@@ -29,7 +29,7 @@ def _safe_get(func: Callable[[], str], default: str = "unknown") -> str:
 
 
 def _detect_install_method() -> str:
-    """Detect how QwenPaw was installed based on environment signals."""
+    """Detect how UGSci was installed based on environment signals."""
     from ..constant import EnvVarLoader
 
     if EnvVarLoader.get_bool("QWENPAW_RUNNING_IN_CONTAINER"):

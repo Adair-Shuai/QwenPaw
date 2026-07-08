@@ -1517,11 +1517,11 @@ export function ChannelDrawer({
               const url =
                 CHANNEL_DOC_EN_URLS[activeKey]! ||
                 CHANNEL_DOC_ZH_URLS[activeKey]!;
-              const isQwenPawDoc = url.includes(
+              const isUGSciDoc = url.includes(
                 "qwenpaw.agentscope.io/docs/channels/",
               );
               const finalUrl =
-                isQwenPawDoc && currentLang === "zh"
+                isUGSciDoc && currentLang === "zh"
                   ? CHANNEL_DOC_ZH_URLS[activeKey]!
                   : CHANNEL_DOC_EN_URLS[activeKey]!;
               openExternalLink(finalUrl);
