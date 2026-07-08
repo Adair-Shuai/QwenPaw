@@ -113,7 +113,10 @@ SECRET_DIR = (
 # Env key for overriding the OS keychain account used for the master key.
 KEYRING_ACCOUNT_ENV = "QWENPAW_KEYRING_ACCOUNT"
 
-PROJECT_NAME = "QwenPaw"
+# Brand display name — override with QWENPAW_BRAND_NAME env var.
+# Internal package name (qwenpaw) and CLI command (qwenpaw) are NOT changed
+# to preserve upstream merge compatibility.
+PROJECT_NAME = _get_env("QWENPAW_BRAND_NAME", "UGSci")
 
 # Message metadata tags shared across agent middleware and memory managers.
 QWENPAW_MESSAGE_TAG_KEY = "qwenpaw_tag"

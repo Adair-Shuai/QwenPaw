@@ -1,4 +1,4 @@
-# CoPaw Test & Coverage Makefile
+# UGSci Test & Coverage Makefile
 
 .PHONY: test test-unit test-contract test-integration test-channel test-channel-contract coverage-full clean
 

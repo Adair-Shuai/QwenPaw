@@ -30,7 +30,7 @@ class AgentStatsPage(BasePage):
     - Empty and loading state handling
     """
 
-    PAGE_TITLE = "QwenPaw Console"
+    PAGE_TITLE = "UGSci Console"
     PAGE_URL = f"{config.base_url}/agent-stats"
 
     # ========== Selector definitions ==========
