@@ -67,10 +67,32 @@ datas += collect_data_files("reme")
 datas += collect_data_files("whisper")
 
 # Collect ALL agentscope data files (yaml model configs, Dockerfile templates,
-# _scripts/_glob_helper.py, etc.) so importlib.resources.files() works at
-# runtime. Without this, agentscope.tool._builtin._scripts is missing and
-# auto_memory / Glob tool will fail with ModuleNotFoundError.
+# etc.) so importlib.resources.files() works at runtime.
 datas += collect_data_files("agentscope")
+
+# agentscope.tool._builtin._scripts contains .py files that are accessed via
+# importlib.resources.files() at runtime (not imported as modules). PyInstaller's
+# collect_data_files skips .py files by default, and collect_submodules puts
+# them into the PYZ archive where importlib.resources cannot find them as
+# filesystem resources. We must explicitly add them as data files.
+#
+# Use importlib.resources to locate the package directory — this is cross-platform
+# (works on macOS .venv/lib/pythonX.Y/ and Windows .venv/Lib/) and avoids
+# hard-coding path components that may differ between environments.
+import importlib.resources as _importlib_resources
+
+try:
+    _scripts_resource = _importlib_resources.files(
+        "agentscope.tool._builtin._scripts"
+    )
+    _agentscope_scripts_dir = Path(str(_scripts_resource))
+    if _agentscope_scripts_dir.is_dir():
+        datas += collect_tree(
+            _agentscope_scripts_dir,
+            "agentscope/tool/_builtin/_scripts",
+        )
+except ModuleNotFoundError:
+    pass
 
 # Collect package metadata for packages that use importlib.metadata at runtime.
 # Keep this allowlist in sync when adding runtime dependencies that query
