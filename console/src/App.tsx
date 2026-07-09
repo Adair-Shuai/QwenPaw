@@ -40,6 +40,7 @@ import CloseWindowPrompt from "./tauri/CloseWindowPrompt";
 import { isTauri } from "@tauri-apps/api/core";
 import "./styles/layout.css";
 import "./styles/form-override.css";
+import "./styles/lobehub-override.css";
 
 const antdLocaleMap: Record<string, Locale> = {
   zh: zhCN,
@@ -198,7 +199,60 @@ function AppInner() {
             ? antdTheme.darkAlgorithm
             : antdTheme.defaultAlgorithm,
           token: {
-            colorPrimary: "#FF7F16",
+            // ── LobeHub design system tokens ──────────────────────────
+            // Primary: UGSci brand blue (overrides LobeHub default monochrome)
+            colorPrimary: "#2563EB",
+            colorSuccess: isDark ? "#c4f042" : "#379d4a",
+            colorWarning: isDark ? "#ffb224" : "#ee9e0b",
+            colorError: isDark ? "#f4416c" : "#ec5e41",
+            colorInfo: isDark ? "#60b1ff" : "#0072f5",
+            // Text — solid neutrals
+            colorText: isDark ? "#ffffff" : "#080808",
+            colorTextSecondary: isDark ? "#aaaaaa" : "#666666",
+            colorTextTertiary: isDark ? "#6f6f6f" : "#999999",
+            colorTextQuaternary: isDark ? "#555555" : "#bbbbbb",
+            // Surfaces
+            colorBgLayout: isDark ? "#000000" : "#f8f8f8",
+            colorBgContainer: isDark ? "#0d0d0d" : "#ffffff",
+            colorBgElevated: isDark ? "#1a1a1a" : "#ffffff",
+            colorBgSpotlight: isDark ? "#2d2d2d" : "#dddddd",
+            // Borders & fills
+            colorBorder: isDark ? "#202020" : "#e3e3e3",
+            colorBorderSecondary: isDark ? "#1a1a1a" : "#eeeeee",
+            colorFill: isDark
+              ? "rgba(255, 255, 255, 0.16)"
+              : "rgba(0, 0, 0, 0.12)",
+            colorFillSecondary: isDark
+              ? "rgba(255, 255, 255, 0.1)"
+              : "rgba(0, 0, 0, 0.06)",
+            colorFillTertiary: isDark
+              ? "rgba(255, 255, 255, 0.06)"
+              : "rgba(0, 0, 0, 0.03)",
+            colorFillQuaternary: isDark
+              ? "rgba(255, 255, 255, 0.02)"
+              : "rgba(0, 0, 0, 0.015)",
+            // Typography — Geist font family (LobeHub design system)
+            fontFamily:
+              'Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif',
+            fontFamilyCode:
+              '"Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, "Cascadia Code", Consolas, "HarmonyOS Sans SC", monospace',
+            fontSize: 14,
+            fontSizeSM: 12,
+            fontSizeLG: 16,
+            lineHeight: 1.5714,
+            // Radius — soft but tight (LobeHub)
+            borderRadiusXS: 4,
+            borderRadiusSM: 6,
+            borderRadius: 8,
+            borderRadiusLG: 12,
+            // Controls
+            controlHeightSM: 28,
+            controlHeight: 36,
+            controlHeightLG: 40,
+            // Shadows — shared across light & dark
+            boxShadowTertiary: "0 3px 1px -1px rgba(26, 26, 26, 0.06)",
+            boxShadowSecondary: "0 8px 16px -4px rgba(0, 0, 0, 0.2)",
+            boxShadow: "0 20px 20px -8px rgba(0, 0, 0, 0.24)",
           },
         }}
       >

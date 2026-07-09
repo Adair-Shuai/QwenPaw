@@ -4,11 +4,11 @@ body {
   overflow: hidden;
   margin: 0;
   padding: 0;
-  background: #f9f8f4;
+  background: #f8f8f8;
 }
 
 .qwenpaw-layout {
-  background: #f9f8f4;
+  background: #f8f8f8;
 }
 
 /* ─── Dark mode global token overrides ─────────────────────────────────────── */
@@ -17,38 +17,38 @@ html.dark-mode {
 }
 
 html.dark-mode body {
-  background: #141414;
+  background: #000000;
   color: rgba(255, 255, 255, 0.85);
 }
 
 /* Ant Design layout background in dark mode */
 html.dark-mode .ant-layout,
 html.dark-mode .qwenpaw-layout {
-  background: #141414 !important;
+  background: #000000 !important;
 }
 
 html.dark-mode .ant-layout-content,
 html.dark-mode .qwenpaw-layout-content {
-  background: #141414 !important;
+  background: #000000 !important;
 }
 
 /* Page content area background */
 html.dark-mode .page-content {
-  background: #141414;
+  background: #000000;
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
 /* Card components — @agentscope-ai/design uses qwenpaw prefix */
 html.dark-mode .qwenpaw-card,
 html.dark-mode .ant-card {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-card-head,
 html.dark-mode .ant-card-head {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-bottom-color: rgba(255, 255, 255, 0.08) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
@@ -71,19 +71,19 @@ html.dark-mode .qwenpaw-spark-info {
 
 html.dark-mode .qwenpaw-card-body,
 html.dark-mode .ant-card-body {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
 }
 
 /* Table components */
 html.dark-mode .qwenpaw-table,
 html.dark-mode .ant-table {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-table-wrapper,
 html.dark-mode .ant-table-wrapper {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
 }
 
 html.dark-mode .qwenpaw-table-thead > tr > th,
@@ -114,7 +114,7 @@ html.dark-mode
   .ant-table-thead
   > tr
   > td {
-  background: #262626 !important;
+  background: #252528 !important;
   color: rgba(255, 255, 255, 0.65) !important;
   border-bottom-color: rgba(255, 255, 255, 0.08) !important;
 }
@@ -122,14 +122,14 @@ html.dark-mode
 /* Sticky thead background (scroll.y tables) */
 html.dark-mode .qwenpaw-table-sticky-holder,
 html.dark-mode .ant-table-sticky-holder {
-  background: #262626 !important;
+  background: #252528 !important;
 }
 
 html.dark-mode .qwenpaw-table-sticky-holder .qwenpaw-table-thead > tr > th,
 html.dark-mode .ant-table-sticky-holder .ant-table-thead > tr > th,
 html.dark-mode .qwenpaw-table-sticky-holder .qwenpaw-table-thead > tr > td,
 html.dark-mode .ant-table-sticky-holder .ant-table-thead > tr > td {
-  background: #262626 !important;
+  background: #252528 !important;
 }
 
 /* Fix left/right sticky columns in thead */
@@ -137,30 +137,30 @@ html.dark-mode .qwenpaw-table-thead > tr > th.qwenpaw-table-cell-fix-left,
 html.dark-mode .ant-table-thead > tr > th.ant-table-cell-fix-left,
 html.dark-mode .qwenpaw-table-thead > tr > th.qwenpaw-table-cell-fix-right,
 html.dark-mode .ant-table-thead > tr > th.ant-table-cell-fix-right {
-  background: #262626 !important;
+  background: #252528 !important;
 }
 
 html.dark-mode .qwenpaw-table-tbody > tr > td,
 html.dark-mode .ant-table-tbody > tr > td {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   color: rgba(255, 255, 255, 0.85) !important;
   border-bottom-color: rgba(255, 255, 255, 0.06) !important;
 }
 
 html.dark-mode .qwenpaw-table-tbody > tr:hover > td,
 html.dark-mode .ant-table-tbody > tr:hover > td {
-  background: #2a2a2a !important;
+  background: #252528 !important;
 }
 
 html.dark-mode .qwenpaw-table-tbody > tr.qwenpaw-table-row-selected > td,
 html.dark-mode .ant-table-tbody > tr.ant-table-row-selected > td {
-  background: rgba(97, 92, 237, 0.12) !important;
+  background: rgba(0, 114, 245, 0.12) !important;
 }
 
 /* Table fixed columns shadow in dark mode */
 html.dark-mode .qwenpaw-table-cell-fix-right,
 html.dark-mode .ant-table-cell-fix-right {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
 }
 
 html.dark-mode .qwenpaw-table-cell-fix-right-first::after,
@@ -171,7 +171,7 @@ html.dark-mode .ant-table-cell-fix-right-first::after {
 /* Table pagination */
 html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-item,
 html.dark-mode .ant-pagination .ant-pagination-item {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
@@ -182,8 +182,8 @@ html.dark-mode .ant-pagination .ant-pagination-item a {
 
 html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-item-active,
 html.dark-mode .ant-pagination .ant-pagination-item-active {
-  background: #ff7f16 !important;
-  border-color: #ff7f16 !important;
+  background: #0072f5 !important;
+  border-color: #0072f5 !important;
 }
 
 html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-item-active a,
@@ -195,7 +195,7 @@ html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-prev button,
 html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-next button,
 html.dark-mode .ant-pagination .ant-pagination-prev button,
 html.dark-mode .ant-pagination .ant-pagination-next button {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
   color: rgba(255, 255, 255, 0.65) !important;
 }
@@ -210,20 +210,20 @@ html.dark-mode .qwenpaw-table-column-sorter-up.active,
 html.dark-mode .qwenpaw-table-column-sorter-down.active,
 html.dark-mode .ant-table-column-sorter-up.active,
 html.dark-mode .ant-table-column-sorter-down.active {
-  color: #ff7f16 !important;
+  color: #0072f5 !important;
 }
 
 /* Checkbox in table */
 html.dark-mode .qwenpaw-checkbox-inner,
 html.dark-mode .ant-checkbox-inner {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.2) !important;
 }
 
 html.dark-mode .qwenpaw-checkbox-checked .qwenpaw-checkbox-inner,
 html.dark-mode .ant-checkbox-checked .ant-checkbox-inner {
-  background: #ff7f16 !important;
-  border-color: #ff7f16 !important;
+  background: #0072f5 !important;
+  border-color: #0072f5 !important;
 }
 
 /* Page titles (h1) */
@@ -236,7 +236,7 @@ html.dark-mode h3 {
 /* Input / Textarea */
 html.dark-mode .qwenpaw-input,
 html.dark-mode .ant-input {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
@@ -269,14 +269,14 @@ html.dark-mode .ant-input::placeholder {
 
 html.dark-mode .qwenpaw-input-affix-wrapper,
 html.dark-mode .ant-input-affix-wrapper {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
 /* Select */
 html.dark-mode .qwenpaw-select-selector,
 html.dark-mode .ant-select-selector {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
@@ -294,7 +294,7 @@ html.dark-mode .ant-select-arrow {
 /* Select dropdown */
 html.dark-mode .qwenpaw-select-dropdown,
 html.dark-mode .ant-select-dropdown {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
@@ -310,13 +310,13 @@ html.dark-mode .ant-select-item-empty {
 
 html.dark-mode .qwenpaw-select-item-option-active,
 html.dark-mode .ant-select-item-option-active {
-  background: rgba(97, 92, 237, 0.12) !important;
+  background: rgba(0, 114, 245, 0.12) !important;
 }
 
 html.dark-mode .qwenpaw-select-item-option-selected,
 html.dark-mode .ant-select-item-option-selected {
-  background: rgba(97, 92, 237, 0.2) !important;
-  color: #ff7f16 !important;
+  background: rgba(0, 114, 245, 0.2) !important;
+  color: #0072f5 !important;
 }
 
 /* Form labels */
@@ -333,20 +333,20 @@ html.dark-mode .ant-form-item-required::before {
 /* InputNumber */
 html.dark-mode .qwenpaw-input-number,
 html.dark-mode .ant-input-number {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-input-number-input,
 html.dark-mode .ant-input-number-input {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-input-number-handler-wrap,
 html.dark-mode .ant-input-number-handler-wrap {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
@@ -359,7 +359,7 @@ html.dark-mode .ant-input-number-handler {
 /* TimePicker */
 html.dark-mode .qwenpaw-picker,
 html.dark-mode .ant-picker {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
@@ -376,12 +376,12 @@ html.dark-mode .ant-picker-suffix {
 
 html.dark-mode .qwenpaw-picker-dropdown,
 html.dark-mode .ant-picker-dropdown {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
 }
 
 html.dark-mode .qwenpaw-picker-panel,
 html.dark-mode .ant-picker-panel {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 
@@ -396,8 +396,8 @@ html.dark-mode
 html.dark-mode
   .ant-picker-time-panel-cell-selected
   .ant-picker-time-panel-cell-inner {
-  background: rgba(97, 92, 237, 0.2) !important;
-  color: #ff7f16 !important;
+  background: rgba(0, 114, 245, 0.2) !important;
+  color: #0072f5 !important;
 }
 
 /* DatePicker / RangePicker calendar panel */
@@ -408,7 +408,7 @@ html.dark-mode .ant-picker-dropdown {
 
 html.dark-mode .qwenpaw-picker-panel-container,
 html.dark-mode .ant-picker-panel-container {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
 }
@@ -452,7 +452,7 @@ html.dark-mode .ant-picker-cell .ant-picker-cell-inner {
 
 html.dark-mode .qwenpaw-picker-cell:hover .qwenpaw-picker-cell-inner,
 html.dark-mode .ant-picker-cell:hover .ant-picker-cell-inner {
-  background: rgba(97, 92, 237, 0.2) !important;
+  background: rgba(0, 114, 245, 0.2) !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
@@ -467,7 +467,7 @@ html.dark-mode .ant-picker-cell-disabled {
 /* Today marker */
 html.dark-mode .qwenpaw-picker-cell-today .qwenpaw-picker-cell-inner::before,
 html.dark-mode .ant-picker-cell-today .ant-picker-cell-inner::before {
-  border-color: #ff7f16 !important;
+  border-color: #0072f5 !important;
 }
 
 /* Selected start/end cell */
@@ -477,14 +477,14 @@ html.dark-mode .qwenpaw-picker-cell-range-start .qwenpaw-picker-cell-inner,
 html.dark-mode .ant-picker-cell-range-start .ant-picker-cell-inner,
 html.dark-mode .qwenpaw-picker-cell-range-end .qwenpaw-picker-cell-inner,
 html.dark-mode .ant-picker-cell-range-end .ant-picker-cell-inner {
-  background: #ff7f16 !important;
+  background: #0072f5 !important;
   color: #fff !important;
 }
 
 /* Range in-between cells */
 html.dark-mode .qwenpaw-picker-cell-in-range::before,
 html.dark-mode .ant-picker-cell-in-range::before {
-  background: rgba(97, 92, 237, 0.15) !important;
+  background: rgba(0, 114, 245, 0.15) !important;
 }
 
 html.dark-mode .qwenpaw-picker-cell-in-range .qwenpaw-picker-cell-inner,
@@ -503,19 +503,19 @@ html.dark-mode
 html.dark-mode
   .qwenpaw-picker-cell-in-view.qwenpaw-picker-cell-range-hover-end::after,
 html.dark-mode .ant-picker-cell-in-view.ant-picker-cell-range-hover-end::after {
-  border-color: #ff7f16 !important;
+  border-color: #0072f5 !important;
 }
 
 /* Panel footer (OK button area) */
 html.dark-mode .qwenpaw-picker-footer,
 html.dark-mode .ant-picker-footer {
   border-top-color: rgba(255, 255, 255, 0.08) !important;
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
 }
 
 html.dark-mode .qwenpaw-picker-today-btn,
 html.dark-mode .ant-picker-today-btn {
-  color: #ff7f16 !important;
+  color: #0072f5 !important;
 }
 
 /* Divider between two panels in RangePicker */
@@ -527,7 +527,7 @@ html.dark-mode .ant-picker-panel + .ant-picker-panel {
 /* Modal */
 html.dark-mode .qwenpaw-modal-content,
 html.dark-mode .ant-modal-content {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   color: rgba(255, 255, 255, 0.85) !important;
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
@@ -535,7 +535,7 @@ html.dark-mode .ant-modal-content {
 
 html.dark-mode .qwenpaw-modal-header,
 html.dark-mode .ant-modal-header {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-bottom-color: rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -557,13 +557,13 @@ html.dark-mode .ant-modal-close:hover {
 
 html.dark-mode .qwenpaw-modal-body,
 html.dark-mode .ant-modal-body {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-modal-footer,
 html.dark-mode .ant-modal-footer {
-  background: #1f1f1f !important;
+  background: #1c1b1e !important;
   border-top-color: rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -612,12 +612,12 @@ html.dark-mode .ant-modal-body .ant-form-item-extra {
 /* Drawer */
 html.dark-mode .qwenpaw-drawer-content,
 html.dark-mode .ant-drawer-content {
-  background: #141414 !important;
+  background: #000000 !important;
 }
 
 html.dark-mode .qwenpaw-drawer-header,
 html.dark-mode .ant-drawer-header {
-  background: #141414 !important;
+  background: #000000 !important;
   border-bottom-color: rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -638,13 +638,13 @@ html.dark-mode .ant-drawer-close:hover {
 
 html.dark-mode .qwenpaw-drawer-body,
 html.dark-mode .ant-drawer-body {
-  background: #141414 !important;
+  background: #000000 !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-drawer-footer,
 html.dark-mode .ant-drawer-footer {
-  background: #141414 !important;
+  background: #000000 !important;
   border-top-color: rgba(255, 255, 255, 0.08) !important;
 }
 
@@ -673,12 +673,12 @@ html.dark-mode .ant-slider-rail {
 
 html.dark-mode .qwenpaw-slider-track,
 html.dark-mode .ant-slider-track {
-  background-color: #ff7f16 !important;
+  background-color: #0072f5 !important;
 }
 
 html.dark-mode .qwenpaw-slider-mark-text,
 html.dark-mode .ant-slider-mark-text {
-  color: #ff7f16 !important;
+  color: #0072f5 !important;
 }
 
 html.dark-mode .qwenpaw-form-item-label > label .qwenpaw-form-item-tooltip,
@@ -688,26 +688,26 @@ html.dark-mode .ant-form-item-label > label .ant-form-item-tooltip {
 
 html.dark-mode .qwenpaw-slider-handle::after,
 html.dark-mode .ant-slider-handle::after {
-  box-shadow: 0 0 0 2px #ff7f16 !important;
-  background-color: #1f1f1f !important;
+  box-shadow: 0 0 0 2px #0072f5 !important;
+  background-color: #1c1b1e !important;
 }
 
 html.dark-mode .qwenpaw-slider-dot,
 html.dark-mode .ant-slider-dot {
   border-color: rgba(255, 255, 255, 0.15) !important;
-  background-color: #2a2a2a !important;
+  background-color: #252528 !important;
 }
 
 /* Tooltip popup (slider value) */
 html.dark-mode .qwenpaw-tooltip-inner,
 html.dark-mode .ant-tooltip-inner {
-  background-color: #2a2a2a !important;
+  background-color: #252528 !important;
   color: rgba(255, 255, 255, 0.85) !important;
 }
 
 html.dark-mode .qwenpaw-tooltip-arrow::before,
 html.dark-mode .ant-tooltip-arrow::before {
-  background: #2a2a2a !important;
+  background: #252528 !important;
 }
 
 /* Tooltip global override — force opaque background in light mode */
@@ -729,13 +729,13 @@ html.dark-mode
 html.dark-mode [class*="chatDisabledOverlay"] :global([class*="chat-input"]),
 html.dark-mode [class*="chatDisabledOverlay"] :global(textarea),
 html.dark-mode [class*="chatDisabledOverlay"] :global(input[type="text"]) {
-  background-color: #2a2a2a !important;
+  background-color: #252528 !important;
 }
 
 /* Sender area dark mode */
 html.dark-mode [class*="qwenpaw-sender-content"],
 html.dark-mode [class*="sender-content"] {
-  background: #2a2a2a !important;
+  background: #252528 !important;
 }
 
 /* Chat page bottom input area container */
@@ -743,7 +743,7 @@ html.dark-mode .qwenpaw-chat-anywhere-input,
 html.dark-mode [class*="chat-anywhere-input"],
 html.dark-mode [class*="qwenpaw-chat-anywhere-default-footer"],
 html.dark-mode [class*="chat-anywhere-footer"] {
-  background: #141414 !important;
+  background: #000000 !important;
 }
 
 /* Chat input placeholder text in dark mode */
@@ -804,13 +804,13 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] code {
 }
 
 html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
-  color: #ff7f16 !important;
+  color: #0072f5 !important;
 }
 
 /* Tool card content blocks — dark mode text and background overrides.
    These elements use div/pre which are not covered by the span/p/li rules above. */
 html.dark-mode [class*="chat-anywhere"] [class*="defaultBlock"] {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.1) !important;
 }
 html.dark-mode [class*="chat-anywhere"] [class*="defaultBlockHeader"] {
@@ -825,7 +825,7 @@ html.dark-mode [class*="chat-anywhere"] [class*="toolCallDiff"] {
   color: rgba(255, 255, 255, 0.85) !important;
 }
 html.dark-mode [class*="chat-anywhere"] [class*="toolCallResultMd"] {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3) !important;
 }
 
@@ -895,12 +895,12 @@ html.dark-mode
   min-height: 100vh;
   max-height: 100vh;
   overflow: hidden;
-  background: #f9f8f4;
+  background: #f8f8f8;
 }
 
 .ant-layout-content {
   overflow: hidden;
-  background: #f9f8f4;
+  background: #f8f8f8;
 }
 
 .qwenpaw-bubble-list-wrapper {
@@ -924,25 +924,25 @@ html.dark-mode
 html.dark-mode .qwenpaw-chat-anywhere,
 html.dark-mode .qwenpaw-chat-anywhere-message-list,
 html.dark-mode .qwenpaw-bubble-list-wrapper {
-  background: #141414 !important;
+  background: #000000 !important;
 }
 
 /* Chat welcome message in dark mode */
 html.dark-mode .qwenpaw-chat-anywhere-welcome-default {
-  background: #141414 !important;
+  background: #000000 !important;
 }
 
 /* Chat input area in dark mode */
 html.dark-mode .qwenpaw-sender,
 html.dark-mode .qwenpaw-sender-content {
-  background: #2a2a2a !important;
+  background: #252528 !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
 /* Menu background in light mode */
 .qwenpaw-menu,
 .ant-menu {
-  background: #f9f8f4 !important;
+  background: #f8f8f8 !important;
 }
 
 /* Menu selected item in light mode */

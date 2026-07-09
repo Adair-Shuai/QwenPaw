@@ -154,7 +154,7 @@ export default function MessageQueuePanel({
           position: "sticky",
           top: 0,
           zIndex: 1,
-          background: isDark ? "#1f1f1f" : "#fff",
+          background: isDark ? "#1c1b1e" : "#fff",
           paddingTop: 4,
           paddingBottom: 6,
           borderBottom: `1px solid ${borderColor}`,

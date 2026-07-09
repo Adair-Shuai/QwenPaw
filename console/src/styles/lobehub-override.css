@@ -1,0 +1,605 @@
+/**
+ * LobeHub Style Override for UGSci Desktop
+ *
+ * This file overrides the default QwenPaw theme (orange/warm) with
+ * LobeHub's design system aesthetic (blue/neutral/mauve).
+ *
+ * Strategy: Only override hardcoded color values from layout.css.
+ * This file is loaded AFTER layout.css, so it wins specificity battles.
+ * It does NOT modify any upstream files, ensuring zero merge conflicts.
+ *
+ * Color mapping (QwenPaw → LobeHub):
+ *   #FF7F16 / #ff7f16  (orange brand)  → #2563EB / #0072f5  (blue brand)
+ *   #f9f8f4            (warm light bg)  → #f8f8f8            (neutral light bg)
+ *   #141414            (dark bg)        → #000000            (pure black)
+ *   #1f1f1f            (dark card)      → #1c1b1e            (mauve dark)
+ *   #262626            (dark table hd)  → #252528            (mauve dark)
+ *   #2a2a2a            (dark input)     → #252528            (mauve dark)
+ *   rgba(97,92,237,.)  (purple accent)  → rgba(0,114,245,.)  (blue accent)
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   1. Light Mode — Backgrounds & Layout
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html,
+body {
+  background: #f8f8f8 !important;
+}
+
+.qwenpaw-layout {
+  background: #f8f8f8 !important;
+}
+
+.ant-layout {
+  background: #f8f8f8 !important;
+}
+
+.ant-layout-content {
+  background: #f8f8f8 !important;
+}
+
+/* Menu background in light mode */
+.qwenpaw-menu,
+.ant-menu {
+  background: #f8f8f8 !important;
+}
+
+/* Menu selected item — blue tint instead of orange */
+.qwenpaw-menu-item-selected,
+.ant-menu-item-selected {
+  background: rgba(37, 99, 235, 0.08) !important;
+}
+
+/* Page content area */
+.page-content {
+  background-color: #ffffff !important;
+  border: 1px solid #eeeeee !important;
+}
+
+/* Chat bubble list & input — white */
+.qwenpaw-bubble-list-wrapper {
+  background: #fff !important;
+}
+
+.qwenpaw-chat-anywhere-input {
+  background: #fff !important;
+}
+
+.qwenpaw-chat-anywhere-message-list-welcome {
+  background: #fff !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   2. Dark Mode — Backgrounds & Surfaces (Mauve neutral palette)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html.dark-mode body {
+  background: #000000 !important;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+html.dark-mode .ant-layout,
+html.dark-mode .qwenpaw-layout {
+  background: #000000 !important;
+}
+
+html.dark-mode .ant-layout-content,
+html.dark-mode .qwenpaw-layout-content {
+  background: #000000 !important;
+}
+
+html.dark-mode .page-content {
+  background: #000000 !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Card components — mauve dark surface */
+html.dark-mode .qwenpaw-card,
+html.dark-mode .ant-card {
+  background: #1c1b1e !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark-mode .qwenpaw-card-head,
+html.dark-mode .ant-card-head {
+  background: #1c1b1e !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark-mode .qwenpaw-card-body,
+html.dark-mode .ant-card-body {
+  background: #1c1b1e !important;
+}
+
+/* Table components */
+html.dark-mode .qwenpaw-table,
+html.dark-mode .ant-table {
+  background: #1c1b1e !important;
+}
+
+html.dark-mode .qwenpaw-table-wrapper,
+html.dark-mode .ant-table-wrapper {
+  background: #1c1b1e !important;
+}
+
+html.dark-mode .qwenpaw-table-thead > tr > th,
+html.dark-mode .ant-table-thead > tr > th,
+html.dark-mode .qwenpaw-table-thead > tr > td,
+html.dark-mode .ant-table-thead > tr > td,
+html.dark-mode
+  .qwenpaw-table-wrapper
+  .qwenpaw-table-container
+  .qwenpaw-table-thead
+  > tr
+  > th,
+html.dark-mode
+  .ant-table-wrapper
+  .ant-table-container
+  .ant-table-thead
+  > tr
+  > th,
+html.dark-mode
+  .qwenpaw-table-wrapper
+  .qwenpaw-table-container
+  .qwenpaw-table-thead
+  > tr
+  > td,
+html.dark-mode
+  .ant-table-wrapper
+  .ant-table-container
+  .ant-table-thead
+  > tr
+  > td {
+  background: #252528 !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark-mode .qwenpaw-table-sticky-holder,
+html.dark-mode .ant-table-sticky-holder {
+  background: #252528 !important;
+}
+
+html.dark-mode .qwenpaw-table-sticky-holder .qwenpaw-table-thead > tr > th,
+html.dark-mode .ant-table-sticky-holder .ant-table-thead > tr > th,
+html.dark-mode .qwenpaw-table-sticky-holder .qwenpaw-table-thead > tr > td,
+html.dark-mode .ant-table-sticky-holder .ant-table-thead > tr > td {
+  background: #252528 !important;
+}
+
+/* Sticky columns in thead */
+html.dark-mode .qwenpaw-table-thead > tr > th.qwenpaw-table-cell-fix-left,
+html.dark-mode .ant-table-thead > tr > th.ant-table-cell-fix-left,
+html.dark-mode .qwenpaw-table-thead > tr > th.qwenpaw-table-cell-fix-right,
+html.dark-mode .ant-table-thead > tr > th.ant-table-cell-fix-right {
+  background: #252528 !important;
+}
+
+html.dark-mode .qwenpaw-table-tbody > tr > td,
+html.dark-mode .ant-table-tbody > tr > td {
+  background: #1c1b1e !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+  border-bottom-color: rgba(255, 255, 255, 0.04) !important;
+}
+
+html.dark-mode .qwenpaw-table-tbody > tr:hover > td,
+html.dark-mode .ant-table-tbody > tr:hover > td {
+  background: #2f2f32 !important;
+}
+
+html.dark-mode .qwenpaw-table-tbody > tr.qwenpaw-table-row-selected > td,
+html.dark-mode .ant-table-tbody > tr.ant-table-row-selected > td {
+  background: rgba(0, 114, 245, 0.12) !important;
+}
+
+/* Table fixed columns */
+html.dark-mode .qwenpaw-table-cell-fix-right,
+html.dark-mode .ant-table-cell-fix-right {
+  background: #1c1b1e !important;
+}
+
+/* Table pagination */
+html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-item,
+html.dark-mode .ant-pagination .ant-pagination-item {
+  background: #1c1b1e !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-item-active,
+html.dark-mode .ant-pagination .ant-pagination-item-active {
+  background: #0072f5 !important;
+  border-color: #0072f5 !important;
+}
+
+html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-item-active a,
+html.dark-mode .ant-pagination .ant-pagination-item-active a {
+  color: #fff !important;
+}
+
+html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-prev button,
+html.dark-mode .qwenpaw-pagination .qwenpaw-pagination-next button,
+html.dark-mode .ant-pagination .ant-pagination-prev button,
+html.dark-mode .ant-pagination .ant-pagination-next button {
+  background: #1c1b1e !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Table sorter icons */
+html.dark-mode .qwenpaw-table-column-sorter-up.active,
+html.dark-mode .ant-table-column-sorter-up.active,
+html.dark-mode .qwenpaw-table-column-sorter-down.active,
+html.dark-mode .ant-table-column-sorter-down.active {
+  color: #0072f5 !important;
+}
+
+/* Checkbox */
+html.dark-mode .qwenpaw-checkbox-checked .qwenpaw-checkbox-inner,
+html.dark-mode .ant-checkbox-checked .ant-checkbox-inner {
+  background: #0072f5 !important;
+  border-color: #0072f5 !important;
+}
+
+/* Input / Textarea */
+html.dark-mode .qwenpaw-input,
+html.dark-mode .ant-input {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark-mode .qwenpaw-input-affix-wrapper,
+html.dark-mode .ant-input-affix-wrapper {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Select */
+html.dark-mode .qwenpaw-select-selector,
+html.dark-mode .ant-select-selector {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark-mode .qwenpaw-select-dropdown,
+html.dark-mode .ant-select-dropdown {
+  background: #1c1b1e !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Select active/selected — blue accent */
+html.dark-mode .qwenpaw-select-item-option-active,
+html.dark-mode .ant-select-item-option-active {
+  background: rgba(0, 114, 245, 0.12) !important;
+}
+
+html.dark-mode .qwenpaw-select-item-option-selected,
+html.dark-mode .ant-select-item-option-selected {
+  background: rgba(0, 114, 245, 0.2) !important;
+  color: #60b1ff !important;
+}
+
+/* InputNumber */
+html.dark-mode .qwenpaw-input-number,
+html.dark-mode .ant-input-number {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark-mode .qwenpaw-input-number-input,
+html.dark-mode .ant-input-number-input {
+  background: #252528 !important;
+}
+
+html.dark-mode .qwenpaw-input-number-handler-wrap,
+html.dark-mode .ant-input-number-handler-wrap {
+  background: #252528 !important;
+}
+
+/* TimePicker / DatePicker */
+html.dark-mode .qwenpaw-picker,
+html.dark-mode .ant-picker {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark-mode .qwenpaw-picker-dropdown,
+html.dark-mode .ant-picker-dropdown {
+  background: transparent !important;
+}
+
+html.dark-mode .qwenpaw-picker-panel-container,
+html.dark-mode .ant-picker-panel-container {
+  background: #1c1b1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+}
+
+html.dark-mode .qwenpaw-picker-panel,
+html.dark-mode .ant-picker-panel {
+  background: #1c1b1e !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Datepicker selected — blue */
+html.dark-mode
+  .qwenpaw-picker-time-panel-cell-selected
+  .qwenpaw-picker-time-panel-cell-inner,
+html.dark-mode
+  .ant-picker-time-panel-cell-selected
+  .ant-picker-time-panel-cell-inner {
+  background: rgba(0, 114, 245, 0.2) !important;
+  color: #60b1ff !important;
+}
+
+html.dark-mode .qwenpaw-picker-cell:hover .qwenpaw-picker-cell-inner,
+html.dark-mode .ant-picker-cell:hover .ant-picker-cell-inner {
+  background: rgba(0, 114, 245, 0.2) !important;
+}
+
+html.dark-mode .qwenpaw-picker-cell-today .qwenpaw-picker-cell-inner::before,
+html.dark-mode .ant-picker-cell-today .ant-picker-cell-inner::before {
+  border-color: #0072f5 !important;
+}
+
+html.dark-mode .qwenpaw-picker-cell-selected .qwenpaw-picker-cell-inner,
+html.dark-mode .ant-picker-cell-selected .ant-picker-cell-inner,
+html.dark-mode .qwenpaw-picker-cell-range-start .qwenpaw-picker-cell-inner,
+html.dark-mode .ant-picker-cell-range-start .ant-picker-cell-inner,
+html.dark-mode .qwenpaw-picker-cell-range-end .qwenpaw-picker-cell-inner,
+html.dark-mode .ant-picker-cell-range-end .ant-picker-cell-inner {
+  background: #0072f5 !important;
+  color: #fff !important;
+}
+
+html.dark-mode .qwenpaw-picker-cell-in-range::before,
+html.dark-mode .ant-picker-cell-in-range::before {
+  background: rgba(0, 114, 245, 0.15) !important;
+}
+
+html.dark-mode
+  .qwenpaw-picker-cell-in-view.qwenpaw-picker-cell-range-hover::before,
+html.dark-mode .ant-picker-cell-in-view.ant-picker-cell-range-hover::before,
+html.dark-mode
+  .qwenpaw-picker-cell-in-view.qwenpaw-picker-cell-range-hover-start::after,
+html.dark-mode
+  .ant-picker-cell-in-view.ant-picker-cell-range-hover-start::after,
+html.dark-mode
+  .qwenpaw-picker-cell-in-view.qwenpaw-picker-cell-range-hover-end::after,
+html.dark-mode .ant-picker-cell-in-view.ant-picker-cell-range-hover-end::after {
+  border-color: #0072f5 !important;
+}
+
+html.dark-mode .qwenpaw-picker-today-btn,
+html.dark-mode .ant-picker-today-btn {
+  color: #0072f5 !important;
+}
+
+html.dark-mode .qwenpaw-picker-footer,
+html.dark-mode .ant-picker-footer {
+  background: #1c1b1e !important;
+}
+
+/* Modal */
+html.dark-mode .qwenpaw-modal-content,
+html.dark-mode .ant-modal-content {
+  background: #1c1b1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 20px 20px -8px rgba(0, 0, 0, 0.24) !important;
+}
+
+html.dark-mode .qwenpaw-modal-header,
+html.dark-mode .ant-modal-header {
+  background: #1c1b1e !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark-mode .qwenpaw-modal-body,
+html.dark-mode .ant-modal-body {
+  background: #1c1b1e !important;
+}
+
+html.dark-mode .qwenpaw-modal-footer,
+html.dark-mode .ant-modal-footer {
+  background: #1c1b1e !important;
+  border-top-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Drawer — darker than cards, matches layout bg */
+html.dark-mode .qwenpaw-drawer-content,
+html.dark-mode .ant-drawer-content {
+  background: #000000 !important;
+}
+
+html.dark-mode .qwenpaw-drawer-header,
+html.dark-mode .ant-drawer-header {
+  background: #000000 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark-mode .qwenpaw-drawer-body,
+html.dark-mode .ant-drawer-body {
+  background: #000000 !important;
+}
+
+html.dark-mode .qwenpaw-drawer-footer,
+html.dark-mode .ant-drawer-footer {
+  background: #000000 !important;
+  border-top-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+/* Slider — blue track */
+html.dark-mode .qwenpaw-slider-track,
+html.dark-mode .ant-slider-track {
+  background-color: #0072f5 !important;
+}
+
+html.dark-mode .qwenpaw-slider-mark-text,
+html.dark-mode .ant-slider-mark-text {
+  color: #0072f5 !important;
+}
+
+html.dark-mode .qwenpaw-slider-handle::after,
+html.dark-mode .ant-slider-handle::after {
+  box-shadow: 0 0 0 2px #0072f5 !important;
+  background-color: #1c1b1e !important;
+}
+
+html.dark-mode .qwenpaw-slider-dot,
+html.dark-mode .ant-slider-dot {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+  background-color: #252528 !important;
+}
+
+/* Tooltip */
+html.dark-mode .qwenpaw-tooltip-inner,
+html.dark-mode .ant-tooltip-inner {
+  background-color: #252528 !important;
+}
+
+html.dark-mode .qwenpaw-tooltip-arrow::before,
+html.dark-mode .ant-tooltip-arrow::before {
+  background: #252528 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   3. Chat Area — Dark Mode
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html.dark-mode .qwenpaw-chat-anywhere,
+html.dark-mode .qwenpaw-chat-anywhere-message-list,
+html.dark-mode .qwenpaw-bubble-list-wrapper {
+  background: #000000 !important;
+}
+
+html.dark-mode .qwenpaw-chat-anywhere-welcome-default {
+  background: #000000 !important;
+}
+
+html.dark-mode .qwenpaw-sender,
+html.dark-mode .qwenpaw-sender-content {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark-mode [class*="qwenpaw-sender-content"],
+html.dark-mode [class*="sender-content"] {
+  background: #252528 !important;
+}
+
+html.dark-mode .qwenpaw-chat-anywhere-input,
+html.dark-mode [class*="chat-anywhere-input"],
+html.dark-mode [class*="qwenpaw-chat-anywhere-default-footer"],
+html.dark-mode [class*="chat-anywhere-footer"] {
+  background: #000000 !important;
+}
+
+/* Chat input disabled overlay */
+html.dark-mode [class*="chatDisabledOverlay"] textarea,
+html.dark-mode [class*="chatDisabledOverlay"] input[type="text"] {
+  background-color: #252528 !important;
+}
+
+/* Chat message links — blue */
+html.dark-mode [class*="chat-anywhere"] [class*="message"] a {
+  color: #60b1ff !important;
+}
+
+/* Tool card blocks */
+html.dark-mode [class*="chat-anywhere"] [class*="defaultBlock"] {
+  background: #252528 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark-mode [class*="chat-anywhere"] [class*="defaultBlockHeader"] {
+  background: #2f2f32 !important;
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark-mode [class*="chat-anywhere"] [class*="toolCallResultMd"] {
+  background: #252528 !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   4. Buttons — Dark Mode
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Default button — subtle dark surface */
+html.dark-mode .ant-btn-default,
+html.dark-mode .qwenpaw-btn-default {
+  color: rgba(255, 255, 255, 0.85) !important;
+  background-color: #1c1b1e !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   5. Scrollbar — LobeHub style (thin, subtle)
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+* {
+  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-width: thin;
+}
+
+::-webkit-scrollbar {
+  width: 0.75em;
+  height: 0.75em;
+}
+
+::-webkit-scrollbar-thumb {
+  border-radius: 10px;
+}
+
+:hover::-webkit-scrollbar-thumb {
+  border: 3px solid transparent;
+  background-color: rgba(255, 255, 255, 0.3);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-track {
+  background-color: transparent;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   6. Modal/Drawer Mask — LobeHub blur effect
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+.ant-modal-mask,
+.qwenpaw-modal-mask,
+.ant-drawer-mask,
+.qwenpaw-drawer-mask {
+  background: rgba(0, 0, 0, 0.5) !important;
+  backdrop-filter: blur(2px);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   7. Empty State & Typography
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html.dark-mode .qwenpaw-empty-image,
+html.dark-mode .ant-empty-image {
+  opacity: 0.2;
+}
+
+html.dark-mode .qwenpaw-empty-description,
+html.dark-mode .ant-empty-description {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+html.dark-mode .qwenpaw-typography-secondary,
+html.dark-mode .ant-typography-secondary {
+  color: rgba(255, 255, 255, 0.5) !important;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   8. Debug Log
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+html.dark-mode .debug-log-container {
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+html.dark-mode .debug-log-container mark {
+  background: rgba(255, 214, 102, 0.35) !important;
+  color: rgba(0, 0, 0, 0.9);
+}

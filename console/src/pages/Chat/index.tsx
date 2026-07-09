@@ -3183,7 +3183,7 @@ export default function ChatPage() {
           styles={{
             content: isDark
               ? {
-                  background: "#1f1f1f",
+                  background: "#1c1b1e",
                   boxShadow: "0 8px 32px rgba(0,0,0,0.5)",
                 }
               : undefined,
