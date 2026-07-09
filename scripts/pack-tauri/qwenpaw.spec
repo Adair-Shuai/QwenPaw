@@ -66,6 +66,12 @@ datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
 datas += collect_data_files("reme")
 datas += collect_data_files("whisper")
 
+# Collect ALL agentscope data files (yaml model configs, Dockerfile templates,
+# _scripts/_glob_helper.py, etc.) so importlib.resources.files() works at
+# runtime. Without this, agentscope.tool._builtin._scripts is missing and
+# auto_memory / Glob tool will fail with ModuleNotFoundError.
+datas += collect_data_files("agentscope")
+
 # Collect package metadata for packages that use importlib.metadata at runtime.
 # Keep this allowlist in sync when adding runtime dependencies that query
 # importlib.metadata, otherwise packaged sidecars may fail only after install.
@@ -148,6 +154,9 @@ a = Analysis(
         "modelscope.hub.snapshot_download",
         *collect_submodules("whisper"),
         *collect_submodules("chromadb"),
+        # agentscope tool _builtin _scripts sub-package is imported via
+        # importlib.resources at runtime; ensure it's explicitly included.
+        *collect_submodules("agentscope"),
     ],
     hookspath=[],
     hooksconfig={},
