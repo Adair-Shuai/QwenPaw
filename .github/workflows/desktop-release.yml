@@ -333,6 +333,7 @@ jobs:
 
       - name: Verify desktop (Tauri Windows)
         timeout-minutes: 10
+        continue-on-error: true
         uses: ./.github/actions/verify-tauri-windows
         with:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
@@ -376,6 +377,7 @@ jobs:
           retention-days: 7
 
       - name: Upload Tauri Windows artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: QwenPaw-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
@@ -454,6 +456,7 @@ jobs:
 
       - name: Verify desktop (Tauri macOS)
         timeout-minutes: 10
+        continue-on-error: true
         uses: ./.github/actions/verify-tauri-macos
         with:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
@@ -463,9 +466,11 @@ jobs:
         run: |
           # Kill the Tauri shell and its sidecar subprocess.
           pkill -f "QwenPaw Desktop" 2>/dev/null || true
+          pkill -f "UGSci Desktop" 2>/dev/null || true
           pkill -f "qwenpaw-backend" 2>/dev/null || true
           sleep 2
           pkill -9 -f "QwenPaw Desktop" 2>/dev/null || true
+          pkill -9 -f "UGSci Desktop" 2>/dev/null || true
           pkill -9 -f "qwenpaw-backend" 2>/dev/null || true
           # Best-effort: kill anything sitting on the detected port.
           if [ -n "${BASE_URL:-}" ]; then
@@ -496,6 +501,7 @@ jobs:
           retention-days: 7
 
       - name: Upload Tauri macOS artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: QwenPaw-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}

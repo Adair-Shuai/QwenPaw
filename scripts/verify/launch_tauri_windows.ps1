@@ -27,7 +27,7 @@ foreach ($hive in @("HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                     "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall")) {
   $reg = Get-ChildItem $hive -ErrorAction SilentlyContinue |
-    Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName -match "QwenPaw" } |
+    Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName -match "QwenPaw|UGSci" } |
     Select-Object -First 1
   if ($reg) {
     $loc = (Get-ItemProperty $reg.PSPath).InstallLocation
@@ -43,6 +43,10 @@ foreach ($hive in @("HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
 # Fallback: search known install candidate directories.
 if (-not $tauriExe) {
   $candidateRoots = @(
+    (Join-Path $env:LOCALAPPDATA "UGSci Desktop"),
+    (Join-Path $env:LOCALAPPDATA "Programs\UGSci Desktop"),
+    (Join-Path $env:ProgramFiles "UGSci Desktop"),
+    (Join-Path ${env:ProgramFiles(x86)} "UGSci Desktop"),
     (Join-Path $env:LOCALAPPDATA "QwenPaw Desktop"),
     (Join-Path $env:LOCALAPPDATA "Programs\QwenPaw Desktop"),
     (Join-Path $env:ProgramFiles "QwenPaw Desktop"),
@@ -60,11 +64,11 @@ if (-not $tauriExe) {
 
 if (-not $tauriExe) {
   Write-Host "=== DEBUG: install location not found ==="
-  Write-Host "Registry entries matching QwenPaw:"
+  Write-Host "Registry entries matching QwenPaw or UGSci:"
   foreach ($hive in @("HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
                       "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall")) {
     Get-ChildItem $hive -ErrorAction SilentlyContinue |
-      Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName -match "QwenPaw" } |
+      Where-Object { (Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).DisplayName -match "QwenPaw|UGSci" } |
       ForEach-Object { Write-Host "  $((Get-ItemProperty $_.PSPath).InstallLocation)" }
   }
   throw "Tauri exe not found after NSIS install"
