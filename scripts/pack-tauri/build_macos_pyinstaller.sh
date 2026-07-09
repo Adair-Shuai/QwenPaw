@@ -182,12 +182,21 @@ case "$(uname -m)" in
     arm64 | aarch64) UPDATER_TARGET="darwin-aarch64" ;;
     *) UPDATER_TARGET="darwin-x86_64" ;;
 esac
-python "${REPO_ROOT}/scripts/pack-tauri/generate_update_manifest.py" stage \
-    --bundle-dir "${BUNDLE_DIR}/macos" \
-    --pattern '*.app.tar.gz' \
-    --target "${UPDATER_TARGET}" \
-    --output "${UPDATER_NAME}" \
-    --pubkey-config "${REPO_ROOT}/console/src-tauri/tauri.version.conf.json"
+# The updater archive (.app.tar.gz) is only generated when Tauri has a signing
+# key configured. Skip staging gracefully when it's absent (e.g., fork builds
+# without TAURI_SIGNING_PRIVATE_KEY).
+if ls "${BUNDLE_DIR}/macos/"*.app.tar.gz >/dev/null 2>&1; then
+    python "${REPO_ROOT}/scripts/pack-tauri/generate_update_manifest.py" stage \
+        --bundle-dir "${BUNDLE_DIR}/macos" \
+        --pattern '*.app.tar.gz' \
+        --target "${UPDATER_TARGET}" \
+        --output "${UPDATER_NAME}" \
+        --pubkey-config "${REPO_ROOT}/console/src-tauri/tauri.version.conf.json"
+else
+    echo "warning: no .app.tar.gz updater archive found; skipping updater staging"
+    echo "(This is expected when building without TAURI_SIGNING_PRIVATE_KEY)"
+    UPDATER_NAME="(skipped - no signing key)"
+fi
 
 echo ""
 echo "========================================="
