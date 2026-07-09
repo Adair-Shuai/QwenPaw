@@ -63,25 +63,32 @@ def cmd_stage(args: argparse.Namespace) -> None:
     bundle_dir = Path(args.bundle_dir)
     source = _find_source(bundle_dir, args.pattern)
     sig_source = source.with_suffix(source.suffix + ".sig")
-    if not sig_source.is_file():
-        raise SystemExit(f"no updater signature found at {sig_source}")
+    has_sig = sig_source.is_file()
+    if not has_sig:
+        print(
+            f"warning: no updater signature found at {sig_source}; "
+            "skipping signature staging (updater will not be available "
+            "for this build)",
+        )
 
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(source, output)
-    shutil.copyfile(sig_source, output.with_suffix(output.suffix + ".sig"))
+    if has_sig:
+        shutil.copyfile(sig_source, output.with_suffix(output.suffix + ".sig"))
 
-    metadata = {
+    metadata: dict[str, str] = {
         "target": args.target,
         "artifact": output.name,
-        "signature": output.name + ".sig",
     }
+    if has_sig:
+        metadata["signature"] = output.name + ".sig"
     sidecar = output.parent / f"tauri-{args.target}-updater.json"
     sidecar.write_text(
         json.dumps(metadata, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
-    if args.pubkey_config:
+    if has_sig and args.pubkey_config:
         verify_signature_key_id(
             signature_path=output.with_suffix(output.suffix + ".sig"),
             pubkey_config=Path(args.pubkey_config),
@@ -95,13 +102,16 @@ def cmd_stage(args: argparse.Namespace) -> None:
 def _read_metadata(path: Path) -> dict[str, str]:
     with path.open("r", encoding="utf-8-sig") as f:
         data = json.load(f)
-    required = {"target", "artifact", "signature"}
+    required = {"target", "artifact"}
     missing = required - set(data)
     if missing:
         raise SystemExit(
             f"{path} missing required keys: {', '.join(sorted(missing))}",
         )
-    return {key: str(data[key]) for key in required}
+    result = {key: str(data[key]) for key in required}
+    if "signature" in data:
+        result["signature"] = str(data["signature"])
+    return result
 
 
 def _signature_text(path: Path) -> str:
@@ -194,10 +204,12 @@ def cmd_manifest(args: argparse.Namespace) -> None:
         base = target_overrides.get(meta["target"], args.base_url).rstrip(
             "/",
         )
-        platforms[meta["target"]] = {
+        entry: dict[str, str] = {
             "url": f"{base}/{quote(meta['artifact'])}",
-            "signature": _signature_text(workdir / meta["signature"]),
         }
+        if "signature" in meta:
+            entry["signature"] = _signature_text(workdir / meta["signature"])
+        platforms[meta["target"]] = entry
     if not platforms:
         raise SystemExit("no updater platforms were provided")
 

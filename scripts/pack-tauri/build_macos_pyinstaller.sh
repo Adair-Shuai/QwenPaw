@@ -116,11 +116,20 @@ cd ..
 echo "Tauri app built"
 echo ""
 
-APP_PATH="${BUNDLE_DIR}/macos/QwenPaw Desktop.app"
-if [ ! -d "${APP_PATH}" ]; then
-    echo "ERROR: No Tauri macOS app found at ${APP_PATH}"
+# Dynamically find the built .app bundle (product name may differ from "QwenPaw Desktop")
+APP_PATH=""
+for app in "${BUNDLE_DIR}/macos/"*.app; do
+    if [ -d "$app" ]; then
+        APP_PATH="$app"
+        break
+    fi
+done
+if [ -z "${APP_PATH}" ] || [ ! -d "${APP_PATH}" ]; then
+    echo "ERROR: No Tauri macOS app found in ${BUNDLE_DIR}/macos/"
+    ls -la "${BUNDLE_DIR}/macos/" 2>/dev/null || true
     exit 1
 fi
+echo "Found app bundle: ${APP_PATH}"
 
 echo "== Step 3b: Signing Final macOS App =="
 bash "${SIGN_MACOS_BUNDLE}" \
