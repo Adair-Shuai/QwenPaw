@@ -209,7 +209,7 @@ def cmd_manifest(args: argparse.Namespace) -> None:
         }
         if "signature" in meta:
             manifest_entry["signature"] = _signature_text(
-                workdir / meta["signature"]
+                workdir / meta["signature"],
             )
         platforms[meta["target"]] = manifest_entry
     if not platforms:
