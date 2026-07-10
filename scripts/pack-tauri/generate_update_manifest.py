@@ -204,12 +204,12 @@ def cmd_manifest(args: argparse.Namespace) -> None:
         base = target_overrides.get(meta["target"], args.base_url).rstrip(
             "/",
         )
-        entry: dict[str, str] = {
+        manifest_entry: dict[str, str] = {
             "url": f"{base}/{quote(meta['artifact'])}",
         }
         if "signature" in meta:
-            entry["signature"] = _signature_text(workdir / meta["signature"])
-        platforms[meta["target"]] = entry
+            manifest_entry["signature"] = _signature_text(workdir / meta["signature"])
+        platforms[meta["target"]] = manifest_entry
     if not platforms:
         raise SystemExit("no updater platforms were provided")
 
