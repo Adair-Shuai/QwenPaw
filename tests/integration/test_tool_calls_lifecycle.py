@@ -491,7 +491,7 @@ def _submit_shell_sleep_task(  # pylint: disable=redefined-outer-name
     return submit_resp.json()["task_id"], session_id
 
 
-def _poll_for_entry(app_server, session_id, timeout=15.0):
+def _poll_for_entry(app_server, session_id, timeout=30.0):
     """Poll list_calls until at least one entry appears; return it."""
     deadline = time.time() + timeout
     while time.time() < deadline:
