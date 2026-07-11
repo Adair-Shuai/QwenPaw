@@ -20,7 +20,7 @@ try:
     from lark_oapi.event.callback.model.p2_card_action_trigger import (
         P2CardActionTriggerResponse,
     )
-except ImportError:  # pragma: no cover - optional dependency
+except Exception:  # pragma: no cover - optional dependency
     P2CardActionTriggerResponse = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:  # pragma: no cover

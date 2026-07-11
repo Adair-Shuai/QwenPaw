@@ -71,12 +71,13 @@ from .utils import (
     sender_display_string,
     short_session_id_from_full_id,
 )
-from .cards import FeishuCardHandler
 
 
 # Compatibility for setuptools>=82 where pkg_resources may be absent.
 # lark-oapi imports pkg_resources.declare_namespace from its vendored protobuf
 # package init; install a minimal shim only while importing lark-oapi.
+# This must run BEFORE any import that might transitively import lark-oapi
+# (including the .cards subpackage below).
 def _declare_namespace_shim(_name: str) -> None:
     return None
 
@@ -106,6 +107,11 @@ else:
             _declare_namespace_shim,
         )
         _declare_namespace_patched = True
+
+
+from .cards import (  # noqa: E402  # pylint: disable=wrong-import-position
+    FeishuCardHandler,
+)
 
 
 class _EventLoopProxy:
@@ -140,7 +146,7 @@ try:
     import lark_oapi.ws.client as _ws_mod
 
     _ws_mod.loop = _EventLoopProxy()
-except ImportError:  # pragma: no cover - optional dependency may be missing
+except Exception:  # pragma: no cover - optional dependency may be missing
     lark = None  # type: ignore[assignment]
     GetUserRequest = None  # type: ignore[assignment]
     CreateFileRequest = None  # type: ignore[assignment]
@@ -1207,9 +1213,11 @@ class FeishuChannel(BaseChannel):
             quoted_lines.append(f"[quoted {label}]")
         for hint in error_hints:
             quoted_lines.append(
-                f"[quoted {hint[1:]}"
-                if hint.startswith("[")
-                else f"[quoted {hint}]",
+                (
+                    f"[quoted {hint[1:]}"
+                    if hint.startswith("[")
+                    else f"[quoted {hint}]"
+                ),
             )
         # Prepend all quoted lines before existing text_parts.
         text_parts[:0] = quoted_lines

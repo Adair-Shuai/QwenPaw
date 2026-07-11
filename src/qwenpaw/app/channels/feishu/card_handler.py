@@ -52,7 +52,7 @@ try:
         P2CardActionTrigger,
         P2CardActionTriggerResponse,
     )
-except ImportError:  # pragma: no cover - optional dependency
+except Exception:  # pragma: no cover - optional dependency
     P2CardActionTrigger = None  # type: ignore[assignment]
     P2CardActionTriggerResponse = None  # type: ignore[assignment]
 
