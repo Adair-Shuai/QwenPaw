@@ -298,13 +298,15 @@ function TagList({
   return React.createElement(
     "div",
     { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
-    ...items.slice(0, max).map((item, i) =>
-      React.createElement(
-        Tag,
-        { key: i, color, style: { fontSize: 11, marginRight: 0 } },
-        item,
+    ...items
+      .slice(0, max)
+      .map((item, i) =>
+        React.createElement(
+          Tag,
+          { key: i, color, style: { fontSize: 11, marginRight: 0 } },
+          item,
+        ),
       ),
-    ),
     items.length > max
       ? React.createElement(
           Tag,
@@ -330,7 +332,9 @@ function ExpertCard({
 
   const { agent, skills, mcps, loading } = expert;
   const isEnabled = agent.enabled;
-  const skillNames = skills.filter((s) => s.enabled !== false).map((s) => s.name);
+  const skillNames = skills
+    .filter((s) => s.enabled !== false)
+    .map((s) => s.name);
   const mcpNames = mcps.map((m) => m.name || m.key);
   const modelText = agent.active_model
     ? `${agent.active_model.provider_id}/${agent.active_model.model}`
@@ -485,12 +489,8 @@ function ExpertDrawer({
     Spin,
   } = getHost().antd;
   const { Text, Paragraph } = Typography;
-  const {
-    EditOutlined,
-    ThunderboltOutlined,
-    FileTextOutlined,
-    ToolOutlined,
-  } = getHost().antdIcons || {};
+  const { EditOutlined, ThunderboltOutlined, FileTextOutlined, ToolOutlined } =
+    getHost().antdIcons || {};
 
   if (!expert) return null;
 
@@ -523,13 +523,13 @@ function ExpertDrawer({
           agent.enabled ? "启用" : "停用",
         ),
       ),
-React.createElement(
-Descriptions.Item,
-{ label: "功能简介" },
-agent.description
-  ? renderMarkdown(agent.description, React)
-  : "暂无描述",
-),
+      React.createElement(
+        Descriptions.Item,
+        { label: "功能简介" },
+        agent.description
+          ? renderMarkdown(agent.description, React)
+          : "暂无描述",
+      ),
       React.createElement(
         Descriptions.Item,
         { label: "使用模型" },
@@ -606,72 +606,72 @@ agent.description
         React.createElement(Spin, { size: "large" }),
       )
     : enabledSkills.length === 0
-      ? React.createElement(Empty, {
-          description: "该专家暂无已启用的技能",
-          image: Empty.PRESENTED_IMAGE_SIMPLE,
-        })
-      : React.createElement(List, {
-          dataSource: enabledSkills,
-          renderItem: (skill: SkillSpec) =>
+    ? React.createElement(Empty, {
+        description: "该专家暂无已启用的技能",
+        image: Empty.PRESENTED_IMAGE_SIMPLE,
+      })
+    : React.createElement(List, {
+        dataSource: enabledSkills,
+        renderItem: (skill: SkillSpec) =>
+          React.createElement(
+            List.Item,
+            null,
             React.createElement(
-              List.Item,
-              null,
+              "div",
+              { style: { width: "100%" } },
               React.createElement(
                 "div",
-                { style: { width: "100%" } },
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 4,
-                    },
+                {
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 4,
                   },
-                  skill.emoji
-                    ? React.createElement(
-                        "span",
-                        { style: { fontSize: 16 } },
-                        skill.emoji,
-                      )
-                    : null,
-                  React.createElement(Text, { strong: true }, skill.name),
-                  skill.version_text
-                    ? React.createElement(
-                        Tag,
-                        { style: { fontSize: 10 } },
-                        `v${skill.version_text}`,
-                      )
-                    : null,
-                ),
-                skill.description
+                },
+                skill.emoji
                   ? React.createElement(
-                      Paragraph,
-                      {
-                        type: "secondary",
-                        style: { fontSize: 12, margin: 0 },
-                        ellipsis: { rows: 2 },
-                      },
-                      skill.description,
+                      "span",
+                      { style: { fontSize: 16 } },
+                      skill.emoji,
                     )
                   : null,
-                skill.tags && skill.tags.length > 0
+                React.createElement(Text, { strong: true }, skill.name),
+                skill.version_text
                   ? React.createElement(
-                      "div",
-                      { style: { marginTop: 4 } },
-                      ...skill.tags.map((tag, i) =>
-                        React.createElement(
-                          Tag,
-                          { key: i, color: "cyan", style: { fontSize: 10 } },
-                          tag,
-                        ),
-                      ),
+                      Tag,
+                      { style: { fontSize: 10 } },
+                      `v${skill.version_text}`,
                     )
                   : null,
               ),
+              skill.description
+                ? React.createElement(
+                    Paragraph,
+                    {
+                      type: "secondary",
+                      style: { fontSize: 12, margin: 0 },
+                      ellipsis: { rows: 2 },
+                    },
+                    skill.description,
+                  )
+                : null,
+              skill.tags && skill.tags.length > 0
+                ? React.createElement(
+                    "div",
+                    { style: { marginTop: 4 } },
+                    ...skill.tags.map((tag, i) =>
+                      React.createElement(
+                        Tag,
+                        { key: i, color: "cyan", style: { fontSize: 10 } },
+                        tag,
+                      ),
+                    ),
+                  )
+                : null,
             ),
-        });
+          ),
+      });
 
   const mcpTab = loading
     ? React.createElement(
@@ -680,80 +680,76 @@ agent.description
         React.createElement(Spin, { size: "large" }),
       )
     : mcps.length === 0
-      ? React.createElement(Empty, {
-          description: "该专家暂无关联的 MCP 客户端",
-          image: Empty.PRESENTED_IMAGE_SIMPLE,
-        })
-      : React.createElement(List, {
-          dataSource: mcps,
-          renderItem: (mcp: MCPClientInfo) =>
+    ? React.createElement(Empty, {
+        description: "该专家暂无关联的 MCP 客户端",
+        image: Empty.PRESENTED_IMAGE_SIMPLE,
+      })
+    : React.createElement(List, {
+        dataSource: mcps,
+        renderItem: (mcp: MCPClientInfo) =>
+          React.createElement(
+            List.Item,
+            null,
             React.createElement(
-              List.Item,
-              null,
+              "div",
+              { style: { width: "100%" } },
               React.createElement(
                 "div",
-                { style: { width: "100%" } },
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 4,
-                    },
+                {
+                  style: {
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 8,
+                    marginBottom: 4,
                   },
-                  React.createElement(
-                    "span",
-                    { style: { fontSize: 14 } },
-                    "🔌",
-                  ),
-                  React.createElement(
-                    Text,
-                    { strong: true },
-                    mcp.name || mcp.key,
-                  ),
-                  React.createElement(
-                    Tag,
-                    {
-                      color: mcp.enabled ? "green" : "default",
-                      style: { fontSize: 10 },
-                    },
-                    mcp.enabled ? "启用" : "停用",
-                  ),
-                  React.createElement(
-                    Tag,
-                    { color: "purple", style: { fontSize: 10 } },
-                    mcp.transport,
-                  ),
+                },
+                React.createElement("span", { style: { fontSize: 14 } }, "🔌"),
+                React.createElement(
+                  Text,
+                  { strong: true },
+                  mcp.name || mcp.key,
                 ),
-                mcp.description
-                  ? React.createElement(
-                      Paragraph,
-                      {
-                        type: "secondary",
-                        style: { fontSize: 12, margin: 0 },
-                        ellipsis: { rows: 2 },
-                      },
-                      mcp.description,
-                    )
-                  : null,
-                mcp.tools && mcp.tools.length > 0
-                  ? React.createElement(
-                      "div",
-                      {
-                        style: {
-                          marginTop: 4,
-                          fontSize: 11,
-                          color: "#8c8c8c",
-                        },
-                      },
-                      `提供 ${mcp.tools.length} 个工具`,
-                    )
-                  : null,
+                React.createElement(
+                  Tag,
+                  {
+                    color: mcp.enabled ? "green" : "default",
+                    style: { fontSize: 10 },
+                  },
+                  mcp.enabled ? "启用" : "停用",
+                ),
+                React.createElement(
+                  Tag,
+                  { color: "purple", style: { fontSize: 10 } },
+                  mcp.transport,
+                ),
               ),
+              mcp.description
+                ? React.createElement(
+                    Paragraph,
+                    {
+                      type: "secondary",
+                      style: { fontSize: 12, margin: 0 },
+                      ellipsis: { rows: 2 },
+                    },
+                    mcp.description,
+                  )
+                : null,
+              mcp.tools && mcp.tools.length > 0
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 4,
+                        fontSize: 11,
+                        color: "#8c8c8c",
+                      },
+                    },
+                    `提供 ${mcp.tools.length} 个工具`,
+                  )
+                : null,
             ),
-        });
+          ),
+      });
 
   const toolsTab = config?.tools
     ? React.createElement(
@@ -802,7 +798,11 @@ agent.description
 
   const tabItems = [
     { key: "basic", label: "基本信息", children: basicInfoTab },
-    { key: "skills", label: `技能 (${enabledSkills.length})`, children: skillsTab },
+    {
+      key: "skills",
+      label: `技能 (${enabledSkills.length})`,
+      children: skillsTab,
+    },
     { key: "mcp", label: `MCP (${mcps.length})`, children: mcpTab },
     { key: "tools", label: "工具配置", children: toolsTab },
   ];
@@ -826,9 +826,7 @@ agent.description
           Button,
           {
             size: "small",
-            icon: EditOutlined
-              ? React.createElement(EditOutlined)
-              : undefined,
+            icon: EditOutlined ? React.createElement(EditOutlined) : undefined,
             onClick: () => navigateTo("/agents"),
           },
           "编辑专家",
@@ -868,8 +866,15 @@ agent.description
 function ExpertCenterPage() {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
-  const { Spin, Empty, Input, Button, message: antdMsg, Row, Col } =
-    getHost().antd;
+  const {
+    Spin,
+    Empty,
+    Input,
+    Button,
+    message: antdMsg,
+    Row,
+    Col,
+  } = getHost().antd;
   const { ReloadOutlined, PlusOutlined, SearchOutlined } =
     getHost().antdIcons || {};
 
@@ -899,8 +904,7 @@ function ExpertCenterPage() {
             // Extract MCP keys from agent config and cross-reference with global MCP list
             const mcpKeys = extractMCPKeys(config?.mcp);
             const agentMCPs = allMCPClients.filter(
-              (mcp) =>
-                mcpKeys.includes(mcp.key) || mcpKeys.includes(mcp.name),
+              (mcp) => mcpKeys.includes(mcp.key) || mcpKeys.includes(mcp.name),
             );
 
             return {
@@ -954,8 +958,7 @@ function ExpertCenterPage() {
 
   const enabledCount = experts.filter((e) => e.agent.enabled).length;
   const totalSkills = experts.reduce(
-    (sum, e) =>
-      sum + e.skills.filter((s) => s.enabled !== false).length,
+    (sum, e) => sum + e.skills.filter((s) => s.enabled !== false).length,
     0,
   );
   const totalMCPs = experts.reduce((sum, e) => sum + e.mcps.length, 0);
@@ -972,7 +975,9 @@ function ExpertCenterPage() {
         React.createElement(
           Button,
           {
-            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
             onClick: loadExperts,
             loading,
           },
@@ -998,7 +1003,9 @@ function ExpertCenterPage() {
       { style: { marginBottom: 16 } },
       React.createElement(Input, {
         placeholder: "搜索专家名称、描述或技能...",
-        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
         value: searchText,
         onChange: (e: any) => setSearchText(e.target.value),
         allowClear: true,
@@ -1013,25 +1020,25 @@ function ExpertCenterPage() {
           React.createElement(Spin, { size: "large" }),
         )
       : filteredExperts.length === 0
-        ? React.createElement(Empty, {
-            description: searchText
-              ? "未找到匹配的专家"
-              : "暂无专家，点击「创建专家」添加",
-          })
-        : React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...filteredExperts.map((expert) =>
-              React.createElement(
-                Col,
-                { key: expert.agent.id, xs: 24, sm: 12, md: 8, lg: 6 },
-                React.createElement(ExpertCard, {
-                  expert,
-                  onClick: () => handleCardClick(expert),
-                }),
-              ),
+      ? React.createElement(Empty, {
+          description: searchText
+            ? "未找到匹配的专家"
+            : "暂无专家，点击「创建专家」添加",
+        })
+      : React.createElement(
+          Row,
+          { gutter: [12, 12] },
+          ...filteredExperts.map((expert) =>
+            React.createElement(
+              Col,
+              { key: expert.agent.id, xs: 24, sm: 12, md: 8, lg: 6 },
+              React.createElement(ExpertCard, {
+                expert,
+                onClick: () => handleCardClick(expert),
+              }),
             ),
           ),
+        ),
     // Drawer
     React.createElement(ExpertDrawer, {
       expert: activeExpert,
@@ -1133,11 +1140,7 @@ function CapabilityCard({
             { color: "blue", style: { fontSize: 11 } },
             `${mcp.tools.length} 个工具`,
           )
-        : React.createElement(
-            Tag,
-            { style: { fontSize: 11 } },
-            "全部工具",
-          ),
+        : React.createElement(Tag, { style: { fontSize: 11 } }, "全部工具"),
       mcp.url
         ? React.createElement(
             Tag,
@@ -1215,10 +1218,7 @@ function CapabilityCenterPage() {
   }, [mcps, searchText]);
 
   const enabledCount = mcps.filter((m) => m.enabled).length;
-  const totalTools = mcps.reduce(
-    (sum, m) => sum + (m.tools?.length || 0),
-    0,
-  );
+  const totalTools = mcps.reduce((sum, m) => sum + (m.tools?.length || 0), 0);
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, "", path);
@@ -1237,7 +1237,9 @@ function CapabilityCenterPage() {
         React.createElement(
           Button,
           {
-            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
             onClick: loadMCPs,
             loading,
           },
@@ -1259,7 +1261,9 @@ function CapabilityCenterPage() {
       { style: { marginBottom: 16 } },
       React.createElement(Input, {
         placeholder: "搜索能力名称、描述...",
-        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
         value: searchText,
         onChange: (e: any) => setSearchText(e.target.value),
         allowClear: true,
@@ -1273,28 +1277,28 @@ function CapabilityCenterPage() {
           React.createElement(Spin, { size: "large" }),
         )
       : filteredMCPs.length === 0
-        ? React.createElement(Empty, {
-            description: searchText
-              ? "未找到匹配的能力"
-              : "暂无 MCP 客户端，点击「管理 MCP」添加",
-          })
-        : React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...filteredMCPs.map((mcp) =>
-              React.createElement(
-                Col,
-                { key: mcp.key, xs: 24, sm: 12, md: 8, lg: 6 },
-                React.createElement(CapabilityCard, {
-                  mcp,
-                  onClick: () => {
-                    setActiveMCP(mcp);
-                    setDrawerOpen(true);
-                  },
-                }),
-              ),
+      ? React.createElement(Empty, {
+          description: searchText
+            ? "未找到匹配的能力"
+            : "暂无 MCP 客户端，点击「管理 MCP」添加",
+        })
+      : React.createElement(
+          Row,
+          { gutter: [12, 12] },
+          ...filteredMCPs.map((mcp) =>
+            React.createElement(
+              Col,
+              { key: mcp.key, xs: 24, sm: 12, md: 8, lg: 6 },
+              React.createElement(CapabilityCard, {
+                mcp,
+                onClick: () => {
+                  setActiveMCP(mcp);
+                  setDrawerOpen(true);
+                },
+              }),
             ),
           ),
+        ),
     // Detail drawer
     activeMCP
       ? React.createElement(
@@ -1304,7 +1308,11 @@ function CapabilityCenterPage() {
               "div",
               { style: { display: "flex", alignItems: "center", gap: 8 } },
               React.createElement("span", { style: { fontSize: 18 } }, "🔌"),
-              React.createElement("span", null, activeMCP.name || activeMCP.key),
+              React.createElement(
+                "span",
+                null,
+                activeMCP.name || activeMCP.key,
+              ),
             ),
             open: drawerOpen,
             onClose: () => setDrawerOpen(false),
@@ -1378,7 +1386,10 @@ function CapabilityCenterPage() {
                 { style: { marginTop: 16 } },
                 React.createElement(
                   Text,
-                  { strong: true, style: { display: "block", marginBottom: 8 } },
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
                   "提供的工具",
                 ),
                 React.createElement(List, {
@@ -1525,7 +1536,9 @@ function SkillCenterPage() {
         React.createElement(
           Button,
           {
-            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
             onClick: loadSkills,
             loading,
           },
@@ -1549,7 +1562,9 @@ function SkillCenterPage() {
       { style: { marginBottom: 16 } },
       React.createElement(Input, {
         placeholder: "搜索技能名称、描述或标签...",
-        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
         value: searchText,
         onChange: (e: any) => setSearchText(e.target.value),
         allowClear: true,
@@ -1563,113 +1578,113 @@ function SkillCenterPage() {
           React.createElement(Spin, { size: "large" }),
         )
       : filteredSkills.length === 0
-        ? React.createElement(Empty, {
-            description: searchText ? "未找到匹配的技能" : "技能池为空",
-          })
-        : React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...filteredSkills.map((skill) =>
+      ? React.createElement(Empty, {
+          description: searchText ? "未找到匹配的技能" : "技能池为空",
+        })
+      : React.createElement(
+          Row,
+          { gutter: [12, 12] },
+          ...filteredSkills.map((skill) =>
+            React.createElement(
+              Col,
+              { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
               React.createElement(
-                Col,
-                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+                Card,
+                {
+                  hoverable: true,
+                  size: "small",
+                  style: { cursor: "pointer", height: "100%" },
+                  onClick: () => {
+                    setActiveSkill(skill);
+                    setInstalledAgents(computeInstalledAgents(skill.name));
+                    setDrawerOpen(true);
+                  },
+                },
                 React.createElement(
-                  Card,
+                  "div",
                   {
-                    hoverable: true,
-                    size: "small",
-                    style: { cursor: "pointer", height: "100%" },
-                    onClick: () => {
-                      setActiveSkill(skill);
-                      setInstalledAgents(computeInstalledAgents(skill.name));
-                      setDrawerOpen(true);
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 8,
                     },
                   },
+                  skill.emoji
+                    ? React.createElement(
+                        "span",
+                        { style: { fontSize: 18 } },
+                        skill.emoji,
+                      )
+                    : React.createElement(
+                        "span",
+                        { style: { fontSize: 18 } },
+                        "⚡",
+                      ),
                   React.createElement(
-                    "div",
+                    Text,
                     {
+                      strong: true,
                       style: {
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        marginBottom: 8,
+                        fontSize: 13,
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       },
                     },
-                    skill.emoji
-                      ? React.createElement(
-                          "span",
-                          { style: { fontSize: 18 } },
-                          skill.emoji,
-                        )
-                      : React.createElement(
-                          "span",
-                          { style: { fontSize: 18 } },
-                          "⚡",
-                        ),
-                    React.createElement(
-                      Text,
-                      {
-                        strong: true,
-                        style: {
-                          fontSize: 13,
-                          flex: 1,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        },
-                      },
-                      skill.name,
-                    ),
-                    skill.protected
-                      ? React.createElement(
-                          Tag,
-                          { color: "gold", style: { fontSize: 10 } },
-                          "内置",
-                        )
-                      : null,
+                    skill.name,
                   ),
-                  skill.description
+                  skill.protected
                     ? React.createElement(
-                        Paragraph,
-                        {
-                          type: "secondary",
-                          style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
-                          ellipsis: { rows: 2 },
-                        },
-                        skill.description,
+                        Tag,
+                        { color: "gold", style: { fontSize: 10 } },
+                        "内置",
                       )
                     : null,
-                  React.createElement(
-                    "div",
-                    {
-                      style: {
-                        marginTop: 8,
-                        display: "flex",
-                        gap: 4,
-                        flexWrap: "wrap",
+                ),
+                skill.description
+                  ? React.createElement(
+                      Paragraph,
+                      {
+                        type: "secondary",
+                        style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                        ellipsis: { rows: 2 },
                       },
+                      skill.description,
+                    )
+                  : null,
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      marginTop: 8,
+                      display: "flex",
+                      gap: 4,
+                      flexWrap: "wrap",
                     },
-                    skill.version_text
-                      ? React.createElement(
-                          Tag,
-                          { style: { fontSize: 10 } },
-                          `v${skill.version_text}`,
-                        )
-                      : null,
-                    ...skill.tags
-                      ?.slice(0, 3)
-                      .map((tag, i) =>
-                        React.createElement(
-                          Tag,
-                          { key: i, color: "cyan", style: { fontSize: 10 } },
-                          tag,
-                        ),
+                  },
+                  skill.version_text
+                    ? React.createElement(
+                        Tag,
+                        { style: { fontSize: 10 } },
+                        `v${skill.version_text}`,
+                      )
+                    : null,
+                  ...skill.tags
+                    ?.slice(0, 3)
+                    .map((tag, i) =>
+                      React.createElement(
+                        Tag,
+                        { key: i, color: "cyan", style: { fontSize: 10 } },
+                        tag,
                       ),
-                  ),
+                    ),
                 ),
               ),
             ),
           ),
+        ),
     // Skill detail drawer
     activeSkill
       ? React.createElement(
@@ -1753,7 +1768,10 @@ function SkillCenterPage() {
                 { style: { marginTop: 16 } },
                 React.createElement(
                   Text,
-                  { strong: true, style: { display: "block", marginBottom: 8 } },
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
                   "标签",
                 ),
                 React.createElement(

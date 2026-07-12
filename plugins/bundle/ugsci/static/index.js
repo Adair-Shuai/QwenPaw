@@ -275,12 +275,7 @@ function ge({
     Tabs: j,
     List: I,
     Spin: m
-  } = u().antd, { Text: z, Paragraph: w } = v, {
-    EditOutlined: y,
-    ThunderboltOutlined: b,
-    FileTextOutlined: P,
-    ToolOutlined: O
-  } = u().antdIcons || {};
+  } = u().antd, { Text: z, Paragraph: w } = v, { EditOutlined: y, ThunderboltOutlined: b, FileTextOutlined: P, ToolOutlined: O } = u().antdIcons || {};
   if (!e) return null;
   const { agent: f, config: d, skills: x, mcps: T, loading: B } = e, _ = x.filter((a) => a.enabled !== !1), M = (a) => {
     window.history.pushState({}, "", a), window.dispatchEvent(new PopStateEvent("popstate"));
@@ -449,11 +444,7 @@ function ge({
               marginBottom: 4
             }
           },
-          t.createElement(
-            "span",
-            { style: { fontSize: 14 } },
-            "🔌"
-          ),
+          t.createElement("span", { style: { fontSize: 14 } }, "🔌"),
           t.createElement(
             z,
             { strong: !0 },
@@ -536,7 +527,11 @@ function ge({
     image: k.PRESENTED_IMAGE_SIMPLE
   }), s = [
     { key: "basic", label: "基本信息", children: H },
-    { key: "skills", label: `技能 (${_.length})`, children: N },
+    {
+      key: "skills",
+      label: `技能 (${_.length})`,
+      children: N
+    },
     { key: "mcp", label: `MCP (${T.length})`, children: G },
     { key: "tools", label: "工具配置", children: c }
   ];
@@ -591,7 +586,15 @@ function ge({
   );
 }
 function Ee() {
-  const e = u().React, { useState: l, useEffect: n, useCallback: t, useMemo: p } = e, { Spin: i, Empty: g, Input: v, Button: E, message: S, Row: k, Col: j } = u().antd, { ReloadOutlined: I, PlusOutlined: m, SearchOutlined: z } = u().antdIcons || {}, [w, y] = l([]), [b, P] = l(!0), [O, f] = l(!1), [d, x] = l(null), [T, B] = l(""), _ = t(async () => {
+  const e = u().React, { useState: l, useEffect: n, useCallback: t, useMemo: p } = e, {
+    Spin: i,
+    Empty: g,
+    Input: v,
+    Button: E,
+    message: S,
+    Row: k,
+    Col: j
+  } = u().antd, { ReloadOutlined: I, PlusOutlined: m, SearchOutlined: z } = u().antdIcons || {}, [w, y] = l([]), [b, P] = l(!0), [O, f] = l(!1), [d, x] = l(null), [T, B] = l(""), _ = t(async () => {
     P(!0);
     try {
       const s = await te(), a = await ne().catch(
@@ -799,11 +802,7 @@ function ye({
         p,
         { color: "blue", style: { fontSize: 11 } },
         `${e.tools.length} 个工具`
-      ) : n.createElement(
-        p,
-        { style: { fontSize: 11 } },
-        "全部工具"
-      ),
+      ) : n.createElement(p, { style: { fontSize: 11 } }, "全部工具"),
       e.url ? n.createElement(
         p,
         {
@@ -858,13 +857,10 @@ function fe() {
         return $.name.toLowerCase().includes(o) || $.key.toLowerCase().includes(o) || ((D = $.description) == null ? void 0 : D.toLowerCase().includes(o)) || $.transport.toLowerCase().includes(o);
       }
     );
-  }, [x, M]), L = x.filter((o) => o.enabled).length, F = x.reduce(
-    (o, $) => {
-      var D;
-      return o + (((D = $.tools) == null ? void 0 : D.length) || 0);
-    },
-    0
-  ), h = (o) => {
+  }, [x, M]), L = x.filter((o) => o.enabled).length, F = x.reduce((o, $) => {
+    var D;
+    return o + (((D = $.tools) == null ? void 0 : D.length) || 0);
+  }, 0), h = (o) => {
     window.history.pushState({}, "", o), window.dispatchEvent(new PopStateEvent("popstate"));
   };
   return e.createElement(
@@ -938,7 +934,11 @@ function fe() {
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8 } },
           e.createElement("span", { style: { fontSize: 18 } }, "🔌"),
-          e.createElement("span", null, c.name || c.key)
+          e.createElement(
+            "span",
+            null,
+            c.name || c.key
+          )
         ),
         open: N,
         onClose: () => G(!1),
@@ -1005,7 +1005,10 @@ function fe() {
         { style: { marginTop: 16 } },
         e.createElement(
           d,
-          { strong: !0, style: { display: "block", marginBottom: 8 } },
+          {
+            strong: !0,
+            style: { display: "block", marginBottom: 8 }
+          },
           "提供的工具"
         ),
         e.createElement(y, {
@@ -1318,7 +1321,10 @@ function he() {
         { style: { marginTop: 16 } },
         e.createElement(
           x,
-          { strong: !0, style: { display: "block", marginBottom: 8 } },
+          {
+            strong: !0,
+            style: { display: "block", marginBottom: 8 }
+          },
           "标签"
         ),
         e.createElement(
