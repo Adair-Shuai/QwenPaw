@@ -1,0 +1,33 @@
+{
+  "id": "ugsci_research",
+  "name": "UGSci Research",
+  "version": "0.1.0",
+  "type": "tool",
+  "description": "UGSci Research — 科学研究模式插件。将 Agent 切换为科学研究工作流，提供文献检索、数据分析、可视化 Artifact 面板等能力，与代码模式并列。",
+  "description_i18n": {
+    "zh-CN": "UGSci Research — 科学研究模式插件。将 Agent 切换为科学研究工作流，提供文献检索、数据分析、可视化 Artifact 面板等能力，与代码模式并列。",
+    "en-US": "UGSci Research — Scientific research mode plugin. Switches the Agent into a research workflow with literature search, data analysis, visualization artifacts, parallel to Coding Mode."
+  },
+  "author": "UGSci Team",
+  "entry": {
+    "frontend": "ui/dist/index.js",
+    "backend": "plugin.py"
+  },
+  "dependencies": [],
+  "qwenpaw_version": {
+    "min": "1.1.7",
+    "max": "2.1.0"
+  },
+  "meta": {
+    "category": "research-mode",
+    "features": [
+      "research-mode",
+      "literature-search",
+      "data-analysis",
+      "artifact-panel",
+      "scientific-visualization",
+      "domain-prompts",
+      "research-skills"
+    ]
+  }
+}

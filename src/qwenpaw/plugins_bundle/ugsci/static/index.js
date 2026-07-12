@@ -453,7 +453,10 @@ function lt({ team: e }) {
     },
     n.createElement(
       l,
-      { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+      {
+        type: "secondary",
+        style: { fontSize: 12, display: "block", marginBottom: 8 }
+      },
       `执行流程 (${e.mode === "pipeline" ? "流水线" : e.mode === "roundtable" ? "圆桌讨论" : "协调者模式"})`
     ),
     // Visual flow
@@ -469,7 +472,9 @@ function lt({ team: e }) {
         }
       },
       ...I ? h.map((f, E) => {
-        const T = e.members.find((j) => j.name === f.agentName);
+        const T = e.members.find(
+          (j) => j.name === f.agentName
+        );
         return [
           E > 0 && e.mode !== "roundtable" ? n.createElement(
             "div",
@@ -499,7 +504,11 @@ function lt({ team: e }) {
                 flex: e.mode === "roundtable" ? "1 1 200px" : "initial"
               }
             },
-            n.createElement("span", { style: { fontSize: 16 } }, (T == null ? void 0 : T.emoji) || "👤"),
+            n.createElement(
+              "span",
+              { style: { fontSize: 16 } },
+              (T == null ? void 0 : T.emoji) || "👤"
+            ),
             n.createElement(
               "div",
               null,
@@ -510,12 +519,21 @@ function lt({ team: e }) {
               ),
               n.createElement(
                 "div",
-                { style: { fontSize: 11, color: "#8c8c8c", maxWidth: 250 } },
+                {
+                  style: {
+                    fontSize: 11,
+                    color: "#8c8c8c",
+                    maxWidth: 250
+                  }
+                },
                 f.instruction
               ),
               f.passContext ? n.createElement(
                 r,
-                { color: "blue", style: { fontSize: 9, marginTop: 2 } },
+                {
+                  color: "blue",
+                  style: { fontSize: 9, marginTop: 2 }
+                },
                 "传递上下文"
               ) : n.createElement(
                 r,
@@ -593,7 +611,9 @@ function at({
     message: y,
     Divider: H,
     Steps: A
-  } = b().antd, { PlusOutlined: K, DeleteOutlined: p, SaveOutlined: x, ArrowRightOutlined: N } = b().antdIcons || {}, { Text: M, Paragraph: F } = D, [_, G] = o(""), [Z, g] = o("🤝"), [s, i] = o(""), [P, V] = o("pipeline"), [q, $] = o(""), [O, z] = o(""), [v, U] = o([]), [B, J] = o([]), [me, k] = o(!1);
+  } = b().antd, { PlusOutlined: K, DeleteOutlined: p, SaveOutlined: x, ArrowRightOutlined: N } = b().antdIcons || {}, { Text: M, Paragraph: F } = D, [_, G] = o(""), [Z, g] = o("🤝"), [s, i] = o(""), [P, V] = o(
+    "pipeline"
+  ), [q, $] = o(""), [O, z] = o(""), [v, U] = o([]), [B, J] = o([]), [me, k] = o(!1);
   h(() => {
     e && (r ? (G(r.name), g(r.emoji), i(r.description), V(r.mode), $(r.coordinatorName || ""), z(r.taskTemplate), U(r.steps || []), J(r.members.map((m) => m.name))) : (G(""), g("🤝"), i(""), V("pipeline"), $(""), z(`请执行以下任务：
 任务描述：{任务描述}`), U([]), J([])));
@@ -640,15 +660,17 @@ function at({
     }
     k(!0);
     try {
-      const m = B.map((Q) => {
-        var ae;
-        const te = t.find((de) => de.name === Q);
-        return {
-          name: Q,
-          role: ((ae = te == null ? void 0 : te.description) == null ? void 0 : ae.slice(0, 30)) || "团队成员",
-          emoji: "👤"
-        };
-      });
+      const m = B.map(
+        (Q) => {
+          var ae;
+          const te = t.find((de) => de.name === Q);
+          return {
+            name: Q,
+            role: ((ae = te == null ? void 0 : te.description) == null ? void 0 : ae.slice(0, 30)) || "团队成员",
+            emoji: "👤"
+          };
+        }
+      );
       let ee = v;
       (v.length === 0 || v.length !== B.length) && (ee = B.map((Q) => ({
         agentName: Q,
@@ -677,7 +699,22 @@ function at({
     } finally {
       k(!1);
     }
-  }, pe = ["🤝", "🛢️", "⛏️", "📋", "🧪", "🌍", "📡", "⚙️", "🔬", "📊", "🏗️", "💡"], fe = t.filter((m) => !B.includes(m.name));
+  }, pe = [
+    "🤝",
+    "🛢️",
+    "⛏️",
+    "📋",
+    "🧪",
+    "🌍",
+    "📡",
+    "⚙️",
+    "🔬",
+    "📊",
+    "🏗️",
+    "💡"
+  ], fe = t.filter(
+    (m) => !B.includes(m.name)
+  );
   return a.createElement(
     f,
     {
@@ -686,14 +723,24 @@ function at({
       title: a.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        a.createElement("span", { style: { fontSize: 20 } }, r ? "✏️" : "➕"),
-        a.createElement("span", null, r ? "编辑专家团" : "创建专家团")
+        a.createElement(
+          "span",
+          { style: { fontSize: 20 } },
+          r ? "✏️" : "➕"
+        ),
+        a.createElement(
+          "span",
+          null,
+          r ? "编辑专家团" : "创建专家团"
+        )
       ),
       width: 720,
       onOk: re,
       okText: "保存团队",
       confirmLoading: me,
-      okButtonProps: { icon: x ? a.createElement(x) : void 0 }
+      okButtonProps: {
+        icon: x ? a.createElement(x) : void 0
+      }
     },
     // Step 1: Basic info
     a.createElement(
@@ -701,7 +748,10 @@ function at({
       { style: { marginBottom: 16 } },
       a.createElement(
         M,
-        { strong: !0, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: !0,
+          style: { display: "block", marginBottom: 8, fontSize: 13 }
+        },
         "1. 基本信息"
       ),
       a.createElement(
@@ -731,7 +781,11 @@ function at({
       a.createElement(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center" } },
-        a.createElement(M, { type: "secondary", style: { fontSize: 12 } }, "协同模式："),
+        a.createElement(
+          M,
+          { type: "secondary", style: { fontSize: 12 } },
+          "协同模式："
+        ),
         a.createElement(j, {
           value: P,
           onChange: (m) => V(m),
@@ -751,7 +805,10 @@ function at({
       { style: { marginBottom: 16 } },
       a.createElement(
         M,
-        { strong: !0, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: !0,
+          style: { display: "block", marginBottom: 8, fontSize: 13 }
+        },
         "2. 选择团队成员"
       ),
       // Available agents
@@ -807,7 +864,11 @@ function at({
               "div",
               { style: { display: "flex", alignItems: "center", gap: 6 } },
               a.createElement("span", null, "👤"),
-              a.createElement(M, { strong: !0, style: { fontSize: 13 } }, m),
+              a.createElement(
+                M,
+                { strong: !0, style: { fontSize: 13 } },
+                m
+              ),
               P === "coordinator" && q === m ? a.createElement(
                 C,
                 { color: "blue", style: { fontSize: 10 } },
@@ -849,7 +910,10 @@ function at({
       { style: { marginBottom: 16 } },
       a.createElement(
         M,
-        { strong: !0, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: !0,
+          style: { display: "block", marginBottom: 8, fontSize: 13 }
+        },
         `3. 编排执行步骤${P === "roundtable" ? "（各步独立执行）" : P === "pipeline" ? "（依次执行，可传递上下文）" : "（由协调者决定调用顺序）"}`
       ),
       // Auto-sync button
@@ -910,7 +974,11 @@ function at({
                   }
                 },
                 `${ee + 1}`
-              ) : a.createElement("span", { style: { fontSize: 14 } }, "🔀"),
+              ) : a.createElement(
+                "span",
+                { style: { fontSize: 14 } },
+                "🔀"
+              ),
               a.createElement(
                 C,
                 { color: "blue", style: { fontSize: 11 } },
@@ -929,7 +997,14 @@ function at({
             ),
             a.createElement(
               "div",
-              { style: { display: "flex", alignItems: "center", gap: 6, paddingLeft: 28 } },
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  paddingLeft: 28
+                }
+              },
               a.createElement(R, {
                 size: "small",
                 checked: m.passContext,
@@ -952,7 +1027,10 @@ function at({
       null,
       a.createElement(
         M,
-        { strong: !0, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: !0,
+          style: { display: "block", marginBottom: 8, fontSize: 13 }
+        },
         `${B.length > 0 ? "4" : "3"}. 任务模板`
       ),
       a.createElement(E.TextArea, {
@@ -967,7 +1045,10 @@ function at({
       }),
       a.createElement(
         M,
-        { type: "secondary", style: { fontSize: 11, display: "block", marginTop: 4 } },
+        {
+          type: "secondary",
+          style: { fontSize: 11, display: "block", marginTop: 4 }
+        },
         "占位符 {参数名} 在发起任务时可由用户填写替换"
       )
     )
@@ -981,7 +1062,15 @@ function Oe({
   onDelete: l
 }) {
   var s;
-  const a = b().React, { useState: o } = a, { Card: h, Tag: I, Typography: f, Button: E, Tooltip: T } = b().antd, { TeamOutlined: j, RocketOutlined: C, UserOutlined: D, EditOutlined: R, DeleteOutlined: w, DownOutlined: y, UpOutlined: H } = b().antdIcons || {}, { Text: A, Paragraph: K } = f, [p, x] = o(!1), N = {
+  const a = b().React, { useState: o } = a, { Card: h, Tag: I, Typography: f, Button: E, Tooltip: T } = b().antd, {
+    TeamOutlined: j,
+    RocketOutlined: C,
+    UserOutlined: D,
+    EditOutlined: R,
+    DeleteOutlined: w,
+    DownOutlined: y,
+    UpOutlined: H
+  } = b().antdIcons || {}, { Text: A, Paragraph: K } = f, [p, x] = o(!1), N = {
     coordinator: { label: "协调者模式", color: "blue" },
     pipeline: { label: "流水线模式", color: "cyan" },
     roundtable: { label: "圆桌讨论", color: "purple" }
@@ -1100,7 +1189,10 @@ function Oe({
       ...F.map(
         (i) => a.createElement(
           T,
-          { key: i.name, title: `${i.name}（${i.role}）${i.found ? "" : " - 未创建"}` },
+          {
+            key: i.name,
+            title: `${i.name}（${i.role}）${i.found ? "" : " - 未创建"}`
+          },
           a.createElement(
             "div",
             {
@@ -1118,7 +1210,9 @@ function Oe({
             a.createElement("span", null, i.emoji),
             a.createElement(
               A,
-              { style: { fontSize: 11, color: i.found ? "#1f4e8c" : "#cf1322" } },
+              {
+                style: { fontSize: 11, color: i.found ? "#1f4e8c" : "#cf1322" }
+              },
               i.name
             )
           )
@@ -1176,16 +1270,30 @@ function rt({
   agents: e,
   onLaunch: n
 }) {
-  const t = b().React, { useMemo: r, useState: l, useCallback: a, useEffect: o } = t, { Row: h, Col: I, Input: f, Empty: E, Typography: T, Tag: j, Button: C, Divider: D, message: R, Popconfirm: w } = b().antd, { SearchOutlined: y, TeamOutlined: H, PlusOutlined: A, RocketOutlined: K } = b().antdIcons || {}, { Text: p } = T, [x, N] = l(""), [M, F] = l([]), [_, G] = l(!1), [Z, g] = l(null);
+  const t = b().React, { useMemo: r, useState: l, useCallback: a, useEffect: o } = t, {
+    Row: h,
+    Col: I,
+    Input: f,
+    Empty: E,
+    Typography: T,
+    Tag: j,
+    Button: C,
+    Divider: D,
+    message: R,
+    Popconfirm: w
+  } = b().antd, { SearchOutlined: y, TeamOutlined: H, PlusOutlined: A, RocketOutlined: K } = b().antdIcons || {}, { Text: p } = T, [x, N] = l(""), [M, F] = l([]), [_, G] = l(!1), [Z, g] = l(null);
   o(() => {
     F(be());
   }, []);
   const s = a(() => {
     F(be());
-  }, []), i = a((v) => {
-    const B = be().filter((J) => J.id !== v.id);
-    We(B), F(B), R.success(`团队「${v.name}」已删除`);
-  }, [R]), P = a((v) => {
+  }, []), i = a(
+    (v) => {
+      const B = be().filter((J) => J.id !== v.id);
+      We(B), F(B), R.success(`团队「${v.name}」已删除`);
+    },
+    [R]
+  ), P = a((v) => {
     g(v), G(!0);
   }, []), V = a(() => {
     g(null), G(!0);
@@ -1851,7 +1959,15 @@ function ut({
     Spin: D,
     Modal: R,
     message: w
-  } = b().antd, { Text: y, Paragraph: H } = I, { EditOutlined: A, ThunderboltOutlined: K, FileTextOutlined: p, ToolOutlined: x, PlusOutlined: N } = b().antdIcons || {}, [M, F] = l.useState(!1), [_, G] = l.useState([]), [Z, g] = l.useState(!1);
+  } = b().antd, { Text: y, Paragraph: H } = I, {
+    EditOutlined: A,
+    ThunderboltOutlined: K,
+    FileTextOutlined: p,
+    ToolOutlined: x,
+    PlusOutlined: N
+  } = b().antdIcons || {}, [M, F] = l.useState(!1), [_, G] = l.useState(
+    []
+  ), [Z, g] = l.useState(!1);
   if (!e) return null;
   const { agent: s, config: i, skills: P, mcps: V, loading: q } = e, $ = P.filter((c) => c.enabled !== !1), O = (c) => {
     window.history.pushState({}, "", c), window.dispatchEvent(new PopStateEvent("popstate"));
@@ -2063,7 +2179,11 @@ function ut({
             ...c.tags.map(
               (W, re) => l.createElement(
                 h,
-                { key: re, color: "cyan", style: { fontSize: 10 } },
+                {
+                  key: re,
+                  color: "cyan",
+                  style: { fontSize: 10 }
+                },
                 W
               )
             )
@@ -2149,7 +2269,11 @@ function ut({
                 marginBottom: 4
               }
             },
-            l.createElement("span", { style: { fontSize: 14 } }, "🔌"),
+            l.createElement(
+              "span",
+              { style: { fontSize: 14 } },
+              "🔌"
+            ),
             l.createElement(
               y,
               { strong: !0 },
@@ -2313,7 +2437,17 @@ function gt({
   onClose: n,
   onCreated: t
 }) {
-  const r = b().React, { useState: l } = r, { Modal: a, Card: o, Tag: h, Input: I, Row: f, Col: E, Spin: T, message: j, Typography: C } = b().antd, { Text: D } = C, [R, w] = l(!1), [y, H] = l(""), A = Ce.filter((p) => {
+  const r = b().React, { useState: l } = r, {
+    Modal: a,
+    Card: o,
+    Tag: h,
+    Input: I,
+    Row: f,
+    Col: E,
+    Spin: T,
+    message: j,
+    Typography: C
+  } = b().antd, { Text: D } = C, [R, w] = l(!1), [y, H] = l(""), A = Ce.filter((p) => {
     if (!y.trim()) return !0;
     const x = y.toLowerCase();
     return p.name.toLowerCase().includes(x) || p.description.toLowerCase().includes(x) || p.category.toLowerCase().includes(x);
@@ -2457,12 +2591,7 @@ function yt({
     Empty: D,
     message: R,
     Typography: w
-  } = b().antd, {
-    FileTextOutlined: y,
-    PlusOutlined: H,
-    EditOutlined: A,
-    ReloadOutlined: K
-  } = b().antdIcons || {}, { Text: p } = w, [x, N] = l([]), [M, F] = l(!0), [_, G] = l(
+  } = b().antd, { FileTextOutlined: y, PlusOutlined: H, EditOutlined: A, ReloadOutlined: K } = b().antdIcons || {}, { Text: p } = w, [x, N] = l([]), [M, F] = l(!0), [_, G] = l(
     n || []
   ), [Z, g] = l(!1), [s, i] = l(null), [P, V] = l(""), [q, $] = l(""), [O, z] = l(!1), v = o(async () => {
     F(!0);
@@ -2611,45 +2740,39 @@ function yt({
               )
             ]
           },
-          r.createElement(
-            h.Item.Meta,
-            {
-              avatar: r.createElement(
-                y,
-                {
-                  style: {
-                    fontSize: 20,
-                    color: S ? "#1677ff" : "#bfbfbf"
-                  }
+          r.createElement(h.Item.Meta, {
+            avatar: r.createElement(y, {
+              style: {
+                fontSize: 20,
+                color: S ? "#1677ff" : "#bfbfbf"
+              }
+            }),
+            title: r.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6
                 }
-              ),
-              title: r.createElement(
-                "div",
-                {
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6
-                  }
-                },
-                r.createElement(p, null, k.filename),
-                L ? r.createElement(
-                  I,
-                  { color: "default", style: { fontSize: 10 } },
-                  "内置"
-                ) : r.createElement(
-                  I,
-                  { color: "cyan", style: { fontSize: 10 } },
-                  "记忆库"
-                )
-              ),
-              description: r.createElement(
-                "div",
-                { style: { fontSize: 12 } },
-                `${(k.size / 1024).toFixed(1)} KB · 修改于 ${new Date(k.modified_time).toLocaleString()}`
+              },
+              r.createElement(p, null, k.filename),
+              L ? r.createElement(
+                I,
+                { color: "default", style: { fontSize: 10 } },
+                "内置"
+              ) : r.createElement(
+                I,
+                { color: "cyan", style: { fontSize: 10 } },
+                "记忆库"
               )
-            }
-          ),
+            ),
+            description: r.createElement(
+              "div",
+              { style: { fontSize: 12 } },
+              `${(k.size / 1024).toFixed(1)} KB · 修改于 ${new Date(k.modified_time).toLocaleString()}`
+            )
+          }),
           r.createElement(f, {
             checked: S,
             size: "small",
@@ -2701,10 +2824,14 @@ function ft({
   skills: e,
   agentId: n
 }) {
-  const t = b().React, { useMemo: r } = t, { List: l, Tag: a, Typography: o, Empty: h, Button: I, message: f } = b().antd, { ThunderboltOutlined: E, CopyOutlined: T } = b().antdIcons || {}, { Text: j } = o, C = r(
-    () => ot(e),
-    [e]
-  ), D = (w) => {
+  const t = b().React, { useMemo: r } = t, {
+    List: l,
+    Tag: a,
+    Typography: o,
+    Empty: h,
+    Button: I,
+    message: f
+  } = b().antd, { ThunderboltOutlined: E, CopyOutlined: T } = b().antdIcons || {}, { Text: j } = o, C = r(() => ot(e), [e]), D = (w) => {
     try {
       const y = b();
       y.setSelectedAgent && y.setSelectedAgent(n);
@@ -2769,32 +2896,29 @@ function ft({
             )
           ]
         },
-        t.createElement(
-          l.Item.Meta,
-          {
-            avatar: t.createElement(
-              a,
-              { color: "blue", style: { borderRadius: "50%" } },
-              `${y + 1}`
-            ),
-            title: t.createElement(
-              "div",
-              {
-                style: {
-                  cursor: "pointer",
-                  color: "#1677ff"
-                },
-                onClick: () => D(w)
+        t.createElement(l.Item.Meta, {
+          avatar: t.createElement(
+            a,
+            { color: "blue", style: { borderRadius: "50%" } },
+            `${y + 1}`
+          ),
+          title: t.createElement(
+            "div",
+            {
+              style: {
+                cursor: "pointer",
+                color: "#1677ff"
               },
-              w
-            ),
-            description: t.createElement(
-              j,
-              { type: "secondary", style: { fontSize: 12 } },
-              "点击直接发送给专家"
-            )
-          }
-        )
+              onClick: () => D(w)
+            },
+            w
+          ),
+          description: t.createElement(
+            j,
+            { type: "secondary", style: { fontSize: 12 } },
+            "点击直接发送给专家"
+          )
+        })
       )
     })
   );
@@ -2812,7 +2936,9 @@ function Et() {
     Tabs: j,
     Modal: C,
     Typography: D
-  } = b().antd, { ReloadOutlined: R, PlusOutlined: w, SearchOutlined: y, TeamOutlined: H } = b().antdIcons || {}, { Text: A, Paragraph: K } = D, [p, x] = n([]), [N, M] = n(!0), [F, _] = n(!1), [G, Z] = n(null), [g, s] = n(""), [i, P] = n(!1), [V, q] = n("experts"), [$, O] = n(null), [z, v] = n(""), [U, B] = n(!1), [J, me] = n([]), k = r(async () => {
+  } = b().antd, { ReloadOutlined: R, PlusOutlined: w, SearchOutlined: y, TeamOutlined: H } = b().antdIcons || {}, { Text: A, Paragraph: K } = D, [p, x] = n([]), [N, M] = n(!0), [F, _] = n(!1), [G, Z] = n(null), [g, s] = n(""), [i, P] = n(!1), [V, q] = n("experts"), [$, O] = n(
+    null
+  ), [z, v] = n(""), [U, B] = n(!1), [J, me] = n([]), k = r(async () => {
     M(!0);
     try {
       const u = await ze(), X = await De().catch(
@@ -2854,30 +2980,35 @@ function Et() {
   t(() => {
     k();
   }, [k]);
-  const S = r(async (u) => {
-    var ae;
-    const X = u.coordinatorName || ((ae = u.members[0]) == null ? void 0 : ae.name);
-    if (!X) {
-      f.error("无法确定协调者专家");
-      return;
-    }
-    const Q = we(J, X);
-    if (!Q) {
-      f.error(`未找到协调者专家「${X}」，请先创建该专家`);
-      return;
-    }
-    if (/\{.+?\}/.test(u.taskTemplate)) {
-      v(""), O(u);
-      return;
-    }
-    await L(u, Q, u.taskTemplate);
-  }, [J, f]), L = r(
+  const S = r(
+    async (u) => {
+      var ae;
+      const X = u.coordinatorName || ((ae = u.members[0]) == null ? void 0 : ae.name);
+      if (!X) {
+        f.error("无法确定协调者专家");
+        return;
+      }
+      const Q = we(J, X);
+      if (!Q) {
+        f.error(`未找到协调者专家「${X}」，请先创建该专家`);
+        return;
+      }
+      if (/\{.+?\}/.test(u.taskTemplate)) {
+        v(""), O(u);
+        return;
+      }
+      await L(u, Q, u.taskTemplate);
+    },
+    [J, f]
+  ), L = r(
     async (u, X, Q) => {
       var te;
       B(!0);
       try {
         const ae = nt(u), de = Q ? ae.replace(u.taskTemplate, Q) : ae, ue = b();
-        ue.setSelectedAgent && ue.setSelectedAgent(X), await tt(X, de), f.success(`团队任务已发起，协调者：${u.coordinatorName || ((te = u.members[0]) == null ? void 0 : te.name)}`), O(null), c("/chat");
+        ue.setSelectedAgent && ue.setSelectedAgent(X), await tt(X, de), f.success(
+          `团队任务已发起，协调者：${u.coordinatorName || ((te = u.members[0]) == null ? void 0 : te.name)}`
+        ), O(null), c("/chat");
       } catch (ae) {
         f.error(ae.message || "发起团队任务失败");
       } finally {
@@ -2904,11 +3035,7 @@ function Et() {
   ), m = p.reduce((u, X) => u + X.mcps.length, 0), ee = [
     {
       key: "experts",
-      label: e.createElement(
-        "span",
-        null,
-        "🧑‍🔬 专家列表"
-      ),
+      label: e.createElement("span", null, "🧑‍🔬 专家列表"),
       children: e.createElement(
         "div",
         null,
@@ -2950,11 +3077,7 @@ function Et() {
     },
     {
       key: "teams",
-      label: e.createElement(
-        "span",
-        null,
-        "🤝 专家团"
-      ),
+      label: e.createElement("span", null, "🤝 专家团"),
       children: e.createElement(rt, {
         agents: J,
         onLaunch: S
@@ -3016,8 +3139,16 @@ function Et() {
         title: e.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8 } },
-          e.createElement("span", { style: { fontSize: 20 } }, $.emoji),
-          e.createElement("span", null, `发起团队任务 - ${$.name}`)
+          e.createElement(
+            "span",
+            { style: { fontSize: 20 } },
+            $.emoji
+          ),
+          e.createElement(
+            "span",
+            null,
+            `发起团队任务 - ${$.name}`
+          )
         ),
         onCancel: () => O(null),
         onOk: () => {
@@ -3039,7 +3170,10 @@ function Et() {
         { style: { marginBottom: 12 } },
         e.createElement(
           A,
-          { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+          {
+            type: "secondary",
+            style: { fontSize: 12, display: "block", marginBottom: 8 }
+          },
           "任务模板（包含占位符 {参数名}，可在下方编辑替换）："
         ),
         e.createElement(
@@ -3063,7 +3197,10 @@ function Et() {
         null,
         e.createElement(
           A,
-          { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+          {
+            type: "secondary",
+            style: { fontSize: 12, display: "block", marginBottom: 8 }
+          },
           "输入具体任务描述（替换上面的占位符内容）："
         ),
         e.createElement(h.TextArea, {
@@ -3076,7 +3213,14 @@ function Et() {
       ),
       e.createElement(
         "div",
-        { style: { marginTop: 12, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6 } },
+        {
+          style: {
+            marginTop: 12,
+            padding: "8px 12px",
+            background: "#e6f4ff",
+            borderRadius: 6
+          }
+        },
         e.createElement(
           A,
           { style: { fontSize: 12, color: "#0958d9" } },
@@ -3742,7 +3886,9 @@ async function bt() {
   return ne("/market/providers");
 }
 async function wt(e) {
-  return ne(`/market/categories?lang=${encodeURIComponent(e)}`);
+  return ne(
+    `/market/categories?lang=${encodeURIComponent(e)}`
+  );
 }
 async function xt(e, n, t, r, l) {
   return ne("/market/search", {
@@ -3768,9 +3914,12 @@ async function kt(e, n, t) {
   });
 }
 async function Ct(e, n) {
-  return ne(`/skills/hub/install/status/${encodeURIComponent(n)}`, {
-    headers: { "X-Agent-Id": e }
-  });
+  return ne(
+    `/skills/hub/install/status/${encodeURIComponent(n)}`,
+    {
+      headers: { "X-Agent-Id": e }
+    }
+  );
 }
 function Tt() {
   const e = b().React, { useState: n, useEffect: t, useCallback: r, useMemo: l, useRef: a } = e, {
@@ -3799,7 +3948,9 @@ function Tt() {
     ShopOutlined: G,
     CheckCircleOutlined: Z,
     LoadingOutlined: g
-  } = b().antdIcons || {}, { Text: s, Paragraph: i, Title: P } = w, [V, q] = n("skills"), [$, O] = n([]), [z, v] = n([]), [U, B] = n([]), [J, me] = n(""), [k, S] = n(""), [L, c] = n(!1), [W, re] = n(!1), [pe, fe] = n({}), [m, ee] = n(null), [le, u] = n({}), [X, Q] = n([]), [te, ae] = n(""), [de, ue] = n(""), ge = a(null);
+  } = b().antdIcons || {}, { Text: s, Paragraph: i, Title: P } = w, [V, q] = n("skills"), [$, O] = n([]), [z, v] = n([]), [U, B] = n([]), [J, me] = n(""), [k, S] = n(""), [L, c] = n(!1), [W, re] = n(!1), [pe, fe] = n(
+    {}
+  ), [m, ee] = n(null), [le, u] = n({}), [X, Q] = n([]), [te, ae] = n(""), [de, ue] = n(""), ge = a(null);
   t(() => {
     Promise.all([
       bt().catch(() => []),
@@ -3813,7 +3964,13 @@ function Tt() {
     async (d, Y, oe) => {
       c(!0);
       try {
-        const ie = await xt(d, oe, 20, "zh", Y || void 0);
+        const ie = await xt(
+          d,
+          oe,
+          20,
+          "zh",
+          Y || void 0
+        );
         oe === void 0 || Object.keys(oe).length === 0 ? B(ie.results) : B((se) => [...se, ...ie.results]);
         const ve = Object.values(ie.by_provider || {}).some(
           (se) => se.has_more
@@ -3824,7 +3981,9 @@ function Tt() {
           ce[se] = (oe[se] || 1) + 1;
         if (fe(ce), ie.errors.length > 0)
           for (const se of ie.errors)
-            console.warn(`[ugsci] Market provider '${se.provider}' error: ${se.message}`);
+            console.warn(
+              `[ugsci] Market provider '${se.provider}' error: ${se.message}`
+            );
       } catch (ie) {
         E.error(ie.message || "搜索市场失败"), B([]);
       } finally {
@@ -3858,7 +4017,10 @@ function Tt() {
       const ve = 60;
       for (let ce = 0; ce < ve; ce++) {
         await new Promise((Ee) => setTimeout(Ee, 2e3));
-        const se = await Ct(te, ie.task_id);
+        const se = await Ct(
+          te,
+          ie.task_id
+        );
         if (se.status === "completed" && ((oe = se.result) != null && oe.installed)) {
           E.success(`技能「${se.result.name || d.name}」安装成功`), u((Ee) => {
             const Se = { ...Ee };
@@ -3923,7 +4085,11 @@ function Tt() {
       e.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 4 } },
-        e.createElement(s, { type: "secondary", style: { fontSize: 12 } }, "安装到"),
+        e.createElement(
+          s,
+          { type: "secondary", style: { fontSize: 12 } },
+          "安装到"
+        ),
         e.createElement(y, {
           value: te || void 0,
           onChange: (d) => ae(d),
@@ -3936,7 +4102,14 @@ function Tt() {
     // Provider badges
     Me.length > 0 ? e.createElement(
       "div",
-      { style: { marginBottom: 12, display: "flex", gap: 4, flexWrap: "wrap" } },
+      {
+        style: {
+          marginBottom: 12,
+          display: "flex",
+          gap: 4,
+          flexWrap: "wrap"
+        }
+      },
       ...Me.map(
         (d) => e.createElement(
           D,
@@ -4090,7 +4263,11 @@ function Tt() {
             src: m.icon_url,
             alt: m.name,
             style: { width: 28, height: 28, borderRadius: 4 }
-          }) : e.createElement("span", { style: { fontSize: 20 } }, "📦"),
+          }) : e.createElement(
+            "span",
+            { style: { fontSize: 20 } },
+            "📦"
+          ),
           e.createElement("span", null, m.name)
         ),
         open: !0,
@@ -4146,7 +4323,10 @@ function Tt() {
         { style: { marginTop: 16 } },
         e.createElement(
           s,
-          { strong: !0, style: { display: "block", marginBottom: 8 } },
+          {
+            strong: !0,
+            style: { display: "block", marginBottom: 8 }
+          },
           "统计"
         ),
         e.createElement(
@@ -4158,7 +4338,13 @@ function Tt() {
               { key: d, style: { textAlign: "center" } },
               e.createElement(
                 "div",
-                { style: { fontSize: 18, fontWeight: 600, color: "#1677ff" } },
+                {
+                  style: {
+                    fontSize: 18,
+                    fontWeight: 600,
+                    color: "#1677ff"
+                  }
+                },
                 String(Y)
               ),
               e.createElement(
@@ -4359,11 +4545,7 @@ function Tt() {
     },
     {
       key: "experts",
-      label: e.createElement(
-        "span",
-        null,
-        "🧑‍🔬 专家模板"
-      ),
+      label: e.createElement("span", null, "🧑‍🔬 专家模板"),
       children: Ke
     }
   ];

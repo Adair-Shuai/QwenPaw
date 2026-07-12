@@ -624,9 +624,9 @@ function buildTeamMessage(team: ExpertTeam): string {
     const modeDesc =
       team.mode === "pipeline"
         ? "请按顺序依次执行以下步骤，每步使用 chat_with_agent 咨询对应专家："
-      : team.mode === "roundtable"
-        ? "请同时向以下专家分别发送独立请求（不传递上下文），收集所有结果后综合："
-        : `你是团队协调者（${team.coordinatorName || team.members[0]?.name || ""}），请按需调用以下专家完成任务：`;
+        : team.mode === "roundtable"
+          ? "请同时向以下专家分别发送独立请求（不传递上下文），收集所有结果后综合："
+          : `你是团队协调者（${team.coordinatorName || team.members[0]?.name || ""}），请按需调用以下专家完成任务：`;
 
     return `${modeDesc}
 
@@ -706,7 +706,10 @@ function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
     },
     React.createElement(
       Text,
-      { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+      {
+        type: "secondary",
+        style: { fontSize: 12, display: "block", marginBottom: 8 },
+      },
       `执行流程 (${team.mode === "pipeline" ? "流水线" : team.mode === "roundtable" ? "圆桌讨论" : "协调者模式"})`,
     ),
     // Visual flow
@@ -724,118 +727,138 @@ function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
       ...(() => {
         if (hasSteps) {
           // Show explicit steps
-          return steps.map((step, i) => {
-            const member = team.members.find((m) => m.name === step.agentName);
-            return [
-              i > 0 && team.mode !== "roundtable"
-                ? React.createElement(
-                    "div",
-                    {
-                      key: `arrow-${i}`,
-                      style: {
-                        textAlign: "center",
-                        color: modeColors[team.mode],
-                        fontSize: 14,
+          return steps
+            .map((step, i) => {
+              const member = team.members.find(
+                (m) => m.name === step.agentName,
+              );
+              return [
+                i > 0 && team.mode !== "roundtable"
+                  ? React.createElement(
+                      "div",
+                      {
+                        key: `arrow-${i}`,
+                        style: {
+                          textAlign: "center",
+                          color: modeColors[team.mode],
+                          fontSize: 14,
+                        },
                       },
-                    },
-                    modeIcons[team.mode],
-                  )
-                : null,
-              React.createElement(
-                "div",
-                {
-                  key: `step-${i}`,
-                  style: {
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "6px 10px",
-                    background: "#fff",
-                    borderRadius: 6,
-                    border: `1px solid ${modeColors[team.mode]}33`,
-                    fontSize: 12,
-                    flex: team.mode === "roundtable" ? "1 1 200px" : "initial",
-                  },
-                },
-                React.createElement("span", { style: { fontSize: 16 } }, member?.emoji || "👤"),
+                      modeIcons[team.mode],
+                    )
+                  : null,
                 React.createElement(
                   "div",
-                  null,
+                  {
+                    key: `step-${i}`,
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      padding: "6px 10px",
+                      background: "#fff",
+                      borderRadius: 6,
+                      border: `1px solid ${modeColors[team.mode]}33`,
+                      fontSize: 12,
+                      flex:
+                        team.mode === "roundtable" ? "1 1 200px" : "initial",
+                    },
+                  },
                   React.createElement(
-                    Text,
-                    { strong: true, style: { fontSize: 12 } },
-                    step.agentName,
+                    "span",
+                    { style: { fontSize: 16 } },
+                    member?.emoji || "👤",
                   ),
                   React.createElement(
                     "div",
-                    { style: { fontSize: 11, color: "#8c8c8c", maxWidth: 250 } },
-                    step.instruction,
+                    null,
+                    React.createElement(
+                      Text,
+                      { strong: true, style: { fontSize: 12 } },
+                      step.agentName,
+                    ),
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 11,
+                          color: "#8c8c8c",
+                          maxWidth: 250,
+                        },
+                      },
+                      step.instruction,
+                    ),
+                    step.passContext
+                      ? React.createElement(
+                          Tag,
+                          {
+                            color: "blue",
+                            style: { fontSize: 9, marginTop: 2 },
+                          },
+                          "传递上下文",
+                        )
+                      : React.createElement(
+                          Tag,
+                          { style: { fontSize: 9, marginTop: 2 } },
+                          "独立",
+                        ),
                   ),
-                  step.passContext
-                    ? React.createElement(
-                        Tag,
-                        { color: "blue", style: { fontSize: 9, marginTop: 2 } },
-                        "传递上下文",
-                      )
-                    : React.createElement(
-                        Tag,
-                        { style: { fontSize: 9, marginTop: 2 } },
-                        "独立",
-                      ),
                 ),
-              ),
-            ];
-          }).flat();
+              ];
+            })
+            .flat();
         }
         // Show member-based flow
-        return team.members.map((m, i) => [
-          i > 0 && team.mode !== "roundtable"
-            ? React.createElement(
-                "div",
-                {
-                  key: `arrow-${i}`,
-                  style: {
-                    textAlign: "center",
-                    color: modeColors[team.mode],
-                    fontSize: 14,
+        return team.members
+          .map((m, i) => [
+            i > 0 && team.mode !== "roundtable"
+              ? React.createElement(
+                  "div",
+                  {
+                    key: `arrow-${i}`,
+                    style: {
+                      textAlign: "center",
+                      color: modeColors[team.mode],
+                      fontSize: 14,
+                    },
                   },
-                },
-                modeIcons[team.mode],
-              )
-            : null,
-          React.createElement(
-            "div",
-            {
-              key: `member-${i}`,
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                padding: "6px 10px",
-                background: "#fff",
-                borderRadius: 6,
-                border: `1px solid ${modeColors[team.mode]}33`,
-                fontSize: 12,
-                flex: team.mode === "roundtable" ? "1 1 150px" : "initial",
-              },
-            },
-            React.createElement("span", { style: { fontSize: 16 } }, m.emoji),
+                  modeIcons[team.mode],
+                )
+              : null,
             React.createElement(
               "div",
-              null,
-              React.createElement(
-                Text,
-                { strong: true, style: { fontSize: 12 } },
-                m.name,
-              ),
+              {
+                key: `member-${i}`,
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  padding: "6px 10px",
+                  background: "#fff",
+                  borderRadius: 6,
+                  border: `1px solid ${modeColors[team.mode]}33`,
+                  fontSize: 12,
+                  flex: team.mode === "roundtable" ? "1 1 150px" : "initial",
+                },
+              },
+              React.createElement("span", { style: { fontSize: 16 } }, m.emoji),
               React.createElement(
                 "div",
-                { style: { fontSize: 11, color: "#8c8c8c" } },
-                m.role,
+                null,
+                React.createElement(
+                  Text,
+                  { strong: true, style: { fontSize: 12 } },
+                  m.name,
+                ),
+                React.createElement(
+                  "div",
+                  { style: { fontSize: 11, color: "#8c8c8c" } },
+                  m.role,
+                ),
               ),
             ),
-          ),
-        ]).flat();
+          ])
+          .flat();
       })(),
     ),
   );
@@ -878,7 +901,9 @@ function TeamBuilderModal({
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("🤝");
   const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<"coordinator" | "pipeline" | "roundtable">("pipeline");
+  const [mode, setMode] = useState<"coordinator" | "pipeline" | "roundtable">(
+    "pipeline",
+  );
   const [coordinatorName, setCoordinatorName] = useState<string>("");
   const [taskTemplate, setTaskTemplate] = useState("");
   const [steps, setSteps] = useState<ExpertTeamStep[]>([]);
@@ -925,11 +950,13 @@ function TeamBuilderModal({
       const existing = new Map(steps.map((s) => [s.agentName, s]));
       const newSteps = selectedMembers.map((agentName) => {
         const existingStep = existing.get(agentName);
-        return existingStep || {
-          agentName,
-          instruction: "请完成你的专业部分",
-          passContext: true,
-        };
+        return (
+          existingStep || {
+            agentName,
+            instruction: "请完成你的专业部分",
+            passContext: true,
+          }
+        );
       });
       setSteps(newSteps);
     }
@@ -953,7 +980,11 @@ function TeamBuilderModal({
     }
   };
 
-  const handleUpdateStep = (index: number, field: keyof ExpertTeamStep, value: any) => {
+  const handleUpdateStep = (
+    index: number,
+    field: keyof ExpertTeamStep,
+    value: any,
+  ) => {
     const newSteps = [...steps];
     newSteps[index] = { ...newSteps[index], [field]: value };
     setSteps(newSteps);
@@ -980,14 +1011,16 @@ function TeamBuilderModal({
     setSaving(true);
     try {
       // Build member objects from agent list
-      const memberObjs: ExpertTeamMember[] = selectedMembers.map((agentName) => {
-        const agent = agents.find((a) => a.name === agentName);
-        return {
-          name: agentName,
-          role: agent?.description?.slice(0, 30) || "团队成员",
-          emoji: "👤",
-        };
-      });
+      const memberObjs: ExpertTeamMember[] = selectedMembers.map(
+        (agentName) => {
+          const agent = agents.find((a) => a.name === agentName);
+          return {
+            name: agentName,
+            role: agent?.description?.slice(0, 30) || "团队成员",
+            emoji: "👤",
+          };
+        },
+      );
 
       // Sync steps if not manually set
       let finalSteps = steps;
@@ -1004,7 +1037,9 @@ function TeamBuilderModal({
         name: name.trim(),
         emoji,
         category: "自定义",
-        description: description.trim() || `${name.trim()}（${selectedMembers.length}人团队）`,
+        description:
+          description.trim() ||
+          `${name.trim()}（${selectedMembers.length}人团队）`,
         mode,
         members: memberObjs,
         coordinatorName: mode === "coordinator" ? coordinatorName : undefined,
@@ -1035,9 +1070,24 @@ function TeamBuilderModal({
     }
   };
 
-  const emojiOptions = ["🤝", "🛢️", "⛏️", "📋", "🧪", "🌍", "📡", "⚙️", "🔬", "📊", "🏗️", "💡"];
+  const emojiOptions = [
+    "🤝",
+    "🛢️",
+    "⛏️",
+    "📋",
+    "🧪",
+    "🌍",
+    "📡",
+    "⚙️",
+    "🔬",
+    "📊",
+    "🏗️",
+    "💡",
+  ];
 
-  const availableAgents = agents.filter((a) => !selectedMembers.includes(a.name));
+  const availableAgents = agents.filter(
+    (a) => !selectedMembers.includes(a.name),
+  );
 
   return React.createElement(
     Modal,
@@ -1047,14 +1097,24 @@ function TeamBuilderModal({
       title: React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement("span", { style: { fontSize: 20 } }, editingTeam ? "✏️" : "➕"),
-        React.createElement("span", null, editingTeam ? "编辑专家团" : "创建专家团"),
+        React.createElement(
+          "span",
+          { style: { fontSize: 20 } },
+          editingTeam ? "✏️" : "➕",
+        ),
+        React.createElement(
+          "span",
+          null,
+          editingTeam ? "编辑专家团" : "创建专家团",
+        ),
       ),
       width: 720,
       onOk: handleSave,
       okText: "保存团队",
       confirmLoading: saving,
-      okButtonProps: { icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined },
+      okButtonProps: {
+        icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined,
+      },
     },
     // Step 1: Basic info
     React.createElement(
@@ -1062,7 +1122,10 @@ function TeamBuilderModal({
       { style: { marginBottom: 16 } },
       React.createElement(
         Text,
-        { strong: true, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: true,
+          style: { display: "block", marginBottom: 8, fontSize: 13 },
+        },
         "1. 基本信息",
       ),
       React.createElement(
@@ -1073,7 +1136,8 @@ function TeamBuilderModal({
           onChange: (v: string) => setEmoji(v),
           style: { width: 60 },
           options: emojiOptions.map((e) => ({ value: e, label: e })),
-          optionRender: (opt: any) => React.createElement("span", { style: { fontSize: 18 } }, opt.value),
+          optionRender: (opt: any) =>
+            React.createElement("span", { style: { fontSize: 18 } }, opt.value),
         }),
         React.createElement(Input, {
           placeholder: "团队名称（如：储层评价团队）",
@@ -1092,7 +1156,11 @@ function TeamBuilderModal({
       React.createElement(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center" } },
-        React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, "协同模式："),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12 } },
+          "协同模式：",
+        ),
         React.createElement(Select, {
           value: mode,
           onChange: (v: any) => setMode(v),
@@ -1112,7 +1180,10 @@ function TeamBuilderModal({
       { style: { marginBottom: 16 } },
       React.createElement(
         Text,
-        { strong: true, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: true,
+          style: { display: "block", marginBottom: 8, fontSize: 13 },
+        },
         "2. 选择团队成员",
       ),
       // Available agents
@@ -1136,7 +1207,9 @@ function TeamBuilderModal({
                 {
                   key: agent.id,
                   size: "small",
-                  icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+                  icon: PlusOutlined
+                    ? React.createElement(PlusOutlined)
+                    : undefined,
                   onClick: () => handleAddMember(agent.name),
                 },
                 agent.name,
@@ -1172,7 +1245,11 @@ function TeamBuilderModal({
                   "div",
                   { style: { display: "flex", alignItems: "center", gap: 6 } },
                   React.createElement("span", null, "👤"),
-                  React.createElement(Text, { strong: true, style: { fontSize: 13 } }, memberName),
+                  React.createElement(
+                    Text,
+                    { strong: true, style: { fontSize: 13 } },
+                    memberName,
+                  ),
                   mode === "coordinator" && coordinatorName === memberName
                     ? React.createElement(
                         Tag,
@@ -1201,7 +1278,9 @@ function TeamBuilderModal({
                       size: "small",
                       type: "link",
                       danger: true,
-                      icon: DeleteOutlined ? React.createElement(DeleteOutlined) : undefined,
+                      icon: DeleteOutlined
+                        ? React.createElement(DeleteOutlined)
+                        : undefined,
                       onClick: () => handleRemoveMember(memberName),
                     },
                     "移除",
@@ -1219,7 +1298,10 @@ function TeamBuilderModal({
           { style: { marginBottom: 16 } },
           React.createElement(
             Text,
-            { strong: true, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+            {
+              strong: true,
+              style: { display: "block", marginBottom: 8, fontSize: 13 },
+            },
             `3. 编排执行步骤${mode === "roundtable" ? "（各步独立执行）" : mode === "pipeline" ? "（依次执行，可传递上下文）" : "（由协调者决定调用顺序）"}`,
           ),
           // Auto-sync button
@@ -1284,7 +1366,11 @@ function TeamBuilderModal({
                             },
                             `${i + 1}`,
                           )
-                        : React.createElement("span", { style: { fontSize: 14 } }, "🔀"),
+                        : React.createElement(
+                            "span",
+                            { style: { fontSize: 14 } },
+                            "🔀",
+                          ),
                       React.createElement(
                         Tag,
                         { color: "blue", style: { fontSize: 11 } },
@@ -1296,23 +1382,34 @@ function TeamBuilderModal({
                         React.createElement(Input, {
                           placeholder: "请输入该步骤的指令...",
                           value: step.instruction,
-                          onChange: (e: any) => handleUpdateStep(i, "instruction", e.target.value),
+                          onChange: (e: any) =>
+                            handleUpdateStep(i, "instruction", e.target.value),
                           size: "small",
                         }),
                       ),
                     ),
                     React.createElement(
                       "div",
-                      { style: { display: "flex", alignItems: "center", gap: 6, paddingLeft: 28 } },
+                      {
+                        style: {
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 6,
+                          paddingLeft: 28,
+                        },
+                      },
                       React.createElement(Switch, {
                         size: "small",
                         checked: step.passContext,
-                        onChange: (v: boolean) => handleUpdateStep(i, "passContext", v),
+                        onChange: (v: boolean) =>
+                          handleUpdateStep(i, "passContext", v),
                       }),
                       React.createElement(
                         Text,
                         { type: "secondary", style: { fontSize: 11 } },
-                        step.passContext ? "传递上一步结果作为上下文" : "独立执行",
+                        step.passContext
+                          ? "传递上一步结果作为上下文"
+                          : "独立执行",
                       ),
                     ),
                   ),
@@ -1327,11 +1424,15 @@ function TeamBuilderModal({
       null,
       React.createElement(
         Text,
-        { strong: true, style: { display: "block", marginBottom: 8, fontSize: 13 } },
+        {
+          strong: true,
+          style: { display: "block", marginBottom: 8, fontSize: 13 },
+        },
         `${selectedMembers.length > 0 ? "4" : "3"}. 任务模板`,
       ),
       React.createElement(Input.TextArea, {
-        placeholder: "输入任务模板，可用 {参数名} 作为占位符...\n\n例如：\n请对区块 {区块名} 的井 {井号} 进行储层评价",
+        placeholder:
+          "输入任务模板，可用 {参数名} 作为占位符...\n\n例如：\n请对区块 {区块名} 的井 {井号} 进行储层评价",
         value: taskTemplate,
         onChange: (e: any) => setTaskTemplate(e.target.value),
         rows: 4,
@@ -1339,7 +1440,10 @@ function TeamBuilderModal({
       }),
       React.createElement(
         Text,
-        { type: "secondary", style: { fontSize: 11, display: "block", marginTop: 4 } },
+        {
+          type: "secondary",
+          style: { fontSize: 11, display: "block", marginTop: 4 },
+        },
         "占位符 {参数名} 在发起任务时可由用户填写替换",
       ),
     ),
@@ -1365,8 +1469,15 @@ function ExpertTeamCard({
   const React = getHost().React;
   const { useState } = React;
   const { Card, Tag, Typography, Button, Tooltip } = getHost().antd;
-  const { TeamOutlined, RocketOutlined, UserOutlined, EditOutlined, DeleteOutlined, DownOutlined, UpOutlined } =
-    getHost().antdIcons || {};
+  const {
+    TeamOutlined,
+    RocketOutlined,
+    UserOutlined,
+    EditOutlined,
+    DeleteOutlined,
+    DownOutlined,
+    UpOutlined,
+  } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
   const [showFlow, setShowFlow] = useState(false);
@@ -1458,26 +1569,40 @@ function ExpertTeamCard({
             "div",
             { style: { display: "flex", gap: 2 } },
             onEdit
-              ? React.createElement(Tooltip, { title: "编辑" },
+              ? React.createElement(
+                  Tooltip,
+                  { title: "编辑" },
                   React.createElement(Button, {
                     type: "text",
                     size: "small",
-                    icon: EditOutlined ? React.createElement(EditOutlined) : undefined,
-                    onClick: (e: any) => { e.stopPropagation(); onEdit(team); },
+                    icon: EditOutlined
+                      ? React.createElement(EditOutlined)
+                      : undefined,
+                    onClick: (e: any) => {
+                      e.stopPropagation();
+                      onEdit(team);
+                    },
                   }),
                 )
-            : null,
+              : null,
             onDelete
-              ? React.createElement(Tooltip, { title: "删除" },
+              ? React.createElement(
+                  Tooltip,
+                  { title: "删除" },
                   React.createElement(Button, {
                     type: "text",
                     size: "small",
                     danger: true,
-                    icon: DeleteOutlined ? React.createElement(DeleteOutlined) : undefined,
-                    onClick: (e: any) => { e.stopPropagation(); onDelete(team); },
+                    icon: DeleteOutlined
+                      ? React.createElement(DeleteOutlined)
+                      : undefined,
+                    onClick: (e: any) => {
+                      e.stopPropagation();
+                      onDelete(team);
+                    },
                   }),
                 )
-            : null,
+              : null,
           )
         : null,
     ),
@@ -1505,7 +1630,10 @@ function ExpertTeamCard({
       ...memberStatus.map((m) =>
         React.createElement(
           Tooltip,
-          { key: m.name, title: `${m.name}（${m.role}）${m.found ? "" : " - 未创建"}` },
+          {
+            key: m.name,
+            title: `${m.name}（${m.role}）${m.found ? "" : " - 未创建"}`,
+          },
           React.createElement(
             "div",
             {
@@ -1523,7 +1651,9 @@ function ExpertTeamCard({
             React.createElement("span", null, m.emoji),
             React.createElement(
               Text,
-              { style: { fontSize: 11, color: m.found ? "#1f4e8c" : "#cf1322" } },
+              {
+                style: { fontSize: 11, color: m.found ? "#1f4e8c" : "#cf1322" },
+              },
               m.name,
             ),
           ),
@@ -1537,16 +1667,21 @@ function ExpertTeamCard({
         type: "link",
         size: "small",
         style: { padding: "0 0 4px 0", fontSize: 11, height: "auto" },
-        onClick: (e: any) => { e.stopPropagation(); setShowFlow(!showFlow); },
+        onClick: (e: any) => {
+          e.stopPropagation();
+          setShowFlow(!showFlow);
+        },
         icon: showFlow
-          ? (UpOutlined ? React.createElement(UpOutlined) : "▲")
-          : (DownOutlined ? React.createElement(DownOutlined) : "▼"),
+          ? UpOutlined
+            ? React.createElement(UpOutlined)
+            : "▲"
+          : DownOutlined
+            ? React.createElement(DownOutlined)
+            : "▼",
       },
       showFlow ? "收起流程" : "查看执行流程",
     ),
-    showFlow
-      ? React.createElement(TeamFlowDiagram, { team })
-      : null,
+    showFlow ? React.createElement(TeamFlowDiagram, { team }) : null,
     // Footer: launch button
     React.createElement(
       "div",
@@ -1594,8 +1729,20 @@ function ExpertTeamSection({
 }) {
   const React = getHost().React;
   const { useMemo, useState, useCallback, useEffect } = React;
-  const { Row, Col, Input, Empty, Typography, Tag, Button, Divider, message: antdMsg, Popconfirm } = getHost().antd;
-  const { SearchOutlined, TeamOutlined, PlusOutlined, RocketOutlined } = getHost().antdIcons || {};
+  const {
+    Row,
+    Col,
+    Input,
+    Empty,
+    Typography,
+    Tag,
+    Button,
+    Divider,
+    message: antdMsg,
+    Popconfirm,
+  } = getHost().antd;
+  const { SearchOutlined, TeamOutlined, PlusOutlined, RocketOutlined } =
+    getHost().antdIcons || {};
   const { Text } = Typography;
 
   const [searchText, setSearchText] = useState("");
@@ -1612,13 +1759,16 @@ function ExpertTeamSection({
     setCustomTeams(loadCustomTeams());
   }, []);
 
-  const handleDeleteTeam = useCallback((team: ExpertTeam) => {
-    const existing = loadCustomTeams();
-    const filtered = existing.filter((t) => t.id !== team.id);
-    saveCustomTeams(filtered);
-    setCustomTeams(filtered);
-    antdMsg.success(`团队「${team.name}」已删除`);
-  }, [antdMsg]);
+  const handleDeleteTeam = useCallback(
+    (team: ExpertTeam) => {
+      const existing = loadCustomTeams();
+      const filtered = existing.filter((t) => t.id !== team.id);
+      saveCustomTeams(filtered);
+      setCustomTeams(filtered);
+      antdMsg.success(`团队「${team.name}」已删除`);
+    },
+    [antdMsg],
+  );
 
   const handleEditTeam = useCallback((team: ExpertTeam) => {
     setEditingTeam(team);
@@ -1789,7 +1939,10 @@ function ExpertTeamSection({
     // Team Builder Modal
     React.createElement(TeamBuilderModal, {
       open: builderOpen,
-      onClose: () => { setBuilderOpen(false); setEditingTeam(null); },
+      onClose: () => {
+        setBuilderOpen(false);
+        setEditingTeam(null);
+      },
       agents,
       editingTeam,
       onSaved: refreshCustomTeams,
@@ -1823,7 +1976,9 @@ function extractPromptFromSkills(skills: SkillSpec[]): string[] {
       .trim();
 
     // Transform into a request sentence
-    if (/^(用于|帮助|提供|支持|实现|完成|分析|计算|生成|创建|检查)/.test(prompt)) {
+    if (
+      /^(用于|帮助|提供|支持|实现|完成|分析|计算|生成|创建|检查)/.test(prompt)
+    ) {
       // Starts with a verb — prefix with "请"
       prompt = `请${prompt}`;
     } else if (/^(a |an |the )/i.test(prompt)) {
@@ -2093,9 +2248,7 @@ function SkillPickerModal({
 
   const toggleSkill = (name: string) => {
     setSelectedNames((prev: string[]) =>
-      prev.includes(name)
-        ? prev.filter((n) => n !== name)
-        : [...prev, name],
+      prev.includes(name) ? prev.filter((n) => n !== name) : [...prev, name],
     );
   };
 
@@ -2170,8 +2323,7 @@ function SkillPickerModal({
         {
           size: "small",
           type: "primary",
-          onClick: () =>
-            setSelectedNames(availableSkills.map((s) => s.name)),
+          onClick: () => setSelectedNames(availableSkills.map((s) => s.name)),
         },
         "全选",
       ),
@@ -2192,158 +2344,149 @@ function SkillPickerModal({
           React.createElement(Spin, { size: "large" }),
         )
       : filteredSkills.length === 0
-      ? React.createElement(Empty, {
-          description: searchText
-            ? "未找到匹配的技能"
-            : "技能池暂无可用技能",
-          image: Empty.PRESENTED_IMAGE_SIMPLE,
-        })
-      : React.createElement(
-          "div",
-          {
-            style: {
-              display: "grid",
-              gridTemplateColumns:
-                "repeat(auto-fill, minmax(145px, 1fr))",
-              gap: 8,
-              maxHeight: 360,
-              overflowY: "auto",
-              padding: 2,
-            },
-          },
-          ...filteredSkills.map((skill: PoolSkillSpec) => {
-            const isSelected = selectedNames.includes(skill.name);
-            const isInstalled = installedSkillNames.includes(skill.name);
-            return React.createElement(
-              "div",
-              {
-                key: skill.name,
-                onClick: () =>
-                  !isInstalled && toggleSkill(skill.name),
-                style: {
-                  position: "relative",
-                  padding: "10px 12px",
-                  border: `1px solid ${
-                    isSelected ? "#0072f5" : "#e8e8e8"
-                  }`,
-                  borderRadius: 6,
-                  cursor: isInstalled ? "not-allowed" : "pointer",
-                  transition: "all 0.15s ease",
-                  background: isSelected
-                    ? "rgba(0, 114, 245, 0.06)"
-                    : isInstalled
-                    ? "#fafafa"
-                    : "#fff",
-                  opacity: isInstalled ? 0.5 : 1,
-                  minHeight: 64,
-                },
+        ? React.createElement(Empty, {
+            description: searchText ? "未找到匹配的技能" : "技能池暂无可用技能",
+            image: Empty.PRESENTED_IMAGE_SIMPLE,
+          })
+        : React.createElement(
+            "div",
+            {
+              style: {
+                display: "grid",
+                gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))",
+                gap: 8,
+                maxHeight: 360,
+                overflowY: "auto",
+                padding: 2,
               },
-              isSelected
-                ? React.createElement(
-                    "span",
-                    {
-                      style: {
-                        position: "absolute",
-                        top: 6,
-                        right: 6,
-                        width: 18,
-                        height: 18,
-                        borderRadius: "50%",
-                        background: "#0072f5",
-                        color: "#fff",
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 10,
-                      },
-                    },
-                    CheckOutlined
-                      ? React.createElement(CheckOutlined)
-                      : "\u2713",
-                  )
-                : null,
-              isInstalled
-                ? React.createElement(
-                    "span",
-                    {
-                      style: {
-                        position: "absolute",
-                        top: 6,
-                        right: 8,
-                        fontSize: 10,
-                        color: "#bbb",
-                      },
-                    },
-                    "已安装",
-                  )
-                : null,
-              React.createElement(
+            },
+            ...filteredSkills.map((skill: PoolSkillSpec) => {
+              const isSelected = selectedNames.includes(skill.name);
+              const isInstalled = installedSkillNames.includes(skill.name);
+              return React.createElement(
                 "div",
                 {
+                  key: skill.name,
+                  onClick: () => !isInstalled && toggleSkill(skill.name),
                   style: {
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    marginBottom: 4,
-                    paddingRight:
-                      isInstalled || isSelected ? 24 : 0,
+                    position: "relative",
+                    padding: "10px 12px",
+                    border: `1px solid ${isSelected ? "#0072f5" : "#e8e8e8"}`,
+                    borderRadius: 6,
+                    cursor: isInstalled ? "not-allowed" : "pointer",
+                    transition: "all 0.15s ease",
+                    background: isSelected
+                      ? "rgba(0, 114, 245, 0.06)"
+                      : isInstalled
+                        ? "#fafafa"
+                        : "#fff",
+                    opacity: isInstalled ? 0.5 : 1,
+                    minHeight: 64,
                   },
                 },
-                React.createElement(
-                  "span",
-                  { style: { fontSize: 16 } },
-                  skill.emoji || "\u26a1",
-                ),
-                React.createElement(
-                  Tooltip,
-                  { title: skill.name },
-                  React.createElement(
-                    Text,
-                    {
-                      strong: true,
-                      style: {
-                        fontSize: 13,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                isSelected
+                  ? React.createElement(
+                      "span",
+                      {
+                        style: {
+                          position: "absolute",
+                          top: 6,
+                          right: 6,
+                          width: 18,
+                          height: 18,
+                          borderRadius: "50%",
+                          background: "#0072f5",
+                          color: "#fff",
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          fontSize: 10,
+                        },
                       },
+                      CheckOutlined
+                        ? React.createElement(CheckOutlined)
+                        : "\u2713",
+                    )
+                  : null,
+                isInstalled
+                  ? React.createElement(
+                      "span",
+                      {
+                        style: {
+                          position: "absolute",
+                          top: 6,
+                          right: 8,
+                          fontSize: 10,
+                          color: "#bbb",
+                        },
+                      },
+                      "已安装",
+                    )
+                  : null,
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
+                      marginBottom: 4,
+                      paddingRight: isInstalled || isSelected ? 24 : 0,
                     },
-                    skill.name,
+                  },
+                  React.createElement(
+                    "span",
+                    { style: { fontSize: 16 } },
+                    skill.emoji || "\u26a1",
+                  ),
+                  React.createElement(
+                    Tooltip,
+                    { title: skill.name },
+                    React.createElement(
+                      Text,
+                      {
+                        strong: true,
+                        style: {
+                          fontSize: 13,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        },
+                      },
+                      skill.name,
+                    ),
                   ),
                 ),
-              ),
-              skill.description
-                ? React.createElement(
-                    "div",
-                    {
-                      style: {
-                        fontSize: 11,
-                        color: "#8c8c8c",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        display: "-webkit-box",
-                        WebkitLineClamp: 2,
-                        WebkitBoxOrient: "vertical",
-                        lineHeight: "1.4",
+                skill.description
+                  ? React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 11,
+                          color: "#8c8c8c",
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                          lineHeight: "1.4",
+                        },
                       },
-                    },
-                    skill.description,
-                  )
-                : null,
-              skill.tags && skill.tags.length > 0
-                ? React.createElement(
-                    "div",
-                    {
-                      style: {
-                        marginTop: 4,
-                        display: "flex",
-                        gap: 2,
-                        flexWrap: "wrap",
+                      skill.description,
+                    )
+                  : null,
+                skill.tags && skill.tags.length > 0
+                  ? React.createElement(
+                      "div",
+                      {
+                        style: {
+                          marginTop: 4,
+                          display: "flex",
+                          gap: 2,
+                          flexWrap: "wrap",
+                        },
                       },
-                    },
-                    ...skill.tags
-                      .slice(0, 2)
-                      .map((tag: string, i: number) =>
+                      ...skill.tags.slice(0, 2).map((tag: string, i: number) =>
                         React.createElement(
                           Tag,
                           {
@@ -2354,11 +2497,11 @@ function SkillPickerModal({
                           tag,
                         ),
                       ),
-                  )
-                : null,
-            );
-          }),
-        ),
+                    )
+                  : null,
+              );
+            }),
+          ),
   );
 }
 
@@ -2538,11 +2681,18 @@ function ExpertDrawer({
     message: antdMsg,
   } = getHost().antd;
   const { Text, Paragraph } = Typography;
-  const { EditOutlined, ThunderboltOutlined, FileTextOutlined, ToolOutlined, PlusOutlined } =
-    getHost().antdIcons || {};
+  const {
+    EditOutlined,
+    ThunderboltOutlined,
+    FileTextOutlined,
+    ToolOutlined,
+    PlusOutlined,
+  } = getHost().antdIcons || {};
 
   const [skillPickerOpen2, setSkillPickerOpen2] = React.useState(false);
-  const [poolSkillsList2, setPoolSkillsList2] = React.useState<PoolSkillSpec[]>([]);
+  const [poolSkillsList2, setPoolSkillsList2] = React.useState<PoolSkillSpec[]>(
+    [],
+  );
   const [poolLoading2, setPoolLoading2] = React.useState(false);
 
   if (!expert) return null;
@@ -2815,7 +2965,11 @@ function ExpertDrawer({
                           ...skill.tags.map((tag, i) =>
                             React.createElement(
                               Tag,
-                              { key: i, color: "cyan", style: { fontSize: 10 } },
+                              {
+                                key: i,
+                                color: "cyan",
+                                style: { fontSize: 10 },
+                              },
                               tag,
                             ),
                           ),
@@ -2912,7 +3066,11 @@ function ExpertDrawer({
                           marginBottom: 4,
                         },
                       },
-                      React.createElement("span", { style: { fontSize: 14 } }, "🔌"),
+                      React.createElement(
+                        "span",
+                        { style: { fontSize: 14 } },
+                        "🔌",
+                      ),
                       React.createElement(
                         Text,
                         { strong: true },
@@ -3006,33 +3164,33 @@ function ExpertDrawer({
         image: Empty.PRESENTED_IMAGE_SIMPLE,
       });
 
-const tabItems = [
-{ key: "basic", label: "基本信息", children: basicInfoTab },
-{
-key: "skills",
-label: `技能 (${enabledSkills.length})`,
-children: skillsTab,
-},
-{
-key: "prompts",
-label: "推荐提问",
-children: React.createElement(PresetPromptsTab, {
-skills: enabledSkills,
-agentId: agent.id,
-}),
-},
-{
-key: "knowledge",
-label: "专家记忆",
-children: React.createElement(KnowledgeBaseTab, {
-agentId: agent.id,
-systemPromptFiles: config?.system_prompt_files || [],
-onRefresh: () => onRefresh(),
-}),
-},
-{ key: "mcp", label: `MCP (${mcps.length})`, children: mcpTab },
-{ key: "tools", label: "工具配置", children: toolsTab },
-];
+  const tabItems = [
+    { key: "basic", label: "基本信息", children: basicInfoTab },
+    {
+      key: "skills",
+      label: `技能 (${enabledSkills.length})`,
+      children: skillsTab,
+    },
+    {
+      key: "prompts",
+      label: "推荐提问",
+      children: React.createElement(PresetPromptsTab, {
+        skills: enabledSkills,
+        agentId: agent.id,
+      }),
+    },
+    {
+      key: "knowledge",
+      label: "专家记忆",
+      children: React.createElement(KnowledgeBaseTab, {
+        agentId: agent.id,
+        systemPromptFiles: config?.system_prompt_files || [],
+        onRefresh: () => onRefresh(),
+      }),
+    },
+    { key: "mcp", label: `MCP (${mcps.length})`, children: mcpTab },
+    { key: "tools", label: "工具配置", children: toolsTab },
+  ];
 
   return React.createElement(
     Drawer,
@@ -3103,8 +3261,17 @@ function ExpertTemplateModal({
 }) {
   const React = getHost().React;
   const { useState } = React;
-  const { Modal, Card, Tag, Input, Row, Col, Spin, message: antdMsg, Typography } =
-    getHost().antd;
+  const {
+    Modal,
+    Card,
+    Tag,
+    Input,
+    Row,
+    Col,
+    Spin,
+    message: antdMsg,
+    Typography,
+  } = getHost().antd;
   const { Text } = Typography;
   const [creating, setCreating] = useState(false);
   const [searchText, setSearchText] = useState("");
@@ -3284,12 +3451,8 @@ function KnowledgeBaseTab({
     message: antdMsg,
     Typography,
   } = getHost().antd;
-  const {
-    FileTextOutlined,
-    PlusOutlined,
-    EditOutlined,
-    ReloadOutlined,
-  } = getHost().antdIcons || {};
+  const { FileTextOutlined, PlusOutlined, EditOutlined, ReloadOutlined } =
+    getHost().antdIcons || {};
   const { Text } = Typography;
 
   const [files, setFiles] = useState<KnowledgeFileInfo[]>([]);
@@ -3456,9 +3619,7 @@ function KnowledgeBaseTab({
           {
             type: "primary",
             size: "small",
-            icon: PlusOutlined
-              ? React.createElement(PlusOutlined)
-              : undefined,
+            icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
             onClick: handleNewFile,
           },
           "新建记忆文件",
@@ -3493,47 +3654,41 @@ function KnowledgeBaseTab({
                   ),
                 ],
               },
-              React.createElement(
-                List.Item.Meta,
-                {
-                  avatar: React.createElement(
-                    FileTextOutlined,
-                    {
-                      style: {
-                        fontSize: 20,
-                        color: isEnabled ? "#1677ff" : "#bfbfbf",
-                      },
+              React.createElement(List.Item.Meta, {
+                avatar: React.createElement(FileTextOutlined, {
+                  style: {
+                    fontSize: 20,
+                    color: isEnabled ? "#1677ff" : "#bfbfbf",
+                  },
+                }),
+                title: React.createElement(
+                  "div",
+                  {
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 6,
                     },
-                  ),
-                  title: React.createElement(
-                    "div",
-                    {
-                      style: {
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 6,
-                      },
-                    },
-                    React.createElement(Text, null, file.filename),
-                    isDefault
-                      ? React.createElement(
-                          Tag,
-                          { color: "default", style: { fontSize: 10 } },
-                          "内置",
-                        )
-                      : React.createElement(
-                          Tag,
-                          { color: "cyan", style: { fontSize: 10 } },
-                          "记忆库",
-                        ),
-                  ),
-                  description: React.createElement(
-                    "div",
-                    { style: { fontSize: 12 } },
-                    `${(file.size / 1024).toFixed(1)} KB · 修改于 ${new Date(file.modified_time).toLocaleString()}`,
-                  ),
-                },
-              ),
+                  },
+                  React.createElement(Text, null, file.filename),
+                  isDefault
+                    ? React.createElement(
+                        Tag,
+                        { color: "default", style: { fontSize: 10 } },
+                        "内置",
+                      )
+                    : React.createElement(
+                        Tag,
+                        { color: "cyan", style: { fontSize: 10 } },
+                        "记忆库",
+                      ),
+                ),
+                description: React.createElement(
+                  "div",
+                  { style: { fontSize: 12 } },
+                  `${(file.size / 1024).toFixed(1)} KB · 修改于 ${new Date(file.modified_time).toLocaleString()}`,
+                ),
+              }),
               React.createElement(Switch, {
                 checked: isEnabled,
                 size: "small",
@@ -3590,16 +3745,18 @@ function PresetPromptsTab({
 }) {
   const React = getHost().React;
   const { useMemo } = React;
-  const { List, Tag, Typography, Empty, Button, message: antdMsg } =
-    getHost().antd;
-  const { ThunderboltOutlined, CopyOutlined } =
-    getHost().antdIcons || {};
+  const {
+    List,
+    Tag,
+    Typography,
+    Empty,
+    Button,
+    message: antdMsg,
+  } = getHost().antd;
+  const { ThunderboltOutlined, CopyOutlined } = getHost().antdIcons || {};
   const { Text } = Typography;
 
-  const prompts = useMemo(
-    () => extractPromptFromSkills(skills),
-    [skills],
-  );
+  const prompts = useMemo(() => extractPromptFromSkills(skills), [skills]);
 
   const handleUsePrompt = (prompt: string) => {
     try {
@@ -3679,32 +3836,29 @@ function PresetPromptsTab({
               ),
             ],
           },
-          React.createElement(
-            List.Item.Meta,
-            {
-              avatar: React.createElement(
-                Tag,
-                { color: "blue", style: { borderRadius: "50%" } },
-                `${index + 1}`,
-              ),
-              title: React.createElement(
-                "div",
-                {
-                  style: {
-                    cursor: "pointer",
-                    color: "#1677ff",
-                  },
-                  onClick: () => handleUsePrompt(prompt),
+          React.createElement(List.Item.Meta, {
+            avatar: React.createElement(
+              Tag,
+              { color: "blue", style: { borderRadius: "50%" } },
+              `${index + 1}`,
+            ),
+            title: React.createElement(
+              "div",
+              {
+                style: {
+                  cursor: "pointer",
+                  color: "#1677ff",
                 },
-                prompt,
-              ),
-              description: React.createElement(
-                Text,
-                { type: "secondary", style: { fontSize: 12 } },
-                "点击直接发送给专家",
-              ),
-            },
-          ),
+                onClick: () => handleUsePrompt(prompt),
+              },
+              prompt,
+            ),
+            description: React.createElement(
+              Text,
+              { type: "secondary", style: { fontSize: 12 } },
+              "点击直接发送给专家",
+            ),
+          }),
         ),
     }),
   );
@@ -3736,7 +3890,9 @@ function ExpertCenterPage() {
   const [searchText, setSearchText] = useState("");
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState("experts");
-  const [teamLaunchModal, setTeamLaunchModal] = useState<ExpertTeam | null>(null);
+  const [teamLaunchModal, setTeamLaunchModal] = useState<ExpertTeam | null>(
+    null,
+  );
   const [teamLaunchInput, setTeamLaunchInput] = useState("");
   const [teamLaunching, setTeamLaunching] = useState(false);
 
@@ -3799,29 +3955,32 @@ function ExpertCenterPage() {
     loadExperts();
   }, [loadExperts]);
 
-  const handleLaunchTeam = useCallback(async (team: ExpertTeam) => {
-    // Find coordinator agent
-    const coordinatorName = team.coordinatorName || team.members[0]?.name;
-    if (!coordinatorName) {
-      antdMsg.error("无法确定协调者专家");
-      return;
-    }
-    const coordinatorId = findAgentIdByName(rawAgents, coordinatorName);
-    if (!coordinatorId) {
-      antdMsg.error(`未找到协调者专家「${coordinatorName}」，请先创建该专家`);
-      return;
-    }
-    // Check if task template has placeholders
-    const hasPlaceholders = /\{.+?\}/.test(team.taskTemplate);
-    if (hasPlaceholders) {
-      // Open modal for user to fill in placeholders
-      setTeamLaunchInput("");
-      setTeamLaunchModal(team);
-      return;
-    }
-    // No placeholders — launch directly
-    await doLaunchTeam(team, coordinatorId, team.taskTemplate);
-  }, [rawAgents, antdMsg]);
+  const handleLaunchTeam = useCallback(
+    async (team: ExpertTeam) => {
+      // Find coordinator agent
+      const coordinatorName = team.coordinatorName || team.members[0]?.name;
+      if (!coordinatorName) {
+        antdMsg.error("无法确定协调者专家");
+        return;
+      }
+      const coordinatorId = findAgentIdByName(rawAgents, coordinatorName);
+      if (!coordinatorId) {
+        antdMsg.error(`未找到协调者专家「${coordinatorName}」，请先创建该专家`);
+        return;
+      }
+      // Check if task template has placeholders
+      const hasPlaceholders = /\{.+?\}/.test(team.taskTemplate);
+      if (hasPlaceholders) {
+        // Open modal for user to fill in placeholders
+        setTeamLaunchInput("");
+        setTeamLaunchModal(team);
+        return;
+      }
+      // No placeholders — launch directly
+      await doLaunchTeam(team, coordinatorId, team.taskTemplate);
+    },
+    [rawAgents, antdMsg],
+  );
 
   const doLaunchTeam = useCallback(
     async (team: ExpertTeam, coordinatorId: string, taskText: string) => {
@@ -3842,7 +4001,9 @@ function ExpertCenterPage() {
         // Send the message via console chat API
         await sendTeamMessage(coordinatorId, finalMessage);
 
-        antdMsg.success(`团队任务已发起，协调者：${team.coordinatorName || team.members[0]?.name}`);
+        antdMsg.success(
+          `团队任务已发起，协调者：${team.coordinatorName || team.members[0]?.name}`,
+        );
         setTeamLaunchModal(null);
 
         // Navigate to chat page
@@ -3888,11 +4049,7 @@ function ExpertCenterPage() {
   const tabItems = [
     {
       key: "experts",
-      label: React.createElement(
-        "span",
-        null,
-        "🧑‍🔬 专家列表",
-      ),
+      label: React.createElement("span", null, "🧑‍🔬 专家列表"),
       children: React.createElement(
         "div",
         null,
@@ -3919,34 +4076,30 @@ function ExpertCenterPage() {
               React.createElement(Spin, { size: "large" }),
             )
           : filteredExperts.length === 0
-          ? React.createElement(Empty, {
-              description: searchText
-                ? "未找到匹配的专家"
-                : "暂无专家，点击「创建专家」添加",
-            })
-          : React.createElement(
-              Row,
-              { gutter: [12, 12] },
-              ...filteredExperts.map((expert) =>
-                React.createElement(
-                  Col,
-                  { key: expert.agent.id, xs: 24, sm: 12, md: 8, lg: 6 },
-                  React.createElement(ExpertCard, {
-                    expert,
-                    onClick: () => handleCardClick(expert),
-                  }),
+            ? React.createElement(Empty, {
+                description: searchText
+                  ? "未找到匹配的专家"
+                  : "暂无专家，点击「创建专家」添加",
+              })
+            : React.createElement(
+                Row,
+                { gutter: [12, 12] },
+                ...filteredExperts.map((expert) =>
+                  React.createElement(
+                    Col,
+                    { key: expert.agent.id, xs: 24, sm: 12, md: 8, lg: 6 },
+                    React.createElement(ExpertCard, {
+                      expert,
+                      onClick: () => handleCardClick(expert),
+                    }),
+                  ),
                 ),
               ),
-            ),
       ),
     },
     {
       key: "teams",
-      label: React.createElement(
-        "span",
-        null,
-        "🤝 专家团",
-      ),
+      label: React.createElement("span", null, "🤝 专家团"),
       children: React.createElement(ExpertTeamSection, {
         agents: rawAgents,
         onLaunch: handleLaunchTeam,
@@ -4012,13 +4165,22 @@ function ExpertCenterPage() {
             title: React.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 8 } },
-              React.createElement("span", { style: { fontSize: 20 } }, teamLaunchModal.emoji),
-              React.createElement("span", null, `发起团队任务 - ${teamLaunchModal.name}`),
+              React.createElement(
+                "span",
+                { style: { fontSize: 20 } },
+                teamLaunchModal.emoji,
+              ),
+              React.createElement(
+                "span",
+                null,
+                `发起团队任务 - ${teamLaunchModal.name}`,
+              ),
             ),
             onCancel: () => setTeamLaunchModal(null),
             onOk: () => {
               const coordinatorName =
-                teamLaunchModal.coordinatorName || teamLaunchModal.members[0]?.name;
+                teamLaunchModal.coordinatorName ||
+                teamLaunchModal.members[0]?.name;
               const coordinatorId = coordinatorName
                 ? findAgentIdByName(rawAgents, coordinatorName)
                 : null;
@@ -4043,7 +4205,10 @@ function ExpertCenterPage() {
             { style: { marginBottom: 12 } },
             React.createElement(
               Text,
-              { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+              {
+                type: "secondary",
+                style: { fontSize: 12, display: "block", marginBottom: 8 },
+              },
               "任务模板（包含占位符 {参数名}，可在下方编辑替换）：",
             ),
             React.createElement(
@@ -4067,7 +4232,10 @@ function ExpertCenterPage() {
             null,
             React.createElement(
               Text,
-              { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+              {
+                type: "secondary",
+                style: { fontSize: 12, display: "block", marginBottom: 8 },
+              },
               "输入具体任务描述（替换上面的占位符内容）：",
             ),
             React.createElement(Input.TextArea, {
@@ -4080,7 +4248,14 @@ function ExpertCenterPage() {
           ),
           React.createElement(
             "div",
-            { style: { marginTop: 12, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6 } },
+            {
+              style: {
+                marginTop: 12,
+                padding: "8px 12px",
+                background: "#e6f4ff",
+                borderRadius: 6,
+              },
+            },
             React.createElement(
               Text,
               { style: { fontSize: 12, color: "#0958d9" } },
@@ -4321,28 +4496,28 @@ function CapabilityCenterPage() {
           React.createElement(Spin, { size: "large" }),
         )
       : filteredMCPs.length === 0
-      ? React.createElement(Empty, {
-          description: searchText
-            ? "未找到匹配的能力"
-            : "暂无 MCP 客户端，点击「管理 MCP」添加",
-        })
-      : React.createElement(
-          Row,
-          { gutter: [12, 12] },
-          ...filteredMCPs.map((mcp) =>
-            React.createElement(
-              Col,
-              { key: mcp.key, xs: 24, sm: 12, md: 8, lg: 6 },
-              React.createElement(CapabilityCard, {
-                mcp,
-                onClick: () => {
-                  setActiveMCP(mcp);
-                  setDrawerOpen(true);
-                },
-              }),
+        ? React.createElement(Empty, {
+            description: searchText
+              ? "未找到匹配的能力"
+              : "暂无 MCP 客户端，点击「管理 MCP」添加",
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...filteredMCPs.map((mcp) =>
+              React.createElement(
+                Col,
+                { key: mcp.key, xs: 24, sm: 12, md: 8, lg: 6 },
+                React.createElement(CapabilityCard, {
+                  mcp,
+                  onClick: () => {
+                    setActiveMCP(mcp);
+                    setDrawerOpen(true);
+                  },
+                }),
+              ),
             ),
           ),
-        ),
     // Detail drawer
     activeMCP
       ? React.createElement(
@@ -4622,113 +4797,113 @@ function SkillCenterPage() {
           React.createElement(Spin, { size: "large" }),
         )
       : filteredSkills.length === 0
-      ? React.createElement(Empty, {
-          description: searchText ? "未找到匹配的技能" : "技能池为空",
-        })
-      : React.createElement(
-          Row,
-          { gutter: [12, 12] },
-          ...filteredSkills.map((skill) =>
-            React.createElement(
-              Col,
-              { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+        ? React.createElement(Empty, {
+            description: searchText ? "未找到匹配的技能" : "技能池为空",
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...filteredSkills.map((skill) =>
               React.createElement(
-                Card,
-                {
-                  hoverable: true,
-                  size: "small",
-                  style: { cursor: "pointer", height: "100%" },
-                  onClick: () => {
-                    setActiveSkill(skill);
-                    setInstalledAgents(computeInstalledAgents(skill.name));
-                    setDrawerOpen(true);
-                  },
-                },
+                Col,
+                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
                 React.createElement(
-                  "div",
+                  Card,
                   {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 8,
+                    hoverable: true,
+                    size: "small",
+                    style: { cursor: "pointer", height: "100%" },
+                    onClick: () => {
+                      setActiveSkill(skill);
+                      setInstalledAgents(computeInstalledAgents(skill.name));
+                      setDrawerOpen(true);
                     },
                   },
-                  skill.emoji
-                    ? React.createElement(
-                        "span",
-                        { style: { fontSize: 18 } },
-                        skill.emoji,
-                      )
-                    : React.createElement(
-                        "span",
-                        { style: { fontSize: 18 } },
-                        "⚡",
-                      ),
                   React.createElement(
-                    Text,
+                    "div",
                     {
-                      strong: true,
                       style: {
-                        fontSize: 13,
-                        flex: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
                       },
                     },
-                    skill.name,
-                  ),
-                  skill.protected
-                    ? React.createElement(
-                        Tag,
-                        { color: "gold", style: { fontSize: 10 } },
-                        "内置",
-                      )
-                    : null,
-                ),
-                skill.description
-                  ? React.createElement(
-                      Paragraph,
+                    skill.emoji
+                      ? React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          skill.emoji,
+                        )
+                      : React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          "⚡",
+                        ),
+                    React.createElement(
+                      Text,
                       {
-                        type: "secondary",
-                        style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
-                        ellipsis: { rows: 2 },
+                        strong: true,
+                        style: {
+                          fontSize: 13,
+                          flex: 1,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        },
                       },
-                      skill.description,
-                    )
-                  : null,
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      marginTop: 8,
-                      display: "flex",
-                      gap: 4,
-                      flexWrap: "wrap",
-                    },
-                  },
-                  skill.version_text
+                      skill.name,
+                    ),
+                    skill.protected
+                      ? React.createElement(
+                          Tag,
+                          { color: "gold", style: { fontSize: 10 } },
+                          "内置",
+                        )
+                      : null,
+                  ),
+                  skill.description
                     ? React.createElement(
-                        Tag,
-                        { style: { fontSize: 10 } },
-                        `v${skill.version_text}`,
+                        Paragraph,
+                        {
+                          type: "secondary",
+                          style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                          ellipsis: { rows: 2 },
+                        },
+                        skill.description,
                       )
                     : null,
-                  ...skill.tags
-                    ?.slice(0, 3)
-                    .map((tag, i) =>
-                      React.createElement(
-                        Tag,
-                        { key: i, color: "cyan", style: { fontSize: 10 } },
-                        tag,
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 8,
+                        display: "flex",
+                        gap: 4,
+                        flexWrap: "wrap",
+                      },
+                    },
+                    skill.version_text
+                      ? React.createElement(
+                          Tag,
+                          { style: { fontSize: 10 } },
+                          `v${skill.version_text}`,
+                        )
+                      : null,
+                    ...skill.tags
+                      ?.slice(0, 3)
+                      .map((tag, i) =>
+                        React.createElement(
+                          Tag,
+                          { key: i, color: "cyan", style: { fontSize: 10 } },
+                          tag,
+                        ),
                       ),
-                    ),
+                  ),
                 ),
               ),
             ),
           ),
-        ),
     // Skill detail drawer
     activeSkill
       ? React.createElement(
@@ -4911,7 +5086,9 @@ async function fetchMarketProviders(): Promise<MarketProviderInfo[]> {
 }
 
 async function fetchMarketCategories(lang: string): Promise<MarketCategory[]> {
-  return apiFetch<MarketCategory[]>(`/market/categories?lang=${encodeURIComponent(lang)}`);
+  return apiFetch<MarketCategory[]>(
+    `/market/categories?lang=${encodeURIComponent(lang)}`,
+  );
 }
 
 async function searchMarket(
@@ -4953,9 +5130,12 @@ async function pollHubInstallStatus(
   agentId: string,
   taskId: string,
 ): Promise<any> {
-  return apiFetch<any>(`/skills/hub/install/status/${encodeURIComponent(taskId)}`, {
-    headers: { "X-Agent-Id": agentId },
-  });
+  return apiFetch<any>(
+    `/skills/hub/install/status/${encodeURIComponent(taskId)}`,
+    {
+      headers: { "X-Agent-Id": agentId },
+    },
+  );
 }
 
 function MarketplacePage() {
@@ -5002,7 +5182,9 @@ function MarketplacePage() {
   const [selectedCategory, setSelectedCategory] = useState("");
   const [loading, setLoading] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [providerPages, setProviderPages] = useState<Record<string, number>>({});
+  const [providerPages, setProviderPages] = useState<Record<string, number>>(
+    {},
+  );
   const [detailItem, setDetailItem] = useState<MarketResult | null>(null);
   const [installing, setInstalling] = useState<Record<string, string>>({});
 
@@ -5035,7 +5217,13 @@ function MarketplacePage() {
     async (query: string, category: string, pages: Record<string, number>) => {
       setLoading(true);
       try {
-        const resp = await searchMarket(query, pages, 20, "zh", category || undefined);
+        const resp = await searchMarket(
+          query,
+          pages,
+          20,
+          "zh",
+          category || undefined,
+        );
         if (pages === undefined || Object.keys(pages).length === 0) {
           setResults(resp.results);
         } else {
@@ -5053,7 +5241,9 @@ function MarketplacePage() {
         setProviderPages(newPages);
         if (resp.errors.length > 0) {
           for (const err of resp.errors) {
-            console.warn(`[ugsci] Market provider '${err.provider}' error: ${err.message}`);
+            console.warn(
+              `[ugsci] Market provider '${err.provider}' error: ${err.message}`,
+            );
           }
         }
       } catch (err: any) {
@@ -5100,7 +5290,10 @@ function MarketplacePage() {
       const maxPolls = 60;
       for (let i = 0; i < maxPolls; i++) {
         await new Promise((r) => setTimeout(r, 2000));
-        const status = await pollHubInstallStatus(installTargetAgent, task.task_id);
+        const status = await pollHubInstallStatus(
+          installTargetAgent,
+          task.task_id,
+        );
         if (status.status === "completed" && status.result?.installed) {
           antdMsg.success(`技能「${status.result.name || item.name}」安装成功`);
           setInstalling((prev: any) => {
@@ -5160,7 +5353,9 @@ function MarketplacePage() {
       },
       React.createElement(Input, {
         placeholder: "搜索技能市场...",
-        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
         value: searchText,
         onChange: (e: any) => setSearchText(e.target.value),
         allowClear: true,
@@ -5183,7 +5378,11 @@ function MarketplacePage() {
       React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 4 } },
-        React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, "安装到"),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12 } },
+          "安装到",
+        ),
         React.createElement(Select, {
           value: installTargetAgent || undefined,
           onChange: (v: string) => setInstallTargetAgent(v),
@@ -5197,7 +5396,14 @@ function MarketplacePage() {
     availableProviders.length > 0
       ? React.createElement(
           "div",
-          { style: { marginBottom: 12, display: "flex", gap: 4, flexWrap: "wrap" } },
+          {
+            style: {
+              marginBottom: 12,
+              display: "flex",
+              gap: 4,
+              flexWrap: "wrap",
+            },
+          },
           ...availableProviders.map((p) =>
             React.createElement(
               Tag,
@@ -5219,136 +5425,136 @@ function MarketplacePage() {
           React.createElement(Spin, { size: "large" }),
         )
       : results.length === 0
-      ? React.createElement(Empty, {
-          description: searchText
-            ? `未找到匹配「${searchText}」的技能`
-            : "输入关键词搜索技能市场",
-          image: Empty.PRESENTED_IMAGE_SIMPLE,
-        })
-      : React.createElement(
-          Row,
-          { gutter: [12, 12] },
-          ...results.map((item) => {
-            const itemKey = `${item.source}:${item.slug}`;
-            const installState = installing[itemKey];
-            return React.createElement(
-              Col,
-              { key: itemKey, xs: 24, sm: 12, md: 8, lg: 6 },
-              React.createElement(
-                Card,
-                {
-                  hoverable: true,
-                  size: "small",
-                  style: { height: "100%", cursor: "pointer" },
-                  onClick: () => setDetailItem(item),
-                },
+        ? React.createElement(Empty, {
+            description: searchText
+              ? `未找到匹配「${searchText}」的技能`
+              : "输入关键词搜索技能市场",
+            image: Empty.PRESENTED_IMAGE_SIMPLE,
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...results.map((item) => {
+              const itemKey = `${item.source}:${item.slug}`;
+              const installState = installing[itemKey];
+              return React.createElement(
+                Col,
+                { key: itemKey, xs: 24, sm: 12, md: 8, lg: 6 },
                 React.createElement(
-                  "div",
+                  Card,
                   {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 8,
-                    },
-                  },
-                  item.icon_url
-                    ? React.createElement("img", {
-                        src: item.icon_url,
-                        alt: item.name,
-                        style: { width: 24, height: 24, borderRadius: 4 },
-                      })
-                    : React.createElement(
-                        "span",
-                        { style: { fontSize: 18 } },
-                        "📦",
-                      ),
-                  React.createElement(
-                    Tooltip,
-                    { title: item.name },
-                    React.createElement(
-                      Text,
-                      {
-                        strong: true,
-                        style: {
-                          fontSize: 13,
-                          flex: 1,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        },
-                      },
-                      item.name,
-                    ),
-                  ),
-                ),
-                React.createElement(
-                  Paragraph,
-                  {
-                    type: "secondary",
-                    style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
-                    ellipsis: { rows: 2 },
-                  },
-                  item.description || "暂无描述",
-                ),
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      marginTop: 8,
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    },
+                    hoverable: true,
+                    size: "small",
+                    style: { height: "100%", cursor: "pointer" },
+                    onClick: () => setDetailItem(item),
                   },
                   React.createElement(
                     "div",
-                    { style: { display: "flex", gap: 4 } },
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
+                      },
+                    },
+                    item.icon_url
+                      ? React.createElement("img", {
+                          src: item.icon_url,
+                          alt: item.name,
+                          style: { width: 24, height: 24, borderRadius: 4 },
+                        })
+                      : React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          "📦",
+                        ),
                     React.createElement(
-                      Tag,
-                      { color: "geekblue", style: { fontSize: 10 } },
-                      item.source,
-                    ),
-                    item.version
-                      ? React.createElement(
-                          Tag,
-                          { style: { fontSize: 10 } },
-                          `v${item.version}`,
-                        )
-                      : null,
-                  ),
-                  installState
-                    ? React.createElement(
-                        Button,
+                      Tooltip,
+                      { title: item.name },
+                      React.createElement(
+                        Text,
                         {
-                          size: "small",
-                          disabled: true,
-                          icon: LoadingOutlined
-                            ? React.createElement(LoadingOutlined)
-                            : undefined,
-                        },
-                        installState === "starting" ? "启动中" : "安装中",
-                      )
-                    : React.createElement(
-                        Button,
-                        {
-                          type: "primary",
-                          size: "small",
-                          icon: DownloadOutlined
-                            ? React.createElement(DownloadOutlined)
-                            : undefined,
-                          onClick: (e: any) => {
-                            e.stopPropagation();
-                            handleInstallSkill(item);
+                          strong: true,
+                          style: {
+                            fontSize: 13,
+                            flex: 1,
+                            overflow: "hidden",
+                            textOverflow: "ellipsis",
+                            whiteSpace: "nowrap",
                           },
                         },
-                        "安装",
+                        item.name,
                       ),
+                    ),
+                  ),
+                  React.createElement(
+                    Paragraph,
+                    {
+                      type: "secondary",
+                      style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                      ellipsis: { rows: 2 },
+                    },
+                    item.description || "暂无描述",
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 8,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      },
+                    },
+                    React.createElement(
+                      "div",
+                      { style: { display: "flex", gap: 4 } },
+                      React.createElement(
+                        Tag,
+                        { color: "geekblue", style: { fontSize: 10 } },
+                        item.source,
+                      ),
+                      item.version
+                        ? React.createElement(
+                            Tag,
+                            { style: { fontSize: 10 } },
+                            `v${item.version}`,
+                          )
+                        : null,
+                    ),
+                    installState
+                      ? React.createElement(
+                          Button,
+                          {
+                            size: "small",
+                            disabled: true,
+                            icon: LoadingOutlined
+                              ? React.createElement(LoadingOutlined)
+                              : undefined,
+                          },
+                          installState === "starting" ? "启动中" : "安装中",
+                        )
+                      : React.createElement(
+                          Button,
+                          {
+                            type: "primary",
+                            size: "small",
+                            icon: DownloadOutlined
+                              ? React.createElement(DownloadOutlined)
+                              : undefined,
+                            onClick: (e: any) => {
+                              e.stopPropagation();
+                              handleInstallSkill(item);
+                            },
+                          },
+                          "安装",
+                        ),
+                  ),
                 ),
-              ),
-            );
-          }),
-        ),
+              );
+            }),
+          ),
     // Load more button
     hasMore && !loading
       ? React.createElement(
@@ -5375,7 +5581,11 @@ function MarketplacePage() {
                     alt: detailItem.name,
                     style: { width: 28, height: 28, borderRadius: 4 },
                   })
-                : React.createElement("span", { style: { fontSize: 20 } }, "📦"),
+                : React.createElement(
+                    "span",
+                    { style: { fontSize: 20 } },
+                    "📦",
+                  ),
               React.createElement("span", null, detailItem.name),
             ),
             open: true,
@@ -5438,7 +5648,10 @@ function MarketplacePage() {
                 { style: { marginTop: 16 } },
                 React.createElement(
                   Text,
-                  { strong: true, style: { display: "block", marginBottom: 8 } },
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
                   "统计",
                 ),
                 React.createElement(
@@ -5450,7 +5663,13 @@ function MarketplacePage() {
                       { key, style: { textAlign: "center" } },
                       React.createElement(
                         "div",
-                        { style: { fontSize: 18, fontWeight: 600, color: "#1677ff" } },
+                        {
+                          style: {
+                            fontSize: 18,
+                            fontWeight: 600,
+                            color: "#1677ff",
+                          },
+                        },
                         String(value),
                       ),
                       React.createElement(
@@ -5674,11 +5893,7 @@ function MarketplacePage() {
     },
     {
       key: "experts",
-      label: React.createElement(
-        "span",
-        null,
-        "🧑‍🔬 专家模板",
-      ),
+      label: React.createElement("span", null, "🧑‍🔬 专家模板"),
       children: expertsMarketTab,
     },
   ];
@@ -5692,7 +5907,9 @@ function MarketplacePage() {
       extra: React.createElement(
         Button,
         {
-          icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+          icon: ReloadOutlined
+            ? React.createElement(ReloadOutlined)
+            : undefined,
           onClick: () => doSearch(searchText, selectedCategory, {}),
           loading,
         },
