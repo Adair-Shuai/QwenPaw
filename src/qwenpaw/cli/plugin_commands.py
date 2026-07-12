@@ -834,6 +834,15 @@ def uninstall(plugin_id: str):
     if manifest:
         _remove_tool_plugin_from_agents(manifest)
 
+    # Mark as uninstalled so bundled plugins don't get re-installed
+    # on next startup (hot-pluggable behavior)
+    try:
+        from ..plugins.bundled import mark_plugin_uninstalled
+
+        mark_plugin_uninstalled(plugin_id)
+    except Exception:
+        pass  # Non-critical — just won't prevent re-installation
+
     try:
         shutil.rmtree(plugin_dir)
         click.echo(f"✅ Plugin '{plugin_id}' uninstalled successfully")

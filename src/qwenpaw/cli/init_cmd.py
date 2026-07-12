@@ -241,6 +241,18 @@ def init_cmd(
     if ensure_skill_pool_initialized():
         click.echo("✓ Skill pool initialized")
 
+    # --- Ensure bundled plugins are installed ---
+    try:
+        from ..plugins.bundled import ensure_bundled_plugins_installed
+
+        installed = ensure_bundled_plugins_installed()
+        if installed:
+            click.echo(f"✓ Bundled plugins installed: {', '.join(installed)}")
+        else:
+            click.echo("✓ Bundled plugins up to date")
+    except Exception as exc:
+        click.echo(f"⚠ Bundled plugin sync skipped: {exc}")
+
     # Get default workspace path for subsequent operations
     default_workspace = Path(f"{WORKING_DIR}/workspaces/default").expanduser()
 

@@ -493,6 +493,28 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # on first creation — no reload needed afterwards.
             logger.debug("Initializing plugin system...")
 
+            # Sync bundled plugins (e.g. UGSci) into the user's plugins
+            # directory before the loader scans it.  This makes bundled
+            # plugins available automatically while remaining hot-pluggable:
+            # users can uninstall via CLI/API and the .uninstalled marker
+            # prevents re-installation on next startup.
+            try:
+                from ..plugins.bundled import (
+                    ensure_bundled_plugins_installed,
+                )
+
+                newly_installed = ensure_bundled_plugins_installed()
+                if newly_installed:
+                    logger.info(
+                        "Bundled plugins synced: %s",
+                        ", ".join(newly_installed),
+                    )
+            except Exception:
+                logger.warning(
+                    "Failed to sync bundled plugins",
+                    exc_info=True,
+                )
+
             from ..plugins.loader import PluginLoader
             from ..plugins.runtime import RuntimeHelpers
             from ..config.utils import get_plugins_dir

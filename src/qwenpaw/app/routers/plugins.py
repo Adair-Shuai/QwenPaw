@@ -785,6 +785,15 @@ async def uninstall_plugin(plugin_id: str, request: Request):
     # Remove tool entries from all agents
     _remove_plugin_tools_from_agents(plugin_id, meta)
 
+    # Mark as uninstalled so bundled plugins don't get re-installed
+    # on next startup (hot-pluggable behavior)
+    try:
+        from ...plugins.bundled import mark_plugin_uninstalled
+
+        mark_plugin_uninstalled(plugin_id)
+    except Exception:
+        pass  # Non-critical
+
     # Schedule agent reloads so tools disappear immediately
     _schedule_all_agents_reload(request)
 
