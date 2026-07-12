@@ -51,6 +51,7 @@ import {
 import type { FlatMenuEntry } from "./registry/adapter";
 import type { MenuItem } from "../plugins/registry/types";
 import type { ReactNode } from "react";
+import { simpleModeWhitelist } from "./registry/simpleModeWhitelist";
 
 // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -67,14 +68,11 @@ function isMobileSidebarViewport() {
 const INBOX_BADGE_POLLING_MS = 6000;
 
 // ── Simple mode whitelist ─────────────────────────────────────────────────
-
-/** Menu item IDs that remain visible in simple sidebar mode (no groups). */
-const SIMPLE_MODE_WHITELIST = new Set([
-  "core.inbox",
-  "core.cron-jobs",
-  "core.agent-config",
-  "core.models",
-]);
+//
+// The whitelist is now a mutable singleton exported from
+// `registry/simpleModeWhitelist.ts`. Builtin IDs are seeded there, and
+// plugins can add their own IDs at runtime via
+// `window.QwenPaw.sidebar.registerSimpleModeItem(id)`.
 
 /**
  * Flatten a MenuItem tree into a leaf-only list for simple sidebar mode.
@@ -87,11 +85,11 @@ function flattenMenuForSimpleMode(items: MenuItem[]): MenuItem[] {
     const item = rawItem as MenuItem & { __children?: MenuItem[] };
     if (item.__children && item.__children.length > 0) {
       for (const child of item.__children) {
-        if (SIMPLE_MODE_WHITELIST.has(child.id)) {
+        if (simpleModeWhitelist.has(child.id)) {
           result.push(child);
         }
       }
-    } else if (SIMPLE_MODE_WHITELIST.has(item.id)) {
+    } else if (simpleModeWhitelist.has(item.id)) {
       result.push(item);
     }
   }

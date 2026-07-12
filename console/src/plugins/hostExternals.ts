@@ -12,7 +12,10 @@ import React from "react";
 import ReactDOM from "react-dom";
 import * as antd from "antd";
 import * as antdIcons from "@ant-design/icons";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { getApiUrl, getApiToken } from "../api/config";
+import { useAgentStore } from "../stores/agentStore";
 import {
   buildAuditNamespace,
   buildMenuNamespace,
@@ -24,6 +27,10 @@ import {
   type QwenPawSlotNamespace,
 } from "./registry/sdk";
 import { menuRegistry, routeRegistry } from "./registry/store";
+import {
+  registerSimpleModeItem,
+  registerSimpleModeItems,
+} from "../layouts/registry/simpleModeWhitelist";
 import type {
   HostAgentInfo,
   HostSessionInfo,
@@ -54,6 +61,12 @@ export interface HostExternals {
   getSelectedAgentId?: () => string;
   getCurrentSessionId?: () => string | null;
   fetch?: (path: string, init?: RequestInit) => Promise<Response>;
+  /** Set the currently selected agent (updates Zustand store + persists). */
+  setSelectedAgent?: (agentId: string) => void;
+  /** ReactMarkdown component for rendering markdown text. */
+  ReactMarkdown?: typeof ReactMarkdown;
+  /** remarkGfm plugin for ReactMarkdown. */
+  remarkGfm?: typeof remarkGfm;
 }
 
 export interface PluginRouteDeclaration {
@@ -187,6 +200,16 @@ export interface WindowNamespace {
   chat?: QwenPawChatNamespace;
   /** Override audit log (debug). Attached by installHostExternals(). */
   audit?: QwenPawAuditNamespace;
+  /** Sidebar simple-mode whitelist API. Attached by installHostExternals(). */
+  sidebar?: QwenPawSidebarNamespace;
+}
+
+/** Sidebar-related plugin API (simple-mode whitelist, etc.). */
+export interface QwenPawSidebarNamespace {
+  /** Register a single menu item ID for simple-mode visibility. */
+  registerSimpleModeItem(id: string): void;
+  /** Register multiple menu item IDs for simple-mode visibility. */
+  registerSimpleModeItems(ids: string[]): void;
 }
 
 declare global {
@@ -239,6 +262,10 @@ export function installHostExternals(): void {
       apiBaseUrl,
       getApiUrl,
       getApiToken,
+      setSelectedAgent: (agentId: string) =>
+        useAgentStore.getState().setSelectedAgent(agentId),
+      ReactMarkdown,
+      remarkGfm,
     };
   }
 
@@ -247,6 +274,14 @@ export function installHostExternals(): void {
   if (!window.QwenPaw.route) window.QwenPaw.route = buildRouteNamespace();
   if (!window.QwenPaw.slot) window.QwenPaw.slot = buildSlotNamespace();
   if (!window.QwenPaw.audit) window.QwenPaw.audit = buildAuditNamespace();
+
+  // ── Sidebar simple-mode whitelist API ──────────────────────────────────
+  if (!window.QwenPaw.sidebar) {
+    window.QwenPaw.sidebar = {
+      registerSimpleModeItem,
+      registerSimpleModeItems,
+    };
+  }
 
   // ── Back-compat shim ───────────────────────────────────────────────────
   // Legacy registerRoutes(pluginId, routes[]) fans out to:
