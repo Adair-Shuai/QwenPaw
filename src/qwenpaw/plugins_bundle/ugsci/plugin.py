@@ -13,11 +13,13 @@ plugin lifecycle hooks via the standard QwenPaw plugin API.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci")
 
 PLUGIN_ID = "ugsci"
 PLUGIN_NAME = "UGSci"
+PLUGIN_DIR = Path(__file__).parent
 
 
 class UGSciPlugin:
@@ -42,6 +44,24 @@ class UGSciPlugin:
             "[%s] Plugin registered — petroleum domain enhancement active",
             PLUGIN_ID,
         )
+
+        # Register skill provider — installs skills from the plugin's
+        # ``skills/`` directory into the workspace skill pool.
+        try:
+            skills_dir = PLUGIN_DIR / "skills"
+            if skills_dir.exists():
+                api.register_skill_provider(
+                    skills_dir=skills_dir,
+                    enabled_by_default=True,
+                    channels=["all"],
+                )
+                logger.info(
+                    "[%s] Skill provider registered: %s",
+                    PLUGIN_ID,
+                    skills_dir,
+                )
+        except Exception as exc:
+            logger.error("Failed to register skills: %s", exc)
 
         # Register startup hook for any future backend-side initialization
         try:
