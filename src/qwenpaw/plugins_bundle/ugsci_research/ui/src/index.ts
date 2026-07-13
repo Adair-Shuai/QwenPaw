@@ -32,57 +32,60 @@ interface AgentConfig {
 }
 
 // ─── API Helpers ─────────────────────────────────────────────────────────────
+//
+// We use dedicated plugin endpoints (/api/ugsci-research/research-mode/{agentId})
+// instead of the generic PUT /api/agents/{agentId} because AgentProfileConfig
+// uses Pydantic extra="ignore", which silently drops the research_mode field.
 
-async function fetchAgentConfig(agentId: string): Promise<AgentConfig | null> {
+/**
+ * Build the full API URL for a plugin endpoint.
+ *
+ * host.getApiUrl(path) prepends `/api` automatically, so we pass the path
+ * WITHOUT the `/api` prefix.  When host.getApiUrl is not available, we
+ * fall back to constructing the URL manually.
+ */
+function _buildUrl(pathWithoutApi: string): string {
   const QP = (window as any).QwenPaw;
-  const fetchFn = QP?.host?.fetch || window.fetch.bind(window);
-  const baseUrl = QP?.host?.apiBaseUrl || "";
-  try {
-    const resp = await fetchFn(`${baseUrl}/api/agents/${agentId}`);
-    if (!resp.ok) return null;
-    const data = await resp.json();
-    return data;
-  } catch {
-    return null;
+  const host = QP?.host;
+  // host.getApiUrl adds /api prefix for us
+  if (host?.getApiUrl) {
+    return host.getApiUrl(pathWithoutApi);
   }
+  // Fallback: construct manually
+  const base = host?.apiBaseUrl || "";
+  const p = pathWithoutApi.startsWith("/") ? pathWithoutApi : `/${pathWithoutApi}`;
+  return `${base}/api${p}`;
 }
 
-async function updateAgentConfig(
-  agentId: string,
-  config: Partial<AgentConfig>,
-): Promise<boolean> {
+/** Auth-aware fetch that uses host.fetch when available (adds auth headers). */
+function _apiFetch(url: string, init?: RequestInit): Promise<Response> {
   const QP = (window as any).QwenPaw;
-  const fetchFn = QP?.host?.fetch || window.fetch.bind(window);
-  const baseUrl = QP?.host?.apiBaseUrl || "";
-  const token = QP?.host?.getApiToken?.() || "";
-  try {
-    const existing = await fetchAgentConfig(agentId);
-    if (!existing) return false;
-    const merged = { ...existing, ...config };
-    const resp = await fetchFn(`${baseUrl}/api/agents/${agentId}`, {
-      method: "PUT",
-      headers: {
-        "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify(merged),
-    });
-    return resp.ok;
-  } catch {
-    return false;
+  const host = QP?.host;
+  // host.fetch already calls getApiUrl internally, which would double-prefix.
+  // So we use window.fetch directly with the full URL we built above.
+  const token = host?.getApiToken?.() || "";
+  const headers: Record<string, string> = {
+    ...((init?.headers as Record<string, string>) ?? {}),
+  };
+  if (token && !headers.Authorization) {
+    headers.Authorization = `Bearer ${token}`;
   }
+  return window.fetch(url, { ...init, headers });
 }
 
 async function getResearchMode(agentId: string): Promise<ResearchModeConfig> {
-  const config = await fetchAgentConfig(agentId);
-  const rm = config?.research_mode;
-  if (rm && typeof rm === "object") {
+  try {
+    const url = _buildUrl(`/ugsci-research/research-mode/${encodeURIComponent(agentId)}`);
+    const resp = await _apiFetch(url);
+    if (!resp.ok) return { enabled: false, domain: "general" };
+    const data = await resp.json();
     return {
-      enabled: !!rm.enabled,
-      domain: rm.domain || "general",
+      enabled: !!data.enabled,
+      domain: data.domain || "general",
     };
+  } catch {
+    return { enabled: false, domain: "general" };
   }
-  return { enabled: false, domain: "general" };
 }
 
 async function setResearchMode(
@@ -90,12 +93,22 @@ async function setResearchMode(
   enabled: boolean,
   domain?: string,
 ): Promise<boolean> {
-  const current = await getResearchMode(agentId);
-  const rm: ResearchModeConfig = {
-    enabled,
-    domain: (domain as any) || current.domain || "general",
-  };
-  return updateAgentConfig(agentId, { research_mode: rm } as any);
+  try {
+    const current = await getResearchMode(agentId);
+    const body = {
+      enabled,
+      domain: domain || current.domain || "general",
+    };
+    const url = _buildUrl(`/ugsci-research/research-mode/${encodeURIComponent(agentId)}`);
+    const resp = await _apiFetch(url, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
 }
 
 // ─── Research Mode Toggle Component ──────────────────────────────────────────
@@ -179,6 +192,169 @@ function ResearchModeToggle() {
         { color: "cyan", style: { margin: 0, fontSize: 11 } },
         "Research",
       ),
+  );
+}
+
+// ─── Research Mode Header Toggle (button styled like CodingModeToggle) ───────
+
+function ResearchModeHeaderToggle() {
+  const host = getHost();
+  const React = host.React;
+  const { useState, useEffect, useCallback } = React;
+  const { Tooltip, Select, message, Popover, Button, Space } = host.antd;
+  const { ExperimentOutlined, SettingOutlined } = host.antdIcons;
+
+  const QP = (window as any).QwenPaw;
+  const agentId = QP?.host?.getSelectedAgentId?.() || "default";
+  const [enabled, setEnabled] = useState(false);
+  const [domain, setDomain] = useState("general");
+  const [loading, setLoading] = useState(false);
+
+  const refresh = useCallback(async () => {
+    const rm = await getResearchMode(agentId);
+    setEnabled(rm.enabled);
+    setDomain(rm.domain);
+  }, [agentId]);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const handleToggle = async () => {
+    setLoading(true);
+    const newEnabled = !enabled;
+    const ok = await setResearchMode(agentId, newEnabled);
+    if (ok) {
+      setEnabled(newEnabled);
+      message.success(newEnabled ? "🔬 研究模式已启用" : "研究模式已关闭");
+    } else {
+      message.error("切换研究模式失败");
+    }
+    setLoading(false);
+  };
+
+  const handleDomainChange = async (value: string) => {
+    setLoading(true);
+    const ok = await setResearchMode(agentId, enabled, value);
+    if (ok) {
+      setDomain(value);
+    }
+    setLoading(false);
+  };
+
+  const navigateToDashboard = () => {
+    window.location.href = "/ugsci-research-dashboard";
+  };
+
+  const buttonStyle: any = {
+    display: "inline-flex",
+    alignItems: "center",
+    gap: "5px",
+    padding: "4px 10px",
+    borderRadius: "6px",
+    border: enabled ? "1.5px solid #06b6d4" : "1.5px solid rgba(0,0,0,0.12)",
+    background: enabled ? "rgba(6,182,212,0.08)" : "transparent",
+    color: enabled ? "#06b6d4" : "rgba(0,0,0,0.55)",
+    fontSize: "13px",
+    fontWeight: 500,
+    cursor: "pointer",
+    transition: "all 0.18s ease",
+  };
+
+  const isDark =
+    typeof document !== "undefined" &&
+    document.documentElement?.classList?.contains("dark-mode");
+
+  if (isDark) {
+    buttonStyle.border = enabled ? "1.5px solid #22d3ee" : "1.5px solid rgba(255,255,255,0.15)";
+    buttonStyle.color = enabled ? "#22d3ee" : "rgba(255,255,255,0.85)";
+    buttonStyle.background = enabled ? "rgba(6,182,212,0.18)" : "transparent";
+  }
+
+  const settingsBtnStyle: any = {
+    display: "inline-flex",
+    alignItems: "center",
+    padding: "4px 6px",
+    borderRadius: "6px",
+    border: "1.5px solid rgba(0,0,0,0.12)",
+    background: "transparent",
+    cursor: "pointer",
+    color: "rgba(0,0,0,0.55)",
+  };
+  if (isDark) {
+    settingsBtnStyle.border = "1.5px solid rgba(255,255,255,0.15)";
+    settingsBtnStyle.color = "rgba(255,255,255,0.85)";
+  }
+
+  // Popover content: domain selector + dashboard link
+  const popoverContent = React.createElement(
+    "div",
+    { style: { display: "flex", flexDirection: "column", gap: 12, padding: 4, minWidth: 160 } },
+    React.createElement(
+      "div",
+      null,
+      React.createElement(
+        "div",
+        { style: { fontSize: 12, color: "#999", marginBottom: 4 } },
+        "研究领域",
+      ),
+      React.createElement(Select, {
+        size: "small",
+        value: domain,
+        onChange: handleDomainChange,
+        loading,
+        style: { width: "100%" },
+        options: [
+          { value: "general", label: "🔬 通用" },
+          { value: "physics", label: "⚛️ 物理" },
+          { value: "biology", label: "🧬 生物" },
+          { value: "ml", label: "🤖 ML" },
+        ],
+      }),
+    ),
+    React.createElement(
+      Button,
+      {
+        size: "small",
+        type: "link",
+        onClick: navigateToDashboard,
+        style: { padding: 0, textAlign: "left" },
+      },
+      "研究面板 →",
+    ),
+  );
+
+  return React.createElement(
+    "span",
+    { style: { display: "inline-flex", alignItems: "center", gap: 4 } },
+    React.createElement(
+      Tooltip,
+      {
+        title: enabled ? `研究模式已开启 (${domain}) — 点击关闭` : "研究模式 — 点击启用",
+        placement: "bottom",
+      },
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          style: buttonStyle,
+          onClick: () => void handleToggle(),
+          disabled: loading,
+          "aria-label": "Toggle Research Mode",
+        },
+        React.createElement("span", { style: { display: "flex", alignItems: "center" } }, "🔬"),
+        React.createElement("span", { style: { lineHeight: 1 } }, enabled ? `研究 ${domain}` : "研究"),
+      ),
+    ),
+    React.createElement(
+      Popover,
+      { content: popoverContent, placement: "bottomRight", trigger: "click" },
+      React.createElement(
+        "button",
+        { type: "button", style: settingsBtnStyle, "aria-label": "Research settings" },
+        React.createElement(SettingOutlined, { style: { fontSize: 12 } }),
+      ),
+    ),
   );
 }
 
@@ -460,89 +636,183 @@ function ArtifactPanel() {
 
 function ResearchDashboardPage() {
   const React = getHost().React;
-  const { Card, Row, Col, Statistic, Typography, Divider, List, Tag, Space } =
-    getHost().antd;
-  const { ExperimentOutlined, BookOutlined, BarChartOutlined, BulbOutlined } =
-    getHost().antdIcons;
+  const { useState, useEffect, useCallback } = React;
+  const {
+    Card,
+    Row,
+    Col,
+    Statistic,
+    Typography,
+    Divider,
+    List,
+    Tag,
+    Space,
+    Button,
+    Select,
+    Tooltip,
+    message,
+  } = getHost().antd;
+  const {
+    ExperimentOutlined,
+    BookOutlined,
+    BarChartOutlined,
+    BulbOutlined,
+    ArrowRightOutlined,
+    ThunderboltOutlined,
+  } = getHost().antdIcons;
 
   const QP = (window as any).QwenPaw;
   const agentId = QP?.host?.getSelectedAgentId?.() || "default";
-  const [rmConfig, setRmConfig] = React.useState<ResearchModeConfig>({
+  const [rmConfig, setRmConfig] = useState<ResearchModeConfig>({
     enabled: false,
     domain: "general",
   });
+  const [loading, setLoading] = useState(false);
 
-  React.useEffect(() => {
-    getResearchMode(agentId).then(setRmConfig);
+  const refresh = useCallback(async () => {
+    const rm = await getResearchMode(agentId);
+    setRmConfig(rm);
   }, [agentId]);
 
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const handleToggle = async () => {
+    setLoading(true);
+    const ok = await setResearchMode(agentId, !rmConfig.enabled);
+    if (ok) {
+      setRmConfig({ ...rmConfig, enabled: !rmConfig.enabled });
+      message.success(
+        !rmConfig.enabled ? "🔬 研究模式已启用" : "研究模式已关闭",
+      );
+    } else {
+      message.error("切换研究模式失败");
+    }
+    setLoading(false);
+  };
+
+  const handleDomainChange = async (value: string) => {
+    setLoading(true);
+    const ok = await setResearchMode(agentId, rmConfig.enabled, value);
+    if (ok) {
+      setRmConfig({ ...rmConfig, domain: value });
+    }
+    setLoading(false);
+  };
+
+  const navigateToChat = () => {
+    window.location.href = "/chat";
+  };
+
+  const navigateToSkillPool = () => {
+    window.location.href = "/skill-pool";
+  };
+
   const stages = [
-    { name: "SCOPE", desc: "Define research question", icon: "🎯" },
-    { name: "LITERATURE", desc: "Search & review papers", icon: "📚" },
-    { name: "REASON", desc: "Deliberate on findings", icon: "💡" },
-    { name: "METHODOLOGY", desc: "Design the approach", icon: "📋" },
-    { name: "COMPUTE", desc: "Execute computations", icon: "⚙️" },
-    { name: "ANALYZE", desc: "Process results", icon: "📊" },
-    { name: "SYNTHESIZE", desc: "Interpret findings", icon: "🔗" },
-    { name: "WRITE", desc: "Produce deliverable", icon: "✍️" },
+    { name: "SCOPE", desc: "定义研究问题", icon: "🎯" },
+    { name: "LITERATURE", desc: "检索与综述文献", icon: "📚" },
+    { name: "REASON", desc: "推理与思考", icon: "💡" },
+    { name: "METHODOLOGY", desc: "设计研究方法", icon: "📋" },
+    { name: "COMPUTE", desc: "执行计算", icon: "⚙️" },
+    { name: "ANALYZE", desc: "分析结果", icon: "📊" },
+    { name: "SYNTHESIZE", desc: "综合解读", icon: "🔗" },
+    { name: "WRITE", desc: "撰写成果", icon: "✍️" },
   ];
 
   const tools = [
     {
       name: "literature_search",
-      desc: "Search OpenAlex, arXiv, Crossref",
+      desc: "搜索 OpenAlex、arXiv、Crossref",
       icon: "📚",
+      action: "在对话中使用 /research on 后自动可用",
     },
-    { name: "web_search", desc: "Web search for scientific info", icon: "🔍" },
-    { name: "data_analysis", desc: "Analyze CSV, JSON, LAS files", icon: "📊" },
+    {
+      name: "web_search",
+      desc: "网络搜索科学信息",
+      icon: "🔍",
+      action: "在对话中使用 /research on 后自动可用",
+    },
+    {
+      name: "data_analysis",
+      desc: "分析 CSV、JSON、LAS 测井文件",
+      icon: "📊",
+      action: "在对话中使用 /research on 后自动可用",
+    },
   ];
 
   const skills = [
-    { name: "literature-review", desc: "PRISMA systematic review", icon: "📚" },
-    {
-      name: "scientific-visualization",
-      desc: "Publication-quality figures",
-      icon: "📈",
-    },
-    {
-      name: "hypothesis-generation",
-      desc: "Structured hypothesis design",
-      icon: "💡",
-    },
+    { name: "literature-review", desc: "PRISMA 系统综述", icon: "📚" },
+    { name: "scientific-visualization", desc: "出版级图表绘制", icon: "📈" },
+    { name: "hypothesis-generation", desc: "结构化假说设计", icon: "💡" },
   ];
 
   return React.createElement(
     "div",
-    { style: { padding: 24 } },
+    { style: { padding: 24, maxWidth: 1200, margin: "0 auto" } },
+    // ── Header Card with Toggle ──
     React.createElement(
       Card,
       null,
       React.createElement(
-        Space,
-        { align: "center", size: 12 },
-        React.createElement(ExperimentOutlined, {
-          style: { fontSize: 28, color: "#06b6d4" },
-        }),
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 } },
         React.createElement(
-          "div",
-          null,
+          Space,
+          { align: "center", size: 12 },
+          React.createElement(ExperimentOutlined, {
+            style: { fontSize: 28, color: rmConfig.enabled ? "#06b6d4" : "#999" },
+          }),
           React.createElement(
-            Typography.Title,
-            { level: 4, style: { margin: 0 } },
-            "Research Mode Dashboard",
+            "div",
+            null,
+            React.createElement(
+              Typography.Title,
+              { level: 4, style: { margin: 0 } },
+              "研究模式",
+            ),
+            React.createElement(
+              Typography.Text,
+              { type: "secondary" },
+              `Agent: ${agentId}`,
+            ),
           ),
+          rmConfig.enabled
+            ? React.createElement(Tag, { color: "green" }, "已启用")
+            : React.createElement(Tag, { color: "default" }, "未启用"),
+        ),
+        React.createElement(
+          Space,
+          { size: 8 },
+          React.createElement(Select, {
+            size: "small",
+            value: rmConfig.domain,
+            onChange: handleDomainChange,
+            loading,
+            style: { width: 120 },
+            options: [
+              { value: "general", label: "🔬 通用" },
+              { value: "physics", label: "⚛️ 物理" },
+              { value: "biology", label: "🧬 生物" },
+              { value: "ml", label: "🤖 ML" },
+            ],
+          }),
           React.createElement(
-            Typography.Text,
-            { type: "secondary" },
-            `Agent: ${agentId} · Domain: ${rmConfig.domain}`,
+            Button,
+            {
+              type: rmConfig.enabled ? "default" : "primary",
+              danger: rmConfig.enabled,
+              loading,
+              onClick: handleToggle,
+              icon: React.createElement(ExperimentOutlined),
+            },
+            rmConfig.enabled ? "关闭研究模式" : "启用研究模式",
           ),
         ),
-        rmConfig.enabled
-          ? React.createElement(Tag, { color: "green" }, "ACTIVE")
-          : React.createElement(Tag, { color: "default" }, "INACTIVE"),
       ),
     ),
     React.createElement(Divider, null),
+    // ── Stats Row ──
     React.createElement(
       Row,
       { gutter: [16, 16] },
@@ -552,9 +822,12 @@ function ResearchDashboardPage() {
         React.createElement(Card, {
           size: "small",
           children: React.createElement(Statistic, {
-            title: "Research Mode",
-            value: rmConfig.enabled ? "Enabled" : "Disabled",
+            title: "研究模式",
+            value: rmConfig.enabled ? "已启用" : "未启用",
             prefix: React.createElement(ExperimentOutlined),
+            valueStyle: rmConfig.enabled
+              ? { color: "#06b6d4" }
+              : { color: "#999" },
           }),
         }),
       ),
@@ -564,7 +837,7 @@ function ResearchDashboardPage() {
         React.createElement(Card, {
           size: "small",
           children: React.createElement(Statistic, {
-            title: "Domain",
+            title: "研究领域",
             value: rmConfig.domain,
             prefix: React.createElement(BookOutlined),
           }),
@@ -576,7 +849,7 @@ function ResearchDashboardPage() {
         React.createElement(Card, {
           size: "small",
           children: React.createElement(Statistic, {
-            title: "Workflow Stages",
+            title: "工作流阶段",
             value: 8,
             prefix: React.createElement(BarChartOutlined),
           }),
@@ -584,45 +857,91 @@ function ResearchDashboardPage() {
       ),
     ),
     React.createElement(Divider, null),
+    // ── Start Research Button ──
+    React.createElement(
+      "div",
+      { style: { textAlign: "center", marginBottom: 24 } },
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          size: "large",
+          icon: React.createElement(ThunderboltOutlined),
+          disabled: !rmConfig.enabled,
+          onClick: navigateToChat,
+          style: rmConfig.enabled
+            ? { background: "#06b6d4", borderColor: "#06b6d4" }
+            : {},
+        },
+        "开始研究对话",
+      ),
+      !rmConfig.enabled &&
+        React.createElement(
+          "div",
+          { style: { marginTop: 8, fontSize: 12, color: "#999" } },
+          "请先启用研究模式",
+        ),
+    ),
+    // ── Workflow Stages ──
     React.createElement(
       Card,
       {
         size: "small",
-        title: React.createElement(Space, null, "🔬 Research Workflow Stages"),
+        title: React.createElement(Space, null, "🔬 研究工作流阶段"),
+        style: { marginBottom: 16 },
       },
       React.createElement(List, {
         grid: { gutter: 16, column: 4 },
         dataSource: stages,
-        renderItem: (stage: any) =>
+        renderItem: (stage: any, index: number) =>
           React.createElement(
             List.Item,
             null,
             React.createElement(
-              Card,
-              {
-                size: "small",
-                style: { textAlign: "center", height: "100%" },
-              },
+              Tooltip,
+              { title: `${stage.name} — ${stage.desc}` },
               React.createElement(
-                "div",
-                { style: { fontSize: 24 } },
-                stage.icon,
-              ),
-              React.createElement(
-                "div",
-                { style: { fontWeight: 600, fontSize: 12, marginTop: 4 } },
-                stage.name,
-              ),
-              React.createElement(
-                "div",
-                { style: { fontSize: 11, color: "#999" } },
-                stage.desc,
+                Card,
+                {
+                  size: "small",
+                  hoverable: true,
+                  style: {
+                    textAlign: "center",
+                    height: "100%",
+                    cursor: "pointer",
+                    borderLeft: rmConfig.enabled
+                      ? "3px solid #06b6d4"
+                      : "3px solid #e8e8e8",
+                    opacity: rmConfig.enabled ? 1 : 0.6,
+                  },
+                },
+                React.createElement(
+                  "div",
+                  { style: { fontSize: 24 } },
+                  stage.icon,
+                ),
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      fontWeight: 600,
+                      fontSize: 12,
+                      marginTop: 4,
+                    },
+                  },
+                  stage.name,
+                ),
+                React.createElement(
+                  "div",
+                  { style: { fontSize: 11, color: "#999" } },
+                  stage.desc,
+                ),
               ),
             ),
           ),
       }),
     ),
-    React.createElement(Divider, null),
+    // ── Tools + Skills ──
     React.createElement(
       Row,
       { gutter: [16, 16] },
@@ -633,7 +952,7 @@ function ResearchDashboardPage() {
           Card,
           {
             size: "small",
-            title: React.createElement(Space, null, "🛠️ Research Tools"),
+            title: React.createElement(Space, null, "🛠️ 研究工具"),
           },
           React.createElement(List, {
             size: "small",
@@ -641,20 +960,40 @@ function ResearchDashboardPage() {
             renderItem: (tool: any) =>
               React.createElement(
                 List.Item,
-                null,
-                React.createElement(
-                  Space,
-                  null,
-                  React.createElement("span", null, tool.icon),
-                  React.createElement(
-                    "div",
-                    null,
-                    React.createElement("code", null, tool.name),
-                    React.createElement("br"),
+                {
+                  actions: [
                     React.createElement(
-                      Typography.Text,
-                      { type: "secondary", style: { fontSize: 11 } },
-                      tool.desc,
+                      Tooltip,
+                      { title: tool.action },
+                      React.createElement(
+                        Tag,
+                        { color: rmConfig.enabled ? "cyan" : "default" },
+                        rmConfig.enabled ? "可用" : "未启用",
+                      ),
+                    ),
+                  ],
+                },
+                React.createElement(
+                  "div",
+                  { style: { cursor: "default" } },
+                  React.createElement(
+                    Space,
+                    null,
+                    React.createElement("span", { style: { fontSize: 18 } }, tool.icon),
+                    React.createElement(
+                      "div",
+                      null,
+                      React.createElement(
+                        "code",
+                        { style: { fontSize: 13, fontWeight: 600 } },
+                        tool.name,
+                      ),
+                      React.createElement("br"),
+                      React.createElement(
+                        Typography.Text,
+                        { type: "secondary", style: { fontSize: 11 } },
+                        tool.desc,
+                      ),
                     ),
                   ),
                 ),
@@ -669,7 +1008,17 @@ function ResearchDashboardPage() {
           Card,
           {
             size: "small",
-            title: React.createElement(Space, null, "⚡ Research Skills"),
+            title: React.createElement(Space, null, "⚡ 研究技能"),
+            extra: React.createElement(
+              Button,
+              {
+                size: "small",
+                type: "link",
+                onClick: navigateToSkillPool,
+                icon: React.createElement(ArrowRightOutlined),
+              },
+              "技能池",
+            ),
           },
           React.createElement(List, {
             size: "small",
@@ -679,18 +1028,29 @@ function ResearchDashboardPage() {
                 List.Item,
                 null,
                 React.createElement(
-                  Space,
-                  null,
-                  React.createElement("span", null, skill.icon),
+                  "div",
+                  {
+                    style: { cursor: "pointer", width: "100%" },
+                    onClick: navigateToSkillPool,
+                  },
                   React.createElement(
-                    "div",
+                    Space,
                     null,
-                    React.createElement("strong", null, skill.name),
-                    React.createElement("br"),
+                    React.createElement("span", { style: { fontSize: 18 } }, skill.icon),
                     React.createElement(
-                      Typography.Text,
-                      { type: "secondary", style: { fontSize: 11 } },
-                      skill.desc,
+                      "div",
+                      null,
+                      React.createElement(
+                        "strong",
+                        { style: { fontSize: 13 } },
+                        skill.name,
+                      ),
+                      React.createElement("br"),
+                      React.createElement(
+                        Typography.Text,
+                        { type: "secondary", style: { fontSize: 11 } },
+                        skill.desc,
+                      ),
                     ),
                   ),
                 ),
@@ -960,9 +1320,9 @@ function getToolCardShared() {
 
 function buildPlugin() {
   const QP = (window as any).QwenPaw;
-  if (!QP?.menu || !QP?.route) {
+  if (!QP?.route) {
     console.warn(
-      "[ugsci-research] QwenPaw.menu/route API not available — plugin disabled",
+      "[ugsci-research] QwenPaw.route API not available — plugin disabled",
     );
     return;
   }
@@ -970,27 +1330,31 @@ function buildPlugin() {
   const React = getHost().React;
   const PLUGIN_ID = "ugsci_research";
 
-  // ── 1. Register Research Dashboard Route + Menu ─────────────────────
+  // ── 1. Register Research Dashboard Route (accessible from toggle) ──
   QP.route.add(PLUGIN_ID, {
     id: "ugsci_research.dashboard",
     path: "/ugsci-research-dashboard",
     component: ResearchDashboardPage,
   });
 
-  QP.menu.add(PLUGIN_ID, {
-    id: "ugsci_research.dashboard",
-    location: "primary.agentScoped",
-    label: () => "研究模式",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🔬"),
-    route: "ugsci_research.dashboard",
-    order: 9,
-    visible: () => true,
-  });
-
-  // ── 2. Register Simple Mode Whitelist ───────────────────────────────
-  if (QP.sidebar?.registerSimpleModeItems) {
-    QP.sidebar.registerSimpleModeItems(["ugsci_research.dashboard"]);
-    console.info("[ugsci-research] Registered for simple-mode visibility");
+  // ── 2. Register Research Mode Toggle in Header (parallel to Coding Mode) ──
+  // Use the header.toggle slot so the toggle appears right next to the
+  // CodingModeToggle button in the top header bar.
+  if (QP.slot?.fill) {
+    QP.slot.fill(PLUGIN_ID, "header.toggle", () =>
+      React.createElement(ResearchModeHeaderToggle),
+    );
+    console.info("[ugsci-research] Registered header.toggle slot");
+  } else {
+    // Fallback: use chat.rightHeader to place the toggle in the chat header
+    if (QP.chat?.rightHeader?.add) {
+      QP.chat.rightHeader.add(
+        PLUGIN_ID,
+        React.createElement(ResearchModeHeaderToggle),
+        { id: "research-mode-toggle", order: 5 },
+      );
+      console.info("[ugsci-research] Registered chat.rightHeader toggle");
+    }
   }
 
   // ── 3. Register Custom Tool Cards ───────────────────────────────────
@@ -1010,20 +1374,7 @@ function buildPlugin() {
     QP.chat.toolRender(PLUGIN_ID, "data_analysis", DataAnalysisCard);
   }
 
-  // ── 4. Register Research Mode Toggle in Chat Header ────────────────
-  if (QP.chat?.actions?.add) {
-    QP.chat.actions.add(PLUGIN_ID, {
-      id: "research-mode-toggle",
-      label: "Research Mode",
-      render: () => React.createElement(ResearchModeToggle),
-      order: 10,
-    });
-    console.info(
-      "[ugsci-research] Registered chat action: research-mode-toggle",
-    );
-  }
-
-  // ── 5. Register Artifact Panel as Response Slot ─────────────────────
+  // ── 4. Register Artifact Panel as Response Slot ─────────────────────
   if (QP.chat?.response?.append) {
     QP.chat.response.append(
       PLUGIN_ID,

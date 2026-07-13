@@ -451,6 +451,7 @@ export default function Header() {
           <span className={styles.hideOnMobile}>
             <CodingModeToggle />
           </span>
+          <Slot name="header.toggle" kind="fill" />
           <div className={styles.headerDivider} />
           <span className={styles.hideOnMobile}>
             <LanguageSwitcher />

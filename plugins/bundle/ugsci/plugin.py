@@ -52,7 +52,7 @@ class UGSciPlugin:
             if skills_dir.exists():
                 api.register_skill_provider(
                     skills_dir=skills_dir,
-                    enabled_by_default=True,
+                    enabled_by_default=False,
                     channels=["all"],
                 )
                 logger.info(

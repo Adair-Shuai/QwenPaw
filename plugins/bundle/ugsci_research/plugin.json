@@ -10,7 +10,7 @@
   },
   "author": "UGSci Team",
   "entry": {
-    "frontend": "static/index.js",
+    "frontend": "ui/dist/index.js",
     "backend": "plugin.py"
   },
   "dependencies": [],

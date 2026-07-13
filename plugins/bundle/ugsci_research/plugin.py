@@ -19,6 +19,9 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
+from fastapi import APIRouter
+from pydantic import BaseModel
+
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci_research")
 
 PLUGIN_ID = "ugsci_research"
@@ -187,6 +190,8 @@ def _register_research_mode(api) -> None:
             )
             return HookResult()
 
+    from qwenpaw.runtime.tool_registry import ToolDescriptor
+
     class ResearchMode(AgentMode):
         """Research Mode — scientific research workflow bundle."""
 
@@ -194,6 +199,50 @@ def _register_research_mode(api) -> None:
 
         def hooks(self):
             return [ResearchContextHook(owner_mode=self)]
+
+        def tools(self):
+            """Register research tools, gated by ``requires_modes=('research',)``.
+
+            Tools registered here are automatically included in the
+            workspace ``ToolRegistry`` via ``AgentMode.setup()``.  The
+            ``requires_modes`` gate ensures they only appear when
+            research mode is active — no manual config toggling needed.
+            """
+            return [
+                ToolDescriptor(
+                    name="web_search",
+                    func=_web_search,
+                    enabled_by_default=True,
+                    requires_modes=("research",),
+                    async_execution=True,
+                    description="Search the web for scientific information",
+                    metadata={"icon": "🔍"},
+                ),
+                ToolDescriptor(
+                    name="literature_search",
+                    func=_literature_search,
+                    enabled_by_default=True,
+                    requires_modes=("research",),
+                    async_execution=True,
+                    description=(
+                        "Search academic databases (OpenAlex, arXiv, "
+                        "Crossref) for scientific papers"
+                    ),
+                    metadata={"icon": "📚"},
+                ),
+                ToolDescriptor(
+                    name="data_analysis",
+                    func=_data_analysis,
+                    enabled_by_default=True,
+                    requires_modes=("research",),
+                    async_execution=True,
+                    description=(
+                        "Analyze data files (CSV, JSON, LAS well logs) "
+                        "with summary statistics and curve information"
+                    ),
+                    metadata={"icon": "📊"},
+                ),
+            ]
 
         def prompt_contributors(self):
             return [ResearchModeContributor()]
@@ -615,6 +664,46 @@ async def _analyze_las(
 # Plugin entry point
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# HTTP API — dedicated endpoints for research_mode (bypasses Pydantic)
+# ---------------------------------------------------------------------------
+
+class ResearchModeRequest(BaseModel):
+    """Request body for setting research mode."""
+
+    enabled: bool
+    domain: str = "general"
+
+
+def _build_research_router() -> APIRouter:
+    """Build a FastAPI router with GET/PUT endpoints for research_mode."""
+    router = APIRouter()
+
+    @router.get("/research-mode/{agent_id}")
+    async def get_research_mode(agent_id: str) -> Dict[str, Any]:
+        """Get the research_mode configuration for an agent."""
+        return _read_research_mode_config(agent_id)
+
+    @router.put("/research-mode/{agent_id}")
+    async def put_research_mode(
+        agent_id: str,
+        body: ResearchModeRequest,
+    ) -> Dict[str, Any]:
+        """Set the research_mode configuration for an agent.
+
+        Writes directly to ``agent.json``, bypassing the Pydantic
+        ``AgentProfileConfig`` model which would drop the field.
+        """
+        rm_config = {
+            "enabled": body.enabled,
+            "domain": body.domain or "general",
+        }
+        _write_research_mode_config(agent_id, rm_config)
+        return rm_config
+
+    return router
+
+
 class UGSciResearchPlugin:
     """UGSci Research plugin backend entry point."""
 
@@ -630,37 +719,24 @@ class UGSciResearchPlugin:
         except Exception as exc:
             logger.error("Failed to register ResearchMode: %s", exc)
 
-        # 2. Register tools
+        # 1b. Register HTTP router for research_mode GET/PUT
         try:
-            api.register_tool(
-                tool_name="web_search",
-                tool_func=_web_search,
-                description="Search the web for scientific information",
-                icon="🔍",
-                enabled=False,
+            api.register_http_router(
+                _build_research_router(),
+                prefix="/ugsci-research",
+                tags=["ugsci-research"],
             )
-            api.register_tool(
-                tool_name="literature_search",
-                tool_func=_literature_search,
-                description=(
-                    "Search academic databases (OpenAlex, arXiv, Crossref) "
-                    "for scientific papers"
-                ),
-                icon="📚",
-                enabled=False,
-            )
-            api.register_tool(
-                tool_name="data_analysis",
-                tool_func=_data_analysis,
-                description=(
-                    "Analyze data files (CSV, JSON, LAS well logs) "
-                    "with summary statistics and curve information"
-                ),
-                icon="📊",
-                enabled=False,
+            logger.info(
+                "[%s] HTTP router registered at /api/ugsci-research",
+                PLUGIN_ID,
             )
         except Exception as exc:
-            logger.error("Failed to register tools: %s", exc)
+            logger.error("Failed to register HTTP router: %s", exc)
+
+        # 2. Tools are registered via ResearchMode.tools() as ToolDescriptor
+        #    instances with requires_modes=('research',).  This ensures they
+        #    are added to the workspace ToolRegistry and only appear when
+        #    research mode is active.  No api.register_tool() calls needed.
 
         # 3. Register skills
         try:
@@ -668,7 +744,7 @@ class UGSciResearchPlugin:
             if skills_dir.exists():
                 api.register_skill_provider(
                     skills_dir=skills_dir,
-                    enabled_by_default=True,
+                    enabled_by_default=False,
                     channels=["all"],
                 )
                 logger.info(
@@ -743,7 +819,7 @@ class UGSciResearchPlugin:
             new_enabled = True
         elif action == "off":
             new_enabled = False
-        if action == "status":
+        elif action == "status":
             status_text = (
                 f"Research Mode: {'ENABLED' if currently_enabled else 'DISABLED'}"
                 f"\nDomain: {current.get('domain', 'general')}"
