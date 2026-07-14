@@ -8,7 +8,7 @@
  * - 只读/编辑模式切换
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Segmented, Space, Tooltip } from "antd";
+import { Button, Space, Tooltip } from "antd";
 import {
   EditOutlined,
   EyeOutlined,
@@ -24,7 +24,7 @@ let monacoLoaded = false;
 async function loadMonaco() {
   if (monacoLoaded) return true;
   try {
-    const monaco = await import("monaco-editor");
+    await import("monaco-editor");
     // 配置 worker（如果需要）
     monacoLoaded = true;
     return true;
@@ -34,15 +34,35 @@ async function loadMonaco() {
 }
 
 // 根据文件扩展名推断语言
-function detectLanguage(extension?: string, mimeType?: string): string {
+function detectLanguage(extension?: string): string {
   const ext = extension?.toLowerCase();
   const map: Record<string, string> = {
-    js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript",
-    py: "python", java: "java", c: "c", cpp: "cpp", go: "go",
-    rs: "rust", rb: "ruby", php: "php", sql: "sql", sh: "shell",
-    bash: "shell", css: "css", less: "less", scss: "scss",
-    html: "html", htm: "html", json: "json", xml: "xml", yaml: "yaml",
-    yml: "yaml", md: "markdown", vue: "html",
+    js: "javascript",
+    jsx: "javascript",
+    ts: "typescript",
+    tsx: "typescript",
+    py: "python",
+    java: "java",
+    c: "c",
+    cpp: "cpp",
+    go: "go",
+    rs: "rust",
+    rb: "ruby",
+    php: "php",
+    sql: "sql",
+    sh: "shell",
+    bash: "shell",
+    css: "css",
+    less: "less",
+    scss: "scss",
+    html: "html",
+    htm: "html",
+    json: "json",
+    xml: "xml",
+    yaml: "yaml",
+    yml: "yaml",
+    md: "markdown",
+    vue: "html",
   };
   return map[ext ?? ""] ?? "plaintext";
 }
@@ -62,7 +82,7 @@ const CodeRenderer: React.FC<RendererContext> = ({
   const prevContentRef = useRef<string>("");
 
   const content = artifact.textContent ?? "";
-  const language = detectLanguage(artifact.extension, artifact.mimeType);
+  const language = detectLanguage(artifact.extension);
   const readOnly = forceReadOnly || !editable;
 
   // 初始化 Monaco Editor
@@ -93,7 +113,8 @@ const CodeRenderer: React.FC<RendererContext> = ({
         lineNumbers: "on",
         folding: true,
         renderWhitespace: "selection",
-        fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+        fontFamily:
+          "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
       });
       editorRef.current = editor;
     })();
@@ -118,20 +139,26 @@ const CodeRenderer: React.FC<RendererContext> = ({
 
     const prev = prevContentRef.current;
     // 如果新内容是旧内容的追加，只插入新增部分
-    if (content.startsWith(prev) && prev.length > 0 && content.length > prev.length) {
+    if (
+      content.startsWith(prev) &&
+      prev.length > 0 &&
+      content.length > prev.length
+    ) {
       const appended = content.slice(prev.length);
       const model = modelRef.current;
       const lastLine = model.getLineCount();
       const lastColumn = model.getLineMaxColumn(lastLine);
-      model.applyEdits([{
-        range: {
-          startLineNumber: lastLine,
-          startColumn: lastColumn,
-          endLineNumber: lastLine,
-          endColumn: lastColumn,
+      model.applyEdits([
+        {
+          range: {
+            startLineNumber: lastLine,
+            startColumn: lastColumn,
+            endLineNumber: lastLine,
+            endColumn: lastColumn,
+          },
+          text: appended,
         },
-        text: appended,
-      }]);
+      ]);
       // 自动滚动到底部
       editorRef.current.revealLine(model.getLineCount());
     } else if (content !== prev) {
@@ -184,11 +211,15 @@ const CodeRenderer: React.FC<RendererContext> = ({
         }}
       >
         <Space size={4}>
-          <span style={{ fontSize: 11, color: "#999", textTransform: "uppercase" }}>
+          <span
+            style={{ fontSize: 11, color: "#999", textTransform: "uppercase" }}
+          >
             {language}
           </span>
           {artifact.isStreaming && (
-            <span style={{ fontSize: 11, color: "#52c41a" }}>● {t("workspace.streaming")}</span>
+            <span style={{ fontSize: 11, color: "#52c41a" }}>
+              ● {t("workspace.streaming")}
+            </span>
           )}
         </Space>
         <Space size={2}>
@@ -196,12 +227,20 @@ const CodeRenderer: React.FC<RendererContext> = ({
             <Button
               size="small"
               type="text"
-              icon={copied ? <CheckOutlined style={{ color: "#52c41a" }} /> : <CopyOutlined />}
+              icon={
+                copied ? (
+                  <CheckOutlined style={{ color: "#52c41a" }} />
+                ) : (
+                  <CopyOutlined />
+                )
+              }
               onClick={handleCopy}
             />
           </Tooltip>
           {!forceReadOnly && (
-            <Tooltip title={editable ? t("workspace.readOnly") : t("workspace.edit")}>
+            <Tooltip
+              title={editable ? t("workspace.readOnly") : t("workspace.edit")}
+            >
               <Button
                 size="small"
                 type="text"
@@ -211,7 +250,12 @@ const CodeRenderer: React.FC<RendererContext> = ({
             </Tooltip>
           )}
           <Tooltip title={t("workspace.download")}>
-            <Button size="small" type="text" icon={<DownloadOutlined />} onClick={handleDownload} />
+            <Button
+              size="small"
+              type="text"
+              icon={<DownloadOutlined />}
+              onClick={handleDownload}
+            />
           </Tooltip>
         </Space>
       </div>

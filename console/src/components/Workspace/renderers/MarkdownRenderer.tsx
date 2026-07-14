@@ -17,7 +17,13 @@
  *
  * 4. 工具栏：代码/预览切换、编辑/只读切换、下载、全屏
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { Button, Segmented, Space, Tooltip, Spin } from "antd";
 import {
   CodeOutlined,
@@ -25,7 +31,6 @@ import {
   EditOutlined,
   DownloadOutlined,
   FullscreenOutlined,
-  ReloadOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
@@ -80,7 +85,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
     return (
       <TipTapMarkdownPreview
         content={content}
-        isStreaming={artifact.isStreaming}
+        isStreaming={artifact.isStreaming ?? false}
         theme={theme}
       />
     );
@@ -95,7 +100,8 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
           padding: "12px",
           fontSize: 13,
           lineHeight: 1.6,
-          fontFamily: "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+          fontFamily:
+            "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
           whiteSpace: "pre-wrap",
           wordBreak: "break-word",
           color: theme === "dark" ? "#e0e0e0" : "#333",
@@ -139,7 +145,9 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         />
         <Space size={2}>
           {!readOnly && (
-            <Tooltip title={editable ? t("workspace.readOnly") : t("workspace.edit")}>
+            <Tooltip
+              title={editable ? t("workspace.readOnly") : t("workspace.edit")}
+            >
               <Button
                 size="small"
                 type="text"
@@ -180,7 +188,13 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         {viewMode === "code" && codeContent}
         {viewMode === "split" && (
           <div style={{ display: "flex", height: "100%" }}>
-            <div style={{ flex: 1, overflow: "auto", borderRight: "1px solid #f0f0f0" }}>
+            <div
+              style={{
+                flex: 1,
+                overflow: "auto",
+                borderRight: "1px solid #f0f0f0",
+              }}
+            >
               {codeContent}
             </div>
             <div style={{ flex: 1, overflow: "auto" }}>{previewContent}</div>
@@ -236,33 +250,50 @@ const TipTapMarkdownPreview: React.FC<{
             // 使用 Markdown 扩展解析 markdown → JSON → React
             // 如果 Markdown 扩展不可用，退化为简单的 HTML 渲染
             return renderToReactElement({
-              content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: md }] }] },
+              content: {
+                type: "doc",
+                content: [
+                  { type: "paragraph", content: [{ type: "text", text: md }] },
+                ],
+              },
               extensions,
             });
           } catch (err) {
-            console.error("[Workspace MarkdownRenderer] TipTap render error:", err);
+            console.error(
+              "[Workspace MarkdownRenderer] TipTap render error:",
+              err,
+            );
             return <SimpleMarkdownFallback content={md} />;
           }
         };
         setTiptapLoaded(true);
       } catch (err) {
-        console.warn("[Workspace MarkdownRenderer] TipTap not available, using fallback:", err);
+        console.warn(
+          "[Workspace MarkdownRenderer] TipTap not available, using fallback:",
+          err,
+        );
         setRenderError("tiptap-unavailable");
       }
     })();
 
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   // TipTap 未加载时使用简单的 markdown 渲染
   if (renderError === "tiptap-unavailable" || !tiptapLoaded) {
-    return <SimpleMarkdownFallback content={content} isStreaming={isStreaming} />;
+    return (
+      <SimpleMarkdownFallback content={content} isStreaming={isStreaming} />
+    );
   }
 
   const rendered = renderFnRef.current?.(content);
   return (
     <div
-      className={`workspace-markdown-preview ${theme === "dark" ? "dark" : "light"}`}
+      className={`workspace-markdown-preview ${
+        theme === "dark" ? "dark" : "light"
+      }`}
       style={{
         padding: "12px 16px",
         fontSize: 14,
@@ -287,7 +318,9 @@ const SimpleMarkdownFallback: React.FC<{
   // 这里做最简单的渲染，实际应复用项目中已有的 Markdown 渲染组件
   return (
     <div style={{ padding: "12px 16px", fontSize: 14, lineHeight: 1.8 }}>
-      <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>
+      <pre
+        style={{ whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}
+      >
         {content}
         {isStreaming && <span className="cursor-blink">▋</span>}
       </pre>

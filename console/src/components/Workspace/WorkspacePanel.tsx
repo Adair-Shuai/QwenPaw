@@ -25,13 +25,23 @@
  *
  * 通过 <Slot name="chat.rightPanel" kind="fill" /> 集成到 Chat 页面
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Button, Tabs, Dropdown, Tooltip, Space, ConfigProvider } from "antd";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { Button, Dropdown, Tooltip, Space, ConfigProvider } from "antd";
 import type { MenuProps } from "antd";
 import {
-  CloseOutlined, CloseCircleOutlined, PushpinOutlined,
-  PushpinFilled, MoreOutlined, ColumnWidthOutlined,
-  CompressOutlined, ExpandOutlined, ReloadOutlined,
+  CloseOutlined,
+  CloseCircleOutlined,
+  PushpinOutlined,
+  PushpinFilled,
+  CompressOutlined,
+  ExpandOutlined,
+  FileTextOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useWorkspaceStore } from "./store/workspaceStore";
@@ -56,13 +66,28 @@ const WorkspacePanel: React.FC = () => {
   const locale = "zh-CN"; // 从 i18n 获取
 
   // 注册内置渲染器
-  useEffect(() => { ensureRenderers(); }, []);
+  useEffect(() => {
+    ensureRenderers();
+  }, []);
 
   const {
-    tabs, activeTabId, panelOpen, panelWidth, isFullscreen,
-    setActiveTab, closeTab, closeOtherTabs, closeAllTabs,
-    togglePanel, setPanelOpen, setPanelWidth, toggleFullscreen,
-    pinTab, unpinTab, renameTab, getArtifact, updateArtifact, openArtifact,
+    tabs,
+    activeTabId,
+    panelOpen,
+    panelWidth,
+    isFullscreen,
+    setActiveTab,
+    closeTab,
+    closeOtherTabs,
+    closeAllTabs,
+    setPanelOpen,
+    setPanelWidth,
+    toggleFullscreen,
+    pinTab,
+    unpinTab,
+    getArtifact,
+    updateArtifact,
+    openArtifact,
   } = useWorkspaceStore();
 
   const [resizing, setResizing] = useState(false);
@@ -91,25 +116,30 @@ const WorkspacePanel: React.FC = () => {
   }, [resizing, setPanelWidth]);
 
   // ── 构建工作区 API ──
-  const workspaceApi: WorkspaceApi = useMemo(() => ({
-    updateArtifact,
-    closeTab,
-    openArtifact,
-    download: (artifact: WorkspaceArtifact) => {
-      if (artifact.binaryUrl) {
-        window.open(artifact.binaryUrl, "_blank");
-      } else if (artifact.textContent) {
-        const blob = new Blob([artifact.textContent], { type: artifact.mimeType });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = artifact.title;
-        a.click();
-        URL.revokeObjectURL(url);
-      }
-    },
-    fullscreen: (_artifact: WorkspaceArtifact) => toggleFullscreen(),
-  }), [updateArtifact, closeTab, openArtifact, toggleFullscreen]);
+  const workspaceApi: WorkspaceApi = useMemo(
+    () => ({
+      updateArtifact,
+      closeTab,
+      openArtifact,
+      download: (artifact: WorkspaceArtifact) => {
+        if (artifact.binaryUrl) {
+          window.open(artifact.binaryUrl, "_blank");
+        } else if (artifact.textContent) {
+          const blob = new Blob([artifact.textContent], {
+            type: artifact.mimeType,
+          });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = artifact.title;
+          a.click();
+          URL.revokeObjectURL(url);
+        }
+      },
+      fullscreen: (_artifact: WorkspaceArtifact) => toggleFullscreen(),
+    }),
+    [updateArtifact, closeTab, openArtifact, toggleFullscreen],
+  );
 
   // ── 获取当前激活的 Artifact ──
   const activeArtifact = activeTabId ? getArtifact(activeTabId) : undefined;
@@ -133,41 +163,48 @@ const WorkspacePanel: React.FC = () => {
   }, [activeArtifact, theme, locale, workspaceApi]);
 
   // ── 标签页右键菜单 ──
-  const tabContextMenu = useCallback((artifactId: string, isPinned: boolean): MenuProps["items"] => [
-    {
-      key: "close",
-      label: t("workspace.closeTab"),
-      icon: <CloseOutlined />,
-      onClick: () => closeTab(artifactId),
-    },
-    {
-      key: "closeOthers",
-      label: t("workspace.closeOthers"),
-      icon: <CloseCircleOutlined />,
-      onClick: () => closeOtherTabs(artifactId),
-    },
-    { type: "divider" },
-    {
-      key: "pin",
-      label: isPinned ? t("workspace.unpin") : t("workspace.pin"),
-      icon: isPinned ? <PushpinFilled /> : <PushpinOutlined />,
-      onClick: () => isPinned ? unpinTab(artifactId) : pinTab(artifactId),
-    },
-    {
-      key: "closeAll",
-      label: t("workspace.closeAll"),
-      danger: true,
-      onClick: () => closeAllTabs(),
-    },
-  ], [t, closeTab, closeOtherTabs, closeAllTabs, pinTab, unpinTab]);
+  const tabContextMenu = useCallback(
+    (artifactId: string, isPinned: boolean): MenuProps["items"] => [
+      {
+        key: "close",
+        label: t("workspace.closeTab"),
+        icon: <CloseOutlined />,
+        onClick: () => closeTab(artifactId),
+      },
+      {
+        key: "closeOthers",
+        label: t("workspace.closeOthers"),
+        icon: <CloseCircleOutlined />,
+        onClick: () => closeOtherTabs(artifactId),
+      },
+      { type: "divider" },
+      {
+        key: "pin",
+        label: isPinned ? t("workspace.unpin") : t("workspace.pin"),
+        icon: isPinned ? <PushpinFilled /> : <PushpinOutlined />,
+        onClick: () => (isPinned ? unpinTab(artifactId) : pinTab(artifactId)),
+      },
+      {
+        key: "closeAll",
+        label: t("workspace.closeAll"),
+        danger: true,
+        onClick: () => closeAllTabs(),
+      },
+    ],
+    [t, closeTab, closeOtherTabs, closeAllTabs, pinTab, unpinTab],
+  );
 
-  // ── 如果面板关闭或没有标签页，不渲染 ──
-  if (!panelOpen || tabs.length === 0) return null;
+  // ── 面板关闭时不渲染 ──
+  if (!panelOpen) return null;
 
   const RendererComponent = rendererMatch?.renderer.component;
 
   return (
-    <ConfigProvider theme={{ token: { colorBgContainer: theme === "dark" ? "#1e1e1e" : "#fff" } }}>
+    <ConfigProvider
+      theme={{
+        token: { colorBgContainer: theme === "dark" ? "#1e1e1e" : "#fff" },
+      }}
+    >
       <div
         ref={panelRef}
         className="workspace-panel"
@@ -203,7 +240,14 @@ const WorkspacePanel: React.FC = () => {
           {/* 标签页列表 */}
           <div
             className="workspace-tabs-scroll"
-            style={{ flex: 1, display: "flex", alignItems: "center", overflowX: "auto", gap: 1, height: "100%" }}
+            style={{
+              flex: 1,
+              display: "flex",
+              alignItems: "center",
+              overflowX: "auto",
+              gap: 1,
+              height: "100%",
+            }}
           >
             {tabs.map((tab) => {
               const isActive = tab.artifactId === activeTabId;
@@ -211,7 +255,9 @@ const WorkspacePanel: React.FC = () => {
               return (
                 <Dropdown
                   key={tab.artifactId}
-                  menu={{ items: tabContextMenu(tab.artifactId, tab.pinned ?? false) }}
+                  menu={{
+                    items: tabContextMenu(tab.artifactId, tab.pinned ?? false),
+                  }}
                   trigger={["contextMenu"]}
                 >
                   <div
@@ -233,22 +279,44 @@ const WorkspacePanel: React.FC = () => {
                       flexShrink: 0,
                       maxWidth: 180,
                       background: isActive
-                        ? (theme === "dark" ? "#2a2a2a" : "#f0f5ff")
+                        ? theme === "dark"
+                          ? "#2a2a2a"
+                          : "#f0f5ff"
                         : "transparent",
                       color: isActive
-                        ? (theme === "dark" ? "#fff" : "#1677ff")
-                        : (theme === "dark" ? "#aaa" : "#666"),
+                        ? theme === "dark"
+                          ? "#fff"
+                          : "#1677ff"
+                        : theme === "dark"
+                        ? "#aaa"
+                        : "#666",
                       border: isActive
-                        ? `1px solid ${theme === "dark" ? "#1677ff" : "#91caff"}`
+                        ? `1px solid ${
+                            theme === "dark" ? "#1677ff" : "#91caff"
+                          }`
                         : "1px solid transparent",
                       transition: "all 0.15s ease",
                     }}
                   >
-                    {tab.pinned && <PushpinFilled style={{ fontSize: 10, color: "#faad14" }} />}
-                    {tab.loading && (
-                      <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#52c41a", animation: "pulse 1s infinite" }} />
+                    {tab.pinned && (
+                      <PushpinFilled
+                        style={{ fontSize: 10, color: "#faad14" }}
+                      />
                     )}
-                    <span style={{ overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {tab.loading && (
+                      <span
+                        style={{
+                          width: 6,
+                          height: 6,
+                          borderRadius: "50%",
+                          background: "#52c41a",
+                          animation: "pulse 1s infinite",
+                        }}
+                      />
+                    )}
+                    <span
+                      style={{ overflow: "hidden", textOverflow: "ellipsis" }}
+                    >
                       {artifact?.icon} {tab.title}
                     </span>
                     {!tab.pinned && (
@@ -268,7 +336,13 @@ const WorkspacePanel: React.FC = () => {
 
           {/* 工具栏按钮 */}
           <Space size={0} style={{ flexShrink: 0, paddingLeft: 4 }}>
-            <Tooltip title={isFullscreen ? t("workspace.exitFullscreen") : t("workspace.fullscreen")}>
+            <Tooltip
+              title={
+                isFullscreen
+                  ? t("workspace.exitFullscreen")
+                  : t("workspace.fullscreen")
+              }
+            >
               <Button
                 size="small"
                 type="text"
@@ -289,10 +363,40 @@ const WorkspacePanel: React.FC = () => {
 
         {/* ── 渲染器区域 ── */}
         <div style={{ flex: 1, overflow: "hidden", position: "relative" }}>
-          {rendererContext && RendererComponent ? (
+          {tabs.length === 0 ? (
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: theme === "dark" ? "#666" : "#999",
+                gap: 8,
+                padding: 24,
+                textAlign: "center",
+              }}
+            >
+              <FileTextOutlined style={{ fontSize: 32, opacity: 0.4 }} />
+              <span style={{ fontSize: 13 }}>
+                {t(
+                  "workspace.emptyHint",
+                  "AI 生成的文件和内容将在此处显示。点击工具卡片中的“在工作区打开”按钮即可预览。",
+                )}
+              </span>
+            </div>
+          ) : rendererContext && RendererComponent ? (
             <RendererComponent {...rendererContext} />
           ) : (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", color: "#999" }}>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "#999",
+              }}
+            >
               {t("workspace.noRenderer")}
             </div>
           )}

@@ -11,9 +11,8 @@
  * 3. 支持优先级、MIME 类型、扩展名、来源类型多维度匹配
  * 4. 注册返回 Disposable，支持插件卸载时自动注销
  */
-import type { Disposable } from "../../plugins/registry/types";
+import type { Disposable } from "../../../plugins/registry/types";
 import type {
-  ArtifactSource,
   RendererMatch,
   RendererRegistration,
   WorkspaceArtifact,
@@ -116,9 +115,7 @@ class RendererRegistryImpl {
     const sourceMatches = all
       .filter(
         (r) =>
-          r.sources?.includes(artifact.source) &&
-          !r.mimeTypes &&
-          !r.extensions,
+          r.sources?.includes(artifact.source) && !r.mimeTypes && !r.extensions,
       )
       .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
 

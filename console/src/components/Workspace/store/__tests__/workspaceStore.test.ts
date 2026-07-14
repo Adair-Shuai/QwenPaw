@@ -3,7 +3,7 @@
  */
 import { describe, it, expect, beforeEach } from "vitest";
 import { useWorkspaceStore } from "../workspaceStore";
-import type { WorkspaceArtifact } from "../types";
+import type { WorkspaceArtifact } from "../../types";
 
 beforeEach(() => {
   // Reset store to clean state
@@ -138,9 +138,9 @@ describe("WorkspaceStore.updateArtifact", () => {
       title: "New Title",
     });
 
-    const tab = useWorkspaceStore.getState().tabs.find(
-      (t) => t.artifactId === "a1",
-    );
+    const tab = useWorkspaceStore
+      .getState()
+      .tabs.find((t) => t.artifactId === "a1");
     expect(tab?.title).toBe("New Title");
   });
 
@@ -254,8 +254,6 @@ describe("WorkspaceStore.getActiveArtifact", () => {
   });
 
   it("returns undefined when no active tab", () => {
-    expect(
-      useWorkspaceStore.getState().getActiveArtifact(),
-    ).toBeUndefined();
+    expect(useWorkspaceStore.getState().getActiveArtifact()).toBeUndefined();
   });
 });

@@ -203,7 +203,7 @@ export interface WindowNamespace {
   /** Sidebar simple-mode whitelist API. Attached by installHostExternals(). */
   sidebar?: QwenPawSidebarNamespace;
   /** Workspace panel API (artifact renderers, open/close tabs). */
-  workspace?: import("../../components/Workspace/workspaceSdk").QwenPawWorkspaceNamespace;
+  workspace?: import("../components/Workspace/workspaceSdk").QwenPawWorkspaceNamespace;
 }
 
 /** Sidebar-related plugin API (simple-mode whitelist, etc.). */

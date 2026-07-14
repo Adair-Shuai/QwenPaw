@@ -2,11 +2,8 @@
  * rendererRegistry.test.ts — 渲染器注册中心测试
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import {
-  rendererRegistry,
-  MimeTypes,
-} from "../rendererRegistry";
-import type { RendererRegistration, WorkspaceArtifact } from "../types";
+import { rendererRegistry, MimeTypes } from "../rendererRegistry";
+import type { RendererRegistration, WorkspaceArtifact } from "../../types";
 
 beforeEach(() => {
   rendererRegistry.__resetForTests();

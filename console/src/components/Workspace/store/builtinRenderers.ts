@@ -21,7 +21,7 @@
  *   4. 可执行类：React 组件、Sandpack
  *   5. 科学数据类（预留）：测井曲线、三维网格
  */
-import type { Disposable } from "../../plugins/registry/types";
+import type { Disposable } from "../../../plugins/registry/types";
 import { rendererRegistry } from "./rendererRegistry";
 import { MimeTypes } from "./rendererRegistry";
 import type { RendererRegistration } from "../types";
@@ -89,8 +89,24 @@ const builtinRenderers: RendererRegistration[] = [
       MimeTypes.PLAIN,
     ],
     extensions: [
-      "js", "jsx", "ts", "tsx", "py", "java", "c", "cpp", "go",
-      "rs", "rb", "php", "sql", "sh", "bash", "css", "less", "scss",
+      "js",
+      "jsx",
+      "ts",
+      "tsx",
+      "py",
+      "java",
+      "c",
+      "cpp",
+      "go",
+      "rs",
+      "rb",
+      "php",
+      "sql",
+      "sh",
+      "bash",
+      "css",
+      "less",
+      "scss",
     ],
     priority: 5,
     editable: true,
@@ -159,8 +175,11 @@ const builtinRenderers: RendererRegistration[] = [
     name: "Image",
     component: ImageRenderer,
     mimeTypes: [
-      MimeTypes.PNG, MimeTypes.JPEG, MimeTypes.GIF,
-      MimeTypes.SVG, MimeTypes.WEBP,
+      MimeTypes.PNG,
+      MimeTypes.JPEG,
+      MimeTypes.GIF,
+      MimeTypes.SVG,
+      MimeTypes.WEBP,
     ],
     extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"],
     priority: 10,

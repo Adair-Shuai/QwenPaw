@@ -49,7 +49,6 @@ import {
   useChatListSnapshot,
 } from "../../plugins/registry/useChatExtensions";
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
-import { Slot } from "../../plugins/registry/Slot";
 import { WorkspacePanel } from "../../components/Workspace";
 import {
   resolveLocalized,

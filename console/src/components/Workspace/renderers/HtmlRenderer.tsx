@@ -12,7 +12,6 @@ import {
   CodeOutlined,
   EyeOutlined,
   DownloadOutlined,
-  FullscreenOutlined,
   ReloadOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -20,7 +19,6 @@ import type { RendererContext } from "../types";
 
 const HtmlRenderer: React.FC<RendererContext> = ({
   artifact,
-  readOnly,
   theme,
   workspace,
 }) => {
@@ -43,7 +41,11 @@ const HtmlRenderer: React.FC<RendererContext> = ({
     if (!content) {
       return (
         <div style={{ padding: "24px", textAlign: "center", color: "#999" }}>
-          {artifact.isStreaming ? <Spin tip={t("workspace.streaming")} /> : t("workspace.emptyContent")}
+          {artifact.isStreaming ? (
+            <Spin tip={t("workspace.streaming")} />
+          ) : (
+            t("workspace.emptyContent")
+          )}
         </div>
       );
     }
@@ -86,17 +88,34 @@ const HtmlRenderer: React.FC<RendererContext> = ({
         />
         <Space size={2}>
           <Tooltip title={t("workspace.reload")}>
-            <Button size="small" type="text" icon={<ReloadOutlined />} onClick={handleReload} />
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={handleReload}
+            />
           </Tooltip>
           <Tooltip title={t("workspace.download")}>
-            <Button size="small" type="text" icon={<DownloadOutlined />} onClick={handleDownload} />
+            <Button
+              size="small"
+              type="text"
+              icon={<DownloadOutlined />}
+              onClick={handleDownload}
+            />
           </Tooltip>
         </Space>
       </div>
       <div style={{ flex: 1, overflow: "auto" }}>
         {viewMode === "preview" && previewContent}
         {viewMode === "code" && (
-          <pre style={{ margin: 0, padding: "12px", fontSize: 13, whiteSpace: "pre-wrap" }}>
+          <pre
+            style={{
+              margin: 0,
+              padding: "12px",
+              fontSize: 13,
+              whiteSpace: "pre-wrap",
+            }}
+          >
             {content}
           </pre>
         )}
