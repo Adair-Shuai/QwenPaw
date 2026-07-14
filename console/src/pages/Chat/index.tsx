@@ -50,6 +50,7 @@ import {
 } from "../../plugins/registry/useChatExtensions";
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
 import { Slot } from "../../plugins/registry/Slot";
+import { WorkspacePanel } from "../../components/Workspace";
 import {
   resolveLocalized,
   type WelcomeRenderProps,
@@ -3238,8 +3239,8 @@ export default function ChatPage() {
         </>
       )}
 
-      {/* Plugin right-side panel (e.g. Artifact panel from UGSci Research) */}
-      <Slot name="chat.rightPanel" kind="fill" />
+      {/* Workspace panel — multi-tab artifact viewer with pluggable renderers */}
+      <WorkspacePanel />
     </div>
   );
 }

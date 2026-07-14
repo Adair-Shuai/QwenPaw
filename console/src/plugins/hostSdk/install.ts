@@ -393,4 +393,18 @@ export function installHostSdk(): void {
   if (!host.getSelectedAgentId) host.getSelectedAgentId = getSelectedAgentId;
   if (!host.getCurrentSessionId) host.getCurrentSessionId = getCurrentSessionId;
   if (!host.fetch) host.fetch = hostFetch;
+
+  // ── Workspace API ──────────────────────────────────────────────────────
+  // Attach workspace namespace so plugins can register custom renderers
+  // and open artifacts in the workspace panel.
+  if (!ns.workspace) {
+    // Lazy import to avoid circular dependency at module load time.
+    import("../../components/Workspace/workspaceSdk").then(
+      ({ createWorkspaceNamespace }) => {
+        if (!ns.workspace) {
+          ns.workspace = createWorkspaceNamespace();
+        }
+      },
+    );
+  }
 }

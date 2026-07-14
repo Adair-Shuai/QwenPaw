@@ -126,6 +126,14 @@ export default defineConfig(({ mode }) => {
       sourcemap: mode !== "production",
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        // Optional Workspace renderer deps — not installed by default.
+        // They are dynamically imported inside try/catch, so marking them
+        // external prevents Rollup from failing the build at resolution time.
+        external: [
+          "react-pdf",
+          "@codesandbox/sandpack-react",
+          /@tiptap\//,
+        ],
         output: {
           manualChunks(id) {
             // React core
