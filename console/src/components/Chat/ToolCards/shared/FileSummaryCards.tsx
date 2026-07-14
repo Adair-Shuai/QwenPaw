@@ -155,7 +155,9 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
         try {
           const args = fn.arguments;
           params =
-            typeof args === "string" ? JSON.parse(args) : (args as Record<string, unknown>) || {};
+            typeof args === "string"
+              ? JSON.parse(args)
+              : (args as Record<string, unknown>) || {};
         } catch {
           // ignore parse errors
         }
@@ -292,8 +294,9 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
     >
       {fileInfos.map((info) => {
         const opConfig = OPERATION_CONFIG[info.operation];
-        const extIcon =
-          EXTENSION_ICON[info.extension || ""] || <FileTextOutlined />;
+        const extIcon = EXTENSION_ICON[info.extension || ""] || (
+          <FileTextOutlined />
+        );
 
         return (
           <div
@@ -305,7 +308,8 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               gap: 8,
               padding: "8px 12px",
               borderRadius: 8,
-              border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
+              border:
+                "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
               background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
               cursor: "pointer",
               transition: "all 0.15s ease",
