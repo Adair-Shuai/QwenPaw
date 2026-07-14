@@ -39,6 +39,7 @@ import type {
   ChatRequestData,
   ChatResponseData,
 } from "../../plugins/registry/types";
+import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -141,9 +142,20 @@ export function HostResponseCard(props: {
         ))}
       </>
     );
+  // Host-side file summary cards: scan output for file-related tool calls
+  // and render small cards at the end of the response.
+  // FileSummaryCards returns null when no file-related tools are found, so
+  // it's safe to always include it in contentAppend.
+  const fileSummary = (
+    <FileSummaryCards data={props.data as Record<string, unknown>} />
+  );
+
   const contentAppend =
-    appendList.length === 0 ? null : (
+    appendList.length === 0 ? (
+      fileSummary
+    ) : (
       <>
+        {fileSummary}
         {appendList.map((e) => (
           <PluginSlotBoundary
             key={e.item.id}

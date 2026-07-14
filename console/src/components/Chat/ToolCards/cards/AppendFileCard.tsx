@@ -35,7 +35,10 @@ const AppendFileCard: React.FC<AppendFileCardProps> = ({
 
   const appendedContent = (params.content as string) || "";
   const lineCount = countLines(appendedContent);
-  const ext = (params.file_path || params.path || "").toString().match(/\.([^.]+)$/)?.[1] || "";
+  const ext =
+    (params.file_path || params.path || "")
+      .toString()
+      .match(/\.([^.]+)$/)?.[1] || "";
 
   const badge =
     !content.status?.startsWith("call") && lineCount > 0 ? (

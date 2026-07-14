@@ -63,7 +63,9 @@ const MemorySearchCard: React.FC<MemorySearchCardProps> = ({
         <DefaultBlock
           title="Output"
           content={formattedResult}
-          workspaceTitle={queryShort ? `Memory: ${queryShort}` : "Memory Search"}
+          workspaceTitle={
+            queryShort ? `Memory: ${queryShort}` : "Memory Search"
+          }
         />
       )}
     </ToolCardShell>

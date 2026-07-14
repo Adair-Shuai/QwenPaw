@@ -35,7 +35,10 @@ const WriteFileCard: React.FC<WriteFileCardProps> = ({
 
   const writtenContent = (params.content as string) || "";
   const lineCount = countLines(writtenContent);
-  const ext = (params.file_path || params.path || "").toString().match(/\.([^.]+)$/)?.[1] || "";
+  const ext =
+    (params.file_path || params.path || "")
+      .toString()
+      .match(/\.([^.]+)$/)?.[1] || "";
 
   const badge =
     !content.status?.startsWith("call") && lineCount > 0 ? (

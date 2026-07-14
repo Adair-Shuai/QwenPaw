@@ -37,6 +37,8 @@ export interface DefaultBlockProps {
   workspaceTitle?: string;
   /** Optional file extension for renderer matching (e.g. "md", "json", "py") */
   workspaceExtension?: string;
+  /** When true (default if workspaceTitle is set), inline content is hidden. */
+  hideContent?: boolean;
 }
 
 /** Try to parse JSON. Returns parsed object or null. */
@@ -56,10 +58,7 @@ function tryParseJson(text: string): unknown | null {
 }
 
 /** Detect a reasonable MIME type from content + extension. */
-function detectMimeType(
-  content: string,
-  ext?: string,
-): string {
+function detectMimeType(content: string, ext?: string): string {
   if (ext) {
     const extMap: Record<string, string> = {
       md: "text/markdown",
@@ -104,14 +103,19 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
   copyTitle,
   workspaceTitle,
   workspaceExtension,
+  hideContent,
 }) => {
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isMarkdown = useMemo(() => looksLikeMarkdown(content), [content]);
   const parsedJson = useMemo(
     () => (isMarkdown ? null : tryParseJson(content)),
     [content, isMarkdown],
   );
+
+  // When workspaceTitle is provided, hide inline content by default
+  const contentHidden = hideContent ?? !!workspaceTitle;
 
   const handleCopy = useCallback(() => {
     navigator.clipboard
@@ -172,7 +176,18 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
   return (
     <div className={styles.defaultBlock}>
       <div className={styles.defaultBlockHeader}>
-        <span className={styles.defaultBlockTitle}>{title}</span>
+        <span
+          className={styles.defaultBlockTitle}
+          style={contentHidden ? { cursor: "pointer", flex: 1 } : undefined}
+          onClick={contentHidden ? () => setExpanded((v) => !v) : undefined}
+        >
+          {contentHidden && (
+            <span style={{ marginRight: 4, fontSize: 10, opacity: 0.6 }}>
+              {expanded ? "▼" : "▶"}
+            </span>
+          )}
+          {title}
+        </span>
         <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
           {workspaceTitle && content && (
             <Tooltip title="在工作区打开">
@@ -194,7 +209,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
           </button>
         </div>
       </div>
-      {renderContent()}
+      {(!contentHidden || expanded) && renderContent()}
     </div>
   );
 };
