@@ -41,7 +41,13 @@ async function executePluginScript(entryUrl: string): Promise<void> {
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(entryUrl, { headers });
+  // Append a cache-busting query parameter so the browser always fetches
+  // the latest plugin bundle instead of serving a stale cached version.
+  const cacheBustUrl = `${entryUrl}${entryUrl.includes("?") ? "&" : "?"}_t=${Date.now()}`;
+  const response = await fetch(cacheBustUrl, {
+    headers,
+    cache: "no-store",
+  });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status} for ${entryUrl}`);
   }

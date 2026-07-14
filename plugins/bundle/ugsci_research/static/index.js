@@ -5,77 +5,77 @@ function re(e) {
   const t = window.QwenPaw, n = t == null ? void 0 : t.host;
   if (n != null && n.getApiUrl)
     return n.getApiUrl(e);
-  const a = (n == null ? void 0 : n.apiBaseUrl) || "", l = e.startsWith("/") ? e : `/${e}`;
-  return `${a}/api${l}`;
+  const l = (n == null ? void 0 : n.apiBaseUrl) || "", a = e.startsWith("/") ? e : `/${e}`;
+  return `${l}/api${a}`;
 }
 function oe(e, t) {
   var o;
-  const n = window.QwenPaw, a = n == null ? void 0 : n.host, l = ((o = a == null ? void 0 : a.getApiToken) == null ? void 0 : o.call(a)) || "", r = {
+  const n = window.QwenPaw, l = n == null ? void 0 : n.host, a = ((o = l == null ? void 0 : l.getApiToken) == null ? void 0 : o.call(l)) || "", r = {
     ...(t == null ? void 0 : t.headers) ?? {}
   };
-  return l && !r.Authorization && (r.Authorization = `Bearer ${l}`), window.fetch(e, { ...t, headers: r });
+  return a && !r.Authorization && (r.Authorization = `Bearer ${a}`), window.fetch(e, { ...t, headers: r });
 }
-async function V(e) {
+async function F(e) {
   try {
     const t = re(`/ugsci-research/research-mode/${encodeURIComponent(e)}`), n = await oe(t);
     if (!n.ok) return { enabled: !1, domain: "general" };
-    const a = await n.json();
+    const l = await n.json();
     return {
-      enabled: !!a.enabled,
-      domain: a.domain || "general"
+      enabled: !!l.enabled,
+      domain: l.domain || "general"
     };
   } catch {
     return { enabled: !1, domain: "general" };
   }
 }
-async function G(e, t, n) {
+async function q(e, t, n) {
   try {
-    const a = await V(e), l = {
+    const l = await F(e), a = {
       enabled: t,
-      domain: n || a.domain || "general"
+      domain: n || l.domain || "general"
     }, r = re(`/ugsci-research/research-mode/${encodeURIComponent(e)}`);
     return (await oe(r, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(l)
+      body: JSON.stringify(a)
     })).ok;
   } catch {
     return !1;
   }
 }
 function ee() {
-  var k, P, D, U;
-  const e = f(), t = e.React, { useState: n, useEffect: a, useCallback: l } = t, { Tooltip: r, Select: o, message: d, Popover: g, Button: b, Space: m } = e.antd, { ExperimentOutlined: p, SettingOutlined: c } = e.antdIcons, w = window.QwenPaw, T = ((P = (k = w == null ? void 0 : w.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : P.call(k)) || "default", [y, L] = n(!1), [z, $] = n("general"), [j, A] = n(!1), _ = l(async () => {
-    const h = await V(T);
-    L(h.enabled), $(h.domain);
-  }, [T]);
-  a(() => {
-    _();
-  }, [_]);
-  const E = async () => {
-    A(!0);
-    const h = !y;
-    await G(T, h) ? (L(h), d.success(h ? "🔬 研究模式已启用" : "研究模式已关闭")) : d.error("切换研究模式失败"), A(!1);
-  }, C = async (h) => {
-    A(!0), await G(T, y, h) && $(h), A(!1);
-  }, x = () => {
+  var T, D, U, N;
+  const e = f(), t = e.React, { useState: n, useEffect: l, useCallback: a } = t, { Tooltip: r, Select: o, message: i, Popover: p, Button: E, Space: m } = e.antd, { ExperimentOutlined: w, SettingOutlined: s } = e.antdIcons, h = window.QwenPaw, S = ((D = (T = h == null ? void 0 : h.host) == null ? void 0 : T.getSelectedAgentId) == null ? void 0 : D.call(T)) || "default", [u, C] = n(!1), [v, O] = n("general"), [L, I] = n(!1), R = a(async () => {
+    const b = await F(S);
+    C(b.enabled), O(b.domain);
+  }, [S]);
+  l(() => {
+    R();
+  }, [R]);
+  const y = async () => {
+    I(!0);
+    const b = !u;
+    await q(S, b) ? (C(b), i.success(b ? "🔬 研究模式已启用" : "研究模式已关闭")) : i.error("切换研究模式失败"), I(!1);
+  }, B = async (b) => {
+    I(!0), await q(S, u, b) && O(b), I(!1);
+  }, z = () => {
     window.location.href = "/ugsci-research-dashboard";
-  }, s = {
+  }, c = {
     display: "inline-flex",
     alignItems: "center",
     gap: "5px",
     padding: "4px 10px",
     borderRadius: "6px",
-    border: y ? "1.5px solid #06b6d4" : "1.5px solid rgba(0,0,0,0.12)",
-    background: y ? "rgba(6,182,212,0.08)" : "transparent",
-    color: y ? "#06b6d4" : "rgba(0,0,0,0.55)",
+    border: u ? "1.5px solid #06b6d4" : "1.5px solid rgba(0,0,0,0.12)",
+    background: u ? "rgba(6,182,212,0.08)" : "transparent",
+    color: u ? "#06b6d4" : "rgba(0,0,0,0.55)",
     fontSize: "13px",
     fontWeight: 500,
     cursor: "pointer",
     transition: "all 0.18s ease"
-  }, I = typeof document < "u" && ((U = (D = document.documentElement) == null ? void 0 : D.classList) == null ? void 0 : U.contains("dark-mode"));
-  I && (s.border = y ? "1.5px solid #22d3ee" : "1.5px solid rgba(255,255,255,0.15)", s.color = y ? "#22d3ee" : "rgba(255,255,255,0.85)", s.background = y ? "rgba(6,182,212,0.18)" : "transparent");
-  const R = {
+  }, P = typeof document < "u" && ((N = (U = document.documentElement) == null ? void 0 : U.classList) == null ? void 0 : N.contains("dark-mode"));
+  P && (c.border = u ? "1.5px solid #22d3ee" : "1.5px solid rgba(255,255,255,0.15)", c.color = u ? "#22d3ee" : "rgba(255,255,255,0.85)", c.background = u ? "rgba(6,182,212,0.18)" : "transparent");
+  const A = {
     display: "inline-flex",
     alignItems: "center",
     padding: "4px 6px",
@@ -85,8 +85,8 @@ function ee() {
     cursor: "pointer",
     color: "rgba(0,0,0,0.55)"
   };
-  I && (R.border = "1.5px solid rgba(255,255,255,0.15)", R.color = "rgba(255,255,255,0.85)");
-  const O = t.createElement(
+  P && (A.border = "1.5px solid rgba(255,255,255,0.15)", A.color = "rgba(255,255,255,0.85)");
+  const _ = t.createElement(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: 12, padding: 4, minWidth: 160 } },
     t.createElement(
@@ -99,9 +99,9 @@ function ee() {
       ),
       t.createElement(o, {
         size: "small",
-        value: z,
-        onChange: C,
-        loading: j,
+        value: v,
+        onChange: B,
+        loading: L,
         style: { width: "100%" },
         options: [
           { value: "general", label: "🔬 通用" },
@@ -112,11 +112,11 @@ function ee() {
       })
     ),
     t.createElement(
-      b,
+      E,
       {
         size: "small",
         type: "link",
-        onClick: x,
+        onClick: z,
         style: { padding: 0, textAlign: "left" }
       },
       "研究面板 →"
@@ -128,109 +128,109 @@ function ee() {
     t.createElement(
       r,
       {
-        title: y ? `研究模式已开启 (${z}) — 点击关闭` : "研究模式 — 点击启用",
+        title: u ? `研究模式已开启 (${v}) — 点击关闭` : "研究模式 — 点击启用",
         placement: "bottom"
       },
       t.createElement(
         "button",
         {
           type: "button",
-          style: s,
-          onClick: () => void E(),
-          disabled: j,
+          style: c,
+          onClick: () => void y(),
+          disabled: L,
           "aria-label": "Toggle Research Mode"
         },
         t.createElement("span", { style: { display: "flex", alignItems: "center" } }, "🔬"),
-        t.createElement("span", { style: { lineHeight: 1 } }, y ? `研究 ${z}` : "研究")
+        t.createElement("span", { style: { lineHeight: 1 } }, u ? `研究 ${v}` : "研究")
       )
     ),
     t.createElement(
-      g,
-      { content: O, placement: "bottomRight", trigger: "click" },
+      p,
+      { content: _, placement: "bottomRight", trigger: "click" },
       t.createElement(
         "button",
-        { type: "button", style: R, "aria-label": "Research settings" },
-        t.createElement(c, { style: { fontSize: 12 } })
+        { type: "button", style: A, "aria-label": "Research settings" },
+        t.createElement(s, { style: { fontSize: 12 } })
       )
     )
   );
 }
 function de() {
-  var h, N;
-  const e = f().React, { useState: t, useEffect: n, useCallback: a } = e, {
-    Card: l,
+  var b, M;
+  const e = f().React, { useState: t, useEffect: n, useCallback: l } = e, {
+    Card: a,
     Tabs: r,
     Empty: o,
-    Image: d,
-    Table: g,
-    Typography: b,
+    Image: i,
+    Table: p,
+    Typography: E,
     Button: m,
-    Space: p,
-    Tag: c,
-    Tooltip: w
+    Space: w,
+    Tag: s,
+    Tooltip: h
   } = f().antd, {
-    PictureOutlined: T,
-    TableOutlined: y,
-    CodeOutlined: L,
-    FileTextOutlined: z,
-    ReloadOutlined: $,
-    DownloadOutlined: j
-  } = f().antdIcons, A = f().ReactMarkdown, _ = f().remarkGfm, E = window.QwenPaw;
-  (N = (h = E == null ? void 0 : E.host) == null ? void 0 : h.getCurrentSessionId) == null || N.call(h);
-  const [C, x] = t([]), [s, I] = t(!1), [R, O] = t("all"), k = a(async () => {
-    var u, S, v, B, i;
-    I(!0);
+    PictureOutlined: S,
+    TableOutlined: u,
+    CodeOutlined: C,
+    FileTextOutlined: v,
+    ReloadOutlined: O,
+    DownloadOutlined: L
+  } = f().antdIcons, I = f().ReactMarkdown, R = f().remarkGfm, y = window.QwenPaw;
+  (M = (b = y == null ? void 0 : y.host) == null ? void 0 : b.getCurrentSessionId) == null || M.call(b);
+  const [B, z] = t([]), [c, P] = t(!1), [A, _] = t("all"), T = l(async () => {
+    var g, x, k, $, d;
+    P(!0);
     try {
-      const q = ((u = E == null ? void 0 : E.host) == null ? void 0 : u.fetch) || window.fetch.bind(window), se = ((S = E == null ? void 0 : E.host) == null ? void 0 : S.apiBaseUrl) || "", ce = ((B = (v = E == null ? void 0 : E.host) == null ? void 0 : v.getSelectedAgentId) == null ? void 0 : B.call(v)) || "default", Z = await q(
+      const Y = ((g = y == null ? void 0 : y.host) == null ? void 0 : g.fetch) || window.fetch.bind(window), se = ((x = y == null ? void 0 : y.host) == null ? void 0 : x.apiBaseUrl) || "", ce = (($ = (k = y == null ? void 0 : y.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : $.call(k)) || "default", Z = await Y(
         `${se}/api/files/list?path=.&agent_id=${ce}`
       );
       if (!Z.ok) {
-        x([]);
+        z([]);
         return;
       }
       const K = await Z.json(), ie = K.files || K.entries || [], Q = [];
-      for (const M of ie) {
-        const H = M.name || M.filename || "", W = ((i = H.split(".").pop()) == null ? void 0 : i.toLowerCase()) || "";
+      for (const j of ie) {
+        const H = j.name || j.filename || "", W = ((d = H.split(".").pop()) == null ? void 0 : d.toLowerCase()) || "";
         if (!(/^(fig|figure|plot|chart|table|artifact)/i.test(H) || ["png", "jpg", "jpeg", "svg", "csv", "json"].includes(W))) continue;
         let J = "text";
         ["png", "jpg", "jpeg", "svg", "gif"].includes(W) ? J = "figure" : ["csv", "tsv"].includes(W) ? J = "table" : ["py", "js", "ts", "sh"].includes(W) ? J = "code" : W === "las" && (J = "las"), Q.push({
           id: H,
           type: J,
           title: H,
-          content: M.url || M.path || H,
-          filePath: M.path || H,
-          createdAt: M.modified || Date.now()
+          content: j.url || j.path || H,
+          filePath: j.path || H,
+          createdAt: j.modified || Date.now()
         });
       }
-      x(Q);
+      z(Q);
     } catch {
-      x([]);
+      z([]);
     } finally {
-      I(!1);
+      P(!1);
     }
-  }, [E]);
+  }, [y]);
   n(() => {
-    k();
-  }, [k]);
-  const P = C.filter((u) => R === "all" ? !0 : u.type === R), D = (u) => {
-    var v, B;
-    const S = ((B = (v = window.QwenPaw) == null ? void 0 : v.host) == null ? void 0 : B.apiBaseUrl) || "";
-    switch (u.type) {
+    T();
+  }, [T]);
+  const D = B.filter((g) => A === "all" ? !0 : g.type === A), U = (g) => {
+    var k, $;
+    const x = (($ = (k = window.QwenPaw) == null ? void 0 : k.host) == null ? void 0 : $.apiBaseUrl) || "";
+    switch (g.type) {
       case "figure":
-        return e.createElement(d, {
-          src: `${S}/api/files/read?path=${encodeURIComponent(
-            u.filePath || ""
+        return e.createElement(i, {
+          src: `${x}/api/files/read?path=${encodeURIComponent(
+            g.filePath || ""
           )}`,
-          alt: u.title,
+          alt: g.title,
           style: { maxWidth: "100%", borderRadius: 8 }
         });
       case "table":
         return e.createElement(
           "div",
           { style: { overflowX: "auto" } },
-          e.createElement(b.Text, {
+          e.createElement(E.Text, {
             code: !0,
-            children: u.filePath
+            children: g.filePath
           }),
           e.createElement(
             "p",
@@ -250,13 +250,13 @@ function de() {
               fontSize: 12
             }
           },
-          u.content
+          g.content
         );
       case "las":
         return e.createElement(
           "div",
           null,
-          e.createElement(c, { color: "orange" }, "LAS Well Log"),
+          e.createElement(s, { color: "orange" }, "LAS Well Log"),
           e.createElement(
             "p",
             { style: { fontSize: 12, color: "#999" } },
@@ -274,93 +274,93 @@ function de() {
                 maxHeight: 300
               }
             },
-            u.content
+            g.content
           )
         );
       default:
         return e.createElement(
           "div",
           { style: { fontSize: 13 } },
-          A ? e.createElement(A, {
-            remarkPlugins: _ ? [_] : [],
-            children: u.content
-          }) : u.content
+          I ? e.createElement(I, {
+            remarkPlugins: R ? [R] : [],
+            children: g.content
+          }) : g.content
         );
     }
-  }, U = [
-    { key: "all", label: "All", icon: e.createElement(z) },
+  }, N = [
+    { key: "all", label: "All", icon: e.createElement(v) },
     {
       key: "figure",
       label: "Figures",
-      icon: e.createElement(T)
+      icon: e.createElement(S)
     },
-    { key: "table", label: "Tables", icon: e.createElement(y) },
-    { key: "code", label: "Code", icon: e.createElement(L) },
+    { key: "table", label: "Tables", icon: e.createElement(u) },
+    { key: "code", label: "Code", icon: e.createElement(C) },
     {
       key: "las",
       label: "Well Logs",
-      icon: e.createElement(y)
+      icon: e.createElement(u)
     }
   ];
   return e.createElement(
-    l,
+    a,
     {
       size: "small",
       title: e.createElement(
-        p,
+        w,
         null,
-        e.createElement(T),
+        e.createElement(S),
         "Artifacts",
         e.createElement(
-          c,
+          s,
           { color: "blue", style: { fontSize: 10 } },
-          String(C.length)
+          String(B.length)
         )
       ),
       extra: e.createElement(
-        p,
+        w,
         null,
         e.createElement(
-          w,
+          h,
           { title: "Refresh" },
           e.createElement(m, {
             size: "small",
             type: "text",
-            icon: e.createElement($),
-            onClick: k,
-            loading: s
+            icon: e.createElement(O),
+            onClick: T,
+            loading: c
           })
         )
       ),
       style: { height: "100%", overflow: "auto" }
     },
-    C.length === 0 ? e.createElement(o, {
+    B.length === 0 ? e.createElement(o, {
       description: "No artifacts yet. Run research tasks to generate figures and data.",
       image: o.PRESENTED_IMAGE_SIMPLE
     }) : e.createElement(r, {
-      activeKey: R,
-      onChange: O,
+      activeKey: A,
+      onChange: _,
       size: "small",
-      items: U.map((u) => ({
-        key: u.key,
-        label: e.createElement(p, { size: 4 }, u.icon, u.label),
+      items: N.map((g) => ({
+        key: g.key,
+        label: e.createElement(w, { size: 4 }, g.icon, g.label),
         children: e.createElement(
           "div",
           { style: { display: "grid", gap: 12 } },
-          P.map(
-            (S) => e.createElement(
-              l,
+          D.map(
+            (x) => e.createElement(
+              a,
               {
-                key: S.id,
+                key: x.id,
                 size: "small",
-                title: S.title,
+                title: x.title,
                 extra: e.createElement(
-                  c,
-                  { color: S.type === "figure" ? "green" : "blue" },
-                  S.type
+                  s,
+                  { color: x.type === "figure" ? "green" : "blue" },
+                  x.type
                 )
               },
-              D(S)
+              U(x)
             )
           )
         )
@@ -369,49 +369,124 @@ function de() {
   );
 }
 function me() {
-  var v, B;
-  const e = f().React, { useState: t, useEffect: n, useCallback: a } = e, {
-    Card: l,
+  var u, C, v, O;
+  const e = f(), t = e.React, { useState: n, useEffect: l } = t, { Button: a, Tooltip: r } = e.antd, { PictureOutlined: o } = e.antdIcons, [i, p] = n(!1), E = window.QwenPaw, m = ((C = (u = E == null ? void 0 : E.host) == null ? void 0 : u.getSelectedAgentId) == null ? void 0 : C.call(u)) || "default", [w, s] = n(!1);
+  if (l(() => {
+    let L = !0;
+    F(m).then((R) => {
+      L && s(R.enabled);
+    });
+    const I = setInterval(() => {
+      F(m).then((R) => {
+        L && s(R.enabled);
+      });
+    }, 3e3);
+    return () => {
+      L = !1, clearInterval(I);
+    };
+  }, [m]), !w) return null;
+  const h = {
+    width: i ? 44 : 320,
+    flexShrink: 0,
+    height: "100%",
+    overflow: "hidden",
+    borderLeft: "1px solid rgba(0,0,0,0.06)",
+    transition: "width 0.2s ease",
+    display: "flex",
+    flexDirection: "column"
+  }, S = typeof document < "u" && ((O = (v = document.documentElement) == null ? void 0 : v.classList) == null ? void 0 : O.contains("dark-mode"));
+  return S && (h.borderLeft = "1px solid rgba(255,255,255,0.08)", h.background = "#1e1e1e"), i ? t.createElement(
+    "div",
+    { style: { ...h, alignItems: "center", paddingTop: 8 } },
+    t.createElement(
+      r,
+      { title: "Expand Artifacts", placement: "left" },
+      t.createElement(a, {
+        type: "text",
+        size: "small",
+        icon: t.createElement(o),
+        onClick: () => p(!1)
+      })
+    )
+  ) : t.createElement(
+    "div",
+    { style: h },
+    t.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 12px",
+          borderBottom: "1px solid rgba(0,0,0,0.06)",
+          fontSize: 13,
+          fontWeight: 600,
+          color: S ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.85)"
+        }
+      },
+      t.createElement("span", null, "📗 Artifacts"),
+      t.createElement(
+        r,
+        { title: "Collapse", placement: "left" },
+        t.createElement(
+          a,
+          { type: "text", size: "small", onClick: () => p(!0), style: { fontSize: 12 } },
+          "‹"
+        )
+      )
+    ),
+    t.createElement(
+      "div",
+      { style: { flex: 1, overflow: "auto", padding: 8 } },
+      t.createElement(de)
+    )
+  );
+}
+function ue() {
+  var k, $;
+  const e = f().React, { useState: t, useEffect: n, useCallback: l } = e, {
+    Card: a,
     Row: r,
     Col: o,
-    Statistic: d,
-    Typography: g,
-    Divider: b,
+    Statistic: i,
+    Typography: p,
+    Divider: E,
     List: m,
-    Tag: p,
-    Space: c,
-    Button: w,
-    Select: T,
-    Tooltip: y,
-    message: L
+    Tag: w,
+    Space: s,
+    Button: h,
+    Select: S,
+    Tooltip: u,
+    message: C
   } = f().antd, {
-    ExperimentOutlined: z,
-    BookOutlined: $,
-    BarChartOutlined: j,
-    BulbOutlined: A,
-    ArrowRightOutlined: _,
-    ThunderboltOutlined: E
-  } = f().antdIcons, C = window.QwenPaw, x = ((B = (v = C == null ? void 0 : C.host) == null ? void 0 : v.getSelectedAgentId) == null ? void 0 : B.call(v)) || "default", [s, I] = t({
+    ExperimentOutlined: v,
+    BookOutlined: O,
+    BarChartOutlined: L,
+    BulbOutlined: I,
+    ArrowRightOutlined: R,
+    ThunderboltOutlined: y
+  } = f().antdIcons, B = window.QwenPaw, z = (($ = (k = B == null ? void 0 : B.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : $.call(k)) || "default", [c, P] = t({
     enabled: !1,
     domain: "general"
-  }), [R, O] = t(!1), k = a(async () => {
-    const i = await V(x);
-    I(i);
-  }, [x]);
+  }), [A, _] = t(!1), T = l(async () => {
+    const d = await F(z);
+    P(d);
+  }, [z]);
   n(() => {
-    k();
-  }, [k]);
-  const P = async () => {
-    O(!0), await G(x, !s.enabled) ? (I({ ...s, enabled: !s.enabled }), L.success(
-      s.enabled ? "研究模式已关闭" : "🔬 研究模式已启用"
-    )) : L.error("切换研究模式失败"), O(!1);
-  }, D = async (i) => {
-    O(!0), await G(x, s.enabled, i) && I({ ...s, domain: i }), O(!1);
-  }, U = () => {
+    T();
+  }, [T]);
+  const D = async () => {
+    _(!0), await q(z, !c.enabled) ? (P({ ...c, enabled: !c.enabled }), C.success(
+      c.enabled ? "研究模式已关闭" : "🔬 研究模式已启用"
+    )) : C.error("切换研究模式失败"), _(!1);
+  }, U = async (d) => {
+    _(!0), await q(z, c.enabled, d) && P({ ...c, domain: d }), _(!1);
+  }, N = () => {
     window.location.href = "/chat";
-  }, h = () => {
+  }, b = () => {
     window.location.href = "/skill-pool";
-  }, N = [
+  }, M = [
     { name: "SCOPE", desc: "定义研究问题", icon: "🎯" },
     { name: "LITERATURE", desc: "检索与综述文献", icon: "📚" },
     { name: "REASON", desc: "推理与思考", icon: "💡" },
@@ -420,7 +495,7 @@ function me() {
     { name: "ANALYZE", desc: "分析结果", icon: "📊" },
     { name: "SYNTHESIZE", desc: "综合解读", icon: "🔗" },
     { name: "WRITE", desc: "撰写成果", icon: "✍️" }
-  ], u = [
+  ], g = [
     {
       name: "literature_search",
       desc: "搜索 OpenAlex、arXiv、Crossref",
@@ -439,7 +514,7 @@ function me() {
       icon: "📊",
       action: "在对话中使用 /research on 后自动可用"
     }
-  ], S = [
+  ], x = [
     { name: "literature-review", desc: "PRISMA 系统综述", icon: "📚" },
     { name: "scientific-visualization", desc: "出版级图表绘制", icon: "📈" },
     { name: "hypothesis-generation", desc: "结构化假说设计", icon: "💡" }
@@ -449,41 +524,41 @@ function me() {
     { style: { padding: 24, maxWidth: 1200, margin: "0 auto" } },
     // ── Header Card with Toggle ──
     e.createElement(
-      l,
+      a,
       null,
       e.createElement(
         "div",
         { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 } },
         e.createElement(
-          c,
+          s,
           { align: "center", size: 12 },
-          e.createElement(z, {
-            style: { fontSize: 28, color: s.enabled ? "#06b6d4" : "#999" }
+          e.createElement(v, {
+            style: { fontSize: 28, color: c.enabled ? "#06b6d4" : "#999" }
           }),
           e.createElement(
             "div",
             null,
             e.createElement(
-              g.Title,
+              p.Title,
               { level: 4, style: { margin: 0 } },
               "研究模式"
             ),
             e.createElement(
-              g.Text,
+              p.Text,
               { type: "secondary" },
-              `Agent: ${x}`
+              `Agent: ${z}`
             )
           ),
-          s.enabled ? e.createElement(p, { color: "green" }, "已启用") : e.createElement(p, { color: "default" }, "未启用")
+          c.enabled ? e.createElement(w, { color: "green" }, "已启用") : e.createElement(w, { color: "default" }, "未启用")
         ),
         e.createElement(
-          c,
+          s,
           { size: 8 },
-          e.createElement(T, {
+          e.createElement(S, {
             size: "small",
-            value: s.domain,
-            onChange: D,
-            loading: R,
+            value: c.domain,
+            onChange: U,
+            loading: A,
             style: { width: 120 },
             options: [
               { value: "general", label: "🔬 通用" },
@@ -493,20 +568,20 @@ function me() {
             ]
           }),
           e.createElement(
-            w,
+            h,
             {
-              type: s.enabled ? "default" : "primary",
-              danger: s.enabled,
-              loading: R,
-              onClick: P,
-              icon: e.createElement(z)
+              type: c.enabled ? "default" : "primary",
+              danger: c.enabled,
+              loading: A,
+              onClick: D,
+              icon: e.createElement(v)
             },
-            s.enabled ? "关闭研究模式" : "启用研究模式"
+            c.enabled ? "关闭研究模式" : "启用研究模式"
           )
         )
       )
     ),
-    e.createElement(b, null),
+    e.createElement(E, null),
     // ── Stats Row ──
     e.createElement(
       r,
@@ -514,59 +589,59 @@ function me() {
       e.createElement(
         o,
         { span: 8 },
-        e.createElement(l, {
+        e.createElement(a, {
           size: "small",
-          children: e.createElement(d, {
+          children: e.createElement(i, {
             title: "研究模式",
-            value: s.enabled ? "已启用" : "未启用",
-            prefix: e.createElement(z),
-            valueStyle: s.enabled ? { color: "#06b6d4" } : { color: "#999" }
+            value: c.enabled ? "已启用" : "未启用",
+            prefix: e.createElement(v),
+            valueStyle: c.enabled ? { color: "#06b6d4" } : { color: "#999" }
           })
         })
       ),
       e.createElement(
         o,
         { span: 8 },
-        e.createElement(l, {
+        e.createElement(a, {
           size: "small",
-          children: e.createElement(d, {
+          children: e.createElement(i, {
             title: "研究领域",
-            value: s.domain,
-            prefix: e.createElement($)
+            value: c.domain,
+            prefix: e.createElement(O)
           })
         })
       ),
       e.createElement(
         o,
         { span: 8 },
-        e.createElement(l, {
+        e.createElement(a, {
           size: "small",
-          children: e.createElement(d, {
+          children: e.createElement(i, {
             title: "工作流阶段",
             value: 8,
-            prefix: e.createElement(j)
+            prefix: e.createElement(L)
           })
         })
       )
     ),
-    e.createElement(b, null),
+    e.createElement(E, null),
     // ── Start Research Button ──
     e.createElement(
       "div",
       { style: { textAlign: "center", marginBottom: 24 } },
       e.createElement(
-        w,
+        h,
         {
           type: "primary",
           size: "large",
-          icon: e.createElement(E),
-          disabled: !s.enabled,
-          onClick: U,
-          style: s.enabled ? { background: "#06b6d4", borderColor: "#06b6d4" } : {}
+          icon: e.createElement(y),
+          disabled: !c.enabled,
+          onClick: N,
+          style: c.enabled ? { background: "#06b6d4", borderColor: "#06b6d4" } : {}
         },
         "开始研究对话"
       ),
-      !s.enabled && e.createElement(
+      !c.enabled && e.createElement(
         "div",
         { style: { marginTop: 8, fontSize: 12, color: "#999" } },
         "请先启用研究模式"
@@ -574,23 +649,23 @@ function me() {
     ),
     // ── Workflow Stages ──
     e.createElement(
-      l,
+      a,
       {
         size: "small",
-        title: e.createElement(c, null, "🔬 研究工作流阶段"),
+        title: e.createElement(s, null, "🔬 研究工作流阶段"),
         style: { marginBottom: 16 }
       },
       e.createElement(m, {
         grid: { gutter: 16, column: 4 },
-        dataSource: N,
-        renderItem: (i, q) => e.createElement(
+        dataSource: M,
+        renderItem: (d, Y) => e.createElement(
           m.Item,
           null,
           e.createElement(
-            y,
-            { title: `${i.name} — ${i.desc}` },
+            u,
+            { title: `${d.name} — ${d.desc}` },
             e.createElement(
-              l,
+              a,
               {
                 size: "small",
                 hoverable: !0,
@@ -598,14 +673,14 @@ function me() {
                   textAlign: "center",
                   height: "100%",
                   cursor: "pointer",
-                  borderLeft: s.enabled ? "3px solid #06b6d4" : "3px solid #e8e8e8",
-                  opacity: s.enabled ? 1 : 0.6
+                  borderLeft: c.enabled ? "3px solid #06b6d4" : "3px solid #e8e8e8",
+                  opacity: c.enabled ? 1 : 0.6
                 }
               },
               e.createElement(
                 "div",
                 { style: { fontSize: 24 } },
-                i.icon
+                d.icon
               ),
               e.createElement(
                 "div",
@@ -616,12 +691,12 @@ function me() {
                     marginTop: 4
                   }
                 },
-                i.name
+                d.name
               ),
               e.createElement(
                 "div",
                 { style: { fontSize: 11, color: "#999" } },
-                i.desc
+                d.desc
               )
             )
           )
@@ -636,25 +711,25 @@ function me() {
         o,
         { span: 12 },
         e.createElement(
-          l,
+          a,
           {
             size: "small",
-            title: e.createElement(c, null, "🛠️ 研究工具")
+            title: e.createElement(s, null, "🛠️ 研究工具")
           },
           e.createElement(m, {
             size: "small",
-            dataSource: u,
-            renderItem: (i) => e.createElement(
+            dataSource: g,
+            renderItem: (d) => e.createElement(
               m.Item,
               {
                 actions: [
                   e.createElement(
-                    y,
-                    { title: i.action },
+                    u,
+                    { title: d.action },
                     e.createElement(
-                      p,
-                      { color: s.enabled ? "cyan" : "default" },
-                      s.enabled ? "可用" : "未启用"
+                      w,
+                      { color: c.enabled ? "cyan" : "default" },
+                      c.enabled ? "可用" : "未启用"
                     )
                   )
                 ]
@@ -663,22 +738,22 @@ function me() {
                 "div",
                 { style: { cursor: "default" } },
                 e.createElement(
-                  c,
+                  s,
                   null,
-                  e.createElement("span", { style: { fontSize: 18 } }, i.icon),
+                  e.createElement("span", { style: { fontSize: 18 } }, d.icon),
                   e.createElement(
                     "div",
                     null,
                     e.createElement(
                       "code",
                       { style: { fontSize: 13, fontWeight: 600 } },
-                      i.name
+                      d.name
                     ),
                     e.createElement("br"),
                     e.createElement(
-                      g.Text,
+                      p.Text,
                       { type: "secondary", style: { fontSize: 11 } },
-                      i.desc
+                      d.desc
                     )
                   )
                 )
@@ -691,50 +766,50 @@ function me() {
         o,
         { span: 12 },
         e.createElement(
-          l,
+          a,
           {
             size: "small",
-            title: e.createElement(c, null, "⚡ 研究技能"),
+            title: e.createElement(s, null, "⚡ 研究技能"),
             extra: e.createElement(
-              w,
+              h,
               {
                 size: "small",
                 type: "link",
-                onClick: h,
-                icon: e.createElement(_)
+                onClick: b,
+                icon: e.createElement(R)
               },
               "技能池"
             )
           },
           e.createElement(m, {
             size: "small",
-            dataSource: S,
-            renderItem: (i) => e.createElement(
+            dataSource: x,
+            renderItem: (d) => e.createElement(
               m.Item,
               null,
               e.createElement(
                 "div",
                 {
                   style: { cursor: "pointer", width: "100%" },
-                  onClick: h
+                  onClick: b
                 },
                 e.createElement(
-                  c,
+                  s,
                   null,
-                  e.createElement("span", { style: { fontSize: 18 } }, i.icon),
+                  e.createElement("span", { style: { fontSize: 18 } }, d.icon),
                   e.createElement(
                     "div",
                     null,
                     e.createElement(
                       "strong",
                       { style: { fontSize: 13 } },
-                      i.name
+                      d.name
                     ),
                     e.createElement("br"),
                     e.createElement(
-                      g.Text,
+                      p.Text,
                       { type: "secondary", style: { fontSize: 11 } },
-                      i.desc
+                      d.desc
                     )
                   )
                 )
@@ -747,67 +822,67 @@ function me() {
   );
 }
 function te(e) {
-  const t = f().React, { ToolCardShell: n, DefaultBlock: a } = X(), { BookOutlined: l, Tag: r } = { ...f().antdIcons, ...f().antd }, o = e.data || e.content || {}, d = o.params || {}, g = d.query || "", b = d.source || "all", m = typeof o.result == "string" ? o.result : JSON.stringify(o.result, null, 2);
-  let p = [];
+  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { BookOutlined: a, Tag: r } = { ...f().antdIcons, ...f().antd }, o = e.data || e.content || {}, i = o.params || {}, p = i.query || "", E = i.source || "all", m = typeof o.result == "string" ? o.result : JSON.stringify(o.result, null, 2);
+  let w = [];
   try {
-    p = JSON.parse(m).results || [];
+    w = JSON.parse(m).results || [];
   } catch {
   }
   return t.createElement(n, {
     content: o,
     isStreaming: e.isStreaming,
-    icon: t.createElement(l),
-    title: `📚 Literature Search: "${g}" (${b})`,
-    inlineResult: p.length ? `${p.length} results` : void 0,
+    icon: t.createElement(a),
+    title: `📚 Literature Search: "${p}" (${E})`,
+    inlineResult: w.length ? `${w.length} results` : void 0,
     children: t.createElement(
       t.Fragment,
       null,
-      p.length > 0 ? t.createElement(
+      w.length > 0 ? t.createElement(
         "div",
         { style: { maxHeight: 400, overflow: "auto" } },
-        p.slice(0, 10).map(
-          (c, w) => t.createElement(
+        w.slice(0, 10).map(
+          (s, h) => t.createElement(
             "div",
             {
-              key: w,
+              key: h,
               style: {
                 padding: "8px 0",
-                borderBottom: w < 9 ? "1px solid #f0f0f0" : "none"
+                borderBottom: h < 9 ? "1px solid #f0f0f0" : "none"
               }
             },
             t.createElement(
               "strong",
               { style: { fontSize: 13 } },
-              c.title || "Untitled"
+              s.title || "Untitled"
             ),
-            c.year && t.createElement(
+            s.year && t.createElement(
               "span",
               { style: { color: "#999", marginLeft: 8 } },
-              `(${c.year})`
+              `(${s.year})`
             ),
-            c.authors && t.createElement(
+            s.authors && t.createElement(
               "div",
               { style: { fontSize: 11, color: "#666" } },
-              Array.isArray(c.authors) ? c.authors.join(", ") : c.authors
+              Array.isArray(s.authors) ? s.authors.join(", ") : s.authors
             ),
-            c.doi && t.createElement(
+            s.doi && t.createElement(
               "code",
               { style: { fontSize: 10 } },
-              c.doi
+              s.doi
             ),
-            c.abstract && t.createElement(
+            s.abstract && t.createElement(
               "div",
               { style: { fontSize: 11, color: "#999", marginTop: 4 } },
-              c.abstract.substring(0, 200) + "..."
+              s.abstract.substring(0, 200) + "..."
             ),
             t.createElement(
               r,
               { style: { fontSize: 10, marginTop: 4 } },
-              c.source || "unknown"
+              s.source || "unknown"
             )
           )
         )
-      ) : t.createElement(a, {
+      ) : t.createElement(l, {
         title: "Output",
         content: m
       })
@@ -815,44 +890,44 @@ function te(e) {
   });
 }
 function ne(e) {
-  const t = f().React, { ToolCardShell: n, DefaultBlock: a } = X(), { SearchOutlined: l } = f().antdIcons, r = e.data || e.content || {}, d = (r.params || {}).query || "", g = typeof r.result == "string" ? r.result : JSON.stringify(r.result, null, 2);
+  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { SearchOutlined: a } = f().antdIcons, r = e.data || e.content || {}, i = (r.params || {}).query || "", p = typeof r.result == "string" ? r.result : JSON.stringify(r.result, null, 2);
   return t.createElement(n, {
     content: r,
     isStreaming: e.isStreaming,
-    icon: t.createElement(l),
-    title: `🔍 Web Search: "${d}"`,
-    children: t.createElement(a, {
+    icon: t.createElement(a),
+    title: `🔍 Web Search: "${i}"`,
+    children: t.createElement(l, {
       title: "Output",
-      content: g
+      content: p
     })
   });
 }
 function ae(e) {
-  const t = f().React, { ToolCardShell: n, DefaultBlock: a } = X(), { BarChartOutlined: l } = f().antdIcons, r = e.data || e.content || {}, o = r.params || {}, d = o.data_path || "", g = o.operation || "summary", b = typeof r.result == "string" ? r.result : JSON.stringify(r.result, null, 2), m = d.split("/").pop() || d;
+  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { BarChartOutlined: a } = f().antdIcons, r = e.data || e.content || {}, o = r.params || {}, i = o.data_path || "", p = o.operation || "summary", E = typeof r.result == "string" ? r.result : JSON.stringify(r.result, null, 2), m = i.split("/").pop() || i;
   return t.createElement(n, {
     content: r,
     isStreaming: e.isStreaming,
-    icon: t.createElement(l),
-    title: `📊 Data Analysis: ${m} (${g})`,
-    children: t.createElement(a, {
+    icon: t.createElement(a),
+    title: `📊 Data Analysis: ${m} (${p})`,
+    children: t.createElement(l, {
       title: "Output",
-      content: b
+      content: E
     })
   });
 }
-let F = null;
+let G = null;
 function X() {
-  if (F) return F;
+  if (G) return G;
   const e = f().React, t = ({
-    title: a,
-    content: l
+    title: l,
+    content: a
   }) => e.createElement(
     "div",
     { style: { margin: "4px 0 2px 18px" } },
     e.createElement(
       "div",
       { style: { fontSize: 11, color: "#999", marginBottom: 2 } },
-      a
+      l
     ),
     e.createElement(
       "pre",
@@ -867,22 +942,22 @@ function X() {
           maxHeight: 360
         }
       },
-      l
+      a
     )
   );
-  return F = { ToolCardShell: ({
-    content: a,
-    isStreaming: l,
+  return G = { ToolCardShell: ({
+    content: l,
+    isStreaming: a,
     icon: r,
     title: o,
-    inlineResult: d,
-    children: g
+    inlineResult: i,
+    children: p
   }) => {
-    const b = a.status === "calling" && l, m = a.status === "error";
+    const E = l.status === "calling" && a, m = l.status === "error";
     return e.createElement(
       "details",
       {
-        open: b || m,
+        open: E || m,
         style: {
           margin: "4px 0",
           border: "1px solid rgba(0,0,0,0.06)",
@@ -901,25 +976,25 @@ function X() {
             fontSize: 13
           }
         },
-        b ? e.createElement("span", {
+        E ? e.createElement("span", {
           className: "ant-spin-dot ant-spin-dot-spin"
         }) : e.createElement("span", null, r),
         e.createElement("span", null, o),
-        !b && d && e.createElement(
+        !E && i && e.createElement(
           "span",
           { style: { fontSize: 11, color: "#999", marginLeft: "auto" } },
-          d
+          i
         )
       ),
       m ? e.createElement(t, {
         title: "Error",
-        content: JSON.stringify(a.result, null, 2)
-      }) : g
+        content: JSON.stringify(l.result, null, 2)
+      }) : p
     );
-  }, DefaultBlock: t }, F;
+  }, DefaultBlock: t }, G;
 }
-function ue() {
-  var a, l, r, o, d, g;
+function ge() {
+  var l, a, r, o, i;
   const e = window.QwenPaw;
   if (!(e != null && e.route)) {
     console.warn(
@@ -931,12 +1006,12 @@ function ue() {
   e.route.add(n, {
     id: "ugsci_research.dashboard",
     path: "/ugsci-research-dashboard",
-    component: me
-  }), (a = e.slot) != null && a.fill ? (e.slot.fill(
+    component: ue
+  }), (l = e.slot) != null && l.fill ? (e.slot.fill(
     n,
     "header.toggle",
     () => t.createElement(ee)
-  ), console.info("[ugsci-research] Registered header.toggle slot")) : (r = (l = e.chat) == null ? void 0 : l.rightHeader) != null && r.add && (e.chat.rightHeader.add(
+  ), console.info("[ugsci-research] Registered header.toggle slot")) : (r = (a = e.chat) == null ? void 0 : a.rightHeader) != null && r.add && (e.chat.rightHeader.add(
     n,
     t.createElement(ee),
     { id: "research-mode-toggle", order: 5 }
@@ -944,31 +1019,28 @@ function ue() {
     literature_search: te,
     web_search: ne,
     data_analysis: ae
-  }), console.info("[ugsci-research] Registered 3 custom tool cards")), (o = e.chat) != null && o.toolRender && (e.chat.toolRender(n, "literature_search", te), e.chat.toolRender(n, "web_search", ne), e.chat.toolRender(n, "data_analysis", ae)), (g = (d = e.chat) == null ? void 0 : d.response) != null && g.append && (e.chat.response.append(
+  }), console.info("[ugsci-research] Registered 3 custom tool cards")), (o = e.chat) != null && o.toolRender && (e.chat.toolRender(n, "literature_search", te), e.chat.toolRender(n, "web_search", ne), e.chat.toolRender(n, "data_analysis", ae)), (i = e.slot) != null && i.fill && (e.slot.fill(
     n,
-    (b) => {
-      var m, p;
-      return (p = (m = e.host) == null ? void 0 : m.getSelectedAgentId) != null && p.call(m), t.createElement(de);
-    },
-    { id: "artifact-panel", order: 100 }
-  ), console.info("[ugsci-research] Registered artifact panel in response slot")), console.info(
+    "chat.rightPanel",
+    () => t.createElement(me)
+  ), console.info("[ugsci-research] Registered artifact panel in chat.rightPanel slot")), console.info(
     "[ugsci-research] Plugin registered: dashboard route + tool cards + toggle + artifact panel"
   );
 }
-function Y() {
+function V() {
   try {
-    ue();
+    ge();
   } catch (e) {
-    console.error("[ugsci-research] Failed to build plugin:", e), setTimeout(Y, 500);
+    console.error("[ugsci-research] Failed to build plugin:", e), setTimeout(V, 500);
   }
 }
 var le;
 if ((le = window.QwenPaw) != null && le.host)
-  Y();
+  V();
 else {
   const e = setInterval(() => {
     var t;
-    (t = window.QwenPaw) != null && t.host && (clearInterval(e), Y());
+    (t = window.QwenPaw) != null && t.host && (clearInterval(e), V());
   }, 200);
   setTimeout(() => clearInterval(e), 1e4);
 }

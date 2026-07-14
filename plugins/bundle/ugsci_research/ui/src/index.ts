@@ -632,6 +632,106 @@ function ArtifactPanel() {
   );
 }
 
+// ─── Artifact Panel Wrapper (for right-side chat panel) ───────────────────────────────────────
+
+function ArtifactPanelWrapper() {
+  const host = getHost();
+  const React = host.React;
+  const { useState, useEffect } = React;
+  const { Button, Tooltip } = host.antd;
+  const { PictureOutlined } = host.antdIcons;
+
+  const [collapsed, setCollapsed] = useState(false);
+  const QP = (window as any).QwenPaw;
+  const agentId = QP?.host?.getSelectedAgentId?.() || "default";
+  const [rmEnabled, setRmEnabled] = useState(false);
+
+  // Check if research mode is enabled; only show panel when active
+  useEffect(() => {
+    let mounted = true;
+    getResearchMode(agentId).then((rm) => {
+      if (mounted) setRmEnabled(rm.enabled);
+    });
+    const interval = setInterval(() => {
+      getResearchMode(agentId).then((rm) => {
+        if (mounted) setRmEnabled(rm.enabled);
+      });
+    }, 3000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [agentId]);
+
+  if (!rmEnabled) return null;
+
+  const panelStyle = {
+    width: collapsed ? 44 : 320,
+    flexShrink: 0,
+    height: "100%",
+    overflow: "hidden",
+    borderLeft: "1px solid rgba(0,0,0,0.06)",
+    transition: "width 0.2s ease",
+    display: "flex",
+    flexDirection: "column" as const,
+  };
+
+  const isDark = typeof document !== "undefined" && document.documentElement?.classList?.contains("dark-mode");
+  if (isDark) {
+    panelStyle.borderLeft = "1px solid rgba(255,255,255,0.08)";
+    (panelStyle as any).background = "#1e1e1e";
+  }
+
+  if (collapsed) {
+    return React.createElement(
+      "div",
+      { style: { ...panelStyle, alignItems: "center", paddingTop: 8 } },
+      React.createElement(
+        Tooltip,
+        { title: "Expand Artifacts", placement: "left" },
+        React.createElement(Button, {
+          type: "text",
+          size: "small",
+          icon: React.createElement(PictureOutlined),
+          onClick: () => setCollapsed(false),
+        }),
+      ),
+    );
+  }
+
+  return React.createElement(
+    "div",
+    { style: panelStyle },
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "8px 12px",
+          borderBottom: "1px solid rgba(0,0,0,0.06)",
+          fontSize: 13,
+          fontWeight: 600,
+          color: isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.85)",
+        },
+      },
+      React.createElement("span", null, "\ud83d\udcd7 Artifacts"),
+      React.createElement(
+        Tooltip,
+        { title: "Collapse", placement: "left" },
+        React.createElement(
+          Button,
+          { type: "text", size: "small", onClick: () => setCollapsed(true), style: { fontSize: 12 } },
+          "\u2039",
+        ),
+      ),
+    ),
+    React.createElement(
+      "div",
+      { style: { flex: 1, overflow: "auto", padding: 8 } },
+      React.createElement(ArtifactPanel),
+    ),
+  );
+}
+
 // ─── Research Dashboard Page ──────────────────────────────────────────────────
 
 function ResearchDashboardPage() {
@@ -1374,19 +1474,15 @@ function buildPlugin() {
     QP.chat.toolRender(PLUGIN_ID, "data_analysis", DataAnalysisCard);
   }
 
-  // ── 4. Register Artifact Panel as Response Slot ─────────────────────
-  if (QP.chat?.response?.append) {
-    QP.chat.response.append(
-      PLUGIN_ID,
-      (_ctx: any) => {
-        // Only show artifact panel when research mode is active
-        const agentId = QP.host?.getSelectedAgentId?.() || "default";
-        // We use a reactive check — the component itself handles visibility
-        return React.createElement(ArtifactPanel);
-      },
-      { id: "artifact-panel", order: 100 },
+  // ── 4. Register Artifact Panel in the right-side chat panel slot ──
+  //    This renders the Artifact panel on the right side of the chat
+  //    window, parallel to the chat messages, instead of being appended
+  //    after each response.
+  if (QP.slot?.fill) {
+    QP.slot.fill(PLUGIN_ID, "chat.rightPanel", () =>
+      React.createElement(ArtifactPanelWrapper),
     );
-    console.info("[ugsci-research] Registered artifact panel in response slot");
+    console.info("[ugsci-research] Registered artifact panel in chat.rightPanel slot");
   }
 
   console.info(

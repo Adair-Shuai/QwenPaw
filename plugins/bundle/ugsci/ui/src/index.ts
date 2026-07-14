@@ -2510,13 +2510,16 @@ function SkillPickerModal({
 function ExpertCard({
   expert,
   onClick,
+  onSummon,
 }: {
   expert: ExpertData;
   onClick: () => void;
+  onSummon?: () => void;
 }) {
   const React = getHost().React;
-  const { Card, Tag, Badge, Typography, Spin } = getHost().antd;
+  const { Card, Tag, Badge, Typography, Spin, Button } = getHost().antd;
   const { Text } = Typography;
+  const { ThunderboltOutlined } = getHost().antdIcons || {};
 
   const { agent, skills, mcps, loading } = expert;
   const isEnabled = agent.enabled;
@@ -2539,6 +2542,15 @@ function ExpertCard({
         transition: "all 0.2s ease",
         borderColor: isEnabled ? undefined : "#d9d9d9",
         opacity: isEnabled ? 1 : 0.7,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      },
+      bodyStyle: {
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        flex: 1,
       },
     },
     React.createElement(
@@ -2595,13 +2607,15 @@ function ExpertCard({
               WebkitLineClamp: 3,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
+              minHeight: 54,
+              flex: "1 0 auto",
             },
           },
           renderMarkdown(agent.description, React),
         )
       : React.createElement(
           "div",
-          { style: { fontSize: 12, color: "#bfbfbf", marginBottom: 10 } },
+          { style: { fontSize: 12, color: "#bfbfbf", marginBottom: 10, minHeight: 54, flex: "1 0 auto" } },
           "暂无描述",
         ),
     // Model info
@@ -2638,7 +2652,7 @@ function ExpertCard({
     !loading && mcpNames.length > 0
       ? React.createElement(
           "div",
-          null,
+          { style: { marginTop: "auto" } },
           React.createElement(
             "div",
             { style: { fontSize: 11, color: "#8c8c8c", marginBottom: 4 } },
@@ -2651,6 +2665,35 @@ function ExpertCard({
           }),
         )
       : null,
+    // Summon button (bottom-right)
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "flex-end",
+          marginTop: 10,
+          paddingTop: 8,
+          borderTop: "1px solid #f0f0f0",
+        },
+      },
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          size: "small",
+          icon: ThunderboltOutlined
+            ? React.createElement(ThunderboltOutlined)
+            : undefined,
+          disabled: !isEnabled,
+          onClick: (e: any) => {
+            e.stopPropagation();
+            if (onSummon) onSummon();
+          },
+        },
+        "召唤专家",
+      ),
+    ),
   );
 }
 
@@ -4027,6 +4070,26 @@ function ExpertCenterPage() {
     setDrawerOpen(true);
   }, []);
 
+  const handleSummonExpert = useCallback(
+    (expert: ExpertData) => {
+      if (!expert.agent.enabled) {
+        antdMsg.warning(`专家「${expert.agent.name}」未启用，请先启用`);
+        return;
+      }
+      try {
+        const host = getHost();
+        if (host.setSelectedAgent) {
+          host.setSelectedAgent(expert.agent.id);
+        }
+      } catch (err) {
+        console.warn("[ugsci] Failed to set selected agent:", err);
+      }
+      antdMsg.success(`已召唤专家「${expert.agent.name}」，正在跳转至对话...`);
+      navigateToExpert("/chat");
+    },
+    [antdMsg],
+  );
+
   const filteredExperts = useMemo(() => {
     if (!searchText.trim()) return experts;
     const q = searchText.toLowerCase();
@@ -4091,6 +4154,7 @@ function ExpertCenterPage() {
                     React.createElement(ExpertCard, {
                       expert,
                       onClick: () => handleCardClick(expert),
+                      onSummon: () => handleSummonExpert(expert),
                     }),
                   ),
                 ),
@@ -4296,6 +4360,15 @@ function CapabilityCard({
         cursor: "pointer",
         borderColor: mcp.enabled ? undefined : "#d9d9d9",
         opacity: mcp.enabled ? 1 : 0.7,
+        height: "100%",
+        display: "flex",
+        flexDirection: "column",
+      },
+      bodyStyle: {
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        flex: 1,
       },
     },
     React.createElement(
@@ -4340,11 +4413,17 @@ function CapabilityCard({
               WebkitLineClamp: 2,
               WebkitBoxOrient: "vertical",
               overflow: "hidden",
+              minHeight: 36,
+              flex: "1 0 auto",
             },
           },
           mcp.description,
         )
-      : null,
+      : React.createElement(
+          "div",
+          { style: { fontSize: 12, color: "#bfbfbf", marginBottom: 8, minHeight: 36, flex: "1 0 auto" } },
+          "暂无描述",
+        ),
     React.createElement(
       "div",
       { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
