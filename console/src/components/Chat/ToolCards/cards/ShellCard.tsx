@@ -44,7 +44,13 @@ const ShellCard: React.FC<ShellCardProps> = ({ content, isStreaming }) => {
       content={content}
       isStreaming={isStreaming}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle={command ? `Shell: ${command.slice(0, 30)}` : "Shell Output"}
+        />
+      )}
     </ToolCardShell>
   );
 };

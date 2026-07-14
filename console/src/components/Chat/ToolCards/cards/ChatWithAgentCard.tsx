@@ -30,7 +30,13 @@ const ChatWithAgentCard: React.FC<ChatWithAgentCardProps> = ({
       icon={<MessageOutlined />}
       title={title}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle={agent ? `Chat: ${agent}` : "Agent Chat"}
+        />
+      )}
     </ToolCardShell>
   );
 };

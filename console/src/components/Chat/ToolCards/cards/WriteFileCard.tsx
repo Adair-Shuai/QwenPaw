@@ -35,6 +35,7 @@ const WriteFileCard: React.FC<WriteFileCardProps> = ({
 
   const writtenContent = (params.content as string) || "";
   const lineCount = countLines(writtenContent);
+  const ext = (params.file_path || params.path || "").toString().match(/\.([^.]+)$/)?.[1] || "";
 
   const badge =
     !content.status?.startsWith("call") && lineCount > 0 ? (
@@ -52,7 +53,12 @@ const WriteFileCard: React.FC<WriteFileCardProps> = ({
       badges={badge}
     >
       {writtenContent && (
-        <DefaultBlock title="Content" content={writtenContent} />
+        <DefaultBlock
+          title="Content"
+          content={writtenContent}
+          workspaceTitle={file || undefined}
+          workspaceExtension={ext || undefined}
+        />
       )}
     </ToolCardShell>
   );

@@ -37,7 +37,13 @@ const CheckAgentTaskCard: React.FC<CheckAgentTaskCardProps> = ({
       icon={<SyncOutlined />}
       title={title}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle="Task Check"
+        />
+      )}
     </ToolCardShell>
   );
 };

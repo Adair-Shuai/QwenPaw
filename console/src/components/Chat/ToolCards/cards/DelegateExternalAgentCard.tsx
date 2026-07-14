@@ -30,7 +30,13 @@ const DelegateExternalAgentCard: React.FC<DelegateExternalAgentCardProps> = ({
       icon={<ApiOutlined />}
       title={title}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle={runner ? `Delegate: ${runner}` : "Delegate"}
+        />
+      )}
     </ToolCardShell>
   );
 };

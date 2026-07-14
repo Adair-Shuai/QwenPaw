@@ -51,7 +51,13 @@ const GrepSearchCard: React.FC<GrepSearchCardProps> = ({
       title={title}
       badges={badge}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle={pattern ? `Grep: ${pattern}` : "Grep Results"}
+        />
+      )}
     </ToolCardShell>
   );
 };

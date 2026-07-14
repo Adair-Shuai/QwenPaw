@@ -51,7 +51,13 @@ const GlobSearchCard: React.FC<GlobSearchCardProps> = ({
       title={title}
       badges={badge}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle={pattern ? `Glob: ${pattern}` : "Glob Results"}
+        />
+      )}
     </ToolCardShell>
   );
 };

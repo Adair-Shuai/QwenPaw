@@ -35,6 +35,7 @@ const AppendFileCard: React.FC<AppendFileCardProps> = ({
 
   const appendedContent = (params.content as string) || "";
   const lineCount = countLines(appendedContent);
+  const ext = (params.file_path || params.path || "").toString().match(/\.([^.]+)$/)?.[1] || "";
 
   const badge =
     !content.status?.startsWith("call") && lineCount > 0 ? (
@@ -52,7 +53,12 @@ const AppendFileCard: React.FC<AppendFileCardProps> = ({
       badges={badge}
     >
       {appendedContent && (
-        <DefaultBlock title="Content" content={appendedContent} />
+        <DefaultBlock
+          title="Content"
+          content={appendedContent}
+          workspaceTitle={file || undefined}
+          workspaceExtension={ext || undefined}
+        />
       )}
     </ToolCardShell>
   );

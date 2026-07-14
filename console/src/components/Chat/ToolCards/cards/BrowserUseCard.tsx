@@ -279,7 +279,13 @@ const BrowserUseCard: React.FC<BrowserUseCardProps> = ({
       icon={<ChromeOutlined />}
       title={title}
     >
-      {resultText && <DefaultBlock title="Output" content={resultText} />}
+      {resultText && (
+        <DefaultBlock
+          title="Output"
+          content={resultText}
+          workspaceTitle="Browser Output"
+        />
+      )}
     </ToolCardShell>
   );
 };

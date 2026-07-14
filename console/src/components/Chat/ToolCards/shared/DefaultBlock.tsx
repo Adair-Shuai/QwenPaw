@@ -6,20 +6,37 @@
  * - Markdown content → rendered via Markdown component
  * - JSON content → pretty-printed and rendered with syntax highlighting
  * - Plain text → rendered with syntax highlighting
+ *
+ * When `workspaceTitle` is provided, an additional "Open in Workspace"
+ * button appears next to the copy button, allowing the user to preview
+ * the content in the workspace panel.
  */
 
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { Markdown } from "@agentscope-ai/chat";
-import { CopyOutlined, CheckOutlined } from "@ant-design/icons";
+import {
+  CopyOutlined,
+  CheckOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
+import { Tooltip } from "antd";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { looksLikeMarkdown } from "./utils";
+import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import styles from "./toolCards.module.less";
 
 export interface DefaultBlockProps {
   title: string;
   content: string;
   copyTitle?: string;
+  /**
+   * If provided, an "Open in Workspace" button will be shown.
+   * This string is used as the artifact title in the workspace.
+   */
+  workspaceTitle?: string;
+  /** Optional file extension for renderer matching (e.g. "md", "json", "py") */
+  workspaceExtension?: string;
 }
 
 /** Try to parse JSON. Returns parsed object or null. */
@@ -38,6 +55,39 @@ function tryParseJson(text: string): unknown | null {
   return null;
 }
 
+/** Detect a reasonable MIME type from content + extension. */
+function detectMimeType(
+  content: string,
+  ext?: string,
+): string {
+  if (ext) {
+    const extMap: Record<string, string> = {
+      md: "text/markdown",
+      markdown: "text/markdown",
+      json: "application/json",
+      html: "text/html",
+      css: "text/css",
+      js: "text/javascript",
+      ts: "text/typescript",
+      py: "text/x-python",
+      sh: "text/x-shellscript",
+      yaml: "text/yaml",
+      yml: "text/yaml",
+      xml: "text/xml",
+      svg: "image/svg+xml",
+    };
+    if (extMap[ext.toLowerCase()]) return extMap[ext.toLowerCase()];
+  }
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return "application/json";
+  }
+  if (looksLikeMarkdown(content)) {
+    return "text/markdown";
+  }
+  return "text/plain";
+}
+
 const highlighterStyle = {
   margin: 0,
   borderRadius: 0,
@@ -52,6 +102,8 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
   title,
   content,
   copyTitle,
+  workspaceTitle,
+  workspaceExtension,
 }) => {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -71,6 +123,19 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
       })
       .catch(() => {});
   }, [content]);
+
+  const handleOpenInWorkspace = useCallback(() => {
+    if (!content) return;
+    const mimeType = detectMimeType(content, workspaceExtension);
+    useWorkspaceStore.getState().openArtifact({
+      id: `block-${workspaceTitle || title}-${Date.now()}`,
+      title: workspaceTitle || title,
+      source: "tool_call",
+      mimeType,
+      extension: workspaceExtension,
+      textContent: content,
+    });
+  }, [content, workspaceTitle, title, workspaceExtension]);
 
   const renderContent = () => {
     if (isMarkdown) {
@@ -108,13 +173,26 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
     <div className={styles.defaultBlock}>
       <div className={styles.defaultBlockHeader}>
         <span className={styles.defaultBlockTitle}>{title}</span>
-        <button
-          className={styles.defaultBlockCopy}
-          onClick={handleCopy}
-          title={copyTitle}
-        >
-          {copied ? <CheckOutlined /> : <CopyOutlined />}
-        </button>
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          {workspaceTitle && content && (
+            <Tooltip title="在工作区打开">
+              <button
+                className={styles.defaultBlockCopy}
+                onClick={handleOpenInWorkspace}
+                title="在工作区打开"
+              >
+                <FolderOpenOutlined />
+              </button>
+            </Tooltip>
+          )}
+          <button
+            className={styles.defaultBlockCopy}
+            onClick={handleCopy}
+            title={copyTitle}
+          >
+            {copied ? <CheckOutlined /> : <CopyOutlined />}
+          </button>
+        </div>
       </div>
       {renderContent()}
     </div>

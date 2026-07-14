@@ -34,7 +34,11 @@ const ListAgentsCard: React.FC<ListAgentsCardProps> = ({
       title={title}
     >
       {formattedResult && (
-        <DefaultBlock title="Output" content={formattedResult} />
+        <DefaultBlock
+          title="Output"
+          content={formattedResult}
+          workspaceTitle="Agent List"
+        />
       )}
     </ToolCardShell>
   );
