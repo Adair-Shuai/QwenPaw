@@ -234,12 +234,14 @@ class TestAddFileHandler:
 class TestLogConstants:
     """Test module-level constants."""
 
-    def test_log_namespace_is_qwenpaw(self):
-        """S级: LOG_NAMESPACE is 'qwenpaw'."""
-        assert LOG_NAMESPACE == "qwenpaw"
+    def test_log_namespace_is_project_name(self):
+        """S级: LOG_NAMESPACE is lowercased PROJECT_NAME."""
+        from qwenpaw.constant import PROJECT_NAME
+
+        assert LOG_NAMESPACE == PROJECT_NAME.lower()
 
     def test_log_namespace_used_by_setup(self):
         """S级: setup_logger uses LOG_NAMESPACE."""
         # Get the logger that setup_logger would configure
         logger = logging.getLogger(LOG_NAMESPACE)
-        assert logger.name == "qwenpaw"
+        assert logger.name == LOG_NAMESPACE
