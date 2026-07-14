@@ -1836,6 +1836,7 @@ function pt({
         borderColor: v ? void 0 : "#d9d9d9",
         opacity: v ? 1 : 0.7,
         height: "100%",
+        width: "100%",
         display: "flex",
         flexDirection: "column"
       },
@@ -3114,11 +3115,18 @@ function Et() {
           description: u ? "未找到匹配的专家" : "暂无专家，点击「创建专家」添加"
         }) : e.createElement(
           y,
-          { gutter: [12, 12] },
+          { gutter: [12, 12], align: "stretch" },
           ...ue.map(
             (g) => e.createElement(
               C,
-              { key: g.agent.id, xs: 24, sm: 12, md: 8, lg: 6 },
+              {
+                key: g.agent.id,
+                xs: 24,
+                sm: 12,
+                md: 8,
+                lg: 6,
+                style: { display: "flex" }
+              },
               e.createElement(pt, {
                 expert: g,
                 onClick: () => G(g),
@@ -3304,6 +3312,7 @@ function ht({
         borderColor: e.enabled ? void 0 : "#d9d9d9",
         opacity: e.enabled ? 1 : 0.7,
         height: "100%",
+        width: "100%",
         display: "flex",
         flexDirection: "column"
       },
@@ -3487,11 +3496,18 @@ function vt() {
       description: A ? "未找到匹配的能力" : "暂无 MCP 客户端，点击「管理 MCP」添加"
     }) : e.createElement(
       y,
-      { gutter: [12, 12] },
+      { gutter: [12, 12], align: "stretch" },
       ...K.map(
         (z) => e.createElement(
           C,
-          { key: z.key, xs: 24, sm: 12, md: 8, lg: 6 },
+          {
+            key: z.key,
+            xs: 24,
+            sm: 12,
+            md: 8,
+            lg: 6,
+            style: { display: "flex" }
+          },
           e.createElement(ht, {
             mcp: z,
             onClick: () => {

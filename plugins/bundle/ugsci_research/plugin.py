@@ -874,7 +874,7 @@ class UGSciResearchPlugin:
             return
 
         try:
-            from ..agents.skill_system.store import (
+            from qwenpaw.agents.skill_system.store import (
                 copy_skill_dir,
                 get_skill_pool_dir,
                 safe_skill_dir,
@@ -882,11 +882,11 @@ class UGSciResearchPlugin:
                 default_pool_manifest,
                 mutate_json,
             )
-            from ..agents.skill_system.registry import (
+            from qwenpaw.agents.skill_system.registry import (
                 ensure_skill_pool_initialized,
                 reconcile_pool_manifest,
             )
-            from ..agents.skill_system.pool_service import (
+            from qwenpaw.agents.skill_system.pool_service import (
                 _register_pool_skill_entry,
             )
             import shutil
@@ -945,14 +945,14 @@ class UGSciResearchPlugin:
     def _remove_pool_skills(plugin_id: str, delete_files: bool = False) -> None:
         """Remove plugin-sourced skills from the pool on uninstall."""
         try:
-            from ..agents.skill_system.store import (
+            from qwenpaw.agents.skill_system.store import (
                 get_pool_skill_manifest_path,
                 get_skill_pool_dir,
                 default_pool_manifest,
                 mutate_json,
                 read_skill_pool_manifest,
             )
-            from ..agents.skill_system.registry import (
+            from qwenpaw.agents.skill_system.registry import (
                 reconcile_pool_manifest,
             )
             import shutil

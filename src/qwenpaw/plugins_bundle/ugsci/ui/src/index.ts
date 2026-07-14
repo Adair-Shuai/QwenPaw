@@ -2543,6 +2543,7 @@ function ExpertCard({
         borderColor: isEnabled ? undefined : "#d9d9d9",
         opacity: isEnabled ? 1 : 0.7,
         height: "100%",
+        width: "100%",
         display: "flex",
         flexDirection: "column",
       },
@@ -4146,11 +4147,18 @@ function ExpertCenterPage() {
               })
             : React.createElement(
                 Row,
-                { gutter: [12, 12] },
+                { gutter: [12, 12], align: "stretch" },
                 ...filteredExperts.map((expert) =>
                   React.createElement(
                     Col,
-                    { key: expert.agent.id, xs: 24, sm: 12, md: 8, lg: 6 },
+                    {
+                      key: expert.agent.id,
+                      xs: 24,
+                      sm: 12,
+                      md: 8,
+                      lg: 6,
+                      style: { display: "flex" },
+                    },
                     React.createElement(ExpertCard, {
                       expert,
                       onClick: () => handleCardClick(expert),
@@ -4361,6 +4369,7 @@ function CapabilityCard({
         borderColor: mcp.enabled ? undefined : "#d9d9d9",
         opacity: mcp.enabled ? 1 : 0.7,
         height: "100%",
+        width: "100%",
         display: "flex",
         flexDirection: "column",
       },
@@ -4582,11 +4591,18 @@ function CapabilityCenterPage() {
           })
         : React.createElement(
             Row,
-            { gutter: [12, 12] },
+            { gutter: [12, 12], align: "stretch" },
             ...filteredMCPs.map((mcp) =>
               React.createElement(
                 Col,
-                { key: mcp.key, xs: 24, sm: 12, md: 8, lg: 6 },
+                {
+                  key: mcp.key,
+                  xs: 24,
+                  sm: 12,
+                  md: 8,
+                  lg: 6,
+                  style: { display: "flex" },
+                },
                 React.createElement(CapabilityCard, {
                   mcp,
                   onClick: () => {
