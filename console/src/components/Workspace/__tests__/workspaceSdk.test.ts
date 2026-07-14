@@ -54,7 +54,9 @@ describe("Workspace SDK", () => {
       expect(list.find((r) => r.id === "custom")?.name).toBe("Custom Renderer");
 
       d.dispose();
-      expect(sdk.listRenderers().find((r) => r.id === "custom")).toBeUndefined();
+      expect(
+        sdk.listRenderers().find((r) => r.id === "custom"),
+      ).toBeUndefined();
     });
 
     it("hasRenderer returns true for registered MIME type", () => {

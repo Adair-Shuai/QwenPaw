@@ -65,23 +65,23 @@
 
 ```typescript
 interface WorkspaceArtifact {
-  id: string;                    // 全局唯一 ID
-  title: string;                 // 标签页标题
+  id: string; // 全局唯一 ID
+  title: string; // 标签页标题
   source: "tool_call" | "file_upload" | "link" | "generated";
-  mimeType: string;              // MIME 类型（渲染器匹配主键）
-  extension?: string;            // 文件扩展名（备用匹配）
+  mimeType: string; // MIME 类型（渲染器匹配主键）
+  extension?: string; // 文件扩展名（备用匹配）
 
   // 内容载体（三选一）
-  textContent?: string;          // 文本内容（markdown/html/code/json）
-  binaryUrl?: string;            // 二进制 URL（图片/PDF/视频/Office）
-  jsonContent?: unknown;         // 结构化 JSON（图表配置/测井数据）
+  textContent?: string; // 文本内容（markdown/html/code/json）
+  binaryUrl?: string; // 二进制 URL（图片/PDF/视频/Office）
+  jsonContent?: unknown; // 结构化 JSON（图表配置/测井数据）
 
-  isStreaming?: boolean;         // 是否正在流式更新
-  streamProgress?: number;       // 流式进度 0-1
+  isStreaming?: boolean; // 是否正在流式更新
+  streamProgress?: number; // 流式进度 0-1
 
-  sessionId?: string;            // 关联会话
-  messageId?: string;            // 关联消息
-  toolName?: string;             // 关联工具
+  sessionId?: string; // 关联会话
+  messageId?: string; // 关联消息
+  toolName?: string; // 关联工具
   meta?: Record<string, unknown>; // 渲染器特定属性
 }
 ```
@@ -100,20 +100,20 @@ interface WorkspaceArtifact {
 
 ## 五、渲染器矩阵
 
-| 渲染器 ID | 格式 | 底层引擎 | 来源 | 流式 | 可编辑 |
-|-----------|------|----------|------|------|--------|
-| `markdown` | Markdown | TipTap Static Renderer | 内置 | ✅ | ✅ |
-| `html` | HTML/SVG | iframe srcdoc 沙箱 | 内置 | ✅ | ❌ |
-| `code` | 代码文件 | Monaco Editor | 内置 | ✅ | ✅ |
-| `json` | JSON | Monaco (JSON mode) | 内置 | ✅ | ✅ |
-| `mermaid` | Mermaid 图表 | mermaid.js | 内置 | ✅ | ❌ |
-| `pdf` | PDF | react-pdf (pdfjs-dist) | 内置 | ❌ | ❌ |
-| `office-doc` | DOCX/XLSX/PPTX | 后端转换 → HTML | 内置 | ❌ | ❌ |
-| `image` | 图片 | Ant Design Image | 内置 | ❌ | ❌ |
-| `sandpack-react` | React 代码 | @codesandbox/sandpack-react | 内置 | ❌ | ❌ |
-| `fallback` | 未知类型 | 文件信息 + 下载 | 内置 | ❌ | ❌ |
-| ~~`well-log`~~ | LAS/DLIS | ~~自定义~~ | ~~插件~~ | ~~❌~~ | ~~❌~~ |
-| ~~`mesh-3d`~~ | OBJ/STL/VTK | ~~three.js~~ | ~~插件~~ | ~~❌~~ | ~~❌~~ |
+| 渲染器 ID        | 格式           | 底层引擎                    | 来源     | 流式   | 可编辑 |
+| ---------------- | -------------- | --------------------------- | -------- | ------ | ------ |
+| `markdown`       | Markdown       | TipTap Static Renderer      | 内置     | ✅     | ✅     |
+| `html`           | HTML/SVG       | iframe srcdoc 沙箱          | 内置     | ✅     | ❌     |
+| `code`           | 代码文件       | Monaco Editor               | 内置     | ✅     | ✅     |
+| `json`           | JSON           | Monaco (JSON mode)          | 内置     | ✅     | ✅     |
+| `mermaid`        | Mermaid 图表   | mermaid.js                  | 内置     | ✅     | ❌     |
+| `pdf`            | PDF            | react-pdf (pdfjs-dist)      | 内置     | ❌     | ❌     |
+| `office-doc`     | DOCX/XLSX/PPTX | 后端转换 → HTML             | 内置     | ❌     | ❌     |
+| `image`          | 图片           | Ant Design Image            | 内置     | ❌     | ❌     |
+| `sandpack-react` | React 代码     | @codesandbox/sandpack-react | 内置     | ❌     | ❌     |
+| `fallback`       | 未知类型       | 文件信息 + 下载             | 内置     | ❌     | ❌     |
+| ~~`well-log`~~   | LAS/DLIS       | ~~自定义~~                  | ~~插件~~ | ~~❌~~ | ~~❌~~ |
+| ~~`mesh-3d`~~    | OBJ/STL/VTK    | ~~three.js~~                | ~~插件~~ | ~~❌~~ | ~~❌~~ |
 
 ## 六、流式更新机制
 
@@ -154,10 +154,14 @@ const output = useMemo(() => {
 // 检测追加式更新，只插入新增部分
 if (newContent.startsWith(prev) && prev.length > 0) {
   const appended = newContent.slice(prev.length);
-  model.applyEdits([{
-    range: { /* end of document */ },
-    text: appended,
-  }]);
+  model.applyEdits([
+    {
+      range: {
+        /* end of document */
+      },
+      text: appended,
+    },
+  ]);
 }
 ```
 
@@ -170,7 +174,7 @@ if (newContent.startsWith(prev) && prev.length > 0) {
 window.QwenPaw.workspace.registerRenderer({
   id: "well-log-las",
   name: "Well Log (LAS)",
-  component: WellLogRenderer,  // React.FC<RendererContext>
+  component: WellLogRenderer, // React.FC<RendererContext>
   mimeTypes: ["application/x-las"],
   extensions: ["las", "dlis"],
   priority: 100,
@@ -218,7 +222,7 @@ window.QwenPaw.workspace.updateArtifact(artifactId, {
 import { WorkspacePanel } from "../../components/Workspace";
 
 // 在 chatPageRoot 的末尾，替换原有的 Slot
-<WorkspacePanel />
+<WorkspacePanel />;
 ```
 
 或通过 Slot 系统（插件方式）：
@@ -287,13 +291,13 @@ console/src/components/Workspace/
 
 ### 第二阶段：科学数据渲染器
 
-| 渲染器 | 格式 | 计划使用的库 | 说明 |
-|--------|------|-------------|------|
-| `well-log` | LAS/DLIS | [wellioviz](https://github.com/JustinGOSSES/wellioviz) 或自定义 D3 | 测井曲线多轨道显示 |
-| `mesh-3d` | OBJ/STL/VTK/GLTF | three.js + @react-three/fiber | 三维网格/模型渲染 |
-| `seismic` | SEGY | [segyjs](https://github.com/seg/segyjs) | 地震数据剖面 |
-| `netcdf` | NetCDF/CDF | netcdfjs | 多维科学数据数组 |
-| `hdf5` | HDF5 | h5wasm | HDF5 科学数据格式 |
+| 渲染器     | 格式             | 计划使用的库                                                       | 说明               |
+| ---------- | ---------------- | ------------------------------------------------------------------ | ------------------ |
+| `well-log` | LAS/DLIS         | [wellioviz](https://github.com/JustinGOSSES/wellioviz) 或自定义 D3 | 测井曲线多轨道显示 |
+| `mesh-3d`  | OBJ/STL/VTK/GLTF | three.js + @react-three/fiber                                      | 三维网格/模型渲染  |
+| `seismic`  | SEGY             | [segyjs](https://github.com/seg/segyjs)                            | 地震数据剖面       |
+| `netcdf`   | NetCDF/CDF       | netcdfjs                                                           | 多维科学数据数组   |
+| `hdf5`     | HDF5             | h5wasm                                                             | HDF5 科学数据格式  |
 
 ### 第三阶段：协作编辑
 

@@ -175,11 +175,7 @@ export default defineConfig(({ mode }) => {
         // Optional Workspace renderer deps — not installed by default.
         // They are dynamically imported inside try/catch, so marking them
         // external prevents Rollup from failing the build at resolution time.
-        external: [
-          "react-pdf",
-          "@codesandbox/sandpack-react",
-          /@tiptap\//,
-        ],
+        external: ["react-pdf", "@codesandbox/sandpack-react", /@tiptap\//],
         output: {
           manualChunks(id) {
             // React core

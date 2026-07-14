@@ -13,13 +13,21 @@
  */
 import React, { useEffect, useState, useCallback } from "react";
 import { Button, Space, Tooltip, Spin, Alert } from "antd";
-import { DownloadOutlined, ReloadOutlined, FileTextOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  ReloadOutlined,
+  FileTextOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 
 const API_BASE = "/api/workspace";
 
-const OfficeDocRenderer: React.FC<RendererContext> = ({ artifact, theme, workspace }) => {
+const OfficeDocRenderer: React.FC<RendererContext> = ({
+  artifact,
+  theme,
+  workspace,
+}) => {
   const { t } = useTranslation();
   const [htmlContent, setHtmlContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
@@ -62,7 +70,15 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({ artifact, theme, workspa
 
   if (loading) {
     return (
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", background: theme === "dark" ? "#1e1e1e" : "#fff" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          height: "100%",
+          background: theme === "dark" ? "#1e1e1e" : "#fff",
+        }}
+      >
         <Spin tip={t("workspace.converting")} size="large" />
       </div>
     );
@@ -70,11 +86,30 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({ artifact, theme, workspa
 
   if (error) {
     return (
-      <div style={{ padding: 24, height: "100%", overflow: "auto", background: theme === "dark" ? "#1e1e1e" : "#fff" }}>
-        <Alert type="warning" message={t("workspace.convertFailed")} description={error} showIcon />
+      <div
+        style={{
+          padding: 24,
+          height: "100%",
+          overflow: "auto",
+          background: theme === "dark" ? "#1e1e1e" : "#fff",
+        }}
+      >
+        <Alert
+          type="warning"
+          message={t("workspace.convertFailed")}
+          description={error}
+          showIcon
+        />
         <Space style={{ marginTop: 16 }}>
-          <Button icon={<ReloadOutlined />} onClick={convertDocument}>{t("workspace.retry")}</Button>
-          <Button icon={<DownloadOutlined />} onClick={() => workspace.download?.(artifact)}>{t("workspace.download")}</Button>
+          <Button icon={<ReloadOutlined />} onClick={convertDocument}>
+            {t("workspace.retry")}
+          </Button>
+          <Button
+            icon={<DownloadOutlined />}
+            onClick={() => workspace.download?.(artifact)}
+          >
+            {t("workspace.download")}
+          </Button>
         </Space>
       </div>
     );
@@ -82,17 +117,47 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({ artifact, theme, workspa
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "4px 8px", borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`, flexShrink: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "4px 8px",
+          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
+          flexShrink: 0,
+        }}
+      >
         <Space size={4}>
           <FileTextOutlined />
-          <span style={{ fontSize: 12, color: "#999" }}>{artifact.extension?.toUpperCase()}</span>
+          <span style={{ fontSize: 12, color: "#999" }}>
+            {artifact.extension?.toUpperCase()}
+          </span>
         </Space>
         <Space size={2}>
-          <Tooltip title={t("workspace.reload")}><Button size="small" type="text" icon={<ReloadOutlined />} onClick={convertDocument} /></Tooltip>
-          <Tooltip title={t("workspace.download")}><Button size="small" type="text" icon={<DownloadOutlined />} onClick={() => workspace.download?.(artifact)} /></Tooltip>
+          <Tooltip title={t("workspace.reload")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={convertDocument}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.download")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<DownloadOutlined />}
+              onClick={() => workspace.download?.(artifact)}
+            />
+          </Tooltip>
         </Space>
       </div>
-      <iframe srcDoc={htmlContent} title={artifact.title} sandbox="allow-same-origin" style={{ width: "100%", flex: 1, border: "none", background: "#fff" }} />
+      <iframe
+        srcDoc={htmlContent}
+        title={artifact.title}
+        sandbox="allow-same-origin"
+        style={{ width: "100%", flex: 1, border: "none", background: "#fff" }}
+      />
     </div>
   );
 };

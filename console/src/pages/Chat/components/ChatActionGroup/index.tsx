@@ -6,6 +6,7 @@ import {
   ExpandAltOutlined,
   CompressOutlined,
   MoreOutlined,
+  PanelRightOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Dropdown, Flex, Tooltip } from "antd";
@@ -20,6 +21,10 @@ interface ChatActionGroupProps {
   historyOpen?: boolean;
   isWideMode?: boolean;
   onToggleWideMode?: () => void;
+  /** Callback to toggle the workspace panel */
+  onToggleWorkspace?: () => void;
+  /** Whether the workspace panel is currently visible */
+  workspaceOpen?: boolean;
 }
 
 const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
@@ -27,6 +32,8 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
   historyOpen = false,
   isWideMode = false,
   onToggleWideMode,
+  onToggleWorkspace,
+  workspaceOpen = false,
 }) => {
   const { t } = useTranslation();
 
@@ -48,6 +55,18 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
         </div>
       ),
       onClick: () => onToggleHistory(),
+    });
+  }
+  if (onToggleWorkspace) {
+    moreItems.push({
+      key: "workspace",
+      icon: <PanelRightOutlined />,
+      label: (
+        <div style={{ textAlign: "center" }}>
+          {workspaceOpen ? t("chat.closeWorkspace", "Close Workspace") : t("chat.openWorkspace", "Open Workspace")}
+        </div>
+      ),
+      onClick: () => onToggleWorkspace(),
     });
   }
   if (onToggleWideMode) {
@@ -86,6 +105,20 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
                 : undefined
             }
             onClick={onToggleHistory}
+          />
+        </Tooltip>
+      )}
+      {!isCompact && onToggleWorkspace && (
+        <Tooltip title={workspaceOpen ? t("chat.closeWorkspace", "Close Workspace") : t("chat.openWorkspace", "Open Workspace")} mouseEnterDelay={0.5}>
+          <IconButton
+            bordered={false}
+            icon={<PanelRightOutlined />}
+            style={
+              workspaceOpen
+                ? { color: "var(--color-primary, #ff9d4d)" }
+                : undefined
+            }
+            onClick={onToggleWorkspace}
           />
         </Tooltip>
       )}

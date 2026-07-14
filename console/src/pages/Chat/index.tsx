@@ -50,6 +50,7 @@ import {
 } from "../../plugins/registry/useChatExtensions";
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
 import { WorkspacePanel } from "../../components/Workspace";
+import { useWorkspaceStore } from "../../components/Workspace/store/workspaceStore";
 import {
   resolveLocalized,
   type WelcomeRenderProps,
@@ -2743,6 +2744,8 @@ export default function ChatPage() {
               historyOpen={effectiveIsFullMode ? historyPanelOpen : false}
               isWideMode={isWideMode}
               onToggleWideMode={toggleWideMode}
+              onToggleWorkspace={() => useWorkspaceStore.getState().togglePanel()}
+              workspaceOpen={workspacePanelOpen}
             />
             {pluginRightHeader}
           </>

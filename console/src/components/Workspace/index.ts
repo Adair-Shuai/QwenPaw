@@ -14,17 +14,22 @@
  */
 export { default as WorkspacePanel } from "./WorkspacePanel";
 export { useWorkspaceStore } from "./store/workspaceStore";
-export { DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH } from "./store/workspaceStore";
+export {
+  DEFAULT_PANEL_WIDTH,
+  MIN_PANEL_WIDTH,
+  MAX_PANEL_WIDTH,
+} from "./store/workspaceStore";
 export { rendererRegistry, MimeTypes } from "./store/rendererRegistry";
-export { registerBuiltinRenderers, unregisterBuiltinRenderers } from "./store/builtinRenderers";
+export {
+  registerBuiltinRenderers,
+  unregisterBuiltinRenderers,
+} from "./store/builtinRenderers";
 export {
   createWorkspaceNamespace,
   openArtifactFromToolCall,
   streamArtifactUpdate,
 } from "./workspaceSdk";
-export type {
-  QwenPawWorkspaceNamespace,
-} from "./workspaceSdk";
+export type { QwenPawWorkspaceNamespace } from "./workspaceSdk";
 export type {
   WorkspaceArtifact,
   WorkspaceState,

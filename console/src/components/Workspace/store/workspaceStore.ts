@@ -14,11 +14,7 @@
  */
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type {
-  WorkspaceArtifact,
-  WorkspaceState,
-  WorkspaceTab,
-} from "../types";
+import type { WorkspaceArtifact, WorkspaceState, WorkspaceTab } from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 默认值
@@ -113,8 +109,9 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
 
       closeTab: (artifactId) =>
         set((state) => {
-          const sessionTabs = (state.tabsBySession[state.currentSessionId] ?? [])
-            .filter((id) => id !== artifactId);
+          const sessionTabs = (
+            state.tabsBySession[state.currentSessionId] ?? []
+          ).filter((id) => id !== artifactId);
 
           const tabs = sessionTabs
             .map((id) => state.artifacts[id])
@@ -205,9 +202,13 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
       setPanelOpen: (open) => set({ panelOpen: open }),
       setPanelWidth: (width) =>
         set({
-          panelWidth: Math.max(MIN_PANEL_WIDTH, Math.min(MAX_PANEL_WIDTH, width)),
+          panelWidth: Math.max(
+            MIN_PANEL_WIDTH,
+            Math.min(MAX_PANEL_WIDTH, width),
+          ),
         }),
-      toggleFullscreen: () => set((state) => ({ isFullscreen: !state.isFullscreen })),
+      toggleFullscreen: () =>
+        set((state) => ({ isFullscreen: !state.isFullscreen })),
 
       pinTab: (artifactId) =>
         set((state) => ({
