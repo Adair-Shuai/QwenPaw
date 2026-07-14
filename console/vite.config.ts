@@ -14,6 +14,52 @@ const cssStubPlugin = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Optional-deps plugin
+//
+// Workspace renderers dynamically import optional packages (TipTap, react-pdf,
+// @codesandbox/sandpack-react) that are NOT in package.json by default.
+// In dev mode, Vite's import-analysis tries to resolve every `import()` call,
+// even those inside try/catch — causing a hard error overlay.
+//
+// This plugin intercepts those specifiers and returns a virtual module that
+// throws at runtime. The renderers' try/catch (or .catch()) handlers swallow
+// the error and fall back to a simpler renderer.
+//
+// For production builds, `build.rollupOptions.external` (below) takes
+// precedence, so the plugin is never called in build mode.
+// ─────────────────────────────────────────────────────────────────────────────
+const OPTIONAL_DEPS = [
+  "react-pdf",
+  "@codesandbox/sandpack-react",
+  "@tiptap/static-renderer",
+  "@tiptap/starter-kit",
+  "@tiptap/markdown",
+];
+
+const optionalDepsPlugin = {
+  name: "optional-deps-stub",
+  enforce: "pre" as const,
+  resolveId(source: string) {
+    // Match exact specifiers and deep imports (e.g. @tiptap/static-renderer)
+    if (OPTIONAL_DEPS.includes(source)) {
+      return `\0optional-dep:${source}`;
+    }
+    return null;
+  },
+  load(id: string) {
+    if (!id.startsWith("\0optional-dep:")) return null;
+    const dep = id.slice("\0optional-dep:".length);
+    return (
+      `// Virtual stub for optional dependency: ${dep}\n` +
+      `// The real package is not installed. The dynamic import() will reject,\n` +
+      `// and the caller's try/catch or .catch() handler should fall back gracefully.\n` +
+      `throw new Error("Optional dependency '${dep}' is not installed. " +\n` +
+      `  \"Install it (npm i ${dep}) or rely on the fallback renderer.\");\n`
+    );
+  },
+};
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
   // Empty = same-origin; frontend and backend served together, no hardcoded host.
@@ -26,7 +72,7 @@ export default defineConfig(({ mode }) => {
       TOKEN: JSON.stringify(env.TOKEN || ""),
       MOBILE: false,
     },
-    plugins: [react(), cssStubPlugin],
+    plugins: [react(), optionalDepsPlugin, cssStubPlugin],
     css: {
       modules: {
         localsConvention: "camelCase",
