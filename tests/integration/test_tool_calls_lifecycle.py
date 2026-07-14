@@ -765,6 +765,12 @@ def test_cancel_while_running(
 
 @pytest.mark.integration
 @pytest.mark.p1
+@pytest.mark.xfail(
+    reason="Offload mechanism temporarily disabled by upstream PR #6058 "
+    "(fix(tool_calls): flatten offload hint + temporarily disable "
+    "broken offload mechanism). Re-enable when the offload bug is fixed.",
+    strict=True,
+)
 def test_offload_while_running(
     app_server,
     mock_llm,  # pylint: disable=redefined-outer-name
