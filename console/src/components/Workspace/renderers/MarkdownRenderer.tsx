@@ -32,7 +32,6 @@ type ViewMode = "preview" | "code";
 
 const MarkdownRenderer: React.FC<RendererContext> = ({
   artifact,
-  readOnly,
   theme,
   workspace,
 }) => {
@@ -86,9 +85,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         }}
       >
         <Markdown content={content} />
-        {artifact.isStreaming && (
-          <span className="cursor-blink">▋</span>
-        )}
+        {artifact.isStreaming && <span className="cursor-blink">▋</span>}
       </div>
     );
   }, [content, artifact.isStreaming, theme, t]);
