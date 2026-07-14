@@ -43,7 +43,9 @@ async function executePluginScript(entryUrl: string): Promise<void> {
 
   // Append a cache-busting query parameter so the browser always fetches
   // the latest plugin bundle instead of serving a stale cached version.
-  const cacheBustUrl = `${entryUrl}${entryUrl.includes("?") ? "&" : "?"}_t=${Date.now()}`;
+  const cacheBustUrl = `${entryUrl}${
+    entryUrl.includes("?") ? "&" : "?"
+  }_t=${Date.now()}`;
   const response = await fetch(cacheBustUrl, {
     headers,
     cache: "no-store",
