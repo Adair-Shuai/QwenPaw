@@ -3,25 +3,13 @@
  *
  * 扫描 response 的 output 数组，找出所有文件相关的工具调用
  * （read_file, write_file, edit_file, append_file, send_file_to_user 等），
- * 以小卡片形式列出。点击卡片自动在右侧工作区打开预览。
+ * 以小卡片形式列出。
+ *
+ * 交互：
+ * - 点击卡片主体 → 在右侧工作区打开文件内容预览
+ * - 点击文件夹图标 → 在系统文件资源管理器中定位文件
  *
  * 布局：根据窗口宽度一行显示 2-3 个卡片。
- *
- * 数据结构说明：
- * vendor (@agentscope-ai/chat) 的 output 数组中，每个 tool 消息的结构为：
- *   {
- *     id: string,
- *     type: "plugin_call" | "plugin_call_output" | "tool_call" | "tool_call_output" | ...,
- *     role: string,
- *     status: string,
- *     content: [
- *       { type: "data", data: { name, arguments, call_id, server_label } },   // [0] = call info
- *       { type: "data", data: { output, state } },                             // [1] = result (if merged)
- *     ]
- *   }
- *
- * 工具名在 content[0].data.name，参数在 content[0].data.arguments (JSON string)。
- * mergeToolMessages 可能已将 input/output 合并到同一条消息的 content 数组中。
  */
 import React, { useMemo } from "react";
 import {
@@ -33,8 +21,10 @@ import {
   FolderOpenOutlined,
   SendOutlined,
 } from "@ant-design/icons";
+import { Tooltip } from "antd";
+import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
-import { stringifyResult } from "./utils";
+import { stringifyResult, toDisplayUrl } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 类型
@@ -55,6 +45,10 @@ interface FileInfo {
   content?: string;
   /** 文件扩展名 */
   extension?: string;
+  /** 是否是二进制文件（图片/视频/音频等） */
+  isBinary?: boolean;
+  /** 二进制文件的 URL（如果有） */
+  binaryUrl?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -84,6 +78,31 @@ const TOOL_CALL_TYPES = new Set([
   "function_call_output",
   "component_call",
   "component_call_output",
+]);
+
+/** Binary file extensions */
+const BINARY_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "webp",
+  "svg",
+  "mp4",
+  "avi",
+  "mov",
+  "wmv",
+  "flv",
+  "mkv",
+  "webm",
+  "mp3",
+  "wav",
+  "flac",
+  "aac",
+  "ogg",
+  "wma",
+  "pdf",
 ]);
 
 /** 从工具调用参数中提取文件路径 */
@@ -117,11 +136,6 @@ function isFileRelatedTool(toolName: string): boolean {
 
 /**
  * 从 response data 的 output 数组中提取所有文件相关的工具调用。
- *
- * output 数组中的每个 tool 消息有 type 为 plugin_call/plugin_call_output 等，
- * content[0].data.name 为工具名，content[0].data.arguments 为 JSON 参数字符串。
- *
- * 如果 mergeToolMessages 已合并 input+output，则 content[1].data.output 为结果。
  */
 function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
   const output = data.output as unknown[] | undefined;
@@ -129,7 +143,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
 
   const infos: FileInfo[] = [];
   // Map: call_id or name → output content (for matching input with output)
-  const outputMap = new Map<string, string>();
+  const outputMap = new Map<string, unknown>();
 
   // First pass: collect output contents
   for (const msg of output) {
@@ -137,7 +151,6 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     const m = msg as Record<string, unknown>;
     const msgType = m.type as string;
 
-    // Only look at output-type messages
     if (
       !msgType ||
       !msgType.endsWith("_output") ||
@@ -159,7 +172,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     const outputVal = dataObj.output;
     const key = callId || name;
     if (key && outputVal !== undefined) {
-      outputMap.set(key, stringifyResult(outputVal));
+      outputMap.set(key, outputVal);
     }
   }
 
@@ -174,7 +187,6 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     const content = m.content;
     if (!Array.isArray(content) || content.length === 0) continue;
 
-    // content[0].data has tool call info
     const firstItem = content[0] as Record<string, unknown> | undefined;
     if (!firstItem || typeof firstItem !== "object") continue;
 
@@ -184,7 +196,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     const name = (callData.name as string) || "";
     if (!isFileRelatedTool(name)) continue;
 
-    // Parse arguments (JSON string or object)
+    // Parse arguments
     let params: Record<string, unknown> = {};
     const rawArgs = callData.arguments;
     if (typeof rawArgs === "string") {
@@ -203,27 +215,45 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     const callId = (callData.call_id as string) || "";
     const msgId = (m.id as string) || "";
 
-    // Try to get output content:
-    // 1. If merged (content[1].data.output exists)
-    // 2. If separate output message exists in outputMap
-    let resultContent: string | undefined;
+    // Get output content
+    let rawResult: unknown;
     if (content.length > 1) {
       const secondItem = content[1] as Record<string, unknown> | undefined;
-      const outputData = secondItem?.data as Record<string, unknown> | undefined;
+      const outputData = secondItem?.data as
+        | Record<string, unknown>
+        | undefined;
       if (outputData?.output !== undefined) {
-        resultContent = stringifyResult(outputData.output);
+        rawResult = outputData.output;
       }
     }
-    if (!resultContent) {
+    if (rawResult === undefined) {
       const key = callId || name;
-      resultContent = outputMap.get(key);
+      rawResult = outputMap.get(key);
     }
 
-    // For write_file / append_file, the content is in params
+    // For write_file / append_file, content is in params
+    let resultContent: string | undefined;
+    if (rawResult !== undefined) {
+      resultContent = stringifyResult(rawResult);
+    }
     if (!resultContent) {
       if (name === "write_file" || name === "append_file") {
         const paramContent = params.content as string;
         if (paramContent) resultContent = paramContent;
+      }
+    }
+
+    const ext = getExtension(filePath);
+    const isBinary = BINARY_EXTENSIONS.has(ext);
+
+    // For binary files, try to get a displayable URL from the result
+    let binaryUrl: string | undefined;
+    if (isBinary) {
+      // Try extracting URL from result blocks
+      binaryUrl = extractUrlFromResult(rawResult) || undefined;
+      // Fall back to constructing a preview URL from the file path
+      if (!binaryUrl) {
+        binaryUrl = toDisplayUrl(filePath);
       }
     }
 
@@ -234,7 +264,9 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       operation: TOOL_OPERATION_MAP[name.toLowerCase()] || "other",
       toolName: name,
       content: resultContent,
-      extension: getExtension(filePath),
+      extension: ext,
+      isBinary,
+      binaryUrl,
     });
   }
 
@@ -245,6 +277,37 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
   }
 
   return Array.from(seen.values());
+}
+
+/** Try to extract a URL from MCP result blocks */
+function extractUrlFromResult(result: unknown): string | null {
+  let arr: unknown[] | null = null;
+
+  if (typeof result === "string") {
+    try {
+      const parsed = JSON.parse(result);
+      if (Array.isArray(parsed)) arr = parsed;
+    } catch {
+      return null;
+    }
+  } else if (Array.isArray(result)) {
+    arr = result;
+  }
+
+  if (!arr) return null;
+
+  for (const block of arr) {
+    if (!block || typeof block !== "object") continue;
+    const b = block as Record<string, unknown>;
+    if (b.source && typeof b.source === "object") {
+      const src = b.source as Record<string, unknown>;
+      if (typeof src.url === "string" && src.url) return src.url;
+    }
+    if (typeof b.url === "string" && b.url) return b.url;
+    if (typeof b.path === "string" && b.path) return b.path;
+  }
+
+  return null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -305,6 +368,41 @@ const EXTENSION_ICON: Record<string, React.ReactNode> = {
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
+// MIME type detection
+// ─────────────────────────────────────────────────────────────────────────────
+
+function getMimeType(ext: string): string {
+  const extMap: Record<string, string> = {
+    md: "text/markdown",
+    markdown: "text/markdown",
+    json: "application/json",
+    html: "text/html",
+    css: "text/css",
+    js: "text/javascript",
+    jsx: "text/javascript",
+    ts: "text/typescript",
+    tsx: "text/typescript",
+    py: "text/x-python",
+    sh: "application/x-sh",
+    yaml: "application/x-yaml",
+    yml: "application/x-yaml",
+    xml: "application/xml",
+    svg: "image/svg+xml",
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    pdf: "application/pdf",
+    mp4: "video/mp4",
+    webm: "video/webm",
+    mp3: "audio/mpeg",
+    wav: "audio/wav",
+  };
+  return extMap[ext.toLowerCase()] || "text/plain";
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // 主组件
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -315,22 +413,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
 
   if (fileInfos.length === 0) return null;
 
-  const handleOpen = (info: FileInfo) => {
+  /** 点击卡片主体：在工作区打开文件内容预览 */
+  const handleOpenInWorkspace = (info: FileInfo) => {
     const ext = info.extension || "";
-    const mimeType =
-      ext === "md"
-        ? "text/markdown"
-        : ext === "json"
-          ? "application/json"
-          : ext === "html"
-            ? "text/html"
-            : ext === "py"
-              ? "text/x-python"
-              : ext === "js" || ext === "jsx"
-                ? "text/javascript"
-                : ext === "ts" || ext === "tsx"
-                  ? "text/typescript"
-                  : "text/plain";
+    const mimeType = getMimeType(ext);
 
     useWorkspaceStore.getState().openArtifact({
       id: `filecard-${info.toolCallId}`,
@@ -338,9 +424,22 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       source: "tool_call",
       mimeType,
       extension: ext || undefined,
-      textContent: info.content || "",
+      textContent: info.isBinary ? undefined : info.content || "",
+      binaryUrl: info.isBinary ? info.binaryUrl : undefined,
       toolName: info.toolName,
     });
+  };
+
+  /** 点击文件夹图标：在系统文件资源管理器中定位文件 */
+  const handleRevealInFileManager = (info: FileInfo) => {
+    // Tauri desktop: invoke native command
+    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+      invoke("reveal_in_file_manager", { path: info.filePath }).catch(
+        (err) => {
+          console.warn("[FileSummaryCards] reveal failed:", err);
+        },
+      );
+    }
   };
 
   return (
@@ -362,7 +461,6 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         return (
           <div
             key={info.toolCallId}
-            onClick={() => handleOpen(info)}
             style={{
               display: "flex",
               alignItems: "center",
@@ -373,68 +471,101 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
                 "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
               background:
                 "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
-              cursor: "pointer",
               transition: "all 0.15s ease",
               overflow: "hidden",
             }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.borderColor = opConfig.color;
-              e.currentTarget.style.background = `${opConfig.color}08`;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.borderColor = "";
-              e.currentTarget.style.background = "";
-            }}
           >
-            {/* 文件类型图标 */}
-            <span
+            {/* 可点击的卡片主体区域 — 打开工作区预览 */}
+            <div
+              onClick={() => handleOpenInWorkspace(info)}
               style={{
-                fontSize: 18,
-                color: opConfig.color,
-                flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
+                gap: 8,
+                flex: 1,
+                minWidth: 0,
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.parentElement!.style.borderColor =
+                  opConfig.color;
+                e.currentTarget.parentElement!.style.background = `${opConfig.color}08`;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.parentElement!.style.borderColor = "";
+                e.currentTarget.parentElement!.style.background = "";
               }}
             >
-              {extIcon}
-            </span>
-
-            {/* 文件名 + 操作标签 */}
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <div
+              {/* 文件类型图标 */}
+              <span
                 style={{
-                  fontSize: 13,
-                  fontWeight: 500,
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  whiteSpace: "nowrap",
-                  color: "var(--ant-color-text, rgba(0,0,0,0.88))",
-                }}
-              >
-                {info.fileName}
-              </div>
-              <div
-                style={{
-                  fontSize: 11,
+                  fontSize: 18,
                   color: opConfig.color,
+                  flexShrink: 0,
                   display: "flex",
                   alignItems: "center",
-                  gap: 4,
                 }}
               >
-                {opConfig.icon}
-                <span>{opConfig.label}</span>
+                {extIcon}
+              </span>
+
+              {/* 文件名 + 操作标签 */}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div
+                  style={{
+                    fontSize: 13,
+                    fontWeight: 500,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                    color: "var(--ant-color-text, rgba(0,0,0,0.88))",
+                  }}
+                >
+                  {info.fileName}
+                </div>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: opConfig.color,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  {opConfig.icon}
+                  <span>{opConfig.label}</span>
+                </div>
               </div>
             </div>
 
-            {/* 打开按钮 */}
-            <FolderOpenOutlined
-              style={{
-                fontSize: 14,
-                color: "var(--ant-color-text-quaternary, #bbb)",
-                flexShrink: 0,
-              }}
-            />
+            {/* 文件夹图标 — 在系统文件资源管理器中定位 */}
+            <Tooltip title="在文件管理器中显示">
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRevealInFileManager(info);
+                }}
+                style={{
+                  border: "none",
+                  background: "transparent",
+                  cursor: "pointer",
+                  padding: 4,
+                  display: "flex",
+                  alignItems: "center",
+                  flexShrink: 0,
+                  color: "var(--ant-color-text-quaternary, #bbb)",
+                  transition: "color 0.15s ease",
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.color = opConfig.color;
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.color = "";
+                }}
+              >
+                <FolderOpenOutlined style={{ fontSize: 14 }} />
+              </button>
+            </Tooltip>
           </div>
         );
       })}
