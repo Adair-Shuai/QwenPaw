@@ -2,10 +2,26 @@
  * FileSummaryCards — 在 AI 回复结尾显示涉及到的文件小卡片
  *
  * 扫描 response 的 output 数组，找出所有文件相关的工具调用
- * （read_file, write_file, edit_file, append_file, send_file 等），
+ * （read_file, write_file, edit_file, append_file, send_file_to_user 等），
  * 以小卡片形式列出。点击卡片自动在右侧工作区打开预览。
  *
  * 布局：根据窗口宽度一行显示 2-3 个卡片。
+ *
+ * 数据结构说明：
+ * vendor (@agentscope-ai/chat) 的 output 数组中，每个 tool 消息的结构为：
+ *   {
+ *     id: string,
+ *     type: "plugin_call" | "plugin_call_output" | "tool_call" | "tool_call_output" | ...,
+ *     role: string,
+ *     status: string,
+ *     content: [
+ *       { type: "data", data: { name, arguments, call_id, server_label } },   // [0] = call info
+ *       { type: "data", data: { output, state } },                             // [1] = result (if merged)
+ *     ]
+ *   }
+ *
+ * 工具名在 content[0].data.name，参数在 content[0].data.arguments (JSON string)。
+ * mergeToolMessages 可能已将 input/output 合并到同一条消息的 content 数组中。
  */
 import React, { useMemo } from "react";
 import {
@@ -15,6 +31,7 @@ import {
   FileImageOutlined,
   CodeOutlined,
   FolderOpenOutlined,
+  SendOutlined,
 } from "@ant-design/icons";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import { stringifyResult } from "./utils";
@@ -47,21 +64,27 @@ interface FileInfo {
 /** 文件操作工具名 → 操作类型映射 */
 const TOOL_OPERATION_MAP: Record<string, FileInfo["operation"]> = {
   read_file: "read",
-  readfile: "read",
-  file_read: "read",
   write_file: "write",
-  writefile: "write",
-  file_write: "write",
   edit_file: "edit",
-  editfile: "edit",
-  file_edit: "edit",
   append_file: "append",
-  appendfile: "append",
-  file_append: "append",
-  send_file: "send",
-  sendfile: "send",
-  file_send: "send",
+  send_file_to_user: "send",
+  view_image: "read",
+  view_video: "read",
 };
+
+/** Tool call message types (from vendor's AgentScopeRuntimeMessageType) */
+const TOOL_CALL_TYPES = new Set([
+  "plugin_call",
+  "plugin_call_output",
+  "tool_call",
+  "tool_call_output",
+  "mcp_call",
+  "mcp_call_output",
+  "function_call",
+  "function_call_output",
+  "component_call",
+  "component_call_output",
+]);
 
 /** 从工具调用参数中提取文件路径 */
 function extractFilePath(params: Record<string, unknown>): string {
@@ -89,92 +112,130 @@ function getExtension(path: string): string {
 
 /** 检查是否是文件相关的工具调用 */
 function isFileRelatedTool(toolName: string): boolean {
-  const lower = toolName.toLowerCase();
-  return lower in TOOL_OPERATION_MAP;
+  return toolName.toLowerCase() in TOOL_OPERATION_MAP;
 }
 
 /**
  * 从 response data 的 output 数组中提取所有文件相关的工具调用。
  *
- * output 数组中的每个 item 可以有：
- * - role: "tool" + content: [{ type: "tool_call", id, name, params, result, status }]
- *   (这是标准 MCP 工具调用格式)
- * - role: "assistant" + tool_calls: [{ id, function: { name, arguments } }]
- *   (这是 OpenAI 格式)
+ * output 数组中的每个 tool 消息有 type 为 plugin_call/plugin_call_output 等，
+ * content[0].data.name 为工具名，content[0].data.arguments 为 JSON 参数字符串。
+ *
+ * 如果 mergeToolMessages 已合并 input+output，则 content[1].data.output 为结果。
  */
 function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
   const output = data.output as unknown[] | undefined;
   if (!Array.isArray(output)) return [];
 
   const infos: FileInfo[] = [];
+  // Map: call_id or name → output content (for matching input with output)
+  const outputMap = new Map<string, string>();
 
+  // First pass: collect output contents
   for (const msg of output) {
     if (!msg || typeof msg !== "object") continue;
     const m = msg as Record<string, unknown>;
+    const msgType = m.type as string;
 
-    // Case 1: role === "tool", content is array of tool_call blocks
-    if (m.role === "tool") {
-      const content = m.content;
-      if (Array.isArray(content)) {
-        for (const block of content) {
-          if (!block || typeof block !== "object") continue;
-          const b = block as Record<string, unknown>;
-          if (b.type !== "tool_call") continue;
-          const name = (b.name as string) || "";
-          if (!isFileRelatedTool(name)) continue;
+    // Only look at output-type messages
+    if (
+      !msgType ||
+      !msgType.endsWith("_output") ||
+      !TOOL_CALL_TYPES.has(msgType)
+    )
+      continue;
 
-          const params = (b.params as Record<string, unknown>) || {};
-          const filePath = extractFilePath(params);
-          if (!filePath) continue;
+    const content = m.content;
+    if (!Array.isArray(content) || content.length === 0) continue;
 
-          const result = b.result;
-          infos.push({
-            toolCallId: (b.id as string) || `${name}-${filePath}`,
-            fileName: shortName(filePath),
-            filePath,
-            operation: TOOL_OPERATION_MAP[name.toLowerCase()] || "other",
-            toolName: name,
-            content: result ? stringifyResult(result) : undefined,
-            extension: getExtension(filePath),
-          });
-        }
+    const firstItem = content[0] as Record<string, unknown> | undefined;
+    if (!firstItem || typeof firstItem !== "object") continue;
+
+    const dataObj = firstItem.data as Record<string, unknown> | undefined;
+    if (!dataObj) continue;
+
+    const name = (dataObj.name as string) || "";
+    const callId = (dataObj.call_id as string) || "";
+    const outputVal = dataObj.output;
+    const key = callId || name;
+    if (key && outputVal !== undefined) {
+      outputMap.set(key, stringifyResult(outputVal));
+    }
+  }
+
+  // Second pass: collect tool call inputs
+  for (const msg of output) {
+    if (!msg || typeof msg !== "object") continue;
+    const m = msg as Record<string, unknown>;
+    const msgType = m.type as string;
+
+    if (!msgType || !TOOL_CALL_TYPES.has(msgType)) continue;
+
+    const content = m.content;
+    if (!Array.isArray(content) || content.length === 0) continue;
+
+    // content[0].data has tool call info
+    const firstItem = content[0] as Record<string, unknown> | undefined;
+    if (!firstItem || typeof firstItem !== "object") continue;
+
+    const callData = firstItem.data as Record<string, unknown> | undefined;
+    if (!callData) continue;
+
+    const name = (callData.name as string) || "";
+    if (!isFileRelatedTool(name)) continue;
+
+    // Parse arguments (JSON string or object)
+    let params: Record<string, unknown> = {};
+    const rawArgs = callData.arguments;
+    if (typeof rawArgs === "string") {
+      try {
+        params = JSON.parse(rawArgs);
+      } catch {
+        params = {};
+      }
+    } else if (rawArgs && typeof rawArgs === "object") {
+      params = rawArgs as Record<string, unknown>;
+    }
+
+    const filePath = extractFilePath(params);
+    if (!filePath) continue;
+
+    const callId = (callData.call_id as string) || "";
+    const msgId = (m.id as string) || "";
+
+    // Try to get output content:
+    // 1. If merged (content[1].data.output exists)
+    // 2. If separate output message exists in outputMap
+    let resultContent: string | undefined;
+    if (content.length > 1) {
+      const secondItem = content[1] as Record<string, unknown> | undefined;
+      const outputData = secondItem?.data as Record<string, unknown> | undefined;
+      if (outputData?.output !== undefined) {
+        resultContent = stringifyResult(outputData.output);
+      }
+    }
+    if (!resultContent) {
+      const key = callId || name;
+      resultContent = outputMap.get(key);
+    }
+
+    // For write_file / append_file, the content is in params
+    if (!resultContent) {
+      if (name === "write_file" || name === "append_file") {
+        const paramContent = params.content as string;
+        if (paramContent) resultContent = paramContent;
       }
     }
 
-    // Case 2: role === "assistant", tool_calls array (OpenAI format)
-    if (m.role === "assistant" && Array.isArray(m.tool_calls)) {
-      for (const tc of m.tool_calls as unknown[]) {
-        if (!tc || typeof tc !== "object") continue;
-        const t = tc as Record<string, unknown>;
-        const fn = t.function as Record<string, unknown> | undefined;
-        if (!fn) continue;
-        const name = (fn.name as string) || "";
-        if (!isFileRelatedTool(name)) continue;
-
-        let params: Record<string, unknown> = {};
-        try {
-          const args = fn.arguments;
-          params =
-            typeof args === "string"
-              ? JSON.parse(args)
-              : (args as Record<string, unknown>) || {};
-        } catch {
-          // ignore parse errors
-        }
-
-        const filePath = extractFilePath(params);
-        if (!filePath) continue;
-
-        infos.push({
-          toolCallId: (t.id as string) || `${name}-${filePath}`,
-          fileName: shortName(filePath),
-          filePath,
-          operation: TOOL_OPERATION_MAP[name.toLowerCase()] || "other",
-          toolName: name,
-          extension: getExtension(filePath),
-        });
-      }
-    }
+    infos.push({
+      toolCallId: callId || msgId || `${name}-${filePath}`,
+      fileName: shortName(filePath),
+      filePath,
+      operation: TOOL_OPERATION_MAP[name.toLowerCase()] || "other",
+      toolName: name,
+      content: resultContent,
+      extension: getExtension(filePath),
+    });
   }
 
   // 去重：同一路径只保留最后一次操作
@@ -215,7 +276,7 @@ const OPERATION_CONFIG: Record<
     label: "追加",
   },
   send: {
-    icon: <FolderOpenOutlined />,
+    icon: <SendOutlined />,
     color: "#13c2c2",
     label: "发送",
   },
@@ -260,16 +321,16 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       ext === "md"
         ? "text/markdown"
         : ext === "json"
-        ? "application/json"
-        : ext === "html"
-        ? "text/html"
-        : ext === "py"
-        ? "text/x-python"
-        : ext === "js" || ext === "jsx"
-        ? "text/javascript"
-        : ext === "ts" || ext === "tsx"
-        ? "text/typescript"
-        : "text/plain";
+          ? "application/json"
+          : ext === "html"
+            ? "text/html"
+            : ext === "py"
+              ? "text/x-python"
+              : ext === "js" || ext === "jsx"
+                ? "text/javascript"
+                : ext === "ts" || ext === "tsx"
+                  ? "text/typescript"
+                  : "text/plain";
 
     useWorkspaceStore.getState().openArtifact({
       id: `filecard-${info.toolCallId}`,
@@ -310,7 +371,8 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               borderRadius: 8,
               border:
                 "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
-              background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
+              background:
+                "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
               cursor: "pointer",
               transition: "all 0.15s ease",
               overflow: "hidden",
