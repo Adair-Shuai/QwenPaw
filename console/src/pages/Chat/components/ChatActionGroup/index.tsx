@@ -6,7 +6,7 @@ import {
   ExpandAltOutlined,
   CompressOutlined,
   MoreOutlined,
-  PanelRightOutlined,
+  AppstoreOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Dropdown, Flex, Tooltip } from "antd";
@@ -60,10 +60,12 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
   if (onToggleWorkspace) {
     moreItems.push({
       key: "workspace",
-      icon: <PanelRightOutlined />,
+      icon: <AppstoreOutlined />,
       label: (
         <div style={{ textAlign: "center" }}>
-          {workspaceOpen ? t("chat.closeWorkspace", "Close Workspace") : t("chat.openWorkspace", "Open Workspace")}
+          {workspaceOpen
+            ? t("chat.closeWorkspace", "Close Workspace")
+            : t("chat.openWorkspace", "Open Workspace")}
         </div>
       ),
       onClick: () => onToggleWorkspace(),
@@ -109,10 +111,17 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
         </Tooltip>
       )}
       {!isCompact && onToggleWorkspace && (
-        <Tooltip title={workspaceOpen ? t("chat.closeWorkspace", "Close Workspace") : t("chat.openWorkspace", "Open Workspace")} mouseEnterDelay={0.5}>
+        <Tooltip
+          title={
+            workspaceOpen
+              ? t("chat.closeWorkspace", "Close Workspace")
+              : t("chat.openWorkspace", "Open Workspace")
+          }
+          mouseEnterDelay={0.5}
+        >
           <IconButton
             bordered={false}
-            icon={<PanelRightOutlined />}
+            icon={<AppstoreOutlined />}
             style={
               workspaceOpen
                 ? { color: "var(--color-primary, #ff9d4d)" }

@@ -7,7 +7,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { ExclamationCircleOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  ExclamationCircleOutlined,
+  SettingOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
 import { SparkCopyLine, SparkAttachmentLine } from "@agentscope-ai/icons";
 import { usePlugins } from "../../plugins/PluginContext";
 import { useTranslation } from "react-i18next";
@@ -1367,6 +1371,10 @@ export default function ChatPage() {
       return false;
     }
   });
+
+  // Workspace panel open state (synced with store)
+  const workspacePanelOpen = useWorkspaceStore((s) => s.panelOpen);
+
   const toggleHistoryPanel = useCallback(() => {
     setHistoryPanelOpen((prev) => {
       const next = !prev;
@@ -2744,7 +2752,9 @@ export default function ChatPage() {
               historyOpen={effectiveIsFullMode ? historyPanelOpen : false}
               isWideMode={isWideMode}
               onToggleWideMode={toggleWideMode}
-              onToggleWorkspace={() => useWorkspaceStore.getState().togglePanel()}
+              onToggleWorkspace={() =>
+                useWorkspaceStore.getState().togglePanel()
+              }
               workspaceOpen={workspacePanelOpen}
             />
             {pluginRightHeader}
@@ -2988,6 +2998,24 @@ export default function ChatPage() {
             },
           },
           {
+            icon: (
+              <span title={t("workspace.openInWorkspace", "在工作区打开")}>
+                <FolderOpenOutlined />
+              </span>
+            ),
+            onClick: ({ data }: { data: CopyableResponse }) => {
+              const text = extractCopyableText(data);
+              if (!text) return;
+              useWorkspaceStore.getState().openArtifact({
+                id: `response-${Date.now()}`,
+                title: t("workspace.assistantResponse", "AI 回复"),
+                mimeType: "text/markdown",
+                textContent: text,
+                source: "generated",
+              });
+            },
+          },
+          {
             render: ({
               data,
             }: {
@@ -3069,6 +3097,7 @@ export default function ChatPage() {
     handleQueueSkip,
     runState,
     isOwner,
+    workspacePanelOpen,
   ]);
 
   return (
