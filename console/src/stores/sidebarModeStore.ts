@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { menuRegistry } from "../plugins/registry/store";
 
 const STORAGE_KEY = "qwenpaw_sidebar_mode";
 
@@ -32,6 +33,9 @@ export const useSidebarModeStore = create<SidebarModeState>((set) => ({
       } catch {
         // storage unavailable
       }
+      // Invalidate menu snapshot cache so that visible() callbacks
+      // (e.g. plugin menu items gated on sidebar mode) are re-evaluated.
+      menuRegistry.refresh();
       return { mode: next };
     }),
 
@@ -45,6 +49,7 @@ export const useSidebarModeStore = create<SidebarModeState>((set) => ({
     } catch {
       // storage unavailable
     }
+    menuRegistry.refresh();
     set({ mode });
   },
 }));
