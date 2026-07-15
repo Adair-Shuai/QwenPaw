@@ -4,18 +4,19 @@
 
 Tests cover:
 - ``_get_docx_page_info``: parsing page dimensions from DOCX XML
-- ``_has_page_break``: detecting explicit page breaks in mammoth's document model
-- ``_estimate_element_lines``: estimating visual lines for paragraphs/tables
-- ``_build_docx_transform``: building a transform that inserts page-break markers
-- ``_convert_docx_to_html``: full DOCX → HTML conversion with page breaks
+- ``_has_page_break``: detecting explicit page breaks in mammoth's
+  document model
+- ``_estimate_element_lines``: estimating visual lines for
+  paragraphs/tables
+- ``_build_docx_transform``: building a transform that inserts
+  page-break markers
+- ``_convert_docx_to_html``: full DOCX -> HTML conversion with page
+  breaks
 - Unsupported file-type handling
 """
 from __future__ import annotations
 
-import io
-import zipfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
@@ -45,7 +46,7 @@ def _make_minimal_docx(tmp_path: Path, filename: str = "test.docx") -> Path:
 
 
 def _make_long_docx(tmp_path: Path, filename: str = "long.docx") -> Path:
-    """Create a .docx file with enough content to trigger estimated page breaks."""
+    """Create a .docx with enough content to trigger estimated page breaks."""
     from docx import Document
 
     doc = Document()
@@ -58,7 +59,8 @@ def _make_long_docx(tmp_path: Path, filename: str = "long.docx") -> Path:
 
 
 def _make_docx_with_explicit_page_break(
-    tmp_path: Path, filename: str = "explicit.docx"
+    tmp_path: Path,
+    filename: str = "explicit.docx",
 ) -> Path:
     """Create a .docx file with an explicit page break."""
     from docx import Document
@@ -167,7 +169,7 @@ class TestHasPageBreak:
             pytest.skip("mammoth not installed")
 
         run_with_break = documents.run(
-            children=[documents.text("before"), documents.page_break]
+            children=[documents.text("before"), documents.page_break],
         )
         para = documents.paragraph(
             style_id="Normal",
@@ -265,7 +267,7 @@ class TestBuildDocxTransform:
 
     def test_returns_callable(self) -> None:
         transform = _build_docx_transform(
-            {"lines_per_page": 45, "chars_per_line": 78}
+            {"lines_per_page": 45, "chars_per_line": 78},
         )
         assert callable(transform)
 
@@ -278,7 +280,7 @@ class TestBuildDocxTransform:
             pytest.skip("mammoth not installed")
 
         transform = _build_docx_transform(
-            {"lines_per_page": 45, "chars_per_line": 78}
+            {"lines_per_page": 45, "chars_per_line": 78},
         )
 
         para_with_break = documents.paragraph(
@@ -306,7 +308,10 @@ class TestBuildDocxTransform:
 
         def check_text(el):
             nonlocal marker_found
-            if isinstance(el, documents.Text) and _PAGE_BREAK_MARKER in el.value:
+            if (
+                isinstance(el, documents.Text)
+                and _PAGE_BREAK_MARKER in el.value
+            ):
                 marker_found = True
             elif hasattr(el, "children"):
                 for c in el.children:
@@ -325,7 +330,7 @@ class TestBuildDocxTransform:
 
         # Small page: 3 lines per page
         transform = _build_docx_transform(
-            {"lines_per_page": 3, "chars_per_line": 78}
+            {"lines_per_page": 3, "chars_per_line": 78},
         )
 
         # Create 5 paragraphs, each ~1 line
@@ -339,9 +344,9 @@ class TestBuildDocxTransform:
                     alignment=None,
                     indent=None,
                     children=[
-                        documents.run(children=[documents.text(f"para {i}")])
+                        documents.run(children=[documents.text(f"para {i}")]),
                     ],
-                )
+                ),
             )
 
         doc = documents.document(
@@ -353,9 +358,7 @@ class TestBuildDocxTransform:
         result = transform(doc)
         # After 3 paragraphs, the 4th should trigger a page break
         # So we expect at least 1 marker inserted
-        markers = [
-            c for c in result.children if _contains_marker(c)
-        ]
+        markers = [c for c in result.children if _contains_marker(c)]
         assert len(markers) >= 1
 
     def test_no_marker_for_short_document(self) -> None:
@@ -366,7 +369,7 @@ class TestBuildDocxTransform:
             pytest.skip("mammoth not installed")
 
         transform = _build_docx_transform(
-            {"lines_per_page": 45, "chars_per_line": 78}
+            {"lines_per_page": 45, "chars_per_line": 78},
         )
 
         para = documents.paragraph(
@@ -422,14 +425,16 @@ class TestConvertDocxToHtml:
         assert "Test Document" in html or "Chapter 1" in html
 
     def test_long_docx_has_page_break_markers(
-        self, long_docx_file: Path
+        self,
+        long_docx_file: Path,
     ) -> None:
         """A long document should have at least one page-break div."""
         html = _convert_docx_to_html(str(long_docx_file))
         assert 'class="docx-page-break"' in html
 
     def test_explicit_page_break_detected(
-        self, explicit_break_docx: Path
+        self,
+        explicit_break_docx: Path,
     ) -> None:
         """A document with an explicit page break should produce a
         page-break div."""

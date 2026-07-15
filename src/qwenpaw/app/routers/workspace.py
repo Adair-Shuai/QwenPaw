@@ -272,11 +272,14 @@ _MIME_MAP: dict[str, str] = {
     "pdf": "application/pdf",
     # Office (served as binary for download/preview)
     "doc": "application/msword",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # noqa: E501
     "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # noqa: E501
     "ppt": "application/vnd.ms-powerpoint",
-    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "pptx": (
+        "application/vnd.openxmlformats-officedocument"
+        ".presentationml.presentation"
+    ),
     "odt": "application/vnd.oasis.opendocument.text",
     "ods": "application/vnd.oasis.opendocument.spreadsheet",
     "odp": "application/vnd.oasis.opendocument.presentation",
@@ -457,15 +460,16 @@ async def write_code_file(
 # Office document conversion (DOCX → HTML)
 # ---------------------------------------------------------------------------
 
+
 class ConvertOfficeRequest(BaseModel):
     """Request body for /convert-office."""
+
     url: str = Field(..., description="File URL or path")
     mime_type: str | None = Field(None, description="MIME type of the file")
 
 
 def _get_docx_page_info(file_path: str) -> dict:
-    """Parse DOCX XML to get page dimensions and estimate lines/chars per page."""
-    import zipfile
+    """Parse DOCX XML to get page dimensions and estimate lines/chars."""
     import xml.etree.ElementTree as ET
 
     W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
@@ -521,7 +525,13 @@ def _get_docx_page_info(file_path: str) -> dict:
         header_h = int(pg_mar.get(f"{{{W_NS}}}header", 0))
         footer_h = int(pg_mar.get(f"{{{W_NS}}}footer", 0))
 
-    usable_h = page_h - margin_top - margin_bottom - max(0, header_h) - max(0, footer_h)
+    usable_h = (
+        page_h
+        - margin_top
+        - margin_bottom
+        - max(0, header_h)
+        - max(0, footer_h)
+    )
     usable_w = page_w - margin_left - margin_right
 
     # 11pt font, 1.15 line spacing → ~253 twips/line
@@ -548,7 +558,10 @@ def _has_page_break(element) -> bool:
     return False
 
 
-def _estimate_element_lines(element, chars_per_line: int) -> float:
+def _estimate_element_lines(  # pylint: disable=too-many-return-statements
+    element,
+    chars_per_line: int,
+) -> float:
     """Estimate the number of visual lines an element occupies."""
     try:
         from mammoth import documents
@@ -635,7 +648,7 @@ def _build_docx_transform(page_info: dict):
 
             if needs_break:
                 marker_run = documents.run(
-                    children=[documents.text(_PAGE_BREAK_MARKER)]
+                    children=[documents.text(_PAGE_BREAK_MARKER)],
                 )
                 marker_para = documents.paragraph(
                     style_id="PageBreakMarker",
@@ -654,7 +667,9 @@ def _build_docx_transform(page_info: dict):
     return transform_document
 
 
-def _convert_docx_to_html(file_path: str) -> str:
+def _convert_docx_to_html(  # pylint: disable=R0912,R0915
+    file_path: str,
+) -> str:
     """Convert a .docx file to HTML with page-break markers."""
     ext = Path(file_path).suffix.lstrip(".").lower()
 
@@ -669,7 +684,8 @@ def _convert_docx_to_html(file_path: str) -> str:
             with open(file_path, "rb") as f:
                 if transform:
                     result = mammoth.convert_to_html(
-                        f, transform_document=transform
+                        f,
+                        transform_document=transform,
                     )
                 else:
                     result = mammoth.convert_to_html(f)
@@ -693,6 +709,7 @@ def _convert_docx_to_html(file_path: str) -> str:
         # Fallback: python-docx (basic text extraction)
         try:
             from docx import Document
+
             doc = Document(file_path)
             html_parts = []
             for para in doc.paragraphs:
@@ -708,12 +725,16 @@ def _convert_docx_to_html(file_path: str) -> str:
                 elif "heading 3" in style:
                     html_parts.append(f"<h3>{text}</h3>")
                 elif "title" in style:
-                    html_parts.append(f"<h1 style='text-align:center'>{text}</h1>")
+                    html_parts.append(
+                        f"<h1 style='text-align:center'>{text}</h1>",
+                    )
                 else:
                     html_parts.append(f"<p>{text}</p>")
             # Tables
             for table in doc.tables:
-                html_parts.append("<table border='1' style='border-collapse:collapse'>")
+                html_parts.append(
+                    "<table border='1' style='border-collapse:collapse'>",
+                )
                 for row in table.rows:
                     html_parts.append("<tr>")
                     for cell in row.cells:
@@ -721,17 +742,21 @@ def _convert_docx_to_html(file_path: str) -> str:
                     html_parts.append("</tr>")
                 html_parts.append("</table>")
             return "\n".join(html_parts)
-        except ImportError:
+        except ImportError as exc:
             raise HTTPException(
                 status_code=500,
-                detail="No docx conversion library available (mammoth or python-docx required)",
-            )
+                detail="No docx conversion library available "  # noqa: E501
+                "(mammoth or python-docx required)",
+            ) from exc
 
     # For .doc, .xls, .ppt — try LibreOffice if available
     if ext in ("doc", "xls", "ppt", "odt", "ods", "odp"):
         raise HTTPException(
             status_code=415,
-            detail=f"Direct preview of .{ext} files is not supported. Please convert to .docx/.xlsx/.pptx first.",
+            detail=(
+                f"Direct preview of .{ext} files is not supported. "
+                f"Please convert to .docx/.xlsx/.pptx first."
+            ),
         )
 
     # For .xlsx — basic table extraction
@@ -743,28 +768,34 @@ def _convert_docx_to_html(file_path: str) -> str:
         # Try openpyxl if available
         try:
             import openpyxl
+
             wb = openpyxl.load_workbook(file_path, read_only=True)
             html_parts = []
             for ws in wb.worksheets:
                 html_parts.append(f"<h3>Sheet: {ws.title}</h3>")
-                html_parts.append("<table border='1' style='border-collapse:collapse'>")
+                html_parts.append(
+                    "<table border='1' style='border-collapse:collapse'>",
+                )
                 for row in ws.iter_rows(max_row=100, values_only=True):
                     html_parts.append("<tr>")
                     for cell in row:
-                        html_parts.append(f"<td>{cell if cell is not None else ''}</td>")
+                        html_parts.append(
+                            f"<td>{cell if cell is not None else ''}</td>",
+                        )
                     html_parts.append("</tr>")
                 html_parts.append("</table>")
             return "\n".join(html_parts)
-        except ImportError:
+        except ImportError as exc:
             raise HTTPException(
                 status_code=500,
                 detail="openpyxl not installed for .xlsx preview",
-            )
+            ) from exc
 
     # For .pptx — basic slide extraction
     if ext == "pptx":
         try:
             from pptx import Presentation
+
             prs = Presentation(file_path)
             html_parts = []
             for i, slide in enumerate(prs.slides, 1):
@@ -775,11 +806,11 @@ def _convert_docx_to_html(file_path: str) -> str:
                         html_parts.append(f"<p>{shape.text}</p>")
                 html_parts.append("</div>")
             return "\n".join(html_parts)
-        except ImportError:
+        except ImportError as exc:
             raise HTTPException(
                 status_code=500,
                 detail="python-pptx not installed for .pptx preview",
-            )
+            ) from exc
 
     raise HTTPException(
         status_code=415,
@@ -815,6 +846,7 @@ async def convert_office(
         file_path = file_path.split("?")[0]
         # URL-decode
         from urllib.parse import unquote
+
         file_path = unquote(file_path)
     elif url.startswith("/"):
         file_path = url.lstrip("/")

@@ -235,11 +235,15 @@ def _get_default_search_dirs() -> List[str]:
             "D:\\CMG", "D:\\Schlumberger", "D:\\COMSOL",
         ])
     elif system == "linux":
-        dirs.extend(["/opt", "/opt/CMG", "/opt/Schlumberger", "/opt/comsol",
-                      "/usr/local"])
+        dirs.extend([
+            "/opt", "/opt/CMG", "/opt/Schlumberger", "/opt/comsol",
+            "/usr/local",
+        ])
     elif system == "darwin":
-        dirs.extend(["/Applications", "/opt/CMG", "/opt/Schlumberger",
-                      "/opt/comsol"])
+        dirs.extend([
+            "/Applications", "/opt/CMG", "/opt/Schlumberger",
+            "/opt/comsol",
+        ])
     return [d for d in dirs if d and os.path.isdir(d)]
 
 
@@ -278,8 +282,10 @@ def _extract_version(executable: str) -> Optional[str]:
 
 # Patterns used for auto-detection of each default engine
 _DETECT_PATTERNS: Dict[str, List[str]] = {
-    "cmg": ["mx2300.exe", "mx2100.exe", "imex.exe", "gm2300.exe", "gem.exe",
-            "st2300.exe", "stars.exe", "builder.exe"],
+    "cmg": [
+        "mx2300.exe", "mx2100.exe", "imex.exe", "gm2300.exe", "gem.exe",
+        "st2300.exe", "stars.exe", "builder.exe",
+    ],
     "eclipse": ["eclipse.exe", "e100.exe", "e300.exe", "eclipse"],
     "intersect": ["intersect.exe", "intersect"],
     "comsol": ["comsol.exe", "comsol", "comsolbatch"],

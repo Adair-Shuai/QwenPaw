@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """Convert UGSci Markdown docs to styled HTML.
 
 Usage: python3 build_html.py
@@ -326,7 +327,7 @@ def sidebar_html(active_id: str = "") -> str:
         cls = "active" if pid == active_id else ""
         items.append(
             f'<a href="{href}" class="{cls}">'
-            f'<span class="icon">{icon}</span> {label}</a>'
+            f'<span class="icon">{icon}</span> {label}</a>',
         )
     return f"""
 <aside id="sidebar">
