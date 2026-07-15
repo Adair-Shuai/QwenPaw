@@ -56,11 +56,20 @@ _data_dirs = [
     ("security/skill_scanner/rules", "qwenpaw/security/skill_scanner/rules"),
     ("security/skill_scanner/data", "qwenpaw/security/skill_scanner/data"),
     ("app/channels/yuanbao/proto", "qwenpaw/app/channels/yuanbao/proto"),
+    # Bundled plugins (inside the package) — e.g. ugsci, ugsci_research
+    ("plugins_bundle", "qwenpaw/plugins_bundle"),
 ]
 datas = [
     (str(SRC / src), dst) for src, dst in _data_dirs if (SRC / src).is_dir()
 ]
 datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
+
+# Include repo-root plugins/bundle/ (cloudpaw, qwenpaw-pet, etc.) so the
+# desktop build ships ALL bundled plugins, not just the ones inside the
+# pip package's plugins_bundle/.
+_repo_plugins_bundle = REPO_ROOT / "plugins" / "bundle"
+if _repo_plugins_bundle.is_dir():
+    datas += collect_tree(_repo_plugins_bundle, "plugins/bundle")
 
 # Include reme package data files (configs, tool yamls, etc.)
 datas += collect_data_files("reme")
