@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "reveal-in-file-manager"
+description = "Allows the frontend to reveal a file in the system file manager (Finder/Explorer/xdg-open)."
+commands.allow = ["reveal_in_file_manager"]

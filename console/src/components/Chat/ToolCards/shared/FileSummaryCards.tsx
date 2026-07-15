@@ -21,9 +21,10 @@ import {
   FolderOpenOutlined,
   SendOutlined,
 } from "@ant-design/icons";
-import { Tooltip } from "antd";
+import { Tooltip, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
+import { workspaceApi } from "@/api/modules/workspace";
 import { stringifyResult, toDisplayUrl } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -414,20 +415,75 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   if (fileInfos.length === 0) return null;
 
   /** 点击卡片主体：在工作区打开文件内容预览 */
-  const handleOpenInWorkspace = (info: FileInfo) => {
+  const handleOpenInWorkspace = async (info: FileInfo) => {
     const ext = info.extension || "";
     const mimeType = getMimeType(ext);
+    const artifactId = `filecard-${info.toolCallId}`;
 
+    // For binary files, use binaryUrl directly
+    if (info.isBinary) {
+      useWorkspaceStore.getState().openArtifact({
+        id: artifactId,
+        title: info.fileName,
+        source: "tool_call",
+        mimeType,
+        extension: ext || undefined,
+        binaryUrl: info.binaryUrl,
+        toolName: info.toolName,
+      });
+      return;
+    }
+
+    // For text files: if we already have the actual file content (from
+    // read_file result), use it directly. Otherwise fetch from backend.
+    //
+    // write_file / append_file / edit_file results are just success
+    // messages like "Wrote 8348 bytes to ...", NOT the file content.
+    // For those, we must fetch the real content from the backend.
+    const isResultActualContent =
+      info.operation === "read" && info.content;
+
+    if (isResultActualContent) {
+      useWorkspaceStore.getState().openArtifact({
+        id: artifactId,
+        title: info.fileName,
+        source: "tool_call",
+        mimeType,
+        extension: ext || undefined,
+        textContent: info.content,
+        toolName: info.toolName,
+      });
+      return;
+    }
+
+    // Open the artifact immediately with a loading state, then fetch
+    // the actual content from the backend and update it.
     useWorkspaceStore.getState().openArtifact({
-      id: `filecard-${info.toolCallId}`,
+      id: artifactId,
       title: info.fileName,
       source: "tool_call",
       mimeType,
       extension: ext || undefined,
-      textContent: info.isBinary ? undefined : info.content || "",
-      binaryUrl: info.isBinary ? info.binaryUrl : undefined,
+      textContent: "",
+      isStreaming: true,
       toolName: info.toolName,
     });
+
+    try {
+      const result = await workspaceApi.loadCodeFile(info.filePath);
+      useWorkspaceStore.getState().updateArtifact(artifactId, {
+        textContent: result.content,
+        isStreaming: false,
+      });
+    } catch {
+      // Fallback: if backend can't load the file (e.g. path outside
+      // workspace), show whatever content we have (tool result text).
+      useWorkspaceStore.getState().updateArtifact(artifactId, {
+        textContent: info.content || "",
+        isStreaming: false,
+      });
+      message.warning(`无法从后端加载文件内容，显示工具返回结果`);
+    }
   };
 
   /** 点击文件夹图标：在系统文件资源管理器中定位文件 */
@@ -437,8 +493,11 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       invoke("reveal_in_file_manager", { path: info.filePath }).catch(
         (err) => {
           console.warn("[FileSummaryCards] reveal failed:", err);
+          message.error(`无法打开文件管理器: ${err}`);
         },
       );
+    } else {
+      message.warning("此功能仅在桌面应用中可用");
     }
   };
 

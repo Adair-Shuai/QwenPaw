@@ -17,6 +17,7 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "open-external-link",
+    "reveal-in-file-manager",
     "tray"
   ]
 }
