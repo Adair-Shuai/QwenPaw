@@ -64,12 +64,21 @@ datas = [
 ]
 datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
 
-# Include repo-root plugins/bundle/ (cloudpaw, qwenpaw-pet, etc.) so the
-# desktop build ships ALL bundled plugins, not just the ones inside the
-# pip package's plugins_bundle/.
+# Include select repo-root plugins/bundle/ plugins in the desktop build.
+# cloudpaw and qwenpaw-pet are excluded: cloudpaw requires Alibaba Cloud
+# credentials and heavy IaC dependencies; qwenpaw-pet pulls in PySide6
+# (~200 MB) for a floating desktop pet window that most users don't need.
+# Users can still install them on-demand via `qwenpaw plugin install`.
 _repo_plugins_bundle = REPO_ROOT / "plugins" / "bundle"
+_bundled_plugin_whitelist = {"ugsci", "ugsci_research"}
 if _repo_plugins_bundle.is_dir():
-    datas += collect_tree(_repo_plugins_bundle, "plugins/bundle")
+    for _plugin_name in _bundled_plugin_whitelist:
+        _plugin_dir = _repo_plugins_bundle / _plugin_name
+        if _plugin_dir.is_dir():
+            datas += collect_tree(
+                _plugin_dir,
+                f"plugins/bundle/{_plugin_name}",
+            )
 
 # Include reme package data files (configs, tool yamls, etc.)
 datas += collect_data_files("reme")
