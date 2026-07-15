@@ -1,17 +1,20 @@
 /**
- * FileSummaryCards — 在 AI 回复结尾显示涉及到的文件小卡片
+ * FileSummaryCards — 在 AI 回复结尾显示涉及到的文件
  *
  * 扫描 response 的 output 数组，找出所有文件相关的工具调用
  * （read_file, write_file, edit_file, append_file, send_file_to_user 等），
- * 以小卡片形式列出。
+ * 分类显示：
+ *
+ * - 交付物（Deliverables）：最终产物（docx, pdf, xlsx, pptx, html, 图片等），
+ *   以卡片形式展示，点击可在工作区预览
+ * - 生成的中间文件（Generated Files）：脚本文件（py, js, ts, sh 等），
+ *   以折叠列表形式展示，点击可展开预览
  *
  * 交互：
- * - 点击卡片主体 → 在右侧工作区打开文件内容预览
+ * - 点击卡片/列表项 → 在右侧工作区打开文件内容预览
  * - 点击文件夹图标 → 在系统文件资源管理器中定位文件
- *
- * 布局：根据窗口宽度一行显示 2-3 个卡片。
  */
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import {
   FileTextOutlined,
   FileAddOutlined,
@@ -20,6 +23,8 @@ import {
   CodeOutlined,
   FolderOpenOutlined,
   SendOutlined,
+  DownOutlined,
+  RightOutlined,
 } from "@ant-design/icons";
 import { Tooltip, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
@@ -50,6 +55,8 @@ interface FileInfo {
   isBinary?: boolean;
   /** 二进制文件的 URL（如果有） */
   binaryUrl?: string;
+  /** 是否是交付物（最终产物）vs 生成的中间文件 */
+  isDeliverable: boolean;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +86,35 @@ const TOOL_CALL_TYPES = new Set([
   "function_call_output",
   "component_call",
   "component_call_output",
+]);
+
+/** 脚本文件扩展名 — 这些通常是生成中间文件，不是最终交付物 */
+const SCRIPT_EXTENSIONS = new Set([
+  "py",
+  "js",
+  "ts",
+  "tsx",
+  "jsx",
+  "sh",
+  "bash",
+  "rb",
+  "pl",
+  "bat",
+  "ps1",
+  "r",
+  "m",
+  "sql",
+  "lua",
+  "go",
+  "rs",
+  "c",
+  "cpp",
+  "h",
+  "hpp",
+  "java",
+  "kt",
+  "swift",
+  "php",
 ]);
 
 /** Binary file extensions */
@@ -246,6 +282,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
 
     const ext = getExtension(filePath);
     const isBinary = BINARY_EXTENSIONS.has(ext);
+    const operation = TOOL_OPERATION_MAP[name.toLowerCase()] || "other";
 
     // For binary files, try to get a displayable URL from the result
     let binaryUrl: string | undefined;
@@ -258,16 +295,26 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       }
     }
 
+    // 判断是否是交付物：
+    // - send_file_to_user 始终是交付物
+    // - 脚本文件（.py, .js, .sh 等）视为中间文件
+    // - 其他文件视为交付物
+    // - read 操作既不是交付物也不是中间文件（不显示）
+    const isDeliverable =
+      operation === "send" ||
+      (operation !== "read" && !SCRIPT_EXTENSIONS.has(ext));
+
     infos.push({
       toolCallId: callId || msgId || `${name}-${filePath}`,
       fileName: shortName(filePath),
       filePath,
-      operation: TOOL_OPERATION_MAP[name.toLowerCase()] || "other",
+      operation,
       toolName: name,
       content: resultContent,
       extension: ext,
       isBinary,
       binaryUrl,
+      isDeliverable,
     });
   }
 
@@ -277,7 +324,10 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     seen.set(info.filePath, info);
   }
 
-  return Array.from(seen.values());
+  // 过滤掉 read 操作（不是文件生成/交付）
+  return Array.from(seen.values()).filter(
+    (info) => info.operation !== "read",
+  );
 }
 
 /** Try to extract a URL from MCP result blocks */
@@ -411,10 +461,25 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   data,
 }) => {
   const fileInfos = useMemo(() => extractFileInfos(data), [data]);
+  const [expandedFiles, setExpandedFiles] = useState(false);
 
-  if (fileInfos.length === 0) return null;
+  // 分离交付物和中间文件
+  const { deliverables, generatedFiles } = useMemo(() => {
+    const deliverables: FileInfo[] = [];
+    const generatedFiles: FileInfo[] = [];
+    for (const info of fileInfos) {
+      if (info.isDeliverable) {
+        deliverables.push(info);
+      } else {
+        generatedFiles.push(info);
+      }
+    }
+    return { deliverables, generatedFiles };
+  }, [fileInfos]);
 
-  /** 点击卡片主体：在工作区打开文件内容预览 */
+  if (deliverables.length === 0 && generatedFiles.length === 0) return null;
+
+  /** 点击卡片/列表项：在工作区打开文件内容预览 */
   const handleOpenInWorkspace = async (info: FileInfo) => {
     const ext = info.extension || "";
     const mimeType = getMimeType(ext);
@@ -434,16 +499,13 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       return;
     }
 
-    // For text files: if we already have the actual file content (from
-    // read_file result), use it directly. Otherwise fetch from backend.
-    //
-    // write_file / append_file / edit_file results are just success
-    // messages like "Wrote 8348 bytes to ...", NOT the file content.
-    // For those, we must fetch the real content from the backend.
-    const isResultActualContent =
-      info.operation === "read" && info.content;
-
-    if (isResultActualContent) {
+    // For write_file / append_file: content is the actual file content
+    // (extracted from tool call params). Use it directly — no need to
+    // fetch from backend.
+    if (
+      (info.operation === "write" || info.operation === "append") &&
+      info.content
+    ) {
       useWorkspaceStore.getState().openArtifact({
         id: artifactId,
         title: info.fileName,
@@ -456,18 +518,20 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       return;
     }
 
-    // Open the artifact immediately with a loading state, then fetch
-    // the actual content from the backend and update it.
+    // For edit_file: we don't have full content, try fetching from backend.
+    // Open with loading state first.
     useWorkspaceStore.getState().openArtifact({
       id: artifactId,
       title: info.fileName,
       source: "tool_call",
       mimeType,
       extension: ext || undefined,
-      textContent: "",
-      isStreaming: true,
+      textContent: info.content || "",
+      isStreaming: !info.content,
       toolName: info.toolName,
     });
+
+    if (info.content) return;
 
     try {
       const result = await workspaceApi.loadCodeFile(info.filePath);
@@ -476,13 +540,13 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         isStreaming: false,
       });
     } catch {
-      // Fallback: if backend can't load the file (e.g. path outside
-      // workspace), show whatever content we have (tool result text).
+      // Fallback: show whatever content we have, or a helpful message
       useWorkspaceStore.getState().updateArtifact(artifactId, {
-        textContent: info.content || "",
+        textContent:
+          info.content ||
+          `无法加载文件内容。文件路径: ${info.filePath}`,
         isStreaming: false,
       });
-      message.warning(`无法从后端加载文件内容，显示工具返回结果`);
     }
   };
 
@@ -501,133 +565,259 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
     }
   };
 
-  return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))",
-        gap: 8,
-        padding: "8px 0",
-        maxWidth: "100%",
-      }}
-    >
-      {fileInfos.map((info) => {
-        const opConfig = OPERATION_CONFIG[info.operation];
-        const extIcon = EXTENSION_ICON[info.extension || ""] || (
-          <FileTextOutlined />
-        );
+  /** 渲染单个文件卡片（交付物用） */
+  const renderCard = (info: FileInfo) => {
+    const opConfig = OPERATION_CONFIG[info.operation];
+    const extIcon = EXTENSION_ICON[info.extension || ""] || (
+      <FileTextOutlined />
+    );
 
-        return (
+    return (
+      <div
+        key={info.toolCallId}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "8px 12px",
+          borderRadius: 8,
+          border:
+            "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
+          background:
+            "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
+          transition: "all 0.15s ease",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          onClick={() => handleOpenInWorkspace(info)}
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            flex: 1,
+            minWidth: 0,
+            cursor: "pointer",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.parentElement!.style.borderColor =
+              opConfig.color;
+            e.currentTarget.parentElement!.style.background = `${opConfig.color}08`;
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.parentElement!.style.borderColor = "";
+            e.currentTarget.parentElement!.style.background = "";
+          }}
+        >
+          <span
+            style={{
+              fontSize: 18,
+              color: opConfig.color,
+              flexShrink: 0,
+              display: "flex",
+              alignItems: "center",
+            }}
+          >
+            {extIcon}
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div
+              style={{
+                fontSize: 13,
+                fontWeight: 500,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                color: "var(--ant-color-text, rgba(0,0,0,0.88))",
+              }}
+            >
+              {info.fileName}
+            </div>
+            <div
+              style={{
+                fontSize: 11,
+                color: opConfig.color,
+                display: "flex",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              {opConfig.icon}
+              <span>{opConfig.label}</span>
+            </div>
+          </div>
+        </div>
+        <Tooltip title="在文件管理器中显示">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRevealInFileManager(info);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              alignItems: "center",
+              flexShrink: 0,
+              color: "var(--ant-color-text-quaternary, #bbb)",
+              transition: "color 0.15s ease",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color = opConfig.color;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "";
+            }}
+          >
+            <FolderOpenOutlined style={{ fontSize: 14 }} />
+          </button>
+        </Tooltip>
+      </div>
+    );
+  };
+
+  /** 渲染中间文件列表项 */
+  const renderListItem = (info: FileInfo) => {
+    const extIcon = EXTENSION_ICON[info.extension || ""] || (
+      <CodeOutlined />
+    );
+
+    return (
+      <div
+        key={info.toolCallId}
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          padding: "4px 8px",
+          borderRadius: 6,
+          cursor: "pointer",
+          transition: "background 0.12s ease",
+        }}
+        onClick={() => handleOpenInWorkspace(info)}
+        onMouseEnter={(e) => {
+          e.currentTarget.style.background =
+            "var(--ant-color-fill-quaternary, rgba(0,0,0,0.04))";
+        }}
+        onMouseLeave={(e) => {
+          e.currentTarget.style.background = "";
+        }}
+      >
+        <span
+          style={{
+            fontSize: 14,
+            color: "var(--ant-color-text-tertiary, #999)",
+            flexShrink: 0,
+            display: "flex",
+            alignItems: "center",
+          }}
+        >
+          {extIcon}
+        </span>
+        <span
+          style={{
+            fontSize: 12,
+            fontFamily:
+              "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            color: "var(--ant-color-text-secondary, rgba(0,0,0,0.65))",
+            flex: 1,
+          }}
+        >
+          {info.fileName}
+        </span>
+        <Tooltip title="在文件管理器中显示">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              handleRevealInFileManager(info);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              padding: 2,
+              display: "flex",
+              alignItems: "center",
+              flexShrink: 0,
+              color: "var(--ant-color-text-quaternary, #bbb)",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.color =
+                "var(--ant-color-text-secondary, #888)";
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.color = "";
+            }}
+          >
+            <FolderOpenOutlined style={{ fontSize: 12 }} />
+          </button>
+        </Tooltip>
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ padding: "8px 0" }}>
+      {/* 交付物卡片区域 */}
+      {deliverables.length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fill, minmax(180px, 1fr))",
+            gap: 8,
+            maxWidth: "100%",
+          }}
+        >
+          {deliverables.map(renderCard)}
+        </div>
+      )}
+
+      {/* 生成的中间文件 — 折叠列表 */}
+      {generatedFiles.length > 0 && (
+        <div style={{ marginTop: deliverables.length > 0 ? 8 : 0 }}>
           <div
-            key={info.toolCallId}
+            onClick={() => setExpandedFiles(!expandedFiles)}
             style={{
               display: "flex",
               alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              borderRadius: 8,
-              border:
-                "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
-              background:
-                "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
-              transition: "all 0.15s ease",
-              overflow: "hidden",
+              gap: 4,
+              cursor: "pointer",
+              padding: "4px 0",
+              fontSize: 12,
+              color: "var(--ant-color-text-secondary, rgba(0,0,0,0.45))",
+              userSelect: "none",
             }}
           >
-            {/* 可点击的卡片主体区域 — 打开工作区预览 */}
+            {expandedFiles ? (
+              <DownOutlined style={{ fontSize: 10 }} />
+            ) : (
+              <RightOutlined style={{ fontSize: 10 }} />
+            )}
+            <span>
+              生成的中间文件 ({generatedFiles.length})
+            </span>
+          </div>
+          {expandedFiles && (
             <div
-              onClick={() => handleOpenInWorkspace(info)}
               style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                flex: 1,
-                minWidth: 0,
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) => {
-                e.currentTarget.parentElement!.style.borderColor =
-                  opConfig.color;
-                e.currentTarget.parentElement!.style.background = `${opConfig.color}08`;
-              }}
-              onMouseLeave={(e) => {
-                e.currentTarget.parentElement!.style.borderColor = "";
-                e.currentTarget.parentElement!.style.background = "";
+                marginTop: 4,
+                padding: "4px 8px",
+                borderRadius: 8,
+                border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
+                background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.01))",
               }}
             >
-              {/* 文件类型图标 */}
-              <span
-                style={{
-                  fontSize: 18,
-                  color: opConfig.color,
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                }}
-              >
-                {extIcon}
-              </span>
-
-              {/* 文件名 + 操作标签 */}
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div
-                  style={{
-                    fontSize: 13,
-                    fontWeight: 500,
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
-                    whiteSpace: "nowrap",
-                    color: "var(--ant-color-text, rgba(0,0,0,0.88))",
-                  }}
-                >
-                  {info.fileName}
-                </div>
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: opConfig.color,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 4,
-                  }}
-                >
-                  {opConfig.icon}
-                  <span>{opConfig.label}</span>
-                </div>
-              </div>
+              {generatedFiles.map(renderListItem)}
             </div>
-
-            {/* 文件夹图标 — 在系统文件资源管理器中定位 */}
-            <Tooltip title="在文件管理器中显示">
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleRevealInFileManager(info);
-                }}
-                style={{
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  padding: 4,
-                  display: "flex",
-                  alignItems: "center",
-                  flexShrink: 0,
-                  color: "var(--ant-color-text-quaternary, #bbb)",
-                  transition: "color 0.15s ease",
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.color = opConfig.color;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.color = "";
-                }}
-              >
-                <FolderOpenOutlined style={{ fontSize: 14 }} />
-              </button>
-            </Tooltip>
-          </div>
-        );
-      })}
+          )}
+        </div>
+      )}
     </div>
   );
 };
