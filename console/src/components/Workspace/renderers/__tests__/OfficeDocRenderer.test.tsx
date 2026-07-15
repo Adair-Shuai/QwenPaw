@@ -86,7 +86,9 @@ describe("OfficeDocRenderer", () => {
   it("shows loading spinner initially", () => {
     // A fetch that never calls resolve keeps the component in loading state.
     // We use a simple mock without timers to avoid leaking fake timers.
-    global.fetch = vi.fn(() => new Promise(() => {})) as unknown as typeof global.fetch;
+    global.fetch = vi.fn(
+      () => new Promise(() => {}),
+    ) as unknown as typeof global.fetch;
 
     const ctx = makeContext();
     const { container } = render(<OfficeDocRenderer {...ctx} />);
@@ -157,7 +159,9 @@ describe("OfficeDocRenderer", () => {
       }),
     ) as unknown as typeof global.fetch;
 
-    const { unmount: unmount1 } = render(<OfficeDocRenderer {...makeContext()} />);
+    const { unmount: unmount1 } = render(
+      <OfficeDocRenderer {...makeContext()} />,
+    );
     await waitFor(
       () => {
         expect(screen.getByText("Download")).toBeInTheDocument();
@@ -250,13 +254,12 @@ describe("OfficeDocRenderer", () => {
   });
 
   it("sends auth headers in the fetch request", async () => {
-    const fetchMock = vi.fn(
-      (_url: string, _opts: RequestInit) =>
-        Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ html: "<p>test</p>" }),
-        }),
+    const fetchMock = vi.fn((_url: string, _opts: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ html: "<p>test</p>" }),
+      }),
     );
     global.fetch = fetchMock as unknown as typeof global.fetch;
 
@@ -267,10 +270,7 @@ describe("OfficeDocRenderer", () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const calls = fetchMock.mock.calls as unknown as [
-      string,
-      RequestInit,
-    ][];
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
     const options = calls[0][1];
     const headers = options.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer test-token");
@@ -279,13 +279,12 @@ describe("OfficeDocRenderer", () => {
   });
 
   it("sends file URL in request body", async () => {
-    const fetchMock = vi.fn(
-      (_url: string, _opts: RequestInit) =>
-        Promise.resolve({
-          ok: true,
-          status: 200,
-          json: () => Promise.resolve({ html: "<p>test</p>" }),
-        }),
+    const fetchMock = vi.fn((_url: string, _opts: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve({ html: "<p>test</p>" }),
+      }),
     );
     global.fetch = fetchMock as unknown as typeof global.fetch;
 
@@ -294,8 +293,9 @@ describe("OfficeDocRenderer", () => {
         id: "doc-1",
         title: "report.docx",
         source: "tool_call",
-        mimeType: "application/vnd.openxmlformats-officedocument"
-          + ".wordprocessingml.document",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument" +
+          ".wordprocessingml.document",
         extension: "docx",
         binaryUrl: "/api/workspace/binary-files/report.docx",
       },
@@ -306,10 +306,7 @@ describe("OfficeDocRenderer", () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const calls = fetchMock.mock.calls as unknown as [
-      string,
-      RequestInit,
-    ][];
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
     const body = JSON.parse(calls[0][1].body as string);
     expect(body.url).toBe("/api/workspace/binary-files/report.docx");
   });

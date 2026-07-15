@@ -171,22 +171,61 @@ const BINARY_EXTENSIONS = new Set([
 /** 交付物文件扩展名 — 最终产物（非脚本的文件类型） */
 const DELIVERABLE_EXTENSIONS = new Set([
   // Documents
-  "md", "markdown", "txt", "rtf", "pdf",
-  "doc", "docx", "xls", "xlsx", "ppt", "pptx",
-  "odt", "ods", "odp",
-  "csv", "tsv",
+  "md",
+  "markdown",
+  "txt",
+  "rtf",
+  "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "odt",
+  "ods",
+  "odp",
+  "csv",
+  "tsv",
   // Web
-  "html", "htm", "xml",
+  "html",
+  "htm",
+  "xml",
   // Data
-  "json", "yaml", "yml",
+  "json",
+  "yaml",
+  "yml",
   // Images
-  "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "tiff", "tif",
+  "png",
+  "jpg",
+  "jpeg",
+  "gif",
+  "bmp",
+  "webp",
+  "svg",
+  "tiff",
+  "tif",
   // Video
-  "mp4", "avi", "mov", "wmv", "flv", "mkv", "webm",
+  "mp4",
+  "avi",
+  "mov",
+  "wmv",
+  "flv",
+  "mkv",
+  "webm",
   // Audio
-  "mp3", "wav", "flac", "aac", "ogg", "wma",
+  "mp3",
+  "wav",
+  "flac",
+  "aac",
+  "ogg",
+  "wma",
   // Archives
-  "zip", "tar", "gz", "7z", "rar",
+  "zip",
+  "tar",
+  "gz",
+  "7z",
+  "rar",
 ]);
 
 /** 从工具调用参数中提取文件路径 */
@@ -231,7 +270,8 @@ function extractDeliverablePathsFromOutput(output: string): string[] {
   const paths = new Set<string>();
 
   // Pattern 1: "Saved to" / "输出到" / "生成" 等 + file path
-  const savedPattern = /(?:saved to|written to|output(?:ted)? to|created|generated|保存到|输出到|生成(?:文件)?|创建)[:\s]+([^\s\n]+)/gi;
+  const savedPattern =
+    /(?:saved to|written to|output(?:ted)? to|created|generated|保存到|输出到|生成(?:文件)?|创建)[:\s]+([^\s\n]+)/gi;
   let match: RegExpExecArray | null;
   while ((match = savedPattern.exec(output)) !== null) {
     const p = match[1].replace(/["',.;]+$/, "");
@@ -484,7 +524,11 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
   const seen = new Map<string, FileInfo>();
   for (const info of infos) {
     const existing = seen.get(info.filePath);
-    if (info.operation === "read" && existing && existing.operation !== "read") {
+    if (
+      info.operation === "read" &&
+      existing &&
+      existing.operation !== "read"
+    ) {
       // read 不覆盖已有的非 read 操作
       continue;
     }
@@ -492,9 +536,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
   }
 
   // 过滤掉 read 操作（不是文件生成/交付）
-  return Array.from(seen.values()).filter(
-    (info) => info.operation !== "read",
-  );
+  return Array.from(seen.values()).filter((info) => info.operation !== "read");
 }
 
 /** Try to extract a URL from MCP result blocks */
@@ -752,8 +794,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       // Fallback: show whatever content we have, or a helpful message
       useWorkspaceStore.getState().updateArtifact(artifactId, {
         textContent:
-          info.content ||
-          `无法加载文件内容。文件路径: ${info.filePath}`,
+          info.content || `无法加载文件内容。文件路径: ${info.filePath}`,
         isStreaming: false,
       });
     }
@@ -763,12 +804,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   const handleRevealInFileManager = (info: FileInfo) => {
     // Tauri desktop: invoke native command
     if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      invoke("reveal_in_file_manager", { path: info.filePath }).catch(
-        (err) => {
-          console.warn("[FileSummaryCards] reveal failed:", err);
-          message.error(`无法打开文件管理器: ${err}`);
-        },
-      );
+      invoke("reveal_in_file_manager", { path: info.filePath }).catch((err) => {
+        console.warn("[FileSummaryCards] reveal failed:", err);
+        message.error(`无法打开文件管理器: ${err}`);
+      });
     } else {
       message.warning("此功能仅在桌面应用中可用");
     }
@@ -792,8 +831,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
           borderRadius: 8,
           border:
             "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
-          background:
-            "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
+          background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
           transition: "all 0.15s ease",
           overflow: "hidden",
           flex: "1 1 180px",
@@ -812,8 +850,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             cursor: "pointer",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.parentElement!.style.borderColor =
-              opConfig.color;
+            e.currentTarget.parentElement!.style.borderColor = opConfig.color;
             e.currentTarget.parentElement!.style.background = `${opConfig.color}08`;
           }}
           onMouseLeave={(e) => {
@@ -892,9 +929,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
 
   /** 渲染中间文件列表项 */
   const renderListItem = (info: FileInfo) => {
-    const extIcon = EXTENSION_ICON[info.extension || ""] || (
-      <CodeOutlined />
-    );
+    const extIcon = EXTENSION_ICON[info.extension || ""] || <CodeOutlined />;
 
     return (
       <div
@@ -1010,9 +1045,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             ) : (
               <RightOutlined style={{ fontSize: 10 }} />
             )}
-            <span>
-              生成的中间文件 ({generatedFiles.length})
-            </span>
+            <span>生成的中间文件 ({generatedFiles.length})</span>
           </div>
           {expandedFiles && (
             <div
@@ -1020,8 +1053,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
                 marginTop: 4,
                 padding: "4px 8px",
                 borderRadius: 8,
-                border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
-                background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.01))",
+                border:
+                  "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
+                background:
+                  "var(--ant-color-fill-quaternary, rgba(0,0,0,0.01))",
               }}
             >
               {generatedFiles.map(renderListItem)}

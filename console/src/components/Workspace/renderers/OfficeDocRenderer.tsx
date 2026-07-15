@@ -149,12 +149,12 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         }}
       >
         <FileTextOutlined style={{ fontSize: 48, color: "#999" }} />
-        <span style={{ fontSize: 13, color: theme === "dark" ? "#ccc" : "#666" }}>
+        <span
+          style={{ fontSize: 13, color: theme === "dark" ? "#ccc" : "#666" }}
+        >
           {artifact.extension?.toUpperCase()} 文档无法在浏览器中直接预览
         </span>
-        <span style={{ fontSize: 12, color: "#999" }}>
-          {artifact.title}
-        </span>
+        <span style={{ fontSize: 12, color: "#999" }}>{artifact.title}</span>
         <Button
           type="primary"
           icon={<DownloadOutlined />}

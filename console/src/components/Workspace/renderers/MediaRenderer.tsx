@@ -17,7 +17,8 @@ const MediaRenderer: React.FC<RendererContext> = ({
 }) => {
   const { t } = useTranslation();
   const url = artifact.binaryUrl ?? "";
-  const isVideo = artifact.mimeType?.startsWith("video/") ||
+  const isVideo =
+    artifact.mimeType?.startsWith("video/") ||
     ["mp4", "webm", "avi", "mov", "mkv", "wmv", "flv"].includes(
       artifact.extension || "",
     );
