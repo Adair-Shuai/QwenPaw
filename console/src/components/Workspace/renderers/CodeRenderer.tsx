@@ -202,7 +202,6 @@ const CodeRenderer: React.FC<RendererContext> = ({
   const content = artifact.textContent ?? "";
   const language = detectLanguage(artifact.extension);
   const isDark = theme === "dark";
-  const isReadOnly = forceReadOnly || !editable;
 
   const lines = content.split("\n");
 

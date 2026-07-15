@@ -250,12 +250,13 @@ describe("OfficeDocRenderer", () => {
   });
 
   it("sends auth headers in the fetch request", async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ html: "<p>test</p>" }),
-      }),
+    const fetchMock = vi.fn(
+      (_url: string, _opts: RequestInit) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ html: "<p>test</p>" }),
+        }),
     );
     global.fetch = fetchMock as unknown as typeof global.fetch;
 
@@ -266,8 +267,11 @@ describe("OfficeDocRenderer", () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const call = fetchMock.mock.calls[0];
-    const options = call[1] as RequestInit;
+    const calls = fetchMock.mock.calls as unknown as [
+      string,
+      RequestInit,
+    ][];
+    const options = calls[0][1];
     const headers = options.headers as Record<string, string>;
     expect(headers["Authorization"]).toBe("Bearer test-token");
     expect(headers["X-Agent-Id"]).toBe("test-agent");
@@ -275,12 +279,13 @@ describe("OfficeDocRenderer", () => {
   });
 
   it("sends file URL in request body", async () => {
-    const fetchMock = vi.fn(() =>
-      Promise.resolve({
-        ok: true,
-        status: 200,
-        json: () => Promise.resolve({ html: "<p>test</p>" }),
-      }),
+    const fetchMock = vi.fn(
+      (_url: string, _opts: RequestInit) =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => Promise.resolve({ html: "<p>test</p>" }),
+        }),
     );
     global.fetch = fetchMock as unknown as typeof global.fetch;
 
@@ -301,8 +306,11 @@ describe("OfficeDocRenderer", () => {
       expect(fetchMock).toHaveBeenCalled();
     });
 
-    const call = fetchMock.mock.calls[0];
-    const body = JSON.parse((call[1] as RequestInit).body as string);
+    const calls = fetchMock.mock.calls as unknown as [
+      string,
+      RequestInit,
+    ][];
+    const body = JSON.parse(calls[0][1].body as string);
     expect(body.url).toBe("/api/workspace/binary-files/report.docx");
   });
 });
