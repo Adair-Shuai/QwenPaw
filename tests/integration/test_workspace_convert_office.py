@@ -49,7 +49,7 @@ def test_convert_office_docx_returns_html(app_server) -> None:
         # Create a .docx file in the workspace
         from docx import Document
 
-        docx_path = app_server.working_dir / agent_id / "test_convert.docx"
+        docx_path = app_server.working_dir / "workspaces" / agent_id / "test_convert.docx"
         docx_path.parent.mkdir(parents=True, exist_ok=True)
         doc = Document()
         doc.add_heading("Integration Test Document", level=0)
@@ -114,7 +114,7 @@ def test_convert_office_long_docx_has_page_breaks(app_server) -> None:
     try:
         from docx import Document
 
-        docx_path = app_server.working_dir / agent_id / "long_doc.docx"
+        docx_path = app_server.working_dir / "workspaces" / agent_id / "long_doc.docx"
         docx_path.parent.mkdir(parents=True, exist_ok=True)
         doc = Document()
         doc.add_heading("Long Document", level=0)
@@ -214,7 +214,7 @@ def test_convert_office_unsupported_type_returns_415(app_server) -> None:
 
     try:
         # Write a .txt file
-        txt_path = app_server.working_dir / agent_id / "plain.txt"
+        txt_path = app_server.working_dir / "workspaces" / agent_id / "plain.txt"
         txt_path.parent.mkdir(parents=True, exist_ok=True)
         txt_path.write_text("plain text content")
 
