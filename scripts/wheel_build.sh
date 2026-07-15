@@ -19,6 +19,14 @@ rm -rf "$CONSOLE_DEST"/*
 mkdir -p "$CONSOLE_DEST"
 cp -R "$CONSOLE_DIR/dist/"* "$CONSOLE_DEST/"
 
+echo "[wheel_build] Building plugin frontend bundles..."
+PLUGIN_UI_SCRIPT="$REPO_ROOT/scripts/pack-tauri/build_plugin_uis.sh"
+if [ -f "$PLUGIN_UI_SCRIPT" ]; then
+  bash "$PLUGIN_UI_SCRIPT"
+else
+  echo "  [warn] build_plugin_uis.sh not found; skipping plugin UI build"
+fi
+
 echo "[wheel_build] Syncing bundled plugins -> src/qwenpaw/plugins_bundle/"
 BUNDLE_SRC="$REPO_ROOT/plugins/bundle"
 BUNDLE_DEST="$REPO_ROOT/src/qwenpaw/plugins_bundle"

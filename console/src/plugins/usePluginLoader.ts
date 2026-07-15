@@ -1,8 +1,8 @@
 /**
  * usePluginLoader.ts — plugin loading utility
  *
- * Fetches the plugin list, downloads each frontend bundle, and executes it
- * via a same-origin Blob URL so plugins can self-register into the
+ * Fetches the plugin list, then dynamically imports each frontend bundle
+ * via a same-origin URL so plugins can self-register into the
  * `pluginSystem` singleton (hostExternals.ts).
  *
  * Exports `loadAllPlugins()` — the single function PluginContext calls.
@@ -33,19 +33,49 @@ function resolveUrl(pluginId: string, apiPath: string): string {
 }
 
 /**
- * Fetch a plugin's JS source, wrap it in a same-origin Blob URL, and
- * execute it via dynamic import.  Blob URL is revoked immediately after.
+ * Execute a plugin's frontend bundle via dynamic `import()`.
+ *
+ * Strategy (tries same-origin import first, falls back to Blob URL):
+ *
+ * 1. **Same-origin `import(url)`** — preferred. The plugin JS is served
+ *    from the same origin as the console page, so `script-src: 'self'`
+ *    (Tauri CSP) allows it. This works in Tauri desktop, web dev, and
+ *    all modern browsers.
+ *
+ * 2. **Blob URL fallback** — if the same-origin import fails (e.g. the
+ *    server doesn't return the correct `Content-Type` or the webview
+ *    blocks cross-path imports), fall back to fetching the JS text and
+ *    executing via a blob: URL. This requires `blob:` in `script-src`.
  */
 async function executePluginScript(entryUrl: string): Promise<void> {
-  const token = getApiToken();
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
   // Append a cache-busting query parameter so the browser always fetches
   // the latest plugin bundle instead of serving a stale cached version.
   const cacheBustUrl = `${entryUrl}${
     entryUrl.includes("?") ? "&" : "?"
   }_t=${Date.now()}`;
+
+  // Strategy 1: Direct same-origin dynamic import.
+  // The plugin endpoint is public (no auth required), so we don't need
+  // to pass an Authorization header.
+  try {
+    await import(/* @vite-ignore */ cacheBustUrl);
+    return;
+  } catch (directErr) {
+    console.warn(
+      `[PluginLoader] Direct import failed for ${entryUrl}, trying blob fallback:`,
+      directErr,
+    );
+  }
+
+  // Strategy 2: Fetch + Blob URL fallback.
+  // Some webview environments may block `import()` of same-origin URLs
+  // that are not regular `<script>` sources. The blob: approach creates
+  // a truly same-origin module that bypasses such restrictions, at the
+  // cost of requiring `blob:` in the CSP `script-src`.
+  const token = getApiToken();
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `Bearer ${token}`;
+
   const response = await fetch(cacheBustUrl, {
     headers,
     cache: "no-store",

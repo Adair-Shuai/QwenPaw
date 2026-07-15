@@ -90,6 +90,19 @@ cd ..
 echo "Console static assets built"
 echo ""
 
+# Step 1b: Build plugin frontend bundles
+# This ensures plugin JS bundles (e.g. ugsci/ui/dist/index.js) are present
+# before PyInstaller bundles them. Without this, plugins appear "loaded"
+# in the backend but their custom UI silently fails to render.
+echo "== Step 1b: Building Plugin Frontend Bundles =="
+bash scripts/pack-tauri/build_plugin_uis.sh
+echo ""
+
+# Step 1c: Verify build assets
+echo "== Step 1c: Verifying Build Assets =="
+python scripts/pack-tauri/verify_build_assets.py --strict
+echo ""
+
 # Step 2: Build PyInstaller backend
 echo "== Step 2: Building PyInstaller Backend =="
 bash scripts/pack-tauri/build_pyinstaller.sh

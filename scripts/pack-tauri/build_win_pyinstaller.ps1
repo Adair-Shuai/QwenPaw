@@ -153,6 +153,26 @@ Set-Location $REPO_ROOT
 Write-Host "Console static assets built" -ForegroundColor Green
 Write-Host ""
 
+# Step 1b: Build plugin frontend bundles
+# This ensures plugin JS bundles (e.g. ugsci/ui/dist/index.js) are present
+# before PyInstaller bundles them. Without this, plugins appear "loaded"
+# in the backend but their custom UI silently fails to render.
+Write-Host "== Step 1b: Building Plugin Frontend Bundles ==" -ForegroundColor Yellow
+$pluginBuildScript = Join-Path $REPO_ROOT "scripts\pack-tauri\build_plugin_uis.ps1"
+& $pluginBuildScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Plugin UI build failed"
+}
+Write-Host ""
+
+# Step 1c: Verify build assets
+Write-Host "== Step 1c: Verifying Build Assets ==" -ForegroundColor Yellow
+python scripts/pack-tauri/verify_build_assets.py --strict
+if ($LASTEXITCODE -ne 0) {
+    throw "Build asset verification failed"
+}
+Write-Host ""
+
 # Step 2: Build PyInstaller backend
 Write-Host "== Step 2: Building PyInstaller Backend ==" -ForegroundColor Yellow
 $PYINSTALLER_SCRIPT = Join-Path $REPO_ROOT "scripts\pack-tauri\build_pyinstaller.ps1"
