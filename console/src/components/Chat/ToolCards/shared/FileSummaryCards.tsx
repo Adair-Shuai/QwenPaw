@@ -30,7 +30,7 @@ import { Tooltip, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import { workspaceApi } from "@/api/modules/workspace";
-import { stringifyResult, toDisplayUrl } from "./utils";
+import { stringifyResult } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 类型
@@ -73,6 +73,16 @@ const TOOL_OPERATION_MAP: Record<string, FileInfo["operation"]> = {
   view_image: "read",
   view_video: "read",
 };
+
+/** 命令执行工具 — 其输出中可能包含生成的交付物文件路径 */
+const COMMAND_EXECUTION_TOOLS = new Set([
+  "execute_shell_command",
+  "execute_python_code",
+  "shell",
+  "bash",
+  "run_command",
+  "terminal",
+]);
 
 /** Tool call message types (from vendor's AgentScopeRuntimeMessageType) */
 const TOOL_CALL_TYPES = new Set([
@@ -126,6 +136,8 @@ const BINARY_EXTENSIONS = new Set([
   "bmp",
   "webp",
   "svg",
+  "tiff",
+  "tif",
   "mp4",
   "avi",
   "mov",
@@ -140,6 +152,41 @@ const BINARY_EXTENSIONS = new Set([
   "ogg",
   "wma",
   "pdf",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx",
+  "ppt",
+  "pptx",
+  "odt",
+  "ods",
+  "odp",
+  "zip",
+  "tar",
+  "gz",
+  "7z",
+  "rar",
+]);
+
+/** 交付物文件扩展名 — 最终产物（非脚本的文件类型） */
+const DELIVERABLE_EXTENSIONS = new Set([
+  // Documents
+  "md", "markdown", "txt", "rtf", "pdf",
+  "doc", "docx", "xls", "xlsx", "ppt", "pptx",
+  "odt", "ods", "odp",
+  "csv", "tsv",
+  // Web
+  "html", "htm", "xml",
+  // Data
+  "json", "yaml", "yml",
+  // Images
+  "png", "jpg", "jpeg", "gif", "bmp", "webp", "svg", "tiff", "tif",
+  // Video
+  "mp4", "avi", "mov", "wmv", "flv", "mkv", "webm",
+  // Audio
+  "mp3", "wav", "flac", "aac", "ogg", "wma",
+  // Archives
+  "zip", "tar", "gz", "7z", "rar",
 ]);
 
 /** 从工具调用参数中提取文件路径 */
@@ -169,6 +216,43 @@ function getExtension(path: string): string {
 /** 检查是否是文件相关的工具调用 */
 function isFileRelatedTool(toolName: string): boolean {
   return toolName.toLowerCase() in TOOL_OPERATION_MAP;
+}
+
+/**
+ * 从命令执行输出文本中提取交付物文件路径。
+ *
+ * 匹配模式：
+ * - "Saved to /path/to/file.docx"
+ * - "Output written to /path/to/report.pdf"
+ * - "生成文件: /path/to/output.xlsx"
+ * - 裸路径 /path/to/file.docx
+ */
+function extractDeliverablePathsFromOutput(output: string): string[] {
+  const paths = new Set<string>();
+
+  // Pattern 1: "Saved to" / "输出到" / "生成" 等 + file path
+  const savedPattern = /(?:saved to|written to|output(?:ted)? to|created|generated|保存到|输出到|生成(?:文件)?|创建)[:\s]+([^\s\n]+)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = savedPattern.exec(output)) !== null) {
+    const p = match[1].replace(/["',.;]+$/, "");
+    const ext = getExtension(p);
+    if (ext && DELIVERABLE_EXTENSIONS.has(ext)) {
+      paths.add(p);
+    }
+  }
+
+  // Pattern 2: bare absolute file paths with deliverable extensions
+  // Unix: /path/to/file.ext  Windows: C:\path\to\file.ext
+  const extPattern = Array.from(DELIVERABLE_EXTENSIONS).join("|");
+  const barePathRegex = new RegExp(
+    `(?:/[\w./-]+|[A-Za-z]:[\\/][\w.\\/-]+)\.(?:${extPattern})`,
+    "gi",
+  );
+  while ((match = barePathRegex.exec(output)) !== null) {
+    paths.add(match[0].replace(/\\/g, "/"));
+  }
+
+  return Array.from(paths);
 }
 
 /**
@@ -268,16 +352,19 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       rawResult = outputMap.get(key);
     }
 
-    // For write_file / append_file, content is in params
+    // For write_file / append_file, the actual file content is in
+    // params.content. The tool result is just a success message like
+    // "Wrote 676 bytes to /path/to/file.md." — we must NOT use that
+    // as the preview content.
+    //
+    // For other tools (read_file, edit_file, etc.), the tool result
+    // may contain useful content.
     let resultContent: string | undefined;
-    if (rawResult !== undefined) {
-      resultContent = stringifyResult(rawResult);
+    if (name === "write_file" || name === "append_file") {
+      resultContent = params.content as string;
     }
-    if (!resultContent) {
-      if (name === "write_file" || name === "append_file") {
-        const paramContent = params.content as string;
-        if (paramContent) resultContent = paramContent;
-      }
+    if (!resultContent && rawResult !== undefined) {
+      resultContent = stringifyResult(rawResult);
     }
 
     const ext = getExtension(filePath);
@@ -287,11 +374,12 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     // For binary files, try to get a displayable URL from the result
     let binaryUrl: string | undefined;
     if (isBinary) {
-      // Try extracting URL from result blocks
+      // Try extracting URL from result blocks (send_file_to_user returns
+      // a DataBlock with URLSource)
       binaryUrl = extractUrlFromResult(rawResult) || undefined;
-      // Fall back to constructing a preview URL from the file path
+      // Fall back to workspace binary file API for workspace files
       if (!binaryUrl) {
-        binaryUrl = toDisplayUrl(filePath);
+        binaryUrl = workspaceApi.getBinaryFileUrl(filePath);
       }
     }
 
@@ -318,9 +406,88 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     });
   }
 
-  // 去重：同一路径只保留最后一次操作
+  // Third pass: scan command execution outputs for deliverable file paths.
+  // When AI writes a script (.py) and runs it via execute_shell_command,
+  // the script may produce deliverable files (e.g., .docx, .pdf) whose
+  // paths appear in the command output. We need to capture these.
+  for (const msg of output) {
+    if (!msg || typeof msg !== "object") continue;
+    const m = msg as Record<string, unknown>;
+    const msgType = m.type as string;
+    if (!msgType || !TOOL_CALL_TYPES.has(msgType)) continue;
+
+    const content = m.content;
+    if (!Array.isArray(content) || content.length === 0) continue;
+
+    const firstItem = content[0] as Record<string, unknown> | undefined;
+    if (!firstItem || typeof firstItem !== "object") continue;
+
+    const callData = firstItem.data as Record<string, unknown> | undefined;
+    if (!callData) continue;
+
+    const name = (callData.name as string) || "";
+    if (!COMMAND_EXECUTION_TOOLS.has(name.toLowerCase())) continue;
+
+    const callId = (callData.call_id as string) || "";
+    const msgId = (m.id as string) || "";
+
+    // Get output text
+    let outputText = "";
+    if (content.length > 1) {
+      const secondItem = content[1] as Record<string, unknown> | undefined;
+      const outputData = secondItem?.data as
+        | Record<string, unknown>
+        | undefined;
+      if (outputData?.output !== undefined) {
+        outputText = stringifyResult(outputData.output);
+      }
+    }
+    if (!outputText) {
+      const key = callId || name;
+      const rawOutput = outputMap.get(key);
+      if (rawOutput !== undefined) {
+        outputText = stringifyResult(rawOutput);
+      }
+    }
+    if (!outputText) continue;
+
+    // Extract deliverable file paths from the output
+    const deliverablePaths = extractDeliverablePathsFromOutput(outputText);
+    for (const filePath of deliverablePaths) {
+      // Skip if already tracked by a write_file / send_file_to_user call
+      if (infos.some((i) => i.filePath === filePath)) continue;
+
+      const ext = getExtension(filePath);
+      const isBinary = BINARY_EXTENSIONS.has(ext);
+      let binaryUrl: string | undefined;
+      if (isBinary) {
+        binaryUrl = workspaceApi.getBinaryFileUrl(filePath);
+      }
+
+      infos.push({
+        toolCallId: `${callId || msgId}-deliverable-${filePath}`,
+        fileName: shortName(filePath),
+        filePath,
+        operation: "other",
+        toolName: name,
+        extension: ext,
+        isBinary,
+        binaryUrl,
+        isDeliverable: true,
+      });
+    }
+  }
+
+  // 去重：同一路径只保留最后一次操作。
+  // 关键：read 操作不应覆盖 write/send/edit/append 操作——
+  // 否则先写后读的文件会被 read 覆盖然后被过滤器删掉。
   const seen = new Map<string, FileInfo>();
   for (const info of infos) {
+    const existing = seen.get(info.filePath);
+    if (info.operation === "read" && existing && existing.operation !== "read") {
+      // read 不覆盖已有的非 read 操作
+      continue;
+    }
     seen.set(info.filePath, info);
   }
 
@@ -404,18 +571,33 @@ const OPERATION_CONFIG: Record<
 const EXTENSION_ICON: Record<string, React.ReactNode> = {
   md: <FileTextOutlined />,
   markdown: <FileTextOutlined />,
+  txt: <FileTextOutlined />,
+  csv: <FileTextOutlined />,
   json: <CodeOutlined />,
   js: <CodeOutlined />,
   ts: <CodeOutlined />,
   tsx: <CodeOutlined />,
   jsx: <CodeOutlined />,
   py: <CodeOutlined />,
+  html: <FileTextOutlined />,
+  htm: <FileTextOutlined />,
+  xml: <FileTextOutlined />,
+  yaml: <FileTextOutlined />,
+  yml: <FileTextOutlined />,
+  pdf: <FileTextOutlined />,
+  doc: <FileTextOutlined />,
+  docx: <FileTextOutlined />,
+  xls: <FileTextOutlined />,
+  xlsx: <FileTextOutlined />,
+  ppt: <FileTextOutlined />,
+  pptx: <FileTextOutlined />,
   png: <FileImageOutlined />,
   jpg: <FileImageOutlined />,
   jpeg: <FileImageOutlined />,
   gif: <FileImageOutlined />,
   svg: <FileImageOutlined />,
   webp: <FileImageOutlined />,
+  bmp: <FileImageOutlined />,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -426,8 +608,12 @@ function getMimeType(ext: string): string {
   const extMap: Record<string, string> = {
     md: "text/markdown",
     markdown: "text/markdown",
+    txt: "text/plain",
+    csv: "text/csv",
+    tsv: "text/tab-separated-values",
     json: "application/json",
     html: "text/html",
+    htm: "text/html",
     css: "text/css",
     js: "text/javascript",
     jsx: "text/javascript",
@@ -438,17 +624,40 @@ function getMimeType(ext: string): string {
     yaml: "application/x-yaml",
     yml: "application/x-yaml",
     xml: "application/xml",
+    rtf: "application/rtf",
     svg: "image/svg+xml",
     png: "image/png",
     jpg: "image/jpeg",
     jpeg: "image/jpeg",
     gif: "image/gif",
     webp: "image/webp",
+    bmp: "image/bmp",
+    tiff: "image/tiff",
+    tif: "image/tiff",
     pdf: "application/pdf",
+    doc: "application/msword",
+    docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    xls: "application/vnd.ms-excel",
+    xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ppt: "application/vnd.ms-powerpoint",
+    pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    odt: "application/vnd.oasis.opendocument.text",
+    ods: "application/vnd.oasis.opendocument.spreadsheet",
+    odp: "application/vnd.oasis.opendocument.presentation",
+    zip: "application/zip",
+    tar: "application/x-tar",
+    gz: "application/gzip",
+    "7z": "application/x-7z-compressed",
+    rar: "application/vnd.rar",
     mp4: "video/mp4",
     webm: "video/webm",
+    avi: "video/x-msvideo",
+    mov: "video/quicktime",
     mp3: "audio/mpeg",
     wav: "audio/wav",
+    flac: "audio/flac",
+    aac: "audio/aac",
+    ogg: "audio/ogg",
   };
   return extMap[ext.toLowerCase()] || "text/plain";
 }
@@ -587,6 +796,9 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
           transition: "all 0.15s ease",
           overflow: "hidden",
+          flex: "1 1 180px",
+          maxWidth: 280,
+          minWidth: 160,
         }}
       >
         <div
@@ -763,13 +975,12 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
 
   return (
     <div style={{ padding: "8px 0" }}>
-      {/* 交付物卡片区域 */}
+      {/* 交付物卡片区域 — 优先横向排列 */}
       {deliverables.length > 0 && (
         <div
           style={{
-            display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fill, minmax(180px, 1fr))",
+            display: "flex",
+            flexWrap: "wrap",
             gap: 8,
             maxWidth: "100%",
           }}

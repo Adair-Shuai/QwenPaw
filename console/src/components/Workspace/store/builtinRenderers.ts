@@ -37,6 +37,7 @@ import JsonRenderer from "../renderers/JsonRenderer";
 import ImageRenderer from "../renderers/ImageRenderer";
 import PdfRenderer from "../renderers/PdfRenderer";
 import OfficeDocRenderer from "../renderers/OfficeDocRenderer";
+import MediaRenderer from "../renderers/MediaRenderer";
 import SandpackRenderer from "../renderers/SandpackRenderer";
 import MermaidRenderer from "../renderers/MermaidRenderer";
 import FallbackRenderer from "../renderers/FallbackRenderer";
@@ -184,6 +185,25 @@ const builtinRenderers: RendererRegistration[] = [
     extensions: ["png", "jpg", "jpeg", "gif", "svg", "webp", "bmp"],
     priority: 10,
     description: "图片查看器，支持缩放、旋转和全屏",
+  },
+
+  // 视频/音频渲染器
+  {
+    id: "media",
+    name: "Media",
+    component: MediaRenderer,
+    mimeTypes: [
+      MimeTypes.MP4,
+      MimeTypes.WEBM,
+      MimeTypes.MP3,
+      MimeTypes.WAV,
+    ],
+    extensions: [
+      "mp4", "webm", "avi", "mov", "mkv", "wmv", "flv",
+      "mp3", "wav", "flac", "aac", "ogg", "wma",
+    ],
+    priority: 10,
+    description: "视频/音频播放器，支持 MP4、WebM、MP3、WAV 等",
   },
 
   // ═══════════════════════════════════════════════════════════════════════

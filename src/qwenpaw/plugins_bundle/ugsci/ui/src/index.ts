@@ -4468,6 +4468,629 @@ function CapabilityCard({
   );
 }
 
+// ─── Local Software Detection Types & Helpers ─────────────────────────────────
+
+interface SoftwareInfo {
+  id: string;
+  name: string;
+  category: string;
+  vendor: string;
+  version: string | null;
+  executable_path: string | null;
+  install_dir: string | null;
+  license_server: string | null;
+  status: "found" | "not_found" | "error";
+  description: string;
+  invocation_hint: string;
+  extra_paths: string[];
+}
+
+interface DetectionResult {
+  platform: string;
+  software_list: SoftwareInfo[];
+  custom_scan_paths: string[];
+  summary: string;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  reservoir_simulation: "油藏数值模拟",
+  geological_modeling: "地质建模",
+  well_log_analysis: "测井分析",
+  production_engineering: "采油工程",
+  post_processing: "后处理与可视化",
+};
+
+const CATEGORY_ICONS: Record<string, string> = {
+  reservoir_simulation: "🛢️",
+  geological_modeling: "🏔️",
+  well_log_analysis: "📡",
+  production_engineering: "⚙️",
+  post_processing: "📊",
+};
+
+async function fetchSoftwareDetection(): Promise<DetectionResult> {
+  return apiFetch<DetectionResult>("/ugsci/software/detect");
+}
+
+async function fetchSoftwareList(): Promise<DetectionResult> {
+  return apiFetch<DetectionResult>("/ugsci/software/list");
+}
+
+async function addScanPath(paths: string[]): Promise<DetectionResult> {
+  return apiFetch<DetectionResult>("/ugsci/software/scan-path", {
+    method: "POST",
+    body: JSON.stringify({ paths }),
+  });
+}
+
+// ─── Local Software Card ──────────────────────────────────────────────────────
+
+function SoftwareCard({
+  sw,
+  onClick,
+}: {
+  sw: SoftwareInfo;
+  onClick: () => void;
+}) {
+  const React = getHost().React;
+  const { Card, Tag, Typography } = getHost().antd;
+  const { Text } = Typography;
+
+  const isFound = sw.status === "found";
+  const icon = CATEGORY_ICONS[sw.category] || "📦";
+
+  return React.createElement(
+    Card,
+    {
+      hoverable: true,
+      onClick,
+      size: "small",
+      style: {
+        cursor: "pointer",
+        borderColor: isFound ? undefined : "#d9d9d9",
+        opacity: isFound ? 1 : 0.65,
+        height: "100%",
+        width: "100%",
+        display: "flex",
+        flexDirection: "column",
+      },
+      bodyStyle: {
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        flex: 1,
+      },
+    },
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "flex-start",
+          marginBottom: 8,
+        },
+      },
+      React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 8 } },
+        React.createElement("span", { style: { fontSize: 20 } }, icon),
+        React.createElement(
+          "div",
+          null,
+          React.createElement(
+            Text,
+            { strong: true, style: { fontSize: 14 } },
+            sw.name,
+          ),
+          React.createElement(
+            "br",
+          ),
+          React.createElement(
+            Text,
+            { type: "secondary", style: { fontSize: 11 } },
+            sw.vendor,
+          ),
+        ),
+      ),
+      React.createElement(
+        Tag,
+        {
+          color: isFound ? "success" : "default",
+          style: { fontSize: 11 },
+        },
+        isFound ? "✅ 已检测" : "— 未安装",
+      ),
+    ),
+    React.createElement(
+      "div",
+      { style: { flex: 1, minHeight: 32 } },
+      React.createElement(
+        Text,
+        { type: "secondary", style: { fontSize: 12 } },
+        sw.description,
+      ),
+    ),
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginTop: 8,
+          display: "flex",
+          gap: 4,
+          flexWrap: "wrap",
+        },
+      },
+      React.createElement(
+        Tag,
+        { style: { fontSize: 11 } },
+        CATEGORY_LABELS[sw.category] || sw.category,
+      ),
+      sw.version
+        ? React.createElement(
+            Tag,
+            { color: "blue", style: { fontSize: 11 } },
+            `v${sw.version}`,
+          )
+        : null,
+    ),
+  );
+}
+
+// ─── Local Software Section ───────────────────────────────────────────────────
+
+function LocalSoftwareSection() {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback, useMemo } = React;
+  const {
+    Spin,
+    Empty,
+    Button,
+    message: antdMsg,
+    Row,
+    Col,
+    Drawer,
+    Descriptions,
+    Tag,
+    Typography,
+    Modal,
+    Input,
+    Alert,
+  } = getHost().antd;
+  const {
+    ReloadOutlined,
+    SearchOutlined,
+    FolderOpenOutlined,
+    CheckCircleOutlined,
+    CopyOutlined,
+  } = getHost().antdIcons || {};
+  const { Text, Paragraph } = Typography;
+
+  const [result, setResult] = useState<DetectionResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [searchText, setSearchText] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeSW, setActiveSW] = useState<SoftwareInfo | null>(null);
+  const [scanPathModalOpen, setScanPathModalOpen] = useState(false);
+  const [scanPathInput, setScanPathInput] = useState("");
+
+  const loadSoftware = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchSoftwareDetection();
+      setResult(data);
+    } catch (err: any) {
+      antdMsg.error(err.message || "软件检测失败");
+      setResult(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadSoftware();
+  }, [loadSoftware]);
+
+  const softwareList = result?.software_list || [];
+  const foundList = softwareList.filter((s) => s.status === "found");
+  const notFoundList = softwareList.filter((s) => s.status !== "found");
+
+  const filteredSW = useMemo(() => {
+    if (!searchText.trim()) return softwareList;
+    const q = searchText.toLowerCase();
+    return softwareList.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        s.vendor.toLowerCase().includes(q) ||
+        s.category.toLowerCase().includes(q) ||
+        s.description?.toLowerCase().includes(q),
+    );
+  }, [softwareList, searchText]);
+
+  const handleAddScanPath = useCallback(async () => {
+    const paths = scanPathInput
+      .split("\n")
+      .map((p: string) => p.trim())
+      .filter(Boolean);
+    if (paths.length === 0) {
+      antdMsg.warning("请输入至少一个路径");
+      return;
+    }
+    try {
+      const data = await addScanPath(paths);
+      setResult(data);
+      antdMsg.success(`已添加 ${paths.length} 个扫描路径并重新检测`);
+      setScanPathModalOpen(false);
+      setScanPathInput("");
+    } catch (err: any) {
+      antdMsg.error(err.message || "添加扫描路径失败");
+    }
+  }, [scanPathInput]);
+
+  const handleCopyPath = useCallback((path: string) => {
+    navigator.clipboard
+      .writeText(path)
+      .then(() => antdMsg.success("路径已复制"))
+      .catch(() => antdMsg.error("复制失败"));
+  }, []);
+
+  const categoryCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const sw of foundList) {
+      counts[sw.category] = (counts[sw.category] || 0) + 1;
+    }
+    return counts;
+  }, [foundList]);
+
+  return React.createElement(
+    "div",
+    null,
+    // Summary alert
+    result
+      ? React.createElement(
+          Alert,
+          {
+            type: foundList.length > 0 ? "success" : "info",
+            message: `检测到 ${foundList.length}/${softwareList.length} 个软件 · 平台: ${result.platform}`,
+            description: foundList.length > 0
+              ? Object.entries(categoryCounts)
+                  .map(
+                    ([cat, n]) =>
+                      `${CATEGORY_LABELS[cat] || cat}: ${n} 个`,
+                  )
+                  .join("，")
+              : "未检测到已安装的油气软件。可尝试添加自定义扫描路径。",
+            showIcon: true,
+            style: { marginBottom: 16 },
+          },
+        )
+      : null,
+    // Action bar
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginBottom: 16,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        },
+      },
+      React.createElement(Input, {
+        placeholder: "搜索软件名称、厂商...",
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
+        value: searchText,
+        onChange: (e: any) => setSearchText(e.target.value),
+        allowClear: true,
+        style: { maxWidth: 300 },
+      }),
+      React.createElement(
+        Button,
+        {
+          icon: ReloadOutlined
+            ? React.createElement(ReloadOutlined)
+            : undefined,
+          onClick: loadSoftware,
+          loading,
+        },
+        "重新检测",
+      ),
+      React.createElement(
+        Button,
+        {
+          icon: FolderOpenOutlined
+            ? React.createElement(FolderOpenOutlined)
+            : undefined,
+          onClick: () => setScanPathModalOpen(true),
+        },
+        "添加扫描路径",
+      ),
+    ),
+    // Content
+    loading
+      ? React.createElement(
+          "div",
+          { style: { textAlign: "center", padding: 60 } },
+          React.createElement(Spin, {
+            size: "large",
+            tip: "正在扫描本地软件...",
+          }),
+        )
+      : filteredSW.length === 0
+        ? React.createElement(Empty, { description: "无匹配软件" })
+        : React.createElement(
+            React.Fragment,
+            null,
+            // Found software section
+            foundList.length > 0
+              ? React.createElement(
+                  "div",
+                  { style: { marginBottom: 16 } },
+                  React.createElement(
+                    Text,
+                    { strong: true, style: { fontSize: 14 } },
+                    `已检测到的软件 (${foundList.length})`,
+                  ),
+                  React.createElement(
+                    Row,
+                    { gutter: [12, 12], align: "stretch", style: { marginTop: 12 } },
+                    ...filteredSW
+                      .filter((s) => s.status === "found")
+                      .map((sw) =>
+                        React.createElement(
+                          Col,
+                          {
+                            key: sw.id,
+                            xs: 24,
+                            sm: 12,
+                            md: 8,
+                            lg: 6,
+                            style: { display: "flex" },
+                          },
+                          React.createElement(SoftwareCard, {
+                            sw,
+                            onClick: () => {
+                              setActiveSW(sw);
+                              setDrawerOpen(true);
+                            },
+                          }),
+                        ),
+                      ),
+                  ),
+                )
+              : null,
+            // Not found section
+            notFoundList.length > 0 && !searchText
+              ? React.createElement(
+                  "div",
+                  null,
+                  React.createElement(
+                    Text,
+                    {
+                      type: "secondary",
+                      style: { fontSize: 13, marginTop: 16, display: "block" },
+                    },
+                    `未检测到的软件 (${notFoundList.length})`,
+                  ),
+                  React.createElement(
+                    Row,
+                    { gutter: [12, 12], style: { marginTop: 12 } },
+                    ...notFoundList.map((sw) =>
+                      React.createElement(
+                        Col,
+                        {
+                          key: sw.id,
+                          xs: 24,
+                          sm: 12,
+                          md: 8,
+                          lg: 6,
+                          style: { display: "flex" },
+                        },
+                        React.createElement(SoftwareCard, {
+                          sw,
+                          onClick: () => {
+                            setActiveSW(sw);
+                            setDrawerOpen(true);
+                          },
+                        }),
+                      ),
+                    ),
+                  ),
+                )
+              : null,
+          ),
+    // Detail drawer
+    activeSW
+      ? React.createElement(
+          Drawer,
+          {
+            title: React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 8 } },
+              React.createElement(
+                "span",
+                { style: { fontSize: 18 } },
+                CATEGORY_ICONS[activeSW.category] || "📦",
+              ),
+              React.createElement("span", null, activeSW.name),
+            ),
+            open: drawerOpen,
+            onClose: () => setDrawerOpen(false),
+            width: 520,
+          },
+          React.createElement(
+            Descriptions,
+            { column: 1, bordered: true, size: "small" },
+            React.createElement(
+              Descriptions.Item,
+              { label: "软件名称" },
+              activeSW.name,
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "厂商" },
+              activeSW.vendor,
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "分类" },
+              CATEGORY_LABELS[activeSW.category] || activeSW.category,
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "状态" },
+              React.createElement(
+                Tag,
+                {
+                  color: activeSW.status === "found" ? "success" : "default",
+                },
+                activeSW.status === "found"
+                  ? "✅ 已检测到"
+                  : "❌ 未检测到",
+              ),
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "版本" },
+              activeSW.version || "—",
+            ),
+            activeSW.executable_path
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "可执行文件" },
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                      },
+                    },
+                    React.createElement(
+                      "code",
+                      {
+                        style: {
+                          fontSize: 12,
+                          wordBreak: "break-all",
+                        },
+                      },
+                      activeSW.executable_path,
+                    ),
+                    React.createElement(
+                      Button,
+                      {
+                        size: "small",
+                        type: "text",
+                        icon: CopyOutlined
+                          ? React.createElement(CopyOutlined)
+                          : undefined,
+                        onClick: () =>
+                          handleCopyPath(activeSW.executable_path!),
+                      },
+                    ),
+                  ),
+                )
+              : null,
+            activeSW.install_dir
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "安装目录" },
+                  React.createElement(
+                    "code",
+                    { style: { fontSize: 12, wordBreak: "break-all" } },
+                    activeSW.install_dir,
+                  ),
+                )
+              : null,
+            React.createElement(
+              Descriptions.Item,
+              { label: "描述" },
+              activeSW.description || "—",
+            ),
+          ),
+          // Invocation hint
+          activeSW.invocation_hint
+            ? React.createElement(
+                "div",
+                {
+                  style: {
+                    marginTop: 16,
+                    padding: 12,
+                    background: "#e6f4ff",
+                    borderRadius: 8,
+                  },
+                },
+                React.createElement(
+                  Text,
+                  { strong: true, style: { fontSize: 13 } },
+                  "💡 调用方式",
+                ),
+                React.createElement(
+                  "div",
+                  { style: { marginTop: 8, fontSize: 13, lineHeight: 1.6 } },
+                  activeSW.invocation_hint,
+                ),
+              )
+            : null,
+        )
+      : null,
+    // Scan path modal
+    React.createElement(
+      Modal,
+      {
+        title: "添加自定义扫描路径",
+        open: scanPathModalOpen,
+        onOk: handleAddScanPath,
+        onCancel: () => setScanPathModalOpen(false),
+        okText: "添加并扫描",
+        cancelText: "取消",
+      },
+      React.createElement(
+        Paragraph,
+        { type: "secondary", style: { fontSize: 12, marginBottom: 12 } },
+        "输入软件安装目录路径（每行一个），系统将在这些路径中搜索已知的油气软件。",
+      ),
+      React.createElement(Input.TextArea, {
+        value: scanPathInput,
+        onChange: (e: any) => setScanPathInput(e.target.value),
+        rows: 5,
+        placeholder: "/opt/CMG\nD:\\\\Software\\\\Schlumberger",
+        style: { fontFamily: "monospace", fontSize: 13 },
+      }),
+      result && result.custom_scan_paths.length > 0
+        ? React.createElement(
+            "div",
+            { style: { marginTop: 12 } },
+            React.createElement(
+              Text,
+              { type: "secondary", style: { fontSize: 12 } },
+              "当前自定义扫描路径：",
+            ),
+            React.createElement(
+              "ul",
+              { style: { margin: "4px 0", paddingLeft: 20 } },
+              ...result.custom_scan_paths.map((p: string) =>
+                React.createElement(
+                  "li",
+                  {
+                    key: p,
+                    style: { fontSize: 12, fontFamily: "monospace" },
+                  },
+                  p,
+                ),
+              ),
+            ),
+          )
+        : null,
+    ),
+  );
+}
+
+// ─── Capability Center Page (with tabs) ───────────────────────────────────────
+
 function CapabilityCenterPage() {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
@@ -4484,6 +5107,7 @@ function CapabilityCenterPage() {
     Tag,
     Typography,
     List,
+    Tabs,
   } = getHost().antd;
   const { ReloadOutlined, PlusOutlined, SearchOutlined, ApiOutlined } =
     getHost().antdIcons || {};
@@ -4494,6 +5118,7 @@ function CapabilityCenterPage() {
   const [searchText, setSearchText] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeMCP, setActiveMCP] = useState<MCPClientInfo | null>(null);
+  const [activeTab, setActiveTab] = useState("mcp");
 
   const loadMCPs = useCallback(async () => {
     setLoading(true);
@@ -4532,40 +5157,20 @@ function CapabilityCenterPage() {
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
-  return React.createElement(
-    "div",
-    { style: { padding: 24 } },
-    React.createElement(PageHeader, {
-      title: "能力中心",
-      subtitle: `共 ${mcps.length} 个 MCP 客户端（${enabledCount} 个启用）· ${totalTools} 个工具`,
-      extra: React.createElement(
-        React.Fragment,
-        null,
-        React.createElement(
-          Button,
-          {
-            icon: ReloadOutlined
-              ? React.createElement(ReloadOutlined)
-              : undefined,
-            onClick: loadMCPs,
-            loading,
-          },
-          "刷新",
-        ),
-        React.createElement(
-          Button,
-          {
-            type: "primary",
-            icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
-            onClick: () => navigateTo("/mcp"),
-          },
-          "管理 MCP",
-        ),
-      ),
-    }),
+  // ── MCP Tab Content ──
+  const mcpTabContent = React.createElement(
+    React.Fragment,
+    null,
     React.createElement(
       "div",
-      { style: { marginBottom: 16 } },
+      {
+        style: {
+          marginBottom: 16,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        },
+      },
       React.createElement(Input, {
         placeholder: "搜索能力名称、描述...",
         prefix: SearchOutlined
@@ -4576,6 +5181,15 @@ function CapabilityCenterPage() {
         allowClear: true,
         style: { maxWidth: 400 },
       }),
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+          onClick: () => navigateTo("/mcp"),
+        },
+        "管理 MCP",
+      ),
     ),
     loading
       ? React.createElement(
@@ -4613,7 +5227,49 @@ function CapabilityCenterPage() {
               ),
             ),
           ),
-    // Detail drawer
+  );
+
+  const tabItems = [
+    {
+      key: "mcp",
+      label: React.createElement("span", null, "🔌 MCP 客户端"),
+      children: mcpTabContent,
+    },
+    {
+      key: "software",
+      label: React.createElement("span", null, "🖥️ 本地软件检测"),
+      children: React.createElement(LocalSoftwareSection),
+    },
+  ];
+
+  return React.createElement(
+    "div",
+    { style: { padding: 24 } },
+    React.createElement(PageHeader, {
+      title: "能力中心",
+      subtitle: `MCP: ${mcps.length} 个客户端（${enabledCount} 个启用）· ${totalTools} 个工具`,
+      extra: React.createElement(
+        React.Fragment,
+        null,
+        React.createElement(
+          Button,
+          {
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
+            onClick: loadMCPs,
+            loading,
+          },
+          "刷新",
+        ),
+      ),
+    }),
+    React.createElement(Tabs, {
+      items: tabItems,
+      activeKey: activeTab,
+      onChange: (k: string) => setActiveTab(k),
+    }),
+    // MCP Detail drawer
     activeMCP
       ? React.createElement(
           Drawer,

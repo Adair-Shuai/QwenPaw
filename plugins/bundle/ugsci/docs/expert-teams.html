@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>专家团 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class=""><span class="icon">🏠</span> UGSci 文档</a><a href="user-guide.html" class=""><span class="icon">📖</span> 使用指南</a><a href="architecture.html" class=""><span class="icon">🏗️</span> 架构设计</a><a href="frontend.html" class=""><span class="icon">🎨</span> 前端开发指南</a><a href="backend.html" class=""><span class="icon">⚙️</span> 后端开发指南</a><a href="skills.html" class=""><span class="icon">⚡</span> 技能列表</a><a href="software-detection.html" class=""><span class="icon">🖥️</span> 本地软件检测</a><a href="expert-teams.html" class="active"><span class="icon">🤝</span> 专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">专家团（多智能体协同）</h1>
+<h2 id="_2">概述</h2>
+<p>专家团是 UGSci 的多智能体协同功能，允许将多个石油领域专家 Agent 组编为团队，以不同模式完成复杂任务。</p>
+<h2 id="_3">三种编排模式</h2>
+<h3 id="pipeline">流水线模式 (pipeline)</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>专家 A → (结果传递) → 专家 B → (结果传递) → 专家 C → 综合输出
+</code></pre></div>
+
+<ul>
+<li>步骤依次执行</li>
+<li>上一步结果作为上下文传递给下一步</li>
+<li>适用于有明确先后顺序的工作流</li>
+</ul>
+<p><strong>示例</strong>：储层评价团队 — 测井分析师 → 地球物理专家 → 油藏工程师</p>
+<h3 id="coordinator">协调者模式 (coordinator)</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>协调者 Agent
+  ├── 咨询专家 A → 获取结果
+  ├── 咨询专家 B → 获取结果
+  └── 综合所有结果 → 输出方案
+</code></pre></div>
+
+<ul>
+<li>由协调者 Agent 主导</li>
+<li>协调者按需咨询其他专家</li>
+<li>适用于需要综合判断的复杂任务</li>
+</ul>
+<p><strong>示例</strong>：钻井设计团队 — 钻井工程师协调地球物理专家和采油工程师</p>
+<h3 id="roundtable">圆桌讨论模式 (roundtable)</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>        ┌── 专家 A（独立评估）──┐
+任务 ──┼── 专家 B（独立评估）──┼── 综合对比 → 最终建议
+        └── 专家 C（独立评估）──┘
+</code></pre></div>
+
+<ul>
+<li>各专家独立评估同一任务</li>
+<li>不传递其他专家的意见</li>
+<li>最后对比综合</li>
+<li>适用于需要多视角对比的评审</li>
+</ul>
+<p><strong>示例</strong>：开发方案评审团队 — 油藏/钻井/采油各自独立评估</p>
+<h2 id="_4">预设专家团</h2>
+<h3 id="1">1. 储层评价团队 🛢️</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类别</td>
+<td>油气勘探</td>
+</tr>
+<tr>
+<td>模式</td>
+<td>流水线 (pipeline)</td>
+</tr>
+<tr>
+<td>协调者</td>
+<td>测井分析师</td>
+</tr>
+</tbody>
+</table>
+<p><strong>成员</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>成员</th>
+<th>角色</th>
+<th>Emoji</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>测井分析师</td>
+<td>岩性识别与孔隙度计算</td>
+<td>📡</td>
+</tr>
+<tr>
+<td>地球物理专家</td>
+<td>储层预测与含油气检测</td>
+<td>🌍</td>
+</tr>
+<tr>
+<td>油藏工程师</td>
+<td>储量评估与开发建议</td>
+<td>🛢️</td>
+</tr>
+</tbody>
+</table>
+<p><strong>任务模板</strong>：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>请对以下区块进行储层评价：
+区块名称：{区块名}
+井号：{井号}
+评价要求：依次咨询测井分析师（岩性解释和孔隙度参数）、
+地球物理专家（储层预测和含油气性检测）、油藏工程师
+（储量计算和开发建议），综合形成储层评价报告。
+</code></pre></div>
+
+<h3 id="2">2. 钻井设计团队 ⛏️</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类别</td>
+<td>钻完井</td>
+</tr>
+<tr>
+<td>模式</td>
+<td>协调者 (coordinator)</td>
+</tr>
+<tr>
+<td>协调者</td>
+<td>钻井工程师</td>
+</tr>
+</tbody>
+</table>
+<p><strong>成员</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>成员</th>
+<th>角色</th>
+<th>Emoji</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>钻井工程师</td>
+<td>井身结构与套管设计</td>
+<td>⛏️</td>
+</tr>
+<tr>
+<td>地球物理专家</td>
+<td>地层压力预测</td>
+<td>🌍</td>
+</tr>
+<tr>
+<td>采油工程师</td>
+<td>完井方案建议</td>
+<td>⚙️</td>
+</tr>
+</tbody>
+</table>
+<h3 id="3">3. 开发方案评审团队 📋</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类别</td>
+<td>油气开发</td>
+</tr>
+<tr>
+<td>模式</td>
+<td>圆桌讨论 (roundtable)</td>
+</tr>
+<tr>
+<td>协调者</td>
+<td>油藏工程师</td>
+</tr>
+</tbody>
+</table>
+<p><strong>成员</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>成员</th>
+<th>角色</th>
+<th>Emoji</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>油藏工程师</td>
+<td>储量与开发方式评估</td>
+<td>🛢️</td>
+</tr>
+<tr>
+<td>钻井工程师</td>
+<td>工程可行性评估</td>
+<td>⛏️</td>
+</tr>
+<tr>
+<td>采油工程师</td>
+<td>生产工艺评估</td>
+<td>⚙️</td>
+</tr>
+</tbody>
+</table>
+<h3 id="4">4. 流体性质分析团队 🧪</h3>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>值</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>类别</td>
+<td>流体性质</td>
+</tr>
+<tr>
+<td>模式</td>
+<td>流水线 (pipeline)</td>
+</tr>
+<tr>
+<td>协调者</td>
+<td>PVT 分析师</td>
+</tr>
+</tbody>
+</table>
+<p><strong>成员</strong>：</p>
+<table>
+<thead>
+<tr>
+<th>成员</th>
+<th>角色</th>
+<th>Emoji</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>PVT 分析师</td>
+<td>PVT实验拟合与物性计算</td>
+<td>🧪</td>
+</tr>
+<tr>
+<td>地球物理专家</td>
+<td>相态行为验证</td>
+<td>🌍</td>
+</tr>
+<tr>
+<td>油藏工程师</td>
+<td>开发方式适配</td>
+<td>🛢️</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_5">任务发起流程</h2>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>用户点击「发起任务」
+    │
+    ├── 查找协调者 Agent
+    │   └── findAgentIdByName(agents, coordinatorName)
+    │       ├── 精确匹配名称
+    │       └── 模糊匹配（包含关系）
+    │
+    ├── 检查任务模板是否有 {占位符}
+    │   │
+    │   ├── 有占位符 → 打开输入弹窗
+    │   │   └── 用户输入具体任务描述
+    │   │
+    │   └── 无占位符 → 直接发起
+    │
+    ├── 构建完整消息
+    │   └── buildTeamMessage(team)
+    │       └── 拼接编排指令 + 任务模板
+    │
+    ├── 设置选中 Agent
+    │   └── host.setSelectedAgent(coordinatorId)
+    │
+    └── 发送消息
+        └── POST /api/console/chat
+            headers: X-Agent-Id: &lt;coordinatorId&gt;
+            body: { channel, user_id, session_id, input }
+    │
+    └── 跳转到聊天页 (/chat)
+</code></pre></div>
+
+<h3 id="_6">编排指令</h3>
+<p>每个专家团包含 <code>orchestrationPrompt</code> 字段，这是给协调者 Agent 的系统级指令，告诉它：</p>
+<ol>
+<li>使用 <code>list_agents()</code> 查看可用专家</li>
+<li>按顺序（或独立）向各专家发送 <code>chat_with_agent</code> 请求</li>
+<li>是否传递上一步结果作为上下文</li>
+<li>最终综合所有结果输出报告</li>
+</ol>
+<h2 id="_7">自定义专家团</h2>
+<p>用户可通过专家团页面创建自定义团队，保存于浏览器 <code>localStorage</code>。</p>
+<h3 id="_8">数据存储</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">CUSTOM_TEAMS_STORAGE_KEY</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;ugsci_custom_teams&quot;</span><span style="color: #ABB2BF">;</span>
+
+<span style="color: #7F848E">// 保存</span>
+<span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">setItem</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">CUSTOM_TEAMS_STORAGE_KEY</span><span style="color: #ABB2BF">, </span><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">stringify</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">teams</span><span style="color: #ABB2BF">));</span>
+
+<span style="color: #7F848E">// 加载</span>
+<span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">teams</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">parse</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">getItem</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">CUSTOM_TEAMS_STORAGE_KEY</span><span style="color: #ABB2BF">));</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>注意</strong>：自定义团队存储在浏览器本地，不同浏览器/设备间不同步，清除浏览器数据会丢失。</p>
+</blockquote>
+<h3 id="_9">团队构建器</h3>
+<p><code>TeamBuilderModal</code> 组件提供表单：</p>
+<ul>
+<li><strong>基本信息</strong>：名称、emoji、类别、描述</li>
+<li><strong>模式选择</strong>：流水线 / 协调者 / 圆桌讨论</li>
+<li><strong>成员管理</strong>：从 Agent 列表选择成员，分配角色和 emoji</li>
+<li><strong>协调者</strong>（仅协调者模式）：选择哪个成员作为协调者</li>
+<li><strong>任务模板</strong>：含 <code>{占位符}</code> 的任务模板</li>
+<li><strong>编排指令</strong>：协调者的系统级指令</li>
+</ul>
+<h3 id="_10">流程图展示</h3>
+<p><code>TeamFlowDiagram</code> 组件可视化展示团队执行流程：</p>
+<ul>
+<li><strong>流水线模式</strong>：线性箭头连接各步骤</li>
+<li><strong>协调者模式</strong>：协调者在中心，箭头指向各成员</li>
+<li><strong>圆桌模式</strong>：各成员并列，箭头汇聚到综合节点</li>
+</ul>
+<h2 id="_11">团队卡片显示</h2>
+<p><code>ExpertTeamCard</code> 组件展示：</p>
+<ul>
+<li>Emoji + 名称</li>
+<li>模式标签（颜色编码）：</li>
+<li>协调者模式 → 蓝色</li>
+<li>流水线模式 → 青色</li>
+<li>圆桌讨论 → 紫色</li>
+<li>成员状态标签：<code>已找到/总数</code>（如 <code>3/3</code> 或 <code>2/3</code>）</li>
+<li>缺少成员时显示橙色警告标签</li>
+<li>自定义团队显示金色「自定义」标签和编辑/删除按钮</li>
+<li>可展开流程图（点击展开/收起）</li>
+<li>发起任务按钮</li>
+</ul>
+<h2 id="agent">Agent 名称匹配</h2>
+<p><code>findAgentIdByName()</code> 使用多级模糊匹配：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">function</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">findAgentIdByName</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">agents</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">)</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">|</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">null</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #7F848E">// 1. 精确匹配（含空格处理）</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">exact</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">agents</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">find</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">a</span><span style="color: #ABB2BF"> =&gt;</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">a</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">===</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">name</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">||</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">a</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">===</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">replace</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">/\s+/g</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;&quot;</span><span style="color: #ABB2BF">)</span>
+<span style="color: #ABB2BF">  );</span>
+
+<span style="color: #ABB2BF">  </span><span style="color: #7F848E">// 2. 模糊匹配（包含关系）</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">fuzzy</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">agents</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">find</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">a</span><span style="color: #ABB2BF"> =&gt;</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">a</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">includes</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">) </span><span style="color: #56B6C2">||</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">includes</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">a</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">) </span><span style="color: #56B6C2">||</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">a</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">replace</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">/\s+/g</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;&quot;</span><span style="color: #ABB2BF">).</span><span style="color: #E06C75">includes</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">name</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">replace</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">/\s+/g</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;&quot;</span><span style="color: #ABB2BF">))</span>
+<span style="color: #ABB2BF">  );</span>
+
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">return</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">exact</span><span style="color: #56B6C2">?</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">id</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">||</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">fuzzy</span><span style="color: #56B6C2">?</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">id</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">||</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">null</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>提示</strong>：为确保团队正常工作，建议专家名称与 Agent 名称保持一致，或至少包含相同的关键词。</p>
+</blockquote>
+<h2 id="_12">添加新预设专家团</h2>
+<p>在 <code>EXPERT_TEAMS</code> 数组中添加新对象：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF">{</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;well-test-team&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井分析团队&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;📊&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">category</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井试油&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">mode</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;pipeline&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">description</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;从压力恢复测试到储层参数解释的完整流程&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">members</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> [</span>
+<span style="color: #ABB2BF">    { </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;测井分析师&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">role</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;数据预处理与质量控制&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;📡&quot;</span><span style="color: #ABB2BF"> },</span>
+<span style="color: #ABB2BF">    { </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;油藏工程师&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">role</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井解释与储层参数计算&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;🛢️&quot;</span><span style="color: #ABB2BF"> },</span>
+<span style="color: #ABB2BF">  ],</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">taskTemplate</span><span style="color: #56B6C2">:</span>
+<span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;请对以下井进行试井分析：\n井名：{井名}\n测试类型：{测试类型}\n要求：依次咨询测井分析师和油藏工程师。&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">orchestrationPrompt</span><span style="color: #56B6C2">:</span>
+<span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;你是试井分析团队的协调者。请按以下步骤工作：\n1. 用 list_agents() 查看可用专家\n2. 向测井分析师发送数据预处理请求\n3. 将结果传递给油藏工程师进行试井解释\n4. 综合形成试井分析报告&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">},</span>
+</code></pre></div>
+
+<blockquote>
+<p><strong>重要</strong>：<code>members[].name</code> 必须与实际创建的 Agent 名称匹配，否则会显示「缺少成员」警告。</p>
+</blockquote>
+</div>
+</body>
+</html>

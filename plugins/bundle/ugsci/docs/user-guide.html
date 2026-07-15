@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>使用指南 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class=""><span class="icon">🏠</span> UGSci 文档</a><a href="user-guide.html" class="active"><span class="icon">📖</span> 使用指南</a><a href="architecture.html" class=""><span class="icon">🏗️</span> 架构设计</a><a href="frontend.html" class=""><span class="icon">🎨</span> 前端开发指南</a><a href="backend.html" class=""><span class="icon">⚙️</span> 后端开发指南</a><a href="skills.html" class=""><span class="icon">⚡</span> 技能列表</a><a href="software-detection.html" class=""><span class="icon">🖥️</span> 本地软件检测</a><a href="expert-teams.html" class=""><span class="icon">🤝</span> 专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">使用指南</h1>
+<p>本指南面向最终用户，介绍 UGSci 插件的安装、配置和日常使用。</p>
+<h2 id="_2">快速开始</h2>
+<h3 id="1">1. 安装插件</h3>
+<p>将 <code>ugsci</code> 目录复制到 QwenPaw 工作目录的 <code>plugins/</code> 子目录下：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>cp<span style="color: #ABB2BF"> </span>-r<span style="color: #ABB2BF"> </span>plugins/bundle/ugsci<span style="color: #ABB2BF"> </span>~/.qwenpaw/plugins/
+</code></pre></div>
+
+<p>重启 QwenPaw 后端后，插件自动加载。打开浏览器控制台，搜索 <code>[ugsci]</code> 可确认注册成功。</p>
+<h3 id="2">2. 切换到极简模式</h3>
+<p>UGSci 的四大模块菜单仅在 <strong>Simple Mode</strong> 下显示。在浏览器地址栏执行：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">setItem</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;qwenpaw_sidebar_mode&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;simple&quot;</span><span style="color: #ABB2BF">);</span>
+</code></pre></div>
+
+<p>刷新页面后，左侧导航栏会出现四个新菜单项：</p>
+<table>
+<thead>
+<tr>
+<th>菜单</th>
+<th>图标</th>
+<th>路由</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>专家中心</td>
+<td>🧑‍🔬</td>
+<td><code>/ugsci-experts</code></td>
+</tr>
+<tr>
+<td>能力中心</td>
+<td>🔌</td>
+<td><code>/ugsci-capabilities</code></td>
+</tr>
+<tr>
+<td>技能中心</td>
+<td>⚡</td>
+<td><code>/ugsci-skills</code></td>
+</tr>
+<tr>
+<td>市场</td>
+<td>🏪</td>
+<td><code>/ugsci-market</code></td>
+</tr>
+</tbody>
+</table>
+<blockquote>
+<p>如需恢复完整模式：<code>localStorage.setItem("qwenpaw_sidebar_mode", "full")</code></p>
+</blockquote>
+<h2 id="_3">专家中心</h2>
+<h3 id="_4">浏览专家</h3>
+<p>打开 <strong>专家中心</strong> 页面，可看到所有已创建的 Agent 以专家卡片形式展示。每张卡片显示：</p>
+<ul>
+<li>专家名称和功能简介</li>
+<li>已安装技能数量</li>
+<li>关联的 MCP 客户端数量</li>
+<li>启用/停用状态</li>
+</ul>
+<p>在搜索框中输入关键词，可按名称、描述或技能名过滤专家。</p>
+<h3 id="_5">查看专家详情</h3>
+<p>点击任意专家卡片，右侧弹出抽屉面板，展示完整配置：</p>
+<ul>
+<li><strong>基本信息</strong>：名称、描述、工作目录、模型信息</li>
+<li><strong>技能列表</strong>：该专家已安装的全部技能</li>
+<li><strong>MCP 客户端</strong>：关联的 MCP 客户端及其工具</li>
+<li><strong>系统提示词</strong>：配置的系统提示词文件路径</li>
+<li><strong>审批级别</strong>：AUTO（自动执行）或 MANUAL（需人工审批）</li>
+</ul>
+<h3 id="_6">召唤专家</h3>
+<p>点击专家卡片上的 <strong>「召唤专家」</strong> 按钮，系统会：</p>
+<ol>
+<li>将该专家设为当前选中 Agent</li>
+<li>自动跳转到聊天页面</li>
+<li>即可直接开始对话</li>
+</ol>
+<blockquote>
+<p>如果专家未启用，召唤按钮会提示先启用。</p>
+</blockquote>
+<h3 id="_7">创建专家</h3>
+<p>点击 <strong>「创建专家」</strong> 按钮，弹出模板选择窗口。从 6 个内置模板中选择：</p>
+<table>
+<thead>
+<tr>
+<th>模板</th>
+<th>说明</th>
+<th>审批级别</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>🛢️ 油藏工程师</td>
+<td>储量评估、物质平衡、数值模拟</td>
+<td>自动</td>
+</tr>
+<tr>
+<td>⛏️ 钻井工程师</td>
+<td>井身结构、钻井液、套管设计</td>
+<td>需审批</td>
+</tr>
+<tr>
+<td>📡 测井分析师</td>
+<td>曲线解释、岩性识别、参数计算</td>
+<td>自动</td>
+</tr>
+<tr>
+<td>⚙️ 采油工程师</td>
+<td>举升工艺、注水管理、增产措施</td>
+<td>自动</td>
+</tr>
+<tr>
+<td>🌍 地球物理专家</td>
+<td>地震解释、反演、储层预测</td>
+<td>自动</td>
+</tr>
+<tr>
+<td>🧪 PVT 分析师</td>
+<td>流体物性、相态分析、PVT 拟合</td>
+<td>自动</td>
+</tr>
+</tbody>
+</table>
+<p>点击模板卡片后，系统自动创建 Agent，预填系统提示词和审批级别。创建完成后回到专家列表即可看到新专家。</p>
+<h3 id="_8">专家团</h3>
+<p>切换到 <strong>「专家团」</strong> 标签页，可使用多智能体协同功能。</p>
+<h4 id="_9">使用预设团队</h4>
+<p>内置 4 个预设专家团：</p>
+<ol>
+<li><strong>储层评价团队</strong> 🛢️ — 流水线模式，测井→地球物理→油藏工程</li>
+<li><strong>钻井设计团队</strong> ⛏️ — 协调者模式，钻井工程师主导</li>
+<li><strong>开发方案评审团队</strong> 📋 — 圆桌讨论，三位专家独立评估</li>
+<li><strong>流体性质分析团队</strong> 🧪 — 流水线模式，PVT→地球物理→油藏</li>
+</ol>
+<p>点击团队卡片的 <strong>「发起任务」</strong> 按钮：</p>
+<ul>
+<li>如果任务模板包含 <code>{占位符}</code>（如 <code>{区块名}</code>），会弹出输入框</li>
+<li>输入具体任务描述后点击「发起任务」</li>
+<li>系统自动将编排指令发送给协调者 Agent</li>
+<li>页面跳转到聊天页，协调者开始按步骤咨询各专家</li>
+</ul>
+<blockquote>
+<p><strong>前提</strong>：团队中所有成员对应的 Agent 必须已创建。卡片上会显示 <code>3/3</code>（全部找到）或 <code>2/3</code>（缺少成员）的状态标签。</p>
+</blockquote>
+<h4 id="_10">创建自定义团队</h4>
+<p>点击 <strong>「创建专家团」</strong> 按钮，在弹出的构建器中填写：</p>
+<ol>
+<li><strong>基本信息</strong>：团队名称、emoji 图标、类别、描述</li>
+<li><strong>编排模式</strong>：选择流水线、协调者或圆桌讨论</li>
+<li><strong>选择成员</strong>：从已有 Agent 列表中选择团队成员</li>
+<li><strong>任务模板</strong>：编写任务模板，可使用 <code>{参数名}</code> 占位符</li>
+<li><strong>编排指令</strong>：编写协调者 Agent 的系统级指令</li>
+</ol>
+<p>保存后，自定义团队会显示在列表顶部（带「自定义」标签），支持编辑和删除。</p>
+<blockquote>
+<p><strong>注意</strong>：自定义团队保存在浏览器 <code>localStorage</code> 中，清除浏览器数据会丢失。不同浏览器/设备间不共享。</p>
+</blockquote>
+<h2 id="_11">能力中心</h2>
+<h3 id="mcp">MCP 客户端</h3>
+<p>打开 <strong>能力中心</strong> 页面的 <strong>「MCP 客户端」</strong> 标签，可查看所有已配置的 MCP 客户端。每张卡片显示：</p>
+<ul>
+<li>客户端名称和 Key</li>
+<li>传输方式（stdio / SSE / Streamable HTTP）</li>
+<li>URL 或启动命令</li>
+<li>提供的工具数量</li>
+<li>启用/停用状态</li>
+</ul>
+<p>点击卡片可查看详细信息。点击 <strong>「管理 MCP」</strong> 跳转到 QwenPaw 原生 MCP 管理页面。</p>
+<h3 id="_12">本地软件检测</h3>
+<p>切换到 <strong>「本地软件检测」</strong> 标签，可查看主机上已安装的油气仿真软件。</p>
+<h4 id="_13">查看检测结果</h4>
+<p>软件卡片按类别分组显示（油藏数值模拟、地质建模、测井分析等）：</p>
+<ul>
+<li>✅ <strong>绿色标签「已检测」</strong>：找到已安装的软件，显示版本和路径</li>
+<li>— <strong>灰色标签「未安装」</strong>：未在系统中找到</li>
+</ul>
+<h4 id="_14">重新检测</h4>
+<p>点击 <strong>「重新检测」</strong> 按钮，系统重新扫描所有标准路径和自定义路径。</p>
+<h4 id="_15">添加扫描路径</h4>
+<p>如果软件安装在非标准路径下，点击 <strong>「添加扫描路径」</strong>：</p>
+<ol>
+<li>输入自定义目录路径（如 <code>D:\MySoftware\CMG</code>）</li>
+<li>系统会添加该路径并重新扫描</li>
+<li>自定义路径会保存，后续检测都会包含</li>
+</ol>
+<h4 id="_16">能力摘要</h4>
+<p>检测结果会生成一份 Markdown 格式的能力摘要，可注入 Agent 系统提示词，让 Agent 知道本地安装了哪些软件及其调用方式。</p>
+<h2 id="_17">技能中心</h2>
+<p>打开 <strong>技能中心</strong> 页面，可浏览共享技能池中的所有技能。</p>
+<h3 id="_18">浏览技能</h3>
+<p>技能卡片展示：emoji、名称、描述、版本号、标签。使用搜索框可按名称、描述或标签过滤。</p>
+<h3 id="_19">查看技能详情</h3>
+<p>点击任意技能卡片，右侧弹出抽屉面板，展示：</p>
+<ul>
+<li>技能完整描述</li>
+<li>来源（customized / system 等）</li>
+<li>版本信息</li>
+<li><strong>已安装此技能的专家列表</strong></li>
+</ul>
+<h3 id="_20">安装技能到专家</h3>
+<ol>
+<li>在技能详情中查看哪些专家已安装了该技能</li>
+<li>如需安装到更多专家，点击 <strong>「管理技能池」</strong> 跳转到技能池管理页面</li>
+<li>在技能池页面选择目标 Agent 并下载安装</li>
+</ol>
+<blockquote>
+<p>UGSci 插件内置的 44 个技能在启动时自动同步到技能池，不会自动安装到任何 Agent，需用户按需下载。</p>
+</blockquote>
+<h2 id="_21">市场</h2>
+<p>打开 <strong>市场</strong> 页面，可搜索和安装远程技能，或使用专家模板创建新专家。</p>
+<h3 id="_22">技能市场</h3>
+<p>在 <strong>「技能市场」</strong> 标签中：</p>
+<ol>
+<li>在搜索框输入关键词（如 <code>matplotlib</code>、<code>reservoir</code>）</li>
+<li>可选择分类进行筛选</li>
+<li>搜索结果以卡片形式展示：名称、描述、来源、版本、作者</li>
+<li>点击卡片查看详情</li>
+<li>在详情面板中选择目标 Agent，点击 <strong>安装</strong></li>
+<li>安装进度通过进度条实时显示</li>
+</ol>
+<h3 id="_23">专家模板</h3>
+<p>在 <strong>「专家模板」</strong> 标签中，可浏览和一键创建专家：</p>
+<ol>
+<li>浏览 6 个内置石油领域专家模板</li>
+<li>点击模板卡片直接创建 Agent</li>
+<li>系统自动填充系统提示词、审批级别等配置</li>
+<li>创建完成后可在专家中心看到新专家</li>
+</ol>
+<h2 id="_24">常见问题</h2>
+<h3 id="_25">插件菜单不显示</h3>
+<p><strong>原因</strong>：未切换到 Simple Mode。</p>
+<p><strong>解决</strong>：在浏览器控制台执行：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">setItem</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;qwenpaw_sidebar_mode&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;simple&quot;</span><span style="color: #ABB2BF">);</span>
+</code></pre></div>
+
+<p>然后刷新页面。</p>
+<h3 id="_26">专家团成员显示「缺少成员」</h3>
+<p><strong>原因</strong>：团队中某些成员名称与实际 Agent 名称不匹配。</p>
+<p><strong>解决</strong>：<br />
+1. 查看团队卡片上的成员列表<br />
+2. 在专家中心创建缺少的专家（使用对应的专家模板）<br />
+3. 确保专家名称与团队成员名称一致</p>
+<h3 id="ugsci">技能池中没有 UGSci 的技能</h3>
+<p><strong>原因</strong>：后端启动时技能同步钩子未执行或失败。</p>
+<p><strong>解决</strong>：<br />
+1. 检查后端日志中是否有 <code>[ugsci] Synced N skill(s) to skill pool</code><br />
+2. 确认 <code>skills/</code> 目录存在且包含 <code>SKILL.md</code> 文件<br />
+3. 重启 QwenPaw 后端</p>
+<h3 id="_27">本地软件检测找不到已安装的软件</h3>
+<p><strong>原因</strong>：软件安装在非标准路径下。</p>
+<p><strong>解决</strong>：<br />
+1. 在能力中心的「本地软件检测」标签中点击「添加扫描路径」<br />
+2. 输入软件的安装目录<br />
+3. 点击「重新检测」</p>
+<h3 id="_28">自定义专家团丢失</h3>
+<p><strong>原因</strong>：自定义团队保存在浏览器 <code>localStorage</code>，清除浏览器数据后丢失。</p>
+<p><strong>预防</strong>：定期手动备份。在控制台执行：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">parse</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">getItem</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;ugsci_custom_teams&quot;</span><span style="color: #ABB2BF">));</span>
+</code></pre></div>
+
+<p>将结果保存到文件，后续可通过 <code>localStorage.setItem()</code> 恢复。</p>
+<h2 id="_29">最佳实践</h2>
+<h3 id="_30">专家命名</h3>
+<ul>
+<li>使用与专家模板一致的名称（如「油藏工程师」「测井分析师」），确保专家团能正确匹配</li>
+<li>避免在名称中使用特殊字符</li>
+<li>同一领域只创建一个对应专家</li>
+</ul>
+<h3 id="_31">技能管理</h3>
+<ul>
+<li>按需安装技能，不要给单个专家安装过多技能</li>
+<li>油气领域技能建议成组安装（如 <code>oil-gas-foundation</code> + <code>oil-gas-drilling</code>）</li>
+<li>定期在技能中心检查技能版本和更新</li>
+</ul>
+<h3 id="_32">团队使用</h3>
+<ul>
+<li>流水线模式适用于有明确先后顺序的工作流</li>
+<li>协调者模式适用于需要综合判断的复杂任务</li>
+<li>圆桌讨论适用于需要多视角对比的评审场景</li>
+<li>任务模板中的占位符应使用有意义的名称（如 <code>{区块名}</code> 而非 <code>{a}</code>）</li>
+</ul>
+</div>
+</body>
+</html>

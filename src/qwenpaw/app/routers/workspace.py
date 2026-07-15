@@ -266,8 +266,41 @@ _MIME_MAP: dict[str, str] = {
     "svg": "image/svg+xml",
     "ico": "image/x-icon",
     "bmp": "image/bmp",
+    "tiff": "image/tiff",
+    "tif": "image/tiff",
     # Documents
     "pdf": "application/pdf",
+    # Office (served as binary for download/preview)
+    "doc": "application/msword",
+    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "xls": "application/vnd.ms-excel",
+    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "ppt": "application/vnd.ms-powerpoint",
+    "pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    "odt": "application/vnd.oasis.opendocument.text",
+    "ods": "application/vnd.oasis.opendocument.spreadsheet",
+    "odp": "application/vnd.oasis.opendocument.presentation",
+    # Video
+    "mp4": "video/mp4",
+    "webm": "video/webm",
+    "avi": "video/x-msvideo",
+    "mov": "video/quicktime",
+    "mkv": "video/x-matroska",
+    "wmv": "video/x-ms-wmv",
+    "flv": "video/x-flv",
+    # Audio
+    "mp3": "audio/mpeg",
+    "wav": "audio/wav",
+    "flac": "audio/flac",
+    "aac": "audio/aac",
+    "ogg": "audio/ogg",
+    "wma": "audio/x-ms-wma",
+    # Archives
+    "zip": "application/zip",
+    "tar": "application/x-tar",
+    "gz": "application/gzip",
+    "7z": "application/x-7z-compressed",
+    "rar": "application/vnd.rar",
     # Data
     "csv": "text/csv",
 }
@@ -418,6 +451,402 @@ async def write_code_file(
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     return {"path": file_path, "size": size}
+
+
+# ---------------------------------------------------------------------------
+# Office document conversion (DOCX → HTML)
+# ---------------------------------------------------------------------------
+
+class ConvertOfficeRequest(BaseModel):
+    """Request body for /convert-office."""
+    url: str = Field(..., description="File URL or path")
+    mime_type: str | None = Field(None, description="MIME type of the file")
+
+
+def _get_docx_page_info(file_path: str) -> dict:
+    """Parse DOCX XML to get page dimensions and estimate lines/chars per page."""
+    import zipfile
+    import xml.etree.ElementTree as ET
+
+    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
+    # Defaults: US Letter, 1-inch margins
+    defaults = {
+        "lines_per_page": 45,
+        "chars_per_line": 78,
+    }
+
+    try:
+        with zipfile.ZipFile(file_path) as z:
+            root = ET.fromstring(z.read("word/document.xml"))
+    except Exception:
+        return defaults
+
+    body = root.find(f"{{{W_NS}}}body")
+    if body is None:
+        return defaults
+
+    # Find section properties (document-level)
+    sect_pr = body.find(f"{{{W_NS}}}sectPr")
+    if sect_pr is None:
+        for child in body:
+            pPr = child.find(f"{{{W_NS}}}pPr")
+            if pPr is not None:
+                s = pPr.find(f"{{{W_NS}}}sectPr")
+                if s is not None:
+                    sect_pr = s
+                    break
+    if sect_pr is None:
+        return defaults
+
+    pg_sz = sect_pr.find(f"{{{W_NS}}}pgSz")
+    pg_mar = sect_pr.find(f"{{{W_NS}}}pgMar")
+
+    page_w = 12240
+    page_h = 15840
+    margin_top = 1440
+    margin_bottom = 1440
+    margin_left = 1440
+    margin_right = 1440
+    header_h = 0
+    footer_h = 0
+
+    if pg_sz is not None:
+        page_w = int(pg_sz.get(f"{{{W_NS}}}w", page_w))
+        page_h = int(pg_sz.get(f"{{{W_NS}}}h", page_h))
+    if pg_mar is not None:
+        margin_top = int(pg_mar.get(f"{{{W_NS}}}top", margin_top))
+        margin_bottom = int(pg_mar.get(f"{{{W_NS}}}bottom", margin_bottom))
+        margin_left = int(pg_mar.get(f"{{{W_NS}}}left", margin_left))
+        margin_right = int(pg_mar.get(f"{{{W_NS}}}right", margin_right))
+        header_h = int(pg_mar.get(f"{{{W_NS}}}header", 0))
+        footer_h = int(pg_mar.get(f"{{{W_NS}}}footer", 0))
+
+    usable_h = page_h - margin_top - margin_bottom - max(0, header_h) - max(0, footer_h)
+    usable_w = page_w - margin_left - margin_right
+
+    # 11pt font, 1.15 line spacing → ~253 twips/line
+    lines_per_page = max(10, usable_h // 253)
+    # 11pt font → avg char width ~120 twips
+    chars_per_line = max(20, usable_w // 120)
+
+    return {
+        "lines_per_page": lines_per_page,
+        "chars_per_line": chars_per_line,
+    }
+
+
+def _has_page_break(element) -> bool:
+    """Recursively check if an element tree contains a page break."""
+    try:
+        from mammoth import documents
+    except ImportError:
+        return False
+    if isinstance(element, documents.Break) and element.break_type == "page":
+        return True
+    if hasattr(element, "children"):
+        return any(_has_page_break(c) for c in element.children)
+    return False
+
+
+def _estimate_element_lines(element, chars_per_line: int) -> float:
+    """Estimate the number of visual lines an element occupies."""
+    try:
+        from mammoth import documents
+    except ImportError:
+        return 1.0
+
+    if isinstance(element, documents.Paragraph):
+        # Collect text content
+        text = []
+
+        def collect_text(el):
+            if isinstance(el, documents.Text):
+                text.append(el.value)
+            elif hasattr(el, "children"):
+                for c in el.children:
+                    collect_text(c)
+
+        collect_text(element)
+        full_text = "".join(text)
+
+        if not full_text.strip():
+            return 1.0
+
+        text_lines = max(1.0, len(full_text) / chars_per_line)
+
+        style_name = (element.style_name or "").lower()
+        if "heading 1" in style_name:
+            return text_lines + 2.0
+        elif "heading 2" in style_name:
+            return text_lines + 1.5
+        elif "heading 3" in style_name:
+            return text_lines + 1.0
+        elif "title" in style_name:
+            return text_lines + 3.0
+        return text_lines
+
+    elif isinstance(element, documents.Table):
+        row_count = len(element.children)
+        return max(3.0, row_count * 1.5)
+
+    elif hasattr(element, "children"):
+        total = 0.0
+        for child in element.children:
+            total += _estimate_element_lines(child, chars_per_line)
+        return max(1.0, total)
+
+    return 1.0
+
+
+# Sentinel text used as a page-break marker inside mammoth's HTML output.
+_PAGE_BREAK_MARKER = "\u0000PAGE_BREAK\u0000"
+
+
+def _build_docx_transform(page_info: dict):
+    """Build a transform_document function that inserts page-break markers."""
+    try:
+        from mammoth import documents
+    except ImportError:
+        return None
+
+    lines_per_page = page_info.get("lines_per_page", 45)
+    chars_per_line = page_info.get("chars_per_line", 78)
+
+    def transform_document(document):
+        new_children = []
+        accumulated_lines = 0.0
+
+        for child in document.children:
+            has_explicit = _has_page_break(child)
+            element_lines = _estimate_element_lines(child, chars_per_line)
+
+            needs_break = False
+            if has_explicit:
+                needs_break = True
+                accumulated_lines = element_lines
+            elif (
+                accumulated_lines > 0
+                and accumulated_lines + element_lines > lines_per_page
+            ):
+                needs_break = True
+                accumulated_lines = element_lines
+            else:
+                accumulated_lines += element_lines
+
+            if needs_break:
+                marker_run = documents.run(
+                    children=[documents.text(_PAGE_BREAK_MARKER)]
+                )
+                marker_para = documents.paragraph(
+                    style_id="PageBreakMarker",
+                    style_name="Page Break Marker",
+                    numbering=None,
+                    alignment=None,
+                    indent=None,
+                    children=[marker_run],
+                )
+                new_children.append(marker_para)
+
+            new_children.append(child)
+
+        return document.copy(children=new_children)
+
+    return transform_document
+
+
+def _convert_docx_to_html(file_path: str) -> str:
+    """Convert a .docx file to HTML with page-break markers."""
+    ext = Path(file_path).suffix.lstrip(".").lower()
+
+    if ext == "docx":
+        try:
+            import mammoth
+
+            # Parse page dimensions for page-break estimation
+            page_info = _get_docx_page_info(file_path)
+            transform = _build_docx_transform(page_info)
+
+            with open(file_path, "rb") as f:
+                if transform:
+                    result = mammoth.convert_to_html(
+                        f, transform_document=transform
+                    )
+                else:
+                    result = mammoth.convert_to_html(f)
+
+            html = result.value
+
+            # Replace markers with styled page-break divs
+            if _PAGE_BREAK_MARKER in html:
+                html = html.replace(
+                    f"<p>{_PAGE_BREAK_MARKER}</p>",
+                    '<div class="docx-page-break"></div>',
+                )
+                # Clean up any remaining marker text
+                html = html.replace(_PAGE_BREAK_MARKER, "")
+
+            return html
+
+        except ImportError:
+            pass
+
+        # Fallback: python-docx (basic text extraction)
+        try:
+            from docx import Document
+            doc = Document(file_path)
+            html_parts = []
+            for para in doc.paragraphs:
+                text = para.text.strip()
+                if not text:
+                    html_parts.append("<br/>")
+                    continue
+                style = (para.style.name or "").lower()
+                if "heading 1" in style:
+                    html_parts.append(f"<h1>{text}</h1>")
+                elif "heading 2" in style:
+                    html_parts.append(f"<h2>{text}</h2>")
+                elif "heading 3" in style:
+                    html_parts.append(f"<h3>{text}</h3>")
+                elif "title" in style:
+                    html_parts.append(f"<h1 style='text-align:center'>{text}</h1>")
+                else:
+                    html_parts.append(f"<p>{text}</p>")
+            # Tables
+            for table in doc.tables:
+                html_parts.append("<table border='1' style='border-collapse:collapse'>")
+                for row in table.rows:
+                    html_parts.append("<tr>")
+                    for cell in row.cells:
+                        html_parts.append(f"<td>{cell.text}</td>")
+                    html_parts.append("</tr>")
+                html_parts.append("</table>")
+            return "\n".join(html_parts)
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="No docx conversion library available (mammoth or python-docx required)",
+            )
+
+    # For .doc, .xls, .ppt — try LibreOffice if available
+    if ext in ("doc", "xls", "ppt", "odt", "ods", "odp"):
+        raise HTTPException(
+            status_code=415,
+            detail=f"Direct preview of .{ext} files is not supported. Please convert to .docx/.xlsx/.pptx first.",
+        )
+
+    # For .xlsx — basic table extraction
+    if ext == "xlsx":
+        try:
+            from docx import Document  # noqa: F401
+        except ImportError:
+            pass
+        # Try openpyxl if available
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(file_path, read_only=True)
+            html_parts = []
+            for ws in wb.worksheets:
+                html_parts.append(f"<h3>Sheet: {ws.title}</h3>")
+                html_parts.append("<table border='1' style='border-collapse:collapse'>")
+                for row in ws.iter_rows(max_row=100, values_only=True):
+                    html_parts.append("<tr>")
+                    for cell in row:
+                        html_parts.append(f"<td>{cell if cell is not None else ''}</td>")
+                    html_parts.append("</tr>")
+                html_parts.append("</table>")
+            return "\n".join(html_parts)
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="openpyxl not installed for .xlsx preview",
+            )
+
+    # For .pptx — basic slide extraction
+    if ext == "pptx":
+        try:
+            from pptx import Presentation
+            prs = Presentation(file_path)
+            html_parts = []
+            for i, slide in enumerate(prs.slides, 1):
+                html_parts.append(f"<h3>Slide {i}</h3>")
+                html_parts.append("<div>")
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        html_parts.append(f"<p>{shape.text}</p>")
+                html_parts.append("</div>")
+            return "\n".join(html_parts)
+        except ImportError:
+            raise HTTPException(
+                status_code=500,
+                detail="python-pptx not installed for .pptx preview",
+            )
+
+    raise HTTPException(
+        status_code=415,
+        detail=f"Unsupported file type: .{ext}",
+    )
+
+
+@router.post(
+    "/convert-office",
+    summary="Convert an Office document to HTML for preview",
+)
+async def convert_office(
+    request: Request,
+    body: ConvertOfficeRequest,
+) -> dict:
+    """Convert a .docx/.xlsx/.pptx file to HTML for in-browser preview.
+
+    Accepts a file URL (from the binary-files endpoint) or a workspace
+    file path. Uses mammoth for DOCX, openpyxl for XLSX, python-pptx
+    for PPTX.
+    """
+    workspace = await get_agent_for_request(request)
+    coding_dir = get_coding_dir(workspace)
+
+    # The URL from the frontend is typically /api/workspace/binary-files/<path>
+    # We need to extract the file path from it.
+    url = body.url or ""
+
+    # Extract the file path from the URL
+    if "/binary-files/" in url:
+        file_path = url.split("/binary-files/", 1)[1]
+        # Remove query params
+        file_path = file_path.split("?")[0]
+        # URL-decode
+        from urllib.parse import unquote
+        file_path = unquote(file_path)
+    elif url.startswith("/"):
+        file_path = url.lstrip("/")
+    elif url.startswith("file://"):
+        file_path = url.replace("file://", "")
+    else:
+        file_path = url
+
+    # Try to resolve the file path within the workspace
+    try:
+        target = safe_join(coding_dir, file_path)
+    except Exception:
+        # If safe_join fails, try as absolute path
+        target = Path(file_path)
+
+    if not target.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {file_path}",
+        )
+
+    def _convert():
+        return _convert_docx_to_html(str(target))
+
+    try:
+        html = await asyncio.to_thread(_convert)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return {"html": html}
 
 
 @router.get(

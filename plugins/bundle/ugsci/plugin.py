@@ -16,6 +16,10 @@ from __future__ import annotations
 import logging
 import shutil
 from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci")
 
@@ -146,6 +150,106 @@ def _remove_plugin_pool_skills(plugin_id: str) -> int:
     return len(to_remove)
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Computation Engine Management — HTTP API
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+class EngineRequest(BaseModel):
+    """Request body for creating/updating an engine."""
+
+    name: str = ""
+    vendor: str = ""
+    version: str = ""
+    executable_path: str = ""
+    install_dir: str = ""
+    category: str = ""
+    description: str = ""
+    invocation_hint: str = ""
+    license_server: str = ""
+    extra_paths: List[str] = []
+
+
+def _build_engine_router() -> APIRouter:
+    """Build a FastAPI router for computation engine management."""
+    router = APIRouter()
+
+    @router.get("/list")
+    async def list_engines_endpoint() -> Dict[str, Any]:
+        """Return all registered computation engines."""
+        from .engine_manager import list_engines, engines_to_list
+
+        engines = list_engines()
+        return {"engines": engines_to_list(engines)}
+
+    @router.get("/{engine_id}")
+    async def get_engine_endpoint(engine_id: str) -> Dict[str, Any]:
+        """Return a single engine by ID."""
+        from .engine_manager import get_engine, to_dict
+
+        engine = get_engine(engine_id)
+        if engine is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Engine not found")
+        return to_dict(engine)
+
+    @router.post("/")
+    async def add_engine_endpoint(body: EngineRequest) -> Dict[str, Any]:
+        """Add a new custom computation engine."""
+        from .engine_manager import add_engine, to_dict
+
+        try:
+            engine = add_engine(body.model_dump())
+            return to_dict(engine)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.put("/{engine_id}")
+    async def update_engine_endpoint(
+        engine_id: str, body: EngineRequest,
+    ) -> Dict[str, Any]:
+        """Update an existing engine."""
+        from .engine_manager import update_engine, to_dict
+
+        try:
+            engine = update_engine(engine_id, body.model_dump())
+            return to_dict(engine)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.delete("/{engine_id}")
+    async def delete_engine_endpoint(engine_id: str) -> Dict[str, Any]:
+        """Delete a computation engine."""
+        from .engine_manager import delete_engine
+
+        try:
+            ok = delete_engine(engine_id)
+            return {"success": ok}
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.post("/detect")
+    async def detect_engines_endpoint() -> Dict[str, Any]:
+        """Auto-detect installed engines and return updated list."""
+        from .engine_manager import detect_engines, engines_to_list
+
+        engines = detect_engines()
+        return {"engines": engines_to_list(engines)}
+
+    @router.get("/summary")
+    async def capability_summary_endpoint() -> Dict[str, str]:
+        """Return a concise text summary for agent system-prompt injection."""
+        from .engine_manager import list_engines, build_capability_summary
+
+        engines = list_engines()
+        return {"summary": build_capability_summary(engines)}
+
+    return router
+
+
 class UGSciPlugin:
     """UGSci plugin backend entry point."""
 
@@ -184,6 +288,39 @@ class UGSciPlugin:
             )
         except Exception:
             pass
+
+        # Initialize default computation engines
+        try:
+            from .engine_manager import init_default_engines
+            count = init_default_engines()
+            if count:
+                logger.info(
+                    "[%s] Created %d default engine(s)",
+                    PLUGIN_ID, count,
+                )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to init default engines: %s",
+                PLUGIN_ID, exc,
+            )
+
+        # Register HTTP routes for computation engine management
+        try:
+            api.register_http_router(
+                _build_engine_router(),
+                prefix="/ugsci/engines",
+                tags=["ugsci-engines"],
+            )
+            logger.info(
+                "[%s] HTTP router registered at /api/ugsci/engines",
+                PLUGIN_ID,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register engine management HTTP router: %s",
+                PLUGIN_ID,
+                exc,
+            )
 
     async def _on_startup(self) -> None:
         """Called when the QwenPaw application starts."""

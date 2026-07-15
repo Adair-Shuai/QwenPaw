@@ -1,19 +1,17 @@
 /**
- * CodeRenderer — Monaco Editor 代码渲染器
+ * CodeRenderer — 轻量级代码查看器
  *
- * 使用 @monaco-editor/react（项目已有依赖），自动处理 web worker 配置。
+ * 使用纯 <pre> + 基本语法高亮，不依赖 Monaco Editor。
  *
- * 性能优化：
- * - 使用 @monaco-editor/react 的 loader，自动配置 Monaco web workers
- *   （语法分析、诊断等在 worker 线程执行，不阻塞主线程）
- * - 禁用 TS/JS 语言服务的诊断和智能提示（预览场景不需要）
- * - 禁用 automaticLayout，改用 onMount 时手动 layout
+ * 设计原因：
+ * - 工作区面板用于预览文件，不需要完整编辑器功能
+ * - Monaco Editor 在 Tauri 环境中从 CDN 加载会失败，导致页面崩溃
+ * - TabbedEditor 已使用 Monaco 提供完整编辑体验
+ * - 轻量查看器加载快、无 worker 依赖、不崩溃
  *
- * 支持流式追加（通过 model.applyEdits 实现无闪烁更新）
+ * 支持：行号、语法高亮色、只读/编辑切换（编辑模式回退到 textarea）、复制、下载
  */
-import React, { useCallback, useEffect, useRef, useState } from "react";
-import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
-import type { editor as MonacoEditor } from "monaco-editor";
+import React, { useCallback, useState } from "react";
 import { Button, Space, Tooltip } from "antd";
 import {
   EditOutlined,
@@ -24,23 +22,6 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
-
-// 配置 @monaco-editor/react 使用本地 monaco-editor 包（而非 CDN 默认的 CDN 加载）
-// 延迟初始化：仅在组件首次挂载时执行一次，避免在模块加载时就引入完整的 monaco-editor
-import { loader } from "@monaco-editor/react";
-
-let loaderInitialized = false;
-function ensureLoaderConfig() {
-  if (loaderInitialized) return;
-  loaderInitialized = true;
-  // 动态导入本地 monaco-editor，配置 loader 使用它而非 CDN
-  // 这样 web worker 也能正确从本地加载
-  import("monaco-editor")
-    .then((monacoNs) => loader.config(monacoNs))
-    .catch(() => {
-      // 如果本地包加载失败，loader 会回退到 CDN
-    });
-}
 
 // 根据文件扩展名推断语言
 function detectLanguage(extension?: string): string {
@@ -76,6 +57,137 @@ function detectLanguage(extension?: string): string {
   return map[ext ?? ""] ?? "plaintext";
 }
 
+// 简单的语法高亮：关键字着色
+// 不是完整的语法高亮器，但比纯文本好很多
+const KEYWORD_SETS: Record<string, Set<string>> = {
+  javascript: new Set([
+    "const", "let", "var", "function", "return", "if", "else", "for",
+    "while", "do", "switch", "case", "break", "continue", "new", "try",
+    "catch", "finally", "throw", "class", "extends", "super", "this",
+    "import", "export", "from", "default", "async", "await", "yield",
+    "typeof", "instanceof", "in", "of", "delete", "void", "null",
+    "undefined", "true", "false", "NaN",
+  ]),
+  typescript: new Set([
+    "const", "let", "var", "function", "return", "if", "else", "for",
+    "while", "do", "switch", "case", "break", "continue", "new", "try",
+    "catch", "finally", "throw", "class", "extends", "super", "this",
+    "import", "export", "from", "default", "async", "await", "yield",
+    "typeof", "instanceof", "in", "of", "delete", "void", "null",
+    "undefined", "true", "false", "NaN", "interface", "type", "enum",
+    "namespace", "public", "private", "protected", "readonly", "abstract",
+    "as", "is", "keyof", "infer", "never", "unknown", "any", "string",
+    "number", "boolean", "symbol", "bigint", "object",
+  ]),
+  python: new Set([
+    "def", "class", "return", "if", "elif", "else", "for", "while",
+    "break", "continue", "pass", "import", "from", "as", "try",
+    "except", "finally", "raise", "with", "lambda", "yield", "global",
+    "nonlocal", "assert", "del", "in", "is", "not", "and", "or",
+    "None", "True", "False", "self", "cls", "async", "await",
+  ]),
+  shell: new Set([
+    "if", "then", "else", "elif", "fi", "for", "do", "done", "while",
+    "case", "esac", "function", "return", "break", "continue", "exit",
+    "echo", "export", "local", "read", "source", "alias", "unset",
+  ]),
+};
+
+function getKeywordSet(language: string): Set<string> | null {
+  if (language === "javascript" || language === "jsx")
+    return KEYWORD_SETS.javascript;
+  if (language === "typescript" || language === "tsx")
+    return KEYWORD_SETS.typescript;
+  if (language === "python") return KEYWORD_SETS.python;
+  if (language === "shell") return KEYWORD_SETS.shell;
+  return null;
+}
+
+/** 简单的高亮渲染：关键字、字符串、注释着色 */
+function highlightLine(
+  line: string,
+  language: string,
+  isDark: boolean,
+): React.ReactNode {
+  const keywords = getKeywordSet(language);
+  if (!keywords) return line;
+
+  const commentColor = isDark ? "#6a9955" : "#6a737d";
+  const keywordColor = isDark ? "#569cd6" : "#0000ff";
+  const stringColor = isDark ? "#ce9178" : "#a31515";
+  const numberColor = isDark ? "#b5cea8" : "#098658";
+
+  // Handle full-line comments
+  const trimmed = line.trimStart();
+  if (
+    trimmed.startsWith("//") ||
+    trimmed.startsWith("#") ||
+    trimmed.startsWith('"""')
+  ) {
+    return <span style={{ color: commentColor }}>{line}</span>;
+  }
+
+  const parts: React.ReactNode[] = [];
+  // Tokenize: strings, comments, words, numbers
+  const tokenRegex =
+    /("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|`(?:[^`\\]|\\.)*`)|(\/\/.*$|#.*$)|(\b\d+\.?\d*\b)|(\b\w+\b)|(\s+)|([^\w\s]+)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  let key = 0;
+
+  while ((match = tokenRegex.exec(line)) !== null) {
+    if (match.index > lastIndex) {
+      parts.push(line.slice(lastIndex, match.index));
+    }
+    const [full, str, comment, num, word, space, other] = match;
+    if (str) {
+      parts.push(
+        <span key={key++} style={{ color: stringColor }}>
+          {str}
+        </span>,
+      );
+    } else if (comment) {
+      parts.push(
+        <span key={key++} style={{ color: commentColor }}>
+          {comment}
+        </span>,
+      );
+    } else if (num) {
+      parts.push(
+        <span key={key++} style={{ color: numberColor }}>
+          {num}
+        </span>,
+      );
+    } else if (word) {
+      if (keywords.has(word)) {
+        parts.push(
+          <span key={key++} style={{ color: keywordColor, fontWeight: 500 }}>
+            {word}
+          </span>,
+        );
+      } else if (word === "true" || word === "false" || word === "null" || word === "undefined" || word === "None" || word === "True" || word === "False") {
+        parts.push(
+          <span key={key++} style={{ color: numberColor }}>
+            {word}
+          </span>,
+        );
+      } else {
+        parts.push(word);
+      }
+    } else if (space) {
+      parts.push(space);
+    } else if (other) {
+      parts.push(other);
+    }
+    lastIndex = match.index + full.length;
+  }
+  if (lastIndex < line.length) {
+    parts.push(line.slice(lastIndex));
+  }
+
+  return <>{parts}</>;
+}
+
 const CodeRenderer: React.FC<RendererContext> = ({
   artifact,
   readOnly: forceReadOnly,
@@ -85,78 +197,14 @@ const CodeRenderer: React.FC<RendererContext> = ({
   const { t } = useTranslation();
   const [editable, setEditable] = useState(false);
   const [copied, setCopied] = useState(false);
-  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
-  const prevContentRef = useRef<string>("");
+  const [editContent, setEditContent] = useState("");
 
   const content = artifact.textContent ?? "";
   const language = detectLanguage(artifact.extension);
-  const readOnly = forceReadOnly || !editable;
+  const isDark = theme === "dark";
+  const isReadOnly = forceReadOnly || !editable;
 
-  // 首次挂载时初始化 Monaco loader（延迟加载 monaco-editor 包）
-  useEffect(() => {
-    ensureLoaderConfig();
-  }, []);
-
-  /**
-   * beforeMount: 在 Monaco 实例创建前配置语言服务。
-   *
-   * 关键性能优化：禁用 TS/JS 诊断和智能提示。
-   * 这些功能需要 worker 线程做完整的类型检查，对于预览场景非常重。
-   */
-  const handleBeforeMount: BeforeMount = useCallback((monaco) => {
-    // 禁用 TypeScript / JavaScript 诊断（预览不需要类型检查）
-    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: true,
-      noSyntaxValidation: true,
-    });
-    monaco.languages.javascript.javascriptDefaults.setDiagnosticsOptions({
-      noSemanticValidation: true,
-      noSyntaxValidation: true,
-    });
-  }, []);
-
-  const handleMount: OnMount = useCallback((editor) => {
-    editorRef.current = editor;
-    prevContentRef.current = content;
-  }, [content]);
-
-  // 流式更新：增量追加内容（参考 LibreChat 的 model.applyEdits 模式）
-  useEffect(() => {
-    const editor = editorRef.current;
-    if (!editor) return;
-
-    const model = editor.getModel();
-    if (!model) return;
-
-    const prev = prevContentRef.current;
-    // 如果新内容是旧内容的追加，只插入新增部分
-    if (
-      content.startsWith(prev) &&
-      prev.length > 0 &&
-      content.length > prev.length
-    ) {
-      const appended = content.slice(prev.length);
-      const lastLine = model.getLineCount();
-      const lastColumn = model.getLineMaxColumn(lastLine);
-      model.applyEdits([
-        {
-          range: {
-            startLineNumber: lastLine,
-            startColumn: lastColumn,
-            endLineNumber: lastLine,
-            endColumn: lastColumn,
-          },
-          text: appended,
-        },
-      ]);
-      // 自动滚动到底部
-      editor.revealLine(model.getLineCount());
-    } else if (content !== prev) {
-      // 内容完全变化，整体替换
-      model.setValue(content);
-    }
-    prevContentRef.current = content;
-  }, [content]);
+  const lines = content.split("\n");
 
   const handleCopy = useCallback(async () => {
     try {
@@ -172,21 +220,45 @@ const CodeRenderer: React.FC<RendererContext> = ({
     if (workspace.download) workspace.download(artifact);
   }, [workspace, artifact]);
 
+  const handleEditToggle = useCallback(() => {
+    if (!editable) {
+      setEditContent(content);
+    }
+    setEditable(!editable);
+  }, [editable, content]);
+
+  const bgColor = isDark ? "#1e1e1e" : "#ffffff";
+  const textColor = isDark ? "#d4d4d4" : "#333333";
+  const lineNumColor = isDark ? "#858585" : "#999999";
+  const borderColor = isDark ? "#333" : "#e8e8e8";
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        height: "100%",
+        background: bgColor,
+      }}
+    >
+      {/* 工具栏 */}
       <div
         style={{
           display: "flex",
           alignItems: "center",
           justifyContent: "space-between",
           padding: "4px 8px",
-          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
+          borderBottom: `1px solid ${borderColor}`,
           flexShrink: 0,
         }}
       >
         <Space size={4}>
           <span
-            style={{ fontSize: 11, color: "#999", textTransform: "uppercase" }}
+            style={{
+              fontSize: 11,
+              color: "#999",
+              textTransform: "uppercase",
+            }}
           >
             {language}
           </span>
@@ -197,7 +269,9 @@ const CodeRenderer: React.FC<RendererContext> = ({
           )}
         </Space>
         <Space size={2}>
-          <Tooltip title={copied ? t("workspace.copied") : t("workspace.copy")}>
+          <Tooltip
+            title={copied ? t("workspace.copied") : t("workspace.copy")}
+          >
             <Button
               size="small"
               type="text"
@@ -219,7 +293,7 @@ const CodeRenderer: React.FC<RendererContext> = ({
                 size="small"
                 type="text"
                 icon={editable ? <EyeOutlined /> : <EditOutlined />}
-                onClick={() => setEditable(!editable)}
+                onClick={handleEditToggle}
               />
             </Tooltip>
           )}
@@ -233,58 +307,70 @@ const CodeRenderer: React.FC<RendererContext> = ({
           </Tooltip>
         </Space>
       </div>
-      <div style={{ flex: 1, overflow: "hidden" }}>
-        <Editor
-          height="100%"
-          defaultLanguage={language}
-          defaultValue={content}
-          theme={theme === "dark" ? "vs-dark" : "light"}
-          beforeMount={handleBeforeMount}
-          onMount={handleMount}
-          loading={
+
+      {/* 代码区域 */}
+      <div
+        style={{
+          flex: 1,
+          overflow: "auto",
+          fontFamily:
+            "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+          fontSize: 13,
+          lineHeight: 1.6,
+        }}
+      >
+        {editable ? (
+          <textarea
+            value={editContent}
+            onChange={(e) => setEditContent(e.target.value)}
+            style={{
+              width: "100%",
+              height: "100%",
+              border: "none",
+              outline: "none",
+              padding: "8px 12px",
+              background: bgColor,
+              color: textColor,
+              fontFamily: "inherit",
+              fontSize: "inherit",
+              lineHeight: "inherit",
+              resize: "none",
+            }}
+          />
+        ) : (
+          <div style={{ display: "flex", minWidth: "max-content" }}>
+            {/* 行号 */}
             <div
               style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                height: "100%",
-                color: "#999",
-                fontSize: 13,
+                padding: "8px 8px 8px 12px",
+                textAlign: "right",
+                color: lineNumColor,
+                userSelect: "none",
+                borderRight: `1px solid ${borderColor}`,
+                flexShrink: 0,
               }}
             >
-              加载编辑器...
+              {lines.map((_, i) => (
+                <div key={i}>{i + 1}</div>
+              ))}
             </div>
-          }
-          options={{
-            readOnly,
-            minimap: { enabled: false },
-            fontSize: 13,
-            lineHeight: 20,
-            scrollBeyondLastLine: false,
-            wordWrap: "on",
-            tabSize: 2,
-            lineNumbers: "on",
-            folding: true,
-            renderWhitespace: "selection",
-            fontFamily:
-              "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
-            // 性能优化：禁用不需要的功能
-            automaticLayout: true,
-            // 禁用智能提示和代码补全（预览场景不需要）
-            quickSuggestions: false,
-            suggestOnTriggerCharacters: false,
-            parameterHints: { enabled: false },
-            hover: { enabled: false },
-            // 禁用代码镜头（引用计数等）
-            codeLens: false,
-            // 禁用 git diff 指示器
-            renderLineHighlight: "line",
-            // 禁用链接检测
-            links: false,
-            // 禁用折叠标志（保留折叠功能但不在边距显示箭头）
-            showFoldingControls: "mouseover",
-          }}
-        />
+            {/* 代码内容 */}
+            <div
+              style={{
+                padding: "8px 12px",
+                color: textColor,
+                whiteSpace: "pre",
+                flex: 1,
+              }}
+            >
+              {lines.map((line, i) => (
+                <div key={i}>
+                  {highlightLine(line, language, isDark) || "\u00A0"}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UGSci 文档 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class="active"><span class="icon">🏠</span> UGSci 文档</a><a href="user-guide.html" class=""><span class="icon">📖</span> 使用指南</a><a href="architecture.html" class=""><span class="icon">🏗️</span> 架构设计</a><a href="frontend.html" class=""><span class="icon">🎨</span> 前端开发指南</a><a href="backend.html" class=""><span class="icon">⚙️</span> 后端开发指南</a><a href="skills.html" class=""><span class="icon">⚡</span> 技能列表</a><a href="software-detection.html" class=""><span class="icon">🖥️</span> 本地软件检测</a><a href="expert-teams.html" class=""><span class="icon">🤝</span> 专家团</a>
+  </nav>
+</aside>
+<div id="main">
+
+<h1>UGSci 文档</h1>
+
+<blockquote>
+<p>面向石油领域的 QwenPaw 增强插件。将 Agent 转化为领域专家，以 <strong>能力</strong>、<strong>技能</strong>、<strong>专家</strong> 三大模块重新组织界面，降低使用门槛。</p>
+</blockquote>
+
+<h2>📚 文档导航</h2>
+
+<div class="doc-grid">
+
+<a class="doc-card" href="user-guide.html">
+  <div class="card-icon">📖</div>
+  <div class="card-title">使用指南</div>
+  <div class="card-desc">从安装到日常使用的完整指南，适合初次使用的用户快速上手。</div>
+</a>
+
+<a class="doc-card" href="architecture.html">
+  <div class="card-icon">🏗️</div>
+  <div class="card-title">架构设计</div>
+  <div class="card-desc">插件整体架构、数据流、前端注册机制和构建系统。</div>
+</a>
+
+<a class="doc-card" href="frontend.html">
+  <div class="card-icon">🎨</div>
+  <div class="card-title">前端开发指南</div>
+  <div class="card-desc">页面组件、API 调用、构建流程和调试技巧。</div>
+</a>
+
+<a class="doc-card" href="backend.html">
+  <div class="card-icon">⚙️</div>
+  <div class="card-title">后端开发指南</div>
+  <div class="card-desc">技能池同步、HTTP API、扩展指南和日志配置。</div>
+</a>
+
+<a class="doc-card" href="skills.html">
+  <div class="card-icon">⚡</div>
+  <div class="card-title">技能列表</div>
+  <div class="card-desc">44 个内置技能的完整说明和分类索引。</div>
+</a>
+
+<a class="doc-card" href="software-detection.html">
+  <div class="card-icon">🖥️</div>
+  <div class="card-title">本地软件检测</div>
+  <div class="card-desc">检测引擎工作原理、已知软件清单和扩展方法。</div>
+</a>
+
+<a class="doc-card" href="expert-teams.html">
+  <div class="card-icon">🤝</div>
+  <div class="card-title">专家团</div>
+  <div class="card-desc">多智能体协同模式、预设团队和自定义团队。</div>
+</a>
+
+</div>
+
+<h2>🚀 快速开始</h2>
+
+<ol>
+<li><p>安装插件：</p>
+<pre><code>cp -r plugins/bundle/ugsci ~/.qwenpaw/plugins/</code></pre></li>
+<li><p>重启 QwenPaw 后端</p></li>
+<li><p>切换到极简模式：</p>
+<pre><code>localStorage.setItem("qwenpaw_sidebar_mode", "simple");</code></pre></li>
+<li><p>刷新页面，开始使用专家中心、能力中心、技能中心和市场</p></li>
+</ol>
+
+<h2>📋 核心模块</h2>
+
+<table>
+<thead>
+<tr><th>模块</th><th>路由</th><th>说明</th></tr>
+</thead>
+<tbody>
+<tr><td>🧑‍🔬 专家中心</td><td><code>/ugsci-experts</code></td><td>Agent 转化为专家卡片，支持创建专家和专家团协同</td></tr>
+<tr><td>🔌 能力中心</td><td><code>/ugsci-capabilities</code></td><td>MCP 客户端展示 + 本地油气软件检测</td></tr>
+<tr><td>⚡ 技能中心</td><td><code>/ugsci-skills</code></td><td>技能池浏览、详情查看和安装状态</td></tr>
+<tr><td>🏪 市场</td><td><code>/ugsci-market</code></td><td>远程技能搜索安装 + 专家模板创建</td></tr>
+</tbody>
+</table>
+
+</div>
+</body>
+</html>

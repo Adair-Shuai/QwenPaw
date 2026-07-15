@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>技能列表 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class=""><span class="icon">🏠</span> UGSci 文档</a><a href="user-guide.html" class=""><span class="icon">📖</span> 使用指南</a><a href="architecture.html" class=""><span class="icon">🏗️</span> 架构设计</a><a href="frontend.html" class=""><span class="icon">🎨</span> 前端开发指南</a><a href="backend.html" class=""><span class="icon">⚙️</span> 后端开发指南</a><a href="skills.html" class="active"><span class="icon">⚡</span> 技能列表</a><a href="software-detection.html" class=""><span class="icon">🖥️</span> 本地软件检测</a><a href="expert-teams.html" class=""><span class="icon">🤝</span> 专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">技能列表</h1>
+<p>UGSci 插件内置 <strong>44 个技能</strong>，在启动时自动同步到 QwenPaw 共享技能池。每个技能是一个包含 <code>SKILL.md</code> 的目录，可能还包含 <code>scripts/</code>、<code>references/</code>、<code>assets/</code> 等辅助文件。</p>
+<p>用户可在技能中心浏览所有技能，并按需下载到任意 Agent。</p>
+<h2 id="_2">油气领域技能</h2>
+<table>
+<thead>
+<tr>
+<th>技能</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>oil-gas-foundation</code></td>
+<td>核心行业知识：术语、角色层级、数据格式（LAS/SEG-Y/WITSML/PRODML/RESQML）、安全文化基础</td>
+</tr>
+<tr>
+<td><code>oil-gas-exploration</code></td>
+<td>油气勘探工作流指引：从区域地质到井位部署</td>
+</tr>
+<tr>
+<td><code>oil-gas-drilling</code></td>
+<td>钻井作业支持：实时钻井监控、溢流检测、卡钻分析、钻井参数优化</td>
+</tr>
+<tr>
+<td><code>oil-gas-reservoir-production</code></td>
+<td>油藏管理与生产优化工作流指引</td>
+</tr>
+<tr>
+<td><code>oil-gas-midstream</code></td>
+<td>管道运输与存储操作工作流指引</td>
+</tr>
+<tr>
+<td><code>oil-gas-refining</code></td>
+<td>炼厂操作与工艺优化工作流指引</td>
+</tr>
+<tr>
+<td><code>oil-gas-delegation</code></td>
+<td>元技能：检测软件任务并路由到合适的 petropowers 技能</td>
+</tr>
+<tr>
+<td><code>segy-operations</code></td>
+<td>使用 segyio 库读写、操作、可视化 SEG-Y 地震数据</td>
+</tr>
+<tr>
+<td><code>well-log-analysis</code></td>
+<td>使用 lasio 库读取、分析和操作 LAS 格式测井数据</td>
+</tr>
+<tr>
+<td><code>scada-timeseries</code></td>
+<td>处理实时 SCADA 数据、WITSML/PRODML 流和时序分析</td>
+</tr>
+<tr>
+<td><code>using-petropowers</code></td>
+<td>对话启动技能：建立技能发现和使用机制，要求在任何回复前调用 Skill 工具</td>
+</tr>
+<tr>
+<td><code>synthetic-data-generation</code></td>
+<td>生成逼真的合成油气数据（LAS 测井、SEG-Y 地震、岩心照片、时序数据），含物理约束</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_3">数据科学 &amp; 可视化</h2>
+<table>
+<thead>
+<tr>
+<th>技能</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>matplotlib</code></td>
+<td>底层绑图库，提供完全自定义控制，适合出版级图形和科学工作流</td>
+</tr>
+<tr>
+<td><code>seaborn</code></td>
+<td>统计可视化，快速探索分布、关系和分类比较，集成 pandas</td>
+</tr>
+<tr>
+<td><code>plotly</code></td>
+<td>交互式可视化库，支持悬停、缩放、平移，适合仪表盘和演示</td>
+</tr>
+<tr>
+<td><code>infographics</code></td>
+<td>[实验性] 使用 AI 创建专业信息图，支持 10 种类型和 8 种行业风格</td>
+</tr>
+<tr>
+<td><code>statistical-analysis</code></td>
+<td>引导式统计分析：检验选择、假设检查、功效分析、APA 格式报告</td>
+</tr>
+<tr>
+<td><code>scikit-learn</code></td>
+<td>Python 机器学习：分类、回归、聚类、降维、模型评估、超参调优</td>
+</tr>
+<tr>
+<td><code>statsmodels</code></td>
+<td>统计模型库：OLS、GLM、混合模型、ARIMA，含详细诊断和推断</td>
+</tr>
+<tr>
+<td><code>shap</code></td>
+<td>模型可解释性：SHAP 值计算、特征重要性、SHAP 图表（瀑布/蜂群/条形/散点）</td>
+</tr>
+<tr>
+<td><code>exploratory-data-analysis</code></td>
+<td>对 200+ 种科学数据格式进行综合探索性数据分析</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_4">大数据 &amp; 性能</h2>
+<table>
+<thead>
+<tr>
+<th>技能</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>dask</code></td>
+<td>分布式计算：超越内存的 pandas/NumPy 工作流，跨集群扩展</td>
+</tr>
+<tr>
+<td><code>polars</code></td>
+<td>快速内存 DataFrame 库，惰性求值、并行执行、Apache Arrow 后端</td>
+</tr>
+<tr>
+<td><code>ray-data</code></td>
+<td>可扩展 ML 数据处理：流式 CPU/GPU 执行，支持 Parquet/CSV/JSON/图像</td>
+</tr>
+<tr>
+<td><code>zarr-python</code></td>
+<td>分块 N 维数组云存储：压缩、并行 I/O、S3/GCS 集成</td>
+</tr>
+<tr>
+<td><code>hdf5-pde-data-loading</code></td>
+<td>加载 PDE 仿真数据集（PDEBench、PhiFlow、JAX-CFD）的 HDF5 模式</td>
+</tr>
+<tr>
+<td><code>hugging-face-datasets</code></td>
+<td>创建和管理 Hugging Face Hub 数据集：仓库初始化、流式更新、SQL 查询</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_5">科学计算</h2>
+<table>
+<thead>
+<tr>
+<th>技能</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sympy</code></td>
+<td>符号数学：代数求解、微积分、表达式化简、符号矩阵、物理计算</td>
+</tr>
+<tr>
+<td><code>pymc</code></td>
+<td>贝叶斯建模：分层模型、MCMC (NUTS)、变分推断、模型比较</td>
+</tr>
+<tr>
+<td><code>pymoo</code></td>
+<td>多目标优化框架：NSGA-II/III、MOEA/D、Pareto 前沿、约束处理</td>
+</tr>
+<tr>
+<td><code>multi-objective-optimization</code></td>
+<td>Pareto 感知的多属性分子设计，平衡多个 ADMET 性质</td>
+</tr>
+<tr>
+<td><code>simpy</code></td>
+<td>离散事件仿真：制造系统、服务运营、网络流量、物流等</td>
+</tr>
+<tr>
+<td><code>networkx</code></td>
+<td>复杂网络和图分析：图算法、社区检测、网络拓扑可视化</td>
+</tr>
+<tr>
+<td><code>geopandas</code></td>
+<td>地理空间矢量数据处理：Shapefile、GeoJSON、空间分析、坐标变换</td>
+</tr>
+<tr>
+<td><code>matlab</code></td>
+<td>MATLAB/GNU Octave 数值计算：矩阵运算、信号处理、图像处理、微分方程</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_6">工程方法论</h2>
+<table>
+<thead>
+<tr>
+<th>技能</th>
+<th>描述</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>brainstorming-gatekeeper</code></td>
+<td>前置检查：判断创意/生成工作前是否需要头脑风暴</td>
+</tr>
+<tr>
+<td><code>brainstorming</code></td>
+<td>创意工作前的必选步骤：探索用户意图、需求和设计</td>
+</tr>
+<tr>
+<td><code>writing-plans</code></td>
+<td>多步骤任务的实现计划编写</td>
+</tr>
+<tr>
+<td><code>executing-plans</code></td>
+<td>在独立会话中执行已编写的实现计划，含审查检查点</td>
+</tr>
+<tr>
+<td><code>dispatching-parallel-agents</code></td>
+<td>2+ 个独立任务的并行派发</td>
+</tr>
+<tr>
+<td><code>subagent-driven-development</code></td>
+<td>在当前会话中执行含独立任务的实现计划</td>
+</tr>
+<tr>
+<td><code>systematic-debugging</code></td>
+<td>遇到 bug/测试失败/异常行为时的系统化调试流程</td>
+</tr>
+<tr>
+<td><code>test-driven-development</code></td>
+<td>测试驱动开发：先写测试再写实现</td>
+</tr>
+<tr>
+<td><code>verification-before-completion</code></td>
+<td>完成验证：声称完成前必须运行验证命令并确认输出</td>
+</tr>
+<tr>
+<td><code>requesting-code-review</code></td>
+<td>任务完成时的代码审查请求</td>
+</tr>
+<tr>
+<td><code>receiving-code-review</code></td>
+<td>接收代码审查反馈时的处理流程</td>
+</tr>
+<tr>
+<td><code>finishing-a-development-branch</code></td>
+<td>开发分支完成后的集成决策（合并/PR/清理）</td>
+</tr>
+<tr>
+<td><code>using-git-worktrees</code></td>
+<td>需要隔离的特性开发，创建 git worktree 并智能选择目录</td>
+</tr>
+<tr>
+<td><code>writing-skills</code></td>
+<td>创建新技能、编辑现有技能或验证技能可用性</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_7">技能目录结构</h2>
+<p>每个技能是一个独立目录，包含：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>skills/
+├── segy-operations/
+│   ├── SKILL.md              # 技能定义（frontmatter + 内容）
+│   └── references/           # 参考资料（可选）
+│       ├── tutorial_01.ipynb
+│       └── ...
+├── matplotlib/
+│   ├── SKILL.md
+│   ├── scripts/              # 可执行脚本（可选）
+│   └── references/
+├── oil-gas-foundation/
+│   └── SKILL.md              # 纯文档技能，无附加文件
+└── ...
+</code></pre></div>
+
+<h3 id="skillmd">SKILL.md 格式</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>---
+name: skill-name
+<span style="color: #ABB2BF; font-weight: bold">description: 简短描述，用于技能卡片展示和搜索</span>
+<span style="color: #ABB2BF; font-weight: bold">---</span>
+
+<span style="color: #ABB2BF; font-weight: bold"># Skill: Skill Name</span>
+
+详细的技术文档、代码模式、参考链接等...
+</code></pre></div>
+
+<p>Frontmatter 字段：</p>
+<table>
+<thead>
+<tr>
+<th>字段</th>
+<th>必填</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>name</code></td>
+<td>是</td>
+<td>技能唯一标识（与目录名一致）</td>
+</tr>
+<tr>
+<td><code>description</code></td>
+<td>是</td>
+<td>简短描述，显示在技能卡片上</td>
+</tr>
+</tbody>
+</table>
+<p>正文内容可包含：技术文档、代码示例、参考链接、使用指南等。</p>
+<h2 id="_8">添加新技能</h2>
+<ol>
+<li>在 <code>skills/</code> 目录下创建新子目录</li>
+<li>编写 <code>SKILL.md</code> 文件</li>
+<li>重启 QwenPaw 后端，技能池同步钩子会自动将其同步到技能池</li>
+<li>用户即可在技能中心看到新技能</li>
+</ol>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>mkdir<span style="color: #ABB2BF"> </span>-p<span style="color: #ABB2BF"> </span>skills/my-new-skill
+cat<span style="color: #ABB2BF"> </span>&gt;<span style="color: #ABB2BF"> </span>skills/my-new-skill/SKILL.md<span style="color: #ABB2BF"> </span><span style="color: #98C379">&lt;&lt; &#39;EOF&#39;</span>
+<span style="color: #98C379">---</span>
+<span style="color: #98C379">name: my-new-skill</span>
+<span style="color: #98C379">description: 新技能的简短描述</span>
+<span style="color: #98C379">---</span>
+
+<span style="color: #98C379"># Skill: My New Skill</span>
+
+<span style="color: #98C379">详细的技术文档...</span>
+<span style="color: #98C379">EOF</span>
+</code></pre></div>
+</div>
+</body>
+</html>
