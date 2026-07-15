@@ -22,10 +22,16 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import os
 import sys
 from pathlib import Path
+
+# Force UTF-8 output on Windows to avoid cp1252 UnicodeEncodeError with emoji.
+if sys.platform == "win32":
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
 
 def _repo_root() -> Path:
@@ -121,7 +127,7 @@ def _check_staleness(repo: Path, strict: bool = False) -> list[str]:
             if strict:
                 errors.append(msg)
             else:
-                print(f"  ⚠️  {msg}", file=sys.stderr)
+                print(f"  [WARN] {msg}", file=sys.stderr)
 
     return errors
 
@@ -150,9 +156,9 @@ def main() -> int:
     if errs:
         all_errors.extend(errs)
         for e in errs:
-            print(f"  ❌ {e}")
+            print(f"  [FAIL] {e}")
     else:
-        print("  ✅ console/dist/ is present and valid")
+        print("  [OK] console/dist/ is present and valid")
 
     # 2. Plugins
     print("[2/3] Checking plugin frontend bundles...")
@@ -160,9 +166,9 @@ def main() -> int:
     if errs:
         all_errors.extend(errs)
         for e in errs:
-            print(f"  ❌ {e}")
+            print(f"  [FAIL] {e}")
     else:
-        print("  ✅ All plugin frontend bundles present")
+        print("  [OK] All plugin frontend bundles present")
 
     # 3. Staleness
     print("[3/3] Checking build freshness...")
@@ -170,16 +176,16 @@ def main() -> int:
     if errs:
         all_errors.extend(errs)
         for e in errs:
-            print(f"  ❌ {e}")
+            print(f"  [FAIL] {e}")
     else:
-        print("  ✅ Build artifacts are up-to-date")
+        print("  [OK] Build artifacts are up-to-date")
 
     print()
     if all_errors:
         print(f"FAILED: {len(all_errors)} error(s) found.", file=sys.stderr)
         return 1
 
-    print("All checks passed. ✅")
+    print("All checks passed. [OK]")
     return 0
 
 

@@ -56,7 +56,7 @@ for plugin_dir in "$BUNDLE_DIR"/*/; do
     fi
 
     size=$(du -h "$dist_js" | cut -f1)
-    echo "  - $plugin_name: ✅ built ($size)"
+    echo "  - $plugin_name: [OK] built ($size)"
     built=$((built + 1))
 
     # Sync dist/ to src/qwenpaw/plugins_bundle/ (PyInstaller bundles from
