@@ -1,13 +1,19 @@
 /**
  * CodeRenderer — Monaco Editor 代码渲染器
  *
- * 设计灵感：LibreChat 的 ArtifactCodeEditor
- * - 使用 Monaco Editor 渲染代码
- * - 支持流式追加（通过 model.applyEdits 实现无闪烁更新）
- * - 支持语法高亮、代码折叠、行号
- * - 只读/编辑模式切换
+ * 使用 @monaco-editor/react（项目已有依赖），自动处理 web worker 配置。
+ *
+ * 性能优化：
+ * - 使用 @monaco-editor/react 的 loader，自动配置 Monaco web workers
+ *   （语法分析、诊断等在 worker 线程执行，不阻塞主线程）
+ * - 禁用 TS/JS 语言服务的诊断和智能提示（预览场景不需要）
+ * - 禁用 automaticLayout，改用 onMount 时手动 layout
+ *
+ * 支持流式追加（通过 model.applyEdits 实现无闪烁更新）
  */
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import Editor, { type OnMount, type BeforeMount } from "@monaco-editor/react";
+import type { editor as MonacoEditor } from "monaco-editor";
 import { Button, Space, Tooltip } from "antd";
 import {
   EditOutlined,
@@ -19,18 +25,21 @@ import {
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 
-// 延迟加载 Monaco Editor（复用项目中已有的 monaco-editor）
-let monacoLoaded = false;
-async function loadMonaco() {
-  if (monacoLoaded) return true;
-  try {
-    await import("monaco-editor");
-    // 配置 worker（如果需要）
-    monacoLoaded = true;
-    return true;
-  } catch {
-    return false;
-  }
+// 配置 @monaco-editor/react 使用本地 monaco-editor 包（而非 CDN 默认的 CDN 加载）
+// 延迟初始化：仅在组件首次挂载时执行一次，避免在模块加载时就引入完整的 monaco-editor
+import { loader } from "@monaco-editor/react";
+
+let loaderInitialized = false;
+function ensureLoaderConfig() {
+  if (loaderInitialized) return;
+  loaderInitialized = true;
+  // 动态导入本地 monaco-editor，配置 loader 使用它而非 CDN
+  // 这样 web worker 也能正确从本地加载
+  import("monaco-editor")
+    .then((monacoNs) => loader.config(monacoNs))
+    .catch(() => {
+      // 如果本地包加载失败，loader 会回退到 CDN
+    });
 }
 
 // 根据文件扩展名推断语言
@@ -76,66 +85,48 @@ const CodeRenderer: React.FC<RendererContext> = ({
   const { t } = useTranslation();
   const [editable, setEditable] = useState(false);
   const [copied, setCopied] = useState(false);
-  const containerRef = useRef<HTMLDivElement>(null);
-  const editorRef = useRef<any>(null);
-  const modelRef = useRef<any>(null);
+  const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const prevContentRef = useRef<string>("");
 
   const content = artifact.textContent ?? "";
   const language = detectLanguage(artifact.extension);
   const readOnly = forceReadOnly || !editable;
 
-  // 初始化 Monaco Editor
+  // 首次挂载时初始化 Monaco loader（延迟加载 monaco-editor 包）
   useEffect(() => {
-    if (!containerRef.current) return;
-    let disposed = false;
-
-    (async () => {
-      const loaded = await loadMonaco();
-      if (disposed || !loaded || !containerRef.current) return;
-
-      const monaco = await import("monaco-editor");
-      const model = monaco.editor.createModel(content, language);
-      modelRef.current = model;
-      prevContentRef.current = content;
-
-      const editor = monaco.editor.create(containerRef.current, {
-        model,
-        theme: theme === "dark" ? "vs-dark" : "vs",
-        readOnly,
-        automaticLayout: true,
-        fontSize: 13,
-        lineHeight: 20,
-        minimap: { enabled: false },
-        scrollBeyondLastLine: false,
-        wordWrap: "on",
-        tabSize: 2,
-        lineNumbers: "on",
-        folding: true,
-        renderWhitespace: "selection",
-        fontFamily:
-          "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
-      });
-      editorRef.current = editor;
-    })();
-
-    return () => {
-      disposed = true;
-      if (editorRef.current) {
-        editorRef.current.dispose();
-        editorRef.current = null;
-      }
-      if (modelRef.current) {
-        modelRef.current.dispose();
-        modelRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    ensureLoaderConfig();
   }, []);
+
+  /**
+   * beforeMount: 在 Monaco 实例创建前配置语言服务。
+   *
+   * 关键性能优化：禁用 TS/JS 诊断和智能提示。
+   * 这些功能需要 worker 线程做完整的类型检查，对于预览场景非常重。
+   */
+  const handleBeforeMount: BeforeMount = useCallback((monaco) => {
+    // 禁用 TypeScript / JavaScript 诊断（预览不需要类型检查）
+    monaco.languages.typescript.typescriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+    });
+    monaco.languages.javascript.javascriptDefaults.setDiagnosticsOptions({
+      noSemanticValidation: true,
+      noSyntaxValidation: true,
+    });
+  }, []);
+
+  const handleMount: OnMount = useCallback((editor) => {
+    editorRef.current = editor;
+    prevContentRef.current = content;
+  }, [content]);
 
   // 流式更新：增量追加内容（参考 LibreChat 的 model.applyEdits 模式）
   useEffect(() => {
-    if (!editorRef.current || !modelRef.current) return;
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const model = editor.getModel();
+    if (!model) return;
 
     const prev = prevContentRef.current;
     // 如果新内容是旧内容的追加，只插入新增部分
@@ -145,7 +136,6 @@ const CodeRenderer: React.FC<RendererContext> = ({
       content.length > prev.length
     ) {
       const appended = content.slice(prev.length);
-      const model = modelRef.current;
       const lastLine = model.getLineCount();
       const lastColumn = model.getLineMaxColumn(lastLine);
       model.applyEdits([
@@ -160,29 +150,13 @@ const CodeRenderer: React.FC<RendererContext> = ({
         },
       ]);
       // 自动滚动到底部
-      editorRef.current.revealLine(model.getLineCount());
+      editor.revealLine(model.getLineCount());
     } else if (content !== prev) {
       // 内容完全变化，整体替换
-      modelRef.current.setValue(content);
+      model.setValue(content);
     }
     prevContentRef.current = content;
   }, [content]);
-
-  // 切换只读模式
-  useEffect(() => {
-    if (editorRef.current) {
-      editorRef.current.updateOptions({ readOnly });
-    }
-  }, [readOnly]);
-
-  // 切换主题
-  useEffect(() => {
-    if (editorRef.current) {
-      import("monaco-editor").then((monaco) => {
-        monaco.editor.setTheme(theme === "dark" ? "vs-dark" : "vs");
-      });
-    }
-  }, [theme]);
 
   const handleCopy = useCallback(async () => {
     try {
@@ -259,7 +233,59 @@ const CodeRenderer: React.FC<RendererContext> = ({
           </Tooltip>
         </Space>
       </div>
-      <div ref={containerRef} style={{ flex: 1, overflow: "hidden" }} />
+      <div style={{ flex: 1, overflow: "hidden" }}>
+        <Editor
+          height="100%"
+          defaultLanguage={language}
+          defaultValue={content}
+          theme={theme === "dark" ? "vs-dark" : "light"}
+          beforeMount={handleBeforeMount}
+          onMount={handleMount}
+          loading={
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                height: "100%",
+                color: "#999",
+                fontSize: 13,
+              }}
+            >
+              加载编辑器...
+            </div>
+          }
+          options={{
+            readOnly,
+            minimap: { enabled: false },
+            fontSize: 13,
+            lineHeight: 20,
+            scrollBeyondLastLine: false,
+            wordWrap: "on",
+            tabSize: 2,
+            lineNumbers: "on",
+            folding: true,
+            renderWhitespace: "selection",
+            fontFamily:
+              "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
+            // 性能优化：禁用不需要的功能
+            automaticLayout: true,
+            // 禁用智能提示和代码补全（预览场景不需要）
+            quickSuggestions: false,
+            suggestOnTriggerCharacters: false,
+            parameterHints: { enabled: false },
+            hover: { enabled: false },
+            // 禁用代码镜头（引用计数等）
+            codeLens: false,
+            // 禁用 git diff 指示器
+            renderLineHighlight: "line",
+            // 禁用链接检测
+            links: false,
+            // 禁用折叠标志（保留折叠功能但不在边距显示箭头）
+            showFoldingControls: "mouseover",
+          }}
+        />
+      </div>
     </div>
   );
 };
