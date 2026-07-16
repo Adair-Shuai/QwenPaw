@@ -430,6 +430,7 @@ export default function Header() {
         <Slot name="header.left" kind="fill" />
         <Space size="middle">
           <Slot name="header.right" kind="fill" />
+          {/* ── "文档资料" and "GitHub" buttons hidden — commented out, not deleted ──
           {resourcesMenuItems.length > 0 && (
             <Dropdown menu={{ items: resourcesMenuItems }}>
               <Button type="text" className={styles.hideOnMobile}>
@@ -447,6 +448,7 @@ export default function Header() {
               {t("header.github")}
             </Button>
           </Tooltip>
+          ── end hidden buttons ── */}
           <div className={styles.headerDivider} />
           <span className={styles.hideOnMobile}>
             <CodingModeToggle />

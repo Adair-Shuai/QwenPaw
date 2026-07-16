@@ -3150,7 +3150,7 @@ function vt() {
     "div",
     { style: { padding: 24 } },
     e.createElement(Te, {
-      title: "专家中心",
+      title: "专家",
       subtitle: `共 ${m.length} 位专家（${fe} 位启用）· ${d} 个技能 · ${ne} 个 MCP 客户端`,
       extra: e.createElement(
         e.Fragment,
@@ -4104,7 +4104,7 @@ function It() {
     "div",
     { style: { padding: 24 } },
     e.createElement(Te, {
-      title: "能力中心",
+      title: "工具",
       subtitle: `MCP: ${$.length} 个客户端（${Q} 个启用）· ${s} 个工具`,
       extra: e.createElement(
         e.Fragment,
@@ -5420,7 +5420,7 @@ function Bt() {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(ie)
-      }), g.success(`专家「${p.name}」创建成功，已跳转至专家中心`), Je("/ugsci-experts");
+      }), g.success(`专家「${p.name}」创建成功，已跳转至专家`), Je("/ugsci-experts");
     } catch (le) {
       g.error(le.message || "创建专家失败");
     }
