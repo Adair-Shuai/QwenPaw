@@ -13,10 +13,16 @@ that the user has intentionally removed.
 Updating: if the bundled version is newer than the installed version
 (compared via ``plugin.json`` → ``version`` field), the plugin is upgraded
 in-place (unless the user has marked it as uninstalled).
+
+Content hash: when the version numbers are equal, a content hash of the
+frontend entry file is compared to detect content changes that were made
+without a version bump.  This prevents stale plugin JS from persisting on
+machines that already have the same version installed from a previous build.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import shutil
@@ -24,6 +30,8 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+_BUNDLE_HASH_FILE = ".bundle_hash"
 
 
 def _get_bundled_plugins_dirs() -> list[Path]:
@@ -121,6 +129,50 @@ def _version_tuple(version: str) -> tuple:
     return tuple(parts)
 
 
+def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
+    """Compute a content hash for a plugin directory.
+
+    Hashes the ``plugin.json`` manifest and the frontend entry file (if
+    present).  This is used to detect content changes that were made
+    without a version bump, so stale plugin JS on a user's machine can
+    be detected and force-updated.
+    """
+    h = hashlib.md5()
+
+    # Hash plugin.json content (normalised)
+    manifest_text = json.dumps(manifest, sort_keys=True, ensure_ascii=False)
+    h.update(manifest_text.encode("utf-8"))
+
+    # Hash the frontend entry file if it exists
+    frontend_entry = manifest.get("entry", {}).get("frontend")
+    if frontend_entry:
+        entry_file = plugin_dir / frontend_entry
+        if entry_file.is_file():
+            h.update(entry_file.read_bytes())
+
+    return h.hexdigest()
+
+
+def _read_installed_hash(plugin_dir: Path) -> str | None:
+    """Read the stored bundle hash from a previously installed plugin."""
+    hash_file = plugin_dir / _BUNDLE_HASH_FILE
+    if not hash_file.is_file():
+        return None
+    try:
+        return hash_file.read_text(encoding="utf-8").strip()
+    except Exception:
+        return None
+
+
+def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
+    """Write the bundle hash so future startups can detect content changes."""
+    hash_file = plugin_dir / _BUNDLE_HASH_FILE
+    try:
+        hash_file.write_text(hash_value, encoding="utf-8")
+    except Exception as exc:
+        logger.warning("Failed to write bundle hash for %s: %s", plugin_dir, exc)
+
+
 def ensure_bundled_plugins_installed() -> (
     list[str]
 ):  # pylint: disable=too-many-branches
@@ -178,10 +230,37 @@ def ensure_bundled_plugins_installed() -> (
                     bundled_version = str(
                         bundled_manifest.get("version", "0.0.0"),
                     )
-                    if _version_tuple(existing_version) >= _version_tuple(
+                    if _version_tuple(existing_version) > _version_tuple(
                         bundled_version,
                     ):
-                        # Up to date — skip
+                        # Installed version is newer — skip
+                        continue
+                    if _version_tuple(existing_version) == _version_tuple(
+                        bundled_version,
+                    ):
+                        # Same version — check content hash to detect
+                        # content changes made without a version bump.
+                        bundled_hash = _compute_bundle_hash(
+                            item, bundled_manifest,
+                        )
+                        installed_hash = _read_installed_hash(target_dir)
+                        if installed_hash == bundled_hash:
+                            # Content is identical — skip
+                            continue
+                        # Content differs — force update
+                        logger.info(
+                            "Updating bundled plugin '%s' v%s "
+                            "(content hash changed)",
+                            plugin_id,
+                            bundled_version,
+                        )
+                        has_marker = _is_uninstalled(target_dir)
+                        shutil.rmtree(target_dir, ignore_errors=True)
+                        shutil.copytree(item, target_dir)
+                        _write_bundle_hash(target_dir, bundled_hash)
+                        if has_marker:
+                            _mark_uninstalled(target_dir)
+                        installed_or_updated.append(plugin_id)
                         continue
                     # Newer version available — upgrade
                     logger.info(
@@ -194,6 +273,10 @@ def ensure_bundled_plugins_installed() -> (
                     has_marker = _is_uninstalled(target_dir)
                     shutil.rmtree(target_dir, ignore_errors=True)
                     shutil.copytree(item, target_dir)
+                    bundled_hash = _compute_bundle_hash(
+                        item, bundled_manifest,
+                    )
+                    _write_bundle_hash(target_dir, bundled_hash)
                     if has_marker:
                         _mark_uninstalled(target_dir)
                     installed_or_updated.append(plugin_id)
@@ -203,6 +286,10 @@ def ensure_bundled_plugins_installed() -> (
             logger.info("Installing bundled plugin '%s'", plugin_id)
             try:
                 shutil.copytree(item, target_dir)
+                bundled_hash = _compute_bundle_hash(
+                    item, bundled_manifest,
+                )
+                _write_bundle_hash(target_dir, bundled_hash)
                 installed_or_updated.append(plugin_id)
             except Exception as exc:
                 logger.warning(
