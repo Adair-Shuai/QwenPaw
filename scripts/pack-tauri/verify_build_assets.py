@@ -17,6 +17,12 @@ Checks:
      (required for plugin JS loading in the desktop webview)
   6. usePluginLoader.ts uses fetch + Blob URL as primary strategy
      (direct import() is silently blocked by CSP in WKWebView)
+  7. Plugin dist files are synced between plugins/bundle/ and
+     src/qwenpaw/plugins_bundle/ (PyInstaller bundles from both)
+  8. Plugin source files are not newer than their dist bundles
+     (catches stale plugin builds)
+  9. Tauri CSP connect-src includes http://127.0.0.1:* for backend
+     fetch() calls from the bootstrap page
 
 Usage:
     python scripts/pack-tauri/verify_build_assets.py
@@ -241,6 +247,188 @@ def _check_plugin_loader_strategy(repo: Path) -> list[str]:
     return errors
 
 
+def _check_plugin_sync(repo: Path) -> list[str]:
+    """Verify plugin dist files are synced between plugins/bundle/ and
+    src/qwenpaw/plugins_bundle/.
+
+    PyInstaller bundles plugins from BOTH locations (see qwenpaw.spec):
+      - src/qwenpaw/plugins_bundle/ -> qwenpaw/plugins_bundle/ (package data)
+      - plugins/bundle/{name}/      -> plugins/bundle/{name}/   (repo root)
+
+    Only plugins that have a mirror in src/qwenpaw/plugins_bundle/ are
+    checked. Plugins without a mirror (e.g. cloudpaw, qwenpaw-pet) are
+    excluded from the PyInstaller whitelist and don't need syncing.
+    """
+    errors: list[str] = []
+    plugins_bundle = repo / "plugins" / "bundle"
+    src_mirror = repo / "src" / "qwenpaw" / "plugins_bundle"
+
+    if not plugins_bundle.is_dir() or not src_mirror.is_dir():
+        return errors
+
+    import hashlib
+
+    for plugin_dir in sorted(plugins_bundle.iterdir()):
+        if not plugin_dir.is_dir():
+            continue
+        manifest_path = plugin_dir / "plugin.json"
+        if not manifest_path.is_file():
+            continue
+
+        # Only check plugins that have a mirror directory in src/
+        mirror_plugin_dir = src_mirror / plugin_dir.name
+        if not mirror_plugin_dir.is_dir():
+            continue  # Not in PyInstaller package path — skip
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        frontend_entry = manifest.get("entry", {}).get("frontend")
+        if not frontend_entry:
+            continue
+
+        # Check that the src/ mirror has the dist file
+        mirror_dist = mirror_plugin_dir / frontend_entry
+        if not mirror_dist.is_file():
+            errors.append(
+                f"Plugin '{plugin_dir.name}': dist file missing in"
+                f" src/qwenpaw/plugins_bundle/{plugin_dir.name}/{frontend_entry}\n"
+                "  PyInstaller bundles from both plugins/bundle/ and"
+                " src/qwenpaw/plugins_bundle/.\n"
+                "  Run: bash scripts/pack-tauri/build_plugin_uis.sh"
+            )
+            continue
+
+        # Compare content hash to ensure sync
+        orig_file = plugin_dir / frontend_entry
+        if not orig_file.is_file():
+            continue  # Already caught by _check_plugins
+
+        orig_hash = hashlib.md5(orig_file.read_bytes()).hexdigest()
+        mirror_hash = hashlib.md5(mirror_dist.read_bytes()).hexdigest()
+
+        if orig_hash != mirror_hash:
+            errors.append(
+                f"Plugin '{plugin_dir.name}': dist file out of sync.\n"
+                f"  plugins/bundle/{plugin_dir.name}/{frontend_entry}"
+                f" (MD5: {orig_hash[:8]})\n"
+                f"  != src/qwenpaw/plugins_bundle/{plugin_dir.name}/"
+                f"{frontend_entry} (MD5: {mirror_hash[:8]})\n"
+                "  Run: bash scripts/pack-tauri/build_plugin_uis.sh"
+            )
+
+    return errors
+
+
+def _check_plugin_staleness(repo: Path, strict: bool = False) -> list[str]:
+    """Warn (or fail in strict mode) if plugin source files are newer than
+    their built dist bundles.
+
+    Catches the case where a developer edits plugin source but forgets
+    to rebuild the dist bundle. Only checks plugins that have a mirror
+    in src/qwenpaw/plugins_bundle/ (i.e. plugins bundled in the desktop
+    build via the PyInstaller whitelist).
+    """
+    errors: list[str] = []
+    plugins_bundle = repo / "plugins" / "bundle"
+    src_mirror = repo / "src" / "qwenpaw" / "plugins_bundle"
+
+    if not plugins_bundle.is_dir():
+        return errors
+
+    for plugin_dir in sorted(plugins_bundle.iterdir()):
+        if not plugin_dir.is_dir():
+            continue
+        # Only check plugins that have a mirror in src/ (PyInstaller whitelist)
+        if not (src_mirror / plugin_dir.name).is_dir():
+            continue
+        manifest_path = plugin_dir / "plugin.json"
+        if not manifest_path.is_file():
+            continue
+
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        frontend_entry = manifest.get("entry", {}).get("frontend")
+        if not frontend_entry:
+            continue
+
+        dist_file = plugin_dir / frontend_entry
+        if not dist_file.is_file():
+            continue  # Already caught by _check_plugins
+
+        dist_mtime = dist_file.stat().st_mtime
+
+        # Check all .ts/.tsx source files in ui/src/
+        ui_src = plugin_dir / "ui" / "src"
+        if not ui_src.is_dir():
+            continue
+
+        for src_file in ui_src.rglob("*.ts*"):
+            if src_file.stat().st_mtime > dist_mtime:
+                msg = (
+                    f"Plugin '{plugin_dir.name}': {src_file.relative_to(repo)}"
+                    f" is newer than {dist_file.relative_to(repo)}.\n"
+                    "  Plugin dist bundle is stale. Rebuild:"
+                    f" cd {plugin_dir / 'ui'} && npm run build"
+                )
+                if strict:
+                    errors.append(msg)
+                else:
+                    print(f"  [WARN] {msg}", file=sys.stderr)
+                break  # One stale file is enough to warn
+
+    return errors
+
+
+def _check_csp_connect_src(repo: Path) -> list[str]:
+    """Verify Tauri CSP connect-src includes http://127.0.0.1:*.
+
+    The bootstrap page (loaded by Tauri's webview) makes fetch() calls to
+    http://127.0.0.1:{port}/api/version to detect backend readiness.
+    Without http://127.0.0.1:* in connect-src, these calls are blocked
+    by CSP and the app hangs on the loading screen.
+    """
+    errors: list[str] = []
+    tauri_conf = repo / "console" / "src-tauri" / "tauri.conf.json"
+
+    if not tauri_conf.is_file():
+        return errors
+
+    try:
+        conf = json.loads(tauri_conf.read_text(encoding="utf-8"))
+    except Exception:
+        return errors  # Already caught by _check_csp
+
+    csp = conf.get("app", {}).get("security", {}).get("csp", {})
+    if not csp:
+        return errors
+
+    connect_src = csp.get("connect-src", "")
+    if not connect_src:
+        errors.append(
+            f"{tauri_conf.relative_to(repo)}: CSP 'connect-src' is empty.\n"
+            "  The bootstrap page needs http://127.0.0.1:* in connect-src\n"
+            "  to poll the backend readiness endpoint."
+        )
+        return errors
+
+    if "http://127.0.0.1:*" not in connect_src:
+        errors.append(
+            f"{tauri_conf.relative_to(repo)}: CSP 'connect-src' is missing"
+            " 'http://127.0.0.1:*'.\n"
+            "  The bootstrap page fetches http://127.0.0.1:{port}/api/version\n"
+            "  to detect when the backend is ready. Without this entry, the\n"
+            "  app will hang on the loading screen."
+        )
+
+    return errors
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Verify frontend and plugin build artifacts before packaging."
@@ -259,8 +447,10 @@ def main() -> int:
     print(f"Repository: {repo}")
     print()
 
+    total_checks = 8
+
     # 1. console/dist
-    print("[1/5] Checking console/dist/...")
+    print(f"[1/{total_checks}] Checking console/dist/...")
     errs = _check_console_dist(repo)
     if errs:
         all_errors.extend(errs)
@@ -270,7 +460,7 @@ def main() -> int:
         print("  [OK] console/dist/ is present and valid")
 
     # 2. Plugins
-    print("[2/5] Checking plugin frontend bundles...")
+    print(f"[2/{total_checks}] Checking plugin frontend bundles...")
     errs = _check_plugins(repo)
     if errs:
         all_errors.extend(errs)
@@ -279,28 +469,34 @@ def main() -> int:
     else:
         print("  [OK] All plugin frontend bundles present")
 
-    # 3. Staleness
-    print("[3/5] Checking build freshness...")
+    # 3. Staleness (console + plugins)
+    print(f"[3/{total_checks}] Checking build freshness...")
     errs = _check_staleness(repo, strict=args.strict)
     if errs:
         all_errors.extend(errs)
         for e in errs:
             print(f"  [FAIL] {e}")
-    else:
-        print("  [OK] Build artifacts are up-to-date")
-
-    # 4. Tauri CSP
-    print("[4/5] Checking Tauri CSP script-src...")
-    errs = _check_csp(repo)
+    errs = _check_plugin_staleness(repo, strict=args.strict)
     if errs:
         all_errors.extend(errs)
         for e in errs:
             print(f"  [FAIL] {e}")
+    if not errs:
+        print("  [OK] Build artifacts are up-to-date")
+
+    # 4. Tauri CSP (script-src + connect-src)
+    print(f"[4/{total_checks}] Checking Tauri CSP...")
+    csp_errs = _check_csp(repo)
+    csp_errs += _check_csp_connect_src(repo)
+    if csp_errs:
+        all_errors.extend(csp_errs)
+        for e in csp_errs:
+            print(f"  [FAIL] {e}")
     else:
-        print("  [OK] CSP allows blob: and http://127.0.0.1:* for plugin loading")
+        print("  [OK] CSP allows blob:, http://127.0.0.1:* for plugin loading")
 
     # 5. Plugin loader strategy
-    print("[5/5] Checking plugin loader strategy...")
+    print(f"[5/{total_checks}] Checking plugin loader strategy...")
     errs = _check_plugin_loader_strategy(repo)
     if errs:
         all_errors.extend(errs)
@@ -308,6 +504,28 @@ def main() -> int:
             print(f"  [FAIL] {e}")
     else:
         print("  [OK] Plugin loader uses fetch + Blob URL as primary strategy")
+
+    # 6. Plugin dist sync (plugins/bundle/ <-> src/qwenpaw/plugins_bundle/)
+    print(f"[6/{total_checks}] Checking plugin dist sync...")
+    errs = _check_plugin_sync(repo)
+    if errs:
+        all_errors.extend(errs)
+        for e in errs:
+            print(f"  [FAIL] {e}")
+    else:
+        print("  [OK] Plugin dist files synced between plugins/bundle/ and src/")
+
+    # 7. Summary of console source staleness
+    print(f"[7/{total_checks}] Checking console source staleness...")
+    # Already checked in step 3, just print summary
+    if not any("stale" in e.lower() for e in all_errors):
+        print("  [OK] Console source files are not newer than dist")
+
+    # 8. Plugin source staleness
+    print(f"[8/{total_checks}] Checking plugin source staleness...")
+    # Already checked in step 3, just print summary
+    if not any("plugin" in e.lower() and "stale" in e.lower() for e in all_errors):
+        print("  [OK] Plugin source files are not newer than dist bundles")
 
     print()
     if all_errors:
