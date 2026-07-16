@@ -110,6 +110,7 @@ function getHost() {
     getApiUrl: (path: string) => string;
     getApiToken: () => string;
     setSelectedAgent?: (agentId: string) => void;
+    useSelectedAgent?: () => { id: string };
     ReactMarkdown?: any;
     remarkGfm?: any;
   };
@@ -5537,15 +5538,365 @@ function CapabilityCenterPage() {
 
 // ─── Skill Center Page ────────────────────────────────────────────────────────
 
-function SkillCenterPage() {
+/** Skills loaded by the currently selected agent (Tab 1). */
+function CurrentAgentSkillsTab({
+  agentId,
+  agentName,
+  onNavigate,
+}: {
+  agentId: string;
+  agentName: string;
+  onNavigate: (path: string) => void;
+}) {
   const React = getHost().React;
-  const { useState, useEffect, useCallback, useMemo } = React;
+  const { useState, useEffect, useCallback } = React;
+  const {
+    Spin,
+    Empty,
+    Button,
+    Row,
+    Col,
+    Card,
+    Tag,
+    Typography,
+    Drawer,
+    Descriptions,
+    Alert,
+  } = getHost().antd;
+  const {
+    ReloadOutlined,
+    ThunderboltOutlined,
+    SettingOutlined,
+  } = getHost().antdIcons || {};
+  const { Text, Paragraph } = Typography;
+
+  const [skills, setSkills] = useState<SkillSpec[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeSkill, setActiveSkill] = useState<SkillSpec | null>(null);
+
+  const loadSkills = useCallback(async () => {
+    if (!agentId) return;
+    setLoading(true);
+    try {
+      const data = await fetchAgentSkills(agentId);
+      setSkills(data);
+    } catch (err: any) {
+      setSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadSkills();
+  }, [loadSkills]);
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(Alert, {
+      type: "info",
+      showIcon: true,
+      message: `当前智能体：${agentName}`,
+      description: `已加载 ${skills.length} 个技能。切换智能体时自动同步。`,
+      style: { marginBottom: 16 },
+    }),
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        },
+      },
+      React.createElement(
+        Text,
+        { type: "secondary", style: { fontSize: 13 } },
+        `共 ${skills.length} 个技能`,
+      ),
+      React.createElement(
+        Button,
+        {
+          icon: ReloadOutlined
+            ? React.createElement(ReloadOutlined)
+            : undefined,
+          onClick: loadSkills,
+          loading,
+          size: "small",
+        },
+        "刷新",
+      ),
+    ),
+    loading
+      ? React.createElement(
+          "div",
+          { style: { textAlign: "center", padding: 60 } },
+          React.createElement(Spin, { size: "large" }),
+        )
+      : skills.length === 0
+        ? React.createElement(Empty, {
+            description: "当前智能体未加载任何技能",
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...skills.map((skill) =>
+              React.createElement(
+                Col,
+                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+                React.createElement(
+                  Card,
+                  {
+                    hoverable: true,
+                    size: "small",
+                    style: { cursor: "pointer", height: "100%" },
+                    onClick: () => {
+                      setActiveSkill(skill);
+                      setDrawerOpen(true);
+                    },
+                  },
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
+                      },
+                    },
+                    skill.emoji
+                      ? React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          skill.emoji,
+                        )
+                      : React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          "⚡",
+                        ),
+                    React.createElement(
+                      Text,
+                      {
+                        strong: true,
+                        style: {
+                          fontSize: 13,
+                          flex: 1,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        },
+                      },
+                      skill.name,
+                    ),
+                    skill.enabled === false
+                      ? React.createElement(
+                          Tag,
+                          { color: "default", style: { fontSize: 10 } },
+                          "已禁用",
+                        )
+                      : React.createElement(
+                          Tag,
+                          { color: "green", style: { fontSize: 10 } },
+                          "已启用",
+                        ),
+                  ),
+                  skill.description
+                    ? React.createElement(
+                        Paragraph,
+                        {
+                          type: "secondary",
+                          style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                          ellipsis: { rows: 2 },
+                        },
+                        skill.description,
+                      )
+                    : null,
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 8,
+                        display: "flex",
+                        gap: 4,
+                        flexWrap: "wrap",
+                      },
+                    },
+                    skill.version_text
+                      ? React.createElement(
+                          Tag,
+                          { style: { fontSize: 10 } },
+                          `v${skill.version_text}`,
+                        )
+                      : null,
+                    ...(skill.tags || [])
+                      .slice(0, 3)
+                      .map((tag, i) =>
+                        React.createElement(
+                          Tag,
+                          { key: i, color: "blue", style: { fontSize: 10 } },
+                          tag,
+                        ),
+                      ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+    // Skill detail drawer
+    activeSkill
+      ? React.createElement(
+          Drawer,
+          {
+            title: React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 8 } },
+              React.createElement(
+                "span",
+                { style: { fontSize: 18 } },
+                activeSkill.emoji || "⚡",
+              ),
+              React.createElement("span", null, activeSkill.name),
+            ),
+            open: drawerOpen,
+            onClose: () => setDrawerOpen(false),
+            width: 520,
+            extra: React.createElement(
+              Button,
+              {
+                type: "primary",
+                size: "small",
+                icon: SettingOutlined
+                  ? React.createElement(SettingOutlined)
+                  : undefined,
+                onClick: () => onNavigate("/skills"),
+              },
+              "管理技能",
+            ),
+          },
+          React.createElement(
+            Descriptions,
+            { column: 1, bordered: true, size: "small" },
+            React.createElement(
+              Descriptions.Item,
+              { label: "技能名称" },
+              activeSkill.name,
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "描述" },
+              activeSkill.description || "-",
+            ),
+            activeSkill.version_text
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "版本" },
+                  activeSkill.version_text,
+                )
+              : null,
+            React.createElement(
+              Descriptions.Item,
+              { label: "来源" },
+              activeSkill.source || "-",
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "状态" },
+              activeSkill.enabled === false ? "已禁用" : "已启用",
+            ),
+            activeSkill.installed_from
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "安装来源" },
+                  activeSkill.installed_from,
+                )
+              : null,
+          ),
+          // Tags
+          activeSkill.tags && activeSkill.tags.length > 0
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16 } },
+                React.createElement(
+                  Text,
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
+                  "标签",
+                ),
+                React.createElement(
+                  "div",
+                  { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
+                  ...activeSkill.tags.map((tag, i) =>
+                    React.createElement(Tag, { key: i, color: "blue" }, tag),
+                  ),
+                ),
+              )
+            : null,
+          // Skill content preview
+          activeSkill.content
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16 } },
+                React.createElement(
+                  Text,
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
+                  "技能内容",
+                ),
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      maxHeight: 300,
+                      overflow: "auto",
+                      padding: 12,
+                      background: "#f5f5f5",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      whiteSpace: "pre-wrap",
+                    },
+                  },
+                  activeSkill.content.slice(0, 2000) +
+                    (activeSkill.content.length > 2000
+                      ? "\n\n... (内容已截断)"
+                      : ""),
+                ),
+              )
+            : null,
+        )
+      : null,
+  );
+}
+
+/** Skill pool tab — the original skill center content (Tab 2). */
+function SkillPoolTab({
+  poolSkills,
+  workspaceSkills,
+  agents,
+  loading,
+  onReload,
+}: {
+  poolSkills: PoolSkillSpec[];
+  workspaceSkills: WorkspaceSkillSummary[];
+  agents: AgentSummary[];
+  loading: boolean;
+  onReload: () => void;
+}) {
+  const React = getHost().React;
+  const { useState, useMemo, useCallback } = React;
   const {
     Spin,
     Empty,
     Input,
     Button,
-    message: antdMsg,
     Row,
     Col,
     Card,
@@ -5563,39 +5914,10 @@ function SkillCenterPage() {
   } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
-  const [poolSkills, setPoolSkills] = useState<PoolSkillSpec[]>([]);
-  const [workspaceSkills, setWorkspaceSkills] = useState<
-    WorkspaceSkillSummary[]
-  >([]);
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeSkill, setActiveSkill] = useState<PoolSkillSpec | null>(null);
   const [installedAgents, setInstalledAgents] = useState<string[]>([]);
-
-  const loadSkills = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [pool, agentList, wsSkills] = await Promise.all([
-        fetchPoolSkills(),
-        fetchAgents(),
-        fetchWorkspaceSkills(),
-      ]);
-      setPoolSkills(pool);
-      setAgents(agentList);
-      setWorkspaceSkills(wsSkills);
-    } catch (err: any) {
-      antdMsg.error(err.message || "加载技能列表失败");
-      setPoolSkills([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSkills();
-  }, [loadSkills]);
 
   const filteredSkills = useMemo(() => {
     if (!searchText.trim()) return poolSkills;
@@ -5629,21 +5951,39 @@ function SkillCenterPage() {
 
   return React.createElement(
     "div",
-    { style: { padding: 24 } },
-    React.createElement(PageHeader, {
-      title: "技能中心",
-      subtitle: `技能池共 ${poolSkills.length} 个技能`,
-      extra: React.createElement(
-        React.Fragment,
-        null,
+    null,
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        },
+      },
+      React.createElement(Input, {
+        placeholder: "搜索技能名称、描述或标签...",
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
+        value: searchText,
+        onChange: (e: any) => setSearchText(e.target.value),
+        allowClear: true,
+        style: { maxWidth: 400 },
+      }),
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8 } },
         React.createElement(
           Button,
           {
             icon: ReloadOutlined
               ? React.createElement(ReloadOutlined)
               : undefined,
-            onClick: loadSkills,
+            onClick: onReload,
             loading,
+            size: "small",
           },
           "刷新",
         ),
@@ -5655,24 +5995,11 @@ function SkillCenterPage() {
               ? React.createElement(DownloadOutlined)
               : undefined,
             onClick: () => navigateTo("/skill-pool"),
+            size: "small",
           },
           "管理技能池",
         ),
       ),
-    }),
-    React.createElement(
-      "div",
-      { style: { marginBottom: 16 } },
-      React.createElement(Input, {
-        placeholder: "搜索技能名称、描述或标签...",
-        prefix: SearchOutlined
-          ? React.createElement(SearchOutlined)
-          : undefined,
-        value: searchText,
-        onChange: (e: any) => setSearchText(e.target.value),
-        allowClear: true,
-        style: { maxWidth: 400 },
-      }),
     ),
     loading
       ? React.createElement(
@@ -5929,6 +6256,109 @@ function SkillCenterPage() {
           ),
         )
       : null,
+  );
+}
+
+function SkillCenterPage() {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback, useMemo } = React;
+  const { Tabs, message: antdMsg } = getHost().antd;
+  const { ThunderboltOutlined } = getHost().antdIcons || {};
+
+  // Track the currently selected agent via the host hook
+  const host = getHost();
+  const useSelectedAgent = host.useSelectedAgent;
+  const selectedAgentInfo = useSelectedAgent ? useSelectedAgent() : null;
+  const currentAgentId = selectedAgentInfo?.id || "default";
+
+  // Also fetch agent list to resolve names
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [poolSkills, setPoolSkills] = useState<PoolSkillSpec[]>([]);
+  const [workspaceSkills, setWorkspaceSkills] = useState<
+    WorkspaceSkillSummary[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("agent-skills");
+
+  const loadPoolData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pool, agentList, wsSkills] = await Promise.all([
+        fetchPoolSkills(),
+        fetchAgents(),
+        fetchWorkspaceSkills(),
+      ]);
+      setPoolSkills(pool);
+      setAgents(agentList);
+      setWorkspaceSkills(wsSkills);
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载技能列表失败");
+      setPoolSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPoolData();
+  }, [loadPoolData]);
+
+  const currentAgentName = useMemo(() => {
+    const agent = agents.find((a) => a.id === currentAgentId);
+    return agent?.name || currentAgentId;
+  }, [agents, currentAgentId]);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  const tabItems = [
+    {
+      key: "agent-skills",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        ThunderboltOutlined
+          ? React.createElement(ThunderboltOutlined, { style: { fontSize: 14 } })
+          : null,
+        "当前Agent加载技能",
+      ),
+      children: React.createElement(CurrentAgentSkillsTab, {
+        agentId: currentAgentId,
+        agentName: currentAgentName,
+        onNavigate: navigateTo,
+      }),
+    },
+    {
+      key: "skill-pool",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        "技能池",
+      ),
+      children: React.createElement(SkillPoolTab, {
+        poolSkills,
+        workspaceSkills,
+        agents,
+        loading,
+        onReload: loadPoolData,
+      }),
+    },
+  ];
+
+  return React.createElement(
+    "div",
+    { style: { padding: 24 } },
+    React.createElement(PageHeader, {
+      title: "技能",
+      subtitle: `技能池共 ${poolSkills.length} 个技能 · 当前智能体：${currentAgentName}`,
+    }),
+    React.createElement(Tabs, {
+      items: tabItems,
+      activeKey: activeTab,
+      onChange: (k: string) => setActiveTab(k),
+    }),
   );
 }
 
@@ -6826,6 +7256,12 @@ function buildPlugin() {
   // Use the new QwenPaw.route.add / QwenPaw.menu.add API so items appear
   // in the agent-scoped section, not under plugins-group.
 
+  const antdIcons = getHost().antdIcons || {};
+  const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
+  const ToolOutlined = antdIcons.ToolOutlined;
+  const ThunderboltOutlined = antdIcons.ThunderboltOutlined;
+  const ShopOutlined = antdIcons.ShopOutlined;
+
   // Expert Center
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.experts",
@@ -6836,14 +7272,16 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.experts",
     location: "primary.agentScoped",
-    label: () => "专家中心",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🧑‍🔬"),
+    label: () => "专家",
+    icon: UserSwitchOutlined
+      ? React.createElement(UserSwitchOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.experts",
     order: 5,
     visible: () => isSimpleMode(),
   });
 
-  // Capability Center
+  // Capability Center → Tools
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.capabilities",
     path: "/ugsci-capabilities",
@@ -6853,14 +7291,16 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.capabilities",
     location: "primary.agentScoped",
-    label: () => "能力中心",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🔌"),
+    label: () => "工具",
+    icon: ToolOutlined
+      ? React.createElement(ToolOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.capabilities",
     order: 6,
     visible: () => isSimpleMode(),
   });
 
-  // Skill Center
+  // Skill Center → Skills
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.skills-center",
     path: "/ugsci-skills",
@@ -6870,8 +7310,10 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.skills-center",
     location: "primary.agentScoped",
-    label: () => "技能中心",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "⚡"),
+    label: () => "技能",
+    icon: ThunderboltOutlined
+      ? React.createElement(ThunderboltOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.skills-center",
     order: 7,
     visible: () => isSimpleMode(),
@@ -6888,7 +7330,9 @@ function buildPlugin() {
     id: "ugsci.market",
     location: "primary.agentScoped",
     label: () => "市场",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🏪"),
+    icon: ShopOutlined
+      ? React.createElement(ShopOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.market",
     order: 8,
     visible: () => isSimpleMode(),
