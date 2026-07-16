@@ -170,12 +170,76 @@ def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
     try:
         hash_file.write_text(hash_value, encoding="utf-8")
     except Exception as exc:
-        logger.warning("Failed to write bundle hash for %s: %s", plugin_dir, exc)
+        logger.warning(
+            "Failed to write bundle hash for %s: %s",
+            plugin_dir,
+            exc,
+        )
 
 
-def ensure_bundled_plugins_installed() -> (
-    list[str]
-):  # pylint: disable=too-many-branches
+def _install_or_update_plugin(
+    item: Path,
+    target_dir: Path,
+    plugin_id: str,
+    bundled_manifest: dict[str, Any],
+) -> bool:
+    """Install or update a single bundled plugin.
+
+    Returns True if the plugin was installed or updated.
+    """
+    bundled_version = str(bundled_manifest.get("version", "0.0.0"))
+    bundled_hash = _compute_bundle_hash(item, bundled_manifest)
+
+    if target_dir.exists():
+        existing_manifest = _read_manifest(target_dir)
+        if existing_manifest is not None:
+            existing_version = str(existing_manifest.get("version", "0.0.0"))
+            existing_cmp = _version_tuple(existing_version)
+            bundled_cmp = _version_tuple(bundled_version)
+
+            if existing_cmp > bundled_cmp:
+                return False  # Installed version is newer
+
+            if existing_cmp == bundled_cmp:
+                installed_hash = _read_installed_hash(target_dir)
+                if installed_hash == bundled_hash:
+                    return False  # Content identical
+                logger.info(
+                    "Updating bundled plugin '%s' v%s (content hash changed)",
+                    plugin_id,
+                    bundled_version,
+                )
+            else:
+                logger.info(
+                    "Upgrading bundled plugin '%s' from %s to %s",
+                    plugin_id,
+                    existing_version,
+                    bundled_version,
+                )
+
+            has_marker = _is_uninstalled(target_dir)
+            shutil.rmtree(target_dir, ignore_errors=True)
+            shutil.copytree(item, target_dir)
+            _write_bundle_hash(target_dir, bundled_hash)
+            if has_marker:
+                _mark_uninstalled(target_dir)
+            return True
+
+    logger.info("Installing bundled plugin '%s'", plugin_id)
+    try:
+        shutil.copytree(item, target_dir)
+        _write_bundle_hash(target_dir, bundled_hash)
+        return True
+    except Exception as exc:
+        logger.warning(
+            "Failed to copy bundled plugin '%s': %s",
+            plugin_id,
+            exc,
+        )
+        return False
+
+
+def ensure_bundled_plugins_installed() -> list[str]:
     """Copy bundled plugins into the user's plugins directory.
 
     This function is idempotent and safe to call on every startup.
@@ -212,7 +276,6 @@ def ensure_bundled_plugins_installed() -> (
             plugin_id = bundled_manifest.get("id", item.name)
             target_dir = plugins_dir / plugin_id
 
-            # Respect user's explicit uninstall — don't re-install
             if _is_uninstalled(target_dir):
                 logger.debug(
                     "Skipping bundled plugin '%s' — user has uninstalled it",
@@ -220,83 +283,13 @@ def ensure_bundled_plugins_installed() -> (
                 )
                 continue
 
-            # Check if already installed and up-to-date
-            if target_dir.exists():
-                existing_manifest = _read_manifest(target_dir)
-                if existing_manifest is not None:
-                    existing_version = str(
-                        existing_manifest.get("version", "0.0.0"),
-                    )
-                    bundled_version = str(
-                        bundled_manifest.get("version", "0.0.0"),
-                    )
-                    if _version_tuple(existing_version) > _version_tuple(
-                        bundled_version,
-                    ):
-                        # Installed version is newer — skip
-                        continue
-                    if _version_tuple(existing_version) == _version_tuple(
-                        bundled_version,
-                    ):
-                        # Same version — check content hash to detect
-                        # content changes made without a version bump.
-                        bundled_hash = _compute_bundle_hash(
-                            item, bundled_manifest,
-                        )
-                        installed_hash = _read_installed_hash(target_dir)
-                        if installed_hash == bundled_hash:
-                            # Content is identical — skip
-                            continue
-                        # Content differs — force update
-                        logger.info(
-                            "Updating bundled plugin '%s' v%s "
-                            "(content hash changed)",
-                            plugin_id,
-                            bundled_version,
-                        )
-                        has_marker = _is_uninstalled(target_dir)
-                        shutil.rmtree(target_dir, ignore_errors=True)
-                        shutil.copytree(item, target_dir)
-                        _write_bundle_hash(target_dir, bundled_hash)
-                        if has_marker:
-                            _mark_uninstalled(target_dir)
-                        installed_or_updated.append(plugin_id)
-                        continue
-                    # Newer version available — upgrade
-                    logger.info(
-                        "Upgrading bundled plugin '%s' from %s to %s",
-                        plugin_id,
-                        existing_version,
-                        bundled_version,
-                    )
-                    # Remove old version but preserve .uninstalled marker
-                    has_marker = _is_uninstalled(target_dir)
-                    shutil.rmtree(target_dir, ignore_errors=True)
-                    shutil.copytree(item, target_dir)
-                    bundled_hash = _compute_bundle_hash(
-                        item, bundled_manifest,
-                    )
-                    _write_bundle_hash(target_dir, bundled_hash)
-                    if has_marker:
-                        _mark_uninstalled(target_dir)
-                    installed_or_updated.append(plugin_id)
-                    continue
-
-            # Fresh install
-            logger.info("Installing bundled plugin '%s'", plugin_id)
-            try:
-                shutil.copytree(item, target_dir)
-                bundled_hash = _compute_bundle_hash(
-                    item, bundled_manifest,
-                )
-                _write_bundle_hash(target_dir, bundled_hash)
+            if _install_or_update_plugin(
+                item,
+                target_dir,
+                plugin_id,
+                bundled_manifest,
+            ):
                 installed_or_updated.append(plugin_id)
-            except Exception as exc:
-                logger.warning(
-                    "Failed to copy bundled plugin '%s': %s",
-                    plugin_id,
-                    exc,
-                )
 
     if installed_or_updated:
         logger.info(
