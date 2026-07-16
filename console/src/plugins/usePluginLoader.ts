@@ -35,17 +35,21 @@ function resolveUrl(pluginId: string, apiPath: string): string {
 /**
  * Execute a plugin's frontend bundle via dynamic `import()`.
  *
- * Strategy (tries same-origin import first, falls back to Blob URL):
+ * Strategy (fetch + Blob URL first, direct import as fallback):
  *
- * 1. **Same-origin `import(url)`** — preferred. The plugin JS is served
- *    from the same origin as the console page, so `script-src: 'self'`
- *    (Tauri CSP) allows it. This works in Tauri desktop, web dev, and
- *    all modern browsers.
+ * 1. **Fetch + Blob URL `import()`** — preferred and most reliable.
+ *    The plugin JS is fetched via `fetch()` (allowed by `connect-src`)
+ *    and then imported via a `blob:` URL (allowed by `script-src blob:`).
+ *    This works in Tauri desktop, web dev, and all modern browsers.
+ *    The key reason this is preferred over direct `import(url)` is that
+ *    in Tauri's WKWebView, `import()` of an HTTP URL can be silently
+ *    blocked by CSP without throwing an error, causing the fallback
+ *    to never execute.
  *
- * 2. **Blob URL fallback** — if the same-origin import fails (e.g. the
- *    server doesn't return the correct `Content-Type` or the webview
- *    blocks cross-path imports), fall back to fetching the JS text and
- *    executing via a blob: URL. This requires `blob:` in `script-src`.
+ * 2. **Direct `import(url)` fallback** — if the Blob URL approach fails
+ *    (e.g. the webview doesn't support `import()` of blob: URLs), try
+ *    a direct same-origin `import()`. This requires the HTTP origin
+ *    to be in `script-src`.
  */
 async function executePluginScript(entryUrl: string): Promise<void> {
   // Append a cache-busting query parameter so the browser always fetches
@@ -54,45 +58,41 @@ async function executePluginScript(entryUrl: string): Promise<void> {
     entryUrl.includes("?") ? "&" : "?"
   }_t=${Date.now()}`;
 
-  // Strategy 1: Direct same-origin dynamic import.
-  // The plugin endpoint is public (no auth required), so we don't need
-  // to pass an Authorization header.
-  try {
-    await import(/* @vite-ignore */ cacheBustUrl);
-    return;
-  } catch (directErr) {
-    console.warn(
-      `[PluginLoader] Direct import failed for ${entryUrl}, trying blob fallback:`,
-      directErr,
-    );
-  }
-
-  // Strategy 2: Fetch + Blob URL fallback.
-  // Some webview environments may block `import()` of same-origin URLs
-  // that are not regular `<script>` sources. The blob: approach creates
-  // a truly same-origin module that bypasses such restrictions, at the
-  // cost of requiring `blob:` in the CSP `script-src`.
+  // Strategy 1: Fetch + Blob URL import (most reliable in Tauri WebView).
   const token = getApiToken();
   const headers: Record<string, string> = {};
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const response = await fetch(cacheBustUrl, {
-    headers,
-    cache: "no-store",
-  });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} for ${entryUrl}`);
+  try {
+    const response = await fetch(cacheBustUrl, {
+      headers,
+      cache: "no-store",
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} for ${entryUrl}`);
+    }
+
+    const jsText = await response.text();
+    const blobUrl = URL.createObjectURL(
+      new Blob([jsText], { type: "text/javascript" }),
+    );
+    try {
+      await import(/* @vite-ignore */ blobUrl);
+      return;
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+  } catch (blobErr) {
+    console.warn(
+      `[PluginLoader] Blob URL import failed for ${entryUrl}, trying direct import:`,
+      blobErr,
+    );
   }
 
-  const jsText = await response.text();
-  const blobUrl = URL.createObjectURL(
-    new Blob([jsText], { type: "application/javascript" }),
-  );
-  try {
-    await import(/* @vite-ignore */ blobUrl);
-  } finally {
-    URL.revokeObjectURL(blobUrl);
-  }
+  // Strategy 2: Direct same-origin dynamic import (fallback).
+  // In some environments (e.g. web dev mode), this may work when the
+  // Blob URL approach doesn't.
+  await import(/* @vite-ignore */ cacheBustUrl);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
