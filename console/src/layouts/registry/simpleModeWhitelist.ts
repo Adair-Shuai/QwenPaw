@@ -15,12 +15,12 @@
  */
 
 // ── Builtin IDs that are always visible in simple mode ──────────────────────
+// NOTE: "core.agent-config" (运行配置) and "core.models" (模型设置) are
+// intentionally excluded — they are full-mode-only and hidden in simple mode.
 
 const BUILTIN_SIMPLE_MODE_IDS = [
   "core.inbox",
   "core.cron-jobs",
-  "core.agent-config",
-  "core.models",
 ];
 
 // ── Mutable singleton ────────────────────────────────────────────────────────

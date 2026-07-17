@@ -200,6 +200,19 @@ import type React from "react";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
+/**
+ * Shared button style that matches the "新建聊天" (new chat) button:
+ * solid #0072f5 fill, white text, 13px / 600 weight, no border, 8px radius.
+ */
+const PRIMARY_BTN_STYLE: Record<string, unknown> = {
+  background: "#0072f5",
+  color: "#fff",
+  fontSize: 13,
+  fontWeight: 600,
+  border: "none",
+  borderRadius: 8,
+};
+
 /** Check if the sidebar is currently in simple mode. */
 function isSimpleMode(): boolean {
   try {
@@ -1711,6 +1724,7 @@ function ExpertTeamCard({
             : undefined,
           disabled: !coordinatorAgent,
           onClick: () => onLaunch(team),
+          style: PRIMARY_BTN_STYLE,
         },
         "发起团队任务",
       ),
@@ -1831,6 +1845,7 @@ function ExpertTeamSection({
           size: "small",
           icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
           onClick: handleCreateTeam,
+          style: PRIMARY_BTN_STYLE,
         },
         "创建专家团",
       ),
@@ -2692,6 +2707,7 @@ function ExpertCard({
             e.stopPropagation();
             if (onSummon) onSummon();
           },
+          style: PRIMARY_BTN_STYLE,
         },
         "召唤专家",
       ),
@@ -3318,8 +3334,41 @@ function ExpertTemplateModal({
     Typography,
   } = getHost().antd;
   const { Text } = Typography;
+  const { FileAddOutlined } = getHost().antdIcons || {};
   const [creating, setCreating] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [blankModalOpen, setBlankModalOpen] = useState(false);
+
+  const handleCreateBlank = async (name: string, description: string) => {
+    setCreating(true);
+    try {
+      const agentRef = await apiFetch<{ id: string }>("/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name || "新专家",
+          description: description || "",
+          skill_names: [],
+        }),
+      });
+
+      // Write a minimal AGENTS.md
+      await writeKnowledgeFile(
+        agentRef.id,
+        "AGENTS.md",
+        `# ${name || "新专家"}\n\n请在此处编写该专家的系统提示词。\n`,
+      );
+
+      antdMsg.success("专家「" + (name || "新专家") + "」创建成功");
+      setBlankModalOpen(false);
+      onClose();
+      onCreated();
+    } catch (err: any) {
+      antdMsg.error(err.message || "创建专家失败");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const filteredTemplates = EXPERT_TEMPLATES.filter((t) => {
     if (!searchText.trim()) return true;
@@ -3400,6 +3449,74 @@ function ExpertTemplateModal({
       : React.createElement(
           Row,
           { gutter: [12, 12] },
+          // ── Blank template card (always first) ──
+          !searchText.trim()
+            ? React.createElement(
+                Col,
+                { xs: 24, sm: 12 },
+                React.createElement(
+                  Card,
+                  {
+                    hoverable: true,
+                    size: "small",
+                    onClick: () => setBlankModalOpen(true),
+                    style: {
+                      cursor: "pointer",
+                      height: "100%",
+                      border: "2px dashed #d9d9d9",
+                      background: "#fafafa",
+                    },
+                  },
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 10,
+                        marginBottom: 8,
+                      },
+                    },
+                    React.createElement(
+                      "span",
+                      { style: { fontSize: 28, color: "#8c8c8c" } },
+                      FileAddOutlined
+                        ? React.createElement(FileAddOutlined)
+                        : "📝",
+                    ),
+                    React.createElement(
+                      "div",
+                      { style: { flex: 1 } },
+                      React.createElement(
+                        Text,
+                        { strong: true, style: { fontSize: 15 } },
+                        "从空白模版开始创建",
+                      ),
+                      React.createElement(
+                        "div",
+                        null,
+                        React.createElement(
+                          Tag,
+                          { color: "default", style: { fontSize: 10 } },
+                          "空白",
+                        ),
+                      ),
+                    ),
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        fontSize: 12,
+                        color: "#595959",
+                        lineHeight: 1.5,
+                      },
+                    },
+                    "创建一个全新的专家，不使用任何预设模板。创建后可自行配置系统提示词、技能和 MCP 客户端。",
+                  ),
+                ),
+              )
+            : null,
           ...filteredTemplates.map((template) =>
             React.createElement(
               Col,
@@ -3468,6 +3585,80 @@ function ExpertTemplateModal({
             ),
           ),
         ),
+    // ── Blank template creation modal ──
+    React.createElement(BlankExpertModal, {
+      open: blankModalOpen,
+      onCancel: () => setBlankModalOpen(false),
+      onCreate: handleCreateBlank,
+    }),
+  );
+}
+
+// ─── Blank Expert Creation Modal ─────────────────────────────────────────────
+
+function BlankExpertModal({
+  open,
+  onCancel,
+  onCreate,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onCreate: (name: string, description: string) => void;
+}) {
+  const React = getHost().React;
+  const { useState } = React;
+  const { Modal, Input, message: antdMsg } = getHost().antd;
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  return React.createElement(
+    Modal,
+    {
+      open,
+      title: "从空白模版创建专家",
+      onCancel,
+      onOk: () => {
+        if (!name.trim()) {
+          antdMsg.warning("请输入专家名称");
+          return;
+        }
+        onCreate(name.trim(), description.trim());
+      },
+      okText: "创建",
+      cancelText: "取消",
+      destroyOnClose: true,
+    },
+    React.createElement(
+      "div",
+      { style: { marginBottom: 16 } },
+      React.createElement(
+        "div",
+        { style: { fontSize: 13, marginBottom: 6, color: "#595959" } },
+        "专家名称",
+      ),
+      React.createElement(Input, {
+        placeholder: "输入专家名称",
+        value: name,
+        onChange: (e: any) => setName(e.target.value),
+        maxLength: 50,
+      }),
+    ),
+    React.createElement(
+      "div",
+      null,
+      React.createElement(
+        "div",
+        { style: { fontSize: 13, marginBottom: 6, color: "#595959" } },
+        "专家描述（可选）",
+      ),
+      React.createElement(Input.TextArea, {
+        placeholder: "简要描述该专家的职责和能力...",
+        value: description,
+        onChange: (e: any) => setDescription(e.target.value),
+        rows: 3,
+        maxLength: 200,
+      }),
+    ),
   );
 }
 
@@ -4225,6 +4416,7 @@ function ExpertCenterPage() {
             type: "primary",
             icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
             onClick: () => setTemplateModalOpen(true),
+            style: PRIMARY_BTN_STYLE,
           },
           "创建专家",
         ),
@@ -4896,23 +5088,29 @@ function EngineSection() {
     [formData],
   );
 
+  const [alertVisible, setAlertVisible] = useState(true);
+
   return React.createElement(
     "div",
     null,
-    // Summary alert
-    React.createElement(
-      Alert,
-      {
-        type: detectedCount > 0 ? "success" : "info",
-        message: `共 ${engines.length} 个引擎 · ${detectedCount} 个已检测`,
-        description:
-          detectedCount > 0
-            ? "部分引擎已自动检测到安装路径，可在卡片中查看详情。"
-            : "尚未检测到已安装的引擎。可点击「自动检测」或手动添加计算引擎。",
-        showIcon: true,
-        style: { marginBottom: 16 },
-      },
-    ),
+    // Summary alert (closable)
+    alertVisible
+      ? React.createElement(
+          Alert,
+          {
+            type: detectedCount > 0 ? "success" : "info",
+            message: `共 ${engines.length} 个引擎 · ${detectedCount} 个已检测`,
+            description:
+              detectedCount > 0
+                ? "部分引擎已自动检测到安装路径，可在卡片中查看详情。"
+                : "尚未检测到已安装的引擎。可点击「自动检测」或手动添加计算引擎。",
+            showIcon: true,
+            closable: true,
+            onClose: () => setAlertVisible(false),
+            style: { marginBottom: 16 },
+          },
+        )
+      : null,
     // Action bar
     React.createElement(
       "div",
@@ -4954,6 +5152,7 @@ function EngineSection() {
             ? React.createElement(PlusOutlined)
             : undefined,
           onClick: openAddModal,
+          style: PRIMARY_BTN_STYLE,
         },
         "添加引擎",
       ),
@@ -5345,6 +5544,7 @@ function CapabilityCenterPage() {
           type: "primary",
           icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
           onClick: () => navigateTo("/mcp"),
+          style: PRIMARY_BTN_STYLE,
         },
         "管理 MCP",
       ),
@@ -5599,7 +5799,6 @@ function CurrentAgentSkillsTab({
     Typography,
     Drawer,
     Descriptions,
-    Alert,
   } = getHost().antd;
   const {
     ReloadOutlined,
@@ -5633,13 +5832,6 @@ function CurrentAgentSkillsTab({
   return React.createElement(
     "div",
     null,
-    React.createElement(Alert, {
-      type: "info",
-      showIcon: true,
-      message: `当前智能体：${agentName}`,
-      description: `已加载 ${skills.length} 个技能。切换智能体时自动同步。`,
-      style: { marginBottom: 16 },
-    }),
     React.createElement(
       "div",
       {
@@ -6034,6 +6226,7 @@ function SkillPoolTab({
               : undefined,
             onClick: () => navigateTo("/skill-pool"),
             size: "small",
+            style: PRIMARY_BTN_STYLE,
           },
           "管理技能池",
         ),

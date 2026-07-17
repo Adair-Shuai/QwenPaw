@@ -48,7 +48,6 @@ import {
   ReadOutlined,
   PlayCircleOutlined,
   InfoCircleOutlined,
-  DownOutlined,
   SyncOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,

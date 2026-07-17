@@ -524,10 +524,12 @@ class AgentBuilder:
         ws = str(workspace_dir) if workspace_dir else str(WORKING_DIR)
 
         _cm = getattr(agent_config, "coding_mode", None)
+        # project_dir is decoupled from coding_mode.enabled so that a
+        # working folder set via the chat header (without entering Coding
+        # Mode) is still injected into the system prompt.
         _project_dir = (
             _cm.project_dir
             if _cm
-            and getattr(_cm, "enabled", False)
             and getattr(_cm, "project_dir", None)
             else None
         )

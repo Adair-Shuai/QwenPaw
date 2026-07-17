@@ -900,3 +900,49 @@ def validate(path: str):
         click.echo(f"❌ Invalid JSON in plugin.json: {e}", err=True)
     except Exception as e:
         click.echo(f"❌ Validation failed: {e}", err=True)
+
+
+@plugin.command(name="sync-bundled")
+@click.option(
+    "--force",
+    is_flag=True,
+    help="Force re-copy all bundled plugins, ignoring version/hash checks",
+)
+def sync_bundled(force: bool):
+    """Re-sync bundled plugins from the package into the plugins directory.
+
+    Bundled plugins (e.g. UGSci, UGSci Research) are automatically copied
+    from the software package into the user's plugins directory on every
+    startup.  However, if the plugin version wasn't bumped or the content
+    hash didn't change (e.g. only backend Python code or skill files were
+    updated), the auto-update may be skipped on machines that already have
+    a previous version installed.
+
+    This command forces a re-sync.  Use ``--force`` to bypass all version
+    and content-hash checks and always re-copy every bundled plugin.
+
+    Examples:
+        qwenpaw plugin sync-bundled
+        qwenpaw plugin sync-bundled --force
+    """
+    from ..plugins.bundled import ensure_bundled_plugins_installed
+
+    if force:
+        click.echo("Force-syncing all bundled plugins...")
+    else:
+        click.echo("Syncing bundled plugins...")
+
+    try:
+        installed = ensure_bundled_plugins_installed(force=force)
+    except Exception as exc:
+        click.echo(f"❌ Failed to sync bundled plugins: {exc}", err=True)
+        return
+
+    if installed:
+        click.echo(
+            f"✅ Bundled plugins updated: {', '.join(installed)}",
+        )
+    else:
+        click.echo("✅ All bundled plugins are up to date")
+
+    click.echo("\nRestart QwenPaw to load the updated plugins.")

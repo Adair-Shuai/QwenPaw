@@ -84,10 +84,11 @@ def build_env_context(
         default_shell: Shell executable used by execute_shell_command.
             When provided, included in the context so the LLM can
             generate syntax appropriate for that shell.
-        project_dir: When set (Coding Mode), the agent's "Working
-            directory" line is replaced with an explicit
-            "Project directory" + "Agent workspace (internal)" pair
-            so the LLM stops treating the workspace as home.
+        project_dir: When set, the agent's "Working directory" line is
+            replaced with an explicit "Working folder (operate here)" +
+            "Agent workspace (internal)" pair so the LLM prioritises
+            file operations in that folder. Works in both regular Chat
+            and Coding Mode.
         active_model_name: Current active model name for runtime
             identity (e.g. "qwen-max", "gpt-4o").
 
@@ -136,7 +137,7 @@ def build_env_context(
 
     if project_dir:
         parts.append(
-            f"- Project directory (Coding Mode — operate here): "
+            f"- Working folder (operate here): "
             f"{project_dir}",
         )
         if working_dir is not None and str(working_dir) != str(project_dir):

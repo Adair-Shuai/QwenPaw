@@ -15,9 +15,16 @@ Updating: if the bundled version is newer than the installed version
 in-place (unless the user has marked it as uninstalled).
 
 Content hash: when the version numbers are equal, a content hash of the
-frontend entry file is compared to detect content changes that were made
-without a version bump.  This prevents stale plugin JS from persisting on
-machines that already have the same version installed from a previous build.
+**entire plugin directory** (all files, recursively) is compared to detect
+content changes that were made without a version bump.  This prevents stale
+plugin files from persisting on machines that already have the same version
+installed from a previous build.
+
+Force mode: ``ensure_bundled_plugins_installed(force=True)`` bypasses the
+version and content-hash checks, always re-copying every bundled plugin
+(unless the user has explicitly uninstalled it via the ``.uninstalled``
+marker).  This is exposed via the CLI command
+``qwenpaw plugin sync-bundled --force``.
 """
 
 from __future__ import annotations
@@ -129,26 +136,56 @@ def _version_tuple(version: str) -> tuple:
     return tuple(parts)
 
 
+# Files and directories excluded from the content hash.  These are
+# internal markers or machine-generated artifacts that should not
+# influence the update decision.
+_HASH_EXCLUDED_NAMES = frozenset({
+    _BUNDLE_HASH_FILE,
+    ".uninstalled",
+    "__pycache__",
+    "node_modules",
+    ".git",
+})
+_HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
+
+
 def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
     """Compute a content hash for a plugin directory.
 
-    Hashes the ``plugin.json`` manifest and the frontend entry file (if
-    present).  This is used to detect content changes that were made
-    without a version bump, so stale plugin JS on a user's machine can
-    be detected and force-updated.
+    Hashes **all files** in the plugin directory recursively (excluding
+    cache files and internal markers) so that any content change — not
+    just changes to ``plugin.json`` or the frontend entry — triggers an
+    update on machines that already have the same version installed.
     """
     h = hashlib.md5()
 
-    # Hash plugin.json content (normalised)
+    # Hash plugin.json content (normalised) — kept first for backward
+    # compatibility so the beginning of the hash stream is unchanged.
     manifest_text = json.dumps(manifest, sort_keys=True, ensure_ascii=False)
     h.update(manifest_text.encode("utf-8"))
 
-    # Hash the frontend entry file if it exists
-    frontend_entry = manifest.get("entry", {}).get("frontend")
-    if frontend_entry:
-        entry_file = plugin_dir / frontend_entry
-        if entry_file.is_file():
-            h.update(entry_file.read_bytes())
+    # Collect every file in the plugin directory, sorted for determinism.
+    all_files: list[Path] = []
+    for f in plugin_dir.rglob("*"):
+        if not f.is_file():
+            continue
+        rel = f.relative_to(plugin_dir)
+        # Skip files inside excluded directories (e.g. __pycache__/x.pyc)
+        if any(part in _HASH_EXCLUDED_NAMES for part in rel.parts[:-1]):
+            continue
+        # Skip excluded file names and suffixes
+        if f.name in _HASH_EXCLUDED_NAMES:
+            continue
+        if f.suffix in _HASH_EXCLUDED_SUFFIXES:
+            continue
+        all_files.append(f)
+
+    all_files.sort()
+
+    for f in all_files:
+        rel = f.relative_to(plugin_dir).as_posix()
+        h.update(rel.encode("utf-8"))
+        h.update(f.read_bytes())
 
     return h.hexdigest()
 
@@ -182,17 +219,25 @@ def _install_or_update_plugin(
     target_dir: Path,
     plugin_id: str,
     bundled_manifest: dict[str, Any],
+    *,
+    force: bool = False,
 ) -> bool:
     """Install or update a single bundled plugin.
 
     Returns True if the plugin was installed or updated.
+
+    Args:
+        force: When ``True``, bypass version and content-hash checks
+            and always re-copy the plugin files.  The ``.uninstalled``
+            marker is still respected (callers check it before calling
+            this function).
     """
     bundled_version = str(bundled_manifest.get("version", "0.0.0"))
     bundled_hash = _compute_bundle_hash(item, bundled_manifest)
 
     if target_dir.exists():
         existing_manifest = _read_manifest(target_dir)
-        if existing_manifest is not None:
+        if existing_manifest is not None and not force:
             existing_version = str(existing_manifest.get("version", "0.0.0"))
             existing_cmp = _version_tuple(existing_version)
             bundled_cmp = _version_tuple(bundled_version)
@@ -216,14 +261,19 @@ def _install_or_update_plugin(
                     existing_version,
                     bundled_version,
                 )
+        elif force:
+            logger.info(
+                "Force-updating bundled plugin '%s'",
+                plugin_id,
+            )
 
-            has_marker = _is_uninstalled(target_dir)
-            shutil.rmtree(target_dir, ignore_errors=True)
-            shutil.copytree(item, target_dir)
-            _write_bundle_hash(target_dir, bundled_hash)
-            if has_marker:
-                _mark_uninstalled(target_dir)
-            return True
+        has_marker = _is_uninstalled(target_dir)
+        shutil.rmtree(target_dir, ignore_errors=True)
+        shutil.copytree(item, target_dir)
+        _write_bundle_hash(target_dir, bundled_hash)
+        if has_marker:
+            _mark_uninstalled(target_dir)
+        return True
 
     logger.info("Installing bundled plugin '%s'", plugin_id)
     try:
@@ -239,12 +289,21 @@ def _install_or_update_plugin(
         return False
 
 
-def ensure_bundled_plugins_installed() -> list[str]:
+def ensure_bundled_plugins_installed(
+    *,
+    force: bool = False,
+) -> list[str]:
     """Copy bundled plugins into the user's plugins directory.
 
     This function is idempotent and safe to call on every startup.
     It respects the ``.uninstalled`` marker — plugins the user has
     explicitly removed will NOT be re-installed.
+
+    Args:
+        force: When ``True``, bypass version and content-hash checks
+            and always re-copy every bundled plugin (unless the user
+            has explicitly uninstalled it).  Useful for recovering
+            from stale plugin states after a software upgrade.
 
     Returns:
         List of plugin IDs that were newly installed or updated.
@@ -288,6 +347,7 @@ def ensure_bundled_plugins_installed() -> list[str]:
                 target_dir,
                 plugin_id,
                 bundled_manifest,
+                force=force,
             ):
                 installed_or_updated.append(plugin_id)
 

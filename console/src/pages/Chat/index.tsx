@@ -29,7 +29,7 @@ import type { ProviderInfo, ModelInfo, SkillSpec } from "../../api/types";
 import ModelSelector from "./ModelSelector";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAgentStore } from "../../stores/agentStore";
-import { useCodingMode } from "../../stores/codingModeStore";
+import { useCodingMode, useProjectDir } from "../../stores/codingModeStore";
 import { useLoopStore, fetchAvailableLoopSkills } from "../../stores/loopStore";
 import { LoopCommandChip } from "../../components/LoopInput";
 import { useChatAnywhereInput } from "@agentscope-ai/chat";
@@ -120,6 +120,7 @@ import { getLastEditorCopy } from "../Coding/lastEditorCopy";
 import { useUploadLimitStore } from "../../stores/uploadLimitStore";
 import MessageQueuePanel from "./components/MessageQueuePanel";
 import ApprovalLevelToggle from "./components/ApprovalLevelToggle";
+import ProjectSelectModal from "../../components/ProjectSelectModal";
 import { useAgentRunningConfigApprovalLevel } from "../../hooks/useAgentRunningConfigApprovalLevel";
 import { type ToolExecutionLevel } from "../../utils/approval";
 import {
@@ -1112,6 +1113,9 @@ export default function ChatPage() {
   const { codingMode, initialized } = useCodingMode();
   const codingModeRef = useRef(codingMode);
   codingModeRef.current = codingMode;
+  const { projectDir } = useProjectDir();
+  const [projectModalOpen, setProjectModalOpen] = useState(false);
+  const hasWorkingFolder = projectDir != null;
   const loopSelectedSkill = useLoopStore((s) => s.selectedSkill);
 
   // Wide mode toggle: expand chat content to full available width
@@ -2811,6 +2815,38 @@ export default function ChatPage() {
                 onTranscription={handleWhisperTranscription}
               />
             ) : null}
+            <button
+              type="button"
+              onClick={() => setProjectModalOpen(true)}
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 4,
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                padding: "4px 6px",
+                fontSize: 13,
+                color: "var(--text-secondary, rgba(0,0,0,0.45))",
+                maxWidth: 240,
+                overflow: "hidden",
+              }}
+            >
+              <FolderOpenOutlined style={{ flexShrink: 0 }} />
+              <span
+                style={{
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {hasWorkingFolder
+                  ? t("chat.workingFolderSet", "工作文件夹：{{path}}", {
+                      path: projectDir!,
+                    })
+                  : t("chat.defaultWorkspace", "默认工作区")}
+              </span>
+            </button>
             <LoopCommandChip />
             {loopSelectedSkill ? (
               <Tooltip title={t("loop.gotoSettings", "Agent Loop Settings")}>
@@ -3308,6 +3344,13 @@ export default function ChatPage() {
 
       {/* Workspace panel — multi-tab artifact viewer with pluggable renderers */}
       <WorkspacePanel />
+
+      {/* Working folder selector modal */}
+      <ProjectSelectModal
+        open={projectModalOpen}
+        onClose={() => setProjectModalOpen(false)}
+        onConfirm={() => setProjectModalOpen(false)}
+      />
     </div>
   );
 }
