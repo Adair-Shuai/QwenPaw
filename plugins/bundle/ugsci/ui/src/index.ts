@@ -1859,7 +1859,7 @@ function ExpertTeamSection({
                 marginBottom: 10,
               },
             },
-            React.createElement("span", { style: { fontSize: 16 } }, "⭐"),
+            React.createElement("span", { style: { fontSize: 16 } }),
             React.createElement(
               Text,
               { strong: true, style: { fontSize: 14 } },
@@ -1901,7 +1901,7 @@ function ExpertTeamSection({
                 marginBottom: 10,
               },
             },
-            React.createElement("span", { style: { fontSize: 16 } }, "📋"),
+            React.createElement("span", { style: { fontSize: 16 } }),
             React.createElement(
               Text,
               { strong: true, style: { fontSize: 14 } },
@@ -3924,8 +3924,13 @@ function ExpertCenterPage() {
     Modal,
     Typography,
   } = getHost().antd;
-  const { ReloadOutlined, PlusOutlined, SearchOutlined, TeamOutlined } =
-    getHost().antdIcons || {};
+  const {
+    ReloadOutlined,
+    PlusOutlined,
+    SearchOutlined,
+    TeamOutlined,
+    UserOutlined,
+  } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
   const [experts, setExperts] = useState<ExpertData[]>([]);
@@ -4114,7 +4119,14 @@ function ExpertCenterPage() {
   const tabItems = [
     {
       key: "experts",
-      label: React.createElement("span", null, "🧑‍🔬 专家列表"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        UserOutlined
+          ? React.createElement(UserOutlined, { style: { fontSize: 14 } })
+          : null,
+        "专家列表",
+      ),
       children: React.createElement(
         "div",
         null,
@@ -4172,7 +4184,14 @@ function ExpertCenterPage() {
     },
     {
       key: "teams",
-      label: React.createElement("span", null, "🤝 专家团"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        TeamOutlined
+          ? React.createElement(TeamOutlined, { style: { fontSize: 14 } })
+          : null,
+        "专家团",
+      ),
       children: React.createElement(ExpertTeamSection, {
         agents: rawAgents,
         onLaunch: handleLaunchTeam,
@@ -5243,8 +5262,13 @@ function CapabilityCenterPage() {
     List,
     Tabs,
   } = getHost().antd;
-  const { ReloadOutlined, PlusOutlined, SearchOutlined, ApiOutlined } =
-    getHost().antdIcons || {};
+  const {
+    ReloadOutlined,
+    PlusOutlined,
+    SearchOutlined,
+    ApiOutlined,
+    RocketOutlined,
+  } = getHost().antdIcons || {};
   const { Text } = Typography;
 
   const [mcps, setMcps] = useState<MCPClientInfo[]>([]);
@@ -5366,12 +5390,26 @@ function CapabilityCenterPage() {
   const tabItems = [
     {
       key: "mcp",
-      label: React.createElement("span", null, "🔌 MCP 客户端"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        ApiOutlined
+          ? React.createElement(ApiOutlined, { style: { fontSize: 14 } })
+          : null,
+        "MCP 客户端",
+      ),
       children: mcpTabContent,
     },
     {
       key: "software",
-      label: React.createElement("span", null, "🖥️ 计算引擎"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        RocketOutlined
+          ? React.createElement(RocketOutlined, { style: { fontSize: 14 } })
+          : null,
+        "计算引擎",
+      ),
       children: React.createElement(EngineSection),
     },
   ];
@@ -6263,7 +6301,8 @@ function SkillCenterPage() {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
   const { Tabs, message: antdMsg } = getHost().antd;
-  const { ThunderboltOutlined } = getHost().antdIcons || {};
+  const { ThunderboltOutlined, AppstoreOutlined } =
+    getHost().antdIcons || {};
 
   // Track the currently selected agent via the host hook
   const host = getHost();
@@ -6335,6 +6374,9 @@ function SkillCenterPage() {
       label: React.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
+        AppstoreOutlined
+          ? React.createElement(AppstoreOutlined, { style: { fontSize: 14 } })
+          : null,
         "技能池",
       ),
       children: React.createElement(SkillPoolTab, {
@@ -6482,6 +6524,7 @@ function MarketplacePage() {
     ShopOutlined,
     CheckCircleOutlined,
     LoadingOutlined,
+    UserOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph, Title } = Typography;
 
@@ -7199,15 +7242,24 @@ function MarketplacePage() {
       key: "skills",
       label: React.createElement(
         "span",
-        null,
-        AppstoreOutlined ? React.createElement(AppstoreOutlined) : null,
-        " 技能市场",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        AppstoreOutlined
+          ? React.createElement(AppstoreOutlined, { style: { fontSize: 14 } })
+          : null,
+        "技能市场",
       ),
       children: skillsMarketTab,
     },
     {
       key: "experts",
-      label: React.createElement("span", null, "🧑‍🔬 专家模板"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        UserOutlined
+          ? React.createElement(UserOutlined, { style: { fontSize: 14 } })
+          : null,
+        "专家模板",
+      ),
       children: expertsMarketTab,
     },
   ];
