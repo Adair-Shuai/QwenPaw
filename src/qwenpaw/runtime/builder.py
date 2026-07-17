@@ -186,7 +186,9 @@ class AgentBuilder:
         # Governor (governance policy layer).
         _cm = getattr(agent_config, "coding_mode", None)
         _project_dir = (
-            _cm.project_dir if _cm and getattr(_cm, "project_dir", None) else None
+            _cm.project_dir
+            if _cm and getattr(_cm, "project_dir", None)
+            else None
         )
         governor = self._init_governor(workspace_dir, _project_dir)
 
@@ -295,7 +297,9 @@ class AgentBuilder:
             memory_manager=self._get_memory_manager(ctx),
             offloader=offloader,
             context_config=self._build_context_config(agent_config),
-            context_manager=(scroll.context_manager if scroll is not None else None),
+            context_manager=(
+                scroll.context_manager if scroll is not None else None
+            ),
             effective_skills=effective_skills,
             governor=governor,
         )
@@ -313,7 +317,8 @@ class AgentBuilder:
             agent.load_state_dict(ctx.session_state)
 
         _logger.info(
-            "builder: built agent for session=%s agent=%s" " model=%s/%s tools=%d",
+            "builder: built agent for session=%s agent=%s"
+            " model=%s/%s tools=%d",
             getattr(ctx, "session_id", ""),
             agent_id,
             active.provider_id,
@@ -430,8 +435,12 @@ class AgentBuilder:
         rc: dict[str, Any] = {
             "session_id": getattr(ctx, "session_id", "") or "",
             "agent_id": getattr(ctx, "agent_id", "") or "",
-            "channel": ((getattr(request, "channel", None) or "") if request else ""),
-            "user_id": ((getattr(request, "user_id", None) or "") if request else ""),
+            "channel": (
+                (getattr(request, "channel", None) or "") if request else ""
+            ),
+            "user_id": (
+                (getattr(request, "user_id", None) or "") if request else ""
+            ),
             "root_session_id": getattr(ctx, "root_session_id", "") or "",
             "root_agent_id": getattr(ctx, "root_agent_id", "") or "",
         }
@@ -447,7 +456,9 @@ class AgentBuilder:
                 "tool_coordinator",
                 None,
             )
-        _channel_meta = getattr(request, "channel_meta", None) if request else None
+        _channel_meta = (
+            getattr(request, "channel_meta", None) if request else None
+        )
         if isinstance(_channel_meta, dict):
             user_name = _channel_meta.get("user_name")
             if user_name:
@@ -458,7 +469,9 @@ class AgentBuilder:
             "channel_instance",
             None,
         )
-        _payload_ctx = getattr(request, "request_context", None) if request else None
+        _payload_ctx = (
+            getattr(request, "request_context", None) if request else None
+        )
         if isinstance(_payload_ctx, dict):
             rc.update(_payload_ctx)
         return rc
@@ -515,7 +528,9 @@ class AgentBuilder:
         # working folder set via the chat header (without entering Coding
         # Mode) is still injected into the system prompt.
         _project_dir = (
-            _cm.project_dir if _cm and getattr(_cm, "project_dir", None) else None
+            _cm.project_dir
+            if _cm and getattr(_cm, "project_dir", None)
+            else None
         )
         _configured_shell = getattr(
             getattr(agent_config, "running", None),
@@ -530,7 +545,9 @@ class AgentBuilder:
         request = getattr(ctx, "request", None)
         _active = getattr(agent_config, "active_model", None)
         _model_name = (
-            _active.model if _active and getattr(_active, "model", None) else None
+            _active.model
+            if _active and getattr(_active, "model", None)
+            else None
         )
         return build_env_context(
             session_id=getattr(ctx, "session_id", ""),
@@ -863,7 +880,9 @@ class AgentBuilder:
             else ""
         )
         tool_results_dir = (
-            os.path.join(workspace_dir, trc.tool_results_cache) if workspace_dir else ""
+            os.path.join(workspace_dir, trc.tool_results_cache)
+            if workspace_dir
+            else ""
         )
 
         return ToolResultPruningMiddleware(
@@ -875,7 +894,9 @@ class AgentBuilder:
                 else trc.pruning_old_msg_max_bytes
             ),
             recent_max_bytes=trc.pruning_recent_msg_max_bytes,
-            exempt_file_extensions={e.lower() for e in trc.exempt_file_extensions},
+            exempt_file_extensions={
+                e.lower() for e in trc.exempt_file_extensions
+            },
             exempt_tool_names={n.lower() for n in trc.exempt_tool_names},
             tool_results_dir=tool_results_dir,
             agent_id=getattr(agent_config, "id", "default"),
@@ -898,9 +919,11 @@ class AgentBuilder:
 
         pruning_middleware = None
         try:
-            pruning_middleware = AgentBuilder._build_tool_result_pruning_middleware(
-                ctx,
-                agent_config,
+            pruning_middleware = (
+                AgentBuilder._build_tool_result_pruning_middleware(
+                    ctx,
+                    agent_config,
+                )
             )
         except Exception:
             _logger.debug(

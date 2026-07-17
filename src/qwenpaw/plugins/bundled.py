@@ -146,7 +146,7 @@ _HASH_EXCLUDED_NAMES = frozenset(
         "__pycache__",
         "node_modules",
         ".git",
-    }
+    },
 )
 _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
 
