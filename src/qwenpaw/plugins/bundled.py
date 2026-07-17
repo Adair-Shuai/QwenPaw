@@ -139,13 +139,15 @@ def _version_tuple(version: str) -> tuple:
 # Files and directories excluded from the content hash.  These are
 # internal markers or machine-generated artifacts that should not
 # influence the update decision.
-_HASH_EXCLUDED_NAMES = frozenset({
-    _BUNDLE_HASH_FILE,
-    ".uninstalled",
-    "__pycache__",
-    "node_modules",
-    ".git",
-})
+_HASH_EXCLUDED_NAMES = frozenset(
+    {
+        _BUNDLE_HASH_FILE,
+        ".uninstalled",
+        "__pycache__",
+        "node_modules",
+        ".git",
+    }
+)
 _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
 
 
