@@ -712,10 +712,19 @@ class ReMeLightMemoryConfig(BaseModel):
         "background task burden.",
     )
 
+    dream_cron_enabled: bool = Field(
+        default=True,
+        description=(
+            "Whether to enable the dream-based memory optimization job"
+        ),
+    )
+
     dream_cron: str = Field(
         default="0 23 * * *",
-        description="Cron expression for dream-based memory optimization job "
-        "(empty to disable)",
+        description=(
+            "Cron expression for dream-based memory optimization job "
+            "(use dream_cron_enabled to enable/disable)"
+        ),
     )
 
     auto_memory_search_config: AutoMemorySearchConfig = Field(
@@ -1395,6 +1404,10 @@ class AgentProfileRef(BaseModel):
     enabled: bool = Field(
         default=True,
         description="Whether agent is enabled (controls instance loading)",
+    )
+    pinned: bool = Field(
+        default=False,
+        description="Whether agent is pinned in agent selectors",
     )
 
 
