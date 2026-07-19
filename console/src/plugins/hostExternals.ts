@@ -251,6 +251,23 @@ export function installHostExternals(): void {
   const apiBaseUrl =
     typeof VITE_API_BASE_URL !== "undefined" ? VITE_API_BASE_URL : "";
 
+  // ── Global `process` polyfill ──────────────────────────────────────────
+  // Some plugins bundle Node.js-aware libraries (e.g. @xyflow/react) that
+  // reference `process` at runtime.  Without this polyfill those plugins
+  // throw `ReferenceError: process is not defined` when loaded in the
+  // browser.  Set it BEFORE any plugin bundle is imported so it is always
+  // available, regardless of the plugin's own build config.
+  if (typeof (window as any).process === "undefined") {
+    (window as any).process = {
+      env: {
+        NODE_ENV: import.meta.env.PROD ? "production" : "development",
+      },
+      platform: "browser",
+      versions: {},
+      cwd: () => "/",
+    };
+  }
+
   if (!window.QwenPaw) {
     (window as any).QwenPaw = {} as WindowNamespace;
   }

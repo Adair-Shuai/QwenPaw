@@ -170,8 +170,9 @@ function NodeCard({ id, data, selected }: NodeProps) {
         borderRadius: 6,
         border: `2px solid ${selected ? color : statusColor}`,
         background: "#fff",
-        minWidth: 140,
+        maxWidth: 200,
         fontSize: 12,
+        boxSizing: "border-box",
         boxShadow: status === "running" ? `0 0 0 3px ${color}33` : "none",
       },
     },
@@ -182,7 +183,7 @@ function NodeCard({ id, data, selected }: NodeProps) {
       React.createElement("span", { style: { fontSize: 16 } }, d?.icon || "🔧"),
       React.createElement(
         "strong",
-        { style: { color } },
+        { style: { color, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
         label,
       ),
       Tag
@@ -190,7 +191,7 @@ function NodeCard({ id, data, selected }: NodeProps) {
             Tag,
             {
               color: statusColor,
-              style: { marginLeft: "auto", fontSize: 10 },
+              style: { marginLeft: "auto", fontSize: 10, flexShrink: 0 },
             },
             status,
           )
@@ -199,7 +200,7 @@ function NodeCard({ id, data, selected }: NodeProps) {
     d?.description
       ? React.createElement(
           "div",
-          { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11 } },
+          { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
           d.description,
         )
       : null,
@@ -479,7 +480,7 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
     // Toolbar
     React.createElement(
       "div",
-      { style: { padding: "8px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 } },
+      { style: { padding: "8px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 } },
       React.createElement(Button, { icon: ArrowLeftOutlined ? React.createElement(ArrowLeftOutlined) : undefined, onClick: onBack }, "返回"),
       React.createElement(Title, { level: 5, style: { margin: 0 } }, doc?.name || flowId),
       React.createElement(Tag, null, `${rfNodes.length} 节点 / ${rfEdges.length} 连接`),
@@ -488,14 +489,14 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
         React.createElement(Button, { type: "primary", icon: PlayCircleOutlined ? React.createElement(PlayCircleOutlined) : undefined, onClick: () => onRun(flowId) }, "运行"),
       ),
     ),
-    // Body: palette + canvas
+    // Body: palette + canvas (flex row, fills remaining height)
     React.createElement(
       "div",
-      { style: { display: "flex", flex: 1, minHeight: 0 } },
+      { style: { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" } },
       // Palette
       React.createElement(
         "div",
-        { style: { width: 220, borderRight: "1px solid #f0f0f0", padding: 12, overflowY: "auto", background: "#fafafa" } },
+        { style: { width: 220, flexShrink: 0, borderRight: "1px solid #f0f0f0", padding: 12, overflowY: "auto", background: "#fafafa" } },
         React.createElement(Text, { strong: true }, "节点面板"),
         Object.entries(palette).map(([cat, items]) => React.createElement(
           "div",
@@ -526,10 +527,10 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
           )),
         )),
       ),
-      // Canvas
+      // Canvas — must have explicit height for ReactFlow to work
       React.createElement(
         "div",
-        { style: { flex: 1, position: "relative" } },
+        { style: { flex: 1, position: "relative", minWidth: 0, minHeight: 0 } },
         React.createElement(
           ReactFlow,
           {
@@ -541,27 +542,30 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
             onNodeClick: (_: any, node: Node) => { setSelectedNode(node); setInspectorOpen(true); },
             nodeTypes,
             fitView: true,
-            style: { background: "#f5f5f5" },
+            nodesDraggable: true,
+            nodesConnectable: true,
+            elementsSelectable: true,
+            style: { background: "#f5f5f5", width: "100%", height: "100%" },
           },
           React.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
           React.createElement(Controls, null),
           React.createElement(MiniMap, { style: { background: "#fafafa" } }),
         ),
       ),
-      // Inspector drawer
-      React.createElement(
-        Drawer,
-        {
-          title: "节点属性",
-          open: inspectorOpen,
-          onClose: () => setInspectorOpen(false),
-          width: 360,
-        },
-        selectedNode ? React.createElement(NodeInspector, { node: selectedNode, nodeTypes: nodeTypesList, onUpdate: (updated: Node) => {
-          setRfNodes((nds: Node[]) => nds.map((n) => n.id === updated.id ? updated : n));
-          setSelectedNode(updated);
-        }}) : React.createElement(Empty, { description: "点击节点查看属性" }),
-      ),
+    ),
+    // Inspector drawer — rendered OUTSIDE the flex body so it overlays correctly
+    React.createElement(
+      Drawer,
+      {
+        title: "节点属性",
+        open: inspectorOpen,
+        onClose: () => setInspectorOpen(false),
+        width: 360,
+      },
+      selectedNode ? React.createElement(NodeInspector, { node: selectedNode, nodeTypes: nodeTypesList, onUpdate: (updated: Node) => {
+        setRfNodes((nds: Node[]) => nds.map((n) => n.id === updated.id ? updated : n));
+        setSelectedNode(updated);
+      }}) : React.createElement(Empty, { description: "点击节点查看属性" }),
     ),
   );
 }
@@ -696,7 +700,8 @@ function RunMonitorDrawer({ runId, onClose }: { runId: string | null; onClose: (
       events.length === 0 ? React.createElement(Empty, { description: "等待事件..." }) : React.createElement(
         Timeline,
         {
-          items: events.slice(-30).map((ev: any) => ({
+          items: events.slice(-30).map((ev: any, i: number) => ({
+            key: ev.type + '_' + i + '_' + (ev.node_id || ''),
             color: ev.type === "execution_success" ? "green"
               : ev.type === "execution_failed" || ev.type?.includes("failed") ? "red"
               : ev.type?.includes("running") ? "blue"
