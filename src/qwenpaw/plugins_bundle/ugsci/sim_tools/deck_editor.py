@@ -69,10 +69,12 @@ async def edit_simulation_deck(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: File not found: {deck_path}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: File not found: {deck_path}",
+                ),
+            ],
         )
 
     # ── Read file ────────────────────────────────────────────────────
@@ -82,10 +84,12 @@ async def edit_simulation_deck(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Failed to read file: {exc}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Failed to read file: {exc}",
+                ),
+            ],
         )
 
     lines = text.splitlines(keepends=True)
@@ -117,10 +121,12 @@ async def edit_simulation_deck(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Keyword '{keyword}' not found in {deck_path.name}.",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Keyword '{keyword}' not found in {deck_path.name}.",
+                ),
+            ],
         )
 
     if end_idx is None:
@@ -147,10 +153,12 @@ async def edit_simulation_deck(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Unknown action '{action}'. Use replace/append/insert/remove.",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Unknown action '{action}'. Use replace/append/insert/remove.",
+                ),
+            ],
         )
 
     # ── Write file ───────────────────────────────────────────────────
@@ -161,10 +169,12 @@ async def edit_simulation_deck(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Failed to write file: {exc}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Failed to write file: {exc}",
+                ),
+            ],
         )
 
     # ── Build response ───────────────────────────────────────────────

@@ -335,16 +335,26 @@ class UGSciPlugin:
             )
 
             sim_tools_meta = [
-                ("launch_simulation", launch_simulation,
-                 "启动数值模拟 (Eclipse/CMG/COMSOL)", "🚀"),
-                ("check_simulation_status", check_simulation_status,
-                 "查询模拟运行状态与收敛性", "📊"),
-                ("read_simulation_results", read_simulation_results,
-                 "读取模拟结果数据", "📖"),
-                ("edit_simulation_deck", edit_simulation_deck,
-                 "修改模拟器输入文件", "✏️"),
-                ("analyze_simulation", analyze_simulation,
-                 "分析模拟结果 (收敛/平衡/性能/对比)", "🔬"),
+                (
+                    "launch_simulation", launch_simulation,
+                    "启动数值模拟 (Eclipse/CMG/COMSOL)", "🚀",
+                ),
+                (
+                    "check_simulation_status", check_simulation_status,
+                    "查询模拟运行状态与收敛性", "📊",
+                ),
+                (
+                    "read_simulation_results", read_simulation_results,
+                    "读取模拟结果数据", "📖",
+                ),
+                (
+                    "edit_simulation_deck", edit_simulation_deck,
+                    "修改模拟器输入文件", "✏️",
+                ),
+                (
+                    "analyze_simulation", analyze_simulation,
+                    "分析模拟结果 (收敛/平衡/性能/对比)", "🔬",
+                ),
             ]
             for tool_name, tool_func, desc, icon in sim_tools_meta:
                 try:

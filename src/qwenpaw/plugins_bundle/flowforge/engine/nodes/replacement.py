@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Node replacement registry — deprecation/rename mapping applied at prompt-submit.
 
 Each entry maps ``(old_class_type, optional_scope) -> new_class_type`` and

@@ -11,7 +11,6 @@ import pytest
 
 from plugins.bundle.flowforge.engine.types import (
     ConditionExpression,
-    ConditionOperator,
     NodeExecutionResult,
     WorkflowResult,
     WorkflowState,
@@ -69,7 +68,9 @@ class TestConditionExpression:
     def test_template_right_value_resolves(self):
         # right = "${threshold}" → resolves against context
         expr = ConditionExpression(
-            left="amount", operator="gt", right="${threshold}",
+            left="amount",
+            operator="gt",
+            right="${threshold}",
         )
         assert expr.evaluate({"amount": 100, "threshold": 50}) is True
         assert expr.evaluate({"amount": 30, "threshold": 50}) is False
@@ -78,16 +79,22 @@ class TestConditionExpression:
         a = ConditionExpression(left="x", operator="eq", right=1)
         b = ConditionExpression(left="y", operator="eq", right=2)
         and_expr = ConditionExpression(
-            left="", operator="and", conditions=[a, b],
+            left="",
+            operator="and",
+            conditions=[a, b],
         )
         assert and_expr.evaluate({"x": 1, "y": 2}) is True
         assert and_expr.evaluate({"x": 1, "y": 0}) is False
         or_expr = ConditionExpression(
-            left="", operator="or", conditions=[a, b],
+            left="",
+            operator="or",
+            conditions=[a, b],
         )
         assert or_expr.evaluate({"x": 1, "y": 0}) is True
         not_expr = ConditionExpression(
-            left="", operator="not", conditions=[a],
+            left="",
+            operator="not",
+            conditions=[a],
         )
         assert not_expr.evaluate({"x": 0}) is True
 
@@ -113,7 +120,9 @@ class TestWorkflowState:
         state.set("name", "world")
         state.inputs = {"greeting": "hello"}
         assert state.resolve_template("${name}") == "world"
-        assert state.resolve_template("${greeting}, ${name}!") == "hello, world!"
+        assert (
+            state.resolve_template("${greeting}, ${name}!") == "hello, world!"
+        )
 
     def test_record_execution_stores_output(self):
         state = WorkflowState(workflow_id="wf")
@@ -136,7 +145,10 @@ class TestWorkflowState:
         assert forked.variables["extra"] == 1
 
     def test_to_summary(self):
-        state = WorkflowState(workflow_id="wf", status=WorkflowStatus.COMPLETED)
+        state = WorkflowState(
+            workflow_id="wf",
+            status=WorkflowStatus.COMPLETED,
+        )
         summary = state.to_summary()
         assert summary["workflow_id"] == "wf"
         assert summary["status"] == "completed"

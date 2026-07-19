@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Factory that lifts registered domain models into ``Model.<task>.<provider>``
 workflow nodes.
 
@@ -96,7 +97,7 @@ def register_domain_model_nodes(
         try:
             cls = builder(spec)
             node_registry.register(
-                cls, module_path=f"domain_model_factory:{cls.NODE_ID}"
+                cls, module_path=f"domain_model_factory:{cls.NODE_ID}",
             )
             registered.append(cls.NODE_ID)
         except Exception as exc:  # noqa: BLE001

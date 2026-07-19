@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Builtin node: load an image into a typed MediaRef (ComfyUI-style LoadImage).
 
 This bridges the "FILE" widget input (file id or path) into the typed

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Thread-safe registry of ``WorkflowNode`` classes.
 
 Mirrors ComfyUI's ``NODE_CLASS_MAPPINGS`` but with proper encapsulation,

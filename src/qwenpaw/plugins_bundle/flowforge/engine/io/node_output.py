@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``NodeOutput`` — result envelope returned by every node's ``execute``.
 
 Port of ComfyUI's ``NodeOutput`` augmented for the leagent control-flow

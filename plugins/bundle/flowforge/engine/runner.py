@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Per-node execution pipeline.
 
 Runs a single node's lifecycle: cache lookup, input resolution,
@@ -76,8 +77,10 @@ def _retry_policy(node_def: dict[str, Any]) -> tuple[int, float]:
 class NodeRunResult:
     __slots__ = ("output", "cached", "duration_ms", "error")
 
-    def __init__(self, output: NodeOutput | None, *, cached: bool = False,
-                 duration_ms: int = 0, error: str | None = None) -> None:
+    def __init__(
+        self, output: NodeOutput | None, *, cached: bool = False,
+        duration_ms: int = 0, error: str | None = None,
+    ) -> None:
         self.output = output
         self.cached = cached
         self.duration_ms = duration_ms
@@ -205,8 +208,10 @@ class NodeRunner:
                 pending = instance.check_lazy_status(**resolved_inputs)
             except Exception:  # noqa: BLE001
                 pending = []
-            missing = [iid for iid in pending if iid not in resolved_inputs
-                       or resolved_inputs[iid] is None]
+            missing = [
+                iid for iid in pending if iid not in resolved_inputs
+                or resolved_inputs[iid] is None
+            ]
             for iid in missing:
                 resolved_inputs.setdefault(iid, None)
 
@@ -258,14 +263,20 @@ class NodeRunner:
             )
 
         if output.error:
-            self.progress.set_status(node_id, NodeStatus.ERROR, error=output.error,
-                                     metadata={"duration_ms": duration_ms})
+            self.progress.set_status(
+                node_id, NodeStatus.ERROR, error=output.error,
+                metadata={"duration_ms": duration_ms},
+            )
             return NodeRunResult(output, duration_ms=duration_ms, error=output.error)
 
         if output.block_execution:
-            self.progress.set_status(node_id, NodeStatus.BLOCKED,
-                                     metadata={"tag": output.block_execution,
-                                               "duration_ms": duration_ms})
+            self.progress.set_status(
+                node_id, NodeStatus.BLOCKED,
+                metadata={
+                    "tag": output.block_execution,
+                    "duration_ms": duration_ms,
+                },
+            )
             return NodeRunResult(output, duration_ms=duration_ms)
 
         # -------------------- cache writeback --------------------
@@ -274,8 +285,10 @@ class NodeRunner:
             if self.cache_provider.should_cache(key, node_def):
                 await self.cache_provider.on_store(key, _payload_from_output(output))
 
-        self.progress.set_status(node_id, NodeStatus.SUCCESS,
-                                 metadata={"duration_ms": duration_ms, **output.metadata})
+        self.progress.set_status(
+            node_id, NodeStatus.SUCCESS,
+            metadata={"duration_ms": duration_ms, **output.metadata},
+        )
         return NodeRunResult(output, duration_ms=duration_ms)
 
 

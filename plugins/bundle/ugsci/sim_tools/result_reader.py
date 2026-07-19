@@ -49,10 +49,12 @@ async def read_simulation_results(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Job '{job_id}' not found.",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Job '{job_id}' not found.",
+                ),
+            ],
         )
 
     try:
@@ -62,10 +64,12 @@ async def read_simulation_results(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Cannot find adapter for '{job.simulator}': {exc}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Cannot find adapter for '{job.simulator}': {exc}",
+                ),
+            ],
         )
 
     lines = [
@@ -103,7 +107,7 @@ async def read_simulation_results(
         lines.append(
             "This may be because the simulation has not produced "
             "output yet, or the result file format requires a "
-            "specialized parser."
+            "specialized parser.",
         )
         return ToolChunk(
             is_last=True,
@@ -140,7 +144,7 @@ async def read_simulation_results(
                     f"    points={len(data_points)} "
                     f"min={min(values):.4g} "
                     f"max={max(values):.4g} "
-                    f"last={values[-1]:.4g}"
+                    f"last={values[-1]:.4g}",
                 )
                 # Show first/last few points
                 preview = sampled[:5] + (["..."] if len(sampled) > 10 else []) + sampled[-5:]
@@ -176,7 +180,7 @@ async def read_simulation_results(
                     f"points={len(data_points)} "
                     f"min={min(values):.4g} "
                     f"max={max(values):.4g} "
-                    f"last={values[-1]:.4g}"
+                    f"last={values[-1]:.4g}",
                 )
 
     return ToolChunk(

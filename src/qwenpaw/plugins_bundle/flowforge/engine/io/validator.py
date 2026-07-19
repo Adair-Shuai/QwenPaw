@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Workflow document validator.
 
 Port of ComfyUI's ``execution.validate_prompt`` / ``validate_inputs``
@@ -61,10 +62,12 @@ def validate(
         if registry is not None:
             node_cls = registry.get(class_type)
             if node_cls is None:
-                node_errors.append(_error(
-                    "unknown_node", f"Unknown node class: {class_type}",
-                    details=f"Node '{node_id}' references unregistered class '{class_type}'",
-                ))
+                node_errors.append(
+                    _error(
+                        "unknown_node", f"Unknown node class: {class_type}",
+                        details=f"Node '{node_id}' references unregistered class '{class_type}'",
+                    ),
+                )
                 errors[node_id] = node_errors
                 continue
 
@@ -84,11 +87,13 @@ def validate(
     start_id = doc.start_id
     if start_id not in node_ids:
         errors.setdefault("__root__", []).append(
-            _error("missing_start", f"start node '{start_id}' is not defined"))
+            _error("missing_start", f"start node '{start_id}' is not defined"),
+        )
     end_id = doc.end_id
     if end_id and end_id not in node_ids:
         errors.setdefault("__root__", []).append(
-            _error("missing_end", f"end node '{end_id}' is not defined"))
+            _error("missing_end", f"end node '{end_id}' is not defined"),
+        )
 
     if not output_nodes and end_id in node_ids:
         output_nodes.append(end_id)
@@ -114,21 +119,25 @@ def _validate_node_inputs(
         value = provided.get(inp.id, None)
         if value is None:
             if not inp.optional and inp.default is None:
-                errors.append(_error(
-                    "required_input_missing",
-                    f"Required input '{inp.id}' missing on '{node_id}'",
-                    details=f"input='{inp.id}' type={inp.get_io_type()}",
-                ))
+                errors.append(
+                    _error(
+                        "required_input_missing",
+                        f"Required input '{inp.id}' missing on '{node_id}'",
+                        details=f"input='{inp.id}' type={inp.get_io_type()}",
+                    ),
+                )
             continue
 
         # Link reference: [upstream_id, slot]
         if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
             up_id, slot = value
             if up_id not in node_ids:
-                errors.append(_error(
-                    "dangling_link",
-                    f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
-                ))
+                errors.append(
+                    _error(
+                        "dangling_link",
+                        f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
+                    ),
+                )
             continue
 
         # Multi-link reference (ARRAY): [[upstream_id, slot], ...]
@@ -143,18 +152,22 @@ def _validate_node_inputs(
             )
         ):
             if inp.get_io_type() != "ARRAY":
-                errors.append(_error(
-                    "type_mismatch",
-                    f"Input '{inp.id}' on '{node_id}' does not accept multiple links",
-                    details=f"type={inp.get_io_type()}",
-                ))
+                errors.append(
+                    _error(
+                        "type_mismatch",
+                        f"Input '{inp.id}' on '{node_id}' does not accept multiple links",
+                        details=f"type={inp.get_io_type()}",
+                    ),
+                )
                 continue
             for up_id, _slot in value:
                 if up_id not in node_ids:
-                    errors.append(_error(
-                        "dangling_link",
-                        f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
-                    ))
+                    errors.append(
+                        _error(
+                            "dangling_link",
+                            f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
+                        ),
+                    )
             continue
 
         # Scalar value — run per-type checks.
@@ -162,11 +175,13 @@ def _validate_node_inputs(
         if io_type == "COMBO":
             choices = getattr(inp, "choices", None) or []
             if choices and value not in choices:
-                errors.append(_error(
-                    "invalid_combo",
-                    f"Input '{inp.id}' on '{node_id}' must be one of {choices}",
-                    details=f"got {value!r}",
-                ))
+                errors.append(
+                    _error(
+                        "invalid_combo",
+                        f"Input '{inp.id}' on '{node_id}' must be one of {choices}",
+                        details=f"got {value!r}",
+                    ),
+                )
         elif io_type == "INT":
             if isinstance(value, bool) or not isinstance(value, int):
                 if isinstance(value, str):
@@ -195,30 +210,36 @@ def _validate_node_inputs(
 
 
 def _validate_node_control(
-    node_id: str, control: dict[str, Any], node_ids: set[str]
+    node_id: str, control: dict[str, Any], node_ids: set[str],
 ) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     for key in ("next", "error_handler", "else_node", "on_reject"):
         target = control.get(key)
         if target and target not in node_ids:
-            errors.append(_error(
-                "dangling_edge",
-                f"Control edge '{key}' on '{node_id}' targets missing node '{target}'",
-            ))
+            errors.append(
+                _error(
+                    "dangling_edge",
+                    f"Control edge '{key}' on '{node_id}' targets missing node '{target}'",
+                ),
+            )
     for cond in control.get("conditions", []) or []:
         target = cond.get("then_node") or cond.get("then")
         if target and target not in node_ids:
-            errors.append(_error(
-                "dangling_edge",
-                f"Condition on '{node_id}' targets missing node '{target}'",
-            ))
+            errors.append(
+                _error(
+                    "dangling_edge",
+                    f"Condition on '{node_id}' targets missing node '{target}'",
+                ),
+            )
     for branch in control.get("branches", []) or []:
         for ref in branch.get("nodes", []) or []:
             if ref not in node_ids:
-                errors.append(_error(
-                    "dangling_edge",
-                    f"Parallel branch on '{node_id}' references missing node '{ref}'",
-                ))
+                errors.append(
+                    _error(
+                        "dangling_edge",
+                        f"Parallel branch on '{node_id}' references missing node '{ref}'",
+                    ),
+                )
     return errors
 
 
@@ -262,10 +283,12 @@ def _detect_cycles(doc: WorkflowDocument) -> dict[str, list[dict[str, Any]]]:
                 if nxt_cls in _LOOP_SAFE_TYPES or src_cls in _LOOP_SAFE_TYPES:
                     continue
                 cycle = path[path.index(nxt):] + [nxt]
-                errors.setdefault(nid, []).append(_error(
-                    "cycle",
-                    f"Control-flow cycle: {' -> '.join(cycle)}",
-                ))
+                errors.setdefault(nid, []).append(
+                    _error(
+                        "cycle",
+                        f"Control-flow cycle: {' -> '.join(cycle)}",
+                    ),
+                )
             elif color[nxt] == WHITE:
                 dfs(nxt, path)
         path.pop()

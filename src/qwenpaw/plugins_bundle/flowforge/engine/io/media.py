@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``MediaRef`` — the value object travelling across typed media sockets.
 
 A :class:`MediaRef` is a storage-agnostic, *by-reference* handle to a

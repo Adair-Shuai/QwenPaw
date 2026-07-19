@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``ScriptAgentNode`` — delegate a workflow step to the Script (compute) Agent.
 
 Runs the same restricted ReAct loop as :class:`ScriptAgentTool`: iterative
@@ -131,6 +132,6 @@ class ScriptAgentNode(WorkflowNode):
             extra_metadata={"node_id": hidden.unique_id, "sandbox": "subprocess"},
         )
         result.metadata.setdefault(
-            "duration_ms", int((time.monotonic() - started) * 1000)
+            "duration_ms", int((time.monotonic() - started) * 1000),
         )
         return result

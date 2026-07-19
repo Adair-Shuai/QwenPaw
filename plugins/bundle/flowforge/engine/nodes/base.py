@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Abstract ``WorkflowNode`` base class.
 
 Schema-driven. Subclasses declare ``define_schema()`` returning a ``Schema``

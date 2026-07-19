@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Extension hooks every :class:`WorkflowNode` may override.
 
 Modelled after the reference ``_io.py`` node contract hooks
@@ -32,7 +33,7 @@ class _NotCacheableSentinel:
 
 
 NOT_CACHEABLE: _NotCacheableSentinel = _NotCacheableSentinel()
-"""Return value telling the runner to skip cache lookup + insertion."""
+# Return value telling the runner to skip cache lookup + insertion.
 
 
 def default_fingerprint_inputs(node: Any, /, **kwargs: Any) -> str:

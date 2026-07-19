@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``Agent.control_agent`` — single-shot workflow control LLM node.
 
 Unlike ReAct-style :class:`Agent.<name>` nodes, Control Agent performs **one**

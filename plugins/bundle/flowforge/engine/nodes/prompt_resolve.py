@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Resolve workflow node ``prompt`` fields from widgets, templates, or Start bags."""
 
 from __future__ import annotations

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Standardized node definition system.
 
 Publishes :class:`WorkflowNode`, the :class:`NodeRegistry`, the
@@ -145,9 +146,14 @@ from .compat import (
     ToolNode,
     NodeRunner,
     NodeRunResult,
+    WorkflowNode as CompatWorkflowNode,
     bootstrap as _compat_bootstrap,
     get_registry as _compat_get_registry,
 )
+
+# Use compat WorkflowNode (non-ABC) as default so tests can instantiate
+# subclasses without implementing define_schema/execute.
+WorkflowNode = CompatWorkflowNode
 
 # Use compat bootstrap/get_registry as default (they use the old simplified API)
 bootstrap = _compat_bootstrap

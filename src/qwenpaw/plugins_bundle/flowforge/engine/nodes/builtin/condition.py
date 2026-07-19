@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``ConditionNode`` — evaluate expressions, route to matching branch."""
 
 from __future__ import annotations
@@ -43,8 +44,10 @@ class ConditionNode(WorkflowNode):
             try:
                 matched = _eval(state, expr)
             except Exception as exc:  # noqa: BLE001
-                logger.warning("condition_eval_error", node_id=node_id,
-                               index=i, error=str(exc))
+                logger.warning(
+                    "condition_eval_error", node_id=node_id,
+                    index=i, error=str(exc),
+                )
                 continue
             if matched:
                 target = cond.get("then_node") or cond.get("then")

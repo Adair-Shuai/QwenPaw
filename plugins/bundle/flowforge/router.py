@@ -247,7 +247,7 @@ def build_router(service: WorkflowService) -> APIRouter:
                                     {
                                         "type": "error",
                                         "error": f"run '{subscribed_run}' not found",
-                                    }
+                                    },
                                 ),
                             )
                             subscribed_run = None
@@ -280,7 +280,7 @@ def build_router(service: WorkflowService) -> APIRouter:
                                     "type": "run_finished",
                                     "run_id": subscribed_run,
                                     "status": handle.status.value,
-                                }
+                                },
                             ),
                         )
                         break

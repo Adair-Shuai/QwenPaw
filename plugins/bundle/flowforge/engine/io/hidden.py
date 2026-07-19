@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Hidden inputs auto-injected by the execution engine.
 
 Port of ComfyUI's ``Hidden`` enum. Nodes declare which hidden inputs they

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Bridge from JSON Schema (tool parameter schemas) to typed IO inputs.
 
 Every :class:`~leagent.tools.base.BaseTool` advertises its parameters as a
@@ -171,6 +172,6 @@ def json_schema_to_inputs(
         if not isinstance(prop_schema, dict):
             prop_schema = {}
         inputs.append(
-            _build_input(prop_id, prop_schema, required=prop_id in required)
+            _build_input(prop_id, prop_schema, required=prop_id in required),
         )
     return inputs

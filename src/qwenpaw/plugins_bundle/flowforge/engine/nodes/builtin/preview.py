@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``PreviewNode`` — a professional artifact preview node (ComfyUI ``PreviewImage`` analogue).
 
 A terminal-but-composable node that accepts any generated media artifact

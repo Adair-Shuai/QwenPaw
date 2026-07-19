@@ -48,7 +48,7 @@ def get_adapter(simulator: str) -> BaseSimAdapter:
     if key not in _ADAPTERS:
         raise KeyError(
             f"No adapter registered for simulator '{simulator}'. "
-            f"Available: {', '.join(sorted(_ADAPTERS))}"
+            f"Available: {', '.join(sorted(_ADAPTERS))}",
         )
     return _ADAPTERS[key]
 

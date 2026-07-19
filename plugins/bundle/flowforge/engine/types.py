@@ -217,7 +217,7 @@ class WorkflowState(BaseModel):
                     "current_node": self.current_node,
                     "retry_count": self.retry_count,
                 },
-            }
+            },
         )
         return ctx
 

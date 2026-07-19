@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Workflow agent-node model override helpers."""
 
 from __future__ import annotations

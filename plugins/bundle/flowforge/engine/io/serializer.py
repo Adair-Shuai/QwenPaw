@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Round-trip serialization helpers for ``WorkflowDocument``."""
 
 from __future__ import annotations

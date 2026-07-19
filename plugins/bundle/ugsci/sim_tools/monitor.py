@@ -37,10 +37,12 @@ async def check_simulation_status(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Job '{job_id}' not found.",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Job '{job_id}' not found.",
+                ),
+            ],
         )
 
     loop = asyncio.get_event_loop()
@@ -59,16 +61,16 @@ async def check_simulation_status(
     if job.status == "running":
         elapsed = loop.time() - job.start_time
         lines.append(
-            f"Elapsed:     {elapsed:.0f}s ({elapsed/3600:.1f}h)"
+            f"Elapsed:     {elapsed:.0f}s ({elapsed/3600:.1f}h)",
         )
         remaining = job.timeout - elapsed
         lines.append(
-            f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)"
+            f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)",
         )
     elif job.end_time:
         duration = job.end_time - job.start_time
         lines.append(
-            f"Duration:    {duration:.0f}s ({duration/3600:.1f}h)"
+            f"Duration:    {duration:.0f}s ({duration/3600:.1f}h)",
         )
 
     if job.returncode is not None:
@@ -95,7 +97,7 @@ async def check_simulation_status(
             lines.append(f"  Newton iter:  {progress.newton_iterations}")
             if progress.material_balance_error is not None:
                 lines.append(
-                    f"  Mat. balance: {progress.material_balance_error:.2e}"
+                    f"  Mat. balance: {progress.material_balance_error:.2e}",
                 )
             if progress.cfl_number is not None:
                 lines.append(f"  CFL number:   {progress.cfl_number:.2f}")

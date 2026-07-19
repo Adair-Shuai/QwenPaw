@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Independent IO module for the workflow engine.
 
 Owns everything that sits between the persisted workflow document and

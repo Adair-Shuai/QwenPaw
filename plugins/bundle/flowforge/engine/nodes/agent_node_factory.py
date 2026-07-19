@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Factory that lifts every registered :class:`AgentDefinition` into a
 dedicated ``Agent.<name>`` :class:`WorkflowNode` subclass.
 
@@ -242,7 +243,7 @@ class _GeneratedAgentNodeBase(WorkflowNode):
             },
         )
         result.metadata.setdefault(
-            "duration_ms", int((time.monotonic() - started) * 1000)
+            "duration_ms", int((time.monotonic() - started) * 1000),
         )
         return result
 

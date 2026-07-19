@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Progress reporting primitives.
 
 The runner records a :class:`NodeProgressState` per node; nodes can call
@@ -26,6 +27,9 @@ class NodeStatus(str, Enum):
     BLOCKED = "blocked"
     CACHED = "cached"
     SKIPPED = "skipped"
+    # Compat members for old flowforge code (independent values)
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 @dataclass
@@ -99,8 +103,10 @@ class ProgressRegistry:
     def node_statuses(self) -> dict[str, str]:
         """Return {node_id: status_value} for all tracked nodes (compat)."""
         with self._lock:
-            return {nid: str(s.status.value if hasattr(s.status, 'value') else s.status)
-                    for nid, s in self._states.items()}
+            return {
+                nid: str(s.status.value if hasattr(s.status, 'value') else s.status)
+                for nid, s in self._states.items()
+            }
 
     def state(self, node_id: str) -> NodeProgressState:
         with self._lock:
@@ -129,6 +135,12 @@ class ProgressRegistry:
         """Return all emitted events (compat)."""
         with self._lock:
             return list(self._events)
+
+    def status(self, node_id: str) -> NodeStatus:
+        """Return the current NodeStatus for a node (compat)."""
+        with self._lock:
+            st = self._states.get(node_id)
+            return st.status if st else NodeStatus.PENDING
 
     def update(
         self,
@@ -170,9 +182,11 @@ class ProgressRegistry:
             st.metadata.update(metadata)
         if duration_ms is not None:
             st.metadata["duration_ms"] = duration_ms
-        self.emit(ProgressEvent(
-            type="executing" if status == NodeStatus.RUNNING else f"node_{status.value}",
-            prompt_id=self.prompt_id,
-            node_id=node_id,
-            state=st,
-        ))
+        self.emit(
+            ProgressEvent(
+                type="executing" if status == NodeStatus.RUNNING else f"node_{status.value}",
+                prompt_id=self.prompt_id,
+                node_id=node_id,
+                state=st,
+            ),
+        )

@@ -182,7 +182,7 @@ class BaseSimAdapter:
             return ""
         try:
             content = log_path.read_text(
-                encoding="utf-8", errors="replace"
+                encoding="utf-8", errors="replace",
             )
             lines = content.splitlines()
             return "\n".join(lines[-n_lines:]) if len(lines) > n_lines else content

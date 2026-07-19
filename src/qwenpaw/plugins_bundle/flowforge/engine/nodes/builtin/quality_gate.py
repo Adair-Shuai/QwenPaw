@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``QualityGateNode`` — score an asset and route pass / fail.
 
 The evaluation gate of the self-correction loop. It derives a quality
@@ -41,20 +42,34 @@ class QualityGateNode(WorkflowNode):
                 "control.pass_node or control.fail_node (self-correction loop)."
             ),
             inputs=[
-                IO.Any.Input(id="asset", optional=True,
-                             tooltip="The asset (image/video/mesh) being evaluated."),
-                IO.Float.Input(id="score", optional=True, min=0.0, max=1.0,
-                               tooltip="Explicit quality score; overrides the heuristic."),
-                IO.Float.Input(id="threshold", optional=True, default=0.7, min=0.0, max=1.0,
-                               tooltip="Minimum score required to pass."),
-                IO.String.Input(id="criteria", optional=True, multiline=True,
-                                tooltip="Human-readable acceptance criteria."),
-                IO.String.Input(id="iteration_var", optional=True, default="refine_iteration",
-                                tooltip="State variable holding the refine iteration count."),
-                IO.Float.Input(id="base_score", optional=True, default=0.45, min=0.0, max=1.0,
-                               tooltip="Heuristic base score at iteration 0."),
-                IO.Float.Input(id="score_step", optional=True, default=0.3, min=0.0, max=1.0,
-                               tooltip="Heuristic score gain per refine iteration."),
+                IO.Any.Input(
+                    id="asset", optional=True,
+                    tooltip="The asset (image/video/mesh) being evaluated.",
+                ),
+                IO.Float.Input(
+                    id="score", optional=True, min=0.0, max=1.0,
+                    tooltip="Explicit quality score; overrides the heuristic.",
+                ),
+                IO.Float.Input(
+                    id="threshold", optional=True, default=0.7, min=0.0, max=1.0,
+                    tooltip="Minimum score required to pass.",
+                ),
+                IO.String.Input(
+                    id="criteria", optional=True, multiline=True,
+                    tooltip="Human-readable acceptance criteria.",
+                ),
+                IO.String.Input(
+                    id="iteration_var", optional=True, default="refine_iteration",
+                    tooltip="State variable holding the refine iteration count.",
+                ),
+                IO.Float.Input(
+                    id="base_score", optional=True, default=0.45, min=0.0, max=1.0,
+                    tooltip="Heuristic base score at iteration 0.",
+                ),
+                IO.Float.Input(
+                    id="score_step", optional=True, default=0.3, min=0.0, max=1.0,
+                    tooltip="Heuristic score gain per refine iteration.",
+                ),
             ],
             outputs=[
                 IO.Float.Output(id="score"),

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Pluggable cache providers for workflow execution.
 
 Lifecycle hooks mirror the runner flow:

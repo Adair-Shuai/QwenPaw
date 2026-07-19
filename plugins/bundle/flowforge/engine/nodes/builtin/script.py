@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``ScriptNode`` — run a short Python snippet in the in-process sandbox.
 
 The node is the lightweight companion of the out-of-process

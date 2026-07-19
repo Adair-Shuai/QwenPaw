@@ -103,10 +103,12 @@ async def launch_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Input file not found: {deck_path}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Input file not found: {deck_path}",
+                ),
+            ],
         )
 
     # ── Resolve executable from engine registry ──────────────────────
@@ -137,14 +139,16 @@ async def launch_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=(
-                    f"Error: Simulator '{simulator}' (engine '{engine_id}') "
-                    f"has no executable path configured.\n"
-                    f"Please configure it in Capabilities → Engines."
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        f"Error: Simulator '{simulator}' (engine '{engine_id}') "
+                        f"has no executable path configured.\n"
+                        f"Please configure it in Capabilities → Engines."
+                    ),
                 ),
-            )],
+            ],
         )
 
     # ── Build command via adapter ────────────────────────────────────
@@ -156,10 +160,12 @@ async def launch_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: {exc}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: {exc}",
+                ),
+            ],
         )
 
     output_file = str(deck_path.with_suffix(adapter.log_extension))
@@ -182,10 +188,12 @@ async def launch_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Failed to start simulation: {exc}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Failed to start simulation: {exc}",
+                ),
+            ],
         )
 
     # ── Register job ─────────────────────────────────────────────────
@@ -216,20 +224,22 @@ async def launch_simulation(
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(
-            type="text",
-            text=(
-                f"Simulation started.\n"
-                f"  Job ID:      {job_id}\n"
-                f"  Simulator:   {simulator}\n"
-                f"  Input file:  {deck_path}\n"
-                f"  Working dir: {work_path}\n"
-                f"  PID:         {proc.pid}\n"
-                f"  Timeout:     {timeout:.0f}s ({timeout/3600:.1f}h)\n\n"
-                f"Use check_simulation_status(job_id=\"{job_id}\") "
-                f"to monitor progress."
+        content=[
+            TextBlock(
+                type="text",
+                text=(
+                    f"Simulation started.\n"
+                    f"  Job ID:      {job_id}\n"
+                    f"  Simulator:   {simulator}\n"
+                    f"  Input file:  {deck_path}\n"
+                    f"  Working dir: {work_path}\n"
+                    f"  PID:         {proc.pid}\n"
+                    f"  Timeout:     {timeout:.0f}s ({timeout/3600:.1f}h)\n\n"
+                    f"Use check_simulation_status(job_id=\"{job_id}\") "
+                    f"to monitor progress."
+                ),
             ),
-        )],
+        ],
     )
 
 

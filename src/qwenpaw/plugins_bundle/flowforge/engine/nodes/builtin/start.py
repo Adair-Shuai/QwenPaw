@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``StartNode`` — entry-point marker. Emits the workflow's input bag."""
 
 from __future__ import annotations

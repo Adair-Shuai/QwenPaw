@@ -216,7 +216,7 @@ class NodeRegistry:
                     "inputs_schema": node.inputs_schema,
                     "outputs_schema": node.outputs_schema,
                     "control_schema": node.control_schema,
-                }
+                },
             )
         return out
 

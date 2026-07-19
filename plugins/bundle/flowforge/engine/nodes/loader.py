@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Discover + register node classes into a :class:`NodeRegistry`.
 
 Discovery sources, applied in order:

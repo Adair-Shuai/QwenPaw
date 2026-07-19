@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``SubworkflowNode`` — invoke another Flow by id."""
 
 from __future__ import annotations

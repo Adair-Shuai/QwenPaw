@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Engine export profiles — turn art assets into engine-ready bundles.
 
 Each profile knows how a target engine wants assets laid out on disk and

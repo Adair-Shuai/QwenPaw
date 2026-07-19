@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``ErrorHandlerNode`` — runs after an upstream failure and optionally invokes
 a recovery tool."""
 
@@ -57,5 +58,7 @@ class ErrorHandlerNode(WorkflowNode):
             except Exception as exc:  # noqa: BLE001
                 logger.error("error_handler_tool_failed", tool=tool, error=str(exc))
 
-        return NodeOutput(values=(error_context,),
-                          metadata={"handled_errors": len(error_context["error_stack"])})
+        return NodeOutput(
+            values=(error_context,),
+            metadata={"handled_errors": len(error_context["error_stack"])},
+        )

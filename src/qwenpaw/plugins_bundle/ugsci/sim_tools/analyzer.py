@@ -48,10 +48,12 @@ async def analyze_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Job '{job_id}' not found.",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Job '{job_id}' not found.",
+                ),
+            ],
         )
 
     try:
@@ -61,10 +63,12 @@ async def analyze_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=f"Error: Cannot find adapter: {exc}",
-            )],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Cannot find adapter: {exc}",
+                ),
+            ],
         )
 
     lines = [
@@ -244,7 +248,7 @@ async def analyze_simulation(
                                 f"  {key}: "
                                 f"job={last_a:.4g} "
                                 f"ref={last_b:.4g} "
-                                f"diff={diff:+.4g} ({rel_diff:+.1f}%)"
+                                f"diff={diff:+.4g} ({rel_diff:+.1f}%)",
                             )
     else:
         lines.append(f"Unknown analysis type: '{analysis_type}'")

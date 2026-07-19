@@ -214,7 +214,7 @@ class EclipseAdapter(BaseSimAdapter):
                 try:
                     val = float(fields[col_idx])
                     summary.vectors.setdefault(vec_name, []).append(
-                        (time_val, val)
+                        (time_val, val),
                     )
                 except (ValueError, IndexError):
                     pass
@@ -227,7 +227,7 @@ class EclipseAdapter(BaseSimAdapter):
                 try:
                     val = float(fields[col_idx])
                     summary.well_vectors.setdefault(well_key, []).append(
-                        (time_val, val)
+                        (time_val, val),
                     )
                 except (ValueError, IndexError):
                     pass

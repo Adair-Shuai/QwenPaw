@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``WaitNode`` — sleep for a fixed duration before continuing."""
 
 from __future__ import annotations

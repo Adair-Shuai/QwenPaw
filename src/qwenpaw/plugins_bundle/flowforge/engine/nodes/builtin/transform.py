@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``TransformNode`` — evaluate a template expression and emit the result."""
 
 from __future__ import annotations

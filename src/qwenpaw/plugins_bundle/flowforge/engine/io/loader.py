@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Load + parse workflow documents.
 
 The engine operates on a single canonical document shape::
@@ -114,7 +115,7 @@ def _assert_canonical(raw: dict[str, Any]) -> None:
     """
     if not isinstance(raw, dict):
         raise WorkflowLoaderError(
-            f"Workflow document must be a mapping, got {type(raw).__name__}"
+            f"Workflow document must be a mapping, got {type(raw).__name__}",
         )
 
     nodes = raw.get("nodes")
@@ -122,23 +123,23 @@ def _assert_canonical(raw: dict[str, Any]) -> None:
         raise WorkflowLoaderError(
             "Workflow document is not in the canonical shape: "
             "'nodes' must be a mapping of node_id -> {class_type, inputs, meta, control}."
-            " Run scripts/workflow/migrate_flows.py to upgrade legacy payloads."
+            " Run scripts/workflow/migrate_flows.py to upgrade legacy payloads.",
         )
 
     for node_id, spec in nodes.items():
         if not isinstance(spec, dict):
             raise WorkflowLoaderError(
-                f"Node '{node_id}' must be a mapping, got {type(spec).__name__}"
+                f"Node '{node_id}' must be a mapping, got {type(spec).__name__}",
             )
         if not spec.get("class_type"):
             raise WorkflowLoaderError(
-                f"Node '{node_id}' is missing required 'class_type' field"
+                f"Node '{node_id}' is missing required 'class_type' field",
             )
 
     control = raw.get("control", {})
     if control is not None and not isinstance(control, dict):
         raise WorkflowLoaderError(
-            f"'control' must be a mapping, got {type(control).__name__}"
+            f"'control' must be a mapping, got {type(control).__name__}",
         )
 
 

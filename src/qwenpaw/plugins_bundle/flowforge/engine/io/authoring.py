@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Authoring helpers: convert human-friendly workflow definitions to the canonical shape.
 
 This is NOT a schema migration layer. The engine exposes a single canonical

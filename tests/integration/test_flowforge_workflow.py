@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=redefined-outer-name
 """Integration tests for the FlowForge plugin REST API + run lifecycle.
 
 Uses FastAPI TestClient directly against a minimal app that mounts only
@@ -84,8 +85,15 @@ def test_node_types(client):
     assert resp.status_code == 200
     types = resp.json()
     class_types = {t["class_type"] for t in types}
-    assert {"InputNode", "OutputNode", "ToolNode", "AgentNode",
-            "ConditionNode", "LLMNode", "CodeNode"}.issubset(class_types)
+    assert {
+        "InputNode",
+        "OutputNode",
+        "ToolNode",
+        "AgentNode",
+        "ConditionNode",
+        "LLMNode",
+        "CodeNode",
+    }.issubset(class_types)
     for t in types:
         assert "display_name" in t
         assert "inputs_schema" in t
@@ -103,7 +111,10 @@ def _linear_flow(flow_id: str = "linear") -> dict:
         "description": "in → out",
         "nodes": {
             "in": {"class_type": "InputNode", "inputs": {"name": "query"}},
-            "out": {"class_type": "OutputNode", "inputs": {"value": ["in", 0]}},
+            "out": {
+                "class_type": "OutputNode",
+                "inputs": {"value": ["in", 0]},
+            },
         },
         "outputs": ["out"],
     }
@@ -158,7 +169,10 @@ def test_get_missing_flow_404(client):
 
 
 def test_validate_flow_endpoint(client):
-    resp = client.post("/api/flowforge/flows/validate", json=_linear_flow("f6"))
+    resp = client.post(
+        "/api/flowforge/flows/validate",
+        json=_linear_flow("f6"),
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert data["ok"] is True
@@ -169,7 +183,10 @@ def test_validate_flow_with_errors(client):
     bad = {
         "id": "bad",
         "nodes": {
-            "n1": {"class_type": "OutputNode", "inputs": {"value": ["ghost", 0]}},
+            "n1": {
+                "class_type": "OutputNode",
+                "inputs": {"value": ["ghost", 0]},
+            },
         },
         "outputs": ["n1"],
     }
@@ -188,7 +205,7 @@ def test_validate_flow_with_errors(client):
 def test_run_linear_flow(client):
     client.post("/api/flowforge/flows", json=_linear_flow("r1"))
     resp = client.post(
-        "/api/flowforge/runs/r1/run" if False else "/api/flowforge/flows/r1/run",
+        "/api/flowforge/flows/r1/run",
         json={"inputs": {"query": "hello"}},
     )
     assert resp.status_code == 200
@@ -207,7 +224,10 @@ def test_run_linear_flow(client):
 
 
 def test_run_missing_flow_404(client):
-    resp = client.post("/api/flowforge/flows/nonexistent/run", json={"inputs": {}})
+    resp = client.post(
+        "/api/flowforge/flows/nonexistent/run",
+        json={"inputs": {}},
+    )
     assert resp.status_code == 404
 
 
@@ -230,7 +250,8 @@ def test_get_missing_run_404(client):
 
 def test_cancel_run(client, service):
     """Cancel a long-running run."""
-    async def slow(**kw):
+
+    async def slow(**_kwargs):
         await asyncio.sleep(10)
         return "never"
 
@@ -242,8 +263,15 @@ def test_cancel_run(client, service):
         "id": "slow",
         "name": "Slow",
         "nodes": {
-            "tool": {"class_type": "ToolNode", "tool_name": "slow_tool", "inputs": {}},
-            "out": {"class_type": "OutputNode", "inputs": {"value": ["tool", 0]}},
+            "tool": {
+                "class_type": "ToolNode",
+                "tool_name": "slow_tool",
+                "inputs": {},
+            },
+            "out": {
+                "class_type": "OutputNode",
+                "inputs": {"value": ["tool", 0]},
+            },
         },
         "outputs": ["out"],
     }
@@ -272,7 +300,8 @@ def test_sse_event_stream(client):
     # The run completes almost instantly; SSE should at least emit the
     # replay history + a terminal event. Use a short timeout.
     with client.stream(
-        "GET", f"/api/flowforge/runs/{run_id}/events",
+        "GET",
+        f"/api/flowforge/runs/{run_id}/events",
     ) as stream:
         seen_types: list[str] = []
         deadline = time.time() + 5.0
@@ -297,12 +326,12 @@ def test_sse_event_stream(client):
 
 
 def test_plugin_manifest_loads():
-    import json
-    from pathlib import Path
-
     manifest_path = (
         Path(__file__).resolve().parents[2]
-        / "plugins" / "bundle" / "flowforge" / "plugin.json"
+        / "plugins"
+        / "bundle"
+        / "flowforge"
+        / "plugin.json"
     )
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert data["id"] == "flowforge"

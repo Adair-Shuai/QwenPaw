@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """In-memory cache strategies for node outputs.
 
 Four cache classes cover the common policies:

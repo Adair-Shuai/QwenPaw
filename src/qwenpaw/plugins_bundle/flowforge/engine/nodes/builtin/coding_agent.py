@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``CodingAgentNode`` — workflow node for the project-scale coding agent.
 
 Mirrors :class:`..builtin.script_agent.ScriptAgentNode`
@@ -229,6 +230,6 @@ class CodingAgentNode(WorkflowNode):
         finally:
             end_execution(exec_run.run_id)
         result.metadata.setdefault(
-            "duration_ms", int((time.monotonic() - started) * 1000)
+            "duration_ms", int((time.monotonic() - started) * 1000),
         )
         return result

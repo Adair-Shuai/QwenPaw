@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Shared execution helper for agent-backed workflow nodes.
 
 Both the builtin agent nodes (``CodingAgentNode`` / ``ScriptAgentNode``)
@@ -106,7 +107,7 @@ class _AggregatedRun:
 
 
 async def _aggregate_agent_events(
-    events: AsyncIterator[Any], *, emit: Any
+    events: AsyncIterator[Any], *, emit: Any,
 ) -> _AggregatedRun:
     """Drive an :class:`AgentEvent` stream and fold it into an aggregate."""
     text_parts: list[str] = []
@@ -155,7 +156,7 @@ async def _aggregate_agent_events(
 
 
 def _take_resume_payload(
-    state: Any, node_id: str | None
+    state: Any, node_id: str | None,
 ) -> tuple[str, str] | None:
     """Pop this node's resume answer + stashed checkpoint id, if any.
 
@@ -173,7 +174,7 @@ def _take_resume_payload(
     checkpoint_id = str(
         payload.get("checkpoint_id")
         or state.metadata.get("agent_checkpoints", {}).get(str(node_id))
-        or ""
+        or "",
     )
     if not checkpoint_id:
         return None
@@ -181,7 +182,7 @@ def _take_resume_payload(
         payload.get("answer")
         or payload.get("input")
         or payload.get("comments")
-        or ""
+        or "",
     )
     return checkpoint_id, answer or "continue"
 
@@ -307,8 +308,10 @@ async def run_agent_node(
         meta.update(agg.meta)
         meta["mode"] = "resume"
         meta["resumed_from"] = checkpoint_id
-        return _finalize(agg, hidden=hidden, state=state, meta=meta,
-                         output_var=output_var)
+        return _finalize(
+            agg, hidden=hidden, state=state, meta=meta,
+            output_var=output_var,
+        )
 
     try:
         if parent is not None:
@@ -378,15 +381,17 @@ async def run_agent_node(
                 )
     except Exception as exc:  # noqa: BLE001
         logger.error(
-            "agent_node_error", agent=agent_name, error=str(exc), exc_info=True
+            "agent_node_error", agent=agent_name, error=str(exc), exc_info=True,
         )
         return NodeOutput(
             error=str(exc),
             metadata={"node_id": hidden.unique_id, "agent": agent_name},
         )
 
-    return _finalize(agg, hidden=hidden, state=state, meta=meta,
-                     output_var=output_var)
+    return _finalize(
+        agg, hidden=hidden, state=state, meta=meta,
+        output_var=output_var,
+    )
 
 
 async def _run_standalone_stream(
@@ -406,7 +411,7 @@ async def _run_standalone_stream(
         definition = definition.with_overrides(max_turns=max_turns)
     if allowed_tools is not None:
         definition = definition.with_overrides(
-            tools=definition.tools.model_copy(update={"allow": allowed_tools})
+            tools=definition.tools.model_copy(update={"allow": allowed_tools}),
         )
 
     return await _aggregate_agent_events(

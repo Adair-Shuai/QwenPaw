@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``ToolCallNode`` — invoke a registered tool via the ToolExecutor."""
 
 from __future__ import annotations
@@ -26,13 +27,19 @@ class ToolCallNode(WorkflowNode):
             description="Execute a registered tool with templated params.",
             inputs=[
                 IO.String.Input(id="tool", tooltip="Tool name as registered in ToolRegistry"),
-                IO.Object.Input(id="params", optional=True, default={},
-                                 tooltip="Tool parameters (templates resolved)"),
+                IO.Object.Input(
+                    id="params", optional=True, default={},
+                    tooltip="Tool parameters (templates resolved)",
+                ),
                 IO.Int.Input(id="retry_count", optional=True, default=0, min=0, max=10),
-                IO.Float.Input(id="retry_delay_sec", optional=True, default=1.0,
-                               min=0.0, max=60.0, step=0.5),
-                IO.String.Input(id="output", optional=True,
-                                tooltip="Variable name to store the result in workflow state"),
+                IO.Float.Input(
+                    id="retry_delay_sec", optional=True, default=1.0,
+                    min=0.0, max=60.0, step=0.5,
+                ),
+                IO.String.Input(
+                    id="output", optional=True,
+                    tooltip="Variable name to store the result in workflow state",
+                ),
             ],
             outputs=[IO.Any.Output(id="result")],
             hidden=[Hidden.UNIQUE_ID, Hidden.TOOL_CONTEXT, Hidden.WORKFLOW_STATE],
@@ -69,15 +76,19 @@ class ToolCallNode(WorkflowNode):
                         state.set(inputs["output"], tool_result.data)
                     return NodeOutput(
                         values=(tool_result.data,),
-                        metadata={"tool": tool, "attempts": attempt + 1,
-                                  "duration_ms": duration_ms},
+                        metadata={
+                            "tool": tool, "attempts": attempt + 1,
+                            "duration_ms": duration_ms,
+                        },
                     )
                 last_error = tool_result.error or "Tool execution failed"
                 logger.warning("tool_call_failed", tool=tool, attempt=attempt + 1, error=last_error)
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
-                logger.error("tool_call_exception", tool=tool, attempt=attempt + 1,
-                             error=last_error, exc_info=True)
+                logger.error(
+                    "tool_call_exception", tool=tool, attempt=attempt + 1,
+                    error=last_error, exc_info=True,
+                )
 
             if attempt < retry_count:
                 await asyncio.sleep(retry_delay_sec * (2 ** attempt))

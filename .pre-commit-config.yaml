@@ -41,6 +41,7 @@ repos:
           | .*/skills/.*
           | ^e2e/
           | ^plugins/
+          | ^src/qwenpaw/plugins_bundle/
           )
         args: [
           --ignore-missing-imports,

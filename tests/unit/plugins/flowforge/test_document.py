@@ -22,15 +22,20 @@ from plugins.bundle.flowforge.engine.errors import ValidationError
 
 class TestLoad:
     def test_load_from_dict(self):
-        doc = load({
-            "id": "wf1",
-            "name": "Test",
-            "nodes": {
-                "n1": {"class_type": "InputNode", "inputs": {"name": "x"}},
-                "n2": {"class_type": "OutputNode", "inputs": {"value": ["n1", 0]}},
+        doc = load(
+            {
+                "id": "wf1",
+                "name": "Test",
+                "nodes": {
+                    "n1": {"class_type": "InputNode", "inputs": {"name": "x"}},
+                    "n2": {
+                        "class_type": "OutputNode",
+                        "inputs": {"value": ["n1", 0]},
+                    },
+                },
+                "outputs": ["n2"],
             },
-            "outputs": ["n2"],
-        })
+        )
         assert isinstance(doc, WorkflowDocument)
         assert doc.id == "wf1"
         assert "n1" in doc.nodes
@@ -41,10 +46,12 @@ class TestLoad:
         assert doc.id == "wf2"
 
     def test_load_normalises_node_fields(self):
-        doc = load({
-            "id": "wf",
-            "nodes": {"n": {"type": "ToolNode"}},
-        })
+        doc = load(
+            {
+                "id": "wf",
+                "nodes": {"n": {"type": "ToolNode"}},
+            },
+        )
         assert doc.nodes["n"]["class_type"] == "ToolNode"
         assert doc.nodes["n"]["inputs"] == {}
         assert doc.nodes["n"]["control"] == {}
@@ -64,13 +71,20 @@ class TestLoad:
 
 class TestValidate:
     def test_valid_document(self):
-        result = validate(load({
-            "id": "wf",
-            "nodes": {
-                "n1": {"class_type": "InputNode"},
-                "n2": {"class_type": "OutputNode", "inputs": {"value": ["n1", 0]}},
-            },
-        }))
+        result = validate(
+            load(
+                {
+                    "id": "wf",
+                    "nodes": {
+                        "n1": {"class_type": "InputNode"},
+                        "n2": {
+                            "class_type": "OutputNode",
+                            "inputs": {"value": ["n1", 0]},
+                        },
+                    },
+                },
+            ),
+        )
         assert result.ok, result.errors
         assert "n2" in result.output_nodes
 
@@ -80,55 +94,87 @@ class TestValidate:
         assert any("no nodes" in e for e in result.errors)
 
     def test_dangling_input_link_fails(self):
-        result = validate(load({
-            "id": "wf",
-            "nodes": {
-                "n1": {"class_type": "OutputNode", "inputs": {"value": ["ghost", 0]}},
-            },
-        }))
+        result = validate(
+            load(
+                {
+                    "id": "wf",
+                    "nodes": {
+                        "n1": {
+                            "class_type": "OutputNode",
+                            "inputs": {"value": ["ghost", 0]},
+                        },
+                    },
+                },
+            ),
+        )
         assert not result.ok
         assert any("ghost" in e for e in result.errors)
 
     def test_dangling_control_next_fails(self):
-        result = validate(load({
-            "id": "wf",
-            "nodes": {
-                "n1": {"class_type": "ToolNode", "control": {"next": "nonexistent"}},
-            },
-        }))
+        result = validate(
+            load(
+                {
+                    "id": "wf",
+                    "nodes": {
+                        "n1": {
+                            "class_type": "ToolNode",
+                            "control": {"next": "nonexistent"},
+                        },
+                    },
+                },
+            ),
+        )
         assert not result.ok
         assert any("nonexistent" in e for e in result.errors)
 
     def test_dangling_condition_target_fails(self):
-        result = validate(load({
-            "id": "wf",
-            "nodes": {
-                "n1": {
-                    "class_type": "ConditionNode",
-                    "control": {
-                        "conditions": [
-                            {"then_node": "ghost", "condition": {"left": "x", "operator": "eq", "right": 1}},
-                        ],
+        result = validate(
+            load(
+                {
+                    "id": "wf",
+                    "nodes": {
+                        "n1": {
+                            "class_type": "ConditionNode",
+                            "control": {
+                                "conditions": [
+                                    {
+                                        "then_node": "ghost",
+                                        "condition": {
+                                            "left": "x",
+                                            "operator": "eq",
+                                            "right": 1,
+                                        },
+                                    },
+                                ],
+                            },
+                        },
                     },
                 },
-            },
-        }))
+            ),
+        )
         assert not result.ok
         assert any("ghost" in e for e in result.errors)
 
     def test_output_nodes_inferred_from_leaves(self):
-        result = validate(load({
-            "id": "wf",
-            "nodes": {
-                "n1": {"class_type": "InputNode"},
-                "n2": {
-                    "class_type": "ToolNode",
-                    "inputs": {"args": ["n1", 0]},
-                    "control": {"next": "n3"},
+        result = validate(
+            load(
+                {
+                    "id": "wf",
+                    "nodes": {
+                        "n1": {"class_type": "InputNode"},
+                        "n2": {
+                            "class_type": "ToolNode",
+                            "inputs": {"args": ["n1", 0]},
+                            "control": {"next": "n3"},
+                        },
+                        "n3": {
+                            "class_type": "OutputNode",
+                            "inputs": {"value": ["n2", 0]},
+                        },
+                    },
                 },
-                "n3": {"class_type": "OutputNode", "inputs": {"value": ["n2", 0]}},
-            },
-        }))
+            ),
+        )
         assert result.ok, result.errors
         # n3 is a leaf (no successors), so it's an output node
         assert "n3" in result.output_nodes
@@ -136,11 +182,13 @@ class TestValidate:
 
 class TestSerialization:
     def test_to_json_roundtrip(self):
-        original = load({
-            "id": "wf",
-            "name": "Roundtrip",
-            "nodes": {"n1": {"class_type": "InputNode"}},
-        })
+        original = load(
+            {
+                "id": "wf",
+                "name": "Roundtrip",
+                "nodes": {"n1": {"class_type": "InputNode"}},
+            },
+        )
         js = to_json(original)
         assert '"id": "wf"' in js
         roundtripped = load(js)

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``IterativeRefineNode`` — bounded self-correction loop controller.
 
 Placed on the failure branch of a :class:`QualityGateNode`. Each pass it
@@ -38,12 +39,18 @@ class IterativeRefineNode(WorkflowNode):
                 "to control.exhausted_node."
             ),
             inputs=[
-                IO.Int.Input(id="max_iterations", optional=True, default=3, min=1, max=20,
-                             tooltip="Maximum regeneration attempts."),
-                IO.String.Input(id="iteration_var", optional=True, default="refine_iteration",
-                                tooltip="State variable holding the iteration count."),
-                IO.String.Input(id="feedback", optional=True, multiline=True,
-                                tooltip="Optional critique fed back into regeneration."),
+                IO.Int.Input(
+                    id="max_iterations", optional=True, default=3, min=1, max=20,
+                    tooltip="Maximum regeneration attempts.",
+                ),
+                IO.String.Input(
+                    id="iteration_var", optional=True, default="refine_iteration",
+                    tooltip="State variable holding the iteration count.",
+                ),
+                IO.String.Input(
+                    id="feedback", optional=True, multiline=True,
+                    tooltip="Optional critique fed back into regeneration.",
+                ),
             ],
             outputs=[
                 IO.Int.Output(id="iteration"),

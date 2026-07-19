@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Factory that lifts every registered :class:`BaseTool` into a dedicated
 :class:`WorkflowNode` subclass.
 

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Schema dataclass — the canonical metadata for a workflow node.
 
 Each node subclass declares a ``Schema`` in ``define_schema()``. The registry
@@ -90,11 +91,11 @@ class Schema:
             for iid in self.input_order:
                 if iid not in known:
                     errors.append(
-                        f"input_order references unknown input '{iid}' in {self.node_id}"
+                        f"input_order references unknown input '{iid}' in {self.node_id}",
                     )
         if self.output_tooltips and len(self.output_tooltips) > len(self.outputs):
             errors.append(
-                f"output_tooltips has more entries than outputs in {self.node_id}"
+                f"output_tooltips has more entries than outputs in {self.node_id}",
             )
         return errors
 

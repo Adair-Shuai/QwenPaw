@@ -29,7 +29,8 @@ except ImportError:
 # ── Simplified node base (old API) ─────────────────────────────────────────────
 
 class WorkflowNode:
-    """Simplified node base (old API): async run() with positional args."""
+    """Simplified node base (old API): async run() with positional args.
+    Not abstract — allows instantiation for testing."""
     class_type: str = "WorkflowNode"
     display_name: str = "Workflow Node"
     description: str = ""
@@ -133,8 +134,10 @@ class AgentNode(WorkflowNode):
     display_name = "Agent Turn"
     category = "action"
     icon = "🤖"
-    inputs_schema = [{"name": "agent_id", "type": "string", "required": True},
-                     {"name": "query", "type": "string", "required": True}]
+    inputs_schema = [
+        {"name": "agent_id", "type": "string", "required": True},
+        {"name": "query", "type": "string", "required": True},
+    ]
     outputs_schema = [{"name": "reply", "type": "string"}]
     control_schema = ["next", "error_handler"]
 
@@ -186,8 +189,10 @@ class LLMNode(WorkflowNode):
     display_name = "LLM Call"
     category = "action"
     icon = "💬"
-    inputs_schema = [{"name": "prompt", "type": "string", "required": True},
-                     {"name": "system", "type": "string", "required": False}]
+    inputs_schema = [
+        {"name": "prompt", "type": "string", "required": True},
+        {"name": "system", "type": "string", "required": False},
+    ]
     outputs_schema = [{"name": "reply", "type": "string"}]
     control_schema = ["next", "error_handler"]
 
@@ -324,9 +329,11 @@ class NodeRunner:
         if not isinstance(output, NodeOutput):
             output = NodeOutput(values=output)
         if self.progress:
-            status = (NodeStatus.FAILED if output.error
-                      else NodeStatus.BLOCKED if output.block_execution
-                      else NodeStatus.COMPLETED)
+            status = (
+                NodeStatus.FAILED if output.error
+                else NodeStatus.BLOCKED if output.block_execution
+                else NodeStatus.COMPLETED
+            )
             self.progress.set_status(node_id, status, duration_ms=duration_ms, metadata=output.metadata)
         return NodeRunResult(output=output, duration_ms=duration_ms)
 

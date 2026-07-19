@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``HumanReviewNode`` — pause execution until an external reviewer resolves."""
 
 from __future__ import annotations
@@ -56,8 +57,10 @@ class HumanReviewNode(WorkflowNode):
             }
             if state is not None and inputs.get("output"):
                 state.set(inputs["output"], decision)
-            logger.info("human_review_resolved", reviewer=reviewer,
-                        node_id=hidden.unique_id, approved=decision["approved"])
+            logger.info(
+                "human_review_resolved", reviewer=reviewer,
+                node_id=hidden.unique_id, approved=decision["approved"],
+            )
             return NodeOutput(
                 values=(decision,),
                 ui={"review_decision": decision},

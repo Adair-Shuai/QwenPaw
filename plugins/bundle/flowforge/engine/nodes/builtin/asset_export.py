@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``AssetExportNode`` — package generated assets into an engine-ready bundle.
 
 Terminal art-pipeline node. It gathers the typed media assets wired into
@@ -59,10 +60,14 @@ class AssetExportNode(WorkflowNode):
                     id="embed_assets", optional=True, default=True,
                     tooltip="Embed raw asset bytes in the bundle (vs. by-reference).",
                 ),
-                IO.String.Input(id="asset_name", optional=True, default="asset",
-                                tooltip="Base name for the exported asset bundle."),
-                IO.String.Input(id="output", optional=True,
-                                tooltip="Optional state variable to store the manifest."),
+                IO.String.Input(
+                    id="asset_name", optional=True, default="asset",
+                    tooltip="Base name for the exported asset bundle.",
+                ),
+                IO.String.Input(
+                    id="output", optional=True,
+                    tooltip="Optional state variable to store the manifest.",
+                ),
             ],
             outputs=[
                 IO.Object.Output(id="manifest"),
@@ -137,7 +142,7 @@ class AssetExportNode(WorkflowNode):
 
     @staticmethod
     async def _collect_bytes(
-        refs: list[MediaRef], hidden: HiddenHolder
+        refs: list[MediaRef], hidden: HiddenHolder,
     ) -> dict[str, bytes]:
         """Best-effort fetch of managed asset bytes by file id for embedding."""
         out: dict[str, bytes] = {}
@@ -166,7 +171,7 @@ class AssetExportNode(WorkflowNode):
 
     @staticmethod
     async def _register_bundle(
-        zip_bytes: bytes, name: str, engine: str, hidden: HiddenHolder
+        zip_bytes: bytes, name: str, engine: str, hidden: HiddenHolder,
     ) -> dict[str, Any] | None:
         """Persist the bundle as a managed artifact; return its download info."""
         from leagent.file.tool_output import register_tool_artifact

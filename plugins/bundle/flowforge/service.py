@@ -156,7 +156,7 @@ class WorkflowService:
                         "version": data.get("version", "1.0"),
                         "node_count": len(data.get("nodes", {})),
                         "updated_at": path.stat().st_mtime,
-                    }
+                    },
                 )
             except Exception:
                 logger.warning("skip malformed flow file %s", path)

@@ -191,7 +191,7 @@ class CMGAdapter(BaseSimAdapter):
                             # parse column headers
                             key = f"COL{j}"
                             summary.vectors.setdefault(key, []).append(
-                                (current_time, val)
+                                (current_time, val),
                             )
                         except ValueError:
                             pass

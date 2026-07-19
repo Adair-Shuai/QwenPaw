@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Built-in node classes.
 
 ``BUILTIN_NODES`` is the curated list the loader registers on startup.

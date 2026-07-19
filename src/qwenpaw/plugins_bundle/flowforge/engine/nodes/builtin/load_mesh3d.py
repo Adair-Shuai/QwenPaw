@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Builtin node: load a 3D mesh into a typed MediaRef (ComfyUI-style LoadMesh)."""
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ _MESH_MIMES = frozenset(
         "model/gltf-binary",
         "model/gltf+json",
         "application/octet-stream",
-    }
+    },
 )
 _MESH_EXTS = frozenset({".glb", ".gltf", ".obj", ".fbx"})
 

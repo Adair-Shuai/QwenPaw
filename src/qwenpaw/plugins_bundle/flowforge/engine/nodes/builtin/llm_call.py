@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``LLMCallNode`` — call the LLMService with a templated prompt."""
 
 from __future__ import annotations
@@ -26,10 +27,14 @@ class LLMCallNode(WorkflowNode):
             inputs=[
                 IO.String.Input(id="prompt", multiline=True),
                 IO.String.Input(id="model", optional=True, default=""),
-                IO.Float.Input(id="temperature", optional=True, default=0.1,
-                               min=0.0, max=2.0, step=0.1),
-                IO.Int.Input(id="max_tokens", optional=True, default=4096,
-                             min=1, max=32768),
+                IO.Float.Input(
+                    id="temperature", optional=True, default=0.1,
+                    min=0.0, max=2.0, step=0.1,
+                ),
+                IO.Int.Input(
+                    id="max_tokens", optional=True, default=4096,
+                    min=1, max=32768,
+                ),
                 IO.String.Input(id="output", optional=True),
             ],
             outputs=[IO.String.Output(id="content")],
@@ -66,8 +71,10 @@ class LLMCallNode(WorkflowNode):
                 state.set(inputs["output"], content)
             return NodeOutput(
                 values=(content,),
-                metadata={"model": inputs.get("model"), "duration_ms": duration_ms,
-                          "response_length": len(content)},
+                metadata={
+                    "model": inputs.get("model"), "duration_ms": duration_ms,
+                    "response_length": len(content),
+                },
             )
         except Exception as exc:  # noqa: BLE001
             duration_ms = int((time.monotonic() - start) * 1000)

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``ParallelNode`` — fan out multiple branches concurrently."""
 
 from __future__ import annotations
@@ -28,13 +29,17 @@ class ParallelNode(WorkflowNode):
                 "may run a ``for_each`` expansion and select a merge strategy."
             ),
             inputs=[
-                IO.Combo.Input(id="merge_strategy", optional=True, default="collect",
-                                choices=["collect", "merge", "first", "last"]),
+                IO.Combo.Input(
+                    id="merge_strategy", optional=True, default="collect",
+                    choices=["collect", "merge", "first", "last"],
+                ),
                 IO.String.Input(id="output", optional=True),
             ],
             outputs=[IO.Array.Output(id="results")],
-            hidden=[Hidden.UNIQUE_ID, Hidden.WORKFLOW_STATE, Hidden.TOOL_CONTEXT,
-                    Hidden.LOGGER, Hidden.DYNPROMPT],
+            hidden=[
+                Hidden.UNIQUE_ID, Hidden.WORKFLOW_STATE, Hidden.TOOL_CONTEXT,
+                Hidden.LOGGER, Hidden.DYNPROMPT,
+            ],
             control_flow=True,
             not_idempotent=True,
         )
@@ -61,16 +66,20 @@ class ParallelNode(WorkflowNode):
                     items = [items]
                 for idx, item in enumerate(items):
                     branch_state = state.fork({"item": item, "index": idx}) if state is not None else None
-                    tasks.append(asyncio.create_task(
-                        _execute_branch(branch, branch_state, executor, hidden),
-                        name=f"{branch.get('id', 'branch')}_{idx}",
-                    ))
+                    tasks.append(
+                        asyncio.create_task(
+                            _execute_branch(branch, branch_state, executor, hidden),
+                            name=f"{branch.get('id', 'branch')}_{idx}",
+                        ),
+                    )
             else:
                 branch_state = state.fork() if state is not None else None
-                tasks.append(asyncio.create_task(
-                    _execute_branch(branch, branch_state, executor, hidden),
-                    name=branch.get("id", "branch"),
-                ))
+                tasks.append(
+                    asyncio.create_task(
+                        _execute_branch(branch, branch_state, executor, hidden),
+                        name=branch.get("id", "branch"),
+                    ),
+                )
 
         results = await asyncio.gather(*tasks, return_exceptions=True)
         duration_ms = int((time.monotonic() - start) * 1000)
@@ -83,14 +92,18 @@ class ParallelNode(WorkflowNode):
 
         return NodeOutput(
             values=(merged,),
-            metadata={"branch_count": len(branches), "task_count": len(tasks),
-                      "failed_count": len(failed), "duration_ms": duration_ms,
-                      "strategy": strategy},
+            metadata={
+                "branch_count": len(branches), "task_count": len(tasks),
+                "failed_count": len(failed), "duration_ms": duration_ms,
+                "strategy": strategy,
+            },
         )
 
 
-async def _execute_branch(branch: dict[str, Any], branch_state: Any, executor: Any,
-                          hidden: HiddenHolder) -> dict[str, Any]:
+async def _execute_branch(
+    branch: dict[str, Any], branch_state: Any, executor: Any,
+    hidden: HiddenHolder,
+) -> dict[str, Any]:
     try:
         if executor and branch.get("nodes"):
             for node_id in branch["nodes"]:

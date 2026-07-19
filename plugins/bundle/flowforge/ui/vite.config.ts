@@ -25,6 +25,9 @@ export default defineConfig({
           react: "React",
           "react-dom": "ReactDOM",
         },
+        // Inject a shim that maps window.QwenPaw.host.React to global
+        // React/ReactDOM so the externalized imports resolve correctly.
+        banner: `var __qp=typeof window!=="undefined"&&window.QwenPaw||{};var __h=__qp.host||{};if(__h.React&&!window.React)window.React=__h.React;if(__h.ReactDOM&&!window.ReactDOM)window.ReactDOM=__h.ReactDOM;`,
       },
     },
     target: "es2020",

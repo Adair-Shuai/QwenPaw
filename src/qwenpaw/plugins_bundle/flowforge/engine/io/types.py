@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Typed IO primitives for the workflow engine.
 
 Every typed primitive declares an ``io_type`` string, a ``Type`` Python

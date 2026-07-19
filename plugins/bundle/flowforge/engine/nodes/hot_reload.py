@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Filesystem watcher that reloads custom node packs on change.
 
 Uses ``watchdog`` when available; degrades to a no-op with a warning if

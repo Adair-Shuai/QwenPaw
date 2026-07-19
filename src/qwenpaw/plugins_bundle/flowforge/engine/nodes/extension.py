@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """``NodeExtension`` — the entry-point-style packaging contract for node packs.
 
 A third-party package exposes::

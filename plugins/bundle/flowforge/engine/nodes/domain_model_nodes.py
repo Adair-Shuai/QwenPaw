@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Build ``Model.<task>.<provider>`` workflow nodes from domain-model adapters.
 
 Each registered :class:`~leagent.llm.domain_registry.DomainModelAdapter`
