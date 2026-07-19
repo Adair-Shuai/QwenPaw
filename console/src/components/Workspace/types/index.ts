@@ -76,7 +76,15 @@ export interface WorkspaceArtifact {
   /** 最后更新时间戳 */
   updatedAt?: number;
 
-  /** 渲染器特定的额外属性 */
+  /** 渲染器特定的额外属性
+   *
+   * 常用 meta 字段：
+   * - textSample: string —— 文件前 8KB 的文本采样，用于 MIME 嗅探
+   *                       （当 mimeType 为 octet-stream 时，渲染器注册中心
+   *                        会用它 + 扩展名解析真实 MIME）
+   * - paperOutline: PaperOutlineNode[] —— PDF 论文大纲（论文模式用）
+   * - sourceFormat: string —— 原始格式（如经过转换的 HTML 对应的源格式）
+   */
   meta?: Record<string, unknown>;
 }
 

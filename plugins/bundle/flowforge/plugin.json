@@ -1,0 +1,41 @@
+{
+  "id": "flowforge",
+  "name": "FlowForge",
+  "version": "0.1.0",
+  "type": "general",
+  "description": "FlowForge —— 基于 ReactFlow DAG 的可视化工作流引擎插件。移植自 LeAgent 工作流内核：声明式 WorkflowDocument、拓扑排序调度器（ExecutionList）、并发批处理执行器（WorkflowExecutor）、节点注册表（ToolNode/AgentNode/ConditionNode/LLMNode/CodeNode/InputNode/OutputNode）、可持久化状态存储与 SSE 实时进度事件。前端提供拖拽式 DAG 编辑器 + 运行监控面板。",
+  "description_i18n": {
+    "zh-CN": "FlowForge —— 基于 ReactFlow DAG 的可视化工作流引擎插件。移植自 LeAgent 工作流内核：声明式 WorkflowDocument、拓扑排序调度器（ExecutionList）、并发批处理执行器（WorkflowExecutor）、节点注册表（ToolNode/AgentNode/ConditionNode/LLMNode/CodeNode/InputNode/OutputNode）、可持久化状态存储与 SSE 实时进度事件。前端提供拖拽式 DAG 编辑器 + 运行监控面板。",
+    "en-US": "FlowForge — Visual workflow engine plugin built on a ReactFlow DAG. Ports the LeAgent workflow core: declarative WorkflowDocument, topological-sort scheduler (ExecutionList), concurrent batched executor (WorkflowExecutor), node registry (ToolNode/AgentNode/ConditionNode/LLMNode/CodeNode/InputNode/OutputNode), durable state store, and SSE live progress events. Ships a drag-and-drop DAG editor plus a run monitor panel in the frontend."
+  },
+  "author": "FlowForge Team",
+  "entry": {
+    "frontend": "ui/dist/index.js",
+    "backend": "plugin.py"
+  },
+  "dependencies": [],
+  "qwenpaw_version": {
+    "min": "1.1.7",
+    "max": "2.1.0"
+  },
+  "meta": {
+    "category": "workflow-engine",
+    "features": [
+      "visual-dag-editor",
+      "reactflow-canvas",
+      "node-palette",
+      "tool-node",
+      "agent-node",
+      "condition-node",
+      "llm-node",
+      "code-node",
+      "input-output-nodes",
+      "topological-scheduler",
+      "concurrent-batch-executor",
+      "state-store",
+      "sse-progress-events",
+      "run-lifecycle",
+      "pause-resume"
+    ]
+  }
+}

@@ -55,6 +55,7 @@ import {
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
 import { WorkspacePanel } from "../../components/Workspace";
 import { useWorkspaceStore } from "../../components/Workspace/store/workspaceStore";
+import { useReaderContextInjector } from "../../features/pdf-reader";
 import {
   resolveLocalized,
   type WelcomeRenderProps,
@@ -1671,6 +1672,23 @@ export default function ChatPage() {
   useMessageHistoryNavigation(chatRef, isChatActive, isComposingRef);
   useChatInputDraft(isChatActive, selectedAgent);
   useChatPasteFromEditor();
+
+  // ── PDF Reader → Chat composer 桥接 ──
+  // 订阅 readerComposerBridge，将 PDF 选中文字/笔记注入 sender textarea
+  const injectPdfContext = useCallback((contextText: string) => {
+    const sender = document.querySelector('[class*="sender"]');
+    const textarea = sender?.querySelector(
+      "textarea",
+    ) as HTMLTextAreaElement | null;
+    if (!textarea) return;
+    const currentValue = textarea.value;
+    const newValue = currentValue
+      ? `${currentValue}\n${contextText}`
+      : contextText;
+    setTextareaValue(textarea, newValue);
+    textarea.focus();
+  }, []);
+  useReaderContextInjector(injectPdfContext);
 
   // ── Loop chip intercept: detect __loop__ prefix from suggestion selection ──
   useEffect(() => {

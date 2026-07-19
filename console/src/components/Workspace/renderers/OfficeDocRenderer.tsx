@@ -1,11 +1,15 @@
 /**
  * OfficeDocRenderer — Office 文档渲染器
  *
- * 当后端支持 /api/workspace/convert-office 时，将 Office 文档转换为 HTML
- * 并在 iframe 中渲染。当后端不支持该端点时（返回 405），自动回退为
- * 文件信息 + 下载按钮模式。
+ * 三级 fallback 策略（吸取 LeAgent 优点）：
+ * 1. 优先：后端 /api/workspace/convert-office 转换为 HTML（保真度最高）
+ * 2. 二级 fallback：后端不可用时，前端纯浏览器解析 OOXML
+ *    - DOCX → mammoth.convertToHtml
+ *    - XLSX → read-excel-file
+ *    - PPTX → JSZip 提取幻灯片
+ * 3. 三级 fallback：前端解析也失败 → 文件信息 + 下载按钮
  *
- * 支持的格式：DOCX、XLSX、PPTX（以及旧版 DOC/XLS/PPT）
+ * 支持的格式：DOCX、XLSX、PPTX（以及旧版 DOC/XLS/PPT，旧版只能走后端）
  */
 import React, { useEffect, useState, useCallback } from "react";
 import { Button, Space, Tooltip, Spin, Alert } from "antd";
@@ -17,8 +21,19 @@ import {
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 import { buildAuthHeaders } from "@/api/authHeaders";
+import OfficeOoxmlPreview from "./OfficeOoxmlPreview";
+import { isOfficeOoxmlMime } from "../../../utils/mimeForPreview";
 
 const API_BASE = "/api/workspace";
+
+/** 判断是否为 OOXML 格式（可走前端解析） */
+function isOoxml(mime: string, ext?: string): boolean {
+  if (isOfficeOoxmlMime(mime)) return true;
+  const e = (ext ?? "").toLowerCase();
+  return e === "docx" || e === "xlsx" || e === "pptx";
+}
+
+type FallbackStage = "none" | "client-side" | "download-only";
 
 const OfficeDocRenderer: React.FC<RendererContext> = ({
   artifact,
@@ -29,8 +44,10 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   const [htmlContent, setHtmlContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [fallbackMode, setFallbackMode] = useState(false);
+  const [fallbackStage, setFallbackStage] = useState<FallbackStage>("none");
   const fileUrl = artifact.binaryUrl ?? "";
+
+  const canClientSideParse = isOoxml(artifact.mimeType, artifact.extension);
 
   const convertDocument = useCallback(async () => {
     if (!fileUrl) {
@@ -40,7 +57,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     }
     setLoading(true);
     setError(null);
-    setFallbackMode(false);
+    setFallbackStage("none");
     try {
       const res = await fetch(`${API_BASE}/convert-office`, {
         method: "POST",
@@ -54,10 +71,14 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         }),
       });
       if (!res.ok) {
-        // 405 Method Not Allowed means the endpoint doesn't exist —
-        // fall back to download mode instead of showing an error.
+        // 405 / 404 means the endpoint doesn't exist —
+        // 优先走前端解析（仅 OOXML），否则走下载模式
         if (res.status === 405 || res.status === 404) {
-          setFallbackMode(true);
+          if (canClientSideParse) {
+            setFallbackStage("client-side");
+          } else {
+            setFallbackStage("download-only");
+          }
           setLoading(false);
           return;
         }
@@ -106,12 +127,16 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       </style></head><body>${rawHtml}</body></html>`;
       setHtmlContent(styledHtml);
     } catch (err) {
-      // Network error or other failure — fall back to download mode
-      setFallbackMode(true);
+      // 网络错误 → 优先前端解析，否则下载
+      if (canClientSideParse) {
+        setFallbackStage("client-side");
+      } else {
+        setFallbackStage("download-only");
+      }
     } finally {
       setLoading(false);
     }
-  }, [fileUrl, artifact.mimeType, t, theme]);
+  }, [fileUrl, artifact.mimeType, t, theme, canClientSideParse]);
 
   useEffect(() => {
     convertDocument();
@@ -133,8 +158,19 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     );
   }
 
-  // Fallback mode: backend doesn't support conversion — show download button
-  if (fallbackMode) {
+  // 二级 fallback：前端纯浏览器解析 OOXML
+  if (fallbackStage === "client-side") {
+    return (
+      <OfficeOoxmlPreview
+        artifact={artifact}
+        theme={theme}
+        workspace={workspace}
+      />
+    );
+  }
+
+  // 三级 fallback：仅下载
+  if (fallbackStage === "download-only") {
     return (
       <div
         style={{

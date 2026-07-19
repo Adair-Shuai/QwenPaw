@@ -2,6 +2,8 @@
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import fs from "fs";
+import os from "os";
 
 // Vitest plugin: transforms .css imports inside node_modules to empty stubs.
 // This prevents errors from packages like @agentscope-ai/icons that import CSS.
@@ -13,6 +15,108 @@ const cssStubPlugin = {
     }
   },
 };
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Plugin bundle watcher
+//
+// Plugin UIs (e.g. UGSci) are pre-built bundles served by the backend from
+// the runtime directory (~/.qwenpaw/plugins/<id>/), not processed by Vite.
+// This means Vite's HMR doesn't apply to them.
+//
+// This plugin solves two problems:
+//   1. **Auto-sync**: When `vite build --watch` (run in the plugin UI dir)
+//      rebuilds `plugins/bundle/ugsci/ui/dist/index.js`, the watcher copies
+//      the new bundle to:
+//        - src/qwenpaw/plugins_bundle/<id>/ui/dist/index.js  (package bundle)
+//        - src/qwenpaw/plugins_bundle/<id>/static/index.js   (static fallback)
+//        - ~/.qwenpaw/plugins/<id>/ui/dist/index.js           (runtime — what the backend serves)
+//        - ~/.qwenpaw/plugins/<id>/static/index.js            (runtime static fallback)
+//        - plugins/bundle/<id>/static/index.js                (source static fallback)
+//   2. **Auto-reload**: After syncing, it sends a `full-reload` event via
+//      Vite's HMR WebSocket so the browser refreshes and picks up the new
+//      bundle on the next page load.
+//
+// Usage:
+//   Terminal 1: cd console && npx vite --host          (this dev server)
+//   Terminal 2: cd plugins/bundle/ugsci/ui && npm run dev  (vite build --watch)
+//   Edit plugins/bundle/ugsci/ui/src/index.ts → auto-rebuild → auto-sync → auto-reload
+// ─────────────────────────────────────────────────────────────────────────────
+// Each entry: { source: <dist/index.js>, syncTargets: [...] }
+const PLUGIN_WATCH_ENTRIES: { source: string; syncTargets: string[] }[] = [
+  {
+    source: path.resolve(__dirname, "../plugins/bundle/ugsci/ui/dist/index.js"),
+    syncTargets: [
+      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci/ui/dist/index.js"),
+      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci/static/index.js"),
+      path.resolve(__dirname, "../plugins/bundle/ugsci/static/index.js"),
+      path.join(os.homedir(), ".qwenpaw/plugins/ugsci/ui/dist/index.js"),
+      path.join(os.homedir(), ".qwenpaw/plugins/ugsci/static/index.js"),
+    ],
+  },
+  {
+    source: path.resolve(__dirname, "../plugins/bundle/ugsci_research/ui/dist/index.js"),
+    syncTargets: [
+      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci_research/ui/dist/index.js"),
+      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci_research/static/index.js"),
+      path.resolve(__dirname, "../plugins/bundle/ugsci_research/static/index.js"),
+      path.join(os.homedir(), ".qwenpaw/plugins/ugsci_research/ui/dist/index.js"),
+      path.join(os.homedir(), ".qwenpaw/plugins/ugsci_research/static/index.js"),
+    ],
+  },
+];
+
+function pluginBundleWatcher() {
+  return {
+    name: "plugin-bundle-watcher",
+    configureServer(server: any) {
+      const watched: { source: string; syncTargets: string[] }[] = [];
+      for (const entry of PLUGIN_WATCH_ENTRIES) {
+        if (fs.existsSync(entry.source)) {
+          watched.push(entry);
+        }
+      }
+
+      if (watched.length === 0) return;
+
+      console.info(
+        `[plugin-bundle-watcher] Watching ${watched.length} plugin bundle(s) for rebuild → auto-sync + auto-reload`,
+      );
+
+      for (const entry of watched) {
+        let debounceTimer: NodeJS.Timeout | null = null;
+        fs.watch(entry.source, () => {
+          if (debounceTimer) clearTimeout(debounceTimer);
+          debounceTimer = setTimeout(() => {
+            const pluginName = path.basename(
+              path.dirname(path.dirname(entry.source)),
+            );
+            try {
+              // Sync the rebuilt bundle to all target locations
+              let synced = 0;
+              for (const target of entry.syncTargets) {
+                try {
+                  // Ensure parent directory exists
+                  fs.mkdirSync(path.dirname(target), { recursive: true });
+                  fs.copyFileSync(entry.source, target);
+                  synced++;
+                } catch {
+                  // Target might not exist yet (e.g. runtime dir not created) — skip silently
+                }
+              }
+              console.info(
+                `[plugin-bundle-watcher] ${pluginName}/index.js rebuilt → synced to ${synced}/${entry.syncTargets.length} locations → triggering full reload`,
+              );
+            } catch (err) {
+              console.warn(`[plugin-bundle-watcher] Failed to sync ${pluginName}:`, err);
+            }
+            // Trigger browser full reload to pick up the new bundle
+            server.ws.send({ type: "full-reload" });
+          }, 500);
+        });
+      }
+    },
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Optional-deps plugin
@@ -72,7 +176,7 @@ export default defineConfig(({ mode }) => {
       TOKEN: JSON.stringify(env.TOKEN || ""),
       MOBILE: false,
     },
-    plugins: [react(), optionalDepsPlugin, cssStubPlugin],
+    plugins: [react(), optionalDepsPlugin, cssStubPlugin, pluginBundleWatcher()],
     css: {
       modules: {
         localsConvention: "camelCase",

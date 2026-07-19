@@ -34,6 +34,7 @@ import MarkdownRenderer from "../renderers/MarkdownRenderer";
 import HtmlRenderer from "../renderers/HtmlRenderer";
 import CodeRenderer from "../renderers/CodeRenderer";
 import JsonRenderer from "../renderers/JsonRenderer";
+import CsvRenderer from "../renderers/CsvRenderer";
 import ImageRenderer from "../renderers/ImageRenderer";
 import PdfRenderer from "../renderers/PdfRenderer";
 import OfficeDocRenderer from "../renderers/OfficeDocRenderer";
@@ -88,6 +89,16 @@ const builtinRenderers: RendererRegistration[] = [
       MimeTypes.CSS,
       MimeTypes.SHELL,
       MimeTypes.PLAIN,
+      MimeTypes.YAML,
+      MimeTypes.XML,
+      "text/yaml",
+      "text/x-yaml",
+      "text/xml",
+      "text/x-toml",
+      "text/x-ini",
+      "application/x-toml",
+      "application/x-ini",
+      "application/x-properties",
     ],
     extensions: [
       "js",
@@ -98,6 +109,8 @@ const builtinRenderers: RendererRegistration[] = [
       "java",
       "c",
       "cpp",
+      "h",
+      "hpp",
       "go",
       "rs",
       "rb",
@@ -108,6 +121,34 @@ const builtinRenderers: RendererRegistration[] = [
       "css",
       "less",
       "scss",
+      "yaml",
+      "yml",
+      "xml",
+      "toml",
+      "ini",
+      "cfg",
+      "conf",
+      "log",
+      "env",
+      "lua",
+      "r",
+      "dart",
+      "kt",
+      "kotlin",
+      "swift",
+      "scala",
+      "vim",
+      "properties",
+      "graphql",
+      "gql",
+      "proto",
+      "gradle",
+      "tf",
+      "makefile",
+      "dockerfile",
+      "bat",
+      "ps1",
+      "psm1",
     ],
     priority: 5,
     editable: true,
@@ -125,7 +166,21 @@ const builtinRenderers: RendererRegistration[] = [
     priority: 8,
     editable: true,
     streamable: true,
-    description: "JSON 树形查看器，支持折叠/展开和 JSON Path 搜索",
+    description:
+      "JSON 树形查看器，支持自动格式化、折叠/展开、路径面包屑、搜索高亮",
+  },
+
+  // CSV/TSV 渲染器（RFC 4180 解析 + 列类型推断 + 搜索 + 分页）
+  {
+    id: "csv",
+    name: "CSV",
+    component: CsvRenderer,
+    mimeTypes: [MimeTypes.CSV, "text/tab-separated-values"],
+    extensions: ["csv", "tsv"],
+    priority: 10,
+    streamable: true,
+    description:
+      "CSV/TSV 表格渲染，支持 RFC 4180 解析、列类型推断、sticky 表头、搜索、分页",
   },
 
   // Mermaid 图表渲染器
@@ -144,7 +199,7 @@ const builtinRenderers: RendererRegistration[] = [
   // 2. 文档类
   // ═══════════════════════════════════════════════════════════════════════
 
-  // PDF 渲染器（react-pdf）
+  // PDF 渲染器（react-pdf + 论文模式 + 缩略图 + 全文搜索）
   {
     id: "pdf",
     name: "PDF",
@@ -152,10 +207,11 @@ const builtinRenderers: RendererRegistration[] = [
     mimeTypes: [MimeTypes.PDF],
     extensions: ["pdf"],
     priority: 10,
-    description: "PDF 文档渲染，支持页码导航和缩放",
+    description:
+      "PDF 文档渲染，支持简单/论文双模式、缩略图、大纲、全文搜索、研究面板",
   },
 
-  // Office 文档渲染器（后端转换 + HTML 渲染）
+  // Office 文档渲染器（后端转换 + 前端 OOXML fallback）
   {
     id: "office-doc",
     name: "Office Document",
@@ -163,7 +219,8 @@ const builtinRenderers: RendererRegistration[] = [
     mimeTypes: [MimeTypes.DOCX, MimeTypes.XLSX, MimeTypes.PPTX],
     extensions: ["docx", "xlsx", "pptx", "doc", "xls", "ppt"],
     priority: 10,
-    description: "Office 文档渲染（后端转换为 HTML，支持 DOCX/XLSX/PPTX）",
+    description:
+      "Office 文档渲染（三级 fallback：后端转换 → 前端 OOXML 解析 → 下载）",
   },
 
   // ═══════════════════════════════════════════════════════════════════════

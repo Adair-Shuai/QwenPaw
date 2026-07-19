@@ -1,0 +1,2 @@
+# FlowForge has no third-party runtime dependencies beyond QwenPaw's
+# already-installed FastAPI / Pydantic / structlog stack.

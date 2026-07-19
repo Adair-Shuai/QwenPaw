@@ -20,21 +20,37 @@ vi.mock("@/api/authHeaders", () => ({
   }),
 }));
 
+// Mock OfficeOoxmlPreview — the real component does async fetch + dynamic
+// import (mammoth/read-excel-file) which hangs in the test environment.
+// Using @/ alias path (same approach as @/api/authHeaders mock above).
+vi.mock("@/components/Workspace/renderers/OfficeOoxmlPreview", () => ({
+  default: function MockOoxmlPreview() {
+    return null as any;
+  },
+}));
+
 // Mock react-i18next
+// CRITICAL: the t function must be stable (same reference across renders).
+// OfficeDocRenderer's useCallback depends on `t`; if t changes every render,
+// convertDocument is recreated → useEffect re-fires → infinite loop in tests.
+const { stableT } = vi.hoisted(() => ({
+  stableT: (key: string) => {
+    const map: Record<string, string> = {
+      "workspace.converting": "Converting...",
+      "workspace.download": "Download",
+      "workspace.retry": "Retry",
+      "workspace.reload": "Reload",
+      "workspace.convertFailed": "Conversion failed",
+      "workspace.noFileUrl": "No file URL",
+      "workspace.clientSideConverting": "Parsing in browser...",
+      "workspace.clientSideConvertFailed": "Client-side parsing failed",
+      "workspace.clientSidePreview": "Client-side preview",
+    };
+    return map[key] || key;
+  },
+}));
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({
-    t: (key: string) => {
-      const map: Record<string, string> = {
-        "workspace.converting": "Converting...",
-        "workspace.download": "Download",
-        "workspace.retry": "Retry",
-        "workspace.reload": "Reload",
-        "workspace.convertFailed": "Conversion failed",
-        "workspace.noFileUrl": "No file URL",
-      };
-      return map[key] || key;
-    },
-  }),
+  useTranslation: () => ({ t: stableT }),
 }));
 
 import OfficeDocRenderer from "../OfficeDocRenderer";
@@ -149,8 +165,11 @@ describe("OfficeDocRenderer", () => {
     expect(srcDoc).toContain("Page Break");
   });
 
-  it("shows fallback download mode on 404 or 405", async () => {
-    // Test 404
+  it("shows client-side OOXML fallback for docx on 404 or 405", async () => {
+    // Test 404 — docx is OOXML, so should route to client-side fallback.
+    // OfficeOoxmlPreview is mocked to return null, so we verify routing by
+    // checking: (1) loading spinner is gone, (2) no iframe (success),
+    // (3) no "Download" button (download-only would show for legacy formats).
     global.fetch = vi.fn(() =>
       Promise.resolve({
         ok: false,
@@ -159,18 +178,20 @@ describe("OfficeDocRenderer", () => {
       }),
     ) as unknown as typeof global.fetch;
 
-    const { unmount: unmount1 } = render(
+    const { container, unmount: unmount1 } = render(
       <OfficeDocRenderer {...makeContext()} />,
     );
     await waitFor(
       () => {
-        expect(screen.getByText("Download")).toBeInTheDocument();
+        expect(container.querySelector(".ant-spin")).not.toBeInTheDocument();
+        expect(container.querySelector("iframe")).not.toBeInTheDocument();
+        expect(screen.queryByText("Download")).not.toBeInTheDocument();
       },
-      { timeout: 3000 },
+      { timeout: 5000 },
     );
     unmount1();
 
-    // Test 405
+    // Test 405 — same behavior
     global.fetch = vi.fn(() =>
       Promise.resolve({
         ok: false,
@@ -179,7 +200,41 @@ describe("OfficeDocRenderer", () => {
       }),
     ) as unknown as typeof global.fetch;
 
-    render(<OfficeDocRenderer {...makeContext()} />);
+    const { container: container2 } = render(
+      <OfficeDocRenderer {...makeContext()} />,
+    );
+    await waitFor(
+      () => {
+        expect(container2.querySelector(".ant-spin")).not.toBeInTheDocument();
+        expect(container2.querySelector("iframe")).not.toBeInTheDocument();
+        expect(screen.queryByText("Download")).not.toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
+  });
+
+  it("shows download-only fallback for legacy doc on 404", async () => {
+    // Legacy .doc (not OOXML) → download-only fallback
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 404,
+        json: () => Promise.resolve({ detail: "Not found" }),
+      }),
+    ) as unknown as typeof global.fetch;
+
+    const ctx = makeContext({
+      artifact: {
+        id: "test-doc-legacy",
+        title: "legacy.doc",
+        source: "tool_call",
+        mimeType: "application/msword",
+        extension: "doc",
+        binaryUrl: "/api/workspace/binary-files/legacy.doc",
+      },
+    });
+
+    render(<OfficeDocRenderer {...ctx} />);
     await waitFor(
       () => {
         expect(screen.getByText("Download")).toBeInTheDocument();
@@ -188,17 +243,22 @@ describe("OfficeDocRenderer", () => {
     );
   });
 
-  it("shows fallback on network error", async () => {
+  it("shows client-side fallback on network error for OOXML", async () => {
     global.fetch = vi.fn(() =>
       Promise.reject(new Error("Network error")),
     ) as unknown as typeof global.fetch;
 
     const ctx = makeContext();
-    render(<OfficeDocRenderer {...ctx} />);
+    const { container } = render(<OfficeDocRenderer {...ctx} />);
 
-    await waitFor(() => {
-      expect(screen.getByText("Download")).toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(container.querySelector(".ant-spin")).not.toBeInTheDocument();
+        expect(container.querySelector("iframe")).not.toBeInTheDocument();
+        expect(screen.queryByText("Download")).not.toBeInTheDocument();
+      },
+      { timeout: 5000 },
+    );
   });
 
   it("applies dark theme colors in iframe HTML", async () => {

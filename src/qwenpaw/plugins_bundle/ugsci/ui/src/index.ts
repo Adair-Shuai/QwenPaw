@@ -110,6 +110,7 @@ function getHost() {
     getApiUrl: (path: string) => string;
     getApiToken: () => string;
     setSelectedAgent?: (agentId: string) => void;
+    useSelectedAgent?: () => { id: string };
     ReactMarkdown?: any;
     remarkGfm?: any;
   };
@@ -198,6 +199,19 @@ function extractMCPKeys(mcpConfig: unknown): string[] {
 import type React from "react";
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
+
+/**
+ * Shared button style that matches the "新建聊天" (new chat) button:
+ * solid #0072f5 fill, white text, 13px / 600 weight, no border, 8px radius.
+ */
+const PRIMARY_BTN_STYLE: Record<string, unknown> = {
+  background: "#0072f5",
+  color: "#fff",
+  fontSize: 13,
+  fontWeight: 600,
+  border: "none",
+  borderRadius: 8,
+};
 
 /** Check if the sidebar is currently in simple mode. */
 function isSimpleMode(): boolean {
@@ -1710,6 +1724,7 @@ function ExpertTeamCard({
             : undefined,
           disabled: !coordinatorAgent,
           onClick: () => onLaunch(team),
+          style: PRIMARY_BTN_STYLE,
         },
         "发起团队任务",
       ),
@@ -1830,6 +1845,7 @@ function ExpertTeamSection({
           size: "small",
           icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
           onClick: handleCreateTeam,
+          style: PRIMARY_BTN_STYLE,
         },
         "创建专家团",
       ),
@@ -1858,7 +1874,7 @@ function ExpertTeamSection({
                 marginBottom: 10,
               },
             },
-            React.createElement("span", { style: { fontSize: 16 } }, "⭐"),
+            React.createElement("span", { style: { fontSize: 16 } }),
             React.createElement(
               Text,
               { strong: true, style: { fontSize: 14 } },
@@ -1900,7 +1916,7 @@ function ExpertTeamSection({
                 marginBottom: 10,
               },
             },
-            React.createElement("span", { style: { fontSize: 16 } }, "📋"),
+            React.createElement("span", { style: { fontSize: 16 } }),
             React.createElement(
               Text,
               { strong: true, style: { fontSize: 14 } },
@@ -2086,6 +2102,45 @@ async function deleteSkillForAgent(
   });
 }
 
+// ─── Batch Skill Management Helpers ──────────────────────────────────────────
+
+interface BatchSkillResult {
+  results: Record<string, { success: boolean; reason?: string }>;
+}
+
+async function batchEnableSkillsForAgent(
+  agentId: string,
+  skillNames: string[],
+): Promise<BatchSkillResult> {
+  return apiFetch<BatchSkillResult>("/skills/batch-enable", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(skillNames),
+  });
+}
+
+async function batchDisableSkillsForAgent(
+  agentId: string,
+  skillNames: string[],
+): Promise<BatchSkillResult> {
+  return apiFetch<BatchSkillResult>("/skills/batch-disable", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(skillNames),
+  });
+}
+
+async function batchDeleteSkillsForAgent(
+  agentId: string,
+  skillNames: string[],
+): Promise<BatchSkillResult> {
+  return apiFetch<BatchSkillResult>("/skills/batch-delete", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(skillNames),
+  });
+}
+
 // ─── MCP Management Helpers ──────────────────────────────────────────────────
 
 /** List all MCP clients for a specific agent. */
@@ -2104,6 +2159,166 @@ async function deleteMCPForAgent(
   await apiFetch(`/mcp/${encodeURIComponent(clientKey)}`, {
     method: "DELETE",
     headers: { "X-Agent-Id": agentId },
+  });
+}
+
+/** Create an MCP client for a specific agent. */
+async function createMCPForAgent(
+  agentId: string,
+  body: Record<string, unknown>,
+): Promise<MCPClientInfo> {
+  return apiFetch<MCPClientInfo>("/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(body),
+  });
+}
+
+/** Toggle an MCP client's enabled status for a specific agent. */
+async function toggleMCPForAgent(
+  agentId: string,
+  clientKey: string,
+): Promise<MCPClientInfo> {
+  return apiFetch<MCPClientInfo>(
+    `/mcp/toggle/${encodeURIComponent(clientKey)}`,
+    {
+      method: "PATCH",
+      headers: { "X-Agent-Id": agentId },
+    },
+  );
+}
+
+/** Disable a skill in an agent's workspace. */
+async function disableSkillForAgent(
+  agentId: string,
+  skillName: string,
+): Promise<void> {
+  await apiFetch(`/skills/${encodeURIComponent(skillName)}/disable`, {
+    method: "POST",
+    headers: { "X-Agent-Id": agentId },
+  });
+}
+
+// ─── Heartbeat Helpers ───────────────────────────────────────────────────────
+
+interface HeartbeatConfig {
+  enabled: boolean;
+  every: string;
+  target: string;
+  timeoutSeconds: number;
+  activeHours?: { start: string; end: string } | null;
+}
+
+interface EveryParts {
+  number: number;
+  unit: "m" | "h";
+}
+
+function parseEvery(every: string): EveryParts {
+  const s = (every || "").trim();
+  if (!s) return { number: 6, unit: "h" };
+  const m = s.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (!m) return { number: 6, unit: "h" };
+  const hours = parseInt(m[1] || "0", 10);
+  const minutes = parseInt(m[2] || "0", 10);
+  const seconds = parseInt(m[3] || "0", 10);
+  const totalMinutes = hours * 60 + minutes + Math.round(seconds / 60);
+  if (totalMinutes <= 0) return { number: 6, unit: "h" };
+  if (totalMinutes >= 60 && totalMinutes % 60 === 0) {
+    return { number: totalMinutes / 60, unit: "h" };
+  }
+  return { number: totalMinutes, unit: "m" };
+}
+
+function serializeEvery(parts: EveryParts): string {
+  return parts.unit === "h" ? `${parts.number}h` : `${parts.number}m`;
+}
+
+async function fetchHeartbeatConfig(
+  agentId: string,
+): Promise<HeartbeatConfig> {
+  return apiFetch<HeartbeatConfig>("/config/heartbeat", {
+    headers: { "X-Agent-Id": agentId },
+  });
+}
+
+async function updateHeartbeatConfig(
+  agentId: string,
+  body: HeartbeatConfig,
+): Promise<HeartbeatConfig> {
+  return apiFetch<HeartbeatConfig>("/config/heartbeat", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(body),
+  });
+}
+
+async function runHeartbeatNow(agentId: string): Promise<void> {
+  await apiFetch<{ started: boolean }>("/config/heartbeat/run", {
+    method: "POST",
+    headers: { "X-Agent-Id": agentId },
+  });
+}
+
+// ─── Running Config Helpers ──────────────────────────────────────────────────
+
+interface AgentsRunningConfig {
+  max_iters: number;
+  loop?: unknown;
+  shell_command_timeout: number;
+  shell_command_executable: string;
+  llm_retry_enabled: boolean;
+  llm_max_retries: number;
+  llm_backoff_base: number;
+  llm_backoff_cap: number;
+  llm_max_concurrent: number;
+  llm_max_qpm: number;
+  llm_rate_limit_pause: number;
+  llm_rate_limit_jitter: number;
+  llm_acquire_timeout: number;
+  history_max_length: number;
+  context_manager_backend: string;
+  memory_manager_backend: string;
+  approval_level?: string;
+  [key: string]: unknown;
+}
+
+async function fetchRunningConfig(
+  agentId: string,
+): Promise<AgentsRunningConfig> {
+  return apiFetch<AgentsRunningConfig>("/workspace/running-config", {
+    headers: { "X-Agent-Id": agentId },
+  });
+}
+
+async function updateRunningConfig(
+  agentId: string,
+  body: AgentsRunningConfig,
+): Promise<AgentsRunningConfig> {
+  return apiFetch<AgentsRunningConfig>("/workspace/running-config", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(body),
+  });
+}
+
+// ─── System Prompt Files Helpers ─────────────────────────────────────────────
+
+async function fetchSystemPromptFiles(agentId: string): Promise<string[]> {
+  const data = await apiFetch<string[]>("/workspace/system-prompt-files", {
+    headers: { "X-Agent-Id": agentId },
+  });
+  return data || [];
+}
+
+async function updateSystemPromptFiles(
+  agentId: string,
+  files: string[],
+): Promise<string[]> {
+  return apiFetch<string[]>("/workspace/system-prompt-files", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify(files),
   });
 }
 
@@ -2505,21 +2720,1226 @@ function SkillPickerModal({
   );
 }
 
+// ─── Expert Config Modal ─────────────────────────────────────────────────────
+
+const CFG_LABEL_STYLE: Record<string, unknown> = {
+  marginBottom: 6,
+  fontSize: 13,
+  fontWeight: 500,
+  color: "#333",
+};
+const CFG_ROW_STYLE: Record<string, unknown> = { marginBottom: 16 };
+
+/** Heartbeat configuration tab — fetches/saves /config/heartbeat with X-Agent-Id. */
+function HeartbeatConfigTab({ agentId }: { agentId: string }) {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback } = React;
+  const {
+    Card,
+    Switch,
+    InputNumber,
+    Select,
+    Button,
+    Spin,
+    Space,
+    Typography,
+    message: antdMsg,
+  } = getHost().antd;
+  const { PlayCircleOutlined, SaveOutlined } = getHost().antdIcons || {};
+  const { Text } = Typography;
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [enabled, setEnabled] = useState(false);
+  const [everyNumber, setEveryNumber] = useState(6);
+  const [everyUnit, setEveryUnit] = useState<"m" | "h">("h");
+  const [target, setTarget] = useState("main");
+  const [timeoutSeconds, setTimeoutSeconds] = useState(300);
+  const [useActiveHours, setUseActiveHours] = useState(false);
+  const [activeHoursStart, setActiveHoursStart] = useState("08:00");
+  const [activeHoursEnd, setActiveHoursEnd] = useState("22:00");
+
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchHeartbeatConfig(agentId);
+      const parts = parseEvery(data.every ?? "6h");
+      setEnabled(data.enabled ?? false);
+      setEveryNumber(parts.number);
+      setEveryUnit(parts.unit);
+      setTarget(data.target ?? "main");
+      setTimeoutSeconds(data.timeoutSeconds ?? 300);
+      setUseActiveHours(!!data.activeHours);
+      setActiveHoursStart(data.activeHours?.start ?? "08:00");
+      setActiveHoursEnd(data.activeHours?.end ?? "22:00");
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载心跳配置失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await updateHeartbeatConfig(agentId, {
+        enabled,
+        every: serializeEvery({ number: everyNumber, unit: everyUnit }),
+        target,
+        timeoutSeconds,
+        activeHours:
+          useActiveHours && activeHoursStart && activeHoursEnd
+            ? { start: activeHoursStart, end: activeHoursEnd }
+            : undefined,
+      });
+      antdMsg.success("心跳配置已保存");
+    } catch (err: any) {
+      antdMsg.error(err.message || "保存心跳配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleRunNow = async () => {
+    setRunning(true);
+    try {
+      await runHeartbeatNow(agentId);
+      antdMsg.success("已触发心跳检查");
+    } catch (err: any) {
+      antdMsg.error(err.message || "触发心跳失败");
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  if (loading) {
+    return React.createElement(
+      "div",
+      { style: { textAlign: "center", padding: 40 } },
+      React.createElement(Spin, { size: "large" }),
+    );
+  }
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      Card,
+      { size: "small", title: "心跳配置", style: { marginBottom: 12 } },
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "启用心跳"),
+        React.createElement(Switch, {
+          checked: enabled,
+          onChange: (v: boolean) => setEnabled(v),
+        }),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12, marginLeft: 8 } },
+          enabled ? "已启用，专家将定期自检" : "已停用",
+        ),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "检查频率"),
+        React.createElement(
+          Space,
+          null,
+          React.createElement(InputNumber, {
+            min: 1,
+            value: everyNumber,
+            onChange: (v: number | null) => setEveryNumber(v ?? 1),
+            style: { width: 100 },
+          }),
+          React.createElement(Select, {
+            value: everyUnit,
+            onChange: (v: "m" | "h") => setEveryUnit(v),
+            style: { width: 90 },
+            options: [
+              { value: "m", label: "分钟" },
+              { value: "h", label: "小时" },
+            ],
+          }),
+        ),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "心跳目标"),
+        React.createElement(Select, {
+          value: target,
+          onChange: (v: string) => setTarget(v),
+          style: { width: 200 },
+          options: [
+            { value: "main", label: "主会话 (main)" },
+            { value: "last", label: "最近会话 (last)" },
+            { value: "inbox", label: "收件箱 (inbox)" },
+          ],
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "超时时间 (秒)"),
+        React.createElement(InputNumber, {
+          min: 1,
+          max: 3600,
+          value: timeoutSeconds,
+          onChange: (v: number | null) => setTimeoutSeconds(v ?? 300),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "活跃时段限制"),
+        React.createElement(Switch, {
+          checked: useActiveHours,
+          onChange: (v: boolean) => setUseActiveHours(v),
+        }),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12, marginLeft: 8 } },
+          "仅在指定时段内触发心跳",
+        ),
+      ),
+      useActiveHours
+        ? React.createElement(
+            "div",
+            { style: CFG_ROW_STYLE },
+            React.createElement("div", { style: CFG_LABEL_STYLE }, "活跃时段"),
+            React.createElement(
+              Space,
+              null,
+              React.createElement("input", {
+                type: "time",
+                value: activeHoursStart,
+                onChange: (e: any) => setActiveHoursStart(e.target.value),
+                style: {
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #d9d9d9",
+                },
+              }),
+              React.createElement("span", null, "至"),
+              React.createElement("input", {
+                type: "time",
+                value: activeHoursEnd,
+                onChange: (e: any) => setActiveHoursEnd(e.target.value),
+                style: {
+                  padding: "4px 8px",
+                  borderRadius: 6,
+                  border: "1px solid #d9d9d9",
+                },
+              }),
+            ),
+          )
+        : null,
+    ),
+    React.createElement(
+      Space,
+      null,
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined,
+          loading: saving,
+          onClick: handleSave,
+          style: PRIMARY_BTN_STYLE,
+        },
+        "保存配置",
+      ),
+      React.createElement(
+        Button,
+        {
+          icon: PlayCircleOutlined
+            ? React.createElement(PlayCircleOutlined)
+            : undefined,
+          loading: running,
+          onClick: handleRunNow,
+        },
+        "立即执行",
+      ),
+    ),
+  );
+}
+
+/** Skills configuration tab — list, enable/disable, add from pool, delete. */
+function SkillsConfigTab({
+  agentId,
+  onRefresh,
+}: {
+  agentId: string;
+  onRefresh: () => void;
+}) {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback } = React;
+  const {
+    List,
+    Tag,
+    Switch,
+    Button,
+    Empty,
+    Spin,
+    Typography,
+    message: antdMsg,
+  } = getHost().antd;
+  const { PlusOutlined, ReloadOutlined, DeleteOutlined } =
+    getHost().antdIcons || {};
+  const { Text, Paragraph } = Typography;
+
+  const [skills, setSkills] = useState<SkillSpec[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [poolSkills, setPoolSkills] = useState<PoolSkillSpec[]>([]);
+  const [poolLoading, setPoolLoading] = useState(false);
+
+  const loadSkills = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchAgentSkills(agentId);
+      setSkills(data);
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载技能失败");
+      setSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadSkills();
+  }, [loadSkills]);
+
+  const handleOpenPicker = async () => {
+    setPickerOpen(true);
+    setPoolLoading(true);
+    try {
+      const pool = await fetchPoolSkills();
+      setPoolSkills(pool);
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载技能池失败");
+    } finally {
+      setPoolLoading(false);
+    }
+  };
+
+  const handleBatchInstall = async (skillNames: string[]) => {
+    let ok = 0;
+    let fail = 0;
+    for (const name of skillNames) {
+      try {
+        await installSkillFromPool(agentId, name);
+        ok++;
+      } catch {
+        fail++;
+      }
+    }
+    if (ok > 0) {
+      antdMsg.success(
+        `成功添加 ${ok} 个技能${fail > 0 ? `，${fail} 个失败` : ""}`,
+      );
+      loadSkills();
+      onRefresh();
+    } else if (fail > 0) {
+      antdMsg.error("添加技能失败");
+    }
+    setPickerOpen(false);
+  };
+
+  const handleToggle = async (skill: SkillSpec, enable: boolean) => {
+    try {
+      if (enable) {
+        await enableSkillForAgent(agentId, skill.name);
+      } else {
+        await disableSkillForAgent(agentId, skill.name);
+      }
+      antdMsg.success(enable ? "已启用" : "已停用");
+      loadSkills();
+      onRefresh();
+    } catch (err: any) {
+      antdMsg.error(err.message || "操作失败");
+    }
+  };
+
+  const handleDelete = async (skillName: string) => {
+    try {
+      await deleteSkillForAgent(agentId, skillName);
+      antdMsg.success(`技能「${skillName}」已移除`);
+      loadSkills();
+      onRefresh();
+    } catch (err: any) {
+      antdMsg.error(err.message || "移除技能失败");
+    }
+  };
+
+  if (loading) {
+    return React.createElement(
+      "div",
+      { style: { textAlign: "center", padding: 40 } },
+      React.createElement(Spin, { size: "large" }),
+    );
+  }
+
+  const enabledSkills = skills.filter((s) => s.enabled !== false);
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        },
+      },
+      React.createElement(
+        Text,
+        { strong: true },
+        `技能列表 (${skills.length}，已启用 ${enabledSkills.length})`,
+      ),
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8 } },
+        React.createElement(
+          Button,
+          {
+            size: "small",
+            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+            onClick: loadSkills,
+          },
+          "刷新",
+        ),
+        React.createElement(
+          Button,
+          {
+            type: "primary",
+            size: "small",
+            icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+            onClick: handleOpenPicker,
+            style: PRIMARY_BTN_STYLE,
+          },
+          "从技能池添加",
+        ),
+      ),
+    ),
+    skills.length === 0
+      ? React.createElement(Empty, {
+          description: "该专家暂无技能",
+          image: Empty.PRESENTED_IMAGE_SIMPLE,
+        })
+      : React.createElement(List, {
+          dataSource: skills,
+          renderItem: (skill: SkillSpec) =>
+            React.createElement(
+              List.Item,
+              {
+                actions: [
+                  React.createElement(Switch, {
+                    key: "toggle",
+                    size: "small",
+                    checked: skill.enabled !== false,
+                    onChange: (v: boolean) => handleToggle(skill, v),
+                  }),
+                  React.createElement(
+                    Button,
+                    {
+                      key: "del",
+                      type: "link",
+                      size: "small",
+                      danger: true,
+                      icon: DeleteOutlined
+                        ? React.createElement(DeleteOutlined)
+                        : undefined,
+                      onClick: () => handleDelete(skill.name),
+                    },
+                    "移除",
+                  ),
+                ],
+              },
+              React.createElement(
+                "div",
+                { style: { width: "100%" } },
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 4,
+                    },
+                  },
+                  skill.emoji
+                    ? React.createElement(
+                        "span",
+                        { style: { fontSize: 16 } },
+                        skill.emoji,
+                      )
+                    : null,
+                  React.createElement(Text, { strong: true }, skill.name),
+                  skill.version_text
+                    ? React.createElement(
+                        Tag,
+                        { style: { fontSize: 10 } },
+                        `v${skill.version_text}`,
+                      )
+                    : null,
+                ),
+                skill.description
+                  ? React.createElement(
+                      Paragraph,
+                      {
+                        type: "secondary",
+                        style: { fontSize: 12, margin: 0 },
+                        ellipsis: { rows: 2 },
+                      },
+                      skill.description,
+                    )
+                  : null,
+              ),
+            ),
+        }),
+    React.createElement(SkillPickerModal, {
+      open: pickerOpen,
+      onClose: () => setPickerOpen(false),
+      poolSkills,
+      installedSkillNames: skills.map((s) => s.name),
+      loading: poolLoading,
+      onInstall: handleBatchInstall,
+    }),
+  );
+}
+
+/** MCP configuration tab — list, toggle, delete, create via JSON import. */
+function MCPConfigTab({
+  agentId,
+  onRefresh,
+}: {
+  agentId: string;
+  onRefresh: () => void;
+}) {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback } = React;
+  const {
+    List,
+    Tag,
+    Button,
+    Empty,
+    Spin,
+    Modal,
+    Input,
+    Typography,
+    message: antdMsg,
+  } = getHost().antd;
+  const { PlusOutlined, ReloadOutlined, DeleteOutlined } =
+    getHost().antdIcons || {};
+  const { Text, Paragraph } = Typography;
+  const { TextArea } = Input;
+
+  const [mcps, setMcps] = useState<MCPClientInfo[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [createOpen, setCreateOpen] = useState(false);
+  const [jsonInput, setJsonInput] = useState(`{
+  "mcpServers": {
+    "example-client": {
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "env": {}
+    }
+  }
+}`);
+  const [creating, setCreating] = useState(false);
+
+  const loadMCPs = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await fetchAgentMCPClients(agentId);
+      setMcps(data);
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载 MCP 失败");
+      setMcps([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadMCPs();
+  }, [loadMCPs]);
+
+  const handleToggle = async (key: string) => {
+    try {
+      await toggleMCPForAgent(agentId, key);
+      antdMsg.success("已切换 MCP 状态");
+      loadMCPs();
+      onRefresh();
+    } catch (err: any) {
+      antdMsg.error(err.message || "切换失败");
+    }
+  };
+
+  const handleDelete = async (key: string) => {
+    try {
+      await deleteMCPForAgent(agentId, key);
+      antdMsg.success(`MCP「${key}」已移除`);
+      loadMCPs();
+      onRefresh();
+    } catch (err: any) {
+      antdMsg.error(err.message || "移除 MCP 失败");
+    }
+  };
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      const parsed = JSON.parse(jsonInput);
+      const servers = parsed.mcpServers || parsed;
+      const entries = Object.entries(servers);
+      if (entries.length === 0) {
+        antdMsg.warning("未找到 MCP 客户端配置");
+        return;
+      }
+      for (const [clientKey, cfg] of entries) {
+        const clientCfg = cfg as Record<string, unknown>;
+        const transport = clientCfg.url
+          ? "streamable_http"
+          : "stdio";
+        await createMCPForAgent(agentId, {
+          client_key: clientKey,
+          client: {
+            name: (clientCfg.name as string) || clientKey,
+            description: (clientCfg.description as string) || "",
+            enabled: true,
+            transport,
+            url: (clientCfg.url as string) || "",
+            command: (clientCfg.command as string) || "",
+            args: clientCfg.args || [],
+            env: clientCfg.env || {},
+            cwd: (clientCfg.cwd as string) || "",
+            headers: clientCfg.headers || {},
+          },
+        });
+      }
+      antdMsg.success("MCP 客户端已创建");
+      setCreateOpen(false);
+      loadMCPs();
+      onRefresh();
+    } catch (err: any) {
+      if (err instanceof SyntaxError) {
+        antdMsg.error("JSON 格式错误：" + err.message);
+      } else {
+        antdMsg.error(err.message || "创建 MCP 失败");
+      }
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  if (loading) {
+    return React.createElement(
+      "div",
+      { style: { textAlign: "center", padding: 40 } },
+      React.createElement(Spin, { size: "large" }),
+    );
+  }
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12,
+        },
+      },
+      React.createElement(Text, { strong: true }, `MCP 客户端 (${mcps.length})`),
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8 } },
+        React.createElement(
+          Button,
+          {
+            size: "small",
+            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+            onClick: loadMCPs,
+          },
+          "刷新",
+        ),
+        React.createElement(
+          Button,
+          {
+            type: "primary",
+            size: "small",
+            icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+            onClick: () => setCreateOpen(true),
+            style: PRIMARY_BTN_STYLE,
+          },
+          "添加 MCP",
+        ),
+      ),
+    ),
+    mcps.length === 0
+      ? React.createElement(Empty, {
+          description: "该专家暂无 MCP 客户端",
+          image: Empty.PRESENTED_IMAGE_SIMPLE,
+        })
+      : React.createElement(List, {
+          dataSource: mcps,
+          renderItem: (mcp: MCPClientInfo) =>
+            React.createElement(
+              List.Item,
+              {
+                actions: [
+                  React.createElement(
+                    Button,
+                    {
+                      key: "toggle",
+                      size: "small",
+                      onClick: () => handleToggle(mcp.key),
+                    },
+                    mcp.enabled ? "停用" : "启用",
+                  ),
+                  React.createElement(
+                    Button,
+                    {
+                      key: "del",
+                      type: "link",
+                      size: "small",
+                      danger: true,
+                      icon: DeleteOutlined
+                        ? React.createElement(DeleteOutlined)
+                        : undefined,
+                      onClick: () => handleDelete(mcp.key),
+                    },
+                    "移除",
+                  ),
+                ],
+              },
+              React.createElement(
+                "div",
+                { style: { width: "100%" } },
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 4,
+                    },
+                  },
+                  React.createElement("span", { style: { fontSize: 14 } }, "🔌"),
+                  React.createElement(Text, { strong: true }, mcp.name || mcp.key),
+                  React.createElement(
+                    Tag,
+                    {
+                      color: mcp.enabled ? "green" : "default",
+                      style: { fontSize: 10 },
+                    },
+                    mcp.enabled ? "启用" : "停用",
+                  ),
+                  React.createElement(
+                    Tag,
+                    { color: "purple", style: { fontSize: 10 } },
+                    mcp.transport,
+                  ),
+                ),
+                mcp.description
+                  ? React.createElement(
+                      Paragraph,
+                      {
+                        type: "secondary",
+                        style: { fontSize: 12, margin: 0 },
+                        ellipsis: { rows: 2 },
+                      },
+                      mcp.description,
+                    )
+                  : null,
+                mcp.tools && mcp.tools.length > 0
+                  ? React.createElement(
+                      "div",
+                      { style: { marginTop: 4, fontSize: 11, color: "#8c8c8c" } },
+                      `提供 ${mcp.tools.length} 个工具`,
+                    )
+                  : null,
+              ),
+            ),
+        }),
+    // Create MCP modal
+    React.createElement(
+      Modal,
+      {
+        open: createOpen,
+        title: "添加 MCP 客户端 (JSON)",
+        onCancel: () => setCreateOpen(false),
+        onOk: handleCreate,
+        confirmLoading: creating,
+        okText: "创建",
+        width: 560,
+      },
+      React.createElement(
+        "div",
+        { style: { marginBottom: 8, fontSize: 12, color: "#8c8c8c" } },
+        "粘贴 MCP 配置 JSON（支持 mcpServers 格式），将创建到当前专家工作区：",
+      ),
+      React.createElement(TextArea, {
+        value: jsonInput,
+        onChange: (e: any) => setJsonInput(e.target.value),
+        rows: 12,
+        style: { fontFamily: "monospace", fontSize: 12 },
+      }),
+    ),
+  );
+}
+
+/** Running configuration tab — fetches/saves /workspace/running-config. */
+function RunningConfigTab({ agentId }: { agentId: string }) {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback, useRef } = React;
+  const {
+    Card,
+    InputNumber,
+    Input,
+    Select,
+    Switch,
+    Button,
+    Spin,
+    Typography,
+    message: antdMsg,
+  } = getHost().antd;
+  const { SaveOutlined } = getHost().antdIcons || {};
+  const { Text } = Typography;
+
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const originalRef = useRef<AgentsRunningConfig | null>(null);
+  const [maxIters, setMaxIters] = useState(100);
+  const [shellTimeout, setShellTimeout] = useState(60);
+  const [shellExecutable, setShellExecutable] = useState("");
+  const [llmRetryEnabled, setLlmRetryEnabled] = useState(true);
+  const [llmMaxRetries, setLlmMaxRetries] = useState(3);
+  const [llmBackoffBase, setLlmBackoffBase] = useState(2);
+  const [llmBackoffCap, setLlmBackoffCap] = useState(60);
+  const [llmMaxConcurrent, setLlmMaxConcurrent] = useState(1);
+  const [llmMaxQpm, setLlmMaxQpm] = useState(0);
+  const [historyMaxLength, setHistoryMaxLength] = useState(50);
+  const [approvalLevel, setApprovalLevel] = useState("AUTO");
+  const [contextBackend, setContextBackend] = useState("light");
+  const [memoryBackend, setMemoryBackend] = useState("remelight");
+
+  const loadConfig = useCallback(async () => {
+    setLoading(true);
+    try {
+      const config = await fetchRunningConfig(agentId);
+      originalRef.current = config;
+      setMaxIters(config.max_iters ?? 100);
+      setShellTimeout(config.shell_command_timeout ?? 60);
+      setShellExecutable(config.shell_command_executable ?? "");
+      setLlmRetryEnabled(config.llm_retry_enabled ?? true);
+      setLlmMaxRetries(config.llm_max_retries ?? 3);
+      setLlmBackoffBase(config.llm_backoff_base ?? 2);
+      setLlmBackoffCap(config.llm_backoff_cap ?? 60);
+      setLlmMaxConcurrent(config.llm_max_concurrent ?? 1);
+      setLlmMaxQpm(config.llm_max_qpm ?? 0);
+      setHistoryMaxLength(config.history_max_length ?? 50);
+      setApprovalLevel(config.approval_level ?? "AUTO");
+      setContextBackend(config.context_manager_backend ?? "light");
+      setMemoryBackend(config.memory_manager_backend ?? "remelight");
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载运行配置失败");
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadConfig();
+  }, [loadConfig]);
+
+  const handleSave = async () => {
+    const original = originalRef.current;
+    if (!original) return;
+    setSaving(true);
+    try {
+      const configToSave: AgentsRunningConfig = {
+        ...original,
+        max_iters: maxIters,
+        shell_command_timeout: shellTimeout,
+        shell_command_executable: shellExecutable,
+        llm_retry_enabled: llmRetryEnabled,
+        llm_max_retries: llmMaxRetries,
+        llm_backoff_base: llmBackoffBase,
+        llm_backoff_cap: llmBackoffCap,
+        llm_max_concurrent: llmMaxConcurrent,
+        llm_max_qpm: llmMaxQpm,
+        history_max_length: historyMaxLength,
+        approval_level: approvalLevel,
+        context_manager_backend: contextBackend,
+        memory_manager_backend: memoryBackend,
+      };
+      await updateRunningConfig(agentId, configToSave);
+      originalRef.current = configToSave;
+      antdMsg.success("运行配置已保存");
+    } catch (err: any) {
+      antdMsg.error(err.message || "保存运行配置失败");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (loading) {
+    return React.createElement(
+      "div",
+      { style: { textAlign: "center", padding: 40 } },
+      React.createElement(Spin, { size: "large" }),
+    );
+  }
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      Card,
+      { size: "small", title: "运行配置", style: { marginBottom: 12 } },
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "审批级别"),
+        React.createElement(Select, {
+          value: approvalLevel,
+          onChange: (v: string) => setApprovalLevel(v),
+          style: { width: 200 },
+          options: [
+            { value: "STRICT", label: "严格 (STRICT) — 每次工具调用需审批" },
+            { value: "SMART", label: "智能 (SMART) — 高风险操作需审批" },
+            { value: "AUTO", label: "自动 (AUTO) — 自动执行" },
+            { value: "OFF", label: "关闭 (OFF) — 无限制" },
+          ],
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大迭代次数"),
+        React.createElement(InputNumber, {
+          min: 1,
+          value: maxIters,
+          onChange: (v: number | null) => setMaxIters(v ?? 100),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "Shell 命令超时 (秒)"),
+        React.createElement(InputNumber, {
+          min: 1,
+          value: shellTimeout,
+          onChange: (v: number | null) => setShellTimeout(v ?? 60),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "Shell 可执行文件"),
+        React.createElement(Input, {
+          value: shellExecutable,
+          onChange: (e: any) => setShellExecutable(e.target.value),
+          placeholder: "留空使用系统默认",
+          style: { width: 240 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "历史消息最大长度"),
+        React.createElement(InputNumber, {
+          min: 1,
+          value: historyMaxLength,
+          onChange: (v: number | null) => setHistoryMaxLength(v ?? 50),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "上下文管理后端"),
+        React.createElement(Select, {
+          value: contextBackend,
+          onChange: (v: string) => setContextBackend(v),
+          style: { width: 200 },
+          options: [{ value: "light", label: "light" }],
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "记忆管理后端"),
+        React.createElement(Select, {
+          value: memoryBackend,
+          onChange: (v: string) => setMemoryBackend(v),
+          style: { width: 200 },
+          options: [
+            { value: "remelight", label: "remelight" },
+            { value: "adbpg", label: "adbpg" },
+            { value: "none", label: "none (禁用)" },
+          ],
+        }),
+      ),
+    ),
+    React.createElement(
+      Card,
+      { size: "small", title: "LLM 重试与限流", style: { marginBottom: 12 } },
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "启用 LLM 重试"),
+        React.createElement(Switch, {
+          checked: llmRetryEnabled,
+          onChange: (v: boolean) => setLlmRetryEnabled(v),
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大重试次数"),
+        React.createElement(InputNumber, {
+          min: 0,
+          value: llmMaxRetries,
+          onChange: (v: number | null) => setLlmMaxRetries(v ?? 3),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "退避基数 (秒)"),
+        React.createElement(InputNumber, {
+          min: 1,
+          value: llmBackoffBase,
+          onChange: (v: number | null) => setLlmBackoffBase(v ?? 2),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "退避上限 (秒)"),
+        React.createElement(InputNumber, {
+          min: 1,
+          value: llmBackoffCap,
+          onChange: (v: number | null) => setLlmBackoffCap(v ?? 60),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大并发数"),
+        React.createElement(InputNumber, {
+          min: 1,
+          value: llmMaxConcurrent,
+          onChange: (v: number | null) => setLlmMaxConcurrent(v ?? 1),
+          style: { width: 120 },
+        }),
+      ),
+      React.createElement(
+        "div",
+        { style: CFG_ROW_STYLE },
+        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大 QPM (0=不限)"),
+        React.createElement(InputNumber, {
+          min: 0,
+          value: llmMaxQpm,
+          onChange: (v: number | null) => setLlmMaxQpm(v ?? 0),
+          style: { width: 120 },
+        }),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12, marginLeft: 8 } },
+          "每分钟最大请求数",
+        ),
+      ),
+    ),
+    React.createElement(
+      Button,
+      {
+        type: "primary",
+        icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined,
+        loading: saving,
+        onClick: handleSave,
+        style: PRIMARY_BTN_STYLE,
+      },
+      "保存运行配置",
+    ),
+  );
+}
+
+/**
+ * Expert configuration modal with 5 tabs: Heartbeat, Files, Skills, MCP,
+ * Running Config. All API calls use X-Agent-Id to target the expert's
+ * workspace. The Files tab reuses the existing KnowledgeBaseTab component.
+ */
+function ExpertConfigModal({
+  expert,
+  open,
+  onClose,
+  onRefresh,
+}: {
+  expert: ExpertData | null;
+  open: boolean;
+  onClose: () => void;
+  onRefresh: () => void;
+}) {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback } = React;
+  const { Modal, Tabs, Spin, Typography } = getHost().antd;
+  const { SettingOutlined } = getHost().antdIcons || {};
+  const { Text } = Typography;
+
+  // System prompt files for the Files tab (KnowledgeBaseTab needs them as prop)
+  const [promptFiles, setPromptFiles] = useState<string[]>([]);
+  const [filesLoading, setFilesLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState("heartbeat");
+
+  const loadPromptFiles = useCallback(async () => {
+    if (!expert) return;
+    setFilesLoading(true);
+    try {
+      const files = await fetchSystemPromptFiles(expert.agent.id);
+      setPromptFiles(files);
+    } catch {
+      setPromptFiles([]);
+    } finally {
+      setFilesLoading(false);
+    }
+  }, [expert]);
+
+  useEffect(() => {
+    if (open && expert) {
+      loadPromptFiles();
+    }
+  }, [open, expert, loadPromptFiles]);
+
+  if (!expert) return null;
+
+  const { agent } = expert;
+
+  const handleFilesRefresh = () => {
+    loadPromptFiles();
+    onRefresh();
+  };
+
+  const tabItems = [
+    {
+      key: "heartbeat",
+      label: "心跳",
+      children: React.createElement(HeartbeatConfigTab, {
+        agentId: agent.id,
+      }),
+    },
+    {
+      key: "files",
+      label: "文件",
+      children: filesLoading
+        ? React.createElement(
+            "div",
+            { style: { textAlign: "center", padding: 40 } },
+            React.createElement(Spin, { size: "large" }),
+          )
+        : React.createElement(KnowledgeBaseTab, {
+            agentId: agent.id,
+            systemPromptFiles: promptFiles,
+            onRefresh: handleFilesRefresh,
+          }),
+    },
+    {
+      key: "skills",
+      label: `技能 (${expert.skills.filter((s) => s.enabled !== false).length})`,
+      children: React.createElement(SkillsConfigTab, {
+        agentId: agent.id,
+        onRefresh,
+      }),
+    },
+    {
+      key: "mcp",
+      label: `MCP (${expert.mcps.length})`,
+      children: React.createElement(MCPConfigTab, {
+        agentId: agent.id,
+        onRefresh,
+      }),
+    },
+    {
+      key: "running",
+      label: "运行配置",
+      children: React.createElement(RunningConfigTab, {
+        agentId: agent.id,
+      }),
+    },
+  ];
+
+  return React.createElement(
+    Modal,
+    {
+      open,
+      title: React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 8 } },
+        SettingOutlined
+          ? React.createElement(SettingOutlined, { style: { fontSize: 18 } })
+          : null,
+        React.createElement("span", null, `配置 - ${agent.name}`),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12, fontWeight: 400 } },
+          agent.id,
+        ),
+      ),
+      onCancel: onClose,
+      footer: null,
+      width: 720,
+    },
+    React.createElement(Tabs, {
+      items: tabItems,
+      activeKey: activeTab,
+      onChange: (k: string) => setActiveTab(k),
+    }),
+  );
+}
+
 // ─── Expert Center Page ───────────────────────────────────────────────────────
 
 function ExpertCard({
   expert,
   onClick,
   onSummon,
+  onConfigure,
 }: {
   expert: ExpertData;
   onClick: () => void;
   onSummon?: () => void;
+  onConfigure?: () => void;
 }) {
   const React = getHost().React;
-  const { Card, Tag, Badge, Typography, Spin, Button } = getHost().antd;
+  const { Card, Tag, Badge, Typography, Spin, Button, Tooltip } = getHost().antd;
   const { Text } = Typography;
-  const { ThunderboltOutlined } = getHost().antdIcons || {};
+  const { ThunderboltOutlined, SettingOutlined } = getHost().antdIcons || {};
 
   const { agent, skills, mcps, loading } = expert;
   const isEnabled = agent.enabled;
@@ -2666,18 +4086,41 @@ function ExpertCard({
           }),
         )
       : null,
-    // Summon button (bottom-right)
+    // Bottom bar: gear icon (left) + summon button (right)
     React.createElement(
       "div",
       {
         style: {
           display: "flex",
-          justifyContent: "flex-end",
+          justifyContent: "space-between",
+          alignItems: "center",
           marginTop: 10,
           paddingTop: 8,
           borderTop: "1px solid #f0f0f0",
         },
       },
+      // Gear icon (bottom-left) — opens configuration modal
+      React.createElement(
+        Tooltip,
+        { title: "配置专家", placement: "top" },
+        React.createElement(
+          Button,
+          {
+            type: "text",
+            size: "small",
+            icon: SettingOutlined
+              ? React.createElement(SettingOutlined, {
+                  style: { fontSize: 16, color: "#8c8c8c" },
+                })
+              : undefined,
+            onClick: (e: any) => {
+              e.stopPropagation();
+              if (onConfigure) onConfigure();
+            },
+          },
+        ),
+      ),
+      // Summon button (bottom-right)
       React.createElement(
         Button,
         {
@@ -2691,6 +4134,7 @@ function ExpertCard({
             e.stopPropagation();
             if (onSummon) onSummon();
           },
+          style: PRIMARY_BTN_STYLE,
         },
         "召唤专家",
       ),
@@ -3317,8 +4761,41 @@ function ExpertTemplateModal({
     Typography,
   } = getHost().antd;
   const { Text } = Typography;
+  const { FileAddOutlined } = getHost().antdIcons || {};
   const [creating, setCreating] = useState(false);
   const [searchText, setSearchText] = useState("");
+  const [blankModalOpen, setBlankModalOpen] = useState(false);
+
+  const handleCreateBlank = async (name: string, description: string) => {
+    setCreating(true);
+    try {
+      const agentRef = await apiFetch<{ id: string }>("/agents", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name || "新专家",
+          description: description || "",
+          skill_names: [],
+        }),
+      });
+
+      // Write a minimal AGENTS.md
+      await writeKnowledgeFile(
+        agentRef.id,
+        "AGENTS.md",
+        `# ${name || "新专家"}\n\n请在此处编写该专家的系统提示词。\n`,
+      );
+
+      antdMsg.success("专家「" + (name || "新专家") + "」创建成功");
+      setBlankModalOpen(false);
+      onClose();
+      onCreated();
+    } catch (err: any) {
+      antdMsg.error(err.message || "创建专家失败");
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const filteredTemplates = EXPERT_TEMPLATES.filter((t) => {
     if (!searchText.trim()) return true;
@@ -3399,6 +4876,74 @@ function ExpertTemplateModal({
       : React.createElement(
           Row,
           { gutter: [12, 12] },
+          // ── Blank template card (always first) ──
+          !searchText.trim()
+            ? React.createElement(
+                Col,
+                { xs: 24, sm: 12 },
+                React.createElement(
+                  Card,
+                  {
+                    hoverable: true,
+                    size: "small",
+                    onClick: () => setBlankModalOpen(true),
+                    style: {
+                      cursor: "pointer",
+                      height: "100%",
+                      border: "2px dashed #d9d9d9",
+                      background: "#fafafa",
+                    },
+                  },
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 10,
+                        marginBottom: 8,
+                      },
+                    },
+                    React.createElement(
+                      "span",
+                      { style: { fontSize: 28, color: "#8c8c8c" } },
+                      FileAddOutlined
+                        ? React.createElement(FileAddOutlined)
+                        : "📝",
+                    ),
+                    React.createElement(
+                      "div",
+                      { style: { flex: 1 } },
+                      React.createElement(
+                        Text,
+                        { strong: true, style: { fontSize: 15 } },
+                        "从空白模版开始创建",
+                      ),
+                      React.createElement(
+                        "div",
+                        null,
+                        React.createElement(
+                          Tag,
+                          { color: "default", style: { fontSize: 10 } },
+                          "空白",
+                        ),
+                      ),
+                    ),
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        fontSize: 12,
+                        color: "#595959",
+                        lineHeight: 1.5,
+                      },
+                    },
+                    "创建一个全新的专家，不使用任何预设模板。创建后可自行配置系统提示词、技能和 MCP 客户端。",
+                  ),
+                ),
+              )
+            : null,
           ...filteredTemplates.map((template) =>
             React.createElement(
               Col,
@@ -3467,6 +5012,80 @@ function ExpertTemplateModal({
             ),
           ),
         ),
+    // ── Blank template creation modal ──
+    React.createElement(BlankExpertModal, {
+      open: blankModalOpen,
+      onCancel: () => setBlankModalOpen(false),
+      onCreate: handleCreateBlank,
+    }),
+  );
+}
+
+// ─── Blank Expert Creation Modal ─────────────────────────────────────────────
+
+function BlankExpertModal({
+  open,
+  onCancel,
+  onCreate,
+}: {
+  open: boolean;
+  onCancel: () => void;
+  onCreate: (name: string, description: string) => void;
+}) {
+  const React = getHost().React;
+  const { useState } = React;
+  const { Modal, Input, message: antdMsg } = getHost().antd;
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+
+  return React.createElement(
+    Modal,
+    {
+      open,
+      title: "从空白模版创建专家",
+      onCancel,
+      onOk: () => {
+        if (!name.trim()) {
+          antdMsg.warning("请输入专家名称");
+          return;
+        }
+        onCreate(name.trim(), description.trim());
+      },
+      okText: "创建",
+      cancelText: "取消",
+      destroyOnClose: true,
+    },
+    React.createElement(
+      "div",
+      { style: { marginBottom: 16 } },
+      React.createElement(
+        "div",
+        { style: { fontSize: 13, marginBottom: 6, color: "#595959" } },
+        "专家名称",
+      ),
+      React.createElement(Input, {
+        placeholder: "输入专家名称",
+        value: name,
+        onChange: (e: any) => setName(e.target.value),
+        maxLength: 50,
+      }),
+    ),
+    React.createElement(
+      "div",
+      null,
+      React.createElement(
+        "div",
+        { style: { fontSize: 13, marginBottom: 6, color: "#595959" } },
+        "专家描述（可选）",
+      ),
+      React.createElement(Input.TextArea, {
+        placeholder: "简要描述该专家的职责和能力...",
+        value: description,
+        onChange: (e: any) => setDescription(e.target.value),
+        rows: 3,
+        maxLength: 200,
+      }),
+    ),
   );
 }
 
@@ -3923,8 +5542,13 @@ function ExpertCenterPage() {
     Modal,
     Typography,
   } = getHost().antd;
-  const { ReloadOutlined, PlusOutlined, SearchOutlined, TeamOutlined } =
-    getHost().antdIcons || {};
+  const {
+    ReloadOutlined,
+    PlusOutlined,
+    SearchOutlined,
+    TeamOutlined,
+    UserOutlined,
+  } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
   const [experts, setExperts] = useState<ExpertData[]>([]);
@@ -3939,6 +5563,8 @@ function ExpertCenterPage() {
   );
   const [teamLaunchInput, setTeamLaunchInput] = useState("");
   const [teamLaunching, setTeamLaunching] = useState(false);
+  const [configModalOpen, setConfigModalOpen] = useState(false);
+  const [configExpert, setConfigExpert] = useState<ExpertData | null>(null);
 
   // Cache the raw agent list for team matching
   const [rawAgents, setRawAgents] = useState<AgentSummary[]>([]);
@@ -3947,24 +5573,16 @@ function ExpertCenterPage() {
     setLoading(true);
     try {
       const agents = await fetchAgents();
-      const allMCPClients = await fetchMCPClients().catch(
-        () => [] as MCPClientInfo[],
-      );
 
       // Fetch detailed data for each agent in parallel
       const expertDataList: ExpertData[] = await Promise.all(
         agents.map(async (agent): Promise<ExpertData> => {
           try {
-            const [config, skills] = await Promise.all([
+            const [config, skills, agentMCPs] = await Promise.all([
               fetchAgentConfig(agent.id).catch(() => null),
               fetchAgentSkills(agent.id).catch(() => [] as SkillSpec[]),
+              fetchAgentMCPClients(agent.id).catch(() => [] as MCPClientInfo[]),
             ]);
-
-            // Extract MCP keys from agent config and cross-reference with global MCP list
-            const mcpKeys = extractMCPKeys(config?.mcp);
-            const agentMCPs = allMCPClients.filter(
-              (mcp) => mcpKeys.includes(mcp.key) || mcpKeys.includes(mcp.name),
-            );
 
             return {
               agent,
@@ -3998,6 +5616,19 @@ function ExpertCenterPage() {
   useEffect(() => {
     loadExperts();
   }, [loadExperts]);
+
+  // Sync configExpert with the refreshed experts list so tab labels
+  // (skill count, MCP count) stay in sync after edits inside the modal.
+  useEffect(() => {
+    if (configExpert && configModalOpen) {
+      const updated = experts.find(
+        (e) => e.agent.id === configExpert.agent.id,
+      );
+      if (updated && updated !== configExpert) {
+        setConfigExpert(updated);
+      }
+    }
+  }, [experts, configExpert, configModalOpen]);
 
   const handleLaunchTeam = useCallback(
     async (team: ExpertTeam) => {
@@ -4071,6 +5702,11 @@ function ExpertCenterPage() {
     setDrawerOpen(true);
   }, []);
 
+  const handleConfigureExpert = useCallback((expert: ExpertData) => {
+    setConfigExpert(expert);
+    setConfigModalOpen(true);
+  }, []);
+
   const handleSummonExpert = useCallback(
     (expert: ExpertData) => {
       if (!expert.agent.enabled) {
@@ -4113,7 +5749,14 @@ function ExpertCenterPage() {
   const tabItems = [
     {
       key: "experts",
-      label: React.createElement("span", null, "🧑‍🔬 专家列表"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        UserOutlined
+          ? React.createElement(UserOutlined, { style: { fontSize: 14 } })
+          : null,
+        "专家列表",
+      ),
       children: React.createElement(
         "div",
         null,
@@ -4163,6 +5806,7 @@ function ExpertCenterPage() {
                       expert,
                       onClick: () => handleCardClick(expert),
                       onSummon: () => handleSummonExpert(expert),
+                      onConfigure: () => handleConfigureExpert(expert),
                     }),
                   ),
                 ),
@@ -4171,7 +5815,14 @@ function ExpertCenterPage() {
     },
     {
       key: "teams",
-      label: React.createElement("span", null, "🤝 专家团"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        TeamOutlined
+          ? React.createElement(TeamOutlined, { style: { fontSize: 14 } })
+          : null,
+        "专家团",
+      ),
       children: React.createElement(ExpertTeamSection, {
         agents: rawAgents,
         onLaunch: handleLaunchTeam,
@@ -4183,7 +5834,7 @@ function ExpertCenterPage() {
     "div",
     { style: { padding: 24 } },
     React.createElement(PageHeader, {
-      title: "专家中心",
+      title: "专家",
       subtitle: `共 ${experts.length} 位专家（${enabledCount} 位启用）· ${totalSkills} 个技能 · ${totalMCPs} 个 MCP 客户端`,
       extra: React.createElement(
         React.Fragment,
@@ -4205,6 +5856,7 @@ function ExpertCenterPage() {
             type: "primary",
             icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
             onClick: () => setTemplateModalOpen(true),
+            style: PRIMARY_BTN_STYLE,
           },
           "创建专家",
         ),
@@ -4227,6 +5879,13 @@ function ExpertCenterPage() {
       open: templateModalOpen,
       onClose: () => setTemplateModalOpen(false),
       onCreated: () => loadExperts(),
+    }),
+    // Config Modal (gear icon)
+    React.createElement(ExpertConfigModal, {
+      expert: configExpert,
+      open: configModalOpen,
+      onClose: () => setConfigModalOpen(false),
+      onRefresh: () => loadExperts(),
     }),
     // Team Launch Modal (for filling placeholders)
     teamLaunchModal
@@ -4468,28 +6127,23 @@ function CapabilityCard({
   );
 }
 
-// ─── Local Software Detection Types & Helpers ─────────────────────────────────
+// ─── Computation Engine Types & Helpers ───────────────────────────────────────
 
-interface SoftwareInfo {
+interface EngineInfo {
   id: string;
   name: string;
-  category: string;
   vendor: string;
-  version: string | null;
-  executable_path: string | null;
-  install_dir: string | null;
-  license_server: string | null;
-  status: "found" | "not_found" | "error";
+  version: string;
+  executable_path: string;
+  install_dir: string;
+  category: string;
   description: string;
   invocation_hint: string;
+  license_server: string;
   extra_paths: string[];
-}
-
-interface DetectionResult {
-  platform: string;
-  software_list: SoftwareInfo[];
-  custom_scan_paths: string[];
-  summary: string;
+  status: "configured" | "detected" | "not_found" | "error";
+  is_default: boolean;
+  is_custom: boolean;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -4498,6 +6152,7 @@ const CATEGORY_LABELS: Record<string, string> = {
   well_log_analysis: "测井分析",
   production_engineering: "采油工程",
   post_processing: "后处理与可视化",
+  multiphysics: "多物理场仿真",
 };
 
 const CATEGORY_ICONS: Record<string, string> = {
@@ -4506,38 +6161,62 @@ const CATEGORY_ICONS: Record<string, string> = {
   well_log_analysis: "📡",
   production_engineering: "⚙️",
   post_processing: "📊",
+  multiphysics: "🔬",
 };
 
-async function fetchSoftwareDetection(): Promise<DetectionResult> {
-  return apiFetch<DetectionResult>("/ugsci/software/detect");
+async function fetchEngines(): Promise<{ engines: EngineInfo[] }> {
+  return apiFetch<{ engines: EngineInfo[] }>("/ugsci/engines/list");
 }
 
-async function fetchSoftwareList(): Promise<DetectionResult> {
-  return apiFetch<DetectionResult>("/ugsci/software/list");
+async function fetchEngine(engineId: string): Promise<EngineInfo> {
+  return apiFetch<EngineInfo>(`/ugsci/engines/${encodeURIComponent(engineId)}`);
 }
 
-async function addScanPath(paths: string[]): Promise<DetectionResult> {
-  return apiFetch<DetectionResult>("/ugsci/software/scan-path", {
+async function addEngine(data: Partial<EngineInfo>): Promise<EngineInfo> {
+  return apiFetch<EngineInfo>("/ugsci/engines/", {
     method: "POST",
-    body: JSON.stringify({ paths }),
+    body: JSON.stringify(data),
   });
 }
 
-// ─── Local Software Card ──────────────────────────────────────────────────────
+async function updateEngine(
+  engineId: string,
+  data: Partial<EngineInfo>,
+): Promise<EngineInfo> {
+  return apiFetch<EngineInfo>(`/ugsci/engines/${encodeURIComponent(engineId)}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+}
 
-function SoftwareCard({
-  sw,
+async function deleteEngine(engineId: string): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>(
+    `/ugsci/engines/${encodeURIComponent(engineId)}`,
+    { method: "DELETE" },
+  );
+}
+
+async function detectEngines(): Promise<{ engines: EngineInfo[] }> {
+  return apiFetch<{ engines: EngineInfo[] }>("/ugsci/engines/detect", {
+    method: "POST",
+  });
+}
+
+// ─── Engine Card ──────────────────────────────────────────────────────────────
+
+function EngineCard({
+  engine,
   onClick,
 }: {
-  sw: SoftwareInfo;
+  engine: EngineInfo;
   onClick: () => void;
 }) {
   const React = getHost().React;
   const { Card, Tag, Typography } = getHost().antd;
   const { Text } = Typography;
 
-  const isFound = sw.status === "found";
-  const icon = CATEGORY_ICONS[sw.category] || "📦";
+  const isDetected = engine.status === "detected";
+  const icon = CATEGORY_ICONS[engine.category] || "📦";
 
   return React.createElement(
     Card,
@@ -4547,8 +6226,7 @@ function SoftwareCard({
       size: "small",
       style: {
         cursor: "pointer",
-        borderColor: isFound ? undefined : "#d9d9d9",
-        opacity: isFound ? 1 : 0.65,
+        borderColor: isDetected ? undefined : "#d9d9d9",
         height: "100%",
         width: "100%",
         display: "flex",
@@ -4581,25 +6259,49 @@ function SoftwareCard({
           React.createElement(
             Text,
             { strong: true, style: { fontSize: 14 } },
-            sw.name,
+            engine.name,
           ),
-          React.createElement(
-            "br",
-          ),
+          React.createElement("br"),
           React.createElement(
             Text,
             { type: "secondary", style: { fontSize: 11 } },
-            sw.vendor,
+            engine.vendor || "—",
           ),
         ),
       ),
       React.createElement(
-        Tag,
-        {
-          color: isFound ? "success" : "default",
-          style: { fontSize: 11 },
-        },
-        isFound ? "✅ 已检测" : "— 未安装",
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" } },
+        isDetected
+          ? React.createElement(
+              Tag,
+              { color: "success", style: { fontSize: 11 } },
+              "✅ 已检测",
+            )
+          : engine.executable_path
+            ? React.createElement(
+                Tag,
+                { color: "warning", style: { fontSize: 11 } },
+                "⚠ 路径无效",
+              )
+            : React.createElement(
+                Tag,
+                { style: { fontSize: 11 } },
+                "🔧 待配置",
+              ),
+        engine.is_default
+          ? React.createElement(
+              Tag,
+              { color: "blue", style: { fontSize: 10 } },
+              "默认",
+            )
+          : engine.is_custom
+            ? React.createElement(
+                Tag,
+                { color: "purple", style: { fontSize: 10 } },
+                "自定义",
+              )
+            : null,
       ),
     ),
     React.createElement(
@@ -4608,7 +6310,7 @@ function SoftwareCard({
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 12 } },
-        sw.description,
+        engine.description || "暂无描述",
       ),
     ),
     React.createElement(
@@ -4621,25 +6323,27 @@ function SoftwareCard({
           flexWrap: "wrap",
         },
       },
-      React.createElement(
-        Tag,
-        { style: { fontSize: 11 } },
-        CATEGORY_LABELS[sw.category] || sw.category,
-      ),
-      sw.version
+      engine.category
+        ? React.createElement(
+            Tag,
+            { style: { fontSize: 11 } },
+            CATEGORY_LABELS[engine.category] || engine.category,
+          )
+        : null,
+      engine.version
         ? React.createElement(
             Tag,
             { color: "blue", style: { fontSize: 11 } },
-            `v${sw.version}`,
+            `v${engine.version}`,
           )
         : null,
     ),
   );
 }
 
-// ─── Local Software Section ───────────────────────────────────────────────────
+// ─── Engine Section ───────────────────────────────────────────────────────────
 
-function LocalSoftwareSection() {
+function EngineSection() {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
   const {
@@ -4656,76 +6360,61 @@ function LocalSoftwareSection() {
     Modal,
     Input,
     Alert,
+    Select,
+    Popconfirm,
+    Space,
   } = getHost().antd;
   const {
     ReloadOutlined,
     SearchOutlined,
-    FolderOpenOutlined,
-    CheckCircleOutlined,
+    PlusOutlined,
+    EditOutlined,
+    DeleteOutlined,
     CopyOutlined,
+    ExperimentOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
-  const [result, setResult] = useState<DetectionResult | null>(null);
+  const [engines, setEngines] = useState<EngineInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [activeSW, setActiveSW] = useState<SoftwareInfo | null>(null);
-  const [scanPathModalOpen, setScanPathModalOpen] = useState(false);
-  const [scanPathInput, setScanPathInput] = useState("");
+  const [activeEngine, setActiveEngine] = useState<EngineInfo | null>(null);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editingEngine, setEditingEngine] = useState<EngineInfo | null>(null);
+  const [formData, setFormData] = useState<Partial<EngineInfo>>({});
+  const [saving, setSaving] = useState(false);
 
-  const loadSoftware = useCallback(async () => {
+  const loadEngines = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchSoftwareDetection();
-      setResult(data);
+      const data = await fetchEngines();
+      setEngines(data.engines || []);
     } catch (err: any) {
-      antdMsg.error(err.message || "软件检测失败");
-      setResult(null);
+      antdMsg.error(err.message || "加载引擎列表失败");
+      setEngines([]);
     } finally {
       setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    loadSoftware();
-  }, [loadSoftware]);
+    loadEngines();
+  }, [loadEngines]);
 
-  const softwareList = result?.software_list || [];
-  const foundList = softwareList.filter((s) => s.status === "found");
-  const notFoundList = softwareList.filter((s) => s.status !== "found");
-
-  const filteredSW = useMemo(() => {
-    if (!searchText.trim()) return softwareList;
+  const filteredEngines = useMemo(() => {
+    if (!searchText.trim()) return engines;
     const q = searchText.toLowerCase();
-    return softwareList.filter(
-      (s) =>
-        s.name.toLowerCase().includes(q) ||
-        s.vendor.toLowerCase().includes(q) ||
-        s.category.toLowerCase().includes(q) ||
-        s.description?.toLowerCase().includes(q),
+    return engines.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.vendor.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q) ||
+        e.description?.toLowerCase().includes(q),
     );
-  }, [softwareList, searchText]);
+  }, [engines, searchText]);
 
-  const handleAddScanPath = useCallback(async () => {
-    const paths = scanPathInput
-      .split("\n")
-      .map((p: string) => p.trim())
-      .filter(Boolean);
-    if (paths.length === 0) {
-      antdMsg.warning("请输入至少一个路径");
-      return;
-    }
-    try {
-      const data = await addScanPath(paths);
-      setResult(data);
-      antdMsg.success(`已添加 ${paths.length} 个扫描路径并重新检测`);
-      setScanPathModalOpen(false);
-      setScanPathInput("");
-    } catch (err: any) {
-      antdMsg.error(err.message || "添加扫描路径失败");
-    }
-  }, [scanPathInput]);
+  const detectedCount = engines.filter((e) => e.status === "detected").length;
 
   const handleCopyPath = useCallback((path: string) => {
     navigator.clipboard
@@ -4734,33 +6423,137 @@ function LocalSoftwareSection() {
       .catch(() => antdMsg.error("复制失败"));
   }, []);
 
-  const categoryCounts = useMemo(() => {
-    const counts: Record<string, number> = {};
-    for (const sw of foundList) {
-      counts[sw.category] = (counts[sw.category] || 0) + 1;
+  const openAddModal = useCallback(() => {
+    setEditingEngine(null);
+    setFormData({
+      name: "",
+      vendor: "",
+      version: "",
+      executable_path: "",
+      category: "",
+      description: "",
+      invocation_hint: "",
+    });
+    setEditModalOpen(true);
+  }, []);
+
+  const openEditModal = useCallback((engine: EngineInfo) => {
+    setEditingEngine(engine);
+    setFormData({ ...engine });
+    setEditModalOpen(true);
+    setDrawerOpen(false);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!formData.name?.trim()) {
+      antdMsg.warning("请输入引擎名称");
+      return;
     }
-    return counts;
-  }, [foundList]);
+    setSaving(true);
+    try {
+      if (editingEngine) {
+        await updateEngine(editingEngine.id, formData);
+        antdMsg.success("引擎已更新");
+      } else {
+        await addEngine(formData);
+        antdMsg.success("引擎已添加");
+      }
+      setEditModalOpen(false);
+      loadEngines();
+    } catch (err: any) {
+      antdMsg.error(err.message || "保存失败");
+    } finally {
+      setSaving(false);
+    }
+  }, [formData, editingEngine, loadEngines]);
+
+  const handleDelete = useCallback(
+    async (engineId: string) => {
+      try {
+        await deleteEngine(engineId);
+        antdMsg.success("引擎已删除");
+        setDrawerOpen(false);
+        loadEngines();
+      } catch (err: any) {
+        antdMsg.error(err.message || "删除失败");
+      }
+    },
+    [loadEngines],
+  );
+
+  const handleDetect = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await detectEngines();
+      setEngines(data.engines || []);
+      antdMsg.success("自动检测完成");
+    } catch (err: any) {
+      antdMsg.error(err.message || "检测失败");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Form field helper
+  const formField = useCallback(
+    (label: string, key: keyof EngineInfo, opts?: { textarea?: boolean; select?: { options: { label: string; value: string }[] } }) => {
+      const value = (formData[key] as string) || "";
+      return React.createElement(
+        "div",
+        { style: { marginBottom: 12 } },
+        React.createElement(
+          Text,
+          { style: { fontSize: 13, display: "block", marginBottom: 4 } },
+          label,
+        ),
+        opts?.select
+          ? React.createElement(Select, {
+              value: value || undefined,
+              onChange: (v: string) =>
+                setFormData((prev: any) => ({ ...prev, [key]: v })),
+              style: { width: "100%" },
+              options: opts.select.options,
+              allowClear: true,
+              placeholder: `选择${label}`,
+            })
+          : opts?.textarea
+            ? React.createElement(Input.TextArea, {
+                value,
+                onChange: (e: any) =>
+                  setFormData((prev: any) => ({ ...prev, [key]: e.target.value })),
+                rows: 3,
+                placeholder: `输入${label}`,
+              })
+            : React.createElement(Input, {
+                value,
+                onChange: (e: any) =>
+                  setFormData((prev: any) => ({ ...prev, [key]: e.target.value })),
+                placeholder: `输入${label}`,
+              }),
+      );
+    },
+    [formData],
+  );
+
+  const [alertVisible, setAlertVisible] = useState(true);
 
   return React.createElement(
     "div",
     null,
-    // Summary alert
-    result
+    // Summary alert (closable)
+    alertVisible
       ? React.createElement(
           Alert,
           {
-            type: foundList.length > 0 ? "success" : "info",
-            message: `检测到 ${foundList.length}/${softwareList.length} 个软件 · 平台: ${result.platform}`,
-            description: foundList.length > 0
-              ? Object.entries(categoryCounts)
-                  .map(
-                    ([cat, n]) =>
-                      `${CATEGORY_LABELS[cat] || cat}: ${n} 个`,
-                  )
-                  .join("，")
-              : "未检测到已安装的油气软件。可尝试添加自定义扫描路径。",
+            type: detectedCount > 0 ? "success" : "info",
+            message: `共 ${engines.length} 个引擎 · ${detectedCount} 个已检测`,
+            description:
+              detectedCount > 0
+                ? "部分引擎已自动检测到安装路径，可在卡片中查看详情。"
+                : "尚未检测到已安装的引擎。可点击「自动检测」或手动添加计算引擎。",
             showIcon: true,
+            closable: true,
+            onClose: () => setAlertVisible(false),
             style: { marginBottom: 16 },
           },
         )
@@ -4774,17 +6567,18 @@ function LocalSoftwareSection() {
           display: "flex",
           gap: 8,
           alignItems: "center",
+          flexWrap: "wrap",
         },
       },
       React.createElement(Input, {
-        placeholder: "搜索软件名称、厂商...",
+        placeholder: "搜索引擎名称、厂商...",
         prefix: SearchOutlined
           ? React.createElement(SearchOutlined)
           : undefined,
         value: searchText,
         onChange: (e: any) => setSearchText(e.target.value),
         allowClear: true,
-        style: { maxWidth: 300 },
+        style: { maxWidth: 280 },
       }),
       React.createElement(
         Button,
@@ -4792,20 +6586,22 @@ function LocalSoftwareSection() {
           icon: ReloadOutlined
             ? React.createElement(ReloadOutlined)
             : undefined,
-          onClick: loadSoftware,
+          onClick: handleDetect,
           loading,
         },
-        "重新检测",
+        "自动检测",
       ),
       React.createElement(
         Button,
         {
-          icon: FolderOpenOutlined
-            ? React.createElement(FolderOpenOutlined)
+          type: "primary",
+          icon: PlusOutlined
+            ? React.createElement(PlusOutlined)
             : undefined,
-          onClick: () => setScanPathModalOpen(true),
+          onClick: openAddModal,
+          style: PRIMARY_BTN_STYLE,
         },
-        "添加扫描路径",
+        "添加引擎",
       ),
     ),
     // Content
@@ -4815,94 +6611,39 @@ function LocalSoftwareSection() {
           { style: { textAlign: "center", padding: 60 } },
           React.createElement(Spin, {
             size: "large",
-            tip: "正在扫描本地软件...",
+            tip: "正在加载计算引擎...",
           }),
         )
-      : filteredSW.length === 0
-        ? React.createElement(Empty, { description: "无匹配软件" })
+      : filteredEngines.length === 0
+        ? React.createElement(Empty, {
+            description: searchText ? "无匹配引擎" : "暂无引擎，点击「添加引擎」开始",
+          })
         : React.createElement(
-            React.Fragment,
-            null,
-            // Found software section
-            foundList.length > 0
-              ? React.createElement(
-                  "div",
-                  { style: { marginBottom: 16 } },
-                  React.createElement(
-                    Text,
-                    { strong: true, style: { fontSize: 14 } },
-                    `已检测到的软件 (${foundList.length})`,
-                  ),
-                  React.createElement(
-                    Row,
-                    { gutter: [12, 12], align: "stretch", style: { marginTop: 12 } },
-                    ...filteredSW
-                      .filter((s) => s.status === "found")
-                      .map((sw) =>
-                        React.createElement(
-                          Col,
-                          {
-                            key: sw.id,
-                            xs: 24,
-                            sm: 12,
-                            md: 8,
-                            lg: 6,
-                            style: { display: "flex" },
-                          },
-                          React.createElement(SoftwareCard, {
-                            sw,
-                            onClick: () => {
-                              setActiveSW(sw);
-                              setDrawerOpen(true);
-                            },
-                          }),
-                        ),
-                      ),
-                  ),
-                )
-              : null,
-            // Not found section
-            notFoundList.length > 0 && !searchText
-              ? React.createElement(
-                  "div",
-                  null,
-                  React.createElement(
-                    Text,
-                    {
-                      type: "secondary",
-                      style: { fontSize: 13, marginTop: 16, display: "block" },
-                    },
-                    `未检测到的软件 (${notFoundList.length})`,
-                  ),
-                  React.createElement(
-                    Row,
-                    { gutter: [12, 12], style: { marginTop: 12 } },
-                    ...notFoundList.map((sw) =>
-                      React.createElement(
-                        Col,
-                        {
-                          key: sw.id,
-                          xs: 24,
-                          sm: 12,
-                          md: 8,
-                          lg: 6,
-                          style: { display: "flex" },
-                        },
-                        React.createElement(SoftwareCard, {
-                          sw,
-                          onClick: () => {
-                            setActiveSW(sw);
-                            setDrawerOpen(true);
-                          },
-                        }),
-                      ),
-                    ),
-                  ),
-                )
-              : null,
+            Row,
+            { gutter: [12, 12], align: "stretch" },
+            ...filteredEngines.map((engine) =>
+              React.createElement(
+                Col,
+                {
+                  key: engine.id,
+                  xs: 24,
+                  sm: 12,
+                  md: 8,
+                  lg: 6,
+                  style: { display: "flex" },
+                },
+                React.createElement(EngineCard, {
+                  engine,
+                  onClick: () => {
+                    setActiveEngine(engine);
+                    setDrawerOpen(true);
+                  },
+                }),
+              ),
+            ),
           ),
     // Detail drawer
-    activeSW
+    activeEngine
       ? React.createElement(
           Drawer,
           {
@@ -4912,31 +6653,72 @@ function LocalSoftwareSection() {
               React.createElement(
                 "span",
                 { style: { fontSize: 18 } },
-                CATEGORY_ICONS[activeSW.category] || "📦",
+                CATEGORY_ICONS[activeEngine.category] || "📦",
               ),
-              React.createElement("span", null, activeSW.name),
+              React.createElement("span", null, activeEngine.name),
             ),
             open: drawerOpen,
             onClose: () => setDrawerOpen(false),
             width: 520,
+            extra: React.createElement(
+              Space,
+              null,
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  icon: EditOutlined
+                    ? React.createElement(EditOutlined)
+                    : undefined,
+                  onClick: () => openEditModal(activeEngine),
+                },
+                "编辑",
+              ),
+              !activeEngine.is_default
+                ? React.createElement(
+                    Popconfirm,
+                    {
+                      title: "确认删除此引擎？",
+                      description: activeEngine.name,
+                      onConfirm: () => handleDelete(activeEngine.id),
+                      okText: "删除",
+                      cancelText: "取消",
+                      okButtonProps: { danger: true },
+                    },
+                    React.createElement(
+                      Button,
+                      {
+                        size: "small",
+                        danger: true,
+                        icon: DeleteOutlined
+                          ? React.createElement(DeleteOutlined)
+                          : undefined,
+                      },
+                      "删除",
+                    ),
+                  )
+                : null,
+            ),
           },
           React.createElement(
             Descriptions,
             { column: 1, bordered: true, size: "small" },
             React.createElement(
               Descriptions.Item,
-              { label: "软件名称" },
-              activeSW.name,
+              { label: "引擎名称" },
+              activeEngine.name,
             ),
             React.createElement(
               Descriptions.Item,
               { label: "厂商" },
-              activeSW.vendor,
+              activeEngine.vendor || "—",
             ),
             React.createElement(
               Descriptions.Item,
               { label: "分类" },
-              CATEGORY_LABELS[activeSW.category] || activeSW.category,
+              activeEngine.category
+                ? CATEGORY_LABELS[activeEngine.category] || activeEngine.category
+                : "—",
             ),
             React.createElement(
               Descriptions.Item,
@@ -4944,19 +6726,26 @@ function LocalSoftwareSection() {
               React.createElement(
                 Tag,
                 {
-                  color: activeSW.status === "found" ? "success" : "default",
+                  color:
+                    activeEngine.status === "detected"
+                      ? "success"
+                      : activeEngine.status === "not_found"
+                        ? "error"
+                        : "default",
                 },
-                activeSW.status === "found"
-                  ? "✅ 已检测到"
-                  : "❌ 未检测到",
+                activeEngine.status === "detected"
+                  ? "✅ 已检测"
+                  : activeEngine.status === "not_found"
+                    ? "❌ 路径无效"
+                    : "🔧 待配置",
               ),
             ),
             React.createElement(
               Descriptions.Item,
               { label: "版本" },
-              activeSW.version || "—",
+              activeEngine.version || "—",
             ),
-            activeSW.executable_path
+            activeEngine.executable_path
               ? React.createElement(
                   Descriptions.Item,
                   { label: "可执行文件" },
@@ -4977,7 +6766,7 @@ function LocalSoftwareSection() {
                           wordBreak: "break-all",
                         },
                       },
-                      activeSW.executable_path,
+                      activeEngine.executable_path,
                     ),
                     React.createElement(
                       Button,
@@ -4988,31 +6777,38 @@ function LocalSoftwareSection() {
                           ? React.createElement(CopyOutlined)
                           : undefined,
                         onClick: () =>
-                          handleCopyPath(activeSW.executable_path!),
+                          handleCopyPath(activeEngine.executable_path),
                       },
                     ),
                   ),
                 )
               : null,
-            activeSW.install_dir
+            activeEngine.install_dir
               ? React.createElement(
                   Descriptions.Item,
                   { label: "安装目录" },
                   React.createElement(
                     "code",
                     { style: { fontSize: 12, wordBreak: "break-all" } },
-                    activeSW.install_dir,
+                    activeEngine.install_dir,
                   ),
+                )
+              : null,
+            activeEngine.license_server
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "许可证服务器" },
+                  activeEngine.license_server,
                 )
               : null,
             React.createElement(
               Descriptions.Item,
               { label: "描述" },
-              activeSW.description || "—",
+              activeEngine.description || "—",
             ),
           ),
           // Invocation hint
-          activeSW.invocation_hint
+          activeEngine.invocation_hint
             ? React.createElement(
                 "div",
                 {
@@ -5031,60 +6827,63 @@ function LocalSoftwareSection() {
                 React.createElement(
                   "div",
                   { style: { marginTop: 8, fontSize: 13, lineHeight: 1.6 } },
-                  activeSW.invocation_hint,
+                  activeEngine.invocation_hint,
                 ),
               )
             : null,
+          // Type badge
+          React.createElement(
+            "div",
+            { style: { marginTop: 12 } },
+            activeEngine.is_default
+              ? React.createElement(
+                  Tag,
+                  { color: "blue" },
+                  "默认引擎",
+                )
+              : activeEngine.is_custom
+                ? React.createElement(
+                    Tag,
+                    { color: "purple" },
+                    "自定义引擎",
+                  )
+                : null,
+          ),
         )
       : null,
-    // Scan path modal
+    // Add/Edit modal
     React.createElement(
       Modal,
       {
-        title: "添加自定义扫描路径",
-        open: scanPathModalOpen,
-        onOk: handleAddScanPath,
-        onCancel: () => setScanPathModalOpen(false),
-        okText: "添加并扫描",
+        title: editingEngine ? "编辑引擎" : "添加计算引擎",
+        open: editModalOpen,
+        onOk: handleSave,
+        onCancel: () => setEditModalOpen(false),
+        okText: editingEngine ? "保存" : "添加",
         cancelText: "取消",
+        confirmLoading: saving,
+        width: 560,
       },
       React.createElement(
-        Paragraph,
-        { type: "secondary", style: { fontSize: 12, marginBottom: 12 } },
-        "输入软件安装目录路径（每行一个），系统将在这些路径中搜索已知的油气软件。",
+        "div",
+        { style: { maxHeight: 480, overflow: "auto", paddingRight: 8 } },
+        formField("引擎名称 *", "name"),
+        formField("厂商", "vendor"),
+        formField("版本", "version"),
+        formField("可执行文件路径", "executable_path"),
+        formField("安装目录", "install_dir"),
+        formField("分类", "category", {
+          select: {
+            options: Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
+              label,
+              value,
+            })),
+          },
+        }),
+        formField("描述", "description", { textarea: true }),
+        formField("调用方式提示", "invocation_hint", { textarea: true }),
+        formField("许可证服务器", "license_server"),
       ),
-      React.createElement(Input.TextArea, {
-        value: scanPathInput,
-        onChange: (e: any) => setScanPathInput(e.target.value),
-        rows: 5,
-        placeholder: "/opt/CMG\nD:\\\\Software\\\\Schlumberger",
-        style: { fontFamily: "monospace", fontSize: 13 },
-      }),
-      result && result.custom_scan_paths.length > 0
-        ? React.createElement(
-            "div",
-            { style: { marginTop: 12 } },
-            React.createElement(
-              Text,
-              { type: "secondary", style: { fontSize: 12 } },
-              "当前自定义扫描路径：",
-            ),
-            React.createElement(
-              "ul",
-              { style: { margin: "4px 0", paddingLeft: 20 } },
-              ...result.custom_scan_paths.map((p: string) =>
-                React.createElement(
-                  "li",
-                  {
-                    key: p,
-                    style: { fontSize: 12, fontFamily: "monospace" },
-                  },
-                  p,
-                ),
-              ),
-            ),
-          )
-        : null,
     ),
   );
 }
@@ -5109,8 +6908,13 @@ function CapabilityCenterPage() {
     List,
     Tabs,
   } = getHost().antd;
-  const { ReloadOutlined, PlusOutlined, SearchOutlined, ApiOutlined } =
-    getHost().antdIcons || {};
+  const {
+    ReloadOutlined,
+    PlusOutlined,
+    SearchOutlined,
+    ApiOutlined,
+    RocketOutlined,
+  } = getHost().antdIcons || {};
   const { Text } = Typography;
 
   const [mcps, setMcps] = useState<MCPClientInfo[]>([]);
@@ -5187,6 +6991,7 @@ function CapabilityCenterPage() {
           type: "primary",
           icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
           onClick: () => navigateTo("/mcp"),
+          style: PRIMARY_BTN_STYLE,
         },
         "管理 MCP",
       ),
@@ -5232,13 +7037,27 @@ function CapabilityCenterPage() {
   const tabItems = [
     {
       key: "mcp",
-      label: React.createElement("span", null, "🔌 MCP 客户端"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        ApiOutlined
+          ? React.createElement(ApiOutlined, { style: { fontSize: 14 } })
+          : null,
+        "MCP 客户端",
+      ),
       children: mcpTabContent,
     },
     {
       key: "software",
-      label: React.createElement("span", null, "🖥️ 本地软件检测"),
-      children: React.createElement(LocalSoftwareSection),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        RocketOutlined
+          ? React.createElement(RocketOutlined, { style: { fontSize: 14 } })
+          : null,
+        "计算引擎",
+      ),
+      children: React.createElement(EngineSection),
     },
   ];
 
@@ -5246,7 +7065,7 @@ function CapabilityCenterPage() {
     "div",
     { style: { padding: 24 } },
     React.createElement(PageHeader, {
-      title: "能力中心",
+      title: "工具",
       subtitle: `MCP: ${mcps.length} 个客户端（${enabledCount} 个启用）· ${totalTools} 个工具`,
       extra: React.createElement(
         React.Fragment,
@@ -5404,15 +7223,615 @@ function CapabilityCenterPage() {
 
 // ─── Skill Center Page ────────────────────────────────────────────────────────
 
-function SkillCenterPage() {
+/** Skills loaded by the currently selected agent (Tab 1). */
+function CurrentAgentSkillsTab({
+  agentId,
+  agentName,
+  onNavigate,
+}: {
+  agentId: string;
+  agentName: string;
+  onNavigate: (path: string) => void;
+}) {
   const React = getHost().React;
-  const { useState, useEffect, useCallback, useMemo } = React;
+  const { useState, useEffect, useCallback } = React;
+  const {
+    Spin,
+    Empty,
+    Button,
+    Row,
+    Col,
+    Card,
+    Tag,
+    Checkbox,
+    Modal,
+    Typography,
+    Drawer,
+    Descriptions,
+    message: antdMsg,
+  } = getHost().antd;
+  const {
+    ReloadOutlined,
+    ThunderboltOutlined,
+    SettingOutlined,
+    CheckSquareOutlined,
+    EyeOutlined,
+    EyeInvisibleOutlined,
+    DeleteOutlined,
+    CloseOutlined,
+  } = getHost().antdIcons || {};
+  const { Text, Paragraph } = Typography;
+
+  const [skills, setSkills] = useState<SkillSpec[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [activeSkill, setActiveSkill] = useState<SkillSpec | null>(null);
+  const [batchMode, setBatchMode] = useState(false);
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(
+    new Set(),
+  );
+  const [batchLoading, setBatchLoading] = useState(false);
+
+  const loadSkills = useCallback(async () => {
+    if (!agentId) return;
+    setLoading(true);
+    try {
+      const data = await fetchAgentSkills(agentId);
+      setSkills(data);
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载技能失败");
+      setSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    loadSkills();
+  }, [loadSkills]);
+
+  // ── Batch helpers ─────────────────────────────────────────────────────────
+  const toggleSelect = (name: string) => {
+    setSelectedSkills((prev: Set<string>) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedSkills(new Set());
+
+  const selectAll = () =>
+    setSelectedSkills(new Set(skills.map((s) => s.name)));
+
+  const toggleBatchMode = () => {
+    if (batchMode) {
+      clearSelection();
+      setBatchMode(false);
+    } else {
+      setBatchMode(true);
+    }
+  };
+
+  const handleBatchEnable = async () => {
+    const names = Array.from(selectedSkills);
+    if (names.length === 0) return;
+    setBatchLoading(true);
+    try {
+      const { results } = await batchEnableSkillsForAgent(agentId, names);
+      const failed = Object.entries(results).filter(
+        ([, r]) => r.success === false,
+      );
+      const succeeded = names.length - failed.length;
+      if (failed.length > 0) {
+        antdMsg.warning(
+          `批量启用完成：成功 ${succeeded} 个，失败 ${failed.length} 个`,
+        );
+      } else {
+        antdMsg.success(`成功启用 ${names.length} 个技能`);
+      }
+      clearSelection();
+      await loadSkills();
+    } catch (err: any) {
+      antdMsg.error(err.message || "批量启用失败");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleBatchDisable = async () => {
+    const names = Array.from(selectedSkills);
+    if (names.length === 0) return;
+    setBatchLoading(true);
+    try {
+      const { results } = await batchDisableSkillsForAgent(agentId, names);
+      const failed = Object.entries(results).filter(
+        ([, r]) => r.success === false,
+      );
+      const succeeded = names.length - failed.length;
+      if (failed.length > 0) {
+        antdMsg.warning(
+          `批量停用完成：成功 ${succeeded} 个，失败 ${failed.length} 个`,
+        );
+      } else {
+        antdMsg.success(`成功停用 ${names.length} 个技能`);
+      }
+      clearSelection();
+      await loadSkills();
+    } catch (err: any) {
+      antdMsg.error(err.message || "批量停用失败");
+    } finally {
+      setBatchLoading(false);
+    }
+  };
+
+  const handleBatchDelete = () => {
+    const names = Array.from(selectedSkills);
+    if (names.length === 0) return;
+    Modal.confirm({
+      title: `确认删除 ${names.length} 个技能？`,
+      content:
+        "删除后技能将从当前专家工作区移除，此操作不可撤销。技能池中的原始技能不受影响。",
+      okText: "确认删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setBatchLoading(true);
+        try {
+          const { results } = await batchDeleteSkillsForAgent(agentId, names);
+          const failed = Object.entries(results).filter(
+            ([, r]) => r.success === false,
+          );
+          const succeeded = names.length - failed.length;
+          if (failed.length > 0) {
+            antdMsg.warning(
+              `批量删除完成：成功 ${succeeded} 个，失败 ${failed.length} 个`,
+            );
+          } else {
+            antdMsg.success(`成功删除 ${names.length} 个技能`);
+          }
+          clearSelection();
+          await loadSkills();
+        } catch (err: any) {
+          antdMsg.error(err.message || "批量删除失败");
+        } finally {
+          setBatchLoading(false);
+        }
+      },
+    });
+  };
+
+  return React.createElement(
+    "div",
+    null,
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+          flexWrap: "wrap",
+          gap: 8,
+        },
+      },
+      React.createElement(
+        Text,
+        { type: "secondary", style: { fontSize: 13 } },
+        batchMode
+          ? `已选择 ${selectedSkills.size} / ${skills.length} 个技能`
+          : `共 ${skills.length} 个技能`,
+      ),
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+        batchMode
+          ? React.createElement(
+              React.Fragment,
+              null,
+              React.createElement(
+                Button,
+                { size: "small", onClick: selectAll },
+                "全选",
+              ),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  icon: CloseOutlined
+                    ? React.createElement(CloseOutlined)
+                    : undefined,
+                  onClick: clearSelection,
+                },
+                "取消选择",
+              ),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  type: "default",
+                  icon: EyeOutlined
+                    ? React.createElement(EyeOutlined)
+                    : undefined,
+                  disabled: selectedSkills.size === 0 || batchLoading,
+                  loading: batchLoading,
+                  onClick: handleBatchEnable,
+                },
+                "批量启用",
+              ),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  danger: true,
+                  icon: EyeInvisibleOutlined
+                    ? React.createElement(EyeInvisibleOutlined)
+                    : undefined,
+                  disabled: selectedSkills.size === 0 || batchLoading,
+                  loading: batchLoading,
+                  onClick: handleBatchDisable,
+                },
+                "批量停用",
+              ),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  danger: true,
+                  icon: DeleteOutlined
+                    ? React.createElement(DeleteOutlined)
+                    : undefined,
+                  disabled: selectedSkills.size === 0 || batchLoading,
+                  loading: batchLoading,
+                  onClick: handleBatchDelete,
+                },
+                `删除 (${selectedSkills.size})`,
+              ),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  type: "primary",
+                  onClick: toggleBatchMode,
+                },
+                "退出批量",
+              ),
+            )
+          : React.createElement(
+              React.Fragment,
+              null,
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  icon: CheckSquareOutlined
+                    ? React.createElement(CheckSquareOutlined)
+                    : undefined,
+                  onClick: toggleBatchMode,
+                  disabled: skills.length === 0,
+                },
+                "批量管理",
+              ),
+              React.createElement(
+                Button,
+                {
+                  icon: ReloadOutlined
+                    ? React.createElement(ReloadOutlined)
+                    : undefined,
+                  onClick: loadSkills,
+                  loading,
+                  size: "small",
+                },
+                "刷新",
+              ),
+            ),
+      ),
+    ),
+    loading
+      ? React.createElement(
+          "div",
+          { style: { textAlign: "center", padding: 60 } },
+          React.createElement(Spin, { size: "large" }),
+        )
+      : skills.length === 0
+        ? React.createElement(Empty, {
+            description: "当前智能体未加载任何技能",
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...skills.map((skill) =>
+              React.createElement(
+                Col,
+                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+                React.createElement(
+                  Card,
+                  {
+                    hoverable: true,
+                    size: "small",
+                    style: {
+                      cursor: batchMode ? "default" : "pointer",
+                      height: "100%",
+                      position: "relative",
+                      borderColor:
+                        batchMode && selectedSkills.has(skill.name)
+                          ? "#0072f5"
+                          : undefined,
+                      borderWidth:
+                        batchMode && selectedSkills.has(skill.name)
+                          ? 2
+                          : 1,
+                    },
+                    onClick: () => {
+                      if (batchMode) {
+                        toggleSelect(skill.name);
+                      } else {
+                        setActiveSkill(skill);
+                        setDrawerOpen(true);
+                      }
+                    },
+                  },
+                  batchMode
+                    ? React.createElement(
+                        "div",
+                        {
+                          style: {
+                            position: "absolute",
+                            top: 8,
+                            right: 8,
+                            zIndex: 1,
+                          },
+                          onClick: (e: any) => {
+                            e.stopPropagation();
+                            toggleSelect(skill.name);
+                          },
+                        },
+                        React.createElement(Checkbox, {
+                          checked: selectedSkills.has(skill.name),
+                        }),
+                      )
+                    : null,
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
+                      },
+                    },
+                    skill.emoji
+                      ? React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          skill.emoji,
+                        )
+                      : React.createElement(
+                          "span",
+                          { style: { fontSize: 18 } },
+                          "⚡",
+                        ),
+                    React.createElement(
+                      Text,
+                      {
+                        strong: true,
+                        style: {
+                          fontSize: 13,
+                          flex: 1,
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          whiteSpace: "nowrap",
+                        },
+                      },
+                      skill.name,
+                    ),
+                    skill.enabled === false
+                      ? React.createElement(
+                          Tag,
+                          { color: "default", style: { fontSize: 10 } },
+                          "已禁用",
+                        )
+                      : React.createElement(
+                          Tag,
+                          { color: "green", style: { fontSize: 10 } },
+                          "已启用",
+                        ),
+                  ),
+                  skill.description
+                    ? React.createElement(
+                        Paragraph,
+                        {
+                          type: "secondary",
+                          style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                          ellipsis: { rows: 2 },
+                        },
+                        skill.description,
+                      )
+                    : null,
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 8,
+                        display: "flex",
+                        gap: 4,
+                        flexWrap: "wrap",
+                      },
+                    },
+                    skill.version_text
+                      ? React.createElement(
+                          Tag,
+                          { style: { fontSize: 10 } },
+                          `v${skill.version_text}`,
+                        )
+                      : null,
+                    ...(skill.tags || [])
+                      .slice(0, 3)
+                      .map((tag, i) =>
+                        React.createElement(
+                          Tag,
+                          { key: i, color: "blue", style: { fontSize: 10 } },
+                          tag,
+                        ),
+                      ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+    // Skill detail drawer
+    activeSkill
+      ? React.createElement(
+          Drawer,
+          {
+            title: React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 8 } },
+              React.createElement(
+                "span",
+                { style: { fontSize: 18 } },
+                activeSkill.emoji || "⚡",
+              ),
+              React.createElement("span", null, activeSkill.name),
+            ),
+            open: drawerOpen,
+            onClose: () => setDrawerOpen(false),
+            width: 520,
+            extra: React.createElement(
+              Button,
+              {
+                type: "primary",
+                size: "small",
+                icon: SettingOutlined
+                  ? React.createElement(SettingOutlined)
+                  : undefined,
+                onClick: () => onNavigate("/skills"),
+              },
+              "管理技能",
+            ),
+          },
+          React.createElement(
+            Descriptions,
+            { column: 1, bordered: true, size: "small" },
+            React.createElement(
+              Descriptions.Item,
+              { label: "技能名称" },
+              activeSkill.name,
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "描述" },
+              activeSkill.description || "-",
+            ),
+            activeSkill.version_text
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "版本" },
+                  activeSkill.version_text,
+                )
+              : null,
+            React.createElement(
+              Descriptions.Item,
+              { label: "来源" },
+              activeSkill.source || "-",
+            ),
+            React.createElement(
+              Descriptions.Item,
+              { label: "状态" },
+              activeSkill.enabled === false ? "已禁用" : "已启用",
+            ),
+            activeSkill.installed_from
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "安装来源" },
+                  activeSkill.installed_from,
+                )
+              : null,
+          ),
+          // Tags
+          activeSkill.tags && activeSkill.tags.length > 0
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16 } },
+                React.createElement(
+                  Text,
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
+                  "标签",
+                ),
+                React.createElement(
+                  "div",
+                  { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
+                  ...activeSkill.tags.map((tag, i) =>
+                    React.createElement(Tag, { key: i, color: "blue" }, tag),
+                  ),
+                ),
+              )
+            : null,
+          // Skill content preview
+          activeSkill.content
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16 } },
+                React.createElement(
+                  Text,
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
+                  "技能内容",
+                ),
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      maxHeight: 300,
+                      overflow: "auto",
+                      padding: 12,
+                      background: "#f5f5f5",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      whiteSpace: "pre-wrap",
+                    },
+                  },
+                  activeSkill.content.slice(0, 2000) +
+                    (activeSkill.content.length > 2000
+                      ? "\n\n... (内容已截断)"
+                      : ""),
+                ),
+              )
+            : null,
+        )
+      : null,
+  );
+}
+
+/** Skill pool tab — the original skill center content (Tab 2). */
+function SkillPoolTab({
+  poolSkills,
+  workspaceSkills,
+  agents,
+  loading,
+  onReload,
+}: {
+  poolSkills: PoolSkillSpec[];
+  workspaceSkills: WorkspaceSkillSummary[];
+  agents: AgentSummary[];
+  loading: boolean;
+  onReload: () => void;
+}) {
+  const React = getHost().React;
+  const { useState, useMemo, useCallback } = React;
   const {
     Spin,
     Empty,
     Input,
     Button,
-    message: antdMsg,
     Row,
     Col,
     Card,
@@ -5430,39 +7849,10 @@ function SkillCenterPage() {
   } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
-  const [poolSkills, setPoolSkills] = useState<PoolSkillSpec[]>([]);
-  const [workspaceSkills, setWorkspaceSkills] = useState<
-    WorkspaceSkillSummary[]
-  >([]);
-  const [agents, setAgents] = useState<AgentSummary[]>([]);
-  const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeSkill, setActiveSkill] = useState<PoolSkillSpec | null>(null);
   const [installedAgents, setInstalledAgents] = useState<string[]>([]);
-
-  const loadSkills = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [pool, agentList, wsSkills] = await Promise.all([
-        fetchPoolSkills(),
-        fetchAgents(),
-        fetchWorkspaceSkills(),
-      ]);
-      setPoolSkills(pool);
-      setAgents(agentList);
-      setWorkspaceSkills(wsSkills);
-    } catch (err: any) {
-      antdMsg.error(err.message || "加载技能列表失败");
-      setPoolSkills([]);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadSkills();
-  }, [loadSkills]);
 
   const filteredSkills = useMemo(() => {
     if (!searchText.trim()) return poolSkills;
@@ -5496,21 +7886,39 @@ function SkillCenterPage() {
 
   return React.createElement(
     "div",
-    { style: { padding: 24 } },
-    React.createElement(PageHeader, {
-      title: "技能中心",
-      subtitle: `技能池共 ${poolSkills.length} 个技能`,
-      extra: React.createElement(
-        React.Fragment,
-        null,
+    null,
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        },
+      },
+      React.createElement(Input, {
+        placeholder: "搜索技能名称、描述或标签...",
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
+        value: searchText,
+        onChange: (e: any) => setSearchText(e.target.value),
+        allowClear: true,
+        style: { maxWidth: 400 },
+      }),
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8 } },
         React.createElement(
           Button,
           {
             icon: ReloadOutlined
               ? React.createElement(ReloadOutlined)
               : undefined,
-            onClick: loadSkills,
+            onClick: onReload,
             loading,
+            size: "small",
           },
           "刷新",
         ),
@@ -5522,24 +7930,12 @@ function SkillCenterPage() {
               ? React.createElement(DownloadOutlined)
               : undefined,
             onClick: () => navigateTo("/skill-pool"),
+            size: "small",
+            style: PRIMARY_BTN_STYLE,
           },
           "管理技能池",
         ),
       ),
-    }),
-    React.createElement(
-      "div",
-      { style: { marginBottom: 16 } },
-      React.createElement(Input, {
-        placeholder: "搜索技能名称、描述或标签...",
-        prefix: SearchOutlined
-          ? React.createElement(SearchOutlined)
-          : undefined,
-        value: searchText,
-        onChange: (e: any) => setSearchText(e.target.value),
-        allowClear: true,
-        style: { maxWidth: 400 },
-      }),
     ),
     loading
       ? React.createElement(
@@ -5641,8 +8037,8 @@ function SkillCenterPage() {
                           `v${skill.version_text}`,
                         )
                       : null,
-                    ...skill.tags
-                      ?.slice(0, 3)
+                    ...(skill.tags || [])
+                      .slice(0, 3)
                       .map((tag, i) =>
                         React.createElement(
                           Tag,
@@ -5799,6 +8195,113 @@ function SkillCenterPage() {
   );
 }
 
+function SkillCenterPage() {
+  const React = getHost().React;
+  const { useState, useEffect, useCallback, useMemo } = React;
+  const { Tabs, message: antdMsg } = getHost().antd;
+  const { ThunderboltOutlined, AppstoreOutlined } =
+    getHost().antdIcons || {};
+
+  // Track the currently selected agent via the host hook
+  const host = getHost();
+  const useSelectedAgent = host.useSelectedAgent;
+  const selectedAgentInfo = useSelectedAgent ? useSelectedAgent() : null;
+  const currentAgentId = selectedAgentInfo?.id || "default";
+
+  // Also fetch agent list to resolve names
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  const [poolSkills, setPoolSkills] = useState<PoolSkillSpec[]>([]);
+  const [workspaceSkills, setWorkspaceSkills] = useState<
+    WorkspaceSkillSummary[]
+  >([]);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("agent-skills");
+
+  const loadPoolData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const [pool, agentList, wsSkills] = await Promise.all([
+        fetchPoolSkills(),
+        fetchAgents(),
+        fetchWorkspaceSkills(),
+      ]);
+      setPoolSkills(pool);
+      setAgents(agentList);
+      setWorkspaceSkills(wsSkills);
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载技能列表失败");
+      setPoolSkills([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadPoolData();
+  }, [loadPoolData]);
+
+  const currentAgentName = useMemo(() => {
+    const agent = agents.find((a) => a.id === currentAgentId);
+    return agent?.name || currentAgentId;
+  }, [agents, currentAgentId]);
+
+  const navigateTo = (path: string) => {
+    window.history.pushState({}, "", path);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  };
+
+  const tabItems = [
+    {
+      key: "agent-skills",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        ThunderboltOutlined
+          ? React.createElement(ThunderboltOutlined, { style: { fontSize: 14 } })
+          : null,
+        "当前Agent加载技能",
+      ),
+      children: React.createElement(CurrentAgentSkillsTab, {
+        agentId: currentAgentId,
+        agentName: currentAgentName,
+        onNavigate: navigateTo,
+      }),
+    },
+    {
+      key: "skill-pool",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        AppstoreOutlined
+          ? React.createElement(AppstoreOutlined, { style: { fontSize: 14 } })
+          : null,
+        "技能池",
+      ),
+      children: React.createElement(SkillPoolTab, {
+        poolSkills,
+        workspaceSkills,
+        agents,
+        loading,
+        onReload: loadPoolData,
+      }),
+    },
+  ];
+
+  return React.createElement(
+    "div",
+    { style: { padding: 24 } },
+    React.createElement(PageHeader, {
+      title: "技能",
+      subtitle: `技能池共 ${poolSkills.length} 个技能 · 当前智能体：${currentAgentName}`,
+    }),
+    React.createElement(Tabs, {
+      items: tabItems,
+      activeKey: activeTab,
+      onChange: (k: string) => setActiveTab(k),
+    }),
+  );
+}
+
 // ─── Marketplace Page ────────────────────────────────────────────────────────
 
 interface MarketResult {
@@ -5919,6 +8422,7 @@ function MarketplacePage() {
     ShopOutlined,
     CheckCircleOutlined,
     LoadingOutlined,
+    UserOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph, Title } = Typography;
 
@@ -6468,7 +8972,7 @@ function MarketplacePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(config),
       });
-      antdMsg.success(`专家「${template.name}」创建成功，已跳转至专家中心`);
+      antdMsg.success(`专家「${template.name}」创建成功，已跳转至专家`);
       navigateTo("/ugsci-experts");
     } catch (err: any) {
       antdMsg.error(err.message || "创建专家失败");
@@ -6636,15 +9140,24 @@ function MarketplacePage() {
       key: "skills",
       label: React.createElement(
         "span",
-        null,
-        AppstoreOutlined ? React.createElement(AppstoreOutlined) : null,
-        " 技能市场",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        AppstoreOutlined
+          ? React.createElement(AppstoreOutlined, { style: { fontSize: 14 } })
+          : null,
+        "技能市场",
       ),
       children: skillsMarketTab,
     },
     {
       key: "experts",
-      label: React.createElement("span", null, "🧑‍🔬 专家模板"),
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        UserOutlined
+          ? React.createElement(UserOutlined, { style: { fontSize: 14 } })
+          : null,
+        "专家模板",
+      ),
       children: expertsMarketTab,
     },
   ];
@@ -6693,6 +9206,12 @@ function buildPlugin() {
   // Use the new QwenPaw.route.add / QwenPaw.menu.add API so items appear
   // in the agent-scoped section, not under plugins-group.
 
+  const antdIcons = getHost().antdIcons || {};
+  const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
+  const ToolOutlined = antdIcons.ToolOutlined;
+  const ThunderboltOutlined = antdIcons.ThunderboltOutlined;
+  const ShopOutlined = antdIcons.ShopOutlined;
+
   // Expert Center
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.experts",
@@ -6703,14 +9222,16 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.experts",
     location: "primary.agentScoped",
-    label: () => "专家中心",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🧑‍🔬"),
+    label: () => "专家",
+    icon: UserSwitchOutlined
+      ? React.createElement(UserSwitchOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.experts",
     order: 5,
     visible: () => isSimpleMode(),
   });
 
-  // Capability Center
+  // Capability Center → Tools
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.capabilities",
     path: "/ugsci-capabilities",
@@ -6720,14 +9241,16 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.capabilities",
     location: "primary.agentScoped",
-    label: () => "能力中心",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🔌"),
+    label: () => "工具",
+    icon: ToolOutlined
+      ? React.createElement(ToolOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.capabilities",
     order: 6,
     visible: () => isSimpleMode(),
   });
 
-  // Skill Center
+  // Skill Center → Skills
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.skills-center",
     path: "/ugsci-skills",
@@ -6737,8 +9260,10 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.skills-center",
     location: "primary.agentScoped",
-    label: () => "技能中心",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "⚡"),
+    label: () => "技能",
+    icon: ThunderboltOutlined
+      ? React.createElement(ThunderboltOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.skills-center",
     order: 7,
     visible: () => isSimpleMode(),
@@ -6755,7 +9280,9 @@ function buildPlugin() {
     id: "ugsci.market",
     location: "primary.agentScoped",
     label: () => "市场",
-    icon: React.createElement("span", { style: { fontSize: 16 } }, "🏪"),
+    icon: ShopOutlined
+      ? React.createElement(ShopOutlined, { style: { fontSize: 16 } })
+      : undefined,
     route: "ugsci.market",
     order: 8,
     visible: () => isSimpleMode(),

@@ -397,13 +397,22 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     // "Wrote 676 bytes to /path/to/file.md." — we must NOT use that
     // as the preview content.
     //
-    // For other tools (read_file, edit_file, etc.), the tool result
-    // may contain useful content.
+    // For edit_file, the tool result is also just a success message
+    // ("Successfully replaced text in ...") — we must NOT use that
+    // either, so handleOpenInWorkspace will fetch the actual file
+    // content from the backend.
+    //
+    // For other tools (read_file, etc.), the tool result may contain
+    // useful content.
     let resultContent: string | undefined;
     if (name === "write_file" || name === "append_file") {
       resultContent = params.content as string;
     }
-    if (!resultContent && rawResult !== undefined) {
+    if (
+      !resultContent &&
+      rawResult !== undefined &&
+      name !== "edit_file"
+    ) {
       resultContent = stringifyResult(rawResult);
     }
 

@@ -17,6 +17,10 @@ import type {
   RendererRegistration,
   WorkspaceArtifact,
 } from "../types";
+import {
+  resolveEffectiveMime,
+  isAmbiguousMime,
+} from "../../../utils/mimeForPreview";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Registry
@@ -76,6 +80,8 @@ class RendererRegistryImpl {
    *
    * 匹配优先级：
    * 1. mimeType 精确匹配 → 取 priority 最高的
+   *    （当 mimeType 为占位符 octet-stream/空 时，先用 resolveEffectiveMime
+   *     结合扩展名 + 文本采样解析出真实 MIME，再做精确匹配）
    * 2. extension 匹配 → 取 priority 最高的
    * 3. source 匹配 → 取 priority 最高的
    * 4. fallback 到通用渲染器（id="fallback"）
@@ -83,11 +89,28 @@ class RendererRegistryImpl {
   match(artifact: WorkspaceArtifact): RendererMatch | null {
     const all = this.getAll();
 
+    // 0. 当声明的 MIME 不可信时，尝试用 resolveEffectiveMime 解析真实 MIME
+    let effectiveMime = artifact.mimeType;
+    if (isAmbiguousMime(artifact.mimeType)) {
+      const resolved = resolveEffectiveMime(
+        artifact.title,
+        artifact.mimeType,
+        // 优先用 meta.textSample，其次用 textContent 的前 8KB 作为采样
+        (artifact.meta?.textSample as string | undefined) ??
+          (artifact.textContent
+            ? artifact.textContent.slice(0, 8192)
+            : undefined),
+      );
+      if (resolved && !isAmbiguousMime(resolved)) {
+        effectiveMime = resolved;
+      }
+    }
+
     // 1. MIME type 精确匹配
     const mimeMatches = all
       .filter(
         (r) =>
-          r.mimeTypes?.includes(artifact.mimeType) &&
+          r.mimeTypes?.includes(effectiveMime) &&
           (!r.sources || r.sources.includes(artifact.source)),
       )
       .sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
