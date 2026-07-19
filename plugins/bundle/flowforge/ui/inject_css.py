@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """Inject ReactFlow CSS into dist/index.js as inline style tag."""
 import os
 
