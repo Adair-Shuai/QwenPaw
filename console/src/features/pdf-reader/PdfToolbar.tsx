@@ -9,14 +9,7 @@
  * - 下载
  */
 import React from "react";
-import {
-  Button,
-  Space,
-  Tooltip,
-  InputNumber,
-  Select,
-  Segmented,
-} from "antd";
+import { Button, Space, Tooltip, InputNumber, Select, Segmented } from "antd";
 import {
   LeftOutlined,
   RightOutlined,
@@ -142,7 +135,13 @@ const PdfToolbar: React.FC<PdfToolbarProps> = ({
           options={ZOOM_OPTIONS}
           style={{ width: 110 }}
         />
-        <Tooltip title={searchVisible ? t("workspace.hideSearch", "隐藏搜索") : t("workspace.showSearch", "全文搜索")}>
+        <Tooltip
+          title={
+            searchVisible
+              ? t("workspace.hideSearch", "隐藏搜索")
+              : t("workspace.showSearch", "全文搜索")
+          }
+        >
           <Button
             size="small"
             type={searchVisible ? "primary" : "text"}

@@ -104,11 +104,7 @@ const OutlineTree: React.FC<{
                 ? "rgba(22,119,255,0.15)"
                 : "rgba(22,119,255,0.08)"
               : "transparent",
-            color: isActive
-              ? "#1677ff"
-              : isDark
-                ? "#ccc"
-                : "#333",
+            color: isActive ? "#1677ff" : isDark ? "#ccc" : "#333",
             fontWeight: isActive ? 600 : 400,
           }}
           onClick={() => {
@@ -249,7 +245,8 @@ const PaperSidebar: React.FC<PaperSidebarProps> = ({
                       ? "rgba(22,119,255,0.15)"
                       : "rgba(22,119,255,0.08)"
                     : "transparent",
-                color: page === currentPage ? "#1677ff" : isDark ? "#ccc" : "#333",
+                color:
+                  page === currentPage ? "#1677ff" : isDark ? "#ccc" : "#333",
                 fontWeight: page === currentPage ? 600 : 400,
               }}
             >

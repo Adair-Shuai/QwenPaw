@@ -70,7 +70,9 @@ async function convertOutline(
 }
 
 export function usePdfDocument(): UsePdfDocumentResult {
-  const [pdfModule, setPdfModule] = useState<typeof import("react-pdf") | null>(null);
+  const [pdfModule, setPdfModule] = useState<typeof import("react-pdf") | null>(
+    null,
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [numPages, setNumPages] = useState(0);
@@ -155,25 +157,26 @@ export function usePdfDocument(): UsePdfDocumentResult {
     [pdfModule],
   );
 
-  const loadPageText = useCallback(async (pageNum: number): Promise<string> => {
-    // 先查缓存
-    const cached = pageTexts.get(pageNum);
-    if (cached !== undefined) return cached;
+  const loadPageText = useCallback(
+    async (pageNum: number): Promise<string> => {
+      // 先查缓存
+      const cached = pageTexts.get(pageNum);
+      if (cached !== undefined) return cached;
 
-    if (!pdfDocRef.current) return "";
+      if (!pdfDocRef.current) return "";
 
-    try {
-      const page = await pdfDocRef.current.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const text = textContent.items
-        .map((item: any) => item.str)
-        .join(" ");
-      setPageTexts((prev) => new Map(prev).set(pageNum, text));
-      return text;
-    } catch {
-      return "";
-    }
-  }, [pageTexts]);
+      try {
+        const page = await pdfDocRef.current.getPage(pageNum);
+        const textContent = await page.getTextContent();
+        const text = textContent.items.map((item: any) => item.str).join(" ");
+        setPageTexts((prev) => new Map(prev).set(pageNum, text));
+        return text;
+      } catch {
+        return "";
+      }
+    },
+    [pageTexts],
+  );
 
   return {
     pdfModule,

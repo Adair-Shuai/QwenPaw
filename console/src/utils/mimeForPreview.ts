@@ -340,9 +340,12 @@ export function mimeFromMagic(sample: string): string | null {
   }
   // PNG / JPG / GIF / WebP 魔数
   if (sample.startsWith("\x89PNG\r\n\x1a\n")) return "image/png";
-  if (sample.charCodeAt(0) === 0xff && sample.charCodeAt(1) === 0xd8) return "image/jpeg";
-  if (sample.startsWith("GIF87a") || sample.startsWith("GIF89a")) return "image/gif";
-  if (sample.startsWith("RIFF") && sample.slice(8, 12) === "WEBP") return "image/webp";
+  if (sample.charCodeAt(0) === 0xff && sample.charCodeAt(1) === 0xd8)
+    return "image/jpeg";
+  if (sample.startsWith("GIF87a") || sample.startsWith("GIF89a"))
+    return "image/gif";
+  if (sample.startsWith("RIFF") && sample.slice(8, 12) === "WEBP")
+    return "image/webp";
   if (sample.startsWith("<svg") || sample.startsWith("<?xml")) {
     // SVG 经常以 <?xml 开头，进一步看是否含 <svg
     if (sample.slice(0, 512).includes("<svg")) return "image/svg+xml";
@@ -396,7 +399,10 @@ export function resolveEffectiveMime(
       return fromMagic;
     }
     // 二进制嗅探：如果采样看起来是二进制，但 declared 是 text/plain → 修正
-    if (looksLikeBinaryString(sample) && (declared === "text/plain" || !declared)) {
+    if (
+      looksLikeBinaryString(sample) &&
+      (declared === "text/plain" || !declared)
+    ) {
       return "application/octet-stream";
     }
   }
@@ -436,8 +442,7 @@ export function isDocxMime(mime: string): boolean {
 /** 判断 MIME 是否为 XLSX */
 export function isXlsxMime(mime: string): boolean {
   return (
-    mime ===
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    mime === "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
   );
 }
 

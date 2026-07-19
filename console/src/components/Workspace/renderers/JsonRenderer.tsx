@@ -53,7 +53,9 @@ function isMinified(text: string): boolean {
 }
 
 /** 安全 JSON 解析 */
-function tryParseJson(text: string): { ok: true; data: unknown } | { ok: false; error: string } {
+function tryParseJson(
+  text: string,
+): { ok: true; data: unknown } | { ok: false; error: string } {
   try {
     return { ok: true, data: JSON.parse(text) };
   } catch (e) {
@@ -153,8 +155,8 @@ const TreeNode: React.FC<TreeNodeProps> = ({
       ? typeof keyName === "number"
         ? `[${keyName}]`
         : depth === 0
-          ? keyName
-          : `.${keyName}`
+        ? keyName
+        : `.${keyName}`
       : "");
 
   // 高亮键名/字符串值
@@ -193,8 +195,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
     } else {
       displayValue = String(value);
     }
-    const color =
-      TYPE_COLORS[type][isDark ? "dark" : "light"];
+    const color = TYPE_COLORS[type][isDark ? "dark" : "light"];
     return (
       <div
         style={{
@@ -208,7 +209,10 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         {keyName !== undefined && (
           <>
             <span
-              style={{ color: isDark ? "#9cdcfe" : "#267fd9", cursor: "pointer" }}
+              style={{
+                color: isDark ? "#9cdcfe" : "#267fd9",
+                cursor: "pointer",
+              }}
               onClick={() => onPathClick(currentPath)}
               title={currentPath}
             >
@@ -258,7 +262,10 @@ const TreeNode: React.FC<TreeNodeProps> = ({
         {keyName !== undefined && (
           <>
             <span
-              style={{ color: isDark ? "#9cdcfe" : "#267fd9", cursor: "pointer" }}
+              style={{
+                color: isDark ? "#9cdcfe" : "#267fd9",
+                cursor: "pointer",
+              }}
               onClick={() => onPathClick(currentPath)}
               title={currentPath}
             >
@@ -419,7 +426,8 @@ const JsonRenderer: React.FC<RendererContext> = (props) => {
           ) : null}
           {stats && (
             <span style={{ fontSize: 11, color: "#999" }}>
-              {stats.type} · {stats.nodes.toLocaleString()} {t("workspace.nodes", "节点")}
+              {stats.type} · {stats.nodes.toLocaleString()}{" "}
+              {t("workspace.nodes", "节点")}
             </span>
           )}
         </Space>
@@ -460,13 +468,17 @@ const JsonRenderer: React.FC<RendererContext> = (props) => {
               icon={
                 expandDepth >= 10 ? <CompressOutlined /> : <ExpandOutlined />
               }
-              onClick={() =>
-                setExpandDepth((d) => (d >= 10 ? 1 : d + 3))
-              }
+              onClick={() => setExpandDepth((d) => (d >= 10 ? 1 : d + 3))}
               disabled={forceRaw || viewMode === "raw"}
             />
           </Tooltip>
-          <Tooltip title={copied ? t("workspace.copied", "已复制") : t("workspace.copy", "复制")}>
+          <Tooltip
+            title={
+              copied
+                ? t("workspace.copied", "已复制")
+                : t("workspace.copy", "复制")
+            }
+          >
             <Button
               size="small"
               type="text"

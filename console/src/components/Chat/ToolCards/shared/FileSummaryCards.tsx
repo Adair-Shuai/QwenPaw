@@ -408,11 +408,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     if (name === "write_file" || name === "append_file") {
       resultContent = params.content as string;
     }
-    if (
-      !resultContent &&
-      rawResult !== undefined &&
-      name !== "edit_file"
-    ) {
+    if (!resultContent && rawResult !== undefined && name !== "edit_file") {
       resultContent = stringifyResult(rawResult);
     }
 

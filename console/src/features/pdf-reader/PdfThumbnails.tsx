@@ -116,7 +116,9 @@ const ThumbnailItem: React.FC<{
               onRenderSuccess={() => {}}
               onLoadError={() => setError(true)}
               loading={
-                <div style={{ height: 100, display: "flex", alignItems: "center" }}>
+                <div
+                  style={{ height: 100, display: "flex", alignItems: "center" }}
+                >
                   <Spin size="small" />
                 </div>
               }
@@ -208,10 +210,7 @@ const PdfThumbnails: React.FC<PdfThumbnailsProps> = ({
       }}
     >
       {pages.map((page) => (
-        <div
-          key={page}
-          ref={page === currentPage ? currentRef : undefined}
-        >
+        <div key={page} ref={page === currentPage ? currentRef : undefined}>
           <ThumbnailItem
             pdfModule={pdfModule}
             fileUrl={fileUrl}

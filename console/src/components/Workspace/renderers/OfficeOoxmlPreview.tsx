@@ -57,10 +57,7 @@ const EMPTY_STATE: PreviewState = {
 };
 
 /** 根据扩展名/MIME 判定预览类型 */
-function detectKind(
-  mime: string,
-  ext?: string,
-): PreviewKind {
+function detectKind(mime: string, ext?: string): PreviewKind {
   const e = (ext ?? "").toLowerCase();
   if (
     mime ===
@@ -84,7 +81,10 @@ function detectKind(
 }
 
 /** 获取文件 ArrayBuffer（带鉴权头） */
-async function fetchArrayBuffer(url: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+async function fetchArrayBuffer(
+  url: string,
+  signal?: AbortSignal,
+): Promise<ArrayBuffer> {
   const res = await fetch(url, {
     headers: { ...buildAuthHeaders() },
     signal,
@@ -121,7 +121,10 @@ async function convertXlsx(
         cell === null || cell === undefined ? "" : String(cell),
       ),
     );
-    sheets.push({ name: raw.sheet || `Sheet${sheets.length + 1}`, rows: stringRows });
+    sheets.push({
+      name: raw.sheet || `Sheet${sheets.length + 1}`,
+      rows: stringRows,
+    });
   }
 
   if (sheets.length === 0) {
@@ -319,7 +322,10 @@ const OfficeOoxmlPreview: React.FC<{
       >
         <Alert
           type="warning"
-          message={`${label} ${t("workspace.clientSideConvertFailed", "前端解析失败")}`}
+          message={`${label} ${t(
+            "workspace.clientSideConvertFailed",
+            "前端解析失败",
+          )}`}
           description={state.error}
           showIcon
         />
@@ -371,7 +377,10 @@ const OfficeOoxmlPreview: React.FC<{
               <select
                 value={state.activeSheet}
                 onChange={(e) =>
-                  setState((s) => ({ ...s, activeSheet: Number(e.target.value) }))
+                  setState((s) => ({
+                    ...s,
+                    activeSheet: Number(e.target.value),
+                  }))
                 }
                 style={{
                   fontSize: 12,
@@ -504,12 +513,20 @@ const OfficeOoxmlPreview: React.FC<{
   // DOCX / PPTX HTML 视图
   const isPptx = kind === "pptx";
   const styledHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: ${isPptx ? "24px" : "24px 32px"}; line-height: 1.7; color: ${textColor}; background: ${bgColor}; ${isPptx ? "max-width: 720px; margin: 0 auto;" : "max-width: 900px; margin: 0 auto;"} }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: ${
+      isPptx ? "24px" : "24px 32px"
+    }; line-height: 1.7; color: ${textColor}; background: ${bgColor}; ${
+      isPptx
+        ? "max-width: 720px; margin: 0 auto;"
+        : "max-width: 900px; margin: 0 auto;"
+    } }
     h1 { font-size: 1.6em; border-bottom: 2px solid ${borderColor}; padding-bottom: 8px; margin-top: 1.5em; }
     h2 { font-size: 1.3em; margin-top: 1.2em; }
     h3 { font-size: 1.1em; margin-top: 1em; }
     table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-    th, td { border: 1px solid ${isDark ? "#555" : "#ddd"}; padding: 8px 12px; text-align: left; }
+    th, td { border: 1px solid ${
+      isDark ? "#555" : "#ddd"
+    }; padding: 8px 12px; text-align: left; }
     th { background: ${headerBg}; font-weight: 600; }
     img { max-width: 100%; height: auto; }
     a { color: ${isDark ? "#4d9eff" : "#1677ff"}; }
@@ -572,8 +589,7 @@ const OfficeOoxmlPreview: React.FC<{
                 max={state.slideCount}
                 value={state.currentSlide}
                 onChange={(v) =>
-                  v &&
-                  setState((s) => ({ ...s, currentSlide: v }))
+                  v && setState((s) => ({ ...s, currentSlide: v }))
                 }
                 style={{ width: 50 }}
               />

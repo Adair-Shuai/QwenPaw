@@ -33,7 +33,13 @@
  * - 研究面板：笔记 + 问 AI
  * - 上下文桥接：选中文字 → 发给聊天 composer
  */
-import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
+import React, {
+  useState,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { Spin, Alert } from "antd";
 import { useTranslation } from "react-i18next";
 import { usePdfDocument } from "./usePdfDocument";
@@ -162,7 +168,10 @@ const PdfReader: React.FC<PdfReaderProps> = ({
             page,
             matchIndex: matches.length,
             text: text.slice(idx, idx + q.length),
-            context: (start > 0 ? "..." : "") + text.slice(start, end) + (end < text.length ? "..." : ""),
+            context:
+              (start > 0 ? "..." : "") +
+              text.slice(start, end) +
+              (end < text.length ? "..." : ""),
           });
           idx += q.length;
         }
@@ -192,22 +201,20 @@ const PdfReader: React.FC<PdfReaderProps> = ({
 
   const prevMatch = useCallback(() => {
     if (searchMatches.length === 0) return;
-    const prev = (currentMatch - 1 + searchMatches.length) % searchMatches.length;
+    const prev =
+      (currentMatch - 1 + searchMatches.length) % searchMatches.length;
     setCurrentMatch(prev);
     setCurrentPage(searchMatches[prev].page);
   }, [searchMatches, currentMatch]);
 
   // ── 模式切换 ──
-  const handleModeChange = useCallback(
-    (newMode: PdfReaderMode) => {
-      setMode(newMode);
-      // 进入论文模式时自动展开搜索栏和研究面板
-      if (newMode === "paper") {
-        // 保持当前状态
-      }
-    },
-    [],
-  );
+  const handleModeChange = useCallback((newMode: PdfReaderMode) => {
+    setMode(newMode);
+    // 进入论文模式时自动展开搜索栏和研究面板
+    if (newMode === "paper") {
+      // 保持当前状态
+    }
+  }, []);
 
   // ── 缩放计算 ──
   const scale = useMemo(() => {
@@ -387,7 +394,8 @@ const PdfReader: React.FC<PdfReaderProps> = ({
                 position: "relative",
                 // 搜索高亮标记层（简化版：仅跳转到匹配页）
                 boxShadow:
-                  currentMatch >= 0 && searchMatches[currentMatch]?.page === currentPage
+                  currentMatch >= 0 &&
+                  searchMatches[currentMatch]?.page === currentPage
                     ? "0 0 0 3px rgba(22,119,255,0.5)"
                     : "none",
                 transition: "box-shadow 0.3s",
@@ -399,8 +407,8 @@ const PdfReader: React.FC<PdfReaderProps> = ({
                 width={
                   scale === null && zoom === "fit-width"
                     ? containerWidth
-                        ? containerWidth - 32
-                        : undefined
+                      ? containerWidth - 32
+                      : undefined
                     : undefined
                 }
                 renderTextLayer={true}

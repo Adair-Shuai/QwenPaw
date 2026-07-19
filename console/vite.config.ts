@@ -46,21 +46,45 @@ const PLUGIN_WATCH_ENTRIES: { source: string; syncTargets: string[] }[] = [
   {
     source: path.resolve(__dirname, "../plugins/bundle/ugsci/ui/dist/index.js"),
     syncTargets: [
-      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci/ui/dist/index.js"),
-      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci/static/index.js"),
+      path.resolve(
+        __dirname,
+        "../src/qwenpaw/plugins_bundle/ugsci/ui/dist/index.js",
+      ),
+      path.resolve(
+        __dirname,
+        "../src/qwenpaw/plugins_bundle/ugsci/static/index.js",
+      ),
       path.resolve(__dirname, "../plugins/bundle/ugsci/static/index.js"),
       path.join(os.homedir(), ".qwenpaw/plugins/ugsci/ui/dist/index.js"),
       path.join(os.homedir(), ".qwenpaw/plugins/ugsci/static/index.js"),
     ],
   },
   {
-    source: path.resolve(__dirname, "../plugins/bundle/ugsci_research/ui/dist/index.js"),
+    source: path.resolve(
+      __dirname,
+      "../plugins/bundle/ugsci_research/ui/dist/index.js",
+    ),
     syncTargets: [
-      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci_research/ui/dist/index.js"),
-      path.resolve(__dirname, "../src/qwenpaw/plugins_bundle/ugsci_research/static/index.js"),
-      path.resolve(__dirname, "../plugins/bundle/ugsci_research/static/index.js"),
-      path.join(os.homedir(), ".qwenpaw/plugins/ugsci_research/ui/dist/index.js"),
-      path.join(os.homedir(), ".qwenpaw/plugins/ugsci_research/static/index.js"),
+      path.resolve(
+        __dirname,
+        "../src/qwenpaw/plugins_bundle/ugsci_research/ui/dist/index.js",
+      ),
+      path.resolve(
+        __dirname,
+        "../src/qwenpaw/plugins_bundle/ugsci_research/static/index.js",
+      ),
+      path.resolve(
+        __dirname,
+        "../plugins/bundle/ugsci_research/static/index.js",
+      ),
+      path.join(
+        os.homedir(),
+        ".qwenpaw/plugins/ugsci_research/ui/dist/index.js",
+      ),
+      path.join(
+        os.homedir(),
+        ".qwenpaw/plugins/ugsci_research/static/index.js",
+      ),
     ],
   },
 ];
@@ -107,7 +131,10 @@ function pluginBundleWatcher() {
                 `[plugin-bundle-watcher] ${pluginName}/index.js rebuilt → synced to ${synced}/${entry.syncTargets.length} locations → triggering full reload`,
               );
             } catch (err) {
-              console.warn(`[plugin-bundle-watcher] Failed to sync ${pluginName}:`, err);
+              console.warn(
+                `[plugin-bundle-watcher] Failed to sync ${pluginName}:`,
+                err,
+              );
             }
             // Trigger browser full reload to pick up the new bundle
             server.ws.send({ type: "full-reload" });
@@ -176,7 +203,12 @@ export default defineConfig(({ mode }) => {
       TOKEN: JSON.stringify(env.TOKEN || ""),
       MOBILE: false,
     },
-    plugins: [react(), optionalDepsPlugin, cssStubPlugin, pluginBundleWatcher()],
+    plugins: [
+      react(),
+      optionalDepsPlugin,
+      cssStubPlugin,
+      pluginBundleWatcher(),
+    ],
     css: {
       modules: {
         localsConvention: "camelCase",

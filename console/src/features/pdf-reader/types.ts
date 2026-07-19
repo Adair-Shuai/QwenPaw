@@ -65,7 +65,15 @@ export interface ThumbnailInfo {
 }
 
 /** 缩放级别 */
-export type ZoomLevel = "fit-width" | "fit-page" | "50" | "75" | "100" | "125" | "150" | "200";
+export type ZoomLevel =
+  | "fit-width"
+  | "fit-page"
+  | "50"
+  | "75"
+  | "100"
+  | "125"
+  | "150"
+  | "200";
 
 /** PDF Reader 内部状态（供 bridge 使用） */
 export interface PdfReaderState {

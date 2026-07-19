@@ -137,13 +137,18 @@ export function parseCsv(
   } = options;
 
   if (!text) {
-    return { headers: [], rows: [], rowCount: 0, delimiter: ",", truncated: false };
+    return {
+      headers: [],
+      rows: [],
+      rowCount: 0,
+      delimiter: ",",
+      truncated: false,
+    };
   }
 
   // 检测分隔符
   const firstNewline = text.search(/\r?\n/);
-  const firstLine =
-    firstNewline >= 0 ? text.slice(0, firstNewline) : text;
+  const firstLine = firstNewline >= 0 ? text.slice(0, firstNewline) : text;
   const delimiter = forcedDelimiter ?? detectDelimiter(firstLine);
 
   const rows: string[][] = [];
@@ -200,7 +205,10 @@ export function inferColumnType(
   colIndex: number,
   rows: string[][],
 ): ColumnType {
-  const sample = rows.slice(0, 100).map((r) => r[colIndex]).filter((v) => v !== undefined && v !== "");
+  const sample = rows
+    .slice(0, 100)
+    .map((r) => r[colIndex])
+    .filter((v) => v !== undefined && v !== "");
   if (sample.length === 0) return "empty";
 
   let numCount = 0;

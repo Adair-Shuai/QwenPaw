@@ -242,11 +242,23 @@ const CsvRenderer: React.FC<RendererContext> = ({
             }}
             style={{ width: 160 }}
           />
-          <Tooltip title={copied ? t("workspace.copied", "已复制") : t("workspace.copy", "复制")}>
+          <Tooltip
+            title={
+              copied
+                ? t("workspace.copied", "已复制")
+                : t("workspace.copy", "复制")
+            }
+          >
             <Button
               size="small"
               type="text"
-              icon={copied ? <CheckOutlined style={{ color: "#52c41a" }} /> : <CopyOutlined />}
+              icon={
+                copied ? (
+                  <CheckOutlined style={{ color: "#52c41a" }} />
+                ) : (
+                  <CopyOutlined />
+                )
+              }
               onClick={handleCopy}
             />
           </Tooltip>
@@ -362,7 +374,8 @@ const CsvRenderer: React.FC<RendererContext> = ({
                         maxWidth: 400,
                         overflow: "hidden",
                         textOverflow: "ellipsis",
-                        textAlign: colTypes[colIdx] === "number" ? "right" : "left",
+                        textAlign:
+                          colTypes[colIdx] === "number" ? "right" : "left",
                       }}
                       title={row[colIdx]}
                     >
