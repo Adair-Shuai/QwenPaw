@@ -3349,9 +3349,11 @@ function SkillsConfigTab({
 function MCPConfigTab({
   agentId,
   onRefresh,
+  isActive,
 }: {
   agentId: string;
   onRefresh: () => void;
+  isActive: boolean;
 }) {
   const React = getHost().React;
   const { useState, useEffect, useCallback } = React;
@@ -3401,6 +3403,14 @@ function MCPConfigTab({
   useEffect(() => {
     loadMCPs();
   }, [loadMCPs]);
+
+  // Refresh MCP data when this tab becomes active so that
+  // changes made externally (e.g. in the Agent MCP page) are reflected.
+  useEffect(() => {
+    if (isActive) {
+      loadMCPs();
+    }
+  }, [isActive, loadMCPs]);
 
   const handleToggle = async (key: string) => {
     try {
@@ -4249,6 +4259,7 @@ function ExpertConfigModal({
       children: React.createElement(MCPConfigTab, {
         agentId: agent.id,
         onRefresh,
+        isActive: activeTab === "mcp",
       }),
     },
     {
@@ -6520,6 +6531,10 @@ interface EngineInfo {
   status: "configured" | "detected" | "not_found" | "error";
   is_default: boolean;
   is_custom: boolean;
+  // Detected sub-modules (e.g. CMG IMEX/GEM/STARS/Builder/Results)
+  modules?: string[];
+  // Map of module name → executable path
+  module_paths?: Record<string, string>;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -6713,6 +6728,14 @@ function EngineCard({
             `v${engine.version}`,
           )
         : null,
+      // Display detected modules (e.g. IMEX, GEM, STARS)
+      ...(engine.modules || []).map((mod) =>
+        React.createElement(
+          Tag,
+          { key: mod, color: "cyan", style: { fontSize: 10 } },
+          mod,
+        ),
+      ),
     ),
   );
 }
@@ -7167,6 +7190,38 @@ function EngineSection() {
                     "code",
                     { style: { fontSize: 12, wordBreak: "break-all" } },
                     activeEngine.install_dir,
+                  ),
+                )
+              : null,
+            // Display detected modules with paths
+            activeEngine.modules && activeEngine.modules.length > 0
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "已检测模块" },
+                  React.createElement(
+                    "div",
+                    { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                    ...activeEngine.modules.map((mod) =>
+                      React.createElement(
+                        "div",
+                        {
+                          key: mod,
+                          style: { display: "flex", alignItems: "center", gap: 8 },
+                        },
+                        React.createElement(
+                          Tag,
+                          { color: "cyan", style: { fontSize: 11 } },
+                          mod,
+                        ),
+                        activeEngine.module_paths && activeEngine.module_paths[mod]
+                          ? React.createElement(
+                              "code",
+                              { style: { fontSize: 11, wordBreak: "break-all" } },
+                              activeEngine.module_paths[mod],
+                            )
+                          : null,
+                      ),
+                    ),
                   ),
                 )
               : null,

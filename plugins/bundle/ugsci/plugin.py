@@ -168,6 +168,8 @@ class EngineRequest(BaseModel):
     invocation_hint: str = ""
     license_server: str = ""
     extra_paths: List[str] = []
+    modules: List[str] = []
+    module_paths: Dict[str, str] = {}
 
 
 def _build_engine_router() -> APIRouter:

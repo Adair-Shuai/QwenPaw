@@ -2262,9 +2262,36 @@ async function runHeartbeatNow(agentId: string): Promise<void> {
 
 // ─── Running Config Helpers ──────────────────────────────────────────────────
 
+interface LoopIterationConfig {
+  enabled?: boolean;
+  max_iterations?: number;
+}
+interface LoopDoomLoopConfig {
+  enabled?: boolean;
+  window_size?: number;
+  similarity_threshold?: number;
+  stages?: unknown[];
+}
+interface LoopConfig {
+  iteration?: LoopIterationConfig;
+  doom_loop?: LoopDoomLoopConfig;
+}
+interface AutoTitleConfig {
+  enabled: boolean;
+  timeout_seconds: number;
+}
+interface LightContextConfig {
+  strategy?: string;
+  dialog_path?: string;
+  token_count_estimate_divisor?: number;
+  scroll_config?: {
+    history_retention_days?: number;
+  };
+  [key: string]: unknown;
+}
 interface AgentsRunningConfig {
   max_iters: number;
-  loop?: unknown;
+  loop?: LoopConfig;
   shell_command_timeout: number;
   shell_command_executable: string;
   llm_retry_enabled: boolean;
@@ -2278,8 +2305,12 @@ interface AgentsRunningConfig {
   llm_acquire_timeout: number;
   history_max_length: number;
   context_manager_backend: string;
+  light_context_config?: LightContextConfig;
   memory_manager_backend: string;
+  reme_light_memory_config?: unknown;
+  adbpg_memory_config?: unknown;
   approval_level?: string;
+  auto_title_config?: AutoTitleConfig;
   [key: string]: unknown;
 }
 
@@ -2303,6 +2334,41 @@ async function updateRunningConfig(
 }
 
 // ─── System Prompt Files Helpers ─────────────────────────────────────────────
+
+// ─── Language / Timezone Helpers (agent-scoped) ───────────────────────────────
+
+async function fetchAgentLanguage(
+  agentId: string,
+): Promise<string> {
+  const data = await apiFetch<{ language: string }>("/workspace/language", {
+    headers: { "X-Agent-Id": agentId },
+  });
+  return data.language || "zh";
+}
+
+async function updateAgentLanguage(
+  agentId: string,
+  language: string,
+): Promise<void> {
+  await apiFetch<{ language: string }>("/workspace/language", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify({ language }),
+  });
+}
+
+async function fetchUserTimezone(): Promise<string> {
+  const data = await apiFetch<{ timezone: string }>("/config/user-timezone");
+  return data.timezone || "UTC";
+}
+
+async function updateUserTimezone(timezone: string): Promise<void> {
+  await apiFetch<{ timezone: string }>("/config/user-timezone", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ timezone }),
+  });
+}
 
 async function fetchSystemPromptFiles(agentId: string): Promise<string[]> {
   const data = await apiFetch<string[]>("/workspace/system-prompt-files", {
@@ -2722,20 +2788,46 @@ function SkillPickerModal({
 
 // ─── Expert Config Modal ─────────────────────────────────────────────────────
 
+// ── Shared layout styles for Expert Config Modal tabs ──
+// A form-like layout: label on top, control below, consistent spacing.
 const CFG_LABEL_STYLE: Record<string, unknown> = {
-  marginBottom: 6,
+  marginBottom: 4,
   fontSize: 13,
   fontWeight: 500,
-  color: "#333",
+  color: "rgba(0,0,0,0.85)",
+  display: "flex",
+  alignItems: "center",
+  gap: 4,
 };
 const CFG_ROW_STYLE: Record<string, unknown> = { marginBottom: 16 };
+// Two-column grid for fields that can share a row
+const CFG_GRID_2COL_STYLE: Record<string, unknown> = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: "0 16px",
+  marginBottom: 16,
+};
+// Section card title style
+const CFG_SECTION_TITLE_STYLE: Record<string, unknown> = {
+  fontSize: 13,
+  fontWeight: 600,
+  color: "rgba(0,0,0,0.85)",
+  marginBottom: 12,
+  paddingBottom: 8,
+  borderBottom: "1px solid #f0f0f0",
+};
+// Tooltip hint text next to a control
+const CFG_HINT_STYLE: Record<string, unknown> = {
+  fontSize: 12,
+  color: "rgba(0,0,0,0.45)",
+  marginLeft: 8,
+};
 
 /** Heartbeat configuration tab — fetches/saves /config/heartbeat with X-Agent-Id. */
 function HeartbeatConfigTab({ agentId }: { agentId: string }) {
   const React = getHost().React;
   const { useState, useEffect, useCallback } = React;
   const {
-    Card,
     Switch,
     InputNumber,
     Select,
@@ -2825,127 +2917,158 @@ function HeartbeatConfigTab({ agentId }: { agentId: string }) {
     );
   }
 
+  // Helper: a labelled form field row
+  const field = (label: string, control: any, hint?: string) =>
+    React.createElement(
+      "div",
+      { style: CFG_ROW_STYLE },
+      React.createElement("div", { style: CFG_LABEL_STYLE }, label),
+      control,
+      hint
+        ? React.createElement(
+            Text,
+            { type: "secondary", style: CFG_HINT_STYLE },
+            hint,
+          )
+        : null,
+    );
+
+  // Helper: a 2-column row with two labelled fields
+  const fieldPair = (
+    label1: string,
+    control1: any,
+    label2: string,
+    control2: any,
+  ) =>
+    React.createElement(
+      "div",
+      { style: CFG_GRID_2COL_STYLE },
+      React.createElement(
+        "div",
+        null,
+        React.createElement("div", { style: CFG_LABEL_STYLE }, label1),
+        control1,
+      ),
+      React.createElement(
+        "div",
+        null,
+        React.createElement("div", { style: CFG_LABEL_STYLE }, label2),
+        control2,
+      ),
+    );
+
+  const { Divider } = getHost().antd;
+
   return React.createElement(
     "div",
-    null,
-    React.createElement(
-      Card,
-      { size: "small", title: "心跳配置", style: { marginBottom: 12 } },
+    { style: { paddingBottom: 8 } },
+    // ── Section: 基本设置 ──
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "基本设置"),
+    field(
+      "启用心跳",
+      React.createElement(Switch, {
+        checked: enabled,
+        onChange: (v: boolean) => setEnabled(v),
+      }),
+      enabled ? "已启用，专家将定期自检" : "已停用",
+    ),
+    fieldPair(
+      "检查频率",
       React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "启用心跳"),
-        React.createElement(Switch, {
-          checked: enabled,
-          onChange: (v: boolean) => setEnabled(v),
+        Space,
+        null,
+        React.createElement(InputNumber, {
+          min: 1,
+          value: everyNumber,
+          onChange: (v: number | null) => setEveryNumber(v ?? 1),
+          style: { width: "100%" },
         }),
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12, marginLeft: 8 } },
-          enabled ? "已启用，专家将定期自检" : "已停用",
-        ),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "检查频率"),
-        React.createElement(
-          Space,
-          null,
-          React.createElement(InputNumber, {
-            min: 1,
-            value: everyNumber,
-            onChange: (v: number | null) => setEveryNumber(v ?? 1),
-            style: { width: 100 },
-          }),
-          React.createElement(Select, {
-            value: everyUnit,
-            onChange: (v: "m" | "h") => setEveryUnit(v),
-            style: { width: 90 },
-            options: [
-              { value: "m", label: "分钟" },
-              { value: "h", label: "小时" },
-            ],
-          }),
-        ),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "心跳目标"),
         React.createElement(Select, {
-          value: target,
-          onChange: (v: string) => setTarget(v),
-          style: { width: 200 },
+          value: everyUnit,
+          onChange: (v: "m" | "h") => setEveryUnit(v),
+          style: { width: 90 },
           options: [
-            { value: "main", label: "主会话 (main)" },
-            { value: "last", label: "最近会话 (last)" },
-            { value: "inbox", label: "收件箱 (inbox)" },
+            { value: "m", label: "分钟" },
+            { value: "h", label: "小时" },
           ],
         }),
       ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "超时时间 (秒)"),
-        React.createElement(InputNumber, {
-          min: 1,
-          max: 3600,
-          value: timeoutSeconds,
-          onChange: (v: number | null) => setTimeoutSeconds(v ?? 300),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "活跃时段限制"),
-        React.createElement(Switch, {
-          checked: useActiveHours,
-          onChange: (v: boolean) => setUseActiveHours(v),
-        }),
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12, marginLeft: 8 } },
-          "仅在指定时段内触发心跳",
-        ),
-      ),
-      useActiveHours
-        ? React.createElement(
-            "div",
-            { style: CFG_ROW_STYLE },
-            React.createElement("div", { style: CFG_LABEL_STYLE }, "活跃时段"),
-            React.createElement(
-              Space,
-              null,
-              React.createElement("input", {
-                type: "time",
-                value: activeHoursStart,
-                onChange: (e: any) => setActiveHoursStart(e.target.value),
-                style: {
-                  padding: "4px 8px",
-                  borderRadius: 6,
-                  border: "1px solid #d9d9d9",
-                },
-              }),
-              React.createElement("span", null, "至"),
-              React.createElement("input", {
-                type: "time",
-                value: activeHoursEnd,
-                onChange: (e: any) => setActiveHoursEnd(e.target.value),
-                style: {
-                  padding: "4px 8px",
-                  borderRadius: 6,
-                  border: "1px solid #d9d9d9",
-                },
-              }),
-            ),
-          )
-        : null,
+      "心跳目标",
+      React.createElement(Select, {
+        value: target,
+        onChange: (v: string) => setTarget(v),
+        style: { width: "100%" },
+        options: [
+          { value: "main", label: "主会话 (main)" },
+          { value: "last", label: "最近会话 (last)" },
+          { value: "inbox", label: "收件箱 (inbox)" },
+        ],
+      }),
     ),
+    field(
+      "超时时间 (秒)",
+      React.createElement(InputNumber, {
+        min: 1,
+        max: 3600,
+        value: timeoutSeconds,
+        onChange: (v: number | null) => setTimeoutSeconds(v ?? 300),
+        style: { width: 200 },
+      }),
+    ),
+
+    // ── Section: 活跃时段 ──
+    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "活跃时段"),
+    field(
+      "启用活跃时段限制",
+      React.createElement(Switch, {
+        checked: useActiveHours,
+        onChange: (v: boolean) => setUseActiveHours(v),
+      }),
+      "仅在指定时段内触发心跳",
+    ),
+    useActiveHours
+      ? fieldPair(
+          "开始时间",
+          React.createElement("input", {
+            type: "time",
+            value: activeHoursStart,
+            onChange: (e: any) => setActiveHoursStart(e.target.value),
+            style: {
+              width: "100%",
+              padding: "4px 11px",
+              borderRadius: 6,
+              border: "1px solid #d9d9d9",
+              fontSize: 14,
+            },
+          }),
+          "结束时间",
+          React.createElement("input", {
+            type: "time",
+            value: activeHoursEnd,
+            onChange: (e: any) => setActiveHoursEnd(e.target.value),
+            style: {
+              width: "100%",
+              padding: "4px 11px",
+              borderRadius: 6,
+              border: "1px solid #d9d9d9",
+              fontSize: 14,
+            },
+          }),
+        )
+      : null,
+
+    // ── Action buttons ──
     React.createElement(
-      Space,
-      null,
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "flex-end",
+          marginTop: 16,
+          gap: 8,
+        },
+      },
       React.createElement(
         Button,
         {
@@ -3226,9 +3349,11 @@ function SkillsConfigTab({
 function MCPConfigTab({
   agentId,
   onRefresh,
+  isActive,
 }: {
   agentId: string;
   onRefresh: () => void;
+  isActive: boolean;
 }) {
   const React = getHost().React;
   const { useState, useEffect, useCallback } = React;
@@ -3278,6 +3403,14 @@ function MCPConfigTab({
   useEffect(() => {
     loadMCPs();
   }, [loadMCPs]);
+
+  // Refresh MCP data when this tab becomes active so that
+  // changes made externally (e.g. in the Agent MCP page) are reflected.
+  useEffect(() => {
+    if (isActive) {
+      loadMCPs();
+    }
+  }, [isActive, loadMCPs]);
 
   const handleToggle = async (key: string) => {
     try {
@@ -3520,7 +3653,9 @@ function RunningConfigTab({ agentId }: { agentId: string }) {
     Switch,
     Button,
     Spin,
+    Space,
     Typography,
+    Divider,
     message: antdMsg,
   } = getHost().antd;
   const { SaveOutlined } = getHost().antdIcons || {};
@@ -3529,38 +3664,86 @@ function RunningConfigTab({ agentId }: { agentId: string }) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const originalRef = useRef<AgentsRunningConfig | null>(null);
-  const [maxIters, setMaxIters] = useState(100);
+
+  // ── Basic settings ──
   const [shellTimeout, setShellTimeout] = useState(60);
   const [shellExecutable, setShellExecutable] = useState("");
+  const [autoTitleEnabled, setAutoTitleEnabled] = useState(true);
+  const [autoTitleTimeout, setAutoTitleTimeout] = useState(30);
+  const [language, setLanguage] = useState("zh");
+  const [timezone, setTimezone] = useState("UTC");
+
+  // ── Iteration & Loop ──
+  const [iterEnabled, setIterEnabled] = useState(true);
+  const [maxIters, setMaxIters] = useState(100);
+  const [doomLoopEnabled, setDoomLoopEnabled] = useState(true);
+  const [doomWindowSize, setDoomWindowSize] = useState(3);
+  const [doomSimilarity, setDoomSimilarity] = useState(1.0);
+
+  // ── LLM Retry ──
   const [llmRetryEnabled, setLlmRetryEnabled] = useState(true);
   const [llmMaxRetries, setLlmMaxRetries] = useState(3);
   const [llmBackoffBase, setLlmBackoffBase] = useState(2);
   const [llmBackoffCap, setLlmBackoffCap] = useState(60);
+
+  // ── LLM Rate Limiter ──
   const [llmMaxConcurrent, setLlmMaxConcurrent] = useState(1);
   const [llmMaxQpm, setLlmMaxQpm] = useState(0);
+  const [llmRateLimitPause, setLlmRateLimitPause] = useState(1);
+  const [llmRateLimitJitter, setLlmRateLimitJitter] = useState(0);
+  const [llmAcquireTimeout, setLlmAcquireTimeout] = useState(30);
+
+  // ── Context & Memory ──
   const [historyMaxLength, setHistoryMaxLength] = useState(50);
-  const [approvalLevel, setApprovalLevel] = useState("AUTO");
   const [contextBackend, setContextBackend] = useState("light");
+  const [contextStrategy, setContextStrategy] = useState("scroll");
   const [memoryBackend, setMemoryBackend] = useState("remelight");
+
+  // ── Approval ──
+  const [approvalLevel, setApprovalLevel] = useState("AUTO");
 
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
-      const config = await fetchRunningConfig(agentId);
+      const [config, lang, tz] = await Promise.all([
+        fetchRunningConfig(agentId),
+        fetchAgentLanguage(agentId).catch(() => "zh"),
+        fetchUserTimezone().catch(() => "UTC"),
+      ]);
       originalRef.current = config;
-      setMaxIters(config.max_iters ?? 100);
+      // Basic
       setShellTimeout(config.shell_command_timeout ?? 60);
       setShellExecutable(config.shell_command_executable ?? "");
+      const atc = config.auto_title_config ?? { enabled: true, timeout_seconds: 30 };
+      setAutoTitleEnabled(atc.enabled ?? true);
+      setAutoTitleTimeout(atc.timeout_seconds ?? 30);
+      setLanguage(lang);
+      setTimezone(tz);
+      // Iteration & Loop
+      const loop = config.loop ?? {};
+      setIterEnabled(loop.iteration?.enabled ?? true);
+      setMaxIters(loop.iteration?.max_iterations ?? config.max_iters ?? 100);
+      setDoomLoopEnabled(loop.doom_loop?.enabled ?? true);
+      setDoomWindowSize(loop.doom_loop?.window_size ?? 3);
+      setDoomSimilarity(loop.doom_loop?.similarity_threshold ?? 1.0);
+      // LLM Retry
       setLlmRetryEnabled(config.llm_retry_enabled ?? true);
       setLlmMaxRetries(config.llm_max_retries ?? 3);
       setLlmBackoffBase(config.llm_backoff_base ?? 2);
       setLlmBackoffCap(config.llm_backoff_cap ?? 60);
+      // LLM Rate Limiter
       setLlmMaxConcurrent(config.llm_max_concurrent ?? 1);
       setLlmMaxQpm(config.llm_max_qpm ?? 0);
+      setLlmRateLimitPause(config.llm_rate_limit_pause ?? 1);
+      setLlmRateLimitJitter(config.llm_rate_limit_jitter ?? 0);
+      setLlmAcquireTimeout(config.llm_acquire_timeout ?? 30);
+      // Context & Memory
       setHistoryMaxLength(config.history_max_length ?? 50);
-      setApprovalLevel(config.approval_level ?? "AUTO");
       setContextBackend(config.context_manager_backend ?? "light");
+      setContextStrategy(config.light_context_config?.strategy ?? "scroll");
       setMemoryBackend(config.memory_manager_backend ?? "remelight");
+      // Approval
+      setApprovalLevel(config.approval_level ?? "AUTO");
     } catch (err: any) {
       antdMsg.error(err.message || "加载运行配置失败");
     } finally {
@@ -3580,21 +3763,47 @@ function RunningConfigTab({ agentId }: { agentId: string }) {
       const configToSave: AgentsRunningConfig = {
         ...original,
         max_iters: maxIters,
+        loop: {
+          ...(original.loop ?? {}),
+          iteration: { enabled: iterEnabled, max_iterations: maxIters },
+          doom_loop: {
+            enabled: doomLoopEnabled,
+            window_size: doomWindowSize,
+            similarity_threshold: doomSimilarity,
+            stages: original.loop?.doom_loop?.stages ?? [],
+          },
+        },
         shell_command_timeout: shellTimeout,
         shell_command_executable: shellExecutable,
+        auto_title_config: {
+          enabled: autoTitleEnabled,
+          timeout_seconds: autoTitleTimeout,
+        },
         llm_retry_enabled: llmRetryEnabled,
         llm_max_retries: llmMaxRetries,
         llm_backoff_base: llmBackoffBase,
         llm_backoff_cap: llmBackoffCap,
         llm_max_concurrent: llmMaxConcurrent,
         llm_max_qpm: llmMaxQpm,
+        llm_rate_limit_pause: llmRateLimitPause,
+        llm_rate_limit_jitter: llmRateLimitJitter,
+        llm_acquire_timeout: llmAcquireTimeout,
         history_max_length: historyMaxLength,
-        approval_level: approvalLevel,
         context_manager_backend: contextBackend,
+        light_context_config: {
+          ...(original.light_context_config ?? {}),
+          strategy: contextStrategy,
+        },
         memory_manager_backend: memoryBackend,
+        approval_level: approvalLevel,
       };
       await updateRunningConfig(agentId, configToSave);
       originalRef.current = configToSave;
+
+      // Also save language and timezone (separate endpoints)
+      if (language) await updateAgentLanguage(agentId, language).catch(() => {});
+      if (timezone) await updateUserTimezone(timezone).catch(() => {});
+
       antdMsg.success("运行配置已保存");
     } catch (err: any) {
       antdMsg.error(err.message || "保存运行配置失败");
@@ -3611,182 +3820,349 @@ function RunningConfigTab({ agentId }: { agentId: string }) {
     );
   }
 
+  // Helper: a labelled form field row
+  const field = (
+    label: string,
+    control: any,
+    hint?: string,
+  ) =>
+    React.createElement(
+      "div",
+      { style: CFG_ROW_STYLE },
+      React.createElement("div", { style: CFG_LABEL_STYLE }, label),
+      control,
+      hint
+        ? React.createElement(
+            Text,
+            { type: "secondary", style: CFG_HINT_STYLE },
+            hint,
+          )
+        : null,
+    );
+
+  // Helper: a 2-column row with two labelled fields
+  const fieldPair = (
+    label1: string,
+    control1: any,
+    label2: string,
+    control2: any,
+  ) =>
+    React.createElement(
+      "div",
+      { style: CFG_GRID_2COL_STYLE },
+      React.createElement(
+        "div",
+        null,
+        React.createElement("div", { style: CFG_LABEL_STYLE }, label1),
+        control1,
+      ),
+      React.createElement(
+        "div",
+        null,
+        React.createElement("div", { style: CFG_LABEL_STYLE }, label2),
+        control2,
+      ),
+    );
+
   return React.createElement(
     "div",
-    null,
+    { style: { paddingBottom: 8 } },
+    // ── Section: 基础设置 ──
     React.createElement(
-      Card,
-      { size: "small", title: "运行配置", style: { marginBottom: 12 } },
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "审批级别"),
-        React.createElement(Select, {
-          value: approvalLevel,
-          onChange: (v: string) => setApprovalLevel(v),
-          style: { width: 200 },
-          options: [
-            { value: "STRICT", label: "严格 (STRICT) — 每次工具调用需审批" },
-            { value: "SMART", label: "智能 (SMART) — 高风险操作需审批" },
-            { value: "AUTO", label: "自动 (AUTO) — 自动执行" },
-            { value: "OFF", label: "关闭 (OFF) — 无限制" },
-          ],
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大迭代次数"),
-        React.createElement(InputNumber, {
-          min: 1,
-          value: maxIters,
-          onChange: (v: number | null) => setMaxIters(v ?? 100),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "Shell 命令超时 (秒)"),
-        React.createElement(InputNumber, {
-          min: 1,
-          value: shellTimeout,
-          onChange: (v: number | null) => setShellTimeout(v ?? 60),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "Shell 可执行文件"),
-        React.createElement(Input, {
-          value: shellExecutable,
-          onChange: (e: any) => setShellExecutable(e.target.value),
-          placeholder: "留空使用系统默认",
-          style: { width: 240 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "历史消息最大长度"),
-        React.createElement(InputNumber, {
-          min: 1,
-          value: historyMaxLength,
-          onChange: (v: number | null) => setHistoryMaxLength(v ?? 50),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "上下文管理后端"),
-        React.createElement(Select, {
-          value: contextBackend,
-          onChange: (v: string) => setContextBackend(v),
-          style: { width: 200 },
-          options: [{ value: "light", label: "light" }],
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "记忆管理后端"),
-        React.createElement(Select, {
-          value: memoryBackend,
-          onChange: (v: string) => setMemoryBackend(v),
-          style: { width: 200 },
-          options: [
-            { value: "remelight", label: "remelight" },
-            { value: "adbpg", label: "adbpg" },
-            { value: "none", label: "none (禁用)" },
-          ],
-        }),
-      ),
+      "div",
+      { style: CFG_SECTION_TITLE_STYLE },
+      "基础设置",
     ),
-    React.createElement(
-      Card,
-      { size: "small", title: "LLM 重试与限流", style: { marginBottom: 12 } },
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "启用 LLM 重试"),
-        React.createElement(Switch, {
-          checked: llmRetryEnabled,
-          onChange: (v: boolean) => setLlmRetryEnabled(v),
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大重试次数"),
-        React.createElement(InputNumber, {
-          min: 0,
-          value: llmMaxRetries,
-          onChange: (v: number | null) => setLlmMaxRetries(v ?? 3),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "退避基数 (秒)"),
-        React.createElement(InputNumber, {
-          min: 1,
-          value: llmBackoffBase,
-          onChange: (v: number | null) => setLlmBackoffBase(v ?? 2),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "退避上限 (秒)"),
-        React.createElement(InputNumber, {
-          min: 1,
-          value: llmBackoffCap,
-          onChange: (v: number | null) => setLlmBackoffCap(v ?? 60),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大并发数"),
-        React.createElement(InputNumber, {
-          min: 1,
-          value: llmMaxConcurrent,
-          onChange: (v: number | null) => setLlmMaxConcurrent(v ?? 1),
-          style: { width: 120 },
-        }),
-      ),
-      React.createElement(
-        "div",
-        { style: CFG_ROW_STYLE },
-        React.createElement("div", { style: CFG_LABEL_STYLE }, "最大 QPM (0=不限)"),
-        React.createElement(InputNumber, {
-          min: 0,
-          value: llmMaxQpm,
-          onChange: (v: number | null) => setLlmMaxQpm(v ?? 0),
-          style: { width: 120 },
-        }),
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12, marginLeft: 8 } },
-          "每分钟最大请求数",
-        ),
-      ),
+    fieldPair(
+      "Shell 命令超时 (秒)",
+      React.createElement(InputNumber, {
+        min: 1,
+        value: shellTimeout,
+        onChange: (v: number | null) => setShellTimeout(v ?? 60),
+        style: { width: "100%" },
+      }),
+      "Shell 可执行文件",
+      React.createElement(Input, {
+        value: shellExecutable,
+        onChange: (e: any) => setShellExecutable(e.target.value),
+        placeholder: "留空使用系统默认",
+        style: { width: "100%" },
+      }),
     ),
+    fieldPair(
+      "语言",
+      React.createElement(Select, {
+        value: language,
+        onChange: (v: string) => setLanguage(v),
+        style: { width: "100%" },
+        options: [
+          { value: "zh", label: "中文" },
+          { value: "en", label: "English" },
+          { value: "id", label: "Bahasa Indonesia" },
+          { value: "ru", label: "Русский" },
+        ],
+      }),
+      "时区",
+      React.createElement(Select, {
+        value: timezone,
+        onChange: (v: string) => setTimezone(v),
+        style: { width: "100%" },
+        showSearch: true,
+        filterOption: (input: string, option: any) =>
+          (option?.label?.toString() || "")
+            .toLowerCase()
+            .includes(input.toLowerCase()),
+        options: [
+          "UTC",
+          "Asia/Shanghai",
+          "Asia/Tokyo",
+          "Asia/Singapore",
+          "Asia/Kolkata",
+          "Europe/London",
+          "Europe/Paris",
+          "America/New_York",
+          "America/Los_Angeles",
+          "America/Chicago",
+          "Australia/Sydney",
+        ].map((tz) => ({ value: tz, label: tz })),
+      }),
+    ),
+    fieldPair(
+      "自动生成会话标题",
+      React.createElement(Space, null, React.createElement(Switch, {
+        checked: autoTitleEnabled,
+        onChange: (v: boolean) => setAutoTitleEnabled(v),
+      })),
+      "标题生成超时 (秒)",
+      React.createElement(InputNumber, {
+        min: 5,
+        value: autoTitleTimeout,
+        onChange: (v: number | null) => setAutoTitleTimeout(v ?? 30),
+        style: { width: "100%" },
+        disabled: !autoTitleEnabled,
+      }),
+    ),
+
+    // ── Section: 审批级别 ──
+    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "审批级别"),
+    field(
+      "工具执行审批",
+      React.createElement(Select, {
+        value: approvalLevel,
+        onChange: (v: string) => setApprovalLevel(v),
+        style: { width: "100%" },
+        options: [
+          { value: "STRICT", label: "严格 (STRICT) — 每次工具调用需审批" },
+          { value: "SMART", label: "智能 (SMART) — 高风险操作需审批" },
+          { value: "AUTO", label: "自动 (AUTO) — 自动执行" },
+          { value: "OFF", label: "关闭 (OFF) — 无限制" },
+        ],
+      }),
+    ),
+
+    // ── Section: 迭代与循环 ──
+    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "迭代与循环"),
+    field(
+      "启用迭代限制",
+      React.createElement(Switch, {
+        checked: iterEnabled,
+        onChange: (v: boolean) => setIterEnabled(v),
+      }),
+      "停止 Agent 前的最大循环轮次",
+    ),
+    iterEnabled
+      ? field(
+          "最大迭代次数",
+          React.createElement(InputNumber, {
+            min: 1,
+            max: 500,
+            value: maxIters,
+            onChange: (v: number | null) => setMaxIters(v ?? 100),
+            style: { width: "100%" },
+          }),
+        )
+      : null,
+    field(
+      "启用重复循环保护",
+      React.createElement(Switch, {
+        checked: doomLoopEnabled,
+        onChange: (v: boolean) => setDoomLoopEnabled(v),
+      }),
+      "检测并阻止重复操作循环",
+    ),
+    doomLoopEnabled
+      ? fieldPair(
+          "检测窗口大小",
+          React.createElement(InputNumber, {
+            min: 2,
+            max: 20,
+            value: doomWindowSize,
+            onChange: (v: number | null) => setDoomWindowSize(v ?? 3),
+            style: { width: "100%" },
+          }),
+          "相似度阈值",
+          React.createElement(InputNumber, {
+            min: 0,
+            max: 1,
+            step: 0.05,
+            value: doomSimilarity,
+            onChange: (v: number | null) => setDoomSimilarity(v ?? 1.0),
+            style: { width: "100%" },
+          }),
+        )
+      : null,
+
+    // ── Section: LLM 重试 ──
+    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "LLM 重试"),
+    field(
+      "启用 LLM 重试",
+      React.createElement(Switch, {
+        checked: llmRetryEnabled,
+        onChange: (v: boolean) => setLlmRetryEnabled(v),
+      }),
+    ),
+    fieldPair(
+      "最大重试次数",
+      React.createElement(InputNumber, {
+        min: 1,
+        value: llmMaxRetries,
+        onChange: (v: number | null) => setLlmMaxRetries(v ?? 3),
+        style: { width: "100%" },
+        disabled: !llmRetryEnabled,
+      }),
+      "退避基数 (秒)",
+      React.createElement(InputNumber, {
+        min: 0.1,
+        step: 0.1,
+        value: llmBackoffBase,
+        onChange: (v: number | null) => setLlmBackoffBase(v ?? 2),
+        style: { width: "100%" },
+        disabled: !llmRetryEnabled,
+      }),
+    ),
+    field(
+      "退避上限 (秒)",
+      React.createElement(InputNumber, {
+        min: 0.5,
+        step: 0.5,
+        value: llmBackoffCap,
+        onChange: (v: number | null) => setLlmBackoffCap(v ?? 60),
+        style: { width: 200 },
+        disabled: !llmRetryEnabled,
+      }),
+    ),
+
+    // ── Section: LLM 限流 ──
+    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "LLM 限流"),
+    fieldPair(
+      "最大并发数",
+      React.createElement(InputNumber, {
+        min: 1,
+        value: llmMaxConcurrent,
+        onChange: (v: number | null) => setLlmMaxConcurrent(v ?? 1),
+        style: { width: "100%" },
+      }),
+      "最大 QPM (0=不限)",
+      React.createElement(InputNumber, {
+        min: 0,
+        step: 10,
+        value: llmMaxQpm,
+        onChange: (v: number | null) => setLlmMaxQpm(v ?? 0),
+        style: { width: "100%" },
+      }),
+    ),
+    fieldPair(
+      "限流暂停时间 (秒)",
+      React.createElement(InputNumber, {
+        min: 1.0,
+        step: 0.5,
+        value: llmRateLimitPause,
+        onChange: (v: number | null) => setLlmRateLimitPause(v ?? 1),
+        style: { width: "100%" },
+      }),
+      "限流抖动 (秒)",
+      React.createElement(InputNumber, {
+        min: 0.0,
+        step: 0.5,
+        value: llmRateLimitJitter,
+        onChange: (v: number | null) => setLlmRateLimitJitter(v ?? 0),
+        style: { width: "100%" },
+      }),
+    ),
+    field(
+      "获取超时 (秒)",
+      React.createElement(InputNumber, {
+        min: 10.0,
+        step: 10,
+        value: llmAcquireTimeout,
+        onChange: (v: number | null) => setLlmAcquireTimeout(v ?? 30),
+        style: { width: 200 },
+      }),
+      "应大于 限流暂停 + 抖动",
+    ),
+
+    // ── Section: 上下文与记忆 ──
+    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "上下文与记忆"),
+    fieldPair(
+      "上下文管理后端",
+      React.createElement(Select, {
+        value: contextBackend,
+        onChange: (v: string) => setContextBackend(v),
+        style: { width: "100%" },
+        options: [{ value: "light", label: "light" }],
+      }),
+      "上下文策略",
+      React.createElement(Select, {
+        value: contextStrategy,
+        onChange: (v: string) => setContextStrategy(v),
+        style: { width: "100%" },
+        options: [
+          { value: "scroll", label: "scroll (滚动窗口)" },
+          { value: "native", label: "native (原生)" },
+        ],
+      }),
+    ),
+    fieldPair(
+      "记忆管理后端",
+      React.createElement(Select, {
+        value: memoryBackend,
+        onChange: (v: string) => setMemoryBackend(v),
+        style: { width: "100%" },
+        options: [
+          { value: "remelight", label: "remelight" },
+          { value: "adbpg", label: "adbpg" },
+          { value: "none", label: "none (禁用)" },
+        ],
+      }),
+      "历史消息最大长度",
+      React.createElement(InputNumber, {
+        min: 1,
+        value: historyMaxLength,
+        onChange: (v: number | null) => setHistoryMaxLength(v ?? 50),
+        style: { width: "100%" },
+      }),
+    ),
+
+    // ── Save button ──
     React.createElement(
-      Button,
-      {
-        type: "primary",
-        icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined,
-        loading: saving,
-        onClick: handleSave,
-        style: PRIMARY_BTN_STYLE,
-      },
-      "保存运行配置",
+      "div",
+      { style: { display: "flex", justifyContent: "flex-end", marginTop: 16 } },
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined,
+          loading: saving,
+          onClick: handleSave,
+          style: PRIMARY_BTN_STYLE,
+        },
+        "保存运行配置",
+      ),
     ),
   );
 }
@@ -3883,6 +4259,7 @@ function ExpertConfigModal({
       children: React.createElement(MCPConfigTab, {
         agentId: agent.id,
         onRefresh,
+        isActive: activeTab === "mcp",
       }),
     },
     {
@@ -3913,12 +4290,22 @@ function ExpertConfigModal({
       ),
       onCancel: onClose,
       footer: null,
-      width: 720,
+      width: 800,
+      centered: true,
+      styles: {
+        body: {
+          maxHeight: "70vh",
+          overflowY: "auto",
+          paddingTop: 0,
+        },
+      },
     },
     React.createElement(Tabs, {
       items: tabItems,
       activeKey: activeTab,
       onChange: (k: string) => setActiveTab(k),
+      size: "small",
+      tabBarStyle: { marginBottom: 16, sticky: 0 },
     }),
   );
 }
@@ -6144,6 +6531,10 @@ interface EngineInfo {
   status: "configured" | "detected" | "not_found" | "error";
   is_default: boolean;
   is_custom: boolean;
+  // Detected sub-modules (e.g. CMG IMEX/GEM/STARS/Builder/Results)
+  modules?: string[];
+  // Map of module name → executable path
+  module_paths?: Record<string, string>;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -6337,6 +6728,14 @@ function EngineCard({
             `v${engine.version}`,
           )
         : null,
+      // Display detected modules (e.g. IMEX, GEM, STARS)
+      ...(engine.modules || []).map((mod) =>
+        React.createElement(
+          Tag,
+          { key: mod, color: "cyan", style: { fontSize: 10 } },
+          mod,
+        ),
+      ),
     ),
   );
 }
@@ -6791,6 +7190,38 @@ function EngineSection() {
                     "code",
                     { style: { fontSize: 12, wordBreak: "break-all" } },
                     activeEngine.install_dir,
+                  ),
+                )
+              : null,
+            // Display detected modules with paths
+            activeEngine.modules && activeEngine.modules.length > 0
+              ? React.createElement(
+                  Descriptions.Item,
+                  { label: "已检测模块" },
+                  React.createElement(
+                    "div",
+                    { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                    ...activeEngine.modules.map((mod) =>
+                      React.createElement(
+                        "div",
+                        {
+                          key: mod,
+                          style: { display: "flex", alignItems: "center", gap: 8 },
+                        },
+                        React.createElement(
+                          Tag,
+                          { color: "cyan", style: { fontSize: 11 } },
+                          mod,
+                        ),
+                        activeEngine.module_paths && activeEngine.module_paths[mod]
+                          ? React.createElement(
+                              "code",
+                              { style: { fontSize: 11, wordBreak: "break-all" } },
+                              activeEngine.module_paths[mod],
+                            )
+                          : null,
+                      ),
+                    ),
                   ),
                 )
               : null,
@@ -8316,6 +8747,465 @@ interface MarketResult {
   stats: Record<string, string | number> | null;
 }
 
+// ─── GitHub Skill Source: types & helpers ────────────────────────────────────
+
+interface GitHubSkillSource {
+  id: string;
+  url: string;
+  label: string;
+  owner: string;
+  repo: string;
+  ref: string;
+  skillsPath: string;
+  enabled: boolean;
+}
+
+interface GitHubSkill {
+  sourceId: string;
+  sourceLabel: string;
+  name: string;
+  description: string;
+  source_url: string;
+  html_url: string;
+  version: string | null;
+  author: string | null;
+}
+
+const UGSCI_GITHUB_SOURCES_KEY = "ugsci.market.githubSources";
+const DEFAULT_GITHUB_SOURCE_URL =
+  "https://github.com/anthropics/skills/tree/main/skills";
+
+function _parseGitHubSkillSourceUrl(
+  raw: string,
+): {
+  owner: string;
+  repo: string;
+  ref: string;
+  skillsPath: string;
+  label: string;
+} | null {
+  try {
+    const url = new URL(raw.trim());
+    const host = url.hostname.toLowerCase();
+    if (host !== "github.com" && host !== "www.github.com") return null;
+    const parts = url.pathname.split("/").filter((p) => p.length > 0);
+    if (parts.length < 2) return null;
+    const owner = decodeURIComponent(parts[0]);
+    const repo = decodeURIComponent(parts[1]);
+    let ref = "main";
+    let skillsPath = "";
+    if (parts.length >= 4 && (parts[2] === "tree" || parts[2] === "blob")) {
+      ref = decodeURIComponent(parts[3]);
+      if (parts.length > 4) {
+        skillsPath = parts.slice(4).map(decodeURIComponent).join("/");
+      }
+    } else if (parts.length > 2) {
+      skillsPath = parts.slice(2).map(decodeURIComponent).join("/");
+    }
+    skillsPath = skillsPath.replace(/\/+$/, "").replace(/^\/+/, "");
+    return {
+      owner,
+      repo,
+      ref: ref || "main",
+      skillsPath,
+      label: `${owner}/${repo}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function _githubSourceId(owner: string, repo: string, skillsPath: string): string {
+  return `${owner}/${repo}:${skillsPath || "/"}`;
+}
+
+function loadGithubSources(): GitHubSkillSource[] {
+  try {
+    const raw = localStorage.getItem(UGSCI_GITHUB_SOURCES_KEY);
+    if (!raw) {
+      // Seed with default source
+      const parsed = _parseGitHubSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
+      if (parsed) {
+        const seed: GitHubSkillSource[] = [
+          {
+            id: _githubSourceId(
+              parsed.owner,
+              parsed.repo,
+              parsed.skillsPath,
+            ),
+            url: DEFAULT_GITHUB_SOURCE_URL,
+            label: parsed.label,
+            owner: parsed.owner,
+            repo: parsed.repo,
+            ref: parsed.ref,
+            skillsPath: parsed.skillsPath,
+            enabled: true,
+          },
+        ];
+        localStorage.setItem(UGSCI_GITHUB_SOURCES_KEY, JSON.stringify(seed));
+        return seed;
+      }
+      return [];
+    }
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (s: any) =>
+        s &&
+        typeof s.id === "string" &&
+        typeof s.owner === "string" &&
+        typeof s.repo === "string",
+    );
+  } catch {
+    return [];
+  }
+}
+
+function saveGithubSources(sources: GitHubSkillSource[]): void {
+  try {
+    localStorage.setItem(
+      UGSCI_GITHUB_SOURCES_KEY,
+      JSON.stringify(sources),
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
+function _parseSkillFrontmatter(content: string): {
+  name?: string;
+  description?: string;
+  version?: string;
+  author?: string;
+} {
+  const fmMatch = content.match(/^---\s*\n([\s\S]*?)\n---/);
+  if (!fmMatch) return {};
+  const fm = fmMatch[1];
+  const result: {
+    name?: string;
+    description?: string;
+    version?: string;
+    author?: string;
+  } = {};
+  // Simple YAML key extraction (avoid pulling in a YAML lib in plugin bundle)
+  const lines = fm.split("\n");
+  let currentKey = "";
+  for (const line of lines) {
+    const kvMatch = line.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (kvMatch) {
+      currentKey = kvMatch[1];
+      let val = kvMatch[2].trim();
+      // Strip surrounding quotes
+      if (
+        (val.startsWith('"') && val.endsWith('"')) ||
+        (val.startsWith("'") && val.endsWith("'"))
+      ) {
+        val = val.slice(1, -1);
+      }
+      if (currentKey === "name") result.name = val;
+      else if (currentKey === "description") result.description = val;
+      else if (currentKey === "version") result.version = val;
+      else if (currentKey === "author") result.author = val;
+    }
+  }
+  return result;
+}
+
+async function fetchGitHubSourceSkills(
+  source: GitHubSkillSource,
+): Promise<GitHubSkill[]> {
+  // 1. List directory contents via GitHub Contents API
+  const encodedPath = source.skillsPath
+    ? encodeURIComponent(source.skillsPath).replace(/%2F/g, "/")
+    : "";
+  const listUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`;
+  const listResp = await fetch(listUrl, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!listResp.ok) {
+    throw new Error(
+      `GitHub API ${listResp.status}: ${source.label} (${source.skillsPath || "/"})`,
+    );
+  }
+  const items = (await listResp.json()) as any[];
+  if (!Array.isArray(items)) return [];
+  // Filter directories (skill folders)
+  const dirs = items.filter(
+    (item) => item.type === "dir" && item.name,
+  );
+
+  // 2. Fetch SKILL.md for each dir in parallel (raw URLs, CORS-safe, no rate limit)
+  const skills = await Promise.all(
+    dirs.map(async (dir) => {
+      const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}/SKILL.md`;
+      const htmlUrl = `https://github.com/${source.owner}/${source.repo}/tree/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}`;
+      const fallbackSkill: GitHubSkill = {
+        sourceId: source.id,
+        sourceLabel: source.label,
+        name: dir.name,
+        description: "",
+        source_url: htmlUrl,
+        html_url: htmlUrl,
+        version: null,
+        author: null,
+      };
+      try {
+        const mdResp = await fetch(rawUrl);
+        if (!mdResp.ok) return fallbackSkill;
+        const mdContent = await mdResp.text();
+        const fm = _parseSkillFrontmatter(mdContent);
+        return {
+          ...fallbackSkill,
+          name: fm.name || dir.name,
+          description: fm.description || "",
+          version: fm.version || null,
+          author: fm.author || null,
+        };
+      } catch {
+        return fallbackSkill;
+      }
+    }),
+  );
+  return skills;
+}
+
+async function fetchAllGitHubSkills(
+  sources: GitHubSkillSource[],
+): Promise<{ skills: GitHubSkill[]; errors: { label: string; message: string }[] }> {
+  const enabled = sources.filter((s) => s.enabled);
+  const results = await Promise.all(
+    enabled.map(async (s) => {
+      try {
+        const skills = await fetchGitHubSourceSkills(s);
+        return { skills, error: null as string | null, label: s.label };
+      } catch (e: any) {
+        return {
+          skills: [] as GitHubSkill[],
+          error: e.message || String(e),
+          label: s.label,
+        };
+      }
+    }),
+  );
+  const allSkills: GitHubSkill[] = [];
+  const errors: { label: string; message: string }[] = [];
+  for (const r of results) {
+    allSkills.push(...r.skills);
+    if (r.error) errors.push({ label: r.label, message: r.error });
+  }
+  return { skills: allSkills, errors };
+}
+
+// ─── Source Config Modal: manage GitHub skill sources ─────────────────────────
+
+function SourceConfigModal({
+  open,
+  onClose,
+  sources,
+  onChange,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sources: GitHubSkillSource[];
+  onChange: (sources: GitHubSkillSource[]) => void;
+}) {
+  const React = getHost().React;
+  const { useState } = React;
+  const {
+    Modal,
+    Input,
+    Button,
+    List,
+    Tag,
+    Switch,
+    Typography,
+    Tooltip,
+    message: antdMsg,
+  } = getHost().antd;
+  const {
+    PlusOutlined,
+    DeleteOutlined,
+    LinkOutlined,
+    GithubOutlined,
+  } = getHost().antdIcons || {};
+  const { Text } = Typography;
+
+  const [newUrl, setNewUrl] = useState("");
+
+  const handleAdd = () => {
+    const trimmed = newUrl.trim();
+    if (!trimmed) return;
+    const parsed = _parseGitHubSkillSourceUrl(trimmed);
+    if (!parsed) {
+      antdMsg.error("无效的 GitHub URL，请输入类似 https://github.com/owner/repo/tree/main/skills 的链接");
+      return;
+    }
+    const id = _githubSourceId(parsed.owner, parsed.repo, parsed.skillsPath);
+    if (sources.some((s) => s.id === id)) {
+      antdMsg.warning("该源已存在");
+      return;
+    }
+    const newSource: GitHubSkillSource = {
+      id,
+      url: trimmed,
+      label: parsed.label,
+      owner: parsed.owner,
+      repo: parsed.repo,
+      ref: parsed.ref,
+      skillsPath: parsed.skillsPath,
+      enabled: true,
+    };
+    const next = [...sources, newSource];
+    saveGithubSources(next);
+    onChange(next);
+    setNewUrl("");
+    antdMsg.success(`已添加源: ${parsed.label}`);
+  };
+
+  const handleToggle = (id: string, enabled: boolean) => {
+    const next = sources.map((s) =>
+      s.id === id ? { ...s, enabled } : s,
+    );
+    saveGithubSources(next);
+    onChange(next);
+  };
+
+  const handleDelete = (id: string) => {
+    const next = sources.filter((s) => s.id !== id);
+    saveGithubSources(next);
+    onChange(next);
+    antdMsg.success("已移除源");
+  };
+
+  return React.createElement(
+    Modal,
+    {
+      open,
+      onCancel: onClose,
+      title: React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 8 } },
+        GithubOutlined
+          ? React.createElement(GithubOutlined, { style: { fontSize: 18 } })
+          : null,
+        React.createElement("span", null, "配置技能源"),
+      ),
+      footer: React.createElement(
+        Button,
+        { onClick: onClose },
+        "关闭",
+      ),
+      width: 640,
+    },
+    React.createElement(
+      "div",
+      { style: { marginBottom: 16 } },
+      React.createElement(
+        Text,
+        { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+        "添加 GitHub 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式：",
+      ),
+      React.createElement(
+        "div",
+        { style: { display: "flex", gap: 8, alignItems: "center" } },
+        React.createElement(Input, {
+          placeholder: "https://github.com/anthropics/skills/tree/main/skills",
+          value: newUrl,
+          onChange: (e: any) => setNewUrl(e.target.value),
+          onPressEnter: handleAdd,
+          prefix: LinkOutlined ? React.createElement(LinkOutlined) : undefined,
+          style: { flex: 1 },
+        }),
+        React.createElement(
+          Button,
+          {
+            type: "primary",
+            icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+            onClick: handleAdd,
+          },
+          "添加",
+        ),
+      ),
+    ),
+    React.createElement(
+      "div",
+      { style: { marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" } },
+      React.createElement(Text, { strong: true }, `已配置源 (${sources.length})`),
+    ),
+    React.createElement(List, {
+      size: "small",
+      bordered: true,
+      dataSource: sources,
+      renderItem: (source: GitHubSkillSource) =>
+        React.createElement(
+          List.Item,
+          {
+            actions: [
+              React.createElement(
+                Tooltip,
+                { title: source.enabled ? "点击禁用" : "点击启用" },
+                React.createElement(Switch, {
+                  size: "small",
+                  checked: source.enabled,
+                  onChange: (v: boolean) => handleToggle(source.id, v),
+                }),
+              ),
+              React.createElement(
+                Tooltip,
+                { title: "移除此源" },
+                React.createElement(
+                  Button,
+                  {
+                    size: "small",
+                    type: "text",
+                    danger: true,
+                    icon: DeleteOutlined
+                      ? React.createElement(DeleteOutlined)
+                      : undefined,
+                    onClick: () => handleDelete(source.id),
+                  },
+                ),
+              ),
+            ],
+          },
+          React.createElement(
+            "div",
+            { style: { flex: 1, minWidth: 0 } },
+            React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
+              React.createElement(
+                Tag,
+                { color: "blue", style: { fontSize: 11 } },
+                source.label,
+              ),
+              source.skillsPath
+                ? React.createElement(
+                    Text,
+                    { type: "secondary", style: { fontSize: 11 } },
+                    `/${source.skillsPath}`,
+                  )
+                : null,
+              React.createElement(
+                Text,
+                { type: "secondary", style: { fontSize: 11 } },
+                `@${source.ref}`,
+              ),
+            ),
+            React.createElement(
+              Text,
+              {
+                type: "secondary",
+                style: { fontSize: 11, wordBreak: "break-all" },
+              },
+              source.url,
+            ),
+          ),
+        ),
+    }),
+  );
+}
+
 interface MarketSearchResponse {
   results: MarketResult[];
   errors: { provider: string; message: string }[];
@@ -8423,6 +9313,8 @@ function MarketplacePage() {
     CheckCircleOutlined,
     LoadingOutlined,
     UserOutlined,
+    SettingOutlined,
+    GithubOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph, Title } = Typography;
 
@@ -8450,6 +9342,13 @@ function MarketplacePage() {
   // Expert templates state
   const [expertSearchText, setExpertSearchText] = useState("");
 
+  // GitHub skill sources state
+  const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
+  const [githubSkills, setGithubSkills] = useState<GitHubSkill[]>([]);
+  const [githubLoading, setGithubLoading] = useState(false);
+  const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
+  const [selectedSourceFilter, setSelectedSourceFilter] = useState("");
+
   const searchTimerRef = useRef<any>(null);
 
   // Load providers and categories on mount
@@ -8467,6 +9366,40 @@ function MarketplacePage() {
       }
     });
   }, []);
+
+  // Load GitHub sources from localStorage on mount, then fetch skills
+  const loadGithubSkills = useCallback(async (sources?: GitHubSkillSource[]) => {
+    const srcs = sources ?? loadGithubSources();
+    if (sources) setGithubSources(sources);
+    else setGithubSources(srcs);
+    const enabled = srcs.filter((s) => s.enabled);
+    if (enabled.length === 0) {
+      setGithubSkills([]);
+      return;
+    }
+    setGithubLoading(true);
+    try {
+      const { skills, errors } = await fetchAllGitHubSkills(srcs);
+      setGithubSkills(skills);
+      if (errors.length > 0) {
+        for (const err of errors) {
+          console.warn(`[ugsci] GitHub source '${err.label}' error: ${err.message}`);
+        }
+        antdMsg.warning(
+          `部分源加载失败: ${errors.map((e) => e.label).join(", ")}`,
+        );
+      }
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载 GitHub 技能源失败");
+      setGithubSkills([]);
+    } finally {
+      setGithubLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadGithubSkills();
+  }, [loadGithubSkills]);
 
   const doSearch = useCallback(
     async (query: string, category: string, pages: Record<string, number>) => {
@@ -8587,8 +9520,99 @@ function MarketplacePage() {
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
+  const handleInstallGithubSkill = async (skill: GitHubSkill) => {
+    if (!installTargetAgent) {
+      antdMsg.warning("请先选择安装目标专家");
+      return;
+    }
+    const itemKey = `github:${skill.sourceId}:${skill.name}`;
+    try {
+      setInstalling((prev: any) => ({ ...prev, [itemKey]: "starting" }));
+      const task = await startHubInstall(
+        installTargetAgent,
+        skill.source_url,
+        true,
+      );
+      setInstalling((prev: any) => ({ ...prev, [itemKey]: "installing" }));
+
+      const maxPolls = 60;
+      for (let i = 0; i < maxPolls; i++) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const status = await pollHubInstallStatus(
+          installTargetAgent,
+          task.task_id,
+        );
+        if (status.status === "completed" && status.result?.installed) {
+          antdMsg.success(`技能「${status.result.name || skill.name}」安装成功`);
+          setInstalling((prev: any) => {
+            const next = { ...prev };
+            delete next[itemKey];
+            return next;
+          });
+          return;
+        }
+        if (status.status === "failed") {
+          throw new Error(status.error || "安装失败");
+        }
+        if (status.status === "cancelled") {
+          antdMsg.info("安装已取消");
+          setInstalling((prev: any) => {
+            const next = { ...prev };
+            delete next[itemKey];
+            return next;
+          });
+          return;
+        }
+      }
+      throw new Error("安装超时");
+    } catch (err: any) {
+      antdMsg.error(err.message || "安装技能失败");
+      setInstalling((prev: any) => {
+        const next = { ...prev };
+        delete next[itemKey];
+        return next;
+      });
+    }
+  };
+
+  // Filtered GitHub skills based on search text and source filter
+  const filteredGithubSkills = useMemo(() => {
+    let filtered = githubSkills;
+    if (selectedSourceFilter) {
+      filtered = filtered.filter((s) => s.sourceLabel === selectedSourceFilter);
+    }
+    if (searchText.trim()) {
+      const q = searchText.toLowerCase();
+      filtered = filtered.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.description?.toLowerCase().includes(q),
+      );
+    }
+    return filtered;
+  }, [githubSkills, searchText, selectedSourceFilter]);
+
   // Available providers
   const availableProviders = providers.filter((p) => p.available);
+
+  // Filtered market results based on source filter
+  const filteredResults = useMemo(() => {
+    if (!selectedSourceFilter) return results;
+    // Find the provider key matching the selected label
+    const provider = availableProviders.find(
+      (p) => p.label === selectedSourceFilter,
+    );
+    if (!provider) return results;
+    return results.filter((r) => r.source === provider.key);
+  }, [results, selectedSourceFilter, availableProviders]);
+
+  // All source labels for the filter dropdown
+  const allSourceLabels = useMemo(() => {
+    const labels = new Set<string>();
+    githubSources.filter((s) => s.enabled).forEach((s) => labels.add(s.label));
+    availableProviders.forEach((p) => labels.add(p.label));
+    return Array.from(labels);
+  }, [githubSources, availableProviders]);
 
   // Skill Market Tab
   const skillsMarketTab = React.createElement(
@@ -8647,39 +9671,248 @@ function MarketplacePage() {
         }),
       ),
     ),
-    // Provider badges
-    availableProviders.length > 0
+    // Source filter tags (GitHub sources + market providers)
+    allSourceLabels.length > 0
       ? React.createElement(
           "div",
           {
             style: {
               marginBottom: 12,
               display: "flex",
-              gap: 4,
+              gap: 6,
               flexWrap: "wrap",
+              alignItems: "center",
             },
           },
-          ...availableProviders.map((p) =>
+          React.createElement(
+            Text,
+            { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
+            "来源筛选:",
+          ),
+          React.createElement(
+            Tag,
+            {
+              style: {
+                fontSize: 11,
+                cursor: "pointer",
+                borderRadius: 12,
+              },
+              color: selectedSourceFilter === "" ? "blue" : undefined,
+              onClick: () => setSelectedSourceFilter(""),
+            },
+            "全部",
+          ),
+          ...allSourceLabels.map((label) =>
             React.createElement(
               Tag,
               {
-                key: p.key,
-                color: p.supports_browse ? "blue" : "default",
-                style: { fontSize: 11 },
+                key: label,
+                style: {
+                  fontSize: 11,
+                  cursor: "pointer",
+                  borderRadius: 12,
+                },
+                color: selectedSourceFilter === label ? "blue" : undefined,
+                icon: GithubOutlined && githubSources.some((s) => s.label === label)
+                  ? React.createElement(GithubOutlined)
+                  : undefined,
+                onClick: () =>
+                  setSelectedSourceFilter(
+                    selectedSourceFilter === label ? "" : label,
+                  ),
               },
-              `${p.label}${p.supports_browse ? "" : " (搜索)"}`,
+              label,
             ),
           ),
         )
       : null,
+    // GitHub skills section
+    githubLoading && githubSkills.length === 0
+      ? React.createElement(
+          "div",
+          { style: { textAlign: "center", padding: 40, marginBottom: 16 } },
+          React.createElement(Spin, {
+            tip: "正在从 GitHub 加载技能...",
+            size: "large",
+          }),
+        )
+      : filteredGithubSkills.length > 0
+        ? React.createElement(
+            "div",
+            { style: { marginBottom: 20 } },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  marginBottom: 10,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                },
+              },
+              GithubOutlined
+                ? React.createElement(GithubOutlined, {
+                    style: { fontSize: 14, color: "#1677ff" },
+                  })
+                : null,
+              React.createElement(
+                Text,
+                { strong: true, style: { fontSize: 13 } },
+                `GitHub 技能源 (${filteredGithubSkills.length})`,
+              ),
+            ),
+            React.createElement(
+              Row,
+              { gutter: [12, 12] },
+              ...filteredGithubSkills.map((skill) => {
+                const itemKey = `github:${skill.sourceId}:${skill.name}`;
+                const installState = installing[itemKey];
+                return React.createElement(
+                  Col,
+                  { key: itemKey, xs: 24, sm: 12, md: 8, lg: 6 },
+                  React.createElement(
+                    Card,
+                    {
+                      hoverable: true,
+                      size: "small",
+                      style: { height: "100%" },
+                    },
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 8,
+                          marginBottom: 8,
+                        },
+                      },
+                      GithubOutlined
+                        ? React.createElement(GithubOutlined, {
+                            style: { fontSize: 18, color: "#57606a" },
+                          })
+                        : React.createElement(
+                            "span",
+                            { style: { fontSize: 18 } },
+                            "📦",
+                          ),
+                      React.createElement(
+                        Tooltip,
+                        { title: skill.name },
+                        React.createElement(
+                          Text,
+                          {
+                            strong: true,
+                            style: {
+                              fontSize: 13,
+                              flex: 1,
+                              overflow: "hidden",
+                              textOverflow: "ellipsis",
+                              whiteSpace: "nowrap",
+                            },
+                          },
+                          skill.name,
+                        ),
+                      ),
+                    ),
+                    React.createElement(
+                      Paragraph,
+                      {
+                        type: "secondary",
+                        style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                        ellipsis: { rows: 2 },
+                      },
+                      skill.description || "暂无描述",
+                    ),
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          marginTop: 8,
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                        },
+                      },
+                      React.createElement(
+                        "div",
+                        { style: { display: "flex", gap: 4, flexWrap: "wrap" } },
+                        React.createElement(
+                          Tag,
+                          { color: "blue", style: { fontSize: 10 } },
+                          skill.sourceLabel,
+                        ),
+                        skill.version
+                          ? React.createElement(
+                              Tag,
+                              { style: { fontSize: 10 } },
+                              `v${skill.version}`,
+                            )
+                          : null,
+                      ),
+                      installState
+                        ? React.createElement(
+                            Button,
+                            {
+                              size: "small",
+                              disabled: true,
+                              icon: LoadingOutlined
+                                ? React.createElement(LoadingOutlined)
+                                : undefined,
+                            },
+                            installState === "starting" ? "启动中" : "安装中",
+                          )
+                        : React.createElement(
+                            Button,
+                            {
+                              type: "primary",
+                              size: "small",
+                              icon: DownloadOutlined
+                                ? React.createElement(DownloadOutlined)
+                                : undefined,
+                              onClick: () => handleInstallGithubSkill(skill),
+                            },
+                            "安装",
+                          ),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          )
+        : null,
+    // Market results section title
+    filteredResults.length > 0 || loading
+      ? React.createElement(
+          "div",
+          {
+            style: {
+              marginBottom: 10,
+              display: "flex",
+              alignItems: "center",
+              gap: 6,
+            },
+          },
+          ShopOutlined
+            ? React.createElement(ShopOutlined, {
+                style: { fontSize: 14, color: "#1677ff" },
+              })
+            : null,
+          React.createElement(
+            Text,
+            { strong: true, style: { fontSize: 13 } },
+            `技能市场${filteredResults.length > 0 ? ` (${filteredResults.length})` : ""}`,
+          ),
+        )
+      : null,
     // Results grid
-    loading && results.length === 0
+    loading && filteredResults.length === 0
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 60 } },
           React.createElement(Spin, { size: "large" }),
         )
-      : results.length === 0
+      : filteredResults.length === 0
         ? React.createElement(Empty, {
             description: searchText
               ? `未找到匹配「${searchText}」的技能`
@@ -8689,7 +9922,7 @@ function MarketplacePage() {
         : React.createElement(
             Row,
             { gutter: [12, 12] },
-            ...results.map((item) => {
+            ...filteredResults.map((item) => {
               const itemKey = `${item.source}:${item.slug}`;
               const installState = installing[itemKey];
               return React.createElement(
@@ -9169,21 +10402,49 @@ function MarketplacePage() {
       title: "市场",
       subtitle: "浏览技能市场 · 选择专家模板 · 随时更新能力和专家",
       extra: React.createElement(
-        Button,
-        {
-          icon: ReloadOutlined
-            ? React.createElement(ReloadOutlined)
-            : undefined,
-          onClick: () => doSearch(searchText, selectedCategory, {}),
-          loading,
-        },
-        "刷新",
+        "div",
+        { style: { display: "flex", gap: 8 } },
+        React.createElement(
+          Button,
+          {
+            icon: GithubOutlined
+              ? React.createElement(GithubOutlined)
+              : undefined,
+            onClick: () => setSourceConfigOpen(true),
+          },
+          "配置源",
+        ),
+        React.createElement(
+          Button,
+          {
+            type: "primary",
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
+            onClick: () => {
+              doSearch(searchText, selectedCategory, {});
+              loadGithubSkills();
+            },
+            loading: loading || githubLoading,
+          },
+          "刷新",
+        ),
       ),
     }),
     React.createElement(Tabs, {
       items: tabItems,
       activeKey: activeTab,
       onChange: (k: string) => setActiveTab(k),
+    }),
+    // Source config modal
+    React.createElement(SourceConfigModal, {
+      open: sourceConfigOpen,
+      onClose: () => setSourceConfigOpen(false),
+      sources: githubSources,
+      onChange: (next: GitHubSkillSource[]) => {
+        setGithubSources(next);
+        loadGithubSkills(next);
+      },
     }),
   );
 }

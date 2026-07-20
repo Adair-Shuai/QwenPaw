@@ -26,6 +26,11 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Dict, List, Optional
 
+try:
+    import winreg
+except ImportError:
+    winreg = None
+
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.detector")
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -221,12 +226,81 @@ KNOWN_SOFTWARE: List[Dict] = [
         "version_args": ["--version"],
         "invocation_hint": "Results is used for simulation result visualization.",
     },
+    # ── COMSOL Multiphysics ───────────────────────────────────────────────
+    {
+        "id": "comsol",
+        "name": "COMSOL Multiphysics",
+        "category": "multiphysics",
+        "vendor": "COMSOL Inc.",
+        "description": "COMSOL Multiphysics — multiphysics simulation platform",
+        "patterns": ["comsol.exe", "comsolbatch.exe", "comsolmphserver.exe", "comsol"],
+        "subdirs": ["bin", "bin\\win64", "bin\\wine64", "exe"],
+        "version_args": ["-version"],
+        "invocation_hint": "COMSOL can be run in batch mode: "
+        "comsolbatch -input <model.mph> -output <result.mph>. "
+        "Or start the GUI by running: comsol.exe",
+    },
 ]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Platform-specific search paths
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def _get_comsol_from_registry() -> Optional[str]:
+    """Check Windows registry for COMSOL installation path."""
+    if platform.system().lower() != "windows" or not winreg:
+        return None
+
+    # COMSOL registry keys to check
+    registry_paths = [
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\COMSOL\COMSOL"),
+        (winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\WOW6432Node\COMSOL\COMSOL"),
+        (winreg.HKEY_CURRENT_USER, r"SOFTWARE\COMSOL\COMSOL"),
+    ]
+
+    try:
+        for hkey, reg_path in registry_paths:
+            try:
+                with winreg.OpenKey(hkey, reg_path) as key:
+                    try:
+                        # Try different possible value names
+                        value_names = ["COMSOLROOT", "InstallDir", "Location", ""]
+                        for value_name in value_names:
+                            try:
+                                install_path, _ = winreg.QueryValueEx(key, value_name)
+                                if install_path and os.path.exists(install_path):
+                                    return install_path
+                            except WindowsError:
+                                continue
+                    except WindowsError:
+                        pass
+            except WindowsError:
+                continue
+    except Exception as e:
+        logger.debug(f"Error reading COMSOL registry: {e}")
+
+    return None
+
+
+def _get_comsol_version_dirs(base_dir: str) -> List[str]:
+    """Find COMSOL version directories like COMSOL61, COMSOL56, etc."""
+    version_dirs = []
+    if not os.path.exists(base_dir):
+        return version_dirs
+
+    try:
+        for item in os.listdir(base_dir):
+            item_path = os.path.join(base_dir, item)
+            if os.path.isdir(item_path) and re.match(r"COMSOL\d+", item):
+                version_dirs.append(item_path)
+    except (PermissionError, OSError):
+        pass
+
+    # Sort by version number (COMSOL61 > COMSOL56)
+    version_dirs.sort(key=lambda x: re.search(r"COMSOL(\d+)", x).group(1) if re.search(r"COMSOL(\d+)", x) else "0", reverse=True)
+    return version_dirs
 
 
 def _get_default_search_dirs() -> List[str]:
@@ -245,6 +319,7 @@ def _get_default_search_dirs() -> List[str]:
             [
                 program_files,
                 program_files_x86,
+                # CMG
                 os.path.join(program_files, "CMG"),
                 os.path.join(program_files, "Schlumberger"),
                 os.path.join(program_files_x86, "Schlumberger"),
@@ -255,6 +330,13 @@ def _get_default_search_dirs() -> List[str]:
                 "D:\\Schlumberger",
                 "D:\\Program Files\\CMG",
                 "D:\\Program Files\\Schlumberger",
+                # COMSOL common install paths
+                os.path.join(program_files, "COMSOL"),
+                os.path.join(program_files_x86, "COMSOL"),
+                "C:\\Program Files\\COMSOL",
+                "C:\\COMSOL",
+                "D:\\Program Files\\COMSOL",
+                "D:\\COMSOL",
             ],
         )
         if local_appdata:
@@ -295,8 +377,28 @@ def _find_executable(
     patterns: List[str],
     search_dirs: List[str],
     subdirs: List[str],
+    software_id: str = "",
 ) -> Optional[Path]:
     """Search for an executable matching any pattern."""
+    
+    # Special fast path for COMSOL - check registry first
+    if software_id == "comsol":
+        comsol_path = _get_comsol_from_registry()
+        if comsol_path:
+            # Check version directories under registry path
+            version_dirs = _get_comsol_version_dirs(comsol_path)
+            for version_dir in version_dirs:
+                for subdir in subdirs:
+                    bin_path = Path(version_dir) / subdir
+                    if not bin_path.is_dir():
+                        continue
+                    for pattern in patterns:
+                        for match in bin_path.glob("*"):
+                            if match.name.lower() == pattern.lower():
+                                if match.is_file():
+                                    return match
+    
+    # Standard search logic
     for base_dir in search_dirs:
         base_path = Path(base_dir)
         # Search directly in base dir
@@ -380,6 +482,22 @@ def _guess_version_from_path(path: Path) -> Optional[str]:
     return None
 
 
+def _extract_comsol_version(install_dir: str) -> Optional[str]:
+    """Extract COMSOL version from install directory name."""
+    dir_name = os.path.basename(install_dir)
+    
+    # COMSOL version patterns: COMSOL61, COMSOL56, COMSOL56Multiphysics, etc.
+    match = re.search(r"COMSOL(\d+)", dir_name, re.IGNORECASE)
+    if match:
+        version_num = match.group(1)
+        if len(version_num) >= 2:
+            major = version_num[:2]
+            minor = version_num[2:] if len(version_num) > 2 else "0"
+            return f"{major}.{minor}"
+    
+    return None
+
+
 def _get_install_dir(executable: Path) -> str:
     """Get the installation directory from an executable path."""
     parent = executable.parent
@@ -435,6 +553,7 @@ def detect_software(
                 sw_def["patterns"],
                 unique_dirs,
                 sw_def.get("subdirs", []),
+                sw_def["id"],
             )
 
             if executable:
@@ -445,6 +564,12 @@ def detect_software(
                 )
                 if not sw.version:
                     sw.version = _guess_version_from_path(executable)
+                
+                # Special COMSOL version extraction from path
+                if sw.id == "comsol" and sw.install_dir:
+                    comsol_version = _extract_comsol_version(sw.install_dir)
+                    if comsol_version:
+                        sw.version = comsol_version
                 sw.status = "found"
                 found_count += 1
             else:
