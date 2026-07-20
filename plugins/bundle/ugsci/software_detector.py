@@ -8,10 +8,10 @@ summary that the agent can use to invoke the software.
 
 Design principles
 -----------------
-1. **Non-intrusive** â€” only *reads* the filesystem; never launches software.
-2. **Cross-platform** â€” checks Windows, Linux and macOS standard paths.
-3. **Extensible** â€” ``KNOWN_SOFTWARE`` is a plain list; add entries freely.
-4. **Cached** â€” results are cached in-process and can be refreshed on demand.
+1. **Non-intrusive** â€?only *reads* the filesystem; never launches software.
+2. **Cross-platform** â€?checks Windows, Linux and macOS standard paths.
+3. **Extensible** â€?``KNOWN_SOFTWARE`` is a plain list; add entries freely.
+4. **Cached** â€?results are cached in-process and can be refreshed on demand.
 """
 
 from __future__ import annotations
@@ -82,7 +82,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "CMG Builder",
         "category": "reservoir_simulation",
         "vendor": "CMG",
-        "description": "Computer Modelling Group â€” reservoir simulation pre-processor",
+        "description": "Computer Modelling Group â€?reservoir simulation pre-processor",
         "patterns": ["builder.exe", "builder"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -94,7 +94,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "CMG IMEX",
         "category": "reservoir_simulation",
         "vendor": "CMG",
-        "description": "CMG IMEX â€” black oil reservoir simulator",
+        "description": "CMG IMEX â€?black oil reservoir simulator",
         "patterns": ["imex.exe", "imex", "mx2100.exe", "mx2300.exe"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -106,7 +106,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "CMG GEM",
         "category": "reservoir_simulation",
         "vendor": "CMG",
-        "description": "CMG GEM â€” compositional reservoir simulator",
+        "description": "CMG GEM â€?compositional reservoir simulator",
         "patterns": ["gem.exe", "gem", "gm2100.exe", "gm2300.exe"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -118,7 +118,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "CMG STARS",
         "category": "reservoir_simulation",
         "vendor": "CMG",
-        "description": "CMG STARS â€” thermal and advanced processes simulator",
+        "description": "CMG STARS â€?thermal and advanced processes simulator",
         "patterns": ["stars.exe", "stars", "st2100.exe", "st2300.exe"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -131,7 +131,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "Eclipse",
         "category": "reservoir_simulation",
         "vendor": "Schlumberger",
-        "description": "Schlumberger Eclipse â€” industry-standard reservoir simulator",
+        "description": "Schlumberger Eclipse â€?industry-standard reservoir simulator",
         "patterns": ["eclipse.exe", "e100.exe", "e300.exe", "eclipse"],
         "subdirs": ["bin", "exe", "eclipse/2024.1/bin", "eclipse/2023.2/bin"],
         "version_args": ["--version"],
@@ -143,7 +143,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "Intersect",
         "category": "reservoir_simulation",
         "vendor": "Schlumberger",
-        "description": "Schlumberger Intersect â€” next-generation reservoir simulator",
+        "description": "Schlumberger Intersect â€?next-generation reservoir simulator",
         "patterns": ["intersect.exe", "intersect"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -156,7 +156,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "Petrel",
         "category": "geological_modeling",
         "vendor": "Schlumberger",
-        "description": "Schlumberger Petrel â€” integrated E&P platform",
+        "description": "Schlumberger Petrel â€?integrated E&P platform",
         "patterns": ["petrel.exe", "petrel"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -169,7 +169,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "tNavigator",
         "category": "reservoir_simulation",
         "vendor": "Rock Flow Technologies",
-        "description": "tNavigator â€” parallel reservoir simulator",
+        "description": "tNavigator â€?parallel reservoir simulator",
         "patterns": ["tnav.exe", "tnavigator.exe", "tnavigator"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -182,7 +182,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "Techlog",
         "category": "well_log_analysis",
         "vendor": "Schlumberger",
-        "description": "Schlumberger Techlog â€” wellbore data analysis platform",
+        "description": "Schlumberger Techlog â€?wellbore data analysis platform",
         "patterns": ["techlog.exe", "techlog"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -195,7 +195,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "PIPESIM",
         "category": "production_engineering",
         "vendor": "Schlumberger",
-        "description": "Schlumberger PIPESIM â€” steady-state multiphase flow simulator",
+        "description": "Schlumberger PIPESIM â€?steady-state multiphase flow simulator",
         "patterns": ["pipesim.exe", "pipesim"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -208,7 +208,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "OFM",
         "category": "production_engineering",
         "vendor": "Schlumberger",
-        "description": "Schlumberger OFM â€” oilfield manager for production data analysis",
+        "description": "Schlumberger OFM â€?oilfield manager for production data analysis",
         "patterns": ["ofm.exe", "ofm"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -220,7 +220,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "CMG Results",
         "category": "post_processing",
         "vendor": "CMG",
-        "description": "CMG Results â€” post-processing and visualization",
+        "description": "CMG Results â€?post-processing and visualization",
         "patterns": ["results.exe", "results"],
         "subdirs": ["bin", "exe"],
         "version_args": ["--version"],
@@ -232,7 +232,7 @@ KNOWN_SOFTWARE: List[Dict] = [
         "name": "COMSOL Multiphysics",
         "category": "multiphysics",
         "vendor": "COMSOL Inc.",
-        "description": "COMSOL Multiphysics â€” multiphysics simulation platform",
+        "description": "COMSOL Multiphysics â€?multiphysics simulation platform",
         "patterns": ["comsol.exe", "comsolbatch.exe", "comsolmphserver.exe", "comsol"],
         "subdirs": ["bin", "bin\\win64", "bin\\wine64", "exe"],
         "version_args": ["-version"],
@@ -380,7 +380,7 @@ def _find_executable(
     software_id: str = "",
 ) -> Optional[Path]:
     """Search for an executable matching any pattern."""
-    
+
     # Special fast path for COMSOL - check registry first
     if software_id == "comsol":
         comsol_path = _get_comsol_from_registry()
@@ -397,7 +397,7 @@ def _find_executable(
                             if match.name.lower() == pattern.lower():
                                 if match.is_file():
                                     return match
-    
+
     # Standard search logic
     for base_dir in search_dirs:
         base_path = Path(base_dir)
@@ -485,7 +485,7 @@ def _guess_version_from_path(path: Path) -> Optional[str]:
 def _extract_comsol_version(install_dir: str) -> Optional[str]:
     """Extract COMSOL version from install directory name."""
     dir_name = os.path.basename(install_dir)
-    
+
     # COMSOL version patterns: COMSOL61, COMSOL56, COMSOL56Multiphysics, etc.
     match = re.search(r"COMSOL(\d+)", dir_name, re.IGNORECASE)
     if match:
@@ -494,7 +494,7 @@ def _extract_comsol_version(install_dir: str) -> Optional[str]:
             major = version_num[:2]
             minor = version_num[2:] if len(version_num) > 2 else "0"
             return f"{major}.{minor}"
-    
+
     return None
 
 
@@ -564,7 +564,7 @@ def detect_software(
                 )
                 if not sw.version:
                     sw.version = _guess_version_from_path(executable)
-                
+
                 # Special COMSOL version extraction from path
                 if sw.id == "comsol" and sw.install_dir:
                     comsol_version = _extract_comsol_version(sw.install_dir)
