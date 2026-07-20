@@ -532,7 +532,7 @@ def _detect_comsol(engine: EngineInfo) -> EngineInfo:
                 return _apply_comsol_result(engine, exe, install_dir, version)
             # Maybe registry returns the version dir directly
             result = _detect_comsol_from_base(
-                str(Path(reg_path).parent) if re.match(r"COMSOL\d+", Path(reg_path).name, re.IGNORECASE) else reg_path
+                str(Path(reg_path).parent) if re.match(r"COMSOL\d+", Path(reg_path).name, re.IGNORECASE) else reg_path,
             )
             if result:
                 exe, install_dir, version = result
@@ -908,7 +908,7 @@ def detect_engines() -> List[EngineInfo]:
                 )
                 # Mark as error
                 err_engine = next(
-                    (e for e in engines if e.id == engine_id), None
+                    (e for e in engines if e.id == engine_id), None,
                 )
                 if err_engine:
                     err_engine.status = "error"

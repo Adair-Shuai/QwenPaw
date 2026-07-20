@@ -7,7 +7,7 @@ import os
 
 sys.path.insert(0, os.path.abspath("."))
 
-from plugins.bundle.ugsci.software_detector import (
+from plugins.bundle.ugsci.software_detector import (  # noqa: E402
     detect_software,
     _get_comsol_from_registry,
     _get_comsol_version_dirs,
@@ -52,30 +52,17 @@ def test_comsol_detection():
     if comsol_found:
         print("   ✅ 找到COMSOL:")
         print(f"      名称: {comsol_found.name}")
-        print(
-            f"      版本: "
-            f"{comsol_found.version or '未检测到'}"
-        )
-        print(
-            f"      路径: "
-            f"{comsol_found.executable_path or '未找到'}"
-        )
-        print(
-            f"      安装目录: "
-            f"{comsol_found.install_dir or '未找到'}"
-        )
+        print(f"      版本: " f"{comsol_found.version or '未检测到'}")
+        print(f"      路径: " f"{comsol_found.executable_path or '未找到'}")
+        print(f"      安装目录: " f"{comsol_found.install_dir or '未找到'}")
         print(f"      状态: {comsol_found.status}")
-        print(
-            f"      使用提示: {comsol_found.invocation_hint}"
-        )
+        print(f"      使用提示: {comsol_found.invocation_hint}")
     else:
         print("   ❌ COMSOL未在检测列表中")
 
     print()
     print(f"总计检测软件数: {len(result.software_list)}")
-    found_count = sum(
-        1 for sw in result.software_list if sw.status == "found"
-    )
+    found_count = sum(1 for sw in result.software_list if sw.status == "found")
     print(f"找到软件数: {found_count}")
 
     return comsol_found
