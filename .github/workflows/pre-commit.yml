@@ -44,10 +44,10 @@ jobs:
       - name: Run pre-commit
         run: |
           pre-commit run --all-files 2>&1 | tee pre-commit.log || true
-          echo "=== FAILED HOOKS ==="
-          grep -iE "Failed|error|Passed" pre-commit.log || true
+          echo "=== HOOK RESULTS ==="
+          grep -E "(Passed|Failed|Skipped)$" pre-commit.log || true
+          echo "=== FAILURE DETAILS ==="
+          grep -A5 "Failed" pre-commit.log || true
           if grep -q Failed pre-commit.log; then
-            echo -e "\e[41m  [**FAIL**] pre-commit checks failed. Run 'pre-commit run --all-files' locally, commit any auto-fixes, then push again. \e[0m"
             exit 1
           fi
-          echo -e "\e[46m  ********************************Passed******************************** \e[0m"
