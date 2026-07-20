@@ -7,6 +7,7 @@ import os
 
 sys.path.insert(0, os.path.abspath("."))
 
+# pylint: disable=wrong-import-position
 from plugins.bundle.ugsci.software_detector import (  # noqa: E402
     detect_software,
     _get_comsol_from_registry,
