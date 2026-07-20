@@ -89,7 +89,7 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          cd console && npm install && npm run build
+          cd console && rm -rf node_modules package-lock.json && npm install && npm run build
 
       - name: Ensure plugin frontend bundles
         shell: bash
@@ -178,7 +178,7 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          cd console && npm install && npm run build
+          cd console && rm -rf node_modules package-lock.json && npm install && npm run build
 
       - name: Ensure plugin frontend bundles
         shell: bash
@@ -265,7 +265,7 @@ jobs:
         env:
           NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          cd console && npm install && npm run build
+          cd console && rm -rf node_modules package-lock.json && npm install && npm run build
 
       - name: Ensure plugin frontend bundles
         shell: bash

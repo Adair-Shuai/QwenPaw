@@ -79,6 +79,7 @@ echo ""
 # Step 1: Build console static assets
 echo "== Step 1: Building Console Static Assets =="
 cd console
+rm -rf node_modules package-lock.json
 npm install
 echo "Generating Tauri icons..."
 npm exec -- tauri icon ../scripts/pack/assets/icon.svg
