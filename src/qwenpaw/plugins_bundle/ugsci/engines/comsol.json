@@ -1,0 +1,18 @@
+{
+  "id": "comsol",
+  "name": "COMSOL",
+  "vendor": "COMSOL Inc.",
+  "version": "6.1",
+  "executable_path": "C:\\Program Files\\COMSOL\\COMSOL61\\Multiphysics\\bin\\win64\\comsol.exe",
+  "install_dir": "C:\\Program Files\\COMSOL\\COMSOL61",
+  "category": "multiphysics",
+  "description": "COMSOL Multiphysics 多物理场耦合仿真平台",
+  "invocation_hint": "COMSOL can be run in batch mode: comsolbatch -input <model.mph> -output <result.mph>",
+  "license_server": "",
+  "extra_paths": [],
+  "status": "detected",
+  "is_default": true,
+  "is_custom": false,
+  "modules": [],
+  "module_paths": {}
+}

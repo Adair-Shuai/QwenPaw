@@ -1,0 +1,18 @@
+{
+  "id": "intersect",
+  "name": "Intersect",
+  "vendor": "Schlumberger",
+  "version": "",
+  "executable_path": "",
+  "install_dir": "",
+  "category": "reservoir_simulation",
+  "description": "Schlumberger Intersect 新一代高性能油藏模拟器",
+  "invocation_hint": "Run: <intersect_path> <model.DATA>",
+  "license_server": "",
+  "extra_paths": [],
+  "status": "not_found",
+  "is_default": true,
+  "is_custom": false,
+  "modules": [],
+  "module_paths": {}
+}

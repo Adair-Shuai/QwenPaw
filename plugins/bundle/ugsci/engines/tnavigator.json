@@ -1,0 +1,18 @@
+{
+  "id": "tnavigator",
+  "name": "tNavigator",
+  "vendor": "Rock Flow Technologies",
+  "version": "",
+  "executable_path": "",
+  "install_dir": "",
+  "category": "reservoir_simulation",
+  "description": "tNavigator 高性能并行油藏模拟器",
+  "invocation_hint": "Run: <tnav_path> <model.DATA> to execute a parallel simulation.",
+  "license_server": "",
+  "extra_paths": [],
+  "status": "configured",
+  "is_default": true,
+  "is_custom": false,
+  "modules": [],
+  "module_paths": {}
+}

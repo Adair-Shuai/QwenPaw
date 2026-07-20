@@ -1,0 +1,18 @@
+{
+  "id": "eclipse",
+  "name": "Eclipse",
+  "vendor": "Schlumberger",
+  "version": "",
+  "executable_path": "",
+  "install_dir": "",
+  "category": "reservoir_simulation",
+  "description": "Schlumberger Eclipse 行业标准油藏模拟器 (E100/E300)",
+  "invocation_hint": "Run: <eclipse_path> <model.DATA> to execute a simulation.",
+  "license_server": "",
+  "extra_paths": [],
+  "status": "not_found",
+  "is_default": true,
+  "is_custom": false,
+  "modules": [],
+  "module_paths": {}
+}

@@ -182,6 +182,84 @@ async function fetchMCPClients(): Promise<MCPClientInfo[]> {
   return data || [];
 }
 
+// ─── Agent-aware MCP API helpers (mirror console /mcp page) ──────────────────
+
+/** List MCP clients for a specific agent (passes X-Agent-Id). */
+async function fetchAgentMCPClientsForCapabilities(
+  agentId: string,
+): Promise<MCPClientInfo[]> {
+  const data = await apiFetch<MCPClientInfo[]>("/mcp", {
+    headers: { "X-Agent-Id": agentId },
+  });
+  return data || [];
+}
+
+/** Toggle an MCP client's enabled status for a specific agent. */
+async function toggleMCPClientForCapabilities(
+  agentId: string,
+  clientKey: string,
+): Promise<MCPClientInfo> {
+  return apiFetch<MCPClientInfo>(
+    `/mcp/toggle/${encodeURIComponent(clientKey)}`,
+    {
+      method: "PATCH",
+      headers: { "X-Agent-Id": agentId },
+    },
+  );
+}
+
+/** Delete an MCP client for a specific agent. */
+async function deleteMCPClientForCapabilities(
+  agentId: string,
+  clientKey: string,
+): Promise<void> {
+  await apiFetch(`/mcp/${encodeURIComponent(clientKey)}`, {
+    method: "DELETE",
+    headers: { "X-Agent-Id": agentId },
+  });
+}
+
+/** Create an MCP client for a specific agent. */
+async function createMCPClientForCapabilities(
+  agentId: string,
+  clientKey: string,
+  client: Record<string, unknown>,
+): Promise<MCPClientInfo> {
+  return apiFetch<MCPClientInfo>("/mcp", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify({ client_key: clientKey, client }),
+  });
+}
+
+/** Update an MCP client for a specific agent. */
+async function updateMCPClientForCapabilities(
+  agentId: string,
+  clientKey: string,
+  updates: Record<string, unknown>,
+): Promise<MCPClientInfo> {
+  return apiFetch<MCPClientInfo>(
+    `/mcp/${encodeURIComponent(clientKey)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+      body: JSON.stringify(updates),
+    },
+  );
+}
+
+/** List tools from a connected MCP server for a specific agent. */
+async function listMCPToolsForCapabilities(
+  agentId: string,
+  clientKey: string,
+): Promise<any[]> {
+  const data = await apiFetch<any[]>(
+    `/mcp/tools/${encodeURIComponent(clientKey)}`,
+    { headers: { "X-Agent-Id": agentId } },
+  );
+  return data || [];
+}
+
 /** Parse agent config's mcp field to extract MCP client keys. */
 function extractMCPKeys(mcpConfig: unknown): string[] {
   if (!mcpConfig || typeof mcpConfig !== "object") return [];
@@ -5087,7 +5165,21 @@ function ExpertDrawer({
           {
             size: "small",
             icon: EditOutlined ? React.createElement(EditOutlined) : undefined,
-            onClick: () => navigateTo("/agents"),
+            onClick: () => {
+              // Close the drawer first to avoid React unmount conflicts
+              onClose();
+              // Set the selected agent so /agents page knows which to edit
+              try {
+                const host = getHost();
+                if (host.setSelectedAgent) {
+                  host.setSelectedAgent(agent.id);
+                }
+              } catch (err) {
+                console.warn("[ugsci] Failed to set selected agent:", err);
+              }
+              // Defer navigation to allow React to process state updates
+              setTimeout(() => navigateTo("/agents"), 0);
+            },
           },
           "编辑专家",
         ),
@@ -5100,6 +5192,8 @@ function ExpertDrawer({
               ? React.createElement(ThunderboltOutlined)
               : undefined,
             onClick: () => {
+              // Close the drawer first to avoid React unmount conflicts
+              onClose();
               // Set this agent as selected via the host store API
               try {
                 const host = getHost();
@@ -5109,7 +5203,8 @@ function ExpertDrawer({
               } catch (err) {
                 console.warn("[ugsci] Failed to set selected agent:", err);
               }
-              navigateTo("/chat");
+              // Defer navigation to allow React to process state updates
+              setTimeout(() => navigateTo("/chat"), 0);
             },
           },
           "开始对话",
@@ -5238,6 +5333,8 @@ function ExpertTemplateModal({
       footer: null,
       title: "选择专家模板",
       width: 800,
+      maskClosable: true,
+      keyboard: true,
     },
     React.createElement(
       "div",
@@ -5417,13 +5514,23 @@ function BlankExpertModal({
 }: {
   open: boolean;
   onCancel: () => void;
-  onCreate: (name: string, description: string) => void;
+  onCreate: (name: string, description: string) => Promise<void> | void;
 }) {
   const React = getHost().React;
-  const { useState } = React;
+  const { useState, useEffect } = React;
   const { Modal, Input, message: antdMsg } = getHost().antd;
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Reset form fields whenever the modal is opened
+  useEffect(() => {
+    if (open) {
+      setName("");
+      setDescription("");
+      setLoading(false);
+    }
+  }, [open]);
 
   return React.createElement(
     Modal,
@@ -5436,10 +5543,19 @@ function BlankExpertModal({
           antdMsg.warning("请输入专家名称");
           return;
         }
-        onCreate(name.trim(), description.trim());
+        setLoading(true);
+        // Fire-and-forget: do NOT return the Promise so antd
+        // doesn't set its internal okButtonLoading state which
+        // can prevent the modal from closing when open becomes false.
+        onCreate(name.trim(), description.trim()).finally(() => {
+          setLoading(false);
+        });
       },
       okText: "创建",
       cancelText: "取消",
+      confirmLoading: loading,
+      maskClosable: true,
+      keyboard: true,
       destroyOnClose: true,
     },
     React.createElement(
@@ -6390,19 +6506,34 @@ function ExpertCenterPage() {
 function CapabilityCard({
   mcp,
   onClick,
+  onToggle,
+  onDelete,
+  onViewTools,
 }: {
   mcp: MCPClientInfo;
   onClick: () => void;
+  onToggle: (e: React.MouseEvent) => void;
+  onDelete: (e: React.MouseEvent) => void;
+  onViewTools: (e: React.MouseEvent) => void;
 }) {
   const React = getHost().React;
-  const { Card, Tag, Badge, Typography } = getHost().antd;
+  const { Card, Tag, Badge, Typography, Button } = getHost().antd;
   const { Text } = Typography;
+  const {
+    EyeOutlined,
+    EyeInvisibleOutlined,
+    DeleteOutlined,
+    ToolOutlined,
+  } = getHost().antdIcons || {};
 
   const transportIcons: Record<string, string> = {
     stdio: "💻",
     streamable_http: "🌐",
     sse: "📡",
   };
+
+  const isRemote =
+    mcp.transport === "streamable_http" || mcp.transport === "sse";
 
   return React.createElement(
     Card,
@@ -6481,7 +6612,7 @@ function CapabilityCard({
         ),
     React.createElement(
       "div",
-      { style: { display: "flex", gap: 6, flexWrap: "wrap" } },
+      { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 } },
       React.createElement(
         Tag,
         { color: "purple", style: { fontSize: 11 } },
@@ -6510,6 +6641,53 @@ function CapabilityCard({
             mcp.url,
           )
         : null,
+    ),
+    // ── Action buttons (mirror console /mcp page) ──
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          gap: 6,
+          marginTop: "auto",
+          paddingTop: 8,
+          borderTop: "1px solid #f0f0f0",
+        },
+      },
+      React.createElement(
+        Button,
+        {
+          size: "small",
+          icon: ToolOutlined ? React.createElement(ToolOutlined) : undefined,
+          onClick: onViewTools,
+        },
+        "工具",
+      ),
+      React.createElement(
+        Button,
+        {
+          size: "small",
+          icon: mcp.enabled
+            ? EyeInvisibleOutlined
+              ? React.createElement(EyeInvisibleOutlined)
+              : undefined
+            : EyeOutlined
+              ? React.createElement(EyeOutlined)
+              : undefined,
+          onClick: onToggle,
+        },
+        mcp.enabled ? "禁用" : "启用",
+      ),
+      React.createElement(
+        Button,
+        {
+          size: "small",
+          danger: true,
+          icon: DeleteOutlined ? React.createElement(DeleteOutlined) : undefined,
+          onClick: onDelete,
+        },
+        "删除",
+      ),
     ),
   );
 }
@@ -6554,6 +6732,13 @@ const CATEGORY_ICONS: Record<string, string> = {
   post_processing: "📊",
   multiphysics: "🔬",
 };
+
+// Engine IDs that have custom PNG icons in engine/icons/
+const ENGINE_ICON_IDS = new Set(["cmg", "comsol", "tnavigator"]);
+
+function getEngineIconUrl(engineId: string): string {
+  return apiUrl(`/ugsci/engines/icon/${encodeURIComponent(engineId)}`);
+}
 
 async function fetchEngines(): Promise<{ engines: EngineInfo[] }> {
   return apiFetch<{ engines: EngineInfo[] }>("/ugsci/engines/list");
@@ -6608,6 +6793,14 @@ function EngineCard({
 
   const isDetected = engine.status === "detected";
   const icon = CATEGORY_ICONS[engine.category] || "📦";
+  const hasCustomIcon = ENGINE_ICON_IDS.has(engine.id);
+  const iconElement = hasCustomIcon
+    ? React.createElement("img", {
+        src: getEngineIconUrl(engine.id),
+        alt: engine.name,
+        style: { width: 24, height: 24, objectFit: "contain" },
+      })
+    : React.createElement("span", { style: { fontSize: 20 } }, icon);
 
   return React.createElement(
     Card,
@@ -6643,7 +6836,7 @@ function EngineCard({
       React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement("span", { style: { fontSize: 20 } }, icon),
+        iconElement,
         React.createElement(
           "div",
           null,
@@ -7051,8 +7244,18 @@ function EngineSection() {
               { style: { display: "flex", alignItems: "center", gap: 8 } },
               React.createElement(
                 "span",
-                { style: { fontSize: 18 } },
-                CATEGORY_ICONS[activeEngine.category] || "📦",
+                { style: { display: "flex", alignItems: "center" } },
+                ENGINE_ICON_IDS.has(activeEngine.id)
+                  ? React.createElement("img", {
+                      src: getEngineIconUrl(activeEngine.id),
+                      alt: activeEngine.name,
+                      style: { width: 20, height: 20, objectFit: "contain" },
+                    })
+                  : React.createElement(
+                      "span",
+                      { style: { fontSize: 18 } },
+                      CATEGORY_ICONS[activeEngine.category] || "📦",
+                    ),
               ),
               React.createElement("span", null, activeEngine.name),
             ),
@@ -7338,6 +7541,7 @@ function CapabilityCenterPage() {
     Typography,
     List,
     Tabs,
+    Modal,
   } = getHost().antd;
   const {
     ReloadOutlined,
@@ -7345,8 +7549,19 @@ function CapabilityCenterPage() {
     SearchOutlined,
     ApiOutlined,
     RocketOutlined,
+    ToolOutlined,
+    DeleteOutlined,
+    EyeOutlined,
+    EyeInvisibleOutlined,
   } = getHost().antdIcons || {};
   const { Text } = Typography;
+  const { TextArea } = Input;
+
+  // ── Agent context (mirror console /mcp page) ──
+  const host = getHost();
+  const useSelectedAgent = host.useSelectedAgent;
+  const selectedAgentInfo = useSelectedAgent ? useSelectedAgent() : null;
+  const currentAgentId = selectedAgentInfo?.id || "default";
 
   const [mcps, setMcps] = useState<MCPClientInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -7355,22 +7570,151 @@ function CapabilityCenterPage() {
   const [activeMCP, setActiveMCP] = useState<MCPClientInfo | null>(null);
   const [activeTab, setActiveTab] = useState("mcp");
 
+  // ── Create modal state (mirror console /mcp create) ──
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [createJson, setCreateJson] = useState(`{
+  "mcpServers": {
+    "example-client": {
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "env": {}
+    }
+  }
+}`);
+  const [creating, setCreating] = useState(false);
+
+  // ── Delete modal state ──
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MCPClientInfo | null>(null);
+
+  // ── Tools viewer modal state (mirror console /mcp tools) ──
+  const [toolsModalOpen, setToolsModalOpen] = useState(false);
+  const [toolsTarget, setToolsTarget] = useState<MCPClientInfo | null>(null);
+  const [toolsList, setToolsList] = useState<any[]>([]);
+  const [toolsLoading, setToolsLoading] = useState(false);
+  const [toolsError, setToolsError] = useState("");
+
   const loadMCPs = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await fetchMCPClients();
+      const data = await fetchAgentMCPClientsForCapabilities(currentAgentId);
       setMcps(data);
     } catch (err: any) {
-      antdMsg.error(err.message || "加载能力列表失败");
+      antdMsg.error(err.message || "加载 MCP 列表失败");
       setMcps([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [currentAgentId]);
 
   useEffect(() => {
     loadMCPs();
   }, [loadMCPs]);
+
+  // ── MCP CRUD handlers (mirror console /mcp page) ──
+  const handleToggle = useCallback(
+    async (mcp: MCPClientInfo) => {
+      try {
+        await toggleMCPClientForCapabilities(currentAgentId, mcp.key);
+        antdMsg.success(mcp.enabled ? "已禁用" : "已启用");
+        loadMCPs();
+      } catch (err: any) {
+        antdMsg.error(err.message || "切换状态失败");
+      }
+    },
+    [currentAgentId, loadMCPs],
+  );
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    try {
+      await deleteMCPClientForCapabilities(currentAgentId, deleteTarget.key);
+      antdMsg.success(`MCP「${deleteTarget.key}」已删除`);
+      setDeleteModalOpen(false);
+      setDeleteTarget(null);
+      loadMCPs();
+    } catch (err: any) {
+      antdMsg.error(err.message || "删除失败");
+    }
+  }, [currentAgentId, deleteTarget, loadMCPs]);
+
+  const handleCreate = useCallback(async () => {
+    setCreating(true);
+    try {
+      const parsed = JSON.parse(createJson);
+      const servers = parsed.mcpServers || parsed;
+      const entries = Object.entries(servers);
+      if (entries.length === 0) {
+        antdMsg.warning("未找到 MCP 客户端配置");
+        return;
+      }
+      let allSuccess = true;
+      for (const [clientKey, cfg] of entries) {
+        const clientCfg = cfg as Record<string, unknown>;
+        const transport = clientCfg.url
+          ? "streamable_http"
+          : "stdio";
+        const clientData = {
+          name: (clientCfg.name as string) || clientKey,
+          description: (clientCfg.description as string) || "",
+          enabled: true,
+          transport,
+          url: (clientCfg.url as string) || "",
+          command: (clientCfg.command as string) || "",
+          args: clientCfg.args || [],
+          env: clientCfg.env || {},
+          cwd: (clientCfg.cwd as string) || "",
+          headers: clientCfg.headers || {},
+        };
+        try {
+          await createMCPClientForCapabilities(
+            currentAgentId,
+            clientKey,
+            clientData,
+          );
+        } catch {
+          allSuccess = false;
+        }
+      }
+      if (allSuccess) {
+        antdMsg.success("MCP 客户端已创建");
+        setCreateModalOpen(false);
+        loadMCPs();
+      }
+    } catch (err: any) {
+      if (err instanceof SyntaxError) {
+        antdMsg.error("JSON 格式错误：" + err.message);
+      } else {
+        antdMsg.error(err.message || "创建 MCP 失败");
+      }
+    } finally {
+      setCreating(false);
+    }
+  }, [createJson, currentAgentId, loadMCPs]);
+
+  const handleViewTools = useCallback(
+    async (mcp: MCPClientInfo) => {
+      setToolsTarget(mcp);
+      setToolsModalOpen(true);
+      setToolsList([]);
+      setToolsError("");
+      setToolsLoading(true);
+      try {
+        const tools = await listMCPToolsForCapabilities(
+          currentAgentId,
+          mcp.key,
+        );
+        setToolsList(tools);
+      } catch (err: any) {
+        setToolsError(
+          err.message || "无法加载工具列表（MCP 服务可能未运行）",
+        );
+      } finally {
+        setToolsLoading(false);
+      }
+    },
+    [currentAgentId],
+  );
 
   const filteredMCPs = useMemo(() => {
     if (!searchText.trim()) return mcps;
@@ -7421,10 +7765,10 @@ function CapabilityCenterPage() {
         {
           type: "primary",
           icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
-          onClick: () => navigateTo("/mcp"),
+          onClick: () => setCreateModalOpen(true),
           style: PRIMARY_BTN_STYLE,
         },
-        "管理 MCP",
+        "添加 MCP",
       ),
     ),
     loading
@@ -7437,7 +7781,7 @@ function CapabilityCenterPage() {
         ? React.createElement(Empty, {
             description: searchText
               ? "未找到匹配的能力"
-              : "暂无 MCP 客户端，点击「管理 MCP」添加",
+              : "暂无 MCP 客户端，点击「添加 MCP」创建",
           })
         : React.createElement(
             Row,
@@ -7458,6 +7802,19 @@ function CapabilityCenterPage() {
                   onClick: () => {
                     setActiveMCP(mcp);
                     setDrawerOpen(true);
+                  },
+                  onToggle: (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    handleToggle(mcp);
+                  },
+                  onDelete: (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    setDeleteTarget(mcp);
+                    setDeleteModalOpen(true);
+                  },
+                  onViewTools: (e: React.MouseEvent) => {
+                    e.stopPropagation();
+                    handleViewTools(mcp);
                   },
                 }),
               ),
@@ -7649,6 +8006,131 @@ function CapabilityCenterPage() {
               ),
         )
       : null,
+    // ── Create MCP Modal (mirror console /mcp JSON import) ──
+    React.createElement(
+      Modal,
+      {
+        title: "添加 MCP 客户端 (JSON)",
+        open: createModalOpen,
+        onCancel: () => setCreateModalOpen(false),
+        onOk: handleCreate,
+        confirmLoading: creating,
+        okText: "创建",
+        cancelText: "取消",
+        width: 700,
+      },
+      React.createElement(
+        "div",
+        { style: { marginBottom: 8, fontSize: 12, color: "#8c8c8c" } },
+        "支持格式: ",
+        React.createElement("code", null, '{ "mcpServers": { "key": {...} } }'),
+        " 或 ",
+        React.createElement("code", null, '{ "key": {...} }'),
+      ),
+      React.createElement(TextArea, {
+        value: createJson,
+        onChange: (e: any) => setCreateJson(e.target.value),
+        autoSize: { minRows: 12, maxRows: 20 },
+        style: { fontFamily: "Monaco, Courier New, monospace", fontSize: 13 },
+      }),
+    ),
+    // ── Delete Confirmation Modal ──
+    React.createElement(
+      Modal,
+      {
+        title: "确认删除",
+        open: deleteModalOpen,
+        onOk: handleDelete,
+        onCancel: () => {
+          setDeleteModalOpen(false);
+          setDeleteTarget(null);
+        },
+        okText: "确认删除",
+        cancelText: "取消",
+        okButtonProps: { danger: true },
+      },
+      React.createElement(
+        "p",
+        null,
+        `确定要删除 MCP 客户端「${deleteTarget?.name || deleteTarget?.key}」吗？此操作不可撤销。`,
+      ),
+    ),
+    // ── Tools Viewer Modal (mirror console /mcp tools) ──
+    React.createElement(
+      Modal,
+      {
+        title: toolsTarget
+          ? `${toolsTarget.name || toolsTarget.key} - 工具列表`
+          : "工具列表",
+        open: toolsModalOpen,
+        onCancel: () => {
+          setToolsModalOpen(false);
+          setToolsTarget(null);
+        },
+        footer: React.createElement(
+          Button,
+          { onClick: () => setToolsModalOpen(false) },
+          "关闭",
+        ),
+        width: 640,
+      },
+      toolsLoading
+        ? React.createElement(
+            "div",
+            { style: { textAlign: "center", padding: 40 } },
+            React.createElement(Spin, { size: "large" }),
+          )
+        : toolsError
+          ? React.createElement(
+              "div",
+              { style: { color: "#ff4d4f", padding: 16 } },
+              toolsError,
+            )
+          : toolsList.length === 0
+            ? React.createElement(Empty, {
+                description: "此 MCP 客户端暂无可用工具（可能服务未启动）",
+              })
+            : React.createElement(List, {
+                size: "small",
+                dataSource: toolsList,
+                renderItem: (tool: any) =>
+                  React.createElement(
+                    List.Item,
+                    null,
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: 2,
+                        },
+                      },
+                      React.createElement(
+                        "div",
+                        { style: { display: "flex", alignItems: "center", gap: 6 } },
+                        ApiOutlined
+                          ? React.createElement(ApiOutlined, {
+                              style: { fontSize: 12, color: "#1677ff" },
+                            })
+                          : null,
+                        React.createElement(
+                          Text,
+                          { strong: true, style: { fontSize: 13 } },
+                          tool.name || tool.key,
+                        ),
+                      ),
+                      tool.description
+                        ? React.createElement(
+                            Text,
+                            { type: "secondary", style: { fontSize: 12 } },
+                            tool.description,
+                          )
+                        : null,
+                    ),
+                  ),
+              }),
+    ),
   );
 }
 

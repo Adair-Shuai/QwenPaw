@@ -1,0 +1,373 @@
+# -*- coding: utf-8 -*-
+"""Engine manager — data model, persistence, and CRUD operations.
+
+This module is responsible for:
+- The ``EngineInfo`` dataclass
+- Default engine definitions
+- JSON file-per-engine persistence
+- CRUD operations (list / get / add / update / delete)
+- Agent-facing capability summary
+
+Detection logic lives in ``engine/detector.py``.
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+import re
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.engine")
+
+PLUGIN_DIR = Path(__file__).resolve().parent.parent  # plugins/bundle/ugsci/
+ENGINES_DIR = PLUGIN_DIR / "engines"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Data model
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+@dataclass
+class EngineInfo:
+    """A computation engine record."""
+
+    id: str
+    name: str
+    vendor: str = ""
+    version: str = ""
+    executable_path: str = ""
+    install_dir: str = ""
+    category: str = ""
+    description: str = ""
+    invocation_hint: str = ""
+    license_server: str = ""
+    extra_paths: List[str] = field(default_factory=list)
+    status: str = "configured"  # configured | detected | not_found | error
+    is_default: bool = False
+    is_custom: bool = False
+    # Detected sub-modules / executables (e.g. CMG IMEX/GEM/STARS)
+    modules: List[str] = field(default_factory=list)
+    # Detected module paths (parallel to modules)
+    module_paths: Dict[str, str] = field(default_factory=dict)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Default engines
+# ──────────────────────────────────────────────────────────────────────────────
+
+DEFAULT_ENGINES: List[Dict[str, Any]] = [
+    {
+        "id": "cmg",
+        "name": "CMG",
+        "vendor": "Computer Modelling Group",
+        "version": "",
+        "executable_path": "",
+        "install_dir": "",
+        "category": "reservoir_simulation",
+        "description": "CMG 油藏数值模拟套件 (IMEX/GEM/STARS/Builder/Results)",
+        "invocation_hint": "IMEX: <path>/mx2300.exe -f <model.dat> -o <output.out>; "
+        "GEM: <path>/gm2300.exe -f <model.dat> -o <output.out>; "
+        "STARS: <path>/st2300.exe -f <model.dat> -o <output.out>",
+        "license_server": "",
+        "extra_paths": [],
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+    {
+        "id": "eclipse",
+        "name": "Eclipse",
+        "vendor": "Schlumberger",
+        "version": "",
+        "executable_path": "",
+        "install_dir": "",
+        "category": "reservoir_simulation",
+        "description": "Schlumberger Eclipse 行业标准油藏模拟器 (E100/E300)",
+        "invocation_hint": "Run: <eclipse_path> <model.DATA> to execute a simulation.",
+        "license_server": "",
+        "extra_paths": [],
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+    {
+        "id": "intersect",
+        "name": "Intersect",
+        "vendor": "Schlumberger",
+        "version": "",
+        "executable_path": "",
+        "install_dir": "",
+        "category": "reservoir_simulation",
+        "description": "Schlumberger Intersect 新一代高性能油藏模拟器",
+        "invocation_hint": "Run: <intersect_path> <model.DATA>",
+        "license_server": "",
+        "extra_paths": [],
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+    {
+        "id": "comsol",
+        "name": "COMSOL",
+        "vendor": "COMSOL Inc.",
+        "version": "",
+        "executable_path": "",
+        "install_dir": "",
+        "category": "multiphysics",
+        "description": "COMSOL Multiphysics 多物理场耦合仿真平台",
+        "invocation_hint": "COMSOL can be run in batch mode: "
+        "comsolbatch -input <model.mph> -output <result.mph>",
+        "license_server": "",
+        "extra_paths": [],
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+    {
+        "id": "tnavigator",
+        "name": "tNavigator",
+        "vendor": "Rock Flow Technologies",
+        "version": "",
+        "executable_path": "",
+        "install_dir": "",
+        "category": "reservoir_simulation",
+        "description": "tNavigator 高性能并行油藏模拟器",
+        "invocation_hint": "Run: <tnav_path> <model.DATA> to execute a parallel simulation.",
+        "license_server": "",
+        "extra_paths": [],
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# File-based persistence
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _ensure_engines_dir() -> Path:
+    """Ensure the engines directory exists and return its path."""
+    ENGINES_DIR.mkdir(parents=True, exist_ok=True)
+    return ENGINES_DIR
+
+
+def _engine_file_path(engine_id: str) -> Path:
+    """Return the JSON file path for a given engine ID."""
+    safe_id = re.sub(r"[^a-zA-Z0-9_\-.]", "_", engine_id)
+    return _ensure_engines_dir() / f"{safe_id}.json"
+
+
+def _write_engine(engine: EngineInfo) -> None:
+    """Write an engine record to its JSON file."""
+    path = _engine_file_path(engine.id)
+    data = asdict(engine)
+    path.write_text(
+        json.dumps(data, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    logger.debug("Engine '%s' written to %s", engine.id, path)
+
+
+def _delete_engine_file(engine_id: str) -> bool:
+    """Delete the JSON file for an engine. Returns True if deleted."""
+    path = _engine_file_path(engine_id)
+    if path.exists():
+        path.unlink()
+        logger.debug("Engine file deleted: %s", path)
+        return True
+    return False
+
+
+def _read_all_engines() -> List[EngineInfo]:
+    """Read all engine JSON files from disk."""
+    engines: List[EngineInfo] = []
+    engines_dir = _ensure_engines_dir()
+    for f in sorted(engines_dir.glob("*.json")):
+        try:
+            data = json.loads(f.read_text(encoding="utf-8"))
+            engines.append(EngineInfo(**data))
+        except Exception as exc:
+            logger.warning("Failed to read engine file %s: %s", f, exc)
+    return engines
+
+
+def _read_engine(engine_id: str) -> Optional[EngineInfo]:
+    """Read a single engine by ID."""
+    path = _engine_file_path(engine_id)
+    if not path.exists():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return EngineInfo(**data)
+    except Exception as exc:
+        logger.warning("Failed to read engine %s: %s", engine_id, exc)
+        return None
+
+
+def init_default_engines() -> int:
+    """Ensure default engine JSON files exist. Returns count created."""
+    count = 0
+    for def_eng in DEFAULT_ENGINES:
+        path = _engine_file_path(def_eng["id"])
+        if not path.exists():
+            engine = EngineInfo(**def_eng)
+            _write_engine(engine)
+            count += 1
+            logger.info("Created default engine: %s", engine.name)
+    return count
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# CRUD operations
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def list_engines() -> List[EngineInfo]:
+    """Return all registered engines."""
+    return _read_all_engines()
+
+
+def get_engine(engine_id: str) -> Optional[EngineInfo]:
+    """Return a single engine by ID."""
+    return _read_engine(engine_id)
+
+
+def add_engine(data: Dict[str, Any]) -> EngineInfo:
+    """Add a new custom engine."""
+    engine_id = data.get("id", "").strip()
+    name = data.get("name", "").strip()
+    if not name:
+        raise ValueError("Engine name is required")
+
+    if not engine_id:
+        base = re.sub(r"[^a-zA-Z0-9_]", "_", name.lower()).strip("_")
+        engine_id = base
+        counter = 1
+        while _engine_file_path(engine_id).exists():
+            engine_id = f"{base}_{counter}"
+            counter += 1
+
+    if _engine_file_path(engine_id).exists():
+        raise ValueError(f"Engine '{engine_id}' already exists")
+
+    engine = EngineInfo(
+        id=engine_id,
+        name=name,
+        vendor=data.get("vendor", ""),
+        version=data.get("version", ""),
+        executable_path=data.get("executable_path", ""),
+        install_dir=data.get("install_dir", ""),
+        category=data.get("category", ""),
+        description=data.get("description", ""),
+        invocation_hint=data.get("invocation_hint", ""),
+        license_server=data.get("license_server", ""),
+        extra_paths=data.get("extra_paths", []),
+        status="configured",
+        is_default=False,
+        is_custom=True,
+    )
+
+    if engine.executable_path and os.path.isfile(engine.executable_path):
+        engine.status = "detected"
+        engine.install_dir = str(Path(engine.executable_path).parent)
+
+    _write_engine(engine)
+    logger.info("Added custom engine: %s (%s)", engine.name, engine.id)
+    return engine
+
+
+def update_engine(engine_id: str, data: Dict[str, Any]) -> EngineInfo:
+    """Update an existing engine. Returns the updated engine."""
+    engine = _read_engine(engine_id)
+    if engine is None:
+        raise ValueError(f"Engine '{engine_id}' not found")
+
+    for key in [
+        "name", "vendor", "version", "executable_path", "install_dir",
+        "category", "description", "invocation_hint", "license_server",
+        "extra_paths", "modules", "module_paths",
+    ]:
+        if key in data:
+            setattr(engine, key, data[key])
+
+    if engine.executable_path and os.path.isfile(engine.executable_path):
+        engine.status = "detected"
+    elif engine.executable_path:
+        engine.status = "not_found"
+    else:
+        engine.status = "configured"
+
+    _write_engine(engine)
+    logger.info("Updated engine: %s", engine.name)
+    return engine
+
+
+def delete_engine(engine_id: str) -> bool:
+    """Delete an engine by ID. Default engines cannot be deleted."""
+    engine = _read_engine(engine_id)
+    if engine is None:
+        raise ValueError(f"Engine '{engine_id}' not found")
+    if engine.is_default:
+        raise ValueError("Default engines cannot be deleted")
+    return _delete_engine_file(engine_id)
+
+
+def to_dict(engine: EngineInfo) -> Dict[str, Any]:
+    """Convert EngineInfo to a JSON-serialisable dict."""
+    return asdict(engine)
+
+
+def engines_to_list(engines: List[EngineInfo]) -> List[Dict[str, Any]]:
+    """Convert a list of engines to dicts."""
+    return [to_dict(e) for e in engines]
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Agent-facing capability summary
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def build_capability_summary(engines: List[EngineInfo]) -> str:
+    """Build a concise text summary for agent system-prompt injection."""
+    configured = [
+        e for e in engines
+        if e.status in ("detected", "configured") and (
+            e.executable_path or e.invocation_hint
+        )
+    ]
+    if not configured:
+        return "No computation engines configured on this host."
+
+    lines = [
+        "## Computation Engines",
+        "",
+        "The following computation engines are available on this host:",
+        "",
+    ]
+
+    for e in configured:
+        lines.append(f"### {e.name} ({e.vendor})" if e.vendor else f"### {e.name}")
+        if e.version:
+            lines.append(f"- **Version**: {e.version}")
+        if e.executable_path:
+            lines.append(f"- **Path**: `{e.executable_path}`")
+        if e.category:
+            lines.append(f"- **Category**: {e.category}")
+        if e.invocation_hint:
+            lines.append(f"- **Usage**: {e.invocation_hint}")
+        if e.modules:
+            lines.append(f"- **Modules**: {', '.join(e.modules)}")
+        lines.append(f"- **Status**: {e.status}")
+        lines.append("")
+
+    lines.append(
+        "Use the paths above to invoke the engines from scripts or commands. "
+        "Always verify the executable path before running.",
+    )
+    return "\n".join(lines)

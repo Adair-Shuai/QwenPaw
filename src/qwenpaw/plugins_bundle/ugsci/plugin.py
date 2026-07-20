@@ -179,7 +179,7 @@ def _build_engine_router() -> APIRouter:
     @router.get("/list")
     async def list_engines_endpoint() -> Dict[str, Any]:
         """Return all registered computation engines."""
-        from .engine_manager import list_engines, engines_to_list
+        from .engine import list_engines, engines_to_list
 
         engines = list_engines()
         return {"engines": engines_to_list(engines)}
@@ -187,7 +187,7 @@ def _build_engine_router() -> APIRouter:
     @router.get("/{engine_id}")
     async def get_engine_endpoint(engine_id: str) -> Dict[str, Any]:
         """Return a single engine by ID."""
-        from .engine_manager import get_engine, to_dict
+        from .engine import get_engine, to_dict
 
         engine = get_engine(engine_id)
         if engine is None:
@@ -198,7 +198,7 @@ def _build_engine_router() -> APIRouter:
     @router.post("/")
     async def add_engine_endpoint(body: EngineRequest) -> Dict[str, Any]:
         """Add a new custom computation engine."""
-        from .engine_manager import add_engine, to_dict
+        from .engine import add_engine, to_dict
 
         try:
             engine = add_engine(body.model_dump())
@@ -212,7 +212,7 @@ def _build_engine_router() -> APIRouter:
         engine_id: str, body: EngineRequest,
     ) -> Dict[str, Any]:
         """Update an existing engine."""
-        from .engine_manager import update_engine, to_dict
+        from .engine import update_engine, to_dict
 
         try:
             engine = update_engine(engine_id, body.model_dump())
@@ -224,7 +224,7 @@ def _build_engine_router() -> APIRouter:
     @router.delete("/{engine_id}")
     async def delete_engine_endpoint(engine_id: str) -> Dict[str, Any]:
         """Delete a computation engine."""
-        from .engine_manager import delete_engine
+        from .engine import delete_engine
 
         try:
             ok = delete_engine(engine_id)
@@ -236,7 +236,7 @@ def _build_engine_router() -> APIRouter:
     @router.post("/detect")
     async def detect_engines_endpoint() -> Dict[str, Any]:
         """Auto-detect installed engines and return updated list."""
-        from .engine_manager import detect_engines, engines_to_list
+        from .engine import detect_engines, engines_to_list
 
         engines = detect_engines()
         return {"engines": engines_to_list(engines)}
@@ -244,10 +244,32 @@ def _build_engine_router() -> APIRouter:
     @router.get("/summary")
     async def capability_summary_endpoint() -> Dict[str, str]:
         """Return a concise text summary for agent system-prompt injection."""
-        from .engine_manager import list_engines, build_capability_summary
+        from .engine import list_engines, build_capability_summary
 
         engines = list_engines()
         return {"summary": build_capability_summary(engines)}
+
+    @router.get("/icon/{engine_id}")
+    async def get_engine_icon(engine_id: str):
+        """Serve an engine icon PNG from engine/icons/ directory."""
+        from fastapi import HTTPException
+        from fastapi.responses import FileResponse
+
+        icon_dir = PLUGIN_DIR / "engine" / "icons"
+        # Try multiple naming conventions
+        for name_pattern in [
+            f"{engine_id}_icon.png",
+            f"{engine_id}.png",
+            f"{engine_id.capitalize()}_icon.png",
+        ]:
+            icon_path = icon_dir / name_pattern
+            if icon_path.is_file():
+                return FileResponse(
+                    str(icon_path),
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+        raise HTTPException(status_code=404, detail="Icon not found")
 
     return router
 
@@ -293,7 +315,7 @@ class UGSciPlugin:
 
         # Initialize default computation engines
         try:
-            from .engine_manager import init_default_engines
+            from .engine import init_default_engines
             count = init_default_engines()
             if count:
                 logger.info(
@@ -328,7 +350,7 @@ class UGSciPlugin:
         # Five tools that let agents launch, monitor, read, edit, and
         # analyze numerical simulations (Eclipse / CMG / COMSOL).
         try:
-            from .sim_tools import (
+            from .engine.tools import (
                 launch_simulation,
                 check_simulation_status,
                 read_simulation_results,
