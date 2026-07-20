@@ -10,9 +10,14 @@
   "invocation_hint": "Run: <tnav_path> <model.DATA> to execute a parallel simulation.",
   "license_server": "",
   "extra_paths": [],
-  "status": "configured",
+  "status": "not_found",
   "is_default": true,
   "is_custom": false,
   "modules": [],
-  "module_paths": {}
+  "module_paths": {},
+  "arch": "",
+  "build": "",
+  "license_status": "",
+  "lmutil_path": "",
+  "extra_info": {}
 }

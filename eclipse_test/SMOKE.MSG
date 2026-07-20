@@ -1,0 +1,88 @@
+<eclipse>
+<warning date="0/0/0" time="0.00000000000000">
+ Neither of the keywords BLACKOIL or COMPS is                               
+ present. BLACKOIL will be assumed.                                         
+</warning>
+<warning date="0/0/0" time="0.00000000000000">
+ ===================================================                        
+ A reduced phase black oil model has been specified.                        
+ It is strongly recommended that a three phase black                        
+ oil model is used instead with properties selected                         
+ such that the unrequired third phase is not active                         
+ in the simulation.                                                         
+ ===================================================                        
+</warning>
+<comment date="1/1/2025" time="0.00000000000000">
+ Since neither GRIDOPTS or REGDIMS specified in the                         
+ Runspec section, the number of FLUXNUM regions will                        
+ be set using item 11 of TABDIMS keyword                                    
+</comment>
+<message date="1/1/2025" time="0.00000000000000">
+ The message service has been activated                                     
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Checking for licenses                                                      
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ ECLIPSE license expires        30-Dec-2077                                 
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Processing GRID data                                                       
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+  The WARP linear solver has   1 sub-grids                                  
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Model has 1 active cells                                                   
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ ROCK specified but ROCKOPTS not yet read                                   
+ ROCK will default to PVT Region                                            
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Processing PROPS data                                                      
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ K-values used for phase equilibrium                                        
+</message>
+<warning date="1/1/2025" time="0.00000000000000">
+ SWFN table 1 has                                                           
+ a maximum saturation value of .800000                                      
+ This should be 1, unless initial water                                     
+ saturations are to be                                                      
+ restricted to this value                                                   
+</warning>
+<message date="1/1/2025" time="0.00000000000000">
+ No FIELDSEP data found                                                     
+ Will use flash to standard conditions                                      
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Processing SOLUTION data                                                   
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Fully implicit option used                                                 
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ This run is initialized by equilibration.                                  
+ If the TEMPI keyword has been specified, it will be ignored.               
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Gas-Oil contact = Oil-Water contact                                        
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Datum depth set to 8000.000                                                
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Processing SUMMARY data                                                    
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ 5 summary file items requested                                             
+ TIME     and YEARS    also available in summary file                       
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Starting processing of SCHEDULE section                                    
+</message>
+<message date="1/1/2025" time="0.00000000000000">
+ Control mode BHP      set for well PROD1                                   
+</message>
+</eclipse>

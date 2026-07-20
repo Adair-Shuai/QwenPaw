@@ -2,17 +2,47 @@
   "id": "eclipse",
   "name": "Eclipse",
   "vendor": "Schlumberger",
-  "version": "",
-  "executable_path": "",
-  "install_dir": "",
+  "version": "2022.2",
+  "executable_path": "C:\\ecl\\2022.2\\bin\\pc_x86_64\\e300.exe",
+  "install_dir": "C:\\ecl\\2022.2",
   "category": "reservoir_simulation",
   "description": "Schlumberger Eclipse 行业标准油藏模拟器 (E100/E300)",
   "invocation_hint": "Run: <eclipse_path> <model.DATA> to execute a simulation.",
-  "license_server": "",
+  "license_server": "@localhost;",
   "extra_paths": [],
-  "status": "not_found",
+  "status": "detected",
   "is_default": true,
   "is_custom": false,
   "modules": [],
-  "module_paths": {}
+  "module_paths": {},
+  "arch": "pc_x86_64",
+  "build": "",
+  "license_status": "unknown",
+  "lmutil_path": "",
+  "extra_info": {
+    "sub_product": "ECLIPSE_300",
+    "license_type": "network",
+    "license_env_vars": {
+      "SLBSLS_LICENSE_FILE": "@localhost;"
+    },
+    "smoke_test": {
+      "product": "ECLIPSE_300",
+      "ok": false,
+      "duration_sec": 1.07,
+      "error": "case_errors_1",
+      "returncode": 0,
+      "prt_head": "\n\n\n           $$$$$   $$$   $      $$$  $$$$    $$$   $$$$$\n           $      $   $  $       $   $   $  $   $  $    \n           $      $      $       $   $   $  $      $    \n           $$$$   $      $       $   $$$$    $$$   $$$$ \n           $      $      $       $   $          $  $    \n           $      $   $  $       $   $      $   $  $    \n           $$$$$   $$$   $$$$$  $$$  $       $$$   $$$$$\n\n\n\n           $$$   $$$    $$$     $$$$$  $$$   $$$$$ $$$$$    $$$$$ \n              $ $   $  $   $        $ $   $      $     $        $ \n              $ $   $  $   $        $ $   $      $     $        $ \n           $$$  $   $  $   $    $$$$$ $   $  $$$$$ $$$$$    $$$$$ \n              $ $   $  $   $    $     $   $  $     $        $     \n              $ $   $  $   $    $     $   $  $     $        $     \n           $$$   $$$    $$$     $$$$$  $$$   $$$$$ $$$$$  $ $$$$$ \n\n\n\n                                 $$$$$   $$$   $      $$$  $$$$    $$$   $$$$$\n                                 $      $   $  $       $   $   $  $   $  $    \n                                 $      $      $       $   $   $  $      $    \n                                 $$$$   $      $       $   $$$$    $$$   $$$$ \n                                 $      $      $       $   $          $  $    \n                                 $      $   $  $       $   $      $   $  $    \n                                 $$$$$   $$$   $$$$$  $$$  $       $$$   $$$$$\n\n\n\n                                 $$$   $$$    $$$     $$$$$  $$$   ",
+      "error_count": 1,
+      "outputs": [
+        "SMOKE.DATA",
+        "SMOKE.DBG",
+        "SMOKE.ECLEND",
+        "SMOKE.EGRID",
+        "SMOKE.MSG",
+        "SMOKE.PRT",
+        "SMOKE.SMSPEC",
+        "SMOKE.dbprtx"
+      ]
+    }
+  }
 }

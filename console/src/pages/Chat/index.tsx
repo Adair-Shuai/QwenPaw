@@ -2836,6 +2836,13 @@ export default function ChatPage() {
             <button
               type="button"
               onClick={() => setProjectModalOpen(true)}
+              title={
+                hasWorkingFolder
+                  ? t("chat.workingFolderSet", "工作文件夹：{{path}}", {
+                      path: projectDir!,
+                    })
+                  : t("chat.defaultWorkspace", "默认工作区")
+              }
               style={{
                 display: "inline-flex",
                 alignItems: "center",
@@ -3152,6 +3159,7 @@ export default function ChatPage() {
     runState,
     isOwner,
     workspacePanelOpen,
+    projectDir,
   ]);
 
   return (

@@ -2,17 +2,28 @@
   "id": "intersect",
   "name": "Intersect",
   "vendor": "Schlumberger",
-  "version": "",
-  "executable_path": "",
-  "install_dir": "",
+  "version": "2022.1",
+  "executable_path": "C:\\ecl\\2022.1\\IX\\x64_ilmpi\\ix.exe",
+  "install_dir": "C:\\ecl\\2022.1",
   "category": "reservoir_simulation",
   "description": "Schlumberger Intersect 新一代高性能油藏模拟器",
   "invocation_hint": "Run: <intersect_path> <model.DATA>",
-  "license_server": "",
+  "license_server": "@localhost;",
   "extra_paths": [],
-  "status": "not_found",
+  "status": "detected",
   "is_default": true,
   "is_custom": false,
   "modules": [],
-  "module_paths": {}
+  "module_paths": {},
+  "arch": "",
+  "build": "",
+  "license_status": "unknown",
+  "lmutil_path": "",
+  "extra_info": {
+    "sub_product": "INTERSECT",
+    "license_type": "network",
+    "license_env_vars": {
+      "SLBSLS_LICENSE_FILE": "@localhost;"
+    }
+  }
 }

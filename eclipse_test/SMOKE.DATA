@@ -1,0 +1,75 @@
+-- ============================================================
+-- Simple Eclipse E300 smoke-test deck
+-- 1x1x1 grid, dead-oil, single producer
+-- ============================================================
+
+RUNSPEC
+DIMENS
+ 1 1 1 /
+OIL
+WATER
+START
+ 1 'JAN' 2025 /
+NSTACK
+ 20 /
+UNIFIN
+UNIFOUT
+
+GRID
+DX
+ 1000 /
+DY
+ 1000 /
+DZ
+ 100 /
+TOPS
+ 8000 /
+PORO
+ 0.3 /
+PERMX
+ 500 /
+PERMY
+ 500 /
+PERMZ
+ 50 /
+
+PROPS
+PVTW
+ 4000 1 3e-6 0.3 1e-7 /
+DENSITY
+ 50 65 0.001 /
+ROCK
+ 4000 3e-6 /
+SWOF
+ 0.2 0 1 0
+ 0.8 0 0 0 /
+PVDO
+ 14.7 1.0 1.0
+ 4014.7 1.0 1.0 /
+
+SOLUTION
+EQUIL
+ 8000 4000 8100 0 8100 0 0 0 0 /
+
+SUMMARY
+FOPR
+FPR
+FOPT
+FWPR
+FWCT
+
+SCHEDULE
+WELSPECS
+ 'PROD1' 'PROD' 1 1 8000 'OIL' /
+/
+COMPDAT
+ 'PROD1' 1 1 1 1 'OPEN' 0 50 /
+/
+WCONPROD
+ 'PROD1' 'OPEN' 'BHP' 1000 10000 10000 10000 10000 3000 /
+/
+ 'PROD1' 'OPEN' 'BHP' 500 10000 10000 10000 10000 3000 /
+/
+TSTEP
+ 30 30 30 30 30 /
+END

@@ -2,31 +2,17 @@
   "id": "cmg",
   "name": "CMG",
   "vendor": "Computer Modelling Group",
-  "version": "2025.30",
-  "executable_path": "C:\\Program Files\\CMG\\IMEX\\2025.30\\Win_x64\\EXE\\mx202530.exe",
-  "install_dir": "C:\\Program Files\\CMG",
+  "version": "",
+  "executable_path": "",
+  "install_dir": "",
   "category": "reservoir_simulation",
   "description": "CMG 油藏数值模拟套件 (IMEX/GEM/STARS/Builder/Results)",
   "invocation_hint": "IMEX: <path>/mx2300.exe -f <model.dat> -o <output.out>; GEM: <path>/gm2300.exe -f <model.dat> -o <output.out>; STARS: <path>/st2300.exe -f <model.dat> -o <output.out>",
   "license_server": "",
   "extra_paths": [],
-  "status": "detected",
+  "status": "configured",
   "is_default": true,
   "is_custom": false,
-  "modules": [
-    "IMEX",
-    "GEM",
-    "STARS",
-    "Builder",
-    "Results",
-    "Launcher"
-  ],
-  "module_paths": {
-    "IMEX": "C:\\Program Files\\CMG\\IMEX\\2025.30\\Win_x64\\EXE\\mx202530.exe",
-    "GEM": "C:\\Program Files\\CMG\\GEM\\2025.30\\Win_x64\\EXE\\gm202530.exe",
-    "STARS": "C:\\Program Files\\CMG\\STARS\\2025.30\\Win_x64\\EXE\\st202530.exe",
-    "Builder": "C:\\Program Files\\CMG\\BR\\2025.30\\Win_x64\\EXE\\Builder.exe",
-    "Results": "C:\\Program Files\\CMG\\RESULTS\\2025.30\\Win_x64\\EXE\\Results.exe",
-    "Launcher": "C:\\Program Files\\CMG\\Launcher\\2025.30\\Win_x64\\EXE\\CMG.exe"
-  }
+  "modules": [],
+  "module_paths": {}
 }

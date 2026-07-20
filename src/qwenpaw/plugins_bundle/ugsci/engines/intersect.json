@@ -14,5 +14,10 @@
   "is_default": true,
   "is_custom": false,
   "modules": [],
-  "module_paths": {}
+  "module_paths": {},
+  "arch": "",
+  "build": "",
+  "license_status": "",
+  "lmutil_path": "",
+  "extra_info": {}
 }

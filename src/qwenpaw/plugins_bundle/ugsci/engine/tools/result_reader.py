@@ -39,8 +39,8 @@ async def read_simulation_results(
     Returns:
         ``ToolChunk``: Contains formatted text with result data.
     """
-    from agentscope.message import TextBlock
-    from agentscope.tool import ToolChunk, ToolResultState
+    from agentscope.message import TextBlock, ToolResultState
+    from agentscope.tool import ToolChunk
 
     from .launcher import _sim_jobs
 

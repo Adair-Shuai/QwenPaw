@@ -1,0 +1,1605 @@
+
+
+
+           $$$$$   $$$   $      $$$  $$$$    $$$   $$$$$
+           $      $   $  $       $   $   $  $   $  $    
+           $      $      $       $   $   $  $      $    
+           $$$$   $      $       $   $$$$    $$$   $$$$ 
+           $      $      $       $   $          $  $    
+           $      $   $  $       $   $      $   $  $    
+           $$$$$   $$$   $$$$$  $$$  $       $$$   $$$$$
+
+
+
+           $$$   $$$    $$$     $$$$$  $$$   $$$$$ $$$$$    $$$$$ 
+              $ $   $  $   $        $ $   $      $     $        $ 
+              $ $   $  $   $        $ $   $      $     $        $ 
+           $$$  $   $  $   $    $$$$$ $   $  $$$$$ $$$$$    $$$$$ 
+              $ $   $  $   $    $     $   $  $     $        $     
+              $ $   $  $   $    $     $   $  $     $        $     
+           $$$   $$$    $$$     $$$$$  $$$   $$$$$ $$$$$  $ $$$$$ 
+
+
+
+                                 $$$$$   $$$   $      $$$  $$$$    $$$   $$$$$
+                                 $      $   $  $       $   $   $  $   $  $    
+                                 $      $      $       $   $   $  $      $    
+                                 $$$$   $      $       $   $$$$    $$$   $$$$ 
+                                 $      $      $       $   $          $  $    
+                                 $      $   $  $       $   $      $   $  $    
+                                 $$$$$   $$$   $$$$$  $$$  $       $$$   $$$$$
+
+
+
+                                 $$$   $$$    $$$     $$$$$  $$$   $$$$$ $$$$$    $$$$$ 
+                                    $ $   $  $   $        $ $   $      $     $        $ 
+                                    $ $   $  $   $        $ $   $      $     $        $ 
+                                 $$$  $   $  $   $    $$$$$ $   $  $$$$$ $$$$$    $$$$$ 
+                                    $ $   $  $   $    $     $   $  $     $        $     
+                                    $ $   $  $   $    $     $   $  $     $        $     
+                                 $$$   $$$    $$$     $$$$$  $$$   $$$$$ $$$$$  $ $$$$$ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+
+Proprietary Notice
+This application contains the confidential and proprietary trade secrets of Schlumberger and may not be copied or stored in an
+information retrieval system, transferred, used, distributed, translated, or retransmitted in any form or by any means, electronic
+or mechanical, in whole or in part, without the express written permission of the copyright owner.
+
+ECLIPSE is a mark of Schlumberger. Copyright (c) 1981-2022 Schlumberger. All rights reserved.
+
+Version =  2022.2  
+Arch    =  PC WINDOWS (64 bit, PC_IL17VS140_OPT)
+
+Annex    | Modification date    | Update date          | Baseline     | Build       | Hash                 
+=====    | =================    | ===========          | ========     | =====       | ====                        
+E300     | 11-JUL-2022 18:45:20 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+Flash    | 11-JUL-2022 18:45:22 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+Eclsol   | 11-JUL-2022 18:45:20 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+Warp     | 11-JUL-2022 18:45:27 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+system   | 11-JUL-2022 18:45:19 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+utility  | 11-JUL-2022 18:45:27 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+network  | 11-JUL-2022 18:45:22 | 11-JUL-2022 18:31:11 | 2022.2       | 20220711.4  | abfb7cd6336-(branch: 2022.2)
+------------------------------------------------------------------------------------------------------------------------------1
+ ECHO                   Echo of input file                                     0.00000     Days  report step 0,            
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.00 elapsed       0.00 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 0: -- ============================================================
+ 0: -- Simple Eclipse E300 smoke-test deck
+ 0: -- 1x1x1 grid, dead-oil, single producer
+ 0: -- ============================================================
+ 0: 
+ 0: RUNSPEC
+ 0: DIMENS
+ 0: 1 1 1 /
+ 0: OIL
+ 0: WATER
+ 0: START
+ 0:  1 'JAN' 2025 /
+ 0: NSTACK
+ 0:  20 /
+ 0: UNIFIN
+ 0: UNIFOUT
+ 0: 
+ 0: GRID
+ 0: DX
+ 0:  1000 /
+ 0: DY
+ 0:  1000 /
+ 0: DZ
+ 0:  100 /
+ 0: TOPS
+ 0:  8000 /
+ 0: PORO
+ 0:  0.3 /
+ 0: PERMX
+ 0:  500 /
+ 0: PERMY
+ 0:  500 /
+ 0: PERMZ
+ 0:  50 /
+ 0: 
+ 0: PROPS
+ 0: PVTW
+ 0:  4000 1 3e-6 0.3 1e-7 /
+ 0: DENSITY
+ 0:  50 65 0.001 /
+ 0: ROCK
+ 0:  4000 3e-6 /
+ 0: SWOF
+ 0:  0.2 0 1 0
+ 0:  0.8 0 0 0 /
+ 0: PVDO
+ 0:  14.7 1.0 1.0
+ 0:  4014.7 1.0 1.0 /
+ 0: 
+ 0: SOLUTION
+ 0: EQUIL
+ 0:  8000 4000 8100 0 8100 0 0 0 0 /
+ 0: 
+ 0: SUMMARY
+ 0: FOPR
+ 0: FPR
+ 0: FOPT
+ 0: FWPR
+ 0: FWCT
+ 0: 
+ 0: SCHEDULE
+ 0: WELSPECS
+ 0:  'PROD1' 'PROD' 1 1 8000 'OIL' /
+ 0: /
+ 0: COMPDAT
+ 0:  'PROD1' 1 1 1 1 'OPEN' 0 50 /
+ 0: /
+ 0: WCONPROD
+ 0:  'PROD1' 'OPEN' 'BHP' 500 10000 10000 10000 10000 3000 /
+ 0: /
+ 0: TSTEP
+ 0:  30 30 30 30 30 /
+ 0: END
+ 
+ 
+                     1  Reading RUNSPEC 
+                     2  Reading DIMENS  
+                     3  Reading OIL     
+                     4  Reading WATER   
+                     5  Reading START   
+                     6  Reading NSTACK  
+                     7  Reading UNIFIN  
+                     8  Reading UNIFOUT 
+                     9  Reading GRID    
+ @--Warning
+ @ Neither of the keywords BLACKOIL or COMPS is                            
+ @ present. BLACKOIL will be assumed.                                      
+ @--Warning
+ @ ===================================================                     
+ @ A reduced phase black oil model has been specified.                     
+ @ It is strongly recommended that a three phase black                     
+ @ oil model is used instead with properties selected                      
+ @ such that the unrequired third phase is not active                      
+ @ in the simulation.                                                      
+ @ ===================================================                     
+ @--Comment
+ @ Since neither GRIDOPTS or REGDIMS specified in the                      
+ @ Runspec section, the number of FLUXNUM regions will                     
+ @ be set using item 11 of TABDIMS keyword                                 
+------------------------------------------------------------------------------------------------------------------------------2
+ DIMENSIONS             Basic problem dimensions                               0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.00 elapsed       0.00 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ Grid dimensions                   1      1      1          Total grid cells                  1
+ Saturation tables              1                           Maximum rows/table             50
+ Pressure tables                1                           Maximum rows/table             50
+ Equilibration tables           1                           Maximum rows/table             50
+ Depths used in equilibration  50
+ Maximum wells                 10                           Max completions/well            1
+ Maximum separators             4
+ Unit convention             Metric
+ Start date                   1/Jan/2025
+ Cells per workgroup                     500
+ Processors assumed                        1
+ @--Message:The message service has been activated
+ @--Message:Checking for licenses
+ @--Message:ECLIPSE license expires        30-Dec-2077
+ 
+ 
+------------------------------------------------------------------------------------------------------------------------------3
+ GRID                   Reading grid data                                      0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.23 elapsed       0.23 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+                    10  Reading DX      
+                    11  Reading DY      
+                    12  Reading DZ      
+                    13  Reading TOPS    
+                    14  Reading PORO    
+                    15  Reading PERMX   
+                    16  Reading PERMY   
+                    17  Reading PERMZ   
+                    18  Reading PROPS   
+ @--Message:Processing GRID data
+ @--Message: The WARP linear solver has   1 sub-grids
+ 
+  The WARP linear solver has                      1  sub-grids
+  Sub-grid #Act-Cel Color    Level    Owned by
+  -------- -------- -------- -------- --------
+        1        1        1        0        1
+ @--Message:Model has 1 active cells
+------------------------------------------------------------------------------------------------------------------------------4
+ LIMITS                 Minimum and maximum values for grid data               0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.23 elapsed       0.23 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+
+    Grid Array     Maximum value                 Minimum value                 Non-zero minimum              Ratio max/min
+    ----------     ----------------------------  ----------------------------  ----------------------------  --------------
+    TOPS             8000.000    (   1   1   1)    8000.000    (   1   1   1)    8000.000    (   1   1   1)    1.000000    
+    MIDS             8050.000    (   1   1   1)    8050.000    (   1   1   1)    8050.000    (   1   1   1)    1.000000    
+    DEPTH            8050.000    (   1   1   1)    8050.000    (   1   1   1)    8050.000    (   1   1   1)    1.000000    
+    DX               1000.000    (   1   1   1)    1000.000    (   1   1   1)    1000.000    (   1   1   1)    1.000000    
+    DY               1000.000    (   1   1   1)    1000.000    (   1   1   1)    1000.000    (   1   1   1)    1.000000    
+    DZ               100.0000    (   1   1   1)    100.0000    (   1   1   1)    100.0000    (   1   1   1)    1.000000    
+    DZNET            100.0000    (   1   1   1)    100.0000    (   1   1   1)    100.0000    (   1   1   1)    1.000000    
+    NTG              1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    PORO            0.3000000    (   1   1   1)   0.3000000    (   1   1   1)   0.3000000    (   1   1   1)    1.000000    
+    PORV            0.3000000E+08(   1   1   1)   0.3000000E+08(   1   1   1)   0.3000000E+08(   1   1   1)    1.000000    
+    PERMX            500.0000    (   1   1   1)    500.0000    (   1   1   1)    500.0000    (   1   1   1)    1.000000    
+    PERMY            500.0000    (   1   1   1)    500.0000    (   1   1   1)    500.0000    (   1   1   1)    1.000000    
+    PERMZ            50.00000    (   1   1   1)    50.00000    (   1   1   1)    50.00000    (   1   1   1)    1.000000    
+    TRANX            0.000000    (   1   1   1)    0.000000    (   1   1   1)    0.000000    (   1   1   1)
+    TRANY            0.000000    (   1   1   1)    0.000000    (   1   1   1)    0.000000    (   1   1   1)
+    TRANZ            0.000000    (   1   1   1)    0.000000    (   1   1   1)    0.000000    (   1   1   1)
+    MULTX            1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    MULTY            1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    MULTZ            1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    ROCKV           0.7000000E+08(   1   1   1)   0.7000000E+08(   1   1   1)   0.7000000E+08(   1   1   1)    1.000000    
+    MULTPV           1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    MINPVV          0.1000000E-05(   1   1   1)   0.1000000E-05(   1   1   1)   0.1000000E-05(   1   1   1)    1.000000    
+    MULTX-           1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    MULTY-           1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+    MULTZ-           1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    (   1   1   1)    1.000000    
+------------------------------------------------------------------------------------------------------------------------------5
+ PROPS                  Reading properties data                                0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.24 elapsed       0.24 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ 
+                    19  Reading PVTW    
+                    20  Reading DENSITY 
+                    21  Reading ROCK    
+ @--Message
+ @ ROCK specified but ROCKOPTS not yet read                                
+ @ ROCK will default to PVT Region                                         
+                    22  Reading SWOF    
+                    23  Reading PVDO    
+                    24  Reading SOLUTION
+ @--Message:Processing PROPS data
+ @--Message:K-values used for phase equilibrium
+ @--Warning
+ @ SWFN table 1 has                                                        
+ @ a maximum saturation value of .800000                                   
+ @ This should be 1, unless initial water                                  
+ @ saturations are to be                                                   
+ @ restricted to this value                                                
+ Number of domains                      1
+ Cells in domain                        1
+------------------------------------------------------------------------------------------------------------------------------6
+ SOLUTION               Reading initial solution data                          0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.26 elapsed       0.26 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+                    25  Reading EQUIL   
+                    26  Reading SUMMARY 
+ @--Message
+ @ No FIELDSEP data found                                                  
+ @ Will use flash to standard conditions                                   
+ @--Message:Processing SOLUTION data
+ @--Message:Fully implicit option used
+ @--Message
+ @ This run is initialized by equilibration.                               
+ @ If the TEMPI keyword has been specified, it will be ignored.            
+ Equilibration region   1 has equal oil-water and oil-gas contacts
+ @--Message:Gas-Oil contact = Oil-Water contact
+ @--Message:Datum depth set to 8000.000
+------------------------------------------------------------------------------------------------------------------------------7
+ STCOND                 Standard conditions                                    0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.28 elapsed       0.28 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+
+ Standard temperature  (absolute)   288.710000 K       
+ Standard temperature                15.560000 deg C   
+ Standard pressure                    1.013250 Barsa   
+
+ Average surface water density       65.000000 Kg/M3   
+ Water molecular weight              18.015000 Kg/Kg-M 
+ Water volume/mole                  0.27715385 SM3/Kg-M
+ Water moles/unit volume              3.608104 Kg-M/SM3
+ Gas volume/mole                  25000.000000 SM3/Kg-M
+ Gas moles/unit volume              0.00004000 Kg-M/SM3
+ Oil volume/mole                      2.400000 SM3/Kg-M
+ Oil moles/unit volume              0.41666667 Kg-M/SM3
+------------------------------------------------------------------------------------------------------------------------------8
+ FIP                    Fluid in place report                                  0.00000     Days  report step 0,  1 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.28 elapsed       0.28 memory        0 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ Fluid in place totals
+ ---------------------
+ 
+ Average pressure  PV weighted:           4000.000 Barsa
+                   HCPV weighted: No Hydrocarbon
+ 
+ Total pore volume at P(ref)             30.000000        M RM3
+ 
+ Total pore volume                       30.000000        M RM3
+ 
+ Hydrocarbon pore volume                  0.000000          RM3
+ 
+ Average X permeability BV weighted        500.000000     MDarcy
+ Average Y permeability BV weighted        500.000000     MDarcy
+ Average Z permeability BV weighted         50.000000     MDarcy
+ Average porosity BV weighted                0.300000      M3/M3
+ Average cell thickness DX*DY weighted     100.000000     Metres
+ 
+ Average oil     saturation               0.000000
+ Reservoir volume of oil                  0.000000          RM3
+ 
+ Average water  saturation                1.000000
+ Reservoir volume of water               30.000000        M RM3
+ 
+ Average gas    saturation                0.000000
+ Reservoir volume of gas                  0.000000          RM3
+
+                        Moles                    Surface volume                     Mass              Material
+                                                                                                      balance
+           ----------------------------  ----------------------------  ----------------------------  ----------
+   Water        108.243131       M Kg-M        30.000000        M SM3      1950.000000         M Kg   1.000000
+   HydroC         0.000000         Kg-M         0.000000          SM3
+
+  Hydrocarbon components not present
+
+ Average hydrocarbon molar density            0.000 Kg-M/RM3
+ Average water       molar density            3.608 Kg-M/RM3
+ 
+ With respect to separator
+ -------------------------
+
+                           Surface volume                                 Moles     
+                   ------------------------------             ------------------------------
+  Oil                       0.000000          SM3                      0.000000         Kg-M
+  Gas                       0.000000          SM3                      0.000000         Kg-M
+
+ Compositions 
+
+                     Total             Separator oil       Separator NGLs      Separator gas 
+                   ----------          -------------       --------------      ------------- 
+ Oil                0.0000000           1.0000000           0.0000000           1.0000000
+
+
+
+
+ @--Message:Processing SUMMARY data
+                    27  Reading FOPR    
+                    28  Reading FPR     
+                    29  Reading FOPT    
+                    30  Reading FWPR    
+                    31  Reading FWCT    
+                    32  Reading SCHEDULE
+ @--Message
+ @ 5 summary file items requested                                          
+ @ TIME     and YEARS    also available in summary file                    
+ Compression from                  83344  to                  66560
+ 
+ 
+ @--Message:Starting processing of SCHEDULE section
+                    33  Reading WELSPECS
+                    34  Reading COMPDAT 
+                    35  Reading WCONPROD
+ @--Message:Control mode BHP      set for well PROD1
+                    36  Reading TSTEP   
+ Advancing simulation to    30.0 Days     Cp/El/Mem:0.3/0.3/2Mb
+         Time  Step     GOR    WCT    OPR    WPR    GPR    FPRP   OIR    WIR    GIR    It     
+         Days  Days     SM3/   SM3/   SM3/   SM3/   SM3/   Bars   SM3/   SM3/   SM3/
+                        SM3    SM3    Day    Day    Day           Day    Day    Day 
+ ----  ------- -------- ------ ------ ------ ------ ------ ------ ------ ------ ------ ---
+ Init;     1.0    1.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ MIF ;     3.0    2.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ MIF ;     7.0    4.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ MIF ;    15.0    8.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ Rep ;    30.0   15.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ Reached report at          30.0 Days     Cp/El/Mem:0.4/0.4/2Mb   (31-Jan-2025)
+------------------------------------------------------------------------------------------------------------------------------9
+ REPORT                 Summary of report step                                 30.00000    Days  report step 1, 31 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.36 elapsed       0.36 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ First step: 1.000 Min. step: 0.020 Max. step: 50.00 Largest.incr.fact.:  2.00 Smallest decr.fact: 0.500
+ Time truncation target: 0.200     limit:  10.0    
+ Throughput ratio target :0.5000 limit: 1.0000
+ Linear target 0.000000 Max non linears: 20 Max linears: 40
+ Total report steps: 1   Total time steps: 5   Total non-linear its: 5   Total linear its: 5
+ Max changes:pres -0.368E-10   1  1  1 satn  0.123E-15   1  1  1
+ Throughput ratio : average     0.00     max     0.00                 0   0   0
+ GOR         0.00 SM3/SM3  WCT     0.000000 SM3/SM3  WGR     0.000000 SM3/SM3  PAV    4000.000005 Barsa   
+ OPR         0.00 SM3/Day  WPR         0.00 SM3/Day  GPR         0.00 SM3/Day  HWPAV  4000.000005 Barsa   
+ OIR         0.00 SM3/Day  WIR         0.00 SM3/Day  GIR         0.00 SM3/Day 
+ 
+ 
+ 
+ =Field production=====================================================================================================
+ |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Gas acct.rates===================================================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |Advance |Makeup  |Reinj + |
+ |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |Adv   + |
+ |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |Makeup  |
+ |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas acct.totals=======================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |
+ |volume  |volume  |volume  |volume  |volume  |volume  |
+ |total   |total   |total   |total   |total   |total   |
+ |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =======================================================
+ 
+ =Field injection=============================================================================================
+ |Control |Oil     |Water   |Gas     |Resv    |Wet gas |Oil     |Water   |Gas     |Resv    |Wet gas |Import  |
+ |mode    |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |fraction|
+ |        |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |none    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+
+ =Composition (%)========================================================
+ | Component   |    Total    |    Oil      |     Gas      |    Total    |
+ |   Name      | Production  | Production  |   Production | Injection   |
+ ========================================================================
+ |  Oil        |    0.0000   |    0.0000   |     0.0000   |    0.0000   |  
+ ========================================================================
+------------------------------------------------------------------------------------------------------------------------------10
+ FIP                    Fluid in place report                                  30.00000    Days  report step 1, 31 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.36 elapsed       0.36 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ Fluid in place totals
+ ---------------------
+ 
+ Average pressure  PV weighted:           4000.000 Barsa
+                   HCPV weighted: No Hydrocarbon
+ 
+ Total pore volume at P(ref)             30.000000        M RM3
+ 
+ Total pore volume                       30.000000        M RM3
+ 
+ Hydrocarbon pore volume                  0.000000          RM3
+ 
+ Average oil     saturation               0.000000
+ Reservoir volume of oil                  0.000000          RM3
+ 
+ Average water  saturation                1.000000
+ Reservoir volume of water               30.000000        M RM3
+ 
+ Average gas    saturation                0.000000
+ Reservoir volume of gas                  0.000000          RM3
+
+                        Moles                    Surface volume                     Mass              Material
+                                                                                                      balance
+           ----------------------------  ----------------------------  ----------------------------  ----------
+   Water        108.243131       M Kg-M        30.000000        M SM3      1950.000000         M Kg   1.000000
+   HydroC         0.000000         Kg-M         0.000000          SM3
+
+  Hydrocarbon components not present
+
+ Average hydrocarbon molar density            0.000 Kg-M/RM3
+ Average water       molar density            3.608 Kg-M/RM3
+ 
+ With respect to separator
+ -------------------------
+
+                           Surface volume                                 Moles     
+                   ------------------------------             ------------------------------
+  Oil                       0.000000          SM3                      0.000000         Kg-M
+  Gas                       0.000000          SM3                      0.000000         Kg-M
+
+ Compositions 
+
+                     Total             Separator oil       Separator NGLs      Separator gas 
+                   ----------          -------------       --------------      ------------- 
+ Oil                0.0000000           1.0000000           0.0000000           1.0000000
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------11
+ GROUPS                 Production and injection data for groups               30.00000    Days  report step 1, 31 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.36 elapsed       0.36 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+
+
+                                          HIERARCHICAL DESCRIPTION OF GROUP CONTROL STRUCTURE
+                                          ---------------------------------------------------
+ 
+                                                               FIELD                                                                 
+                                                               |                                                                     
+                                                               |---PROD                                                              
+                                                                                                                                     
+                                                                                                                                     
+ 
+ =Group production==============================================================================================================
+ |Group   |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |name    |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ 
+ =Gas rates========================================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |Advance |Make-up |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas totals=====================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |total   |total   |total   |total   |total   |total   |
+ |        |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ================================================================
+ 
+ =Total composition (%)======
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Oil composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Gas composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Group injection=============================================================================================
+ |Group   |Water   |Gas     |Water   |Gas     |Resv    |Wet gas |Water   |Gas     |Resv    |Wet gas |Import  |
+ |name    |control |control |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |mode    |mode    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |fraction|
+ |        |        |        |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+ 
+ =Injection composition (%)==
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+------------------------------------------------------------------------------------------------------------------------------12
+ WELLS                  Status of wells                                        30.00000    Days  report step 1, 31 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.36 elapsed       0.36 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Well status===================================================================================================================
+ |Well    |Position|Control |Complet-|Well    |Bhp     |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |Wet gas |
+ |name    |        |mode    |ions    |type    |ref.    |target  |target  |target  |target  |target  |target  |target  |target  |
+ |        |        |        |        |        |depth   |or limit|or limit|or limit|or limit|or limit|or limit|or limit|or limit|
+ |        |        |        |        |        |Metres  |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1|BHP     |1       |Producer| 8000.00| 500.000|  10000.|  10000.|  10000.| 3000.00|        |  10000.|        |
+ ===============================================================================================================================
+ 
+ =Well rates===========================================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |GOR     |WCT     |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|value   |values  |prod/inj|        |        |prod/inj|
+ |        |        |        |rate    |rate    |rate    |rate    |        |        |rate    |        |        |        |
+ |        |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000| 3000.00|        |0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Total composition 
+ |Well    |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Well totals========================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Resv    |Total   |Total   |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|prod/inj|GOR     |WCT     |prod/inj|
+ |        |        |        |total   |total   |total   |total   |total   |        |        |total   |
+ |        |        |        |SM3     |SM3     |SM3     |SM3     |RM3     |SM3/SM3 |SM3/SM3 |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ====================================================================================================
+------------------------------------------------------------------------------------------------------------------------------13
+ CONNECTIONS            Status of well connections                             30.00000    Days  report step 1, 31 Jan 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.36 elapsed       0.36 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =New or altered connections================================================================
+ |Well    |  Position  |Comp|   CCF  | Radius |  Skin  |Kh      |D-factor| Depth  |Pressure|
+ |Name    |            | Num|        |        |        |        |        |        | Equiv. |
+ |        |   I   J   K|    |        |        |        |        |        |        | Radius |
+ |        |            |    |CPM3/D/B|Metres  |        |        |Day/SM3 |Metres  |Metres  |
+ |--------|------------|----|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1   1|   1| 50.0000|0.152400|0.000000| 6690.82|0.000000| 8050.00| 197.990|
+ ===========================================================================================
+ 
+ =All connections===============================================================================================================
+ |Well    |  Position  |Open|Pwell   |Drawdown|Oil     |Water   |Gas     |Resv    |GOR     |WCT     |Oil PI  |Water PI|Gas PI  |
+ |Name    |            | or |minus   |        |rate    |rate    |rate    |rate    |        |        |        |        |        |
+ |        |   I   J   K|Shut|Pbhp    |        |        |        |        |        |        |        |        |        |        |
+ |        |            |    |Barsa   |Bars    |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/D/B |SM3/D/B |SM3/D/B |
+ |--------|------------|----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1   1|Open|0.000000| 1000.00|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ Advancing simulation to    60.0 Days     Cp/El/Mem:0.4/0.4/2Mb
+         Time  Step     GOR    WCT    OPR    WPR    GPR    FPRP   OIR    WIR    GIR    It     
+         Days  Days     SM3/   SM3/   SM3/   SM3/   SM3/   Bars   SM3/   SM3/   SM3/
+                        SM3    SM3    Day    Day    Day           Day    Day    Day 
+ ----  ------- -------- ------ ------ ------ ------ ------ ------ ------ ------ ------ ---
+ Rep ;    60.0   30.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ Reached report at          60.0 Days     Cp/El/Mem:0.4/0.4/2Mb   (2-Mar-2025)
+------------------------------------------------------------------------------------------------------------------------------14
+ REPORT                 Summary of report step                                 60.00000    Days  report step 2,  2 Mar 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.37 elapsed       0.37 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ First step: 1.000 Min. step: 0.020 Max. step: 50.00 Largest.incr.fact.:  2.00 Smallest decr.fact: 0.500
+ Time truncation target: 0.200     limit:  10.0    
+ Throughput ratio target :0.5000 limit: 1.0000
+ Linear target 0.000000 Max non linears: 20 Max linears: 40
+ Total report steps: 2   Total time steps: 6   Total non-linear its: 6   Total linear its: 6
+ Max changes:pres  0.741E-10   1  1  1 satn  0.246E-15   1  1  1
+ Throughput ratio : average     0.00     max     0.00                 0   0   0
+ GOR         0.00 SM3/SM3  WCT     0.000000 SM3/SM3  WGR     0.000000 SM3/SM3  PAV    4000.000005 Barsa   
+ OPR         0.00 SM3/Day  WPR         0.00 SM3/Day  GPR         0.00 SM3/Day  HWPAV  4000.000005 Barsa   
+ OIR         0.00 SM3/Day  WIR         0.00 SM3/Day  GIR         0.00 SM3/Day 
+ 
+ 
+ 
+ =Field production=====================================================================================================
+ |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Gas acct.rates===================================================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |Advance |Makeup  |Reinj + |
+ |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |Adv   + |
+ |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |Makeup  |
+ |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas acct.totals=======================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |
+ |volume  |volume  |volume  |volume  |volume  |volume  |
+ |total   |total   |total   |total   |total   |total   |
+ |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =======================================================
+ 
+ =Field injection=============================================================================================
+ |Control |Oil     |Water   |Gas     |Resv    |Wet gas |Oil     |Water   |Gas     |Resv    |Wet gas |Import  |
+ |mode    |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |fraction|
+ |        |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |none    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+
+ =Composition (%)========================================================
+ | Component   |    Total    |    Oil      |     Gas      |    Total    |
+ |   Name      | Production  | Production  |   Production | Injection   |
+ ========================================================================
+ |  Oil        |    0.0000   |    0.0000   |     0.0000   |    0.0000   |  
+ ========================================================================
+------------------------------------------------------------------------------------------------------------------------------15
+ FIP                    Fluid in place report                                  60.00000    Days  report step 2,  2 Mar 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.37 elapsed       0.37 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ Fluid in place totals
+ ---------------------
+ 
+ Average pressure  PV weighted:           4000.000 Barsa
+                   HCPV weighted: No Hydrocarbon
+ 
+ Total pore volume at P(ref)             30.000000        M RM3
+ 
+ Total pore volume                       30.000000        M RM3
+ 
+ Hydrocarbon pore volume                  0.000000          RM3
+ 
+ Average oil     saturation               0.000000
+ Reservoir volume of oil                  0.000000          RM3
+ 
+ Average water  saturation                1.000000
+ Reservoir volume of water               30.000000        M RM3
+ 
+ Average gas    saturation                0.000000
+ Reservoir volume of gas                  0.000000          RM3
+
+                        Moles                    Surface volume                     Mass              Material
+                                                                                                      balance
+           ----------------------------  ----------------------------  ----------------------------  ----------
+   Water        108.243131       M Kg-M        30.000000        M SM3      1950.000000         M Kg   1.000000
+   HydroC         0.000000         Kg-M         0.000000          SM3
+
+  Hydrocarbon components not present
+
+ Average hydrocarbon molar density            0.000 Kg-M/RM3
+ Average water       molar density            3.608 Kg-M/RM3
+ 
+ With respect to separator
+ -------------------------
+
+                           Surface volume                                 Moles     
+                   ------------------------------             ------------------------------
+  Oil                       0.000000          SM3                      0.000000         Kg-M
+  Gas                       0.000000          SM3                      0.000000         Kg-M
+
+ Compositions 
+
+                     Total             Separator oil       Separator NGLs      Separator gas 
+                   ----------          -------------       --------------      ------------- 
+ Oil                0.0000000           1.0000000           0.0000000           1.0000000
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------16
+ GROUPS                 Production and injection data for groups               60.00000    Days  report step 2,  2 Mar 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.37 elapsed       0.37 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Group production==============================================================================================================
+ |Group   |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |name    |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ 
+ =Gas rates========================================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |Advance |Make-up |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas totals=====================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |total   |total   |total   |total   |total   |total   |
+ |        |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ================================================================
+ 
+ =Total composition (%)======
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Oil composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Gas composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Group injection=============================================================================================
+ |Group   |Water   |Gas     |Water   |Gas     |Resv    |Wet gas |Water   |Gas     |Resv    |Wet gas |Import  |
+ |name    |control |control |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |mode    |mode    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |fraction|
+ |        |        |        |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+ 
+ =Injection composition (%)==
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+------------------------------------------------------------------------------------------------------------------------------17
+ WELLS                  Status of wells                                        60.00000    Days  report step 2,  2 Mar 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.37 elapsed       0.37 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Well status===================================================================================================================
+ |Well    |Position|Control |Complet-|Well    |Bhp     |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |Wet gas |
+ |name    |        |mode    |ions    |type    |ref.    |target  |target  |target  |target  |target  |target  |target  |target  |
+ |        |        |        |        |        |depth   |or limit|or limit|or limit|or limit|or limit|or limit|or limit|or limit|
+ |        |        |        |        |        |Metres  |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1|BHP     |1       |Producer| 8000.00| 500.000|  10000.|  10000.|  10000.| 3000.00|        |  10000.|        |
+ ===============================================================================================================================
+ 
+ =Well rates===========================================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |GOR     |WCT     |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|value   |values  |prod/inj|        |        |prod/inj|
+ |        |        |        |rate    |rate    |rate    |rate    |        |        |rate    |        |        |        |
+ |        |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000| 3000.00|        |0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Total composition 
+ |Well    |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Well totals========================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Resv    |Total   |Total   |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|prod/inj|GOR     |WCT     |prod/inj|
+ |        |        |        |total   |total   |total   |total   |total   |        |        |total   |
+ |        |        |        |SM3     |SM3     |SM3     |SM3     |RM3     |SM3/SM3 |SM3/SM3 |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ====================================================================================================
+------------------------------------------------------------------------------------------------------------------------------18
+ CONNECTIONS            Status of well connections                             60.00000    Days  report step 2,  2 Mar 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.37 elapsed       0.37 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =All connections===============================================================================================================
+ |Well    |  Position  |Open|Pwell   |Drawdown|Oil     |Water   |Gas     |Resv    |GOR     |WCT     |Oil PI  |Water PI|Gas PI  |
+ |Name    |            | or |minus   |        |rate    |rate    |rate    |rate    |        |        |        |        |        |
+ |        |   I   J   K|Shut|Pbhp    |        |        |        |        |        |        |        |        |        |        |
+ |        |            |    |Barsa   |Bars    |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/D/B |SM3/D/B |SM3/D/B |
+ |--------|------------|----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1   1|Open|0.000000| 1000.00|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ Advancing simulation to    90.0 Days     Cp/El/Mem:0.4/0.4/2Mb
+         Time  Step     GOR    WCT    OPR    WPR    GPR    FPRP   OIR    WIR    GIR    It     
+         Days  Days     SM3/   SM3/   SM3/   SM3/   SM3/   Bars   SM3/   SM3/   SM3/
+                        SM3    SM3    Day    Day    Day           Day    Day    Day 
+ ----  ------- -------- ------ ------ ------ ------ ------ ------ ------ ------ ------ ---
+ Rep ;    90.0   30.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ Reached report at          90.0 Days     Cp/El/Mem:0.4/0.4/2Mb   (1-Apr-2025)
+------------------------------------------------------------------------------------------------------------------------------19
+ REPORT                 Summary of report step                                 90.00000    Days  report step 3,  1 Apr 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.38 elapsed       0.38 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ First step: 1.000 Min. step: 0.020 Max. step: 50.00 Largest.incr.fact.:  2.00 Smallest decr.fact: 0.500
+ Time truncation target: 0.200     limit:  10.0    
+ Throughput ratio target :0.5000 limit: 1.0000
+ Linear target 0.000000 Max non linears: 20 Max linears: 40
+ Total report steps: 3   Total time steps: 7   Total non-linear its: 7   Total linear its: 7
+ Max changes:pres -0.555E-10   1  1  1 satn  0.123E-15   1  1  1
+ Throughput ratio : average     0.00     max     0.00                 0   0   0
+ GOR         0.00 SM3/SM3  WCT     0.000000 SM3/SM3  WGR     0.000000 SM3/SM3  PAV    4000.000005 Barsa   
+ OPR         0.00 SM3/Day  WPR         0.00 SM3/Day  GPR         0.00 SM3/Day  HWPAV  4000.000005 Barsa   
+ OIR         0.00 SM3/Day  WIR         0.00 SM3/Day  GIR         0.00 SM3/Day 
+ 
+ 
+ 
+ =Field production=====================================================================================================
+ |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Gas acct.rates===================================================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |Advance |Makeup  |Reinj + |
+ |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |Adv   + |
+ |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |Makeup  |
+ |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas acct.totals=======================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |
+ |volume  |volume  |volume  |volume  |volume  |volume  |
+ |total   |total   |total   |total   |total   |total   |
+ |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =======================================================
+ 
+ =Field injection=============================================================================================
+ |Control |Oil     |Water   |Gas     |Resv    |Wet gas |Oil     |Water   |Gas     |Resv    |Wet gas |Import  |
+ |mode    |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |fraction|
+ |        |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |none    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+
+ =Composition (%)========================================================
+ | Component   |    Total    |    Oil      |     Gas      |    Total    |
+ |   Name      | Production  | Production  |   Production | Injection   |
+ ========================================================================
+ |  Oil        |    0.0000   |    0.0000   |     0.0000   |    0.0000   |  
+ ========================================================================
+------------------------------------------------------------------------------------------------------------------------------20
+ FIP                    Fluid in place report                                  90.00000    Days  report step 3,  1 Apr 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.38 elapsed       0.38 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ Fluid in place totals
+ ---------------------
+ 
+ Average pressure  PV weighted:           4000.000 Barsa
+                   HCPV weighted: No Hydrocarbon
+ 
+ Total pore volume at P(ref)             30.000000        M RM3
+ 
+ Total pore volume                       30.000000        M RM3
+ 
+ Hydrocarbon pore volume                  0.000000          RM3
+ 
+ Average oil     saturation               0.000000
+ Reservoir volume of oil                  0.000000          RM3
+ 
+ Average water  saturation                1.000000
+ Reservoir volume of water               30.000000        M RM3
+ 
+ Average gas    saturation                0.000000
+ Reservoir volume of gas                  0.000000          RM3
+
+                        Moles                    Surface volume                     Mass              Material
+                                                                                                      balance
+           ----------------------------  ----------------------------  ----------------------------  ----------
+   Water        108.243131       M Kg-M        30.000000        M SM3      1950.000000         M Kg   1.000000
+   HydroC         0.000000         Kg-M         0.000000          SM3
+
+  Hydrocarbon components not present
+
+ Average hydrocarbon molar density            0.000 Kg-M/RM3
+ Average water       molar density            3.608 Kg-M/RM3
+ 
+ With respect to separator
+ -------------------------
+
+                           Surface volume                                 Moles     
+                   ------------------------------             ------------------------------
+  Oil                       0.000000          SM3                      0.000000         Kg-M
+  Gas                       0.000000          SM3                      0.000000         Kg-M
+
+ Compositions 
+
+                     Total             Separator oil       Separator NGLs      Separator gas 
+                   ----------          -------------       --------------      ------------- 
+ Oil                0.0000000           1.0000000           0.0000000           1.0000000
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------21
+ GROUPS                 Production and injection data for groups               90.00000    Days  report step 3,  1 Apr 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.38 elapsed       0.38 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Group production==============================================================================================================
+ |Group   |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |name    |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ 
+ =Gas rates========================================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |Advance |Make-up |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas totals=====================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |total   |total   |total   |total   |total   |total   |
+ |        |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ================================================================
+ 
+ =Total composition (%)======
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Oil composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Gas composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Group injection=============================================================================================
+ |Group   |Water   |Gas     |Water   |Gas     |Resv    |Wet gas |Water   |Gas     |Resv    |Wet gas |Import  |
+ |name    |control |control |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |mode    |mode    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |fraction|
+ |        |        |        |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+ 
+ =Injection composition (%)==
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+------------------------------------------------------------------------------------------------------------------------------22
+ WELLS                  Status of wells                                        90.00000    Days  report step 3,  1 Apr 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.38 elapsed       0.38 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Well status===================================================================================================================
+ |Well    |Position|Control |Complet-|Well    |Bhp     |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |Wet gas |
+ |name    |        |mode    |ions    |type    |ref.    |target  |target  |target  |target  |target  |target  |target  |target  |
+ |        |        |        |        |        |depth   |or limit|or limit|or limit|or limit|or limit|or limit|or limit|or limit|
+ |        |        |        |        |        |Metres  |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1|BHP     |1       |Producer| 8000.00| 500.000|  10000.|  10000.|  10000.| 3000.00|        |  10000.|        |
+ ===============================================================================================================================
+ 
+ =Well rates===========================================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |GOR     |WCT     |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|value   |values  |prod/inj|        |        |prod/inj|
+ |        |        |        |rate    |rate    |rate    |rate    |        |        |rate    |        |        |        |
+ |        |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000| 3000.00|        |0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Total composition 
+ |Well    |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Well totals========================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Resv    |Total   |Total   |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|prod/inj|GOR     |WCT     |prod/inj|
+ |        |        |        |total   |total   |total   |total   |total   |        |        |total   |
+ |        |        |        |SM3     |SM3     |SM3     |SM3     |RM3     |SM3/SM3 |SM3/SM3 |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ====================================================================================================
+------------------------------------------------------------------------------------------------------------------------------23
+ CONNECTIONS            Status of well connections                             90.00000    Days  report step 3,  1 Apr 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.38 elapsed       0.38 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =All connections===============================================================================================================
+ |Well    |  Position  |Open|Pwell   |Drawdown|Oil     |Water   |Gas     |Resv    |GOR     |WCT     |Oil PI  |Water PI|Gas PI  |
+ |Name    |            | or |minus   |        |rate    |rate    |rate    |rate    |        |        |        |        |        |
+ |        |   I   J   K|Shut|Pbhp    |        |        |        |        |        |        |        |        |        |        |
+ |        |            |    |Barsa   |Bars    |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/D/B |SM3/D/B |SM3/D/B |
+ |--------|------------|----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1   1|Open|0.000000| 1000.00|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ Advancing simulation to   120.0 Days     Cp/El/Mem:0.4/0.4/2Mb
+         Time  Step     GOR    WCT    OPR    WPR    GPR    FPRP   OIR    WIR    GIR    It     
+         Days  Days     SM3/   SM3/   SM3/   SM3/   SM3/   Bars   SM3/   SM3/   SM3/
+                        SM3    SM3    Day    Day    Day           Day    Day    Day 
+ ----  ------- -------- ------ ------ ------ ------ ------ ------ ------ ------ ------ ---
+ Rep ;   120.0   30.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ Reached report at         120.0 Days     Cp/El/Mem:0.4/0.4/2Mb   (1-May-2025)
+------------------------------------------------------------------------------------------------------------------------------24
+ REPORT                 Summary of report step                                 120.00000   Days  report step 4,  1 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.39 elapsed       0.39 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ First step: 1.000 Min. step: 0.020 Max. step: 50.00 Largest.incr.fact.:  2.00 Smallest decr.fact: 0.500
+ Time truncation target: 0.200     limit:  10.0    
+ Throughput ratio target :0.5000 limit: 1.0000
+ Linear target 0.000000 Max non linears: 20 Max linears: 40
+ Total report steps: 4   Total time steps: 8   Total non-linear its: 8   Total linear its: 8
+ Max changes:pres  0.368E-10   1  1  1 satn  0.123E-15   1  1  1
+ Throughput ratio : average     0.00     max     0.00                 0   0   0
+ GOR         0.00 SM3/SM3  WCT     0.000000 SM3/SM3  WGR     0.000000 SM3/SM3  PAV    4000.000005 Barsa   
+ OPR         0.00 SM3/Day  WPR         0.00 SM3/Day  GPR         0.00 SM3/Day  HWPAV  4000.000005 Barsa   
+ OIR         0.00 SM3/Day  WIR         0.00 SM3/Day  GIR         0.00 SM3/Day 
+ 
+ 
+ 
+ =Field production=====================================================================================================
+ |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Gas acct.rates===================================================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |Advance |Makeup  |Reinj + |
+ |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |Adv   + |
+ |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |Makeup  |
+ |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas acct.totals=======================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |
+ |volume  |volume  |volume  |volume  |volume  |volume  |
+ |total   |total   |total   |total   |total   |total   |
+ |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =======================================================
+ 
+ =Field injection=============================================================================================
+ |Control |Oil     |Water   |Gas     |Resv    |Wet gas |Oil     |Water   |Gas     |Resv    |Wet gas |Import  |
+ |mode    |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |fraction|
+ |        |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |none    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+
+ =Composition (%)========================================================
+ | Component   |    Total    |    Oil      |     Gas      |    Total    |
+ |   Name      | Production  | Production  |   Production | Injection   |
+ ========================================================================
+ |  Oil        |    0.0000   |    0.0000   |     0.0000   |    0.0000   |  
+ ========================================================================
+------------------------------------------------------------------------------------------------------------------------------25
+ FIP                    Fluid in place report                                  120.00000   Days  report step 4,  1 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.39 elapsed       0.39 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ Fluid in place totals
+ ---------------------
+ 
+ Average pressure  PV weighted:           4000.000 Barsa
+                   HCPV weighted: No Hydrocarbon
+ 
+ Total pore volume at P(ref)             30.000000        M RM3
+ 
+ Total pore volume                       30.000000        M RM3
+ 
+ Hydrocarbon pore volume                  0.000000          RM3
+ 
+ Average oil     saturation               0.000000
+ Reservoir volume of oil                  0.000000          RM3
+ 
+ Average water  saturation                1.000000
+ Reservoir volume of water               30.000000        M RM3
+ 
+ Average gas    saturation                0.000000
+ Reservoir volume of gas                  0.000000          RM3
+
+                        Moles                    Surface volume                     Mass              Material
+                                                                                                      balance
+           ----------------------------  ----------------------------  ----------------------------  ----------
+   Water        108.243131       M Kg-M        30.000000        M SM3      1950.000000         M Kg   1.000000
+   HydroC         0.000000         Kg-M         0.000000          SM3
+
+  Hydrocarbon components not present
+
+ Average hydrocarbon molar density            0.000 Kg-M/RM3
+ Average water       molar density            3.608 Kg-M/RM3
+ 
+ With respect to separator
+ -------------------------
+
+                           Surface volume                                 Moles     
+                   ------------------------------             ------------------------------
+  Oil                       0.000000          SM3                      0.000000         Kg-M
+  Gas                       0.000000          SM3                      0.000000         Kg-M
+
+ Compositions 
+
+                     Total             Separator oil       Separator NGLs      Separator gas 
+                   ----------          -------------       --------------      ------------- 
+ Oil                0.0000000           1.0000000           0.0000000           1.0000000
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------26
+ GROUPS                 Production and injection data for groups               120.00000   Days  report step 4,  1 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.39 elapsed       0.39 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Group production==============================================================================================================
+ |Group   |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |name    |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ 
+ =Gas rates========================================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |Advance |Make-up |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas totals=====================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |total   |total   |total   |total   |total   |total   |
+ |        |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ================================================================
+ 
+ =Total composition (%)======
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Oil composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Gas composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Group injection=============================================================================================
+ |Group   |Water   |Gas     |Water   |Gas     |Resv    |Wet gas |Water   |Gas     |Resv    |Wet gas |Import  |
+ |name    |control |control |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |mode    |mode    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |fraction|
+ |        |        |        |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+ 
+ =Injection composition (%)==
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+------------------------------------------------------------------------------------------------------------------------------27
+ WELLS                  Status of wells                                        120.00000   Days  report step 4,  1 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.39 elapsed       0.39 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Well status===================================================================================================================
+ |Well    |Position|Control |Complet-|Well    |Bhp     |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |Wet gas |
+ |name    |        |mode    |ions    |type    |ref.    |target  |target  |target  |target  |target  |target  |target  |target  |
+ |        |        |        |        |        |depth   |or limit|or limit|or limit|or limit|or limit|or limit|or limit|or limit|
+ |        |        |        |        |        |Metres  |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1|BHP     |1       |Producer| 8000.00| 500.000|  10000.|  10000.|  10000.| 3000.00|        |  10000.|        |
+ ===============================================================================================================================
+ 
+ =Well rates===========================================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |GOR     |WCT     |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|value   |values  |prod/inj|        |        |prod/inj|
+ |        |        |        |rate    |rate    |rate    |rate    |        |        |rate    |        |        |        |
+ |        |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000| 3000.00|        |0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Total composition 
+ |Well    |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Well totals========================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Resv    |Total   |Total   |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|prod/inj|GOR     |WCT     |prod/inj|
+ |        |        |        |total   |total   |total   |total   |total   |        |        |total   |
+ |        |        |        |SM3     |SM3     |SM3     |SM3     |RM3     |SM3/SM3 |SM3/SM3 |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ====================================================================================================
+------------------------------------------------------------------------------------------------------------------------------28
+ CONNECTIONS            Status of well connections                             120.00000   Days  report step 4,  1 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.39 elapsed       0.39 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =All connections===============================================================================================================
+ |Well    |  Position  |Open|Pwell   |Drawdown|Oil     |Water   |Gas     |Resv    |GOR     |WCT     |Oil PI  |Water PI|Gas PI  |
+ |Name    |            | or |minus   |        |rate    |rate    |rate    |rate    |        |        |        |        |        |
+ |        |   I   J   K|Shut|Pbhp    |        |        |        |        |        |        |        |        |        |        |
+ |        |            |    |Barsa   |Bars    |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/D/B |SM3/D/B |SM3/D/B |
+ |--------|------------|----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1   1|Open|0.000000| 1000.00|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ Advancing simulation to   150.0 Days     Cp/El/Mem:0.4/0.4/2Mb
+         Time  Step     GOR    WCT    OPR    WPR    GPR    FPRP   OIR    WIR    GIR    It     
+         Days  Days     SM3/   SM3/   SM3/   SM3/   SM3/   Bars   SM3/   SM3/   SM3/
+                        SM3    SM3    Day    Day    Day           Day    Day    Day 
+ ----  ------- -------- ------ ------ ------ ------ ------ ------ ------ ------ ------ ---
+ Rep ;   150.0   30.00     0.0    0.0    0.0    0.0    0.0 4000.0    0.0    0.0    0.0   1 
+ Reached report at         150.0 Days     Cp/El/Mem:0.4/0.4/2Mb   (31-May-2025)
+------------------------------------------------------------------------------------------------------------------------------29
+ REPORT                 Summary of report step                                 150.00000   Days  report step 5, 31 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.40 elapsed       0.40 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ First step: 1.000 Min. step: 0.020 Max. step: 50.00 Largest.incr.fact.:  2.00 Smallest decr.fact: 0.500
+ Time truncation target: 0.200     limit:  10.0    
+ Throughput ratio target :0.5000 limit: 1.0000
+ Linear target 0.000000 Max non linears: 20 Max linears: 40
+ Total report steps: 5   Total time steps: 9   Total non-linear its: 9   Total linear its: 9
+ Max changes:pres -0.555E-10   1  1  1 satn  0.123E-15   1  1  1
+ Throughput ratio : average     0.00     max     0.00                 0   0   0
+ GOR         0.00 SM3/SM3  WCT     0.000000 SM3/SM3  WGR     0.000000 SM3/SM3  PAV    4000.000005 Barsa   
+ OPR         0.00 SM3/Day  WPR         0.00 SM3/Day  GPR         0.00 SM3/Day  HWPAV  4000.000005 Barsa   
+ OIR         0.00 SM3/Day  WIR         0.00 SM3/Day  GIR         0.00 SM3/Day 
+ 
+ 
+ 
+ =Field production=====================================================================================================
+ |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Gas acct.rates===================================================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |Advance |Makeup  |Reinj + |
+ |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |Adv   + |
+ |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |Makeup  |
+ |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas acct.totals=======================================
+ |Fuel    |Sales   |Reinj.  |Excess  |Sum     |Export  |
+ |volume  |volume  |volume  |volume  |volume  |volume  |
+ |total   |total   |total   |total   |total   |total   |
+ |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|
+ |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =======================================================
+ 
+ =Field injection=============================================================================================
+ |Control |Oil     |Water   |Gas     |Resv    |Wet gas |Oil     |Water   |Gas     |Resv    |Wet gas |Import  |
+ |mode    |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |fraction|
+ |        |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |none    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+
+ =Composition (%)========================================================
+ | Component   |    Total    |    Oil      |     Gas      |    Total    |
+ |   Name      | Production  | Production  |   Production | Injection   |
+ ========================================================================
+ |  Oil        |    0.0000   |    0.0000   |     0.0000   |    0.0000   |  
+ ========================================================================
+------------------------------------------------------------------------------------------------------------------------------30
+ FIP                    Fluid in place report                                  150.00000   Days  report step 5, 31 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.40 elapsed       0.40 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ Fluid in place totals
+ ---------------------
+ 
+ Average pressure  PV weighted:           4000.000 Barsa
+                   HCPV weighted: No Hydrocarbon
+ 
+ Total pore volume at P(ref)             30.000000        M RM3
+ 
+ Total pore volume                       30.000000        M RM3
+ 
+ Hydrocarbon pore volume                  0.000000          RM3
+ 
+ Average oil     saturation               0.000000
+ Reservoir volume of oil                  0.000000          RM3
+ 
+ Average water  saturation                1.000000
+ Reservoir volume of water               30.000000        M RM3
+ 
+ Average gas    saturation                0.000000
+ Reservoir volume of gas                  0.000000          RM3
+
+                        Moles                    Surface volume                     Mass              Material
+                                                                                                      balance
+           ----------------------------  ----------------------------  ----------------------------  ----------
+   Water        108.243131       M Kg-M        30.000000        M SM3      1950.000000         M Kg   1.000000
+   HydroC         0.000000         Kg-M         0.000000          SM3
+
+  Hydrocarbon components not present
+
+ Average hydrocarbon molar density            0.000 Kg-M/RM3
+ Average water       molar density            3.608 Kg-M/RM3
+ 
+ With respect to separator
+ -------------------------
+
+                           Surface volume                                 Moles     
+                   ------------------------------             ------------------------------
+  Oil                       0.000000          SM3                      0.000000         Kg-M
+  Gas                       0.000000          SM3                      0.000000         Kg-M
+
+ Compositions 
+
+                     Total             Separator oil       Separator NGLs      Separator gas 
+                   ----------          -------------       --------------      ------------- 
+ Oil                0.0000000           1.0000000           0.0000000           1.0000000
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------31
+ GROUPS                 Production and injection data for groups               150.00000   Days  report step 5, 31 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.40 elapsed       0.40 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Group production==============================================================================================================
+ |Group   |Control |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |Oil     |Water   |Gas     |Liquid  |Resv    |Wet gas |
+ |name    |mode    |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |prod.   |
+ |        |        |rate    |rate    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |total   |total   |
+ |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |SM3     |SM3     |RM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+ 
+ =Gas rates========================================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |Advance |Make-up |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |rate    |rate    |rate    |rate    |rate    |rate    |rate    |rate    |
+ |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ==================================================================================
+ 
+ =Gas totals=====================================================
+ |Group   |Fuel    |Sales   |Reinj.  |Export  |Sum     |Excess  |
+ |name    |volume  |volume  |volume  |volume  |volume  |volume  |
+ |        |total   |total   |total   |total   |total   |total   |
+ |        |SM3     |SM3     |SM3     |SM3     |SM3     |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ================================================================
+ 
+ =Total composition (%)======
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Oil composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Gas composition (%)========
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Group injection=============================================================================================
+ |Group   |Water   |Gas     |Water   |Gas     |Resv    |Wet gas |Water   |Gas     |Resv    |Wet gas |Import  |
+ |name    |control |control |inject. |inject. |inject. |inject. |inject. |inject. |inject. |inject. |(makeup)|
+ |        |mode    |mode    |rate    |rate    |rate    |rate    |total   |total   |total   |total   |fraction|
+ |        |        |        |SM3/Day |SM3/Day |RM3/Day |SM3/Day |SM3     |SM3     |RM3     |SM3     |        |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |FIELD   |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ |PROD    |Passive |Passive |0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ =============================================================================================================
+ 
+ =Injection composition (%)==
+ |Group   |Oil     |
+ |--------|--------|
+ ===================
+------------------------------------------------------------------------------------------------------------------------------32
+ WELLS                  Status of wells                                        150.00000   Days  report step 5, 31 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.40 elapsed       0.40 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =Well status===================================================================================================================
+ |Well    |Position|Control |Complet-|Well    |Bhp     |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |Wet gas |
+ |name    |        |mode    |ions    |type    |ref.    |target  |target  |target  |target  |target  |target  |target  |target  |
+ |        |        |        |        |        |depth   |or limit|or limit|or limit|or limit|or limit|or limit|or limit|or limit|
+ |        |        |        |        |        |Metres  |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1|BHP     |1       |Producer| 8000.00| 500.000|  10000.|  10000.|  10000.| 3000.00|        |  10000.|        |
+ ===============================================================================================================================
+ 
+ =Well rates===========================================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Bhp     |Thp     |Resv    |GOR     |WCT     |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|value   |values  |prod/inj|        |        |prod/inj|
+ |        |        |        |rate    |rate    |rate    |rate    |        |        |rate    |        |        |        |
+ |        |        |        |SM3/Day |SM3/Day |SM3/Day |SM3/Day |Barsa   |Barsa   |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/Day |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000| 3000.00|        |0.000000|0.000000|0.000000|0.000000|
+ ======================================================================================================================
+ 
+ =Total composition 
+ |Well    |Oil     |
+ |--------|--------|
+ ===================
+ 
+ =Well totals========================================================================================
+ |Well    |Control |Well    |Oil     |Water   |Gas     |Liquid  |Resv    |Total   |Total   |Wet gas |
+ |name    |mode    |type    |prod/inj|prod/inj|prod/inj|prod/inj|prod/inj|GOR     |WCT     |prod/inj|
+ |        |        |        |total   |total   |total   |total   |total   |        |        |total   |
+ |        |        |        |SM3     |SM3     |SM3     |SM3     |RM3     |SM3/SM3 |SM3/SM3 |SM3     |
+ |--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |BHP     |Producer|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ====================================================================================================
+------------------------------------------------------------------------------------------------------------------------------33
+ CONNECTIONS            Status of well connections                             150.00000   Days  report step 5, 31 May 2025
+ Run on 20/07/2026 at 18:59:50 version 2022.2   cpu       0.40 elapsed       0.40 memory        2 Mb
+------------------------------------------------------------------------------------------------------------------------------
+ 
+ =All connections===============================================================================================================
+ |Well    |  Position  |Open|Pwell   |Drawdown|Oil     |Water   |Gas     |Resv    |GOR     |WCT     |Oil PI  |Water PI|Gas PI  |
+ |Name    |            | or |minus   |        |rate    |rate    |rate    |rate    |        |        |        |        |        |
+ |        |   I   J   K|Shut|Pbhp    |        |        |        |        |        |        |        |        |        |        |
+ |        |            |    |Barsa   |Bars    |SM3/Day |SM3/Day |SM3/Day |RM3/Day |SM3/SM3 |SM3/SM3 |SM3/D/B |SM3/D/B |SM3/D/B |
+ |--------|------------|----|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|--------|
+ |PROD1   |   1   1   1|Open|0.000000| 1000.00|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|0.000000|
+ ===============================================================================================================================
+                    37  Reading END     
+
+ Actual well dimensions required in run
+ Number of wells in the model           1 (WELLDIMS item  1 was    10)
+ Max number of connections per well     1 (WELLDIMS item  2 was     1)
+ Number of groups in the model          2 (WELLDIMS item  3 was     5)
+ Max number of wells  per group         1 (WELLDIMS item  4 was    10)
+ Max number of groups per group         1 (WELLDIMS item  4 was    10)
+
+
+ INIT/RESTART header dimensions in this run:
+ Maximum required  header size:         0
+ Maximum available header size:     10000
+
+            2 Mbytes of storage required                                 
+   2.3247     MB/active cell                                             
+           31 Mbytes (image size)                                        
+
+
+ Unconverged stability checks            0       0
+ Unconverged flash calculations          0       0
+ Unconverged Psat  calculations          0
+ Cubic solns with no positive root       0
+ Unconverged well  model calls           0       0
+
+ Error summary 
+ Comments               1
+ Warnings               3
+ Problems               0
+ Errors                 0
+ Bugs                   0
+ Final cpu       0.43 elapsed       0.43
+ Total number of time steps forced to be accepted          0

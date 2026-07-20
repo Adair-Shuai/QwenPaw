@@ -82,8 +82,8 @@ async def launch_simulation(
     Returns:
         ``ToolChunk``: Contains the job_id and launch information.
     """
-    from agentscope.message import TextBlock
-    from agentscope.tool import ToolChunk, ToolResultState
+    from agentscope.message import TextBlock, ToolResultState
+    from agentscope.tool import ToolChunk
 
     # ── Resolve working directory ────────────────────────────────────
     if not working_dir:

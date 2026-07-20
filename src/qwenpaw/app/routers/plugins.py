@@ -803,6 +803,92 @@ async def uninstall_plugin(plugin_id: str, request: Request):
     }
 
 
+@router.post(
+    "/{plugin_id}/reload",
+    summary="Hot-reload a plugin from its runtime directory",
+    description=(
+        "Unload and immediately re-load a plugin from its existing "
+        "runtime directory — no file copy needed.  Ideal for development "
+        "when the runtime directory is a junction/symlink to the source. "
+        "All agents are reloaded in the background."
+    ),
+)
+async def reload_plugin(plugin_id: str, request: Request):
+    """Hot-reload a plugin without copying files.
+
+    Unloads the plugin (removing its Python module from
+    ``sys.modules``), then re-loads it from the same runtime path.
+    This picks up changes to backend Python files, ``plugin.json``,
+    and frontend bundles without a server restart.
+    """
+    loader = getattr(request.app.state, "plugin_loader", None)
+    if loader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Plugin loader is not ready yet.",
+        )
+
+    record = loader.get_loaded_plugin(plugin_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Plugin '{plugin_id}' is not loaded.",
+        )
+
+    source_path = record.source_path
+    manifest_path = source_path / "plugin.json"
+
+    if not manifest_path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"plugin.json not found at {manifest_path}",
+        )
+
+    # Collect provider / command IDs before unload
+    provider_ids, command_names = _collect_plugin_runtime_ids(
+        loader.registry,
+        plugin_id,
+    )
+
+    # Unload (keep files on disk)
+    try:
+        await loader.unload_plugin(plugin_id, delete_files=False)
+    except Exception as exc:
+        logger.error(f"Plugin reload (unload) failed: {exc}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to unload plugin: {exc}",
+        ) from exc
+
+    # Post-unload cleanup for providers / commands
+    _post_unload_cleanup(request, plugin_id, provider_ids, command_names)
+
+    # Re-read manifest and re-load from the same path
+    try:
+        manifest = loader._load_manifest(manifest_path)
+        record = await loader.load_plugin(manifest, source_path)
+    except Exception as exc:
+        logger.error(
+            f"Plugin reload (load) failed for '{plugin_id}': {exc}",
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to reload plugin: {exc}",
+        ) from exc
+
+    # Post-load setup (register providers, run startup hooks, reload agents)
+    await _post_load_setup(request, plugin_id)
+
+    return {
+        "id": plugin_id,
+        "name": record.manifest.name,
+        "version": record.manifest.version,
+        "loaded": True,
+        "message": f"Plugin '{plugin_id}' reloaded successfully.",
+    }
+
+
 @router.get(
     "/{plugin_id}/status",
     summary="Get plugin status",

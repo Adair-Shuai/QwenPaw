@@ -50,8 +50,8 @@ async def edit_simulation_deck(
     Returns:
         ``ToolChunk``: Confirmation of the edit with a summary.
     """
-    from agentscope.message import TextBlock
-    from agentscope.tool import ToolChunk, ToolResultState
+from agentscope.message import TextBlock, ToolResultState
+from agentscope.tool import ToolChunk
 
     # ── Resolve file path ────────────────────────────────────────────
     deck_path = Path(deck_file)

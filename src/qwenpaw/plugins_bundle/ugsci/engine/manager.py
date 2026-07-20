@@ -53,6 +53,17 @@ class EngineInfo:
     modules: List[str] = field(default_factory=list)
     # Detected module paths (parallel to modules)
     module_paths: Dict[str, str] = field(default_factory=dict)
+    # ── Schlumberger-specific fields (Eclipse / Intersect) ──────────
+    # Architecture subdir (e.g. pc_x86_64, pc_x86_64e, pc_win32)
+    arch: str = ""
+    # Build number extracted from PRT or file version info
+    build: str = ""
+    # License verification status: ok | no_license | unknown | ""
+    license_status: str = ""
+    # lmutil.exe path (if found)
+    lmutil_path: str = ""
+    # Extra metadata dict (smoke test results, lmstat summary, etc.)
+    extra_info: Dict[str, Any] = field(default_factory=dict)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -292,6 +303,7 @@ def update_engine(engine_id: str, data: Dict[str, Any]) -> EngineInfo:
         "name", "vendor", "version", "executable_path", "install_dir",
         "category", "description", "invocation_hint", "license_server",
         "extra_paths", "modules", "module_paths",
+        "arch", "build", "license_status", "lmutil_path", "extra_info",
     ]:
         if key in data:
             setattr(engine, key, data[key])

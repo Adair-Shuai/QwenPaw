@@ -19,6 +19,7 @@ import re
 import shutil
 import subprocess
 import string
+import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
@@ -84,6 +85,15 @@ def _build_search_paths(folder_name: str) -> List[str]:
 # ──────────────────────────────────────────────────────────────────────────────
 # Registry helpers (Windows only)
 # ──────────────────────────────────────────────────────────────────────────────
+
+
+def _reg_get_value(key, name: str) -> Optional[str]:
+    """Read a single registry value, returning None if not found."""
+    try:
+        val, _ = winreg.QueryValueEx(key, name)
+        return str(val) if val else None
+    except (FileNotFoundError, OSError):
+        return None
 
 
 def _get_from_registry(vendor_key: str) -> Optional[str]:
@@ -602,72 +612,820 @@ def _apply_comsol_result(
 # Eclipse / Intersect detection strategy (Schlumberger)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_ECLIPSE_PATTERNS = ["eclipse.exe", "e100.exe", "e300.exe", "eclipse"]
-_INTERSECT_PATTERNS = ["intersect.exe", "intersect"]
+# All Schlumberger simulator executable names (lowercase)
+# Eclipse family — E100, E300, ECLRUN, FrontSim, Visage, Petrel
+_ECLIPSE_EXE_NAMES: set = {
+    "eclipse.exe", "eclipse_msmpi.exe",
+    "e100.exe", "e100_msmpi.exe",
+    "e300.exe", "e300_msmpi.exe",
+    "eclrun.exe",
+    "frontsim.exe",
+    "visage.exe",
+    "petrel.exe", "petrel_b.exe",
+}
+# Intersect family
+_INTERSECT_EXE_NAMES: set = {
+    "intersect.exe", "ix.exe",
+}
+# Combined set — used when scanning a Schlumberger install root
+# that may contain products from multiple families.
+_ALL_SCHLUMBERGER_EXE_NAMES: set = _ECLIPSE_EXE_NAMES | _INTERSECT_EXE_NAMES
+
+# Product identification rules: (exe-name regex, sub-product label)
+_ECLIPSE_PRODUCT_RULES = [
+    (re.compile(r"^eclipse(_msmpi)?\.exe$", re.I), "ECLIPSE_100"),
+    (re.compile(r"^e100(_msmpi)?\.exe$", re.I),    "ECLIPSE_100"),
+    (re.compile(r"^e300(_msmpi)?\.exe$", re.I),    "ECLIPSE_300"),
+    (re.compile(r"^eclrun\.exe$", re.I),           "ECLRUN"),
+    (re.compile(r"^frontsim\.exe$", re.I),         "FRONTSIM"),
+    (re.compile(r"^visage\.exe$", re.I),           "VISAGE"),
+    (re.compile(r"^petrel(_b)?\.exe$", re.I),      "PETREL"),
+]
+_INTERSECT_PRODUCT_RULES = [
+    (re.compile(r"^intersect\.exe$", re.I),         "INTERSECT"),
+    (re.compile(r"^ix\.exe$", re.I),                 "INTERSECT"),
+]
+
+# tNavigator executable patterns (used by tNavigator strategy)
 _TNAVIGATOR_PATTERNS = ["tnav.exe", "tnavigator.exe", "tnavigator"]
 
-# Schlumberger subdirectories
-_SCHLUMBERGER_SUBDIRS = [
-    "bin", os.path.join("bin", "win64"), "exe",
-    os.path.join("eclipse", "2024.1", "bin"),
-    os.path.join("eclipse", "2023.2", "bin"),
+# Schlumberger common install roots (relative to drive, by priority)
+_SCHLUMBERGER_FOLDER_NAMES = [
+    "ecl", "SLB", "Schlumberger", "Petrel",
 ]
+
+# Architecture subdirectories within bin/ (Eclipse/Intersect)
+# Includes MPI variant dirs used by Intersect (x64_ilmpi, x64_msmpi)
+_SCHLUMBERGER_ARCH_DIRS = [
+    "pc_x86_64", "pc_x86_64e", "pc_win32",
+    "win64", "win32", "x64", "x86_64",
+    "x64_ilmpi", "x64_msmpi",  # Intersect MPI variants
+    "",  # flat layout (no arch subdir)
+]
+
+# Subdirectories to search for executables (relative to version dir)
+# Covers all known Schlumberger directory layouts:
+#   <version>/bin/<arch>/eclipse.exe          — Eclipse E100/E300
+#   <version>/IX/x64_ilmpi/ix.exe              — Intersect (Intel MPI)
+#   <version>/IX/x64_msmpi/ix.exe              — Intersect (MS MPI)
+#   <version>/Visage/pc_x86_64/visage.exe      — Visage
+#   <version>/Petrel.exe                       — Petrel (direct)
+#   macros/eclrun.exe                          — ECLRUN launcher
+#   macros/compat/eclrun.exe                   — ECLRUN compat
+_SCHLUMBERGER_BIN_SUBDIRS = [
+    os.path.join("bin"),
+    os.path.join("bin", "win64"),
+    os.path.join("exe"),
+    os.path.join("IX", "bin"),
+    os.path.join("IX", "x64_ilmpi"),
+    os.path.join("IX", "x64_msmpi"),
+    os.path.join("IX"),
+    os.path.join("eclipse", "bin"),
+    os.path.join("Visage"),
+    os.path.join("macros"),
+    os.path.join("macros", "compat"),
+    "",  # check directly in the version/product dir (e.g. Petrel 2022)
+]
+
+# Version pattern: 2022.2, 2024.1, etc.
+_SCHLUMBERGER_VERSION_PATTERN = re.compile(r"^(\d{4}\.\d+)$")
+
+# PRT file version extraction pattern
+_PRT_VERSION_PATTERN = re.compile(
+    r"(?:Schlumberger\s+)?(?:ECLIPSE|E300|INTERSECT|FrontSim|VISAGE)\s+([\d.]+)\s*"
+    r"(?:\(Build\s+([\d.]+)\)\s*)?(?:\(?(\d+\s*bit)?\)?)?",
+    re.I,
+)
+
+# License environment variables (Schlumberger)
+_LICENSE_ENV_VARS = [
+    "SLBSLS_LICENSE_FILE",
+    "SLBSLS_HOME",
+    "FLEXLM_LICENSE_FILE",
+    "LM_LICENSE_FILE",
+    "LSERV_HOST",
+    "ECLIPSE_LICENSE_FILE",
+]
+
+# Registry uninstall keys (Windows) for Schlumberger products
+_REGISTRY_UNINSTALL_KEYS = [
+    (winreg.HKEY_LOCAL_MACHINE,
+     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall") if winreg else None,
+    (winreg.HKEY_LOCAL_MACHINE,
+     r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") if winreg else None,
+    (winreg.HKEY_CURRENT_USER,
+     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall") if winreg else None,
+]
+_REGISTRY_UNINSTALL_KEYS = [k for k in _REGISTRY_UNINSTALL_KEYS if k is not None]
+
+# Registry name match pattern for Schlumberger products
+_REGISTRY_NAME_PATTERN = re.compile(
+    r"eclipse|petrel|schlumberger|intersect|frontsim|visage|\becl\b|slb",
+    re.I,
+)
+
+# Utility/launcher executables that should NOT be matched in PATH search
+# (they are not the simulator itself — we want the real simulator exe).
+# These are still searched in Layers 2-3 (registry + common paths).
+_PATH_SKIP_EXES: set = {
+    "eclrun.exe",     # ECLRUN launcher
+    "petrel.exe",     # Petrel platform (not a simulator)
+    "petrel_b.exe",   # Petrel batch
+}
+
+# Minimal smoke-test deck (1x1x1, single-phase gas, ~seconds to run)
+_SMOKE_TEST_DECK = """-- Smoke test case (auto-generated by engine detector)
+-- 1x1x1 grid, single-phase gas, single producer
+
+RUNSPEC
+
+TITLE
+ SMOKE TEST - AUTOGEN /
+
+DIMENS
+ 1 1 1 /
+
+START
+ 1 'JAN' 2020 /
+
+METRIC
+
+GAS
+
+WELLDIMS
+ 1 1 2 1 /
+
+
+GRID
+
+DX
+ 1000 /
+DY
+ 1000 /
+DZ
+ 100 /
+TOPS
+ 2000 /
+
+PORO
+ 0.20 /
+PERMX
+ 100 /
+PERMY
+ 100 /
+PERMZ
+ 10 /
+NTG
+ 1.0 /
+
+
+PROPS
+
+ROCK
+ 250 1.0E-5 /
+
+-- Dry gas PVT: P, 1/Bg, visg
+PVDG
+ 1     1.00    0.015
+ 50    0.020   0.015
+ 250   0.0040  0.025
+ 500   0.0020  0.025
+ 1000  0.0010  0.030 /
+
+DENSITY
+ 850 1000 0.80 /
+
+
+SOLUTION
+
+PRESSURE
+ 250 /
+
+
+SUMMARY
+
+FPR
+FGPR
+FGPT
+
+
+SCHEDULE
+
+WELSPECS
+ 'P1' 'G1' 1 1 2000 'GAS' /
+/
+
+COMPDAT
+ 'P1' 1 1 1 1 'OPEN' 1* 10 /
+/
+
+WCONPROD
+ 'P1' 'OPEN' 'GRAT' 1* 1* 50000 100 1* 1* /
+/
+
+TSTEP
+ 5 5 5 5 /
+
+END
+"""
 
 
 def _detect_schlumberger(
     engine: EngineInfo,
-    patterns: List[str],
-    folder_name: str,
+    exe_names: set,
+    product_rules: List[Tuple[re.Pattern, str]],
 ) -> EngineInfo:
-    """Schlumberger detection: registry + multi-drive.
+    """Schlumberger detection: 4-layer cascade.
 
-    Eclipse/Intersect structure:
-      ``<DRIVE>:\\Program Files\\Schlumberger\\<product>\\<version>\\bin\\*.exe``
-    or ``<DRIVE>:\\Schlumberger\\<product>\\bin\\*.exe``
+    Layer 1 — Environment variable PATH
+    Layer 2 — Windows registry (uninstall keys + vendor keys)
+    Layer 3 — Common install paths (multi-drive, C: first)
+    Layer 4 — License verification (env vars + lmutil)
+
+    Each layer fills in as much info as possible; later layers
+    enrich fields left empty by earlier ones.
     """
-    # 1. Registry
-    reg_path = _get_from_registry(folder_name)
-    if reg_path and os.path.isdir(reg_path):
-        found = _find_exe_in_dir(reg_path, patterns, _SCHLUMBERGER_SUBDIRS)
-        if found:
-            engine.executable_path = found
-            engine.install_dir = str(Path(found).parent.parent)
-            engine.status = "detected"
-            ver = _extract_version_from_exe(found)
+    found_exe: Optional[str] = None
+    found_version: Optional[str] = None
+    found_arch: Optional[str] = None
+    found_install_root: Optional[str] = None
+    source: str = "unknown"
+
+    # ── Layer 1: PATH environment variable ───────────────────────
+    # Skip utility/launcher exes in PATH — we want the real simulator.
+    path_env = os.environ.get("PATH", "")
+    for p in path_env.split(os.pathsep):
+        if not p:
+            continue
+        try:
+            pp = Path(p)
+            for exe in pp.glob("*.exe"):
+                exe_lower = exe.name.lower()
+                if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
+                    found_exe = str(exe)
+                    source = "env"
+                    found_version, found_install_root, found_arch = (
+                        _infer_schlumberger_version_and_root(exe)
+                    )
+                    break
+            if found_exe:
+                break
+        except (PermissionError, OSError):
+            continue
+
+    # ── Layer 2: Windows registry ─────────────────────────────────
+    # Skip non-simulator exes in registry too — we want the real
+    # simulator, not Petrel platform or ECLRUN launcher.
+    if not found_exe:
+        reg_exe_names = exe_names - _PATH_SKIP_EXES
+        reg_result = _search_registry_for_schlumberger(reg_exe_names)
+        if reg_result:
+            found_exe, found_version, found_install_root, found_arch = reg_result
+            source = "registry"
+
+    # ── Layer 3: Common install paths (multi-drive) ───────────────
+    if not found_exe:
+        for drive_letter in _get_available_drives():
+            drive = f"{drive_letter}:"
+            for folder in _SCHLUMBERGER_FOLDER_NAMES:
+                candidates = [
+                    os.path.join(drive, os.sep, folder),
+                    os.path.join(drive, os.sep, "Program Files", folder),
+                    os.path.join(drive, os.sep, "Program Files (x86)", folder),
+                ]
+                for candidate in candidates:
+                    if not os.path.isdir(candidate):
+                        continue
+                    result = _scan_schlumberger_dir(
+                        Path(candidate), exe_names,
+                    )
+                    if result:
+                        found_exe, found_version, found_install_root, found_arch = result
+                        source = "common_path"
+                        break
+                if found_exe:
+                    break
+            if found_exe:
+                break
+
+    # ── Apply detection result ────────────────────────────────────
+    if found_exe and os.path.isfile(found_exe):
+        engine.executable_path = found_exe
+        engine.status = "detected"
+        if found_version:
+            engine.version = found_version
+        if found_arch:
+            engine.arch = found_arch
+        if found_install_root:
+            engine.install_dir = found_install_root
+        else:
+            engine.install_dir = str(Path(found_exe).parent.parent)
+
+        # Identify sub-product (E100/E300/Intersect)
+        for pattern, product_label in product_rules:
+            if pattern.match(Path(found_exe).name):
+                engine.extra_info["sub_product"] = product_label
+                break
+
+        # Enrich version from file info if still missing
+        if not engine.version:
+            ver = _extract_version_from_exe(found_exe)
             if ver:
                 engine.version = ver
-            return engine
 
-    # 2. Multi-drive search
-    for candidate in _build_search_paths(folder_name):
-        if not os.path.isdir(candidate):
-            continue
-        found = _find_exe_in_dir(candidate, patterns, _SCHLUMBERGER_SUBDIRS)
-        if found:
-            engine.executable_path = found
-            engine.install_dir = str(Path(found).parent.parent)
-            engine.status = "detected"
-            ver = _extract_version_from_exe(found)
+        # Enrich version from path inference if still missing
+        if not engine.version:
+            ver, _, _ = _infer_schlumberger_version_and_root(Path(found_exe))
             if ver:
                 engine.version = ver
-            logger.info(
-                "%s detected: path=%s", engine.name, found,
-            )
-            return engine
 
-    # 3. Fallback: try PATH
-    for pattern in patterns:
-        if "*" in pattern or "?" in pattern:
-            continue
-        found = shutil.which(pattern)
-        if found:
-            engine.executable_path = found
-            engine.install_dir = str(Path(found).parent)
-            engine.status = "detected"
-            return engine
+        logger.info(
+            "%s detected: version=%s, arch=%s, path=%s, source=%s",
+            engine.name, engine.version, engine.arch, found_exe, source,
+        )
+    else:
+        engine.status = "not_found"
 
-    engine.status = "not_found"
+    # ── Layer 4: License verification ─────────────────────────────
+    _verify_schlumberger_license(engine)
+
     return engine
+
+
+def _search_registry_for_schlumberger(
+    exe_names: set,
+) -> Optional[Tuple[str, Optional[str], Optional[str], Optional[str]]]:
+    """Search Windows registry uninstall keys for Schlumberger products.
+
+    Returns ``(exe_path, version, install_root, arch)`` or ``None``.
+    """
+    if not winreg:
+        return None
+
+    for root, subkey in _REGISTRY_UNINSTALL_KEYS:
+        try:
+            with winreg.OpenKey(root, subkey) as k:
+                n_sub = winreg.QueryInfoKey(k)[0]
+                for i in range(n_sub):
+                    try:
+                        subname = winreg.EnumKey(k, i)
+                        with winreg.OpenKey(k, subname) as sk:
+                            name = _reg_get_value(sk, "DisplayName")
+                            if not name or not _REGISTRY_NAME_PATTERN.search(name):
+                                continue
+                            loc = _reg_get_value(sk, "InstallLocation")
+                            ver = _reg_get_value(sk, "DisplayVersion")
+                            if loc and os.path.isdir(loc):
+                                result = _scan_schlumberger_dir(
+                                    Path(loc), exe_names,
+                                )
+                                if result:
+                                    exe_path, _, install_root, arch = result
+                                    return exe_path, ver, install_root, arch
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return None
+
+
+def _scan_schlumberger_dir(
+    root: Path,
+    exe_names: set,
+) -> Optional[Tuple[str, Optional[str], Optional[str], Optional[str]]]:
+    """Scan a Schlumberger install directory for simulator executables.
+
+    Uses a two-pass strategy to prioritise primary simulator executables
+    (eclipse.exe, e300.exe) over secondary products (visage.exe,
+    frontsim.exe, petrel.exe) across ALL version directories.
+
+    Pass 1: scan every version dir for **primary** exes only.
+    Pass 2: scan every version dir for **all** exes (fallback).
+
+    Returns ``(exe_path, version, install_root, arch)`` or ``None``.
+    """
+    if not root.is_dir():
+        return None
+
+    # Primary simulator executables — the actual simulators, not
+    # platform/utility tools.
+    primary_exes = exe_names - _PATH_SKIP_EXES - {
+        "visage.exe", "frontsim.exe",
+    }
+
+    # Collect version subdirectories (e.g. 2022.2, 2022.3)
+    try:
+        version_dirs: List[Path] = []
+        for item in root.iterdir():
+            if item.is_dir() and _SCHLUMBERGER_VERSION_PATTERN.match(item.name):
+                version_dirs.append(item)
+    except (PermissionError, OSError):
+        version_dirs = []
+
+    version_dirs.sort(key=lambda x: x.name, reverse=True)
+
+    # ── Pass 1: primary exes across all version dirs ──────────────
+    for ver_dir in version_dirs:
+        result = _find_exe_in_version_dir(ver_dir, primary_exes)
+        if result:
+            exe_path, arch = result
+            return exe_path, ver_dir.name, str(ver_dir), arch
+
+    # ── Pass 2: all exes across all version dirs (fallback) ──────
+    for ver_dir in version_dirs:
+        result = _find_exe_in_version_dir(ver_dir, exe_names)
+        if result:
+            exe_path, arch = result
+            return exe_path, ver_dir.name, str(ver_dir), arch
+
+    # Strategy B: Look directly in root (no version subdir)
+    for names in (primary_exes, exe_names):
+        result = _find_exe_in_version_dir(root, names)
+        if result:
+            exe_path, arch = result
+            ver, install_root, _ = _infer_schlumberger_version_and_root(
+                Path(exe_path),
+            )
+            return exe_path, ver, install_root, arch
+
+    # Strategy C: Scan one level of subdirectories (for non-version dirs)
+    try:
+        for sub in root.iterdir():
+            if not sub.is_dir():
+                continue
+            if _SCHLUMBERGER_VERSION_PATTERN.match(sub.name):
+                continue
+            for names in (primary_exes, exe_names):
+                result = _find_exe_in_version_dir(sub, names)
+                if result:
+                    exe_path, arch = result
+                    ver, install_root, _ = _infer_schlumberger_version_and_root(
+                        Path(exe_path),
+                    )
+                    return exe_path, ver, install_root, arch
+    except (PermissionError, OSError):
+        pass
+
+    return None
+
+
+def _find_exe_in_version_dir(
+    ver_dir: Path,
+    exe_names: set,
+) -> Optional[Tuple[str, Optional[str]]]:
+    """Find a target executable inside a version directory.
+
+    Checks ``bin/<arch>/`` for each known architecture subdir,
+    plus flat ``bin/`` and ``exe/`` layouts.
+
+    Returns ``(exe_path, arch)`` or ``None``.
+    """
+    for bin_subdir in _SCHLUMBERGER_BIN_SUBDIRS:
+        bin_path = ver_dir / bin_subdir
+        if not bin_path.is_dir():
+            continue
+
+        # Check architecture subdirs
+        for arch_dir_name in _SCHLUMBERGER_ARCH_DIRS:
+            if arch_dir_name:
+                arch_path = bin_path / arch_dir_name
+            else:
+                arch_path = bin_path
+            if not arch_path.is_dir():
+                continue
+            for exe in arch_path.iterdir():
+                if exe.is_file() and exe.name.lower() in exe_names:
+                    return str(exe), arch_dir_name or ""
+
+        # Also check directly in bin_path (already covered by arch_dir="")
+        for exe in bin_path.iterdir():
+            if exe.is_file() and exe.name.lower() in exe_names:
+                return str(exe), ""
+
+    return None
+
+
+def _infer_schlumberger_version_and_root(
+    exe: Path,
+) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+    """Extract version, install root, and arch from an executable path.
+
+    Typical paths:
+      ``C:\\ecl\\2022.2\\bin\\pc_x86_64\\eclipse.exe``
+      ``C:\\ecl\\2022.1\\IX\\bin\\intersect.exe``
+      ``C:\\Program Files\\Schlumberger\\Petrel 2022.2\\Petrel.exe``
+    """
+    parts = exe.parts
+    version: Optional[str] = None
+    install_root: Optional[str] = None
+    arch: Optional[str] = None
+
+    # Pattern 1: <root>/<version>/bin/<arch>/exe
+    for i, p in enumerate(parts):
+        if _SCHLUMBERGER_VERSION_PATTERN.match(p):
+            version = _SCHLUMBERGER_VERSION_PATTERN.match(p).group(1)
+            install_root = str(Path(*parts[: i + 1]))
+            # Look for bin/<arch> after version
+            if i + 2 < len(parts) and parts[i + 1].lower() == "bin":
+                arch = parts[i + 2]
+            break
+
+    # Pattern 2: "Petrel 2022.2" in path
+    if version is None:
+        for i, p in enumerate(parts):
+            m = re.search(r"(\d{4}\.\d+)", p)
+            if m and any(
+                kw in p.lower()
+                for kw in ("petrel", "eclipse", "schlumberger", "ecl", "slb")
+            ):
+                version = m.group(1)
+                install_root = str(Path(*parts[: i + 1]))
+                break
+
+    # Pattern 3: generic version number
+    if version is None:
+        for p in parts:
+            m = _SCHLUMBERGER_VERSION_PATTERN.match(p)
+            if m:
+                version = m.group(1)
+                break
+
+    # Normalize install_root path separators
+    if install_root:
+        install_root = install_root.replace("/", "\\")
+
+    return version, install_root, arch
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# License verification for Schlumberger engines
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _verify_schlumberger_license(engine: EngineInfo) -> None:
+    """Multi-dimensional license verification for Schlumberger engines.
+
+    1. Check license environment variables
+    2. Find lmutil.exe and run lmstat
+    3. (Optional) Run a smoke test — only for ECLIPSE variants
+    """
+    # 1. Environment variables
+    license_env: Dict[str, str] = {}
+    for var in _LICENSE_ENV_VARS:
+        val = os.environ.get(var, "")
+        if val:
+            license_env[var] = val
+
+    if license_env:
+        # Parse server info from the first env var that has port@host
+        for key, val in license_env.items():
+            m = re.match(r"(\d+)@([\w.\-]+)", val)
+            if m:
+                engine.license_server = val
+                engine.extra_info["license_port"] = int(m.group(1))
+                engine.extra_info["license_host"] = m.group(2)
+                engine.extra_info["license_type"] = "network"
+                break
+            elif "@" in val or val.startswith("28000"):
+                engine.license_server = val
+                engine.extra_info["license_type"] = "network"
+                break
+            else:
+                engine.license_server = val
+                engine.extra_info["license_type"] = "node_locked_or_unknown"
+
+        engine.extra_info["license_env_vars"] = license_env
+
+    # 2. Find lmutil and run lmstat
+    lmutil_path = _find_lmutil(engine)
+    if lmutil_path:
+        engine.lmutil_path = lmutil_path
+        if engine.license_server:
+            lmstat_summary = _run_lmstat(lmutil_path, engine.license_server)
+            if lmstat_summary:
+                engine.extra_info["lmstat_summary"] = lmstat_summary
+
+    # 3. Run smoke test for detected Eclipse engines
+    if engine.status == "detected":
+        _run_smoke_test(engine)
+
+    # 4. Determine overall license status
+    # If no license env vars at all → unknown
+    # If smoke test passes → ok
+    # If smoke test shows license_denied → no_license
+    if not license_env and not engine.lmutil_path:
+        engine.license_status = "unknown"
+    elif engine.license_status != "no_license":
+        # Default to unknown until smoke test confirms
+        engine.license_status = "unknown"
+
+
+def _find_lmutil(engine: EngineInfo) -> Optional[str]:
+    """Locate lmutil.exe across multiple sources."""
+    candidates: List[str] = []
+
+    # 1. PATH
+    path_lmutil = shutil.which("lmutil")
+    if path_lmutil:
+        candidates.append(path_lmutil)
+
+    # 2. Common install locations
+    common_paths = [
+        r"C:\ecl\home\lmutil.exe",
+        r"C:\ecl\macros\lmutil.exe",
+        r"C:\Program Files\Schlumberger\lmutil.exe",
+        r"C:\Program Files (x86)\Schlumberger\lmutil.exe",
+        r"C:\Program Files\FLEXlm\lmutil.exe",
+    ]
+
+    # 3. Derive from detected engine install root
+    if engine.install_dir:
+        install_root = Path(engine.install_dir)
+        common_paths.extend([
+            str(install_root / "bin" / "lmutil.exe"),
+            str(install_root / "home" / "lmutil.exe"),
+            str(install_root.parent / "home" / "lmutil.exe"),
+        ])
+
+    for c in common_paths:
+        if c and os.path.isfile(c):
+            candidates.append(c)
+
+    # Deduplicate
+    seen: set = set()
+    for c in candidates:
+        cl = c.lower()
+        if cl not in seen:
+            seen.add(cl)
+            if os.path.isfile(c):
+                return c
+
+    return None
+
+
+def _run_lmstat(lmutil_path: str, license_str: str) -> Optional[str]:
+    """Run ``lmutil lmstat -c <license> -a`` and return a summary."""
+    try:
+        result = subprocess.run(
+            [lmutil_path, "lmstat", "-c", license_str, "-a"],
+            capture_output=True, text=True, timeout=15,
+        )
+        output = result.stdout + result.stderr
+        # Extract key lines
+        summary_lines: List[str] = []
+        for line in output.split("\n"):
+            if any(
+                kw in line.lower()
+                for kw in [
+                    "server", "license", "feature", "error",
+                    "up", "down", "vendor", "daemon", "conn",
+                ]
+            ):
+                summary_lines.append(line.strip())
+        return "\n".join(summary_lines[:30]) if summary_lines else output[:1500]
+    except subprocess.TimeoutExpired:
+        logger.warning("lmutil lmstat query timed out")
+    except Exception as e:
+        logger.warning("lmutil query failed: %s", e)
+    return None
+
+
+def _run_smoke_test(engine: EngineInfo) -> None:
+    """Run a minimal smoke test to verify the engine and license.
+
+    Only runs for ECLIPSE variants (E100/E300). Sets
+    ``engine.license_status`` and populates ``engine.extra_info``.
+    """
+    import tempfile
+
+    sub_product = engine.extra_info.get("sub_product", "")
+    # Smoke test only makes sense for Eclipse E100/E300
+    if sub_product not in ("ECLIPSE_100", "ECLIPSE_300"):
+        return
+
+    exe_path = engine.executable_path
+    if not exe_path or not os.path.isfile(exe_path):
+        return
+
+    case_name = "SMOKE"
+    smoke_result: Dict[str, Any] = {
+        "product": sub_product,
+        "ok": False,
+        "duration_sec": 0.0,
+        "error": None,
+    }
+
+    # Prepare environment with license vars
+    env = os.environ.copy()
+    for var in _LICENSE_ENV_VARS:
+        val = engine.extra_info.get("license_env_vars", {}).get(var)
+        if val and var not in env:
+            env[var] = val
+
+    t0 = 0.0
+    try:
+        with tempfile.TemporaryDirectory(prefix="ecl_smoke_") as td:
+            td_path = Path(td)
+            (td_path / f"{case_name}.DATA").write_text(
+                _SMOKE_TEST_DECK, encoding="utf-8",
+            )
+
+            t0 = time.time()
+            r = subprocess.run(
+                [exe_path, case_name],
+                cwd=str(td_path),
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            smoke_result["duration_sec"] = round(time.time() - t0, 2)
+            smoke_result["returncode"] = r.returncode
+
+            # Parse .PRT file
+            prt = td_path / f"{case_name}.PRT"
+            if prt.exists():
+                head = prt.read_text(
+                    encoding="latin-1", errors="ignore",
+                )[:1500]
+                smoke_result["prt_head"] = head
+
+                head_lower = head.lower()
+                # Check for license denial
+                if any(
+                    kw in head_lower
+                    for kw in [
+                        "no license", "flexlm error",
+                        "license error", "cannot get license",
+                    ]
+                ):
+                    smoke_result["error"] = "license_denied"
+                    engine.license_status = "no_license"
+                else:
+                    # Extract version/build from PRT
+                    m = _PRT_VERSION_PATTERN.search(head)
+                    if m:
+                        smoke_result["extracted_version"] = m.group(1)
+                        if m.group(2):
+                            smoke_result["extracted_build"] = m.group(2)
+                            engine.build = m.group(2)
+                        if not engine.version:
+                            engine.version = m.group(1)
+
+                    # Check error count and ECLEND
+                    full_prt = prt.read_text(
+                        encoding="latin-1", errors="ignore",
+                    )
+                    err_match = re.search(
+                        r"^\s*Errors?\s+(\d+)\s*$",
+                        full_prt, re.MULTILINE | re.IGNORECASE,
+                    )
+                    error_count = (
+                        int(err_match.group(1)) if err_match else None
+                    )
+                    smoke_result["error_count"] = error_count
+
+                    ecle = td_path / f"{case_name}.ECLEND"
+                    if not ecle.exists():
+                        smoke_result["error"] = "no_ecle_end"
+                        if engine.license_status != "no_license":
+                            engine.license_status = "unknown"
+                    elif error_count == 0:
+                        smoke_result["ok"] = True
+                        engine.license_status = "ok"
+                    elif error_count and error_count > 0:
+                        smoke_result["error"] = f"case_errors_{error_count}"
+                        # License works if we got this far
+                        if engine.license_status != "no_license":
+                            engine.license_status = "ok"
+                    else:
+                        # Fallback: has ECLEND, no license error → pass
+                        smoke_result["ok"] = True
+                        engine.license_status = "ok"
+
+                    # List output files
+                    smoke_result["outputs"] = sorted(
+                        f.name for f in td_path.glob(f"{case_name}.*")
+                    )
+            else:
+                # No PRT → likely license failure
+                combined = (r.stdout + r.stderr).lower()
+                if "license" in combined:
+                    smoke_result["error"] = "license_denied"
+                    engine.license_status = "no_license"
+                else:
+                    smoke_result["error"] = "no_prt_file"
+                    if engine.license_status != "no_license":
+                        engine.license_status = "unknown"
+
+    except subprocess.TimeoutExpired:
+        smoke_result["duration_sec"] = 120.0
+        smoke_result["error"] = "timeout"
+    except Exception as e:
+        smoke_result["error"] = f"exception: {e}"
+        smoke_result["duration_sec"] = round(time.time() - t0, 2)
+
+    engine.extra_info["smoke_test"] = smoke_result
 
 
 def _find_exe_in_dir(
@@ -785,12 +1543,12 @@ def _strategy_comsol(engine: EngineInfo) -> EngineInfo:
 
 @_register_strategy("eclipse")
 def _strategy_eclipse(engine: EngineInfo) -> EngineInfo:
-    return _detect_schlumberger(engine, _ECLIPSE_PATTERNS, "Schlumberger")
+    return _detect_schlumberger(engine, _ECLIPSE_EXE_NAMES, _ECLIPSE_PRODUCT_RULES)
 
 
 @_register_strategy("intersect")
 def _strategy_intersect(engine: EngineInfo) -> EngineInfo:
-    return _detect_schlumberger(engine, _INTERSECT_PATTERNS, "Schlumberger")
+    return _detect_schlumberger(engine, _INTERSECT_EXE_NAMES, _INTERSECT_PRODUCT_RULES)
 
 
 @_register_strategy("tnavigator")
@@ -800,7 +1558,7 @@ def _strategy_tnavigator(engine: EngineInfo) -> EngineInfo:
     for reg_key in ["Rock Flow Technologies", "tNavigator", "RFT"]:
         reg_path = _get_from_registry(reg_key)
         if reg_path and os.path.isdir(reg_path):
-            found = _find_exe_in_dir(reg_path, _TNAVIGATOR_PATTERNS, _SCHLUMBERGER_SUBDIRS)
+            found = _find_exe_in_dir(reg_path, _TNAVIGATOR_PATTERNS, ["bin", os.path.join("bin", "win64"), "exe", "bin64"])
             if found:
                 engine.executable_path = found
                 engine.install_dir = str(Path(found).parent.parent)
@@ -811,11 +1569,12 @@ def _strategy_tnavigator(engine: EngineInfo) -> EngineInfo:
                 return engine
 
     # 2. Multi-drive search for Rock Flow Technologies and tNavigator folders
+    _tnav_subdirs = ["bin", os.path.join("bin", "win64"), "exe", "bin64"]
     for folder_name in ["Rock Flow Technologies", "tNavigator", "RFT"]:
         for candidate in _build_search_paths(folder_name):
             if not os.path.isdir(candidate):
                 continue
-            found = _find_exe_in_dir(candidate, _TNAVIGATOR_PATTERNS, _SCHLUMBERGER_SUBDIRS)
+            found = _find_exe_in_dir(candidate, _TNAVIGATOR_PATTERNS, _tnav_subdirs)
             if found:
                 engine.executable_path = found
                 engine.install_dir = str(Path(found).parent.parent)

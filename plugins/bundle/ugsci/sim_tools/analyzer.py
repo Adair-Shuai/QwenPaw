@@ -38,8 +38,8 @@ async def analyze_simulation(
     Returns:
         ``ToolChunk``: Contains a structured analysis report.
     """
-    from agentscope.message import TextBlock
-    from agentscope.tool import ToolChunk, ToolResultState
+from agentscope.message import TextBlock, ToolResultState
+from agentscope.tool import ToolChunk
 
     from .launcher import _sim_jobs
 

@@ -13,12 +13,15 @@ pool to any agent on demand.
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
 import shutil
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci")
@@ -251,25 +254,338 @@ def _build_engine_router() -> APIRouter:
 
     @router.get("/icon/{engine_id}")
     async def get_engine_icon(engine_id: str):
-        """Serve an engine icon PNG from engine/icons/ directory."""
+        """Serve an engine icon from engine/icons/ directory.
+
+        Matches icons automatically based on:
+        1. sub_product (e.g., ECLIPSE_300 → ECLIPSE_icon.png)
+        2. product prefix (e.g., ECLIPSE from ECLIPSE_300)
+        3. engine_id (e.g., eclipse → Eclipse_icon.png)
+
+        Supports both .png and .jpg extensions.
+        """
         from fastapi import HTTPException
         from fastapi.responses import FileResponse
+        import json as _json
 
         icon_dir = PLUGIN_DIR / "engine" / "icons"
-        # Try multiple naming conventions
-        for name_pattern in [
+
+        # Read the engine JSON to get sub_product for smarter matching
+        sub_product = ""
+        engine_json = PLUGIN_DIR / "engines" / f"{engine_id}.json"
+        if engine_json.is_file():
+            try:
+                data = _json.loads(
+                    engine_json.read_text(encoding="utf-8"),
+                )
+                sub_product = (
+                    data.get("extra_info", {}).get("sub_product", "")
+                    or ""
+                )
+            except Exception:
+                pass
+
+        # Build candidate icon names in priority order
+        candidates: list[str] = []
+
+        if sub_product:
+            # 1. Sub-product specific (e.g., ECLIPSE_300_icon.png)
+            candidates.append(f"{sub_product}_icon.png")
+            candidates.append(f"{sub_product}_icon.jpg")
+            candidates.append(f"{sub_product}.png")
+
+            # 2. Product prefix (e.g., ECLIPSE from ECLIPSE_300)
+            product_prefix = sub_product.split("_")[0]
+            if product_prefix and product_prefix != sub_product:
+                for name in [
+                    f"{product_prefix}_icon.png",
+                    f"{product_prefix}_icon.jpg",
+                    f"{product_prefix}.png",
+                    f"{product_prefix.capitalize()}_icon.png",
+                    f"{product_prefix.lower()}_icon.png",
+                ]:
+                    if name not in candidates:
+                        candidates.append(name)
+
+        # 3. Engine ID based patterns
+        for name in [
             f"{engine_id}_icon.png",
+            f"{engine_id}_icon.jpg",
             f"{engine_id}.png",
             f"{engine_id.capitalize()}_icon.png",
+            f"{engine_id.capitalize()}_icon.jpg",
+            f"{engine_id.upper()}_icon.png",
+            f"{engine_id.upper()}_icon.jpg",
         ]:
+            if name not in candidates:
+                candidates.append(name)
+
+        # Try each candidate
+        for name_pattern in candidates:
             icon_path = icon_dir / name_pattern
             if icon_path.is_file():
+                # Determine media type from extension
+                ext = icon_path.suffix.lower()
+                media_type = (
+                    "image/jpeg" if ext == ".jpg" or ext == ".jpeg"
+                    else "image/png"
+                )
                 return FileResponse(
                     str(icon_path),
-                    media_type="image/png",
+                    media_type=media_type,
                     headers={"Cache-Control": "public, max-age=86400"},
                 )
         raise HTTPException(status_code=404, detail="Icon not found")
+
+    return router
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Avatar — Online fetch + local cache + team composition
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def _resource_dir() -> Path:
+    """Return the avatar cache directory under the default workspace resource."""
+    d = Path.home() / ".qwenpaw" / "workspaces" / "default" / "resource"
+    d.mkdir(parents=True, exist_ok=True)
+    return d
+
+
+def _default_avatar_path() -> Path:
+    """Return the path to the bundled Default.png fallback image."""
+    return PLUGIN_DIR / "ui" / "Default.png"
+
+
+def _seed_to_filename(seed: str) -> str:
+    """Convert a seed string to a safe filename component."""
+    h = hashlib.md5(seed.encode("utf-8")).hexdigest()[:12]
+    safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in seed)[:20]
+    return f"Avatar_{safe}_{h}.png"
+
+
+def _cached_avatar_path(seed: str) -> Path:
+    """Return the local cache path for a given seed's avatar PNG."""
+    return _resource_dir() / _seed_to_filename(seed)
+
+
+def _fetch_avatar_png_online(seed: str) -> bytes:
+    """Fetch a PNG avatar from the DiceBear online API.
+
+    Returns the raw PNG bytes.  Raises on network error.
+    """
+    import httpx
+
+    resp = httpx.get(
+        "https://api.dicebear.com/9.x/notionists/png",
+        params={"seed": seed},
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.content
+
+
+def _get_or_fetch_avatar_png(seed: str) -> Path:
+    """Return the path to a cached avatar PNG, fetching from network if needed.
+
+    Flow:
+    1. If cached file exists -> return it
+    2. If not -> fetch from DiceBear online API -> save -> return
+    3. If fetch fails -> return Default.png path
+    """
+    cached = _cached_avatar_path(seed)
+    if cached.is_file():
+        return cached
+
+    try:
+        png_bytes = _fetch_avatar_png_online(seed)
+        cached.write_bytes(png_bytes)
+        logger.info("[%s] Fetched and cached avatar for seed '%s'", PLUGIN_ID, seed)
+        return cached
+    except Exception as exc:
+        logger.warning("[%s] Failed to fetch avatar for seed '%s': %s",
+                       PLUGIN_ID, seed, exc)
+        default = _default_avatar_path()
+        if default.is_file():
+            return default
+        raise
+
+
+# ── Team avatar composition (PIL) ───────────────────────────────────────────
+
+_CANVAS_SIZE = 256
+_BG_COLOR = (240, 240, 240, 255)
+
+
+def _circle_mask(size: int):
+    """Return a (size, size) white circle mask (L mode)."""
+    from PIL import Image, ImageDraw
+
+    m = Image.new("L", (size, size), 0)
+    ImageDraw.Draw(m).ellipse((0, 0, size - 1, size - 1), fill=255)
+    return m
+
+
+def _apply_circle_clip(img, bg_color=_BG_COLOR):
+    """Crop a square image into a circle, filling the rest with bg_color."""
+    from PIL import Image
+
+    w, h = img.size
+    s = min(w, h)
+    result = Image.new("RGBA", (s, s), bg_color)
+    mask = _circle_mask(s)
+    cropped = img.crop(((w - s) // 2, (h - s) // 2, (w + s) // 2, (h + s) // 2))
+    result.paste(cropped, (0, 0), mask)
+    return result
+
+
+def _team_positions(n: int, radius: float, cx: float, cy: float):
+    """Return n positions evenly distributed on a circle arc, first at top."""
+    start = -math.pi / 2
+    return [
+        (cx + radius * math.cos(start + 2 * math.pi * i / n),
+         cy + radius * math.sin(start + 2 * math.pi * i / n))
+        for i in range(n)
+    ]
+
+
+def _compose_team_avatar(seeds: list[str]) -> bytes:
+    """Compose a team avatar from individual member avatars.
+
+    Takes 2-5 member seeds; if more than 5, takes the first 5.
+    Returns the composed PNG as bytes.
+    """
+    from PIL import Image, ImageDraw
+    from io import BytesIO
+
+    n = len(seeds)
+    if n < 2:
+        path = _get_or_fetch_avatar_png(seeds[0])
+        return path.read_bytes()
+    if n > 5:
+        seeds = seeds[:5]
+        n = 5
+
+    canvas = Image.new("RGBA", (_CANVAS_SIZE, _CANVAS_SIZE), _BG_COLOR)
+
+    circle_r = _CANVAS_SIZE * 0.27
+    icon_sz = int(_CANVAS_SIZE * 0.40)
+    cx = cy = _CANVAS_SIZE / 2
+
+    positions = _team_positions(n, circle_r, cx, cy)
+    av_mask = _circle_mask(icon_sz)
+
+    avatars = []
+    for seed in seeds:
+        path = _get_or_fetch_avatar_png(seed)
+        img = Image.open(path).convert("RGBA")
+        img = img.resize((icon_sz, icon_sz), Image.LANCZOS)
+
+        tile = Image.new("RGBA", (icon_sz, icon_sz))
+        tile.paste(img, (0, 0), av_mask)
+        draw = ImageDraw.Draw(tile)
+        draw.ellipse((0, 0, icon_sz - 1, icon_sz - 1),
+                     outline=(255, 255, 255, 220), width=5)
+        avatars.append(tile)
+
+    for pos, av in zip(positions, avatars):
+        x = int(pos[0] - icon_sz / 2)
+        y = int(pos[1] - icon_sz / 2)
+        canvas.paste(av, (x, y), av)
+
+    # Subtle connecting lines
+    draw = ImageDraw.Draw(canvas)
+    for i in range(n):
+        for j in range(i + 1, n):
+            draw.line([positions[i], positions[j]],
+                      fill=(180, 190, 200, 60), width=2)
+
+    canvas = _apply_circle_clip(canvas)
+
+    buf = BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def _build_avatar_router() -> APIRouter:
+    """Build a FastAPI router for avatar generation."""
+    router = APIRouter()
+
+    @router.get("/{seed}")
+    async def get_avatar(seed: str) -> Response:
+        """Return a PNG avatar for the given seed.
+
+        Flow: local cache -> DiceBear online API -> Default.png fallback.
+        """
+        try:
+            path = _get_or_fetch_avatar_png(seed)
+            return FileResponse(
+                str(path),
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+        except Exception as exc:
+            logger.error("[%s] Avatar serving failed for seed '%s': %s",
+                         PLUGIN_ID, seed, exc)
+            default = _default_avatar_path()
+            if default.is_file():
+                return FileResponse(
+                    str(default),
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"},
+                )
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail="Avatar unavailable")
+
+    @router.get("/team/{team_id}")
+    async def get_team_avatar(team_id: str) -> Response:
+        """Compose and return a team avatar from member seeds.
+
+        The ``team_id`` is a comma-separated list of member names (seeds).
+        Example: /team/Alice,Bob,Charlie
+        """
+        seeds = [s.strip() for s in team_id.split(",") if s.strip()]
+        if not seeds:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail="No seeds provided")
+
+        team_hash = hashlib.md5(",".join(seeds).encode("utf-8")).hexdigest()[:12]
+        team_cache = _resource_dir() / f"TeamAvatar_{team_hash}.png"
+
+        if team_cache.is_file():
+            return FileResponse(
+                str(team_cache),
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+
+        try:
+            png_bytes = _compose_team_avatar(seeds)
+            team_cache.write_bytes(png_bytes)
+            return Response(
+                content=png_bytes,
+                media_type="image/png",
+                headers={"Cache-Control": "public, max-age=3600"},
+            )
+        except Exception as exc:
+            logger.error("[%s] Team avatar failed for seeds %s: %s",
+                         PLUGIN_ID, seeds, exc)
+            try:
+                path = _get_or_fetch_avatar_png(seeds[0])
+                return FileResponse(
+                    str(path),
+                    media_type="image/png",
+                    headers={"Cache-Control": "public, max-age=3600"},
+                )
+            except Exception:
+                default = _default_avatar_path()
+                if default.is_file():
+                    return FileResponse(
+                        str(default),
+                        media_type="image/png",
+                        headers={"Cache-Control": "public, max-age=3600"},
+                    )
+                from fastapi import HTTPException
+                raise HTTPException(status_code=500, detail="Avatar unavailable")
 
     return router
 
@@ -346,9 +662,30 @@ class UGSciPlugin:
                 exc,
             )
 
+        # Register HTTP routes for DiceBear avatar generation
+        try:
+            api.register_http_router(
+                _build_avatar_router(),
+                prefix="/ugsci/avatar",
+                tags=["ugsci-avatar"],
+            )
+            logger.info(
+                "[%s] HTTP router registered at /api/ugsci/avatar",
+                PLUGIN_ID,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register avatar HTTP router: %s",
+                PLUGIN_ID,
+                exc,
+            )
+
         # ── Register simulation control tools ────────────────────────
         # Five tools that let agents launch, monitor, read, edit, and
         # analyze numerical simulations (Eclipse / CMG / COMSOL).
+        # Tools are enabled by default because the plugin is purpose-built
+        # for simulation workflows.  Each tool gracefully handles the
+        # "no engine configured" case by returning a helpful error.
         try:
             from .engine.tools import (
                 launch_simulation,
@@ -387,7 +724,7 @@ class UGSciPlugin:
                         tool_func=tool_func,
                         description=desc,
                         icon=icon,
-                        enabled=False,
+                        enabled=True,
                     )
                 except Exception as exc:
                     logger.error(

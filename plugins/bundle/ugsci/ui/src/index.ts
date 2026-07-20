@@ -322,6 +322,223 @@ function renderMarkdown(text: string, React: typeof import("react")) {
     .replace(/^[-*]\s+/gm, "• ");
 }
 
+// ─── MCP Templates ───────────────────────────────────────────────────────────
+
+interface MCPTemplate {
+  id: string;
+  name: string;
+  emoji: string;
+  category: string;
+  description: string;
+  transport: "stdio" | "streamable_http" | "sse";
+  /** stdio transport */
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  /** http / sse transport */
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+const MCP_TEMPLATES: MCPTemplate[] = [
+  {
+    id: "filesystem",
+    name: "Filesystem",
+    emoji: "📁",
+    category: "文件系统",
+    description:
+      "模型上下文协议文件系统服务器，提供文件读写、目录浏览和搜索能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/"],
+  },
+  {
+    id: "sqlite",
+    name: "SQLite",
+    emoji: "🗄️",
+    category: "数据库",
+    description:
+      "SQLite 数据库 MCP 服务器，提供查询、表结构查看和数据操作能力。",
+    transport: "stdio",
+    command: "uvx",
+    args: ["mcp-server-sqlite", "--db-path", "/path/to/database.db"],
+  },
+  {
+    id: "postgres",
+    name: "PostgreSQL",
+    emoji: "🐘",
+    category: "数据库",
+    description:
+      "PostgreSQL 数据库 MCP 服务器，提供只读 SQL 查询和 schema 探索能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-postgres"],
+    env: {
+      POSTGRES_CONNECTION_STRING:
+        "postgresql://user:password@localhost:5432/dbname",
+    },
+  },
+  {
+    id: "brave-search",
+    name: "Brave Search",
+    emoji: "🔍",
+    category: "搜索",
+    description:
+      "Brave Search MCP 服务器，提供网络搜索和本地搜索能力。需要 Brave API Key。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-brave-search"],
+    env: {
+      BRAVE_API_KEY: "your-brave-api-key",
+    },
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    emoji: "🐙",
+    category: "开发工具",
+    description:
+      "GitHub MCP 服务器，提供仓库管理、Issue / PR 操作、代码搜索和文件操作能力。需要 GitHub Token。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-github"],
+    env: {
+      GITHUB_PERSONAL_ACCESS_TOKEN: "your-github-token",
+    },
+  },
+  {
+    id: "gitlab",
+    name: "GitLab",
+    emoji: "🦊",
+    category: "开发工具",
+    description:
+      "GitLab MCP 服务器，提供项目管理、Merge Request 操作和 CI/CD 流水线能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-gitlab"],
+    env: {
+      GITLAB_PERSONAL_ACCESS_TOKEN: "your-gitlab-token",
+      GITLAB_API_URL: "https://gitlab.com/api/v4",
+    },
+  },
+  {
+    id: "fetch",
+    name: "Fetch",
+    emoji: "🌐",
+    category: "网络工具",
+    description:
+      "Fetch MCP 服务器，提供 URL 内容抓取和网页转 Markdown 能力。",
+    transport: "stdio",
+    command: "uvx",
+    args: ["mcp-server-fetch"],
+  },
+  {
+    id: "memory",
+    name: "Memory",
+    emoji: "🧠",
+    category: "知识管理",
+    description:
+      "Memory MCP 服务器，提供基于知识图谱的长期记忆存储和检索能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-memory"],
+  },
+  {
+    id: "puppeteer",
+    name: "Puppeteer",
+    emoji: "🎭",
+    category: "浏览器自动化",
+    description:
+      "Puppeteer MCP 服务器，提供浏览器自动化、网页截图和 PDF 生成能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-puppeteer"],
+  },
+  {
+    id: "sequential-thinking",
+    name: "Sequential Thinking",
+    emoji: "💭",
+    category: "推理增强",
+    description:
+      "Sequential Thinking MCP 服务器，提供结构化的逐步推理和问题分解能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+  },
+  {
+    id: "everart",
+    name: "EverArt",
+    emoji: "🎨",
+    category: "AI 生成",
+    description:
+      "EverArt MCP 服务器，提供 AI 图像生成能力。需要 EverArt API Key。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-everart"],
+    env: {
+      EVERART_API_KEY: "your-everart-api-key",
+    },
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    emoji: "📁",
+    category: "云存储",
+    description:
+      "Google Drive MCP 服务器，提供 Google Drive 文件搜索和内容访问能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-google-drive"],
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    emoji: "💬",
+    category: "通讯协作",
+    description:
+      "Slack MCP 服务器，提供频道消息发送、列表查看和消息搜索能力。需要 Slack Bot Token。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-slack"],
+    env: {
+      SLACK_BOT_TOKEN: "xoxb-your-bot-token",
+      SLACK_TEAM_ID: "your-team-id",
+    },
+  },
+  {
+    id: "time",
+    name: "Time",
+    emoji: "⏰",
+    category: "工具",
+    description: "Time MCP 服务器，提供时间查询和时区转换能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-time"],
+  },
+  {
+    id: "exa-search",
+    name: "Exa AI Search",
+    emoji: "🔬",
+    category: "搜索",
+    description:
+      "Exa AI 学术搜索 MCP 服务器，提供实时学术论文搜索和引用获取能力。适合科研场景。",
+    transport: "streamable_http",
+    url: "https://mcp.exa.ai/mcp",
+  },
+  {
+    id: "comsol-mcp",
+    name: "COMSOL Multiphysics",
+    emoji: "🔧",
+    category: "仿真工程",
+    description:
+      "COMSOL Multiphysics MCP 服务器，提供有限元仿真建模、求解和结果分析能力。适合多物理场耦合仿真场景。",
+    transport: "stdio",
+    command: "python",
+    args: ["-m", "comsol_mcp"],
+  },
+];
+
 // ─── Expert Templates ───────────────────────────────────────────────────────
 
 interface ExpertTemplate {
@@ -699,7 +916,7 @@ function findAgentIdByName(
  */
 function buildTeamMessage(team: ExpertTeam): string {
   const memberList = team.members
-    .map((m) => `- ${m.emoji} ${m.name}（${m.role}）`)
+    .map((m) => `- ${m.name}（${m.role}）`)
     .join("\n");
 
   // For custom teams with explicit steps, build detailed step-by-step instructions
@@ -856,11 +1073,10 @@ function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                         team.mode === "roundtable" ? "1 1 200px" : "initial",
                     },
                   },
-                  React.createElement(
-                    "span",
-                    { style: { fontSize: 16 } },
-                    member?.emoji || "👤",
-                  ),
+                  React.createElement(ExpertAvatar, {
+                    name: step.agentName,
+                    size: 24,
+                  }),
                   React.createElement(
                     "div",
                     null,
@@ -933,7 +1149,7 @@ function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                   flex: team.mode === "roundtable" ? "1 1 150px" : "initial",
                 },
               },
-              React.createElement("span", { style: { fontSize: 16 } }, m.emoji),
+              React.createElement(ExpertAvatar, { name: m.name, size: 24 }),
               React.createElement(
                 "div",
                 null,
@@ -1109,7 +1325,7 @@ function TeamBuilderModal({
           return {
             name: agentName,
             role: agent?.description?.slice(0, 30) || "团队成员",
-            emoji: "👤",
+            emoji: "",
           };
         },
       );
@@ -1222,15 +1438,13 @@ function TeamBuilderModal({
       ),
       React.createElement(
         "div",
-        { style: { display: "flex", gap: 8, marginBottom: 8 } },
-        React.createElement(Select, {
-          value: emoji,
-          onChange: (v: string) => setEmoji(v),
-          style: { width: 60 },
-          options: emojiOptions.map((e) => ({ value: e, label: e })),
-          optionRender: (opt: any) =>
-            React.createElement("span", { style: { fontSize: 18 } }, opt.value),
-        }),
+        { style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center" } },
+        selectedMembers.length > 0
+          ? React.createElement(TeamAvatar, {
+              members: selectedMembers,
+              size: 36,
+            })
+          : null,
         React.createElement(Input, {
           placeholder: "团队名称（如：储层评价团队）",
           value: name,
@@ -1336,7 +1550,7 @@ function TeamBuilderModal({
                 React.createElement(
                   "div",
                   { style: { display: "flex", alignItems: "center", gap: 6 } },
-                  React.createElement("span", null, "👤"),
+                  React.createElement(ExpertAvatar, { name: memberName, size: 24 }),
                   React.createElement(
                     Text,
                     { strong: true, style: { fontSize: 13 } },
@@ -1613,7 +1827,10 @@ function ExpertTeamCard({
           marginBottom: 10,
         },
       },
-      React.createElement("span", { style: { fontSize: 24 } }, team.emoji),
+      React.createElement(TeamAvatar, {
+        members: team.members.map((m) => m.name),
+        size: 36,
+      }),
       React.createElement(
         "div",
         { style: { flex: 1 } },
@@ -1740,7 +1957,7 @@ function ExpertTeamCard({
                 fontSize: 11,
               },
             },
-            React.createElement("span", null, m.emoji),
+            React.createElement(ExpertAvatar, { name: m.name, size: 18 }),
             React.createElement(
               Text,
               {
@@ -4452,7 +4669,7 @@ function ExpertCard({
       React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement("span", { style: { fontSize: 20 } }, "🧑‍🔬"),
+        React.createElement(ExpertAvatar, { name: agent.name, size: 36 }),
         React.createElement(
           "div",
           null,
@@ -5151,7 +5368,7 @@ function ExpertDrawer({
       title: React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement("span", { style: { fontSize: 20 } }, "🧑‍🔬"),
+        React.createElement(ExpertAvatar, { name: agent.name, size: 28 }),
         React.createElement("span", null, agent.name),
       ),
       open,
@@ -5270,8 +5487,12 @@ function ExpertTemplateModal({
 
       antdMsg.success("专家「" + (name || "新专家") + "」创建成功");
       setBlankModalOpen(false);
-      onClose();
-      onCreated();
+      // Defer closing the outer modal to avoid simultaneous closing race condition
+      // when BlankExpertModal and ExpertTemplateModal try to close at the same time
+      setTimeout(() => {
+        onClose();
+        onCreated();
+      }, 0);
     } catch (err: any) {
       antdMsg.error(err.message || "创建专家失败");
     } finally {
@@ -5326,6 +5547,9 @@ function ExpertTemplateModal({
   };
 
   return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(
     Modal,
     {
       open,
@@ -5450,11 +5674,10 @@ function ExpertTemplateModal({
                       marginBottom: 8,
                     },
                   },
-                  React.createElement(
-                    "span",
-                    { style: { fontSize: 28 } },
-                    template.emoji,
-                  ),
+                  React.createElement(ExpertAvatar, {
+                    name: template.name,
+                    size: 40,
+                  }),
                   React.createElement(
                     "div",
                     { style: { flex: 1 } },
@@ -5496,7 +5719,8 @@ function ExpertTemplateModal({
             ),
           ),
         ),
-    // ── Blank template creation modal ──
+    ),
+    // ── Blank template creation modal (sibling, not nested inside Modal) ──
     React.createElement(BlankExpertModal, {
       open: blankModalOpen,
       onCancel: () => setBlankModalOpen(false),
@@ -5553,7 +5777,7 @@ function BlankExpertModal({
         // and blocks closing (returns early) when it is true.  Using
         // okButtonProps.loading shows the spinner on the OK button without
         // preventing the user from closing the modal via X / Cancel / mask / ESC.
-        onCreate(name.trim(), description.trim()).finally(() => {
+        Promise.resolve(onCreate(name.trim(), description.trim())).finally(() => {
           setLoading(false);
         });
       },
@@ -5562,7 +5786,6 @@ function BlankExpertModal({
       okButtonProps: { loading: loading },
       maskClosable: true,
       keyboard: true,
-      destroyOnClose: true,
     },
     React.createElement(
       "div",
@@ -6405,11 +6628,10 @@ function ExpertCenterPage() {
             title: React.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 8 } },
-              React.createElement(
-                "span",
-                { style: { fontSize: 20 } },
-                teamLaunchModal.emoji,
-              ),
+              React.createElement(TeamAvatar, {
+                members: teamLaunchModal.members.map((m) => m.name),
+                size: 28,
+              }),
               React.createElement(
                 "span",
                 null,
@@ -6740,10 +6962,95 @@ const CATEGORY_ICONS: Record<string, string> = {
 };
 
 // Engine IDs that have custom PNG icons in engine/icons/
-const ENGINE_ICON_IDS = new Set(["cmg", "comsol", "tnavigator"]);
+const ENGINE_ICON_IDS = new Set(["cmg", "comsol", "tnavigator", "eclipse", "intersect","visage"]);
 
 function getEngineIconUrl(engineId: string): string {
   return apiUrl(`/ugsci/engines/icon/${encodeURIComponent(engineId)}`);
+}
+
+// ─── Expert Avatar (DiceBear) ────────────────────────────────────────────────
+
+/** Build the URL for an avatar PNG (cached / online-fetched / default fallback). */
+function getExpertAvatarUrl(seed: string): string {
+  return apiUrl(`/ugsci/avatar/${encodeURIComponent(seed)}`);
+}
+
+/** Build the URL for a composed team avatar PNG from member names. */
+function getTeamAvatarUrl(memberNames: string[]): string {
+  const joined = memberNames.map(encodeURIComponent).join(",");
+  return apiUrl(`/ugsci/avatar/team/${joined}`);
+}
+
+/**
+ * ExpertAvatar — renders a PNG avatar for the given expert name.
+ *
+ * The backend serves from local cache, falling back to the DiceBear
+ * online API, then to Default.png.  If the <img> itself errors, we
+ * retry once with a cache-busting query param before giving up.
+ */
+function ExpertAvatar({
+  name,
+  size = 32,
+  borderRadius = "50%",
+}: {
+  name: string;
+  size?: number;
+  borderRadius?: string | number;
+}) {
+  const React = getHost().React;
+  const [retry, setRetry] = React.useState(0);
+
+  const src = retry === 0
+    ? getExpertAvatarUrl(name)
+    : `${getExpertAvatarUrl(name)}?_r=${retry}`;
+
+  return React.createElement("img", {
+    src,
+    alt: name,
+    onError: () => {
+      // Retry once with cache-busting; after that the backend
+      // itself will have returned Default.png so stop retrying.
+      if (retry < 1) setRetry(retry + 1);
+    },
+    style: { width: size, height: size, borderRadius, objectFit: "cover", flexShrink: 0 },
+  });
+}
+
+/**
+ * TeamAvatar — renders a composed team avatar from member names.
+ * Takes first 5 members for composition.
+ */
+function TeamAvatar({
+  members,
+  size = 32,
+  borderRadius = "50%",
+}: {
+  members: string[];
+  size?: number;
+  borderRadius?: string | number;
+}) {
+  const React = getHost().React;
+  const [retry, setRetry] = React.useState(0);
+
+  if (!members || members.length === 0) {
+    return React.createElement("span", {
+      style: { width: size, height: size, display: "inline-block" },
+    });
+  }
+
+  const names = members.slice(0, 5);
+  const src = retry === 0
+    ? getTeamAvatarUrl(names)
+    : `${getTeamAvatarUrl(names)}?_r=${retry}`;
+
+  return React.createElement("img", {
+    src,
+    alt: "team",
+    onError: () => {
+      if (retry < 1) setRetry(retry + 1);
+    },
+    style: { width: size, height: size, borderRadius, objectFit: "cover", flexShrink: 0 },
+  });
 }
 
 async function fetchEngines(): Promise<{ engines: EngineInfo[] }> {
@@ -6957,7 +7264,6 @@ function EngineSection() {
     Typography,
     Modal,
     Input,
-    Alert,
     Select,
     Popconfirm,
     Space,
@@ -7133,29 +7439,9 @@ function EngineSection() {
     [formData],
   );
 
-  const [alertVisible, setAlertVisible] = useState(true);
-
   return React.createElement(
     "div",
     null,
-    // Summary alert (closable)
-    alertVisible
-      ? React.createElement(
-          Alert,
-          {
-            type: detectedCount > 0 ? "success" : "info",
-            message: `共 ${engines.length} 个引擎 · ${detectedCount} 个已检测`,
-            description:
-              detectedCount > 0
-                ? "部分引擎已自动检测到安装路径，可在卡片中查看详情。"
-                : "尚未检测到已安装的引擎。可点击「自动检测」或手动添加计算引擎。",
-            showIcon: true,
-            closable: true,
-            onClose: () => setAlertVisible(false),
-            style: { marginBottom: 16 },
-          },
-        )
-      : null,
     // Action bar
     React.createElement(
       "div",
@@ -9094,7 +9380,7 @@ function SkillPoolTab({
                             gap: 6,
                           },
                         },
-                        React.createElement("span", null, "🧑‍🔬"),
+                        React.createElement(ExpertAvatar, { name: agentName, size: 20 }),
                         React.createElement(
                           Text,
                           { style: { fontSize: 13 } },
