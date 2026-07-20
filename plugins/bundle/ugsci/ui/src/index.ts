@@ -10089,10 +10089,11 @@ function MarketplacePage() {
     UserOutlined,
     SettingOutlined,
     GithubOutlined,
+    ApiOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph, Title } = Typography;
 
-  // Tab: 'skills' | 'experts'
+  // Tab: 'skills' | 'mcp' | 'experts'
   const [activeTab, setActiveTab] = useState("skills");
 
   // Skill market state
@@ -10116,6 +10117,12 @@ function MarketplacePage() {
   // Expert templates state
   const [expertSearchText, setExpertSearchText] = useState("");
 
+  // MCP market state
+  const [mcpSearchText, setMcpSearchText] = useState("");
+  const [mcpInstalling, setMcpInstalling] = useState<Record<string, boolean>>({});
+  const [mcpInstallTargetAgent, setMcpInstallTargetAgent] = useState<string>("");
+  const [existingMcpKeys, setExistingMcpKeys] = useState<Set<string>>(new Set());
+
   // GitHub skill sources state
   const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
   const [githubSkills, setGithubSkills] = useState<GitHubSkill[]>([]);
@@ -10137,6 +10144,7 @@ function MarketplacePage() {
       setAgents(agentList);
       if (agentList.length > 0) {
         setInstallTargetAgent(agentList[0].id);
+        setMcpInstallTargetAgent(agentList[0].id);
       }
     });
   }, []);
@@ -10986,6 +10994,271 @@ function MarketplacePage() {
     }
   };
 
+  // ── MCP Market: load existing MCP keys when target agent changes ──
+  const loadExistingMcpKeys = useCallback(async (agentId: string) => {
+    if (!agentId) return;
+    try {
+      const data = await fetchAgentMCPClients(agentId);
+      setExistingMcpKeys(new Set(data.map((m) => m.key)));
+    } catch {
+      setExistingMcpKeys(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mcpInstallTargetAgent) {
+      loadExistingMcpKeys(mcpInstallTargetAgent);
+    }
+  }, [mcpInstallTargetAgent, loadExistingMcpKeys]);
+
+  // ── MCP Market: install handler ──
+  const handleInstallMcp = async (template: MCPTemplate) => {
+    if (!mcpInstallTargetAgent) {
+      antdMsg.warning("请先选择目标专家");
+      return;
+    }
+    setMcpInstalling((prev) => ({ ...prev, [template.id]: true }));
+    try {
+      const clientKey = template.id;
+      await createMCPForAgent(mcpInstallTargetAgent, {
+        client_key: clientKey,
+        client: {
+          name: template.name,
+          description: template.description,
+          enabled: true,
+          transport: template.transport,
+          url: template.url || "",
+          command: template.command || "",
+          args: template.args || [],
+          env: template.env || {},
+          cwd: template.cwd || "",
+          headers: template.headers || {},
+        },
+      });
+      antdMsg.success(`MCP「${template.name}」已添加到当前专家`);
+      setExistingMcpKeys((prev) => new Set(prev).add(clientKey));
+    } catch (err: any) {
+      antdMsg.error(err.message || `添加 MCP「${template.name}」失败`);
+    } finally {
+      setMcpInstalling((prev) => ({ ...prev, [template.id]: false }));
+    }
+  };
+
+  // ── MCP Market: filtered templates ──
+  const filteredMcpTemplates = useMemo(() => {
+    if (!mcpSearchText.trim()) return MCP_TEMPLATES;
+    const q = mcpSearchText.toLowerCase();
+    return MCP_TEMPLATES.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        t.category.toLowerCase().includes(q),
+    );
+  }, [mcpSearchText]);
+
+  const mcpMarketTab = React.createElement(
+    "div",
+    null,
+    // Info banner
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginBottom: 16,
+          padding: "12px 16px",
+          background: "linear-gradient(135deg, #f0fdf4 0%, #f0fff4 100%)",
+          borderRadius: 8,
+          border: "1px solid #d9f7be",
+        },
+      },
+      React.createElement(
+        Text,
+        { style: { fontSize: 13, color: "#135200" } },
+        "从 MCP 模板库选择常用 Model Context Protocol 服务器，一键添加到当前专家。支持文件系统、数据库、搜索、开发工具等多种 MCP 服务器。",
+      ),
+    ),
+    // Search + agent selector
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: "wrap",
+          alignItems: "center",
+        },
+      },
+      React.createElement(Input, {
+        placeholder: "搜索 MCP 模板...",
+        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        value: mcpSearchText,
+        onChange: (e: any) => setMcpSearchText(e.target.value),
+        allowClear: true,
+        style: { maxWidth: 300 },
+      }),
+      React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12, whiteSpace: "nowrap" } },
+          "安装到：",
+        ),
+        React.createElement(Select, {
+          value: mcpInstallTargetAgent,
+          onChange: (v: string) => setMcpInstallTargetAgent(v),
+          style: { minWidth: 180 },
+          size: "small",
+          options: agents.map((a) => ({ value: a.id, label: a.name })),
+        }),
+      ),
+    ),
+    // MCP template cards
+    React.createElement(
+      Row,
+      { gutter: [12, 12] },
+      ...filteredMcpTemplates.map((template) =>
+        React.createElement(
+          Col,
+          { key: template.id, xs: 24, sm: 12, md: 8 },
+          React.createElement(
+            Card,
+            {
+              hoverable: true,
+              size: "small",
+              style: { height: "100%" },
+            },
+            // Header: emoji + name + tags
+            React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  marginBottom: 8,
+                },
+              },
+              React.createElement(
+                "span",
+                { style: { fontSize: 28 } },
+                template.emoji,
+              ),
+              React.createElement(
+                "div",
+                { style: { flex: 1 } },
+                React.createElement(
+                  Text,
+                  { strong: true, style: { fontSize: 14 } },
+                  template.name,
+                ),
+                React.createElement(
+                  "div",
+                  { style: { display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" } },
+                  React.createElement(
+                    Tag,
+                    { color: "blue", style: { fontSize: 10 } },
+                    template.category,
+                  ),
+                  React.createElement(
+                    Tag,
+                    {
+                      color: template.transport === "stdio" ? "purple" : "cyan",
+                      style: { fontSize: 10 },
+                    },
+                    template.transport,
+                  ),
+                  template.env && Object.keys(template.env).length > 0
+                    ? React.createElement(
+                        Tag,
+                        { color: "orange", style: { fontSize: 10 } },
+                        "需配置密钥",
+                      )
+                    : null,
+                ),
+              ),
+            ),
+            // Description
+            React.createElement(
+              Paragraph,
+              {
+                type: "secondary",
+                style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
+                ellipsis: { rows: 3 },
+              },
+              template.description,
+            ),
+            // Footer: config preview + install button
+            React.createElement(
+              "div",
+              {
+                style: {
+                  marginTop: 10,
+                  paddingTop: 8,
+                  borderTop: "1px solid #f0f0f0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                },
+              },
+              React.createElement(
+                Text,
+                { type: "secondary", style: { fontSize: 11 } },
+                template.transport === "stdio"
+                  ? `${template.command} ${(template.args || []).join(" ")}`
+                  : template.url || "",
+              ),
+              existingMcpKeys.has(template.id)
+                ? React.createElement(
+                    Button,
+                    { size: "small", disabled: true },
+                    "已安装",
+                  )
+                : React.createElement(
+                    Button,
+                    {
+                      type: "primary",
+                      size: "small",
+                      loading: !!mcpInstalling[template.id],
+                      icon: ApiOutlined
+                        ? React.createElement(ApiOutlined)
+                        : undefined,
+                      onClick: () => handleInstallMcp(template),
+                    },
+                    "安装",
+                  ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    // Future expansion hint
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginTop: 20,
+          padding: 16,
+          textAlign: "center",
+          border: "1px dashed #d9d9d9",
+          borderRadius: 8,
+          background: "#fafafa",
+        },
+      },
+      ShopOutlined
+        ? React.createElement(ShopOutlined, {
+            style: { fontSize: 24, color: "#bfbfbf", marginBottom: 8 },
+          })
+        : null,
+      React.createElement(
+        Text,
+        { type: "secondary", style: { fontSize: 12 } },
+        "更多 MCP 服务器模板持续更新中，也支持通过 JSON 配置自定义添加",
+      ),
+    ),
+  );
+
   const expertsMarketTab = React.createElement(
     "div",
     null,
@@ -11156,6 +11429,18 @@ function MarketplacePage() {
       children: skillsMarketTab,
     },
     {
+      key: "mcp",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        ApiOutlined
+          ? React.createElement(ApiOutlined, { style: { fontSize: 14 } })
+          : null,
+        "MCP 市场",
+      ),
+      children: mcpMarketTab,
+    },
+    {
       key: "experts",
       label: React.createElement(
         "span",
@@ -11174,7 +11459,7 @@ function MarketplacePage() {
     { style: { padding: 24 } },
     React.createElement(PageHeader, {
       title: "市场",
-      subtitle: "浏览技能市场 · 选择专家模板 · 随时更新能力和专家",
+      subtitle: "浏览技能市场 · 选择 MCP 服务器 · 创建专家模板 · 随时更新能力和专家",
       extra: React.createElement(
         "div",
         { style: { display: "flex", gap: 8 } },

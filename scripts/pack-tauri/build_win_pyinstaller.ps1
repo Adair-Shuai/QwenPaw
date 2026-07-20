@@ -126,9 +126,9 @@ Write-Host "== Step 1: Building Console Static Assets ==" -ForegroundColor Yello
 Set-Location console
 
 Write-Host "Installing frontend dependencies..."
-npm ci
+npm install
 if ($LASTEXITCODE -ne 0) {
-    throw "npm ci failed"
+    throw "npm install failed"
 }
 
 Write-Host "Generating Tauri icons..."

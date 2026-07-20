@@ -70,8 +70,6 @@ dependencies = [
     # wheels for all three OSes.
     "ast-grep-cli>=0.20",
     "html2text>=2024.2.26",
-    "dicebear-core",
-    "dicebear-styles",
 ]
 
 [project.urls]

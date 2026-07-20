@@ -322,6 +322,223 @@ function renderMarkdown(text: string, React: typeof import("react")) {
     .replace(/^[-*]\s+/gm, "• ");
 }
 
+// ─── MCP Templates ───────────────────────────────────────────────────────────
+
+interface MCPTemplate {
+  id: string;
+  name: string;
+  emoji: string;
+  category: string;
+  description: string;
+  transport: "stdio" | "streamable_http" | "sse";
+  /** stdio transport */
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  /** http / sse transport */
+  url?: string;
+  headers?: Record<string, string>;
+}
+
+const MCP_TEMPLATES: MCPTemplate[] = [
+  {
+    id: "filesystem",
+    name: "Filesystem",
+    emoji: "📁",
+    category: "文件系统",
+    description:
+      "模型上下文协议文件系统服务器，提供文件读写、目录浏览和搜索能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-filesystem", "/"],
+  },
+  {
+    id: "sqlite",
+    name: "SQLite",
+    emoji: "🗄️",
+    category: "数据库",
+    description:
+      "SQLite 数据库 MCP 服务器，提供查询、表结构查看和数据操作能力。",
+    transport: "stdio",
+    command: "uvx",
+    args: ["mcp-server-sqlite", "--db-path", "/path/to/database.db"],
+  },
+  {
+    id: "postgres",
+    name: "PostgreSQL",
+    emoji: "🐘",
+    category: "数据库",
+    description:
+      "PostgreSQL 数据库 MCP 服务器，提供只读 SQL 查询和 schema 探索能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-postgres"],
+    env: {
+      POSTGRES_CONNECTION_STRING:
+        "postgresql://user:password@localhost:5432/dbname",
+    },
+  },
+  {
+    id: "brave-search",
+    name: "Brave Search",
+    emoji: "🔍",
+    category: "搜索",
+    description:
+      "Brave Search MCP 服务器，提供网络搜索和本地搜索能力。需要 Brave API Key。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-brave-search"],
+    env: {
+      BRAVE_API_KEY: "your-brave-api-key",
+    },
+  },
+  {
+    id: "github",
+    name: "GitHub",
+    emoji: "🐙",
+    category: "开发工具",
+    description:
+      "GitHub MCP 服务器，提供仓库管理、Issue / PR 操作、代码搜索和文件操作能力。需要 GitHub Token。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-github"],
+    env: {
+      GITHUB_PERSONAL_ACCESS_TOKEN: "your-github-token",
+    },
+  },
+  {
+    id: "gitlab",
+    name: "GitLab",
+    emoji: "🦊",
+    category: "开发工具",
+    description:
+      "GitLab MCP 服务器，提供项目管理、Merge Request 操作和 CI/CD 流水线能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-gitlab"],
+    env: {
+      GITLAB_PERSONAL_ACCESS_TOKEN: "your-gitlab-token",
+      GITLAB_API_URL: "https://gitlab.com/api/v4",
+    },
+  },
+  {
+    id: "fetch",
+    name: "Fetch",
+    emoji: "🌐",
+    category: "网络工具",
+    description:
+      "Fetch MCP 服务器，提供 URL 内容抓取和网页转 Markdown 能力。",
+    transport: "stdio",
+    command: "uvx",
+    args: ["mcp-server-fetch"],
+  },
+  {
+    id: "memory",
+    name: "Memory",
+    emoji: "🧠",
+    category: "知识管理",
+    description:
+      "Memory MCP 服务器，提供基于知识图谱的长期记忆存储和检索能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-memory"],
+  },
+  {
+    id: "puppeteer",
+    name: "Puppeteer",
+    emoji: "🎭",
+    category: "浏览器自动化",
+    description:
+      "Puppeteer MCP 服务器，提供浏览器自动化、网页截图和 PDF 生成能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-puppeteer"],
+  },
+  {
+    id: "sequential-thinking",
+    name: "Sequential Thinking",
+    emoji: "💭",
+    category: "推理增强",
+    description:
+      "Sequential Thinking MCP 服务器，提供结构化的逐步推理和问题分解能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-sequential-thinking"],
+  },
+  {
+    id: "everart",
+    name: "EverArt",
+    emoji: "🎨",
+    category: "AI 生成",
+    description:
+      "EverArt MCP 服务器，提供 AI 图像生成能力。需要 EverArt API Key。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-everart"],
+    env: {
+      EVERART_API_KEY: "your-everart-api-key",
+    },
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    emoji: "📁",
+    category: "云存储",
+    description:
+      "Google Drive MCP 服务器，提供 Google Drive 文件搜索和内容访问能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-google-drive"],
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    emoji: "💬",
+    category: "通讯协作",
+    description:
+      "Slack MCP 服务器，提供频道消息发送、列表查看和消息搜索能力。需要 Slack Bot Token。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-slack"],
+    env: {
+      SLACK_BOT_TOKEN: "xoxb-your-bot-token",
+      SLACK_TEAM_ID: "your-team-id",
+    },
+  },
+  {
+    id: "time",
+    name: "Time",
+    emoji: "⏰",
+    category: "工具",
+    description: "Time MCP 服务器，提供时间查询和时区转换能力。",
+    transport: "stdio",
+    command: "npx",
+    args: ["-y", "@modelcontextprotocol/server-time"],
+  },
+  {
+    id: "exa-search",
+    name: "Exa AI Search",
+    emoji: "🔬",
+    category: "搜索",
+    description:
+      "Exa AI 学术搜索 MCP 服务器，提供实时学术论文搜索和引用获取能力。适合科研场景。",
+    transport: "streamable_http",
+    url: "https://mcp.exa.ai/mcp",
+  },
+  {
+    id: "comsol-mcp",
+    name: "COMSOL Multiphysics",
+    emoji: "🔧",
+    category: "仿真工程",
+    description:
+      "COMSOL Multiphysics MCP 服务器，提供有限元仿真建模、求解和结果分析能力。适合多物理场耦合仿真场景。",
+    transport: "stdio",
+    command: "python",
+    args: ["-m", "comsol_mcp"],
+  },
+];
+
 // ─── Expert Templates ───────────────────────────────────────────────────────
 
 interface ExpertTemplate {
@@ -9872,10 +10089,11 @@ function MarketplacePage() {
     UserOutlined,
     SettingOutlined,
     GithubOutlined,
+    ApiOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph, Title } = Typography;
 
-  // Tab: 'skills' | 'experts'
+  // Tab: 'skills' | 'mcp' | 'experts'
   const [activeTab, setActiveTab] = useState("skills");
 
   // Skill market state
@@ -9899,6 +10117,12 @@ function MarketplacePage() {
   // Expert templates state
   const [expertSearchText, setExpertSearchText] = useState("");
 
+  // MCP market state
+  const [mcpSearchText, setMcpSearchText] = useState("");
+  const [mcpInstalling, setMcpInstalling] = useState<Record<string, boolean>>({});
+  const [mcpInstallTargetAgent, setMcpInstallTargetAgent] = useState<string>("");
+  const [existingMcpKeys, setExistingMcpKeys] = useState<Set<string>>(new Set());
+
   // GitHub skill sources state
   const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
   const [githubSkills, setGithubSkills] = useState<GitHubSkill[]>([]);
@@ -9920,6 +10144,7 @@ function MarketplacePage() {
       setAgents(agentList);
       if (agentList.length > 0) {
         setInstallTargetAgent(agentList[0].id);
+        setMcpInstallTargetAgent(agentList[0].id);
       }
     });
   }, []);
@@ -10769,6 +10994,271 @@ function MarketplacePage() {
     }
   };
 
+  // ── MCP Market: load existing MCP keys when target agent changes ──
+  const loadExistingMcpKeys = useCallback(async (agentId: string) => {
+    if (!agentId) return;
+    try {
+      const data = await fetchAgentMCPClients(agentId);
+      setExistingMcpKeys(new Set(data.map((m) => m.key)));
+    } catch {
+      setExistingMcpKeys(new Set());
+    }
+  }, []);
+
+  useEffect(() => {
+    if (mcpInstallTargetAgent) {
+      loadExistingMcpKeys(mcpInstallTargetAgent);
+    }
+  }, [mcpInstallTargetAgent, loadExistingMcpKeys]);
+
+  // ── MCP Market: install handler ──
+  const handleInstallMcp = async (template: MCPTemplate) => {
+    if (!mcpInstallTargetAgent) {
+      antdMsg.warning("请先选择目标专家");
+      return;
+    }
+    setMcpInstalling((prev) => ({ ...prev, [template.id]: true }));
+    try {
+      const clientKey = template.id;
+      await createMCPForAgent(mcpInstallTargetAgent, {
+        client_key: clientKey,
+        client: {
+          name: template.name,
+          description: template.description,
+          enabled: true,
+          transport: template.transport,
+          url: template.url || "",
+          command: template.command || "",
+          args: template.args || [],
+          env: template.env || {},
+          cwd: template.cwd || "",
+          headers: template.headers || {},
+        },
+      });
+      antdMsg.success(`MCP「${template.name}」已添加到当前专家`);
+      setExistingMcpKeys((prev) => new Set(prev).add(clientKey));
+    } catch (err: any) {
+      antdMsg.error(err.message || `添加 MCP「${template.name}」失败`);
+    } finally {
+      setMcpInstalling((prev) => ({ ...prev, [template.id]: false }));
+    }
+  };
+
+  // ── MCP Market: filtered templates ──
+  const filteredMcpTemplates = useMemo(() => {
+    if (!mcpSearchText.trim()) return MCP_TEMPLATES;
+    const q = mcpSearchText.toLowerCase();
+    return MCP_TEMPLATES.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        t.description.toLowerCase().includes(q) ||
+        t.category.toLowerCase().includes(q),
+    );
+  }, [mcpSearchText]);
+
+  const mcpMarketTab = React.createElement(
+    "div",
+    null,
+    // Info banner
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginBottom: 16,
+          padding: "12px 16px",
+          background: "linear-gradient(135deg, #f0fdf4 0%, #f0fff4 100%)",
+          borderRadius: 8,
+          border: "1px solid #d9f7be",
+        },
+      },
+      React.createElement(
+        Text,
+        { style: { fontSize: 13, color: "#135200" } },
+        "从 MCP 模板库选择常用 Model Context Protocol 服务器，一键添加到当前专家。支持文件系统、数据库、搜索、开发工具等多种 MCP 服务器。",
+      ),
+    ),
+    // Search + agent selector
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          gap: 12,
+          marginBottom: 16,
+          flexWrap: "wrap",
+          alignItems: "center",
+        },
+      },
+      React.createElement(Input, {
+        placeholder: "搜索 MCP 模板...",
+        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        value: mcpSearchText,
+        onChange: (e: any) => setMcpSearchText(e.target.value),
+        allowClear: true,
+        style: { maxWidth: 300 },
+      }),
+      React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12, whiteSpace: "nowrap" } },
+          "安装到：",
+        ),
+        React.createElement(Select, {
+          value: mcpInstallTargetAgent,
+          onChange: (v: string) => setMcpInstallTargetAgent(v),
+          style: { minWidth: 180 },
+          size: "small",
+          options: agents.map((a) => ({ value: a.id, label: a.name })),
+        }),
+      ),
+    ),
+    // MCP template cards
+    React.createElement(
+      Row,
+      { gutter: [12, 12] },
+      ...filteredMcpTemplates.map((template) =>
+        React.createElement(
+          Col,
+          { key: template.id, xs: 24, sm: 12, md: 8 },
+          React.createElement(
+            Card,
+            {
+              hoverable: true,
+              size: "small",
+              style: { height: "100%" },
+            },
+            // Header: emoji + name + tags
+            React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "flex-start",
+                  gap: 10,
+                  marginBottom: 8,
+                },
+              },
+              React.createElement(
+                "span",
+                { style: { fontSize: 28 } },
+                template.emoji,
+              ),
+              React.createElement(
+                "div",
+                { style: { flex: 1 } },
+                React.createElement(
+                  Text,
+                  { strong: true, style: { fontSize: 14 } },
+                  template.name,
+                ),
+                React.createElement(
+                  "div",
+                  { style: { display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" } },
+                  React.createElement(
+                    Tag,
+                    { color: "blue", style: { fontSize: 10 } },
+                    template.category,
+                  ),
+                  React.createElement(
+                    Tag,
+                    {
+                      color: template.transport === "stdio" ? "purple" : "cyan",
+                      style: { fontSize: 10 },
+                    },
+                    template.transport,
+                  ),
+                  template.env && Object.keys(template.env).length > 0
+                    ? React.createElement(
+                        Tag,
+                        { color: "orange", style: { fontSize: 10 } },
+                        "需配置密钥",
+                      )
+                    : null,
+                ),
+              ),
+            ),
+            // Description
+            React.createElement(
+              Paragraph,
+              {
+                type: "secondary",
+                style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
+                ellipsis: { rows: 3 },
+              },
+              template.description,
+            ),
+            // Footer: config preview + install button
+            React.createElement(
+              "div",
+              {
+                style: {
+                  marginTop: 10,
+                  paddingTop: 8,
+                  borderTop: "1px solid #f0f0f0",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                },
+              },
+              React.createElement(
+                Text,
+                { type: "secondary", style: { fontSize: 11 } },
+                template.transport === "stdio"
+                  ? `${template.command} ${(template.args || []).join(" ")}`
+                  : template.url || "",
+              ),
+              existingMcpKeys.has(template.id)
+                ? React.createElement(
+                    Button,
+                    { size: "small", disabled: true },
+                    "已安装",
+                  )
+                : React.createElement(
+                    Button,
+                    {
+                      type: "primary",
+                      size: "small",
+                      loading: !!mcpInstalling[template.id],
+                      icon: ApiOutlined
+                        ? React.createElement(ApiOutlined)
+                        : undefined,
+                      onClick: () => handleInstallMcp(template),
+                    },
+                    "安装",
+                  ),
+            ),
+          ),
+        ),
+      ),
+    ),
+    // Future expansion hint
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginTop: 20,
+          padding: 16,
+          textAlign: "center",
+          border: "1px dashed #d9d9d9",
+          borderRadius: 8,
+          background: "#fafafa",
+        },
+      },
+      ShopOutlined
+        ? React.createElement(ShopOutlined, {
+            style: { fontSize: 24, color: "#bfbfbf", marginBottom: 8 },
+          })
+        : null,
+      React.createElement(
+        Text,
+        { type: "secondary", style: { fontSize: 12 } },
+        "更多 MCP 服务器模板持续更新中，也支持通过 JSON 配置自定义添加",
+      ),
+    ),
+  );
+
   const expertsMarketTab = React.createElement(
     "div",
     null,
@@ -10939,6 +11429,18 @@ function MarketplacePage() {
       children: skillsMarketTab,
     },
     {
+      key: "mcp",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        ApiOutlined
+          ? React.createElement(ApiOutlined, { style: { fontSize: 14 } })
+          : null,
+        "MCP 市场",
+      ),
+      children: mcpMarketTab,
+    },
+    {
       key: "experts",
       label: React.createElement(
         "span",
@@ -10957,7 +11459,7 @@ function MarketplacePage() {
     { style: { padding: 24 } },
     React.createElement(PageHeader, {
       title: "市场",
-      subtitle: "浏览技能市场 · 选择专家模板 · 随时更新能力和专家",
+      subtitle: "浏览技能市场 · 选择 MCP 服务器 · 创建专家模板 · 随时更新能力和专家",
       extra: React.createElement(
         "div",
         { style: { display: "flex", gap: 8 } },
