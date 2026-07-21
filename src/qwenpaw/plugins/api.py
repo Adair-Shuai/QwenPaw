@@ -96,7 +96,9 @@ def _bridge_to_runtime(
     # snake_case function names to PascalCase (e.g. "launch_simulation"
     # → "LaunchSimulation"), then looks up the type by that name.
     try:
-        from ..governance.tool_registry import DEFAULT_REGISTRY as _GOV_REGISTRY
+        from ..governance.tool_registry import (
+            DEFAULT_REGISTRY as _GOV_REGISTRY,
+        )
         policy_name = _GOV_REGISTRY.python_to_policy_name(tool_name)
         for name in (tool_name, policy_name):
             if _GOV_REGISTRY.get_type(name) == "unknown":

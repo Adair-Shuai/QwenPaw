@@ -497,7 +497,7 @@ def _submit_shell_sleep_task(  # pylint: disable=redefined-outer-name
     return submit_resp.json()["task_id"], session_id
 
 
-def _poll_for_entry(app_server, session_id, timeout=30.0):
+def _poll_for_entry(app_server, session_id, timeout=20.0):
     """Poll list_calls until at least one entry appears; return it."""
     deadline = time.time() + timeout
     while time.time() < deadline:
@@ -771,12 +771,6 @@ def test_cancel_while_running(
 
 @pytest.mark.integration
 @pytest.mark.p1
-@pytest.mark.xfail(
-    reason="Offload mechanism temporarily disabled by upstream PR #6058 "
-    "(fix(tool_calls): flatten offload hint + temporarily disable "
-    "broken offload mechanism). Re-enable when the offload bug is fixed.",
-    strict=True,
-)
 def test_offload_while_running(
     app_server,
     mock_llm,  # pylint: disable=redefined-outer-name

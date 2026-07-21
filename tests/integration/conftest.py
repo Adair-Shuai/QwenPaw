@@ -49,8 +49,6 @@ from typing import Any
 import httpx
 import pytest
 
-from helpers import default_http_timeout
-
 _INTEGRATION_COVERAGE_DIR: Path | None = None
 _COVERAGE_SUBPROC_BASENAME = "integration_subproc"
 _COVERAGE_RCFILE_NAME = "coverage_subprocess.ini"
@@ -403,12 +401,8 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
 
         # 15s default lets cold-start endpoints (ACP getter, heartbeat)
         # finish without hiding real deadlocks; 30s in coverage mode
-        # for tracer overhead.  The QWENPAW_INTEGRATION_HTTP_TIMEOUT env
-        # var acts as a floor so slow runners (Windows CI) can lift every
-        # request's timeout in one place.
-        http_timeout = default_http_timeout(
-            30.0 if _integration_coverage_requested() else 15.0,
-        )
+        # for tracer overhead.
+        http_timeout = 30.0 if _integration_coverage_requested() else 15.0
         client = httpx.Client(timeout=http_timeout, trust_env=False)
 
         try:

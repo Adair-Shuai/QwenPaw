@@ -374,7 +374,8 @@ def ensure_bundled_plugins_installed(
 
             if plugin_id in _BUNDLED_EXCLUDE:
                 logger.debug(
-                    "Skipping bundled plugin '%s' — excluded from auto-install",
+                    "Skipping bundled plugin '%s' - excluded"
+                    " from auto-install",
                     plugin_id,
                 )
                 continue

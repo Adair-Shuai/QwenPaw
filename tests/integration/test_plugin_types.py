@@ -714,12 +714,6 @@ def test_command_plugin_install_loads(app_server) -> None:
 
 @pytest.mark.integration
 @pytest.mark.p0
-@pytest.mark.xfail(
-    reason="Plugin command registration log not appearing after upstream "
-    "merge (PR #6044 plugins/api.py refactor). The upload succeeds "
-    "(200) but the command registration log is missing from server logs.",
-    strict=True,
-)
 def test_command_plugin_command_actually_registered(app_server) -> None:
     """Test purpose:
     - Verify the plugin's slash command is *really* registered in the

@@ -40,7 +40,7 @@ def default_http_timeout(default: float = 15.0) -> float:
 
 
 PLUGIN_HTTP_TIMEOUT = default_http_timeout(60.0)
-LOADER_READY_TIMEOUT = default_http_timeout(30.0)
+LOADER_READY_TIMEOUT = 20.0
 AGENT_SCOPED_PREFIX = "/api/agents"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OFFICIAL_PLUGINS_DIR = REPO_ROOT / "plugins"
