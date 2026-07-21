@@ -143,8 +143,8 @@ def cmd_link(plugin_id: str) -> None:
     print(f"\n[DONE] Junction created:")
     print(f"  {target} → {source}")
     print(f"  Plugin: {plugin_id} v{src_version}")
-    print(f"\nNow edits to source files are immediately visible at runtime.")
-    print(f"Restart the backend to load the linked plugin.")
+    print("\nNow edits to source files are immediately visible at runtime.")
+    print("Restart the backend to load the linked plugin.")
 
 
 def cmd_unlink(plugin_id: str) -> None:
@@ -183,7 +183,7 @@ def cmd_unlink(plugin_id: str) -> None:
             shutil.copytree(source, target)
             print(f"[OK] Re-synced from source → {target}")
 
-    print(f"\nRun `qwenpaw plugin sync-bundled --force` to ensure clean state.")
+    print("\nRun `qwenpaw plugin sync-bundled --force` to ensure clean state.")
 
 
 def _get_auth_headers() -> dict[str, str]:
@@ -210,8 +210,8 @@ def cmd_reload(plugin_id: str) -> None:
 
     print(f"Hot-reloading plugin '{plugin_id}'...")
     if is_linked:
-        print(f"  [LINKED] {rt_dir} → source (junction)")
-        print(f"  Backend code changes will be picked up.")
+        print(f"  [LINKED] {rt_dir} -> source (junction)")
+        print("  Backend code changes will be picked up.")
     else:
         source = get_plugin_source_dir(plugin_id)
         if source is None:
@@ -243,7 +243,7 @@ def cmd_reload(plugin_id: str) -> None:
 def cmd_status() -> None:
     """Show link status for all bundled plugins."""
     print(f"Runtime plugins dir: {RUNTIME_PLUGINS_DIR}")
-    print(f"Bundle dirs:")
+    print("Bundle dirs:")
     for d in BUNDLE_DIRS:
         print(f"  - {d}")
     print()
@@ -310,9 +310,9 @@ def cmd_build_ui(plugin_id: str) -> None:
     # If linked, the build output is already at runtime
     rt_dir = get_runtime_plugin_dir(plugin_id)
     if rt_dir.exists() and is_junction_or_symlink(rt_dir):
-        print(f"\n[INFO] Plugin is linked — build output is live at runtime.")
+        print("\n[INFO] Plugin is linked -- build output is live at runtime.")
     else:
-        print(f"\n[INFO] Plugin is NOT linked — run 'link {plugin_id}' or")
+        print(f"\n[INFO] Plugin is NOT linked -- run 'link {plugin_id}' or")
         print(f"       'reload {plugin_id}' to sync to runtime.")
 
 
@@ -347,7 +347,12 @@ def cmd_watch_ui(plugin_id: str) -> None:
         print(f"  NOT linked — run 'link {plugin_id}' for live updates")
     print()
 
-    subprocess.run(["npx", "vite", "build", "--watch"], cwd=str(ui_dir), shell=True)
+    subprocess.run(
+        ["npx", "vite", "build", "--watch"],
+        cwd=str(ui_dir),
+        shell=True,
+        check=False,
+    )
 
 
 # ─── CLI ────────────────────────────────────────────────────────────────
