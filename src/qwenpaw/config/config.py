@@ -1156,6 +1156,79 @@ class RubricGateConfig(BaseModel):
     )
 
 
+class GateInstanceConfig(BaseModel):
+    """One built-in gate configured in a custom loop mode."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
+    type: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_]*$",
+    )
+    enabled: bool = True
+    params: Dict[str, Any] = Field(default_factory=dict)
+
+
+class CustomLoopModeConfig(BaseModel):
+    """A saved custom loop mode made from built-in gates."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
+    name: str = Field(min_length=1, max_length=80)
+    description: str = Field(default="", max_length=500)
+    slash_command: str = Field(
+        min_length=1,
+        max_length=64,
+        pattern=r"^[a-z0-9][a-z0-9_-]*$",
+    )
+    enabled: bool = False
+    gates: List[GateInstanceConfig] = Field(
+        default_factory=list,
+        max_length=20,
+    )
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def strip_display_name(cls, value: Any) -> Any:
+        """Strip display names before length and uniqueness validation."""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @model_validator(mode="after")
+    def validate_pipeline(self) -> "CustomLoopModeConfig":
+        """Reject ambiguous or unsafe pipeline shapes."""
+        gate_ids = [gate.id for gate in self.gates]
+        if len(gate_ids) != len(set(gate_ids)):
+            raise ValueError("Gate instance IDs must be unique")
+
+        gate_types = [gate.type for gate in self.gates if gate.enabled]
+        if len(gate_types) != len(set(gate_types)):
+            raise ValueError("Gate types cannot be repeated")
+        from ..loop.catalog import get_gate_catalog
+
+        get_gate_catalog().validate_exclusive_groups(gate_types)
+        if self.enabled and not gate_types:
+            raise ValueError("Enabled custom modes require an enabled gate")
+        return self
+
+
+def normalize_custom_loop_mode_name(name: str) -> str:
+    """Return the canonical value used for custom mode name uniqueness."""
+    return name.strip().casefold()
+
+
 class LoopConfig(BaseModel):
     """Loop engineering configuration."""
 
@@ -1171,6 +1244,34 @@ class LoopConfig(BaseModel):
         default_factory=RubricGateConfig,
         description="Completion check settings",
     )
+    custom_modes: List[CustomLoopModeConfig] = Field(
+        default_factory=list,
+        max_length=20,
+        description="User-defined loop modes built from built-in gates",
+    )
+
+    @model_validator(mode="after")
+    def validate_custom_modes(self) -> "LoopConfig":
+        """Keep custom mode identity and commands unambiguous."""
+        mode_ids = [mode.id for mode in self.custom_modes]
+        if len(mode_ids) != len(set(mode_ids)):
+            raise ValueError("Custom loop mode IDs must be unique")
+        commands = [mode.slash_command for mode in self.custom_modes]
+        if len(commands) != len(set(commands)):
+            raise ValueError("Custom loop slash commands must be unique")
+        names = [
+            normalize_custom_loop_mode_name(mode.name)
+            for mode in self.custom_modes
+        ]
+        if len(names) != len(set(names)):
+            raise ValueError("Custom loop mode names must be unique")
+        from ..loop.catalog import get_gate_catalog
+
+        for mode in self.custom_modes:
+            for gate in mode.gates:
+                catalog = get_gate_catalog()
+                catalog.validate_params(gate.type, gate.params)
+        return self
 
 
 class AgentsRunningConfig(BaseModel):

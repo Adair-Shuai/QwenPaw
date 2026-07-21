@@ -39,6 +39,7 @@ import ChatActionGroup from "./components/ChatActionGroup";
 import ChatSessionDrawer from "./components/ChatSessionDrawer";
 import { useSidebarModeStore } from "../../stores/sidebarModeStore";
 import TurnUsageAction from "./components/TurnUsageAction";
+import StreamingTokenBadge from "./components/StreamingTokenBadge";
 import {
   patchContextMaxInputLength,
   wrapChatResponseUsageStream,
@@ -3180,6 +3181,7 @@ export default function ChatPage() {
             key={refreshKey}
             options={options}
           />
+          <StreamingTokenBadge />
         </div>
 
         {/* Rate-limit guidance banner */}

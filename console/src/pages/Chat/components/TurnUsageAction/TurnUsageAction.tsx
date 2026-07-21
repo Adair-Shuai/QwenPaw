@@ -122,10 +122,8 @@ const TurnUsageAction: React.FC<{
   const { t } = useTranslation();
   const snapshot = readTurnUsageFromResponseCardData(data?.data ?? null);
   if (!snapshot || (!snapshot.usage && !snapshot.context_usage)) {
-    console.info("[TurnUsageAction] no snapshot, data=", data?.data);
     return null;
   }
-  console.info("[TurnUsageAction] rendering with snapshot=", snapshot);
 
   const ratio = snapshot.context_usage
     ? Math.max(

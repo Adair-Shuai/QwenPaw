@@ -113,16 +113,7 @@ async def resolve_turn_usage(
 ) -> tuple[dict[str, Any] | None, dict[str, Any] | None, Any | None]:
     """Resolve turn/ctx from provider usage + full agent-state estimate."""
     turn = TokenRecordingModelWrapper.pop_usage_for_session(session_id)
-    logger.info(
-        "turn_usage.resolve: session=%s turn=%s",
-        session_id[:30],
-        turn,
-    )
     if session is None:
-        logger.info(
-            "turn_usage.resolve: session is None"
-            " — returning turn only"
-        )
         return turn, None, None
 
     agent_state = await _load_agent_state(
@@ -132,25 +123,15 @@ async def resolve_turn_usage(
         channel=channel,
     )
     if agent_state is None:
-        logger.info("turn_usage.resolve: agent_state is None")
         return turn, None, None
 
     context_size = int((turn or {}).get("context_size", 0) or 0)
-    logger.info(
-        "turn_usage.resolve: context_size from turn=%s, agent_id=%s",
-        context_size,
-        agent_id,
-    )
     stats = await snapshot_context_usage_for_state(
         agent_state,
         agent_id,
         preferred_max_input_length=context_size,
     )
     if not stats:
-        logger.info(
-            "turn_usage.resolve: stats is None"
-            " — no context estimation"
-        )
         return turn, None, agent_state
 
     ctx = {

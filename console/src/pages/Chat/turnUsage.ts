@@ -1,3 +1,4 @@
+import React, { useEffect, useState } from "react";
 import ReactDOM from "react-dom";
 import type {
   IAgentScopeRuntimeWebUIRef,
@@ -140,24 +141,15 @@ export function patchLastResponseCardUsage(
   snapshot: TurnUsageSnapshot,
 ): boolean {
   const messagesApi = chatRef.current?.messages;
-  if (!messagesApi) {
-    console.info("[turn_usage] patch: messagesApi not available");
-    return false;
-  }
+  if (!messagesApi) return false;
 
   const lastAssistantMsg = findPatchTargetAssistant(
     messagesApi.getMessages() ?? [],
   );
-  if (!lastAssistantMsg) {
-    console.info("[turn_usage] patch: no target assistant message found");
-    return false;
-  }
+  if (!lastAssistantMsg) return false;
 
   const data = getResponseCardData(lastAssistantMsg.cards);
-  if (!data) {
-    console.info("[turn_usage] patch: no response card data");
-    return false;
-  }
+  if (!data) return false;
 
   const prev = readTurnUsageFromResponseCardData(data);
   if (
@@ -273,12 +265,125 @@ function snapshotFromSsePayload(raw: string): TurnUsageSnapshot | null {
   }
 }
 
+// ── Streaming Token Counter ──────────────────────────────────────────────────
+
+/**
+ * Lightweight pub/sub store for real-time streaming token estimation.
+ *
+ * The `wrapChatResponseUsageStream` TransformStream writes character counts
+ * here as SSE chunks arrive; `useStreamingTokens` hook reads from it.
+ */
+
+export interface StreamingTokenState {
+  /** Estimated output tokens generated so far in the current stream. */
+  estimatedTokens: number;
+  /** True while a stream is actively producing output. */
+  isStreaming: boolean;
+}
+
+type StreamingTokenListener = (state: StreamingTokenState) => void;
+
+const _listeners = new Set<StreamingTokenListener>();
+let _state: StreamingTokenState = {
+  estimatedTokens: 0,
+  isStreaming: false,
+};
+
+function _notify(): void {
+  for (const fn of _listeners) fn(_state);
+}
+
+/** Subscribe to streaming token updates. Returns an unsubscribe function. */
+export function subscribeStreamingTokens(
+  fn: StreamingTokenListener,
+): () => void {
+  _listeners.add(fn);
+  fn(_state); // emit current state immediately
+  return () => {
+    _listeners.delete(fn);
+  };
+}
+
+/** React hook: returns the current streaming token state. */
+export function useStreamingTokens(): StreamingTokenState {
+  const [state, setState] = useState<StreamingTokenState>(_state);
+  useEffect(() => subscribeStreamingTokens(setState), []);
+  return state;
+}
+
+/**
+ * Estimate token count from a text string.
+ *
+ * Heuristic:
+ * - CJK characters (Chinese, Japanese, Korean): ~0.7 tokens each
+ * - Other characters (ASCII, Latin): ~0.25 tokens each (~4 chars/token)
+ *
+ * This is intentionally approximate — the exact count is only known
+ * by the LLM provider after the response completes.
+ */
+function estimateTokensFromText(text: string): number {
+  if (!text) return 0;
+  let cjk = 0;
+  let other = 0;
+  for (const char of text) {
+    const code = char.codePointAt(0)!;
+    if (
+      (code >= 0x4e00 && code <= 0x9fff) || // CJK Unified Ideographs
+      (code >= 0x3400 && code <= 0x4dbf) || // CJK Extension A
+      (code >= 0x3000 && code <= 0x303f) || // CJK Symbols and Punctuation
+      (code >= 0xff00 && code <= 0xffef) || // Halfwidth and Fullwidth Forms
+      (code >= 0x3040 && code <= 0x30ff) || // Hiragana + Katakana
+      (code >= 0xac00 && code <= 0xd7af) // Hangul Syllables
+    ) {
+      cjk++;
+    } else {
+      other++;
+    }
+  }
+  return Math.ceil(cjk * 0.7 + other * 0.25);
+}
+
+/**
+ * Extract text content from an SSE event payload.
+ *
+ * Looks for `delta` arrays in message events (streaming text chunks).
+ */
+function extractTextFromSseEvent(payload: Record<string, unknown>): string {
+  const obj = payload.object;
+  const delta = payload.delta;
+
+  // Message events with delta content (streaming text)
+  if (obj === "message" && Array.isArray(delta)) {
+    let text = "";
+    for (const part of delta) {
+      if (part && typeof part === "object") {
+        const partType = (part as Record<string, unknown>).type;
+        const partText = (part as Record<string, unknown>).text;
+        if (partType === "text" && typeof partText === "string") {
+          text += partText;
+        }
+        // Also count reasoning/thinking text
+        if (
+          (partType === "reasoning" || partType === "thinking") &&
+          typeof partText === "string"
+        ) {
+          text += partText;
+        }
+      }
+    }
+    return text;
+  }
+
+  return "";
+}
+
+// ── SSE Stream Wrapper ───────────────────────────────────────────────────────
+
 /**
  * Observe the SSE body and patch usage when the stream finishes.
  *
- * Trailing `turn_usage` SSE arrives after Completed response. The chat SDK
- * may drop it via isStillActive (session id drift after realId URL resolve),
- * so we capture it here and patch after the SDK has finished reading.
+ * Also tracks streaming token counts in real-time by parsing text deltas
+ * from each SSE event.
  */
 export function wrapChatResponseUsageStream(
   response: Response,
@@ -289,6 +394,11 @@ export function wrapChatResponseUsageStream(
   const decoder = new TextDecoder();
   let buffer = "";
   let pendingUsage: TurnUsageSnapshot | null = null;
+  let streamingTokenCount = 0;
+
+  // Signal start of streaming
+  _state = { estimatedTokens: 0, isStreaming: true };
+  _notify();
 
   const transformed = response.body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
@@ -298,10 +408,26 @@ export function wrapChatResponseUsageStream(
         const parsed = parseSseDataLines(buffer);
         buffer = parsed.rest;
         for (const raw of parsed.events) {
+          // Check for turn_usage SSE
           const snap = snapshotFromSsePayload(raw);
           if (snap) {
-            console.info("[turn_usage] SSE snapshot captured:", snap);
             pendingUsage = snap;
+          }
+
+          // Estimate streaming tokens from text deltas
+          try {
+            const payload = JSON.parse(raw) as Record<string, unknown>;
+            const text = extractTextFromSseEvent(payload);
+            if (text) {
+              streamingTokenCount += estimateTokensFromText(text);
+              _state = {
+                estimatedTokens: streamingTokenCount,
+                isStreaming: true,
+              };
+              _notify();
+            }
+          } catch {
+            // Not valid JSON — skip
           }
         }
       },
@@ -311,15 +437,29 @@ export function wrapChatResponseUsageStream(
         for (const raw of parsed.events) {
           const snap = snapshotFromSsePayload(raw);
           if (snap) {
-            console.info("[turn_usage] SSE snapshot captured (flush):", snap);
             pendingUsage = snap;
           }
+
+          try {
+            const payload = JSON.parse(raw) as Record<string, unknown>;
+            const text = extractTextFromSseEvent(payload);
+            if (text) {
+              streamingTokenCount += estimateTokensFromText(text);
+            }
+          } catch {
+            // skip
+          }
         }
+
+        // Signal end of streaming
+        _state = {
+          estimatedTokens: streamingTokenCount,
+          isStreaming: false,
+        };
+        _notify();
+
         if (pendingUsage) {
-          console.info("[turn_usage] scheduling patch for last response card");
           schedulePatchLastResponseCardUsage(chatRef, pendingUsage);
-        } else {
-          console.info("[turn_usage] no usage snapshot found in SSE stream");
         }
       },
     }),
