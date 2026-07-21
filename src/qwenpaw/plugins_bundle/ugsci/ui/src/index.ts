@@ -167,9 +167,17 @@ async function fetchAgentSkills(agentId: string): Promise<SkillSpec[]> {
   return data || [];
 }
 
-async function fetchPoolSkills(): Promise<PoolSkillSpec[]> {
-  const data = await apiFetch<PoolSkillSpec[]>("/skills/pool");
+async function fetchPoolSkills(summary = false): Promise<PoolSkillSpec[]> {
+  const qs = summary ? "?summary=true" : "";
+  const data = await apiFetch<PoolSkillSpec[]>(`/skills/pool${qs}`);
   return data || [];
+}
+
+async function fetchPoolSkillContent(skillName: string): Promise<string> {
+  const data = await apiFetch<{ name: string; content: string }>(
+    `/skills/pool/${encodeURIComponent(skillName)}/content`,
+  );
+  return data?.content || "";
 }
 
 async function fetchWorkspaceSkills(): Promise<WorkspaceSkillSummary[]> {
@@ -3441,7 +3449,7 @@ function SkillsConfigTab({
     setPickerOpen(true);
     setPoolLoading(true);
     try {
-      const pool = await fetchPoolSkills();
+      const pool = await fetchPoolSkills(true);
       setPoolSkills(pool);
     } catch (err: any) {
       antdMsg.error(err.message || "加载技能池失败");
@@ -4976,7 +4984,7 @@ function ExpertDrawer({
     setSkillPickerOpen2(true);
     setPoolLoading2(true);
     try {
-      const pool = await fetchPoolSkills();
+      const pool = await fetchPoolSkills(true);
       setPoolSkillsList2(pool);
     } catch (err: any) {
       antdMsg.error(err.message || "加载技能池失败");
@@ -9058,6 +9066,8 @@ function SkillPoolTab({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeSkill, setActiveSkill] = useState<PoolSkillSpec | null>(null);
   const [installedAgents, setInstalledAgents] = useState<string[]>([]);
+  const [contentLoading, setContentLoading] = useState(false);
+  const [displayCount, setDisplayCount] = useState(24);
 
   const filteredSkills = useMemo(() => {
     if (!searchText.trim()) return poolSkills;
@@ -9069,6 +9079,16 @@ function SkillPoolTab({
         s.tags?.some((t) => t.toLowerCase().includes(q)),
     );
   }, [poolSkills, searchText]);
+
+  const visibleSkills = useMemo(
+    () => filteredSkills.slice(0, displayCount),
+    [filteredSkills, displayCount],
+  );
+
+  const handleSearchChange = useCallback((val: string) => {
+    setSearchText(val);
+    setDisplayCount(24);
+  }, []);
 
   const computeInstalledAgents = useCallback(
     (skillName: string): string[] => {
@@ -9082,6 +9102,27 @@ function SkillPoolTab({
       return result;
     },
     [workspaceSkills, agents],
+  );
+
+  const handleCardClick = useCallback(
+    async (skill: PoolSkillSpec) => {
+      setActiveSkill(skill);
+      setInstalledAgents(computeInstalledAgents(skill.name));
+      setDrawerOpen(true);
+      // Lazy-load full content if not already present
+      if (!skill.content) {
+        setContentLoading(true);
+        try {
+          const content = await fetchPoolSkillContent(skill.name);
+          setActiveSkill({ ...skill, content });
+        } catch {
+          // keep empty content on error
+        } finally {
+          setContentLoading(false);
+        }
+      }
+    },
+    [computeInstalledAgents],
   );
 
   const navigateTo = (path: string) => {
@@ -9108,7 +9149,7 @@ function SkillPoolTab({
           ? React.createElement(SearchOutlined)
           : undefined,
         value: searchText,
-        onChange: (e: any) => setSearchText(e.target.value),
+        onChange: (e: any) => handleSearchChange(e.target.value),
         allowClear: true,
         style: { maxWidth: 400 },
       }),
@@ -9153,24 +9194,23 @@ function SkillPoolTab({
             description: searchText ? "未找到匹配的技能" : "技能池为空",
           })
         : React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...filteredSkills.map((skill) =>
-              React.createElement(
-                Col,
-                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+            React.Fragment,
+            null,
+            React.createElement(
+              Row,
+              { gutter: [12, 12] },
+              ...visibleSkills.map((skill) =>
                 React.createElement(
-                  Card,
-                  {
-                    hoverable: true,
-                    size: "small",
-                    style: { cursor: "pointer", height: "100%" },
-                    onClick: () => {
-                      setActiveSkill(skill);
-                      setInstalledAgents(computeInstalledAgents(skill.name));
-                      setDrawerOpen(true);
+                  Col,
+                  { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+                  React.createElement(
+                    Card,
+                    {
+                      hoverable: true,
+                      size: "small",
+                      style: { cursor: "pointer", height: "100%" },
+                      onClick: () => handleCardClick(skill),
                     },
-                  },
                   React.createElement(
                     "div",
                     {
@@ -9255,7 +9295,23 @@ function SkillPoolTab({
                 ),
               ),
             ),
+            // Load more button
+            visibleSkills.length < filteredSkills.length
+              ? React.createElement(
+                  "div",
+                  { style: { textAlign: "center", marginTop: 16 } },
+                  React.createElement(
+                    Button,
+                    {
+                      onClick: () => setDisplayCount((c: number) => c + 24),
+                      size: "small",
+                    },
+                    `加载更多 (剩余 ${filteredSkills.length - visibleSkills.length} 个)`,
+                  ),
+                )
+              : null,
           ),
+        ),
     // Skill detail drawer
     activeSkill
       ? React.createElement(
@@ -9395,6 +9451,45 @@ function SkillPoolTab({
                   "暂无专家安装此技能",
                 ),
           ),
+          // Skill content preview (lazy-loaded)
+          contentLoading
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16, textAlign: "center" } },
+                React.createElement(Spin, { size: "small" }),
+              )
+            : activeSkill.content
+              ? React.createElement(
+                  "div",
+                  { style: { marginTop: 16 } },
+                  React.createElement(
+                    Text,
+                    {
+                      strong: true,
+                      style: { display: "block", marginBottom: 8 },
+                    },
+                    "技能内容",
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        maxHeight: 300,
+                        overflow: "auto",
+                        padding: 12,
+                        background: "#f5f5f5",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        whiteSpace: "pre-wrap",
+                      },
+                    },
+                    activeSkill.content.slice(0, 2000) +
+                      (activeSkill.content.length > 2000
+                        ? "\n\n... (内容已截断)"
+                        : ""),
+                  ),
+                )
+              : null,
         )
       : null,
   );
@@ -9426,7 +9521,7 @@ function SkillCenterPage() {
     setLoading(true);
     try {
       const [pool, agentList, wsSkills] = await Promise.all([
-        fetchPoolSkills(),
+        fetchPoolSkills(true),
         fetchAgents(),
         fetchWorkspaceSkills(),
       ]);

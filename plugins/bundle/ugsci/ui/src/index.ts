@@ -3449,7 +3449,7 @@ function SkillsConfigTab({
     setPickerOpen(true);
     setPoolLoading(true);
     try {
-      const pool = await fetchPoolSkills();
+      const pool = await fetchPoolSkills(true);
       setPoolSkills(pool);
     } catch (err: any) {
       antdMsg.error(err.message || "加载技能池失败");
@@ -4984,7 +4984,7 @@ function ExpertDrawer({
     setSkillPickerOpen2(true);
     setPoolLoading2(true);
     try {
-      const pool = await fetchPoolSkills();
+      const pool = await fetchPoolSkills(true);
       setPoolSkillsList2(pool);
     } catch (err: any) {
       antdMsg.error(err.message || "加载技能池失败");
@@ -8987,44 +8987,38 @@ function CurrentAgentSkillsTab({
               )
             : null,
           // Skill content preview
-          contentLoading
+          activeSkill.content
             ? React.createElement(
                 "div",
-                { style: { marginTop: 16, textAlign: "center" } },
-                React.createElement(Spin, { size: "small" }),
-              )
-            : activeSkill.content
-              ? React.createElement(
+                { style: { marginTop: 16 } },
+                React.createElement(
+                  Text,
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
+                  "技能内容",
+                ),
+                React.createElement(
                   "div",
-                  { style: { marginTop: 16 } },
-                  React.createElement(
-                    Text,
-                    {
-                      strong: true,
-                      style: { display: "block", marginBottom: 8 },
+                  {
+                    style: {
+                      maxHeight: 300,
+                      overflow: "auto",
+                      padding: 12,
+                      background: "#f5f5f5",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      whiteSpace: "pre-wrap",
                     },
-                    "技能内容",
-                  ),
-                  React.createElement(
-                    "div",
-                    {
-                      style: {
-                        maxHeight: 300,
-                        overflow: "auto",
-                        padding: 12,
-                        background: "#f5f5f5",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        whiteSpace: "pre-wrap",
-                      },
-                    },
-                    activeSkill.content.slice(0, 2000) +
-                      (activeSkill.content.length > 2000
-                        ? "\n\n... (内容已截断)"
-                        : ""),
-                  ),
-                )
-              : null,
+                  },
+                  activeSkill.content.slice(0, 2000) +
+                    (activeSkill.content.length > 2000
+                      ? "\n\n... (内容已截断)"
+                      : ""),
+                ),
+              )
+            : null,
         )
       : null,
   );
@@ -9457,6 +9451,45 @@ function SkillPoolTab({
                   "暂无专家安装此技能",
                 ),
           ),
+          // Skill content preview (lazy-loaded)
+          contentLoading
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16, textAlign: "center" } },
+                React.createElement(Spin, { size: "small" }),
+              )
+            : activeSkill.content
+              ? React.createElement(
+                  "div",
+                  { style: { marginTop: 16 } },
+                  React.createElement(
+                    Text,
+                    {
+                      strong: true,
+                      style: { display: "block", marginBottom: 8 },
+                    },
+                    "技能内容",
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        maxHeight: 300,
+                        overflow: "auto",
+                        padding: 12,
+                        background: "#f5f5f5",
+                        borderRadius: 6,
+                        fontSize: 12,
+                        whiteSpace: "pre-wrap",
+                      },
+                    },
+                    activeSkill.content.slice(0, 2000) +
+                      (activeSkill.content.length > 2000
+                        ? "\n\n... (内容已截断)"
+                        : ""),
+                  ),
+                )
+              : null,
         )
       : null,
   );

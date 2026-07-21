@@ -52,28 +52,58 @@ def _install_msg_dict_shim() -> None:
 _install_msg_dict_shim()
 
 
-def _install_agentscope_tool_utils_optional_fix() -> None:
-    """Ensure ``Optional`` is resolvable in agentscope.tool._utils.
+def _install_agentscope_tool_utils_typing_fix() -> None:
+    """Ensure common ``typing`` names are resolvable in agentscope.tool._utils.
 
     agentscope's ``_utils.py`` creates a Pydantic model named
     ``_StructuredOutputDynamicClass`` via ``create_model()`` from function
-    parameter annotations.  When a parameter uses ``Optional[...]`` and the
-    annotation is a string forward reference (``from __future__ import
-    annotations``), Pydantic looks up ``Optional`` in the module's global
-    namespace — but agentscope.tool._utils does not import it, causing
-    ``PydanticUserError: _StructuredOutputDynamicClass is not fully defined``.
+    parameter annotations.  When a parameter uses ``Optional[...]``,
+    ``List[...]``, ``Dict[...]`` etc. and the annotation is a string
+    forward reference (``from __future__ import annotations``), Pydantic
+    looks up the name in the module's global namespace — but
+    agentscope.tool._utils does not import those names, causing
+    ``PydanticUserError: _StructuredOutputDynamicClass is not fully defined;
+    you should define 'Optional' / 'List' / 'Dict' / …``.
 
-    This shim injects ``Optional`` into that module's namespace so the
-    forward reference resolves correctly.
+    This shim injects all commonly-used ``typing`` names into that
+    module's namespace so the forward references resolve correctly.
     """
     try:
         import typing
-        import agentscope.tool._utils as _utils_mod
 
-        if not hasattr(_utils_mod, "Optional"):
-            _utils_mod.Optional = typing.Optional
+        # agentscope modules that call pydantic.create_model() with
+        # stringified annotations from ``from __future__ import
+        # annotations``.  Each needs the typing names available in
+        # its own global namespace for Pydantic to resolve forward
+        # references.
+        _target_modules = [
+            "agentscope.tool._utils",
+            "agentscope.tool._toolkit",
+            "agentscope.tool._builtin._meta",
+        ]
+
+        # Inject every public name from ``typing`` that a function
+        # annotation might reference when ``from __future__ import
+        # annotations`` turns it into a string.
+        _typing_names = (
+            "Optional", "List", "Dict", "Tuple", "Set", "FrozenSet",
+            "Union", "Any", "Callable", "Sequence", "Mapping",
+            "Iterator", "Iterable", "Generator", "Awaitable",
+            "AsyncIterator", "AsyncGenerator", "Type", "ClassVar",
+            "Literal", "TypeVar", "Generic", "Protocol",
+        )
+
+        import importlib
+        for _mod_path in _target_modules:
+            try:
+                _mod = importlib.import_module(_mod_path)
+            except Exception:
+                continue
+            for _name in _typing_names:
+                if not hasattr(_mod, _name):
+                    setattr(_mod, _name, getattr(typing, _name))
     except Exception:
         pass
 
 
-_install_agentscope_tool_utils_optional_fix()
+_install_agentscope_tool_utils_typing_fix()
