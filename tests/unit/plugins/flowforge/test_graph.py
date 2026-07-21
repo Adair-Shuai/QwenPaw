@@ -19,7 +19,7 @@ from plugins.bundle.flowforge.engine.graph import (
 
 
 def _run(coro):
-    return asyncio.get_event_loop().run_until_complete(coro)
+    return asyncio.run(coro)
 
 
 def make_prompt(nodes: dict) -> DynamicPrompt:
