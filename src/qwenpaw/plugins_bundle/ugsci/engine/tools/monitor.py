@@ -30,9 +30,9 @@ async def check_simulation_status(
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
-    from .launcher import _sim_jobs
+    from .launcher import _get_job
 
-    job = _sim_jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         return ToolChunk(
             is_last=True,
@@ -57,15 +57,25 @@ async def check_simulation_status(
         f"PID:         {job.pid}",
     ]
 
-    # Elapsed / duration
+    # Elapsed / duration — prefer wall-clock time (survives restart)
     if job.status == "running":
-        elapsed = loop.time() - job.start_time
+        if job.start_ts > 0:
+            import time as _time
+            elapsed = _time.time() - job.start_ts
+        else:
+            elapsed = loop.time() - job.start_time
         lines.append(
             f"Elapsed:     {elapsed:.0f}s ({elapsed/3600:.1f}h)",
         )
         remaining = job.timeout - elapsed
         lines.append(
             f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)",
+        )
+    elif job.end_ts and job.start_ts:
+        import time as _time
+        duration = job.end_ts - job.start_ts
+        lines.append(
+            f"Duration:    {duration:.0f}s ({duration/3600:.1f}h)",
         )
     elif job.end_time:
         duration = job.end_time - job.start_time

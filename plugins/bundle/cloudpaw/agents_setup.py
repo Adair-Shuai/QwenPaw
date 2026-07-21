@@ -197,14 +197,6 @@ def ensure_builtin_agents() -> None:
 
     config = load_config()
 
-    if config.agents.active_agent in ("default", ""):
-        config.agents.active_agent = BUILTIN_ORCHESTRATION_AGENT_ID
-        save_config(config)
-        logger.info(
-            "Set active_agent to orchestration agent: %s",
-            BUILTIN_ORCHESTRATION_AGENT_ID,
-        )
-
     for spec in _AGENT_SPECS:
         agent_id = spec["agent_id"]
         expected_ws = (

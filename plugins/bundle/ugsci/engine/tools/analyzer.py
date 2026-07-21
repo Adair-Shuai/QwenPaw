@@ -41,9 +41,9 @@ async def analyze_simulation(
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
-    from .launcher import _sim_jobs
+    from .launcher import _get_job
 
-    job = _sim_jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         return ToolChunk(
             is_last=True,
@@ -214,7 +214,7 @@ async def analyze_simulation(
         if not reference_job_id:
             lines.append("Error: comparison analysis requires reference_job_id.")
         else:
-            ref_job = _sim_jobs.get(reference_job_id)
+            ref_job = _get_job(reference_job_id)
             if not ref_job:
                 lines.append(f"Error: Reference job '{reference_job_id}' not found.")
             else:

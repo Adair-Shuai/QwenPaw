@@ -4,7 +4,7 @@ $ErrorActionPreference = "Stop"
 
 # 1. Run NSIS silent install (matches real user installer).
 #    /S = silent, run the installer to completion before continuing.
-$installer = Get-ChildItem dist/QwenPaw-Tauri-*-Windows-setup.exe |
+$installer = Get-ChildItem dist/UGSci-Tauri-*-Windows-setup.exe |
   Select-Object -First 1
 if (-not $installer) { throw "NSIS installer not found in dist/" }
 Write-Host "Installing $($installer.Name) silently..."

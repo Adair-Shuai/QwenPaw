@@ -32,6 +32,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -39,6 +40,14 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _BUNDLE_HASH_FILE = ".bundle_hash"
+
+# Plugins that are bundled in the repo but should NOT be auto-installed
+# on startup.  Each entry is a plugin ID (from plugin.json → "id" field).
+_BUNDLED_EXCLUDE: frozenset[str] = frozenset(
+    {
+        "cloudpaw",  # Alibaba Cloud deployment plugin — opt-in only
+    },
+)
 
 
 def _get_bundled_plugins_dirs() -> list[Path]:
@@ -76,6 +85,16 @@ def _get_bundled_plugins_dirs() -> list[Path]:
     here = Path(__file__).resolve().parent
     for parent in [here, *here.parents]:
         candidate = parent / "plugins" / "bundle"
+        if candidate.is_dir() and candidate not in result:
+            result.append(candidate)
+            break  # only need the first match
+
+    # Also scan plugins/apps/ — app-type plugins (e.g. agent-kanban)
+    # live at a separate level from regular bundle plugins but are
+    # loaded through the same PluginLoader pipeline once installed
+    # into ~/.qwenpaw/plugins/.
+    for parent in [here, *here.parents]:
+        candidate = parent / "plugins" / "apps"
         if candidate.is_dir() and candidate not in result:
             result.append(candidate)
             break  # only need the first match
@@ -237,6 +256,23 @@ def _install_or_update_plugin(
     bundled_version = str(bundled_manifest.get("version", "0.0.0"))
     bundled_hash = _compute_bundle_hash(item, bundled_manifest)
 
+    # If target_dir is a junction/symlink (development convenience
+    # for hot-reload), skip the update entirely — the link already
+    # points to the source tree so content is always current.
+    # Trying to rmtree/copytree a junction fails on Windows.
+    if target_dir.exists() and (
+        target_dir.is_symlink()
+        or (
+            hasattr(os.path, "isjunction")
+            and os.path.isjunction(str(target_dir))
+        )
+    ):
+        logger.debug(
+            "Skipping bundled plugin '%s' — target is a junction/symlink",
+            plugin_id,
+        )
+        return False
+
     if target_dir.exists():
         existing_manifest = _read_manifest(target_dir)
         if existing_manifest is not None and not force:
@@ -335,6 +371,14 @@ def ensure_bundled_plugins_installed(
                 continue
 
             plugin_id = bundled_manifest.get("id", item.name)
+
+            if plugin_id in _BUNDLED_EXCLUDE:
+                logger.debug(
+                    "Skipping bundled plugin '%s' — excluded from auto-install",
+                    plugin_id,
+                )
+                continue
+
             target_dir = plugins_dir / plugin_id
 
             if _is_uninstalled(target_dir):
@@ -344,14 +388,20 @@ def ensure_bundled_plugins_installed(
                 )
                 continue
 
-            if _install_or_update_plugin(
-                item,
-                target_dir,
-                plugin_id,
-                bundled_manifest,
-                force=force,
-            ):
-                installed_or_updated.append(plugin_id)
+            try:
+                if _install_or_update_plugin(
+                    item,
+                    target_dir,
+                    plugin_id,
+                    bundled_manifest,
+                    force=force,
+                ):
+                    installed_or_updated.append(plugin_id)
+            except Exception:
+                logger.exception(
+                    "Failed to sync bundled plugin '%s'",
+                    plugin_id,
+                )
 
     if installed_or_updated:
         logger.info(

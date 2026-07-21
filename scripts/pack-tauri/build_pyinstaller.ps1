@@ -1,4 +1,4 @@
-# Build QwenPaw backend with PyInstaller for Tauri sidecar (Windows)
+# Build UGSci backend with PyInstaller for Tauri sidecar (Windows)
 # Creates an onedir backend bundle with embedded Python runtime
 #
 # Usage:
@@ -33,7 +33,7 @@ if (Test-Path $VERSION_FILE) {
 }
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "QwenPaw PyInstaller Build - Windows" -ForegroundColor Cyan
+Write-Host "UGSci PyInstaller Build - Windows" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Version: $VERSION"
 Write-Host "Repository: $REPO_ROOT"

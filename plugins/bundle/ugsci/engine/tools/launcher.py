@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,8 +36,10 @@ class SimJob:
     working_dir: str
     pid: int
     status: str = "running"  # running | completed | failed | timeout | error
-    start_time: float = 0.0
-    end_time: Optional[float] = None
+    start_time: float = 0.0  # loop.time() — for in-process elapsed calc
+    start_ts: float = 0.0  # time.time() — wall clock, survives restart
+    end_time: Optional[float] = None  # loop.time()
+    end_ts: Optional[float] = None  # time.time() — wall clock
     timeout: float = 86400.0
     returncode: Optional[int] = None
     error: Optional[str] = None
@@ -62,6 +65,14 @@ async def launch_simulation(
 
     The simulation runs as a background subprocess — this function returns
     immediately.  Use ``check_simulation_status`` to query progress.
+
+    For long-running simulations (hours/days), consider setting up a
+    scheduled check via the cron system so the Agent is automatically
+    notified when the simulation finishes::
+
+        qwenpaw cron create --type agent --schedule-type scheduled \
+          --run-at "<10 minutes later>" --text "检查 job <job_id> 状态" \
+          --channel <channel> --agent-id <agent_id>
 
     Args:
         simulator (`str`):
@@ -200,6 +211,7 @@ async def launch_simulation(
     job_id = f"sim_{uuid.uuid4().hex[:8]}"
     loop = asyncio.get_event_loop()
 
+    wall_now = time.time()
     job = SimJob(
         job_id=job_id,
         simulator=simulator.lower().strip(),
@@ -208,10 +220,30 @@ async def launch_simulation(
         pid=proc.pid,
         status="running",
         start_time=loop.time(),
+        start_ts=wall_now,
         timeout=timeout,
         process=proc,
     )
     _sim_jobs[job_id] = job
+
+    # ── Persist job metadata ────────────────────────────────────────
+    try:
+        from . import job_store
+
+        job_store.save_job(job_id, {
+            "job_id": job_id,
+            "simulator": job.simulator,
+            "deck_file": job.deck_file,
+            "working_dir": job.working_dir,
+            "pid": job.pid,
+            "status": job.status,
+            "start_ts": job.start_ts,
+            "timeout": job.timeout,
+            "returncode": None,
+            "error": None,
+        })
+    except Exception as exc:
+        logger.warning("Failed to persist job %s: %s", job_id, exc)
 
     # ── Start background monitor ─────────────────────────────────────
     asyncio.create_task(_monitor_job(job_id))
@@ -244,6 +276,125 @@ async def launch_simulation(
 
 
 # ---------------------------------------------------------------------------
+# Job recovery — used by monitor / result_reader / analyzer when a job
+# is not found in the in-memory _sim_jobs dict (e.g. after restart).
+# ---------------------------------------------------------------------------
+
+
+def _recover_job(job_id: str) -> Optional[SimJob]:
+    """Try to recover a job from persistent storage.
+
+    Returns a SimJob (without process handle) if found in the JSON
+    store, or None.  The recovered job is inserted into ``_sim_jobs``
+    so subsequent lookups hit memory directly.
+    """
+    try:
+        from . import job_store
+    except Exception:
+        return None
+
+    meta = job_store.load_job(job_id)
+    if not meta:
+        return None
+
+    # Reconstruct SimJob from stored metadata (process handle is lost)
+    start_ts = meta.get("start_ts", 0.0)
+    try:
+        start_ts = float(start_ts)
+    except (ValueError, TypeError):
+        start_ts = 0.0
+
+    end_ts = meta.get("end_ts")
+    try:
+        end_ts = float(end_ts) if end_ts is not None else None
+    except (ValueError, TypeError):
+        end_ts = None
+
+    job = SimJob(
+        job_id=meta.get("job_id", job_id),
+        simulator=meta.get("simulator", ""),
+        deck_file=meta.get("deck_file", ""),
+        working_dir=meta.get("working_dir", ""),
+        pid=meta.get("pid", 0),
+        status=meta.get("status", "unknown"),
+        start_ts=start_ts,
+        end_ts=end_ts,
+        timeout=meta.get("timeout", 86400.0),
+        returncode=meta.get("returncode"),
+        error=meta.get("error"),
+        process=None,  # Cannot recover process handle after restart
+    )
+
+    # If status was "running", check timeout first, then PID liveness.
+    # Timeout check guards against PID reuse: if the job has exceeded
+    # its timeout, we mark it as "timeout" regardless of PID status.
+    if job.status == "running":
+        if job.start_ts > 0:
+            elapsed = time.time() - job.start_ts
+            if elapsed > job.timeout:
+                job.status = "timeout"
+                job.end_ts = time.time()
+                job_store.update_job_status(
+                    job_id,
+                    job.status,
+                    end_ts=job.end_ts,
+                )
+                logger.info(
+                    "Recovered job %s: exceeded timeout, marked as timeout",
+                    job_id,
+                )
+                _sim_jobs[job_id] = job
+                return job
+
+        if job.pid > 0 and not job_store.is_pid_alive(job.pid):
+            # Process has terminated — mark as completed (optimistic;
+            # Agent should verify with read_simulation_results)
+            job.status = "completed"
+            job.end_ts = time.time()
+            job_store.update_job_status(
+                job_id,
+                job.status,
+                end_ts=job.end_ts,
+            )
+            logger.info(
+                "Recovered job %s: process dead, marked as completed",
+                job_id,
+            )
+        elif job.pid > 0:
+            logger.info(
+                "Recovered job %s: process still running (pid=%d)",
+                job_id, job.pid,
+            )
+        else:
+            logger.info(
+                "Recovered job %s: status=%s (no PID)",
+                job_id, job.status,
+            )
+    else:
+        logger.info(
+            "Recovered job %s: status=%s",
+            job_id, job.status,
+        )
+
+    _sim_jobs[job_id] = job
+    return job
+
+
+def _get_job(job_id: str) -> Optional[SimJob]:
+    """Look up a job by ID, recovering from persistent store if needed.
+
+    This is the single entry point for job lookup — used by monitor,
+    result_reader, and analyzer.  Returns None only if the job is truly
+    unknown (neither in memory nor in the persistent store).
+    """
+    job = _sim_jobs.get(job_id)
+    if job is not None:
+        return job
+    # Try recovery from persistent store
+    return _recover_job(job_id)
+
+
+# ---------------------------------------------------------------------------
 # Background monitor coroutine
 # ---------------------------------------------------------------------------
 
@@ -272,6 +423,22 @@ async def _monitor_job(job_id: str) -> None:
         job.error = str(exc)
 
     job.end_time = loop.time()
+    job.end_ts = time.time()
+
+    # ── Update persisted status ──────────────────────────────────────
+    try:
+        from . import job_store
+
+        job_store.update_job_status(
+            job_id,
+            job.status,
+            returncode=job.returncode,
+            error=job.error,
+            end_ts=job.end_ts,
+        )
+    except Exception as exc:
+        logger.warning("Failed to update job status %s: %s", job_id, exc)
+
     logger.info(
         "Simulation ended: job=%s status=%s rc=%s",
         job_id, job.status, job.returncode,

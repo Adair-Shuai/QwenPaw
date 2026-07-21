@@ -26,14 +26,11 @@ const defaultConfig = {
   welcome: {
     greeting: "Hello, how can I help you today?",
     description:
-      "I am a helpful assistant that can help you with your questions.",
+      "UGSci AI assistant is online. From reservoir analysis to numerical simulation and engineering decisions — describe your scenario and I'll deliver results.",
     avatar: "/online.svg",
     prompts: [
       {
-        value: "Let's start a new journey!",
-      },
-      {
-        value: "Can you tell me what skills you have?",
+        value: "Can you tell me what you can do?",
       },
     ],
   },
@@ -53,7 +50,7 @@ class ChatConfigProvider {
   }
 
   getPrompts(t: TFunction): Array<{ value: string }> {
-    return [{ value: t("chat.prompt1") }, { value: t("chat.prompt2") }];
+    return [{ value: t("chat.prompt1") }];
   }
 
   getConfig(t: TFunction) {

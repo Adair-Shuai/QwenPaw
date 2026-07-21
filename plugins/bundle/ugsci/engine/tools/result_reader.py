@@ -42,9 +42,9 @@ async def read_simulation_results(
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
-    from .launcher import _sim_jobs
+    from .launcher import _get_job
 
-    job = _sim_jobs.get(job_id)
+    job = _get_job(job_id)
     if not job:
         return ToolChunk(
             is_last=True,

@@ -2277,12 +2277,23 @@ function ExpertTeamSection({
  * Each enabled skill's `description` is transformed into a natural-language
  * request that the user can click to start a conversation.
  */
-function extractPromptFromSkills(skills: SkillSpec[]): string[] {
-  const prompts: string[] = [];
+/** Prompt object with a visible label and the full prompt value. */
+interface PromptItem {
+  label: string;
+  value: string;
+}
+
+function extractPromptFromSkills(skills: SkillSpec[]): PromptItem[] {
+  const prompts: PromptItem[] = [];
   for (const skill of skills) {
     if (skill.enabled === false) continue;
     const desc = skill.description?.trim();
     if (!desc) continue;
+
+    // Use skill name as the short label (fall back to truncated description)
+    const label = (skill.name || desc).length > 20
+      ? (skill.name || desc).substring(0, 18) + "…"
+      : (skill.name || desc);
 
     // Transform description into a user-facing prompt
     let prompt = desc;
@@ -2313,7 +2324,7 @@ function extractPromptFromSkills(skills: SkillSpec[]): string[] {
       prompt = prompt.substring(0, 77) + "...";
     }
 
-    prompts.push(prompt);
+    prompts.push({ label, value: prompt });
     if (prompts.length >= 4) break;
   }
   return prompts;
@@ -6161,7 +6172,7 @@ function PresetPromptsTab({
 
   const prompts = useMemo(() => extractPromptFromSkills(skills), [skills]);
 
-  const handleUsePrompt = (prompt: string) => {
+  const handleUsePrompt = (prompt: PromptItem) => {
     try {
       const host = getHost();
       if (host.setSelectedAgent) {
@@ -6170,14 +6181,14 @@ function PresetPromptsTab({
     } catch {}
     // Store the prompt for the chat page to pick up
     try {
-      sessionStorage.setItem("ugsci_pending_prompt", prompt);
+      sessionStorage.setItem("ugsci_pending_prompt", prompt.value);
     } catch {}
     window.history.pushState({}, "", "/chat");
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
-  const handleCopy = (prompt: string) => {
-    navigator.clipboard?.writeText(prompt).then(() => {
+  const handleCopy = (prompt: PromptItem) => {
+    navigator.clipboard?.writeText(prompt.value).then(() => {
       antdMsg.success("已复制到剪贴板");
     });
   };
@@ -6220,7 +6231,7 @@ function PresetPromptsTab({
     ),
     React.createElement(List, {
       dataSource: prompts,
-      renderItem: (prompt: string, index: number) =>
+      renderItem: (prompt: PromptItem, index: number) =>
         React.createElement(
           List.Item,
           {
@@ -6254,12 +6265,12 @@ function PresetPromptsTab({
                 },
                 onClick: () => handleUsePrompt(prompt),
               },
-              prompt,
+              prompt.value,
             ),
             description: React.createElement(
               Text,
               { type: "secondary", style: { fontSize: 12 } },
-              "点击直接发送给专家",
+              prompt.label,
             ),
           }),
         ),
@@ -11602,6 +11613,407 @@ function MarketplacePage() {
   );
 }
 
+// ─── Welcome Prompts Injector ─────────────────────────────────────────────────
+//
+// A hidden React component registered via QP.chat.rightHeader.add() that
+// stays mounted for the lifetime of the chat page.  It uses the host hook
+// useSelectedAgent() to react to agent switches, fetches the agent's skills,
+// and calls QP.chat.welcome.set() to:
+//   1. Always set the UGSci-branded description.
+//   2. When the agent has skills, inject { label, value } prompts derived
+//      from those skills.
+//   3. When the agent has no skills (or fetch fails), fall back to the
+//      default prompt "能告诉我你都能做点什么吗".
+
+/** Detect the current UI language (zh / en / ja / ru / vi / id). */
+function detectLocale(): string {
+  try {
+    const stored = localStorage.getItem("language") || "";
+    if (stored) return stored.split("-")[0];
+  } catch {}
+  const nav = (typeof navigator !== "undefined" ? navigator.language : "") || "";
+  return nav.split("-")[0] || "en";
+}
+
+/** UGSci welcome description per locale. */
+const UGSCI_DESCRIPTIONS: Record<string, string> = {
+  zh: "您好，UGSci 智能助手在线。无论是油气藏分析、数值模拟还是工程决策，描述您的场景，我来交付结果。",
+  en: "UGSci AI assistant is online. From reservoir analysis to numerical simulation and engineering decisions — describe your scenario and I'll deliver results.",
+  ja: "UGSci AIアシスタントがオンラインです。油層解析、数値シミュレーション、エンジニアリングの意思決定など、シナリオを描写してください。結果をお届けします。",
+  ru: "UGSci AI-ассистент онлайн. От анализа пласта до численного моделирования и инженерных решений — опишите свой сценарий, и я предоставлю результат.",
+  vi: "Trợ lý AI UGSci đang trực tuyến. Từ phân tích mỏ, mô phỏng số đến ra quyết định kỹ thuật — mô tả kịch bản của bạn, tôi sẽ giao kết quả.",
+  id: "Asisten AI UGSci sedang online. Dari analisis reservoir, simulasi numerik hingga keputusan engineering — jelaskan skenario Anda, saya akan memberikan hasilnya.",
+};
+
+/** Default prompt per locale (shown when agent has no skills). */
+const UGSCI_DEFAULT_PROMPT: Record<string, { label: string; value: string }> = {
+  zh: { label: "能告诉我你都能做点什么吗？", value: "能告诉我你都能做点什么吗" },
+  en: { label: "Can you tell me what you can do?", value: "Can you tell me what you can do?" },
+  ja: { label: "あなたができることを教えてください", value: "あなたができることを教えてください" },
+  ru: { label: "Расскажи, что ты умеешь делать?", value: "Расскажи, что ты умеешь делать?" },
+  vi: { label: "Bạn có thể cho tôi biết bạn làm được gì không?", value: "Bạn có thể cho tôi biết bạn làm được gì không?" },
+  id: { label: "Bisa cerita apa saja yang bisa Anda lakukan?", value: "Bisa cerita apa saja yang bisa Anda lakukan?" },
+};
+
+function WelcomePromptsInjector() {
+  const host = getHost();
+  const React = host.React;
+  const { useEffect, useRef } = React;
+
+  // useSelectedAgent() is a host hook that returns { id: string }.
+  // It re-renders this component whenever the selected agent changes.
+  const agentInfo = host.useSelectedAgent ? host.useSelectedAgent() : { id: "default" };
+  const agentId = agentInfo?.id || "default";
+
+  // Keep track of the last injected agent so we don't re-fetch unnecessarily.
+  const lastInjectedRef = useRef<string | null>(null);
+  // Keep the disposable returned by welcome.set() so we can clean up.
+  const disposableRef = useRef<(() => void) | null>(null);
+
+  useEffect(() => {
+    if (lastInjectedRef.current === agentId) return;
+    lastInjectedRef.current = agentId;
+
+    const locale = detectLocale();
+    const description = UGSCI_DESCRIPTIONS[locale] || UGSCI_DESCRIPTIONS.en;
+    const defaultPrompt = UGSCI_DEFAULT_PROMPT[locale] || UGSCI_DEFAULT_PROMPT.en;
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const skills = await fetchAgentSkills(agentId);
+        if (cancelled) return;
+
+        const promptItems = extractPromptFromSkills(skills);
+
+        // Dispose the previous registration before setting a new one.
+        if (disposableRef.current) {
+          try { disposableRef.current(); } catch {}
+          disposableRef.current = null;
+        }
+
+        const QP = (window as any).QwenPaw;
+        if (QP?.chat?.welcome) {
+          if (promptItems.length > 0) {
+            // Agent has skills — inject skill-derived prompts + UGSci description.
+            disposableRef.current = QP.chat.welcome.set("ugsci", {
+              description,
+              prompts: promptItems,
+            });
+            console.info(
+              `[ugsci] Injected ${promptItems.length} welcome prompts for agent "${agentId}"`,
+            );
+          } else {
+            // No skills — use default prompt + UGSci description.
+            disposableRef.current = QP.chat.welcome.set("ugsci", {
+              description,
+              prompts: [defaultPrompt],
+            });
+            console.info(
+              `[ugsci] No skills for agent "${agentId}" — using default prompt`,
+            );
+          }
+        }
+      } catch (err) {
+        console.warn(
+          `[ugsci] Failed to inject welcome prompts for agent "${agentId}":`,
+          err,
+        );
+        // On error, still set the description + default prompt.
+        const QP = (window as any).QwenPaw;
+        if (QP?.chat?.welcome && !cancelled) {
+          if (disposableRef.current) {
+            try { disposableRef.current(); } catch {}
+            disposableRef.current = null;
+          }
+          disposableRef.current = QP.chat.welcome.set("ugsci", {
+            description,
+            prompts: [defaultPrompt],
+          });
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [agentId]);
+
+  // Render nothing — this component exists only for its side effect.
+  return null;
+}
+
+// ─── Mode Selector ───────────────────────────────────────────────────────────
+//
+// A compact dropdown rendered in the sender prefix area (left side of the
+// chat input box).  It lets the user pick a task mode:
+//
+//   - 默认对话  (default)   — normal Q&A, reply once and stop
+//   - Goal 模式 (goal)      — /goal, persistent loop with self-audit
+//   - Mission 模式 (mission) — /mission, master→worker→verifier pipeline
+//
+// Selecting a loop mode injects `__loop__<mode>` into the textarea; the
+// host's loop-chip interception detects it, sets the chip, and clears
+// the textarea — exactly as if the user had typed the slash command.
+// Selecting "默认对话" clicks the chip's close button to clear it.
+//
+// A 500ms DOM poll keeps the selector in sync with external mode changes
+// (manual /goal typing, command palette, etc.).
+
+interface ModeOption {
+  key: string;
+  label: string;
+  icon?: string;
+  desc: string;
+}
+
+const MODE_OPTIONS: ModeOption[] = [
+  { key: "default", label: "默认", icon: "", desc: "普通对话，回复即停" },
+  { key: "goal", label: "Goal", icon: "", desc: "持续循环 + 自我审计" },
+  { key: "mission", label: "Mission", icon: "", desc: "多Agent流水线 + 上下文隔离" },
+];
+
+/** Set textarea value and trigger input event (mirrors host setTextareaValue). */
+function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
+  const setter = Object.getOwnPropertyDescriptor(
+    HTMLTextAreaElement.prototype,
+    "value",
+  )?.set;
+  if (setter) {
+    setter.call(textarea, value);
+  } else {
+    textarea.value = value;
+  }
+  textarea.selectionStart = textarea.selectionEnd = value.length;
+  textarea.dispatchEvent(new Event("input", { bubbles: true }));
+}
+
+function ModeSelector() {
+  const host = getHost();
+  const React = host.React;
+  const { useState, useEffect, useCallback, useRef } = React;
+  const { Dropdown, Button } = host.antd;
+  const {
+    SendOutlined,
+    CarryOutOutlined,
+    ScheduleOutlined,
+    DownOutlined,
+  } = host.antdIcons || {};
+
+  const [currentMode, setCurrentMode] = useState<string>("default");
+
+  // Suppress the DOM poll for a short period after the user explicitly
+  // selects a mode.  This prevents the poll from racing with React 18's
+  // batched state update and reverting the selection (e.g. clicking
+  // "默认" → chip still in DOM for a few ms → poll sees "/goal" →
+  // sets currentMode back to "goal").
+  const suppressPollUntilRef = useRef(0);
+
+  // ── Poll DOM for chip state to stay in sync ──
+  useEffect(() => {
+    const checkChip = () => {
+      // Skip polling if we're in a suppress window.
+      if (suppressPollUntilRef.current && Date.now() < suppressPollUntilRef.current) {
+        return;
+      }
+      // Clear expired suppress.
+      if (suppressPollUntilRef.current && Date.now() >= suppressPollUntilRef.current) {
+        suppressPollUntilRef.current = 0;
+      }
+
+      const chipSpan = document.querySelector(
+        '[class*="loopChip"] span',
+      );
+      if (chipSpan) {
+        const text = (chipSpan.textContent || "").trim();
+        // Chip text looks like "/goal" or "/mission"
+        const m = text.match(/^\/(\S+)/);
+        if (m) {
+          const mode = m[1];
+          setCurrentMode((prev: string) => (prev !== mode ? mode : prev));
+          return;
+        }
+      }
+      setCurrentMode((prev: string) => (prev !== "default" ? "default" : prev));
+    };
+    const interval = setInterval(checkChip, 500);
+    // Also check immediately
+    checkChip();
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Activate a mode ──
+  const handleSelect = useCallback((modeKey: string) => {
+    if (modeKey === currentMode) return;
+
+    // Suppress poll for 1s to prevent race condition.
+    suppressPollUntilRef.current = Date.now() + 1000;
+
+    if (modeKey === "default") {
+      // Clear the loop chip.
+      // Strategy: find the chip container, then click the last SVG
+      // inside it (which is the X close icon from lucide-react).
+      const chip = document.querySelector('[class*="loopChip"]');
+      if (chip) {
+        // Method 1: look for any element with "close" or "chipClose" in class
+        let closeEl: HTMLElement | null = chip.querySelector(
+          '[class*="chipClose"], [class*="chip_close"], [class*="close"]',
+        ) as HTMLElement | null;
+
+        // Method 2: fallback — last SVG in the chip is the X icon
+        if (!closeEl) {
+          const svgs = chip.querySelectorAll("svg");
+          if (svgs.length > 0) {
+            closeEl = svgs[svgs.length - 1] as unknown as HTMLElement;
+          }
+        }
+
+        // Method 3: fallback — last child element
+        if (!closeEl) {
+          const children = chip.querySelectorAll("*");
+          if (children.length > 0) {
+            closeEl = children[children.length - 1] as HTMLElement;
+          }
+        }
+
+        if (closeEl) {
+          // Use MouseEvent for broader compatibility with React's synthetic events.
+          closeEl.dispatchEvent(
+            new MouseEvent("click", { bubbles: true, cancelable: true }),
+          );
+        }
+      }
+      setCurrentMode("default");
+      return;
+    }
+
+    // Inject __loop__<mode> into textarea — the host interception will
+    // detect it, set the chip, and clear the textarea automatically.
+    const textarea = document
+      .querySelector('[class*="sender"]')
+      ?.querySelector("textarea") as HTMLTextAreaElement | null;
+    if (textarea) {
+      setNativeTextareaValue(textarea, `__loop__${modeKey}`);
+      // The interception runs on rAF, so the textarea will be cleared by it.
+      // Focus the textarea so the user can immediately type their task.
+      setTimeout(() => textarea.focus(), 100);
+    }
+    setCurrentMode(modeKey);
+  }, [currentMode]);
+
+  // ── Build menu items ──
+  const menuItems = MODE_OPTIONS.map((opt) => {
+    const isActive = opt.key === currentMode;
+    return {
+      key: opt.key,
+      label: React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            minWidth: 180,
+          },
+        },
+        React.createElement("span", { style: { fontSize: 14, display: "flex", alignItems: "center", width: 16, justifyContent: "center" },
+          }, (() => {
+            if (opt.key === "goal" && CarryOutOutlined) return React.createElement(CarryOutOutlined, { style: { fontSize: 14 } });
+            if (opt.key === "mission" && ScheduleOutlined) return React.createElement(ScheduleOutlined, { style: { fontSize: 14 } });
+            if (SendOutlined) return React.createElement(SendOutlined, { style: { fontSize: 14 } });
+            return null;
+          })()),
+        React.createElement(
+          "div",
+          { style: { flex: 1 } },
+          React.createElement(
+            "div",
+            { style: { fontWeight: isActive ? 600 : 400 } },
+            opt.label,
+          ),
+          React.createElement(
+            "div",
+            {
+              style: {
+                fontSize: 11,
+                color: "rgba(0,0,0,0.45)",
+                marginTop: 1,
+              },
+            },
+            opt.desc,
+          ),
+        ),
+        isActive
+          ? React.createElement("span", {
+              style: { color: "#1677ff", fontSize: 12, fontWeight: 600 },
+            }, "✓")
+          : null,
+      ),
+    };
+  });
+
+  // ── Current option ──
+  const currentOpt = MODE_OPTIONS.find((o) => o.key === currentMode) || MODE_OPTIONS[0];
+
+  // ── Icon for current mode ──
+  // default → SendOutlined, goal → CarryOutOutlined, mission → ScheduleOutlined
+  let IconComp: any = null;
+  if (currentMode === "goal" && CarryOutOutlined) {
+    IconComp = React.createElement(CarryOutOutlined, { style: { fontSize: 14 } });
+  } else if (currentMode === "mission" && ScheduleOutlined) {
+    IconComp = React.createElement(ScheduleOutlined, { style: { fontSize: 14 } });
+  } else if (SendOutlined) {
+    IconComp = React.createElement(SendOutlined, { style: { fontSize: 14 } });
+  } else {
+    IconComp = currentOpt.icon;
+  }
+
+  // ── Build trigger button ──
+  // Use size "default" (height 32px) to match the whisper / attachment
+  // buttons in the sender area.
+  const trigger = React.createElement(
+    Button,
+    {
+      type: "text",
+      style: {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        height: 32,
+        padding: "4px 10px",
+        borderRadius: 6,
+        fontSize: 13,
+        lineHeight: 1,
+        color: currentMode !== "default" ? "#1677ff" : "rgba(0,0,0,0.65)",
+        fontWeight: currentMode !== "default" ? 600 : 400,
+        flexShrink: 0,
+      },
+    },
+    IconComp,
+    React.createElement("span", null, currentOpt.label),
+    DownOutlined
+      ? React.createElement(DownOutlined, { style: { fontSize: 10, opacity: 0.5 } })
+      : null,
+  );
+
+  // ── Build dropdown menu ──
+  const menu = {
+    items: menuItems,
+    onClick: (info: { key: string }) => handleSelect(info.key),
+  };
+
+  // Wrap in a span with order:-1 so the mode selector appears BEFORE
+  // the whisper / working-folder buttons (which are rendered first in
+  // the host's prefix fragment).  Works because the SDK's prefix
+  // container is a flex row.
+  return React.createElement(
+    "span",
+    { style: { order: -1, display: "inline-flex", alignItems: "center", flexShrink: 0 } },
+    React.createElement(Dropdown, { menu, trigger: ["click"] }, trigger),
+  );
+}
+
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
 function buildPlugin() {
@@ -11615,6 +12027,37 @@ function buildPlugin() {
 
   const React = getHost().React;
   const PLUGIN_ID = "ugsci";
+
+  // ── Register Welcome Prompts Injector ────────────────────────────────
+  // Register a hidden component in the rightHeader slot so it stays mounted
+  // for the lifetime of the chat page and can react to agent switches.
+  if (QP.chat?.rightHeader?.add) {
+    QP.chat.rightHeader.add(PLUGIN_ID, React.createElement(WelcomePromptsInjector), {
+      id: "ugsci.welcome-injector",
+      order: -1, // render before other right-header items (invisible anyway)
+    });
+    console.info("[ugsci] WelcomePromptsInjector registered via rightHeader");
+  } else {
+    console.warn(
+      "[ugsci] QP.chat.rightHeader.add not available — agent-specific welcome prompts disabled",
+    );
+  }
+
+  // ── Register Mode Selector in sender prefix ──────────────────────────
+  // Adds a compact dropdown on the left side of the chat input box that
+  // lets users switch between Default / Goal / Mission modes.
+  if (QP.chat?.sender?.addPrefix) {
+    QP.chat.sender.addPrefix(
+      PLUGIN_ID,
+      React.createElement(ModeSelector),
+      { id: "ugsci.mode-selector", order: -100 },
+    );
+    console.info("[ugsci] ModeSelector registered via sender.addPrefix");
+  } else {
+    console.warn(
+      "[ugsci] QP.chat.sender.addPrefix not available — mode selector disabled",
+    );
+  }
 
   // ── Register Routes + Menu Items ─────────────────────────────────────
   // Use the new QwenPaw.route.add / QwenPaw.menu.add API so items appear

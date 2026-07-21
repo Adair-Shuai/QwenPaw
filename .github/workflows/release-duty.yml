@@ -260,8 +260,8 @@ jobs:
             ## macOS Desktop — ${mention('macos')}
 
             1. Go to the [Release page](${releaseUrl})
-            2. Download \`QwenPaw-${version}-macOS.zip\`
-            3. Unzip, drag \`QwenPaw.app\` to Applications, launch
+            2. Download \`UGSci-${version}-macOS.zip\`
+            3. Unzip, drag \`UGSci.app\` to Applications, launch UGSci
 
             - [ ] Download and unzip succeed
             - [ ] App launches without crash
@@ -275,8 +275,8 @@ jobs:
             ## Windows Desktop — ${mention('windows')}
 
             1. Go to the [Release page](${releaseUrl})
-            2. Download \`QwenPaw-Setup-${version}.exe\`
-            3. Run the installer, follow the wizard, launch QwenPaw
+            2. Download \`UGSci-Setup-${version}.exe\`
+            3. Run the installer, follow the wizard, launch UGSci
 
             - [ ] Installer runs without error
             - [ ] App launches without crash
@@ -306,7 +306,7 @@ jobs:
             const { data: issue } = await github.rest.issues.create({
               owner: context.repo.owner,
               repo:  context.repo.repo,
-              title: `[Release Duty] QwenPaw ${tag} (${typeBadge}) — Installation Verification`,
+              title: `[Release Duty] UGSci ${tag} (${typeBadge}) — Installation Verification`,
               body:  body,
               labels: ['release-duty', releaseType === 'stable' || releaseType === 'post'
                 ? 'stable'

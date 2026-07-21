@@ -58,7 +58,12 @@ def _bridge_to_runtime(
     description: str,
     registry,
 ) -> None:
-    """Attach ToolDescriptor and inject into runtime ToolRegistries."""
+    """Attach ToolDescriptor and inject into runtime ToolRegistries.
+
+    Also registers the tool in the governance ToolRegistry so the
+    policy engine recognises it.  Without this, plugin tools are
+    rejected as "unknown tool" in Phase 0 of policy evaluation.
+    """
     import inspect
 
     from ..runtime.tool_registry import ToolDescriptor
@@ -78,6 +83,36 @@ def _bridge_to_runtime(
         logger.info(
             "Attached ToolDescriptor to '%s'",
             tool_name,
+        )
+
+    # ── Register in governance ToolRegistry ────────────────────────
+    # Plugin tools must be registered as "internal" type so the
+    # governance policy engine does not reject them as "unknown tool"
+    # in Phase 0.  "internal" tools are allowed by default (they are
+    # framework-managed, not raw shell/file/network operations).
+    #
+    # We register BOTH the raw tool_name and the PascalCase policy
+    # name because governance uses python_to_policy_name() to convert
+    # snake_case function names to PascalCase (e.g. "launch_simulation"
+    # → "LaunchSimulation"), then looks up the type by that name.
+    try:
+        from ..governance.tool_registry import DEFAULT_REGISTRY as _GOV_REGISTRY
+        policy_name = _GOV_REGISTRY.python_to_policy_name(tool_name)
+        for name in (tool_name, policy_name):
+            if _GOV_REGISTRY.get_type(name) == "unknown":
+                _GOV_REGISTRY.register(
+                    name,
+                    "internal",
+                    "",  # no target_param — internal tools don't need one
+                )
+        logger.info(
+            "Registered '%s' in governance ToolRegistry as internal",
+            tool_name,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to register '%s' in governance ToolRegistry: %s",
+            tool_name, exc,
         )
 
     if registry is None:

@@ -590,6 +590,117 @@ def _build_avatar_router() -> APIRouter:
     return router
 
 
+def _build_sim_router() -> APIRouter:
+    """Build a FastAPI router for simulation job monitoring (SSE + list)."""
+    import asyncio
+    import json
+    import time
+
+    from fastapi.responses import StreamingResponse
+
+    router = APIRouter()
+
+    @router.get("/jobs")
+    async def list_sim_jobs() -> Dict[str, Any]:
+        """List all known simulation jobs (from persistent store + memory)."""
+        try:
+            from .engine.tools import job_store
+            from .engine.tools.launcher import _sim_jobs
+
+            # Merge persisted jobs with in-memory jobs
+            persisted = job_store.list_jobs()
+            result: dict[str, Any] = {}
+
+            # Start with persisted jobs
+            for jid, meta in persisted.items():
+                result[jid] = {
+                    "job_id": meta.get("job_id", jid),
+                    "simulator": meta.get("simulator", ""),
+                    "status": meta.get("status", "unknown"),
+                    "deck_file": meta.get("deck_file", ""),
+                    "pid": meta.get("pid", 0),
+                    "start_ts": meta.get("start_ts"),
+                    "end_ts": meta.get("end_ts"),
+                }
+
+            # Overlay in-memory jobs (may have more recent status)
+            for jid, job in _sim_jobs.items():
+                result[jid] = {
+                    "job_id": job.job_id,
+                    "simulator": job.simulator,
+                    "status": job.status,
+                    "deck_file": job.deck_file,
+                    "pid": job.pid,
+                    "start_ts": job.start_ts if job.start_ts > 0 else None,
+                    "end_ts": job.end_ts,
+                }
+
+            return {"jobs": list(result.values())}
+        except Exception as exc:
+            logger.error("[%s] Failed to list jobs: %s", PLUGIN_ID, exc)
+            return {"jobs": [], "error": str(exc)}
+
+    @router.get("/jobs/{job_id}/stream")
+    async def job_stream(job_id: str):
+        """SSE stream of simulation job status updates.
+
+        Polls the job status every 5 seconds and sends updates as SSE
+        events.  The stream closes when the job reaches a terminal
+        status (completed / failed / timeout / error).
+        """
+
+        async def event_stream():
+            try:
+                from .engine.tools.launcher import _get_job
+            except Exception:
+                yield f"data: {json.dumps({'error': 'Job store unavailable'})}\n\n"
+                return
+
+            while True:
+                job = _get_job(job_id)
+                if not job:
+                    yield f"data: {json.dumps({'error': 'Job not found', 'job_id': job_id})}\n\n"
+                    return
+
+                data: dict[str, Any] = {
+                    "job_id": job.job_id,
+                    "status": job.status,
+                    "simulator": job.simulator,
+                    "pid": job.pid,
+                }
+
+                if job.start_ts > 0:
+                    elapsed = time.time() - job.start_ts
+                    data["elapsed"] = round(elapsed, 1)
+                    data["remaining"] = round(max(0, job.timeout - elapsed), 1)
+
+                if job.returncode is not None:
+                    data["returncode"] = job.returncode
+                if job.error:
+                    data["error"] = job.error
+                if job.end_ts:
+                    data["end_ts"] = job.end_ts
+
+                yield f"data: {json.dumps(data)}\n\n"
+
+                if job.status in ("completed", "failed", "timeout", "error"):
+                    return
+
+                await asyncio.sleep(5)
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={
+                "Cache-Control": "no-cache",
+                "Connection": "keep-alive",
+                "X-Accel-Buffering": "no",
+            },
+        )
+
+    return router
+
+
 class UGSciPlugin:
     """UGSci plugin backend entry point."""
 
@@ -676,6 +787,24 @@ class UGSciPlugin:
         except Exception as exc:
             logger.error(
                 "[%s] Failed to register avatar HTTP router: %s",
+                PLUGIN_ID,
+                exc,
+            )
+
+        # Register HTTP routes for simulation job monitoring (SSE + list)
+        try:
+            api.register_http_router(
+                _build_sim_router(),
+                prefix="/ugsci/sim",
+                tags=["ugsci-sim"],
+            )
+            logger.info(
+                "[%s] HTTP router registered at /api/ugsci/sim",
+                PLUGIN_ID,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register sim monitoring HTTP router: %s",
                 PLUGIN_ID,
                 exc,
             )

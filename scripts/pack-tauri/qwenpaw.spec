@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for QwenPaw Desktop (Tauri sidecar).
+PyInstaller spec file for UGSci Desktop (Tauri sidecar).
 
 Shared spec for both macOS and Windows. Builds an onedir backend bundle so the
 desktop startup can load Python directly without onefile extraction. The same

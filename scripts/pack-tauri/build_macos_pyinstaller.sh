@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build QwenPaw with Tauri for macOS (PyInstaller backend)
+# Build UGSci with Tauri for macOS (PyInstaller backend)
 # Creates a self-contained desktop app with bundled Python backend
 #
 # Usage:
@@ -13,7 +13,7 @@ cd "$REPO_ROOT"
 VERSION=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)
 
 echo "========================================="
-echo "QwenPaw Tauri Build - macOS (PyInstaller)"
+echo "UGSci Tauri Build - macOS (PyInstaller)"
 echo "========================================="
 echo "Version: ${VERSION}"
 echo ""
@@ -130,7 +130,7 @@ cd ..
 echo "Tauri app built"
 echo ""
 
-# Dynamically find the built .app bundle (product name may differ from "QwenPaw Desktop")
+# Dynamically find the built .app bundle (product name may differ from "UGSci Desktop")
 APP_PATH=""
 for app in "${BUNDLE_DIR}/macos/"*.app; do
     if [ -d "$app" ]; then
@@ -170,7 +170,7 @@ STAGED_APP_PATH="${DIST_DIR}/$(basename "${APP_PATH}")"
 echo ".app copied to ${STAGED_APP_PATH}"
 
 # Create ZIP archive
-ZIP_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS.zip"
+ZIP_NAME="${DIST_ROOT}/UGSci-Tauri-${VERSION}-macOS.zip"
 if [ -f "${ZIP_NAME}" ]; then
     rm -f "${ZIP_NAME}"
 fi
@@ -191,7 +191,7 @@ else
 fi
 echo ""
 
-UPDATER_NAME="${DIST_ROOT}/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz"
+UPDATER_NAME="${DIST_ROOT}/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
 case "$(uname -m)" in
     arm64 | aarch64) UPDATER_TARGET="darwin-aarch64" ;;
     *) UPDATER_TARGET="darwin-x86_64" ;;

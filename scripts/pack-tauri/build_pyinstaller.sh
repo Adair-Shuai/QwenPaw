@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build QwenPaw backend with PyInstaller for Tauri sidecar
+# Build UGSci backend with PyInstaller for Tauri sidecar
 # Creates an onedir backend bundle with embedded Python runtime
 #
 # Usage:
@@ -18,7 +18,7 @@ DIST="${DIST:-dist}"
 VERSION=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)
 
 echo "========================================="
-echo "QwenPaw PyInstaller Build"
+echo "UGSci PyInstaller Build"
 echo "========================================="
 echo "Version: ${VERSION}"
 echo "Repository: ${REPO_ROOT}"

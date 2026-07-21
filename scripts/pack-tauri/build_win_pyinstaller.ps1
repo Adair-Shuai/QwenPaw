@@ -1,4 +1,4 @@
-# Build QwenPaw with Tauri for Windows (PyInstaller backend)
+# Build UGSci with Tauri for Windows (PyInstaller backend)
 # Creates a self-contained desktop app with bundled Python backend
 #
 # Usage:
@@ -56,7 +56,7 @@ if (Test-Path $VERSION_FILE) {
 }
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "QwenPaw Tauri Build - Windows (PyInstaller)" -ForegroundColor Cyan
+Write-Host "UGSci Tauri Build - Windows (PyInstaller)" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Version: $VERSION"
 Write-Host ""
