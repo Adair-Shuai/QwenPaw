@@ -715,7 +715,7 @@ function pn({ team: e }) {
               flex: e.mode === "roundtable" ? "1 1 200px" : "initial"
             }
           },
-          t.createElement(Ne, {
+          t.createElement(Be, {
             name: c.agentName,
             size: 24
           }),
@@ -781,7 +781,7 @@ function pn({ team: e }) {
               flex: e.mode === "roundtable" ? "1 1 150px" : "initial"
             }
           },
-          t.createElement(Ne, { name: c.name, size: 24 }),
+          t.createElement(Be, { name: c.name, size: 24 }),
           t.createElement(
             "div",
             null,
@@ -1056,7 +1056,7 @@ function gn({
             r.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 6 } },
-              r.createElement(Ne, { name: K, size: 24 }),
+              r.createElement(Be, { name: K, size: 24 }),
               r.createElement(
                 U,
                 { strong: !0, style: { fontSize: 13 } },
@@ -1403,7 +1403,7 @@ function bt({
                 fontSize: 11
               }
             },
-            r.createElement(Ne, { name: u.name, size: 18 }),
+            r.createElement(Be, { name: u.name, size: 18 }),
             r.createElement(
               x,
               {
@@ -2151,7 +2151,7 @@ const qe = {
   gridTemplateColumns: "1fr 1fr",
   gap: "0 16px",
   marginBottom: 16
-}, De = {
+}, Ne = {
   fontSize: 13,
   fontWeight: 600,
   color: "rgba(0,0,0,0.85)",
@@ -2249,7 +2249,7 @@ function Ln({ agentId: e }) {
     "div",
     { style: { paddingBottom: 8 } },
     // ── Section: 基本设置 ──
-    t.createElement("div", { style: De }, "基本设置"),
+    t.createElement("div", { style: Ne }, "基本设置"),
     Y(
       "启用心跳",
       t.createElement(r, {
@@ -2303,7 +2303,7 @@ function Ln({ agentId: e }) {
     ),
     // ── Section: 活跃时段 ──
     t.createElement(G, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: De }, "活跃时段"),
+    t.createElement("div", { style: Ne }, "活跃时段"),
     Y(
       "启用活跃时段限制",
       t.createElement(r, {
@@ -2805,7 +2805,7 @@ function Dn({ agentId: e }) {
     Typography: D,
     Divider: b,
     message: A
-  } = E().antd, { SaveOutlined: _ } = E().antdIcons || {}, { Text: H } = D, [x, V] = a(!0), [L, O] = a(!1), j = r(null), [U, g] = a(60), [M, T] = a(""), [Q, C] = a(!0), [w, u] = a(30), [R, X] = a("zh"), [J, P] = a("UTC"), [d, S] = a(!0), [p, ne] = a(100), [F, Y] = a(!0), [Z, G] = a(3), [$, le] = a(1), [y, ae] = a(!0), [ue, ve] = a(3), [K, ce] = a(2), [B, re] = a(60), [oe, te] = a(1), [W, pe] = a(0), [me, Ie] = a(1), [Te, k] = a(0), [se, ge] = a(30), [we, Se] = a(50), [Ce, $e] = a("light"), [Ue, Oe] = a("scroll"), [Fe, He] = a("remelight"), [Be, Le] = a("AUTO"), je = l(async () => {
+  } = E().antd, { SaveOutlined: _ } = E().antdIcons || {}, { Text: H } = D, [x, V] = a(!0), [L, O] = a(!1), j = r(null), [U, g] = a(60), [M, T] = a(""), [Q, C] = a(!0), [w, u] = a(30), [R, X] = a("zh"), [J, P] = a("UTC"), [d, S] = a(!0), [p, ne] = a(100), [F, Y] = a(!0), [Z, G] = a(3), [$, le] = a(1), [y, ae] = a(!0), [ue, ve] = a(3), [K, ce] = a(2), [B, re] = a(60), [oe, te] = a(1), [W, pe] = a(0), [me, Ie] = a(1), [Te, k] = a(0), [se, ge] = a(30), [we, Se] = a(50), [Ce, $e] = a("light"), [Ue, Oe] = a("scroll"), [Fe, He] = a("remelight"), [je, Le] = a("AUTO"), De = l(async () => {
     var z, ke, xe, be, ze, Re;
     V(!0);
     try {
@@ -2826,8 +2826,8 @@ function Dn({ agentId: e }) {
     }
   }, [e]);
   n(() => {
-    je();
-  }, [je]);
+    De();
+  }, [De]);
   const Ge = async () => {
     var ke, xe;
     const z = j.current;
@@ -2869,7 +2869,7 @@ function Dn({ agentId: e }) {
             strategy: Ue
           },
           memory_manager_backend: Fe,
-          approval_level: Be
+          approval_level: je
         };
         await _n(e, be), j.current = be, R && await Mn(e, R).catch(() => {
         }), J && await Rn(J).catch(() => {
@@ -2919,7 +2919,7 @@ function Dn({ agentId: e }) {
     // ── Section: 基础设置 ──
     t.createElement(
       "div",
-      { style: De },
+      { style: Ne },
       "基础设置"
     ),
     ie(
@@ -2993,11 +2993,11 @@ function Dn({ agentId: e }) {
     ),
     // ── Section: 审批级别 ──
     t.createElement(b, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: De }, "审批级别"),
+    t.createElement("div", { style: Ne }, "审批级别"),
     q(
       "工具执行审批",
       t.createElement(c, {
-        value: Be,
+        value: je,
         onChange: (z) => Le(z),
         style: { width: "100%" },
         options: [
@@ -3010,7 +3010,7 @@ function Dn({ agentId: e }) {
     ),
     // ── Section: 迭代与循环 ──
     t.createElement(b, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: De }, "迭代与循环"),
+    t.createElement("div", { style: Ne }, "迭代与循环"),
     q(
       "启用迭代限制",
       t.createElement(m, {
@@ -3058,7 +3058,7 @@ function Dn({ agentId: e }) {
     ) : null,
     // ── Section: LLM 重试 ──
     t.createElement(b, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: De }, "LLM 重试"),
+    t.createElement("div", { style: Ne }, "LLM 重试"),
     q(
       "启用 LLM 重试",
       t.createElement(m, {
@@ -3098,7 +3098,7 @@ function Dn({ agentId: e }) {
     ),
     // ── Section: LLM 限流 ──
     t.createElement(b, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: De }, "LLM 限流"),
+    t.createElement("div", { style: Ne }, "LLM 限流"),
     ie(
       "最大并发数",
       t.createElement(i, {
@@ -3147,7 +3147,7 @@ function Dn({ agentId: e }) {
     ),
     // ── Section: 上下文与记忆 ──
     t.createElement(b, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: De }, "上下文与记忆"),
+    t.createElement("div", { style: Ne }, "上下文与记忆"),
     ie(
       "上下文管理后端",
       t.createElement(c, {
@@ -3354,7 +3354,7 @@ function Un({
       l.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        l.createElement(Ne, { name: b.name, size: 36 }),
+        l.createElement(Be, { name: b.name, size: 36 }),
         l.createElement(
           "div",
           null,
@@ -3942,7 +3942,7 @@ function Fn({
       title: l.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        l.createElement(Ne, { name: w.name, size: 28 }),
+        l.createElement(Be, { name: w.name, size: 28 }),
         l.createElement("span", null, w.name)
       ),
       open: t,
@@ -4189,7 +4189,7 @@ function Hn({
                     marginBottom: 8
                   }
                 },
-                n.createElement(Ne, {
+                n.createElement(Be, {
                   name: g.name,
                   size: 40
                 }),
@@ -5197,7 +5197,7 @@ function kt(e) {
   const t = e.map(encodeURIComponent).join(",");
   return Ye(`/ugsci/avatar/team/${t}`);
 }
-function Ne({
+function Be({
   name: e,
   size: t = 32,
   borderRadius: a = "50%"
@@ -5965,10 +5965,10 @@ function tl() {
         return ie.name.toLowerCase().includes(q) || ie.key.toLowerCase().includes(q) || ((z = ie.description) == null ? void 0 : z.toLowerCase().includes(q)) || ie.transport.toLowerCase().includes(q);
       }
     );
-  }, [J, p]), Be = J.filter((q) => q.enabled).length, Le = J.reduce((q, ie) => {
+  }, [J, p]), je = J.filter((q) => q.enabled).length, Le = J.reduce((q, ie) => {
     var z;
     return q + (((z = ie.tools) == null ? void 0 : z.length) || 0);
-  }, 0), je = e.createElement(
+  }, 0), De = e.createElement(
     e.Fragment,
     null,
     e.createElement(
@@ -6047,7 +6047,7 @@ function tl() {
         O ? e.createElement(O, { style: { fontSize: 14 } }) : null,
         "MCP 客户端"
       ),
-      children: je
+      children: De
     },
     {
       key: "software",
@@ -6065,7 +6065,7 @@ function tl() {
     { style: { padding: 24 } },
     e.createElement(lt, {
       title: "工具",
-      subtitle: `MCP: ${J.length} 个客户端（${Be} 个启用）· ${Le} 个工具`,
+      subtitle: `MCP: ${J.length} 个客户端（${je} 个启用）· ${Le} 个工具`,
       extra: e.createElement(
         e.Fragment,
         null,
@@ -7081,7 +7081,7 @@ function ll({
                   gap: 6
                 }
               },
-              r.createElement(Ne, { name: p, size: 20 }),
+              r.createElement(Be, { name: p, size: 20 }),
               r.createElement(
                 g,
                 { style: { fontSize: 13 } },
@@ -7557,7 +7557,7 @@ function pl() {
     ApiOutlined: X
   } = E().antdIcons || {}, { Text: J, Paragraph: P, Title: d } = A, [S, p] = t("skills"), [ne, F] = t([]), [Y, Z] = t([]), [G, $] = t([]), [le, y] = t(""), [ae, ue] = t(""), [ve, K] = t(!1), [ce, B] = t(!1), [re, oe] = t(
     {}
-  ), [te, W] = t(null), [pe, me] = t({}), [Ie, Te] = t([]), [k, se] = t(""), [ge, we] = t(""), [Se, Ce] = t(""), [$e, Ue] = t({}), [Oe, Fe] = t(""), [He, Be] = t(/* @__PURE__ */ new Set()), [Le, je] = t([]), [Ge, q] = t([]), [ie, z] = t(!1), [ke, xe] = t(!1), [be, ze] = t(""), Re = r(null);
+  ), [te, W] = t(null), [pe, me] = t({}), [Ie, Te] = t([]), [k, se] = t(""), [ge, we] = t(""), [Se, Ce] = t(""), [$e, Ue] = t({}), [Oe, Fe] = t(""), [He, je] = t(/* @__PURE__ */ new Set()), [Le, De] = t([]), [Ge, q] = t([]), [ie, z] = t(!1), [ke, xe] = t(!1), [be, ze] = t(""), Re = r(null);
   a(() => {
     Promise.all([
       ml().catch(() => []),
@@ -7569,7 +7569,7 @@ function pl() {
   }, []);
   const ye = n(async (o) => {
     const N = o ?? rl();
-    if (je(o || N), N.filter((fe) => fe.enabled).length === 0) {
+    if (De(o || N), N.filter((fe) => fe.enabled).length === 0) {
       q([]);
       return;
     }
@@ -8272,9 +8272,9 @@ function pl() {
     if (o)
       try {
         const N = await yt(o);
-        Be(new Set(N.map((de) => de.key)));
+        je(new Set(N.map((de) => de.key)));
       } catch {
-        Be(/* @__PURE__ */ new Set());
+        je(/* @__PURE__ */ new Set());
       }
   }, []);
   a(() => {
@@ -8302,7 +8302,7 @@ function pl() {
           cwd: o.cwd || "",
           headers: o.headers || {}
         }
-      }), m.success(`MCP「${o.name}」已添加到当前专家`), Be((de) => new Set(de).add(N));
+      }), m.success(`MCP「${o.name}」已添加到当前专家`), je((de) => new Set(de).add(N));
     } catch (N) {
       m.error(N.message || `添加 MCP「${o.name}」失败`);
     } finally {
@@ -8558,11 +8558,10 @@ function pl() {
                   marginBottom: 8
                 }
               },
-              e.createElement(
-                "span",
-                { style: { fontSize: 28 } },
-                o.emoji
-              ),
+              e.createElement(Be, {
+                name: o.name,
+                size: 40
+              }),
               e.createElement(
                 "div",
                 { style: { flex: 1 } },
@@ -8727,7 +8726,7 @@ function pl() {
       onClose: () => xe(!1),
       sources: Le,
       onChange: (o) => {
-        je(o), ye(o);
+        De(o), ye(o);
       }
     })
   );

@@ -671,7 +671,19 @@ def _build_workspace_skill_specs(workspace_dir: Path) -> list[SkillSpec]:
     return specs
 
 
-def _build_pool_skill_specs() -> list[PoolSkillSpec]:
+def _build_pool_skill_specs(
+    *,
+    summary: bool = False,
+) -> list[PoolSkillSpec]:
+    """Build pool skill specifications.
+
+    Args:
+        summary: When ``True``, omit the full ``content`` field
+            (entire SKILL.md) from each spec.  The content can be
+            fetched on demand via ``GET /pool/{skill_name}/content``.
+            This dramatically reduces payload size when the caller
+            only needs the skill list for card display.
+    """
     manifest = read_skill_pool_manifest()
     entries = manifest.get("skills", {})
     pool_dir = get_skill_pool_dir()
@@ -693,7 +705,12 @@ def _build_pool_skill_specs() -> list[PoolSkillSpec]:
             if skill is None:
                 continue
             info = sync_info.get(skill_name, {})
-            dump = skill.model_dump(exclude={"version_text"})
+            exclude_fields = {"version_text"}
+            if summary:
+                exclude_fields.add("content")
+            dump = skill.model_dump(exclude=exclude_fields)
+            if summary:
+                dump["content"] = ""
             dump["tags"] = entry.get("tags") or []
             is_external = bool(entry.get("external", False))
             specs.append(
@@ -853,16 +870,46 @@ async def cancel_hub_install(task_id: str) -> dict[str, Any]:
 
 
 @router.get("/pool")
-async def list_pool_skills() -> list[PoolSkillSpec]:
-    return _build_pool_skill_specs()
+async def list_pool_skills(
+    summary: bool = False,
+) -> list[PoolSkillSpec]:
+    """List all pool skills.
+
+    Args:
+        summary: When ``True``, omit the full ``content`` field from
+            each skill spec to reduce payload size.  Use
+            ``GET /pool/{skill_name}/content`` to fetch a single
+            skill's content on demand.
+    """
+    return _build_pool_skill_specs(summary=summary)
+
+
+@router.get("/pool/{skill_name}/content")
+async def get_pool_skill_content(skill_name: str) -> dict[str, str]:
+    """Fetch the full ``content`` (SKILL.md) of a single pool skill.
+
+    This is the lazy-load complement to ``GET /pool?summary=true``.
+    """
+    pool_dir = get_skill_pool_dir()
+    skill_dir = resolve_pool_skill_dir(skill_name) or (
+        pool_dir / skill_name
+    )
+    if not skill_dir.is_dir():
+        raise HTTPException(404, f"Skill '{skill_name}' not found")
+    skill = read_skill_from_dir(skill_dir, "customized")
+    if skill is None:
+        raise HTTPException(404, f"SKILL.md not found for '{skill_name}'")
+    return {"name": skill_name, "content": skill.content}
 
 
 @router.post("/pool/refresh")
-async def refresh_pool_skills() -> list[PoolSkillSpec]:
+async def refresh_pool_skills(
+    summary: bool = False,
+) -> list[PoolSkillSpec]:
     """Force reconcile and return updated pool skill list."""
     reconcile_pool_manifest()
     await _follow_auto_update()
-    return _build_pool_skill_specs()
+    return _build_pool_skill_specs(summary=summary)
 
 
 @router.get("/pool/builtin-sources")

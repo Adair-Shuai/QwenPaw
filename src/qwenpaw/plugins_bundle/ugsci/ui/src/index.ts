@@ -11312,11 +11312,10 @@ function MarketplacePage() {
                   marginBottom: 8,
                 },
               },
-              React.createElement(
-                "span",
-                { style: { fontSize: 28 } },
-                template.emoji,
-              ),
+              React.createElement(ExpertAvatar, {
+                name: template.name,
+                size: 40,
+              }),
               React.createElement(
                 "div",
                 { style: { flex: 1 } },

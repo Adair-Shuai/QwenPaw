@@ -50,3 +50,30 @@ def _install_msg_dict_shim() -> None:
 
 
 _install_msg_dict_shim()
+
+
+def _install_agentscope_tool_utils_optional_fix() -> None:
+    """Ensure ``Optional`` is resolvable in agentscope.tool._utils.
+
+    agentscope's ``_utils.py`` creates a Pydantic model named
+    ``_StructuredOutputDynamicClass`` via ``create_model()`` from function
+    parameter annotations.  When a parameter uses ``Optional[...]`` and the
+    annotation is a string forward reference (``from __future__ import
+    annotations``), Pydantic looks up ``Optional`` in the module's global
+    namespace — but agentscope.tool._utils does not import it, causing
+    ``PydanticUserError: _StructuredOutputDynamicClass is not fully defined``.
+
+    This shim injects ``Optional`` into that module's namespace so the
+    forward reference resolves correctly.
+    """
+    try:
+        import typing
+        import agentscope.tool._utils as _utils_mod
+
+        if not hasattr(_utils_mod, "Optional"):
+            _utils_mod.Optional = typing.Optional
+    except Exception:
+        pass
+
+
+_install_agentscope_tool_utils_optional_fix()
