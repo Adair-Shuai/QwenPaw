@@ -9655,6 +9655,71 @@ const UGSCI_GITHUB_SOURCES_KEY = "ugsci.market.githubSources";
 const DEFAULT_GITHUB_SOURCE_URL =
   "https://github.com/anthropics/skills/tree/main/skills";
 
+// ─── MCP / Expert Source: types & helpers ─────────────────────────────────────
+
+interface GenericSource {
+  id: string;
+  label: string;
+  url: string;
+  enabled: boolean;
+  type: "mcp" | "expert";
+}
+
+const UGSCI_MCP_SOURCES_KEY = "ugsci.market.mcpSources";
+const UGSCI_EXPERT_SOURCES_KEY = "ugsci.market.expertSources";
+
+function loadGenericSources(
+  storageKey: string,
+  type: "mcp" | "expert",
+): GenericSource[] {
+  try {
+    const raw = localStorage.getItem(storageKey);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (s: any) =>
+        s &&
+        typeof s.id === "string" &&
+        typeof s.label === "string" &&
+        typeof s.url === "string",
+    ).map((s: any) => ({
+      id: s.id,
+      label: s.label,
+      url: s.url,
+      enabled: s.enabled !== false,
+      type,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function saveGenericSources(
+  storageKey: string,
+  sources: GenericSource[],
+): void {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(sources));
+  } catch {}
+}
+
+function loadMcpSources(): GenericSource[] {
+  return loadGenericSources(UGSCI_MCP_SOURCES_KEY, "mcp");
+}
+
+function saveMcpSources(sources: GenericSource[]): void {
+  saveGenericSources(UGSCI_MCP_SOURCES_KEY, sources);
+}
+
+function loadExpertSources(): GenericSource[] {
+  return loadGenericSources(UGSCI_EXPERT_SOURCES_KEY, "expert");
+}
+
+function saveExpertSources(sources: GenericSource[]): void {
+  saveGenericSources(UGSCI_EXPERT_SOURCES_KEY, sources);
+}
+
 function _parseGitHubSkillSourceUrl(
   raw: string,
 ): {
@@ -10086,6 +10151,445 @@ function SourceConfigModal({
   );
 }
 
+// ─── Generic Source Config Modal: for MCP / Expert sources ──────────────────
+
+function GenericSourceConfigModal({
+  open,
+  onClose,
+  sources,
+  onChange,
+  type,
+}: {
+  open: boolean;
+  onClose: () => void;
+  sources: GenericSource[];
+  onChange: (sources: GenericSource[]) => void;
+  type: "mcp" | "expert";
+}) {
+  const React = getHost().React;
+  const { useState } = React;
+  const {
+    Modal,
+    Input,
+    Button,
+    List,
+    Tag,
+    Switch,
+    Typography,
+    Tooltip,
+    message: antdMsg,
+  } = getHost().antd;
+  const {
+    PlusOutlined,
+    DeleteOutlined,
+    LinkOutlined,
+    ApiOutlined,
+    UserOutlined,
+    ImportOutlined,
+    ExportOutlined,
+    CopyOutlined,
+  } = getHost().antdIcons || {};
+  const { Text } = Typography;
+
+  const [newUrl, setNewUrl] = useState("");
+  const [newLabel, setNewLabel] = useState("");
+  const [importText, setImportText] = useState("");
+  const [showImport, setShowImport] = useState(false);
+
+  const typeLabel = type === "mcp" ? "MCP" : "专家模板";
+  const typeIcon =
+    type === "mcp"
+      ? ApiOutlined
+        ? React.createElement(ApiOutlined, { style: { fontSize: 18 } })
+        : null
+      : UserOutlined
+        ? React.createElement(UserOutlined, { style: { fontSize: 18 } })
+        : null;
+
+  const handleAdd = () => {
+    const trimmedUrl = newUrl.trim();
+    const trimmedLabel = newLabel.trim();
+    if (!trimmedUrl) return;
+    const label = trimmedLabel || trimmedUrl.slice(0, 40);
+    const id = `${type}:${trimmedUrl}`;
+    if (sources.some((s) => s.id === id)) {
+      antdMsg.warning("该源已存在");
+      return;
+    }
+    const newSource: GenericSource = {
+      id,
+      label,
+      url: trimmedUrl,
+      enabled: true,
+      type,
+    };
+    const next = [...sources, newSource];
+    if (type === "mcp") saveMcpSources(next);
+    else saveExpertSources(next);
+    onChange(next);
+    setNewUrl("");
+    setNewLabel("");
+    antdMsg.success(`已添加${typeLabel}源: ${label}`);
+  };
+
+  const handleToggle = (id: string, enabled: boolean) => {
+    const next = sources.map((s) =>
+      s.id === id ? { ...s, enabled } : s,
+    );
+    if (type === "mcp") saveMcpSources(next);
+    else saveExpertSources(next);
+    onChange(next);
+  };
+
+  const handleDelete = (id: string) => {
+    const next = sources.filter((s) => s.id !== id);
+    if (type === "mcp") saveMcpSources(next);
+    else saveExpertSources(next);
+    onChange(next);
+    antdMsg.success("已移除源");
+  };
+
+  const handleExport = () => {
+    const exportData = JSON.stringify(
+      { type, sources },
+      null,
+      2,
+    );
+    try {
+      navigator.clipboard.writeText(exportData);
+      antdMsg.success(`${typeLabel}源已复制到剪贴板（${sources.length} 个源）`);
+    } catch {
+      // Fallback: create a temporary textarea
+      const textarea = document.createElement("textarea");
+      textarea.value = exportData;
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand("copy");
+      document.body.removeChild(textarea);
+      antdMsg.success(`${typeLabel}源已复制到剪贴板（${sources.length} 个源）`);
+    }
+  };
+
+  const handleImport = () => {
+    const trimmed = importText.trim();
+    if (!trimmed) {
+      antdMsg.warning("请粘贴 JSON 内容");
+      return;
+    }
+    try {
+      const data = JSON.parse(trimmed);
+      let importedSources: GenericSource[] = [];
+
+      // Accept either { type, sources: [...] } or raw [...]
+      if (Array.isArray(data)) {
+        importedSources = data;
+      } else if (data && Array.isArray(data.sources)) {
+        importedSources = data.sources;
+      } else if (data && typeof data === "object") {
+        // Single source object
+        importedSources = [data];
+      } else {
+        throw new Error("Invalid format");
+      }
+
+      const valid = importedSources.filter(
+        (s: any) =>
+          s &&
+          typeof s.url === "string" &&
+          typeof s.label === "string",
+      );
+
+      if (valid.length === 0) {
+        antdMsg.error("未找到有效的源数据");
+        return;
+      }
+
+      // Merge with existing (deduplicate by id)
+      const existingIds = new Set(sources.map((s) => s.id));
+      const toAdd: GenericSource[] = [];
+      for (const s of valid) {
+        const id = s.id || `${type}:${s.url}`;
+        if (!existingIds.has(id)) {
+          toAdd.push({
+            id,
+            label: s.label,
+            url: s.url,
+            enabled: s.enabled !== false,
+            type,
+          });
+        }
+      }
+
+      if (toAdd.length === 0) {
+        antdMsg.info("所有源均已存在，无新增");
+        return;
+      }
+
+      const next = [...sources, ...toAdd];
+      if (type === "mcp") saveMcpSources(next);
+      else saveExpertSources(next);
+      onChange(next);
+      setImportText("");
+      setShowImport(false);
+      antdMsg.success(`成功导入 ${toAdd.length} 个${typeLabel}源`);
+    } catch (err: any) {
+      antdMsg.error(`JSON 解析失败: ${err.message || "格式错误"}`);
+    }
+  };
+
+  return React.createElement(
+    Modal,
+    {
+      open,
+      onCancel: onClose,
+      title: React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 8 } },
+        typeIcon,
+        React.createElement("span", null, `配置${typeLabel}源`),
+      ),
+      footer: React.createElement(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between" } },
+        React.createElement(
+          "div",
+          { style: { display: "flex", gap: 8 } },
+          React.createElement(
+            Button,
+            {
+              icon: ExportOutlined
+                ? React.createElement(ExportOutlined)
+                : undefined,
+              onClick: handleExport,
+              disabled: sources.length === 0,
+              size: "small",
+            },
+            "导出到剪贴板",
+          ),
+          React.createElement(
+            Button,
+            {
+              icon: ImportOutlined
+                ? React.createElement(ImportOutlined)
+                : undefined,
+              onClick: () => setShowImport(!showImport),
+              size: "small",
+            },
+            showImport ? "隐藏导入" : "导入JSON",
+          ),
+        ),
+        React.createElement(
+          Button,
+          { onClick: onClose },
+          "关闭",
+        ),
+      ),
+      width: 680,
+    },
+    // Description
+    React.createElement(
+      Text,
+      { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 12 } },
+      `配置${typeLabel}源地址，支持从远程仓库或团队共享的 JSON 导入${typeLabel}配置。`,
+    ),
+    // Import section (collapsible)
+    showImport
+      ? React.createElement(
+          "div",
+          {
+            style: {
+              marginBottom: 16,
+              padding: 12,
+              background: "#fafafa",
+              borderRadius: 8,
+              border: "1px solid #f0f0f0",
+            },
+          },
+          React.createElement(
+            Text,
+            { strong: true, style: { fontSize: 12, display: "block", marginBottom: 8 } },
+            `粘贴${typeLabel}源 JSON（支持从导出的剪贴板内容粘贴）`,
+          ),
+          React.createElement(Input.TextArea, {
+            placeholder:
+              type === "mcp"
+                ? '{\n  "type": "mcp",\n  "sources": [\n    { "label": "团队MCP", "url": "https://raw.githubusercontent.com/team/mcp-registry/main/mcp.json" }\n  ]\n}'
+                : '{\n  "type": "expert",\n  "sources": [\n    { "label": "团队专家库", "url": "https://raw.githubusercontent.com/team/expert-registry/main/experts.json" }\n  ]\n}',
+            value: importText,
+            onChange: (e: any) => setImportText(e.target.value),
+            autoSize: { minRows: 4, maxRows: 10 },
+            style: { fontFamily: "monospace", fontSize: 12 },
+          }),
+          React.createElement(
+            "div",
+            { style: { marginTop: 8, display: "flex", gap: 8 } },
+            React.createElement(
+              Button,
+              {
+                type: "primary",
+                size: "small",
+                onClick: handleImport,
+              },
+              "导入",
+            ),
+            React.createElement(
+              Button,
+              {
+                size: "small",
+                onClick: () => setImportText(""),
+              },
+              "清空",
+            ),
+          ),
+        )
+      : null,
+    // Add new source
+    React.createElement(
+      "div",
+      { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
+      React.createElement(Input, {
+        placeholder: "源名称（可选，如：团队MCP仓库）",
+        value: newLabel,
+        onChange: (e: any) => setNewLabel(e.target.value),
+        style: { width: 200 },
+      }),
+      React.createElement(Input, {
+        placeholder:
+          type === "mcp"
+            ? "https://raw.githubusercontent.com/team/mcp-registry/main/mcp.json"
+            : "https://raw.githubusercontent.com/team/expert-registry/main/experts.json",
+        value: newUrl,
+        onChange: (e: any) => setNewUrl(e.target.value),
+        onPressEnter: handleAdd,
+        prefix: LinkOutlined ? React.createElement(LinkOutlined) : undefined,
+        style: { flex: 1 },
+      }),
+      React.createElement(
+        Button,
+        {
+          type: "primary",
+          icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+          onClick: handleAdd,
+        },
+        "添加",
+      ),
+    ),
+    // Source list
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginBottom: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        },
+      },
+      React.createElement(
+        Text,
+        { strong: true },
+        `已配置源 (${sources.length})`,
+      ),
+    ),
+    React.createElement(List, {
+      size: "small",
+      bordered: true,
+      dataSource: sources,
+      renderItem: (source: GenericSource) =>
+        React.createElement(
+          List.Item,
+          {
+            actions: [
+              React.createElement(
+                Tooltip,
+                { title: source.enabled ? "点击禁用" : "点击启用" },
+                React.createElement(Switch, {
+                  size: "small",
+                  checked: source.enabled,
+                  onChange: (v: boolean) => handleToggle(source.id, v),
+                }),
+              ),
+              React.createElement(
+                Tooltip,
+                { title: "移除此源" },
+                React.createElement(
+                  Button,
+                  {
+                    size: "small",
+                    type: "text",
+                    danger: true,
+                    icon: DeleteOutlined
+                      ? React.createElement(DeleteOutlined)
+                      : undefined,
+                    onClick: () => handleDelete(source.id),
+                  },
+                ),
+              ),
+            ],
+          },
+          React.createElement(
+            "div",
+            { style: { flex: 1, minWidth: 0 } },
+            React.createElement(
+              "div",
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                },
+              },
+              React.createElement(
+                Tag,
+                {
+                  color: type === "mcp" ? "purple" : "blue",
+                  style: { fontSize: 11 },
+                },
+                source.label,
+              ),
+              !source.enabled
+                ? React.createElement(
+                    Tag,
+                    { style: { fontSize: 10 } },
+                    "已禁用",
+                  )
+                : null,
+            ),
+            React.createElement(
+              Text,
+              {
+                type: "secondary",
+                style: { fontSize: 11, wordBreak: "break-all" },
+              },
+              source.url,
+            ),
+          ),
+        ),
+    }),
+    // Share hint
+    React.createElement(
+      "div",
+      {
+        style: {
+          marginTop: 12,
+          padding: "8px 12px",
+          background: "#e6f4ff",
+          borderRadius: 6,
+          fontSize: 12,
+          color: "#1677ff",
+        },
+      },
+      React.createElement(
+        "span",
+        null,
+        "💡 ",
+        `点击「导出到剪贴板」可复制所有源配置，分享给团队成员后粘贴到「导入JSON」即可快速配置。`,
+      ),
+    ),
+  );
+}
+
 interface MarketSearchResponse {
   results: MarketResult[];
   errors: { provider: string; message: string }[];
@@ -10236,6 +10740,14 @@ function MarketplacePage() {
   const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
   const [selectedSourceFilter, setSelectedSourceFilter] = useState("");
 
+  // MCP sources state
+  const [mcpSources, setMcpSources] = useState<GenericSource[]>([]);
+  const [mcpSourceConfigOpen, setMcpSourceConfigOpen] = useState(false);
+
+  // Expert sources state
+  const [expertSources, setExpertSources] = useState<GenericSource[]>([]);
+  const [expertSourceConfigOpen, setExpertSourceConfigOpen] = useState(false);
+
   const searchTimerRef = useRef<any>(null);
 
   // Load providers and categories on mount
@@ -10287,6 +10799,9 @@ function MarketplacePage() {
 
   useEffect(() => {
     loadGithubSkills();
+    // Load MCP and Expert sources from localStorage
+    setMcpSources(loadMcpSources());
+    setExpertSources(loadExpertSources());
   }, [loadGithubSkills]);
 
   const doSearch = useCallback(
@@ -10557,6 +11072,18 @@ function MarketplacePage() {
           placeholder: "选择专家",
           options: agents.map((a) => ({ value: a.id, label: a.name })),
         }),
+      ),
+      // Configure skill source button
+      React.createElement(
+        Button,
+        {
+          icon: GithubOutlined
+            ? React.createElement(GithubOutlined)
+            : undefined,
+          onClick: () => setSourceConfigOpen(true),
+          size: "small",
+        },
+        "配置技能源",
       ),
     ),
     // Source filter tags (GitHub sources + market providers)
@@ -11165,24 +11692,6 @@ function MarketplacePage() {
   const mcpMarketTab = React.createElement(
     "div",
     null,
-    // Info banner
-    React.createElement(
-      "div",
-      {
-        style: {
-          marginBottom: 16,
-          padding: "12px 16px",
-          background: "linear-gradient(135deg, #f0fdf4 0%, #f0fff4 100%)",
-          borderRadius: 8,
-          border: "1px solid #d9f7be",
-        },
-      },
-      React.createElement(
-        Text,
-        { style: { fontSize: 13, color: "#135200" } },
-        "从 MCP 模板库选择常用 Model Context Protocol 服务器，一键添加到当前专家。支持文件系统、数据库、搜索、开发工具等多种 MCP 服务器。",
-      ),
-    ),
     // Search + agent selector
     React.createElement(
       "div",
@@ -11218,6 +11727,16 @@ function MarketplacePage() {
           size: "small",
           options: agents.map((a) => ({ value: a.id, label: a.name })),
         }),
+      ),
+      // Configure MCP source button
+      React.createElement(
+        Button,
+        {
+          icon: ApiOutlined ? React.createElement(ApiOutlined) : undefined,
+          onClick: () => setMcpSourceConfigOpen(true),
+          size: "small",
+        },
+        "配置 MCP 源",
       ),
     ),
     // MCP template cards
@@ -11373,26 +11892,30 @@ function MarketplacePage() {
       {
         style: {
           marginBottom: 16,
-          padding: "12px 16px",
-          background: "linear-gradient(135deg, #e8f4fd 0%, #f0f7ff 100%)",
-          borderRadius: 8,
-          border: "1px solid #d6e4ff",
+          display: "flex",
+          gap: 12,
+          alignItems: "center",
+          flexWrap: "wrap",
         },
       },
+      React.createElement(Input, {
+        placeholder: "搜索专家模板...",
+        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        value: expertSearchText,
+        onChange: (e: any) => setExpertSearchText(e.target.value),
+        allowClear: true,
+        style: { maxWidth: 400, flex: 1, minWidth: 200 },
+      }),
       React.createElement(
-        Text,
-        { style: { fontSize: 13, color: "#1f4e8c" } },
-        "从专家模板库选择预设专家，一键创建并配置系统提示词、审批级别和推荐技能。未来将支持从远程市场获取更多行业专家模板。",
+        Button,
+        {
+          icon: UserOutlined ? React.createElement(UserOutlined) : undefined,
+          onClick: () => setExpertSourceConfigOpen(true),
+          size: "small",
+        },
+        "配置专家源",
       ),
     ),
-    React.createElement(Input, {
-      placeholder: "搜索专家模板...",
-      prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
-      value: expertSearchText,
-      onChange: (e: any) => setExpertSearchText(e.target.value),
-      allowClear: true,
-      style: { marginBottom: 16, maxWidth: 400 },
-    }),
     React.createElement(
       Row,
       { gutter: [12, 12] },
@@ -11571,16 +12094,6 @@ function MarketplacePage() {
         React.createElement(
           Button,
           {
-            icon: GithubOutlined
-              ? React.createElement(GithubOutlined)
-              : undefined,
-            onClick: () => setSourceConfigOpen(true),
-          },
-          "配置源",
-        ),
-        React.createElement(
-          Button,
-          {
             type: "primary",
             icon: ReloadOutlined
               ? React.createElement(ReloadOutlined)
@@ -11600,7 +12113,7 @@ function MarketplacePage() {
       activeKey: activeTab,
       onChange: (k: string) => setActiveTab(k),
     }),
-    // Source config modal
+    // Skill source config modal
     React.createElement(SourceConfigModal, {
       open: sourceConfigOpen,
       onClose: () => setSourceConfigOpen(false),
@@ -11609,6 +12122,22 @@ function MarketplacePage() {
         setGithubSources(next);
         loadGithubSkills(next);
       },
+    }),
+    // MCP source config modal
+    React.createElement(GenericSourceConfigModal, {
+      open: mcpSourceConfigOpen,
+      onClose: () => setMcpSourceConfigOpen(false),
+      sources: mcpSources,
+      onChange: (next: GenericSource[]) => setMcpSources(next),
+      type: "mcp",
+    }),
+    // Expert source config modal
+    React.createElement(GenericSourceConfigModal, {
+      open: expertSourceConfigOpen,
+      onClose: () => setExpertSourceConfigOpen(false),
+      sources: expertSources,
+      onChange: (next: GenericSource[]) => setExpertSources(next),
+      type: "expert",
     }),
   );
 }

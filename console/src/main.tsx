@@ -46,7 +46,8 @@ if (typeof window !== "undefined") {
     if (
       msg.includes(":first-child") ||
       msg.includes("pseudo class") ||
-      msg.includes("potentially unsafe")
+      msg.includes("potentially unsafe") ||
+      msg.includes("Message not found for content")
     ) {
       return;
     }

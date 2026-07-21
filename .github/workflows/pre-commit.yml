@@ -21,6 +21,8 @@ jobs:
     env:
       OS: ubuntu-latest
       PYTHON: "3.11"
+      GOPROXY: "https://proxy.golang.org,direct"
+      GOSUMDB: off
     steps:
       - uses: actions/checkout@v4
 
@@ -37,6 +39,12 @@ jobs:
         run: |
           pip install -q -e ".[dev]"
 
+      - name: Cache pre-commit
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-python-3.11-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Install pre-commit hooks
         run: |
           pre-commit install
@@ -44,10 +52,8 @@ jobs:
       - name: Run pre-commit
         run: |
           pre-commit run --all-files 2>&1 | tee pre-commit.log || true
-          echo "=== HOOK RESULTS ==="
-          grep -E "(Passed|Failed|Skipped)$" pre-commit.log || true
-          echo "=== FAILURE DETAILS ==="
-          grep -A5 "Failed" pre-commit.log || true
           if grep -q Failed pre-commit.log; then
+            echo -e "\e[41m  [**FAIL**] pre-commit checks failed. Run 'pre-commit run --all-files' locally, commit any auto-fixes, then push again. \e[0m"
             exit 1
           fi
+          echo -e "\e[46m  ********************************Passed******************************** \e[0m"

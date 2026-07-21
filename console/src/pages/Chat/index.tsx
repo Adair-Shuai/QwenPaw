@@ -2974,7 +2974,9 @@ export default function ChatPage() {
           }
 
           if (payload.type === "turn_usage") {
-            return null;
+            // Return a HEARTBEAT message — SDK's handle() checks for
+            // this type first and returns immediately without side effects.
+            return { object: "message", type: "heartbeat" };
           }
 
           if (payload.type === "rate_limited") {
@@ -2982,7 +2984,7 @@ export default function ChatPage() {
               (payload.alternatives as typeof rateLimitAlternatives) || [];
             setRateLimitAlternatives(alts);
             message.warning(t("chat.rateLimitHit"));
-            return null;
+            return { object: "message", type: "heartbeat" };
           }
 
           if (payloadRequestsHistoryClear(payload)) {

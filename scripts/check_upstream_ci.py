@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """Check upstream repo's recent CI runs."""
 import json
 import urllib.request

@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """Check latest CI runs for the fork."""
 import json
 import urllib.request

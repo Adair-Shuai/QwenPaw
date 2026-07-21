@@ -18,6 +18,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 // @ts-ignore — @xyflow/react is bundled by vite, types resolved at build time
 import {
   ReactFlow,
+  ReactFlowProvider,
   Background,
   Controls,
   MiniMap,
@@ -166,14 +167,14 @@ function NodeCard({ id, data, selected }: NodeProps) {
     "div",
     {
       style: {
-        padding: "8px 12px",
-        borderRadius: 6,
+        padding: "10px 16px",
+        borderRadius: 8,
         border: `2px solid ${selected ? color : statusColor}`,
         background: "#fff",
-        maxWidth: 200,
+        width: 220,
         fontSize: 12,
         boxSizing: "border-box",
-        boxShadow: status === "running" ? `0 0 0 3px ${color}33` : "none",
+        boxShadow: status === "running" ? `0 0 0 3px ${color}33` : "0 2px 8px rgba(0,0,0,0.08)",
       },
     },
     React.createElement(Handle, { type: "target", position: Position.Left }),
@@ -351,8 +352,8 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
 
   const [doc, setDoc] = useState<FlowDocument | null>(null);
   const [nodeTypesList, setNodeTypesList] = useState<NodeTypeSpec[]>([]);
-  const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -475,7 +476,7 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
 
   return React.createElement(
     "div",
-    { style: { display: "flex", flexDirection: "column", height: "100%" },
+    { style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" },
       "data-flowforge-editor": true },
     // Toolbar
     React.createElement(
@@ -527,12 +528,17 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
           )),
         )),
       ),
-      // Canvas — must have explicit height for ReactFlow to work
+      // Canvas — must have explicit height for ReactFlow to work.
+      // We use position:absolute + top/left/right/bottom:0 to ensure
+      // the container fills its flex parent regardless of CSS quirks.
       React.createElement(
         "div",
-        { style: { flex: 1, position: "relative", minWidth: 0, minHeight: 0 } },
+        { style: { flex: 1, position: "relative", minWidth: 0, minHeight: 200 } },
         React.createElement(
-          ReactFlow,
+          ReactFlowProvider,
+          null,
+          React.createElement(
+            ReactFlow,
           {
             nodes: rfNodes,
             edges: rfEdges,
@@ -547,9 +553,10 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
             elementsSelectable: true,
             style: { background: "#f5f5f5", width: "100%", height: "100%" },
           },
-          React.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
-          React.createElement(Controls, null),
-          React.createElement(MiniMap, { style: { background: "#fafafa" } }),
+            React.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
+            React.createElement(Controls, null),
+            React.createElement(MiniMap, { style: { background: "#fafafa" } }),
+          ),
         ),
       ),
     ),
@@ -772,6 +779,19 @@ function buildPlugin() {
   const antdIcons = getHost().antdIcons || {};
   const ApartmentOutlined = antdIcons.ApartmentOutlined;
   const NodeIndexOutlined = antdIcons.NodeIndexOutlined;
+
+  // ── Inject global CSS to ensure the route container fills the page ──
+  // The host's route container may not have height:100% by default,
+  // which collapses the flex chain and makes ReactFlow invisible.
+  const flowforgeCss = document.createElement("style");
+  flowforgeCss.textContent = `
+[data-flowforge-editor] { height: 100% !important; min-height: 0 !important; }
+[data-flowforge-editor] > div:first-child { flex-shrink: 0; }
+[data-flowforge-editor] .react-flow { background: #f5f5f5; }
+[data-flowforge-editor] .react-flow__node { cursor: grab; }
+[data-flowforge-editor] .react-flow__node.dragging { cursor: grabbing; }
+`;
+  document.head.appendChild(flowforgeCss);
 
   QP.route.add(PLUGIN_ID, {
     id: "flowforge.editor",

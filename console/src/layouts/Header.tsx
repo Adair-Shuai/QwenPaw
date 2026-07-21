@@ -127,8 +127,15 @@ export default function Header() {
   };
 
   // Web-only PyPI fallback: desktop path is owned by DesktopUpdateContext.
+  // Disabled for private/internal forks that are not published to PyPI —
+  // the fetch always fails and pollutes the console with network errors.
   useEffect(() => {
     if (onDesktop) return;
+
+    // PyPI version check is only useful for public packages on PyPI.
+    // Skip it entirely to avoid console noise from failed requests.
+    // To re-enable, set window.__QWENPAW_CHECK_PYPI = true in dev tools.
+    if (!(window as any).__QWENPAW_CHECK_PYPI) return;
 
     fetch(PYPI_URL)
       .then((res) => res.json())
