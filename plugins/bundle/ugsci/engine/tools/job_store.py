@@ -136,10 +136,15 @@ def is_pid_alive(pid: int) -> bool:
         return False
     try:
         if os.name == "nt":
-            # Windows: use ctypes to check process existence
+            # Windows: use ctypes to check process existence.
+            # On 64-bit systems, HANDLE is a 64-bit pointer — we must
+            # set restype/argtypes to avoid truncation (default c_int
+            # is only 32 bits).
             import ctypes
 
             kernel32 = ctypes.windll.kernel32
+            kernel32.OpenProcess.restype = ctypes.c_void_p
+            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
             SYNCHRONIZE = 0x00100000
             handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
             if handle:
