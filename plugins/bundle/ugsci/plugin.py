@@ -819,6 +819,7 @@ class UGSciPlugin:
             from .engine.tools import (
                 launch_simulation,
                 check_simulation_status,
+                wait_for_simulation,
                 read_simulation_results,
                 edit_simulation_deck,
                 analyze_simulation,
@@ -832,6 +833,10 @@ class UGSciPlugin:
                 (
                     "check_simulation_status", check_simulation_status,
                     "查询模拟运行状态与收敛性", "📊",
+                ),
+                (
+                    "wait_for_simulation", wait_for_simulation,
+                    "等待模拟完成 (内部轮询，零token消耗)", "⏳",
                 ),
                 (
                     "read_simulation_results", read_simulation_results,

@@ -140,15 +140,24 @@ export function patchLastResponseCardUsage(
   snapshot: TurnUsageSnapshot,
 ): boolean {
   const messagesApi = chatRef.current?.messages;
-  if (!messagesApi) return false;
+  if (!messagesApi) {
+    console.info("[turn_usage] patch: messagesApi not available");
+    return false;
+  }
 
   const lastAssistantMsg = findPatchTargetAssistant(
     messagesApi.getMessages() ?? [],
   );
-  if (!lastAssistantMsg) return false;
+  if (!lastAssistantMsg) {
+    console.info("[turn_usage] patch: no target assistant message found");
+    return false;
+  }
 
   const data = getResponseCardData(lastAssistantMsg.cards);
-  if (!data) return false;
+  if (!data) {
+    console.info("[turn_usage] patch: no response card data");
+    return false;
+  }
 
   const prev = readTurnUsageFromResponseCardData(data);
   if (
@@ -290,7 +299,10 @@ export function wrapChatResponseUsageStream(
         buffer = parsed.rest;
         for (const raw of parsed.events) {
           const snap = snapshotFromSsePayload(raw);
-          if (snap) pendingUsage = snap;
+          if (snap) {
+            console.info("[turn_usage] SSE snapshot captured:", snap);
+            pendingUsage = snap;
+          }
         }
       },
       flush() {
@@ -298,10 +310,16 @@ export function wrapChatResponseUsageStream(
         const parsed = parseSseDataLines(`${buffer}\n\n`);
         for (const raw of parsed.events) {
           const snap = snapshotFromSsePayload(raw);
-          if (snap) pendingUsage = snap;
+          if (snap) {
+            console.info("[turn_usage] SSE snapshot captured (flush):", snap);
+            pendingUsage = snap;
+          }
         }
         if (pendingUsage) {
+          console.info("[turn_usage] scheduling patch for last response card");
           schedulePatchLastResponseCardUsage(chatRef, pendingUsage);
+        } else {
+          console.info("[turn_usage] no usage snapshot found in SSE stream");
         }
       },
     }),

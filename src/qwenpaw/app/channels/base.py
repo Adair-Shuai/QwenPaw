@@ -1708,10 +1708,23 @@ class BaseChannel(ABC):
                 channel=channel,
             )
             if turn is None and ctx is None:
+                logger.info(
+                    "turn_usage: SKIP emit — both turn and ctx are None "
+                    "for session=%s workspace=%s session_obj=%s",
+                    session_id[:30],
+                    workspace is not None,
+                    session is not None,
+                )
                 return []
             self._on_turn_usage_ready(turn, ctx)
             if turn:
                 logger.info("Usage for session %s: %s", session_id, turn)
+            logger.info(
+                "turn_usage: EMIT — turn=%s ctx=%s for session=%s",
+                turn is not None,
+                ctx is not None,
+                session_id[:30],
+            )
             if session is not None:
                 try:
                     await token_usage.persist_turn_usage(
