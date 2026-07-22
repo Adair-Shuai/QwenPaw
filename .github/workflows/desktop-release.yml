@@ -837,8 +837,8 @@ jobs:
       - name: Clean up old desktop versions from OSS
         env:
           OSS_BUCKET: ${{ env.OSS_BUCKET }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           # Delete any file in the desktop file directories that isn't the
           # current version or the "latest" alias.  This keeps OSS lean:
           # only one versioned copy + one "latest" copy per platform.
