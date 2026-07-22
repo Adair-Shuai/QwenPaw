@@ -492,6 +492,12 @@ agentsApi.waitForReady(agentId)    // 等待 Agent 就绪
 
 新增 `test_langfuse_context.py`（132 行）和 `test_langfuse_integration.py`（49 行）测试。
 
+对 UGSci 开发最有价值的上游 Feature
+OMP 工作流模式 — 多角色团队协作、自动驾驶、QA 验证，直接可用于科研流程编排
+用户可编辑 Agent Mode — Goal/Mission 模式参数可调，适合设定科研目标和多步骤任务
+Governance 工具自动注册 — UGSci 插件工具不再被误判为"unknown tool"
+子 agent 审批路由 — 多专家协作时的审批能正确路由
+实时事件元数据 — 模拟任务可携带 job_id/model_type 等上下文信息
 ---
 
 ## 6. 默认循环重构为 Agent Mode
