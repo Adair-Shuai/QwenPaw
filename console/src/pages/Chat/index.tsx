@@ -45,7 +45,6 @@ import { IconButton } from "@agentscope-ai/design";
 import ChatActionGroup from "./components/ChatActionGroup";
 import ChatSessionDrawer from "./components/ChatSessionDrawer";
 import { useSidebarModeStore } from "../../stores/sidebarModeStore";
-import TurnUsageAction from "./components/TurnUsageAction";
 import StreamingTokenBadge from "./components/StreamingTokenBadge";
 import ContextUsageIndicator from "./components/ContextUsageIndicator";
 import {
