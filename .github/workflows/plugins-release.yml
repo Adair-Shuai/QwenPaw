@@ -99,12 +99,16 @@ jobs:
             --prune-removed
 
       - name: Clean up removed plugin files from OSS
+        env:
+          OSS_BUCKET: ${{ env.OSS_BUCKET }}
         run: |
           # Delete OSS objects for plugins that are no longer published.
           # We extract plugin_ids from the old index that are absent from
           # the new index, then remove their zip files from OSS.
           python3 - << 'PYEOF'
-          import json, subprocess, sys
+          import json, os, subprocess, sys
+
+          bucket = os.environ['OSS_BUCKET']
 
           with open('existing-index.json') as f:
               old = json.load(f)
@@ -122,7 +126,7 @@ jobs:
           print(f'Removed plugins to clean from OSS: {removed}')
           for plugin_id in removed:
               for kind in ('bundle', 'tool', 'apps'):
-                  prefix = f"oss://${{OSS_BUCKET}}/files/plugins/{kind}/{plugin_id}/"
+                  prefix = f"oss://{bucket}/files/plugins/{kind}/{plugin_id}/"
                   result = subprocess.run(
                       ['ossutil', 'ls', prefix, '-s'],
                       capture_output=True, text=True
