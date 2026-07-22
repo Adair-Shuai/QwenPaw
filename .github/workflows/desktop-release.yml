@@ -833,3 +833,53 @@ jobs:
             --force
 
           echo "✓ Main index updated"
+
+      - name: Clean up old desktop versions from OSS
+        env:
+          OSS_BUCKET: ${{ env.OSS_BUCKET }}
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Delete any file in the desktop file directories that isn't the
+          # current version or the "latest" alias.  This keeps OSS lean:
+          # only one versioned copy + one "latest" copy per platform.
+          python3 - << 'PYEOF'
+          import os, re, subprocess, sys
+
+          bucket = os.environ['OSS_BUCKET']
+          version = os.environ['VERSION']
+          keep_patterns = [version, 'latest']
+
+          dirs_to_clean = [
+              f"oss://{bucket}/files/apps/desktop/win/",
+              f"oss://{bucket}/files/apps/desktop/mac/",
+              f"oss://{bucket}/files/apps/desktop/win-tauri/",
+              f"oss://{bucket}/files/apps/desktop/mac-tauri/",
+              f"oss://{bucket}/metadata/apps/desktop/win/",
+              f"oss://{bucket}/metadata/apps/desktop/mac/",
+              f"oss://{bucket}/metadata/apps/desktop/win-tauri/",
+              f"oss://{bucket}/metadata/apps/desktop/mac-tauri/",
+          ]
+
+          for prefix in dirs_to_clean:
+              result = subprocess.run(
+                  ['ossutil', 'ls', prefix, '-s'],
+                  capture_output=True, text=True
+              )
+              for line in result.stdout.strip().split('\n'):
+                  line = line.strip()
+                  if not line.startswith('oss://'):
+                      continue
+                  # Extract filename from the OSS path
+                  filename = line.rsplit('/', 1)[-1]
+                  # Strip .json extension for metadata files
+                  base = filename[:-5] if filename.endswith('.json') else filename
+                  # Keep if filename contains current version or "latest"
+                  if any(p in filename for p in keep_patterns):
+                      continue
+                  print(f"  Deleting old: {line}")
+                  subprocess.run(
+                      ['ossutil', 'rm', line, '--force'],
+                      capture_output=True, text=True
+                  )
+          print("✓ Old desktop versions cleaned up")
+          PYEOF
