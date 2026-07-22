@@ -4608,9 +4608,9 @@ function ExpertConfigModal({
       centered: true,
       styles: {
         body: {
+          minHeight: 400,
           maxHeight: "70vh",
           overflowY: "auto",
-          paddingTop: 0,
         },
       },
     },
@@ -4619,7 +4619,7 @@ function ExpertConfigModal({
       activeKey: activeTab,
       onChange: (k: string) => setActiveTab(k),
       size: "small",
-      tabBarStyle: { marginBottom: 16, sticky: 0 },
+      tabBarStyle: { marginBottom: 16 },
     }),
   );
 }
@@ -12273,276 +12273,6 @@ function WelcomePromptsInjector() {
   return null;
 }
 
-// ─── Mode Selector ───────────────────────────────────────────────────────────
-//
-// A compact dropdown rendered in the sender prefix area (left side of the
-// chat input box).  It lets the user pick a task mode:
-//
-//   - 默认对话  (default)   — normal Q&A, reply once and stop
-//   - Goal 模式 (goal)      — /goal, persistent loop with self-audit
-//   - Mission 模式 (mission) — /mission, master→worker→verifier pipeline
-//
-// Selecting a loop mode injects `__loop__<mode>` into the textarea; the
-// host's loop-chip interception detects it, sets the chip, and clears
-// the textarea — exactly as if the user had typed the slash command.
-// Selecting "默认对话" clicks the chip's close button to clear it.
-//
-// A 500ms DOM poll keeps the selector in sync with external mode changes
-// (manual /goal typing, command palette, etc.).
-
-interface ModeOption {
-  key: string;
-  label: string;
-  icon?: string;
-  desc: string;
-}
-
-const MODE_OPTIONS: ModeOption[] = [
-  { key: "default", label: "默认", icon: "", desc: "普通对话，回复即停" },
-  { key: "goal", label: "Goal", icon: "", desc: "持续循环 + 自我审计" },
-  { key: "mission", label: "Mission", icon: "", desc: "多Agent流水线 + 上下文隔离" },
-];
-
-/** Set textarea value and trigger input event (mirrors host setTextareaValue). */
-function setNativeTextareaValue(textarea: HTMLTextAreaElement, value: string) {
-  const setter = Object.getOwnPropertyDescriptor(
-    HTMLTextAreaElement.prototype,
-    "value",
-  )?.set;
-  if (setter) {
-    setter.call(textarea, value);
-  } else {
-    textarea.value = value;
-  }
-  textarea.selectionStart = textarea.selectionEnd = value.length;
-  textarea.dispatchEvent(new Event("input", { bubbles: true }));
-}
-
-function ModeSelector() {
-  const host = getHost();
-  const React = host.React;
-  const { useState, useEffect, useCallback, useRef } = React;
-  const { Dropdown, Button } = host.antd;
-  const {
-    SendOutlined,
-    CarryOutOutlined,
-    ScheduleOutlined,
-    DownOutlined,
-  } = host.antdIcons || {};
-
-  const [currentMode, setCurrentMode] = useState<string>("default");
-
-  // Suppress the DOM poll for a short period after the user explicitly
-  // selects a mode.  This prevents the poll from racing with React 18's
-  // batched state update and reverting the selection (e.g. clicking
-  // "默认" → chip still in DOM for a few ms → poll sees "/goal" →
-  // sets currentMode back to "goal").
-  const suppressPollUntilRef = useRef(0);
-
-  // ── Poll DOM for chip state to stay in sync ──
-  useEffect(() => {
-    const checkChip = () => {
-      // Skip polling if we're in a suppress window.
-      if (suppressPollUntilRef.current && Date.now() < suppressPollUntilRef.current) {
-        return;
-      }
-      // Clear expired suppress.
-      if (suppressPollUntilRef.current && Date.now() >= suppressPollUntilRef.current) {
-        suppressPollUntilRef.current = 0;
-      }
-
-      const chipSpan = document.querySelector(
-        '[class*="loopChip"] span',
-      );
-      if (chipSpan) {
-        const text = (chipSpan.textContent || "").trim();
-        // Chip text looks like "/goal" or "/mission"
-        const m = text.match(/^\/(\S+)/);
-        if (m) {
-          const mode = m[1];
-          setCurrentMode((prev: string) => (prev !== mode ? mode : prev));
-          return;
-        }
-      }
-      setCurrentMode((prev: string) => (prev !== "default" ? "default" : prev));
-    };
-    const interval = setInterval(checkChip, 500);
-    // Also check immediately
-    checkChip();
-    return () => clearInterval(interval);
-  }, []);
-
-  // ── Activate a mode ──
-  const handleSelect = useCallback((modeKey: string) => {
-    if (modeKey === currentMode) return;
-
-    // Suppress poll for 1s to prevent race condition.
-    suppressPollUntilRef.current = Date.now() + 1000;
-
-    if (modeKey === "default") {
-      // Clear the loop chip.
-      // Strategy: find the chip container, then click the last SVG
-      // inside it (which is the X close icon from lucide-react).
-      const chip = document.querySelector('[class*="loopChip"]');
-      if (chip) {
-        // Method 1: look for any element with "close" or "chipClose" in class
-        let closeEl: HTMLElement | null = chip.querySelector(
-          '[class*="chipClose"], [class*="chip_close"], [class*="close"]',
-        ) as HTMLElement | null;
-
-        // Method 2: fallback — last SVG in the chip is the X icon
-        if (!closeEl) {
-          const svgs = chip.querySelectorAll("svg");
-          if (svgs.length > 0) {
-            closeEl = svgs[svgs.length - 1] as unknown as HTMLElement;
-          }
-        }
-
-        // Method 3: fallback — last child element
-        if (!closeEl) {
-          const children = chip.querySelectorAll("*");
-          if (children.length > 0) {
-            closeEl = children[children.length - 1] as HTMLElement;
-          }
-        }
-
-        if (closeEl) {
-          // Use MouseEvent for broader compatibility with React's synthetic events.
-          closeEl.dispatchEvent(
-            new MouseEvent("click", { bubbles: true, cancelable: true }),
-          );
-        }
-      }
-      setCurrentMode("default");
-      return;
-    }
-
-    // Inject __loop__<mode> into textarea — the host interception will
-    // detect it, set the chip, and clear the textarea automatically.
-    const textarea = document
-      .querySelector('[class*="sender"]')
-      ?.querySelector("textarea") as HTMLTextAreaElement | null;
-    if (textarea) {
-      setNativeTextareaValue(textarea, `__loop__${modeKey}`);
-      // The interception runs on rAF, so the textarea will be cleared by it.
-      // Focus the textarea so the user can immediately type their task.
-      setTimeout(() => textarea.focus(), 100);
-    }
-    setCurrentMode(modeKey);
-  }, [currentMode]);
-
-  // ── Build menu items ──
-  const menuItems = MODE_OPTIONS.map((opt) => {
-    const isActive = opt.key === currentMode;
-    return {
-      key: opt.key,
-      label: React.createElement(
-        "div",
-        {
-          style: {
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            minWidth: 180,
-          },
-        },
-        React.createElement("span", { style: { fontSize: 14, display: "flex", alignItems: "center", width: 16, justifyContent: "center" },
-          }, (() => {
-            if (opt.key === "goal" && CarryOutOutlined) return React.createElement(CarryOutOutlined, { style: { fontSize: 14 } });
-            if (opt.key === "mission" && ScheduleOutlined) return React.createElement(ScheduleOutlined, { style: { fontSize: 14 } });
-            if (SendOutlined) return React.createElement(SendOutlined, { style: { fontSize: 14 } });
-            return null;
-          })()),
-        React.createElement(
-          "div",
-          { style: { flex: 1 } },
-          React.createElement(
-            "div",
-            { style: { fontWeight: isActive ? 600 : 400 } },
-            opt.label,
-          ),
-          React.createElement(
-            "div",
-            {
-              style: {
-                fontSize: 11,
-                color: "rgba(0,0,0,0.45)",
-                marginTop: 1,
-              },
-            },
-            opt.desc,
-          ),
-        ),
-        isActive
-          ? React.createElement("span", {
-              style: { color: "#1677ff", fontSize: 12, fontWeight: 600 },
-            }, "✓")
-          : null,
-      ),
-    };
-  });
-
-  // ── Current option ──
-  const currentOpt = MODE_OPTIONS.find((o) => o.key === currentMode) || MODE_OPTIONS[0];
-
-  // ── Icon for current mode ──
-  // default → SendOutlined, goal → CarryOutOutlined, mission → ScheduleOutlined
-  let IconComp: any = null;
-  if (currentMode === "goal" && CarryOutOutlined) {
-    IconComp = React.createElement(CarryOutOutlined, { style: { fontSize: 14 } });
-  } else if (currentMode === "mission" && ScheduleOutlined) {
-    IconComp = React.createElement(ScheduleOutlined, { style: { fontSize: 14 } });
-  } else if (SendOutlined) {
-    IconComp = React.createElement(SendOutlined, { style: { fontSize: 14 } });
-  } else {
-    IconComp = currentOpt.icon;
-  }
-
-  // ── Build trigger button ──
-  // Use size "default" (height 32px) to match the whisper / attachment
-  // buttons in the sender area.
-  const trigger = React.createElement(
-    Button,
-    {
-      type: "text",
-      style: {
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 4,
-        height: 32,
-        padding: "4px 10px",
-        borderRadius: 6,
-        fontSize: 13,
-        lineHeight: 1,
-        color: currentMode !== "default" ? "#1677ff" : "rgba(0,0,0,0.65)",
-        fontWeight: currentMode !== "default" ? 600 : 400,
-        flexShrink: 0,
-      },
-    },
-    IconComp,
-    React.createElement("span", null, currentOpt.label),
-    DownOutlined
-      ? React.createElement(DownOutlined, { style: { fontSize: 10, opacity: 0.5 } })
-      : null,
-  );
-
-  // ── Build dropdown menu ──
-  const menu = {
-    items: menuItems,
-    onClick: (info: { key: string }) => handleSelect(info.key),
-  };
-
-  // Wrap in a span with order:-1 so the mode selector appears BEFORE
-  // the whisper / working-folder buttons (which are rendered first in
-  // the host's prefix fragment).  Works because the SDK's prefix
-  // container is a flex row.
-  return React.createElement(
-    "span",
-    { style: { order: -1, display: "inline-flex", alignItems: "center", flexShrink: 0 } },
-    React.createElement(Dropdown, { menu, trigger: ["click"] }, trigger),
-  );
-}
-
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
 function buildPlugin() {
@@ -12569,22 +12299,6 @@ function buildPlugin() {
   } else {
     console.warn(
       "[ugsci] QP.chat.rightHeader.add not available — agent-specific welcome prompts disabled",
-    );
-  }
-
-  // ── Register Mode Selector in sender prefix ──────────────────────────
-  // Adds a compact dropdown on the left side of the chat input box that
-  // lets users switch between Default / Goal / Mission modes.
-  if (QP.chat?.sender?.addPrefix) {
-    QP.chat.sender.addPrefix(
-      PLUGIN_ID,
-      React.createElement(ModeSelector),
-      { id: "ugsci.mode-selector", order: -100 },
-    );
-    console.info("[ugsci] ModeSelector registered via sender.addPrefix");
-  } else {
-    console.warn(
-      "[ugsci] QP.chat.sender.addPrefix not available — mode selector disabled",
     );
   }
 

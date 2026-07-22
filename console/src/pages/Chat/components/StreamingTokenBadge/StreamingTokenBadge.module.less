@@ -1,0 +1,61 @@
+.badge {
+  position: absolute;
+  bottom: 12px;
+  right: 16px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.06);
+  backdrop-filter: blur(8px);
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(0, 0, 0, 0.65);
+  pointer-events: none;
+  user-select: none;
+  transition: opacity 0.3s ease;
+  animation: streamingBadgeFadeIn 0.3s ease;
+
+  :global([data-theme="dark"]) & {
+    background: rgba(255, 255, 255, 0.08);
+    color: rgba(255, 255, 255, 0.65);
+  }
+}
+
+.dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #52c41a;
+  display: inline-block;
+  animation: streamingBadgePulse 1.2s ease-in-out infinite;
+}
+
+.count {
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes streamingBadgePulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.4;
+    transform: scale(0.8);
+  }
+}
+
+@keyframes streamingBadgeFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

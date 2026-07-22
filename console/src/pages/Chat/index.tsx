@@ -32,14 +32,13 @@ import { useAgentStore } from "../../stores/agentStore";
 import { useCodingMode, useProjectDir } from "../../stores/codingModeStore";
 import {
   useLoopStore,
-  fetchAvailableLoopSkills,
   beginLoopModeSubmission,
   fetchActiveLoopMode,
   fetchAvailableLoopModes,
   markLoopModeRunning,
   prepareLoopModeMessage,
 } from "../../stores/loopStore";
-import { LoopCommandChip, LoopModeSelector } from "../../components/LoopInput";
+import { LoopModeSelector } from "../../components/LoopInput";
 import { useChatAnywhereInput } from "@agentscope-ai/chat";
 import styles from "./index.module.less";
 import { IconButton } from "@agentscope-ai/design";
@@ -1128,7 +1127,6 @@ export default function ChatPage() {
   const { projectDir } = useProjectDir();
   const [projectModalOpen, setProjectModalOpen] = useState(false);
   const hasWorkingFolder = projectDir != null;
-  const loopSelectedSkill = useLoopStore((s) => s.selectedSkill);
   const loopAvailableModes = useLoopStore((state) => state.availableModes);
 
   // Wide mode toggle: expand chat content to full available width
@@ -1725,75 +1723,6 @@ export default function ChatPage() {
   }, []);
   useReaderContextInjector(injectPdfContext);
 
-  // ── Loop chip intercept: detect __loop__ prefix from suggestion selection ──
-  useEffect(() => {
-    let rafId = 0;
-    let lastChecked = "";
-
-    const checkForLoopPrefix = () => {
-      const textarea = document
-        .querySelector('[class*="sender"]')
-        ?.querySelector("textarea") as HTMLTextAreaElement | null;
-      if (!textarea) return;
-      const val = textarea.value;
-      if (val === lastChecked) return;
-      lastChecked = val;
-      const loopMatch = val.match(/^\/?__loop__(\S+)/);
-      if (loopMatch) {
-        const skillName = loopMatch[1].trim();
-        const skills = useLoopStore.getState().availableSkills;
-        const skill = skills.find((s) => s.name === skillName) ?? {
-          name: skillName,
-          description: skillName,
-        };
-        useLoopStore.getState().setSelectedSkill(skill);
-        setTextareaValue(textarea, "");
-        lastChecked = "";
-      }
-    };
-
-    const onInput = () => checkForLoopPrefix();
-
-    const poll = () => {
-      checkForLoopPrefix();
-      rafId = requestAnimationFrame(poll);
-    };
-    rafId = requestAnimationFrame(poll);
-
-    document.addEventListener("input", onInput, true);
-    return () => {
-      cancelAnimationFrame(rafId);
-      document.removeEventListener("input", onInput, true);
-    };
-  }, []);
-
-  // ── Loop chip backspace: highlight on first backspace, delete on second ──
-  useEffect(() => {
-    const handleChipBackspace = (e: KeyboardEvent) => {
-      if (!isChatActive()) return;
-      if (e.key !== "Backspace") {
-        if (useLoopStore.getState().chipHighlighted) {
-          useLoopStore.getState().setChipHighlighted(false);
-        }
-        return;
-      }
-      const target = e.target as HTMLElement;
-      if (target?.tagName !== "TEXTAREA") return;
-      const textarea = target as HTMLTextAreaElement;
-      if (textarea.selectionStart !== 0 || textarea.value.length > 0) return;
-      if (!useLoopStore.getState().selectedSkill) return;
-
-      e.preventDefault();
-      if (useLoopStore.getState().chipHighlighted) {
-        useLoopStore.getState().setSelectedSkill(null);
-      } else {
-        useLoopStore.getState().setChipHighlighted(true);
-      }
-    };
-    document.addEventListener("keydown", handleChipBackspace, true);
-    return () =>
-      document.removeEventListener("keydown", handleChipBackspace, true);
-  }, [isChatActive]);
 
   // ── Message Queue ───────────────────────────────────────────────────────
 
@@ -2849,6 +2778,7 @@ export default function ChatPage() {
         ) : undefined,
         prefix: (
           <>
+            <LoopModeSelector />
             {whisperEnabled ? (
               <WhisperSpeechButton
                 ref={whisperSpeechRef}
@@ -2894,21 +2824,6 @@ export default function ChatPage() {
                   : t("chat.defaultWorkspace", "默认工作区")}
               </span>
             </button>
-            <LoopCommandChip />
-            <LoopModeSelector />
-            {loopSelectedSkill ? (
-              <Tooltip title={t("loop.gotoSettings", "Agent Loop Settings")}>
-                <SettingOutlined
-                  style={{
-                    fontSize: 14,
-                    cursor: "pointer",
-                    color: "var(--text-secondary, rgba(0,0,0,0.45))",
-                    padding: "4px 6px",
-                  }}
-                  onClick={() => navigate("/agent-config?tab=agentLoop")}
-                />
-              </Tooltip>
-            ) : null}
             {pluginSenderPrefix}
           </>
         ),

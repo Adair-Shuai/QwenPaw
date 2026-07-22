@@ -17,7 +17,7 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
@@ -36,11 +36,11 @@ class SimJob:
     pid: int
     status: str = "running"  # running | completed | failed | timeout | error
     start_time: float = 0.0
-    end_time: Optional[float] = None
+    end_time: float | None = None
     timeout: float = 86400.0
-    returncode: Optional[int] = None
-    error: Optional[str] = None
-    process: Optional[Any] = None  # asyncio.subprocess.Process
+    returncode: int | None = None
+    error: str | None = None
+    process: Any | None = None  # asyncio.subprocess.Process
     extra: dict[str, Any] = field(default_factory=dict)
 
 

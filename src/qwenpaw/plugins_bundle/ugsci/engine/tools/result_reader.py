@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, List, Optional
+from typing import Any
 
 import logging
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
@@ -12,8 +12,8 @@ _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
 async def read_simulation_results(
     job_id: str,
     data_type: str = "summary",
-    variables: Optional[List[str]] = None,
-    wells: Optional[List[str]] = None,
+    variables: list[str] | None = None,
+    wells: list[str] | None = None,
     max_points: int = 200,
 ) -> Any:
     """Read result data from a simulation job.

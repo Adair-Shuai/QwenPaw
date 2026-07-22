@@ -18,7 +18,7 @@ import time
 import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
@@ -38,12 +38,12 @@ class SimJob:
     status: str = "running"  # running | completed | failed | timeout | error
     start_time: float = 0.0  # loop.time() — for in-process elapsed calc
     start_ts: float = 0.0  # time.time() — wall clock, survives restart
-    end_time: Optional[float] = None  # loop.time()
-    end_ts: Optional[float] = None  # time.time() — wall clock
+    end_time: float | None = None  # loop.time()
+    end_ts: float | None = None  # time.time() — wall clock
     timeout: float = 86400.0
-    returncode: Optional[int] = None
-    error: Optional[str] = None
-    process: Optional[Any] = None  # asyncio.subprocess.Process
+    returncode: int | None = None
+    error: str | None = None
+    process: Any | None = None  # asyncio.subprocess.Process
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -281,7 +281,7 @@ async def launch_simulation(
 # ---------------------------------------------------------------------------
 
 
-def _recover_job(job_id: str) -> Optional[SimJob]:
+def _recover_job(job_id: str) -> SimJob | None:
     """Try to recover a job from persistent storage.
 
     Returns a SimJob (without process handle) if found in the JSON
@@ -380,7 +380,7 @@ def _recover_job(job_id: str) -> Optional[SimJob]:
     return job
 
 
-def _get_job(job_id: str) -> Optional[SimJob]:
+def _get_job(job_id: str) -> SimJob | None:
     """Look up a job by ID, recovering from persistent store if needed.
 
     This is the single entry point for job lookup — used by monitor,

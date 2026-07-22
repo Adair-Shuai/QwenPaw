@@ -38,7 +38,7 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any, Optional
+from typing import Any
 
 import logging
 _logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
@@ -140,7 +140,7 @@ async def wait_for_simulation(
 
     # ── Poll loop ──────────────────────────────────────────────────
     start_wait = time.time()
-    last_progress_step: Optional[int] = None
+    last_progress_step: int | None = None
     last_progress_time = time.time()
     poll_count = 0
     stall_detected = False

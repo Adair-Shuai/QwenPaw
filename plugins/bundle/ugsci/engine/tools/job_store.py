@@ -17,7 +17,7 @@ import os
 import threading
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
@@ -76,7 +76,7 @@ def save_job(job_id: str, meta: dict[str, Any]) -> None:
         _save_store(store)
 
 
-def load_job(job_id: str) -> Optional[dict[str, Any]]:
+def load_job(job_id: str) -> dict[str, Any] | None:
     """Load a job's metadata. Returns None if not found."""
     with _lock:
         store = _load_store()
@@ -87,9 +87,9 @@ def update_job_status(
     job_id: str,
     status: str,
     *,
-    returncode: Optional[int] = None,
-    error: Optional[str] = None,
-    end_ts: Optional[float] = None,
+    returncode: int | None = None,
+    error: str | None = None,
+    end_ts: float | None = None,
 ) -> None:
     """Update specific fields of a job's metadata.
 

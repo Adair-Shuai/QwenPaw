@@ -7,7 +7,7 @@ basic line-level editing for CMG / COMSOL input files.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, List, Optional
+from typing import Any
 
 import logging
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")

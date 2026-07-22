@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, List, Optional
+from typing import Any
 
 import logging
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
@@ -13,7 +13,7 @@ async def analyze_simulation(
     job_id: str,
     analysis_type: str = "convergence",
     reference_job_id: str = "",
-    metrics: Optional[List[str]] = None,
+    metrics: list[str] | None = None,
 ) -> Any:
     """Analyze simulation results and return a diagnostic report.
 
