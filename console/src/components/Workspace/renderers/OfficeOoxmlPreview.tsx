@@ -254,7 +254,11 @@ const OfficeOoxmlPreview: React.FC<{
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
-      const buf = await fetchArrayBuffer(fileUrl, controller.signal, selectedAgent);
+      const buf = await fetchArrayBuffer(
+        fileUrl,
+        controller.signal,
+        selectedAgent,
+      );
       if (kind === "docx") {
         const html = await convertDocx(buf);
         setState({

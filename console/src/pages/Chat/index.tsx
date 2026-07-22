@@ -1722,7 +1722,6 @@ export default function ChatPage() {
   }, []);
   useReaderContextInjector(injectPdfContext);
 
-
   // ── Message Queue ───────────────────────────────────────────────────────
 
   // Stop background sender for THIS session when ChatPage mounts (foreground

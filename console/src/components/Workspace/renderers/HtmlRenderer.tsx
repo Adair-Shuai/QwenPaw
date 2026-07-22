@@ -99,8 +99,8 @@ const HtmlRenderer: React.FC<RendererContext> = ({
    *
    * 3. 始终注入 <meta charset="utf-8"> 防止编码问题。
    *
- * 4. 注入 STORAGE_POLYFILL 脚本，在所有业务 JS 之前安装
- *    localStorage/sessionStorage 内存级 polyfill。
+   * 4. 注入 STORAGE_POLYFILL 脚本，在所有业务 JS 之前安装
+   *    localStorage/sessionStorage 内存级 polyfill。
    */
   const processedContent = useMemo(() => {
     if (!content) return content;
@@ -129,10 +129,7 @@ const HtmlRenderer: React.FC<RendererContext> = ({
     if (hasDoctype || (hasHtmlTag && hasHeadTag)) {
       if (hasHeadTag) {
         // 注入到 <head> 开标签之后
-        return content.replace(
-          /<head([^>]*)>/i,
-          `<head$1>${injects.join("")}`,
-        );
+        return content.replace(/<head([^>]*)>/i, `<head$1>${injects.join("")}`);
       }
       if (hasHtmlTag) {
         // 有 <html> 但无 <head>，在 <html> 之后创建 <head>
@@ -146,7 +143,9 @@ const HtmlRenderer: React.FC<RendererContext> = ({
       const bodyContent = content
         .replace(/<!doctype[^>]*>/i, "")
         .replace(/<\/?body[^>]*>/gi, "");
-      return `<!DOCTYPE html><html><head>${injects.join("")}</head><body>${bodyContent}</body></html>`;
+      return `<!DOCTYPE html><html><head>${injects.join(
+        "",
+      )}</head><body>${bodyContent}</body></html>`;
     }
 
     // ── Case 2：有 <html> 但无 <head> ──
@@ -159,7 +158,9 @@ const HtmlRenderer: React.FC<RendererContext> = ({
 
     // ── Case 3：有 <body> 但无 <html>/<head> ──
     if (hasBodyTag) {
-      return `<!DOCTYPE html><html><head>${injects.join("")}</head>${content}</html>`;
+      return `<!DOCTYPE html><html><head>${injects.join(
+        "",
+      )}</head>${content}</html>`;
     }
 
     // ── Case 4：纯 HTML 片段（无任何文档结构标签） ──
