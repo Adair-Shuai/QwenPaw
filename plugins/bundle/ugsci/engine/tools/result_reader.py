@@ -148,14 +148,15 @@ async def read_simulation_results(
                 )
                 # Show first/last few points
                 preview = sampled[:5] + (["..."] if len(sampled) > 10 else []) + sampled[-5:]
-                pts_str = ", ".join(
-                    f"{t:.1f}:{v:.4g}" if isinstance(item, tuple)
-                    else str(item)
-                    for item in preview
-                    for t, v in [item] if isinstance(item, tuple)
-                ) if all(isinstance(item, tuple) for item in preview if item != "...") else ""
-                if pts_str:
-                    lines.append(f"    preview: {pts_str}")
+                pts_parts: list[str] = []
+                for item in preview:
+                    if isinstance(item, tuple):
+                        t, v = item
+                        pts_parts.append(f"{t:.1f}:{v:.4g}")
+                    else:
+                        pts_parts.append(str(item))
+                if pts_parts:
+                    lines.append(f"    preview: {', '.join(pts_parts)}")
         lines.append("")
 
     # ── Format well-level vectors ────────────────────────────────────

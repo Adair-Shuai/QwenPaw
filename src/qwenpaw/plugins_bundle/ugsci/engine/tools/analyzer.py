@@ -196,7 +196,7 @@ async def analyze_simulation(
             current_oil = fopr[-1][1]
             lines.append(f"  Peak oil rate (FOPR):   {peak_oil:.2f}")
             lines.append(f"  Current oil rate (FOPR): {current_oil:.2f}")
-            decline = (1 - current_oil / peak_oil * 100) if peak_oil > 0 else 0
+            decline = (1 - current_oil / peak_oil) * 100 if peak_oil > 0 else 0
             lines.append(f"  Decline from peak:      {decline:.1f}%")
 
         if fwpr and fopr:

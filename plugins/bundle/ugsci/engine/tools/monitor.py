@@ -2,10 +2,11 @@
 """check_simulation_status — query the status of a running simulation."""
 from __future__ import annotations
 
-import asyncio
+import logging
+import time
 from typing import Any
 
-logger = logging = __import__("logging").getLogger("qwenpaw.plugin.ugsci.sim")
+_logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
 
 async def check_simulation_status(
@@ -31,6 +32,7 @@ async def check_simulation_status(
     from agentscope.tool import ToolChunk
 
     from .launcher import _get_job
+    from ..adapters import get_adapter
 
     job = _get_job(job_id)
     if not job:
@@ -45,8 +47,6 @@ async def check_simulation_status(
             ],
         )
 
-    loop = asyncio.get_event_loop()
-
     # ── Build status text ────────────────────────────────────────────
     lines = [
         f"Job ID:      {job.job_id}",
@@ -60,10 +60,9 @@ async def check_simulation_status(
     # Elapsed / duration — prefer wall-clock time (survives restart)
     if job.status == "running":
         if job.start_ts > 0:
-            import time as _time
-            elapsed = _time.time() - job.start_ts
+            elapsed = time.time() - job.start_ts
         else:
-            elapsed = loop.time() - job.start_time
+            elapsed = time.time() - job.start_time
         lines.append(
             f"Elapsed:     {elapsed:.0f}s ({elapsed/3600:.1f}h)",
         )
@@ -72,7 +71,6 @@ async def check_simulation_status(
             f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)",
         )
     elif job.end_ts and job.start_ts:
-        import time as _time
         duration = job.end_ts - job.start_ts
         lines.append(
             f"Duration:    {duration:.0f}s ({duration/3600:.1f}h)",
@@ -92,8 +90,6 @@ async def check_simulation_status(
     # ── Convergence detail ───────────────────────────────────────────
     if detail_level in ("convergence", "full"):
         try:
-            from ..adapters import get_adapter
-
             adapter = get_adapter(job.simulator)
             progress = adapter.parse_progress(job.working_dir)
 
@@ -131,8 +127,8 @@ async def check_simulation_status(
             else:
                 lines.append("")
                 lines.append("--- No warnings detected ---")
-        except Exception:
-            pass
+        except Exception as exc:
+            _logger.debug("Failed to parse warnings for job %s: %s", job_id, exc)
 
     return ToolChunk(
         is_last=True,

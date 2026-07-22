@@ -58,6 +58,20 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     setLoading(true);
     setError(null);
     setFallbackStage("none");
+
+    // file:/// URLs are local paths that the backend cannot access.
+    // Skip the backend conversion attempt entirely and go straight to
+    // client-side parsing (OOXML) or download-only fallback.
+    if (fileUrl.startsWith("file://")) {
+      if (canClientSideParse) {
+        setFallbackStage("client-side");
+      } else {
+        setFallbackStage("download-only");
+      }
+      setLoading(false);
+      return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/convert-office`, {
         method: "POST",

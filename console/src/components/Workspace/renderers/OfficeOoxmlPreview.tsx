@@ -28,6 +28,10 @@ import { useTranslation } from "react-i18next";
 import JSZip from "jszip";
 import type { RendererContext } from "../types";
 import { buildAuthHeaders } from "@/api/authHeaders";
+import { isDesktopTauriRuntime } from "@/utils/openExternalLink";
+import { invoke } from "@tauri-apps/api/core";
+import { useAgentStore } from "@/stores/agentStore";
+import { workspaceApi } from "@/api/modules/workspace";
 
 type PreviewKind = "docx" | "xlsx" | "pptx" | "unknown";
 
@@ -80,11 +84,50 @@ function detectKind(mime: string, ext?: string): PreviewKind {
   return "unknown";
 }
 
-/** 获取文件 ArrayBuffer（带鉴权头） */
+/**
+ * 获取文件 ArrayBuffer（带鉴权头）
+ *
+ * 处理三种 URL 类型：
+ * 1. file:/// URL — 浏览器无法直接 fetch，需通过 Tauri invoke 或转换为 API URL
+ * 2. http(s):// URL — 直接 fetch，附带鉴权头
+ * 3. 相对路径 — 通过 workspace API fetch
+ */
 async function fetchArrayBuffer(
   url: string,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  agentId: string,
 ): Promise<ArrayBuffer> {
+  // file:/// URLs: browser security blocks direct fetch.
+  // Use Tauri invoke in desktop mode, or convert to workspace API URL.
+  if (url.startsWith("file://")) {
+    // Strip "file:" + any number of slashes, then URL-decode.
+    // file:///C:/Users/... → C:/Users/...
+    // file:///C:/.../%E7%A4%BA%E4%BE%8B.docx → C:/.../示例.docx
+    const filePath = decodeURIComponent(url.replace(/^file:[/\\]*/, ""));
+
+    // Tauri desktop: read file directly from disk
+    if (isDesktopTauriRuntime()) {
+      const response = await invoke<ArrayBuffer | number[]>(
+        "read_workspace_binary_file",
+        { filePath, agentId },
+      );
+      const bytes = Array.isArray(response)
+        ? new Uint8Array(response)
+        : new Uint8Array(response);
+      return bytes.buffer;
+    }
+
+    // Browser: convert file:/// path to workspace API URL
+    const apiUrl = workspaceApi.getBinaryFileUrl(filePath);
+    const res = await fetch(apiUrl, {
+      headers: { ...buildAuthHeaders() },
+      signal,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.arrayBuffer();
+  }
+
+  // Standard HTTP or relative URL
   const res = await fetch(url, {
     headers: { ...buildAuthHeaders() },
     signal,
@@ -193,6 +236,7 @@ const OfficeOoxmlPreview: React.FC<{
   const { t } = useTranslation();
   const isDark = theme === "dark";
   const [state, setState] = useState<PreviewState>(EMPTY_STATE);
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
 
   const kind = useMemo(
     () => detectKind(artifact.mimeType, artifact.extension),
@@ -210,7 +254,7 @@ const OfficeOoxmlPreview: React.FC<{
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
-      const buf = await fetchArrayBuffer(fileUrl, controller.signal);
+      const buf = await fetchArrayBuffer(fileUrl, controller.signal, selectedAgent);
       if (kind === "docx") {
         const html = await convertDocx(buf);
         setState({
@@ -252,7 +296,7 @@ const OfficeOoxmlPreview: React.FC<{
     } finally {
       clearTimeout(timeout);
     }
-  }, [fileUrl, kind]);
+  }, [fileUrl, kind, selectedAgent]);
 
   useEffect(() => {
     convert();

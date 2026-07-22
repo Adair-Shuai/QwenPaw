@@ -30,7 +30,7 @@ import { Tooltip, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import { workspaceApi } from "@/api/modules/workspace";
-import { stringifyResult } from "./utils";
+import { stringifyResult, toDisplayUrl } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 类型
@@ -55,6 +55,8 @@ interface FileInfo {
   isBinary?: boolean;
   /** 二进制文件的 URL（如果有） */
   binaryUrl?: string;
+  /** 文件预览 URL（从 send_file_to_user 的 DataBlock 中提取，用于文本文件预览） */
+  fileUrl?: string;
   /** 是否是交付物（最终产物）vs 生成的中间文件 */
   isDeliverable: boolean;
 }
@@ -402,13 +404,22 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     // either, so handleOpenInWorkspace will fetch the actual file
     // content from the backend.
     //
+    // For send_file_to_user, the tool result contains a DataBlock with
+    // the file URL and a TextBlock "File sent successfully." — we must
+    // NOT use the text as content. The URL is extracted separately.
+    //
     // For other tools (read_file, etc.), the tool result may contain
     // useful content.
     let resultContent: string | undefined;
     if (name === "write_file" || name === "append_file") {
       resultContent = params.content as string;
     }
-    if (!resultContent && rawResult !== undefined && name !== "edit_file") {
+    if (
+      !resultContent &&
+      rawResult !== undefined &&
+      name !== "edit_file" &&
+      name !== "send_file_to_user"
+    ) {
       resultContent = stringifyResult(rawResult);
     }
 
@@ -425,6 +436,16 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       // Fall back to workspace binary file API for workspace files
       if (!binaryUrl) {
         binaryUrl = workspaceApi.getBinaryFileUrl(filePath);
+      }
+    }
+
+    // For send_file_to_user with text files, extract the file URL from
+    // the DataBlock so we can fetch the actual content for preview.
+    let fileUrl: string | undefined;
+    if (operation === "send" && !isBinary) {
+      const rawUrl = extractUrlFromResult(rawResult);
+      if (rawUrl) {
+        fileUrl = toDisplayUrl(rawUrl);
       }
     }
 
@@ -447,6 +468,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       extension: ext,
       isBinary,
       binaryUrl,
+      fileUrl,
       isDeliverable,
     });
   }
@@ -774,20 +796,35 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       return;
     }
 
-    // For edit_file: we don't have full content, try fetching from backend.
-    // Open with loading state first.
+    // For edit_file / send_file_to_user: we don't have full content,
+    // try fetching from backend. Open with loading state first.
     useWorkspaceStore.getState().openArtifact({
       id: artifactId,
       title: info.fileName,
       source: "tool_call",
       mimeType,
       extension: ext || undefined,
-      textContent: info.content || "",
-      isStreaming: !info.content,
+      textContent: "",
+      isStreaming: true,
       toolName: info.toolName,
     });
 
-    if (info.content) return;
+    // For send_file_to_user, try fetching via the file preview URL first.
+    if (info.fileUrl) {
+      try {
+        const resp = await fetch(info.fileUrl);
+        if (resp.ok) {
+          const text = await resp.text();
+          useWorkspaceStore.getState().updateArtifact(artifactId, {
+            textContent: text,
+            isStreaming: false,
+          });
+          return;
+        }
+      } catch {
+        // Fall through to workspace code-files API
+      }
+    }
 
     try {
       const result = await workspaceApi.loadCodeFile(info.filePath);

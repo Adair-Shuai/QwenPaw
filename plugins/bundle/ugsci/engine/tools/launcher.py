@@ -123,10 +123,14 @@ async def launch_simulation(
         )
 
     # ── Resolve executable from engine registry ──────────────────────
+    get_engine = None
     try:
         from .. import get_engine
     except Exception:
-        get_engine = None  # type: ignore
+        try:
+            from ...engine_manager import get_engine
+        except Exception:
+            pass
 
     # Map simulator name to engine ID
     engine_id_map = {
@@ -209,9 +213,14 @@ async def launch_simulation(
 
     # ── Register job ─────────────────────────────────────────────────
     job_id = f"sim_{uuid.uuid4().hex[:8]}"
-    loop = asyncio.get_event_loop()
 
     wall_now = time.time()
+    try:
+        loop = asyncio.get_running_loop()
+        mono_now = loop.time()
+    except RuntimeError:
+        mono_now = time.time()
+
     job = SimJob(
         job_id=job_id,
         simulator=simulator.lower().strip(),
@@ -219,7 +228,7 @@ async def launch_simulation(
         working_dir=str(work_path),
         pid=proc.pid,
         status="running",
-        start_time=loop.time(),
+        start_time=mono_now,
         start_ts=wall_now,
         timeout=timeout,
         process=proc,
@@ -394,6 +403,16 @@ def _get_job(job_id: str) -> SimJob | None:
     return _recover_job(job_id)
 
 
+def get_all_jobs() -> dict[str, SimJob]:
+    """Return a snapshot of all in-memory jobs.
+
+    This is the public accessor for the job table — used by the
+    HTTP SSE router in plugin.py instead of importing the private
+    ``_sim_jobs`` dict directly.
+    """
+    return dict(_sim_jobs)
+
+
 # ---------------------------------------------------------------------------
 # Background monitor coroutine
 # ---------------------------------------------------------------------------
@@ -405,7 +424,12 @@ async def _monitor_job(job_id: str) -> None:
         return
 
     proc = job.process
-    loop = asyncio.get_event_loop()
+
+    try:
+        loop = asyncio.get_running_loop()
+        mono_now = loop.time()
+    except RuntimeError:
+        mono_now = time.time()
 
     try:
         await asyncio.wait_for(proc.wait(), timeout=job.timeout)
@@ -422,7 +446,7 @@ async def _monitor_job(job_id: str) -> None:
         job.status = "error"
         job.error = str(exc)
 
-    job.end_time = loop.time()
+    job.end_time = mono_now
     job.end_ts = time.time()
 
     # ── Update persisted status ──────────────────────────────────────

@@ -297,7 +297,50 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      include: ["diff"],
+      include: [
+        "diff",
+        // react-syntax-highlighter language modules are dynamically imported
+        // by @agentscope-ai/chat's CodeHighlighter. Pre-bundle the common
+        // languages so Vite's dev server can resolve them at runtime.
+        // NOTE: only modules that actually exist under
+        // react-syntax-highlighter/dist/esm/languages/prism/ can be listed
+        // here — Vite will error on non-existent paths.
+        "react-syntax-highlighter/dist/esm/languages/prism/json",
+        "react-syntax-highlighter/dist/esm/languages/prism/javascript",
+        "react-syntax-highlighter/dist/esm/languages/prism/typescript",
+        "react-syntax-highlighter/dist/esm/languages/prism/jsx",
+        "react-syntax-highlighter/dist/esm/languages/prism/tsx",
+        "react-syntax-highlighter/dist/esm/languages/prism/python",
+        "react-syntax-highlighter/dist/esm/languages/prism/bash",
+        "react-syntax-highlighter/dist/esm/languages/prism/java",
+        "react-syntax-highlighter/dist/esm/languages/prism/go",
+        "react-syntax-highlighter/dist/esm/languages/prism/rust",
+        "react-syntax-highlighter/dist/esm/languages/prism/cpp",
+        "react-syntax-highlighter/dist/esm/languages/prism/c",
+        "react-syntax-highlighter/dist/esm/languages/prism/csharp",
+        "react-syntax-highlighter/dist/esm/languages/prism/sql",
+        "react-syntax-highlighter/dist/esm/languages/prism/yaml",
+        // markup covers HTML, XML, and SVG in Prism
+        "react-syntax-highlighter/dist/esm/languages/prism/markup",
+        "react-syntax-highlighter/dist/esm/languages/prism/css",
+        "react-syntax-highlighter/dist/esm/languages/prism/markdown",
+        "react-syntax-highlighter/dist/esm/languages/prism/docker",
+        "react-syntax-highlighter/dist/esm/languages/prism/git",
+        "react-syntax-highlighter/dist/esm/languages/prism/ini",
+        "react-syntax-highlighter/dist/esm/languages/prism/toml",
+        "react-syntax-highlighter/dist/esm/languages/prism/powershell",
+        "react-syntax-highlighter/dist/esm/languages/prism/ruby",
+        "react-syntax-highlighter/dist/esm/languages/prism/php",
+        "react-syntax-highlighter/dist/esm/languages/prism/swift",
+        "react-syntax-highlighter/dist/esm/languages/prism/kotlin",
+        "react-syntax-highlighter/dist/esm/languages/prism/scala",
+        "react-syntax-highlighter/dist/esm/languages/prism/lua",
+        "react-syntax-highlighter/dist/esm/languages/prism/r",
+        "react-syntax-highlighter/dist/esm/languages/prism/perl",
+        "react-syntax-highlighter/dist/esm/languages/prism/makefile",
+        "react-syntax-highlighter/dist/esm/languages/prism/nginx",
+        "react-syntax-highlighter/dist/esm/languages/prism/latex",
+      ],
     },
     build: {
       // Output to QwenPaw's console directory,

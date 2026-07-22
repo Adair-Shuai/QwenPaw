@@ -37,14 +37,13 @@ class COMSOLAdapter(BaseSimAdapter):
         deck_file: str,
         output_file: str = "",
     ) -> list[str]:
+        # COMSOL batch mode: -inputfile <model.mph> -outputfile <result.mph>
+        # The output_file passed by the launcher is a .log path (adapter.log_extension);
+        # COMSOL's -outputfile expects a .mph result file, so derive it from deck_file.
         cmd = [executable, "batch", "-inputfile", deck_file]
-        if output_file:
-            cmd.extend(["-outputfile", output_file])
-        else:
-            base = deck_file.rsplit(".", 1)[0]
-            cmd.extend(["-outputfile", base + "_result.mph"])
-        # Add a log file flag
-        base = deck_file.rsplit(".", 1)[0]
+        deck_base = deck_file.rsplit(".", 1)[0]
+        cmd.extend(["-outputfile", deck_base + "_result.mph"])
+        # Use the deck file's parent directory as temp dir
         cmd.extend(["-tmpdir", str(Path(deck_file).parent)])
         return cmd
 

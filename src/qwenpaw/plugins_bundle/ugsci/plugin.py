@@ -605,7 +605,7 @@ def _build_sim_router() -> APIRouter:
         """List all known simulation jobs (from persistent store + memory)."""
         try:
             from .engine.tools import job_store
-            from .engine.tools.launcher import _sim_jobs
+            from .engine.tools.launcher import get_all_jobs
 
             # Merge persisted jobs with in-memory jobs
             persisted = job_store.list_jobs()
@@ -624,7 +624,7 @@ def _build_sim_router() -> APIRouter:
                 }
 
             # Overlay in-memory jobs (may have more recent status)
-            for jid, job in _sim_jobs.items():
+            for jid, job in get_all_jobs().items():
                 result[jid] = {
                     "job_id": job.job_id,
                     "simulator": job.simulator,
