@@ -346,31 +346,19 @@ function estimateTokensFromText(text: string): number {
 /**
  * Extract text content from an SSE event payload.
  *
- * Looks for `delta` arrays in message events (streaming text chunks).
+ * The actual SSE streaming format uses `TextContent` objects:
+ *   { "object": "content", "type": "text", "text": "...", "delta": true }
+ *
+ * These are sent as individual streaming chunks — the `delta` boolean
+ * distinguishes streaming fragments from final/complete content blocks.
  */
 function extractTextFromSseEvent(payload: Record<string, unknown>): string {
   const obj = payload.object;
-  const delta = payload.delta;
+  const isDelta = payload.delta === true;
+  const text = payload.text;
 
-  // Message events with delta content (streaming text)
-  if (obj === "message" && Array.isArray(delta)) {
-    let text = "";
-    for (const part of delta) {
-      if (part && typeof part === "object") {
-        const partType = (part as Record<string, unknown>).type;
-        const partText = (part as Record<string, unknown>).text;
-        if (partType === "text" && typeof partText === "string") {
-          text += partText;
-        }
-        // Also count reasoning/thinking text
-        if (
-          (partType === "reasoning" || partType === "thinking") &&
-          typeof partText === "string"
-        ) {
-          text += partText;
-        }
-      }
-    }
+  // Content events with delta=true (streaming text chunks)
+  if (obj === "content" && isDelta && typeof text === "string") {
     return text;
   }
 

@@ -1258,7 +1258,7 @@ export default function ChatPage() {
     // after a short delay so the non-owner Alert appears without flashing.
     const fallbackTimer = setTimeout(() => {
       setOwnershipResolved(true);
-    }, 300);
+    }, 500);
     return () => {
       ctrl.abort();
       clearTimeout(fallbackTimer);

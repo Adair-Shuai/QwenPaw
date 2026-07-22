@@ -203,8 +203,8 @@ export const getDocsUrl = (lang: string): string =>
 
 | 当前 URL | 所在文件 | 用途 | 修改建议 |
 |----------|----------|------|----------|
-| `https://download.qwenpaw.agentscope.io` | `src/qwenpaw/plugins/download_catalog.py` (`PLUGIN_DOWNLOAD_CDN`) | 插件下载 CDN | 改为自己的 CDN |
-| `https://download.qwenpaw.agentscope.io/files/models/llama_cpp` | `src/qwenpaw/local_models/manager.py` | 本地模型下载 | 改为自己的模型仓库 |
+| `https://ugsci-download.oss-cn-beijing.aliyuncs.com` | `src/qwenpaw/plugins/download_catalog.py` (`PLUGIN_DOWNLOAD_CDN`) | 插件下载 CDN | ✅ 已修改 |
+| `https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/models/llama_cpp` | `src/qwenpaw/local_models/manager.py` | 本地模型下载 | ✅ 已修改 |
 | `https://pypi.org/pypi/qwenpaw/json` | `src/qwenpaw/cli/update_cmd.py` (`_PYPI_JSON_URL`) | 版本检查 | 如自建 PyPI 仓库则修改 |
 | `https://pypi.org/pypi/qwenpaw/json` | `console/src/layouts/constants.ts` (`PYPI_URL`) | 前端版本检查 | 同上 |
 | Tauri updater endpoints | `console/src-tauri/tauri.conf.json` | 桌面端自动更新 | 改为自己的更新服务器 |

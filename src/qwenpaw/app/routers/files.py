@@ -3,8 +3,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
-from urllib.parse import unquote
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from starlette.responses import FileResponse
 
 from qwenpaw.constant import WORKING_DIR
@@ -56,6 +55,49 @@ def _check_path(path: Path) -> str | None:
     return None
 
 
+async def _resolve_relative_path(normalized: str, request: Request) -> Path:
+    """Resolve a relative file path by searching candidate directories.
+
+    Search order:
+    1. Agent workspace_dir (e.g. ``~/.qwenpaw/workspaces/default/``)
+    2. Agent workspace_dir/media (uploaded files)
+    3. Agent coding_dir (agent's working folder)
+    4. WORKING_DIR (fallback)
+
+    Returns the first match that exists as a file. If none match,
+    returns the workspace_dir candidate so that the caller produces
+    a proper 404 rather than a confusing 403.
+    """
+    candidates: list[Path] = []
+
+    # Try to get the agent workspace from the request context
+    try:
+        from ..agent_context import get_agent_for_request, get_coding_dir
+
+        workspace = await get_agent_for_request(request)
+        ws_dir = workspace.workspace_dir
+        candidates.append(ws_dir / normalized)
+        candidates.append(ws_dir / "media" / normalized)
+        candidates.append(get_coding_dir(workspace) / normalized)
+    except Exception:
+        pass
+
+    # Fallback: WORKING_DIR
+    candidates.append(_ALLOWED_ROOT / normalized)
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+            if resolved.is_file():
+                return resolved
+        except (OSError, ValueError):
+            continue
+
+    # Return the first candidate (workspace_dir or WORKING_DIR) so the
+    # caller emits a 404 "Not found" rather than a misleading error.
+    return candidates[0].resolve() if candidates else (_ALLOWED_ROOT / normalized).resolve()
+
+
 @router.api_route(
     "/preview/{filepath:path}",
     methods=["GET", "HEAD"],
@@ -63,9 +105,11 @@ def _check_path(path: Path) -> str | None:
 )
 async def preview_file(
     filepath: str,
+    request: Request,
 ):
     """Preview file."""
-    normalized = unquote(filepath)
+    # FastAPI already URL-decodes path parameters; ``filepath`` is ready to use.
+    normalized = filepath
 
     # Normalize /C:/... to C:/... on Windows.
     if (
@@ -78,7 +122,7 @@ async def preview_file(
 
     path = Path(normalized).expanduser()
     if not path.is_absolute():
-        path = Path("/" + normalized)
+        path = await _resolve_relative_path(normalized, request)
     path = path.resolve()
     reason = _check_path(path)
     if reason:

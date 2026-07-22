@@ -18,7 +18,7 @@ from ..plugins.architecture import PluginManifest
 
 logger = logging.getLogger(__name__)
 
-PLUGIN_DOWNLOAD_CDN = "https://download.qwenpaw.agentscope.io"
+PLUGIN_DOWNLOAD_CDN = "https://ugsci-download.oss-cn-beijing.aliyuncs.com"
 _FETCH_TIMEOUT = 30
 
 

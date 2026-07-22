@@ -449,7 +449,7 @@ jobs:
             UGSci-Tauri-*-Windows-setup.exe
             UGSci-Tauri-*-macOS.zip
             UGSci-Tauri-*-macOS.app.tar.gz
-            qwenpaw-tauri-latest.json
+            ugsci-tauri-latest.json
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -465,8 +465,8 @@ jobs:
       needs.build-tauri-macos.result == 'success'
     runs-on: ubuntu-latest
     env:
-      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
-      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://download.qwenpaw.agentscope.io/files/apps/desktop' }}
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/apps/desktop' }}
     steps:
       - name: Checkout (for scripts)
         uses: actions/checkout@v4
@@ -709,9 +709,9 @@ jobs:
             --target-base "darwin-aarch64=${OSS_BASE}/mac-tauri" \
             "${metadata_args[@]}" \
             --notes "$NOTES" \
-            --output qwenpaw-tauri-latest-oss.json
-          ossutil cp qwenpaw-tauri-latest-oss.json \
-            "oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest.json" \
+            --output ugsci-tauri-latest-oss.json
+          ossutil cp ugsci-tauri-latest-oss.json \
+            "oss://${OSS_BUCKET}/metadata/ugsci-tauri-latest.json" \
             --acl public-read \
             --force
 
