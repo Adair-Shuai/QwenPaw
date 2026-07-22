@@ -30,7 +30,7 @@ jobs:
   # to run without the secret (UI-load checks still execute).
   check-release-secrets:
     name: Check release secrets (release only)
-    if: github.event_name == 'release'
+    if: github.event_name == 'release' && !github.event.release.prerelease
     runs-on: ubuntu-latest
     steps:
       - name: Ensure DashScope secret is configured
