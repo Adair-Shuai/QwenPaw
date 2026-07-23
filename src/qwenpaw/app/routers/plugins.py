@@ -952,8 +952,12 @@ async def reload_plugin(plugin_id: str, request: Request):
             detail=f"Failed to reload plugin: {exc}",
         ) from exc
 
-    # Post-load setup (register providers, run startup hooks, reload agents)
+    # Post-load setup (register providers, run startup hooks)
     await _post_load_setup(request, plugin_id)
+
+    # Schedule agent reloads so new/changed tools take effect immediately.
+    # (Upstream moved this out of _post_load_setup; callers must do it.)
+    await _schedule_all_agents_reload(request)
 
     return {
         "id": plugin_id,
