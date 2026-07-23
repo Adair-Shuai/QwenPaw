@@ -70,7 +70,7 @@ datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
 # (~200 MB) for a floating desktop pet window that most users don't need.
 # Users can still install them on-demand via `qwenpaw plugin install`.
 _repo_plugins_bundle = REPO_ROOT / "plugins" / "bundle"
-_bundled_plugin_whitelist = {"ugsci", "ugsci_research"}
+_bundled_plugin_whitelist = {"ugsci", "ugsci_research", "omp_workflows"}
 if _repo_plugins_bundle.is_dir():
     for _plugin_name in _bundled_plugin_whitelist:
         _plugin_dir = _repo_plugins_bundle / _plugin_name
@@ -78,6 +78,20 @@ if _repo_plugins_bundle.is_dir():
             datas += collect_tree(
                 _plugin_dir,
                 f"plugins/bundle/{_plugin_name}",
+            )
+
+# Include select repo-root plugins/apps/ plugins in the desktop build.
+# App-type plugins (e.g. agent-kanban) live at a separate level from
+# regular bundle plugins but are loaded through the same pipeline.
+_repo_plugins_apps = REPO_ROOT / "plugins" / "apps"
+_bundled_apps_whitelist = {"agent-kanban"}
+if _repo_plugins_apps.is_dir():
+    for _plugin_name in _bundled_apps_whitelist:
+        _plugin_dir = _repo_plugins_apps / _plugin_name
+        if _plugin_dir.is_dir():
+            datas += collect_tree(
+                _plugin_dir,
+                f"plugins/apps/{_plugin_name}",
             )
 
 # Include reme package data files (configs, tool yamls, etc.)
