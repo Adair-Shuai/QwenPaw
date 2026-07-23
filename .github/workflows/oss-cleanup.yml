@@ -39,12 +39,7 @@ jobs:
           if [ -n "${{ inputs.keep_version }}" ]; then
             echo "version=${{ inputs.keep_version }}" >> "$GITHUB_OUTPUT"
           else
-            VERSION=$(python -c "
-              import re
-              with open('src/qwenpaw/__version__.py') as f:
-                m = re.search(r'__version__\s*=\s*\"([^\"]+)\"', f.read())
-                print(m.group(1))
-            ")
+            VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/qwenpaw/__version__.py)
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           fi
 
