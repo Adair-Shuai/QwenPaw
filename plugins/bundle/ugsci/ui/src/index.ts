@@ -138,17 +138,57 @@ function authHeaders(extra?: Record<string, string>): Record<string, string> {
   return headers;
 }
 
-async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+// ── Lightweight GET cache ─────────────────────────────────────────────────
+// Prevents redundant API calls when switching between plugin pages.
+// TTL is short (15s) so data stays reasonably fresh. The "刷新" button
+// and detect action call clearApiCache() to force a fresh fetch.
+const _apiCache = new Map<string, { data: any; ts: number }>();
+const _API_CACHE_TTL = 15_000; // 15 seconds
+
+function clearApiCache(): void {
+  _apiCache.clear();
+}
+
+async function apiFetch<T>(
+  path: string,
+  opts?: RequestInit & { bypassCache?: boolean },
+): Promise<T> {
+  const method = (opts?.method || "GET").toUpperCase();
+  const { bypassCache, ...fetchOpts } = (opts || {}) as RequestInit & {
+    bypassCache?: boolean;
+  };
+
+  // Any mutating request (POST/PUT/DELETE/PATCH) invalidates the cache
+  // so subsequent GETs fetch fresh data.
+  if (method !== "GET") {
+    clearApiCache();
+  }
+
+  // Cache only GET requests (unless explicitly bypassed)
+  if (method === "GET" && !bypassCache) {
+    const cached = _apiCache.get(path);
+    if (cached && Date.now() - cached.ts < _API_CACHE_TTL) {
+      return cached.data as T;
+    }
+  }
+
   const resp = await fetch(apiUrl(path), {
-    ...opts,
-    headers: { ...authHeaders(), ...(opts?.headers || {}) },
+    ...fetchOpts,
+    headers: { ...authHeaders(), ...(fetchOpts.headers || {}) },
   });
   if (!resp.ok) {
     const text = await resp.text().catch(() => "");
     throw new Error(text || `HTTP ${resp.status}`);
   }
   if (resp.status === 204) return null as T;
-  return resp.json();
+  const data = await resp.json();
+
+  // Cache successful GET responses
+  if (method === "GET") {
+    _apiCache.set(path, { data, ts: Date.now() });
+  }
+
+  return data;
 }
 
 async function fetchAgents(): Promise<AgentSummary[]> {
@@ -3554,7 +3594,7 @@ function SkillsConfigTab({
           {
             size: "small",
             icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
-            onClick: loadSkills,
+            onClick: () => { clearApiCache(); loadSkills(); },
           },
           "刷新",
         ),
@@ -3824,7 +3864,7 @@ function MCPConfigTab({
           {
             size: "small",
             icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
-            onClick: loadMCPs,
+            onClick: () => { clearApiCache(); loadMCPs(); },
           },
           "刷新",
         ),
@@ -6596,7 +6636,7 @@ function ExpertCenterPage() {
             icon: ReloadOutlined
               ? React.createElement(ReloadOutlined)
               : undefined,
-            onClick: loadExperts,
+            onClick: () => { clearApiCache(); loadExperts(); },
             loading,
           },
           "刷新",
@@ -7105,7 +7145,7 @@ async function deleteEngine(engineId: string): Promise<{ success: boolean }> {
 }
 
 async function detectEngines(): Promise<{ engines: EngineInfo[] }> {
-  return apiFetch<{ engines: EngineInfo[] }>("/ugsci/engines/detect", {
+  return apiFetch<{ engines: EngineInfo[] }>("/ugsci/engines/detect/refresh", {
     method: "POST",
   });
 }
@@ -8175,7 +8215,7 @@ function CapabilityCenterPage() {
             icon: ReloadOutlined
               ? React.createElement(ReloadOutlined)
               : undefined,
-            onClick: loadMCPs,
+            onClick: () => { clearApiCache(); loadMCPs(); },
             loading,
           },
           "刷新",
@@ -8744,9 +8784,7 @@ function CurrentAgentSkillsTab({
                   icon: ReloadOutlined
                     ? React.createElement(ReloadOutlined)
                     : undefined,
-                  onClick: loadSkills,
-                  loading,
-                  size: "small",
+                  onClick: () => { clearApiCache(); loadSkills(); },
                 },
                 "刷新",
               ),

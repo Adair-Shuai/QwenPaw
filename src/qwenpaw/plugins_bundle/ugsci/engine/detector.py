@@ -1268,7 +1268,7 @@ def _run_lmstat(lmutil_path: str, license_str: str) -> Optional[str]:
     try:
         result = subprocess.run(
             [lmutil_path, "lmstat", "-c", license_str, "-a"],
-            capture_output=True, text=True, timeout=15,
+            capture_output=True, text=True, timeout=5,
         )
         output = result.stdout + result.stderr
         # Extract key lines
@@ -1337,7 +1337,7 @@ def _run_smoke_test(engine: EngineInfo) -> None:
                 env=env,
                 capture_output=True,
                 text=True,
-                timeout=120,
+                timeout=30,
             )
             smoke_result["duration_sec"] = round(time.time() - t0, 2)
             smoke_result["returncode"] = r.returncode
@@ -1419,7 +1419,7 @@ def _run_smoke_test(engine: EngineInfo) -> None:
                         engine.license_status = "unknown"
 
     except subprocess.TimeoutExpired:
-        smoke_result["duration_sec"] = 120.0
+        smoke_result["duration_sec"] = 30.0
         smoke_result["error"] = "timeout"
     except Exception as e:
         smoke_result["error"] = f"exception: {e}"
@@ -1501,7 +1501,7 @@ def _extract_version_from_exe(executable: str) -> Optional[str]:
     try:
         result = subprocess.run(
             [executable, "--version"],
-            capture_output=True, text=True, timeout=10, shell=False,
+            capture_output=True, text=True, timeout=5, shell=False,
         )
         output = (result.stdout + result.stderr).strip()
         if output:
