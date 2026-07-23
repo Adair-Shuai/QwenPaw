@@ -566,6 +566,10 @@ const DEFAULT_USER_ID = "default";
 const DEFAULT_CHANNEL = "console";
 const WIDE_MODE_STORAGE_KEY = "qwenpaw_chat_wide_mode";
 
+// Stable fallback so an absent queue entry doesn't produce a fresh array
+// reference on every render (which would invalidate the options memo).
+const EMPTY_QUEUE: QueueItem[] = [];
+
 function isSkillAvailableInConsole(skill: SkillSpec): boolean {
   if (!skill.enabled) return false;
   const channels = skill.channels?.length ? skill.channels : ["all"];
@@ -1113,6 +1117,25 @@ const timestampStyle: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+type SessionQueuePanelProps = Omit<
+  React.ComponentProps<typeof MessageQueuePanel>,
+  "items" | "runState"
+> & { sessionId: string };
+
+/**
+ * Self-subscribed queue panel: item/run-state changes re-render only this
+ * component instead of invalidating the whole ChatPage options memo (and
+ * with it the SDK options object) on every queue mutation.
+ */
+function SessionQueuePanel({ sessionId, ...handlers }: SessionQueuePanelProps) {
+  const items = useMessageQueueStore((s) => s.queues[sessionId]) ?? EMPTY_QUEUE;
+  const runState = useMessageQueueStore(
+    (s) => s.runStates[sessionId] ?? "idle",
+  );
+  if (items.length === 0) return null;
+  return <MessageQueuePanel items={items} runState={runState} {...handlers} />;
+}
+
 const HISTORY_PANEL_STORAGE_KEY = "qwenpaw_history_panel_open";
 
 export default function ChatPage() {
@@ -1191,7 +1214,7 @@ export default function ChatPage() {
   const queueSessionIdRef = useRef(queueSessionId);
   queueSessionIdRef.current = queueSessionId;
   const messageQueue =
-    useMessageQueueStore((s) => s.queues[queueSessionId]) ?? [];
+    useMessageQueueStore((s) => s.queues[queueSessionId]) ?? EMPTY_QUEUE;
   const messageQueueRef = useRef(messageQueue);
   messageQueueRef.current = messageQueue;
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -1236,10 +1259,6 @@ export default function ChatPage() {
       }));
     },
     [],
-  );
-
-  const runState = useMessageQueueStore(
-    (s) => s.runStates[queueSessionId] ?? "idle",
   );
 
   // Single-tab ownership: only one tab per conversation may send. Other tabs
@@ -2759,9 +2778,8 @@ export default function ChatPage() {
               />
             )}
             {hasQueueItems ? (
-              <MessageQueuePanel
-                items={messageQueue}
-                runState={runState}
+              <SessionQueuePanel
+                sessionId={queueSessionId}
                 onRemove={handleQueueRemove}
                 onEdit={handleQueueEdit}
                 onReorder={handleQueueReorder}
@@ -3092,7 +3110,9 @@ export default function ChatPage() {
     handleWhisperTranscription,
     isWideMode,
     toggleWideMode,
-    messageQueue,
+    hasQueueItems,
+    isQueueOnlyTab,
+    showSenderBeforeUI,
     handleQueueRemove,
     handleQueueEdit,
     handleQueueReorder,
@@ -3106,6 +3126,9 @@ export default function ChatPage() {
     workspacePanelOpen,
     projectDir,
     syncLoopModeStatus,
+    effectiveIsFullMode,
+    historyPanelOpen,
+    toggleHistoryPanel,
     handleCompactCommand,
     handleNewCommand,
   ]);

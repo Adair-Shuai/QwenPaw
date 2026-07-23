@@ -22,6 +22,7 @@ import {
 import { Tooltip } from "antd";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { copyText } from "@/utils/clipboard";
 import { looksLikeMarkdown } from "./utils";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import styles from "./toolCards.module.less";
@@ -118,8 +119,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
   const contentHidden = hideContent ?? !!workspaceTitle;
 
   const handleCopy = useCallback(() => {
-    navigator.clipboard
-      .writeText(content)
+    void copyText(content)
       .then(() => {
         if (timerRef.current) clearTimeout(timerRef.current);
         setCopied(true);
@@ -192,6 +192,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
           {workspaceTitle && content && (
             <Tooltip title="在工作区打开">
               <button
+                type="button"
                 className={styles.defaultBlockCopy}
                 onClick={handleOpenInWorkspace}
                 title="在工作区打开"
@@ -201,6 +202,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
             </Tooltip>
           )}
           <button
+            type="button"
             className={styles.defaultBlockCopy}
             onClick={handleCopy}
             title={copyTitle}
