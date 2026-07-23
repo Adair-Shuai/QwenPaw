@@ -203,6 +203,8 @@ def cmd_manifest(args: argparse.Namespace) -> None:
         base = target_overrides.get(meta["target"], args.base_url).rstrip(
             "/",
         )
+        if not base.startswith(("http://", "https://")):
+            base = f"https://{base}"
         manifest_entry: dict[str, str] = {
             "url": f"{base}/{quote(meta['artifact'])}",
         }
