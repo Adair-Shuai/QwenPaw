@@ -1,0 +1,131 @@
+# Clean up old desktop versions from OSS, keeping only the latest build.
+#
+# Triggered manually via workflow_dispatch. Uses the same ossutil approach
+# as the cleanup step in desktop-release.yml, but as a standalone job so
+# a full rebuild is not required.
+
+name: OSS Cleanup
+
+on:
+  workflow_dispatch:
+    inputs:
+      keep_version:
+        description: 'Version to keep (e.g. 2.0.1b2). Leave empty to auto-detect from __version__.py'
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Get version
+        id: version
+        shell: bash
+        run: |
+          if [ -n "${{ inputs.keep_version }}" ]; then
+            echo "version=${{ inputs.keep_version }}" >> "$GITHUB_OUTPUT"
+          else
+            VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/qwenpaw/__version__.py)
+            echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install ossutil
+        run: |
+          wget https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil --version
+
+      - name: Configure ossutil
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: List all desktop files before cleanup
+        run: |
+          echo "=== Files before cleanup ==="
+          for prefix in \
+            "oss://${OSS_BUCKET}/files/apps/desktop/" \
+            "oss://${OSS_BUCKET}/metadata/apps/desktop/"; do
+            echo "--- ${prefix} ---"
+            ossutil ls "${prefix}" -s 2>/dev/null || true
+          done
+
+      - name: Clean up old desktop versions
+        env:
+          OSS_BUCKET: ${{ env.OSS_BUCKET }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          python3 - << 'PYEOF'
+          import os, subprocess
+
+          bucket = os.environ['OSS_BUCKET']
+          version = os.environ['VERSION']
+          # Keep files matching current version, "latest", or essential
+          # non-versioned files like index.json and the updater manifest.
+          keep_patterns = [version, 'latest', 'index.json', 'ugsci-tauri-latest.json']
+
+          dirs_to_clean = [
+              f"oss://{bucket}/files/apps/desktop/win/",
+              f"oss://{bucket}/files/apps/desktop/mac/",
+              f"oss://{bucket}/files/apps/desktop/win-tauri/",
+              f"oss://{bucket}/files/apps/desktop/mac-tauri/",
+              f"oss://{bucket}/metadata/apps/desktop/win/",
+              f"oss://{bucket}/metadata/apps/desktop/mac/",
+              f"oss://{bucket}/metadata/apps/desktop/win-tauri/",
+              f"oss://{bucket}/metadata/apps/desktop/mac-tauri/",
+              f"oss://{bucket}/metadata/apps/desktop/",
+          ]
+
+          deleted = 0
+          kept = 0
+          for prefix in dirs_to_clean:
+              result = subprocess.run(
+                  ['ossutil', 'ls', prefix, '-s'],
+                  capture_output=True, text=True
+              )
+              for line in result.stdout.strip().split('\n'):
+                  line = line.strip()
+                  if not line.startswith('oss://'):
+                      continue
+                  filename = line.rsplit('/', 1)[-1]
+                  if any(p in filename for p in keep_patterns):
+                      print(f"  KEEP: {line}")
+                      kept += 1
+                      continue
+                  print(f"  DELETE: {line}")
+                  subprocess.run(
+                      ['ossutil', 'rm', line, '--force'],
+                      capture_output=True, text=True
+                  )
+                  deleted += 1
+
+          print(f"\n✓ Cleanup complete: {deleted} deleted, {kept} kept (version={version})")
+          PYEOF
+
+      - name: List remaining desktop files after cleanup
+        run: |
+          echo "=== Files after cleanup ==="
+          for prefix in \
+            "oss://${OSS_BUCKET}/files/apps/desktop/" \
+            "oss://${OSS_BUCKET}/metadata/apps/desktop/"; do
+            echo "--- ${prefix} ---"
+            ossutil ls "${prefix}" -s 2>/dev/null || true
+          done

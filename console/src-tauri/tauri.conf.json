@@ -77,7 +77,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEE0MkMxRjE4MUM4Njc0RjAKUldUd2RJWWNHQjhzcEhoZ2FWWkxVRXp0bFMyS1JEand6YXZURCs5YnlNcFlzRCtNalhRcjJwamMK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFQzVFM0JBRjJCNEE3NUUKUldSZXA3VHl1dVBGWGhvb1JqQzNySlYwWVNsVmZNQTN5YnRiaUc5WVh2d3RTQnE1aHhrK1M4NVUK",
       "endpoints": [
         "https://ugsci-download.oss-cn-beijing.aliyuncs.com/metadata/ugsci-tauri-latest.json"
       ],

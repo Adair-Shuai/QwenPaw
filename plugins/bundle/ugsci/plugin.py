@@ -17,6 +17,8 @@ import hashlib
 import logging
 import math
 import shutil
+import threading
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -179,81 +181,82 @@ def _build_engine_router() -> APIRouter:
     """Build a FastAPI router for computation engine management."""
     router = APIRouter()
 
+    # All endpoints are plain ``def`` (not ``async def``) so that
+    # FastAPI runs them in its thread-pool.  This prevents
+    # synchronous file I/O and subprocess calls from blocking
+    # the event loop.
+
+    # ── Detection cache ──────────────────────────────────────────────
+    # detect_engines() is expensive (multi-drive scan + subprocess calls).
+    # Cache the result so that rapid re-mounts of the frontend
+    # EngineSection don't trigger redundant full detections.
+    _DETECT_CACHE_TTL = 300  # 5 minutes
+    _detect_cache: dict = {"data": None, "ts": 0.0, "lock": threading.Lock()}
+
+    def _invalidate_detect_cache() -> None:
+        """Clear the detection cache (call after add/update/delete)."""
+        with _detect_cache["lock"]:
+            _detect_cache["data"] = None
+            _detect_cache["ts"] = 0.0
+
+    # ── Static routes (registered BEFORE /{engine_id} to avoid shadowing) ──
+
     @router.get("/list")
-    async def list_engines_endpoint() -> Dict[str, Any]:
+    def list_engines_endpoint() -> Dict[str, Any]:
         """Return all registered computation engines."""
         from .engine import list_engines, engines_to_list
 
         engines = list_engines()
         return {"engines": engines_to_list(engines)}
 
-    @router.get("/{engine_id}")
-    async def get_engine_endpoint(engine_id: str) -> Dict[str, Any]:
-        """Return a single engine by ID."""
-        from .engine import get_engine, to_dict
-
-        engine = get_engine(engine_id)
-        if engine is None:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=404, detail="Engine not found")
-        return to_dict(engine)
-
-    @router.post("/")
-    async def add_engine_endpoint(body: EngineRequest) -> Dict[str, Any]:
-        """Add a new custom computation engine."""
-        from .engine import add_engine, to_dict
-
-        try:
-            engine = add_engine(body.model_dump())
-            return to_dict(engine)
-        except ValueError as exc:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail=str(exc))
-
-    @router.put("/{engine_id}")
-    async def update_engine_endpoint(
-        engine_id: str, body: EngineRequest,
-    ) -> Dict[str, Any]:
-        """Update an existing engine."""
-        from .engine import update_engine, to_dict
-
-        try:
-            engine = update_engine(engine_id, body.model_dump())
-            return to_dict(engine)
-        except ValueError as exc:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail=str(exc))
-
-    @router.delete("/{engine_id}")
-    async def delete_engine_endpoint(engine_id: str) -> Dict[str, Any]:
-        """Delete a computation engine."""
-        from .engine import delete_engine
-
-        try:
-            ok = delete_engine(engine_id)
-            return {"success": ok}
-        except ValueError as exc:
-            from fastapi import HTTPException
-            raise HTTPException(status_code=400, detail=str(exc))
-
-    @router.post("/detect")
-    async def detect_engines_endpoint() -> Dict[str, Any]:
-        """Auto-detect installed engines and return updated list."""
-        from .engine import detect_engines, engines_to_list
-
-        engines = detect_engines()
-        return {"engines": engines_to_list(engines)}
-
     @router.get("/summary")
-    async def capability_summary_endpoint() -> Dict[str, str]:
+    def capability_summary_endpoint() -> Dict[str, str]:
         """Return a concise text summary for agent system-prompt injection."""
         from .engine import list_engines, build_capability_summary
 
         engines = list_engines()
         return {"summary": build_capability_summary(engines)}
 
+    @router.post("/detect")
+    def detect_engines_endpoint() -> Dict[str, Any]:
+        """Auto-detect installed engines and return updated list.
+
+        Results are cached for 5 minutes to avoid repeated expensive
+        subprocess calls.
+        """
+        from .engine import detect_engines, engines_to_list
+
+        now = time.time()
+        cached = _detect_cache["data"]
+        if cached is not None and (now - _detect_cache["ts"]) < _DETECT_CACHE_TTL:
+            return {"engines": cached}
+
+        with _detect_cache["lock"]:
+            # Double-check after acquiring lock
+            cached = _detect_cache["data"]
+            if cached is not None and (time.time() - _detect_cache["ts"]) < _DETECT_CACHE_TTL:
+                return {"engines": cached}
+
+            engines = detect_engines()
+            result = {"engines": engines_to_list(engines)}
+            _detect_cache["data"] = result["engines"]
+            _detect_cache["ts"] = time.time()
+            return result
+
+    @router.post("/detect/refresh")
+    def detect_engines_refresh_endpoint() -> Dict[str, Any]:
+        """Force re-detection (bypasses cache)."""
+        from .engine import detect_engines, engines_to_list
+
+        with _detect_cache["lock"]:
+            engines = detect_engines()
+            result = {"engines": engines_to_list(engines)}
+            _detect_cache["data"] = result["engines"]
+            _detect_cache["ts"] = time.time()
+            return result
+
     @router.get("/icon/{engine_id}")
-    async def get_engine_icon(engine_id: str):
+    def get_engine_icon(engine_id: str):
         """Serve an engine icon from engine/icons/ directory.
 
         Matches icons automatically based on:
@@ -336,6 +339,60 @@ def _build_engine_router() -> APIRouter:
                 )
         raise HTTPException(status_code=404, detail="Icon not found")
 
+    # ── Dynamic routes (registered AFTER all static GET routes) ──
+
+    @router.get("/{engine_id}")
+    def get_engine_endpoint(engine_id: str) -> Dict[str, Any]:
+        """Return a single engine by ID."""
+        from .engine import get_engine, to_dict
+
+        engine = get_engine(engine_id)
+        if engine is None:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Engine not found")
+        return to_dict(engine)
+
+    @router.post("/")
+    def add_engine_endpoint(body: EngineRequest) -> Dict[str, Any]:
+        """Add a new custom computation engine."""
+        from .engine import add_engine, to_dict
+
+        try:
+            engine = add_engine(body.model_dump())
+            _invalidate_detect_cache()
+            return to_dict(engine)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.put("/{engine_id}")
+    def update_engine_endpoint(
+        engine_id: str, body: EngineRequest,
+    ) -> Dict[str, Any]:
+        """Update an existing engine."""
+        from .engine import update_engine, to_dict
+
+        try:
+            engine = update_engine(engine_id, body.model_dump())
+            _invalidate_detect_cache()
+            return to_dict(engine)
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc))
+
+    @router.delete("/{engine_id}")
+    def delete_engine_endpoint(engine_id: str) -> Dict[str, Any]:
+        """Delete a computation engine."""
+        from .engine import delete_engine
+
+        try:
+            ok = delete_engine(engine_id)
+            _invalidate_detect_cache()
+            return {"success": ok}
+        except ValueError as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=400, detail=str(exc))
+
     return router
 
 
@@ -378,7 +435,7 @@ def _fetch_avatar_png_online(seed: str) -> bytes:
     resp = httpx.get(
         "https://api.dicebear.com/9.x/notionists/png",
         params={"seed": seed},
-        timeout=15,
+        timeout=5,
     )
     resp.raise_for_status()
     return resp.content
@@ -408,6 +465,109 @@ def _get_or_fetch_avatar_png(seed: str) -> Path:
         if default.is_file():
             return default
         raise
+
+
+# ── Avatar cache pre-warming ────────────────────────────────────────────────
+
+# Preset expert team member names (must match the frontend EXPERT_TEAMS array).
+# These are the fixed names that appear in every fresh installation, so we
+# can safely pre-fetch their avatars at startup.
+_PRESET_EXPERT_NAMES: list[str] = [
+    "测井分析师",
+    "地球物理专家",
+    "油藏工程师",
+    "钻井工程师",
+    "采油工程师",
+    "PVT 分析师",
+]
+
+# Preset team compositions (must match the frontend EXPERT_TEAMS members).
+_PRESET_TEAMS: list[list[str]] = [
+    ["测井分析师", "地球物理专家", "油藏工程师"],
+    ["钻井工程师", "地球物理专家", "采油工程师"],
+    ["油藏工程师", "钻井工程师", "采油工程师"],
+    ["PVT 分析师", "地球物理专家", "油藏工程师"],
+]
+
+
+def _collect_agent_names() -> list[str]:
+    """Collect all configured agent display names from config."""
+    names: list[str] = []
+    try:
+        from qwenpaw.config.config import load_agent_config
+        from qwenpaw.config.utils import load_config
+
+        config = load_config()
+        for agent_id in config.agents.profiles:
+            try:
+                agent_config = load_agent_config(agent_id)
+                if agent_config.name:
+                    names.append(agent_config.name)
+            except Exception:
+                continue
+    except Exception as exc:
+        logger.debug("[%s] Could not collect agent names: %s", PLUGIN_ID, exc)
+    return names
+
+
+def _prewarm_avatar_cache() -> None:
+    """Pre-fetch all known expert avatars into local cache.
+
+    Runs in a background daemon thread at startup.  Fetches:
+    1. Individual avatars for all preset expert names
+    2. Individual avatars for all configured agent names
+    3. Composed team avatars for all preset teams
+
+    Already-cached files are skipped (the fetch functions check
+    for existing files first).  This means subsequent on-demand
+    requests from the frontend will hit the local cache and
+    return instantly without any network I/O.
+    """
+    try:
+        # Collect all unique names that need avatars
+        all_names: set[str] = set(_PRESET_EXPERT_NAMES)
+
+        # Add dynamically configured agent names
+        agent_names = _collect_agent_names()
+        all_names.update(agent_names)
+
+        logger.info(
+            "[%s] Pre-warming %d avatar(s) in background...",
+            PLUGIN_ID, len(all_names),
+        )
+
+        # Pre-fetch individual avatars
+        fetched = 0
+        for name in all_names:
+            try:
+                path = _get_or_fetch_avatar_png(name)
+                if path.is_file():
+                    fetched += 1
+            except Exception:
+                continue
+
+        # Pre-compose team avatars
+        team_count = 0
+        for team_members in _PRESET_TEAMS:
+            try:
+                team_hash = hashlib.md5(
+                    ",".join(team_members).encode("utf-8"),
+                ).hexdigest()[:12]
+                team_cache = _resource_dir() / f"TeamAvatar_{team_hash}.png"
+                if team_cache.is_file():
+                    continue  # Already cached
+                png_bytes = _compose_team_avatar(team_members)
+                team_cache.write_bytes(png_bytes)
+                team_count += 1
+            except Exception:
+                continue
+
+        logger.info(
+            "[%s] Avatar pre-warm complete: %d individual, %d team avatars",
+            PLUGIN_ID, fetched, team_count,
+        )
+    except Exception as exc:
+        logger.warning("[%s] Avatar pre-warm failed: %s", PLUGIN_ID, exc)
 
 
 # ── Team avatar composition (PIL) ───────────────────────────────────────────
@@ -511,7 +671,7 @@ def _build_avatar_router() -> APIRouter:
     router = APIRouter()
 
     @router.get("/{seed}")
-    async def get_avatar(seed: str) -> Response:
+    def get_avatar(seed: str) -> Response:
         """Return a PNG avatar for the given seed.
 
         Flow: local cache -> DiceBear online API -> Default.png fallback.
@@ -537,7 +697,7 @@ def _build_avatar_router() -> APIRouter:
             raise HTTPException(status_code=500, detail="Avatar unavailable")
 
     @router.get("/team/{team_id}")
-    async def get_team_avatar(team_id: str) -> Response:
+    def get_team_avatar(team_id: str) -> Response:
         """Compose and return a team avatar from member seeds.
 
         The ``team_id`` is a comma-separated list of member names (seeds).
@@ -594,14 +754,13 @@ def _build_sim_router() -> APIRouter:
     """Build a FastAPI router for simulation job monitoring (SSE + list)."""
     import asyncio
     import json
-    import time
 
     from fastapi.responses import StreamingResponse
 
     router = APIRouter()
 
     @router.get("/jobs")
-    async def list_sim_jobs() -> Dict[str, Any]:
+    def list_sim_jobs() -> Dict[str, Any]:
         """List all known simulation jobs (from persistent store + memory)."""
         try:
             from .engine.tools import job_store
@@ -879,6 +1038,17 @@ class UGSciPlugin:
     async def _on_startup(self) -> None:
         """Called when the QwenPaw application starts."""
         logger.info("[%s] Startup hook executed", PLUGIN_ID)
+
+        # Pre-warm avatar cache in a background thread so that
+        # expert / team avatars are already on disk by the time
+        # the frontend renders them.  This avoids on-demand
+        # network fetches (DiceBear API) that block request threads.
+        thread = threading.Thread(
+            target=_prewarm_avatar_cache,
+            name="ugsci-avatar-prewarm",
+            daemon=True,
+        )
+        thread.start()
 
     async def _on_startup_sync_skills(self) -> None:
         """Sync plugin skills to the shared skill pool on startup."""
