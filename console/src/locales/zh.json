@@ -283,7 +283,20 @@
     "saveFailed": "保存失败",
     "saving": "保存中...",
     "saved": "已保存",
-    "unsaved": "未保存"
+    "unsaved": "未保存",
+    "converting": "正在转换...",
+    "convertFailed": "转换失败",
+    "retry": "重试",
+    "download": "下载",
+    "reload": "重新加载",
+    "noFileUrl": "未提供文件 URL",
+    "basicRender": "基础渲染",
+    "switchToHtml": "切换到 HTML 预览",
+    "switchToScreenshot": "切换到截图预览",
+    "screenshotFailed": "截图获取失败",
+    "prevPage": "上一页",
+    "nextPage": "下一页",
+    "page": "页"
   },
   "agent": {
     "parent": "设置",

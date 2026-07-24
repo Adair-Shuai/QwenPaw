@@ -43,6 +43,7 @@ InstallOrigin = Literal[
     "",
     "skills-sh",
     "github",
+    "gitee",
     "lobehub",
     "qwenpaw",
     "modelscope",
@@ -510,6 +511,7 @@ async def _http_fetch(
     accept: str = "application/json",
     max_bytes: int | None = None,
     timeout: float | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> bytes:
     _ensure_not_cancelled()
     if max_bytes is not None and max_bytes <= 0:
@@ -520,6 +522,8 @@ async def _http_fetch(
 
     host = (urlparse(url).netloc or "").lower()
     headers = _request_headers(url, accept)
+    if extra_headers:
+        headers = {**headers, **extra_headers}
     attempts = _hub_http_retries() + 1
     last_error: Exception | None = None
 
@@ -643,12 +647,14 @@ async def _http_get(
     params: dict[str, Any] | None = None,
     accept: str = "application/json",
     timeout: float | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> str:
     payload = await _http_fetch(
         url,
         params=params,
         accept=accept,
         timeout=timeout,
+        extra_headers=extra_headers,
     )
     return payload.decode("utf-8", errors="replace")
 
@@ -671,12 +677,14 @@ async def _http_json_get(
     url: str,
     params: dict[str, Any] | None = None,
     timeout: float | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> Any:
     body = await _http_get(
         url,
         params=params,
         accept="application/json",
         timeout=timeout,
+        extra_headers=extra_headers,
     )
     return json.loads(body)
 
@@ -691,11 +699,13 @@ http_json_get = _http_json_get
 async def _http_text_get(
     url: str,
     params: dict[str, Any] | None = None,
+    extra_headers: dict[str, str] | None = None,
 ) -> str:
     return await _http_get(
         url,
         params=params,
         accept="text/plain, text/markdown, */*",
+        extra_headers=extra_headers,
     )
 
 
@@ -1127,6 +1137,268 @@ def _resolve_clawhub_slug(bundle_url: str) -> str:
     if from_url:
         return from_url
     return ""
+
+
+# ---------- Gitee spec parser & API helpers --------------------------------
+
+
+def _extract_gitee_spec(
+    url: str,
+) -> tuple[str, str, str, str] | None:
+    """Parse Gitee repo URL into (owner, repo, branch, path_hint).
+
+    Accepts:
+      https://gitee.com/owner/repo
+      https://gitee.com/owner/repo/tree/master/skills/anthropics
+      https://gitee.com/owner/repo/tree/master/skills/anthropics/pdf
+    """
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    if host not in {"gitee.com", "www.gitee.com"}:
+        return None
+    parts = [unquote(p) for p in parsed.path.split("/") if p]
+    if len(parts) < 2:
+        return None
+    owner, repo = parts[0], parts[1]
+    branch = ""
+    path_hint = ""
+    if len(parts) >= 4 and parts[2] in {"tree", "blob"}:
+        branch = parts[3]
+        if len(parts) > 4:
+            path_hint = "/".join(parts[4:])
+    elif len(parts) > 2:
+        path_hint = "/".join(parts[2:])
+    return owner, repo, branch, path_hint
+
+
+def _gitee_api_base(owner: str, repo: str) -> str:
+    return f"https://gitee.com/api/v5/repos/{owner}/{repo}"
+
+
+def _gitee_contents_url(
+    owner: str,
+    repo: str,
+    path: str,
+    ref: str,
+) -> str:
+    base = _gitee_api_base(owner, repo)
+    cleaned = path.strip("/")
+    suffix = f"contents/{cleaned}" if cleaned else "contents"
+    url = f"{base}/{suffix}"
+    params = [f"ref={quote(ref, safe='')}"]
+    return f"{url}?{'&'.join(params)}"
+
+
+def _gitee_request_headers(token: str) -> dict[str, str]:
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if token:
+        headers["Authorization"] = f"token {token}"
+    return headers
+
+
+async def _gitee_get_content_entry(
+    owner: str,
+    repo: str,
+    path: str,
+    ref: str,
+    token: str = "",
+) -> dict[str, Any] | None:
+    """Fetch a single file/dir entry from Gitee Contents API."""
+    url = _gitee_contents_url(owner, repo, path, ref)
+    headers = _gitee_request_headers(token)
+    try:
+        data = await _http_json_get(url, extra_headers=headers)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return None
+        raise
+    return data if isinstance(data, dict) else None
+
+
+async def _gitee_get_dir_entries(
+    owner: str,
+    repo: str,
+    path: str,
+    ref: str,
+    token: str = "",
+) -> list[dict[str, Any]]:
+    """List directory contents from Gitee Contents API."""
+    url = _gitee_contents_url(owner, repo, path, ref)
+    headers = _gitee_request_headers(token)
+    try:
+        data = await _http_json_get(url, extra_headers=headers)
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 404:
+            return []
+        raise
+    if isinstance(data, list):
+        return [x for x in data if isinstance(x, dict)]
+    return []
+
+
+async def _gitee_read_file(
+    entry: dict[str, Any],
+    token: str = "",
+) -> str:
+    """Read file content from a Gitee content entry.
+
+    Prefers base64 ``content`` (already authenticated via API).
+    Falls back to ``download_url`` with auth headers for private repos.
+    """
+    content = entry.get("content")
+    if isinstance(content, str) and content:
+        try:
+            normalized = content.replace("\n", "")
+            return base64.b64decode(normalized).decode(
+                "utf-8",
+                errors="replace",
+            )
+        except Exception:
+            pass
+    download_url = entry.get("download_url")
+    if isinstance(download_url, str) and download_url:
+        try:
+            headers = _gitee_request_headers(token)
+            return await _http_text_get(download_url, extra_headers=headers)
+        except Exception:
+            pass
+    return ""
+
+
+async def _gitee_get_default_branch(
+    owner: str,
+    repo: str,
+    token: str = "",
+) -> str:
+    """Get the default branch of a Gitee repo."""
+    url = _gitee_api_base(owner, repo)
+    headers = _gitee_request_headers(token)
+    try:
+        data = await _http_json_get(url, extra_headers=headers)
+        if isinstance(data, dict):
+            raw = data.get("default_branch")
+            if isinstance(raw, str) and raw.strip():
+                return raw.strip()
+    except Exception:
+        pass
+    return "master"
+
+
+async def _gitee_collect_tree_files(
+    owner: str,
+    repo: str,
+    ref: str,
+    root: str,
+    token: str = "",
+    max_files: int = 4096,
+) -> dict[str, str]:
+    """Recursively collect all files under *root* from a Gitee repo."""
+    files: dict[str, str] = {}
+    pending = [root] if root else [""]
+    visited = 0
+    while pending:
+        _ensure_not_cancelled()
+        current_dir = pending.pop()
+        entries = await _gitee_get_dir_entries(
+            owner, repo, current_dir, ref, token,
+        )
+        for entry in entries:
+            _ensure_not_cancelled()
+            entry_type = str(entry.get("type") or "")
+            entry_path = str(entry.get("path") or "")
+            if not entry_path:
+                continue
+            if entry_type in ("dir", "tree"):
+                pending.append(entry_path)
+                continue
+            if entry_type != "file":
+                continue
+            rel = _relative_from_root(entry_path, root)
+            files[rel] = await _gitee_read_file(entry, token)
+            visited += 1
+            if visited >= max_files:
+                logger.warning(
+                    "Gitee file collection capped at %d files",
+                    max_files,
+                )
+                return files
+    return files
+
+
+async def _fetch_bundle_from_gitee_url(
+    bundle_url: str,
+    requested_version: str,
+    *,
+    access_token: str = "",
+) -> tuple[Any, str]:
+    """Fetch a skill bundle from a Gitee URL.
+
+    Supports URLs like:
+      https://gitee.com/owner/repo/tree/master/skills/anthropics/pdf
+    """
+    spec = _extract_gitee_spec(bundle_url)
+    if spec is None:
+        raise ConfigurationException(
+            config_key="skills_hub.bundle_url",
+            message=(
+                "Invalid Gitee URL format. Use a repo or path URL, e.g. "
+                "https://gitee.com/owner/repo or "
+                "https://gitee.com/owner/repo/tree/master/path/to/skill"
+            ),
+        )
+    owner, repo, branch_in_url, path_hint = spec
+    path_hint = path_hint.strip("/")
+    if path_hint.endswith("/SKILL.md"):
+        path_hint = path_hint[: -len("/SKILL.md")]
+    elif path_hint == "SKILL.md":
+        path_hint = ""
+
+    branch = requested_version.strip() or branch_in_url.strip()
+    if not branch:
+        branch = await _gitee_get_default_branch(owner, repo, access_token)
+
+    # Try the path hint directly as the skill root
+    skill_md_entry = await _gitee_get_content_entry(
+        owner, repo,
+        _join_repo_path(path_hint, "SKILL.md"),
+        branch, access_token,
+    )
+    if skill_md_entry is None:
+        # Try skills/<path_hint>
+        skill_md_entry = await _gitee_get_content_entry(
+            owner, repo,
+            _join_repo_path("skills", _join_repo_path(path_hint, "SKILL.md")),
+            branch, access_token,
+        )
+        if skill_md_entry is not None:
+            path_hint = _join_repo_path("skills", path_hint)
+
+    if skill_md_entry is None or \
+            str(skill_md_entry.get("type") or "") != "file":
+        raise SkillsError(
+            message=(
+                f"Could not find SKILL.md in Gitee repository "
+                f"https://gitee.com/{owner}/{repo}. "
+                f"Path hint: {path_hint!r}; branch: {branch}. "
+                "Ensure the URL points to a folder containing SKILL.md."
+            ),
+        )
+
+    files: dict[str, str] = {}
+    tree_files = await _gitee_collect_tree_files(
+        owner=owner,
+        repo=repo,
+        ref=branch,
+        root=path_hint,
+        token=access_token,
+    )
+    files.update(tree_files)
+    # Ensure SKILL.md is from the dedicated fetch (has content field)
+    files["SKILL.md"] = await _gitee_read_file(skill_md_entry, access_token)
+
+    source_url = f"https://gitee.com/{owner}/{repo}"
+    skill_name = path_hint.split("/")[-1].strip() if path_hint else repo
+    return {"name": skill_name or repo, "files": files}, source_url
 
 
 # ---------- GitHub Contents API client -------------------------------------
@@ -2068,6 +2340,7 @@ _ProviderFetcher = Callable[..., Awaitable[tuple[Any, str]]]
 PROVIDERS: list[tuple[InstallOrigin, _ProviderMatcher, _ProviderFetcher]] = [
     ("skills-sh", _extract_skills_sh_spec, _fetch_bundle_from_skills_sh_url),
     ("github", _extract_github_spec, _fetch_bundle_from_github_url),
+    ("gitee", _extract_gitee_spec, _fetch_bundle_from_gitee_url),
     ("lobehub", _extract_lobehub_identifier, _fetch_bundle_from_lobehub_url),
     (
         "qwenpaw",
@@ -2105,10 +2378,20 @@ def _classify_install_origin(bundle_url: str) -> InstallOrigin:
 async def _resolve_bundle_from_url(
     bundle_url: str,
     version: str,
+    access_token: str = "",
 ) -> tuple[Any, str]:
     _, fetcher = _match_provider(bundle_url)
     if fetcher is not None:
-        return await fetcher(bundle_url, requested_version=version)
+        # Gitee provider accepts access_token; others ignore it.
+        try:
+            return await fetcher(
+                bundle_url,
+                requested_version=version,
+                access_token=access_token,
+            )
+        except TypeError:
+            # Provider doesn't accept access_token kwarg
+            return await fetcher(bundle_url, requested_version=version)
     # Fallback for direct bundle JSON URLs.
     return await _http_json_get(bundle_url), bundle_url
 
@@ -2131,6 +2414,7 @@ async def _prepare_install_payload(
     bundle_url: str,
     version: str,
     target_name: str | None,
+    access_token: str = "",
 ) -> _InstallPayload:
     """Validate, fetch, normalise, resolve final skill name.
 
@@ -2144,7 +2428,9 @@ async def _prepare_install_payload(
             message="bundle_url must be a valid http(s) URL",
         )
     _ensure_not_cancelled()
-    data, source_url = await _resolve_bundle_from_url(bundle_url, version)
+    data, source_url = await _resolve_bundle_from_url(
+        bundle_url, version, access_token,
+    )
     installed_from = _classify_install_origin(bundle_url)
     name, content, references, scripts, extra_files = _normalize_bundle(data)
     if not name:
@@ -2174,12 +2460,14 @@ async def install_skill_from_hub(
     enable: bool = False,
     target_name: str | None = None,
     cancel_checker: Any | None = None,
+    access_token: str = "",
 ) -> HubInstallResult:
     with _with_cancel_checker(cancel_checker):
         payload = await _prepare_install_payload(
             bundle_url,
             version,
             target_name,
+            access_token,
         )
         _ensure_not_cancelled()
         skill_service = SkillService(workspace_dir)
@@ -2225,12 +2513,14 @@ async def import_pool_skill_from_hub(
     version: str = "",
     target_name: str | None = None,
     cancel_checker: Any | None = None,
+    access_token: str = "",
 ) -> HubInstallResult:
     with _with_cancel_checker(cancel_checker):
         payload = await _prepare_install_payload(
             bundle_url,
             version,
             target_name,
+            access_token,
         )
         _ensure_not_cancelled()
         pool_service = SkillPoolService()

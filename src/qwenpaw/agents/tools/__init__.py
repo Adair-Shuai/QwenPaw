@@ -46,6 +46,19 @@ from .delegate_external_agent import delegate_external_agent
 from .make_skill_tools import materialize_skill
 from .ast_tool import ast_search
 from .run_tool_batch import run_tool_batch
+from .office_tools import (
+    office_create_document,
+    office_add_element,
+    office_set_properties,
+    office_get_element,
+    office_query_elements,
+    office_remove_element,
+    office_view_document,
+    office_view_screenshot,
+    office_validate_document,
+    office_merge_template,
+    office_batch_operations,
+)
 
 
 def discover_builtin_tool_funcs() -> list[Callable]:

@@ -1217,6 +1217,11 @@ export default function ChatPage() {
     useMessageQueueStore((s) => s.queues[queueSessionId]) ?? EMPTY_QUEUE;
   const messageQueueRef = useRef(messageQueue);
   messageQueueRef.current = messageQueue;
+  // Subscribe to per-session run state (idle / running / paused / error)
+  // so useMemo dependencies that reference runState stay reactive.
+  const runState = useMessageQueueStore(
+    (s) => s.runStates[queueSessionId] ?? "idle",
+  );
   const autoSendTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const prevQueueLenRef = useRef(messageQueue.length);
 

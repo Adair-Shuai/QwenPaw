@@ -338,6 +338,10 @@ class HubInstallRequest(BaseModel):
     version: str = Field(default="", description="Optional version tag")
     enable: bool = Field(default=True, description="Enable after import")
     target_name: str = Field(default="", description="Optional renamed skill")
+    access_token: str = Field(
+        default="",
+        description="Optional access token for private repos (e.g. Gitee)",
+    )
 
 
 class HubInstallTaskStatus(str, Enum):
@@ -560,6 +564,7 @@ async def _run_hub_install_task(
             enable=body.enable,
             target_name=body.target_name,
             cancel_checker=cancel_event.is_set,
+            access_token=body.access_token,
         )
         imported_skill_name = result.name
         if cancel_event.is_set():

@@ -339,10 +339,16 @@ const PRIMARY_BTN_STYLE: Record<string, unknown> = {
   borderRadius: 8,
 };
 
-/** Check if the sidebar is currently in simple mode. */
+/**
+ * Check if the sidebar is currently in simple mode.
+ * Defaults to true (simple mode) when no preference is stored,
+ * matching the store's default-after-install behavior.
+ */
 function isSimpleMode(): boolean {
   try {
-    return localStorage.getItem("qwenpaw_sidebar_mode") === "simple";
+    const stored = localStorage.getItem("qwenpaw_sidebar_mode");
+    // Default to simple mode when no value is stored (first launch)
+    return stored === null ? true : stored === "simple";
   } catch {
     return false;
   }
@@ -9665,20 +9671,22 @@ interface MarketResult {
   stats: Record<string, string | number> | null;
 }
 
-// ─── GitHub Skill Source: types & helpers ────────────────────────────────────
+// ─── Git Skill Source: types & helpers (GitHub + Gitee) ─────────────────────
 
-interface GitHubSkillSource {
+interface GitSkillSource {
   id: string;
   url: string;
   label: string;
+  provider: "github" | "gitee";
   owner: string;
   repo: string;
   ref: string;
   skillsPath: string;
   enabled: boolean;
+  token?: string;
 }
 
-interface GitHubSkill {
+interface GitSkill {
   sourceId: string;
   sourceLabel: string;
   name: string;
@@ -9758,9 +9766,10 @@ function saveExpertSources(sources: GenericSource[]): void {
   saveGenericSources(UGSCI_EXPERT_SOURCES_KEY, sources);
 }
 
-function _parseGitHubSkillSourceUrl(
+function _parseGitSkillSourceUrl(
   raw: string,
 ): {
+  provider: "github" | "gitee";
   owner: string;
   repo: string;
   ref: string;
@@ -9770,7 +9779,14 @@ function _parseGitHubSkillSourceUrl(
   try {
     const url = new URL(raw.trim());
     const host = url.hostname.toLowerCase();
-    if (host !== "github.com" && host !== "www.github.com") return null;
+    let provider: "github" | "gitee";
+    if (host === "github.com" || host === "www.github.com") {
+      provider = "github";
+    } else if (host === "gitee.com" || host === "www.gitee.com") {
+      provider = "gitee";
+    } else {
+      return null;
+    }
     const parts = url.pathname.split("/").filter((p) => p.length > 0);
     if (parts.length < 2) return null;
     const owner = decodeURIComponent(parts[0]);
@@ -9786,7 +9802,12 @@ function _parseGitHubSkillSourceUrl(
       skillsPath = parts.slice(2).map(decodeURIComponent).join("/");
     }
     skillsPath = skillsPath.replace(/\/+$/, "").replace(/^\/+/, "");
+    // Gitee default branch is usually "master"
+    if (!ref || ref === "main") {
+      ref = provider === "gitee" ? "master" : "main";
+    }
     return {
+      provider,
       owner,
       repo,
       ref: ref || "main",
@@ -9798,26 +9819,33 @@ function _parseGitHubSkillSourceUrl(
   }
 }
 
-function _githubSourceId(owner: string, repo: string, skillsPath: string): string {
-  return `${owner}/${repo}:${skillsPath || "/"}`;
+function _gitSourceId(
+  provider: string,
+  owner: string,
+  repo: string,
+  skillsPath: string,
+): string {
+  return `${provider}:${owner}/${repo}:${skillsPath || "/"}`;
 }
 
-function loadGithubSources(): GitHubSkillSource[] {
+function loadGithubSources(): GitSkillSource[] {
   try {
     const raw = localStorage.getItem(UGSCI_GITHUB_SOURCES_KEY);
     if (!raw) {
       // Seed with default source
-      const parsed = _parseGitHubSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
+      const parsed = _parseGitSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
       if (parsed) {
-        const seed: GitHubSkillSource[] = [
+        const seed: GitSkillSource[] = [
           {
-            id: _githubSourceId(
+            id: _gitSourceId(
+              parsed.provider,
               parsed.owner,
               parsed.repo,
               parsed.skillsPath,
             ),
             url: DEFAULT_GITHUB_SOURCE_URL,
             label: parsed.label,
+            provider: parsed.provider,
             owner: parsed.owner,
             repo: parsed.repo,
             ref: parsed.ref,
@@ -9838,13 +9866,17 @@ function loadGithubSources(): GitHubSkillSource[] {
         typeof s.id === "string" &&
         typeof s.owner === "string" &&
         typeof s.repo === "string",
-    );
+    ).map((s: any) => ({
+      ...s,
+      // Backward compat: old sources don't have provider field
+      provider: s.provider || "github",
+    }));
   } catch {
     return [];
   }
 }
 
-function saveGithubSources(sources: GitHubSkillSource[]): void {
+function saveGithubSources(sources: GitSkillSource[]): void {
   try {
     localStorage.setItem(
       UGSCI_GITHUB_SOURCES_KEY,
@@ -9895,8 +9927,8 @@ function _parseSkillFrontmatter(content: string): {
 }
 
 async function fetchGitHubSourceSkills(
-  source: GitHubSkillSource,
-): Promise<GitHubSkill[]> {
+  source: GitSkillSource,
+): Promise<GitSkill[]> {
   // 1. List directory contents via GitHub Contents API
   const encodedPath = source.skillsPath
     ? encodeURIComponent(source.skillsPath).replace(/%2F/g, "/")
@@ -9922,7 +9954,7 @@ async function fetchGitHubSourceSkills(
     dirs.map(async (dir) => {
       const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}/SKILL.md`;
       const htmlUrl = `https://github.com/${source.owner}/${source.repo}/tree/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}`;
-      const fallbackSkill: GitHubSkill = {
+      const fallbackSkill: GitSkill = {
         sourceId: source.id,
         sourceLabel: source.label,
         name: dir.name,
@@ -9952,25 +9984,100 @@ async function fetchGitHubSourceSkills(
   return skills;
 }
 
-async function fetchAllGitHubSkills(
-  sources: GitHubSkillSource[],
-): Promise<{ skills: GitHubSkill[]; errors: { label: string; message: string }[] }> {
+async function fetchGiteeSourceSkills(
+  source: GitSkillSource,
+): Promise<GitSkill[]> {
+  const token = source.token || "";
+  const headers: Record<string, string> = {};
+  if (token) headers["Authorization"] = `token ${token}`;
+
+  // 1. List directory contents via Gitee Contents API
+  const encodedPath = source.skillsPath
+    ? encodeURIComponent(source.skillsPath).replace(/%2F/g, "/")
+    : "";
+  const listUrl = `https://gitee.com/api/v5/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`;
+  const listResp = await fetch(listUrl, { headers });
+  if (!listResp.ok) {
+    throw new Error(
+      `Gitee API ${listResp.status}: ${source.label} (${source.skillsPath || "/"})`,
+    );
+  }
+  const items = (await listResp.json()) as any[];
+  if (!Array.isArray(items)) return [];
+  const dirs = items.filter(
+    (item) => (item.type === "dir" || item.type === "tree") && item.name,
+  );
+
+  // 2. Fetch SKILL.md for each dir via Gitee Contents API (base64 decoded)
+  const skills = await Promise.all(
+    dirs.map(async (dir) => {
+      const skillPath = source.skillsPath
+        ? `${source.skillsPath}/${dir.name}/SKILL.md`
+        : `${dir.name}/SKILL.md`;
+      const rawUrl = `https://gitee.com/api/v5/repos/${source.owner}/${source.repo}/contents/${skillPath}?ref=${encodeURIComponent(source.ref)}`;
+      const htmlUrl = `https://gitee.com/${source.owner}/${source.repo}/tree/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}`;
+      const fallbackSkill: GitSkill = {
+        sourceId: source.id,
+        sourceLabel: source.label,
+        name: dir.name,
+        description: "",
+        source_url: htmlUrl,
+        html_url: htmlUrl,
+        version: null,
+        author: null,
+      };
+      try {
+        const mdResp = await fetch(rawUrl, { headers });
+        if (!mdResp.ok) return fallbackSkill;
+        const mdData = await mdResp.json();
+        // Gitee returns content as base64
+        let mdContent = "";
+        if (mdData.content) {
+          try {
+            mdContent = atob(mdData.content.replace(/\n/g, ""));
+          } catch {
+            mdContent = "";
+          }
+        }
+        if (!mdContent) return fallbackSkill;
+        const fm = _parseSkillFrontmatter(mdContent);
+        return {
+          ...fallbackSkill,
+          name: fm.name || dir.name,
+          description: fm.description || "",
+          version: fm.version || null,
+          author: fm.author || null,
+        };
+      } catch {
+        return fallbackSkill;
+      }
+    }),
+  );
+  return skills;
+}
+
+async function fetchAllGitSkills(
+  sources: GitSkillSource[],
+): Promise<{ skills: GitSkill[]; errors: { label: string; message: string }[] }> {
   const enabled = sources.filter((s) => s.enabled);
   const results = await Promise.all(
     enabled.map(async (s) => {
       try {
-        const skills = await fetchGitHubSourceSkills(s);
+        const fetcher = s.provider === "gitee"
+          ? fetchGiteeSourceSkills
+          : fetchGitHubSourceSkills;
+        const skills = await fetcher(s);
         return { skills, error: null as string | null, label: s.label };
       } catch (e: any) {
         return {
-          skills: [] as GitHubSkill[],
+          skills: [] as GitSkill[],
           error: e.message || String(e),
           label: s.label,
         };
       }
     }),
   );
-  const allSkills: GitHubSkill[] = [];
+  const allSkills: GitSkill[] = [];
   const errors: { label: string; message: string }[] = [];
   for (const r of results) {
     allSkills.push(...r.skills);
@@ -9989,8 +10096,8 @@ function SourceConfigModal({
 }: {
   open: boolean;
   onClose: () => void;
-  sources: GitHubSkillSource[];
-  onChange: (sources: GitHubSkillSource[]) => void;
+  sources: GitSkillSource[];
+  onChange: (sources: GitSkillSource[]) => void;
 }) {
   const React = getHost().React;
   const { useState } = React;
@@ -10014,34 +10121,45 @@ function SourceConfigModal({
   const { Text } = Typography;
 
   const [newUrl, setNewUrl] = useState("");
+  const [newToken, setNewToken] = useState("");
 
   const handleAdd = () => {
     const trimmed = newUrl.trim();
     if (!trimmed) return;
-    const parsed = _parseGitHubSkillSourceUrl(trimmed);
+    const parsed = _parseGitSkillSourceUrl(trimmed);
     if (!parsed) {
-      antdMsg.error("无效的 GitHub URL，请输入类似 https://github.com/owner/repo/tree/main/skills 的链接");
+      antdMsg.error(
+        "无效的仓库 URL，请输入类似 https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills 的链接",
+      );
       return;
     }
-    const id = _githubSourceId(parsed.owner, parsed.repo, parsed.skillsPath);
+    const id = _gitSourceId(
+      parsed.provider,
+      parsed.owner,
+      parsed.repo,
+      parsed.skillsPath,
+    );
     if (sources.some((s) => s.id === id)) {
       antdMsg.warning("该源已存在");
       return;
     }
-    const newSource: GitHubSkillSource = {
+    const newSource: GitSkillSource = {
       id,
       url: trimmed,
       label: parsed.label,
+      provider: parsed.provider,
       owner: parsed.owner,
       repo: parsed.repo,
       ref: parsed.ref,
       skillsPath: parsed.skillsPath,
       enabled: true,
+      token: newToken.trim() || undefined,
     };
     const next = [...sources, newSource];
     saveGithubSources(next);
     onChange(next);
     setNewUrl("");
+    setNewToken("");
     antdMsg.success(`已添加源: ${parsed.label}`);
   };
 
@@ -10086,13 +10204,13 @@ function SourceConfigModal({
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
-        "添加 GitHub 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式：",
+        "添加 GitHub 或 Gitee 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式：",
       ),
       React.createElement(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center" } },
         React.createElement(Input, {
-          placeholder: "https://github.com/anthropics/skills/tree/main/skills",
+          placeholder: "https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills",
           value: newUrl,
           onChange: (e: any) => setNewUrl(e.target.value),
           onPressEnter: handleAdd,
@@ -10109,6 +10227,16 @@ function SourceConfigModal({
           "添加",
         ),
       ),
+      React.createElement(
+        "div",
+        { style: { marginTop: 8, display: "flex", gap: 8, alignItems: "center" } },
+        React.createElement(Input.Password, {
+          placeholder: "Access Token（私有仓库可选，公开仓库留空）",
+          value: newToken,
+          onChange: (e: any) => setNewToken(e.target.value),
+          style: { flex: 1 },
+        }),
+      ),
     ),
     React.createElement(
       "div",
@@ -10119,7 +10247,7 @@ function SourceConfigModal({
       size: "small",
       bordered: true,
       dataSource: sources,
-      renderItem: (source: GitHubSkillSource) =>
+      renderItem: (source: GitSkillSource) =>
         React.createElement(
           List.Item,
           {
@@ -10159,6 +10287,11 @@ function SourceConfigModal({
               { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
               React.createElement(
                 Tag,
+                { color: source.provider === "gitee" ? "red" : "blue", style: { fontSize: 11 } },
+                source.provider === "gitee" ? "Gitee" : "GitHub",
+              ),
+              React.createElement(
+                Tag,
                 { color: "blue", style: { fontSize: 11 } },
                 source.label,
               ),
@@ -10174,6 +10307,13 @@ function SourceConfigModal({
                 { type: "secondary", style: { fontSize: 11 } },
                 `@${source.ref}`,
               ),
+              source.token
+                ? React.createElement(
+                    Tag,
+                    { color: "green", style: { fontSize: 10 } },
+                    "🔒 Token",
+                  )
+                : null,
             ),
             React.createElement(
               Text,
@@ -10681,6 +10821,7 @@ async function startHubInstall(
   agentId: string,
   bundleUrl: string,
   enable: boolean,
+  accessToken?: string,
 ): Promise<{ task_id: string }> {
   return apiFetch<{ task_id: string }>("/skills/hub/install/start", {
     method: "POST",
@@ -10688,6 +10829,7 @@ async function startHubInstall(
     body: JSON.stringify({
       bundle_url: bundleUrl,
       enable,
+      access_token: accessToken || "",
     }),
   });
 }
@@ -10772,8 +10914,8 @@ function MarketplacePage() {
   const [existingMcpKeys, setExistingMcpKeys] = useState<Set<string>>(new Set());
 
   // GitHub skill sources state
-  const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
-  const [githubSkills, setGithubSkills] = useState<GitHubSkill[]>([]);
+  const [githubSources, setGithubSources] = useState<GitSkillSource[]>([]);
+  const [githubSkills, setGithubSkills] = useState<GitSkill[]>([]);
   const [githubLoading, setGithubLoading] = useState(false);
   const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
   const [selectedSourceFilter, setSelectedSourceFilter] = useState("");
@@ -10806,7 +10948,7 @@ function MarketplacePage() {
   }, []);
 
   // Load GitHub sources from localStorage on mount, then fetch skills
-  const loadGithubSkills = useCallback(async (sources?: GitHubSkillSource[]) => {
+  const loadGithubSkills = useCallback(async (sources?: GitSkillSource[]) => {
     const srcs = sources ?? loadGithubSources();
     if (sources) setGithubSources(sources);
     else setGithubSources(srcs);
@@ -10817,7 +10959,7 @@ function MarketplacePage() {
     }
     setGithubLoading(true);
     try {
-      const { skills, errors } = await fetchAllGitHubSkills(srcs);
+      const { skills, errors } = await fetchAllGitSkills(srcs);
       setGithubSkills(skills);
       if (errors.length > 0) {
         for (const err of errors) {
@@ -10961,18 +11103,22 @@ function MarketplacePage() {
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
 
-  const handleInstallGithubSkill = async (skill: GitHubSkill) => {
+  const handleInstallGithubSkill = async (skill: GitSkill) => {
     if (!installTargetAgent) {
       antdMsg.warning("请先选择安装目标专家");
       return;
     }
     const itemKey = `github:${skill.sourceId}:${skill.name}`;
+    // Find the source's token for private repo access
+    const source = githubSources.find((s) => s.id === skill.sourceId);
+    const accessToken = source?.token || "";
     try {
       setInstalling((prev: any) => ({ ...prev, [itemKey]: "starting" }));
       const task = await startHubInstall(
         installTargetAgent,
         skill.source_url,
         true,
+        accessToken,
       );
       setInstalling((prev: any) => ({ ...prev, [itemKey]: "installing" }));
 
@@ -12156,7 +12302,7 @@ function MarketplacePage() {
       open: sourceConfigOpen,
       onClose: () => setSourceConfigOpen(false),
       sources: githubSources,
-      onChange: (next: GitHubSkillSource[]) => {
+      onChange: (next: GitSkillSource[]) => {
         setGithubSources(next);
         loadGithubSkills(next);
       },

@@ -38,6 +38,7 @@ import CsvRenderer from "../renderers/CsvRenderer";
 import ImageRenderer from "../renderers/ImageRenderer";
 import PdfRenderer from "../renderers/PdfRenderer";
 import OfficeDocRenderer from "../renderers/OfficeDocRenderer";
+import OfficeScreenshotRenderer from "../renderers/OfficeScreenshotRenderer";
 import MediaRenderer from "../renderers/MediaRenderer";
 import SandpackRenderer from "../renderers/SandpackRenderer";
 import MermaidRenderer from "../renderers/MermaidRenderer";
@@ -221,6 +222,18 @@ const builtinRenderers: RendererRegistration[] = [
     priority: 10,
     description:
       "Office 文档渲染（三级 fallback：后端转换 → 前端 OOXML 解析 → 下载）",
+  },
+
+  // Office 文档截图渲染器（OfficeCLI 高保真截图，不可用时降级到 office-doc）
+  {
+    id: "office-screenshot",
+    name: "Office Screenshot",
+    component: OfficeScreenshotRenderer,
+    mimeTypes: [MimeTypes.DOCX, MimeTypes.XLSX, MimeTypes.PPTX],
+    extensions: ["docx", "xlsx", "pptx"],
+    priority: 15,
+    description:
+      "Office 文档截图预览（OfficeCLI 高保真渲染，不可用时自动降级到 HTML 预览）",
   },
 
   // ═══════════════════════════════════════════════════════════════════════

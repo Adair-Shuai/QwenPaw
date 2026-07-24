@@ -500,7 +500,20 @@
     "saveFailed": "Save failed",
     "saving": "Saving...",
     "saved": "Saved",
-    "unsaved": "Unsaved"
+    "unsaved": "Unsaved",
+    "converting": "Converting...",
+    "convertFailed": "Conversion failed",
+    "retry": "Retry",
+    "download": "Download",
+    "reload": "Reload",
+    "noFileUrl": "No file URL provided",
+    "basicRender": "Basic Rendering",
+    "switchToHtml": "Switch to HTML preview",
+    "switchToScreenshot": "Switch to screenshot preview",
+    "screenshotFailed": "Screenshot failed",
+    "prevPage": "Previous page",
+    "nextPage": "Next page",
+    "page": "Page"
   },
   "agent": {
     "parent": "Settings",

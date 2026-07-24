@@ -12,14 +12,21 @@ import io
 import json
 import shutil
 import stat
+import subprocess
 import tempfile
 import os
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Body, HTTPException, UploadFile, File, Request
-from fastapi.responses import ORJSONResponse, Response, StreamingResponse
+from fastapi.responses import (
+    FileResponse,
+    ORJSONResponse,
+    Response,
+    StreamingResponse,
+)
 from watchfiles import awatch, Change
 from pydantic import BaseModel, Field
 
@@ -468,6 +475,153 @@ class ConvertOfficeRequest(BaseModel):
     mime_type: str | None = Field(None, description="MIME type of the file")
 
 
+class OfficeViewRequest(BaseModel):
+    """Request body for /office-screenshot and /office-outline."""
+
+    url: str = Field(..., description="File URL or path")
+    page: int = Field(1, description="Page/slide number (1-based)")
+
+
+# ---------------------------------------------------------------------------
+# OfficeCLI integration helpers
+# ---------------------------------------------------------------------------
+
+_OFFICECLI_TIMEOUT = 30  # seconds
+
+
+def _is_officecli_available() -> bool:
+    """Check if the officecli binary is on PATH."""
+    return shutil.which("officecli") is not None
+
+
+def _officecli_bin() -> str:
+    """Return the resolved officecli executable path.
+
+    On Windows, npm-installed CLIs are ``.cmd`` wrappers. ``subprocess.run``
+    without ``shell=True`` cannot find them by bare name, so we resolve the
+    full path via ``shutil.which``.
+    """
+    resolved = shutil.which("officecli")
+    return resolved or "officecli"
+
+
+def _convert_with_officecli(file_path: str) -> str | None:
+    """High-fidelity HTML conversion via ``officecli view <file> html -o``.
+
+    Uses ``-o`` to write HTML to a temp file (avoids opening a browser).
+    Returns an HTML string on success, or *None* on any failure so the
+    caller can fall back to the legacy conversion path.
+    """
+    tmp_html = tempfile.mktemp(suffix=".html")
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                _officecli_bin(),
+                "view",
+                file_path,
+                "html",
+                "-o",
+                tmp_html,
+            ],
+            capture_output=True,
+            timeout=_OFFICECLI_TIMEOUT,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        Path(tmp_html).unlink(missing_ok=True)
+        return None
+    if result.returncode != 0 or not Path(tmp_html).exists():
+        Path(tmp_html).unlink(missing_ok=True)
+        return None
+    try:
+        with open(tmp_html, "r", encoding="utf-8") as f:
+            return f.read()
+    except OSError:
+        return None
+    finally:
+        Path(tmp_html).unlink(missing_ok=True)
+
+
+def _get_officecli_page_count(file_path: str) -> int:
+    """Get the total page/slide count of an Office document via officecli.
+
+    Uses ``officecli view <file> stats --json``.
+    Returns 0 if the count cannot be determined (best-effort).
+    """
+    try:
+        result = subprocess.run(  # noqa: S603
+            [
+                _officecli_bin(),
+                "view",
+                file_path,
+                "stats",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_OFFICECLI_TIMEOUT,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return 0
+    if result.returncode != 0:
+        return 0
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError:
+        return 0
+    # officecli stats --json returns:
+    #   {"success": true, "data": {"slides": 5, ...}}   (PPTX)
+    #   {"success": true, "data": {"pageCount": 3, ...}} (DOCX)
+    # Try top-level and nested "data" keys
+    nested = data.get("data") or {}
+    return (
+        data.get("pageCount")
+        or data.get("page_count")
+        or data.get("slides")
+        or data.get("totalPages")
+        or nested.get("pageCount")
+        or nested.get("page_count")
+        or nested.get("slides")
+        or nested.get("totalPages")
+        or 0
+    )
+
+
+def _resolve_file_path_from_url(url: str, coding_dir: Path) -> Path:
+    """Resolve a frontend URL to an absolute file path.
+
+    Handles ``/api/workspace/binary-files/<path>``, absolute paths, and
+    ``file://`` URLs.  Raises ``HTTPException(404)`` if the file does
+    not exist.
+    """
+    if "/binary-files/" in url:
+        file_path = url.split("/binary-files/", 1)[1].split("?")[0]
+        file_path = unquote(file_path)
+    elif url.startswith("/"):
+        file_path = url.lstrip("/")
+    elif url.startswith("file:///"):
+        # file:///c:/Users/... → c:/Users/... (Windows drive letter)
+        file_path = url[len("file:///") :]
+    elif url.startswith("file://"):
+        # file://hostname/share/... → //hostname/share/... (UNC)
+        file_path = url[len("file://") :]
+    else:
+        file_path = url
+
+    try:
+        target = safe_join(coding_dir, file_path)
+    except Exception:
+        target = Path(file_path)
+
+    if not target.exists():
+        raise HTTPException(
+            status_code=404,
+            detail=f"File not found: {file_path}",
+        )
+    return target
+
+
 def _get_docx_page_info(file_path: str) -> dict:
     """Parse DOCX XML to get page dimensions and estimate lines/chars."""
     import xml.etree.ElementTree as ET
@@ -670,8 +824,18 @@ def _build_docx_transform(page_info: dict):
 def _convert_docx_to_html(  # pylint: disable=R0912,R0915
     file_path: str,
 ) -> str:
-    """Convert a .docx file to HTML with page-break markers."""
+    """Convert a .docx/.xlsx/.pptx file to HTML for preview.
+
+    Priority: officecli (high fidelity) → existing libs (fallback).
+    """
     ext = Path(file_path).suffix.lstrip(".").lower()
+
+    # ── 优先路径：officecli 高保真渲染 ──
+    if _is_officecli_available():
+        html = _convert_with_officecli(file_path)
+        if html:
+            return html
+        # officecli 失败，继续走 fallback
 
     if ext == "docx":
         try:
@@ -690,7 +854,7 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
                 else:
                     result = mammoth.convert_to_html(f)
 
-            html = result.value
+            html: str = result.value or ""
 
             # Replace markers with styled page-break divs
             if _PAGE_BREAK_MARKER in html:
@@ -829,56 +993,227 @@ async def convert_office(
     """Convert a .docx/.xlsx/.pptx file to HTML for in-browser preview.
 
     Accepts a file URL (from the binary-files endpoint) or a workspace
-    file path. Uses mammoth for DOCX, openpyxl for XLSX, python-pptx
-    for PPTX.
+    file path. Uses officecli (high fidelity) when available, falling
+    back to mammoth for DOCX, openpyxl for XLSX, python-pptx for PPTX.
     """
     workspace = await get_agent_for_request(request)
     coding_dir = get_coding_dir(workspace)
 
-    # The URL from the frontend is typically /api/workspace/binary-files/<path>
-    # We need to extract the file path from it.
-    url = body.url or ""
+    target = _resolve_file_path_from_url(body.url or "", coding_dir)
 
-    # Extract the file path from the URL
-    if "/binary-files/" in url:
-        file_path = url.split("/binary-files/", 1)[1]
-        # Remove query params
-        file_path = file_path.split("?")[0]
-        # URL-decode
-        from urllib.parse import unquote
-
-        file_path = unquote(file_path)
-    elif url.startswith("/"):
-        file_path = url.lstrip("/")
-    elif url.startswith("file://"):
-        file_path = url.replace("file://", "")
-    else:
-        file_path = url
-
-    # Try to resolve the file path within the workspace
-    try:
-        target = safe_join(coding_dir, file_path)
-    except Exception:
-        # If safe_join fails, try as absolute path
-        target = Path(file_path)
-
-    if not target.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"File not found: {file_path}",
-        )
-
-    def _convert():
-        return _convert_docx_to_html(str(target))
+    def _convert() -> tuple[str, str]:
+        # Try officecli first for high-fidelity rendering
+        if _is_officecli_available():
+            html = _convert_with_officecli(str(target))
+            if html:
+                return html, "officecli"
+        # Fallback to legacy conversion
+        return _convert_docx_to_html(str(target)), "legacy"
 
     try:
-        html = await asyncio.to_thread(_convert)
+        html, engine = await asyncio.to_thread(_convert)
     except HTTPException:
         raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    return {"html": html}
+    return {"html": html, "engine": engine}
+
+
+@router.post(
+    "/office-screenshot",
+    summary="Render an Office document page as PNG screenshot",
+)
+async def office_screenshot(
+    request: Request,
+    body: OfficeViewRequest,
+) -> Response:
+    """Render a specific page/slide of an Office document as a PNG image.
+
+    Uses ``officecli view <file> screenshot --page N -o <tmp>``.
+    Returns the PNG file as a ``FileResponse``.
+
+    Raises ``HTTPException(404)`` if officecli is not installed.
+    """
+    if not _is_officecli_available():
+        raise HTTPException(
+            status_code=404,
+            detail="officecli is not installed. "
+            "Install from: https://github.com/iOfficeAI/OfficeCLI/releases",
+        )
+
+    workspace = await get_agent_for_request(request)
+    coding_dir = get_coding_dir(workspace)
+    target = _resolve_file_path_from_url(body.url, coding_dir)
+
+    tmp_path = tempfile.mktemp(suffix=".png")
+
+    def _run_screenshot() -> subprocess.CompletedProcess:
+        return subprocess.run(  # noqa: S603
+            [
+                _officecli_bin(),
+                "view",
+                str(target),
+                "screenshot",
+                "--page",
+                str(body.page),
+                "-o",
+                tmp_path,
+            ],
+            capture_output=True,
+            timeout=60,
+            check=False,
+        )
+
+    try:
+        result = await asyncio.to_thread(_run_screenshot)
+    except subprocess.TimeoutExpired as exc:
+        Path(tmp_path).unlink(missing_ok=True)
+        raise HTTPException(
+            status_code=504,
+            detail="officecli screenshot timed out",
+        ) from exc
+
+    if result.returncode != 0 or not Path(tmp_path).exists():
+        Path(tmp_path).unlink(missing_ok=True)
+        stderr = result.stderr.decode(
+            errors="replace",
+        ) if result.stderr else ""
+        raise HTTPException(
+            status_code=500,
+            detail=f"officecli screenshot failed: {stderr}",
+        )
+
+    # Get page count for frontend pagination (best-effort)
+    page_count = _get_officecli_page_count(str(target))
+
+    from starlette.background import BackgroundTask
+
+    return FileResponse(
+        tmp_path,
+        media_type="image/png",
+        filename=f"page_{body.page}.png",
+        headers={"X-Total-Pages": str(page_count)} if page_count > 0 else {},
+        background=BackgroundTask(lambda: Path(tmp_path).unlink(missing_ok=True)),
+    )
+
+
+@router.post(
+    "/office-outline",
+    summary="Get document outline (headings/structure)",
+)
+async def office_outline(
+    request: Request,
+    body: ConvertOfficeRequest,
+) -> dict:
+    """Get the outline (heading structure) of an Office document.
+
+    Uses ``officecli view <file> outline --json``.
+    """
+    if not _is_officecli_available():
+        raise HTTPException(
+            status_code=404,
+            detail="officecli is not installed.",
+        )
+
+    workspace = await get_agent_for_request(request)
+    coding_dir = get_coding_dir(workspace)
+    target = _resolve_file_path_from_url(body.url, coding_dir)
+
+    def _run_outline() -> dict:
+        result = subprocess.run(  # noqa: S603
+            [
+                _officecli_bin(),
+                "view",
+                str(target),
+                "outline",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_OFFICECLI_TIMEOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"officecli: {result.stderr}",
+            )
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="officecli returned invalid JSON",
+            ) from exc
+
+    try:
+        data = await asyncio.to_thread(_run_outline)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return data
+
+
+@router.post(
+    "/office-issues",
+    summary="Detect document issues (formatting/accessibility)",
+)
+async def office_issues(
+    request: Request,
+    body: ConvertOfficeRequest,
+) -> dict:
+    """Detect issues in an Office document (formatting, accessibility).
+
+    Uses ``officecli view <file> issues --json``.
+    """
+    if not _is_officecli_available():
+        raise HTTPException(
+            status_code=404,
+            detail="officecli is not installed.",
+        )
+
+    workspace = await get_agent_for_request(request)
+    coding_dir = get_coding_dir(workspace)
+    target = _resolve_file_path_from_url(body.url, coding_dir)
+
+    def _run_issues() -> dict:
+        result = subprocess.run(  # noqa: S603
+            [
+                _officecli_bin(),
+                "view",
+                str(target),
+                "issues",
+                "--json",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=_OFFICECLI_TIMEOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            raise HTTPException(
+                status_code=500,
+                detail=f"officecli: {result.stderr}",
+            )
+        try:
+            return json.loads(result.stdout)
+        except json.JSONDecodeError as exc:
+            raise HTTPException(
+                status_code=500,
+                detail="officecli returned invalid JSON",
+            ) from exc
+
+    try:
+        data = await asyncio.to_thread(_run_issues)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return data
 
 
 @router.get(

@@ -1,0 +1,1072 @@
+﻿2026-07-22T10:03:44.1147635Z Current runner version: '2.336.0'
+2026-07-22T10:03:44.1206829Z ##[group]Runner Image Provisioner
+2026-07-22T10:03:44.1207705Z Hosted Compute Agent
+2026-07-22T10:03:44.1208466Z Version: 20260707.563
+2026-07-22T10:03:44.1209131Z Commit: 02667638d2b423fbc733a8e32a88b44996a3ba6e
+2026-07-22T10:03:44.1209866Z Build Date: 2026-07-07T19:33:50Z
+2026-07-22T10:03:44.1210984Z Worker ID: {501fa2bb-9dcd-451f-8b36-9c113f5157af}
+2026-07-22T10:03:44.1211737Z Azure Region: northcentralus
+2026-07-22T10:03:44.1212839Z ##[endgroup]
+2026-07-22T10:03:44.1214464Z ##[group]Operating System
+2026-07-22T10:03:44.1215133Z Ubuntu
+2026-07-22T10:03:44.1215835Z 24.04.4
+2026-07-22T10:03:44.1216390Z LTS
+2026-07-22T10:03:44.1216984Z ##[endgroup]
+2026-07-22T10:03:44.1217655Z ##[group]Runner Image
+2026-07-22T10:03:44.1218340Z Image: ubuntu-24.04
+2026-07-22T10:03:44.1219029Z Version: 20260714.240.1
+2026-07-22T10:03:44.1220623Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260714.240/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-22T10:03:44.1222296Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260714.240
+2026-07-22T10:03:44.1223312Z ##[endgroup]
+2026-07-22T10:03:44.1224563Z ##[group]GITHUB_TOKEN Permissions
+2026-07-22T10:03:44.1226956Z Contents: read
+2026-07-22T10:03:44.1227620Z Metadata: read
+2026-07-22T10:03:44.1228266Z ##[endgroup]
+2026-07-22T10:03:44.1230963Z Secret source: Actions
+2026-07-22T10:03:44.1232357Z Prepare workflow directory
+2026-07-22T10:03:44.1938892Z Prepare all required actions
+2026-07-22T10:03:44.1999901Z Getting action download info
+2026-07-22T10:03:44.4534537Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-07-22T10:03:44.8308958Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-07-22T10:03:44.9131269Z Download action repository 'actions/download-artifact@v4' (SHA:d3f86a106a0bac45b974a628896c90dbdf5c8093)
+2026-07-22T10:03:45.3685980Z Complete job name: upload-oss
+2026-07-22T10:03:45.4572803Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T10:03:45.4584083Z ##[group]Run actions/checkout@v4
+2026-07-22T10:03:45.4584878Z with:
+2026-07-22T10:03:45.4585388Z   repository: Adair-Shuai/QwenPaw
+2026-07-22T10:03:45.4590485Z   token: ***
+2026-07-22T10:03:45.4591009Z   ssh-strict: true
+2026-07-22T10:03:45.4591521Z   ssh-user: git
+2026-07-22T10:03:45.4592028Z   persist-credentials: true
+2026-07-22T10:03:45.4592594Z   clean: true
+2026-07-22T10:03:45.4593099Z   sparse-checkout-cone-mode: true
+2026-07-22T10:03:45.4593688Z   fetch-depth: 1
+2026-07-22T10:03:45.4594195Z   fetch-tags: false
+2026-07-22T10:03:45.4594701Z   show-progress: true
+2026-07-22T10:03:45.4595220Z   lfs: false
+2026-07-22T10:03:45.4595796Z   submodules: false
+2026-07-22T10:03:45.4596314Z   set-safe-directory: true
+2026-07-22T10:03:45.4596869Z   allow-unsafe-pr-checkout: false
+2026-07-22T10:03:45.4597759Z env:
+2026-07-22T10:03:45.4598225Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:03:45.4599123Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:03:45.4599831Z ##[endgroup]
+2026-07-22T10:03:45.5686612Z Syncing repository: Adair-Shuai/QwenPaw
+2026-07-22T10:03:45.5689647Z ##[group]Getting Git version info
+2026-07-22T10:03:45.5691078Z Working directory is '/home/runner/work/QwenPaw/QwenPaw'
+2026-07-22T10:03:45.5692992Z [command]/usr/bin/git version
+2026-07-22T10:03:45.5710234Z git version 2.54.0
+2026-07-22T10:03:45.5763068Z ##[endgroup]
+2026-07-22T10:03:45.5781410Z Temporarily overriding HOME='/home/runner/work/_temp/99e8f675-7231-4b26-a102-6831c74a4cbd' before making global git config changes
+2026-07-22T10:03:45.5784076Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T10:03:45.5787108Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/QwenPaw/QwenPaw
+2026-07-22T10:03:45.5838703Z Deleting the contents of '/home/runner/work/QwenPaw/QwenPaw'
+2026-07-22T10:03:45.5841957Z ##[group]Initializing the repository
+2026-07-22T10:03:45.5846201Z [command]/usr/bin/git init /home/runner/work/QwenPaw/QwenPaw
+2026-07-22T10:03:45.5924363Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-22T10:03:45.5928884Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-22T10:03:45.5930722Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-22T10:03:45.5932159Z hint: call:
+2026-07-22T10:03:45.5932948Z hint:
+2026-07-22T10:03:45.5933850Z hint: 	git config --global init.defaultBranch <name>
+2026-07-22T10:03:45.5934930Z hint:
+2026-07-22T10:03:45.5935953Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-22T10:03:45.5937653Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-22T10:03:45.5939019Z hint:
+2026-07-22T10:03:45.5939743Z hint: 	git branch -m <name>
+2026-07-22T10:03:45.5940731Z hint:
+2026-07-22T10:03:45.5941831Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-22T10:03:45.5943313Z Initialized empty Git repository in /home/runner/work/QwenPaw/QwenPaw/.git/
+2026-07-22T10:03:45.5952197Z [command]/usr/bin/git remote add origin https://github.com/Adair-Shuai/QwenPaw
+2026-07-22T10:03:45.5983418Z ##[endgroup]
+2026-07-22T10:03:45.5984957Z ##[group]Disabling automatic garbage collection
+2026-07-22T10:03:45.5986397Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-22T10:03:45.6020650Z ##[endgroup]
+2026-07-22T10:03:45.6022276Z ##[group]Setting up auth
+2026-07-22T10:03:45.6027217Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T10:03:45.6062388Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T10:03:45.6422543Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T10:03:45.6460483Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T10:03:45.6728394Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T10:03:45.6767992Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T10:03:45.7021549Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-22T10:03:45.7065397Z ##[endgroup]
+2026-07-22T10:03:45.7066397Z ##[group]Fetching the repository
+2026-07-22T10:03:45.7076031Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +619fb90605afc0205eb01f97b04b73a4ba37ff83:refs/remotes/origin/release
+2026-07-22T10:03:55.9880008Z From https://github.com/Adair-Shuai/QwenPaw
+2026-07-22T10:03:55.9881297Z  * [new ref]         619fb90605afc0205eb01f97b04b73a4ba37ff83 -> origin/release
+2026-07-22T10:03:55.9907557Z ##[endgroup]
+2026-07-22T10:03:55.9908398Z ##[group]Determining the checkout info
+2026-07-22T10:03:55.9911015Z ##[endgroup]
+2026-07-22T10:03:55.9917593Z [command]/usr/bin/git sparse-checkout disable
+2026-07-22T10:03:55.9969756Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-22T10:03:56.0005622Z ##[group]Checking out the ref
+2026-07-22T10:03:56.0010981Z [command]/usr/bin/git checkout --progress --force -B release refs/remotes/origin/release
+2026-07-22T10:03:57.2912222Z Updating files:   2% (136/4803)
+2026-07-22T10:03:57.7559648Z Updating files:   3% (145/4803)
+2026-07-22T10:03:58.0169162Z Updating files:   4% (193/4803)
+2026-07-22T10:03:58.2274438Z Updating files:   4% (215/4803)
+2026-07-22T10:03:58.2333213Z Updating files:   5% (241/4803)
+2026-07-22T10:03:58.2388543Z Updating files:   6% (289/4803)
+2026-07-22T10:03:58.2415297Z Updating files:   7% (337/4803)
+2026-07-22T10:03:58.2436638Z Updating files:   8% (385/4803)
+2026-07-22T10:03:58.2459743Z Updating files:   9% (433/4803)
+2026-07-22T10:03:58.2486158Z Updating files:  10% (481/4803)
+2026-07-22T10:03:58.2528408Z Updating files:  11% (529/4803)
+2026-07-22T10:03:58.2562035Z Updating files:  12% (577/4803)
+2026-07-22T10:03:58.2637948Z Updating files:  13% (625/4803)
+2026-07-22T10:03:58.2668921Z Updating files:  14% (673/4803)
+2026-07-22T10:03:58.2709617Z Updating files:  15% (721/4803)
+2026-07-22T10:03:58.2754397Z Updating files:  16% (769/4803)
+2026-07-22T10:03:58.2793570Z Updating files:  17% (817/4803)
+2026-07-22T10:03:58.2828244Z Updating files:  18% (865/4803)
+2026-07-22T10:03:58.2867473Z Updating files:  19% (913/4803)
+2026-07-22T10:03:58.2905780Z Updating files:  20% (961/4803)
+2026-07-22T10:03:58.2933885Z Updating files:  21% (1009/4803)
+2026-07-22T10:03:58.2957554Z Updating files:  22% (1057/4803)
+2026-07-22T10:03:58.2984211Z Updating files:  23% (1105/4803)
+2026-07-22T10:03:58.3030618Z Updating files:  24% (1153/4803)
+2026-07-22T10:03:58.3078735Z Updating files:  25% (1201/4803)
+2026-07-22T10:03:58.3113818Z Updating files:  26% (1249/4803)
+2026-07-22T10:03:58.3157340Z Updating files:  27% (1297/4803)
+2026-07-22T10:03:58.3184984Z Updating files:  28% (1345/4803)
+2026-07-22T10:03:58.3241663Z Updating files:  29% (1393/4803)
+2026-07-22T10:03:58.3291002Z Updating files:  30% (1441/4803)
+2026-07-22T10:03:58.3326043Z Updating files:  31% (1489/4803)
+2026-07-22T10:03:58.3367859Z Updating files:  32% (1537/4803)
+2026-07-22T10:03:58.3415278Z Updating files:  33% (1585/4803)
+2026-07-22T10:03:58.3460668Z Updating files:  34% (1634/4803)
+2026-07-22T10:03:58.3501939Z Updating files:  35% (1682/4803)
+2026-07-22T10:03:58.3578425Z Updating files:  36% (1730/4803)
+2026-07-22T10:03:58.3630605Z Updating files:  37% (1778/4803)
+2026-07-22T10:03:58.3697499Z Updating files:  38% (1826/4803)
+2026-07-22T10:03:58.3755117Z Updating files:  39% (1874/4803)
+2026-07-22T10:03:58.3821630Z Updating files:  40% (1922/4803)
+2026-07-22T10:03:58.3870505Z Updating files:  41% (1970/4803)
+2026-07-22T10:03:58.3917522Z Updating files:  42% (2018/4803)
+2026-07-22T10:03:58.3970008Z Updating files:  43% (2066/4803)
+2026-07-22T10:03:58.4023569Z Updating files:  44% (2114/4803)
+2026-07-22T10:03:58.4069656Z Updating files:  45% (2162/4803)
+2026-07-22T10:03:58.4107473Z Updating files:  46% (2210/4803)
+2026-07-22T10:03:58.4141086Z Updating files:  47% (2258/4803)
+2026-07-22T10:03:58.4188840Z Updating files:  48% (2306/4803)
+2026-07-22T10:03:58.4219236Z Updating files:  49% (2354/4803)
+2026-07-22T10:03:58.4265302Z Updating files:  50% (2402/4803)
+2026-07-22T10:03:58.4304223Z Updating files:  51% (2450/4803)
+2026-07-22T10:03:58.4335380Z Updating files:  52% (2498/4803)
+2026-07-22T10:03:58.4371484Z Updating files:  53% (2546/4803)
+2026-07-22T10:03:58.4404658Z Updating files:  54% (2594/4803)
+2026-07-22T10:03:58.4440591Z Updating files:  55% (2642/4803)
+2026-07-22T10:03:58.4474650Z Updating files:  56% (2690/4803)
+2026-07-22T10:03:58.4508464Z Updating files:  57% (2738/4803)
+2026-07-22T10:03:58.4546935Z Updating files:  58% (2786/4803)
+2026-07-22T10:03:58.4585401Z Updating files:  59% (2834/4803)
+2026-07-22T10:03:58.4633804Z Updating files:  60% (2882/4803)
+2026-07-22T10:03:58.4675895Z Updating files:  61% (2930/4803)
+2026-07-22T10:03:58.4711197Z Updating files:  62% (2978/4803)
+2026-07-22T10:03:58.4745955Z Updating files:  63% (3026/4803)
+2026-07-22T10:03:58.4783223Z Updating files:  64% (3074/4803)
+2026-07-22T10:03:58.4822775Z Updating files:  65% (3122/4803)
+2026-07-22T10:03:58.4851162Z Updating files:  66% (3170/4803)
+2026-07-22T10:03:58.4886373Z Updating files:  67% (3219/4803)
+2026-07-22T10:03:58.4914227Z Updating files:  68% (3267/4803)
+2026-07-22T10:03:58.4960252Z Updating files:  69% (3315/4803)
+2026-07-22T10:03:58.4998344Z Updating files:  70% (3363/4803)
+2026-07-22T10:03:58.5044157Z Updating files:  71% (3411/4803)
+2026-07-22T10:03:58.5086007Z Updating files:  72% (3459/4803)
+2026-07-22T10:03:58.5135083Z Updating files:  73% (3507/4803)
+2026-07-22T10:03:58.5202028Z Updating files:  74% (3555/4803)
+2026-07-22T10:03:58.5250875Z Updating files:  75% (3603/4803)
+2026-07-22T10:03:58.5323668Z Updating files:  76% (3651/4803)
+2026-07-22T10:03:58.5375606Z Updating files:  77% (3699/4803)
+2026-07-22T10:03:58.5435431Z Updating files:  78% (3747/4803)
+2026-07-22T10:03:58.5490420Z Updating files:  79% (3795/4803)
+2026-07-22T10:03:58.5540650Z Updating files:  80% (3843/4803)
+2026-07-22T10:03:58.5590790Z Updating files:  81% (3891/4803)
+2026-07-22T10:03:58.5642531Z Updating files:  82% (3939/4803)
+2026-07-22T10:03:58.5690877Z Updating files:  83% (3987/4803)
+2026-07-22T10:03:58.5733949Z Updating files:  84% (4035/4803)
+2026-07-22T10:03:58.5776253Z Updating files:  85% (4083/4803)
+2026-07-22T10:03:58.6260778Z Updating files:  86% (4131/4803)
+2026-07-22T10:03:58.6286225Z Updating files:  87% (4179/4803)
+2026-07-22T10:03:58.6322457Z Updating files:  88% (4227/4803)
+2026-07-22T10:03:58.6355106Z Updating files:  89% (4275/4803)
+2026-07-22T10:03:58.6384159Z Updating files:  90% (4323/4803)
+2026-07-22T10:03:58.6431500Z Updating files:  91% (4371/4803)
+2026-07-22T10:03:58.6464222Z Updating files:  92% (4419/4803)
+2026-07-22T10:03:58.6491865Z Updating files:  93% (4467/4803)
+2026-07-22T10:03:58.6523440Z Updating files:  94% (4515/4803)
+2026-07-22T10:03:58.6595233Z Updating files:  95% (4563/4803)
+2026-07-22T10:03:58.6674386Z Updating files:  96% (4611/4803)
+2026-07-22T10:03:58.6707319Z Updating files:  97% (4659/4803)
+2026-07-22T10:03:58.6731160Z Updating files:  98% (4707/4803)
+2026-07-22T10:03:58.6763389Z Updating files:  99% (4755/4803)
+2026-07-22T10:03:58.6763715Z Updating files: 100% (4803/4803)
+2026-07-22T10:03:58.6764010Z Updating files: 100% (4803/4803), done.
+2026-07-22T10:03:58.6828728Z Switched to a new branch 'release'
+2026-07-22T10:03:58.6832582Z branch 'release' set up to track 'origin/release'.
+2026-07-22T10:03:58.6995522Z ##[endgroup]
+2026-07-22T10:03:58.7054016Z [command]/usr/bin/git log -1 --format=%H
+2026-07-22T10:03:58.7085067Z 619fb90605afc0205eb01f97b04b73a4ba37ff83
+2026-07-22T10:03:58.7339681Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T10:03:58.7341860Z ##[group]Run actions/setup-python@v5
+2026-07-22T10:03:58.7342149Z with:
+2026-07-22T10:03:58.7342378Z   python-version: 3.11
+2026-07-22T10:03:58.7342620Z   check-latest: false
+2026-07-22T10:03:58.7345007Z   token: ***
+2026-07-22T10:03:58.7345231Z   update-environment: true
+2026-07-22T10:03:58.7345498Z   allow-prereleases: false
+2026-07-22T10:03:58.7345732Z   freethreaded: false
+2026-07-22T10:03:58.7345970Z env:
+2026-07-22T10:03:58.7346173Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:03:58.7346606Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:03:58.7346948Z ##[endgroup]
+2026-07-22T10:03:58.8658579Z ##[group]Installed versions
+2026-07-22T10:03:58.8738867Z (node:2263) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-22T10:03:58.8740268Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-22T10:03:58.8740967Z Successfully set up CPython (3.11.15)
+2026-07-22T10:03:58.8741720Z ##[endgroup]
+2026-07-22T10:03:58.8935966Z ##[group]Run python -m pip install packaging
+2026-07-22T10:03:58.8936612Z [36;1mpython -m pip install packaging[0m
+2026-07-22T10:03:58.9141444Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:03:58.9141756Z env:
+2026-07-22T10:03:58.9142001Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:03:58.9142662Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:03:58.9143349Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:03:58.9143818Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:03:58.9144264Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:03:58.9144647Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:03:58.9145027Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:03:58.9145405Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:03:58.9145739Z ##[endgroup]
+2026-07-22T10:04:02.1311222Z Collecting packaging
+2026-07-22T10:04:02.1810202Z   Downloading packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
+2026-07-22T10:04:02.1883274Z Downloading packaging-26.2-py3-none-any.whl (100 kB)
+2026-07-22T10:04:02.2861717Z Installing collected packages: packaging
+2026-07-22T10:04:02.3494723Z Successfully installed packaging-26.2
+2026-07-22T10:04:02.4029343Z Prepare all required actions
+2026-07-22T10:04:02.4066397Z ##[group]Run ./.github/actions/get-version
+2026-07-22T10:04:02.4066696Z env:
+2026-07-22T10:04:02.4066908Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:04:02.4067406Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:04:02.4067819Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4068262Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:04:02.4068688Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4069070Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4069451Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4069847Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:04:02.4070399Z ##[endgroup]
+2026-07-22T10:04:02.4145562Z ##[group]Run set -euo pipefail
+2026-07-22T10:04:02.4145982Z [36;1mset -euo pipefail[0m
+2026-07-22T10:04:02.4146626Z [36;1mversion=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)[0m
+2026-07-22T10:04:02.4147276Z [36;1mif [ -z "$version" ]; then[0m
+2026-07-22T10:04:02.4147834Z [36;1m  echo "::error::Failed to extract __version__ from src/qwenpaw/__version__.py"[0m
+2026-07-22T10:04:02.4148370Z [36;1m  exit 1[0m
+2026-07-22T10:04:02.4148594Z [36;1mfi[0m
+2026-07-22T10:04:02.4148845Z [36;1mecho "version=$version" >> "$GITHUB_OUTPUT"[0m
+2026-07-22T10:04:02.4214836Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-22T10:04:02.4215196Z env:
+2026-07-22T10:04:02.4215420Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:04:02.4215905Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:04:02.4216320Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4216758Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:04:02.4217201Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4217582Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4217966Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4218339Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:04:02.4218663Z ##[endgroup]
+2026-07-22T10:04:02.4432186Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T10:04:02.4433422Z ##[group]Run actions/download-artifact@v4
+2026-07-22T10:04:02.4433709Z with:
+2026-07-22T10:04:02.4433927Z   merge-multiple: false
+2026-07-22T10:04:02.4434180Z   repository: Adair-Shuai/QwenPaw
+2026-07-22T10:04:02.4434440Z   run-id: 29907985123
+2026-07-22T10:04:02.4434657Z env:
+2026-07-22T10:04:02.4434866Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:04:02.4435379Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:04:02.4435980Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4436416Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:04:02.4436877Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4437264Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4437643Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:02.4438018Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:04:02.4438347Z ##[endgroup]
+2026-07-22T10:04:02.6099244Z (node:2296) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-22T10:04:02.6099990Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-22T10:04:02.7487840Z Found 5 artifact(s)
+2026-07-22T10:04:02.7488917Z No input name, artifact-ids or pattern filtered specified, downloading all artifacts
+2026-07-22T10:04:02.7489732Z An extra directory with the artifact name will be created for each download
+2026-07-22T10:04:02.7490646Z Preparing to download the following artifacts:
+2026-07-22T10:04:02.7491953Z - UGSci-Desktop-Tauri-macOS-2.0.1b1 (ID: 8525604476, Size: 745133631, Expected Digest: sha256:9a883a8849ad98f3268d120ea2f5e643c46caf8f44d572869b024e0aa59442ca)
+2026-07-22T10:04:02.7493320Z - desktop-verify-screenshots-tauri-macos-2.0.1b1 (ID: 8525590214, Size: 86484, Expected Digest: sha256:19bee9dd5590c7f47af7ff93b5226bfebfeed44b1ab7dcae876b80cc6430b761)
+2026-07-22T10:04:02.7494611Z - tauri-updater-meta-windows (ID: 8525554408, Size: 263, Expected Digest: sha256:81346373d4eeb8f331e97a114e6bb095f765cd31cff49d6fbb4351fdc3c7d982)
+2026-07-22T10:04:02.7495779Z - UGSci-Desktop-Tauri-Windows-2.0.1b1 (ID: 8525553910, Size: 611908780, Expected Digest: sha256:978496d2e97d6414f36dcd7c2e99a9cb4fb4a96ea71d65f12876208641ef3c19)
+2026-07-22T10:04:02.7497155Z - desktop-verify-screenshots-tauri-windows-2.0.1b1 (ID: 8525543839, Size: 54812, Expected Digest: sha256:745943b605a58cf3c31b8bbb09a9002a26d1095b99d9577582072429f3a45a14)
+2026-07-22T10:04:02.8875977Z Redirecting to blob download url: https://productionresultssa17.blob.core.windows.net/actions-results/3e6ac6ec-082d-444d-b7c0-5b7a4b7501a4/workflow-job-run-e44f3980-11ac-5622-9302-34b011b34aec/artifacts/a77a51e0e84bcf1932cf5592fe4f2592b1af40c5efa6c7c0ecd10e5a6bd964c0.zip
+2026-07-22T10:04:02.8877661Z Starting download of artifact to: /home/runner/work/QwenPaw/QwenPaw/UGSci-Desktop-Tauri-macOS-2.0.1b1
+2026-07-22T10:04:02.9040754Z Redirecting to blob download url: https://productionresultssa17.blob.core.windows.net/actions-results/3e6ac6ec-082d-444d-b7c0-5b7a4b7501a4/workflow-job-run-8a00035c-b303-52be-bc4a-5aa69ac9883a/artifacts/379b3462a78529642d98161f99971ea90090f82038874b97e05c4fb386a672c8.zip
+2026-07-22T10:04:02.9042091Z Starting download of artifact to: /home/runner/work/QwenPaw/QwenPaw/tauri-updater-meta-windows
+2026-07-22T10:04:02.9075633Z Redirecting to blob download url: https://productionresultssa17.blob.core.windows.net/actions-results/3e6ac6ec-082d-444d-b7c0-5b7a4b7501a4/workflow-job-run-8a00035c-b303-52be-bc4a-5aa69ac9883a/artifacts/e02390f6b7bdc2c75661282bee9eaf011395d7bd4be980de30dc0938c5cf6923.zip
+2026-07-22T10:04:02.9078162Z Starting download of artifact to: /home/runner/work/QwenPaw/QwenPaw/desktop-verify-screenshots-tauri-windows-2.0.1b1
+2026-07-22T10:04:02.9322657Z Redirecting to blob download url: https://productionresultssa17.blob.core.windows.net/actions-results/3e6ac6ec-082d-444d-b7c0-5b7a4b7501a4/workflow-job-run-e44f3980-11ac-5622-9302-34b011b34aec/artifacts/88e29d65d1e6412b18634d51ba29cb25f652f883ca82184edd5ed09d9b238531.zip
+2026-07-22T10:04:02.9324353Z Starting download of artifact to: /home/runner/work/QwenPaw/QwenPaw/desktop-verify-screenshots-tauri-macos-2.0.1b1
+2026-07-22T10:04:02.9331213Z Redirecting to blob download url: https://productionresultssa17.blob.core.windows.net/actions-results/3e6ac6ec-082d-444d-b7c0-5b7a4b7501a4/workflow-job-run-8a00035c-b303-52be-bc4a-5aa69ac9883a/artifacts/61158c4823bff2157169756a54043666a995d40c9e55f7f417f0a58888f72dfa.zip
+2026-07-22T10:04:02.9333082Z Starting download of artifact to: /home/runner/work/QwenPaw/QwenPaw/UGSci-Desktop-Tauri-Windows-2.0.1b1
+2026-07-22T10:04:03.0093534Z (node:2296) [DEP0005] DeprecationWarning: Buffer() is deprecated due to security and usability issues. Please use the Buffer.alloc(), Buffer.allocUnsafe(), or Buffer.from() methods instead.
+2026-07-22T10:04:03.0157166Z SHA256 digest of downloaded artifact is 81346373d4eeb8f331e97a114e6bb095f765cd31cff49d6fbb4351fdc3c7d982
+2026-07-22T10:04:03.0157797Z Artifact download completed successfully.
+2026-07-22T10:04:03.0293538Z SHA256 digest of downloaded artifact is 745943b605a58cf3c31b8bbb09a9002a26d1095b99d9577582072429f3a45a14
+2026-07-22T10:04:03.0294361Z Artifact download completed successfully.
+2026-07-22T10:04:03.0710669Z SHA256 digest of downloaded artifact is 19bee9dd5590c7f47af7ff93b5226bfebfeed44b1ab7dcae876b80cc6430b761
+2026-07-22T10:04:03.0711712Z Artifact download completed successfully.
+2026-07-22T10:04:28.0846136Z SHA256 digest of downloaded artifact is 978496d2e97d6414f36dcd7c2e99a9cb4fb4a96ea71d65f12876208641ef3c19
+2026-07-22T10:04:28.0846853Z Artifact download completed successfully.
+2026-07-22T10:04:47.5649466Z SHA256 digest of downloaded artifact is 9a883a8849ad98f3268d120ea2f5e643c46caf8f44d572869b024e0aa59442ca
+2026-07-22T10:04:47.5650373Z Artifact download completed successfully.
+2026-07-22T10:04:47.5650767Z Total of 5 artifact(s) downloaded
+2026-07-22T10:04:47.5656834Z Download artifact has finished successfully
+2026-07-22T10:04:47.6298437Z ##[group]Run wget https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+2026-07-22T10:04:47.6299624Z [36;1mwget https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip[0m
+2026-07-22T10:04:47.6300611Z [36;1munzip ossutil-v1.7.18-linux-amd64.zip[0m
+2026-07-22T10:04:47.6301220Z [36;1mchmod +x ossutil-v1.7.18-linux-amd64/ossutil64[0m
+2026-07-22T10:04:47.6302009Z [36;1msudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil[0m
+2026-07-22T10:04:47.6302708Z [36;1mossutil --version[0m
+2026-07-22T10:04:47.6379777Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:04:47.6380185Z env:
+2026-07-22T10:04:47.6380437Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:04:47.6381824Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:04:47.6382297Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:47.6382778Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:04:47.6383299Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:47.6383731Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:47.6384155Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:47.6384578Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:04:47.6384951Z ##[endgroup]
+2026-07-22T10:04:48.0694599Z --2026-07-22 10:04:48--  https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+2026-07-22T10:04:48.3536061Z Resolving gosspublic.alicdn.com (gosspublic.alicdn.com)... 155.102.130.244, 155.102.130.248, 2404:2280:205:0:3::55, ...
+2026-07-22T10:04:48.3743630Z Connecting to gosspublic.alicdn.com (gosspublic.alicdn.com)|155.102.130.244|:443... connected.
+2026-07-22T10:04:48.4418034Z HTTP request sent, awaiting response... 200 OK
+2026-07-22T10:04:48.4418507Z Length: 11842170 (11M) [application/zip]
+2026-07-22T10:04:48.4419748Z Saving to: ‘ossutil-v1.7.18-linux-amd64.zip’
+2026-07-22T10:04:48.4420236Z 
+2026-07-22T10:04:48.4629375Z      0K .......... .......... .......... .......... ..........  0% 2.32M 5s
+2026-07-22T10:04:48.4688427Z     50K .......... .......... .......... .......... ..........  0% 8.16M 3s
+2026-07-22T10:04:48.4830951Z    100K .......... .......... .......... .......... ..........  1% 3.43M 3s
+2026-07-22T10:04:48.4867781Z    150K .......... .......... .......... .......... ..........  1% 13.2M 3s
+2026-07-22T10:04:48.4996393Z    200K .......... .......... .......... .......... ..........  2% 3.81M 3s
+2026-07-22T10:04:48.5053115Z    250K .......... .......... .......... .......... ..........  2% 8.59M 2s
+2026-07-22T10:04:48.5086726Z    300K .......... .......... .......... .......... ..........  3% 14.4M 2s
+2026-07-22T10:04:48.5147884Z    350K .......... .......... .......... .......... ..........  3% 7.99M 2s
+2026-07-22T10:04:48.5237180Z    400K .......... .......... .......... .......... ..........  3% 5.46M 2s
+2026-07-22T10:04:48.5273329Z    450K .......... .......... .......... .......... ..........  4% 13.5M 2s
+2026-07-22T10:04:48.5321523Z    500K .......... .......... .......... .......... ..........  4% 10.1M 2s
+2026-07-22T10:04:48.5357716Z    550K .......... .......... .......... .......... ..........  5% 13.5M 2s
+2026-07-22T10:04:48.5419914Z    600K .......... .......... .......... .......... ..........  5% 7.80M 2s
+2026-07-22T10:04:48.5449109Z    650K .......... .......... .......... .......... ..........  6% 16.7M 2s
+2026-07-22T10:04:48.5479576Z    700K .......... .......... .......... .......... ..........  6% 16.0M 2s
+2026-07-22T10:04:48.5500960Z    750K .......... .......... .......... .......... ..........  6% 22.9M 1s
+2026-07-22T10:04:48.5518142Z    800K .......... .......... .......... .......... ..........  7% 28.5M 1s
+2026-07-22T10:04:48.5534848Z    850K .......... .......... .......... .......... ..........  7% 29.0M 1s
+2026-07-22T10:04:48.5599685Z    900K .......... .......... .......... .......... ..........  8% 7.53M 1s
+2026-07-22T10:04:48.5642732Z    950K .......... .......... .......... .......... ..........  8% 11.4M 1s
+2026-07-22T10:04:48.5655339Z   1000K .......... .......... .......... .......... ..........  9% 38.0M 1s
+2026-07-22T10:04:48.5665794Z   1050K .......... .......... .......... .......... ..........  9% 47.8M 1s
+2026-07-22T10:04:48.5674251Z   1100K .......... .......... .......... .......... ..........  9% 54.7M 1s
+2026-07-22T10:04:48.5693763Z   1150K .......... .......... .......... .......... .......... 10% 25.6M 1s
+2026-07-22T10:04:48.5716118Z   1200K .......... .......... .......... .......... .......... 10% 21.6M 1s
+2026-07-22T10:04:48.5728983Z   1250K .......... .......... .......... .......... .......... 11% 38.0M 1s
+2026-07-22T10:04:48.5758041Z   1300K .......... .......... .......... .......... .......... 11% 16.9M 1s
+2026-07-22T10:04:48.5803028Z   1350K .......... .......... .......... .......... .......... 12% 10.9M 1s
+2026-07-22T10:04:48.5852116Z   1400K .......... .......... .......... .......... .......... 12% 9.94M 1s
+2026-07-22T10:04:48.5857171Z   1450K .......... .......... .......... .......... .......... 12% 88.2M 1s
+2026-07-22T10:04:48.5866298Z   1500K .......... .......... .......... .......... .......... 13% 53.3M 1s
+2026-07-22T10:04:48.5872614Z   1550K .......... .......... .......... .......... .......... 13% 77.2M 1s
+2026-07-22T10:04:48.5885470Z   1600K .......... .......... .......... .......... .......... 14% 38.2M 1s
+2026-07-22T10:04:48.5897781Z   1650K .......... .......... .......... .......... .......... 14% 41.2M 1s
+2026-07-22T10:04:48.5911537Z   1700K .......... .......... .......... .......... .......... 15% 34.9M 1s
+2026-07-22T10:04:48.5920726Z   1750K .......... .......... .......... .......... .......... 15% 52.9M 1s
+2026-07-22T10:04:48.5926501Z   1800K .......... .......... .......... .......... .......... 15% 79.9M 1s
+2026-07-22T10:04:48.5939450Z   1850K .......... .......... .......... .......... .......... 16% 38.2M 1s
+2026-07-22T10:04:48.5963591Z   1900K .......... .......... .......... .......... .......... 16% 20.3M 1s
+2026-07-22T10:04:48.5969514Z   1950K .......... .......... .......... .......... .......... 17% 80.4M 1s
+2026-07-22T10:04:48.6043467Z   2000K .......... .......... .......... .......... .......... 17% 8.62M 1s
+2026-07-22T10:04:48.6054695Z   2050K .......... .......... .......... .......... .......... 18% 17.1M 1s
+2026-07-22T10:04:48.6062623Z   2100K .......... .......... .......... .......... .......... 18% 61.1M 1s
+2026-07-22T10:04:48.6075736Z   2150K .......... .......... .......... .......... .......... 19% 38.0M 1s
+2026-07-22T10:04:48.6085164Z   2200K .......... .......... .......... .......... .......... 19% 51.8M 1s
+2026-07-22T10:04:48.6099687Z   2250K .......... .......... .......... .......... .......... 19% 32.8M 1s
+2026-07-22T10:04:48.6103887Z   2300K .......... .......... .......... .......... .......... 20%  113M 1s
+2026-07-22T10:04:48.6116550Z   2350K .......... .......... .......... .......... .......... 20% 38.7M 1s
+2026-07-22T10:04:48.6130594Z   2400K .......... .......... .......... .......... .......... 21% 35.1M 1s
+2026-07-22T10:04:48.6139586Z   2450K .......... .......... .......... .......... .......... 21% 55.7M 1s
+2026-07-22T10:04:48.6152586Z   2500K .......... .......... .......... .......... .......... 22% 97.1M 1s
+2026-07-22T10:04:48.6158050Z   2550K .......... .......... .......... .......... .......... 22% 35.5M 1s
+2026-07-22T10:04:48.6171029Z   2600K .......... .......... .......... .......... .......... 22% 37.5M 1s
+2026-07-22T10:04:48.6183578Z   2650K .......... .......... .......... .......... .......... 23% 39.2M 1s
+2026-07-22T10:04:48.6193642Z   2700K .......... .......... .......... .......... .......... 23% 48.8M 1s
+2026-07-22T10:04:48.6228616Z   2750K .......... .......... .......... .......... .......... 24% 14.0M 1s
+2026-07-22T10:04:48.6236013Z   2800K .......... .......... .......... .......... .......... 24% 63.1M 1s
+2026-07-22T10:04:48.6247570Z   2850K .......... .......... .......... .......... .......... 25% 42.6M 1s
+2026-07-22T10:04:48.6259037Z   2900K .......... .......... .......... .......... .......... 25% 44.6M 1s
+2026-07-22T10:04:48.6260741Z   2950K .......... .......... .......... .......... .......... 25%  233M 1s
+2026-07-22T10:04:48.6270976Z   3000K .......... .......... .......... .......... .......... 26% 48.3M 1s
+2026-07-22T10:04:48.6280235Z   3050K .......... .......... .......... .......... .......... 26% 52.2M 1s
+2026-07-22T10:04:48.6288674Z   3100K .......... .......... .......... .......... .......... 27% 57.8M 0s
+2026-07-22T10:04:48.6290287Z   3150K .......... .......... .......... .......... .......... 27%  262M 0s
+2026-07-22T10:04:48.6298212Z   3200K .......... .......... .......... .......... .......... 28% 62.9M 0s
+2026-07-22T10:04:48.6305608Z   3250K .......... .......... .......... .......... .......... 28% 66.5M 0s
+2026-07-22T10:04:48.6313717Z   3300K .......... .......... .......... .......... .......... 28% 58.5M 0s
+2026-07-22T10:04:48.6319664Z   3350K .......... .......... .......... .......... .......... 29% 83.9M 0s
+2026-07-22T10:04:48.6321753Z   3400K .......... .......... .......... .......... .......... 29%  224M 0s
+2026-07-22T10:04:48.6328334Z   3450K .......... .......... .......... .......... .......... 30% 74.8M 0s
+2026-07-22T10:04:48.6333947Z   3500K .......... .......... .......... .......... .......... 30% 87.4M 0s
+2026-07-22T10:04:48.6341928Z   3550K .......... .......... .......... .......... .......... 31% 65.7M 0s
+2026-07-22T10:04:48.6355343Z   3600K .......... .......... .......... .......... .......... 31% 35.4M 0s
+2026-07-22T10:04:48.6357118Z   3650K .......... .......... .......... .......... .......... 31%  242M 0s
+2026-07-22T10:04:48.6369534Z   3700K .......... .......... .......... .......... .......... 32% 39.7M 0s
+2026-07-22T10:04:48.6382056Z   3750K .......... .......... .......... .......... .......... 32% 39.1M 0s
+2026-07-22T10:04:48.6396017Z   3800K .......... .......... .......... .......... .......... 33% 35.3M 0s
+2026-07-22T10:04:48.6429168Z   3850K .......... .......... .......... .......... .......... 33% 14.7M 0s
+2026-07-22T10:04:48.6434729Z   3900K .......... .......... .......... .......... .......... 34% 86.0M 0s
+2026-07-22T10:04:48.6448890Z   3950K .......... .......... .......... .......... .......... 34% 34.3M 0s
+2026-07-22T10:04:48.6459519Z   4000K .......... .......... .......... .......... .......... 35% 46.2M 0s
+2026-07-22T10:04:48.6462291Z   4050K .......... .......... .......... .......... .......... 35%  181M 0s
+2026-07-22T10:04:48.6463679Z   4100K .......... .......... .......... .......... .......... 35%  294M 0s
+2026-07-22T10:04:48.6466879Z   4150K .......... .......... .......... .......... .......... 36%  164M 0s
+2026-07-22T10:04:48.6471287Z   4200K .......... .......... .......... .......... .......... 36%  107M 0s
+2026-07-22T10:04:48.6475105Z   4250K .......... .......... .......... .......... .......... 37%  132M 0s
+2026-07-22T10:04:48.6478544Z   4300K .......... .......... .......... .......... .......... 37%  143M 0s
+2026-07-22T10:04:48.6480824Z   4350K .......... .......... .......... .......... .......... 38%  224M 0s
+2026-07-22T10:04:48.6484662Z   4400K .......... .......... .......... .......... .......... 38%  133M 0s
+2026-07-22T10:04:48.6488675Z   4450K .......... .......... .......... .......... .......... 38%  109M 0s
+2026-07-22T10:04:48.6492471Z   4500K .......... .......... .......... .......... .......... 39%  129M 0s
+2026-07-22T10:04:48.6495551Z   4550K .......... .......... .......... .......... .......... 39%  161M 0s
+2026-07-22T10:04:48.6497525Z   4600K .......... .......... .......... .......... .......... 40%  244M 0s
+2026-07-22T10:04:48.6501615Z   4650K .......... .......... .......... .......... .......... 40%  124M 0s
+2026-07-22T10:04:48.6505244Z   4700K .......... .......... .......... .......... .......... 41%  134M 0s
+2026-07-22T10:04:48.6508659Z   4750K .......... .......... .......... .......... .......... 41%  156M 0s
+2026-07-22T10:04:48.6512945Z   4800K .......... .......... .......... .......... .......... 41%  237M 0s
+2026-07-22T10:04:48.6514614Z   4850K .......... .......... .......... .......... .......... 42%  116M 0s
+2026-07-22T10:04:48.6517791Z   4900K .......... .......... .......... .......... .......... 42%  149M 0s
+2026-07-22T10:04:48.6521708Z   4950K .......... .......... .......... .......... .......... 43%  124M 0s
+2026-07-22T10:04:48.6525077Z   5000K .......... .......... .......... .......... .......... 43%  149M 0s
+2026-07-22T10:04:48.6528666Z   5050K .......... .......... .......... .......... .......... 44%  160M 0s
+2026-07-22T10:04:48.6530729Z   5100K .......... .......... .......... .......... .......... 44%  199M 0s
+2026-07-22T10:04:48.6535752Z   5150K .......... .......... .......... .......... .......... 44% 96.1M 0s
+2026-07-22T10:04:48.6543872Z   5200K .......... .......... .......... .......... .......... 45% 62.8M 0s
+2026-07-22T10:04:48.6556870Z   5250K .......... .......... .......... .......... .......... 45% 36.2M 0s
+2026-07-22T10:04:48.6569321Z   5300K .......... .......... .......... .......... .......... 46% 40.5M 0s
+2026-07-22T10:04:48.6571314Z   5350K .......... .......... .......... .......... .......... 46%  210M 0s
+2026-07-22T10:04:48.6583921Z   5400K .......... .......... .......... .......... .......... 47% 38.6M 0s
+2026-07-22T10:04:48.6598963Z   5450K .......... .......... .......... .......... .......... 47% 32.7M 0s
+2026-07-22T10:04:48.6630519Z   5500K .......... .......... .......... .......... .......... 47% 15.8M 0s
+2026-07-22T10:04:48.6632673Z   5550K .......... .......... .......... .......... .......... 48%  196M 0s
+2026-07-22T10:04:48.6651414Z   5600K .......... .......... .......... .......... .......... 48% 27.2M 0s
+2026-07-22T10:04:48.6662666Z   5650K .......... .......... .......... .......... .......... 49% 40.7M 0s
+2026-07-22T10:04:48.6663786Z   5700K .......... .......... .......... .......... .......... 49%  289M 0s
+2026-07-22T10:04:48.6667979Z   5750K .......... .......... .......... .......... .......... 50%  136M 0s
+2026-07-22T10:04:48.6671175Z   5800K .......... .......... .......... .......... .......... 50%  146M 0s
+2026-07-22T10:04:48.6674718Z   5850K .......... .......... .......... .......... .......... 51%  140M 0s
+2026-07-22T10:04:48.6678281Z   5900K .......... .......... .......... .......... .......... 51%  143M 0s
+2026-07-22T10:04:48.6681054Z   5950K .......... .......... .......... .......... .......... 51%  176M 0s
+2026-07-22T10:04:48.6690980Z   6000K .......... .......... .......... .......... .......... 52%  242M 0s
+2026-07-22T10:04:48.6696131Z   6050K .......... .......... .......... .......... .......... 52%  164M 0s
+2026-07-22T10:04:48.6696887Z   6100K .......... .......... .......... .......... .......... 53%  217M 0s
+2026-07-22T10:04:48.6699908Z   6150K .......... .......... .......... .......... .......... 53%  396M 0s
+2026-07-22T10:04:48.6703298Z   6200K .......... .......... .......... .......... .......... 54%  157M 0s
+2026-07-22T10:04:48.6706886Z   6250K .......... .......... .......... .......... .......... 54%  266M 0s
+2026-07-22T10:04:48.6707662Z   6300K .......... .......... .......... .......... .......... 54%  300M 0s
+2026-07-22T10:04:48.6708411Z   6350K .......... .......... .......... .......... .......... 55%  142M 0s
+2026-07-22T10:04:48.6709121Z   6400K .......... .......... .......... .......... .......... 55%  165M 0s
+2026-07-22T10:04:48.6713933Z   6450K .......... .......... .......... .......... .......... 56%  133M 0s
+2026-07-22T10:04:48.6714692Z   6500K .......... .......... .......... .......... .......... 56%  159M 0s
+2026-07-22T10:04:48.6715448Z   6550K .......... .......... .......... .......... .......... 57%  279M 0s
+2026-07-22T10:04:48.6716175Z   6600K .......... .......... .......... .......... .......... 57%  187M 0s
+2026-07-22T10:04:48.6717029Z   6650K .......... .......... .......... .......... .......... 57%  136M 0s
+2026-07-22T10:04:48.6720415Z   6700K .......... .......... .......... .......... .......... 58%  158M 0s
+2026-07-22T10:04:48.6721971Z   6750K .......... .......... .......... .......... .......... 58%  256M 0s
+2026-07-22T10:04:48.6725595Z   6800K .......... .......... .......... .......... .......... 59%  176M 0s
+2026-07-22T10:04:48.6728192Z   6850K .......... .......... .......... .......... .......... 59%  127M 0s
+2026-07-22T10:04:48.6731029Z   6900K .......... .......... .......... .......... .......... 60%  175M 0s
+2026-07-22T10:04:48.6733501Z   6950K .......... .......... .......... .......... .......... 60%  214M 0s
+2026-07-22T10:04:48.6735372Z   7000K .......... .......... .......... .......... .......... 60%  237M 0s
+2026-07-22T10:04:48.6738403Z   7050K .......... .......... .......... .......... .......... 61%  165M 0s
+2026-07-22T10:04:48.6741570Z   7100K .......... .......... .......... .......... .......... 61%  158M 0s
+2026-07-22T10:04:48.6744476Z   7150K .......... .......... .......... .......... .......... 62%  176M 0s
+2026-07-22T10:04:48.6747677Z   7200K .......... .......... .......... .......... .......... 62%  243M 0s
+2026-07-22T10:04:48.6749414Z   7250K .......... .......... .......... .......... .......... 63%  145M 0s
+2026-07-22T10:04:48.6761183Z   7300K .......... .......... .......... .......... .......... 63% 44.1M 0s
+2026-07-22T10:04:48.6772129Z   7350K .......... .......... .......... .......... .......... 63% 43.1M 0s
+2026-07-22T10:04:48.6799842Z   7400K .......... .......... .......... .......... .......... 64% 17.8M 0s
+2026-07-22T10:04:48.6801835Z   7450K .......... .......... .......... .......... .......... 64%  224M 0s
+2026-07-22T10:04:48.6832905Z   7500K .......... .......... .......... .......... .......... 65% 15.7M 0s
+2026-07-22T10:04:48.6852144Z   7550K .......... .......... .......... .......... .......... 65% 25.5M 0s
+2026-07-22T10:04:48.6863894Z   7600K .......... .......... .......... .......... .......... 66% 45.4M 0s
+2026-07-22T10:04:48.6867288Z   7650K .......... .......... .......... .......... .......... 66%  169M 0s
+2026-07-22T10:04:48.6868878Z   7700K .......... .......... .......... .......... .......... 67%  141M 0s
+2026-07-22T10:04:48.6872301Z   7750K .......... .......... .......... .......... .......... 67%  167M 0s
+2026-07-22T10:04:48.6875257Z   7800K .......... .......... .......... .......... .......... 67%  155M 0s
+2026-07-22T10:04:48.6878404Z   7850K .......... .......... .......... .......... .......... 68%  156M 0s
+2026-07-22T10:04:48.6881374Z   7900K .......... .......... .......... .......... .......... 68%  282M 0s
+2026-07-22T10:04:48.6883085Z   7950K .......... .......... .......... .......... .......... 69%  156M 0s
+2026-07-22T10:04:48.6886582Z   8000K .......... .......... .......... .......... .......... 69%  168M 0s
+2026-07-22T10:04:48.6889520Z   8050K .......... .......... .......... .......... .......... 70%  142M 0s
+2026-07-22T10:04:48.6892671Z   8100K .......... .......... .......... .......... .......... 70%  158M 0s
+2026-07-22T10:04:48.6894947Z   8150K .......... .......... .......... .......... .......... 70%  273M 0s
+2026-07-22T10:04:48.6897394Z   8200K .......... .......... .......... .......... .......... 71%  162M 0s
+2026-07-22T10:04:48.6900516Z   8250K .......... .......... .......... .......... .......... 71%  169M 0s
+2026-07-22T10:04:48.6903384Z   8300K .......... .......... .......... .......... .......... 72%  166M 0s
+2026-07-22T10:04:48.6905997Z   8350K .......... .......... .......... .......... .......... 72%  270M 0s
+2026-07-22T10:04:48.6908505Z   8400K .......... .......... .......... .......... .......... 73%  165M 0s
+2026-07-22T10:04:48.6911616Z   8450K .......... .......... .......... .......... .......... 73%  134M 0s
+2026-07-22T10:04:48.6914453Z   8500K .......... .......... .......... .......... .......... 73%  171M 0s
+2026-07-22T10:04:48.6917864Z   8550K .......... .......... .......... .......... .......... 74%  149M 0s
+2026-07-22T10:04:48.6919378Z   8600K .......... .......... .......... .......... .......... 74%  275M 0s
+2026-07-22T10:04:48.6922169Z   8650K .......... .......... .......... .......... .......... 75%  196M 0s
+2026-07-22T10:04:48.6924827Z   8700K .......... .......... .......... .......... .......... 75%  186M 0s
+2026-07-22T10:04:48.6927511Z   8750K .......... .......... .......... .......... .......... 76%  284M 0s
+2026-07-22T10:04:48.6930237Z   8800K .......... .......... .......... .......... .......... 76%  167M 0s
+2026-07-22T10:04:48.6932999Z   8850K .......... .......... .......... .......... .......... 76%  132M 0s
+2026-07-22T10:04:48.6935719Z   8900K .......... .......... .......... .......... .......... 77%  184M 0s
+2026-07-22T10:04:48.6938251Z   8950K .......... .......... .......... .......... .......... 77%  280M 0s
+2026-07-22T10:04:48.6941175Z   9000K .......... .......... .......... .......... .......... 78%  155M 0s
+2026-07-22T10:04:48.6943865Z   9050K .......... .......... .......... .......... .......... 78%  153M 0s
+2026-07-22T10:04:48.6946422Z   9100K .......... .......... .......... .......... .......... 79%  189M 0s
+2026-07-22T10:04:48.6948868Z   9150K .......... .......... .......... .......... .......... 79%  280M 0s
+2026-07-22T10:04:48.6952896Z   9200K .......... .......... .......... .......... .......... 79%  142M 0s
+2026-07-22T10:04:48.6954543Z   9250K .......... .......... .......... .......... .......... 80%  151M 0s
+2026-07-22T10:04:48.6957398Z   9300K .......... .......... .......... .......... .......... 80%  184M 0s
+2026-07-22T10:04:48.6959906Z   9350K .......... .......... .......... .......... .......... 81%  204M 0s
+2026-07-22T10:04:48.6962820Z   9400K .......... .......... .......... .......... .......... 81%  201M 0s
+2026-07-22T10:04:48.6965282Z   9450K .......... .......... .......... .......... .......... 82%  160M 0s
+2026-07-22T10:04:48.6968120Z   9500K .......... .......... .......... .......... .......... 82%  174M 0s
+2026-07-22T10:04:48.6971502Z   9550K .......... .......... .......... .......... .......... 83%  155M 0s
+2026-07-22T10:04:48.6974175Z   9600K .......... .......... .......... .......... .......... 83%  276M 0s
+2026-07-22T10:04:48.6976246Z   9650K .......... .......... .......... .......... .......... 83%  149M 0s
+2026-07-22T10:04:48.6979173Z   9700K .......... .......... .......... .......... .......... 84%  167M 0s
+2026-07-22T10:04:48.6982411Z   9750K .......... .......... .......... .......... .......... 84%  156M 0s
+2026-07-22T10:04:48.6985351Z   9800K .......... .......... .......... .......... .......... 85%  167M 0s
+2026-07-22T10:04:48.6987091Z   9850K .......... .......... .......... .......... .......... 85%  257M 0s
+2026-07-22T10:04:48.6990314Z   9900K .......... .......... .......... .......... .......... 86%  169M 0s
+2026-07-22T10:04:48.6993463Z   9950K .......... .......... .......... .......... .......... 86%  148M 0s
+2026-07-22T10:04:48.6996547Z  10000K .......... .......... .......... .......... .......... 86%  204M 0s
+2026-07-22T10:04:48.6999449Z  10050K .......... .......... .......... .......... .......... 87%  132M 0s
+2026-07-22T10:04:48.7002884Z  10100K .......... .......... .......... .......... .......... 87%  154M 0s
+2026-07-22T10:04:48.7004973Z  10150K .......... .......... .......... .......... .......... 88%  213M 0s
+2026-07-22T10:04:48.7008079Z  10200K .......... .......... .......... .......... .......... 88%  156M 0s
+2026-07-22T10:04:48.7012107Z  10250K .......... .......... .......... .......... .......... 89%  126M 0s
+2026-07-22T10:04:48.7014860Z  10300K .......... .......... .......... .......... .......... 89%  170M 0s
+2026-07-22T10:04:48.7017639Z  10350K .......... .......... .......... .......... .......... 89%  190M 0s
+2026-07-22T10:04:48.7019870Z  10400K .......... .......... .......... .......... .......... 90%  245M 0s
+2026-07-22T10:04:48.7034083Z  10450K .......... .......... .......... .......... .......... 90% 33.3M 0s
+2026-07-22T10:04:48.7036833Z  10500K .......... .......... .......... .......... .......... 91%  177M 0s
+2026-07-22T10:04:48.7051814Z  10550K .......... .......... .......... .......... .......... 91% 32.9M 0s
+2026-07-22T10:04:48.7055064Z  10600K .......... .......... .......... .......... .......... 92%  147M 0s
+2026-07-22T10:04:48.7057491Z  10650K .......... .......... .......... .......... .......... 92%  264M 0s
+2026-07-22T10:04:48.7059690Z  10700K .......... .......... .......... .......... .......... 92%  200M 0s
+2026-07-22T10:04:48.7070299Z  10750K .......... .......... .......... .......... .......... 93% 56.3M 0s
+2026-07-22T10:04:48.7071844Z  10800K .......... .......... .......... .......... .......... 93%  117M 0s
+2026-07-22T10:04:48.7073957Z  10850K .......... .......... .......... .......... .......... 94%  241M 0s
+2026-07-22T10:04:48.7076959Z  10900K .......... .......... .......... .......... .......... 94%  164M 0s
+2026-07-22T10:04:48.7079742Z  10950K .......... .......... .......... .......... .......... 95%  175M 0s
+2026-07-22T10:04:48.7082429Z  11000K .......... .......... .......... .......... .......... 95%  192M 0s
+2026-07-22T10:04:48.7086419Z  11050K .......... .......... .......... .......... .......... 95%  140M 0s
+2026-07-22T10:04:48.7088577Z  11100K .......... .......... .......... .......... .......... 96%  180M 0s
+2026-07-22T10:04:48.7092069Z  11150K .......... .......... .......... .......... .......... 96%  135M 0s
+2026-07-22T10:04:48.7094466Z  11200K .......... .......... .......... .......... .......... 97%  205M 0s
+2026-07-22T10:04:48.7097788Z  11250K .......... .......... .......... .......... .......... 97%  146M 0s
+2026-07-22T10:04:48.7099932Z  11300K .......... .......... .......... .......... .......... 98%  230M 0s
+2026-07-22T10:04:48.7101774Z  11350K .......... .......... .......... .......... .......... 98%  260M 0s
+2026-07-22T10:04:48.7103945Z  11400K .......... .......... .......... .......... .......... 99%  230M 0s
+2026-07-22T10:04:48.7105481Z  11450K .......... .......... .......... .......... .......... 99%  296M 0s
+2026-07-22T10:04:48.7107340Z  11500K .......... .......... .......... .......... .......... 99%  297M 0s
+2026-07-22T10:04:48.7108291Z  11550K .......... ....                                       100%  271M=0.3s
+2026-07-22T10:04:48.7108574Z 
+2026-07-22T10:04:48.7109741Z 2026-07-22 10:04:48 (42.0 MB/s) - ‘ossutil-v1.7.18-linux-amd64.zip’ saved [11842170/11842170]
+2026-07-22T10:04:48.7110622Z 
+2026-07-22T10:04:48.7796117Z Archive:  ossutil-v1.7.18-linux-amd64.zip
+2026-07-22T10:04:48.7796827Z    creating: ossutil-v1.7.18-linux-amd64/
+2026-07-22T10:04:48.8666989Z   inflating: ossutil-v1.7.18-linux-amd64/ossutil  
+2026-07-22T10:04:48.9551565Z   inflating: ossutil-v1.7.18-linux-amd64/ossutil64  
+2026-07-22T10:04:48.9709219Z ossutil version: v1.7.18
+2026-07-22T10:04:48.9763312Z ##[group]Run ossutil config -e *** \
+2026-07-22T10:04:48.9764026Z [36;1mossutil config -e *** \[0m
+2026-07-22T10:04:48.9764395Z [36;1m  -i *** \[0m
+2026-07-22T10:04:48.9764721Z [36;1m  -k *** \[0m
+2026-07-22T10:04:48.9764981Z [36;1m  -L CH[0m
+2026-07-22T10:04:48.9829136Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:04:48.9829439Z env:
+2026-07-22T10:04:48.9829983Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:04:48.9831195Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:04:48.9831923Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:48.9832616Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:04:48.9833326Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:48.9833923Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:48.9834591Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:48.9835306Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:04:48.9835865Z ##[endgroup]
+2026-07-22T10:04:51.0308742Z ##[group]Run VERSION="2.0.1b1"
+2026-07-22T10:04:51.0309162Z [36;1mVERSION="2.0.1b1"[0m
+2026-07-22T10:04:51.0309449Z [36;1m[0m
+2026-07-22T10:04:51.0309699Z [36;1mupload_tauri_artifact() {[0m
+2026-07-22T10:04:51.0310203Z [36;1m  local dirs="$1"[0m
+2026-07-22T10:04:51.0310608Z [36;1m  local pattern="$2"[0m
+2026-07-22T10:04:51.0310929Z [36;1m  local platform="$3"[0m
+2026-07-22T10:04:51.0311241Z [36;1m  local versioned_name="$4"[0m
+2026-07-22T10:04:51.0311556Z [36;1m  local latest_name="$5"[0m
+2026-07-22T10:04:51.0311855Z [36;1m  local metadata="$6"[0m
+2026-07-22T10:04:51.0312135Z [36;1m[0m
+2026-07-22T10:04:51.0312373Z [36;1m  local artifact[0m
+2026-07-22T10:04:51.0312787Z [36;1m  artifact=$(find ${dirs} -name "${pattern}" 2>/dev/null | head -1 || true)[0m
+2026-07-22T10:04:51.0313244Z [36;1m  if [ -z "${artifact}" ]; then[0m
+2026-07-22T10:04:51.0313656Z [36;1m    echo "No ${platform} Tauri artifact found, skipping"[0m
+2026-07-22T10:04:51.0314096Z [36;1m    return 0[0m
+2026-07-22T10:04:51.0314355Z [36;1m  fi[0m
+2026-07-22T10:04:51.0314585Z [36;1m[0m
+2026-07-22T10:04:51.0314906Z [36;1m  echo "Processing ${platform} Tauri artifact: ${artifact}"[0m
+2026-07-22T10:04:51.0315351Z [36;1m  python scripts/pack/generate_oss_metadata.py \[0m
+2026-07-22T10:04:51.0315725Z [36;1m    --file "${artifact}" \[0m
+2026-07-22T10:04:51.0316038Z [36;1m    --product desktop \[0m
+2026-07-22T10:04:51.0316350Z [36;1m    --platform "${platform}" \[0m
+2026-07-22T10:04:51.0316669Z [36;1m    --version "${VERSION}" \[0m
+2026-07-22T10:04:51.0316981Z [36;1m    --output "${metadata}"[0m
+2026-07-22T10:04:51.0317266Z [36;1m[0m
+2026-07-22T10:04:51.0317506Z [36;1m  ossutil cp "${artifact}" \[0m
+2026-07-22T10:04:51.0317948Z [36;1m    "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \[0m
+2026-07-22T10:04:51.0318431Z [36;1m    --acl public-read \[0m
+2026-07-22T10:04:51.0318743Z [36;1m    --force[0m
+2026-07-22T10:04:51.0319030Z [36;1m  ossutil cp "${artifact}" \[0m
+2026-07-22T10:04:51.0319473Z [36;1m    "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${latest_name}" \[0m
+2026-07-22T10:04:51.0319921Z [36;1m    --acl public-read \[0m
+2026-07-22T10:04:51.0320358Z [36;1m    --force[0m
+2026-07-22T10:04:51.0320632Z [36;1m  ossutil cp "${metadata}" \[0m
+2026-07-22T10:04:51.0321104Z [36;1m    "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \[0m
+2026-07-22T10:04:51.0321576Z [36;1m    --acl public-read \[0m
+2026-07-22T10:04:51.0321862Z [36;1m    --force[0m
+2026-07-22T10:04:51.0322114Z [36;1m  ossutil cp "${metadata}" \[0m
+2026-07-22T10:04:51.0322547Z [36;1m    "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${latest_name}.json" \[0m
+2026-07-22T10:04:51.0323007Z [36;1m    --acl public-read \[0m
+2026-07-22T10:04:51.0323298Z [36;1m    --force[0m
+2026-07-22T10:04:51.0323546Z [36;1m}[0m
+2026-07-22T10:04:51.0323774Z [36;1m[0m
+2026-07-22T10:04:51.0324010Z [36;1mupload_tauri_artifact \[0m
+2026-07-22T10:04:51.0324564Z [36;1m  "UGSci-Desktop-Tauri-Windows-*" \[0m
+2026-07-22T10:04:51.0324950Z [36;1m  "UGSci-Tauri-*-Windows-setup.exe" \[0m
+2026-07-22T10:04:51.0325289Z [36;1m  "win-tauri" \[0m
+2026-07-22T10:04:51.0325618Z [36;1m  "UGSci-Tauri-${VERSION}-Windows-setup.exe" \[0m
+2026-07-22T10:04:51.0326040Z [36;1m  "UGSci-Tauri-latest-Windows-setup.exe" \[0m
+2026-07-22T10:04:51.0326417Z [36;1m  "win-tauri-metadata.json"[0m
+2026-07-22T10:04:51.0326731Z [36;1m[0m
+2026-07-22T10:04:51.0326981Z [36;1mupload_tauri_artifact \[0m
+2026-07-22T10:04:51.0327317Z [36;1m  "UGSci-Desktop-Tauri-macOS-*" \[0m
+2026-07-22T10:04:51.0327667Z [36;1m  "UGSci-Tauri-*-macOS.zip" \[0m
+2026-07-22T10:04:51.0327982Z [36;1m  "mac-tauri" \[0m
+2026-07-22T10:04:51.0328294Z [36;1m  "UGSci-Tauri-${VERSION}-macOS.zip" \[0m
+2026-07-22T10:04:51.0328666Z [36;1m  "UGSci-Tauri-latest-macOS.zip" \[0m
+2026-07-22T10:04:51.0329015Z [36;1m  "mac-tauri-metadata.json"[0m
+2026-07-22T10:04:51.0392377Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:04:51.0392905Z env:
+2026-07-22T10:04:51.0393162Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:04:51.0393777Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:04:51.0394264Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:51.0394740Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:04:51.0395223Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:51.0395657Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:51.0396075Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:04:51.0396501Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:04:51.0396875Z ##[endgroup]
+2026-07-22T10:04:51.0509658Z Processing win-tauri Tauri artifact: UGSci-Desktop-Tauri-Windows-2.0.1b1/UGSci-Tauri-2.0.1b1-Windows-setup.exe
+2026-07-22T10:04:51.8141026Z Generating metadata for: UGSci-Desktop-Tauri-Windows-2.0.1b1/UGSci-Tauri-2.0.1b1-Windows-setup.exe
+2026-07-22T10:04:51.8142116Z ✓ Metadata written to: win-tauri-metadata.json
+2026-07-22T10:04:51.8142521Z   ID: desktop-win-tauri-2.0.1b1
+2026-07-22T10:04:51.8142831Z   Size: 586.0 MB
+2026-07-22T10:04:51.8143100Z   SHA256: e34acc07fda016ac...
+2026-07-22T10:04:56.9204581Z 
+2026-07-22T10:05:01.9416912Z Total num: 1, size: 614,424,221. Dealed num: 0, OK size: 130,565,151, Progress: 21.250%, Speed: 25027.72KB/s
+2026-07-22T10:05:05.6685509Z Total num: 1, size: 614,424,221. Dealed num: 0, OK size: 488,979,291, Progress: 79.583%, Speed: 69707.73KB/s
+2026-07-22T10:05:05.6686171Z                                                                                                              
+2026-07-22T10:05:05.6686685Z Succeed: Total num: 1, size: 614,424,221. OK num: 1(upload 1 files).
+2026-07-22T10:05:05.6686978Z 
+2026-07-22T10:05:05.6687117Z average speed 44385000(byte/s)
+2026-07-22T10:05:05.6687320Z 
+2026-07-22T10:05:05.6687431Z 13.843001(s) elapsed
+2026-07-22T10:05:10.8182293Z 
+2026-07-22T10:05:15.8184927Z Total num: 1, size: 614,424,221. Dealed num: 0, OK size: 145,925,757, Progress: 23.750%, Speed: 27711.30KB/s
+2026-07-22T10:05:17.6138396Z Total num: 1, size: 614,424,221. Dealed num: 0, OK size: 509,460,099, Progress: 82.917%, Speed: 71000.29KB/s
+2026-07-22T10:05:17.6139212Z                                                                                                              
+2026-07-22T10:05:17.6139721Z Succeed: Total num: 1, size: 614,424,221. OK num: 1(upload 1 files).
+2026-07-22T10:05:17.6140237Z 
+2026-07-22T10:05:17.6140417Z average speed 51467000(byte/s)
+2026-07-22T10:05:17.6140706Z 
+2026-07-22T10:05:17.6140864Z 11.938495(s) elapsed
+2026-07-22T10:05:18.3864994Z 
+2026-07-22T10:05:18.3865730Z Succeed: Total num: 1, size: 711. OK num: 1(upload 1 files).
+2026-07-22T10:05:18.3866193Z 
+2026-07-22T10:05:18.3866316Z average speed 0(byte/s)
+2026-07-22T10:05:18.3866501Z 
+2026-07-22T10:05:18.3866605Z 0.765783(s) elapsed
+2026-07-22T10:05:19.0059916Z 
+2026-07-22T10:05:19.0060940Z Succeed: Total num: 1, size: 711. OK num: 1(upload 1 files).
+2026-07-22T10:05:19.0061655Z 
+2026-07-22T10:05:19.0061786Z average speed 1000(byte/s)
+2026-07-22T10:05:19.0061981Z 
+2026-07-22T10:05:19.0062089Z 0.613090(s) elapsed
+2026-07-22T10:05:19.0093576Z Processing mac-tauri Tauri artifact: UGSci-Desktop-Tauri-macOS-2.0.1b1/UGSci-Tauri-2.0.1b1-macOS.zip
+2026-07-22T10:05:19.9372538Z Generating metadata for: UGSci-Desktop-Tauri-macOS-2.0.1b1/UGSci-Tauri-2.0.1b1-macOS.zip
+2026-07-22T10:05:19.9373723Z ✓ Metadata written to: mac-tauri-metadata.json
+2026-07-22T10:05:19.9374275Z   ID: desktop-mac-tauri-2.0.1b1
+2026-07-22T10:05:19.9374733Z   Size: 719.6 MB
+2026-07-22T10:05:19.9375100Z   SHA256: b35ea33a97a3acb5...
+2026-07-22T10:05:24.9754709Z 
+2026-07-22T10:05:30.1302411Z Total num: 1, size: 754,531,360. Dealed num: 0, OK size: 143,720,304, Progress: 19.048%, Speed: 27924.42KB/s
+2026-07-22T10:05:35.1628268Z Total num: 1, size: 754,531,360. Dealed num: 0, OK size: 472,223,856, Progress: 62.585%, Speed: 62235.54KB/s
+2026-07-22T10:05:35.4623564Z Total num: 1, size: 754,531,360. Dealed num: 0, OK size: 754,531,360, Progress: 100.000%, Speed: 54781.05KB/s
+2026-07-22T10:05:35.4624516Z                                                                                                               
+2026-07-22T10:05:35.4625140Z Succeed: Total num: 1, size: 754,531,360. OK num: 1(upload 1 files).
+2026-07-22T10:05:35.4625577Z 
+2026-07-22T10:05:35.4632118Z average speed 48638000(byte/s)
+2026-07-22T10:05:35.4632463Z 
+2026-07-22T10:05:35.4632579Z 15.513357(s) elapsed
+2026-07-22T10:05:40.4836287Z 
+2026-07-22T10:05:45.5348415Z Total num: 1, size: 754,531,360. Dealed num: 0, OK size: 148,853,172, Progress: 19.728%, Speed: 28991.94KB/s
+2026-07-22T10:05:49.3683390Z Total num: 1, size: 754,531,360. Dealed num: 0, OK size: 497,888,196, Progress: 65.986%, Speed: 67480.78KB/s
+2026-07-22T10:05:49.3684356Z                                                                                                              
+2026-07-22T10:05:49.3684957Z Succeed: Total num: 1, size: 754,531,360. OK num: 1(upload 1 files).
+2026-07-22T10:05:49.3685261Z 
+2026-07-22T10:05:49.3685386Z average speed 54286000(byte/s)
+2026-07-22T10:05:49.3685582Z 
+2026-07-22T10:05:49.3685690Z 13.899076(s) elapsed
+2026-07-22T10:05:50.0306473Z 
+2026-07-22T10:05:50.0307203Z Succeed: Total num: 1, size: 687. OK num: 1(upload 1 files).
+2026-07-22T10:05:50.0307660Z 
+2026-07-22T10:05:50.0307834Z average speed 1000(byte/s)
+2026-07-22T10:05:50.0308116Z 
+2026-07-22T10:05:50.0308265Z 0.655495(s) elapsed
+2026-07-22T10:05:50.6301786Z 
+2026-07-22T10:05:50.6302469Z Succeed: Total num: 1, size: 687. OK num: 1(upload 1 files).
+2026-07-22T10:05:50.6302949Z 
+2026-07-22T10:05:50.6303124Z average speed 1000(byte/s)
+2026-07-22T10:05:50.6303378Z 
+2026-07-22T10:05:50.6303516Z 0.593453(s) elapsed
+2026-07-22T10:05:50.7412960Z ##[group]Run # The manifest generator expects the artifact binary alongside the
+2026-07-22T10:05:50.7413681Z [36;1m# The manifest generator expects the artifact binary alongside the[0m
+2026-07-22T10:05:50.7414239Z [36;1m# sidecar JSON.  After artifact splitting the exe lives in a separate[0m
+2026-07-22T10:05:50.7414751Z [36;1m# artifact directory, so we symlink it into the meta directory.[0m
+2026-07-22T10:05:50.7415305Z [36;1mfor f in UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-setup.exe; do[0m
+2026-07-22T10:05:50.7415880Z [36;1m  [ -f "$f" ] && ln -sf "../$f" tauri-updater-meta-windows/ 2>/dev/null || true[0m
+2026-07-22T10:05:50.7416290Z [36;1mdone[0m
+2026-07-22T10:05:50.7480367Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:05:50.7480672Z env:
+2026-07-22T10:05:50.7480918Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:05:50.7481483Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:05:50.7481984Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.7482458Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:05:50.7482916Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.7483543Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.7483964Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.7484383Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:05:50.7484743Z ##[endgroup]
+2026-07-22T10:05:50.8226168Z ##[group]Run VERSION="2.0.1b1"
+2026-07-22T10:05:50.8226568Z [36;1mVERSION="2.0.1b1"[0m
+2026-07-22T10:05:50.8226890Z [36;1mOSS_BASE="${OSS_PUBLIC_BASE_URL%/}"[0m
+2026-07-22T10:05:50.8227239Z [36;1mmetadata_args=()[0m
+2026-07-22T10:05:50.8227654Z [36;1mfor f in tauri-updater-meta-windows/tauri-windows-*-updater.json \[0m
+2026-07-22T10:05:50.8228200Z [36;1m         tauri-updater-meta-macos/tauri-darwin-*-updater.json; do[0m
+2026-07-22T10:05:50.8228661Z [36;1m  [ -f "$f" ] && metadata_args+=(--metadata "$f")[0m
+2026-07-22T10:05:50.8229022Z [36;1mdone[0m
+2026-07-22T10:05:50.8229303Z [36;1mif [ ${#metadata_args[@]} -eq 0 ]; then[0m
+2026-07-22T10:05:50.8229740Z [36;1m  echo "No Tauri updater sidecars found, skipping OSS manifest"[0m
+2026-07-22T10:05:50.8230395Z [36;1m  exit 0[0m
+2026-07-22T10:05:50.8230635Z [36;1mfi[0m
+2026-07-22T10:05:50.8230930Z [36;1mNOTES="${RELEASE_BODY:-UGSci Desktop ${VERSION}}"[0m
+2026-07-22T10:05:50.8231469Z [36;1mpython scripts/pack-tauri/generate_update_manifest.py manifest \[0m
+2026-07-22T10:05:50.8231905Z [36;1m  --version "$VERSION" \[0m
+2026-07-22T10:05:50.8232218Z [36;1m  --base-url "$OSS_BASE" \[0m
+2026-07-22T10:05:50.8232586Z [36;1m  --target-base "windows-x86_64=${OSS_BASE}/win-tauri" \[0m
+2026-07-22T10:05:50.8233031Z [36;1m  --target-base "darwin-aarch64=${OSS_BASE}/mac-tauri" \[0m
+2026-07-22T10:05:50.8233397Z [36;1m  "${metadata_args[@]}" \[0m
+2026-07-22T10:05:50.8233693Z [36;1m  --notes "$NOTES" \[0m
+2026-07-22T10:05:50.8234022Z [36;1m  --output ugsci-tauri-latest-oss.json[0m
+2026-07-22T10:05:50.8234401Z [36;1mossutil cp ugsci-tauri-latest-oss.json \[0m
+2026-07-22T10:05:50.8234838Z [36;1m  "oss://${OSS_BUCKET}/metadata/ugsci-tauri-latest.json" \[0m
+2026-07-22T10:05:50.8235235Z [36;1m  --acl public-read \[0m
+2026-07-22T10:05:50.8235522Z [36;1m  --force[0m
+2026-07-22T10:05:50.8299636Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:05:50.8299947Z env:
+2026-07-22T10:05:50.8300409Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:05:50.8300991Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:05:50.8301459Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.8301927Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:05:50.8302394Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.8302814Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.8303224Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:50.8303639Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:05:50.8304001Z   RELEASE_BODY: 
+2026-07-22T10:05:50.8304254Z ##[endgroup]
+2026-07-22T10:05:50.8946027Z wrote manifest ugsci-tauri-latest-oss.json (platforms: windows-x86_64)
+2026-07-22T10:05:51.5653115Z 
+2026-07-22T10:05:51.5654374Z Succeed: Total num: 1, size: 290. OK num: 1(upload 1 files).
+2026-07-22T10:05:51.5654860Z 
+2026-07-22T10:05:51.5655030Z average speed 0(byte/s)
+2026-07-22T10:05:51.5655335Z 
+2026-07-22T10:05:51.5655489Z 0.658590(s) elapsed
+2026-07-22T10:05:51.5695719Z ##[group]Run VERSION="2.0.1b1"
+2026-07-22T10:05:51.5696137Z [36;1mVERSION="2.0.1b1"[0m
+2026-07-22T10:05:51.5696413Z [36;1m[0m
+2026-07-22T10:05:51.5696718Z [36;1m# Download existing desktop/index.json if exists[0m
+2026-07-22T10:05:51.5697229Z [36;1mossutil cp "oss://${OSS_BUCKET}/metadata/apps/desktop/index.json" \[0m
+2026-07-22T10:05:51.5697798Z [36;1m  desktop-index.json 2>/dev/null || cat > desktop-index.json << 'EOF'[0m
+2026-07-22T10:05:51.5698214Z [36;1m{[0m
+2026-07-22T10:05:51.5698469Z [36;1m  "product": "desktop",[0m
+2026-07-22T10:05:51.5698774Z [36;1m  "updated_at": "",[0m
+2026-07-22T10:05:51.5699267Z [36;1m  "platforms": {},[0m
+2026-07-22T10:05:51.5699546Z [36;1m  "files": {}[0m
+2026-07-22T10:05:51.5699805Z [36;1m}[0m
+2026-07-22T10:05:51.5700574Z [36;1mEOF[0m
+2026-07-22T10:05:51.5700869Z [36;1m[0m
+2026-07-22T10:05:51.5701126Z [36;1m# Merge Windows metadata if exists[0m
+2026-07-22T10:05:51.5701502Z [36;1mif [ -f "win-metadata.json" ]; then[0m
+2026-07-22T10:05:51.5701946Z [36;1m  python scripts/pack/generate_oss_metadata.py \[0m
+2026-07-22T10:05:51.5702483Z [36;1m    --file "$(find UGSci-Desktop-Windows-* -name 'UGSci-Setup-*.exe' | head -1)" \[0m
+2026-07-22T10:05:51.5702955Z [36;1m    --product desktop \[0m
+2026-07-22T10:05:51.5703289Z [36;1m    --platform win \[0m
+2026-07-22T10:05:51.5703589Z [36;1m    --version "$VERSION" \[0m
+2026-07-22T10:05:51.5703919Z [36;1m    --output win-metadata.json \[0m
+2026-07-22T10:05:51.5704303Z [36;1m    --merge-index desktop-index.json \[0m
+2026-07-22T10:05:51.5704671Z [36;1m    --output-index desktop-index.json[0m
+2026-07-22T10:05:51.5704997Z [36;1mfi[0m
+2026-07-22T10:05:51.5705226Z [36;1m[0m
+2026-07-22T10:05:51.5705467Z [36;1m# Merge macOS metadata if exists[0m
+2026-07-22T10:05:51.5705803Z [36;1mif [ -f "mac-metadata.json" ]; then[0m
+2026-07-22T10:05:51.5706181Z [36;1m  python scripts/pack/generate_oss_metadata.py \[0m
+2026-07-22T10:05:51.5706670Z [36;1m    --file "$(find UGSci-Desktop-macOS-* -name 'UGSci-*.zip' | head -1)" \[0m
+2026-07-22T10:05:51.5707106Z [36;1m    --product desktop \[0m
+2026-07-22T10:05:51.5707408Z [36;1m    --platform mac \[0m
+2026-07-22T10:05:51.5707696Z [36;1m    --version "$VERSION" \[0m
+2026-07-22T10:05:51.5708016Z [36;1m    --output mac-metadata.json \[0m
+2026-07-22T10:05:51.5708380Z [36;1m    --merge-index desktop-index.json \[0m
+2026-07-22T10:05:51.5708746Z [36;1m    --output-index desktop-index.json[0m
+2026-07-22T10:05:51.5709064Z [36;1mfi[0m
+2026-07-22T10:05:51.5709301Z [36;1m[0m
+2026-07-22T10:05:51.5709546Z [36;1mmerge_tauri_metadata() {[0m
+2026-07-22T10:05:51.5709851Z [36;1m  local metadata="$1"[0m
+2026-07-22T10:05:51.5710393Z [36;1m  local dirs="$2"[0m
+2026-07-22T10:05:51.5710730Z [36;1m  local pattern="$3"[0m
+2026-07-22T10:05:51.5711023Z [36;1m  local platform="$4"[0m
+2026-07-22T10:05:51.5711332Z [36;1m  if [ ! -f "${metadata}" ]; then[0m
+2026-07-22T10:05:51.5711661Z [36;1m    return 0[0m
+2026-07-22T10:05:51.5711922Z [36;1m  fi[0m
+2026-07-22T10:05:51.5712233Z [36;1m  python scripts/pack/generate_oss_metadata.py \[0m
+2026-07-22T10:05:51.5712684Z [36;1m    --file "$(find ${dirs} -name "${pattern}" | head -1)" \[0m
+2026-07-22T10:05:51.5713077Z [36;1m    --product desktop \[0m
+2026-07-22T10:05:51.5713391Z [36;1m    --platform "${platform}" \[0m
+2026-07-22T10:05:51.5713716Z [36;1m    --version "$VERSION" \[0m
+2026-07-22T10:05:51.5714027Z [36;1m    --output "${metadata}" \[0m
+2026-07-22T10:05:51.5714367Z [36;1m    --merge-index desktop-index.json \[0m
+2026-07-22T10:05:51.5714731Z [36;1m    --output-index desktop-index.json[0m
+2026-07-22T10:05:51.5715053Z [36;1m}[0m
+2026-07-22T10:05:51.5715287Z [36;1m[0m
+2026-07-22T10:05:51.5715530Z [36;1mmerge_tauri_metadata \[0m
+2026-07-22T10:05:51.5715847Z [36;1m  "win-tauri-metadata.json" \[0m
+2026-07-22T10:05:51.5716192Z [36;1m  "UGSci-Desktop-Tauri-Windows-*" \[0m
+2026-07-22T10:05:51.5716545Z [36;1m  "UGSci-Tauri-*-Windows-setup.exe" \[0m
+2026-07-22T10:05:51.5717098Z [36;1m  "win-tauri"[0m
+2026-07-22T10:05:51.5717386Z [36;1mmerge_tauri_metadata \[0m
+2026-07-22T10:05:51.5717689Z [36;1m  "mac-tauri-metadata.json" \[0m
+2026-07-22T10:05:51.5718029Z [36;1m  "UGSci-Desktop-Tauri-macOS-*" \[0m
+2026-07-22T10:05:51.5718365Z [36;1m  "UGSci-Tauri-*-macOS.zip" \[0m
+2026-07-22T10:05:51.5718671Z [36;1m  "mac-tauri"[0m
+2026-07-22T10:05:51.5718931Z [36;1m[0m
+2026-07-22T10:05:51.5719195Z [36;1m# Upload updated desktop/index.json[0m
+2026-07-22T10:05:51.5719538Z [36;1mossutil cp desktop-index.json \[0m
+2026-07-22T10:05:51.5719939Z [36;1m  "oss://${OSS_BUCKET}/metadata/apps/desktop/index.json" \[0m
+2026-07-22T10:05:51.5720685Z [36;1m  --acl public-read \[0m
+2026-07-22T10:05:51.5720979Z [36;1m  --force[0m
+2026-07-22T10:05:51.5721228Z [36;1m[0m
+2026-07-22T10:05:51.5721489Z [36;1mecho "✓ Desktop index updated"[0m
+2026-07-22T10:05:51.5786121Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:05:51.5786446Z env:
+2026-07-22T10:05:51.5786716Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:05:51.5787379Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:05:51.5787849Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:51.5788321Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:05:51.5788787Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:51.5789209Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:51.5789628Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:51.5790272Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:05:51.5790668Z ##[endgroup]
+2026-07-22T10:05:52.3776444Z 
+2026-07-22T10:05:52.3777188Z Succeed: Total num: 1, size: 2,014. OK num: 1(download 1 objects).
+2026-07-22T10:05:52.3777683Z 
+2026-07-22T10:05:52.3777813Z average speed 2000(byte/s)
+2026-07-22T10:05:52.3778006Z 
+2026-07-22T10:05:52.3778113Z 0.783385(s) elapsed
+2026-07-22T10:05:53.1476777Z Generating metadata for: UGSci-Desktop-Tauri-Windows-2.0.1b1/UGSci-Tauri-2.0.1b1-Windows-setup.exe
+2026-07-22T10:05:53.1478098Z ✓ Metadata written to: win-tauri-metadata.json
+2026-07-22T10:05:53.1478683Z   ID: desktop-win-tauri-2.0.1b1
+2026-07-22T10:05:53.1479126Z   Size: 586.0 MB
+2026-07-22T10:05:53.1479510Z   SHA256: e34acc07fda016ac...
+2026-07-22T10:05:53.1479796Z 
+2026-07-22T10:05:53.1479981Z Merging into desktop index: desktop-index.json
+2026-07-22T10:05:53.1480748Z ✓ Desktop index written to: desktop-index.json
+2026-07-22T10:05:53.1481138Z   Latest win-tauri: desktop-win-tauri-2.0.1b1
+2026-07-22T10:05:54.1094788Z Generating metadata for: UGSci-Desktop-Tauri-macOS-2.0.1b1/UGSci-Tauri-2.0.1b1-macOS.zip
+2026-07-22T10:05:54.1095823Z ✓ Metadata written to: mac-tauri-metadata.json
+2026-07-22T10:05:54.1096225Z   ID: desktop-mac-tauri-2.0.1b1
+2026-07-22T10:05:54.1096528Z   Size: 719.6 MB
+2026-07-22T10:05:54.1096786Z   SHA256: b35ea33a97a3acb5...
+2026-07-22T10:05:54.1096971Z 
+2026-07-22T10:05:54.1097141Z Merging into desktop index: desktop-index.json
+2026-07-22T10:05:54.1097559Z ✓ Desktop index written to: desktop-index.json
+2026-07-22T10:05:54.1097914Z   Latest mac-tauri: desktop-mac-tauri-2.0.1b1
+2026-07-22T10:05:54.9265254Z 
+2026-07-22T10:05:54.9266428Z Succeed: Total num: 1, size: 2,014. OK num: 1(upload 1 files).
+2026-07-22T10:05:54.9266913Z 
+2026-07-22T10:05:54.9267080Z average speed 2000(byte/s)
+2026-07-22T10:05:54.9267482Z 
+2026-07-22T10:05:54.9267743Z 0.805250(s) elapsed
+2026-07-22T10:05:54.9272249Z ✓ Desktop index updated
+2026-07-22T10:05:54.9315919Z ##[group]Run # Download main index if exists
+2026-07-22T10:05:54.9316573Z [36;1m# Download main index if exists[0m
+2026-07-22T10:05:54.9317252Z [36;1mossutil cp "oss://${OSS_BUCKET}/metadata/index.json" \[0m
+2026-07-22T10:05:54.9318047Z [36;1m  main-index.json 2>/dev/null || cat > main-index.json << 'EOF'[0m
+2026-07-22T10:05:54.9318734Z [36;1m{[0m
+2026-07-22T10:05:54.9319098Z [36;1m  "version": "1.0",[0m
+2026-07-22T10:05:54.9319538Z [36;1m  "updated_at": "",[0m
+2026-07-22T10:05:54.9319959Z [36;1m  "products": {}[0m
+2026-07-22T10:05:54.9320545Z [36;1m}[0m
+2026-07-22T10:05:54.9320888Z [36;1mEOF[0m
+2026-07-22T10:05:54.9321238Z [36;1m[0m
+2026-07-22T10:05:54.9321702Z [36;1m# Ensure desktop product is in main index[0m
+2026-07-22T10:05:54.9322249Z [36;1mpython3 << 'PYTHON'[0m
+2026-07-22T10:05:54.9322684Z [36;1mimport json[0m
+2026-07-22T10:05:54.9323157Z [36;1mfrom datetime import datetime, timezone[0m
+2026-07-22T10:05:54.9323674Z [36;1m[0m
+2026-07-22T10:05:54.9324125Z [36;1mwith open("main-index.json", "r") as f:[0m
+2026-07-22T10:05:54.9324667Z [36;1m    index = json.load(f)[0m
+2026-07-22T10:05:54.9325096Z [36;1m[0m
+2026-07-22T10:05:54.9326115Z [36;1mindex["updated_at"] = datetime.now(timezone.utc).isoformat()[0m
+2026-07-22T10:05:54.9326738Z [36;1m[0m
+2026-07-22T10:05:54.9327112Z [36;1mif "desktop" not in index["products"]:[0m
+2026-07-22T10:05:54.9327681Z [36;1m    index["products"]["desktop"] = {[0m
+2026-07-22T10:05:54.9328194Z [36;1m        "name": {[0m
+2026-07-22T10:05:54.9328638Z [36;1m            "zh-CN": "桌面客户端",[0m
+2026-07-22T10:05:54.9329171Z [36;1m            "en-US": "Desktop Client"[0m
+2026-07-22T10:05:54.9329736Z [36;1m        },[0m
+2026-07-22T10:05:54.9330402Z [36;1m        "index_url": "/metadata/apps/desktop/index.json"[0m
+2026-07-22T10:05:54.9330954Z [36;1m    }[0m
+2026-07-22T10:05:54.9331281Z [36;1m[0m
+2026-07-22T10:05:54.9331672Z [36;1mwith open("main-index.json", "w") as f:[0m
+2026-07-22T10:05:54.9332304Z [36;1m    json.dump(index, f, indent=2, ensure_ascii=False)[0m
+2026-07-22T10:05:54.9332864Z [36;1mPYTHON[0m
+2026-07-22T10:05:54.9333229Z [36;1m[0m
+2026-07-22T10:05:54.9333600Z [36;1m# Upload main index[0m
+2026-07-22T10:05:54.9334072Z [36;1mossutil cp main-index.json \[0m
+2026-07-22T10:05:54.9334647Z [36;1m  "oss://${OSS_BUCKET}/metadata/index.json" \[0m
+2026-07-22T10:05:54.9335214Z [36;1m  --acl public-read \[0m
+2026-07-22T10:05:54.9335669Z [36;1m  --force[0m
+2026-07-22T10:05:54.9336039Z [36;1m[0m
+2026-07-22T10:05:54.9336414Z [36;1mecho "✓ Main index updated"[0m
+2026-07-22T10:05:54.9413116Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:05:54.9413428Z env:
+2026-07-22T10:05:54.9413677Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:05:54.9414414Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:05:54.9415116Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:54.9415877Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:05:54.9416674Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:54.9417377Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:54.9418050Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:54.9418757Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:05:54.9419349Z ##[endgroup]
+2026-07-22T10:05:55.7233953Z 
+2026-07-22T10:05:55.7234681Z Succeed: Total num: 1, size: 421. OK num: 1(download 1 objects).
+2026-07-22T10:05:55.7235172Z 
+2026-07-22T10:05:55.7235346Z average speed 0(byte/s)
+2026-07-22T10:05:55.7235607Z 
+2026-07-22T10:05:55.7235756Z 0.767127(s) elapsed
+2026-07-22T10:05:56.2674550Z 
+2026-07-22T10:05:56.2675184Z Succeed: Total num: 1, size: 421. OK num: 1(upload 1 files).
+2026-07-22T10:05:56.2675689Z 
+2026-07-22T10:05:56.2675853Z average speed 0(byte/s)
+2026-07-22T10:05:56.2676043Z 
+2026-07-22T10:05:56.2676150Z 0.514782(s) elapsed
+2026-07-22T10:05:56.2682048Z ✓ Main index updated
+2026-07-22T10:05:56.2721110Z ##[group]Run VERSION="2.0.1b1"
+2026-07-22T10:05:56.2721497Z [36;1mVERSION="2.0.1b1"[0m
+2026-07-22T10:05:56.2721888Z [36;1m# Delete any file in the desktop file directories that isn't the[0m
+2026-07-22T10:05:56.2722430Z [36;1m# current version or the "latest" alias.  This keeps OSS lean:[0m
+2026-07-22T10:05:56.2722917Z [36;1m# only one versioned copy + one "latest" copy per platform.[0m
+2026-07-22T10:05:56.2723317Z [36;1mpython3 - << 'PYEOF'[0m
+2026-07-22T10:05:56.2723641Z [36;1mimport os, re, subprocess, sys[0m
+2026-07-22T10:05:56.2723951Z [36;1m[0m
+2026-07-22T10:05:56.2724209Z [36;1mbucket = os.environ['OSS_BUCKET'][0m
+2026-07-22T10:05:56.2724543Z [36;1mversion = os.environ['VERSION'][0m
+2026-07-22T10:05:56.2724880Z [36;1mkeep_patterns = [version, 'latest'][0m
+2026-07-22T10:05:56.2725191Z [36;1m[0m
+2026-07-22T10:05:56.2725421Z [36;1mdirs_to_clean = [[0m
+2026-07-22T10:05:56.2725774Z [36;1m    f"oss://{bucket}/files/apps/desktop/win/",[0m
+2026-07-22T10:05:56.2726192Z [36;1m    f"oss://{bucket}/files/apps/desktop/mac/",[0m
+2026-07-22T10:05:56.2726582Z [36;1m    f"oss://{bucket}/files/apps/desktop/win-tauri/",[0m
+2026-07-22T10:05:56.2727180Z [36;1m    f"oss://{bucket}/files/apps/desktop/mac-tauri/",[0m
+2026-07-22T10:05:56.2727571Z [36;1m    f"oss://{bucket}/metadata/apps/desktop/win/",[0m
+2026-07-22T10:05:56.2727953Z [36;1m    f"oss://{bucket}/metadata/apps/desktop/mac/",[0m
+2026-07-22T10:05:56.2728353Z [36;1m    f"oss://{bucket}/metadata/apps/desktop/win-tauri/",[0m
+2026-07-22T10:05:56.2728768Z [36;1m    f"oss://{bucket}/metadata/apps/desktop/mac-tauri/",[0m
+2026-07-22T10:05:56.2729140Z [36;1m][0m
+2026-07-22T10:05:56.2729367Z [36;1m[0m
+2026-07-22T10:05:56.2729606Z [36;1mfor prefix in dirs_to_clean:[0m
+2026-07-22T10:05:56.2729931Z [36;1m    result = subprocess.run([0m
+2026-07-22T10:05:56.2730476Z [36;1m        ['ossutil', 'ls', prefix, '-s'],[0m
+2026-07-22T10:05:56.2730836Z [36;1m        capture_output=True, text=True[0m
+2026-07-22T10:05:56.2731167Z [36;1m    )[0m
+2026-07-22T10:05:56.2731474Z [36;1m    for line in result.stdout.strip().split('\n'):[0m
+2026-07-22T10:05:56.2731834Z [36;1m        line = line.strip()[0m
+2026-07-22T10:05:56.2732192Z [36;1m        if not line.startswith('oss://'):[0m
+2026-07-22T10:05:56.2732537Z [36;1m            continue[0m
+2026-07-22T10:05:56.2732852Z [36;1m        # Extract filename from the OSS path[0m
+2026-07-22T10:05:56.2733225Z [36;1m        filename = line.rsplit('/', 1)[-1][0m
+2026-07-22T10:05:56.2733612Z [36;1m        # Strip .json extension for metadata files[0m
+2026-07-22T10:05:56.2734064Z [36;1m        base = filename[:-5] if filename.endswith('.json') else filename[0m
+2026-07-22T10:05:56.2734557Z [36;1m        # Keep if filename contains current version or "latest"[0m
+2026-07-22T10:05:56.2735003Z [36;1m        if any(p in filename for p in keep_patterns):[0m
+2026-07-22T10:05:56.2735366Z [36;1m            continue[0m
+2026-07-22T10:05:56.2735681Z [36;1m        print(f"  Deleting old: {line}")[0m
+2026-07-22T10:05:56.2736022Z [36;1m        subprocess.run([0m
+2026-07-22T10:05:56.2736356Z [36;1m            ['ossutil', 'rm', line, '--force'],[0m
+2026-07-22T10:05:56.2736722Z [36;1m            capture_output=True, text=True[0m
+2026-07-22T10:05:56.2737050Z [36;1m        )[0m
+2026-07-22T10:05:56.2737349Z [36;1mprint("✓ Old desktop versions cleaned up")[0m
+2026-07-22T10:05:56.2737680Z [36;1mPYEOF[0m
+2026-07-22T10:05:56.2800778Z shell: /usr/bin/bash -e {0}
+2026-07-22T10:05:56.2801079Z env:
+2026-07-22T10:05:56.2801330Z   OSS_BUCKET: ugsci-download
+2026-07-22T10:05:56.2801889Z   OSS_PUBLIC_BASE_URL: ugsci-download.***/files/apps/desktop
+2026-07-22T10:05:56.2802353Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:56.2802826Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T10:05:56.2803284Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:56.2803952Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:56.2804372Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T10:05:56.2804789Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T10:05:56.2805203Z ##[endgroup]
+2026-07-22T10:05:56.3122655Z Traceback (most recent call last):
+2026-07-22T10:05:56.3131525Z   File "<stdin>", line 4, in <module>
+2026-07-22T10:05:56.3132237Z   File "<frozen os>", line 679, in __getitem__
+2026-07-22T10:05:56.3132796Z KeyError: 'VERSION'
+2026-07-22T10:05:56.3173909Z ##[error]Process completed with exit code 1.
+2026-07-22T10:05:56.3288439Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T10:05:56.3289672Z Post job cleanup.
+2026-07-22T10:05:56.4184830Z [command]/usr/bin/git version
+2026-07-22T10:05:56.4230307Z git version 2.54.0
+2026-07-22T10:05:56.4267984Z Temporarily overriding HOME='/home/runner/work/_temp/9be56949-72d0-489e-a546-b0b11e228b27' before making global git config changes
+2026-07-22T10:05:56.4270329Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T10:05:56.4273905Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/QwenPaw/QwenPaw
+2026-07-22T10:05:56.4314198Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T10:05:56.4351453Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T10:05:56.4622449Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T10:05:56.4662653Z http.https://github.com/.extraheader
+2026-07-22T10:05:56.4671943Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T10:05:56.4698813Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T10:05:56.5022517Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T10:05:56.5081406Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T10:05:56.5509020Z Cleaning up orphan processes
+2026-07-22T10:05:56.5844150Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/download-artifact@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/

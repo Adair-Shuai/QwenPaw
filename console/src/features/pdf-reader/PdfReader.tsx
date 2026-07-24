@@ -81,7 +81,7 @@ const PdfReader: React.FC<PdfReaderProps> = ({
     numPages,
     outline,
     pageTexts,
-    loadDocument,
+    onDocumentLoad,
     loadPageText,
   } = usePdfDocument();
 
@@ -115,12 +115,12 @@ const PdfReader: React.FC<PdfReaderProps> = ({
     return () => ro.disconnect();
   }, []);
 
-  // ── 加载文档 ──
+  // ── 文件切换时重置状态 ──
+  // react-pdf <Document file={fileUrl}> 会自动重新加载文档，
+  // 我们只需在 URL 变化时重置页码等状态。
   useEffect(() => {
-    if (pdfModule && fileUrl) {
-      loadDocument(fileUrl);
-    }
-  }, [pdfModule, fileUrl, loadDocument]);
+    setCurrentPage(1);
+  }, [fileUrl]);
 
   // ── 页码导航 ──
   const goToPage = useCallback(
@@ -383,6 +383,7 @@ const PdfReader: React.FC<PdfReaderProps> = ({
           <Document
             file={fileUrl}
             loading={null}
+            onLoadSuccess={onDocumentLoad}
             error={
               <div style={{ color: "#ccc", textAlign: "center", padding: 40 }}>
                 {t("workspace.pdfLoadFailed", "PDF 加载失败")}

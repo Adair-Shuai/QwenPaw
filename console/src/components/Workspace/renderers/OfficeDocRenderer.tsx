@@ -12,7 +12,7 @@
  * 支持的格式：DOCX、XLSX、PPTX（以及旧版 DOC/XLS/PPT，旧版只能走后端）
  */
 import React, { useEffect, useState, useCallback } from "react";
-import { Button, Space, Tooltip, Spin, Alert } from "antd";
+import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
   ReloadOutlined,
@@ -45,6 +45,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fallbackStage, setFallbackStage] = useState<FallbackStage>("none");
+  const [rendererEngine, setRendererEngine] = useState<"officecli" | "legacy">("legacy");
   const fileUrl = artifact.binaryUrl ?? "";
 
   const canClientSideParse = isOoxml(artifact.mimeType, artifact.extension);
@@ -101,45 +102,55 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       }
       const data = await res.json();
       const rawHtml = data.html ?? "";
-      // Build theme-aware CSS based on the app's current theme (not the
-      // system preference, which would mismatch inside an iframe).
-      const isDark = theme === "dark";
-      const bgColor = isDark ? "#1e1e1e" : "#ffffff";
-      const textColor = isDark ? "#d4d4d4" : "#333333";
-      const borderColor = isDark ? "#444444" : "#e0e0e0";
-      const thBg = isDark ? "#2a2a2a" : "#f5f5f5";
-      const cellBorder = isDark ? "#555555" : "#dddddd";
-      const styledHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 24px 32px; line-height: 1.7; color: ${textColor}; background: ${bgColor}; max-width: 900px; margin: 0 auto; }
-        h1 { font-size: 1.6em; border-bottom: 2px solid ${borderColor}; padding-bottom: 8px; margin-top: 1.5em; }
-        h2 { font-size: 1.3em; margin-top: 1.2em; }
-        h3 { font-size: 1.1em; margin-top: 1em; }
-        table { border-collapse: collapse; width: 100%; margin: 12px 0; }
-        th, td { border: 1px solid ${cellBorder}; padding: 8px 12px; text-align: left; }
-        th { background: ${thBg}; font-weight: 600; }
-        img { max-width: 100%; height: auto; }
-        a { color: ${isDark ? "#4d9eff" : "#1677ff"}; }
-        ul, ol { padding-left: 1.5em; }
-        .docx-page-break {
-          position: relative;
-          margin: 32px 0;
-          height: 0;
-          border-top: 2px dashed ${isDark ? "#555" : "#ccc"};
-        }
-        .docx-page-break::after {
-          content: "— Page Break —";
-          position: absolute;
-          top: -11px;
-          left: 50%;
-          transform: translateX(-50%);
-          font-size: 11px;
-          color: ${isDark ? "#888" : "#999"};
-          background: ${bgColor};
-          padding: 0 12px;
-          white-space: nowrap;
-        }
-      </style></head><body>${rawHtml}</body></html>`;
-      setHtmlContent(styledHtml);
+      const isOfficecli = data.engine === "officecli";
+      setRendererEngine(isOfficecli ? "officecli" : "legacy");
+
+      if (isOfficecli) {
+        // officecli returns a complete standalone HTML document with
+        // its own CSS and JavaScript for high-fidelity rendering.
+        // Do NOT wrap it in our template — use it as-is so scripts
+        // and styles work correctly.
+        setHtmlContent(rawHtml);
+      } else {
+        // Legacy rendering: wrap in theme-aware styled template
+        const isDark = theme === "dark";
+        const bgColor = isDark ? "#1e1e1e" : "#ffffff";
+        const textColor = isDark ? "#d4d4d4" : "#333333";
+        const borderColor = isDark ? "#444444" : "#e0e0e0";
+        const thBg = isDark ? "#2a2a2a" : "#f5f5f5";
+        const cellBorder = isDark ? "#555555" : "#dddddd";
+        const styledHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+          body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 24px 32px; line-height: 1.7; color: ${textColor}; background: ${bgColor}; max-width: 900px; margin: 0 auto; }
+          h1 { font-size: 1.6em; border-bottom: 2px solid ${borderColor}; padding-bottom: 8px; margin-top: 1.5em; }
+          h2 { font-size: 1.3em; margin-top: 1.2em; }
+          h3 { font-size: 1.1em; margin-top: 1em; }
+          table { border-collapse: collapse; width: 100%; margin: 12px 0; }
+          th, td { border: 1px solid ${cellBorder}; padding: 8px 12px; text-align: left; }
+          th { background: ${thBg}; font-weight: 600; }
+          img { max-width: 100%; height: auto; }
+          a { color: ${isDark ? "#4d9eff" : "#1677ff"}; }
+          ul, ol { padding-left: 1.5em; }
+          .docx-page-break {
+            position: relative;
+            margin: 32px 0;
+            height: 0;
+            border-top: 2px dashed ${isDark ? "#555" : "#ccc"};
+          }
+          .docx-page-break::after {
+            content: "— Page Break —";
+            position: absolute;
+            top: -11px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            color: ${isDark ? "#888" : "#999"};
+            background: ${bgColor};
+            padding: 0 12px;
+            white-space: nowrap;
+          }
+        </style></head><body>${rawHtml}</body></html>`;
+        setHtmlContent(styledHtml);
+      }
     } catch (err) {
       // 网络错误 → 优先前端解析，否则下载
       if (canClientSideParse) {
@@ -264,6 +275,16 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           <span style={{ fontSize: 12, color: "#999" }}>
             {artifact.extension?.toUpperCase()}
           </span>
+          {rendererEngine === "officecli" && (
+            <Tag color="green" style={{ fontSize: 10, marginInlineStart: 4 }}>
+              OfficeCLI
+            </Tag>
+          )}
+          {rendererEngine === "legacy" && fallbackStage === "none" && (
+            <Tag color="orange" style={{ fontSize: 10, marginInlineStart: 4 }}>
+              {t("workspace.basicRender")}
+            </Tag>
+          )}
         </Space>
         <Space size={2}>
           <Tooltip title={t("workspace.reload")}>
@@ -287,7 +308,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       <iframe
         srcDoc={htmlContent}
         title={artifact.title}
-        sandbox="allow-same-origin"
+        sandbox={rendererEngine === "officecli" ? "allow-scripts allow-same-origin" : "allow-same-origin"}
         style={{ width: "100%", flex: 1, border: "none", background: "#fff" }}
       />
     </div>

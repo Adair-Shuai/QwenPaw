@@ -6,6 +6,13 @@
  * - 页数获取
  * - 大纲（outline）提取
  * - 全文文本缓存（用于搜索）
+ *
+ * 性能优化：
+ * - 不再单独通过 pdfjs.getDocument() 加载文档，而是复用 react-pdf
+ *   <Document> 组件的 onLoadSuccess 回调中已经加载好的 PDFDocumentProxy，
+ *   避免重复下载和解析 PDF 文件
+ * - 移除了前 5 页文本预加载（阻塞渲染），改为搜索时按需懒加载
+ * - 大纲提取移至后台异步执行，不阻塞首屏渲染
  */
 import { useState, useEffect, useCallback, useRef } from "react";
 import { loadReactPdf, type RawOutlineItem } from "./pdfjs";
@@ -24,8 +31,11 @@ export interface UsePdfDocumentResult {
   outline: PdfOutlineNode[];
   /** 每页的文本内容（1-based 索引） */
   pageTexts: Map<number, string>;
-  /** 加载文档 */
-  loadDocument: (url: string) => Promise<void>;
+  /**
+   * 接收 react-pdf <Document> 组件 onLoadSuccess 回调中的 PDFDocumentProxy。
+   * 从中提取页数、大纲等信息，不再单独加载文档。
+   */
+  onDocumentLoad: (pdf: any) => void;
   /** 加载某页文本（懒加载，搜索时按需调用） */
   loadPageText: (pageNum: number) => Promise<string>;
 }
@@ -99,63 +109,35 @@ export function usePdfDocument(): UsePdfDocumentResult {
     };
   }, []);
 
-  const loadDocument = useCallback(
-    async (url: string) => {
-      if (!pdfModule) {
-        setError("react-pdf not loaded");
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      setError(null);
-      try {
-        // 使用 pdfjs 底层 API 加载文档（不依赖 React 组件）
-        // react-pdf 的类型声明未暴露 getDocument，用类型断言访问
-        const pdfjs = pdfModule.pdfjs as unknown as {
-          getDocument: (url: string) => { promise: Promise<any> };
-        };
-        const loadingTask = pdfjs.getDocument(url);
-        const pdf = await loadingTask.promise;
-        pdfDocRef.current = pdf;
-        setNumPages(pdf.numPages);
+  /**
+   * 接收 react-pdf <Document> 组件加载成功后的 PDFDocumentProxy。
+   * 从中提取页数并异步加载大纲，不阻塞渲染。
+   *
+   * 这取代了之前单独调用 pdfjs.getDocument() 的方式，
+   * 避免了 PDF 文件被下载和解析两次。
+   */
+  const onDocumentLoad = useCallback((pdf: any) => {
+    pdfDocRef.current = pdf;
+    setNumPages(pdf.numPages);
+    // 立即解除 loading 状态，让 PDF 页面开始渲染
+    setLoading(false);
+    setError(null);
 
-        // 提取大纲
-        try {
-          const rawOutline = await pdf.getOutline();
-          if (rawOutline && rawOutline.length > 0) {
-            const converted = await convertOutline(rawOutline, pdf);
-            setOutline(converted);
-          } else {
-            setOutline([]);
-          }
-        } catch {
+    // 异步提取大纲（不阻塞首屏渲染）
+    (async () => {
+      try {
+        const rawOutline = await pdf.getOutline();
+        if (rawOutline && rawOutline.length > 0) {
+          const converted = await convertOutline(rawOutline, pdf);
+          setOutline(converted);
+        } else {
           setOutline([]);
         }
-
-        // 预加载前 5 页文本（用于初始搜索）
-        const texts = new Map<number, string>();
-        const preloadPages = Math.min(5, pdf.numPages);
-        for (let i = 1; i <= preloadPages; i++) {
-          try {
-            const page = await pdf.getPage(i);
-            const textContent = await page.getTextContent();
-            const text = textContent.items
-              .map((item: any) => item.str)
-              .join(" ");
-            texts.set(i, text);
-          } catch {
-            // 单页文本加载失败忽略
-          }
-        }
-        setPageTexts(texts);
-        setLoading(false);
-      } catch (err) {
-        setError((err as Error).message || "Failed to load PDF");
-        setLoading(false);
+      } catch {
+        setOutline([]);
       }
-    },
-    [pdfModule],
-  );
+    })();
+  }, []);
 
   const loadPageText = useCallback(
     async (pageNum: number): Promise<string> => {
@@ -185,7 +167,7 @@ export function usePdfDocument(): UsePdfDocumentResult {
     numPages,
     outline,
     pageTexts,
-    loadDocument,
+    onDocumentLoad,
     loadPageText,
   };
 }

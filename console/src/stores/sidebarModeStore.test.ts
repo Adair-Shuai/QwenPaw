@@ -14,7 +14,7 @@ function clearStorage() {
 describe("sidebarModeStore", () => {
   beforeEach(() => {
     clearStorage();
-    useSidebarModeStore.setState({ mode: "full" });
+    useSidebarModeStore.setState({ mode: "simple" });
     vi.clearAllMocks();
   });
 
@@ -22,15 +22,20 @@ describe("sidebarModeStore", () => {
   // Initial state — tri-state-ish (persisted "simple" / persisted other / no value)
   // ---------------------------------------------------------------------------
 
-  it("defaults to 'full' when localStorage has no entry (via setstate we can't test create-time)", () => {
+  it("defaults to 'simple' when localStorage has no entry", () => {
     // After our reset, the store has the value we set.
-    useSidebarModeStore.setState({ mode: "full" });
-    expect(useSidebarModeStore.getState().mode).toBe("full");
+    useSidebarModeStore.setState({ mode: "simple" });
+    expect(useSidebarModeStore.getState().mode).toBe("simple");
   });
 
   it("persists to the 'qwenpaw_sidebar_mode' localStorage key", () => {
     useSidebarModeStore.getState().setMode("simple");
     expect(localStorage.getItem("qwenpaw_sidebar_mode")).toBe("simple");
+  });
+
+  it("persists 'full' to localStorage (does not remove the key)", () => {
+    useSidebarModeStore.getState().setMode("full");
+    expect(localStorage.getItem("qwenpaw_sidebar_mode")).toBe("full");
   });
 
   // ---------------------------------------------------------------------------
@@ -44,13 +49,13 @@ describe("sidebarModeStore", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe("simple");
   });
 
-  it("setMode('full') removes the localStorage entry and updates state", () => {
+  it("setMode('full') persists 'full' to localStorage and updates state", () => {
     localStorage.setItem(STORAGE_KEY, "simple");
 
     useSidebarModeStore.getState().setMode("full");
 
     expect(useSidebarModeStore.getState().mode).toBe("full");
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("full");
   });
 
   it("setMode updates state across multiple calls", () => {
@@ -77,14 +82,14 @@ describe("sidebarModeStore", () => {
     expect(localStorage.getItem(STORAGE_KEY)).toBe("simple");
   });
 
-  it("toggleMode flips 'simple' to 'full' and removes the localStorage entry", () => {
+  it("toggleMode flips 'simple' to 'full' and persists 'full'", () => {
     useSidebarModeStore.setState({ mode: "simple" });
     localStorage.setItem(STORAGE_KEY, "simple");
 
     useSidebarModeStore.getState().toggleMode();
 
     expect(useSidebarModeStore.getState().mode).toBe("full");
-    expect(localStorage.getItem(STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(STORAGE_KEY)).toBe("full");
   });
 
   it("toggleMode round-trips back to the original mode after two calls", () => {
@@ -117,16 +122,16 @@ describe("sidebarModeStore", () => {
     localStorage.getItem = original;
   });
 
-  it("setMode('full') does not throw when localStorage.removeItem throws", () => {
-    const original = localStorage.removeItem;
-    localStorage.removeItem = vi.fn(() => {
+  it("setMode('full') does not throw when localStorage.setItem throws", () => {
+    const originalSet = localStorage.setItem;
+    localStorage.setItem = vi.fn(() => {
       throw new Error("denied");
     });
 
     expect(() => useSidebarModeStore.getState().setMode("full")).not.toThrow();
     expect(useSidebarModeStore.getState().mode).toBe("full");
 
-    localStorage.removeItem = original;
+    localStorage.setItem = originalSet;
   });
 
   it("toggleMode does not throw when localStorage.setItem throws", () => {

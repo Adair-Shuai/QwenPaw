@@ -148,7 +148,7 @@ function pluginBundleWatcher() {
 // ─────────────────────────────────────────────────────────────────────────────
 // Optional-deps plugin
 //
-// Workspace renderers dynamically import optional packages (TipTap, react-pdf,
+// Workspace renderers dynamically import some optional packages (TipTap,
 // @codesandbox/sandpack-react) that are NOT in package.json by default.
 // In dev mode, Vite's import-analysis tries to resolve every `import()` call,
 // even those inside try/catch — causing a hard error overlay.
@@ -157,11 +157,13 @@ function pluginBundleWatcher() {
 // throws at runtime. The renderers' try/catch (or .catch()) handlers swallow
 // the error and fall back to a simpler renderer.
 //
+// Note: react-pdf is now a regular dependency and excluded from this list.
 // For production builds, `build.rollupOptions.external` (below) takes
 // precedence, so the plugin is never called in build mode.
 // ─────────────────────────────────────────────────────────────────────────────
+// react-pdf is now a regular dependency (in package.json) and can be
+// pre-bundled by Vite in dev mode without issues.
 const OPTIONAL_DEPS = [
-  "react-pdf",
   "@codesandbox/sandpack-react",
   "@tiptap/static-renderer",
   "@tiptap/starter-kit",
