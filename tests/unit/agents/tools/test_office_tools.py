@@ -307,9 +307,10 @@ class TestOfficeBatchOperations:
     @patch("qwenpaw.agents.tools.office_tools.get_current_workspace_dir")
     async def test_uses_input_flag_not_file(self, mock_ws, mock_run):
         """Verify batch command uses --input, not --file."""
+        import tempfile
         from pathlib import Path
 
-        mock_ws.return_value = Path("/tmp")
+        mock_ws.return_value = Path(tempfile.gettempdir())
         mock_run.return_value = {"success": True, "ok": True}
 
         from qwenpaw.agents.tools.office_tools import office_batch_operations
@@ -351,10 +352,11 @@ class TestOfficeViewDocument:
         mock_avail,
     ):
         """HTML mode should capture HTML from stdout, not use --json."""
+        import tempfile
         from pathlib import Path
 
         mock_avail.return_value = True
-        mock_ws.return_value = Path("/tmp")
+        mock_ws.return_value = Path(tempfile.gettempdir())
 
         mock_proc = AsyncMock()
         mock_proc.returncode = 0
