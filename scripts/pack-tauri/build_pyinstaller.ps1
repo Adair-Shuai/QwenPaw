@@ -209,10 +209,35 @@ Write-Host "== Staging bundled Python runtime ==" -ForegroundColor Yellow
 Assert-LastExit "Failed to stage bundled Python runtime"
 Write-Host ""
 
+# Pre-install common Python libraries into the bundled runtime so users on
+# machines without Python can handle files (Excel/Word/PPT/images/data
+# processing) without waiting for a pip download on first use.
+Write-Host "== Installing common Python packages into bundled runtime ==" -ForegroundColor Yellow
+$PyRuntimeBin = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
+if (-not (Test-Path $PyRuntimeBin)) {
+    throw "Bundled Python executable not found at $PyRuntimeBin"
+}
+$PipIndexUrl = if ($env:PIP_INDEX_URL) { $env:PIP_INDEX_URL } else { "https://pypi.tuna.tsinghua.edu.cn/simple/" }
+Write-Host "Using PyPI mirror: $PipIndexUrl"
+& $PyRuntimeBin -m pip install `
+    --disable-pip-version-check `
+    --no-input `
+    --index-url $PipIndexUrl `
+    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow
+Assert-LastExit "Failed to install common Python packages"
+Write-Host "Common Python packages installed" -ForegroundColor Green
+Write-Host ""
+
 Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
     --dest (Join-Path $BINARIES_DIR "node-runtime")
 Assert-LastExit "Failed to stage bundled Node runtime"
+Write-Host ""
+
+Write-Host "== Staging bundled OfficeCLI ==" -ForegroundColor Yellow
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_officecli.py") `
+    --dest (Join-Path $BINARIES_DIR "officecli")
+Assert-LastExit "Failed to stage bundled OfficeCLI"
 Write-Host ""
 
 Write-Host "=========================================" -ForegroundColor Cyan

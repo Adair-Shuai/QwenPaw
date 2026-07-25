@@ -144,9 +144,32 @@ echo "== Staging bundled Python runtime =="
     --dest "${BINARIES_DIR}/python-runtime"
 echo ""
 
+# Pre-install common Python libraries into the bundled runtime so users on
+# machines without Python can handle files (Excel/Word/PPT/images/data
+# processing) without waiting for a pip download on first use.
+echo "== Installing common Python packages into bundled runtime =="
+PY_RUNTIME_BIN="${BINARIES_DIR}/python-runtime/python/bin/python3"
+if [ ! -f "$PY_RUNTIME_BIN" ]; then
+    PY_RUNTIME_BIN="${BINARIES_DIR}/python-runtime/python/bin/python"
+fi
+PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple/}"
+echo "Using PyPI mirror: ${PIP_INDEX_URL}"
+"$PY_RUNTIME_BIN" -m pip install \
+    --disable-pip-version-check \
+    --no-input \
+    --index-url "$PIP_INDEX_URL" \
+    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow
+echo "Common Python packages installed"
+echo ""
+
 echo "== Staging bundled Node runtime =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_node_runtime.py" \
     --dest "${BINARIES_DIR}/node-runtime"
+echo ""
+
+echo "== Staging bundled OfficeCLI =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_officecli.py" \
+    --dest "${BINARIES_DIR}/officecli"
 echo ""
 
 echo "========================================="

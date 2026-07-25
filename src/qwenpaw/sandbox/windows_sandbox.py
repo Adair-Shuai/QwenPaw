@@ -443,6 +443,32 @@ async def _apply_all_acls(config: SandboxConfig, sid: str) -> Dict[str, Any]:
                 python_dir,
             )
 
+    # ── Bundled Python runtime grant (frozen desktop build) ──────────
+    # In the frozen desktop build ``sys.executable`` is the backend binary,
+    # not the bundled CPython. The bundled interpreter lives in a sibling
+    # resource directory whose path is injected via the
+    # ``QWENPAW_DESKTOP_PY_RUNTIME`` env var by the Tauri Rust launcher.
+    # Without this grant, ``python script.py`` inside the AppContainer
+    # fails with access denied.
+    bundled_python = os.environ.get("QWENPAW_DESKTOP_PY_RUNTIME", "")
+    if bundled_python and os.path.isfile(bundled_python):
+        bundled_python_dir = os.path.dirname(bundled_python)
+        bundled_root = os.path.dirname(bundled_python_dir)
+        # Grant RX on the interpreter's bin/ dir and the Python root
+        # (which contains Lib/site-packages with pre-installed packages).
+        for py_path in (bundled_python_dir, bundled_root):
+            if py_path and os.path.isdir(py_path):
+                py_norm = os.path.normcase(os.path.normpath(py_path))
+                if py_norm != ws_norm and py_norm not in {
+                    os.path.normcase(os.path.normpath(p)) for p in grant_paths
+                }:
+                    grant_paths.append(py_path)
+                    await _set_acl_grant(py_path, sid, "RX")
+                    logger.debug(
+                        "Granted RX on bundled Python dir: %s",
+                        py_path,
+                    )
+
     # ── Deny paths (single-step deny ACE) ─────────────────────────────
     for deny_path in config.deny_paths:
         expanded = os.path.expanduser(deny_path)

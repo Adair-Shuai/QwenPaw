@@ -492,6 +492,41 @@ def _is_dangerous_self_kill(cmd: str) -> bool:
     return False
 
 
+# Cached PATH prefix for the bundled Python runtime (frozen desktop build).
+# Computed once on first use; the path never changes during the process
+# lifetime, so we avoid repeated ``os.path.isfile`` / ``os.path.isdir``
+# calls that would block the event loop on every shell command.
+_bundled_python_path_prefix: str | None = None
+
+
+def _resolve_bundled_python_path_prefix() -> str:
+    """Return the PATH entries for the bundled CPython, or ``""`` if absent.
+
+    On Windows the ``Scripts/`` subdirectory (holding ``pip.exe`` and other
+    CLI shims) is included alongside the interpreter directory.
+    """
+    global _bundled_python_path_prefix
+    if _bundled_python_path_prefix is not None:
+        return _bundled_python_path_prefix
+
+    bundled_python = os.environ.get("QWENPAW_DESKTOP_PY_RUNTIME", "")
+    if not bundled_python or not os.path.isfile(bundled_python):
+        _bundled_python_path_prefix = ""
+        return ""
+
+    bundled_bin = str(Path(bundled_python).parent)
+    # On Windows, pip.exe and other CLI shims live in a ``Scripts``
+    # subdirectory alongside python.exe.
+    bundled_scripts = str(Path(bundled_bin) / "Scripts")
+    if os.path.isdir(bundled_scripts):
+        _bundled_python_path_prefix = (
+            bundled_bin + os.pathsep + bundled_scripts
+        )
+    else:
+        _bundled_python_path_prefix = bundled_bin
+    return _bundled_python_path_prefix
+
+
 # pylint: disable=too-many-branches, too-many-statements
 @tool_descriptor(
     requires_sandbox=("shell_exec",),
@@ -579,6 +614,17 @@ async def execute_shell_command(
     # Ensure the venv Python is on PATH for subprocesses
     env = os.environ.copy()
     python_bin_dir = str(Path(sys.executable).parent)
+
+    # In the frozen desktop build the bundled standalone CPython lives in
+    # a sibling resource directory. Prepend its bin dir (and ``Scripts``
+    # on Windows) so shell commands like ``python script.py`` and
+    # ``pip install ...`` resolve to the bundled interpreter when the
+    # user has no system Python installed. The prefix is cached to avoid
+    # blocking disk I/O on every call.
+    bundled_prefix = _resolve_bundled_python_path_prefix()
+    if bundled_prefix:
+        python_bin_dir = bundled_prefix + os.pathsep + python_bin_dir
+
     existing_path = env.get("PATH", "")
     if existing_path:
         env["PATH"] = python_bin_dir + os.pathsep + existing_path
