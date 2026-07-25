@@ -31,7 +31,6 @@
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
     "@monaco-editor/react": "^4.7.0",
-    "@rollup/rollup-darwin-arm64": "^4.62.2",
     "@tauri-apps/api": "^2.10.1",
     "@tauri-apps/plugin-dialog": "^2.7.1",
     "@types/react-window": "^1.8.8",

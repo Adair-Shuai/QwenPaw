@@ -344,8 +344,13 @@ class TestOfficeViewDocument:
     @patch("qwenpaw.agents.tools.office_tools._officecli_available")
     @patch("qwenpaw.agents.tools.office_tools.asyncio.create_subprocess_exec")
     @patch("qwenpaw.agents.tools.office_tools.get_current_workspace_dir")
-    async def test_html_mode_uses_o_flag(self, mock_ws, mock_exec, mock_avail):
-        """HTML mode should use -o with a temp file, not --json."""
+    async def test_html_mode_returns_html_from_stdout(
+        self,
+        mock_ws,
+        mock_exec,
+        mock_avail,
+    ):
+        """HTML mode should capture HTML from stdout, not use --json."""
         from pathlib import Path
 
         mock_avail.return_value = True
@@ -354,17 +359,9 @@ class TestOfficeViewDocument:
         mock_proc = AsyncMock()
         mock_proc.returncode = 0
 
-        # Simulate officecli writing HTML to the -o file
+        # Simulate officecli writing HTML to stdout
         async def mock_communicate():
-            # Write a fake HTML file
-            for call_args in [mock_exec.call_args]:
-                cmd = call_args[0]
-                if "-o" in cmd:
-                    idx = cmd.index("-o")
-                    output_path = cmd[idx + 1]
-                    with open(output_path, "w", encoding="utf-8") as f:
-                        f.write("<html><body>Test</body></html>")
-            return (b"", b"")
+            return (b"<html><body>Test</body></html>", b"")
 
         mock_proc.communicate = mock_communicate
         mock_exec.return_value = mock_proc
@@ -373,12 +370,11 @@ class TestOfficeViewDocument:
 
         chunk = await office_view_document("test.pptx", "html")
 
-        # Verify -o is in the command, --json is not
+        # Verify --json is not in the command (we want raw HTML)
         cmd = mock_exec.call_args[0]
-        assert "-o" in cmd
         assert "--json" not in cmd
 
-        # Verify HTML content is returned
+        # Verify HTML content is returned from stdout
         data = json.loads(chunk.content[0].text)
         assert data["ok"] is True
         assert "html" in data
