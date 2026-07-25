@@ -940,6 +940,7 @@ async def reload_plugin(plugin_id: str, request: Request):
 
     # Re-read manifest and re-load from the same path
     try:
+        # pylint: disable=protected-access
         manifest = loader._load_manifest(manifest_path)
         record = await loader.load_plugin(manifest, source_path)
     except Exception as exc:

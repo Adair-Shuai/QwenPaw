@@ -189,6 +189,7 @@ def _bridge_to_runtime(
         from ..governance.tool_registry import (
             DEFAULT_REGISTRY as _GOV_REGISTRY,
         )
+
         policy_name = _GOV_REGISTRY.python_to_policy_name(tool_name)
         for name in (tool_name, policy_name):
             if _GOV_REGISTRY.get_type(name) == "unknown":
@@ -204,7 +205,8 @@ def _bridge_to_runtime(
     except Exception as exc:
         logger.warning(
             "Failed to register '%s' in governance ToolRegistry: %s",
-            tool_name, exc,
+            tool_name,
+            exc,
         )
 
     if registry is None:

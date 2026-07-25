@@ -86,14 +86,33 @@ def _install_agentscope_tool_utils_typing_fix() -> None:
         # annotation might reference when ``from __future__ import
         # annotations`` turns it into a string.
         _typing_names = (
-            "Optional", "List", "Dict", "Tuple", "Set", "FrozenSet",
-            "Union", "Any", "Callable", "Sequence", "Mapping",
-            "Iterator", "Iterable", "Generator", "Awaitable",
-            "AsyncIterator", "AsyncGenerator", "Type", "ClassVar",
-            "Literal", "TypeVar", "Generic", "Protocol",
+            "Optional",
+            "List",
+            "Dict",
+            "Tuple",
+            "Set",
+            "FrozenSet",
+            "Union",
+            "Any",
+            "Callable",
+            "Sequence",
+            "Mapping",
+            "Iterator",
+            "Iterable",
+            "Generator",
+            "Awaitable",
+            "AsyncIterator",
+            "AsyncGenerator",
+            "Type",
+            "ClassVar",
+            "Literal",
+            "TypeVar",
+            "Generic",
+            "Protocol",
         )
 
         import importlib
+
         for _mod_path in _target_modules:
             try:
                 _mod = importlib.import_module(_mod_path)

@@ -141,7 +141,10 @@ _drain_event.set()
 # nested install tasks each carry their own checker without interference.
 _cancel_checker_ctx: contextvars.ContextVar[
     Any | None
-] = contextvars.ContextVar("skills_hub_cancel_checker", default=None)
+] = contextvars.ContextVar(
+    "skills_hub_cancel_checker",
+    default=None,
+)
 
 
 # ---------- Env-driven config ----------------------------------------------
@@ -1300,7 +1303,11 @@ async def _gitee_collect_tree_files(
         _ensure_not_cancelled()
         current_dir = pending.pop()
         entries = await _gitee_get_dir_entries(
-            owner, repo, current_dir, ref, token,
+            owner,
+            repo,
+            current_dir,
+            ref,
+            token,
         )
         for entry in entries:
             _ensure_not_cancelled()
@@ -1359,22 +1366,28 @@ async def _fetch_bundle_from_gitee_url(
 
     # Try the path hint directly as the skill root
     skill_md_entry = await _gitee_get_content_entry(
-        owner, repo,
+        owner,
+        repo,
         _join_repo_path(path_hint, "SKILL.md"),
-        branch, access_token,
+        branch,
+        access_token,
     )
     if skill_md_entry is None:
         # Try skills/<path_hint>
         skill_md_entry = await _gitee_get_content_entry(
-            owner, repo,
+            owner,
+            repo,
             _join_repo_path("skills", _join_repo_path(path_hint, "SKILL.md")),
-            branch, access_token,
+            branch,
+            access_token,
         )
         if skill_md_entry is not None:
             path_hint = _join_repo_path("skills", path_hint)
 
-    if skill_md_entry is None or \
-            str(skill_md_entry.get("type") or "") != "file":
+    if (
+        skill_md_entry is None
+        or str(skill_md_entry.get("type") or "") != "file"
+    ):
         raise SkillsError(
             message=(
                 f"Could not find SKILL.md in Gitee repository "
@@ -2429,7 +2442,9 @@ async def _prepare_install_payload(
         )
     _ensure_not_cancelled()
     data, source_url = await _resolve_bundle_from_url(
-        bundle_url, version, access_token,
+        bundle_url,
+        version,
+        access_token,
     )
     installed_from = _classify_install_origin(bundle_url)
     name, content, references, scripts, extra_files = _normalize_bundle(data)

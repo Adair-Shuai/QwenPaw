@@ -85,6 +85,7 @@ def _build_plugin(ui_dir: Path, plugin_id: str) -> bool:
             text=True,
             timeout=120,
             shell=os.name == "nt",  # noqa: S602
+            check=False,
         )
     except subprocess.TimeoutExpired:
         print(f"  [FAIL] {plugin_id}: npm install timed out", file=sys.stderr)
@@ -110,9 +111,13 @@ def _build_plugin(ui_dir: Path, plugin_id: str) -> bool:
             text=True,
             timeout=120,
             shell=os.name == "nt",  # noqa: S602
+            check=False,
         )
     except subprocess.TimeoutExpired:
-        print(f"  [FAIL] {plugin_id}: npm run build timed out", file=sys.stderr)
+        print(
+            f"  [FAIL] {plugin_id}: npm run build timed out",
+            file=sys.stderr,
+        )
         return False
 
     if result.returncode != 0:
@@ -147,13 +152,7 @@ def _sync_dist(
         return
 
     # 1. Sync to src/qwenpaw/plugins_bundle/<plugin>/<frontend_entry>
-    src_mirror = (
-        repo
-        / "src"
-        / "qwenpaw"
-        / "plugins_bundle"
-        / plugin_dir.name
-    )
+    src_mirror = repo / "src" / "qwenpaw" / "plugins_bundle" / plugin_dir.name
     if src_mirror.is_dir():
         mirror_dist = src_mirror / frontend_entry
         mirror_dist.parent.mkdir(parents=True, exist_ok=True)
@@ -187,7 +186,7 @@ def _sync_dist(
 # ── Main ───────────────────────────────────────────────────────────────────
 
 
-def main() -> int:
+def main() -> int:  # pylint: disable=too-many-branches,too-many-statements
     import argparse
 
     parser = argparse.ArgumentParser(
@@ -228,7 +227,9 @@ def main() -> int:
         plugins_to_check.append((plugin_dir, plugin_id, frontend_entry))
 
     if not plugins_to_check:
-        print("[dev_ensure_plugin_uis] No plugins with frontend entries found.")
+        print(
+            "[dev_ensure_plugin_uis] No plugins with frontend entries found.",
+        )
         return 0
 
     missing: list[tuple[Path, str, str]] = []

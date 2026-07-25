@@ -149,4 +149,18 @@ e2e/__pycache__/
 # knowledge-base related
 graphify-out/
 local-docs/
-docs-site/
+docs-site/conflict_chat.txt
+oss_cleanup_logs.txt
+mac_build_logs.txt
+inspect_flowforge.py
+screenshot_flowforge.py
+test_workflow.py
+.actrc
+flowforge_screenshots/
+comprehensive_verify.py
+check_icons.py
+debug_node_size.py
+verify_flowforge.py
+final_verify.py
+/conflict_chat.txt
+test_inspector.py

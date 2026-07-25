@@ -42,9 +42,22 @@ import {
   getBezierPath,
   EdgeLabelRenderer,
   Panel,
-  useReactFlow,
 } from "@xyflow/react";
-import "@xyflow/react/dist/style.css";
+// Import ReactFlow CSS as a string and inject at runtime.
+// In blob URL loading context, external CSS files are not loaded,
+// so we must inline the CSS into the JS bundle.
+// @ts-ignore — ?inline imports CSS as a string
+import reactFlowCss from "@xyflow/react/dist/style.css?inline";
+
+if (typeof document !== "undefined") {
+  const styleId = "flowforge-reactflow-css";
+  if (!document.getElementById(styleId)) {
+    const styleEl = document.createElement("style");
+    styleEl.id = styleId;
+    styleEl.textContent = reactFlowCss;
+    document.head.appendChild(styleEl);
+  }
+}
 
 // ─── Host access shim ───────────────────────────────────────────────────────
 
@@ -134,7 +147,7 @@ function NodeCard({ id, data, selected }: NodeProps) {
     style: {
       padding: "10px 14px", borderRadius: 8,
       border: `2px solid ${selected ? color : stColor}`,
-      background: "#fff", width: 240, minHeight: 120, fontSize: 12,
+      background: "#fff", width: "240px", minWidth: "240px", maxWidth: "240px", minHeight: "120px", fontSize: 12,
       boxShadow: st === "running" ? `0 0 0 3px ${color}33` : selected ? "0 2px 8px rgba(0,0,0,0.12)" : "0 1px 4px rgba(0,0,0,0.08)",
       transition: "border-color 0.2s, box-shadow 0.2s",
       display: "flex", flexDirection: "column",
@@ -418,8 +431,9 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
   const ExclamationCircleOutlined = antdIcons?.ExclamationCircleOutlined;
   const AlignLeftOutlined = antdIcons?.AlignLeftOutlined;
   const AlignRightOutlined = antdIcons?.AlignRightOutlined;
-  const AlignTopOutlined = antdIcons?.AlignTopOutlined;
-  const AlignBottomOutlined = antdIcons?.AlignBottomOutlined;
+  // AlignTopOutlined / AlignBottomOutlined don't exist in antd; use vertical align icons
+  const VerticalAlignTopOutlined = antdIcons?.VerticalAlignTopOutlined;
+  const VerticalAlignBottomOutlined = antdIcons?.VerticalAlignBottomOutlined;
 
   const [doc, setDoc] = useState<FlowDocument | null>(null);
   const [nodeTypesList, setNodeTypesList] = useState<NodeTypeSpec[]>([]);
@@ -434,7 +448,6 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
   const [activeTab, setActiveTab] = useState("nodes");
   const [ioModalOpen, setIoModalOpen] = useState(false);
   const rfWrapper = useRef<HTMLDivElement>(null);
-  const { getNodes, setNodes: rfSetNodes } = useReactFlow();
 
   // Load flow + node types
   useEffect(() => {
@@ -722,10 +735,10 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
                 React.createElement(Button, { size: "small", type: "text", icon: AlignRightOutlined ? React.createElement(AlignRightOutlined) : undefined, onClick: () => alignNodes("right") }),
               ),
               React.createElement(Tooltip, { title: "顶部对齐" },
-                React.createElement(Button, { size: "small", type: "text", icon: AlignTopOutlined ? React.createElement(AlignTopOutlined) : undefined, onClick: () => alignNodes("top") }),
+                React.createElement(Button, { size: "small", type: "text", icon: VerticalAlignTopOutlined ? React.createElement(VerticalAlignTopOutlined) : undefined, onClick: () => alignNodes("top") }, !VerticalAlignTopOutlined ? "⬆" : null),
               ),
               React.createElement(Tooltip, { title: "底部对齐" },
-                React.createElement(Button, { size: "small", type: "text", icon: AlignBottomOutlined ? React.createElement(AlignBottomOutlined) : undefined, onClick: () => alignNodes("bottom") }),
+                React.createElement(Button, { size: "small", type: "text", icon: VerticalAlignBottomOutlined ? React.createElement(VerticalAlignBottomOutlined) : undefined, onClick: () => alignNodes("bottom") }, !VerticalAlignBottomOutlined ? "⬇" : null),
               ),
               React.createElement("div", { style: { width: 1, background: "#e8e8e8", margin: "0 2px" } }),
               React.createElement(Tooltip, { title: "水平分布" },

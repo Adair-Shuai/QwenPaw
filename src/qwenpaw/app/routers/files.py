@@ -95,7 +95,11 @@ async def _resolve_relative_path(normalized: str, request: Request) -> Path:
 
     # Return the first candidate (workspace_dir or WORKING_DIR) so the
     # caller emits a 404 "Not found" rather than a misleading error.
-    return candidates[0].resolve() if candidates else (_ALLOWED_ROOT / normalized).resolve()
+    return (
+        candidates[0].resolve()
+        if candidates
+        else (_ALLOWED_ROOT / normalized).resolve()
+    )
 
 
 @router.api_route(
@@ -108,7 +112,8 @@ async def preview_file(
     request: Request,
 ):
     """Preview file."""
-    # FastAPI already URL-decodes path parameters; ``filepath`` is ready to use.
+    # FastAPI already URL-decodes path parameters;
+    # ``filepath`` is ready to use.
     normalized = filepath
 
     # Normalize /C:/... to C:/... on Windows.

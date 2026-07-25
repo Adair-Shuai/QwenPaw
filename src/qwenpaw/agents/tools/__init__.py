@@ -53,11 +53,19 @@ from .office_tools import (
     office_get_element,
     office_query_elements,
     office_remove_element,
+    office_move_element,
+    office_swap_elements,
     office_view_document,
     office_view_screenshot,
+    office_get_text,
+    office_get_stats,
+    office_import_data,
+    office_refresh_fields,
     office_validate_document,
     office_merge_template,
     office_batch_operations,
+    office_raw_get,
+    office_raw_set,
 )
 
 

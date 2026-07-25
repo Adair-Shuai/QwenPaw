@@ -69,8 +69,11 @@ def is_junction_or_symlink(path: Path) -> bool:
     if platform.system() == "Windows":
         # On Windows, junctions are detected via FILE_ATTRIBUTE_REPARSE_POINT
         import ctypes
+
         attrs = ctypes.windll.kernel32.GetFileAttributesW(str(path))
-        return attrs != -1 and (attrs & 0x400) != 0  # FILE_ATTRIBUTE_REPARSE_POINT
+        return (
+            attrs != -1 and (attrs & 0x400) != 0
+        )  # FILE_ATTRIBUTE_REPARSE_POINT
     else:
         return path.is_symlink()
 
@@ -140,7 +143,7 @@ def cmd_link(plugin_id: str) -> None:
     else:
         os.symlink(source, target, target_is_directory=True)
 
-    print(f"\n[DONE] Junction created:")
+    print("\n[DONE] Junction created:")
     print(f"  {target} → {source}")
     print(f"  Plugin: {plugin_id} v{src_version}")
     print("\nNow edits to source files are immediately visible at runtime.")
@@ -156,7 +159,9 @@ def cmd_unlink(plugin_id: str) -> None:
         return
 
     if not is_junction_or_symlink(target):
-        print(f"[INFO] {target} is not a junction/symlink — nothing to unlink.")
+        print(
+            f"[INFO] {target} is not a junction/symlink — nothing to unlink.",
+        )
         return
 
     # Remove the junction/symlink
@@ -219,7 +224,9 @@ def cmd_reload(plugin_id: str) -> None:
             sys.exit(1)
         print(f"  [NOT LINKED] Runtime: {rt_dir}")
         print(f"  Source:    {source}")
-        print(f"  Warning: runtime files may be stale. Run 'link {plugin_id}' first.")
+        print(
+            f"  Warning: runtime files may be stale. Run 'link {plugin_id}' first.",
+        )
     print(f"  → POST {url}")
 
     try:
@@ -266,7 +273,9 @@ def cmd_status() -> None:
         print("No bundled plugins found.")
         return
 
-    print(f"{'Plugin ID':<20} {'Source':<12} {'Runtime':<12} {'Linked':<8} {'Version'}")
+    print(
+        f"{'Plugin ID':<20} {'Source':<12} {'Runtime':<12} {'Linked':<8} {'Version'}",
+    )
     print("-" * 70)
 
     for pid, src_dir in sorted(all_plugins.items()):
@@ -274,8 +283,12 @@ def cmd_status() -> None:
         version = read_plugin_version(src_dir)
         src_exists = "Y" if src_dir.exists() else "N"
         rt_exists = "Y" if rt_dir.exists() else "N"
-        linked = "Y" if rt_dir.exists() and is_junction_or_symlink(rt_dir) else "N"
-        print(f"{pid:<20} {src_exists:<12} {rt_exists:<12} {linked:<8} v{version}")
+        linked = (
+            "Y" if rt_dir.exists() and is_junction_or_symlink(rt_dir) else "N"
+        )
+        print(
+            f"{pid:<20} {src_exists:<12} {rt_exists:<12} {linked:<8} v{version}",
+        )
 
 
 def cmd_build_ui(plugin_id: str) -> None:
@@ -295,10 +308,20 @@ def cmd_build_ui(plugin_id: str) -> None:
     if not node_modules.exists():
         print("[INFO] Installing UI dependencies...")
         npm = os.environ.get("npm_execpath", "npm")
-        subprocess.run([npm, "install"], cwd=str(ui_dir), check=True, shell=True)
+        subprocess.run(
+            [npm, "install"],
+            cwd=str(ui_dir),
+            check=True,
+            shell=True,
+        )
 
     print("[INFO] Building UI (vite build)...")
-    subprocess.run(["npx", "vite", "build"], cwd=str(ui_dir), check=True, shell=True)
+    subprocess.run(
+        ["npx", "vite", "build"],
+        cwd=str(ui_dir),
+        check=True,
+        shell=True,
+    )
 
     dist_file = ui_dir / "dist" / "index.js"
     if dist_file.exists():
@@ -333,7 +356,12 @@ def cmd_watch_ui(plugin_id: str) -> None:
     if not node_modules.exists():
         print("[INFO] Installing UI dependencies...")
         npm = os.environ.get("npm_execpath", "npm")
-        subprocess.run([npm, "install"], cwd=str(ui_dir), check=True, shell=True)
+        subprocess.run(
+            [npm, "install"],
+            cwd=str(ui_dir),
+            check=True,
+            shell=True,
+        )
 
     rt_dir = get_runtime_plugin_dir(plugin_id)
     is_linked = rt_dir.exists() and is_junction_or_symlink(rt_dir)
@@ -389,7 +417,10 @@ Examples:
     p_link = sub.add_parser("link", help="Link runtime dir → source dir")
     p_link.add_argument("plugin_id", help="Plugin ID (e.g. ugsci)")
 
-    p_unlink = sub.add_parser("unlink", help="Remove link, restore copy-based sync")
+    p_unlink = sub.add_parser(
+        "unlink",
+        help="Remove link, restore copy-based sync",
+    )
     p_unlink.add_argument("plugin_id", help="Plugin ID")
 
     p_reload = sub.add_parser("reload", help="Hot-reload plugin via API")
@@ -398,7 +429,10 @@ Examples:
     p_build = sub.add_parser("build", help="Build plugin frontend")
     p_build.add_argument("plugin_id", help="Plugin ID")
 
-    p_watch = sub.add_parser("watch", help="Watch plugin frontend (vite --watch)")
+    p_watch = sub.add_parser(
+        "watch",
+        help="Watch plugin frontend (vite --watch)",
+    )
     p_watch.add_argument("plugin_id", help="Plugin ID")
 
     sub.add_parser("status", help="Show link status for all plugins")

@@ -896,9 +896,7 @@ async def get_pool_skill_content(skill_name: str) -> dict[str, str]:
     This is the lazy-load complement to ``GET /pool?summary=true``.
     """
     pool_dir = get_skill_pool_dir()
-    skill_dir = resolve_pool_skill_dir(skill_name) or (
-        pool_dir / skill_name
-    )
+    skill_dir = resolve_pool_skill_dir(skill_name) or (pool_dir / skill_name)
     if not skill_dir.is_dir():
         raise HTTPException(404, f"Skill '{skill_name}' not found")
     skill = read_skill_from_dir(skill_dir, "customized")

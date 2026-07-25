@@ -14,8 +14,6 @@ import json
 import subprocess
 from unittest.mock import patch, MagicMock
 
-import pytest
-
 
 # ---------------------------------------------------------------------------
 # _is_officecli_available
@@ -55,7 +53,9 @@ class TestConvertWithOfficecli:
         def mock_run(cmd, **kwargs):
             # Verify -o is in the command, --json is not
             assert "-o" in cmd, f"Expected -o in command: {cmd}"
-            assert "--json" not in cmd, f"--json should not be in command: {cmd}"
+            assert (
+                "--json" not in cmd
+            ), f"--json should not be in command: {cmd}"
             # Write a fake HTML file to the -o path
             o_idx = cmd.index("-o")
             output_path = cmd[o_idx + 1]
@@ -111,7 +111,8 @@ class TestConvertWithOfficecli:
             assert html is None
 
     def test_returns_none_when_output_file_missing(self):
-        """When officecli succeeds but output file doesn't exist, return None."""
+        """When officecli succeeds but output file
+        doesn't exist, return None."""
         from qwenpaw.app.routers.workspace import _convert_with_officecli
 
         mock_result = MagicMock()
@@ -278,12 +279,15 @@ class TestConvertDocxToHtmlFallback:
         """When officecli is not available, skip to legacy conversion."""
         from qwenpaw.app.routers.workspace import _convert_docx_to_html
 
-        with patch(
-            "qwenpaw.app.routers.workspace._is_officecli_available",
-            return_value=False,
-        ), patch(
-            "qwenpaw.app.routers.workspace._convert_with_officecli",
-        ) as mock_oci:
+        with (
+            patch(
+                "qwenpaw.app.routers.workspace._is_officecli_available",
+                return_value=False,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace._convert_with_officecli",
+            ) as mock_oci,
+        ):
             # Legacy path will fail (no mammoth), but we just verify
             # officecli was NOT called
             try:
@@ -296,12 +300,15 @@ class TestConvertDocxToHtmlFallback:
         """When officecli is available but returns None, fall through."""
         from qwenpaw.app.routers.workspace import _convert_docx_to_html
 
-        with patch(
-            "qwenpaw.app.routers.workspace._is_officecli_available",
-            return_value=True,
-        ), patch(
-            "qwenpaw.app.routers.workspace._convert_with_officecli",
-            return_value=None,
+        with (
+            patch(
+                "qwenpaw.app.routers.workspace._is_officecli_available",
+                return_value=True,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace._convert_with_officecli",
+                return_value=None,
+            ),
         ):
             # Legacy path will fail (no mammoth), but we verify
             # officecli was called
@@ -314,12 +321,15 @@ class TestConvertDocxToHtmlFallback:
         """When officecli returns HTML, legacy path is not touched."""
         from qwenpaw.app.routers.workspace import _convert_docx_to_html
 
-        with patch(
-            "qwenpaw.app.routers.workspace._is_officecli_available",
-            return_value=True,
-        ), patch(
-            "qwenpaw.app.routers.workspace._convert_with_officecli",
-            return_value="<html>High fidelity HTML</html>",
+        with (
+            patch(
+                "qwenpaw.app.routers.workspace._is_officecli_available",
+                return_value=True,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace._convert_with_officecli",
+                return_value="<html>High fidelity HTML</html>",
+            ),
         ):
             html = _convert_docx_to_html("/tmp/test.docx")
             assert html == "<html>High fidelity HTML</html>"

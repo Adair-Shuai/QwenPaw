@@ -15,7 +15,7 @@ Covers:
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -114,7 +114,9 @@ class TestRunOfficecli:
     @patch("qwenpaw.agents.tools.office_tools._officecli_available")
     @patch("qwenpaw.agents.tools.office_tools.asyncio.create_subprocess_exec")
     async def test_error_parses_stdout_json_on_nonzero_exit(
-        self, mock_exec, mock_avail,
+        self,
+        mock_exec,
+        mock_avail,
     ):
         """On non-zero exit, still parse stdout JSON for structured error."""
         mock_avail.return_value = True
@@ -145,7 +147,11 @@ class TestRunOfficecli:
     @pytest.mark.asyncio
     @patch("qwenpaw.agents.tools.office_tools._officecli_available")
     @patch("qwenpaw.agents.tools.office_tools.asyncio.create_subprocess_exec")
-    async def test_error_with_no_stdout_uses_stderr(self, mock_exec, mock_avail):
+    async def test_error_with_no_stdout_uses_stderr(
+        self,
+        mock_exec,
+        mock_avail,
+    ):
         """When stdout is empty on error, fall back to stderr."""
         mock_avail.return_value = True
         mock_proc = AsyncMock()
@@ -237,7 +243,11 @@ class TestOfficeCreateDocument:
     @pytest.mark.asyncio
     @patch("qwenpaw.agents.tools.office_tools._run_officecli")
     async def test_calls_create_command(self, mock_run):
-        mock_run.return_value = {"success": True, "ok": True, "path": "test.pptx"}
+        mock_run.return_value = {
+            "success": True,
+            "ok": True,
+            "path": "test.pptx",
+        }
         from qwenpaw.agents.tools.office_tools import office_create_document
 
         await office_create_document("test.pptx")
@@ -267,7 +277,9 @@ class TestOfficeAddElement:
         args = mock_run.call_args[0]
         assert args[0] == "add"
         # Check that --prop key=value pairs are present
-        prop_args = [args[i] for i in range(len(args)) if args[i - 1] == "--prop"]
+        prop_args = [
+            args[i] for i in range(len(args)) if args[i - 1] == "--prop"
+        ]
         assert "title=Hello" in prop_args
         assert "background=1A1A2E" in prop_args
 
@@ -350,7 +362,7 @@ class TestOfficeViewDocument:
                 if "-o" in cmd:
                     idx = cmd.index("-o")
                     output_path = cmd[idx + 1]
-                    with open(output_path, "w") as f:
+                    with open(output_path, "w", encoding="utf-8") as f:
                         f.write("<html><body>Test</body></html>")
             return (b"", b"")
 

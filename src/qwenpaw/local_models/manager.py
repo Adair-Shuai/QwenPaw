@@ -44,8 +44,9 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
     _instance: LocalModelManager | None = None
 
     DEFAULT_LLAMA_CPP_BASE_URL = (
-        # Mirror of "https://github.com/ggml-org/llama.cpp/releases/download"
-        "https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/models/llama_cpp"
+        # Mirror of llama.cpp releases download
+        "https://ugsci-download.oss-cn-beijing"
+        ".aliyuncs.com/files/models/llama_cpp"
     )
     DEFAULT_LLAMA_CPP_RELEASE_TAG = "b8744"
     CONFIG_FILE_NAME = "config.json"

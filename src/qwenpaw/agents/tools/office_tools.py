@@ -38,6 +38,7 @@ import json
 import logging
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -54,6 +55,15 @@ from .file_io import _path_to_file_url, _resolve_file_path
 logger = logging.getLogger(__name__)
 
 _OFFICECLI_TIMEOUT = 60  # seconds
+
+# Hide the console window on Windows when spawning officecli subprocesses.
+# On POSIX this is 0 (a no-op for subprocess.Popen).  Without this flag,
+# every officecli call on Windows would flash a black cmd window.
+_SUBPROCESS_FLAGS = (
+    getattr(subprocess, "CREATE_NO_WINDOW", 0)
+    if sys.platform == "win32"
+    else 0
+)
 
 
 # ---------------------------------------------------------------------------
@@ -170,6 +180,7 @@ async def _run_officecli(  # pylint: disable=too-many-return-statements
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            creationflags=_SUBPROCESS_FLAGS,
         )
     except FileNotFoundError:
         return {"ok": False, "error": "officecli binary not found"}
@@ -539,6 +550,7 @@ async def _office_view_html(resolved: str) -> ToolChunk:
             "html",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            creationflags=_SUBPROCESS_FLAGS,
         )
     except FileNotFoundError:
         return _not_installed_error()
@@ -634,6 +646,7 @@ async def office_view_screenshot(
             tmp_path,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            creationflags=_SUBPROCESS_FLAGS,
         )
     except FileNotFoundError:
         return _not_installed_error()
