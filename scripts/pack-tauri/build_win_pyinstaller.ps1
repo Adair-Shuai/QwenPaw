@@ -126,6 +126,12 @@ Write-Host "== Step 1: Building Console Static Assets ==" -ForegroundColor Yello
 Set-Location console
 
 Write-Host "Installing frontend dependencies..."
+# Remove lock file to allow npm to resolve Windows-specific optional
+# dependencies (e.g. @tauri-apps/cli-win32-x64-msvc) that may be
+# missing from a macOS-generated lock file.
+if (Test-Path package-lock.json) {
+    Remove-Item package-lock.json -Force
+}
 npm install
 if ($LASTEXITCODE -ne 0) {
     throw "npm install failed"
