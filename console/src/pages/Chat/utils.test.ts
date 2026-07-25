@@ -12,7 +12,20 @@ import type { CopyableResponse } from "./utils";
 // toDisplayUrl depends on chatApi.filePreviewUrl, needs to be mocked
 vi.mock("@/api/modules/chat", () => ({
   chatApi: {
-    filePreviewUrl: vi.fn((p: string) => `http://localhost:8000${p}`),
+    // Mock mimics real filePreviewUrl: %2F for absolute paths, as-is for relative
+    filePreviewUrl: vi.fn((p: string) => {
+      if (p.startsWith("http://") || p.startsWith("https://")) return p;
+      let cleaned = p;
+      if (p.startsWith("file://")) {
+        cleaned = p.slice(7);
+        if (cleaned.length > 2 && cleaned[0] === "/" && cleaned[2] === ":" && /^[a-zA-Z]$/.test(cleaned[1])) {
+          cleaned = cleaned.slice(1);
+        }
+      }
+      const isAbs = cleaned.startsWith("/");
+      const segs = (isAbs ? cleaned.slice(1) : cleaned).split("/").map(encodeURIComponent).join("/");
+      return `http://localhost:8000/api/files/preview/${isAbs ? "%2F" : ""}${segs}`;
+    }),
   },
 }));
 
@@ -231,15 +244,15 @@ describe("toDisplayUrl", () => {
     expect(toDisplayUrl("")).toBe("");
   });
 
-  it("calls chatApi.filePreviewUrl for relative paths", () => {
+  it("calls chatApi.filePreviewUrl for absolute paths", () => {
     expect(toDisplayUrl("/uploads/img.png")).toBe(
-      "http://localhost:8000/uploads/img.png",
+      "http://localhost:8000/api/files/preview/%2Fuploads/img.png",
     );
   });
 
-  it("strips file:// prefix then resolves full URL", () => {
+  it("resolves file:// URLs as absolute paths with %2F", () => {
     expect(toDisplayUrl("file:///uploads/img.png")).toBe(
-      "http://localhost:8000/uploads/img.png",
+      "http://localhost:8000/api/files/preview/%2Fuploads/img.png",
     );
   });
 });

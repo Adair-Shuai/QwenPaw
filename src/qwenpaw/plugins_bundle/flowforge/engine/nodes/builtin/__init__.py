@@ -140,10 +140,7 @@ try:
 except Exception:  # pragma: no cover
     pass
 
-try:
-    from .export_profiles import ExportProfilesNode
-    BUILTIN_NODES.append(ExportProfilesNode)
-except Exception:  # pragma: no cover
-    pass
+# export_profiles is a utility module (build_export_bundle), not a standalone node.
+# AssetExportNode uses it internally.
 
 __all__ = ["BUILTIN_NODES"] + [cls.__name__ for cls in BUILTIN_NODES]

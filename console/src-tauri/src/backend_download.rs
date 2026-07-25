@@ -281,26 +281,40 @@ pub(crate) async fn read_workspace_binary_file(
     Ok(tauri::ipc::Response::new(buffer))
 }
 
-/// Resolve a relative workspace file path to an absolute path.
+/// Resolve a workspace file path to an absolute path.
 ///
 /// Reads the QwenPaw config to determine the coding project directory (or workspace
 /// directory if no custom project is set), then safely joins the relative path to
 /// prevent path traversal attacks.
 ///
+/// **Absolute paths** (e.g. from `file://` URLs produced by tool-call results)
+/// are accepted if they resolve within the coding directory *or* the QwenPaw
+/// working directory (which covers all agent workspaces).  This is necessary
+/// because tools may write output files to the workspace directory rather than
+/// the coding project sub-directory.
+///
 /// If `agent_id` is provided, uses that agent's config; otherwise falls back to
 /// the active agent in config.json.
 fn resolve_workspace_file_path(
-    relative_path: &str,
+    file_path: &str,
     agent_id: Option<&str>,
 ) -> Result<PathBuf, String> {
-    if relative_path.trim().is_empty() {
+    if file_path.trim().is_empty() {
         return Err("file path is empty".into());
     }
 
     let coding_dir = get_coding_directory(agent_id)?;
+    let working_dir = get_working_directory();
 
-    // Safe join: resolve the path and ensure it stays within coding directory
-    let target = coding_dir.join(relative_path);
+    // Determine the target path: if *file_path* is absolute, use it directly;
+    // otherwise safe-join it to the coding directory.
+    let parsed = PathBuf::from(file_path);
+    let target = if parsed.is_absolute() {
+        parsed
+    } else {
+        coding_dir.join(file_path)
+    };
+
     let canonical_target = target.canonicalize().map_err(|err| {
         format!("failed to resolve file path '{}': {err}", target.display())
     })?;
@@ -312,14 +326,46 @@ fn resolve_workspace_file_path(
         )
     })?;
 
-    if !canonical_target.starts_with(&canonical_coding_dir) {
-        return Err(format!(
-            "path traversal detected: '{}' resolves outside coding directory",
-            relative_path
-        ));
+    // Allow the path if it is within the coding directory …
+    if canonical_target.starts_with(&canonical_coding_dir) {
+        return Ok(canonical_target);
     }
 
-    Ok(canonical_target)
+    // … or within the QwenPaw working directory (covers all agent workspaces).
+    if let Some(ref wd) = working_dir {
+        if let Ok(canonical_wd) = wd.canonicalize() {
+            if canonical_target.starts_with(&canonical_wd) {
+                return Ok(canonical_target);
+            }
+        }
+    }
+
+    Err(format!(
+        "path traversal detected: '{}' resolves outside coding directory and working directory",
+        file_path
+    ))
+}
+
+/// Get the QwenPaw working directory (root config directory).
+///
+/// Resolution order:
+/// 1. `QWENPAW_WORKING_DIR` / `COPAW_WORKING_DIR` environment variable
+/// 2. `~/.copaw` (legacy installation)
+/// 3. `~/.qwenpaw` (default)
+fn get_working_directory() -> Option<PathBuf> {
+    if let Ok(dir) = std::env::var("QWENPAW_WORKING_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    if let Ok(dir) = std::env::var("COPAW_WORKING_DIR") {
+        return Some(PathBuf::from(dir));
+    }
+    let home = dirs::home_dir()?;
+    let copaw_legacy = home.join(".copaw");
+    if copaw_legacy.exists() {
+        Some(copaw_legacy)
+    } else {
+        Some(home.join(".qwenpaw"))
+    }
 }
 
 /// Get the coding project directory from QwenPaw configuration.

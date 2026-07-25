@@ -4,6 +4,7 @@ fn main() {
     // while allowing local Rust checks to run in a clean checkout.
     if std::env::var("PROFILE").as_deref() != Ok("release") {
         let _ = std::fs::create_dir_all("binaries/qwenpaw-backend");
+        let _ = std::fs::create_dir_all("binaries/officecli");
     }
 
     tauri_build::build()

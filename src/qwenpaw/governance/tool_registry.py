@@ -322,6 +322,23 @@ def register_tool_governance(
         registry.set_owner(python_name, owner)
         return pname
 
+    # Unowned placeholder (e.g. from _bridge_to_runtime safety net) can
+    # be upgraded when a real owner claims it with proper metadata.
+    # Without this, the safety-net "internal" registration blocks the
+    # explicit typed registration that follows in direct-call test paths
+    # and plugin code that bridges before registering governance.
+    if not existing_owner and owner and existing_map is None:
+        registry.register(
+            pname,
+            tool_type,
+            target_param,
+            pattern_param=pattern_param,
+            sandbox_required=sandbox_required,
+        )
+        registry.register_python_name(python_name, pname)
+        registry.set_owner(python_name, owner)
+        return pname
+
     existing_identity = registry.get_identity(pname)
 
     # Same owner may replace identity on hot-reload / force reinstall.

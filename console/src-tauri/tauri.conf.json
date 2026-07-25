@@ -42,7 +42,8 @@
     "resources": [
       "binaries/qwenpaw-backend",
       "binaries/python-runtime",
-      "binaries/node-runtime"
+      "binaries/node-runtime",
+      "binaries/officecli"
     ],
     "windows": {
       "webviewInstallMode": {

@@ -57,7 +57,7 @@ class LLMCallNode(WorkflowNode):
 
         start = time.monotonic()
         try:
-            from leagent.llm import ChatMessage
+            from ...adapter import ChatMessage
             messages = [ChatMessage.user(prompt)]
             response = await llm.complete(
                 messages=messages,

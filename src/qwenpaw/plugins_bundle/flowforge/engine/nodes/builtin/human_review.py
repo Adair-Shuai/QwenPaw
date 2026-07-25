@@ -9,8 +9,9 @@ import logging
 
 from ...io import IO, Hidden, HiddenHolder, NodeOutput, Schema
 from ..base import WorkflowNode
+from ...adapter.log_compat import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class HumanReviewNode(WorkflowNode):

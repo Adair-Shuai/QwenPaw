@@ -159,6 +159,22 @@ def build_router(service: WorkflowService) -> APIRouter:
         cancelled = service.cancel_run(run_id)
         return {"run_id": run_id, "cancelled": cancelled}
 
+    @router.post("/runs/{run_id}/resume")
+    async def resume_run(
+        run_id: str,
+        body: RunRequest | None = Body(None),
+    ) -> dict[str, Any]:
+        inputs = (body.inputs if body else {}) or {}
+        try:
+            handle = service.resume_run(run_id, inputs)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc))
+        return {
+            "run_id": handle.run_id,
+            "flow_id": handle.flow_id,
+            "status": handle.status.value,
+        }
+
     # ---------------------------------------------------------------- #
     # SSE event stream
     # ---------------------------------------------------------------- #

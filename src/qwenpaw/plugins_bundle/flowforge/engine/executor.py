@@ -131,12 +131,27 @@ class _ContextShim:
         return self._executor.tool_registry
 
     @property
+    def tool_executor(self) -> Any:
+        return self._executor.tool_executor
+
+    @property
     def agent_runtime(self) -> Any:
         return self._executor.agent_runtime
 
     @property
+    def agent_controller(self) -> Any:
+        return self._executor.agent_controller
+
+    @property
     def llm_service(self) -> Any:
         return self._executor.llm_service
+
+    def get_tool_context(self, state: Any = None) -> Any:
+        """Delegate to the tool executor's context resolver if available."""
+        te = self._executor.tool_executor
+        if te is not None and hasattr(te, "get_tool_context"):
+            return te.get_tool_context(state)
+        return state
 
 
 class WorkflowExecutor:
@@ -287,6 +302,7 @@ class WorkflowExecutor:
             workflow_state=state,
             progress=progress,
             abort_event=abort_event,
+            extra_data=extra_data,
         )
 
         upstream_values: dict[tuple[str, int], Any] = {}

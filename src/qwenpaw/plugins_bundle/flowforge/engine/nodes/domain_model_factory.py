@@ -24,10 +24,12 @@ from typing import TYPE_CHECKING, Any
 
 import logging
 
+from ..adapter.log_compat import get_logger
+
 if TYPE_CHECKING:
     from .registry import NodeRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _NODE_ID_PREFIX = "Model."
 
@@ -65,8 +67,8 @@ def register_domain_model_nodes(
     """
     if domain_registry is None:
         try:
-            from leagent.llm.domain_models import register_builtin_domain_models
-            from leagent.llm.domain_registry import (
+            from ..adapter.domain_registry import register_builtin_domain_models
+            from ..adapter.domain_registry import (
                 get_domain_registry,
                 load_domain_model_plugins,
             )

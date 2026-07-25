@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from leagent.runtime.definition import AgentDefinition, ModelPolicy
+from ..adapter import AgentDefinition, ModelPolicy
 
 
 def parse_agent_model_override(raw: Any) -> tuple[str, str] | None:

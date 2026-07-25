@@ -18,7 +18,9 @@ from __future__ import annotations
 
 from typing import Any
 
-import logging; logger = logging.getLogger(__name__)
+import logging
+
+from ...adapter.log_compat import get_logger
 from ...io import (
     IO,
     Hidden,

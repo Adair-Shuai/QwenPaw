@@ -1,17 +1,22 @@
 /**
- * FlowForge frontend plugin for QwenPaw — ReactFlow DAG editor + run monitor.
+ * FlowForge frontend plugin for QwenPaw — full-featured ReactFlow DAG editor + run monitor.
  *
- * Source layout (compiled to `ui/dist/index.js` via `vite build`):
- *   - FlowListPage      — list saved flows; create / edit / delete / run.
- *   - FlowEditorPage    — ReactFlow canvas + node palette + inspector + toolbar.
- *   - RunMonitorDrawer  — real-time run progress via SSE /api/flowforge/runs/{id}/events.
+ * Ported from LeAgent's workflow editor, adapted to QwenPaw's plugin pattern:
+ *   - Uses window.QwenPaw.host for React/antd/getApiUrl (no bundled React copy)
+ *   - Uses @xyflow/react (ReactFlow v12) — bundled into dist/index.js by vite
+ *   - Registration: window.QwenPaw.route.add + window.QwenPaw.menu.add
  *
- * Uses `window.QwenPaw.host` for React/antd/getApiUrl (no bundled React copy).
- * Uses `@xyflow/react` (ReactFlow v12) — bundled into dist/index.js by vite.
- *
- * Registration follows the same pattern as the ugsci plugin:
- *   window.QwenPaw.route.add(pluginId, { id, path, component })
- *   window.QwenPaw.menu.add(pluginId, { id, label, icon, route, order })
+ * Features ported from LeAgent:
+ *   - FlowListPage: list/create/edit/delete/duplicate/run flows
+ *   - FlowEditorPage: ReactFlow canvas + searchable node palette + typed node inspector
+ *   - Custom bezier edges with inline label editing and delete buttons
+ *   - Node search/filter, drag-to-add, keyboard delete, duplicate node
+ *   - Run mode with real-time node status overlay on canvas
+ *   - Workflow inputs/outputs configuration panel
+ *   - Validation feedback in editor
+ *   - Alignment tools (align left/right/top/bottom, distribute H/V)
+ *   - Connection type validation
+ *   - RunMonitorDrawer: real-time run progress via SSE + node timeline
  */
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -30,7 +35,14 @@ import {
   type Edge,
   type Connection,
   type NodeProps,
+  type EdgeProps,
   BackgroundVariant,
+  getConnectedEdges,
+  MarkerType,
+  getBezierPath,
+  EdgeLabelRenderer,
+  Panel,
+  useReactFlow,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
@@ -49,99 +61,64 @@ function getHost() {
 }
 
 function getToken(): string {
-  try {
-    return getHost().getApiToken() || "";
-  } catch {
-    return "";
-  }
+  try { return getHost().getApiToken() || ""; } catch { return ""; }
 }
 
-function apiUrl(path: string): string {
-  return getHost().getApiUrl(path);
-}
+function apiUrl(path: string): string { return getHost().getApiUrl(path); }
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const token = getToken();
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...extra,
-  };
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra };
 }
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
-  const resp = await fetch(apiUrl(path), {
-    ...opts,
-    headers: { ...authHeaders(), ...(opts?.headers || {}) },
-  });
-  if (!resp.ok) {
-    const text = await resp.text().catch(() => "");
-    throw new Error(text || `HTTP ${resp.status}`);
-  }
+  const resp = await fetch(apiUrl(path), { ...opts, headers: { ...authHeaders(), ...(opts?.headers || {}) } });
+  if (!resp.ok) { const text = await resp.text().catch(() => ""); throw new Error(text || `HTTP ${resp.status}`); }
   if (resp.status === 204) return null as T;
   return resp.json();
 }
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
-interface FlowSummary {
-  id: string;
-  name: string;
-  description: string;
-  version: string;
-  node_count: number;
-  updated_at: number;
-}
-
+interface FlowSummary { id: string; name: string; description: string; version: string; node_count: number; updated_at: number; }
 interface NodeTypeSpec {
-  class_type: string;
-  display_name: string;
-  description: string;
-  category: string;
-  icon: string;
-  inputs_schema: any[];
-  outputs_schema: any[];
-  control_schema: string[];
+  class_type: string; display_name: string; description: string; category: string; icon: string;
+  inputs_schema: any[]; outputs_schema: any[]; control_schema: string[];
 }
-
 interface FlowDocument {
-  id: string;
-  name: string;
-  description: string;
-  nodes: Record<string, any>;
-  edges: any[];
-  inputs: any[];
-  outputs: any;
-  start_id: string | null;
-  metadata: Record<string, any>;
-  version: string;
+  id: string; name: string; description: string;
+  nodes: Record<string, any>; edges: any[];
+  inputs: any[]; outputs: any; start_id: string | null;
+  metadata: Record<string, any>; version: string;
 }
-
 interface RunStatus {
-  run_id: string;
-  flow_id: string;
-  state_id: string;
-  status: string;
-  started_at: number;
-  finished_at: number | null;
-  error: string | null;
-  node_statuses: Record<string, string>;
-  outputs: Record<string, any>;
-  errors: string[];
-  duration_ms: number;
+  run_id: string; flow_id: string; state_id: string; status: string;
+  started_at: number; finished_at: number | null; error: string | null;
+  node_statuses: Record<string, string>; outputs: Record<string, any>;
+  errors: string[]; duration_ms: number;
 }
 
-// ─── ReactFlow custom node components ───────────────────────────────────────
+// ─── Node category colors ───────────────────────────────────────────────────
 
 const NODE_COLORS: Record<string, string> = {
-  InputNode: "#52c41a",
-  OutputNode: "#fa541c",
-  ToolNode: "#1677ff",
-  AgentNode: "#722ed1",
-  ConditionNode: "#faad14",
-  LLMNode: "#13c2c2",
-  CodeNode: "#eb2f96",
+  StartNode: "#52c41a", EndNode: "#fa541c", InputNode: "#52c41a", OutputNode: "#fa541c",
+  ToolCallNode: "#1677ff", ToolNode: "#1677ff", AgentNode: "#722ed1",
+  ConditionNode: "#faad14", LLMCallNode: "#13c2c2", LLMNode: "#13c2c2",
+  CodeNode: "#eb2f96", ScriptNode: "#eb2f96", ParallelNode: "#874d00",
+  WaitNode: "#8c8c8c", TransformNode: "#0958d9", ErrorHandlerNode: "#cf1322",
+  HumanReviewNode: "#d4380d", SubworkflowNode: "#5b8c00", QualityGateNode: "#7cb305",
+  IterativeRefineNode: "#08979c", AssetExportNode: "#c41d7f",
 };
+
+function nodeColor(classType: string): string { return NODE_COLORS[classType] || "#1677ff"; }
+
+function statusColor(s: string): string {
+  return s === "completed" ? "#52c41a" : s === "running" ? "#1677ff"
+    : s === "failed" ? "#ff4d4f" : s === "skipped" ? "#bfbfbf"
+    : s === "blocked" ? "#faad14" : s === "cancelled" ? "#fa8c16" : "#d9d9d9";
+}
+
+// ─── Custom Node Card (240×120, matching LeAgent) ──────────────────────────
 
 function NodeCard({ id, data, selected }: NodeProps) {
   const antd = getHost().antd;
@@ -149,204 +126,300 @@ function NodeCard({ id, data, selected }: NodeProps) {
   const d = data as any;
   const classType: string = d?.class_type || d?.type || "ToolNode";
   const label: string = d?.label || classType;
-  const color = NODE_COLORS[classType] || "#1677ff";
-  const status: string = d?._status || "pending";
-  const statusColor =
-    status === "completed"
-      ? "#52c41a"
-      : status === "running"
-      ? "#1677ff"
-      : status === "failed"
-      ? "#ff4d4f"
-      : status === "skipped"
-      ? "#bfbfbf"
-      : "#d9d9d9";
+  const color = nodeColor(classType);
+  const st: string = d?._status || "pending";
+  const stColor = statusColor(st);
 
-  return React.createElement(
-    "div",
-    {
-      style: {
-        padding: "8px 12px",
-        borderRadius: 6,
-        border: `2px solid ${selected ? color : statusColor}`,
-        background: "#fff",
-        minWidth: 140,
-        fontSize: 12,
-        boxShadow: status === "running" ? `0 0 0 3px ${color}33` : "none",
-      },
+  return React.createElement("div", {
+    style: {
+      padding: "10px 14px", borderRadius: 8,
+      border: `2px solid ${selected ? color : stColor}`,
+      background: "#fff", width: 240, minHeight: 120, fontSize: 12,
+      boxShadow: st === "running" ? `0 0 0 3px ${color}33` : selected ? "0 2px 8px rgba(0,0,0,0.12)" : "0 1px 4px rgba(0,0,0,0.08)",
+      transition: "border-color 0.2s, box-shadow 0.2s",
+      display: "flex", flexDirection: "column",
     },
+  },
     React.createElement(Handle, { type: "target", position: Position.Left }),
-    React.createElement(
-      "div",
-      { style: { display: "flex", alignItems: "center", gap: 6 } },
+    // Header row: icon + label + status tag
+    React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
       React.createElement("span", { style: { fontSize: 16 } }, d?.icon || "🔧"),
-      React.createElement(
-        "strong",
-        { style: { color } },
-        label,
-      ),
-      Tag
-        ? React.createElement(
-            Tag,
-            {
-              color: statusColor,
-              style: { marginLeft: "auto", fontSize: 10 },
-            },
-            status,
-          )
-        : null,
+      React.createElement("strong", { style: { color, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, label),
+      Tag ? React.createElement(Tag, { color: stColor, style: { marginLeft: "auto", fontSize: 10 } }, st) : null,
     ),
-    d?.description
-      ? React.createElement(
-          "div",
-          { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11 } },
-          d.description,
-        )
-      : null,
+    // Description
+    d?.description ? React.createElement("div", { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, maxWidth: 212, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description) : null,
+    // Node ID footer
+    React.createElement("div", { style: { marginTop: "auto", paddingTop: 4, color: "#bfbfbf", fontSize: 10, fontFamily: "monospace" } }, id),
     React.createElement(Handle, { type: "source", position: Position.Right }),
   );
 }
 
-const nodeTypes = { default: NodeCard, tool: NodeCard, agent: NodeCard, condition: NodeCard, io: NodeCard, llm: NodeCard, code: NodeCard };
+// ─── Custom Bezier Edge with label editing and delete ───────────────────────
+
+function LabeledEdge(props: EdgeProps & any) {
+  const { id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected, markerEnd } = props;
+  const antd = getHost().antd;
+  const [edgePath, labelX, labelY] = getBezierPath({
+    sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition,
+  });
+  const [editing, setEditing] = useState(false);
+  const [editValue, setEditValue] = useState("");
+
+  const onDelete = useCallback((e: any) => {
+    e.stopPropagation();
+    // Dispatch a custom event that the parent ReactFlow can listen to
+    const evt = new CustomEvent("flowforge:edge-delete", { detail: { id } });
+    window.dispatchEvent(evt);
+  }, [id]);
+
+  const startEdit = useCallback((e: any) => {
+    e.stopPropagation();
+    setEditValue(data?.label || "");
+    setEditing(true);
+  }, [data]);
+
+  const commitEdit = useCallback(() => {
+    setEditing(false);
+    const evt = new CustomEvent("flowforge:edge-label", { detail: { id, label: editValue } });
+    window.dispatchEvent(evt);
+  }, [id, editValue]);
+
+  return React.createElement(React.Fragment, null,
+    React.createElement("path", {
+      id, d: edgePath,
+      stroke: selected ? "#1677ff" : (data?.color || "#bfbfbf"),
+      strokeWidth: selected ? 3 : 2,
+      fill: "none",
+      markerEnd: markerEnd,
+      style: { transition: "stroke 0.2s" },
+    }),
+    React.createElement(EdgeLabelRenderer, null,
+      React.createElement("div", {
+        style: {
+          position: "absolute",
+          transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+          pointerEvents: "all",
+          display: "flex", alignItems: "center", gap: 4,
+        },
+        className: "nodrag nopan",
+      },
+        editing
+          ? React.createElement("input", {
+              value: editValue,
+              onChange: (e: any) => setEditValue(e.target.value),
+              onBlur: commitEdit,
+              onKeyDown: (e: any) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditing(false); },
+              style: {
+                width: 80, fontSize: 10, border: "1px solid #1677ff",
+                borderRadius: 4, padding: "2px 4px", textAlign: "center",
+              },
+              autoFocus: true,
+            })
+          : React.createElement("div", {
+              onDoubleClick: startEdit,
+              style: {
+                background: "#fff", border: selected ? "1px solid #1677ff" : "1px solid #d9d9d9",
+                borderRadius: 4, padding: "2px 6px", fontSize: 10, textAlign: "center",
+                cursor: "pointer", maxWidth: 100,
+                overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              },
+              title: "双击编辑标签",
+            }, data?.label || "···"),
+        selected ? React.createElement("button", {
+          onClick: onDelete,
+          style: {
+            border: "none", background: "#ff4d4f", color: "#fff",
+            borderRadius: "50%", width: 18, height: 18, fontSize: 11,
+            cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+            lineHeight: 1, padding: 0,
+          },
+          title: "删除连线",
+        }, "×") : null,
+      ),
+    ),
+  );
+}
+
+const nodeTypes = { workflow: NodeCard };
+const edgeTypes = { labeled: LabeledEdge };
+
+// ─── Typed Input Field Renderer ─────────────────────────────────────────────
+
+function TypedInput({ field, value, onChange }: { field: any; value: any; onChange: (v: any) => void }) {
+  const antd = getHost().antd;
+  const { Input, InputNumber, Select, Switch, Input: { TextArea } } = antd;
+  const type = field?.type || "any";
+  const name = field?.name || "";
+  const required = field?.required;
+  const label = name + (required ? " *" : "");
+  const placeholder = `${type}`;
+
+  if (type === "number" || type === "int" || type === "float") {
+    return React.createElement(antd.Form.Item, { key: name, label },
+      React.createElement(InputNumber, {
+        value: value ?? "", onChange: (v: any) => onChange(v),
+        placeholder, style: { width: "100%" },
+      }),
+    );
+  }
+  if (type === "boolean" || type === "bool") {
+    return React.createElement(antd.Form.Item, { key: name, label },
+      React.createElement(Switch, { checked: !!value, onChange: (v: any) => onChange(v) }),
+    );
+  }
+  if (type === "select" || type === "enum") {
+    const options = (field?.options || []).map((o: any) => ({ label: typeof o === "string" ? o : o.label, value: typeof o === "string" ? o : o.value }));
+    return React.createElement(antd.Form.Item, { key: name, label },
+      React.createElement(Select, { value: value ?? "", onChange: (v: any) => onChange(v), options, placeholder, allowClear: true }),
+    );
+  }
+  if (type === "textarea" || type === "multiline" || name === "prompt" || name === "system" || name === "instruction") {
+    return React.createElement(antd.Form.Item, { key: name, label },
+      React.createElement(TextArea, {
+        value: value ?? "", onChange: (e: any) => onChange(e.target.value),
+        placeholder, autoSize: { minRows: 2, maxRows: 6 },
+      }),
+    );
+  }
+  return React.createElement(antd.Form.Item, { key: name, label },
+    React.createElement(Input, {
+      value: value ?? "", onChange: (e: any) => onChange(e.target.value),
+      placeholder,
+    }),
+  );
+}
 
 // ─── Flow List Page ─────────────────────────────────────────────────────────
 
 function FlowListPage({ onEdit, onRun }: { onEdit: (id: string) => void; onRun: (id: string) => void }) {
   const antd = getHost().antd;
-  const { Table, Button, Space, Input, Modal, message, Typography } = antd;
+  const antdIcons = getHost().antdIcons;
+  const { Table, Button, Space, Input, Modal, message, Typography, Card, Empty } = antd;
   const { Title } = Typography;
+  const PlusOutlined = antdIcons?.PlusOutlined;
+  const ReloadOutlined = antdIcons?.ReloadOutlined;
+
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
   const [newName, setNewName] = useState("");
-  const [creating, setCreating] = useState(false);
+  const [newModalOpen, setNewModalOpen] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const data = await apiFetch<FlowSummary[]>("/flowforge/flows");
       setFlows(data || []);
-    } catch (e: any) {
-      message?.error(`加载失败: ${e.message}`);
-    } finally {
-      setLoading(false);
-    }
+    } catch (e: any) { message?.error(`加载失败: ${e.message}`); }
+    finally { setLoading(false); }
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  const filtered = flows.filter((f) => !search || f.name.includes(search) || f.id.includes(search));
+  const filtered = flows.filter((f) => !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.id.toLowerCase().includes(search.toLowerCase()));
 
   const createFlow = useCallback(async () => {
     if (!newName.trim()) return;
     try {
       const doc = await apiFetch<FlowDocument>("/flowforge/flows", {
-        method: "POST",
-        body: JSON.stringify({ id: newName, name: newName, nodes: {}, edges: [], outputs: [] }),
+        method: "POST", body: JSON.stringify({ id: newName, name: newName, nodes: {}, edges: [], outputs: [] }),
       });
       message?.success(`已创建工作流 ${doc.id}`);
-      setNewName("");
+      setNewName(""); setNewModalOpen(false);
       onEdit(doc.id);
-    } catch (e: any) {
-      message?.error(`创建失败: ${e.message}`);
-    }
+    } catch (e: any) { message?.error(`创建失败: ${e.message}`); }
   }, [newName, onEdit]);
+
+  const duplicateFlow = useCallback(async (id: string) => {
+    try {
+      const doc = await apiFetch<FlowDocument>(`/flowforge/flows/${encodeURIComponent(id)}`);
+      const newId = `${id}_copy_${Date.now().toString(36)}`;
+      doc.id = newId; doc.name = `${doc.name} (副本)`;
+      await apiFetch(`/flowforge/flows/${encodeURIComponent(newId)}`, { method: "PUT", body: JSON.stringify(doc) });
+      message?.success(`已复制为 ${newId}`);
+      refresh();
+    } catch (e: any) { message?.error(`复制失败: ${e.message}`); }
+  }, [refresh]);
 
   const deleteFlow = useCallback(async (id: string) => {
     Modal.confirm({
-      title: "删除工作流",
-      content: `确认删除 "${id}" 吗？此操作不可恢复。`,
+      title: "删除工作流", content: `确认删除 "${id}" 吗？此操作不可恢复。`,
       okType: "danger",
       onOk: async () => {
-        try {
-          await apiFetch(`/flowforge/flows/${encodeURIComponent(id)}`, { method: "DELETE" });
-          message?.success("已删除");
-          refresh();
-        } catch (e: any) {
-          message?.error(`删除失败: ${e.message}`);
-        }
+        try { await apiFetch(`/flowforge/flows/${encodeURIComponent(id)}`, { method: "DELETE" }); message?.success("已删除"); refresh(); }
+        catch (e: any) { message?.error(`删除失败: ${e.message}`); }
       },
     });
   }, [refresh]);
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id" },
+    { title: "ID", dataIndex: "id", key: "id", render: (id: string) => React.createElement("span", { style: { fontFamily: "monospace", fontSize: 12 } }, id) },
     { title: "名称", dataIndex: "name", key: "name" },
     { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
-    { title: "节点数", dataIndex: "node_count", key: "node_count", width: 80 },
-    { title: "版本", dataIndex: "version", key: "version", width: 80 },
+    { title: "节点", dataIndex: "node_count", key: "node_count", width: 70 },
+    { title: "版本", dataIndex: "version", key: "version", width: 70 },
     {
-      title: "操作",
-      key: "actions",
-      width: 240,
-      render: (_: any, row: FlowSummary) => React.createElement(
-        Space, null,
+      title: "操作", key: "actions", width: 280,
+      render: (_: any, row: FlowSummary) => React.createElement(Space, null,
         React.createElement(Button, { size: "small", onClick: () => onEdit(row.id) }, "编辑"),
+        React.createElement(Button, { size: "small", onClick: () => duplicateFlow(row.id) }, "复制"),
         React.createElement(Button, { size: "small", type: "primary", onClick: () => onRun(row.id) }, "运行"),
         React.createElement(Button, { size: "small", danger: true, onClick: () => deleteFlow(row.id) }, "删除"),
       ),
     },
   ];
 
-  return React.createElement(
-    "div",
-    { style: { padding: 24 } },
-    React.createElement(
-      "div",
-      { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
-      React.createElement(Title, { level: 4, style: { margin: 0 } }, "工作流"),
-      React.createElement(
-        Space,
-        null,
-        React.createElement(Input.Search, {
-          placeholder: "搜索工作流",
-          value: search,
-          onChange: (e: any) => setSearch(e.target.value),
-          style: { width: 240 },
-          onSearch: refresh,
-        }),
-        React.createElement(Button, { onClick: refresh, loading }, "刷新"),
+  return React.createElement("div", { style: { padding: 24 } },
+    React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
+      React.createElement(Title, { level: 4, style: { margin: 0 } }, "工作流", React.createElement("span", { style: { fontSize: 14, color: "#8c8c8c", marginLeft: 8 } }, "可视化 DAG 工作流引擎")),
+      React.createElement(Space, null,
+        React.createElement(Input.Search, { placeholder: "搜索工作流", value: search, onChange: (e: any) => setSearch(e.target.value), style: { width: 220 }, allowClear: true }),
+        React.createElement(Button, { icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined, onClick: refresh, loading: loading }),
+        React.createElement(Button, { type: "primary", icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined, onClick: () => setNewModalOpen(true) }, "新建工作流"),
       ),
     ),
-    React.createElement(
-      "div",
-      { style: { marginBottom: 16, display: "flex", gap: 8 } },
-      React.createElement(Input, {
-        placeholder: "新工作流名称",
-        value: newName,
-        onChange: (e: any) => setNewName(e.target.value),
-        style: { width: 240 },
-        onPressEnter: createFlow,
-      }),
-      React.createElement(Button, { type: "dashed", onClick: createFlow, disabled: !newName.trim() }, "+ 新建工作流"),
-    ),
     React.createElement(Table, {
-      rowKey: "id",
-      columns,
-      dataSource: filtered,
-      loading,
-      pagination: { pageSize: 20 },
-      size: "small",
+      rowKey: "id", columns, dataSource: filtered, loading,
+      pagination: { pageSize: 20 }, size: "small",
+      locale: { emptyText: React.createElement(Empty, { description: "暂无工作流，点击「新建工作流」创建" }) },
     }),
+    React.createElement(Modal, {
+      title: "新建工作流", open: newModalOpen, onOk: createFlow,
+      onCancel: () => { setNewModalOpen(false); setNewName(""); },
+      okText: "创建", cancelText: "取消", okButtonProps: { disabled: !newName.trim() },
+    }, React.createElement(Input, {
+      placeholder: "输入工作流 ID（如 my-workflow）",
+      value: newName, onChange: (e: any) => setNewName(e.target.value),
+      onPressEnter: createFlow,
+    })),
   );
 }
 
-// ─── Flow Editor Page (ReactFlow canvas) ───────────────────────────────────
+// ─── Flow Editor Page ───────────────────────────────────────────────────────
 
 interface EditorProps {
-  flowId: string;
-  onBack: () => void;
-  onRun: (id: string) => void;
+  flowId: string; onBack: () => void; onRun: (id: string) => void;
+  runStatuses: Record<string, string>;
 }
 
-function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
+function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
   const antd = getHost().antd;
   const antdIcons = getHost().antdIcons;
-  const { Button, Space, Input, Drawer, Form, Select, message, Typography, Tag, Empty } = antd;
-  const { Title, Text } = Typography;
+  const { Button, Space, Input, Drawer, Form, Select, message, Typography, Tag, Empty, Tooltip, Popconfirm, Tabs, Spin, Collapse } = antd;
+  const { Title, Text, Paragraph } = Typography;
   const ArrowLeftOutlined = antdIcons?.ArrowLeftOutlined;
   const SaveOutlined = antdIcons?.SaveOutlined;
   const PlayCircleOutlined = antdIcons?.PlayCircleOutlined;
+  const CopyOutlined = antdIcons?.CopyOutlined;
+  const DeleteOutlined = antdIcons?.DeleteOutlined;
+  const SearchOutlined = antdIcons?.SearchOutlined;
+  const CheckCircleOutlined = antdIcons?.CheckCircleOutlined;
+  const ExclamationCircleOutlined = antdIcons?.ExclamationCircleOutlined;
+  const AlignLeftOutlined = antdIcons?.AlignLeftOutlined;
+  const AlignRightOutlined = antdIcons?.AlignRightOutlined;
+  const AlignTopOutlined = antdIcons?.AlignTopOutlined;
+  const AlignBottomOutlined = antdIcons?.AlignBottomOutlined;
 
   const [doc, setDoc] = useState<FlowDocument | null>(null);
   const [nodeTypesList, setNodeTypesList] = useState<NodeTypeSpec[]>([]);
@@ -356,6 +429,12 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
   const [inspectorOpen, setInspectorOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [paletteSearch, setPaletteSearch] = useState("");
+  const [validation, setValidation] = useState<{ ok: boolean; errors: string[] } | null>(null);
+  const [activeTab, setActiveTab] = useState("nodes");
+  const [ioModalOpen, setIoModalOpen] = useState(false);
+  const rfWrapper = useRef<HTMLDivElement>(null);
+  const { getNodes, setNodes: rfSetNodes } = useReactFlow();
 
   // Load flow + node types
   useEffect(() => {
@@ -368,61 +447,144 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
           apiFetch<NodeTypeSpec[]>("/flowforge/node-types"),
         ]);
         if (cancelled) return;
-        setDoc(flow);
-        setNodeTypesList(types || []);
-        // Convert flow nodes (dict) → ReactFlow nodes (array) with positions
+        setDoc(flow); setNodeTypesList(types || []);
         const savedPositions = (flow.metadata?.positions || {}) as Record<string, { x: number; y: number }>;
-        const rfNodes: Node[] = Object.entries(flow.nodes || {}).map(([id, n]: [string, any], idx) => {
+        const rfN: Node[] = Object.entries(flow.nodes || {}).map(([id, n]: [string, any], idx) => {
           const ct = n.class_type || n.type || "ToolNode";
           const spec = (types || []).find((t) => t.class_type === ct);
-          const pos = savedPositions[id] || { x: 100 + (idx % 4) * 260, y: 80 + Math.floor(idx / 4) * 140 };
-          return {
-            id,
-            type: "default",
-            position: pos,
-            data: { ...n, label: n.label || spec?.display_name || ct, icon: spec?.icon, class_type: ct, description: spec?.description },
-          };
+          const pos = savedPositions[id] || { x: 100 + (idx % 4) * 300, y: 80 + Math.floor(idx / 4) * 180 };
+          return { id, type: "workflow", position: pos,
+            data: { ...n, label: n.label || spec?.display_name || ct, icon: spec?.icon, class_type: ct, description: spec?.description } };
         });
-        const rfEdges: Edge[] = (flow.edges || []).map((e: any, idx: number) => ({
-          id: e.id || `e${idx}`,
-          source: e.source,
-          target: e.target,
-          sourceHandle: e.source_handle,
-          targetHandle: e.target_handle,
-          animated: true,
+        const rfE: Edge[] = (flow.edges || []).map((e: any, idx: number) => ({
+          id: e.id || `e${idx}`, source: e.source, target: e.target,
+          sourceHandle: e.source_handle, targetHandle: e.target_handle,
+          type: "labeled", animated: true, data: { label: e.label || "" },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#bfbfbf" },
         }));
-        setRfNodes(rfNodes);
-        setRfEdges(rfEdges);
-      } catch (e: any) {
-        message?.error(`加载工作流失败: ${e.message}`);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
+        setRfNodes(rfN); setRfEdges(rfE);
+      } catch (e: any) { message?.error(`加载工作流失败: ${e.message}`); }
+      finally { if (!cancelled) setLoading(false); }
     })();
     return () => { cancelled = true; };
   }, [flowId]);
 
-  const onConnect = useCallback((conn: Connection) => {
-    setRfEdges((eds: Edge[]) => addEdge({ ...conn, animated: true }, eds));
+  // Sync run statuses to canvas nodes (execution overlay)
+  useEffect(() => {
+    setRfNodes((nds: Node[]) => nds.map((n) => ({
+      ...n,
+      data: { ...n.data, _status: runStatuses[n.id] || (n.data as any)?._status || "pending" },
+    })));
+  }, [runStatuses]);
+
+  // Listen for edge events from LabeledEdge component
+  useEffect(() => {
+    const onEdgeDelete = (e: any) => {
+      const edgeId = e.detail?.id;
+      if (edgeId) {
+        setRfEdges((eds: Edge[]) => eds.filter((ed) => ed.id !== edgeId));
+      }
+    };
+    const onEdgeLabel = (e: any) => {
+      const { id, label } = e.detail || {};
+      if (id) {
+        setRfEdges((eds: Edge[]) => eds.map((ed) => ed.id === id ? { ...ed, data: { ...ed.data, label } } : ed));
+      }
+    };
+    window.addEventListener("flowforge:edge-delete", onEdgeDelete);
+    window.addEventListener("flowforge:edge-label", onEdgeLabel);
+    return () => {
+      window.removeEventListener("flowforge:edge-delete", onEdgeDelete);
+      window.removeEventListener("flowforge:edge-label", onEdgeLabel);
+    };
   }, [setRfEdges]);
+
+  const onConnect = useCallback((conn: Connection) => {
+    setRfEdges((eds: Edge[]) => addEdge({ ...conn, type: "labeled", animated: true, data: { label: "" }, markerEnd: { type: MarkerType.ArrowClosed, color: "#bfbfbf" } }, eds));
+  }, [setRfEdges]);
+
+  // Connection validation: no self-loops, no duplicates
+  const isValidConnection = useCallback((conn: Connection | Edge) => {
+    if (conn.source === conn.target) return false;
+    const exists = rfEdges.some((e) => e.source === conn.source && e.target === conn.target);
+    return !exists;
+  }, [rfEdges]);
 
   const addNode = useCallback((spec: NodeTypeSpec) => {
     const id = `${spec.class_type.toLowerCase()}_${Date.now().toString(36)}`;
     const newNode: Node = {
-      id,
-      type: "default",
+      id, type: "workflow",
       position: { x: 200 + Math.random() * 200, y: 150 + Math.random() * 150 },
-      data: {
-        label: spec.display_name,
-        class_type: spec.class_type,
-        icon: spec.icon,
-        description: spec.description,
-        inputs: {},
-        control: {},
-      },
+      data: { label: spec.display_name, class_type: spec.class_type, icon: spec.icon, description: spec.description, inputs: {}, control: {} },
     };
     setRfNodes((nds: Node[]) => nds.concat(newNode));
   }, [setRfNodes]);
+
+  const duplicateNode = useCallback((node: Node) => {
+    const newId = `${node.id}_copy_${Date.now().toString(36)}`;
+    const newNode: Node = {
+      ...node, id: newId,
+      position: { x: node.position.x + 40, y: node.position.y + 40 },
+      data: { ...node.data, label: `${(node.data as any)?.label || ""} (副本)` },
+      selected: false,
+    };
+    setRfNodes((nds: Node[]) => nds.concat(newNode));
+    message?.success("已复制节点");
+  }, [setRfNodes]);
+
+  const deleteNode = useCallback((nodeId: string) => {
+    setRfNodes((nds: Node[]) => nds.filter((n) => n.id !== nodeId));
+    setRfEdges((eds: Edge[]) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+    if (selectedNode?.id === nodeId) { setSelectedNode(null); setInspectorOpen(false); }
+  }, [setRfNodes, setRfEdges, selectedNode]);
+
+  // Keyboard delete
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.key === "Delete" || e.key === "Backspace") && selectedNode && inspectorOpen) {
+        const tag = (e.target as HTMLElement)?.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+        deleteNode(selectedNode.id);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [selectedNode, inspectorOpen, deleteNode]);
+
+  // ─── Alignment tools ──────────────────────────────────────────────────────
+
+  const alignNodes = useCallback((direction: "left" | "right" | "top" | "bottom") => {
+    const selected = rfNodes.filter((n) => n.selected);
+    if (selected.length < 2) { message?.warning("请先选中至少 2 个节点"); return; }
+    const ref = direction === "left" ? Math.min(...selected.map((n) => n.position.x))
+      : direction === "right" ? Math.max(...selected.map((n) => n.position.x + 240))
+      : direction === "top" ? Math.min(...selected.map((n) => n.position.y))
+      : Math.max(...selected.map((n) => n.position.y + 120));
+    setRfNodes((nds: Node[]) => nds.map((n) => {
+      if (!n.selected) return n;
+      const pos = direction === "left" ? { ...n.position, x: ref }
+        : direction === "right" ? { ...n.position, x: ref - 240 }
+        : direction === "top" ? { ...n.position, y: ref }
+        : { ...n.position, y: ref - 120 };
+      return { ...n, position: pos };
+    }));
+  }, [rfNodes, setRfNodes]);
+
+  const distributeNodes = useCallback((axis: "h" | "v") => {
+    const selected = rfNodes.filter((n) => n.selected);
+    if (selected.length < 3) { message?.warning("请先选中至少 3 个节点"); return; }
+    const sorted = [...selected].sort((a, b) => axis === "h" ? a.position.x - b.position.x : a.position.y - b.position.y);
+    const first = sorted[0];
+    const last = sorted[sorted.length - 1];
+    const totalSpan = axis === "h" ? last.position.x - first.position.x : last.position.y - first.position.y;
+    const step = totalSpan / (sorted.length - 1);
+    const idToPos = new Map<string, { x: number; y: number }>();
+    sorted.forEach((n, i) => {
+      if (axis === "h") idToPos.set(n.id, { ...n.position, x: first.position.x + step * i });
+      else idToPos.set(n.id, { ...n.position, y: first.position.y + step * i });
+    });
+    setRfNodes((nds: Node[]) => nds.map((n) => idToPos.has(n.id) ? { ...n, position: idToPos.get(n.id)! } : n));
+  }, [rfNodes, setRfNodes]);
 
   const save = useCallback(async () => {
     if (!doc) return;
@@ -436,205 +598,330 @@ function FlowEditorPage({ flowId, onBack, onRun }: EditorProps) {
         positions[n.id] = n.position;
       }
       const edges = rfEdges.map((e: Edge, idx: number) => ({
-        id: e.id || `e${idx}`,
-        source: e.source,
-        target: e.target,
-        source_handle: e.sourceHandle,
-        target_handle: e.targetHandle,
+        id: e.id || `e${idx}`, source: e.source, target: e.target,
+        source_handle: e.sourceHandle, target_handle: e.targetHandle,
+        label: (e.data as any)?.label || "",
       }));
-      const payload: FlowDocument = {
-        ...doc,
-        nodes,
-        edges,
-        metadata: { ...doc.metadata, positions },
-      };
-      const saved = await apiFetch<FlowDocument>(`/flowforge/flows/${encodeURIComponent(flowId)}`, {
-        method: "PUT",
-        body: JSON.stringify(payload),
-      });
-      setDoc(saved);
-      message?.success("已保存");
-    } catch (e: any) {
-      message?.error(`保存失败: ${e.message}`);
-    } finally {
-      setSaving(false);
-    }
+      const payload: FlowDocument = { ...doc, nodes, edges, metadata: { ...doc.metadata, positions } };
+      const saved = await apiFetch<FlowDocument>(`/flowforge/flows/${encodeURIComponent(flowId)}`, { method: "PUT", body: JSON.stringify(payload) });
+      setDoc(saved); message?.success("已保存");
+    } catch (e: any) { message?.error(`保存失败: ${e.message}`); }
+    finally { setSaving(false); }
   }, [doc, flowId, rfEdges, rfNodes]);
 
-  // Group node types by category for the palette
+  const validateFlow = useCallback(async () => {
+    if (!doc) return;
+    try {
+      const nodes: Record<string, any> = {};
+      for (const n of rfNodes) {
+        const { label, icon, description, _status, ...rest } = (n.data || {}) as any;
+        nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
+      }
+      const edges = rfEdges.map((e: Edge, idx: number) => ({ id: e.id || `e${idx}`, source: e.source, target: e.target }));
+      const payload = { ...doc, nodes, edges };
+      const result = await apiFetch<{ ok: boolean; errors: string[] }>("/flowforge/flows/validate", { method: "POST", body: JSON.stringify(payload) });
+      setValidation({ ok: result.ok, errors: result.errors || [] });
+      if (result.ok) message?.success("验证通过"); else message?.warning(`验证发现 ${result.errors.length} 个问题`);
+    } catch (e: any) { message?.error(`验证失败: ${e.message}`); }
+  }, [doc, rfNodes, rfEdges]);
+
+  // Palette with search
   const palette = useMemo(() => {
     const groups: Record<string, NodeTypeSpec[]> = {};
-    for (const t of nodeTypesList) {
-      (groups[t.category] ||= []).push(t);
-    }
+    const filtered = nodeTypesList.filter((t) =>
+      !paletteSearch ||
+      t.display_name.toLowerCase().includes(paletteSearch.toLowerCase()) ||
+      t.class_type.toLowerCase().includes(paletteSearch.toLowerCase()) ||
+      t.description.toLowerCase().includes(paletteSearch.toLowerCase())
+    );
+    for (const t of filtered) { (groups[t.category] ||= []).push(t); }
     return groups;
-  }, [nodeTypesList]);
+  }, [nodeTypesList, paletteSearch]);
 
-  if (loading) return React.createElement(antd.Spin, { size: "large" });
+  if (loading) return React.createElement("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", height: "100%" } }, React.createElement(Spin, { size: "large" }));
 
-  return React.createElement(
-    "div",
-    { style: { display: "flex", flexDirection: "column", height: "100%" },
-      "data-flowforge-editor": true },
+  return React.createElement("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, "data-flowforge-editor": true },
     // Toolbar
-    React.createElement(
-      "div",
-      { style: { padding: "8px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8 } },
+    React.createElement("div", { style: { padding: "8px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 } },
       React.createElement(Button, { icon: ArrowLeftOutlined ? React.createElement(ArrowLeftOutlined) : undefined, onClick: onBack }, "返回"),
       React.createElement(Title, { level: 5, style: { margin: 0 } }, doc?.name || flowId),
       React.createElement(Tag, null, `${rfNodes.length} 节点 / ${rfEdges.length} 连接`),
+      validation ? (validation.ok
+        ? React.createElement(Tag, { icon: CheckCircleOutlined ? React.createElement(CheckCircleOutlined) : undefined, color: "success" }, "验证通过")
+        : React.createElement(Tooltip, { title: validation.errors.join("\n") },
+            React.createElement(Tag, { icon: ExclamationCircleOutlined ? React.createElement(ExclamationCircleOutlined) : undefined, color: "error" }, `${validation.errors.length} 个问题`)))
+        : null,
+      // Run status indicator
+      Object.keys(runStatuses).length > 0 ? React.createElement(Tag, { color: "processing" }, `运行中: ${Object.values(runStatuses).filter((s) => s === "running").length} 执行中`) : null,
       React.createElement(Space, { style: { marginLeft: "auto" } },
+        React.createElement(Button, { onClick: () => setIoModalOpen(true) }, "输入/输出配置"),
+        React.createElement(Button, { icon: CheckCircleOutlined ? React.createElement(CheckCircleOutlined) : undefined, onClick: validateFlow }, "验证"),
         React.createElement(Button, { icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined, onClick: save, loading: saving }, "保存"),
         React.createElement(Button, { type: "primary", icon: PlayCircleOutlined ? React.createElement(PlayCircleOutlined) : undefined, onClick: () => onRun(flowId) }, "运行"),
       ),
     ),
-    // Body: palette + canvas
-    React.createElement(
-      "div",
-      { style: { display: "flex", flex: 1, minHeight: 0 } },
-      // Palette
-      React.createElement(
-        "div",
-        { style: { width: 220, borderRight: "1px solid #f0f0f0", padding: 12, overflowY: "auto", background: "#fafafa" } },
-        React.createElement(Text, { strong: true }, "节点面板"),
-        Object.entries(palette).map(([cat, items]) => React.createElement(
-          "div",
-          { key: cat, style: { marginTop: 12 } },
-          React.createElement(Text, { type: "secondary", style: { fontSize: 11, textTransform: "uppercase" } }, cat),
-          items.map((spec) => React.createElement(
-            "div",
-            {
+    // Body: palette + canvas + inspector
+    React.createElement("div", { style: { display: "flex", flex: 1, minHeight: 0 } },
+      // Palette sidebar
+      React.createElement("div", { style: { width: 240, borderRight: "1px solid #f0f0f0", display: "flex", flexDirection: "column", background: "#fafafa" } },
+        React.createElement("div", { style: { padding: "8px 12px", borderBottom: "1px solid #f0f0f0" } },
+          React.createElement(Input, {
+            placeholder: "搜索节点...", prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+            value: paletteSearch, onChange: (e: any) => setPaletteSearch(e.target.value),
+            allowClear: true, size: "small",
+          }),
+        ),
+        React.createElement("div", { style: { flex: 1, overflowY: "auto", padding: "8px 12px" } },
+          Object.entries(palette).map(([cat, items]) => React.createElement("div", { key: cat, style: { marginBottom: 12 } },
+            React.createElement(Text, { type: "secondary", style: { fontSize: 10, textTransform: "uppercase", fontWeight: 600 } }, cat),
+            items.map((spec) => React.createElement("div", {
               key: spec.class_type,
               onClick: () => addNode(spec),
               style: {
-                padding: "6px 8px",
-                margin: "4px 0",
-                background: "#fff",
-                border: "1px solid #e8e8e8",
-                borderRadius: 4,
-                cursor: "pointer",
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                fontSize: 12,
+                padding: "6px 8px", margin: "4px 0", background: "#fff",
+                border: "1px solid #e8e8e8", borderRadius: 4, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 6, fontSize: 12,
+                borderLeft: `3px solid ${nodeColor(spec.class_type)}`,
               },
-              onMouseEnter: (e: any) => { e.currentTarget.style.borderColor = "#1677ff"; },
+              onMouseEnter: (e: any) => { e.currentTarget.style.borderColor = nodeColor(spec.class_type); },
               onMouseLeave: (e: any) => { e.currentTarget.style.borderColor = "#e8e8e8"; },
+              title: spec.description,
             },
-            React.createElement("span", null, spec.icon),
-            React.createElement("span", null, spec.display_name),
+              React.createElement("span", { style: { fontSize: 14 } }, spec.icon),
+              React.createElement("span", null, spec.display_name),
+            )),
           )),
-        )),
+        ),
       ),
       // Canvas
-      React.createElement(
-        "div",
-        { style: { flex: 1, position: "relative" } },
-        React.createElement(
-          ReactFlow,
-          {
-            nodes: rfNodes,
-            edges: rfEdges,
-            onNodesChange,
-            onEdgesChange,
-            onConnect,
-            onNodeClick: (_: any, node: Node) => { setSelectedNode(node); setInspectorOpen(true); },
-            nodeTypes,
-            fitView: true,
-            style: { background: "#f5f5f5" },
-          },
+      React.createElement("div", { ref: rfWrapper, style: { flex: 1, position: "relative" } },
+        React.createElement(ReactFlow, {
+          nodes: rfNodes, edges: rfEdges,
+          onNodesChange, onEdgesChange, onConnect,
+          onNodeClick: (_: any, node: Node) => { setSelectedNode(node); setInspectorOpen(true); },
+          nodeTypes, edgeTypes,
+          isValidConnection,
+          fitView: true, style: { background: "#f5f5f5" },
+          deleteKeyCode: null,
+        },
           React.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
           React.createElement(Controls, null),
-          React.createElement(MiniMap, { style: { background: "#fafafa" } }),
+          React.createElement(MiniMap, { style: { background: "#fafafa" }, nodeColor: (n: Node) => nodeColor((n.data as any)?.class_type || ""), nodeStrokeWidth: 2 }),
+          // Alignment tools panel
+          React.createElement(Panel, { position: "top-left" },
+            React.createElement("div", {
+              style: {
+                background: "#fff", borderRadius: 6, padding: "4px 8px",
+                boxShadow: "0 1px 4px rgba(0,0,0,0.1)", display: "flex", gap: 4,
+              },
+            },
+              React.createElement(Tooltip, { title: "左对齐" },
+                React.createElement(Button, { size: "small", type: "text", icon: AlignLeftOutlined ? React.createElement(AlignLeftOutlined) : undefined, onClick: () => alignNodes("left") }),
+              ),
+              React.createElement(Tooltip, { title: "右对齐" },
+                React.createElement(Button, { size: "small", type: "text", icon: AlignRightOutlined ? React.createElement(AlignRightOutlined) : undefined, onClick: () => alignNodes("right") }),
+              ),
+              React.createElement(Tooltip, { title: "顶部对齐" },
+                React.createElement(Button, { size: "small", type: "text", icon: AlignTopOutlined ? React.createElement(AlignTopOutlined) : undefined, onClick: () => alignNodes("top") }),
+              ),
+              React.createElement(Tooltip, { title: "底部对齐" },
+                React.createElement(Button, { size: "small", type: "text", icon: AlignBottomOutlined ? React.createElement(AlignBottomOutlined) : undefined, onClick: () => alignNodes("bottom") }),
+              ),
+              React.createElement("div", { style: { width: 1, background: "#e8e8e8", margin: "0 2px" } }),
+              React.createElement(Tooltip, { title: "水平分布" },
+                React.createElement(Button, { size: "small", type: "text", onClick: () => distributeNodes("h") }, "H··"),
+              ),
+              React.createElement(Tooltip, { title: "垂直分布" },
+                React.createElement(Button, { size: "small", type: "text", onClick: () => distributeNodes("v") }, "V··"),
+              ),
+            ),
+          ),
         ),
       ),
       // Inspector drawer
-      React.createElement(
-        Drawer,
-        {
-          title: "节点属性",
-          open: inspectorOpen,
-          onClose: () => setInspectorOpen(false),
-          width: 360,
-        },
-        selectedNode ? React.createElement(NodeInspector, { node: selectedNode, nodeTypes: nodeTypesList, onUpdate: (updated: Node) => {
-          setRfNodes((nds: Node[]) => nds.map((n) => n.id === updated.id ? updated : n));
-          setSelectedNode(updated);
-        }}) : React.createElement(Empty, { description: "点击节点查看属性" }),
+      React.createElement(Drawer, {
+        title: "节点属性", open: inspectorOpen,
+        onClose: () => setInspectorOpen(false), width: 380,
+        extra: selectedNode ? React.createElement(Space, null,
+          React.createElement(Tooltip, { title: "复制节点" },
+            React.createElement(Button, { size: "small", icon: CopyOutlined ? React.createElement(CopyOutlined) : undefined, onClick: () => duplicateNode(selectedNode) }),
+          ),
+          React.createElement(Popconfirm, { title: "确认删除此节点？", onConfirm: () => deleteNode(selectedNode.id) },
+            React.createElement(Button, { size: "small", danger: true, icon: DeleteOutlined ? React.createElement(DeleteOutlined) : undefined }),
+          ),
+        ) : null,
+      },
+        selectedNode ? React.createElement(NodeInspector, {
+          node: selectedNode, nodeTypes: nodeTypesList,
+          onUpdate: (updated: Node) => {
+            setRfNodes((nds: Node[]) => nds.map((n) => n.id === updated.id ? updated : n));
+            setSelectedNode(updated);
+          },
+        }) : React.createElement(Empty, { description: "点击节点查看属性" }),
       ),
     ),
+    // IO Config Modal
+    React.createElement(IoConfigModal, {
+      open: ioModalOpen, doc: doc,
+      onClose: () => setIoModalOpen(false),
+      onSave: (inputs: any[], outputs: any, startId: string | null) => {
+        setDoc((d) => d ? { ...d, inputs, outputs, start_id: startId } : d);
+        setIoModalOpen(false);
+        message?.success("输入/输出配置已更新（需保存生效）");
+      },
+    }),
   );
 }
 
+// ─── Node Inspector ─────────────────────────────────────────────────────────
+
 function NodeInspector({ node, nodeTypes, onUpdate }: { node: Node; nodeTypes: NodeTypeSpec[]; onUpdate: (n: Node) => void }) {
   const antd = getHost().antd;
-  const { Form, Input, Select, InputNumber, Typography } = antd;
+  const { Form, Input, Select, Typography, Divider, Collapse } = antd;
+  const { Title: AntTitle, Text: AntText, Paragraph } = Typography;
   const data = (node.data || {}) as any;
   const classType = data.class_type || "ToolNode";
   const spec = nodeTypes.find((t) => t.class_type === classType);
 
-  const update = (key: string, value: any) => {
-    const newData = { ...data, [key]: value };
-    onUpdate({ ...node, data: newData });
-  };
-  const updateInput = (name: string, value: any) => {
-    const inputs = { ...(data.inputs || {}), [name]: value };
-    update("inputs", inputs);
-  };
+  const update = (key: string, value: any) => { onUpdate({ ...node, data: { ...data, [key]: value } }); };
+  const updateInput = (name: string, value: any) => { update("inputs", { ...(data.inputs || {}), [name]: value }); };
+  const updateControl = (key: string, value: any) => { update("control", { ...(data.control || {}), [key]: value }); };
 
-  return React.createElement(
-    Form,
-    { layout: "vertical" },
-    React.createElement(Form.Item, { label: "节点 ID" }, React.createElement(Input, { value: node.id, disabled: true })),
-    React.createElement(Form.Item, { label: "类型" }, React.createElement(Select, {
-      value: classType,
-      onChange: (v: string) => update("class_type", v),
-      options: nodeTypes.map((t) => ({ label: `${t.icon} ${t.display_name}`, value: t.class_type })),
-    })),
-    React.createElement(Form.Item, { label: "标签" }, React.createElement(Input, {
-      value: data.label || "",
-      onChange: (e: any) => update("label", e.target.value),
-    })),
-    spec?.description ? React.createElement(Typography.Paragraph, { type: "secondary", style: { fontSize: 12 } }, spec.description) : null,
-    React.createElement(Typography.Title, { level: 5 }, "输入参数"),
-    (spec?.inputs_schema || []).map((field: any) => React.createElement(
-      Form.Item,
-      { key: field.name, label: field.name + (field.required ? " *" : "") },
-      React.createElement(Input, {
-        value: (data.inputs || {})[field.name] ?? "",
-        onChange: (e: any) => updateInput(field.name, e.target.value),
-        placeholder: `${field.type || "any"}`,
+  const controlItems: any[] = [
+    React.createElement(Form.Item, { key: "retry_count", label: "重试次数" },
+      React.createElement(antd.InputNumber, { value: data.control?.retry_count ?? 0, onChange: (v: any) => updateControl("retry_count", v ?? 0), min: 0, max: 10, style: { width: "100%" } }),
+    ),
+    React.createElement(Form.Item, { key: "retry_delay", label: "重试延迟(秒)" },
+      React.createElement(antd.InputNumber, { value: data.control?.retry_delay_sec ?? 1, onChange: (v: any) => updateControl("retry_delay_sec", v ?? 1), min: 0, step: 0.5, style: { width: "100%" } }),
+    ),
+    React.createElement(Form.Item, { key: "output_var", label: "输出变量名" },
+      React.createElement(Input, { value: data.control?.output || "", onChange: (e: any) => updateControl("output", e.target.value), placeholder: "如：result" }),
+    ),
+    React.createElement(Form.Item, { key: "mode", label: "执行模式" },
+      React.createElement(Select, {
+        value: data.control?.mode || "run", onChange: (v: any) => updateControl("mode", v),
+        options: [
+          { label: "正常运行 (run)", value: "run" },
+          { label: "静默跳过 (mute)", value: "mute" },
+          { label: "直通上游 (bypass)", value: "bypass" },
+        ],
       }),
+    ),
+  ];
+
+  return React.createElement(Form, { layout: "vertical" },
+    React.createElement(Form.Item, { label: "节点 ID" }, React.createElement(Input, { value: node.id, disabled: true, style: { fontFamily: "monospace", fontSize: 11 } })),
+    React.createElement(Form.Item, { label: "节点类型" },
+      React.createElement(Select, {
+        value: classType, onChange: (v: string) => update("class_type", v),
+        options: nodeTypes.map((t) => ({ label: `${t.icon} ${t.display_name}`, value: t.class_type })),
+        showSearch: true, optionFilterProp: "label",
+      }),
+    ),
+    React.createElement(Form.Item, { label: "显示标签" },
+      React.createElement(Input, { value: data.label || "", onChange: (e: any) => update("label", e.target.value), placeholder: "节点显示名称" }),
+    ),
+    spec?.description ? React.createElement(Paragraph, { type: "secondary", style: { fontSize: 12, background: "#f5f5f5", padding: 8, borderRadius: 4 } }, spec.description) : null,
+    React.createElement(Divider, { style: { margin: "12px 0" } }),
+    React.createElement(AntTitle, { level: 5 }, "输入参数"),
+    (spec?.inputs_schema || []).length === 0
+      ? React.createElement(AntText, { type: "secondary", style: { fontSize: 12 } }, "此节点类型没有定义输入参数")
+      : (spec?.inputs_schema || []).map((field: any) =>
+          React.createElement(TypedInput, { key: field.name, field, value: (data.inputs || {})[field.name], onChange: (v: any) => updateInput(field.name, v) }),
+        ),
+    React.createElement(Divider, { style: { margin: "12px 0" } }),
+    React.createElement(Collapse, { ghost: true, defaultActiveKey: ["control"],
+      items: [{ key: "control", label: "执行控制", children: controlItems }],
+    }),
+  );
+}
+
+// ─── IO Config Modal ────────────────────────────────────────────────────────
+
+function IoConfigModal({ open, doc, onClose, onSave }: {
+  open: boolean; doc: FlowDocument | null;
+  onClose: () => void; onSave: (inputs: any[], outputs: any, startId: string | null) => void;
+}) {
+  const antd = getHost().antd;
+  const { Modal: AntModal, Form, Input, Button, Select, Space, Typography, Empty } = antd;
+  const { Title: AntTitle, Text: AntText } = Typography;
+  const [inputs, setInputs] = useState<any[]>([]);
+  const [outputs, setOutputs] = useState<any>([]);
+  const [startId, setStartId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (open && doc) {
+      setInputs(doc.inputs || []);
+      setOutputs(doc.outputs || []);
+      setStartId(doc.start_id || null);
+    }
+  }, [open, doc]);
+
+  const nodeIds = doc ? Object.keys(doc.nodes || {}) : [];
+
+  return React.createElement(AntModal, {
+    title: "工作流输入/输出配置", open, onCancel: onClose, width: 600,
+    footer: React.createElement(Space, null,
+      React.createElement(Button, { onClick: onClose }, "取消"),
+      React.createElement(Button, { type: "primary", onClick: () => onSave(inputs, outputs, startId) }, "确定"),
+    ),
+  },
+    // Start node
+    React.createElement(Form.Item, { label: "起始节点" },
+      React.createElement(Select, {
+        value: startId, onChange: (v: any) => setStartId(v || null),
+        options: [{ label: "(自动)", value: null }, ...nodeIds.map((id) => ({ label: id, value: id }))],
+        allowClear: true, placeholder: "选择起始节点",
+      }),
+    ),
+    React.createElement(AntTitle, { level: 5 }, "工作流输入参数"),
+    inputs.length === 0 ? React.createElement(AntText, { type: "secondary" }, "无输入参数定义") : null,
+    inputs.map((inp, idx) => React.createElement(Space, { key: idx, style: { marginBottom: 8 } },
+      React.createElement(Input, { placeholder: "名称", value: inp.name || "", onChange: (e: any) => { const ni = [...inputs]; ni[idx] = { ...inp, name: e.target.value }; setInputs(ni); }, style: { width: 120 } }),
+      React.createElement(Select, { value: inp.type || "any", onChange: (v: any) => { const ni = [...inputs]; ni[idx] = { ...inp, type: v }; setInputs(ni); },
+        options: [{ label: "any", value: "any" }, { label: "string", value: "string" }, { label: "number", value: "number" }, { label: "boolean", value: "boolean" }, { label: "object", value: "object" }],
+        style: { width: 100 },
+      }),
+      React.createElement(Input, { placeholder: "默认值", value: inp.default ?? "", onChange: (e: any) => { const ni = [...inputs]; ni[idx] = { ...inp, default: e.target.value }; setInputs(ni); }, style: { width: 120 } }),
+      React.createElement(Button, { danger: true, size: "small", onClick: () => setInputs(inputs.filter((_, i) => i !== idx)) }, "删除"),
     )),
+    React.createElement(Button, { size: "small", type: "dashed", onClick: () => setInputs([...inputs, { name: "", type: "any", default: "" }]), style: { marginTop: 4 } }, "+ 添加输入"),
+    React.createElement(AntTitle, { level: 5, style: { marginTop: 16 } }, "工作流输出"),
+    React.createElement(Select, {
+      mode: "tags", value: Array.isArray(outputs) ? outputs : [],
+      onChange: (v: any) => setOutputs(v),
+      options: nodeIds.map((id) => ({ label: id, value: id })),
+      placeholder: "选择输出节点ID",
+      style: { width: "100%" },
+    }),
   );
 }
 
 // ─── Run Monitor Drawer ─────────────────────────────────────────────────────
 
-function RunMonitorDrawer({ runId, onClose }: { runId: string | null; onClose: () => void }) {
+function RunMonitorDrawer({ runId, onClose, onStatusUpdate }: { runId: string | null; onClose: () => void; onStatusUpdate?: (statuses: Record<string, string>) => void }) {
   const antd = getHost().antd;
-  const { Drawer, Typography, Tag, Button, Spin, Empty, Timeline, message } = antd;
+  const { Drawer, Typography, Tag, Button, Spin, Empty, Timeline, message, Tabs, List, Tooltip } = antd;
   const { Title, Text, Paragraph } = Typography;
   const [run, setRun] = useState<RunStatus | null>(null);
   const [events, setEvents] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
-  const eventSourceRef = useRef<EventSource | null>(null);
 
   const refresh = useCallback(async () => {
     if (!runId) return;
     try {
       const data = await apiFetch<RunStatus>(`/flowforge/runs/${encodeURIComponent(runId)}`);
       setRun(data);
-    } catch (e: any) {
-      message?.error(`获取运行状态失败: ${e.message}`);
-    }
-  }, [runId]);
+      if (onStatusUpdate && data?.node_statuses) {
+        onStatusUpdate(data.node_statuses);
+      }
+    } catch (e: any) { message?.error(`获取运行状态失败: ${e.message}`); }
+  }, [runId, onStatusUpdate]);
 
   useEffect(() => {
     if (!runId) return;
-    setLoading(true);
+    setLoading(true); setEvents([]);
     refresh().finally(() => setLoading(false));
-    // SSE stream
     const es = new EventSource(apiUrl(`/flowforge/runs/${encodeURIComponent(runId)}/events`));
     es.onmessage = (ev) => {
       try {
@@ -643,93 +930,101 @@ function RunMonitorDrawer({ runId, onClose }: { runId: string | null; onClose: (
         if (payload.type?.startsWith("execution_")) refresh();
       } catch {}
     };
-    es.onerror = () => { /* will reconnect */ };
-    eventSourceRef.current = es;
-    // Poll status every 2s as fallback
+    es.onerror = () => {};
     const timer = setInterval(refresh, 2000);
-    return () => {
-      es.close();
-      clearInterval(timer);
-    };
+    return () => { es.close(); clearInterval(timer); };
   }, [runId, refresh]);
 
-  const statusColor = (s: string) =>
-    s === "completed" ? "green" : s === "running" ? "blue" : s === "failed" ? "red" : s === "cancelled" ? "orange" : "default";
+  const isFinished = run?.status === "completed" || run?.status === "failed" || run?.status === "cancelled";
 
-  return React.createElement(
-    Drawer,
-    {
-      title: runId ? `运行监控 — ${runId.slice(0, 8)}` : "运行监控",
-      open: !!runId,
-      onClose,
-      width: 520,
-    },
+  return React.createElement(Drawer, {
+    title: runId ? `运行监控 — ${runId.slice(0, 8)}` : "运行监控",
+    open: !!runId, onClose, width: 560,
+    extra: run && !isFinished ? React.createElement(Button, { size: "small", danger: true, onClick: async () => {
+      try { await apiFetch(`/flowforge/runs/${encodeURIComponent(runId!)}/cancel`, { method: "POST" }); message?.success("已取消"); }
+      catch (e: any) { message?.error(`取消失败: ${e.message}`); }
+    }}, "取消运行") : null,
+  },
     loading && !run ? React.createElement(Spin, null) : null,
-    run ? React.createElement(
-      React.Fragment,
-      null,
-      React.createElement("div", { style: { marginBottom: 12, display: "flex", gap: 8, alignItems: "center" } },
+    run ? React.createElement(React.Fragment, null,
+      // Status header
+      React.createElement("div", { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
         React.createElement(Tag, { color: statusColor(run.status) }, run.status),
         React.createElement(Text, { type: "secondary" }, `${run.duration_ms}ms`),
+        run.flow_id ? React.createElement(Text, { type: "secondary", style: { fontFamily: "monospace", fontSize: 11 } }, `flow: ${run.flow_id}`) : null,
       ),
-      React.createElement(Title, { level: 5 }, "节点状态"),
-      React.createElement(
-        "div",
-        null,
-        Object.entries(run.node_statuses || {}).map(([nid, st]) => React.createElement(
-          "div",
-          { key: nid, style: { display: "flex", gap: 8, marginBottom: 4 } },
-          React.createElement(Text, { style: { fontFamily: "monospace" } }, nid),
-          React.createElement(Tag, { color: statusColor(st) }, st),
-        )),
-      ),
-      run.errors?.length ? React.createElement(React.Fragment, null,
-        React.createElement(Title, { level: 5, style: { marginTop: 16 } }, "错误"),
-        run.errors.map((e, i) => React.createElement(Paragraph, { key: i, type: "danger", style: { fontSize: 12 } }, e)),
-      ) : null,
-      Object.keys(run.outputs || {}).length ? React.createElement(React.Fragment, null,
-        React.createElement(Title, { level: 5, style: { marginTop: 16 } }, "输出"),
-        React.createElement("pre", { style: { background: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto" } },
-          JSON.stringify(run.outputs, null, 2)),
-      ) : null,
-      React.createElement(Title, { level: 5, style: { marginTop: 16 } }, "事件流"),
-      events.length === 0 ? React.createElement(Empty, { description: "等待事件..." }) : React.createElement(
-        Timeline,
-        {
-          items: events.slice(-30).map((ev: any) => ({
-            color: ev.type === "execution_success" ? "green"
-              : ev.type === "execution_failed" || ev.type?.includes("failed") ? "red"
-              : ev.type?.includes("running") ? "blue"
-              : ev.type?.includes("completed") ? "green"
-              : "gray",
-            children: React.createElement(
-              "span",
-              { style: { fontSize: 12 } },
-              React.createElement(Text, { strong: true }, ev.type),
-              ev.node_id ? React.createElement(Text, { type: "secondary" }, ` · ${ev.node_id}`) : null,
-              ev.data ? React.createElement("pre", { style: { fontSize: 10, margin: 0 } }, JSON.stringify(ev.data)) : null,
+      // Tabs
+      React.createElement(Tabs, {
+        items: [
+          {
+            key: "nodes",
+            label: "节点状态",
+            children: React.createElement("div", null,
+              Object.entries(run.node_statuses || {}).length === 0
+                ? React.createElement(Empty, { description: "无节点状态" })
+                : Object.entries(run.node_statuses || {}).map(([nid, st]) => React.createElement("div", {
+                  key: nid, style: { display: "flex", gap: 8, marginBottom: 6, alignItems: "center" },
+                },
+                  React.createElement(Text, { style: { fontFamily: "monospace", fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis" } }, nid),
+                  React.createElement(Tag, { color: statusColor(st) }, st),
+                )),
             ),
-          })),
-        }
-      ),
+          },
+          {
+            key: "outputs",
+            label: "输出",
+            children: Object.keys(run.outputs || {}).length
+              ? React.createElement("pre", { style: { background: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 400 } }, JSON.stringify(run.outputs, null, 2))
+              : React.createElement(Empty, { description: "无输出" }),
+          },
+          {
+            key: "errors",
+            label: React.createElement("span", null, "错误", run.errors?.length ? React.createElement(Tag, { color: "error", style: { marginLeft: 4 } }, run.errors.length) : null),
+            children: run.errors?.length
+              ? run.errors.map((e, i) => React.createElement(Paragraph, { key: i, type: "danger", style: { fontSize: 12, background: "#fff2f0", padding: 8, borderRadius: 4, marginBottom: 4 } }, e))
+              : React.createElement(Empty, { description: "无错误" }),
+          },
+          {
+            key: "events",
+            label: `事件流 (${events.length})`,
+            children: events.length === 0
+              ? React.createElement(Empty, { description: "等待事件..." })
+              : React.createElement(Timeline, {
+                items: events.slice(-50).map((ev: any) => ({
+                  color: ev.type === "execution_success" ? "green"
+                    : ev.type === "execution_failed" || ev.type?.includes("failed") ? "red"
+                    : ev.type?.includes("running") ? "blue"
+                    : ev.type?.includes("completed") ? "green"
+                    : ev.type?.includes("blocked") ? "orange"
+                    : "gray",
+                  children: React.createElement("div", { style: { fontSize: 12 } },
+                    React.createElement(Text, { strong: true }, ev.type),
+                    ev.node_id ? React.createElement(Text, { type: "secondary" }, ` · ${ev.node_id}`) : null,
+                    ev.data ? React.createElement("pre", { style: { fontSize: 10, margin: "4px 0 0 0", background: "#f5f5f5", padding: 4, borderRadius: 2, overflow: "auto", maxHeight: 120 } }, JSON.stringify(ev.data, null, 2)) : null,
+                  ),
+                })),
+              }),
+          },
+        ],
+      }),
     ) : React.createElement(Empty, { description: "未找到运行" }),
   );
 }
 
-// ─── Top-level App (route switching) ─────────────────────────────────────────
+// ─── Top-level App ──────────────────────────────────────────────────────────
 
 function FlowForgeApp() {
   const [route, setRoute] = useState<"list" | "editor">("list");
   const [flowId, setFlowId] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
+  const [runStatuses, setRunStatuses] = useState<Record<string, string>>({});
 
   const editFlow = useCallback((id: string) => { setFlowId(id); setRoute("editor"); }, []);
-  const backToList = useCallback(() => { setRoute("list"); setFlowId(null); }, []);
+  const backToList = useCallback(() => { setRoute("list"); setFlowId(null); setRunStatuses({}); }, []);
   const runFlow = useCallback(async (id: string) => {
     try {
       const res = await apiFetch<{ run_id: string }>(`/flowforge/flows/${encodeURIComponent(id)}/run`, {
-        method: "POST",
-        body: JSON.stringify({ inputs: {} }),
+        method: "POST", body: JSON.stringify({ inputs: {} }),
       });
       setRunId(res.run_id);
     } catch (e: any) {
@@ -738,19 +1033,24 @@ function FlowForgeApp() {
     }
   }, []);
 
+  const handleStatusUpdate = useCallback((statuses: Record<string, string>) => {
+    setRunStatuses(statuses);
+  }, []);
+
+  const handleCloseRun = useCallback(() => {
+    setRunId(null);
+    setRunStatuses({});
+  }, []);
+
   if (route === "editor" && flowId) {
-    return React.createElement(
-      React.Fragment,
-      null,
-      React.createElement(FlowEditorPage, { flowId, onBack: backToList, onRun: runFlow }),
-      React.createElement(RunMonitorDrawer, { runId, onClose: () => setRunId(null) }),
+    return React.createElement(React.Fragment, null,
+      React.createElement(FlowEditorPage, { flowId, onBack: backToList, onRun: runFlow, runStatuses }),
+      React.createElement(RunMonitorDrawer, { runId, onClose: handleCloseRun, onStatusUpdate: handleStatusUpdate }),
     );
   }
-  return React.createElement(
-    React.Fragment,
-    null,
+  return React.createElement(React.Fragment, null,
     React.createElement(FlowListPage, { onEdit: editFlow, onRun: runFlow }),
-    React.createElement(RunMonitorDrawer, { runId, onClose: () => setRunId(null) }),
+    React.createElement(RunMonitorDrawer, { runId, onClose: handleCloseRun, onStatusUpdate: handleStatusUpdate }),
   );
 }
 
@@ -785,36 +1085,22 @@ function buildPlugin() {
     order: 9,
   });
 
-  // Register for Simple Mode so the workflow menu item stays visible
-  // when the sidebar is in "simple" mode.
   if (QP.sidebar?.registerSimpleModeItem) {
     QP.sidebar.registerSimpleModeItem("flowforge.editor");
-    console.info("[flowforge] Registered for simple-mode visibility");
-  } else {
-    console.warn("[flowforge] sidebar.registerSimpleModeItem not available");
   }
 
   console.info("[flowforge] Plugin registered: DAG editor route + menu active");
 }
 
-// ── Bootstrap ────────────────────────────────────────────────────────────────
-
 function tryBuildPlugin() {
-  try {
-    buildPlugin();
-  } catch (err) {
-    console.error("[flowforge] Failed to build plugin:", err);
-    setTimeout(tryBuildPlugin, 500);
-  }
+  try { buildPlugin(); }
+  catch (err) { console.error("[flowforge] Failed to build plugin:", err); setTimeout(tryBuildPlugin, 500); }
 }
 
 if ((window as any).QwenPaw?.host) {
   tryBuildPlugin();
 } else {
   const interval = setInterval(() => {
-    if ((window as any).QwenPaw?.host) {
-      clearInterval(interval);
-      tryBuildPlugin();
-    }
+    if ((window as any).QwenPaw?.host) { clearInterval(interval); tryBuildPlugin(); }
   }, 100);
 }

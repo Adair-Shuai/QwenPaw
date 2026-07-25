@@ -55,11 +55,23 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
         backend.display(),
         backend_dir.display(),
     );
+    // Resolve the bundled officecli directory (if present) so it can be
+    // prepended to PATH — this makes `shutil.which("officecli")` find
+    // the bundled binary inside the desktop app.
+    let officecli_dir = packaged_officecli_dir(app);
+    if let Some(ref dir) = officecli_dir {
+        log::info!("[backend] bundled officecli: {}", dir.display());
+    } else {
+        log::warn!("[backend] bundled officecli not found");
+    }
     let mut command = app
         .shell()
         .command(backend)
         .current_dir(&backend_dir)
-        .env(path_env_key(), path_with_backend_dir(&backend_dir)?);
+        .env(
+            path_env_key(),
+            path_with_backend_dir(&backend_dir, officecli_dir.as_deref())?,
+        );
     // Bundled standalone Python used by the backend to install third-party
     // plugin dependencies (sys.executable is the frozen backend, not Python).
     if let Some(python) = packaged_python_runtime(app) {
@@ -82,6 +94,14 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
         );
     } else {
         log::warn!("[backend] bundled node runtime not found");
+    }
+    // Also expose the officecli directory as an env var so the Python
+    // backend can locate the binary directly (not just via PATH).
+    if let Some(ref dir) = officecli_dir {
+        command = command.env(
+            "QWENPAW_DESKTOP_OFFICECLI_DIR",
+            dir.to_string_lossy().to_string(),
+        );
     }
     Ok(command)
 }
@@ -120,6 +140,22 @@ fn packaged_node_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 #[cfg(not(debug_assertions))]
+fn packaged_officecli_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let dir = app
+        .path()
+        .resource_dir()
+        .ok()?
+        .join("binaries")
+        .join("officecli");
+    let binary = if cfg!(windows) {
+        dir.join("officecli.exe")
+    } else {
+        dir.join("officecli")
+    };
+    binary.is_file().then_some(dir)
+}
+
+#[cfg(not(debug_assertions))]
 fn packaged_backend_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     let executable_name = if cfg!(windows) {
         "qwenpaw-backend.exe"
@@ -145,8 +181,17 @@ fn packaged_backend_executable(app: &tauri::AppHandle) -> Result<PathBuf, String
 }
 
 #[cfg(not(debug_assertions))]
-fn path_with_backend_dir(backend_dir: &Path) -> Result<String, String> {
-    let mut paths = vec![backend_dir.to_path_buf()];
+fn path_with_backend_dir(
+    backend_dir: &Path,
+    officecli_dir: Option<&Path>,
+) -> Result<String, String> {
+    let mut paths: Vec<PathBuf> = Vec::new();
+    // Prepend the officecli directory so `shutil.which("officecli")`
+    // resolves the bundled binary before any system-wide install.
+    if let Some(oc_dir) = officecli_dir {
+        paths.push(oc_dir.to_path_buf());
+    }
+    paths.push(backend_dir.to_path_buf());
     if let Some(existing) = std::env::var_os(path_env_key()) {
         paths.extend(std::env::split_paths(&existing));
     }

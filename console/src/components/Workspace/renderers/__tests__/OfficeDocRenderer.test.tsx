@@ -53,7 +53,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: stableT }),
 }));
 
-import OfficeDocRenderer from "../OfficeDocRenderer";
+import OfficeDocRenderer, { _clearConvertCache } from "../OfficeDocRenderer";
 
 function makeContext(
   overrides: Partial<RendererContext> = {},
@@ -90,6 +90,7 @@ describe("OfficeDocRenderer", () => {
 
   beforeEach(() => {
     originalFetch = global.fetch;
+    _clearConvertCache();
   });
 
   afterEach(() => {

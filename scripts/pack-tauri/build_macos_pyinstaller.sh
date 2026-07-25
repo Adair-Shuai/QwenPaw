@@ -117,6 +117,13 @@ bash "${SIGN_MACOS_BUNDLE}" \
 echo "PyInstaller backend signed"
 echo ""
 
+echo "== Step 2c: Signing Bundled OfficeCLI =="
+bash "${SIGN_MACOS_BUNDLE}" \
+    "${REPO_ROOT}/console/src-tauri/binaries/officecli" \
+    "${APPLE_SIGNING_IDENTITY}"
+echo "Bundled OfficeCLI signed"
+echo ""
+
 # Step 3: Build Tauri app
 echo "== Step 3: Building Tauri App =="
 BUNDLE_DIR="${REPO_ROOT}/console/src-tauri/target/release/bundle"

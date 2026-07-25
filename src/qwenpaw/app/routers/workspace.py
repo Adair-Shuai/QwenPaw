@@ -10,9 +10,11 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import os
 import zipfile
@@ -42,6 +44,8 @@ from ...agents.templates import get_workspace_md_template_id
 from ...agents.utils import copy_workspace_md_files
 from ...constant import BUILTIN_QA_AGENT_ID, SUPPORTED_AGENT_LANGUAGES
 from ..agent_context import get_agent_for_request, get_coding_dir
+
+logger = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
@@ -318,7 +322,7 @@ _MIME_MAP: dict[str, str] = {
 
 @router.get(
     "/binary-files/{file_path:path}",
-    summary="Serve a binary workspace file (images, PDFs) for preview",
+    summary="Serve a binary workspace file (images, PDFs, CSV) for preview",
 )
 async def read_binary_file(
     file_path: str,
@@ -327,10 +331,27 @@ async def read_binary_file(
     """Return the raw bytes of *file_path* with the appropriate Content-Type.
 
     Intended for the IDE preview panel (images, PDFs, CSV).
+    Accepts relative paths within the workspace or absolute paths
+    (from ``file://`` URLs produced by tool-call results).
     Rejects files that are not in ``_MIME_MAP`` or exceed 50 MB.
     """
     workspace = await get_agent_for_request(request)
-    target = safe_join(get_coding_dir(workspace), file_path)
+    coding_dir = get_coding_dir(workspace)
+
+    # Support absolute paths (from file:// URLs) as well as relative paths.
+    # When the path looks like a URL (contains "://"), treat it as a URL;
+    # otherwise check if it's an absolute filesystem path.
+    if "://" in file_path:
+        target = _resolve_file_path_from_url(file_path, coding_dir)
+    else:
+        extracted = Path(file_path)
+        if extracted.is_absolute():
+            target = extracted
+        else:
+            try:
+                target = safe_join(coding_dir, file_path)
+            except Exception:
+                target = extracted
 
     ext = target.suffix.lstrip(".").lower()
     mime = _MIME_MAP.get(ext)
@@ -488,31 +509,114 @@ class OfficeViewRequest(BaseModel):
 
 _OFFICECLI_TIMEOUT = 30  # seconds
 
+# Cache for officecli availability check (avoids repeated subprocess calls)
+_officecli_checked: bool = False
+_officecli_ok: bool = False
 
-def _is_officecli_available() -> bool:
-    """Check if the officecli binary is on PATH."""
-    return shutil.which("officecli") is not None
+
+def _bundled_officecli_path() -> str | None:
+    """Return the path to a bundled officecli binary, if available.
+
+    In the Tauri desktop build, the officecli binary is shipped as a
+    resource under ``binaries/officecli/``. The Rust backend launcher
+    sets ``QWENPAW_DESKTOP_OFFICECLI_DIR`` to that directory.
+
+    Returns the full path to the executable, or ``None`` if not found.
+    """
+    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
+    if not oc_dir:
+        return None
+    exe_name = "officecli.exe" if sys.platform == "win32" else "officecli"
+    candidate = Path(oc_dir) / exe_name
+    if candidate.is_file():
+        return str(candidate)
+    return None
 
 
 def _officecli_bin() -> str:
     """Return the resolved officecli executable path.
 
-    On Windows, npm-installed CLIs are ``.cmd`` wrappers. ``subprocess.run``
-    without ``shell=True`` cannot find them by bare name, so we resolve the
-    full path via ``shutil.which``.
+    Priority:
+    1. Bundled binary in the Tauri resource directory (desktop app)
+    2. ``shutil.which("officecli")`` (system PATH — npm install, etc.)
+    3. Bare ``"officecli"`` as a last resort (will likely fail)
     """
+    bundled = _bundled_officecli_path()
+    if bundled:
+        return bundled
     resolved = shutil.which("officecli")
     return resolved or "officecli"
 
 
-def _convert_with_officecli(file_path: str) -> str | None:
-    """High-fidelity HTML conversion via ``officecli view <file> html -o``.
+def _is_officecli_available() -> bool:
+    """Check if the correct officecli binary is available and supports
+    ``view``.
 
-    Uses ``-o`` to write HTML to a temp file (avoids opening a browser).
+    The npm package ``officecli`` (v0.2.x) is a *different* tool — an AI
+    document generator that does NOT have a ``view`` subcommand.  This
+    function verifies that the installed binary is the OfficeCLI from
+    https://github.com/iOfficeAI/OfficeCLI/releases which supports
+    ``view <file> html``, ``view <file> screenshot``, etc.
+
+    The check is cached after the first call to avoid repeated subprocess
+    invocations.
+    """
+    global _officecli_checked, _officecli_ok  # noqa: PLW0603
+    if _officecli_checked:
+        return _officecli_ok
+
+    _officecli_checked = True
+    resolved = _bundled_officecli_path() or shutil.which("officecli")
+    if resolved is None:
+        _officecli_ok = False
+        return False
+
+    # Verify it supports the "view" subcommand by checking --help output.
+    # The wrong officecli (npm AI generator) will either error out or
+    # not list "view" in its commands.
+    try:
+        result = subprocess.run(  # noqa: S603
+            [resolved, "--help"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        _officecli_ok = False
+        return False
+
+    if result.returncode != 0:
+        # Some CLIs print help to stderr with non-zero exit
+        help_text = (result.stdout or "") + (result.stderr or "")
+    else:
+        help_text = result.stdout or ""
+
+    # The correct OfficeCLI has "view" in its help/commands list.
+    # The npm officecli has "new", "doctor", "login", etc. but NOT "view".
+    _officecli_ok = "view" in help_text
+    if not _officecli_ok:
+        logger.warning(
+            "officecli binary found at %s but does not support 'view' "
+            "subcommand — likely the wrong npm package. "
+            "Install the correct one from "
+            "https://github.com/iOfficeAI/OfficeCLI/releases",
+            resolved,
+        )
+    else:
+        logger.info("officecli (with view support) detected at %s", resolved)
+    return _officecli_ok
+
+
+def _convert_with_officecli(file_path: str) -> str | None:
+    """High-fidelity HTML conversion via ``officecli view <file> html``.
+
+    Reads HTML directly from stdout (no temp file needed), which is
+    significantly faster than the ``-o <tmpfile>`` approach because it
+    avoids filesystem I/O.
     Returns an HTML string on success, or *None* on any failure so the
     caller can fall back to the legacy conversion path.
     """
-    tmp_html = tempfile.mktemp(suffix=".html")
     try:
         result = subprocess.run(  # noqa: S603
             [
@@ -520,34 +624,54 @@ def _convert_with_officecli(file_path: str) -> str | None:
                 "view",
                 file_path,
                 "html",
-                "-o",
-                tmp_html,
             ],
             capture_output=True,
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        Path(tmp_html).unlink(missing_ok=True)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        logger.warning(
+            "officecli conversion failed for %s: %s",
+            file_path,
+            exc,
+        )
         return None
-    if result.returncode != 0 or not Path(tmp_html).exists():
-        Path(tmp_html).unlink(missing_ok=True)
+    if result.returncode != 0:
+        stderr = (
+            result.stderr.decode(errors="replace") if result.stderr else ""
+        )
+        logger.warning(
+            "officecli returned non-zero exit %d for %s: %s",
+            result.returncode,
+            file_path,
+            stderr[:200],
+        )
         return None
-    try:
-        with open(tmp_html, "r", encoding="utf-8") as f:
-            return f.read()
-    except OSError:
+    html = result.stdout.decode(errors="replace") if result.stdout else ""
+    if not html.strip():
+        logger.warning("officecli returned empty HTML for %s", file_path)
         return None
-    finally:
-        Path(tmp_html).unlink(missing_ok=True)
+    return html
+
+
+_page_count_cache: dict[str, tuple[int, float]] = {}
+_PAGE_COUNT_CACHE_TTL = 300.0  # 5 minutes
 
 
 def _get_officecli_page_count(file_path: str) -> int:
     """Get the total page/slide count of an Office document via officecli.
 
     Uses ``officecli view <file> stats --json``.
+    Results are cached for 5 minutes per file to avoid repeated subprocess
+    invocations on every screenshot request.
     Returns 0 if the count cannot be determined (best-effort).
     """
+    import time as _time
+
+    cached = _page_count_cache.get(file_path)
+    if cached and (_time.time() - cached[1]) < _PAGE_COUNT_CACHE_TTL:
+        return cached[0]
+
     try:
         result = subprocess.run(  # noqa: S603
             [
@@ -575,7 +699,7 @@ def _get_officecli_page_count(file_path: str) -> int:
     #   {"success": true, "data": {"pageCount": 3, ...}} (DOCX)
     # Try top-level and nested "data" keys
     nested = data.get("data") or {}
-    return (
+    count = (
         data.get("pageCount")
         or data.get("page_count")
         or data.get("slides")
@@ -586,6 +710,8 @@ def _get_officecli_page_count(file_path: str) -> int:
         or nested.get("totalPages")
         or 0
     )
+    _page_count_cache[file_path] = (count, _time.time())
+    return count
 
 
 def _resolve_file_path_from_url(url: str, coding_dir: Path) -> Path:
@@ -600,19 +726,43 @@ def _resolve_file_path_from_url(url: str, coding_dir: Path) -> Path:
         file_path = unquote(file_path)
     elif url.startswith("/"):
         file_path = url.lstrip("/")
-    elif url.startswith("file:///"):
-        # file:///c:/Users/... → c:/Users/... (Windows drive letter)
-        file_path = url[len("file:///") :]
     elif url.startswith("file://"):
-        # file://hostname/share/... → //hostname/share/... (UNC)
-        file_path = url[len("file://") :]
+        # file:///tmp/test.docx → /tmp/test.docx (Unix absolute)
+        # file:///C:/Users/...  → C:/Users/...  (Windows drive letter)
+        # file://localhost/path → /path          (localhost authority)
+        # file://host/share/... → //host/share/  (UNC)
+        rest = url[len("file://") :]
+        if rest.startswith("/"):
+            # file:///path → /path (Unix) or file:///C:/... → /C:/... (Windows)
+            file_path = unquote(rest)
+            # On Windows, strip leading "/" before a drive letter: /C:/x → C:/x
+            if (
+                len(file_path) > 2
+                and file_path[0] == "/"
+                and file_path[2] == ":"
+                and file_path[1].isalpha()
+            ):
+                file_path = file_path[1:]
+        elif rest.startswith("localhost/"):
+            # file://localhost/path → /path
+            file_path = unquote(rest[len("localhost") :])
+        else:
+            # file://host/share/... → //host/share/... (UNC)
+            file_path = unquote("//" + rest)
     else:
         file_path = url
 
-    try:
-        target = safe_join(coding_dir, file_path)
-    except Exception:
-        target = Path(file_path)
+    # If the extracted path is absolute (common with file:// URLs from
+    # tool-call results), use it directly instead of trying safe_join
+    # which would reject it as a path-traversal attempt.
+    extracted = Path(file_path)
+    if extracted.is_absolute():
+        target = extracted
+    else:
+        try:
+            target = safe_join(coding_dir, file_path)
+        except Exception:
+            target = extracted
 
     if not target.exists():
         raise HTTPException(
@@ -824,18 +974,13 @@ def _build_docx_transform(page_info: dict):
 def _convert_docx_to_html(  # pylint: disable=R0912,R0915
     file_path: str,
 ) -> str:
-    """Convert a .docx/.xlsx/.pptx file to HTML for preview.
+    """Convert a .docx/.xlsx/.pptx file to HTML for preview (legacy fallback).
 
-    Priority: officecli (high fidelity) → existing libs (fallback).
+    Uses python libraries (mammoth, openpyxl, python-pptx) for conversion.
+    The caller (:func:`convert_office`) is responsible for trying officecli
+    first; this function is only the low-fidelity fallback.
     """
     ext = Path(file_path).suffix.lstrip(".").lower()
-
-    # ── 优先路径：officecli 高保真渲染 ──
-    if _is_officecli_available():
-        html = _convert_with_officecli(file_path)
-        if html:
-            return html
-        # officecli 失败，继续走 fallback
 
     if ext == "docx":
         try:
@@ -926,11 +1071,6 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
     # For .xlsx — basic table extraction
     if ext == "xlsx":
         try:
-            from docx import Document  # noqa: F401
-        except ImportError:
-            pass
-        # Try openpyxl if available
-        try:
             import openpyxl
 
             wb = openpyxl.load_workbook(file_path, read_only=True)
@@ -954,6 +1094,12 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
                 status_code=500,
                 detail="openpyxl not installed for .xlsx preview",
             ) from exc
+        except Exception as exc:
+            logger.exception("XLSX conversion failed for %s", file_path)
+            raise HTTPException(
+                status_code=500,
+                detail=f"XLSX preview error: {exc}",
+            ) from exc
 
     # For .pptx — basic slide extraction
     if ext == "pptx":
@@ -974,6 +1120,12 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
             raise HTTPException(
                 status_code=500,
                 detail="python-pptx not installed for .pptx preview",
+            ) from exc
+        except Exception as exc:
+            logger.exception("PPTX conversion failed for %s", file_path)
+            raise HTTPException(
+                status_code=500,
+                detail=f"PPTX preview error: {exc}",
             ) from exc
 
     raise HTTPException(
@@ -1006,7 +1158,18 @@ async def convert_office(
         if _is_officecli_available():
             html = _convert_with_officecli(str(target))
             if html:
+                logger.info("officecli conversion succeeded for %s", target)
                 return html, "officecli"
+            logger.info(
+                "officecli conversion returned None, falling back"
+                " to legacy for %s",
+                target,
+            )
+        else:
+            logger.debug(
+                "officecli not available, using legacy conversion for %s",
+                target,
+            )
         # Fallback to legacy conversion
         return _convert_docx_to_html(str(target)), "legacy"
 
@@ -1015,6 +1178,7 @@ async def convert_office(
     except HTTPException:
         raise
     except Exception as exc:
+        logger.exception("convert-office failed for %s", target)
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {"html": html, "engine": engine}
@@ -1076,9 +1240,13 @@ async def office_screenshot(
 
     if result.returncode != 0 or not Path(tmp_path).exists():
         Path(tmp_path).unlink(missing_ok=True)
-        stderr = result.stderr.decode(
-            errors="replace",
-        ) if result.stderr else ""
+        stderr = (
+            result.stderr.decode(
+                errors="replace",
+            )
+            if result.stderr
+            else ""
+        )
         raise HTTPException(
             status_code=500,
             detail=f"officecli screenshot failed: {stderr}",
@@ -1094,7 +1262,9 @@ async def office_screenshot(
         media_type="image/png",
         filename=f"page_{body.page}.png",
         headers={"X-Total-Pages": str(page_count)} if page_count > 0 else {},
-        background=BackgroundTask(lambda: Path(tmp_path).unlink(missing_ok=True)),
+        background=BackgroundTask(
+            lambda: Path(tmp_path).unlink(missing_ok=True),
+        ),
     )
 
 

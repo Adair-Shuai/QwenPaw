@@ -3,7 +3,18 @@ import type { TFunction } from "i18next";
 
 vi.mock("@/api/modules/chat", () => ({
   chatApi: {
-    filePreviewUrl: (p: string) => `/api/files/preview${p}`,
+    // Mock that mimics the real filePreviewUrl behavior: %2F encoding
+    // for absolute paths, as-is for relative paths.
+    filePreviewUrl: (p: string) => {
+      if (p.startsWith("http://") || p.startsWith("https://")) return p;
+      let cleaned = p;
+      if (p.startsWith("file://")) {
+        cleaned = p.slice(7);
+      }
+      const isAbs = cleaned.startsWith("/");
+      const segments = (isAbs ? cleaned.slice(1) : cleaned);
+      return `/api/files/preview/${isAbs ? "%2F" : ""}${segments}`;
+    },
   },
 }));
 
@@ -116,7 +127,7 @@ describe("getMediaInfo", () => {
     const media = getMediaInfo(
       baseToolCall({ params: { file_path: "/abs/path/file1.txt" } }),
     );
-    expect(media?.url).toBe("/api/files/preview/abs/path/file1.txt");
+    expect(media?.url).toBe("/api/files/preview/%2Fabs/path/file1.txt");
   });
 
   it("uses a Windows drive-letter param path while the result is pending", () => {
@@ -141,7 +152,7 @@ describe("getMediaInfo", () => {
         ]),
       }),
     );
-    expect(media?.url).toBe("/api/files/preview/abs/path/file1.txt");
+    expect(media?.url).toBe("/api/files/preview/%2Fabs/path/file1.txt");
     expect(media?.name).toBe("file1.txt");
   });
 });

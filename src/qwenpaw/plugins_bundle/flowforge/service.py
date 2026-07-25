@@ -267,6 +267,64 @@ class WorkflowService:
         future.add_done_callback(_on_done)
         return handle
 
+    def resume_run(
+        self,
+        run_id: str,
+        inputs: dict[str, Any] | None = None,
+    ) -> RunHandle:
+        """Resume a paused/blocked run with new inputs.
+
+        Re-uses the existing executor's ``resume`` method to continue
+        from the persisted state snapshot.
+        """
+        handle = self._runs.get(run_id)
+        if handle is None:
+            raise FileNotFoundError(f"run '{run_id}' not found")
+        flow_payload = self.get_flow(handle.flow_id)
+        if flow_payload is None:
+            raise FileNotFoundError(f"flow '{handle.flow_id}' not found")
+        doc = load(flow_payload)
+        new_run_id = str(uuid4())
+        prompt_id = new_run_id
+        progress = ProgressRegistry(prompt_id=prompt_id)
+        executor = self._executor
+
+        async def _resume() -> WorkflowResult:
+            try:
+                from uuid import UUID
+                state_id = handle.state_id
+                result = await executor.resume(
+                    doc,
+                    state_id,
+                    inputs or {},
+                    prompt_id=prompt_id,
+                )
+                return result
+            except Exception as exc:
+                logger.exception("resume %s failed", new_run_id)
+                raise exc
+
+        future = asyncio.run_coroutine_threadsafe(_resume(), self._loop)
+        new_handle = RunHandle(
+            run_id=new_run_id,
+            flow_id=handle.flow_id,
+            state_id=handle.state_id,
+            progress=progress,
+            future=future,
+        )
+        self._runs[new_run_id] = new_handle
+
+        def _on_done(fut: Future) -> None:
+            new_handle.finished_at = time.time()
+            try:
+                new_handle.result = fut.result()
+                new_handle.state_id = new_handle.result.state_id
+            except Exception as exc:
+                new_handle.error = str(exc)
+
+        future.add_done_callback(_on_done)
+        return new_handle
+
     def get_run(self, run_id: str) -> RunHandle | None:
         return self._runs.get(run_id)
 

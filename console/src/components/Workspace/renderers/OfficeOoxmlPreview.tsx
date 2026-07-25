@@ -1,6 +1,14 @@
 /**
  * OfficeOoxmlPreview — 纯前端 OOXML 预览（fallback 专用）
  *
+ * @deprecated 此前端解析模块计划在后续版本中移除。
+ * 后端 officecli 已能稳定、高保真地渲染 DOCX/XLSX/PPTX，
+ * 前端解析仅在 officecli 不可用时作为最后 fallback。
+ * 如果 officecli 在未来几个版本中保持稳定，此模块及其
+ * 独占依赖（mammoth、read-excel-file）将被移除以减少
+ * 约 10MB 的 node_modules 体积。
+ * 新功能不应依赖此模块，请使用后端 convert-office 端点。
+ *
  * 当后端 /api/workspace/convert-office 不可用时，作为二级 fallback：
  * - DOCX：用 mammoth.convertToHtml({ arrayBuffer }) 转为 HTML
  * - XLSX：用 read-excel-file 解析为行列数据，渲染为表格
@@ -100,10 +108,20 @@ async function fetchArrayBuffer(
   // file:/// URLs: browser security blocks direct fetch.
   // Use Tauri invoke in desktop mode, or convert to workspace API URL.
   if (url.startsWith("file://")) {
-    // Strip "file:" + any number of slashes, then URL-decode.
-    // file:///C:/Users/... → C:/Users/...
-    // file:///C:/.../%E7%A4%BA%E4%BE%8B.docx → C:/.../示例.docx
-    const filePath = decodeURIComponent(url.replace(/^file:[/\\]*/, ""));
+    // Strip "file://" (7 chars), then URL-decode.
+    // file:///tmp/test.docx   → /tmp/test.docx  (Unix absolute)
+    // file:///C:/Users/...    → /C:/Users/...   → C:/Users/... (Windows)
+    // file://localhost/path   → /path
+    let filePath = decodeURIComponent(url.slice(7));
+    // On Windows, strip leading "/" before a drive letter: /C:/x → C:/x
+    if (
+      filePath.length > 2 &&
+      filePath[0] === "/" &&
+      filePath[2] === ":" &&
+      /^[a-zA-Z]$/.test(filePath[1])
+    ) {
+      filePath = filePath.slice(1);
+    }
 
     // Tauri desktop: read file directly from disk
     if (isDesktopTauriRuntime()) {
@@ -111,10 +129,9 @@ async function fetchArrayBuffer(
         "read_workspace_binary_file",
         { filePath, agentId },
       );
-      const bytes = Array.isArray(response)
-        ? new Uint8Array(response)
-        : new Uint8Array(response);
-      return bytes.buffer;
+      // Tauri returns either an ArrayBuffer or a number[] depending on
+      // the IPC channel; both are accepted by the Uint8Array constructor.
+      return new Uint8Array(response).buffer;
     }
 
     // Browser: convert file:/// path to workspace API URL

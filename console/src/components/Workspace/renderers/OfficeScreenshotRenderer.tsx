@@ -149,13 +149,17 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
           background: theme === "dark" ? "#1e1e1e" : "#fff",
         }}
       >
-        <Spin tip={t("workspace.converting")} size="large" />
+        <Spin size="large" />
+        <span style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+          {t("workspace.converting")}
+        </span>
       </div>
     );
   }

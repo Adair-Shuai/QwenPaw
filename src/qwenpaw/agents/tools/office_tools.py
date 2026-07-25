@@ -9,18 +9,26 @@ OfficeCLI supports Word (.docx), Excel (.xlsx), and PowerPoint (.pptx)
 with high-fidelity rendering. When ``officecli`` is not installed, all
 tools return a friendly error message guiding the user to install it.
 
-Tool list (11 tools):
+Tool list (19 tools):
     - office_create_document
     - office_add_element
     - office_set_properties
     - office_get_element
     - office_query_elements
     - office_remove_element
+    - office_move_element
+    - office_swap_elements
     - office_view_document
     - office_view_screenshot
+    - office_get_text
+    - office_get_stats
+    - office_import_data
+    - office_refresh_fields
     - office_validate_document
     - office_merge_template
     - office_batch_operations
+    - office_raw_get
+    - office_raw_set
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ import json
 import logging
 import os
 import shutil
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -52,18 +61,46 @@ _OFFICECLI_TIMEOUT = 60  # seconds
 # ---------------------------------------------------------------------------
 
 
+def _bundled_officecli_path() -> str | None:
+    """Return the path to a bundled officecli binary, if available.
+
+    In the Tauri desktop build, the officecli binary is shipped as a
+    resource under ``binaries/officecli/``. The Rust backend launcher
+    sets ``QWENPAW_DESKTOP_OFFICECLI_DIR`` to that directory.
+
+    Returns the full path to the executable, or ``None`` if not found.
+    """
+    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
+    if not oc_dir:
+        return None
+    exe_name = "officecli.exe" if sys.platform == "win32" else "officecli"
+    candidate = Path(oc_dir) / exe_name
+    if candidate.is_file():
+        return str(candidate)
+    return None
+
+
 def _officecli_available() -> bool:
-    """Check if the officecli binary is on PATH."""
+    """Check if the officecli binary is available.
+
+    Checks both the bundled location (Tauri desktop) and the system PATH.
+    """
+    if _bundled_officecli_path() is not None:
+        return True
     return shutil.which("officecli") is not None
 
 
 def _officecli_bin() -> str:
     """Return the resolved officecli executable path.
 
-    On Windows, npm-installed CLIs are ``.cmd`` wrappers.
-    ``asyncio.create_subprocess_exec`` cannot find them by bare name,
-    so we resolve the full path via ``shutil.which``.
+    Priority:
+    1. Bundled binary in the Tauri resource directory (desktop app)
+    2. ``shutil.which("officecli")`` (system PATH — npm install, etc.)
+    3. Bare ``"officecli"`` as a last resort (will likely fail)
     """
+    bundled = _bundled_officecli_path()
+    if bundled:
+        return bundled
     resolved = shutil.which("officecli")
     return resolved or "officecli"
 
@@ -171,7 +208,8 @@ async def _run_officecli(  # pylint: disable=too-many-return-statements
             return {
                 "ok": False,
                 "success": False,
-                "error": err_str or stderr_text.strip()
+                "error": err_str
+                or stderr_text.strip()
                 or f"officecli exited with code {proc.returncode}",
             }
         return {
@@ -471,53 +509,71 @@ async def office_view_document(
     resolved = _resolve_workspace_path(file_path)
     valid_modes = {"outline", "html", "issues"}
     if mode not in valid_modes:
-        return _json_toolchunk({
-            "ok": False,
-            "error": f"Invalid mode '{mode}'. Use one of: {valid_modes}",
-        })
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "error": f"Invalid mode '{mode}'. Use one of: {valid_modes}",
+            },
+        )
 
     if mode == "html":
-        # "view html" without -o may open a browser.
-        # Use -o with a temp file, then read and return the HTML.
-        workspace_dir = get_current_workspace_dir() or WORKING_DIR
-        tmp_html = str(workspace_dir / f"office_view_{os.getpid()}.html")
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                _officecli_bin(), "view", resolved, "html",
-                "-o", tmp_html,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            _stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=_OFFICECLI_TIMEOUT,
-            )
-            if proc.returncode != 0:
-                err = stderr.decode(errors="replace").strip() if stderr else ""
-                return _json_toolchunk({
-                    "ok": False,
-                    "error": f"view html failed: {err}",
-                })
-            try:
-                with open(tmp_html, "r", encoding="utf-8") as f:
-                    html_content = f.read()
-            finally:
-                Path(tmp_html).unlink(missing_ok=True)
-            return _json_toolchunk({
-                "ok": True,
-                "success": True,
-                "mode": "html",
-                "html": html_content[:50000],  # truncate to avoid huge context
-                "truncated": len(html_content) > 50000,
-            })
-        except asyncio.TimeoutError:
-            Path(tmp_html).unlink(missing_ok=True)
-            return _json_toolchunk({
-                "ok": False,
-                "error": "officecli view html timed out",
-            })
+        return await _office_view_html(resolved)
 
     result = await _run_officecli("view", resolved, mode)
     return _json_toolchunk(result)
+
+
+async def _office_view_html(resolved: str) -> ToolChunk:
+    """Handle the ``html`` view mode with custom truncation."""
+    # officecli view html (without --json) outputs raw HTML to stdout.
+    # We bypass _run_officecli here because:
+    # 1. We don't want --json (we want raw HTML, not JSON-wrapped)
+    # 2. We need custom truncation (50 KB limit for context safety)
+    if not _officecli_available():
+        return _not_installed_error()
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            _officecli_bin(),
+            "view",
+            resolved,
+            "html",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+    except FileNotFoundError:
+        return _not_installed_error()
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=_OFFICECLI_TIMEOUT,
+        )
+    except asyncio.TimeoutError:
+        proc.kill()
+        await proc.wait()
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "error": "officecli view html timed out",
+            },
+        )
+    if proc.returncode != 0:
+        err = stderr.decode(errors="replace").strip() if stderr else ""
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "error": f"view html failed: {err}",
+            },
+        )
+    html_content = stdout.decode(errors="replace") if stdout else ""
+    return _json_toolchunk(
+        {
+            "ok": True,
+            "success": True,
+            "mode": "html",
+            "html": html_content[:50000],  # truncate to avoid huge context
+            "truncated": len(html_content) > 50000,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -590,17 +646,21 @@ async def office_view_screenshot(
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
-        return _json_toolchunk({
-            "ok": False,
-            "error": "officecli screenshot timed out",
-        })
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "error": "officecli screenshot timed out",
+            },
+        )
 
     if proc.returncode != 0 or not Path(tmp_path).exists():
         err = stderr.decode(errors="replace").strip() if stderr else ""
-        return _json_toolchunk({
-            "ok": False,
-            "error": f"Screenshot failed: {err}",
-        })
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "error": f"Screenshot failed: {err}",
+            },
+        )
 
     # Return as DataBlock so the model can see the image
     file_url = _path_to_file_url(tmp_path)
@@ -767,4 +827,401 @@ async def office_batch_operations(
     finally:
         Path(cmd_file).unlink(missing_ok=True)
 
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 12: office_move_element
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_write",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeMoveElement",
+    ui_description="Move/reorder elements in Office documents",
+    ui_icon="↕️",
+)
+async def office_move_element(
+    file_path: str,
+    path: str,
+    to: str | None = None,
+    index: int | None = None,
+    after: str | None = None,
+    before: str | None = None,
+) -> ToolChunk:
+    """Move an element to a new position or parent in an Office document.
+
+    Args:
+        file_path (`str`):
+            Document path.
+        path (`str`):
+            DOM path of the element to move (e.g. "/slide[3]").
+        to (`str | None`):
+            Target parent path. If omitted, reorders within the current
+            parent.
+        index (`int | None`):
+            Insert position (0-based). If omitted, appends to end.
+        after (`str | None`):
+            Move after the element at this path.
+        before (`str | None`):
+            Move before the element at this path.
+
+    Returns:
+        `ToolChunk`:
+            JSON with the move result.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    args: list[str] = ["move", resolved, path]
+    if to is not None:
+        args.extend(["--to", to])
+    if index is not None:
+        args.extend(["--index", str(index)])
+    if after is not None:
+        args.extend(["--after", after])
+    if before is not None:
+        args.extend(["--before", before])
+    result = await _run_officecli(*args)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 13: office_swap_elements
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_write",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeSwapElements",
+    ui_description="Swap two elements in Office documents",
+    ui_icon="🔄",
+)
+async def office_swap_elements(
+    file_path: str,
+    path1: str,
+    path2: str,
+) -> ToolChunk:
+    """Swap two elements in an Office document.
+
+    Useful for reordering slides, table rows, paragraphs, etc.
+
+    Args:
+        file_path (`str`):
+            Document path.
+        path1 (`str`):
+            DOM path of the first element (e.g. "/slide[1]").
+        path2 (`str`):
+            DOM path of the second element (e.g. "/slide[3]").
+
+    Returns:
+        `ToolChunk`:
+            JSON with the swap result.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    result = await _run_officecli("swap", resolved, path1, path2)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 14: office_get_text
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_read",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeGetText",
+    ui_description="Extract plain text from Office documents",
+    ui_icon="📝",
+)
+async def office_get_text(
+    file_path: str,
+    max_lines: int = 0,
+    start: int = 0,
+    end: int = 0,
+) -> ToolChunk:
+    """Extract plain text from an Office document.
+
+    Each paragraph/row/slide is on a separate line, prefixed with its
+    DOM path (e.g. ``[/body/p[1]] Hello world``). This is much more
+    token-efficient than HTML for AI consumption.
+
+    Args:
+        file_path (`str`):
+            Document path (.docx/.xlsx/.pptx).
+        max_lines (`int`):
+            Maximum number of lines/rows/slides to output. 0 = no limit.
+        start (`int`):
+            Start line/paragraph number (0 = from beginning).
+        end (`int`):
+            End line/paragraph number (0 = to end).
+
+    Returns:
+        `ToolChunk`:
+            JSON with the extracted text.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    args: list[str] = ["view", resolved, "text"]
+    if max_lines > 0:
+        args.extend(["--max-lines", str(max_lines)])
+    if start > 0:
+        args.extend(["--start", str(start)])
+    if end > 0:
+        args.extend(["--end", str(end)])
+    result = await _run_officecli(*args)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 15: office_get_stats
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_read",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeGetStats",
+    ui_description="Get document statistics (word count, styles, fonts)",
+    ui_icon="📊",
+)
+async def office_get_stats(
+    file_path: str,
+    page_count: bool = False,
+) -> ToolChunk:
+    """Get statistics about an Office document.
+
+    Returns paragraph count, word count, character count, style
+    distribution, font usage, and font-size distribution. For DOCX on
+    Windows with Word installed, can also report total page count.
+
+    Args:
+        file_path (`str`):
+            Document path (.docx/.xlsx/.pptx).
+        page_count (`bool`):
+            If True, also report total page count via Word repagination
+            (DOCX only, requires Windows + Word; slow on long docs).
+
+    Returns:
+        `ToolChunk`:
+            JSON with document statistics.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    args: list[str] = ["view", resolved, "stats"]
+    if page_count:
+        args.append("--page-count")
+    result = await _run_officecli(*args)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 16: office_import_data
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_write",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeImportData",
+    ui_description="Import CSV/TSV data into Excel sheets",
+    ui_icon="📥",
+)
+async def office_import_data(
+    file_path: str,
+    sheet_path: str,
+    source_file: str,
+    data_format: str = "csv",
+    has_header: bool = False,
+    start_cell: str = "A1",
+) -> ToolChunk:
+    """Import CSV/TSV data into an Excel sheet.
+
+    Args:
+        file_path (`str`):
+            Target Excel file path (.xlsx).
+        sheet_path (`str`):
+            Sheet path (e.g. "/Sheet1").
+        source_file (`str`):
+            Source CSV/TSV file path to import.
+        data_format (`str`):
+            Data format: "csv" or "tsv". Default: "csv".
+        has_header (`bool`):
+            If True, treat the first row as headers and set AutoFilter
+            and freeze pane.
+        start_cell (`str`):
+            Starting cell for the data. Default: "A1".
+
+    Returns:
+        `ToolChunk`:
+            JSON with the import result.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    resolved_source = _resolve_workspace_path(source_file)
+    args: list[str] = [
+        "import",
+        resolved,
+        sheet_path,
+        resolved_source,
+        "--format",
+        data_format,
+        "--start-cell",
+        start_cell,
+    ]
+    if has_header:
+        args.append("--header")
+    result = await _run_officecli(*args)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 17: office_refresh_fields
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_write",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeRefreshFields",
+    ui_description="Refresh TOC, page numbers, and cross-references",
+    ui_icon="🔁",
+)
+async def office_refresh_fields(file_path: str) -> ToolChunk:
+    """Refresh derived field values in an Office document.
+
+    Recalculates TOC page numbers, PAGE/NUMPAGES fields, and
+    cross-references. For DOCX this requires Word on Windows; on other
+    platforms it works for XLSX/PPTX field caches.
+
+    Args:
+        file_path (`str`):
+            Document path (.docx/.xlsx/.pptx).
+
+    Returns:
+        `ToolChunk`:
+            JSON with the refresh result.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    result = await _run_officecli("refresh", resolved)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 18: office_raw_get
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_read",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeRawGet",
+    ui_description="View raw XML of Office document parts",
+    ui_icon="🔧",
+)
+async def office_raw_get(
+    file_path: str,
+    part: str = "/document",
+) -> ToolChunk:
+    """View the raw XML of a document part.
+
+    This is the universal fallback for inspecting any OpenXML part
+    that is not covered by the structured get/query commands.
+
+    Args:
+        file_path (`str`):
+            Document path (.docx/.xlsx/.pptx).
+        part (`str`):
+            Part path (e.g. "/document", "/styles", "/header[1]",
+            "/Sheet1", "/slide[1]"). Default: "/document".
+
+    Returns:
+        `ToolChunk`:
+            JSON with the raw XML content.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    result = await _run_officecli("raw", resolved, part)
+    # Truncate large XML output to avoid context bloat.
+    # The raw XML of a document part can be 100 KB+ for real documents.
+    if isinstance(result, dict):
+        for key in ("data", "message"):
+            val = result.get(key)
+            if isinstance(val, str) and len(val) > 50000:
+                result[key] = val[:50000]
+                result[f"{key}_truncated"] = True
+                result[f"{key}_full_length"] = len(val)
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 19: office_raw_set
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_write",),
+    async_execution=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeRawSet",
+    ui_description="Modify raw XML in Office document parts",
+    ui_icon="✒️",
+)
+async def office_raw_set(
+    file_path: str,
+    part: str,
+    xpath: str,
+    action: str,
+    xml: str = "",
+) -> ToolChunk:
+    """Modify raw XML in a document part (universal fallback).
+
+    This is the most powerful editing command — it can perform any
+    OpenXML operation by directly manipulating the XML. Use it when
+    the structured add/set/remove commands don't cover a specific need.
+
+    Args:
+        file_path (`str`):
+            Document path (.docx/.xlsx/.pptx).
+        part (`str`):
+            Part path (e.g. "/document", "/styles", "/Sheet1",
+            "/slide[1]").
+        xpath (`str`):
+            XPath to target element(s) within the part.
+        action (`str`):
+            Action to perform: "append", "prepend", "insertbefore",
+            "insertafter", "replace", "remove", or "setattr".
+        xml (`str`):
+            XML fragment (for append/prepend/insert/replace) or
+            ``attr=value`` (for setattr). Empty for "remove".
+
+    Returns:
+        `ToolChunk`:
+            JSON with the modification result.
+    """
+    resolved = _resolve_workspace_path(file_path)
+    args: list[str] = [
+        "raw-set",
+        resolved,
+        part,
+        "--xpath",
+        xpath,
+        "--action",
+        action,
+    ]
+    if xml:
+        args.extend(["--xml", xml])
+    result = await _run_officecli(*args)
     return _json_toolchunk(result)

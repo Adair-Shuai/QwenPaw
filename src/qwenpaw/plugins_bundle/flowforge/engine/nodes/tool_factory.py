@@ -41,8 +41,8 @@ from typing import Any, ClassVar, Iterable
 
 import logging
 
-from leagent.tools.base import BaseTool, ToolCategory
-from leagent.tools.registry import ToolRegistry
+from ..adapter import BaseTool, ToolCategory, ToolRegistry
+from ..adapter.log_compat import get_logger
 from ..io import (
     IO,
     Hidden,
@@ -54,7 +54,7 @@ from ..io.schema_bridge import json_schema_to_inputs
 from .base import WorkflowNode
 from .registry import NodeRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 # ``output``/``retry_*`` live on every generated node and are not part of

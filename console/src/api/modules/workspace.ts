@@ -207,12 +207,21 @@ export const workspaceApi = {
   /**
    * Returns the URL for a binary file (image, PDF, CSV) preview.
    * The browser can use this URL directly in <img>, <embed>, or fetch().
+   *
+   * For absolute filesystem paths (starting with /), the leading slash is
+   * encoded as %2F to survive the Vite dev-server proxy (which normalizes
+   * // to /). FastAPI decodes %2F back to / so the backend treats the path
+   * as absolute.
    */
-  getBinaryFileUrl: (filePath: string) =>
-    getApiUrl(
-      `/workspace/binary-files/${filePath
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/")}`,
-    ),
+  getBinaryFileUrl: (filePath: string) => {
+    const isAbsolute = filePath.startsWith("/");
+    const cleanPath = isAbsolute ? filePath.slice(1) : filePath;
+    const encoded = cleanPath
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    return getApiUrl(
+      `/workspace/binary-files/${isAbsolute ? "%2F" : ""}${encoded}`,
+    );
+  },
 };

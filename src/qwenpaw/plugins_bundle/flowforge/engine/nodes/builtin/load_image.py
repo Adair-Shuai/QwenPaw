@@ -11,7 +11,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-from leagent.file.tool_output import register_tool_artifact
+from ...adapter.tool_output import register_tool_artifact
 from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_tree
 from ..base import WorkflowNode
 
@@ -41,7 +41,7 @@ async def _resolve_session_attachment(
         return None
 
     try:
-        from leagent.main import get_service_manager
+        from ...adapter import get_service_manager
 
         sm = get_service_manager()
         session_manager = getattr(sm, "session_manager", None)
@@ -88,7 +88,7 @@ class LoadImageNode(WorkflowNode):
     NODE_ID = "LoadImage"
 
     @classmethod
-    def get_schema(cls) -> Schema:
+    def define_schema(cls) -> Schema:
         return Schema(
             node_id=cls.NODE_ID,
             display_name="Load image",

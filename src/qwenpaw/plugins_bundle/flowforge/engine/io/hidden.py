@@ -58,6 +58,8 @@ class HiddenHolder:
     #: running nodes (agents) pass it down so an executor cancel aborts the
     #: in-flight agent turn instead of waiting for it to finish.
     abort_event: Any = None
+    #: Per-execution extra data bag (run_id, session_id, user_id, etc.).
+    extra_data: dict[str, Any] | None = None
 
     def resolve(self, key: Hidden) -> Any:
         return getattr(self, key.value, None)
@@ -79,4 +81,5 @@ class HiddenHolder:
             logger=self.logger,
             progress=self.progress,
             abort_event=self.abort_event,
+            extra_data=self.extra_data,
         )

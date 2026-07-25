@@ -16,6 +16,7 @@ from typing import Any
 
 import logging
 
+from ...adapter.log_compat import get_logger
 from ...io import (
     IO,
     Hidden,
@@ -30,7 +31,7 @@ from ..base import WorkflowNode
 
 from .export_profiles import EXPORT_ENGINES, build_export_bundle
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AssetExportNode(WorkflowNode):
@@ -148,7 +149,7 @@ class AssetExportNode(WorkflowNode):
         out: dict[str, bytes] = {}
         file_service = None
         try:
-            from leagent.services.service_manager import get_service_manager
+            from ...adapter import get_service_manager
 
             sm = get_service_manager()
             file_service = getattr(sm, "file_service", None) if sm else None
@@ -174,7 +175,7 @@ class AssetExportNode(WorkflowNode):
         zip_bytes: bytes, name: str, engine: str, hidden: HiddenHolder,
     ) -> dict[str, Any] | None:
         """Persist the bundle as a managed artifact; return its download info."""
-        from leagent.file.tool_output import register_tool_artifact
+        from ...adapter.tool_output import register_tool_artifact
 
         filename = f"{name}_{engine}_bundle.zip"
         attachment = await register_tool_artifact(

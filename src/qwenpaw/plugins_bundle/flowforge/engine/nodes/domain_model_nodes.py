@@ -26,7 +26,7 @@ from ..io import IO, Hidden, HiddenHolder, InputBase, NodeOutput, Schema
 from .base import WorkflowNode
 
 if TYPE_CHECKING:
-    from leagent.llm.domain_registry import (
+    from ..adapter.domain_registry import (
         DomainModelAdapter,
         DomainModelSpec,
         DomainParam,

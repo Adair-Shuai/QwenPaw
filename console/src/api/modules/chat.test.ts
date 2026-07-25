@@ -41,9 +41,14 @@ describe("chatApi.filePreviewUrl", () => {
     expect(result).toBe("/api/files/preview/img.png");
   });
 
-  it("strips leading / from path", () => {
+  it("encodes leading / as %2F for absolute paths", () => {
     const result = chatApi.filePreviewUrl("/img.png");
-    expect(result).toBe("/api/files/preview/img.png");
+    expect(result).toBe("/api/files/preview/%2Fimg.png");
+  });
+
+  it("encodes file:// URLs as absolute paths with %2F", () => {
+    const result = chatApi.filePreviewUrl("file:///Users/test/img.png");
+    expect(result).toBe("/api/files/preview/%2FUsers/test/img.png");
   });
 
   it("appends ?token= param when token is present", () => {

@@ -7,7 +7,7 @@ import mimetypes
 from pathlib import Path
 from typing import Any
 
-from leagent.file.tool_output import register_tool_artifact
+from ...adapter.tool_output import register_tool_artifact
 from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_tree
 from ..base import WorkflowNode
 
@@ -37,7 +37,7 @@ class LoadMesh3DNode(WorkflowNode):
     NODE_ID = "LoadMesh3D"
 
     @classmethod
-    def get_schema(cls) -> Schema:
+    def define_schema(cls) -> Schema:
         return Schema(
             node_id=cls.NODE_ID,
             display_name="Load 3D mesh",

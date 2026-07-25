@@ -14,7 +14,8 @@ import time
 from typing import Any
 
 import logging
-logger = logging.getLogger(__name__)
+from .adapter.log_compat import get_logger
+logger = get_logger(__name__)
 from .io import Hidden, HiddenHolder, NodeOutput
 from .io.contract import NOT_CACHEABLE
 from .nodes import NodeRegistry
@@ -24,7 +25,7 @@ from .caching import BaseCache, CacheEntry, CacheKeySet
 from .errors import NodeExecutionError, WorkflowEngineError
 from .progress import CurrentNodeContext, NodeStatus, ProgressRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 #: Exception types treated as transient (worth retrying). Network/timeout
 #: errors are the common case for generation backends and tool calls.

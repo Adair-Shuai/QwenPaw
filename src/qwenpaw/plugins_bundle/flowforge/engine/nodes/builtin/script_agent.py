@@ -13,7 +13,7 @@ from typing import Any
 
 import logging
 
-from leagent.agent.script_agent import DEFAULT_SCRIPT_AGENT_TOOLS
+from ...adapter import DEFAULT_SCRIPT_AGENT_TOOLS
 from ...io import (
     IO,
     Hidden,

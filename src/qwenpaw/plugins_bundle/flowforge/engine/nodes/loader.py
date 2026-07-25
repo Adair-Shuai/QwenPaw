@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 import logging
+from ..adapter.log_compat import get_logger
 
 try:  # importlib.metadata is stdlib; older interpreters fall back
     from importlib.metadata import entry_points
@@ -39,7 +40,7 @@ from .base import WorkflowNode
 from .extension import NodeExtension
 from .registry import NodeRegistry, get_registry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 ENTRYPOINT_GROUP = "flowforge.workflow.nodes"
 
@@ -61,9 +62,14 @@ async def load_art_pack(registry: NodeRegistry | None = None) -> list[str]:
 
     Loaded as a :class:`NodeExtension` bundle rather than auto-generated
     from adapters — node authoring stays explicit and composable.
+    Returns an empty list if the art extension is not installed.
     """
     reg = registry or get_registry()
-    from .art import ArtNodeExtension  # local import to avoid circularity
+    try:
+        from .art import ArtNodeExtension  # local import to avoid circularity
+    except ImportError:
+        logger.debug("art_extension_not_installed")
+        return []
 
     extension = ArtNodeExtension()
     registered: list[str] = []
@@ -243,7 +249,7 @@ async def bootstrap(
         from .agent_node_factory import register_agent_nodes
 
         if agent_registry is None:
-            from leagent.runtime import get_agent_registry
+            from ..adapter import get_agent_registry
 
             agent_registry = get_agent_registry()
         summary["agents"] = register_agent_nodes(reg, agent_registry)
@@ -258,7 +264,7 @@ async def bootstrap(
         logger.warning("domain_model_node_bootstrap_failed", exc_info=True)
 
     try:
-        from leagent.llm.capabilities.bootstrap import bootstrap_capabilities
+        from ..adapter import bootstrap_capabilities
 
         caps = bootstrap_capabilities()
         summary["capabilities"] = [*caps.get("generation", []), *caps.get("domain", [])]

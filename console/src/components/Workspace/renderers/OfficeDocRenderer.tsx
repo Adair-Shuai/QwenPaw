@@ -3,10 +3,12 @@
  *
  * 三级 fallback 策略（吸取 LeAgent 优点）：
  * 1. 优先：后端 /api/workspace/convert-office 转换为 HTML（保真度最高）
- * 2. 二级 fallback：后端不可用时，前端纯浏览器解析 OOXML
+ * 2. 二级 fallback（@deprecated 计划移除）：后端不可用时，前端纯浏览器解析 OOXML
  *    - DOCX → mammoth.convertToHtml
  *    - XLSX → read-excel-file
  *    - PPTX → JSZip 提取幻灯片
+ *    注意：此 fallback 依赖 mammoth/read-excel-file (~10MB)，
+ *    待 officecli 稳定后将在后续版本中移除，简化为两级 fallback。
  * 3. 三级 fallback：前端解析也失败 → 文件信息 + 下载按钮
  *
  * 支持的格式：DOCX、XLSX、PPTX（以及旧版 DOC/XLS/PPT，旧版只能走后端）
@@ -25,6 +27,18 @@ import OfficeOoxmlPreview from "./OfficeOoxmlPreview";
 import { isOfficeOoxmlMime } from "../../../utils/mimeForPreview";
 
 const API_BASE = "/api/workspace";
+
+/**
+ * In-memory cache for officecli conversion results.
+ * Key: fileUrl, Value: { html, engine, timestamp }
+ * Avoids re-converting the same file when switching tabs back and forth.
+ * Entries expire after 5 minutes to handle file edits.
+ */
+const _convertCache = new Map<
+  string,
+  { html: string; engine: string; ts: number }
+>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /** 判断是否为 OOXML 格式（可走前端解析） */
 function isOoxml(mime: string, ext?: string): boolean {
@@ -56,23 +70,25 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       setLoading(false);
       return;
     }
-    setLoading(true);
-    setError(null);
-    setFallbackStage("none");
 
-    // file:/// URLs are local paths that the backend cannot access.
-    // Skip the backend conversion attempt entirely and go straight to
-    // client-side parsing (OOXML) or download-only fallback.
-    if (fileUrl.startsWith("file://")) {
-      if (canClientSideParse) {
-        setFallbackStage("client-side");
-      } else {
-        setFallbackStage("download-only");
-      }
+    // Check cache first — avoids re-converting when switching tabs
+    const cached = _convertCache.get(fileUrl);
+    if (cached && Date.now() - cached.ts < CACHE_TTL) {
+      setHtmlContent(cached.html);
+      setRendererEngine(cached.engine as "officecli" | "legacy");
       setLoading(false);
       return;
     }
 
+    setLoading(true);
+    setError(null);
+    setFallbackStage("none");
+
+    // Always try backend conversion first. The backend runs locally
+    // (both in Tauri desktop and Vite dev mode) and can access local
+    // files, including file:// paths. If the backend is unreachable or
+    // returns 404/405, the error handling below falls back to
+    // client-side OOXML parsing or download-only mode.
     try {
       const res = await fetch(`${API_BASE}/convert-office`, {
         method: "POST",
@@ -111,6 +127,11 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         // Do NOT wrap it in our template — use it as-is so scripts
         // and styles work correctly.
         setHtmlContent(rawHtml);
+        _convertCache.set(fileUrl, {
+          html: rawHtml,
+          engine: "officecli",
+          ts: Date.now(),
+        });
       } else {
         // Legacy rendering: wrap in theme-aware styled template
         const isDark = theme === "dark";
@@ -150,6 +171,11 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           }
         </style></head><body>${rawHtml}</body></html>`;
         setHtmlContent(styledHtml);
+        _convertCache.set(fileUrl, {
+          html: styledHtml,
+          engine: "legacy",
+          ts: Date.now(),
+        });
       }
     } catch (err) {
       // 网络错误 → 优先前端解析，否则下载
@@ -172,13 +198,17 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       <div
         style={{
           display: "flex",
+          flexDirection: "column",
           alignItems: "center",
           justifyContent: "center",
           height: "100%",
           background: theme === "dark" ? "#1e1e1e" : "#fff",
         }}
       >
-        <Spin tip={t("workspace.converting")} size="large" />
+        <Spin size="large" />
+        <span style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
+          {t("workspace.converting")}
+        </span>
       </div>
     );
   }
@@ -314,5 +344,10 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     </div>
   );
 };
+
+/** Clear the in-memory conversion cache (for testing). */
+export function _clearConvertCache() {
+  _convertCache.clear();
+}
 
 export default OfficeDocRenderer;

@@ -44,8 +44,36 @@ export const chatApi = {
     if (!filename) return "";
     if (filename.startsWith("http://") || filename.startsWith("https://"))
       return filename;
-    let cleaned = filename.replace(/^\/+/, "");
-    const path = `${FILES_PREVIEW}/${cleaned}`;
+
+    // Extract the filesystem path from file:// URLs or use as-is.
+    let cleaned: string;
+    if (filename.startsWith("file://")) {
+      let rest = filename.slice(7); // strip "file://"
+      // On Windows: file:///C:/... → /C:/... → C:/...
+      if (
+        rest.length > 2 &&
+        rest[0] === "/" &&
+        rest[2] === ":" &&
+        /^[a-zA-Z]$/.test(rest[1])
+      ) {
+        rest = rest.slice(1);
+      }
+      cleaned = decodeURIComponent(rest);
+    } else {
+      cleaned = filename;
+    }
+
+    // For absolute Unix paths (starting with /), encode the leading slash
+    // as %2F. The Vite dev-server proxy normalizes // to /, which would
+    // strip the leading slash and make the backend treat the path as
+    // relative. Using %2F survives the proxy and FastAPI decodes it back
+    // to /, so Path(filepath).is_absolute() returns True on the backend.
+    const isAbsolute = cleaned.startsWith("/");
+    const segments = (isAbsolute ? cleaned.slice(1) : cleaned)
+      .split("/")
+      .map(encodeURIComponent)
+      .join("/");
+    const path = `${FILES_PREVIEW}/${isAbsolute ? "%2F" : ""}${segments}`;
     const url = getApiUrl(path);
 
     const token = getApiToken();
