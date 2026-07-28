@@ -11,6 +11,7 @@ import logging
 import os
 import re
 import time
+import xml.etree.ElementTree as ET
 import zipfile
 from collections import OrderedDict
 from contextlib import asynccontextmanager, contextmanager
@@ -50,6 +51,7 @@ InstallOrigin = Literal[
     "aliyun",
     "skillsmp",
     "clawhub",
+    "oss",
     "url",
     "zip",
 ]
@@ -2158,6 +2160,219 @@ async def _fetch_bundle_from_aliyun_url(
     return bundle, bundle_url
 
 
+# ---------- Provider: OSS (Alibaba Cloud Object Storage) -------------------
+
+
+_OSS_HOST_RE = re.compile(
+    r"^(?P<bucket>[a-z0-9][a-z0-9-]{1,61}[a-z0-9])"
+    r"\.oss-(?P<region>[a-z0-9-]+)\.aliyuncs\.com$",
+)
+
+
+def _extract_oss_spec(
+    url: str,
+) -> tuple[str, str, str] | None:
+    """Parse an OSS URL into (endpoint, prefix, skill_folder_name).
+
+    Accepts URLs like:
+      https://bucket.oss-cn-beijing.aliyuncs.com/skills/skill-name
+      https://bucket.oss-cn-hangzhou.aliyuncs.com/path/to/skill-folder/
+
+    Returns (endpoint_url, prefix_with_trailing_slash,
+    skill_folder_name) or None.
+    """
+    parsed = urlparse(url)
+    host = (parsed.netloc or "").lower()
+    m = _OSS_HOST_RE.match(host)
+    if not m:
+        return None
+    # Build the endpoint URL (scheme + host)
+    endpoint = f"{parsed.scheme}://{host}"
+    # Extract the path as prefix
+    path = unquote(parsed.path).lstrip("/")
+    # Remove trailing slashes
+    path = path.rstrip("/")
+    if not path:
+        return None
+    # The skill folder name is the last path segment
+    parts = [p for p in path.split("/") if p]
+    if not parts:
+        return None
+    skill_folder = parts[-1]
+    prefix = path + "/"
+    return endpoint, prefix, skill_folder
+
+
+async def _oss_list_objects(
+    endpoint: str,
+    prefix: str,
+    *,
+    delimiter: str = "",
+    max_keys: int = 1000,
+) -> tuple[list[str], list[str]]:
+    """List objects in an OSS bucket under *prefix*.
+
+    Returns (file_keys, common_prefixes).
+    Uses the OSS ListObjects REST API (no SDK required for public buckets).
+    """
+    params: dict[str, str] = {
+        "prefix": prefix,
+        "max-keys": str(max_keys),
+    }
+    if delimiter:
+        params["delimiter"] = delimiter
+    _query_parts = [f"{k}={quote(v, safe='')}" for k, v in params.items()]
+    list_url = f"{endpoint}/?{'&'.join(_query_parts)}"
+    try:
+        body = await _http_get(
+            list_url,
+            accept="application/xml, */*",
+        )
+    except httpx.HTTPStatusError as e:
+        raise SkillsError(
+            message=f"OSS ListObjects failed: HTTP {e.response.status_code}",
+        ) from e
+    # Parse XML response
+    file_keys: list[str] = []
+    common_prefixes: list[str] = []
+    try:
+        root = ET.fromstring(body)
+        # OSS XML namespace is typically empty
+        for contents in root.iter("Contents"):
+            key_elem = contents.find("Key")
+            if key_elem is not None and key_elem.text:
+                file_keys.append(key_elem.text)
+        for cp in root.iter("CommonPrefixes"):
+            prefix_elem = cp.find("Prefix")
+            if prefix_elem is not None and prefix_elem.text:
+                common_prefixes.append(prefix_elem.text)
+    except ET.ParseError as e:
+        raise SkillsError(
+            message=f"OSS ListObjects returned invalid XML: {e}",
+        ) from e
+    return file_keys, common_prefixes
+
+
+async def _fetch_bundle_from_oss_url(  # pylint: disable=R0912,R0915
+    bundle_url: str,
+    requested_version: str,
+    *,
+    access_token: str = "",
+) -> tuple[Any, str]:
+    """Fetch a skill bundle from an Alibaba Cloud OSS URL.
+
+    Supports URLs like:
+      https://bucket.oss-cn-beijing.aliyuncs.com/skills/skill-name
+    """
+    del requested_version, access_token  # not used for OSS
+    spec = _extract_oss_spec(bundle_url)
+    if spec is None:
+        raise ConfigurationException(
+            config_key="skills_hub.bundle_url",
+            message=(
+                "Invalid OSS URL format. Use a URL like "
+                "https://bucket.oss-cn-region.aliyuncs.com/"
+                "path/to/skill-folder"
+            ),
+        )
+    endpoint, prefix, skill_folder = spec
+
+    # Try ListObjects to enumerate all files under the skill folder
+    file_keys: list[str] = []
+    try:
+        file_keys, _ = await _oss_list_objects(endpoint, prefix)
+    except Exception as e:
+        logger.warning(
+            "OSS ListObjects failed for prefix '%s': %s; "
+            "trying manifest.json fallback",
+            prefix,
+            e,
+        )
+
+    # If ListObjects was denied (AccessDenied), the caller already
+    # knows the exact skill folder URL — fetch SKILL.md directly and
+    # also try references/ and scripts/ sub-paths.
+    if not file_keys:
+        # Direct file fetch fallback: try known skill file paths
+        known_paths = [
+            "SKILL.md",
+        ]
+        # Also try listing references/ and scripts/ subdirectories
+        for sub in ("references", "scripts"):
+            try:
+                sub_keys, _ = await _oss_list_objects(
+                    endpoint,
+                    f"{prefix}{sub}/",
+                )
+                for sk in sub_keys:
+                    if not sk.endswith("/") and not sk.startswith(
+                        f"{prefix}{sub}/.",
+                    ):
+                        known_paths.append(sk[len(prefix) :])
+            except Exception:
+                pass
+
+        # Fetch each known path
+        files: dict[str, str] = {}
+        for rel in known_paths:
+            full_key = f"{prefix}{rel}" if not rel.startswith(prefix) else rel
+            file_url = f"{endpoint}/{quote(full_key, safe='/')}"
+            try:
+                content = await _http_text_get(file_url)
+            except Exception as e:
+                logger.warning("Failed to fetch OSS file %s: %s", full_key, e)
+                continue
+            files[rel] = content
+    else:
+        # ListObjects succeeded: fetch each file
+        files = {}
+        for key in file_keys:
+            # Skip directory markers (keys ending with /)
+            if key.endswith("/"):
+                continue
+            # Compute relative path from the prefix
+            rel = key[len(prefix) :] if key.startswith(prefix) else key
+            if not rel:
+                continue
+            # Skip hidden files
+            if rel.startswith(".") or "/." in rel:
+                continue
+            # Fetch file content
+            file_url = f"{endpoint}/{quote(key, safe='/')}"
+            try:
+                content = await _http_text_get(file_url)
+            except Exception as e:
+                logger.warning("Failed to fetch OSS file %s: %s", key, e)
+                continue
+            files[rel] = content
+
+    if not files:
+        raise SkillsError(
+            message=(
+                f"No files found under OSS prefix '{prefix}' at {endpoint}. "
+                "Ensure the bucket allows public read access "
+                "and the path is correct."
+            ),
+        )
+
+    if "SKILL.md" not in files:
+        raise SkillsError(
+            message=f"OSS skill folder '{skill_folder}' is missing SKILL.md",
+        )
+
+    # Extract skill name from frontmatter
+    skill_name = skill_folder
+    try:
+        post = frontmatter.loads(files["SKILL.md"])
+        fm_name = post.get("name")
+        if isinstance(fm_name, str) and fm_name.strip():
+            skill_name = fm_name.strip()
+    except yaml.YAMLError:
+        pass
+
+    return {"name": skill_name, "files": files}, bundle_url
+
+
 # ---------- Provider: ClawHub (slug-based detail API) ----------------------
 
 
@@ -2366,6 +2581,7 @@ PROVIDERS: list[tuple[InstallOrigin, _ProviderMatcher, _ProviderFetcher]] = [
         _fetch_bundle_from_modelscope_url,
     ),
     ("aliyun", _extract_aliyun_skill_spec, _fetch_bundle_from_aliyun_url),
+    ("oss", _extract_oss_spec, _fetch_bundle_from_oss_url),
     ("skillsmp", _extract_skillsmp_slug, _fetch_bundle_from_skillsmp_url),
     ("clawhub", _resolve_clawhub_slug, _fetch_bundle_from_clawhub_url),
 ]
