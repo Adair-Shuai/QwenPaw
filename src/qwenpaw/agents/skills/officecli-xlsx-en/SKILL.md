@@ -4,7 +4,7 @@ description: "Use this skill any time a .xlsx file is involved. QwenPaw wraps co
 metadata:
   builtin_skill_version: "1.0"
   qwenpaw:
-    emoji: "ð"
+    emoji: "📄"
 ---
 
 
