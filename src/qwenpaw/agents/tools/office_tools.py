@@ -851,6 +851,7 @@ async def office_batch_operations(
 @tool_descriptor(
     requires_sandbox=("file_write",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeMoveElement",
@@ -908,6 +909,7 @@ async def office_move_element(
 @tool_descriptor(
     requires_sandbox=("file_write",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeSwapElements",
@@ -948,6 +950,7 @@ async def office_swap_elements(
 @tool_descriptor(
     requires_sandbox=("file_read",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeGetText",
@@ -1000,6 +1003,7 @@ async def office_get_text(
 @tool_descriptor(
     requires_sandbox=("file_read",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeGetStats",
@@ -1043,6 +1047,7 @@ async def office_get_stats(
 @tool_descriptor(
     requires_sandbox=("file_write",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeImportData",
@@ -1104,6 +1109,7 @@ async def office_import_data(
 @tool_descriptor(
     requires_sandbox=("file_write",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeRefreshFields",
@@ -1138,6 +1144,7 @@ async def office_refresh_fields(file_path: str) -> ToolChunk:
 @tool_descriptor(
     requires_sandbox=("file_read",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeRawGet",
@@ -1186,6 +1193,7 @@ async def office_raw_get(
 @tool_descriptor(
     requires_sandbox=("file_write",),
     async_execution=True,
+    enabled_by_default=False,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeRawSet",

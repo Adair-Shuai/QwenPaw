@@ -18,6 +18,8 @@ metadata:
 
 ## 工具清单
 
+### 默认工具（默认启用）
+
 | 工具 | 用途 | 写权限 |
 |------|------|--------|
 | `office_create_document` | 创建空白文档 | 是 |
@@ -31,6 +33,23 @@ metadata:
 | `office_validate_document` | 验证文档格式 | 否 |
 | `office_merge_template` | 合并模板数据 | 是 |
 | `office_batch_operations` | 批量操作 | 是 |
+
+### 高级工具（按需启用，`enabled_by_default=False`）
+
+这些工具默认不加载，以减少工具选择的认知开销。需要精细控制时再启用。
+
+| 工具 | 用途 | 写权限 |
+|------|------|--------|
+| `office_move_element` | 移动/重排文档内元素 | 是 |
+| `office_swap_elements` | 交换两个元素的位置 | 是 |
+| `office_get_text` | 提取文档纯文本 | 否 |
+| `office_get_stats` | 获取文档统计信息（页数、字数、形状数） | 否 |
+| `office_import_data` | 导入 CSV/JSON 数据到 Excel | 是 |
+| `office_refresh_fields` | 刷新目录/页码/交叉引用（docx） | 是 |
+| `office_raw_get` | 读取原始 OOXML 部件（50KB 截断） | 否 |
+| `office_raw_set` | 通过 XPath 修改原始 OOXML | 是 |
+
+> **提示：** 如需完整 CLI 参考（L1→L2→L3 策略、所有元素类型、属性格式），加载 `officecli-reference` 技能。如需格式特定的深度 schema，加载 `officecli-docx`、`officecli-pptx` 或 `officecli-xlsx`。
 
 ## 标准工作流
 
@@ -94,3 +113,14 @@ metadata:
 - 是否有残留的占位符文本
 
 如果发现问题，使用 `office_set_properties` 修正后再次截图确认，直到满意为止。
+
+## 关联技能
+
+如需更深入的知识，加载以下配套技能：
+
+| 技能 | 何时加载 |
+|------|---------|
+| `officecli-reference` | 需要完整 CLI 命令参考、L1→L2→L3 策略或常见陷阱 |
+| `officecli-docx` | 处理 .docx 且需要完整元素 schema（样式、目录、修订追踪、域） |
+| `officecli-pptx` | 处理 .pptx 且需要完整元素 schema（动画、过渡、图表、连接符） |
+| `officecli-xlsx` | 处理 .xlsx 且需要完整元素 schema（透视表、条件格式、数据验证） |

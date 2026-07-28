@@ -18,6 +18,8 @@ metadata:
 
 ## Tool List
 
+### Default Tools (enabled by default)
+
 | Tool | Purpose | Write |
 |------|---------|-------|
 | `office_create_document` | Create blank document | Yes |
@@ -31,6 +33,23 @@ metadata:
 | `office_validate_document` | Validate document format | No |
 | `office_merge_template` | Merge data into templates | Yes |
 | `office_batch_operations` | Batch operations | Yes |
+
+### Advanced Tools (opt-in, `enabled_by_default=False`)
+
+These tools are not loaded by default to reduce tool-selection overhead. Enable them when you need fine-grained control.
+
+| Tool | Purpose | Write |
+|------|---------|-------|
+| `office_move_element` | Move/reorder elements within document | Yes |
+| `office_swap_elements` | Swap two elements' positions | Yes |
+| `office_get_text` | Extract plain text from document | No |
+| `office_get_stats` | Get document statistics (pages, words, shapes) | No |
+| `office_import_data` | Import CSV/JSON data into Excel | Yes |
+| `office_refresh_fields` | Refresh TOC/page numbers/cross-refs (docx) | Yes |
+| `office_raw_get` | Read raw OOXML part (50KB truncated) | No |
+| `office_raw_set` | Modify raw OOXML via XPath | Yes |
+
+> **Tip:** For the full CLI reference (L1→L2→L3 strategy, all element types, property formats), load the `officecli-reference` skill. For format-specific deep schemas, load `officecli-docx`, `officecli-pptx`, or `officecli-xlsx`.
 
 ## Standard Workflow
 
@@ -94,3 +113,14 @@ Check for:
 - Leftover placeholder text
 
 If issues are found, use `office_set_properties` to fix, then screenshot again to confirm, repeating until satisfied.
+
+## Related Skills
+
+For deeper knowledge, load these companion skills:
+
+| Skill | When to Load |
+|-------|-------------|
+| `officecli-reference` | Need full CLI command reference, L1→L2→L3 strategy, or common pitfalls |
+| `officecli-docx` | Working with .docx and need full element schema (styles, TOC, tracked changes, fields) |
+| `officecli-pptx` | Working with .pptx and need full element schema (animations, transitions, charts, connectors) |
+| `officecli-xlsx` | Working with .xlsx and need full element schema (pivot tables, conditional formatting, validations) |
