@@ -13,18 +13,17 @@ from typing import TYPE_CHECKING, Any, List
 from urllib.parse import urlparse
 
 import httpx
-
-from ..utils.http import (
-    should_use_custom_http_client,
-    build_httpx_proxy_kwargs,
-)
-
-# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 from agentscope.model import ChatModelBase
 from openai import APIError
 from pydantic import Field
 
 from qwenpaw.providers.provider import ModelInfo, Provider
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
 
 from .capping_formatter import MAX_INLINE_MEDIA_BYTES, _CappingOpenAIFormatter
 from .multimodal_prober import evaluate_video_probe_answer

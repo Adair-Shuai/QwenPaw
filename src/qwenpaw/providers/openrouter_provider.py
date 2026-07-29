@@ -10,17 +10,16 @@ from agentscope.model import ChatModelBase
 from openai import APIError, AsyncOpenAI
 from pydantic import Field
 
-from ..utils.http import (
-    should_use_custom_http_client,
-    build_httpx_proxy_kwargs,
-)
-
-# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
-
 from qwenpaw.providers.provider import (
     Provider,
     ExtendedModelInfo,
     ModelInfo,
+)
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
 )
 from .capping_formatter import _CappingOpenAIFormatter
 from .capping_formatter import MAX_INLINE_MEDIA_BYTES

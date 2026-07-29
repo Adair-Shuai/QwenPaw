@@ -13,13 +13,6 @@ from agentscope.model import ChatModelBase
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
-
-from ..utils.http import (
-    should_use_custom_http_client,
-    build_httpx_proxy_kwargs,
-)
-
-# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 from pydantic import Field
 
 from qwenpaw.providers.multimodal_prober import (
@@ -31,6 +24,12 @@ from qwenpaw.providers.multimodal_prober import (
     evaluate_image_probe_answer,
 )
 from qwenpaw.providers.provider import ModelInfo, Provider
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
 from .capping_formatter import _CappingGeminiFormatter
 from .capping_formatter import MAX_INLINE_MEDIA_BYTES
 
@@ -201,7 +200,7 @@ class GeminiProvider(Provider):
             proxy_kwargs = build_httpx_proxy_kwargs(self.base_url)
             if proxy_kwargs:
                 http_options_kwargs["httpxAsyncClient"] = httpx.AsyncClient(
-                    **proxy_kwargs
+                    **proxy_kwargs,
                 )
         return genai.Client(
             api_key=self.api_key,

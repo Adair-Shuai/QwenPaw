@@ -10840,7 +10840,11 @@ interface OssMcpServer {
   description: string;
   tags: string[];
   transport: string;
+  /** stdio config */
   config?: { command: string; args: string[] };
+  /** http/sse config — url and headers live here in the manifest */
+  config_url?: string;
+  config_headers?: Record<string, string>;
   env?: string[];
   source?: string;
   icon?: string;
@@ -10887,6 +10891,12 @@ function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
       envObj[envKey] = `your-${envKey.toLowerCase().replace(/_/g, "-")}`;
     }
   }
+  // Normalise transport: OSS manifest uses "streamable-http" but backend
+  // expects "streamable_http" (underscore).
+  const rawTransport = server.transport || "stdio";
+  const transport = rawTransport.replace(/-/g, "_") as
+    "stdio" | "streamable_http" | "sse";
+
   // Pick an emoji based on icon name or id
   let emoji = "🔌";
   const iconLower = (server.icon || "").toLowerCase();
@@ -10905,6 +10915,17 @@ function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
   else if (iconLower.includes("science") || iconLower.includes("flask")) emoji = "🔬";
   else if (iconLower.includes("book") || iconLower.includes("arxiv")) emoji = "📚";
   else if (iconLower.includes("patent")) emoji = "📜";
+  // For non-stdio transports, extract url and headers from config
+  const configAny = server.config as any;
+  const configUrl: string =
+    server.config_url ||
+    configAny?.url ||
+    "";
+  const configHeaders: Record<string, string> =
+    server.config_headers ||
+    configAny?.headers ||
+    {};
+
   return {
     id: server.id,
     name: server.name,
@@ -10914,10 +10935,12 @@ function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
       : undefined,
     category: server.category ? _tagGroupLabel(server.category) : "",
     description: server.description,
-    transport: (server.transport || "stdio") as "stdio" | "streamable_http" | "sse",
+    transport,
     command: server.config?.command || "",
     args: server.config?.args || [],
     env: Object.keys(envObj).length > 0 ? envObj : undefined,
+    url: configUrl,
+    headers: Object.keys(configHeaders).length > 0 ? configHeaders : undefined,
   };
 }
 
@@ -11283,10 +11306,13 @@ async function fetchOSSSourceSkills(
     throw new Error(`Invalid OSS URL: ${source.url}`);
   }
   const { endpoint, prefix } = ossParsed;
+  // Encode prefix only for direct OSS URLs (skillUrl); the ossProxyUrl
+  // function applies encodeURIComponent internally, so we pass the raw
+  // prefix to avoid double-encoding.
   const encodedPrefix = prefix.split("/").map(encodeURIComponent).join("/");
 
   // Fetch manifest.json — the authoritative source for skill metadata + tags
-  const manifestUrl = ossProxyUrl(`${encodedPrefix}/manifest.json`);
+  const manifestUrl = ossProxyUrl(`${prefix}/manifest.json`);
   const manifestResp = await fetch(manifestUrl);
   if (!manifestResp.ok) {
     throw new Error(
@@ -11507,6 +11533,199 @@ async function fetchAllGitHubSkills(
     if (r.error) errors.push({ label: r.label, message: r.error });
   }
   return { skills: allSkills, errors };
+}
+
+/**
+ * Minimal YAML parser for MCP driver config files.
+ * Extracts client_key, name, description, transport, command, args, env,
+ * url, headers, cwd from a simple YAML structure without a full YAML lib.
+ */
+function _parseMcpDriverYaml(yamlText: string): {
+  client_key?: string;
+  name?: string;
+  description?: string;
+  transport?: string;
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  cwd?: string;
+} | null {
+  const result: any = {};
+  let currentSection: "" | "args" | "env" | "headers" = "";
+  const args: string[] = [];
+  const env: Record<string, string> = {};
+  const headers: Record<string, string> = {};
+
+  const lines = yamlText.split("\n");
+  for (const line of lines) {
+    // Skip comments and empty lines
+    if (/^\s*#/.test(line) || /^\s*$/.test(line)) continue;
+    const indent = line.match(/^(\s*)/)?.[1].length || 0;
+    const trimmed = line.trim();
+
+    // Detect list items (only at 2+ indent under args)
+    if (currentSection === "args" && indent >= 2 && trimmed.startsWith("- ")) {
+      args.push(trimmed.slice(2).trim().replace(/^["']|["']$/g, ""));
+      continue;
+    }
+    // Detect key: value under env or headers (at 2+ indent)
+    if ((currentSection === "env" || currentSection === "headers") && indent >= 2) {
+      const kvMatch = trimmed.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+      if (kvMatch) {
+        let val = kvMatch[2].trim().replace(/^["']|["']$/g, "");
+        if (currentSection === "env") env[kvMatch[1]] = val;
+        else headers[kvMatch[1]] = val;
+        continue;
+      }
+    }
+
+    // Top-level key: value
+    const kvMatch = trimmed.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (kvMatch && indent === 0) {
+      const key = kvMatch[1];
+      let val = kvMatch[2].trim().replace(/^["']|["']$/g, "");
+      // Reset section tracking
+      currentSection = "";
+      if (val === "") {
+        // This key starts a nested block
+        if (key === "args") currentSection = "args";
+        else if (key === "env") currentSection = "env";
+        else if (key === "headers") currentSection = "headers";
+      } else {
+        // Simple key: value
+        if (key === "client_key" || key === "id") result.client_key = val;
+        else if (key === "name") result.name = val;
+        else if (key === "description") result.description = val;
+        else if (key === "transport") result.transport = val.replace(/-/g, "_");
+        else if (key === "command") result.command = val;
+        else if (key === "url") result.url = val;
+        else if (key === "cwd") result.cwd = val;
+      }
+    }
+  }
+
+  if (args.length > 0) result.args = args;
+  if (Object.keys(env).length > 0) result.env = env;
+  if (Object.keys(headers).length > 0) result.headers = headers;
+
+  if (!result.client_key) return null;
+  return result;
+}
+
+/**
+ * Fetch MCP servers from custom (user-configured) sources.
+ * Each source URL is expected to return a manifest in the same format as
+ * the official OSS MCP manifest ({ servers: [...], tag_groups: {...} }).
+ * Uses the backend oss-proxy for CORS avoidance when the URL is on OSS.
+ */
+async function fetchCustomMcpSources(
+  sources: GenericSource[],
+): Promise<{ servers: OssMcpServer[]; errors: string[] }> {
+  const enabled = sources.filter((s) => s.enabled && s.url);
+  if (enabled.length === 0) return { servers: [], errors: [] };
+
+  const results = await Promise.all(
+    enabled.map(async (src) => {
+      try {
+        // Try fetching directly first; fall back to oss-proxy for CORS
+        let resp = await fetch(src.url).catch(() => null as Response | null);
+        if (!resp || !resp.ok) {
+          // Try via oss-proxy
+          const proxyUrl = ossProxyUrl(src.url.replace(/^https?:\/\/[^/]+\//, ""));
+          resp = await fetch(proxyUrl);
+        }
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const manifest = await resp.json();
+        const servers: OssMcpServer[] = (manifest.servers || []).map((s: any) => ({
+          id: s.id || s.name,
+          name: s.name || s.id,
+          description: s.description || "",
+          tags: s.tags || [],
+          transport: s.transport || "stdio",
+          config: s.config,
+          config_url: s.config_url,
+          config_headers: s.config_headers,
+          env: Array.isArray(s.env) ? s.env : undefined,
+          source: s.source || src.label,
+          icon: s.icon,
+          icon_url: s.icon_url || s.icon_path || undefined,
+          category: "",
+        }));
+        return { servers, error: null as string | null };
+      } catch (e: any) {
+        return {
+          servers: [] as OssMcpServer[],
+          error: `${src.label}: ${e.message || String(e)}`,
+        };
+      }
+    }),
+  );
+
+  const allServers: OssMcpServer[] = [];
+  const errors: string[] = [];
+  for (const r of results) {
+    allServers.push(...r.servers);
+    if (r.error) errors.push(r.error);
+  }
+  return { servers: allServers, errors };
+}
+
+/**
+ * Fetch agents from custom (user-configured) sources.
+ * Each source URL is expected to return a manifest in the same format as
+ * the official OSS agents manifest ({ agents: [...], tag_groups: {...} }).
+ */
+async function fetchCustomExpertSources(
+  sources: GenericSource[],
+): Promise<{ agents: OssAgent[]; errors: string[] }> {
+  const enabled = sources.filter((s) => s.enabled && s.url);
+  if (enabled.length === 0) return { agents: [], errors: [] };
+
+  const results = await Promise.all(
+    enabled.map(async (src) => {
+      try {
+        let resp = await fetch(src.url).catch(() => null as Response | null);
+        if (!resp || !resp.ok) {
+          const proxyUrl = ossProxyUrl(src.url.replace(/^https?:\/\/[^/]+\//, ""));
+          resp = await fetch(proxyUrl);
+        }
+        if (!resp.ok) {
+          throw new Error(`HTTP ${resp.status}`);
+        }
+        const manifest = await resp.json();
+        const agents: OssAgent[] = (manifest.agents || []).map((a: any) => ({
+          id: a.id || a.name,
+          name: a.name || a.id,
+          description: a.description || "",
+          path: a.path || "",
+          tags: a.tags || [],
+          config: a.config,
+          instructions: a.instructions,
+          skills_manifest: a.skills_manifest,
+          drivers: a.drivers,
+          category: "",
+        }));
+        return { agents, error: null as string | null };
+      } catch (e: any) {
+        return {
+          agents: [] as OssAgent[],
+          error: `${src.label}: ${e.message || String(e)}`,
+        };
+      }
+    }),
+  );
+
+  const allAgents: OssAgent[] = [];
+  const errors: string[] = [];
+  for (const r of results) {
+    allAgents.push(...r.agents);
+    if (r.error) errors.push(r.error);
+  }
+  return { agents: allAgents, errors };
 }
 
 // ─── Source Config Modal: manage GitHub skill sources ─────────────────────────
@@ -12565,19 +12784,21 @@ function MarketplacePage() {
     [],
   );
 
-  // Debounced search
+  // Debounced search — market search is triggered by searchText only.
+  // selectedCategory (from OSS skill tags) is NOT passed to market search
+  // because market providers use a different category taxonomy.
   useEffect(() => {
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     searchTimerRef.current = setTimeout(() => {
-      doSearch(searchText, selectedCategory, {});
+      doSearch(searchText, "", {});
     }, 400);
     return () => {
       if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     };
-  }, [searchText, selectedCategory, doSearch]);
+  }, [searchText, doSearch]);
 
   const handleLoadMore = () => {
-    doSearch(searchText, selectedCategory, providerPages);
+    doSearch(searchText, "", providerPages);
   };
 
   const handleInstallSkill = async (item: MarketResult) => {
@@ -12588,6 +12809,10 @@ function MarketplacePage() {
       if (result.installed) {
         antdMsg.success(
           `技能「${result.name || item.name}」已安装到技能池，可在技能中心查看`,
+        );
+      } else {
+        antdMsg.info(
+          `技能「${result.name || item.name}」已存在于技能池，无需重复安装`,
         );
       }
       setInstalling((prev: any) => {
@@ -12621,6 +12846,10 @@ function MarketplacePage() {
       if (result.installed) {
         antdMsg.success(
           `技能「${result.name || skill.name}」已安装到技能池，可在技能中心查看`,
+        );
+      } else {
+        antdMsg.info(
+          `技能「${result.name || skill.name}」已存在于技能池，无需重复安装`,
         );
       }
       setInstalling((prev: any) => {
@@ -12681,14 +12910,10 @@ function MarketplacePage() {
   // Available providers
   const availableProviders = providers.filter((p) => p.available);
 
-  // Filtered market results based on category filter
-  const filteredResults = useMemo(() => {
-    if (!selectedCategory) return results;
-    return results.filter((r) => {
-      const provider = availableProviders.find((p) => p.key === r.source);
-      return provider?.label === selectedCategory;
-    });
-  }, [results, selectedCategory, availableProviders]);
+  // Market search results are filtered by searchText only.
+  // Note: selectedCategory (from OSS skill tags) is not applied here
+  // because market provider labels use a different category taxonomy.
+  const filteredResults = results;
 
   // Skill Market Tab
   const skillsMarketTab = React.createElement(
@@ -13284,6 +13509,7 @@ function MarketplacePage() {
   const handleCreateOssAgent = async (agent: OssAgent) => {
     if (ossAgentCreating) return;
     setOssAgentCreating(true);
+    let createdAgentId: string | null = null;
     try {
       // Fetch instructions (AGENTS.md) from OSS if available
       let systemPrompt = agent.description;
@@ -13312,6 +13538,17 @@ function MarketplacePage() {
           }
         } catch {}
       }
+      // Fetch agent config (agent.json) from OSS if available
+      let agentConfig: Record<string, any> | null = null;
+      if (agent.config) {
+        try {
+          const configPath = agent.config.replace(/^\/+/, "");
+          const resp = await fetch(ossProxyUrl(configPath));
+          if (resp.ok) {
+            agentConfig = await resp.json();
+          }
+        } catch {}
+      }
       const agentRef = await apiFetch<{ id: string }>("/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -13321,10 +13558,78 @@ function MarketplacePage() {
           skill_names: skillNames,
         }),
       });
+      createdAgentId = agentRef.id;
+
+      // Write AGENTS.md system prompt
       await writeKnowledgeFile(agentRef.id, "AGENTS.md", systemPrompt);
+
+      // Auto-configure MCP drivers from the agent manifest
+      if (agent.drivers?.mcp && Array.isArray(agent.drivers.mcp)) {
+        for (const driverPath of agent.drivers.mcp) {
+          try {
+            const cleanDriverPath = driverPath.replace(/^\/+/, "");
+            const resp = await fetch(ossProxyUrl(cleanDriverPath));
+            if (!resp.ok) continue;
+            const yamlText = await resp.text();
+            // Parse a minimal YAML structure to extract client_key,
+            // transport, command, args, url, env, headers.
+            const parsed = _parseMcpDriverYaml(yamlText);
+            if (parsed && parsed.client_key) {
+              await createMCPForAgent(agentRef.id, {
+                client_key: parsed.client_key,
+                client: {
+                  name: parsed.name || parsed.client_key,
+                  description: parsed.description || "",
+                  enabled: true,
+                  transport: parsed.transport || "stdio",
+                  url: parsed.url || "",
+                  command: parsed.command || "",
+                  args: parsed.args || [],
+                  env: parsed.env || {},
+                  cwd: parsed.cwd || "",
+                  headers: parsed.headers || {},
+                },
+              });
+            }
+          } catch (mcpErr: any) {
+            console.warn(
+              `[ugsci] Failed to load MCP driver '${driverPath}': ${mcpErr?.message || mcpErr}`,
+            );
+          }
+        }
+      }
+
+      // If agent.json has additional configuration (e.g. approval level,
+      // active_model), apply it via PUT /agents/{id}
+      if (agentConfig) {
+        try {
+          const currentConfig = await fetchAgentConfig(agentRef.id);
+          const merged = { ...currentConfig, ...agentConfig };
+          // Don't overwrite the name/description set during creation
+          merged.name = agent.name;
+          merged.description = agent.description;
+          await apiFetch(`/agents/${encodeURIComponent(agentRef.id)}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(merged),
+          });
+        } catch {}
+      }
+
       antdMsg.success(`专家「${agent.name}」创建成功，已跳转至专家`);
       navigateTo("/ugsci-experts");
     } catch (err: any) {
+      // Rollback: delete partially created agent if writeKnowledgeFile
+      // or MCP configuration failed after agent creation.
+      if (createdAgentId) {
+        try {
+          await apiFetch(`/agents/${encodeURIComponent(createdAgentId)}`, {
+            method: "DELETE",
+          });
+        } catch {
+          /* best-effort cleanup */
+        }
+      }
       antdMsg.error(err.message || "创建专家失败");
     } finally {
       setOssAgentCreating(false);

@@ -9,17 +9,10 @@ import time
 from datetime import datetime
 from typing import Any, Dict, List
 
+import anthropic
 import httpx
 from agentscope.model import ChatModelBase
-import anthropic
 from pydantic import Field
-
-# [PROXY-BYPASS] Proxy injection for Anthropic SDK clients.
-# See: src/qwenpaw/docs/proxy-bypass-design.md
-from ..utils.http import (
-    should_use_custom_http_client,
-    build_httpx_proxy_kwargs,
-)
 
 from qwenpaw.providers.multimodal_prober import (
     ProbeResult,
@@ -32,6 +25,13 @@ from qwenpaw.providers.multimodal_prober import (
     evaluate_video_probe_answer,
 )
 from qwenpaw.providers.provider import ModelInfo, Provider
+
+# [PROXY-BYPASS] Proxy injection for Anthropic SDK clients.
+# See: src/qwenpaw/docs/proxy-bypass-design.md
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
 
 from .capping_formatter import _CappingAnthropicFormatter
 from .capping_formatter import MAX_INLINE_MEDIA_BYTES
@@ -625,6 +625,7 @@ class _AnthropicChatModelCompat:
     module load when Anthropic is not configured.
     """
 
+    # pylint: disable=too-many-statements
     def __new__(cls, **kwargs: Any) -> Any:
         from agentscope.model import AnthropicChatModel
 
@@ -639,21 +640,8 @@ class _AnthropicChatModelCompat:
             _qp_cached_client: Any = None
             _qp_cached_client_key: tuple = ()
 
-            def _get_or_create_client(self) -> Any:
-                """Return a cached AsyncAnthropic client, rebuilding only when
-                credential or base_url changes."""
-                key = (
-                    self.credential.base_url,
-                    self.credential.api_key.get_secret_value(),
-                    id(self._qp_default_headers),
-                    self._qp_auth_mode,
-                )
-                if (
-                    self._qp_cached_client is not None
-                    and self._qp_cached_client_key == key
-                ):
-                    return self._qp_cached_client
-
+            def _build_client_kwargs(self) -> Dict[str, Any]:
+                """Build kwargs for ``anthropic.AsyncAnthropic``."""
                 client_kwargs: Dict[str, Any] = {
                     "base_url": self.credential.base_url,
                 }
@@ -677,16 +665,31 @@ class _AnthropicChatModelCompat:
                     # calls in disabled/custom mode would still use the
                     # system proxy.
                     if should_use_custom_http_client():
-                        import httpx as _httpx
-
                         proxy_kwargs = build_httpx_proxy_kwargs(
                             self.credential.base_url,
                         )
                         if proxy_kwargs:
-                            client_kwargs["http_client"] = _httpx.AsyncClient(
-                                **proxy_kwargs
+                            client_kwargs["http_client"] = httpx.AsyncClient(
+                                **proxy_kwargs,
                             )
+                return client_kwargs
 
+            def _get_or_create_client(self) -> Any:
+                """Return a cached AsyncAnthropic client, rebuilding only when
+                credential or base_url changes."""
+                key = (
+                    self.credential.base_url,
+                    self.credential.api_key.get_secret_value(),
+                    id(self._qp_default_headers),
+                    self._qp_auth_mode,
+                )
+                if (
+                    self._qp_cached_client is not None
+                    and self._qp_cached_client_key == key
+                ):
+                    return self._qp_cached_client
+
+                client_kwargs = self._build_client_kwargs()
                 self._qp_cached_client = anthropic.AsyncAnthropic(
                     **client_kwargs,
                 )
