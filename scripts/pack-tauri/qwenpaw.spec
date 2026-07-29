@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 """
-PyInstaller spec file for UGSci Desktop (Tauri sidecar).
+PyInstaller spec file for QwenPaw Desktop (Tauri sidecar).
 
 Shared spec for both macOS and Windows. Builds an onedir backend bundle so the
 desktop startup can load Python directly without onefile extraction. The same
@@ -16,6 +16,7 @@ from PyInstaller.utils.hooks import (
     collect_data_files,
     collect_submodules,
     copy_metadata,
+    get_package_paths,
 )
 
 REPO_ROOT = Path(SPECPATH).parent.parent
@@ -56,43 +57,11 @@ _data_dirs = [
     ("security/skill_scanner/rules", "qwenpaw/security/skill_scanner/rules"),
     ("security/skill_scanner/data", "qwenpaw/security/skill_scanner/data"),
     ("app/channels/yuanbao/proto", "qwenpaw/app/channels/yuanbao/proto"),
-    # Bundled plugins (inside the package) — e.g. ugsci, ugsci_research
-    ("plugins_bundle", "qwenpaw/plugins_bundle"),
 ]
 datas = [
     (str(SRC / src), dst) for src, dst in _data_dirs if (SRC / src).is_dir()
 ]
 datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
-
-# Include select repo-root plugins/bundle/ plugins in the desktop build.
-# cloudpaw and qwenpaw-pet are excluded: cloudpaw requires Alibaba Cloud
-# credentials and heavy IaC dependencies; qwenpaw-pet pulls in PySide6
-# (~200 MB) for a floating desktop pet window that most users don't need.
-# Users can still install them on-demand via `qwenpaw plugin install`.
-_repo_plugins_bundle = REPO_ROOT / "plugins" / "bundle"
-_bundled_plugin_whitelist = {"ugsci", "ugsci_research", "omp_workflows"}
-if _repo_plugins_bundle.is_dir():
-    for _plugin_name in _bundled_plugin_whitelist:
-        _plugin_dir = _repo_plugins_bundle / _plugin_name
-        if _plugin_dir.is_dir():
-            datas += collect_tree(
-                _plugin_dir,
-                f"plugins/bundle/{_plugin_name}",
-            )
-
-# Include select repo-root plugins/apps/ plugins in the desktop build.
-# App-type plugins (e.g. agent-kanban) live at a separate level from
-# regular bundle plugins but are loaded through the same pipeline.
-_repo_plugins_apps = REPO_ROOT / "plugins" / "apps"
-_bundled_apps_whitelist = {"agent-kanban"}
-if _repo_plugins_apps.is_dir():
-    for _plugin_name in _bundled_apps_whitelist:
-        _plugin_dir = _repo_plugins_apps / _plugin_name
-        if _plugin_dir.is_dir():
-            datas += collect_tree(
-                _plugin_dir,
-                f"plugins/apps/{_plugin_name}",
-            )
 
 # Include reme package data files (configs, tool yamls, etc.)
 datas += collect_data_files("reme")
@@ -107,33 +76,48 @@ datas += collect_data_files(
     include_py_files=True,
 )
 
-# Collect ALL agentscope data files (yaml model configs, Dockerfile templates,
-# etc.) so importlib.resources.files() works at runtime.
-datas += collect_data_files("agentscope")
-
-# agentscope.tool._builtin._scripts contains .py files that are accessed via
-# importlib.resources.files() at runtime (not imported as modules). PyInstaller's
-# collect_data_files skips .py files by default, and collect_submodules puts
-# them into the PYZ archive where importlib.resources cannot find them as
-# filesystem resources. We must explicitly add them as data files.
-#
-# Use importlib.resources to locate the package directory — this is cross-platform
-# (works on macOS .venv/lib/pythonX.Y/ and Windows .venv/Lib/) and avoids
-# hard-coding path components that may differ between environments.
-import importlib.resources as _importlib_resources
-
-try:
-    _scripts_resource = _importlib_resources.files(
-        "agentscope.tool._builtin._scripts"
+# The Qoder SDK ships a platform-specific qodercli executable. Classify it as
+# a binary so PyInstaller preserves executable permissions and signs it with
+# the rest of the macOS bundle.
+_, _qoder_sdk_dir = get_package_paths("qoder_agent_sdk")
+_qoder_cli_name = "qodercli.exe" if sys.platform == "win32" else "qodercli"
+_qoder_cli = Path(_qoder_sdk_dir) / "_bundled" / _qoder_cli_name
+if not _qoder_cli.is_file():
+    raise SystemExit(
+        f"Qoder SDK CLI not found at {_qoder_cli}; reinstall qoder-agent-sdk"
     )
-    _agentscope_scripts_dir = Path(str(_scripts_resource))
-    if _agentscope_scripts_dir.is_dir():
-        datas += collect_tree(
-            _agentscope_scripts_dir,
-            "agentscope/tool/_builtin/_scripts",
-        )
-except ModuleNotFoundError:
-    pass
+qoder_binaries = [
+    (str(_qoder_cli), "qoder_agent_sdk/_bundled"),
+]
+
+# The official Codex Python SDK depends on a platform wheel that exposes a
+# stable bundled_codex_path() API. Preserve its runtime layout because Codex
+# resolves sibling hosts and resources relative to the main executable.
+_, _codex_bin_dir = get_package_paths("codex_cli_bin")
+_codex_bin_dir = Path(_codex_bin_dir)
+_codex_executable = (
+    "codex.exe" if sys.platform == "win32" else "codex"
+)
+_codex_cli = _codex_bin_dir / "bin" / _codex_executable
+if not _codex_cli.is_file():
+    raise SystemExit(
+        f"Codex SDK CLI not found at {_codex_cli}; reinstall openai-codex"
+    )
+codex_binaries = [
+    (
+        str(path),
+        str(Path("codex_cli_bin") / path.relative_to(_codex_bin_dir).parent),
+    )
+    for directory_name in ("bin", "codex-path", "codex-resources")
+    for path in (_codex_bin_dir / directory_name).rglob("*")
+    if path.is_file()
+]
+datas.append(
+    (
+        str(_codex_bin_dir / "codex-package.json"),
+        "codex_cli_bin",
+    ),
+)
 
 # Collect package metadata for packages that use importlib.metadata at runtime.
 # Keep this allowlist in sync when adding runtime dependencies that query
@@ -159,6 +143,9 @@ _metadata_pkgs = [
     "huggingface_hub",
     "modelscope",
     "openai-whisper",
+    "openai-codex",
+    "openai-codex-cli-bin",
+    "qoder-agent-sdk",
 ]
 for _pkg in _metadata_pkgs:
     try:
@@ -172,9 +159,10 @@ a = Analysis(
         str(SRC / "tauri" / "cli_entry.py"),
     ],
     pathex=[str(REPO_ROOT), str(REPO_ROOT / "src")],
-    binaries=[],
+    binaries=[*qoder_binaries, *codex_binaries],
     datas=datas,
     hiddenimports=[
+        "codex_cli_bin",
         # uvicorn internals (not auto-discovered by PyInstaller)
         "uvicorn.logging",
         "uvicorn.loops",
@@ -192,6 +180,8 @@ a = Analysis(
         *collect_submodules("qwenpaw.app.channels"),
         # ACP runner support is lazily imported by delegate_external_agent.
         *collect_submodules("qwenpaw.agents.acp"),
+        # PawApp SDK modules are imported by installed app plugins at runtime.
+        *collect_submodules("qwenpaw.pawapp"),
         # ASGI app entry points
         "qwenpaw.app._app",
         "qwenpaw.app.multi_agent_manager",
@@ -219,9 +209,6 @@ a = Analysis(
         *collect_submodules("agentscope.workspace._mcp_gateway"),
         *collect_submodules("whisper"),
         *collect_submodules("chromadb"),
-        # agentscope tool _builtin _scripts sub-package is imported via
-        # importlib.resources at runtime; ensure it's explicitly included.
-        *collect_submodules("agentscope"),
     ],
     hookspath=[],
     hooksconfig={},
