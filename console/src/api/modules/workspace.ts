@@ -216,10 +216,7 @@ export const workspaceApi = {
   getBinaryFileUrl: (filePath: string) => {
     const isAbsolute = filePath.startsWith("/");
     const cleanPath = isAbsolute ? filePath.slice(1) : filePath;
-    const encoded = cleanPath
-      .split("/")
-      .map(encodeURIComponent)
-      .join("/");
+    const encoded = cleanPath.split("/").map(encodeURIComponent).join("/");
     return getApiUrl(
       `/workspace/binary-files/${isAbsolute ? "%2F" : ""}${encoded}`,
     );

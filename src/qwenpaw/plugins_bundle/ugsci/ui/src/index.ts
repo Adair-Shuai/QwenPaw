@@ -10823,6 +10823,61 @@ function ossProxyUrl(ossPath: string): string {
   return apiUrl(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}`);
 }
 
+/**
+ * Fetch a JSON resource from OSS with automatic fallback:
+ *   1. Try direct fetch from the OSS URL (works if CORS is enabled)
+ *   2. Fall back to the backend proxy (always works, avoids CORS)
+ * Returns the parsed JSON, or throws if both attempts fail.
+ */
+async function fetchOssJson(ossPath: string): Promise<any> {
+  const cleanPath = ossPath.replace(/^\/+/, "");
+  const directUrl = `${UGSCI_OSS_BASE}/${cleanPath}`;
+
+  // 1. Try direct fetch first (fast path, avoids backend round-trip)
+  try {
+    const resp = await fetch(directUrl);
+    if (resp.ok) {
+      return await resp.json();
+    }
+  } catch {
+    // CORS or network error — fall through to proxy
+  }
+
+  // 2. Fall back to backend proxy (always works, avoids CORS)
+  const proxyUrl = ossProxyUrl(cleanPath);
+  const resp = await fetch(proxyUrl);
+  if (!resp.ok) {
+    throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
+  }
+  return await resp.json();
+}
+
+/**
+ * Fetch a text resource from OSS with the same fallback strategy.
+ */
+async function fetchOssText(ossPath: string): Promise<string> {
+  const cleanPath = ossPath.replace(/^\/+/, "");
+  const directUrl = `${UGSCI_OSS_BASE}/${cleanPath}`;
+
+  // 1. Try direct fetch first
+  try {
+    const resp = await fetch(directUrl);
+    if (resp.ok) {
+      return await resp.text();
+    }
+  } catch {
+    // CORS or network error — fall through to proxy
+  }
+
+  // 2. Fall back to backend proxy
+  const proxyUrl = ossProxyUrl(cleanPath);
+  const resp = await fetch(proxyUrl);
+  if (!resp.ok) {
+    throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
+  }
+  return await resp.text();
+}
+
 // ─── MCP / Expert Source: types & helpers ─────────────────────────────────────
 
 /** Dynamic category extracted from OSS manifests. */
@@ -11099,57 +11154,63 @@ function _parseOSSSkillSourceUrl(
 }
 
 function loadGithubSources(): GitHubSkillSource[] {
+  // Build default sources (always include OSS + GitHub)
+  const defaultSources: GitHubSkillSource[] = [];
+  // Default OSS source
+  const ossParsed = _parseOSSSkillSourceUrl(DEFAULT_OSS_SOURCE_URL);
+  if (ossParsed) {
+    defaultSources.push({
+      id: _githubSourceId(
+        ossParsed.endpoint,
+        "",
+        ossParsed.prefix,
+        "oss",
+      ),
+      url: DEFAULT_OSS_SOURCE_URL,
+      label: ossParsed.label,
+      owner: ossParsed.endpoint,
+      repo: "",
+      ref: "",
+      skillsPath: ossParsed.prefix,
+      enabled: true,
+      platform: "oss",
+    });
+  }
+  // Default GitHub source
+  const ghParsed = _parseGitHubSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
+  if (ghParsed) {
+    defaultSources.push({
+      id: _githubSourceId(
+        ghParsed.owner,
+        ghParsed.repo,
+        ghParsed.skillsPath,
+        ghParsed.platform,
+      ),
+      url: DEFAULT_GITHUB_SOURCE_URL,
+      label: ghParsed.label,
+      owner: ghParsed.owner,
+      repo: ghParsed.repo,
+      ref: ghParsed.ref,
+      skillsPath: ghParsed.skillsPath,
+      enabled: true,
+      platform: ghParsed.platform,
+    });
+  }
+
   try {
     const raw = localStorage.getItem(UGSCI_GITHUB_SOURCES_KEY);
     if (!raw) {
-      // Seed with default sources: OSS + GitHub
-      const seed: GitHubSkillSource[] = [];
-      // Default OSS source
-      const ossParsed = _parseOSSSkillSourceUrl(DEFAULT_OSS_SOURCE_URL);
-      if (ossParsed) {
-        seed.push({
-          id: _githubSourceId(
-            ossParsed.endpoint,
-            "",
-            ossParsed.prefix,
-            "oss",
-          ),
-          url: DEFAULT_OSS_SOURCE_URL,
-          label: ossParsed.label,
-          owner: ossParsed.endpoint,
-          repo: "",
-          ref: "",
-          skillsPath: ossParsed.prefix,
-          enabled: true,
-          platform: "oss",
-        });
-      }
-      // Default GitHub source
-      const parsed = _parseGitHubSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
-      if (parsed) {
-        seed.push({
-          id: _githubSourceId(
-            parsed.owner,
-            parsed.repo,
-            parsed.skillsPath,
-            parsed.platform,
-          ),
-          url: DEFAULT_GITHUB_SOURCE_URL,
-          label: parsed.label,
-          owner: parsed.owner,
-          repo: parsed.repo,
-          ref: parsed.ref,
-          skillsPath: parsed.skillsPath,
-          enabled: true,
-          platform: parsed.platform,
-        });
-      }
-      localStorage.setItem(UGSCI_GITHUB_SOURCES_KEY, JSON.stringify(seed));
-      return seed;
+      // First run: seed with defaults
+      localStorage.setItem(
+        UGSCI_GITHUB_SOURCES_KEY,
+        JSON.stringify(defaultSources),
+      );
+      return defaultSources;
     }
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
+    if (!Array.isArray(parsed)) return defaultSources;
+
+    const userSources = parsed.filter(
       (s: any) =>
         s &&
         typeof s.id === "string" &&
@@ -11162,8 +11223,23 @@ function loadGithubSources(): GitHubSkillSource[] {
       ref: s.ref || "",
       skillsPath: s.skillsPath || "",
     }));
+
+    // Merge: ensure default OSS source is always present (in case
+    // localStorage has old data from before the OSS source was added)
+    const existingIds = new Set(userSources.map((s) => s.id));
+    const merged = [
+      ...userSources,
+      ...defaultSources.filter((d) => !existingIds.has(d.id)),
+    ];
+
+    // Persist the merged list so future loads are stable
+    localStorage.setItem(
+      UGSCI_GITHUB_SOURCES_KEY,
+      JSON.stringify(merged),
+    );
+    return merged;
   } catch {
-    return [];
+    return defaultSources;
   }
 }
 
@@ -11312,14 +11388,15 @@ async function fetchOSSSourceSkills(
   const encodedPrefix = prefix.split("/").map(encodeURIComponent).join("/");
 
   // Fetch manifest.json — the authoritative source for skill metadata + tags
-  const manifestUrl = ossProxyUrl(`${prefix}/manifest.json`);
-  const manifestResp = await fetch(manifestUrl);
-  if (!manifestResp.ok) {
+  // Uses fetchOssJson which tries direct OSS first, then falls back to proxy
+  let manifest: any;
+  try {
+    manifest = await fetchOssJson(`${prefix}/manifest.json`);
+  } catch {
     throw new Error(
-      `无法获取技能列表: manifest.json (${manifestResp.status})`,
+      `无法获取技能列表: manifest.json (OSS fetch failed)`,
     );
   }
-  const manifest = await manifestResp.json();
 
   const skills: GitHubSkill[] = [];
 
@@ -11390,12 +11467,7 @@ async function fetchOSSMcpManifest(): Promise<{
   servers: OssMcpServer[];
   categories: DynamicCategory[];
 }> {
-  const manifestUrl = ossProxyUrl("mcp/manifest.json");
-  const resp = await fetch(manifestUrl);
-  if (!resp.ok) {
-    throw new Error(`无法获取 MCP 列表: ${resp.status}`);
-  }
-  const manifest = await resp.json();
+  const manifest = await fetchOssJson("mcp/manifest.json");
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
@@ -11446,12 +11518,7 @@ async function fetchOSSAgentsManifest(): Promise<{
   agents: OssAgent[];
   categories: DynamicCategory[];
 }> {
-  const manifestUrl = ossProxyUrl("agents/manifest.json");
-  const resp = await fetch(manifestUrl);
-  if (!resp.ok) {
-    throw new Error(`无法获取 Agent 列表: ${resp.status}`);
-  }
-  const manifest = await resp.json();
+  const manifest = await fetchOssJson("agents/manifest.json");
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
@@ -11630,16 +11697,16 @@ async function fetchCustomMcpSources(
     enabled.map(async (src) => {
       try {
         // Try fetching directly first; fall back to oss-proxy for CORS
-        let resp = await fetch(src.url).catch(() => null as Response | null);
-        if (!resp || !resp.ok) {
-          // Try via oss-proxy
-          const proxyUrl = ossProxyUrl(src.url.replace(/^https?:\/\/[^/]+\//, ""));
-          resp = await fetch(proxyUrl);
+        let manifest: any;
+        try {
+          const resp = await fetch(src.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          manifest = await resp.json();
+        } catch {
+          // Try via oss-proxy (extract path after host)
+          const ossPath = src.url.replace(/^https?:\/\/[^/]+\//, "");
+          manifest = await fetchOssJson(ossPath);
         }
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const manifest = await resp.json();
         const servers: OssMcpServer[] = (manifest.servers || []).map((s: any) => ({
           id: s.id || s.name,
           name: s.name || s.id,
@@ -11688,15 +11755,15 @@ async function fetchCustomExpertSources(
   const results = await Promise.all(
     enabled.map(async (src) => {
       try {
-        let resp = await fetch(src.url).catch(() => null as Response | null);
-        if (!resp || !resp.ok) {
-          const proxyUrl = ossProxyUrl(src.url.replace(/^https?:\/\/[^/]+\//, ""));
-          resp = await fetch(proxyUrl);
+        let manifest: any;
+        try {
+          const resp = await fetch(src.url);
+          if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+          manifest = await resp.json();
+        } catch {
+          const ossPath = src.url.replace(/^https?:\/\/[^/]+\//, "");
+          manifest = await fetchOssJson(ossPath);
         }
-        if (!resp.ok) {
-          throw new Error(`HTTP ${resp.status}`);
-        }
-        const manifest = await resp.json();
         const agents: OssAgent[] = (manifest.agents || []).map((a: any) => ({
           id: a.id || a.name,
           name: a.name || a.id,
@@ -13557,10 +13624,7 @@ function MarketplacePage() {
       if (agent.instructions) {
         try {
           const instrPath = agent.instructions.replace(/^\/+/, "");
-          const resp = await fetch(ossProxyUrl(instrPath));
-          if (resp.ok) {
-            systemPrompt = await resp.text();
-          }
+          systemPrompt = await fetchOssText(instrPath);
         } catch {}
       }
       // Fetch skills manifest from OSS if available
@@ -13568,14 +13632,11 @@ function MarketplacePage() {
       if (agent.skills_manifest) {
         try {
           const manifestPath = agent.skills_manifest.replace(/^\/+/, "");
-          const resp = await fetch(ossProxyUrl(manifestPath));
-          if (resp.ok) {
-            const data = await resp.json();
-            if (Array.isArray(data)) {
-              skillNames = data.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
-            } else if (data.skills) {
-              skillNames = data.skills.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
-            }
+          const data = await fetchOssJson(manifestPath);
+          if (Array.isArray(data)) {
+            skillNames = data.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
+          } else if (data.skills) {
+            skillNames = data.skills.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
           }
         } catch {}
       }
@@ -13584,10 +13645,7 @@ function MarketplacePage() {
       if (agent.config) {
         try {
           const configPath = agent.config.replace(/^\/+/, "");
-          const resp = await fetch(ossProxyUrl(configPath));
-          if (resp.ok) {
-            agentConfig = await resp.json();
-          }
+          agentConfig = await fetchOssJson(configPath);
         } catch {}
       }
       const agentRef = await apiFetch<{ id: string }>("/agents", {
@@ -13609,9 +13667,7 @@ function MarketplacePage() {
         for (const driverPath of agent.drivers.mcp) {
           try {
             const cleanDriverPath = driverPath.replace(/^\/+/, "");
-            const resp = await fetch(ossProxyUrl(cleanDriverPath));
-            if (!resp.ok) continue;
-            const yamlText = await resp.text();
+            const yamlText = await fetchOssText(cleanDriverPath);
             // Parse a minimal YAML structure to extract client_key,
             // transport, command, args, url, env, headers.
             const parsed = _parseMcpDriverYaml(yamlText);

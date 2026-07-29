@@ -246,8 +246,7 @@ const builtinRenderers: RendererRegistration[] = [
     mimeTypes: [MimeTypes.PPTX],
     extensions: ["pptx", "ppt"],
     priority: 10,
-    description:
-      "PPTX 文档 HTML 渲染（当截图渲染不可用时的 fallback）",
+    description: "PPTX 文档 HTML 渲染（当截图渲染不可用时的 fallback）",
   },
 
   // ═══════════════════════════════════════════════════════════════════════

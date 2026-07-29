@@ -12,7 +12,7 @@ vi.mock("@/api/modules/chat", () => ({
         cleaned = p.slice(7);
       }
       const isAbs = cleaned.startsWith("/");
-      const segments = (isAbs ? cleaned.slice(1) : cleaned);
+      const segments = isAbs ? cleaned.slice(1) : cleaned;
       return `/api/files/preview/${isAbs ? "%2F" : ""}${segments}`;
     },
   },

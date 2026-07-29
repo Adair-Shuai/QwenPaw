@@ -26,9 +26,7 @@ function NetworkPage() {
       const data = await api.getConfig();
       setConfig(data);
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : t("common.loadFailed"),
-      );
+      setError(err instanceof Error ? err.message : t("common.loadFailed"));
     } finally {
       setLoading(false);
     }
@@ -72,11 +70,7 @@ function NetworkPage() {
       <div className={styles.networkPage}>
         <div className={styles.centerState}>
           <span className={styles.stateTextError}>{error}</span>
-          <Button
-            size="small"
-            onClick={fetchConfig}
-            style={{ marginTop: 12 }}
-          >
+          <Button size="small" onClick={fetchConfig} style={{ marginTop: 12 }}>
             {t("common.retry")}
           </Button>
         </div>
@@ -86,10 +80,7 @@ function NetworkPage() {
 
   return (
     <div className={styles.networkPage}>
-      <PageHeader
-        parent={t("network.parent")}
-        current={t("network.title")}
-      />
+      <PageHeader parent={t("network.parent")} current={t("network.title")} />
 
       <div className={styles.content}>
         <Alert
@@ -101,12 +92,8 @@ function NetworkPage() {
         />
 
         <div className={styles.card}>
-          <div className={styles.cardTitle}>
-            {t("network.proxyModeTitle")}
-          </div>
-          <div className={styles.cardDesc}>
-            {t("network.proxyModeDesc")}
-          </div>
+          <div className={styles.cardTitle}>{t("network.proxyModeTitle")}</div>
+          <div className={styles.cardDesc}>{t("network.proxyModeDesc")}</div>
 
           <Segmented<ProxyMode>
             value={config?.proxy_mode ?? "auto"}
@@ -150,11 +137,7 @@ function NetworkPage() {
         <Button onClick={handleReset} disabled={saving}>
           {t("common.reset")}
         </Button>
-        <Button
-          type="primary"
-          onClick={handleSave}
-          loading={saving}
-        >
+        <Button type="primary" onClick={handleSave} loading={saving}>
           {t("common.save")}
         </Button>
       </div>

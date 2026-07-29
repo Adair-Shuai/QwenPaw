@@ -59,7 +59,9 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [fallbackStage, setFallbackStage] = useState<FallbackStage>("none");
-  const [rendererEngine, setRendererEngine] = useState<"officecli" | "legacy">("legacy");
+  const [rendererEngine, setRendererEngine] = useState<"officecli" | "legacy">(
+    "legacy",
+  );
   const fileUrl = artifact.binaryUrl ?? "";
 
   const canClientSideParse = isOoxml(artifact.mimeType, artifact.extension);
@@ -338,7 +340,11 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       <iframe
         srcDoc={htmlContent}
         title={artifact.title}
-        sandbox={rendererEngine === "officecli" ? "allow-scripts allow-same-origin" : "allow-same-origin"}
+        sandbox={
+          rendererEngine === "officecli"
+            ? "allow-scripts allow-same-origin"
+            : "allow-same-origin"
+        }
         style={{ width: "100%", flex: 1, border: "none", background: "#fff" }}
       />
     </div>

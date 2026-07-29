@@ -18,13 +18,23 @@ vi.mock("@/api/modules/chat", () => ({
       let cleaned = p;
       if (p.startsWith("file://")) {
         cleaned = p.slice(7);
-        if (cleaned.length > 2 && cleaned[0] === "/" && cleaned[2] === ":" && /^[a-zA-Z]$/.test(cleaned[1])) {
+        if (
+          cleaned.length > 2 &&
+          cleaned[0] === "/" &&
+          cleaned[2] === ":" &&
+          /^[a-zA-Z]$/.test(cleaned[1])
+        ) {
           cleaned = cleaned.slice(1);
         }
       }
       const isAbs = cleaned.startsWith("/");
-      const segs = (isAbs ? cleaned.slice(1) : cleaned).split("/").map(encodeURIComponent).join("/");
-      return `http://localhost:8000/api/files/preview/${isAbs ? "%2F" : ""}${segs}`;
+      const segs = (isAbs ? cleaned.slice(1) : cleaned)
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/");
+      return `http://localhost:8000/api/files/preview/${
+        isAbs ? "%2F" : ""
+      }${segs}`;
     }),
   },
 }));

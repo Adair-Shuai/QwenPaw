@@ -10,14 +10,7 @@
  * 支持的格式：DOCX、XLSX、PPTX
  */
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import {
-  Button,
-  Space,
-  Tooltip,
-  Spin,
-  Alert,
-  Tag,
-} from "antd";
+import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
   ReloadOutlined,
@@ -188,10 +181,7 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           >
             {t("workspace.retry")}
           </Button>
-          <Button
-            icon={<CodeOutlined />}
-            onClick={() => setViewMode("html")}
-          >
+          <Button icon={<CodeOutlined />} onClick={() => setViewMode("html")}>
             {t("workspace.switchToHtml")}
           </Button>
           <Button
@@ -240,7 +230,14 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
               onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
             />
           </Tooltip>
-          <span style={{ fontSize: 11, color: "#999", minWidth: 40, textAlign: "center" }}>
+          <span
+            style={{
+              fontSize: 11,
+              color: "#999",
+              minWidth: 40,
+              textAlign: "center",
+            }}
+          >
             {currentPage} / {pageCount > 0 ? pageCount : "?"}
           </span>
           <Tooltip title={t("workspace.nextPage")}>
@@ -298,7 +295,14 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
         }}
       >
         {loading && screenshotUrl && (
-          <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}>
+          <div
+            style={{
+              position: "absolute",
+              top: "50%",
+              left: "50%",
+              transform: "translate(-50%, -50%)",
+            }}
+          >
             <Spin size="large" />
           </div>
         )}
