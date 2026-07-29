@@ -242,6 +242,15 @@ export const BUILTIN_MENU: MenuItem[] = [
     label: navLabel("nav.network"),
     icon: SparkInternetLine,
     route: "core.network",
+    order: 52,
+  },
+  {
+    id: "core.offload-policy",
+    location: "primary.settings",
+    parentId: "core.settings-group",
+    label: navLabel("nav.offloadPolicy", "Tool Offload"),
+    icon: SparkDateLine,
+    route: "core.offload-policy",
     order: 55,
   },
   {
