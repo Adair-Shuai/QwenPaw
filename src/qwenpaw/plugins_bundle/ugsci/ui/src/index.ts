@@ -12703,28 +12703,69 @@ function MarketplacePage() {
     }
   }, []);
 
-  // Load OSS MCP and Agents manifests on mount (parallel)
-  const loadOssMarketData = useCallback(async () => {
+  // Load OSS MCP and Agents manifests on mount (parallel),
+  // plus custom user-configured MCP/Expert sources.
+  const loadOssMarketData = useCallback(async (
+    mcpSrcs?: GenericSource[],
+    expertSrcs?: GenericSource[],
+  ) => {
     setOssMcpLoading(true);
     setOssAgentLoading(true);
-    const [mcpResult, agentsResult] = await Promise.allSettled([
-      fetchOSSMcpManifest(),
-      fetchOSSAgentsManifest(),
-    ]);
-    // Process MCP result
+    // Fetch official OSS manifests and custom sources in parallel
+    const customMcpSrcs = mcpSrcs ?? loadMcpSources();
+    const customExpertSrcs = expertSrcs ?? loadExpertSources();
+    const [mcpResult, agentsResult, customMcpResult, customExpertResult] =
+      await Promise.allSettled([
+        fetchOSSMcpManifest(),
+        fetchOSSAgentsManifest(),
+        fetchCustomMcpSources(customMcpSrcs),
+        fetchCustomExpertSources(customExpertSrcs),
+      ]);
+    // Process MCP result — merge OSS + custom
     if (mcpResult.status === "fulfilled") {
-      setOssMcpServers(mcpResult.value.servers);
+      const ossServers = mcpResult.value.servers;
+      const customServers =
+        customMcpResult.status === "fulfilled"
+          ? customMcpResult.value.servers
+          : [];
+      // Merge, avoiding duplicate ids (OSS takes priority)
+      const seenIds = new Set(ossServers.map((s) => s.id));
+      const merged = [
+        ...ossServers,
+        ...customServers.filter((s) => !seenIds.has(s.id)),
+      ];
+      setOssMcpServers(merged);
       setOssMcpCategories(mcpResult.value.categories);
+      if (customMcpResult.status === "fulfilled" && customMcpResult.value.errors.length > 0) {
+        for (const e of customMcpResult.value.errors) {
+          console.warn(`[ugsci] Custom MCP source error: ${e}`);
+        }
+      }
     } else {
       console.warn(`[ugsci] MCP manifest error: ${mcpResult.reason?.message || mcpResult.reason}`);
       setOssMcpServers([]);
       setOssMcpCategories([]);
     }
     setOssMcpLoading(false);
-    // Process Agents result
+    // Process Agents result — merge OSS + custom
     if (agentsResult.status === "fulfilled") {
-      setOssAgents(agentsResult.value.agents);
+      const ossAgents = agentsResult.value.agents;
+      const customAgents =
+        customExpertResult.status === "fulfilled"
+          ? customExpertResult.value.agents
+          : [];
+      const seenIds = new Set(ossAgents.map((a) => a.id));
+      const merged = [
+        ...ossAgents,
+        ...customAgents.filter((a) => !seenIds.has(a.id)),
+      ];
+      setOssAgents(merged);
       setOssAgentCategories(agentsResult.value.categories);
+      if (customExpertResult.status === "fulfilled" && customExpertResult.value.errors.length > 0) {
+        for (const e of customExpertResult.value.errors) {
+          console.warn(`[ugsci] Custom expert source error: ${e}`);
+        }
+      }
     } else {
       console.warn(`[ugsci] Agents manifest error: ${agentsResult.reason?.message || agentsResult.reason}`);
       setOssAgents([]);
@@ -14406,7 +14447,11 @@ template.iconUrl
       open: mcpSourceConfigOpen,
       onClose: () => setMcpSourceConfigOpen(false),
       sources: mcpSources,
-      onChange: (next: GenericSource[]) => setMcpSources(next),
+      onChange: (next: GenericSource[]) => {
+        setMcpSources(next);
+        // Reload MCP data with updated custom sources
+        loadOssMarketData(next, undefined);
+      },
       type: "mcp",
     }),
     // MCP token config modal (for templates requiring secrets)
@@ -14416,7 +14461,11 @@ template.iconUrl
       open: expertSourceConfigOpen,
       onClose: () => setExpertSourceConfigOpen(false),
       sources: expertSources,
-      onChange: (next: GenericSource[]) => setExpertSources(next),
+      onChange: (next: GenericSource[]) => {
+        setExpertSources(next);
+        // Reload expert data with updated custom sources
+        loadOssMarketData(undefined, next);
+      },
       type: "expert",
     }),
   );

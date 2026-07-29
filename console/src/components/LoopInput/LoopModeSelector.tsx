@@ -173,7 +173,7 @@ export function LoopModeSelector() {
       content={content}
       onOpenChange={setOpen}
       open={open}
-      classNames={{ root: styles.modePopover }}
+      rootClassName={styles.modePopover}
       placement="topLeft"
       trigger="click"
     >
