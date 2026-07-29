@@ -1132,7 +1132,53 @@ async def search_market_plugins(
         ) from exc
 
 
-# ── Internal async helpers ────────────────────────────────────────────────
+# ── OSS proxy (avoid CORS for UGSci official manifests) ────────────────────
+
+_OSS_BASE_URL = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com"
+_OSS_PROXY_TIMEOUT = 15
+
+
+@router.get(
+    "/oss-proxy",
+    summary="Proxy OSS resources to avoid CORS",
+)
+async def oss_proxy(path: str):
+    """Proxy a file from the UGSci OSS bucket to the frontend.
+
+    The OSS bucket does not send CORS headers, so the browser cannot fetch
+    directly.  This endpoint fetches server-side and returns the content
+    with permissive CORS headers.
+    """
+    import httpx
+
+    clean_path = path.lstrip("/")
+    url = f"{_OSS_BASE_URL}/{clean_path}"
+    try:
+        async with httpx.AsyncClient(timeout=_OSS_PROXY_TIMEOUT) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+            # Guess content type from the URL extension
+            content_type, _ = mimetypes.guess_type(clean_path)
+            if not content_type:
+                content_type = "application/octet-stream"
+            from fastapi.responses import Response
+
+            return Response(
+                content=resp.content,
+                media_type=content_type,
+                headers={"Cache-Control": "public, max-age=300"},
+            )
+    except httpx.HTTPStatusError as exc:
+        raise HTTPException(
+            status_code=exc.response.status_code,
+            detail=f"OSS returned {exc.response.status_code} for {clean_path}",
+        ) from exc
+    except Exception as exc:
+        logger.warning("OSS proxy failed for %s: %s", clean_path, exc)
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch from OSS: {exc}",
+        ) from exc
 
 
 _DOWNLOAD_TIMEOUT = 60  # seconds per read chunk; total limit is implicit

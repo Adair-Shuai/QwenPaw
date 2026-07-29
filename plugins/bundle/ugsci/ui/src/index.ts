@@ -534,6 +534,8 @@ interface MCPTemplate {
   id: string;
   name: string;
   emoji: string;
+  /** Optional icon URL (overrides emoji when present) */
+  iconUrl?: string;
   category: string;
   description: string;
   transport: "stdio" | "streamable_http" | "sse";
@@ -10790,6 +10792,8 @@ interface GitHubSkillSource {
 interface GitHubSkill {
   sourceId: string;
   sourceLabel: string;
+  /** e.g. "UGSci/anthropics" — shown on card to indicate collection origin */
+  sourcePath?: string;
   name: string;
   description: string;
   source_url: string;
@@ -10808,6 +10812,16 @@ const UGSCI_OSS_BASE = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com"
 
 // Default OSS source – Alibaba Cloud OSS bucket (skills path)
 const DEFAULT_OSS_SOURCE_URL = `${UGSCI_OSS_BASE}/skills`;
+
+/**
+ * Build a backend-proxied OSS URL to avoid CORS.
+ * The backend endpoint `/api/plugins/oss-proxy?path=xxx` fetches
+ * from OSS server-side and returns the content with CORS headers.
+ */
+function ossProxyUrl(ossPath: string): string {
+  const cleanPath = ossPath.replace(/^\/+/, "");
+  return apiUrl(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}`);
+}
 
 // ─── MCP / Expert Source: types & helpers ─────────────────────────────────────
 
@@ -10830,6 +10844,8 @@ interface OssMcpServer {
   env?: string[];
   source?: string;
   icon?: string;
+  /** Relative path to icon image in OSS (e.g. mcp/assets/icons/filesystem.svg) */
+  icon_url?: string;
   /** Computed: which tag_group this server belongs to */
   category?: string;
 }
@@ -10893,6 +10909,9 @@ function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
     id: server.id,
     name: server.name,
     emoji,
+    iconUrl: server.icon_url
+      ? ossProxyUrl(server.icon_url)
+      : undefined,
     category: server.category ? _tagGroupLabel(server.category) : "",
     description: server.description,
     transport: (server.transport || "stdio") as "stdio" | "streamable_http" | "sse",
@@ -11048,7 +11067,7 @@ function _parseOSSSkillSourceUrl(
     return {
       endpoint,
       prefix: path,
-      label: "UGSci 官方",
+      label: "UGSci",
       platform: "oss",
     };
   } catch {
@@ -11267,7 +11286,7 @@ async function fetchOSSSourceSkills(
   const encodedPrefix = prefix.split("/").map(encodeURIComponent).join("/");
 
   // Fetch manifest.json — the authoritative source for skill metadata + tags
-  const manifestUrl = `${endpoint}/${encodedPrefix}/manifest.json`;
+  const manifestUrl = ossProxyUrl(`${encodedPrefix}/manifest.json`);
   const manifestResp = await fetch(manifestUrl);
   if (!manifestResp.ok) {
     throw new Error(
@@ -11278,42 +11297,47 @@ async function fetchOSSSourceSkills(
 
   const skills: GitHubSkill[] = [];
 
-  /** Recursively process manifest items, flattening collections. */
-  function processItems(items: any[]) {
-    for (const item of items) {
-      if (item.type === "collection" && Array.isArray(item.children)) {
-        // Recurse into collection children
-        processItems(item.children);
-        continue;
-      }
-      // Individual skill
-      const skillPath: string = item.path || item.name || "";
-      if (!skillPath) continue;
-      const encodedPath = skillPath
-        .split("/")
-        .map(encodeURIComponent)
-        .join("/");
-      const skillUrl = `${endpoint}/${encodedPrefix}/${encodedPath}`;
-      // Try to extract version from metadata string like 'version: "1.2.0"'
-      let version: string | null = null;
-      if (item.metadata) {
-        const vm = item.metadata.match(/version:\s*"?([\d.]+)"?/);
-        if (vm) version = vm[1];
-      }
-      skills.push({
-        sourceId: source.id,
-        sourceLabel: source.label,
-        name: item.name || skillPath.split("/").pop() || skillPath,
-        description: item.description || "",
-        source_url: skillUrl,
-        html_url: skillUrl,
-        version,
-        author: null,
-        tag: item.tag || undefined,
-        isOfficial: true,
-      });
-    }
-  }
+/** Recursively process manifest items, flattening collections. */
+function processItems(items: any[], parentCollection?: string) {
+for (const item of items) {
+if (item.type === "collection" && Array.isArray(item.children)) {
+// Recurse into collection children, passing the collection name
+processItems(item.children, item.name);
+continue;
+}
+// Individual skill
+const skillPath: string = item.path || item.name || "";
+if (!skillPath) continue;
+const encodedPath = skillPath
+.split("/")
+.map(encodeURIComponent)
+.join("/");
+const skillUrl = `${endpoint}/${encodedPrefix}/${encodedPath}`;
+// Try to extract version from metadata string like 'version: "1.2.0"'
+let version: string | null = null;
+if (item.metadata) {
+const vm = item.metadata.match(/version:\s*"?([\d.]+)"?/);
+if (vm) version = vm[1];
+}
+// Build sourcePath: "UGSci/<collection>" or just "UGSci" for top-level
+const sourcePath = parentCollection
+? `${source.label}/${parentCollection}`
+: source.label;
+skills.push({
+sourceId: source.id,
+sourceLabel: source.label,
+sourcePath,
+name: item.name || skillPath.split("/").pop() || skillPath,
+description: item.description || "",
+source_url: skillUrl,
+html_url: skillUrl,
+version,
+author: null,
+tag: item.tag || undefined,
+isOfficial: true,
+});
+}
+}
 
   if (Array.isArray(manifest)) {
     // Legacy: manifest is a plain array of strings or objects
@@ -11340,7 +11364,7 @@ async function fetchOSSMcpManifest(): Promise<{
   servers: OssMcpServer[];
   categories: DynamicCategory[];
 }> {
-  const manifestUrl = `${UGSCI_OSS_BASE}/mcp/manifest.json`;
+  const manifestUrl = ossProxyUrl("mcp/manifest.json");
   const resp = await fetch(manifestUrl);
   if (!resp.ok) {
     throw new Error(`无法获取 MCP 列表: ${resp.status}`);
@@ -11383,6 +11407,7 @@ async function fetchOSSMcpManifest(): Promise<{
       env: Array.isArray(s.env) ? s.env : undefined,
       source: s.source,
       icon: s.icon,
+      icon_url: s.icon_url || s.icon_path || undefined,
       category,
     } as OssMcpServer;
   });
@@ -11395,7 +11420,7 @@ async function fetchOSSAgentsManifest(): Promise<{
   agents: OssAgent[];
   categories: DynamicCategory[];
 }> {
-  const manifestUrl = `${UGSCI_OSS_BASE}/agents/manifest.json`;
+  const manifestUrl = ossProxyUrl("agents/manifest.json");
   const resp = await fetch(manifestUrl);
   if (!resp.ok) {
     throw new Error(`无法获取 Agent 列表: ${resp.status}`);
@@ -12383,7 +12408,6 @@ function MarketplacePage() {
   const [githubSkills, setGithubSkills] = useState<GitHubSkill[]>([]);
   const [githubLoading, setGithubLoading] = useState(false);
   const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
-  const [selectedSourceFilter, setSelectedSourceFilter] = useState("");
 
   // MCP sources state
   const [mcpSources, setMcpSources] = useState<GenericSource[]>([]);
@@ -12404,9 +12428,10 @@ function MarketplacePage() {
   const [ossAgentCategories, setOssAgentCategories] = useState<DynamicCategory[]>([]);
   const [ossAgentLoading, setOssAgentLoading] = useState(false);
   const [expertSelectedCategory, setExpertSelectedCategory] = useState("");
+  const [ossAgentCreating, setOssAgentCreating] = useState(false);
 
   // ── Dynamic skill categories (from OSS manifest tags) ──
-  const [skillCategories, setSkillCategories] = useState<DynamicCategory[]>([]);
+  // (Categories are computed dynamically via unifiedCategories useMemo)
 
   const searchTimerRef = useRef<any>(null);
 
@@ -12442,7 +12467,7 @@ function MarketplacePage() {
       const { skills, errors } = await fetchAllGitHubSkills(srcs);
       setGithubSkills(skills);
       // Extract dynamic categories from OSS skills that have tags
-      setSkillCategories(_extractSkillCategories(skills));
+      // (Categories computed dynamically via unifiedCategories)
       if (errors.length > 0) {
         for (const err of errors) {
           console.warn(`[ugsci] GitHub source '${err.label}' error: ${err.message}`);
@@ -12459,34 +12484,34 @@ function MarketplacePage() {
     }
   }, []);
 
-  // Load OSS MCP and Agents manifests on mount
+  // Load OSS MCP and Agents manifests on mount (parallel)
   const loadOssMarketData = useCallback(async () => {
-    // Fetch MCP manifest
     setOssMcpLoading(true);
-    try {
-      const { servers, categories: cats } = await fetchOSSMcpManifest();
-      setOssMcpServers(servers);
-      setOssMcpCategories(cats);
-    } catch (err: any) {
-      console.warn(`[ugsci] MCP manifest error: ${err.message}`);
+    setOssAgentLoading(true);
+    const [mcpResult, agentsResult] = await Promise.allSettled([
+      fetchOSSMcpManifest(),
+      fetchOSSAgentsManifest(),
+    ]);
+    // Process MCP result
+    if (mcpResult.status === "fulfilled") {
+      setOssMcpServers(mcpResult.value.servers);
+      setOssMcpCategories(mcpResult.value.categories);
+    } else {
+      console.warn(`[ugsci] MCP manifest error: ${mcpResult.reason?.message || mcpResult.reason}`);
       setOssMcpServers([]);
       setOssMcpCategories([]);
-    } finally {
-      setOssMcpLoading(false);
     }
-    // Fetch Agents manifest
-    setOssAgentLoading(true);
-    try {
-      const { agents, categories: cats } = await fetchOSSAgentsManifest();
-      setOssAgents(agents);
-      setOssAgentCategories(cats);
-    } catch (err: any) {
-      console.warn(`[ugsci] Agents manifest error: ${err.message}`);
+    setOssMcpLoading(false);
+    // Process Agents result
+    if (agentsResult.status === "fulfilled") {
+      setOssAgents(agentsResult.value.agents);
+      setOssAgentCategories(agentsResult.value.categories);
+    } else {
+      console.warn(`[ugsci] Agents manifest error: ${agentsResult.reason?.message || agentsResult.reason}`);
       setOssAgents([]);
       setOssAgentCategories([]);
-    } finally {
-      setOssAgentLoading(false);
     }
+    setOssAgentLoading(false);
   }, []);
 
   useEffect(() => {
@@ -12613,14 +12638,34 @@ function MarketplacePage() {
     }
   };
 
-  // Filtered GitHub skills based on search text, source filter, and category
+  // Unified dynamic categories: OSS skill tags + imported custom source labels
+  const unifiedCategories = useMemo(() => {
+    const cats: DynamicCategory[] = [];
+    const seen = new Set<string>();
+    // 1. Tags from OSS skills manifest (dynamic, no hardcoding)
+    for (const s of githubSkills) {
+      if (s.tag && !seen.has(s.tag)) {
+        seen.add(s.tag);
+        cats.push({ id: s.tag, label: s.tag });
+      }
+    }
+    // 2. Custom imported source labels (non-official skills)
+    for (const s of githubSkills) {
+      if (!s.isOfficial && s.sourceLabel && !seen.has(s.sourceLabel)) {
+        seen.add(s.sourceLabel);
+        cats.push({ id: s.sourceLabel, label: s.sourceLabel });
+      }
+    }
+    return cats;
+  }, [githubSkills]);
+
+  // Filtered GitHub skills based on search text and unified category
   const filteredGithubSkills = useMemo(() => {
     let filtered = githubSkills;
-    if (selectedSourceFilter) {
-      filtered = filtered.filter((s) => s.sourceLabel === selectedSourceFilter);
-    }
     if (selectedCategory) {
-      filtered = filtered.filter((s) => s.tag === selectedCategory);
+      filtered = filtered.filter(
+        (s) => s.tag === selectedCategory || s.sourceLabel === selectedCategory,
+      );
     }
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
@@ -12631,29 +12676,19 @@ function MarketplacePage() {
       );
     }
     return filtered;
-  }, [githubSkills, searchText, selectedSourceFilter, selectedCategory]);
+  }, [githubSkills, searchText, selectedCategory]);
 
   // Available providers
   const availableProviders = providers.filter((p) => p.available);
 
-  // Filtered market results based on source filter
+  // Filtered market results based on category filter
   const filteredResults = useMemo(() => {
-    if (!selectedSourceFilter) return results;
-    // Find the provider key matching the selected label
-    const provider = availableProviders.find(
-      (p) => p.label === selectedSourceFilter,
-    );
-    if (!provider) return results;
-    return results.filter((r) => r.source === provider.key);
-  }, [results, selectedSourceFilter, availableProviders]);
-
-  // All source labels for the filter dropdown
-  const allSourceLabels = useMemo(() => {
-    const labels = new Set<string>();
-    githubSources.filter((s) => s.enabled).forEach((s) => labels.add(s.label));
-    availableProviders.forEach((p) => labels.add(p.label));
-    return Array.from(labels);
-  }, [githubSources, availableProviders]);
+    if (!selectedCategory) return results;
+    return results.filter((r) => {
+      const provider = availableProviders.find((p) => p.key === r.source);
+      return provider?.label === selectedCategory;
+    });
+  }, [results, selectedCategory, availableProviders]);
 
   // Skill Market Tab
   const skillsMarketTab = React.createElement(
@@ -12681,19 +12716,6 @@ function MarketplacePage() {
         allowClear: true,
         style: { flex: 1, minWidth: 200, maxWidth: 400 },
       }),
-      skillCategories.length > 0
-        ? React.createElement(Select, {
-            value: selectedCategory || undefined,
-            onChange: (v: string) => setSelectedCategory(v || ""),
-            placeholder: "全部分类",
-            allowClear: true,
-            style: { minWidth: 150 },
-            options: [
-              { value: "", label: "全部分类" },
-              ...skillCategories.map((c) => ({ value: c.id, label: c.label })),
-            ],
-          })
-        : null,
       // Pool install info
       React.createElement(
         Text,
@@ -12713,8 +12735,8 @@ function MarketplacePage() {
         "配置技能源",
       ),
     ),
-    // Source filter tags (GitHub sources + market providers)
-    allSourceLabels.length > 0
+    // Dynamic category filter tags (from OSS manifest tags + imported sources)
+    unifiedCategories.length > 0
       ? React.createElement(
           "div",
           {
@@ -12729,7 +12751,7 @@ function MarketplacePage() {
           React.createElement(
             Text,
             { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
-            "来源筛选:",
+            "分类:",
           ),
           React.createElement(
             Tag,
@@ -12739,37 +12761,37 @@ function MarketplacePage() {
                 cursor: "pointer",
                 borderRadius: 12,
               },
-              color: selectedSourceFilter === "" ? "blue" : undefined,
-              onClick: () => setSelectedSourceFilter(""),
+              color: selectedCategory === "" ? "blue" : undefined,
+              onClick: () => setSelectedCategory(""),
             },
             "全部",
           ),
-          ...allSourceLabels.map((label) => {
-            const src = githubSources.find((s) => s.label === label);
-            const isOss = src?.platform === "oss";
+          ...unifiedCategories.map((cat) => {
+            // Check if this category is from an imported source (non-official)
+            const isImported = githubSkills.some(
+              (s) => !s.isOfficial && s.sourceLabel === cat.id,
+            );
             return React.createElement(
               Tag,
               {
-                key: label,
+                key: cat.id,
                 style: {
                   fontSize: 11,
                   cursor: "pointer",
                   borderRadius: 12,
                 },
-                color: selectedSourceFilter === label
-                  ? (isOss ? "green" : "blue")
+                color: selectedCategory === cat.id
+                  ? (isImported ? "blue" : "geekblue")
                   : undefined,
-                icon: isOss
-                  ? (ApiOutlined ? React.createElement(ApiOutlined) : undefined)
-                  : (GithubOutlined && src
-                    ? React.createElement(GithubOutlined)
-                    : undefined),
+                icon: isImported
+                  ? (GithubOutlined ? React.createElement(GithubOutlined) : undefined)
+                  : undefined,
                 onClick: () =>
-                  setSelectedSourceFilter(
-                    selectedSourceFilter === label ? "" : label,
+                  setSelectedCategory(
+                    selectedCategory === cat.id ? "" : cat.id,
                   ),
               },
-              label,
+              cat.label,
             );
           }),
         )
@@ -12779,10 +12801,7 @@ function MarketplacePage() {
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 40, marginBottom: 16 } },
-          React.createElement(Spin, {
-            tip: "正在加载技能...",
-            size: "large",
-          }),
+          React.createElement(Spin, { size: "large" }, React.createElement("div", { style: { minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" } }, "正在加载技能...")),
         )
       : filteredGithubSkills.length > 0
         ? React.createElement(
@@ -12806,7 +12825,7 @@ function MarketplacePage() {
               React.createElement(
                 Text,
                 { strong: true, style: { fontSize: 13 } },
-                `技能源 (${filteredGithubSkills.length})`,
+                `技能市场 (${filteredGithubSkills.length})`,
               ),
             ),
             React.createElement(
@@ -12872,41 +12891,54 @@ function MarketplacePage() {
                       },
                       skill.description || "暂无描述",
                     ),
-                    React.createElement(
-                      "div",
-                      {
-                        style: {
-                          marginTop: 8,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                        },
-                      },
                       React.createElement(
                         "div",
-                        { style: { display: "flex", gap: 4, flexWrap: "wrap" } },
-                        // Official OSS skills: show tag as category, no source label
-                        skill.isOfficial
-                          ? (skill.tag
-                              ? React.createElement(
-                                  Tag,
-                                  { color: "geekblue", style: { fontSize: 10 } },
-                                  skill.tag,
-                                )
-                              : null)
-                          : React.createElement(
-                              Tag,
-                              { color: "blue", style: { fontSize: 10 } },
-                              skill.sourceLabel,
-                            ),
-                        skill.version
-                          ? React.createElement(
-                              Tag,
-                              { style: { fontSize: 10 } },
-                              `v${skill.version}`,
-                            )
-                          : null,
-                      ),
+                        {
+                          style: {
+                            marginTop: 8,
+                            display: "flex",
+                            justifyContent: "space-between",
+                            alignItems: "center",
+                          },
+                        },
+                        React.createElement(
+                          "div",
+                          { style: { display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" } },
+                          // Show source path (e.g. "UGSci/anthropics") in bottom-left
+                          skill.sourcePath || skill.sourceLabel
+                            ? React.createElement(
+                                "span",
+                                {
+                                  style: {
+                                    fontSize: 10,
+                                    color: "#999",
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: 2,
+                                  },
+                                },
+                                ApiOutlined
+                                  ? React.createElement(ApiOutlined, { style: { fontSize: 10 } })
+                                  : null,
+                                skill.sourcePath || skill.sourceLabel,
+                              )
+                            : null,
+                          // Show tag as category badge
+                          skill.tag
+                            ? React.createElement(
+                                Tag,
+                                { color: "geekblue", style: { fontSize: 10 } },
+                                skill.tag,
+                              )
+                            : null,
+                          skill.version
+                            ? React.createElement(
+                                Tag,
+                                { style: { fontSize: 10 } },
+                                `v${skill.version}`,
+                              )
+                            : null,
+                        ),
                       installState
                         ? React.createElement(
                             Button,
@@ -13250,12 +13282,15 @@ function MarketplacePage() {
   }, [ossAgents, expertSearchText, expertSelectedCategory]);
 
   const handleCreateOssAgent = async (agent: OssAgent) => {
+    if (ossAgentCreating) return;
+    setOssAgentCreating(true);
     try {
       // Fetch instructions (AGENTS.md) from OSS if available
       let systemPrompt = agent.description;
       if (agent.instructions) {
         try {
-          const resp = await fetch(`${UGSCI_OSS_BASE}/${agent.instructions}`);
+          const instrPath = agent.instructions.replace(/^\/+/, "");
+          const resp = await fetch(ossProxyUrl(instrPath));
           if (resp.ok) {
             systemPrompt = await resp.text();
           }
@@ -13265,7 +13300,8 @@ function MarketplacePage() {
       let skillNames: string[] = [];
       if (agent.skills_manifest) {
         try {
-          const resp = await fetch(`${UGSCI_OSS_BASE}/${agent.skills_manifest}`);
+          const manifestPath = agent.skills_manifest.replace(/^\/+/, "");
+          const resp = await fetch(ossProxyUrl(manifestPath));
           if (resp.ok) {
             const data = await resp.json();
             if (Array.isArray(data)) {
@@ -13290,6 +13326,8 @@ function MarketplacePage() {
       navigateTo("/ugsci-experts");
     } catch (err: any) {
       antdMsg.error(err.message || "创建专家失败");
+    } finally {
+      setOssAgentCreating(false);
     }
   };
 
@@ -13426,19 +13464,6 @@ function MarketplacePage() {
         allowClear: true,
         style: { maxWidth: 300 },
       }),
-      ossMcpCategories.length > 0
-        ? React.createElement(Select, {
-            value: mcpSelectedCategory || undefined,
-            onChange: (v: string) => setMcpSelectedCategory(v || ""),
-            placeholder: "全部分类",
-            allowClear: true,
-            style: { minWidth: 150 },
-            options: [
-              { value: "", label: "全部分类" },
-              ...ossMcpCategories.map((c) => ({ value: c.id, label: c.label })),
-            ],
-          })
-        : null,
       React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
@@ -13466,12 +13491,56 @@ function MarketplacePage() {
         "配置 MCP 源",
       ),
     ),
+    // Dynamic category tag row (from OSS manifest tag_groups)
+    ossMcpCategories.length > 0
+      ? React.createElement(
+          "div",
+          {
+            style: {
+              marginBottom: 12,
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              alignItems: "center",
+            },
+          },
+          React.createElement(
+            Text,
+            { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
+            "分类:",
+          ),
+          React.createElement(
+            Tag,
+            {
+              style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
+              color: mcpSelectedCategory === "" ? "blue" : undefined,
+              onClick: () => setMcpSelectedCategory(""),
+            },
+            "全部",
+          ),
+          ...ossMcpCategories.map((cat) =>
+            React.createElement(
+              Tag,
+              {
+                key: cat.id,
+                style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
+                color: mcpSelectedCategory === cat.id ? "geekblue" : undefined,
+                onClick: () =>
+                  setMcpSelectedCategory(
+                    mcpSelectedCategory === cat.id ? "" : cat.id,
+                  ),
+              },
+              cat.label,
+            ),
+          ),
+        )
+      : null,
     // MCP server cards (dynamic from OSS)
     ossMcpLoading && filteredMcpTemplates.length === 0
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 40 } },
-          React.createElement(Spin, { tip: "正在加载 MCP 服务器...", size: "large" }),
+          React.createElement(Spin, { size: "large" }, React.createElement("div", { style: { minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" } }, "正在加载 MCP 服务器...")),
         )
       : filteredMcpTemplates.length === 0
         ? React.createElement(Empty, {
@@ -13503,11 +13572,18 @@ function MarketplacePage() {
                   marginBottom: 8,
                 },
               },
-              React.createElement(
-                "span",
-                { style: { fontSize: 28 } },
-                template.emoji,
-              ),
+React.createElement(
+"span",
+{ style: { fontSize: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32 } },
+template.iconUrl
+  ? React.createElement("img", {
+      src: template.iconUrl,
+      alt: template.name,
+      style: { width: 28, height: 28, objectFit: "contain" },
+      onError: (e: any) => { e.target.style.display = "none"; },
+    })
+  : template.emoji,
+),
               React.createElement(
                 "div",
                 { style: { flex: 1 } },
@@ -13630,7 +13706,7 @@ function MarketplacePage() {
           title: React.createElement(
             "div",
             { style: { display: "flex", alignItems: "center", gap: 8 } },
-            React.createElement("span", { style: { fontSize: 20 } }, mcpConfigTemplate.emoji),
+            React.createElement("span", { style: { fontSize: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24 } }, mcpConfigTemplate.iconUrl ? React.createElement("img", { src: mcpConfigTemplate.iconUrl, alt: mcpConfigTemplate.name, style: { width: 22, height: 22, objectFit: "contain" }, onError: (e: any) => { e.target.style.display = "none"; } }) : mcpConfigTemplate.emoji),
             React.createElement("span", null, `配置 ${mcpConfigTemplate.name} 密钥`),
           ),
           open: !!mcpConfigTemplate,
@@ -13746,19 +13822,6 @@ function MarketplacePage() {
         allowClear: true,
         style: { maxWidth: 400, flex: 1, minWidth: 200 },
       }),
-      ossAgentCategories.length > 0
-        ? React.createElement(Select, {
-            value: expertSelectedCategory || undefined,
-            onChange: (v: string) => setExpertSelectedCategory(v || ""),
-            placeholder: "全部分类",
-            allowClear: true,
-            style: { minWidth: 150 },
-            options: [
-              { value: "", label: "全部分类" },
-              ...ossAgentCategories.map((c) => ({ value: c.id, label: c.label })),
-            ],
-          })
-        : null,
       React.createElement(
         Button,
         {
@@ -13769,12 +13832,56 @@ function MarketplacePage() {
         "配置专家源",
       ),
     ),
+    // Dynamic category tag row (from OSS manifest tag_groups)
+    ossAgentCategories.length > 0
+      ? React.createElement(
+          "div",
+          {
+            style: {
+              marginBottom: 12,
+              display: "flex",
+              gap: 6,
+              flexWrap: "wrap",
+              alignItems: "center",
+            },
+          },
+          React.createElement(
+            Text,
+            { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
+            "分类:",
+          ),
+          React.createElement(
+            Tag,
+            {
+              style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
+              color: expertSelectedCategory === "" ? "blue" : undefined,
+              onClick: () => setExpertSelectedCategory(""),
+            },
+            "全部",
+          ),
+          ...ossAgentCategories.map((cat) =>
+            React.createElement(
+              Tag,
+              {
+                key: cat.id,
+                style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
+                color: expertSelectedCategory === cat.id ? "geekblue" : undefined,
+                onClick: () =>
+                  setExpertSelectedCategory(
+                    expertSelectedCategory === cat.id ? "" : cat.id,
+                  ),
+              },
+              cat.label,
+            ),
+          ),
+        )
+      : null,
     // Agent cards (dynamic from OSS)
     ossAgentLoading && filteredOssAgents.length === 0
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 40 } },
-          React.createElement(Spin, { tip: "正在加载专家模板...", size: "large" }),
+          React.createElement(Spin, { size: "large" }, React.createElement("div", { style: { minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" } }, "正在加载专家模板...")),
         )
       : filteredOssAgents.length === 0
         ? React.createElement(Empty, {
@@ -13869,6 +13976,8 @@ function MarketplacePage() {
                       {
                         type: "primary",
                         size: "small",
+                        loading: ossAgentCreating,
+                        disabled: ossAgentCreating,
                         icon: AppstoreOutlined
                           ? React.createElement(AppstoreOutlined)
                           : undefined,
