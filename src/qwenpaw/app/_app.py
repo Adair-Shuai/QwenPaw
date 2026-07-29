@@ -102,6 +102,20 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     auto_register_from_env()
     check_proxy_config_sanity()
 
+    # [PROXY-BYPASS] Apply network proxy configuration at startup so all
+    # subsequent outbound HTTP requests (LLM providers, skill hub, etc.)
+    # honour the user's proxy_mode / custom_proxy_url / no_proxy_hosts.
+    # See: src/qwenpaw/docs/proxy-bypass-design.md
+    try:
+        from ..utils.http import apply_network_config
+
+        apply_network_config(load_config().network)
+    except Exception:  # pylint: disable=broad-except
+        logger.warning(
+            "Failed to apply network config at startup",
+            exc_info=True,
+        )
+
     try:
         from ..utils.telemetry import (
             collect_and_upload_telemetry,

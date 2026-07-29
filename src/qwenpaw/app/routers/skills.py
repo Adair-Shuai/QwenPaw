@@ -1290,6 +1290,7 @@ def _download_one_or_raise(
 
 @router.post("/pool/download")
 async def download_pool_skill_to_workspaces(
+    request: Request,
     body: DownloadFromPoolRequest,
 ) -> dict[str, Any]:
     """Download one pool skill into one or more workspaces.
@@ -1329,6 +1330,16 @@ async def download_pool_skill_to_workspaces(
             backup_dir = plan["snapshot"].get("backup_dir")
             if backup_dir is not None:
                 shutil.rmtree(Path(backup_dir).parent, ignore_errors=True)
+
+    # Reload each affected agent so the new skill is picked up immediately
+    for target in targets:
+        try:
+            schedule_agent_reload(request, target.workspace_id)
+        except Exception:
+            logger.warning(
+                "Failed to schedule agent reload for '%s' after pool download",
+                target.workspace_id,
+            )
 
     return {"downloaded": downloaded}
 
@@ -1491,7 +1502,10 @@ async def batch_delete_skills(
     skills: list[str],
 ) -> dict[str, Any]:
     """Auto-disable then delete each skill. Per-skill results."""
-    workspace_dir = await _request_workspace_dir(request)
+    from ..agent_context import get_agent_for_request
+
+    workspace = await get_agent_for_request(request)
+    workspace_dir = Path(workspace.workspace_dir)
     service = SkillService(workspace_dir)
     results: dict[str, Any] = {}
     for skill_name in skills:
@@ -1507,6 +1521,8 @@ async def batch_delete_skills(
                 "success": False,
                 "reason": str(exc),
             }
+    if any(r.get("success") for r in results.values()):
+        schedule_agent_reload(request, workspace.agent_id)
     return {"results": results}
 
 
@@ -1627,7 +1643,10 @@ async def delete_skill(
     request: Request,
     skill_name: str,
 ) -> dict[str, Any]:
-    workspace_dir = await _request_workspace_dir(request)
+    from ..agent_context import get_agent_for_request
+
+    workspace = await get_agent_for_request(request)
+    workspace_dir = Path(workspace.workspace_dir)
     service = SkillService(workspace_dir)
     service.disable_skill(skill_name)
     deleted = service.delete_skill(skill_name)
@@ -1636,6 +1655,7 @@ async def delete_skill(
             status_code=409,
             detail="Only disabled workspace skills can be deleted",
         )
+    schedule_agent_reload(request, workspace.agent_id)
     return {"deleted": True}
 
 

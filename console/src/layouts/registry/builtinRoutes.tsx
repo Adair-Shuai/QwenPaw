@@ -51,6 +51,7 @@ const VoiceTranscriptionPage = lazyImportWithRetry(
 const AgentsPage = lazyImportWithRetry("../../pages/Settings/Agents");
 const DebugPage = lazyImportWithRetry("../../pages/Settings/Debug");
 const BackupsPage = lazyImportWithRetry("../../pages/Settings/Backups");
+const NetworkPage = lazyImportWithRetry("../../pages/Settings/Network");
 const PluginManagerPage = lazyImportWithRetry(
   "../../pages/Settings/PluginManager",
 );
@@ -68,7 +69,9 @@ function DefaultRedirect() {
       <Spin
         tip={t("common.loading")}
         style={{ display: "block", margin: "20vh auto" }}
-      />
+      >
+        <div style={{ minHeight: 48 }} />
+      </Spin>
     );
   }
   return <Navigate to={codingMode ? "/coding" : "/chat"} replace />;
@@ -117,6 +120,7 @@ export const BUILTIN_ROUTES: Route[] = [
   },
   { id: "core.debug", path: "/debug", component: DebugPage },
   { id: "core.backups", path: "/backups", component: BackupsPage },
+  { id: "core.network", path: "/network", component: NetworkPage },
   {
     id: "core.plugin-manager",
     path: "/plugin-manager",

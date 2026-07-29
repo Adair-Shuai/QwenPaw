@@ -13,6 +13,13 @@ from typing import TYPE_CHECKING, Any, List
 from urllib.parse import urlparse
 
 import httpx
+
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 from agentscope.model import ChatModelBase
 from openai import APIError
 from pydantic import Field
@@ -195,6 +202,12 @@ class OpenAIProvider(Provider):
         headers = self._build_default_headers()
         if headers:
             kwargs["default_headers"] = headers
+        # [PROXY-BYPASS] Inject proxy-aware httpx client when network
+        # config requires it (disabled or custom mode).
+        if should_use_custom_http_client():
+            proxy_kwargs = build_httpx_proxy_kwargs(self.base_url)
+            if proxy_kwargs:
+                kwargs["http_client"] = httpx.AsyncClient(**proxy_kwargs)
         return AsyncOpenAI(**kwargs)
 
     @staticmethod

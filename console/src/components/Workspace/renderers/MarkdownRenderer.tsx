@@ -63,7 +63,9 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       return (
         <div style={{ padding: "24px", textAlign: "center", color: "#999" }}>
           {artifact.isStreaming ? (
-            <Spin tip={t("workspace.streaming")} />
+            <Spin tip={t("workspace.streaming")}>
+              <div style={{ minHeight: 48 }} />
+            </Spin>
           ) : (
             t("workspace.emptyContent")
           )}

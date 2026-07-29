@@ -236,6 +236,15 @@ export const BUILTIN_MENU: MenuItem[] = [
     order: 50,
   },
   {
+    id: "core.network",
+    location: "primary.settings",
+    parentId: "core.settings-group",
+    label: navLabel("nav.network"),
+    icon: SparkInternetLine,
+    route: "core.network",
+    order: 55,
+  },
+  {
     id: "core.security",
     location: "primary.settings",
     parentId: "core.settings-group",

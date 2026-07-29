@@ -13,6 +13,13 @@ from agentscope.model import ChatModelBase
 from google import genai
 from google.genai import errors as genai_errors
 from google.genai import types as genai_types
+
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 from pydantic import Field
 
 from qwenpaw.providers.multimodal_prober import (
@@ -182,12 +189,23 @@ class GeminiProvider(Provider):
 
     def _client(self, timeout: float = 10) -> Any:
         headers = self._build_default_headers() or None
+        http_options_kwargs: dict = {
+            "timeout": int(timeout * 1000),
+            "headers": headers,
+        }
+        # [PROXY-BYPASS] Bug4 fix: Gemini overrides _client() so it
+        # must also inject the proxy client via HttpOptions.
+        if should_use_custom_http_client():
+            import httpx
+
+            proxy_kwargs = build_httpx_proxy_kwargs(self.base_url)
+            if proxy_kwargs:
+                http_options_kwargs["httpxAsyncClient"] = httpx.AsyncClient(
+                    **proxy_kwargs
+                )
         return genai.Client(
             api_key=self.api_key,
-            http_options=genai_types.HttpOptions(
-                timeout=int(timeout * 1000),
-                headers=headers,
-            ),
+            http_options=genai_types.HttpOptions(**http_options_kwargs),
         )
 
     @staticmethod

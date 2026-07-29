@@ -128,6 +128,7 @@
     "debug": "调试",
     "plugins": "插件",
     "backups": "备份",
+    "network": "网络代理",
     "pluginManager": "插件管理"
   },
   "sidebar": {
@@ -3329,5 +3330,20 @@
         "description": "运行结构化、可持续的多步骤任务。"
       }
     }
+  },
+  "network": {
+    "parent": "设置",
+    "title": "网络代理",
+    "proxyModeTitle": "代理模式",
+    "proxyModeDesc": "控制后端访问外部 LLM API 时的代理行为。本地回环地址 (localhost) 始终绕过代理。",
+    "modeAuto": "自动",
+    "modeDisabled": "绕过代理",
+    "modeCustom": "自定义代理",
+    "proxyUrlPlaceholder": "http://127.0.0.1:7890 或 socks5://127.0.0.1:1080",
+    "noProxyHint": "始终绕过代理的地址: {{hosts}}",
+    "browserProxyAlertTitle": "浏览器代理提示",
+    "browserProxyAlertDesc": "此设置仅控制后端到外部 API 的代理。如果浏览器/桌面端无法连接本地后端，请在系统代理设置中将 localhost 加入绕过列表，或在浏览器 PAC 文件中排除 127.0.0.1。",
+    "saveSuccess": "网络配置已保存",
+    "saveFailed": "保存网络配置失败"
   }
 }

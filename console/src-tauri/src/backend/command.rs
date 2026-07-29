@@ -22,7 +22,10 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
             .command("uv")
             .args(["run", "python", "-m", "qwenpaw.tauri.entry"])
             .current_dir(repo_root)
-            .env("PYTHONPATH", source_path.display().to_string())
+        .env("PYTHONPATH", source_path.display().to_string())
+        // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
+        // See: src/qwenpaw/docs/proxy-bypass-design.md
+        .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
     } else {
         let (python, prefix_args) = python_command(&repo_root);
         let mut args = prefix_args;
@@ -37,7 +40,10 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
             .command(python)
             .args(args)
             .current_dir(repo_root)
-            .env("PYTHONPATH", source_path.display().to_string())
+        .env("PYTHONPATH", source_path.display().to_string())
+        // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
+        // See: src/qwenpaw/docs/proxy-bypass-design.md
+        .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
     };
     Ok(command)
 }
@@ -71,7 +77,10 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
         .env(
             path_env_key(),
             path_with_backend_dir(&backend_dir, officecli_dir.as_deref())?,
-        );
+        )
+        // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
+        // See: src/qwenpaw/docs/proxy-bypass-design.md
+        .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
     // Bundled standalone Python used by the backend to install third-party
     // plugin dependencies (sys.executable is the frozen backend, not Python).
     if let Some(python) = packaged_python_runtime(app) {

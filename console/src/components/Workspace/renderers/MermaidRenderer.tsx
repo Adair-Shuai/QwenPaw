@@ -90,7 +90,11 @@ const MermaidRenderer: React.FC<RendererContext> = ({
           padding: 16,
         }}
       >
-        {loading && <Spin tip={t("workspace.rendering")} />}
+        {loading && (
+          <Spin tip={t("workspace.rendering")}>
+            <div style={{ minHeight: 48 }} />
+          </Spin>
+        )}
         {error && (
           <div style={{ color: "#ff4d4f", padding: 16, fontSize: 13 }}>
             {error}

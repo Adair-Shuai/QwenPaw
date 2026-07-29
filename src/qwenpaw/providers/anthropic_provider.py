@@ -14,6 +14,13 @@ from agentscope.model import ChatModelBase
 import anthropic
 from pydantic import Field
 
+# [PROXY-BYPASS] Proxy injection for Anthropic SDK clients.
+# See: src/qwenpaw/docs/proxy-bypass-design.md
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
+
 from qwenpaw.providers.multimodal_prober import (
     ProbeResult,
     _PROBE_IMAGE_B64,
@@ -96,11 +103,29 @@ class AnthropicProvider(Provider):
         return dict(self.custom_headers) if self.custom_headers else {}
 
     def _get_strip_http_client(self) -> httpx.AsyncClient:
-        """Return a cached AsyncClient backed by _StripApiKeyTransport."""
+        """Return a cached AsyncClient backed by _StripApiKeyTransport.
+
+        [PROXY-BYPASS] Bug2 fix: When proxy config requires it
+        (``disabled`` or ``custom`` mode), the transport is configured
+        with the appropriate ``proxy`` and ``trust_env`` settings so
+        that proxy bypass / custom proxy works even in ``auth_token``
+        mode.
+        """
         if self._strip_http_client is None:
-            self._strip_http_client = httpx.AsyncClient(
-                transport=_StripApiKeyTransport(),
-            )
+            if should_use_custom_http_client():
+                proxy_kwargs = build_httpx_proxy_kwargs(self.base_url)
+                # _StripApiKeyTransport extends AsyncHTTPTransport,
+                # which accepts ``proxy`` and ``trust_env`` in __init__.
+                self._strip_http_client = httpx.AsyncClient(
+                    transport=_StripApiKeyTransport(
+                        proxy=proxy_kwargs.get("proxy"),
+                        trust_env=proxy_kwargs.get("trust_env", True),
+                    ),
+                )
+            else:
+                self._strip_http_client = httpx.AsyncClient(
+                    transport=_StripApiKeyTransport(),
+                )
         return self._strip_http_client
 
     def _client(self, timeout: float = 5) -> anthropic.AsyncAnthropic:
@@ -113,6 +138,19 @@ class AnthropicProvider(Provider):
                 http_client=self._get_strip_http_client(),
                 timeout=timeout,
             )
+        # [PROXY-BYPASS] Inject proxy-aware httpx client when network
+        # config requires it (disabled or custom mode).
+        if should_use_custom_http_client():
+            proxy_kwargs = build_httpx_proxy_kwargs(self.base_url)
+            if proxy_kwargs:
+                http_client = httpx.AsyncClient(**proxy_kwargs)
+                return anthropic.AsyncAnthropic(
+                    api_key=self.api_key,
+                    base_url=self.base_url,
+                    default_headers=default_headers,
+                    http_client=http_client,
+                    timeout=timeout,
+                )
         return anthropic.AsyncAnthropic(
             api_key=self.api_key,
             base_url=self.base_url,
@@ -633,6 +671,21 @@ class _AnthropicChatModelCompat:
                     client_kwargs[
                         "api_key"
                     ] = self.credential.api_key.get_secret_value()
+                    # [PROXY-BYPASS] Bug5 fix: Inject proxy-aware httpx
+                    # client in the actual LLM call path (not just
+                    # connection check).  Without this, Anthropic LLM
+                    # calls in disabled/custom mode would still use the
+                    # system proxy.
+                    if should_use_custom_http_client():
+                        import httpx as _httpx
+
+                        proxy_kwargs = build_httpx_proxy_kwargs(
+                            self.credential.base_url,
+                        )
+                        if proxy_kwargs:
+                            client_kwargs["http_client"] = _httpx.AsyncClient(
+                                **proxy_kwargs
+                            )
 
                 self._qp_cached_client = anthropic.AsyncAnthropic(
                     **client_kwargs,

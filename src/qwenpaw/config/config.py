@@ -2358,6 +2358,49 @@ class SecurityConfig(BaseModel):
         return cleaned
 
 
+# [PROXY-BYPASS] Network proxy configuration model.
+# See: src/qwenpaw/docs/proxy-bypass-design.md
+class NetworkConfig(BaseModel):
+    """Network proxy configuration.
+
+    Controls how the backend's outbound HTTP requests (to LLM providers,
+    skill hub, etc.) route through proxies.
+
+    Modes:
+    - ``auto``: Respect system proxy env vars (HTTP_PROXY / HTTPS_PROXY /
+      NO_PROXY).  This is the default and preserves historical behaviour.
+    - ``disabled``: Ignore *all* proxy env vars.  Every request goes direct.
+      Useful when a corporate proxy breaks connectivity to LLM APIs or
+      when the user wants to bypass a VPN proxy for local models.
+    - ``custom``: Use ``custom_proxy_url`` as the proxy for all outbound
+      requests, ignoring system env vars.
+    """
+
+    proxy_mode: Literal["auto", "disabled", "custom"] = Field(
+        default="auto",
+        description=(
+            "Proxy mode for outbound HTTP requests. "
+            "'auto': respect system proxy env vars (default); "
+            "'disabled': bypass all proxies, connect directly; "
+            "'custom': use custom_proxy_url."
+        ),
+    )
+    custom_proxy_url: str = Field(
+        default="",
+        description=(
+            "Proxy URL used when proxy_mode='custom'. "
+            "Example: 'http://127.0.0.1:7890' or 'socks5://127.0.0.1:1080'."
+        ),
+    )
+    no_proxy_hosts: List[str] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1", "::1"],
+        description=(
+            "Hosts that always bypass the proxy, regardless of proxy_mode. "
+            "Appended to the NO_PROXY env var at startup."
+        ),
+    )
+
+
 class Config(BaseModel):
     """Root config (config.json)."""
 
@@ -2368,6 +2411,8 @@ class Config(BaseModel):
     agents: AgentsConfig = Field(default_factory=AgentsConfig)
     last_dispatch: Optional[LastDispatchConfig] = None
     security: SecurityConfig = Field(default_factory=SecurityConfig)
+    # [PROXY-BYPASS] Network proxy config. See: docs/proxy-bypass-design.md
+    network: NetworkConfig = Field(default_factory=NetworkConfig)
     acp: ACPConfig = Field(default_factory=ACPConfig)
     show_tool_details: bool = True
     user_timezone: str = Field(

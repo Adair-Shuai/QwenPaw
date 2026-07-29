@@ -38,6 +38,7 @@ from ...config.config import (
     MatrixConfig,
     MattermostConfig,
     MQTTConfig,
+    NetworkConfig,
     QQConfig,
     SIPChannelConfig,
     SkillScannerConfig,
@@ -1242,3 +1243,44 @@ async def put_allow_no_auth_hosts(
     config.security.allow_no_auth_hosts = normalized_hosts
     save_config(config)
     return AllowNoAuthHostsResponse(hosts=normalized_hosts)
+
+
+# [PROXY-BYPASS] Network / Proxy REST API endpoints.
+# See: src/qwenpaw/docs/proxy-bypass-design.md
+# ── Network / Proxy ─────────────────────────────────────────────────
+
+
+@router.get(
+    "/network",
+    response_model=NetworkConfig,
+    summary="Get network proxy configuration",
+)
+async def get_network_config() -> NetworkConfig:
+    """Get the current network proxy configuration."""
+    config = load_config()
+    return config.network
+
+
+@router.put(
+    "/network",
+    response_model=NetworkConfig,
+    summary="Update network proxy configuration",
+)
+async def put_network_config(
+    body: NetworkConfig = Body(...),
+) -> NetworkConfig:
+    """Update network proxy configuration.
+
+    Applies the new config immediately to the running process by
+    patching process-level env vars and the module-level cache.
+    """
+    config = load_config()
+    config.network = body
+    save_config(config)
+
+    # Apply immediately to the running process.
+    from ...utils.http import apply_network_config
+
+    apply_network_config(body)
+
+    return body

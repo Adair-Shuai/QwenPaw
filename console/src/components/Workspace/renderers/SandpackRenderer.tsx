@@ -87,7 +87,9 @@ const SandpackRenderer: React.FC<RendererContext> = ({
             justifyContent: "center",
           }}
         >
-          <Spin tip={t("workspace.loadingSandpack")} />
+          <Spin tip={t("workspace.loadingSandpack")}>
+            <div style={{ minHeight: 48 }} />
+          </Spin>
         </div>
       </div>
     );

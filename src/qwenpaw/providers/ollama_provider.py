@@ -9,6 +9,12 @@ from openai import AsyncOpenAI
 
 from qwenpaw.providers.capping_formatter import _CappingOpenAIFormatter
 from qwenpaw.providers.openai_provider import OpenAIProvider
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 
 
 class OllamaProvider(OpenAIProvider):
@@ -51,6 +57,16 @@ class OllamaProvider(OpenAIProvider):
         headers = self._build_default_headers()
         if headers:
             kwargs["default_headers"] = headers
+        # [PROXY-BYPASS] Inject proxy-aware httpx client when network
+        # config requires it (disabled or custom mode).
+        if should_use_custom_http_client():
+            import httpx
+
+            proxy_kwargs = build_httpx_proxy_kwargs(
+                self._openai_compatible_base_url(),
+            )
+            if proxy_kwargs:
+                kwargs["http_client"] = httpx.AsyncClient(**proxy_kwargs)
         return AsyncOpenAI(**kwargs)
 
     async def check_model_connection(

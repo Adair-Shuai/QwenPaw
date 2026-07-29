@@ -23,6 +23,7 @@ import { tokenUsageApi } from "./modules/tokenUsage";
 import { agentStatsApi } from "./modules/agentStats";
 import { toolsApi } from "./modules/tools";
 import { securityApi } from "./modules/security";
+import { networkApi } from "./modules/network";
 import { userTimezoneApi } from "./modules/userTimezone";
 import { languageApi } from "./modules/language";
 import { backupApi } from "./modules/backup";
@@ -84,6 +85,9 @@ export const api = {
 
   // Security
   ...securityApi,
+
+  // Network
+  ...networkApi,
 
   // User Timezone
   ...userTimezoneApi,

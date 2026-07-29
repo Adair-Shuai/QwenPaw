@@ -10,6 +10,13 @@ from agentscope.model import ChatModelBase
 from openai import APIError, AsyncOpenAI
 from pydantic import Field
 
+from ..utils.http import (
+    should_use_custom_http_client,
+    build_httpx_proxy_kwargs,
+)
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
+
 from qwenpaw.providers.provider import (
     Provider,
     ExtendedModelInfo,
@@ -53,12 +60,21 @@ class OpenRouterProvider(Provider):
         return {**self._DEFAULT_HEADERS, **self.custom_headers}
 
     def _client(self, timeout: float = 30) -> AsyncOpenAI:
-        return AsyncOpenAI(
-            base_url=self.base_url,
-            api_key=self.api_key,
-            timeout=timeout,
-            default_headers=self._build_default_headers(),
-        )
+        kwargs: dict = {
+            "base_url": self.base_url,
+            "api_key": self.api_key,
+            "timeout": timeout,
+            "default_headers": self._build_default_headers(),
+        }
+        # [PROXY-BYPASS] Bug4 fix: OpenRouter overrides _client() so it
+        # must also inject the proxy client.
+        if should_use_custom_http_client():
+            import httpx
+
+            proxy_kwargs = build_httpx_proxy_kwargs(self.base_url)
+            if proxy_kwargs:
+                kwargs["http_client"] = httpx.AsyncClient(**proxy_kwargs)
+        return AsyncOpenAI(**kwargs)
 
     @staticmethod
     def _extract_provider(model_id: str) -> str:

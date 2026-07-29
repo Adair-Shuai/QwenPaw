@@ -70,6 +70,20 @@ interface PoolSkillSpec {
   auto_update?: boolean;
 }
 
+interface MCPClientOAuthStatus {
+  authorized: boolean;
+  expires_at: number;
+  scope: string;
+  client_id: string;
+}
+
+type MCPAccessEffect = "allow" | "ask" | "deny";
+
+interface MCPAccessSummary {
+  default_effect: MCPAccessEffect;
+  overrides_count: number;
+}
+
 interface MCPClientInfo {
   key: string;
   name: string;
@@ -77,9 +91,74 @@ interface MCPClientInfo {
   enabled: boolean;
   transport: "stdio" | "streamable_http" | "sse";
   url: string;
+  headers: Record<string, string>;
   command: string;
   args: string[];
+  env: Record<string, string>;
+  cwd: string;
   tools: string[] | null;
+  oauth_status: MCPClientOAuthStatus | null;
+  access_summary: MCPAccessSummary;
+}
+
+interface MCPToolInfo {
+  name: string;
+  description: string;
+  enabled: boolean;
+  input_schema: Record<string, unknown>;
+}
+
+type MCPAccessSourceType = "channel" | (string & {});
+type MCPAccessSubjectType = "all" | "user";
+
+interface MCPAccessRule {
+  source_type: MCPAccessSourceType;
+  source_value: string;
+  subject_type: MCPAccessSubjectType;
+  subject_value: string;
+  effect: MCPAccessEffect;
+}
+
+interface MCPAccessPrincipalOption {
+  source_type: MCPAccessSourceType;
+  source_value: string;
+  subject_type: "user";
+  subject_value: string;
+  label: string;
+  chat_id: string;
+  chat_name: string;
+  session_id: string;
+  updated_at: string | null;
+}
+
+interface MCPToolDefaultPolicy {
+  tool_name: string;
+  effect: MCPAccessEffect;
+}
+
+interface MCPToolAccessOverride extends MCPAccessRule {
+  tool_name: string;
+}
+
+interface MCPAccessPolicy {
+  default_effect: MCPAccessEffect;
+  client_overrides: MCPAccessRule[];
+  tool_defaults: MCPToolDefaultPolicy[];
+  tool_overrides: MCPToolAccessOverride[];
+  unmanaged_rules_count: number;
+}
+
+interface MCPClientUpdate {
+  name?: string;
+  description?: string;
+  command?: string;
+  enabled?: boolean;
+  transport?: "stdio" | "streamable_http" | "sse";
+  url?: string;
+  headers?: Record<string, string>;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
 }
 
 interface WorkspaceSkillSummary {
@@ -300,12 +379,91 @@ async function updateMCPClientForCapabilities(
 async function listMCPToolsForCapabilities(
   agentId: string,
   clientKey: string,
-): Promise<any[]> {
-  const data = await apiFetch<any[]>(
+): Promise<MCPToolInfo[]> {
+  const data = await apiFetch<MCPToolInfo[]>(
     `/mcp/tools/${encodeURIComponent(clientKey)}`,
     { headers: { "X-Agent-Id": agentId } },
   );
   return data || [];
+}
+
+/** Get saved MCP access policy for a specific agent. */
+async function getMCPPolicyForCapabilities(
+  agentId: string,
+  clientKey: string,
+): Promise<MCPAccessPolicy> {
+  return apiFetch<MCPAccessPolicy>(
+    `/mcp/policy/${encodeURIComponent(clientKey)}`,
+    { headers: { "X-Agent-Id": agentId } },
+  );
+}
+
+/** Update saved MCP access policy for a specific agent. */
+async function updateMCPPolicyForCapabilities(
+  agentId: string,
+  clientKey: string,
+  policy: MCPAccessPolicy,
+): Promise<MCPAccessPolicy> {
+  return apiFetch<MCPAccessPolicy>(
+    `/mcp/policy/${encodeURIComponent(clientKey)}`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+      body: JSON.stringify(policy),
+    },
+  );
+}
+
+/** List recent source-scoped principals for MCP access rules. */
+async function listMCPAccessPrincipalsForCapabilities(
+  agentId: string,
+): Promise<MCPAccessPrincipalOption[]> {
+  const data = await apiFetch<MCPAccessPrincipalOption[]>(
+    "/mcp/access-principals",
+    { headers: { "X-Agent-Id": agentId } },
+  );
+  return data || [];
+}
+
+/** Start OAuth flow for a remote MCP client. */
+async function startMCPOAuthForCapabilities(
+  agentId: string,
+  clientKey: string,
+  body: { url: string; scope?: string; client_id?: string; auth_endpoint?: string; token_endpoint?: string },
+): Promise<{ auth_url: string; session_id: string }> {
+  return apiFetch<{ auth_url: string; session_id: string }>(
+    `/mcp/oauth/start/${encodeURIComponent(clientKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+      body: JSON.stringify(body),
+    },
+  );
+}
+
+/** Get OAuth status for an MCP client. */
+async function getMCPOAuthStatusForCapabilities(
+  agentId: string,
+  clientKey: string,
+): Promise<{ authorized: boolean; expires_at: number; scope: string }> {
+  return apiFetch<{ authorized: boolean; expires_at: number; scope: string }>(
+    `/mcp/oauth/status/${encodeURIComponent(clientKey)}`,
+    { headers: { "X-Agent-Id": agentId } },
+  );
+}
+
+/** Revoke OAuth tokens for an MCP client. */
+async function revokeMCPOAuthForCapabilities(
+  agentId: string,
+  clientKey: string,
+): Promise<void> {
+  await apiFetch<{ message: string }>(
+    `/mcp/oauth/${encodeURIComponent(clientKey)}`,
+    {
+      method: "DELETE",
+      headers: { "X-Agent-Id": agentId },
+    },
+  );
 }
 
 /** Parse agent config's mcp field to extract MCP client keys. */
@@ -587,28 +745,193 @@ const MCP_TEMPLATES: MCPTemplate[] = [
   },
 ];
 
-// ─── Expert Templates ───────────────────────────────────────────────────────
+// ─── MCP Env Hints ──────────────────────────────────────────────────────────
+// Provides helpful labels and links for well-known env keys so users know
+// where to obtain their tokens during MCP installation.
+const MCP_ENV_HINTS: Record<
+  string,
+  { label: string; help: string; link?: string; isSecret?: boolean }
+> = {
+  BRAVE_API_KEY: {
+    label: "Brave API Key",
+    help: "在 Brave Search API 官网注册获取",
+    link: "https://brave.com/search/api/",
+    isSecret: true,
+  },
+  GITHUB_PERSONAL_ACCESS_TOKEN: {
+    label: "GitHub Personal Access Token",
+    help: "GitHub Settings → Developer settings → Personal access tokens",
+    link: "https://github.com/settings/tokens",
+    isSecret: true,
+  },
+  GITLAB_PERSONAL_ACCESS_TOKEN: {
+    label: "GitLab Personal Access Token",
+    help: "GitLab User Settings → Access Tokens",
+    link: "https://gitlab.com/-/user_settings/personal_access_tokens",
+    isSecret: true,
+  },
+  GITLAB_API_URL: {
+    label: "GitLab API URL",
+    help: "默认为 https://gitlab.com/api/v4，自建实例请修改",
+    isSecret: false,
+  },
+  EVERART_API_KEY: {
+    label: "EverArt API Key",
+    help: "在 EverArt 官网获取 API Key",
+    link: "https://everart.ai/",
+    isSecret: true,
+  },
+  SLACK_BOT_TOKEN: {
+    label: "Slack Bot Token",
+    help: "以 xoxb- 开头，在 Slack App 设置中获取",
+    link: "https://api.slack.com/apps",
+    isSecret: true,
+  },
+  SLACK_TEAM_ID: {
+    label: "Slack Team ID",
+    help: "在 Slack 工作区设置中查看 Team ID",
+    isSecret: false,
+  },
+  POSTGRES_CONNECTION_STRING: {
+    label: "PostgreSQL 连接串",
+    help: "格式: postgresql://user:password@host:port/dbname",
+    isSecret: true,
+  },
+};
 
-interface ExpertTemplate {
-  id: string;
-  name: string;
-  emoji: string;
-  category: string;
-  description: string;
-  systemPrompt: string;
-  recommendedSkills: string[];
-  approvalLevel: "AUTO" | "MANUAL";
+/** Check whether a template's env values look like placeholders needing user input. */
+function mcpTemplateNeedsConfig(template: MCPTemplate): boolean {
+  if (!template.env) return false;
+  const entries = Object.entries(template.env);
+  if (entries.length === 0) return false;
+  // Any non-empty env value is treated as needing configuration
+  return entries.some(([, v]) => typeof v === "string" && v.length > 0);
 }
 
-const EXPERT_TEMPLATES: ExpertTemplate[] = [
+// ─── Expert Bundles ────────────────────────────────────────────────────────
+//
+// An Expert Bundle is a complete, distributable expert definition containing
+// system prompt, recommended skills, and (future) knowledge files, MCP clients,
+// and memory seeds.  See docs/expert-bundle-design.md for the full spec.
+
+/** A knowledge file attached to an expert bundle (interface reserved). */
+interface KnowledgeFile {
+  filename: string;
+  content: string;
+  enabled?: boolean;
+  description?: string;
+}
+
+/** An MCP client configuration attached to an expert bundle (interface reserved). */
+interface MCPClientConfig {
+  client_key: string;
+  name: string;
+  description: string;
+  transport: "stdio" | "streamable_http" | "sse";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  cwd?: string;
+  url?: string;
+  headers?: Record<string, string>;
+  tools?: string[] | null;
+}
+
+/** A memory seed attached to an expert bundle (interface reserved). */
+interface MemorySeed {
+  type: "proactive" | "episodic";
+  content: string;
+  metadata?: Record<string, any>;
+}
+
+interface ExpertBundle {
+  // ── Metadata ──
+  id: string;
+  name: string;
+  category: string;
+  description: string;
+  version: string;
+  author: string;
+  tags: string[];
+
+  // ── Avatar ──
+  /** DiceBear seed (defaults to name if not set). */
+  avatar_seed?: string;
+  /** Custom avatar URL (data: or https:). Overrides avatar_seed. */
+  avatar_url?: string;
+  /** @deprecated kept for backward compat; use avatar_seed instead. */
+  emoji?: string;
+
+  // ── Prompt layer ──
+  system_prompt: string;
+  soul_prompt?: string;
+  profile_prompt?: string;
+
+  // ── Skill layer ──
+  recommended_skills: string[];
+
+  // ── Knowledge layer (reserved) ──
+  knowledge_files?: KnowledgeFile[];
+
+  // ── MCP layer (reserved) ──
+  mcp_clients?: MCPClientConfig[];
+
+  // ── Memory layer (reserved) ──
+  memory_seeds?: MemorySeed[];
+
+  // ── Behavior config ──
+  approval_level: "AUTO" | "MANUAL";
+  model_config?: { provider_id?: string; model?: string };
+  welcome_message?: string;
+}
+
+/**
+ * Backward-compatible alias.  Old code references `ExpertTemplate` and
+ * snake_case fields — we keep them working via getters.
+ */
+interface ExpertTemplate extends ExpertBundle {}
+
+/** Helper: get the avatar URL for a bundle (avatar_url > avatar_seed > name). */
+function getBundleAvatarUrl(bundle: ExpertBundle): string {
+  if (bundle.avatar_url) return bundle.avatar_url;
+  const seed = bundle.avatar_seed || bundle.name;
+  return apiUrl(`/ugsci/avatar/${encodeURIComponent(seed)}`);
+}
+
+/** Helper: render ExpertAvatar for a bundle. */
+function BundleAvatar({
+  bundle,
+  size = 32,
+  borderRadius = "50%",
+}: {
+  bundle: ExpertBundle;
+  size?: number;
+  borderRadius?: string | number;
+}) {
+  const React = getHost().React;
+  const [retry, setRetry] = React.useState(0);
+  const baseUrl = getBundleAvatarUrl(bundle);
+  const src = retry === 0 ? baseUrl : `${baseUrl}?_r=${retry}`;
+  return React.createElement("img", {
+    src,
+    alt: bundle.name,
+    onError: () => { if (retry < 1) setRetry(retry + 1); },
+    style: { width: size, height: size, borderRadius, objectFit: "cover", flexShrink: 0 },
+  });
+}
+
+const EXPERT_BUNDLES: ExpertBundle[] = [
   {
     id: "reservoir-engineer",
     name: "油藏工程师",
-    emoji: "🛢️",
     category: "油气开发",
     description:
       "**油藏工程师** —— 擅长储量评估、物质平衡计算、递减曲线分析、油藏数值模拟方案设计。",
-    systemPrompt: `# 油藏工程师
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["油藏", "数值模拟", "储量评估", "历史拟合"],
+    avatar_seed: "油藏工程师",
+    system_prompt: `# 油藏工程师
 
 你是一位经验丰富的油藏工程师，专注于油气田开发与油藏管理。
 
@@ -625,17 +948,32 @@ const EXPERT_TEMPLATES: ExpertTemplate[] = [
 - 对不确定参数给出合理范围和敏感性分析
 - 输出结果使用表格和图示说明
 `,
-    recommendedSkills: [],
-    approvalLevel: "AUTO",
+    recommended_skills: [
+      "oil-gas-foundation",
+      "oil-gas-reservoir-production",
+      "reservoir-simulation-workflow",
+      "history-matching",
+      "convergence-diagnosis",
+      "matplotlib",
+      "statistical-analysis",
+      "sensitivity-analysis",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "AUTO",
   },
   {
     id: "drilling-engineer",
     name: "钻井工程师",
-    emoji: "⛏️",
     category: "钻完井",
     description:
       "**钻井工程师** —— 擅长井身结构设计、钻井液优化、套管设计、固井方案和钻井风险管理。",
-    systemPrompt: `# 钻井工程师
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["钻井", "套管设计", "钻井液", "固井"],
+    avatar_seed: "钻井工程师",
+    system_prompt: `# 钻井工程师
 
 你是一位资深钻井工程师，专注于钻井工程设计与现场技术支持。
 
@@ -652,17 +990,30 @@ const EXPERT_TEMPLATES: ExpertTemplate[] = [
 - 安全系数取值需说明依据
 - 对复杂井段给出风险预警和应急预案
 `,
-    recommendedSkills: [],
-    approvalLevel: "MANUAL",
+    recommended_skills: [
+      "oil-gas-foundation",
+      "oil-gas-drilling",
+      "oil-gas-reservoir-production",
+      "matplotlib",
+      "statistical-analysis",
+      "systematic-debugging",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "MANUAL",
   },
   {
     id: "well-logging-analyst",
     name: "测井分析师",
-    emoji: "📡",
     category: "测井试油",
     description:
       "**测井分析师** —— 擅长测井曲线解释、岩性识别、孔隙度/饱和度计算和储层评价。",
-    systemPrompt: `# 测井分析师
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["测井", "岩性识别", "储层评价", "孔隙度"],
+    avatar_seed: "测井分析师",
+    system_prompt: `# 测井分析师
 
 你是一位专业的测井解释工程师，精通各种测井方法的数据处理与解释。
 
@@ -679,17 +1030,31 @@ const EXPERT_TEMPLATES: ExpertTemplate[] = [
 - 对异常曲线段给出多种可能解释
 - 储层评价需综合多条曲线交叉验证
 `,
-    recommendedSkills: [],
-    approvalLevel: "AUTO",
+    recommended_skills: [
+      "oil-gas-foundation",
+      "well-log-analysis",
+      "oil-gas-exploration",
+      "exploratory-data-analysis",
+      "matplotlib",
+      "statistical-analysis",
+      "scikit-learn",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "AUTO",
   },
   {
     id: "production-engineer",
     name: "采油工程师",
-    emoji: "⚙️",
     category: "油气生产",
     description:
       "**采油工程师** —— 擅长举升工艺设计、注水管理、增产措施工艺设计和生产动态监测。",
-    systemPrompt: `# 采油工程师
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["采油", "举升工艺", "注水", "压裂酸化"],
+    avatar_seed: "采油工程师",
+    system_prompt: `# 采油工程师
 
 你是一位经验丰富的采油工程师，专注于油气井生产优化与工艺设计。
 
@@ -706,17 +1071,31 @@ const EXPERT_TEMPLATES: ExpertTemplate[] = [
 - 措施方案需包含预期效果和风险评估
 - 引用规范时注明标准编号
 `,
-    recommendedSkills: [],
-    approvalLevel: "AUTO",
+    recommended_skills: [
+      "oil-gas-foundation",
+      "oil-gas-reservoir-production",
+      "scada-timeseries",
+      "matplotlib",
+      "statistical-analysis",
+      "sensitivity-analysis",
+      "multi-objective-optimization",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "AUTO",
   },
   {
     id: "geophysicist",
     name: "地球物理专家",
-    emoji: "🌍",
     category: "地球物理",
     description:
       "**地球物理专家** —— 擅长地震资料解释、属性分析、反演处理和储层预测。",
-    systemPrompt: `# 地球物理专家
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["地球物理", "地震", "反演", "储层预测"],
+    avatar_seed: "地球物理专家",
+    system_prompt: `# 地球物理专家
 
 你是一位资深的地球物理学家，专注于地震勘探与储层地球物理。
 
@@ -733,17 +1112,31 @@ const EXPERT_TEMPLATES: ExpertTemplate[] = [
 - 对地震资料品质给出评价
 - 反演结果需标定并说明不确定性
 `,
-    recommendedSkills: [],
-    approvalLevel: "AUTO",
+    recommended_skills: [
+      "oil-gas-foundation",
+      "oil-gas-exploration",
+      "segy-operations",
+      "matplotlib",
+      "statistical-analysis",
+      "exploratory-data-analysis",
+      "scikit-learn",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "AUTO",
   },
   {
     id: "pvt-analyst",
     name: "PVT 分析师",
-    emoji: "🧪",
     category: "流体性质",
     description:
       "**PVT 分析师** —— 擅长油气流体物性计算、相态分析、PVT 实验拟合和组分模型。",
-    systemPrompt: `# PVT 分析师
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["PVT", "相态分析", "流体物性", "状态方程"],
+    avatar_seed: "PVT 分析师",
+    system_prompt: `# PVT 分析师
 
 你是一位专业的 PVT 流体性质分析工程师，精通油气藏流体相态行为。
 
@@ -760,10 +1153,24 @@ const EXPERT_TEMPLATES: ExpertTemplate[] = [
 - 对缺少实验数据的情况推荐经验公式并说明误差
 - 组分模型需给出特征化步骤和拟合质量
 `,
-    recommendedSkills: [],
-    approvalLevel: "AUTO",
+    recommended_skills: [
+      "oil-gas-foundation",
+      "oil-gas-reservoir-production",
+      "matplotlib",
+      "statistical-analysis",
+      "sensitivity-analysis",
+      "sympy",
+      "pymoo",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "AUTO",
   },
 ];
+
+/** Backward-compatible alias so existing code using EXPERT_TEMPLATES keeps working. */
+const EXPERT_TEMPLATES = EXPERT_BUNDLES;
 
 // ─── Expert Teams (多智能体协同) ─────────────────────────────────────────────
 
@@ -2550,6 +2957,13 @@ async function disableSkillForAgent(
   await apiFetch(`/skills/${encodeURIComponent(skillName)}/disable`, {
     method: "POST",
     headers: { "X-Agent-Id": agentId },
+  });
+}
+
+/** Delete a skill from the pool (non-protected only). */
+async function deletePoolSkill(skillName: string): Promise<void> {
+  await apiFetch(`/skills/pool/${encodeURIComponent(skillName)}`, {
+    method: "DELETE",
   });
 }
 
@@ -4648,9 +5062,9 @@ function ExpertConfigModal({
       centered: true,
       styles: {
         body: {
-          minHeight: 400,
-          maxHeight: "70vh",
+          height: "min(520px, calc(100vh - 280px))",
           overflowY: "auto",
+          overflowX: "hidden",
         },
       },
     },
@@ -4708,11 +5122,13 @@ function ExpertCard({
         display: "flex",
         flexDirection: "column",
       },
-      bodyStyle: {
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        flex: 1,
+      styles: {
+        body: {
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          flex: 1,
+        },
       },
     },
     React.createElement(
@@ -5579,16 +5995,16 @@ function ExpertTemplateModal({
         body: JSON.stringify({
           name: template.name,
           description: template.description,
-          skill_names: template.recommendedSkills,
+          skill_names: template.recommended_skills,
         }),
       });
 
       // 2. Write AGENTS.md with template system prompt
-      await writeKnowledgeFile(agentRef.id, "AGENTS.md", template.systemPrompt);
+      await writeKnowledgeFile(agentRef.id, "AGENTS.md", template.system_prompt);
 
       // 3. Update agent config with approval level
       const config = await fetchAgentConfig(agentRef.id);
-      config.approval_level = template.approvalLevel;
+      config.approval_level = template.approval_level;
       await apiFetch(`/agents/${encodeURIComponent(agentRef.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -5753,7 +6169,7 @@ function ExpertTemplateModal({
                         { color: "blue", style: { fontSize: 10 } },
                         template.category,
                       ),
-                      template.approvalLevel === "MANUAL"
+                      template.approval_level === "MANUAL"
                         ? React.createElement(
                             Tag,
                             { color: "orange", style: { fontSize: 10 } },
@@ -6790,21 +7206,687 @@ function ExpertCenterPage() {
 
 // ─── Capability Center Page ───────────────────────────────────────────────────
 
-function CapabilityCard({
-  mcp,
-  onClick,
-  onToggle,
-  onDelete,
-  onViewTools,
+// ── MCP Access Policy helpers (ported from console accessPolicy.ts) ──
+
+const MCP_CHANNEL_SOURCE_VALUES = [
+  "console", "dingtalk", "feishu", "wechat", "wecom",
+  "discord", "telegram", "qq", "imessage", "mattermost",
+  "matrix", "onebot", "mqtt", "voice", "sip", "xiaoyi",
+] as const;
+
+const CHANNEL_SOURCE_LABELS: Record<string, string> = {
+  console: "Console", dingtalk: "DingTalk", feishu: "Feishu",
+  wechat: "WeChat", wecom: "WeCom", discord: "Discord",
+  telegram: "Telegram", qq: "QQ", imessage: "iMessage",
+  mattermost: "Mattermost", matrix: "Matrix", onebot: "OneBot",
+  mqtt: "MQTT", voice: "Voice", sip: "SIP", xiaoyi: "XiaoYi",
+};
+
+interface MCPAccessToolGroup {
+  toolName: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+  stale: boolean;
+  defaultEffect: MCPAccessEffect;
+  hasExplicitDefault: boolean;
+  rules: MCPToolAccessOverride[];
+}
+
+function normalizeSourceType(t: string): MCPAccessSourceType {
+  return (t || "").trim() || "channel";
+}
+function normalizeSourceValue(v: string): string {
+  return (v || "").trim();
+}
+function isWildcardSourceValue(v: string): boolean {
+  const n = normalizeSourceValue(v);
+  return n === "" || n === "*";
+}
+function normalizeSubjectType(t: MCPAccessSubjectType): MCPAccessSubjectType {
+  return t === "user" ? "user" : "all";
+}
+
+function normalizeMCPAccessRule(rule: MCPAccessRule): MCPAccessRule {
+  const subjectType = normalizeSubjectType(rule.subject_type);
+  return {
+    source_type: normalizeSourceType(rule.source_type),
+    source_value: normalizeSourceValue(rule.source_value),
+    subject_type: subjectType,
+    subject_value: subjectType === "all" ? "" : (rule.subject_value || "").trim(),
+    effect: rule.effect,
+  };
+}
+
+function normalizeMCPToolRule(rule: MCPToolAccessOverride): MCPToolAccessOverride {
+  return { tool_name: rule.tool_name || "*", ...normalizeMCPAccessRule(rule) };
+}
+
+function normalizeMCPToolDefault(d: MCPToolDefaultPolicy): MCPToolDefaultPolicy {
+  return { tool_name: d.tool_name || "*", effect: d.effect };
+}
+
+function sortAccessRules(rules: MCPAccessRule[]): MCPAccessRule[] {
+  return [...rules].map(normalizeMCPAccessRule).sort((a, b) =>
+    a.source_type.localeCompare(b.source_type) ||
+    a.source_value.localeCompare(b.source_value) ||
+    a.subject_type.localeCompare(b.subject_type) ||
+    a.subject_value.localeCompare(b.subject_value)
+  );
+}
+
+function sortToolRules(rules: MCPToolAccessOverride[]): MCPToolAccessOverride[] {
+  return [...rules].map(normalizeMCPToolRule).sort((a, b) =>
+    a.tool_name.localeCompare(b.tool_name) ||
+    a.source_type.localeCompare(b.source_type) ||
+    a.source_value.localeCompare(b.source_value) ||
+    a.subject_type.localeCompare(b.subject_type) ||
+    a.subject_value.localeCompare(b.subject_value)
+  );
+}
+
+function sortToolDefaults(d: MCPToolDefaultPolicy[]): MCPToolDefaultPolicy[] {
+  return [...d].map(normalizeMCPToolDefault).sort((a, b) => a.tool_name.localeCompare(b.tool_name));
+}
+
+function normalizeMCPAccessPolicy(policy: MCPAccessPolicy): MCPAccessPolicy {
+  return {
+    default_effect: policy.default_effect || "deny",
+    client_overrides: sortAccessRules(policy.client_overrides || []),
+    tool_defaults: sortToolDefaults(policy.tool_defaults || []),
+    tool_overrides: sortToolRules(policy.tool_overrides || []),
+    unmanaged_rules_count: policy.unmanaged_rules_count || 0,
+  };
+}
+
+function accessRuleIdentityKey(rule: Pick<MCPAccessRule, "source_type" | "source_value" | "subject_type" | "subject_value">): string {
+  return [normalizeSourceType(rule.source_type), normalizeSourceValue(rule.source_value), normalizeSubjectType(rule.subject_type), rule.subject_type === "all" ? "" : (rule.subject_value || "").trim()].join("\u0000");
+}
+
+function toolRuleIdentityKey(rule: Pick<MCPToolAccessOverride, "tool_name" | "source_type" | "source_value" | "subject_type" | "subject_value">): string {
+  return [(rule.tool_name || "*"), normalizeSourceType(rule.source_type), normalizeSourceValue(rule.source_value), normalizeSubjectType(rule.subject_type), rule.subject_type === "all" ? "" : (rule.subject_value || "").trim()].join("\u0000");
+}
+
+function buildMCPAccessToolGroups(tools: MCPToolInfo[], policy: MCPAccessPolicy): MCPAccessToolGroup[] {
+  const np = normalizeMCPAccessPolicy(policy);
+  const rulesByTool = new Map<string, MCPToolAccessOverride[]>();
+  np.tool_overrides.forEach(o => {
+    const r = normalizeMCPToolRule(o);
+    const arr = rulesByTool.get(r.tool_name) || [];
+    arr.push(r);
+    rulesByTool.set(r.tool_name, arr);
+  });
+  const defaultsByTool = new Map(np.tool_defaults.map(d => [d.tool_name, normalizeMCPToolDefault(d)]));
+  const currentNames = new Set(tools.map(t => t.name));
+  const current: MCPAccessToolGroup[] = tools.map(t => ({
+    toolName: t.name,
+    description: t.description,
+    inputSchema: t.input_schema,
+    stale: false,
+    defaultEffect: defaultsByTool.get(t.name)?.effect || np.default_effect,
+    hasExplicitDefault: defaultsByTool.has(t.name),
+    rules: sortToolRules(rulesByTool.get(t.name) || []),
+  }));
+  const staleNames = new Set([...rulesByTool.keys(), ...defaultsByTool.keys()]);
+  const stale: MCPAccessToolGroup[] = Array.from(staleNames)
+    .filter(n => n !== "*" && !currentNames.has(n))
+    .map(n => ({
+      toolName: n,
+      description: "",
+      inputSchema: {},
+      stale: true,
+      defaultEffect: defaultsByTool.get(n)?.effect || np.default_effect,
+      hasExplicitDefault: defaultsByTool.has(n),
+      rules: sortToolRules(rulesByTool.get(n) || []),
+    }));
+  return [...current, ...stale];
+}
+
+function nextDefaultSourceValue(policy: MCPAccessPolicy, toolName: string | null): string {
+  const np = normalizeMCPAccessPolicy(policy);
+  const used = new Set(
+    toolName === null
+      ? np.client_overrides.map(r => accessRuleIdentityKey(normalizeMCPAccessRule(r)))
+      : np.tool_overrides.filter(r => r.tool_name === toolName).map(r => toolRuleIdentityKey(normalizeMCPToolRule(r)))
+  );
+  for (const sv of MCP_CHANNEL_SOURCE_VALUES) {
+    const candidate = toolName === null
+      ? accessRuleIdentityKey({ source_type: "channel", source_value: sv, subject_type: "all", subject_value: "" })
+      : toolRuleIdentityKey({ tool_name: toolName, source_type: "channel", source_value: sv, subject_type: "all", subject_value: "" });
+    if (!used.has(candidate)) return sv;
+  }
+  return "console";
+}
+
+function addClientRule(policy: MCPAccessPolicy): MCPAccessPolicy {
+  return upsertClientRule(policy, { source_type: "channel", source_value: nextDefaultSourceValue(policy, null), subject_type: "all", subject_value: "", effect: "ask" });
+}
+
+function addToolRule(policy: MCPAccessPolicy, toolName: string): MCPAccessPolicy {
+  return upsertToolRule(policy, { tool_name: toolName, source_type: "channel", source_value: nextDefaultSourceValue(policy, toolName), subject_type: "all", subject_value: "", effect: "ask" });
+}
+
+function upsertClientRule(policy: MCPAccessPolicy, rule: MCPAccessRule, prev?: Parameters<typeof accessRuleIdentityKey>[0]): MCPAccessPolicy {
+  const np = normalizeMCPAccessPolicy(policy);
+  const nr = normalizeMCPAccessRule(rule);
+  const prevKey = prev ? accessRuleIdentityKey(prev) : accessRuleIdentityKey(nr);
+  const nextKey = accessRuleIdentityKey(nr);
+  const next = np.client_overrides.filter(r => { const k = accessRuleIdentityKey(normalizeMCPAccessRule(r)); return k !== prevKey && k !== nextKey; });
+  next.push(nr);
+  return { ...np, client_overrides: sortAccessRules(next) };
+}
+
+function upsertToolRule(policy: MCPAccessPolicy, rule: MCPToolAccessOverride, prev?: Parameters<typeof toolRuleIdentityKey>[0]): MCPAccessPolicy {
+  const np = normalizeMCPAccessPolicy(policy);
+  const nr = normalizeMCPToolRule(rule);
+  const prevKey = prev ? toolRuleIdentityKey(prev) : toolRuleIdentityKey(nr);
+  const nextKey = toolRuleIdentityKey(nr);
+  const next = np.tool_overrides.filter(r => { const k = toolRuleIdentityKey(normalizeMCPToolRule(r)); return k !== prevKey && k !== nextKey; });
+  next.push(nr);
+  return { ...np, tool_overrides: sortToolRules(next) };
+}
+
+function upsertToolDefault(policy: MCPAccessPolicy, toolName: string, effect: MCPAccessEffect): MCPAccessPolicy {
+  const np = normalizeMCPAccessPolicy(policy);
+  const next = np.tool_defaults.filter(d => d.tool_name !== toolName);
+  next.push({ tool_name: toolName, effect });
+  return { ...np, tool_defaults: sortToolDefaults(next) };
+}
+
+function removeClientRule(policy: MCPAccessPolicy, rule: Parameters<typeof accessRuleIdentityKey>[0]): MCPAccessPolicy {
+  const np = normalizeMCPAccessPolicy(policy);
+  const tk = accessRuleIdentityKey(rule);
+  return { ...np, client_overrides: np.client_overrides.filter(r => accessRuleIdentityKey(normalizeMCPAccessRule(r)) !== tk) };
+}
+
+function removeToolRule(policy: MCPAccessPolicy, rule: Parameters<typeof toolRuleIdentityKey>[0]): MCPAccessPolicy {
+  const np = normalizeMCPAccessPolicy(policy);
+  const tk = toolRuleIdentityKey(rule);
+  return { ...np, tool_overrides: np.tool_overrides.filter(r => toolRuleIdentityKey(normalizeMCPToolRule(r)) !== tk) };
+}
+
+function filterPrincipalOptionsForRule(principals: MCPAccessPrincipalOption[], rule: MCPAccessRule): MCPAccessPrincipalOption[] {
+  const st = normalizeSourceType(rule.source_type);
+  const sv = normalizeSourceValue(rule.source_value);
+  if (isWildcardSourceValue(sv)) return [];
+  const bySubject = new Map<string, MCPAccessPrincipalOption>();
+  principals.forEach(p => {
+    if (normalizeSourceType(p.source_type) !== st || normalizeSourceValue(p.source_value) !== sv) return;
+    const sv2 = (p.subject_value || "").trim();
+    if (!sv2 || bySubject.has(sv2)) return;
+    bySubject.set(sv2, p);
+  });
+  return Array.from(bySubject.values());
+}
+
+function buildSubjectValueOptions(principals: MCPAccessPrincipalOption[], rule: MCPAccessRule): { label: string; value: string }[] {
+  return filterPrincipalOptionsForRule(principals, rule).map(p => ({ label: p.subject_value, value: p.subject_value }));
+}
+
+function ruleHasAmbiguousUserSource(rule: MCPAccessRule): boolean {
+  return normalizeSourceType(rule.source_type) === "channel" && isWildcardSourceValue(rule.source_value) && normalizeSubjectType(rule.subject_type) === "user" && Boolean((rule.subject_value || "").trim());
+}
+
+function ruleHasUnknownUserValue(principals: MCPAccessPrincipalOption[], rule: MCPAccessRule): boolean {
+  const n = normalizeMCPAccessRule(rule);
+  return n.subject_type === "user" && Boolean(n.subject_value) && n.subject_value !== "*" &&
+    principals.some(p => normalizeSourceType(p.source_type) === n.source_type) &&
+    !ruleHasAmbiguousUserSource(n) &&
+    !filterPrincipalOptionsForRule(principals, n).some(p => p.subject_value === n.subject_value);
+}
+
+function validateMCPAccessPolicy(policy: MCPAccessPolicy): { reason: string; rule: MCPAccessRule | MCPToolAccessOverride } | null {
+  const rules: Array<MCPAccessRule | MCPToolAccessOverride> = [...(policy.client_overrides || []), ...(policy.tool_overrides || [])];
+  for (const rule of rules) {
+    const n = normalizeMCPAccessRule(rule);
+    if (n.subject_type !== "user") continue;
+    if (!n.subject_value || n.subject_value === "*" || !n.source_value) return { reason: "missingUserValue", rule };
+    if (ruleHasAmbiguousUserSource(n)) return { reason: "ambiguousUserSource", rule };
+  }
+  return null;
+}
+
+function withRuleDefaults<R extends MCPAccessRule>(rule: R, patch: Partial<MCPAccessRule>): R {
+  const nr = { ...rule, ...patch } as R;
+  if (patch.subject_type) (nr as any).subject_value = "";
+  if ((patch.source_type !== undefined || patch.source_value !== undefined) && patch.subject_value === undefined && (nr as any).subject_type === "user") (nr as any).subject_value = "";
+  return nr;
+}
+
+function policySignature(p: MCPAccessPolicy): string {
+  return JSON.stringify(normalizeMCPAccessPolicy(p));
+}
+
+// ── MCP Access Modal Component (ported from console MCPAccessModal) ──
+
+function UGSciMCPAccessModal({
+  client,
+  agentId,
+  open,
+  onClose,
+  onSave,
 }: {
-  mcp: MCPClientInfo;
-  onClick: () => void;
-  onToggle: (e: React.MouseEvent) => void;
-  onDelete: (e: React.MouseEvent) => void;
-  onViewTools: (e: React.MouseEvent) => void;
+  client: MCPClientInfo;
+  agentId: string;
+  open: boolean;
+  onClose: () => void;
+  onSave: (key: string, policy: MCPAccessPolicy) => Promise<boolean>;
 }) {
   const React = getHost().React;
-  const { Card, Tag, Badge, Typography, Button } = getHost().antd;
+  const { useState, useEffect, useMemo, useCallback } = React;
+  const { Modal, Spin, Empty, Button, Tag, Segmented, Select, Input, AutoComplete, Typography, message: antdMsg } = getHost().antd;
+  const { PlusOutlined, DeleteOutlined } = getHost().antdIcons || {};
+  const { Text } = Typography;
+
+  const [policy, setPolicy] = useState<MCPAccessPolicy | null>(null);
+  const [tools, setTools] = useState<MCPToolInfo[]>([]);
+  const [principalOptions, setPrincipalOptions] = useState<MCPAccessPrincipalOption[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [toolsError, setToolsError] = useState("");
+  const [initialSig, setInitialSig] = useState("");
+
+  useEffect(() => {
+    if (!open) return;
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true); setTools([]); setPrincipalOptions([]); setToolsError("");
+      try {
+        const savedPolicy = await getMCPPolicyForCapabilities(agentId, client.key);
+        if (!cancelled) {
+          const normalized = normalizeMCPAccessPolicy(savedPolicy);
+          setPolicy(normalized);
+          setInitialSig(policySignature(normalized));
+        }
+        try {
+          const principals = await listMCPAccessPrincipalsForCapabilities(agentId);
+          if (!cancelled) setPrincipalOptions(principals);
+        } catch { if (!cancelled) setPrincipalOptions([]); }
+        if (!client.enabled) { if (!cancelled) setToolsError("MCP 客户端未启用，无法获取工具列表"); return; }
+        try {
+          const t = await listMCPToolsForCapabilities(agentId, client.key);
+          if (!cancelled) setTools(t);
+        } catch (err: any) { if (!cancelled) setToolsError(err?.message || "无法加载工具列表"); }
+      } catch { if (!cancelled) { setPolicy(null); setInitialSig(""); setToolsError("加载访问策略失败"); } }
+      finally { if (!cancelled) setLoading(false); }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [open, client.key, client.enabled, agentId]);
+
+  const groups = useMemo(() => policy ? buildMCPAccessToolGroups(tools, policy) : [], [tools, policy]);
+  const isDirty = useMemo(() => Boolean(policy && policySignature(policy) !== initialSig), [policy, initialSig]);
+
+  const channelLabel = (v: string) => CHANNEL_SOURCE_LABELS[v] || v;
+
+  const setDefaultEffect = useCallback((e: MCPAccessEffect) => {
+    setPolicy((prev: MCPAccessPolicy | null) => prev ? { ...prev, default_effect: e } : prev);
+  }, []);
+
+  const updateClientRule = useCallback((rule: MCPAccessRule, patch: Partial<MCPAccessRule>) => {
+    setPolicy((prev: MCPAccessPolicy | null) => prev ? upsertClientRule(prev, withRuleDefaults(rule, patch), { source_type: rule.source_type, source_value: rule.source_value, subject_type: rule.subject_type, subject_value: rule.subject_value }) : prev);
+  }, []);
+
+  const updateToolRule = useCallback((rule: MCPToolAccessOverride, patch: Partial<MCPAccessRule>) => {
+    setPolicy((prev: MCPAccessPolicy | null) => prev ? upsertToolRule(prev, withRuleDefaults(rule, patch) as MCPToolAccessOverride, { tool_name: rule.tool_name, source_type: rule.source_type, source_value: rule.source_value, subject_type: rule.subject_type, subject_value: rule.subject_value }) : prev);
+  }, []);
+
+  const handleSave = useCallback(async () => {
+    if (!policy) return;
+    const err = validateMCPAccessPolicy(policy);
+    if (err) { antdMsg.error(err.reason === "missingUserValue" ? "用户规则缺少用户标识" : "用户来源不明确"); return; }
+    setSaving(true);
+    try {
+      const ok = await onSave(client.key, policy);
+      if (ok) { setInitialSig(policySignature(policy)); onClose(); }
+    } finally { setSaving(false); }
+  }, [policy, client.key, onSave, onClose, antdMsg]);
+
+  const handleClose = useCallback(() => {
+    if (!isDirty || saving) { onClose(); return; }
+    Modal.confirm({
+      title: "放弃修改", content: "确定要放弃未保存的修改吗？",
+      okText: "确认", cancelText: "取消", onOk: onClose,
+    });
+  }, [isDirty, saving, onClose]);
+
+  // ── Rule row renderer ──
+  const renderRuleRow = useCallback((rule: MCPAccessRule | MCPToolAccessOverride, isToolRule: boolean) => {
+    const subjectValueOptions = buildSubjectValueOptions(principalOptions, rule);
+    const hasAmbiguous = ruleHasAmbiguousUserSource(rule);
+    const hasUnknown = ruleHasUnknownUserValue(principalOptions, rule);
+    const sourceValueOpts = [{ label: "所有渠道", value: "*" }, ...MCP_CHANNEL_SOURCE_VALUES.map(v => ({ label: channelLabel(v), value: v }))];
+    const subjectTypeOpts = [{ label: "所有人", value: "all" }, { label: "指定用户", value: "user" }];
+    const updateFn = isToolRule ? updateToolRule : updateClientRule;
+    const setEffect = (e: MCPAccessEffect) => {
+      if (isToolRule) {
+        setPolicy((prev: MCPAccessPolicy | null) => prev ? upsertToolRule(prev, { ...(rule as MCPToolAccessOverride), effect: e }) : prev);
+      } else {
+        setPolicy((prev: MCPAccessPolicy | null) => prev ? upsertClientRule(prev, { ...rule, effect: e }) : prev);
+      }
+    };
+    const deleteFn = () => {
+      if (isToolRule) {
+        setPolicy((prev: MCPAccessPolicy | null) => prev ? removeToolRule(prev, { tool_name: (rule as MCPToolAccessOverride).tool_name, source_type: rule.source_type, source_value: rule.source_value, subject_type: rule.subject_type, subject_value: rule.subject_value }) : prev);
+      } else {
+        setPolicy((prev: MCPAccessPolicy | null) => prev ? removeClientRule(prev, { source_type: rule.source_type, source_value: rule.source_value, subject_type: rule.subject_type, subject_value: rule.subject_value }) : prev);
+      }
+    };
+    const key = isToolRule ? toolRuleIdentityKey(rule as MCPToolAccessOverride) : accessRuleIdentityKey(rule);
+
+    return React.createElement(
+      "div",
+      { key, style: { display: "grid", gridTemplateColumns: "1fr 1fr 1fr 1fr 1fr auto", gap: 6, alignItems: "end", padding: "6px 0", borderBottom: "1px solid #f5f5f5" } },
+      // source_type
+      React.createElement("div", null,
+        React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "来源类型"),
+        React.createElement(Select, {
+          size: "small", style: { width: "100%" }, value: rule.source_type || "channel",
+          onChange: (v: string) => updateFn(rule, { source_type: v as MCPAccessSourceType, source_value: v === "channel" ? (rule.source_value || "*") : rule.source_value } as any),
+          options: [{ label: "渠道", value: "channel" }, ...(rule.source_type && rule.source_type !== "channel" ? [{ label: rule.source_type, value: rule.source_type }] : [])],
+        }),
+      ),
+      // source_value
+      React.createElement("div", null,
+        React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "来源"),
+        rule.source_type === "channel"
+          ? React.createElement(Select, { size: "small", style: { width: "100%" }, value: rule.source_value || "*", onChange: (v: string) => updateFn(rule, { source_value: v } as any), options: sourceValueOpts })
+          : React.createElement(Input, { size: "small", placeholder: "来源标识", value: rule.source_value, onChange: (e: any) => updateFn(rule, { source_value: e.target.value } as any) }),
+      ),
+      // subject_type
+      React.createElement("div", null,
+        React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "对象类型"),
+        React.createElement(Select, { size: "small", style: { width: "100%" }, value: rule.subject_type, onChange: (v: string) => updateFn(rule, { subject_type: v as MCPAccessSubjectType } as any), options: subjectTypeOpts }),
+      ),
+      // subject_value
+      React.createElement("div", null,
+        React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "对象"),
+        rule.subject_type === "user"
+          ? React.createElement("div", null,
+              React.createElement(AutoComplete, {
+                size: "small", style: { width: "100%" }, value: rule.subject_value,
+                options: subjectValueOptions,
+                placeholder: subjectValueOptions.length > 0 ? "用户 ID" : "无近期用户",
+                onChange: (v: string) => updateFn(rule, { subject_value: v } as any),
+                onSelect: (v: string) => updateFn(rule, { subject_value: v } as any),
+                filterOption: (input: string, option: any) => String(option?.value || "").toLowerCase().includes(input.toLowerCase()),
+              }),
+              hasAmbiguous ? React.createElement(Text, { style: { fontSize: 10, color: "#fa8c16", display: "block" } }, "请先选择具体渠道") : null,
+              hasUnknown ? React.createElement(Text, { style: { fontSize: 10, color: "#fa8c16", display: "block" } }, "未知的用户标识") : null,
+            )
+          : React.createElement(Input, { size: "small", disabled: true, value: "所有人" }),
+      ),
+      // effect
+      React.createElement("div", null,
+        React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "效果"),
+        React.createElement(Select, {
+          size: "small", style: { width: "100%" }, value: rule.effect,
+          onChange: (v: string) => setEffect(v as MCPAccessEffect),
+          options: [{ label: "允许", value: "allow" }, { label: "询问", value: "ask" }, { label: "拒绝", value: "deny" }],
+        }),
+      ),
+      // delete
+      React.createElement(Button, { size: "small", type: "text", icon: React.createElement(DeleteOutlined), onClick: deleteFn, title: "删除规则" }),
+    );
+  }, [principalOptions, updateClientRule, updateToolRule]);
+
+  // ── Segmented for default effect ──
+  const renderSegmented = (value: MCPAccessEffect, onChange: (e: MCPAccessEffect) => void) => {
+    const colors: Record<MCPAccessEffect, { bg: string; border: string; text: string }> = {
+      ask: { bg: "rgba(245,158,11,0.24)", border: "rgba(217,119,6,0.36)", text: "#8a4b00" },
+      allow: { bg: "rgba(34,197,94,0.22)", border: "rgba(22,163,74,0.35)", text: "#17643a" },
+      deny: { bg: "rgba(239,68,68,0.2)", border: "rgba(220,38,38,0.34)", text: "#9f1f26" },
+    };
+    const c = colors[value];
+    return React.createElement(Segmented, {
+      size: "small",
+      value,
+      onChange: (v: string) => onChange(v as MCPAccessEffect),
+      style: { "--mcp-policy-segment-bg": c.bg, "--mcp-policy-segment-border": c.border, "--mcp-policy-segment-text": c.text } as any,
+      options: [{ label: "询问", value: "ask" }, { label: "允许", value: "allow" }, { label: "拒绝", value: "deny" }],
+    });
+  };
+
+  return React.createElement(
+    Modal,
+    {
+      title: `${client.name || client.key} - 工具与访问策略`,
+      open,
+      onCancel: handleClose,
+      width: "min(1040px, calc(100vw - 32px))" as any,
+      styles: {
+        body: {
+          maxHeight: "min(520px, calc(100vh - 280px))",
+          overflowY: "auto",
+          overflowX: "hidden",
+        },
+      },
+      footer: React.createElement(
+        "div",
+        { style: { textAlign: "right" } },
+        React.createElement(Button, { onClick: handleClose, style: { marginRight: 8 } }, "取消"),
+        React.createElement(Button, { type: "primary", onClick: handleSave, loading: saving, disabled: !policy || loading }, "保存"),
+      ),
+    },
+    loading && !policy
+      ? React.createElement("div", { style: { textAlign: "center", padding: 40 } }, React.createElement(Spin))
+      : policy
+        ? React.createElement(
+            "div",
+            null,
+            // ── Client-level panel ──
+            React.createElement(
+              "div",
+              { style: { marginBottom: 16, padding: "12px 16px", background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0" } },
+              React.createElement(
+                "div",
+                { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+                React.createElement(Text, { strong: true }, "客户端访问策略"),
+                React.createElement(
+                  "div",
+                  { style: { display: "flex", alignItems: "center", gap: 8 } },
+                  React.createElement(Text, { style: { fontSize: 12, color: "#666" } }, "默认:"),
+                  renderSegmented(policy.default_effect, setDefaultEffect),
+                  React.createElement(Button, { size: "small", icon: React.createElement(PlusOutlined), onClick: () => setPolicy((prev: MCPAccessPolicy | null) => prev ? addClientRule(prev) : prev) }, "添加规则"),
+                ),
+              ),
+              policy.client_overrides.length === 0
+                ? React.createElement(Text, { style: { fontSize: 12, color: "#999" } }, "暂无客户端级覆盖规则")
+                : React.createElement("div", null, ...policy.client_overrides.map((r) => renderRuleRow(r, false))),
+            ),
+            // ── Error message ──
+            toolsError ? React.createElement("div", { style: { color: "#ff4d4f", fontSize: 12, marginBottom: 8 } }, toolsError) : null,
+            // ── Tool-level panel ──
+            React.createElement(Text, { strong: true, style: { display: "block", marginBottom: 8 } }, "工具访问策略"),
+            groups.length === 0
+              ? React.createElement(Empty, { description: "暂无工具" })
+              : React.createElement(
+                  "div",
+                  null,
+                  ...groups.map((group) =>
+                    React.createElement(
+                      "div",
+                      { key: group.toolName, style: { marginBottom: 12, padding: "10px 12px", background: "#fafafa", borderRadius: 6, border: "1px solid #f0f0f0" } },
+                      React.createElement(
+                        "div",
+                        { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 } },
+                        React.createElement(
+                          "div",
+                          { style: { display: "flex", alignItems: "center", gap: 6 } },
+                          React.createElement(Tag, { color: group.stale ? "default" : "blue" }, group.toolName),
+                          group.stale ? React.createElement(Tag, { color: "orange" }, "已失效") : null,
+                        ),
+                        React.createElement(
+                          "div",
+                          { style: { display: "flex", alignItems: "center", gap: 8 } },
+                          React.createElement(Text, { style: { fontSize: 12, color: "#666" } }, "默认:"),
+                          renderSegmented(group.defaultEffect, (e) => setPolicy((prev: MCPAccessPolicy | null) => prev ? upsertToolDefault(prev, group.toolName, e) : prev)),
+                          React.createElement(Button, { size: "small", icon: React.createElement(PlusOutlined), onClick: () => setPolicy((prev: MCPAccessPolicy | null) => prev ? addToolRule(prev, group.toolName) : prev) }, "添加规则"),
+                        ),
+                      ),
+                      // Tool schema
+                      (group.description || (group.inputSchema && Object.keys(group.inputSchema).length > 0))
+                        ? React.createElement(
+                            "details",
+                            { style: { marginBottom: 6, fontSize: 12 } },
+                            React.createElement("summary", { style: { cursor: "pointer", color: "#888" } }, "工具详情"),
+                            group.description ? React.createElement("div", { style: { padding: "4px 0", color: "#666" } }, group.description) : null,
+                            group.inputSchema && Object.keys(group.inputSchema).length > 0
+                              ? React.createElement("pre", { style: { background: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 200 } }, JSON.stringify(group.inputSchema, null, 2))
+                              : null,
+                          )
+                        : null,
+                      // Tool rules
+                      group.rules.length === 0
+                        ? React.createElement(Text, { style: { fontSize: 12, color: "#999" } }, "暂无工具级覆盖规则")
+                        : React.createElement("div", null, ...group.rules.map((r) => renderRuleRow(r, true))),
+                    )
+                  ),
+              ),
+          )
+        : React.createElement("div", { style: { color: "#ff4d4f" } }, "加载访问策略失败"),
+  );
+}
+
+// ── MCP OAuth Modal Component (ported from console MCPOAuthSection) ──
+
+function UGSciMCPOAuthModal({
+  client,
+  agentId,
+  open,
+  onClose,
+  onAuthChanged,
+}: {
+  client: MCPClientInfo;
+  agentId: string;
+  open: boolean;
+  onClose: () => void;
+  onAuthChanged: () => void;
+}) {
+  const React = getHost().React;
+  const { useState, useCallback, useEffect } = React;
+  const { Modal, Button, Input, Typography, message: antdMsg } = getHost().antd;
+  const { Text } = Typography;
+
+  const [phase, setPhase] = useState<"idle" | "starting" | "waiting" | "success" | "error" | "revoking">("idle");
+  const [errorMsg, setErrorMsg] = useState("");
+  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [clientId, setClientId] = useState(client.oauth_status?.client_id || "");
+  const [scope, setScope] = useState(client.oauth_status?.scope || "");
+  const [authEndpoint, setAuthEndpoint] = useState("");
+  const [tokenEndpoint, setTokenEndpoint] = useState("");
+
+  useEffect(() => {
+    if (phase !== "waiting") return;
+    const timer = setInterval(async () => {
+      try {
+        const st = await getMCPOAuthStatusForCapabilities(agentId, client.key);
+        if (st.authorized) { setPhase("success"); onAuthChanged(); }
+      } catch { /* ignore */ }
+    }, 2000);
+    return () => clearInterval(timer);
+  }, [phase, client.key, agentId, onAuthChanged]);
+
+  const isAuthorized = phase === "success" || (phase === "idle" && client.oauth_status?.authorized === true);
+  const isExpired = phase === "idle" && client.oauth_status?.authorized && client.oauth_status.expires_at > 0 && client.oauth_status.expires_at < Date.now() / 1000;
+
+  const handleStart = useCallback(async () => {
+    if (!client.url?.trim()) { setErrorMsg("缺少 URL"); return; }
+    setPhase("starting"); setErrorMsg("");
+    try {
+      const resp = await startMCPOAuthForCapabilities(agentId, client.key, {
+        url: client.url, scope, client_id: clientId, auth_endpoint: authEndpoint, token_endpoint: tokenEndpoint,
+      });
+      setPhase("waiting");
+      window.open(resp.auth_url, "_blank", "popup,width=600,height=700");
+    } catch (err: any) {
+      setPhase("error");
+      setErrorMsg(err?.message || "OAuth 启动失败");
+    }
+  }, [agentId, client.key, client.url, scope, clientId, authEndpoint, tokenEndpoint]);
+
+  const handleRevoke = useCallback(async () => {
+    setPhase("revoking");
+    try {
+      await revokeMCPOAuthForCapabilities(agentId, client.key);
+      setPhase("idle");
+      onAuthChanged();
+    } catch { setPhase("idle"); }
+  }, [agentId, client.key, onAuthChanged]);
+
+  return React.createElement(
+    Modal,
+    {
+      title: `${client.name || client.key} — OAuth 授权管理`,
+      open,
+      onCancel: onClose,
+      footer: React.createElement("div", { style: { textAlign: "right" } }, React.createElement(Button, { onClick: onClose }, "关闭")),
+      width: 560,
+    },
+    React.createElement(
+      "div",
+      { style: { background: "#f8f9fa", border: "1px solid #e9ecef", borderRadius: 8, padding: "12px 14px" } },
+      // Status
+      React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 8 } },
+        React.createElement(
+          "span",
+          { style: { fontSize: 12, padding: "2px 8px", borderRadius: 12, border: "1px solid", color: isExpired ? "#e67e22" : isAuthorized ? "#27ae60" : "#7f8c8d", borderColor: isExpired ? "#e67e22" : isAuthorized ? "#27ae60" : "#7f8c8d", background: "white" } },
+          isExpired ? "已过期" : isAuthorized ? "已授权" : phase === "waiting" ? "等待授权..." : phase === "error" ? "授权失败" : "未授权",
+        ),
+        React.createElement(
+          "div",
+          { style: { display: "flex", gap: 8 } },
+          (isAuthorized || isExpired) ? React.createElement(Button, { size: "small", onClick: handleRevoke, loading: phase === "revoking" }, "撤销") : null,
+          React.createElement(Button, { size: "small", type: isAuthorized && !isExpired ? "default" : "primary", onClick: handleStart, loading: phase === "starting" || phase === "waiting", disabled: !client.url?.trim() }, isAuthorized && !isExpired ? "重新授权" : "授权"),
+        ),
+      ),
+      errorMsg ? React.createElement("p", { style: { color: "#c0392b", fontSize: 12 } }, errorMsg) : null,
+      // Advanced
+      React.createElement(
+        "div",
+        { style: { marginTop: 8, cursor: "pointer", color: "#888", fontSize: 12 }, onClick: () => setShowAdvanced(v => !v) },
+        showAdvanced ? "收起高级设置" : "展开高级设置",
+      ),
+      showAdvanced
+        ? React.createElement(
+            "div",
+            { style: { marginTop: 8, padding: "10px 12px", background: "white", borderRadius: 6, border: "1px solid #e9ecef" } },
+            React.createElement(Text, { style: { fontSize: 11, color: "#888", display: "block", marginBottom: 2 } }, "Client ID"),
+            React.createElement(Input, { size: "small", placeholder: "留空则使用动态注册", value: clientId, onChange: (e: any) => setClientId(e.target.value) }),
+            React.createElement(Text, { style: { fontSize: 11, color: "#888", display: "block", marginBottom: 2, marginTop: 8 } }, "Scope"),
+            React.createElement(Input, { size: "small", placeholder: "OAuth scope", value: scope, onChange: (e: any) => setScope(e.target.value) }),
+            React.createElement(Text, { style: { fontSize: 11, color: "#888", display: "block", marginBottom: 2, marginTop: 8 } }, "授权端点"),
+            React.createElement(Input, { size: "small", placeholder: "https://auth.example.com/authorize", value: authEndpoint, onChange: (e: any) => setAuthEndpoint(e.target.value) }),
+            React.createElement(Text, { style: { fontSize: 11, color: "#888", display: "block", marginBottom: 2, marginTop: 8 } }, "令牌端点"),
+            React.createElement(Input, { size: "small", placeholder: "https://auth.example.com/token", value: tokenEndpoint, onChange: (e: any) => setTokenEndpoint(e.target.value) }),
+          )
+        : null,
+    ),
+  );
+}
+
+
+function CapabilityCard({
+  mcp,
+  agentId,
+  onToggle,
+  onDelete,
+  onUpdate,
+  onUpdatePolicy,
+  onRefresh,
+}: {
+  mcp: MCPClientInfo;
+  agentId: string;
+  onToggle: (e: React.MouseEvent) => void;
+  onDelete: () => void;
+  onUpdate: (key: string, updates: MCPClientUpdate) => Promise<boolean>;
+  onUpdatePolicy: (key: string, policy: MCPAccessPolicy) => Promise<boolean>;
+  onRefresh?: () => Promise<void>;
+}) {
+  const React = getHost().React;
+  const { useState } = React;
+  const { Card, Tag, Tooltip, Modal, Input, Button, Typography } = getHost().antd;
   const { Text } = Typography;
   const {
     EyeOutlined,
@@ -6813,169 +7895,241 @@ function CapabilityCard({
     ToolOutlined,
   } = getHost().antdIcons || {};
 
-  const transportIcons: Record<string, string> = {
-    stdio: "💻",
-    streamable_http: "🌐",
-    sse: "📡",
+  const [jsonModalOpen, setJsonModalOpen] = useState(false);
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [accessModalOpen, setAccessModalOpen] = useState(false);
+  const [editedJson, setEditedJson] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [oauthModalOpen, setOauthModalOpen] = useState(false);
+
+  const isRemote = mcp.transport === "streamable_http" || mcp.transport === "sse";
+  const clientType = isRemote ? "Remote" : "Local";
+
+  const oauthStatus = mcp.oauth_status;
+  const now = Date.now() / 1000;
+  const isOauthAuthorized = !!oauthStatus?.authorized && oauthStatus.expires_at > now;
+  const isOauthExpired = !!oauthStatus?.authorized && oauthStatus.expires_at <= now;
+  const hasOauth = !!oauthStatus;
+
+  const handleCardClick = () => {
+    setEditedJson(JSON.stringify(mcp, null, 2));
+    setIsEditing(false);
+    setJsonModalOpen(true);
   };
 
-  const isRemote =
-    mcp.transport === "streamable_http" || mcp.transport === "sse";
+  const handleSaveJson = async () => {
+    try {
+      const parsed = JSON.parse(editedJson);
+      // Only extract updatable fields to avoid sending read-only server-side
+      // data (oauth_status, access_summary, tools, etc.) back to the backend.
+      const allowedKeys: (keyof MCPClientUpdate)[] = [
+        "name", "description", "command", "enabled", "transport",
+        "url", "headers", "args", "env", "cwd",
+      ];
+      const updates: MCPClientUpdate = {};
+      for (const k of allowedKeys) {
+        if (k in parsed) (updates as any)[k] = parsed[k];
+      }
+      const success = await onUpdate(mcp.key, updates);
+      if (success) { setJsonModalOpen(false); setIsEditing(false); }
+    } catch { alert("JSON 格式错误"); }
+  };
+
+  const clientJson = JSON.stringify(mcp, null, 2);
 
   return React.createElement(
-    Card,
-    {
-      hoverable: true,
-      onClick,
-      size: "small",
-      style: {
-        cursor: "pointer",
-        borderColor: mcp.enabled ? undefined : "#d9d9d9",
-        opacity: mcp.enabled ? 1 : 0.7,
-        height: "100%",
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-      },
-      bodyStyle: {
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        flex: 1,
-      },
-    },
+    React.Fragment,
+    null,
     React.createElement(
-      "div",
+      Card,
       {
+        hoverable: true,
+        onClick: handleCardClick,
+        size: "small",
         style: {
+          cursor: "pointer",
+          borderColor: mcp.enabled ? undefined : "#d9d9d9",
+          opacity: mcp.enabled ? 1 : 0.7,
+          height: "100%",
+          width: "100%",
           display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 8,
+          flexDirection: "column",
         },
+        styles: {
+          body: {
+            display: "flex",
+            flexDirection: "column",
+            height: "100%",
+            flex: 1,
+          },
+        },
+      },
+      // ── Header: name + type badge + oauth icons + status ──
+      React.createElement(
+        "div",
+        { style: { display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 } },
+        React.createElement(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 6, minWidth: 0 } },
+          React.createElement(
+            Tooltip,
+            { title: mcp.name },
+            React.createElement(Text, { strong: true, style: { fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, mcp.name || mcp.key),
+          ),
+          React.createElement(
+            "span",
+            { style: { fontSize: 10, padding: "1px 6px", borderRadius: 4, background: isRemote ? "#e6f4ff" : "#f9f0ff", color: isRemote ? "#1677ff" : "#722ed1", flexShrink: 0 } },
+            clientType,
+          ),
+          // OAuth status icons
+          hasOauth && isOauthExpired
+            ? React.createElement("span", { style: { fontSize: 11, color: "#e67e22", flexShrink: 0 } }, "⚠")
+            : null,
+          hasOauth && isOauthAuthorized
+            ? React.createElement("span", { style: { fontSize: 11, color: "#27ae60", flexShrink: 0 } }, "✓")
+            : null,
+          hasOauth && !isOauthAuthorized && !isOauthExpired
+            ? React.createElement("span", { style: { fontSize: 11, color: "#7f8c8d", flexShrink: 0 } }, "🔒")
+            : null,
+        ),
+        React.createElement(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 4, fontSize: 11, flexShrink: 0 } },
+          React.createElement("span", { style: { width: 6, height: 6, borderRadius: "50%", background: mcp.enabled ? "#52c41a" : "#d9d9d9" } }),
+          mcp.enabled ? "启用" : "停用",
+        ),
+      ),
+      // ── Description ──
+      React.createElement(
+        "p",
+        { style: { fontSize: 12, color: "#666", margin: "6px 0 8px", lineHeight: 1.6, minHeight: 36, overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" } },
+        mcp.description || "-",
+      ),
+      // ── Footer: tools button + secondary actions ──
+      React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 8, marginTop: "auto", paddingTop: 12, borderTop: "1px solid #f0f0f0" } },
+        // Tools button
+        React.createElement(
+          Button,
+          {
+            size: "small",
+            icon: ToolOutlined ? React.createElement(ToolOutlined) : undefined,
+            onClick: (e: React.MouseEvent) => { e.stopPropagation(); setAccessModalOpen(true); },
+            style: { width: "100%" },
+          },
+          "工具与访问策略",
+        ),
+        // Secondary actions: oauth (remote only) + toggle + delete
+        React.createElement(
+          "div",
+          { style: { display: "grid", gridTemplateColumns: isRemote ? "1fr 1fr 1fr" : "1fr 1fr", gap: 8 } },
+          isRemote
+            ? React.createElement(
+                Button,
+                {
+                  size: "small",
+                  onClick: (e: React.MouseEvent) => { e.stopPropagation(); setOauthModalOpen(true); },
+                  style: {
+                    color: isOauthAuthorized ? "#27ae60" : isOauthExpired ? "#e67e22" : undefined,
+                    borderColor: isOauthAuthorized ? "#27ae60" : isOauthExpired ? "#e67e22" : undefined,
+                    background: isOauthAuthorized ? "rgba(39,174,96,0.06)" : isOauthExpired ? "rgba(230,126,34,0.06)" : undefined,
+                  },
+                },
+                isOauthAuthorized ? "已授权" : isOauthExpired ? "已过期" : "授权",
+              )
+            : null,
+          React.createElement(
+            Button,
+            {
+              size: "small",
+              icon: mcp.enabled
+                ? EyeInvisibleOutlined ? React.createElement(EyeInvisibleOutlined) : undefined
+                : EyeOutlined ? React.createElement(EyeOutlined) : undefined,
+              onClick: onToggle,
+            },
+            mcp.enabled ? "禁用" : "启用",
+          ),
+          React.createElement(
+            Button,
+            {
+              size: "small",
+              danger: true,
+              icon: DeleteOutlined ? React.createElement(DeleteOutlined) : undefined,
+              onClick: (e: React.MouseEvent) => { e.stopPropagation(); setDeleteModalOpen(true); },
+            },
+            "删除",
+          ),
+        ),
+      ),
+    ),
+    // ── Delete Confirmation Modal ──
+    React.createElement(
+      Modal,
+      {
+        title: "确认删除",
+        open: deleteModalOpen,
+        onOk: () => { setDeleteModalOpen(false); onDelete(); },
+        onCancel: () => setDeleteModalOpen(false),
+        okText: "确认删除",
+        cancelText: "取消",
+        okButtonProps: { danger: true },
+      },
+      React.createElement("p", null, `确定要删除 MCP 客户端「${mcp.name || mcp.key}」吗？此操作不可撤销。`),
+    ),
+    // ── JSON Config Modal (click card to view/edit) ──
+    React.createElement(
+      Modal,
+      {
+        title: `${mcp.name || mcp.key} - 配置`,
+        open: jsonModalOpen,
+        onCancel: () => { setJsonModalOpen(false); setIsEditing(false); },
+        footer: React.createElement(
+          "div",
+          { style: { textAlign: "right" } },
+          React.createElement(Button, { onClick: () => { setJsonModalOpen(false); setIsEditing(false); }, style: { marginRight: 8 } }, "取消"),
+          isEditing
+            ? React.createElement(Button, { type: "primary", onClick: handleSaveJson }, "保存")
+            : React.createElement(Button, { type: "primary", onClick: () => setIsEditing(true) }, "编辑"),
+        ),
+        width: 700,
       },
       React.createElement(
         "div",
-        { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement(
-          "span",
-          { style: { fontSize: 18 } },
-          transportIcons[mcp.transport] || "🔌",
-        ),
-        React.createElement(
-          Text,
-          { strong: true, style: { fontSize: 14 } },
-          mcp.name || mcp.key,
-        ),
+        { style: { marginBottom: 8, fontSize: 12, color: "#8c8c8c" } },
+        "密钥类字段（如 API_KEY）可能已被后端脱敏，保存时不会覆盖脱敏值。",
       ),
-      React.createElement(Badge, {
-        status: mcp.enabled ? "success" : "default",
-        text: mcp.enabled ? "启用" : "停用",
-      }),
+      isEditing
+        ? React.createElement(Input.TextArea, {
+            value: editedJson,
+            onChange: (e: any) => setEditedJson(e.target.value),
+            autoSize: { minRows: 15, maxRows: 25 },
+            style: { fontFamily: "Monaco, Courier New, monospace", fontSize: 13 },
+          })
+        : React.createElement(
+            "pre",
+            { style: { backgroundColor: "#f5f5f5", padding: 16, borderRadius: 8, maxHeight: 400, overflow: "auto", fontSize: 13, fontFamily: "Monaco, Courier New, monospace" } },
+            clientJson,
+          ),
     ),
-    mcp.description
-      ? React.createElement(
-          "div",
-          {
-            style: {
-              fontSize: 12,
-              color: "#595959",
-              marginBottom: 8,
-              lineHeight: 1.5,
-              display: "-webkit-box",
-              WebkitLineClamp: 2,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              minHeight: 36,
-              flex: "1 0 auto",
-            },
-          },
-          mcp.description,
-        )
-      : React.createElement(
-          "div",
-          { style: { fontSize: 12, color: "#bfbfbf", marginBottom: 8, minHeight: 36, flex: "1 0 auto" } },
-          "暂无描述",
-        ),
-    React.createElement(
-      "div",
-      { style: { display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 8 } },
-      React.createElement(
-        Tag,
-        { color: "purple", style: { fontSize: 11 } },
-        mcp.transport,
-      ),
-      mcp.tools && mcp.tools.length > 0
-        ? React.createElement(
-            Tag,
-            { color: "blue", style: { fontSize: 11 } },
-            `${mcp.tools.length} 个工具`,
-          )
-        : React.createElement(Tag, { style: { fontSize: 11 } }, "全部工具"),
-      mcp.url
-        ? React.createElement(
-            Tag,
-            {
-              color: "geekblue",
-              style: {
-                fontSize: 11,
-                maxWidth: 200,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-              },
-            },
-            mcp.url,
-          )
-        : null,
-    ),
-    // ── Action buttons (mirror console /mcp page) ──
-    React.createElement(
-      "div",
-      {
-        style: {
-          display: "flex",
-          gap: 6,
-          marginTop: "auto",
-          paddingTop: 8,
-          borderTop: "1px solid #f0f0f0",
-        },
-      },
-      React.createElement(
-        Button,
-        {
-          size: "small",
-          icon: ToolOutlined ? React.createElement(ToolOutlined) : undefined,
-          onClick: onViewTools,
-        },
-        "工具",
-      ),
-      React.createElement(
-        Button,
-        {
-          size: "small",
-          icon: mcp.enabled
-            ? EyeInvisibleOutlined
-              ? React.createElement(EyeInvisibleOutlined)
-              : undefined
-            : EyeOutlined
-              ? React.createElement(EyeOutlined)
-              : undefined,
-          onClick: onToggle,
-        },
-        mcp.enabled ? "禁用" : "启用",
-      ),
-      React.createElement(
-        Button,
-        {
-          size: "small",
-          danger: true,
-          icon: DeleteOutlined ? React.createElement(DeleteOutlined) : undefined,
-          onClick: onDelete,
-        },
-        "删除",
-      ),
-    ),
+    // ── Access Modal (tools + access policy) ──
+    React.createElement(UGSciMCPAccessModal, {
+      client: mcp,
+      agentId,
+      open: accessModalOpen,
+      onClose: () => setAccessModalOpen(false),
+      onSave: onUpdatePolicy,
+    }),
+    // ── OAuth Modal (remote clients only) ──
+    isRemote
+      ? React.createElement(UGSciMCPOAuthModal, {
+          client: mcp,
+          agentId,
+          open: oauthModalOpen,
+          onClose: () => setOauthModalOpen(false),
+          onAuthChanged: async () => { await onRefresh?.(); },
+        })
+      : null,
   );
 }
 
@@ -7188,11 +8342,13 @@ function EngineCard({
         display: "flex",
         flexDirection: "column",
       },
-      bodyStyle: {
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        flex: 1,
+      styles: {
+        body: {
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          flex: 1,
+        },
       },
     },
     React.createElement(
@@ -7886,11 +9042,6 @@ function CapabilityCenterPage() {
     message: antdMsg,
     Row,
     Col,
-    Drawer,
-    Descriptions,
-    Tag,
-    Typography,
-    List,
     Tabs,
     Modal,
   } = getHost().antd;
@@ -7900,12 +9051,7 @@ function CapabilityCenterPage() {
     SearchOutlined,
     ApiOutlined,
     RocketOutlined,
-    ToolOutlined,
-    DeleteOutlined,
-    EyeOutlined,
-    EyeInvisibleOutlined,
   } = getHost().antdIcons || {};
-  const { Text } = Typography;
   const { TextArea } = Input;
 
   // ── Agent context (mirror console /mcp page) ──
@@ -7917,8 +9063,6 @@ function CapabilityCenterPage() {
   const [mcps, setMcps] = useState<MCPClientInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [activeMCP, setActiveMCP] = useState<MCPClientInfo | null>(null);
   const [activeTab, setActiveTab] = useState("mcp");
 
   // ── Create modal state (mirror console /mcp create) ──
@@ -7933,17 +9077,6 @@ function CapabilityCenterPage() {
   }
 }`);
   const [creating, setCreating] = useState(false);
-
-  // ── Delete modal state ──
-  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<MCPClientInfo | null>(null);
-
-  // ── Tools viewer modal state (mirror console /mcp tools) ──
-  const [toolsModalOpen, setToolsModalOpen] = useState(false);
-  const [toolsTarget, setToolsTarget] = useState<MCPClientInfo | null>(null);
-  const [toolsList, setToolsList] = useState<any[]>([]);
-  const [toolsLoading, setToolsLoading] = useState(false);
-  const [toolsError, setToolsError] = useState("");
 
   const loadMCPs = useCallback(async () => {
     setLoading(true);
@@ -7976,18 +9109,15 @@ function CapabilityCenterPage() {
     [currentAgentId, loadMCPs],
   );
 
-  const handleDelete = useCallback(async () => {
-    if (!deleteTarget) return;
+  const handleDelete = useCallback(async (mcp: MCPClientInfo) => {
     try {
-      await deleteMCPClientForCapabilities(currentAgentId, deleteTarget.key);
-      antdMsg.success(`MCP「${deleteTarget.key}」已删除`);
-      setDeleteModalOpen(false);
-      setDeleteTarget(null);
+      await deleteMCPClientForCapabilities(currentAgentId, mcp.key);
+      antdMsg.success(`MCP「${mcp.key}」已删除`);
       loadMCPs();
     } catch (err: any) {
       antdMsg.error(err.message || "删除失败");
     }
-  }, [currentAgentId, deleteTarget, loadMCPs]);
+  }, [currentAgentId, loadMCPs]);
 
   const handleCreate = useCallback(async () => {
     setCreating(true);
@@ -8043,30 +9173,6 @@ function CapabilityCenterPage() {
     }
   }, [createJson, currentAgentId, loadMCPs]);
 
-  const handleViewTools = useCallback(
-    async (mcp: MCPClientInfo) => {
-      setToolsTarget(mcp);
-      setToolsModalOpen(true);
-      setToolsList([]);
-      setToolsError("");
-      setToolsLoading(true);
-      try {
-        const tools = await listMCPToolsForCapabilities(
-          currentAgentId,
-          mcp.key,
-        );
-        setToolsList(tools);
-      } catch (err: any) {
-        setToolsError(
-          err.message || "无法加载工具列表（MCP 服务可能未运行）",
-        );
-      } finally {
-        setToolsLoading(false);
-      }
-    },
-    [currentAgentId],
-  );
-
   const filteredMCPs = useMemo(() => {
     if (!searchText.trim()) return mcps;
     const q = searchText.toLowerCase();
@@ -8121,6 +9227,14 @@ function CapabilityCenterPage() {
         },
         "添加 MCP",
       ),
+      React.createElement(
+        Button,
+        {
+          icon: ApiOutlined ? React.createElement(ApiOutlined) : undefined,
+          onClick: () => navigateTo("/mcp"),
+        },
+        "前往 MCP 管理",
+      ),
     ),
     loading
       ? React.createElement(
@@ -8150,23 +9264,37 @@ function CapabilityCenterPage() {
                 },
                 React.createElement(CapabilityCard, {
                   mcp,
-                  onClick: () => {
-                    setActiveMCP(mcp);
-                    setDrawerOpen(true);
-                  },
+                  agentId: currentAgentId,
                   onToggle: (e: React.MouseEvent) => {
                     e.stopPropagation();
                     handleToggle(mcp);
                   },
-                  onDelete: (e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    setDeleteTarget(mcp);
-                    setDeleteModalOpen(true);
+                  onDelete: () => {
+                    handleDelete(mcp);
                   },
-                  onViewTools: (e: React.MouseEvent) => {
-                    e.stopPropagation();
-                    handleViewTools(mcp);
+                  onUpdate: async (key: string, updates: MCPClientUpdate) => {
+                    try {
+                      await updateMCPClientForCapabilities(currentAgentId, key, updates as any);
+                      antdMsg.success("MCP 配置已更新");
+                      loadMCPs();
+                      return true;
+                    } catch (err: any) {
+                      antdMsg.error(err.message || "更新 MCP 失败");
+                      return false;
+                    }
                   },
+                  onUpdatePolicy: async (key: string, policy: MCPAccessPolicy) => {
+                    try {
+                      await updateMCPPolicyForCapabilities(currentAgentId, key, policy);
+                      antdMsg.success("访问策略已保存");
+                      loadMCPs();
+                      return true;
+                    } catch (err: any) {
+                      antdMsg.error(err.message || "保存访问策略失败");
+                      return false;
+                    }
+                  },
+                  onRefresh: async () => { loadMCPs(); },
                 }),
               ),
             ),
@@ -8227,136 +9355,6 @@ function CapabilityCenterPage() {
       activeKey: activeTab,
       onChange: (k: string) => setActiveTab(k),
     }),
-    // MCP Detail drawer
-    activeMCP
-      ? React.createElement(
-          Drawer,
-          {
-            title: React.createElement(
-              "div",
-              { style: { display: "flex", alignItems: "center", gap: 8 } },
-              React.createElement("span", { style: { fontSize: 18 } }, "🔌"),
-              React.createElement(
-                "span",
-                null,
-                activeMCP.name || activeMCP.key,
-              ),
-            ),
-            open: drawerOpen,
-            onClose: () => setDrawerOpen(false),
-            width: 480,
-          },
-          React.createElement(
-            Descriptions,
-            { column: 1, bordered: true, size: "small" },
-            React.createElement(
-              Descriptions.Item,
-              { label: "Key" },
-              React.createElement(
-                "code",
-                { style: { fontSize: 12 } },
-                activeMCP.key,
-              ),
-            ),
-            React.createElement(
-              Descriptions.Item,
-              { label: "名称" },
-              activeMCP.name || "-",
-            ),
-            React.createElement(
-              Descriptions.Item,
-              { label: "描述" },
-              activeMCP.description || "-",
-            ),
-            React.createElement(
-              Descriptions.Item,
-              { label: "状态" },
-              React.createElement(
-                Tag,
-                { color: activeMCP.enabled ? "green" : "default" },
-                activeMCP.enabled ? "启用" : "停用",
-              ),
-            ),
-            React.createElement(
-              Descriptions.Item,
-              { label: "传输方式" },
-              activeMCP.transport,
-            ),
-            activeMCP.url
-              ? React.createElement(
-                  Descriptions.Item,
-                  { label: "URL" },
-                  activeMCP.url,
-                )
-              : null,
-            activeMCP.command
-              ? React.createElement(
-                  Descriptions.Item,
-                  { label: "命令" },
-                  React.createElement(
-                    "code",
-                    { style: { fontSize: 11 } },
-                    activeMCP.command,
-                  ),
-                )
-              : null,
-            activeMCP.args && activeMCP.args.length > 0
-              ? React.createElement(
-                  Descriptions.Item,
-                  { label: "参数" },
-                  activeMCP.args.join(" "),
-                )
-              : null,
-          ),
-          activeMCP.tools && activeMCP.tools.length > 0
-            ? React.createElement(
-                "div",
-                { style: { marginTop: 16 } },
-                React.createElement(
-                  Text,
-                  {
-                    strong: true,
-                    style: { display: "block", marginBottom: 8 },
-                  },
-                  "提供的工具",
-                ),
-                React.createElement(List, {
-                  size: "small",
-                  dataSource: activeMCP.tools,
-                  renderItem: (tool: string) =>
-                    React.createElement(
-                      List.Item,
-                      null,
-                      React.createElement(
-                        "div",
-                        {
-                          style: {
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 6,
-                          },
-                        },
-                        ApiOutlined
-                          ? React.createElement(ApiOutlined, {
-                              style: { fontSize: 12, color: "#1677ff" },
-                            })
-                          : null,
-                        React.createElement(
-                          Text,
-                          { style: { fontSize: 12 } },
-                          tool,
-                        ),
-                      ),
-                    ),
-                }),
-              )
-            : React.createElement(
-                "div",
-                { style: { marginTop: 16, fontSize: 12, color: "#8c8c8c" } },
-                "此 MCP 客户端未设置工具白名单（所有工具均可用）",
-              ),
-        )
-      : null,
     // ── Create MCP Modal (mirror console /mcp JSON import) ──
     React.createElement(
       Modal,
@@ -8384,103 +9382,6 @@ function CapabilityCenterPage() {
         autoSize: { minRows: 12, maxRows: 20 },
         style: { fontFamily: "Monaco, Courier New, monospace", fontSize: 13 },
       }),
-    ),
-    // ── Delete Confirmation Modal ──
-    React.createElement(
-      Modal,
-      {
-        title: "确认删除",
-        open: deleteModalOpen,
-        onOk: handleDelete,
-        onCancel: () => {
-          setDeleteModalOpen(false);
-          setDeleteTarget(null);
-        },
-        okText: "确认删除",
-        cancelText: "取消",
-        okButtonProps: { danger: true },
-      },
-      React.createElement(
-        "p",
-        null,
-        `确定要删除 MCP 客户端「${deleteTarget?.name || deleteTarget?.key}」吗？此操作不可撤销。`,
-      ),
-    ),
-    // ── Tools Viewer Modal (mirror console /mcp tools) ──
-    React.createElement(
-      Modal,
-      {
-        title: toolsTarget
-          ? `${toolsTarget.name || toolsTarget.key} - 工具列表`
-          : "工具列表",
-        open: toolsModalOpen,
-        onCancel: () => {
-          setToolsModalOpen(false);
-          setToolsTarget(null);
-        },
-        footer: React.createElement(
-          Button,
-          { onClick: () => setToolsModalOpen(false) },
-          "关闭",
-        ),
-        width: 640,
-      },
-      toolsLoading
-        ? React.createElement(
-            "div",
-            { style: { textAlign: "center", padding: 40 } },
-            React.createElement(Spin, { size: "large" }),
-          )
-        : toolsError
-          ? React.createElement(
-              "div",
-              { style: { color: "#ff4d4f", padding: 16 } },
-              toolsError,
-            )
-          : toolsList.length === 0
-            ? React.createElement(Empty, {
-                description: "此 MCP 客户端暂无可用工具（可能服务未启动）",
-              })
-            : React.createElement(List, {
-                size: "small",
-                dataSource: toolsList,
-                renderItem: (tool: any) =>
-                  React.createElement(
-                    List.Item,
-                    null,
-                    React.createElement(
-                      "div",
-                      {
-                        style: {
-                          display: "flex",
-                          flexDirection: "column",
-                          gap: 2,
-                        },
-                      },
-                      React.createElement(
-                        "div",
-                        { style: { display: "flex", alignItems: "center", gap: 6 } },
-                        ApiOutlined
-                          ? React.createElement(ApiOutlined, {
-                              style: { fontSize: 12, color: "#1677ff" },
-                            })
-                          : null,
-                        React.createElement(
-                          Text,
-                          { strong: true, style: { fontSize: 13 } },
-                          tool.name || tool.key,
-                        ),
-                      ),
-                      tool.description
-                        ? React.createElement(
-                            Text,
-                            { type: "secondary", style: { fontSize: 12 } },
-                            tool.description,
-                          )
-                        : null,
-                    ),
-                  ),
-              }),
     ),
   );
 }
@@ -8535,6 +9436,8 @@ function CurrentAgentSkillsTab({
     new Set(),
   );
   const [batchLoading, setBatchLoading] = useState(false);
+  const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const loadSkills = useCallback(async () => {
     if (!agentId) return;
@@ -8661,6 +9564,48 @@ function CurrentAgentSkillsTab({
           antdMsg.error(err.message || "批量删除失败");
         } finally {
           setBatchLoading(false);
+        }
+      },
+    });
+  };
+
+  // ── Single-skill hover actions ────────────────────────────────────────────
+  const handleToggleEnabled = async (skill: SkillSpec) => {
+    setActionLoading(true);
+    try {
+      if (skill.enabled === false) {
+        await enableSkillForAgent(agentId, skill.name);
+        antdMsg.success(`已启用技能「${skill.name}」`);
+      } else {
+        await disableSkillForAgent(agentId, skill.name);
+        antdMsg.success(`已禁用技能「${skill.name}」`);
+      }
+      await loadSkills();
+    } catch (err: any) {
+      antdMsg.error(err.message || "操作失败");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDelete = (skill: SkillSpec) => {
+    Modal.confirm({
+      title: `确认删除技能「${skill.name}」？`,
+      content:
+        "删除后技能将从当前专家工作区移除，此操作不可撤销。技能池中的原始技能不受影响。",
+      okText: "确认删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setActionLoading(true);
+        try {
+          await deleteSkillForAgent(agentId, skill.name);
+          antdMsg.success(`已删除技能「${skill.name}」`);
+          await loadSkills();
+        } catch (err: any) {
+          antdMsg.error(err.message || "删除失败");
+        } finally {
+          setActionLoading(false);
         }
       },
     });
@@ -8834,6 +9779,10 @@ function CurrentAgentSkillsTab({
                         setDrawerOpen(true);
                       }
                     },
+                    onMouseEnter: () => {
+                      if (!batchMode) setHoveredSkill(skill.name);
+                    },
+                    onMouseLeave: () => setHoveredSkill(null),
                   },
                   batchMode
                     ? React.createElement(
@@ -8940,6 +9889,59 @@ function CurrentAgentSkillsTab({
                         ),
                       ),
                   ),
+                  // Hover action footer (not in batch mode)
+                  !batchMode && hoveredSkill === skill.name
+                    ? React.createElement(
+                        "div",
+                        {
+                          style: {
+                            marginTop: 8,
+                            paddingTop: 8,
+                            borderTop: "1px solid #f0f0f0",
+                            display: "flex",
+                            gap: 8,
+                            justifyContent: "flex-end",
+                          },
+                        },
+                        React.createElement(
+                          Button,
+                          {
+                            size: "small",
+                            type: "default",
+                            icon:
+                              skill.enabled === false
+                                ? EyeOutlined
+                                  ? React.createElement(EyeOutlined)
+                                  : undefined
+                                : EyeInvisibleOutlined
+                                  ? React.createElement(EyeInvisibleOutlined)
+                                  : undefined,
+                            disabled: actionLoading,
+                            onClick: (e: any) => {
+                              e.stopPropagation();
+                              handleToggleEnabled(skill);
+                            },
+                          },
+                          skill.enabled === false ? "启用" : "禁用",
+                        ),
+                        React.createElement(
+                          Button,
+                          {
+                            size: "small",
+                            danger: true,
+                            icon: DeleteOutlined
+                              ? React.createElement(DeleteOutlined)
+                              : undefined,
+                            disabled: actionLoading,
+                            onClick: (e: any) => {
+                              e.stopPropagation();
+                              handleDelete(skill);
+                            },
+                          },
+                          "删除",
+                        ),
+                      )
+                    : null,
                 ),
               ),
             ),
@@ -9080,12 +10082,16 @@ function SkillPoolTab({
   agents,
   loading,
   onReload,
+  agentId,
+  agentName,
 }: {
   poolSkills: PoolSkillSpec[];
   workspaceSkills: WorkspaceSkillSummary[];
   agents: AgentSummary[];
   loading: boolean;
   onReload: () => void;
+  agentId: string;
+  agentName: string;
 }) {
   const React = getHost().React;
   const { useState, useMemo, useCallback } = React;
@@ -9102,12 +10108,16 @@ function SkillPoolTab({
     Drawer,
     Descriptions,
     List,
+    Modal,
+    message: antdMsg,
   } = getHost().antd;
   const {
     ReloadOutlined,
     SearchOutlined,
     DownloadOutlined,
     ThunderboltOutlined,
+    DeleteOutlined,
+    PlusOutlined,
   } = getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
@@ -9117,6 +10127,8 @@ function SkillPoolTab({
   const [installedAgents, setInstalledAgents] = useState<string[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [displayCount, setDisplayCount] = useState(24);
+  const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
+  const [actionLoading, setActionLoading] = useState(false);
 
   const filteredSkills = useMemo(() => {
     if (!searchText.trim()) return poolSkills;
@@ -9173,6 +10185,49 @@ function SkillPoolTab({
     },
     [computeInstalledAgents],
   );
+
+  // ── Hover action handlers ─────────────────────────────────────────────────
+  const handleInstallToAgent = async (skill: PoolSkillSpec) => {
+    setActionLoading(true);
+    try {
+      await installSkillFromPool(agentId, skill.name);
+      antdMsg.success(
+        `已将技能「${skill.name}」加载到当前专家「${agentName}」`,
+      );
+      onReload();
+    } catch (err: any) {
+      antdMsg.error(err.message || "加载技能失败");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteFromPool = (skill: PoolSkillSpec) => {
+    if (skill.protected) {
+      antdMsg.warning("内置技能不可删除");
+      return;
+    }
+    Modal.confirm({
+      title: `确认从技能池删除「${skill.name}」？`,
+      content:
+        "删除后所有已安装此技能的专家将不受影响，但技能池中将不再包含此技能。此操作不可撤销。",
+      okText: "确认删除",
+      cancelText: "取消",
+      okButtonProps: { danger: true },
+      onOk: async () => {
+        setActionLoading(true);
+        try {
+          await deletePoolSkill(skill.name);
+          antdMsg.success(`已从技能池删除「${skill.name}」`);
+          onReload();
+        } catch (err: any) {
+          antdMsg.error(err.message || "删除失败");
+        } finally {
+          setActionLoading(false);
+        }
+      },
+    });
+  };
 
   const navigateTo = (path: string) => {
     window.history.pushState({}, "", path);
@@ -9259,6 +10314,8 @@ function SkillPoolTab({
                       size: "small",
                       style: { cursor: "pointer", height: "100%" },
                       onClick: () => handleCardClick(skill),
+                      onMouseEnter: () => setHoveredSkill(skill.name),
+                      onMouseLeave: () => setHoveredSkill(null),
                     },
                   React.createElement(
                     "div",
@@ -9341,6 +10398,54 @@ function SkillPoolTab({
                         ),
                       ),
                   ),
+                  // Hover action footer
+                  hoveredSkill === skill.name
+                    ? React.createElement(
+                        "div",
+                        {
+                          style: {
+                            marginTop: 8,
+                            paddingTop: 8,
+                            borderTop: "1px solid #f0f0f0",
+                            display: "flex",
+                            gap: 8,
+                            justifyContent: "flex-end",
+                          },
+                        },
+                        React.createElement(
+                          Button,
+                          {
+                            size: "small",
+                            type: "primary",
+                            icon: PlusOutlined
+                              ? React.createElement(PlusOutlined)
+                              : undefined,
+                            disabled: actionLoading,
+                            onClick: (e: any) => {
+                              e.stopPropagation();
+                              handleInstallToAgent(skill);
+                            },
+                          },
+                          "加载到当前Agent",
+                        ),
+                        React.createElement(
+                          Button,
+                          {
+                            size: "small",
+                            danger: true,
+                            icon: DeleteOutlined
+                              ? React.createElement(DeleteOutlined)
+                              : undefined,
+                            disabled: actionLoading || skill.protected,
+                            onClick: (e: any) => {
+                              e.stopPropagation();
+                              handleDeleteFromPool(skill);
+                            },
+                          },
+                          "删除",
+                        ),
+                      )
+                    : null,
                 ),
               ),
             ),
@@ -9632,6 +10737,8 @@ function SkillCenterPage() {
         agents,
         loading,
         onReload: loadPoolData,
+        agentId: currentAgentId,
+        agentName: currentAgentName,
       }),
     },
   ];
@@ -9676,6 +10783,8 @@ interface GitHubSkillSource {
   ref: string;
   skillsPath: string;
   enabled: boolean;
+  platform: "github" | "gitee" | "oss";
+  accessToken?: string;
 }
 
 interface GitHubSkill {
@@ -9687,13 +10796,111 @@ interface GitHubSkill {
   html_url: string;
   version: string | null;
   author: string | null;
+  tag?: string;
+  isOfficial?: boolean;
 }
 
 const UGSCI_GITHUB_SOURCES_KEY = "ugsci.market.githubSources";
 const DEFAULT_GITHUB_SOURCE_URL =
   "https://github.com/anthropics/skills/tree/main/skills";
+// UGSci official OSS base URL — serves skills, mcp, and agents manifests
+const UGSCI_OSS_BASE = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com";
+
+// Default OSS source – Alibaba Cloud OSS bucket (skills path)
+const DEFAULT_OSS_SOURCE_URL = `${UGSCI_OSS_BASE}/skills`;
 
 // ─── MCP / Expert Source: types & helpers ─────────────────────────────────────
+
+/** Dynamic category extracted from OSS manifests. */
+interface DynamicCategory {
+  id: string;
+  label: string;
+  /** For MCP/Agents: which tags belong to this group */
+  tags?: string[];
+}
+
+/** MCP server entry from OSS manifest. */
+interface OssMcpServer {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  transport: string;
+  config?: { command: string; args: string[] };
+  env?: string[];
+  source?: string;
+  icon?: string;
+  /** Computed: which tag_group this server belongs to */
+  category?: string;
+}
+
+/** Agent entry from OSS manifest. */
+interface OssAgent {
+  id: string;
+  name: string;
+  description: string;
+  path: string;
+  tags: string[];
+  config?: string;
+  instructions?: string;
+  skills_manifest?: string;
+  drivers?: Record<string, string[]>;
+  /** Computed: which tag_group this agent belongs to */
+  category?: string;
+}
+
+/** Display label for a tag group key (not hardcoded categories — just i18n labels). */
+function _tagGroupLabel(key: string): string {
+  const labels: Record<string, string> = {
+    domain: "领域",
+    workflow: "工作流",
+    computation: "计算与数据",
+    integration: "集成与工具",
+    type: "类型",
+    capability: "能力",
+    tooling: "工具链",
+  };
+  return labels[key] || key;
+}
+
+/** Map an OSS MCP server to the internal MCPTemplate format. */
+function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
+  const envObj: Record<string, string> = {};
+  if (server.env && server.env.length > 0) {
+    for (const envKey of server.env) {
+      envObj[envKey] = "";
+    }
+  }
+  // Pick an emoji based on icon name or id
+  let emoji = "🔌";
+  const iconLower = (server.icon || "").toLowerCase();
+  if (iconLower.includes("folder")) emoji = "📁";
+  else if (iconLower.includes("git")) emoji = "🌿";
+  else if (iconLower.includes("github")) emoji = "🐙";
+  else if (iconLower.includes("database") || iconLower.includes("postgres") || iconLower.includes("sqlite")) emoji = "🗄️";
+  else if (iconLower.includes("search") || iconLower.includes("brave")) emoji = "🔍";
+  else if (iconLower.includes("browser") || iconLower.includes("puppeteer")) emoji = "🎭";
+  else if (iconLower.includes("memory") || iconLower.includes("brain")) emoji = "🧠";
+  else if (iconLower.includes("file") || iconLower.includes("fetch")) emoji = "🌐";
+  else if (iconLower.includes("slack")) emoji = "💬";
+  else if (iconLower.includes("google")) emoji = "📁";
+  else if (iconLower.includes("notion")) emoji = "📝";
+  else if (iconLower.includes("jupyter")) emoji = "📊";
+  else if (iconLower.includes("science") || iconLower.includes("flask")) emoji = "🔬";
+  else if (iconLower.includes("book") || iconLower.includes("arxiv")) emoji = "📚";
+  else if (iconLower.includes("patent")) emoji = "📜";
+  return {
+    id: server.id,
+    name: server.name,
+    emoji,
+    category: server.category ? _tagGroupLabel(server.category) : "",
+    description: server.description,
+    transport: (server.transport || "stdio") as "stdio" | "streamable_http" | "sse",
+    command: server.config?.command || "",
+    args: server.config?.args || [],
+    env: Object.keys(envObj).length > 0 ? envObj : undefined,
+  };
+}
 
 interface GenericSource {
   id: string;
@@ -9766,11 +10973,19 @@ function _parseGitHubSkillSourceUrl(
   ref: string;
   skillsPath: string;
   label: string;
+  platform: "github" | "gitee";
 } | null {
   try {
     const url = new URL(raw.trim());
     const host = url.hostname.toLowerCase();
-    if (host !== "github.com" && host !== "www.github.com") return null;
+    let platform: "github" | "gitee";
+    if (host === "github.com" || host === "www.github.com") {
+      platform = "github";
+    } else if (host === "gitee.com" || host === "www.gitee.com") {
+      platform = "gitee";
+    } else {
+      return null;
+    }
     const parts = url.pathname.split("/").filter((p) => p.length > 0);
     if (parts.length < 2) return null;
     const owner = decodeURIComponent(parts[0]);
@@ -9792,43 +11007,103 @@ function _parseGitHubSkillSourceUrl(
       ref: ref || "main",
       skillsPath,
       label: `${owner}/${repo}`,
+      platform,
     };
   } catch {
     return null;
   }
 }
 
-function _githubSourceId(owner: string, repo: string, skillsPath: string): string {
-  return `${owner}/${repo}:${skillsPath || "/"}`;
+function _githubSourceId(
+  owner: string,
+  repo: string,
+  skillsPath: string,
+  platform: string = "github",
+): string {
+  if (platform === "oss") {
+    return `oss:${owner}/${skillsPath || "/"}`;
+  }
+  return `${platform}:${owner}/${repo}:${skillsPath || "/"}`;
+}
+
+function _parseOSSSkillSourceUrl(
+  raw: string,
+): {
+  endpoint: string;
+  prefix: string;
+  label: string;
+  platform: "oss";
+} | null {
+  try {
+    const url = new URL(raw.trim());
+    const host = url.hostname.toLowerCase();
+    const ossMatch = host.match(
+      /^([a-z0-9][a-z0-9-]{1,61}[a-z0-9])\.oss-([a-z0-9-]+)\.aliyuncs\.com$/,
+    );
+    if (!ossMatch) return null;
+    const bucket = ossMatch[1];
+    const endpoint = `${url.protocol}//${host}`;
+    const path = decodeURIComponent(url.pathname).replace(/^\/+/, "").replace(/\/+$/, "");
+    if (!path) return null;
+    return {
+      endpoint,
+      prefix: path,
+      label: "UGSci 官方",
+      platform: "oss",
+    };
+  } catch {
+    return null;
+  }
 }
 
 function loadGithubSources(): GitHubSkillSource[] {
   try {
     const raw = localStorage.getItem(UGSCI_GITHUB_SOURCES_KEY);
     if (!raw) {
-      // Seed with default source
+      // Seed with default sources: OSS + GitHub
+      const seed: GitHubSkillSource[] = [];
+      // Default OSS source
+      const ossParsed = _parseOSSSkillSourceUrl(DEFAULT_OSS_SOURCE_URL);
+      if (ossParsed) {
+        seed.push({
+          id: _githubSourceId(
+            ossParsed.endpoint,
+            "",
+            ossParsed.prefix,
+            "oss",
+          ),
+          url: DEFAULT_OSS_SOURCE_URL,
+          label: ossParsed.label,
+          owner: ossParsed.endpoint,
+          repo: "",
+          ref: "",
+          skillsPath: ossParsed.prefix,
+          enabled: true,
+          platform: "oss",
+        });
+      }
+      // Default GitHub source
       const parsed = _parseGitHubSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
       if (parsed) {
-        const seed: GitHubSkillSource[] = [
-          {
-            id: _githubSourceId(
-              parsed.owner,
-              parsed.repo,
-              parsed.skillsPath,
-            ),
-            url: DEFAULT_GITHUB_SOURCE_URL,
-            label: parsed.label,
-            owner: parsed.owner,
-            repo: parsed.repo,
-            ref: parsed.ref,
-            skillsPath: parsed.skillsPath,
-            enabled: true,
-          },
-        ];
-        localStorage.setItem(UGSCI_GITHUB_SOURCES_KEY, JSON.stringify(seed));
-        return seed;
+        seed.push({
+          id: _githubSourceId(
+            parsed.owner,
+            parsed.repo,
+            parsed.skillsPath,
+            parsed.platform,
+          ),
+          url: DEFAULT_GITHUB_SOURCE_URL,
+          label: parsed.label,
+          owner: parsed.owner,
+          repo: parsed.repo,
+          ref: parsed.ref,
+          skillsPath: parsed.skillsPath,
+          enabled: true,
+          platform: parsed.platform,
+        });
       }
-      return [];
+      localStorage.setItem(UGSCI_GITHUB_SOURCES_KEY, JSON.stringify(seed));
+      return seed;
     }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
@@ -9836,9 +11111,15 @@ function loadGithubSources(): GitHubSkillSource[] {
       (s: any) =>
         s &&
         typeof s.id === "string" &&
-        typeof s.owner === "string" &&
-        typeof s.repo === "string",
-    );
+        (typeof s.owner === "string" || s.platform === "oss"),
+    ).map((s: any) => ({
+      ...s,
+      platform: s.platform || "github",
+      owner: s.owner || "",
+      repo: s.repo || "",
+      ref: s.ref || "",
+      skillsPath: s.skillsPath || "",
+    }));
   } catch {
     return [];
   }
@@ -9897,17 +11178,29 @@ function _parseSkillFrontmatter(content: string): {
 async function fetchGitHubSourceSkills(
   source: GitHubSkillSource,
 ): Promise<GitHubSkill[]> {
-  // 1. List directory contents via GitHub Contents API
+  const isGitee = source.platform === "gitee";
   const encodedPath = source.skillsPath
     ? encodeURIComponent(source.skillsPath).replace(/%2F/g, "/")
     : "";
-  const listUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`;
+
+  // 1. List directory contents via API
+  const listUrl = isGitee
+    ? `https://gitee.com/api/v5/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`
+    : `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`;
+  const reqHeaders: Record<string, string> = {
+    Accept: isGitee
+      ? "application/json"
+      : "application/vnd.github+json",
+  };
+  if (isGitee && source.accessToken) {
+    reqHeaders["Authorization"] = `token ${source.accessToken}`;
+  }
   const listResp = await fetch(listUrl, {
-    headers: { Accept: "application/vnd.github+json" },
+    headers: reqHeaders,
   });
   if (!listResp.ok) {
     throw new Error(
-      `GitHub API ${listResp.status}: ${source.label} (${source.skillsPath || "/"})`,
+      `${isGitee ? "Gitee" : "GitHub"} API ${listResp.status}: ${source.label} (${source.skillsPath || "/"})`,
     );
   }
   const items = (await listResp.json()) as any[];
@@ -9917,11 +11210,16 @@ async function fetchGitHubSourceSkills(
     (item) => item.type === "dir" && item.name,
   );
 
-  // 2. Fetch SKILL.md for each dir in parallel (raw URLs, CORS-safe, no rate limit)
+  // 2. Fetch SKILL.md for each dir in parallel (raw URLs, CORS-safe)
   const skills = await Promise.all(
     dirs.map(async (dir) => {
-      const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}/SKILL.md`;
-      const htmlUrl = `https://github.com/${source.owner}/${source.repo}/tree/${source.ref}/${source.skillsPath ? source.skillsPath + "/" : ""}${dir.name}`;
+      const pathPrefix = source.skillsPath ? source.skillsPath + "/" : "";
+      const rawUrl = isGitee
+        ? `https://gitee.com/${source.owner}/${source.repo}/raw/${source.ref}/${pathPrefix}${dir.name}/SKILL.md`
+        : `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.ref}/${pathPrefix}${dir.name}/SKILL.md`;
+      const htmlUrl = isGitee
+        ? `https://gitee.com/${source.owner}/${source.repo}/tree/${source.ref}/${pathPrefix}${dir.name}`
+        : `https://github.com/${source.owner}/${source.repo}/tree/${source.ref}/${pathPrefix}${dir.name}`;
       const fallbackSkill: GitHubSkill = {
         sourceId: source.id,
         sourceLabel: source.label,
@@ -9933,7 +11231,13 @@ async function fetchGitHubSourceSkills(
         author: null,
       };
       try {
-        const mdResp = await fetch(rawUrl);
+        const mdHeaders: Record<string, string> = {};
+        if (isGitee && source.accessToken) {
+          mdHeaders["Authorization"] = `token ${source.accessToken}`;
+        }
+        const mdResp = await fetch(rawUrl, {
+          headers: mdHeaders,
+        });
         if (!mdResp.ok) return fallbackSkill;
         const mdContent = await mdResp.text();
         const fm = _parseSkillFrontmatter(mdContent);
@@ -9952,6 +11256,204 @@ async function fetchGitHubSourceSkills(
   return skills;
 }
 
+async function fetchOSSSourceSkills(
+  source: GitHubSkillSource,
+): Promise<GitHubSkill[]> {
+  const ossParsed = _parseOSSSkillSourceUrl(source.url);
+  if (!ossParsed) {
+    throw new Error(`Invalid OSS URL: ${source.url}`);
+  }
+  const { endpoint, prefix } = ossParsed;
+  const encodedPrefix = prefix.split("/").map(encodeURIComponent).join("/");
+
+  // Fetch manifest.json — the authoritative source for skill metadata + tags
+  const manifestUrl = `${endpoint}/${encodedPrefix}/manifest.json`;
+  const manifestResp = await fetch(manifestUrl);
+  if (!manifestResp.ok) {
+    throw new Error(
+      `无法获取技能列表: manifest.json (${manifestResp.status})`,
+    );
+  }
+  const manifest = await manifestResp.json();
+
+  const skills: GitHubSkill[] = [];
+
+  /** Recursively process manifest items, flattening collections. */
+  function processItems(items: any[]) {
+    for (const item of items) {
+      if (item.type === "collection" && Array.isArray(item.children)) {
+        // Recurse into collection children
+        processItems(item.children);
+        continue;
+      }
+      // Individual skill
+      const skillPath: string = item.path || item.name || "";
+      if (!skillPath) continue;
+      const encodedPath = skillPath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/");
+      const skillUrl = `${endpoint}/${encodedPrefix}/${encodedPath}`;
+      // Try to extract version from metadata string like 'version: "1.2.0"'
+      let version: string | null = null;
+      if (item.metadata) {
+        const vm = item.metadata.match(/version:\s*"?([\d.]+)"?/);
+        if (vm) version = vm[1];
+      }
+      skills.push({
+        sourceId: source.id,
+        sourceLabel: source.label,
+        name: item.name || skillPath.split("/").pop() || skillPath,
+        description: item.description || "",
+        source_url: skillUrl,
+        html_url: skillUrl,
+        version,
+        author: null,
+        tag: item.tag || undefined,
+        isOfficial: true,
+      });
+    }
+  }
+
+  if (Array.isArray(manifest)) {
+    // Legacy: manifest is a plain array of strings or objects
+    processItems(
+      manifest.map((s: any) =>
+        typeof s === "string" ? { name: s, path: s } : s,
+      ),
+    );
+  } else if (manifest && Array.isArray(manifest.skills)) {
+    processItems(manifest.skills);
+  }
+
+  if (skills.length === 0) {
+    throw new Error(
+      `manifest.json 中未找到技能。请检查 ${source.url}/manifest.json`,
+    );
+  }
+
+  return skills;
+}
+
+/** Fetch MCP servers from the UGSci official OSS manifest. */
+async function fetchOSSMcpManifest(): Promise<{
+  servers: OssMcpServer[];
+  categories: DynamicCategory[];
+}> {
+  const manifestUrl = `${UGSCI_OSS_BASE}/mcp/manifest.json`;
+  const resp = await fetch(manifestUrl);
+  if (!resp.ok) {
+    throw new Error(`无法获取 MCP 列表: ${resp.status}`);
+  }
+  const manifest = await resp.json();
+
+  // Extract dynamic categories from tag_groups
+  const categories: DynamicCategory[] = [];
+  const tagGroups: Record<string, string[]> = {};
+  if (manifest.tag_groups && typeof manifest.tag_groups === "object") {
+    for (const [groupKey, tags] of Object.entries(manifest.tag_groups)) {
+      if (Array.isArray(tags)) {
+        tagGroups[groupKey] = tags as string[];
+        categories.push({
+          id: groupKey,
+          label: _tagGroupLabel(groupKey),
+          tags: tags as string[],
+        });
+      }
+    }
+  }
+
+  // Process servers — assign category based on tag_groups
+  const servers: OssMcpServer[] = (manifest.servers || []).map((s: any) => {
+    let category = "";
+    const serverTags: string[] = s.tags || [];
+    for (const [groupKey, tags] of Object.entries(tagGroups)) {
+      if (tags.some((t) => serverTags.includes(t))) {
+        category = groupKey;
+        break;
+      }
+    }
+    return {
+      id: s.id || s.name,
+      name: s.name || s.id,
+      description: s.description || "",
+      tags: serverTags,
+      transport: s.transport || "stdio",
+      config: s.config,
+      env: Array.isArray(s.env) ? s.env : undefined,
+      source: s.source,
+      icon: s.icon,
+      category,
+    } as OssMcpServer;
+  });
+
+  return { servers, categories };
+}
+
+/** Fetch agents from the UGSci official OSS manifest. */
+async function fetchOSSAgentsManifest(): Promise<{
+  agents: OssAgent[];
+  categories: DynamicCategory[];
+}> {
+  const manifestUrl = `${UGSCI_OSS_BASE}/agents/manifest.json`;
+  const resp = await fetch(manifestUrl);
+  if (!resp.ok) {
+    throw new Error(`无法获取 Agent 列表: ${resp.status}`);
+  }
+  const manifest = await resp.json();
+
+  // Extract dynamic categories from tag_groups
+  const categories: DynamicCategory[] = [];
+  const tagGroups: Record<string, string[]> = {};
+  if (manifest.tag_groups && typeof manifest.tag_groups === "object") {
+    for (const [groupKey, tags] of Object.entries(manifest.tag_groups)) {
+      if (Array.isArray(tags)) {
+        tagGroups[groupKey] = tags as string[];
+        categories.push({
+          id: groupKey,
+          label: _tagGroupLabel(groupKey),
+          tags: tags as string[],
+        });
+      }
+    }
+  }
+
+  // Process agents — assign category based on tag_groups
+  const agentsList: OssAgent[] = (manifest.agents || []).map((a: any) => {
+    let category = "";
+    const agentTags: string[] = a.tags || [];
+    for (const [groupKey, tags] of Object.entries(tagGroups)) {
+      if (tags.some((t) => agentTags.includes(t))) {
+        category = groupKey;
+        break;
+      }
+    }
+    return {
+      id: a.id || a.name,
+      name: a.name || a.id,
+      description: a.description || "",
+      path: a.path || "",
+      tags: agentTags,
+      config: a.config,
+      instructions: a.instructions,
+      skills_manifest: a.skills_manifest,
+      drivers: a.drivers,
+      category,
+    } as OssAgent;
+  });
+
+  return { agents: agentsList, categories };
+}
+
+/** Extract dynamic skill categories from loaded OSS skills. */
+function _extractSkillCategories(skills: GitHubSkill[]): DynamicCategory[] {
+  const tagSet = new Set<string>();
+  for (const s of skills) {
+    if (s.tag) tagSet.add(s.tag);
+  }
+  return Array.from(tagSet).map((tag) => ({ id: tag, label: tag }));
+}
+
 async function fetchAllGitHubSkills(
   sources: GitHubSkillSource[],
 ): Promise<{ skills: GitHubSkill[]; errors: { label: string; message: string }[] }> {
@@ -9959,7 +11461,10 @@ async function fetchAllGitHubSkills(
   const results = await Promise.all(
     enabled.map(async (s) => {
       try {
-        const skills = await fetchGitHubSourceSkills(s);
+        const skills =
+          s.platform === "oss"
+            ? await fetchOSSSourceSkills(s)
+            : await fetchGitHubSourceSkills(s);
         return { skills, error: null as string | null, label: s.label };
       } catch (e: any) {
         return {
@@ -10014,16 +11519,17 @@ function SourceConfigModal({
   const { Text } = Typography;
 
   const [newUrl, setNewUrl] = useState("");
+  const [newToken, setNewToken] = useState("");
 
   const handleAdd = () => {
     const trimmed = newUrl.trim();
     if (!trimmed) return;
     const parsed = _parseGitHubSkillSourceUrl(trimmed);
     if (!parsed) {
-      antdMsg.error("无效的 GitHub URL，请输入类似 https://github.com/owner/repo/tree/main/skills 的链接");
+      antdMsg.error("无效的仓库 URL，请输入类似 https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills 的链接");
       return;
     }
-    const id = _githubSourceId(parsed.owner, parsed.repo, parsed.skillsPath);
+    const id = _githubSourceId(parsed.owner, parsed.repo, parsed.skillsPath, parsed.platform);
     if (sources.some((s) => s.id === id)) {
       antdMsg.warning("该源已存在");
       return;
@@ -10037,17 +11543,28 @@ function SourceConfigModal({
       ref: parsed.ref,
       skillsPath: parsed.skillsPath,
       enabled: true,
+      platform: parsed.platform,
+      accessToken: newToken.trim() || undefined,
     };
     const next = [...sources, newSource];
     saveGithubSources(next);
     onChange(next);
     setNewUrl("");
+    setNewToken("");
     antdMsg.success(`已添加源: ${parsed.label}`);
   };
 
   const handleToggle = (id: string, enabled: boolean) => {
     const next = sources.map((s) =>
       s.id === id ? { ...s, enabled } : s,
+    );
+    saveGithubSources(next);
+    onChange(next);
+  };
+
+  const handleTokenChange = (id: string, token: string) => {
+    const next = sources.map((s) =>
+      s.id === id ? { ...s, accessToken: token.trim() || undefined } : s,
     );
     saveGithubSources(next);
     onChange(next);
@@ -10086,13 +11603,13 @@ function SourceConfigModal({
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
-        "添加 GitHub 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式：",
+        "添加 GitHub 或 Gitee 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式：",
       ),
       React.createElement(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center" } },
         React.createElement(Input, {
-          placeholder: "https://github.com/anthropics/skills/tree/main/skills",
+          placeholder: "https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills",
           value: newUrl,
           onChange: (e: any) => setNewUrl(e.target.value),
           onPressEnter: handleAdd,
@@ -10109,6 +11626,24 @@ function SourceConfigModal({
           "添加",
         ),
       ),
+      // Gitee token input (shown when URL looks like a Gitee link)
+      newUrl.trim() && newUrl.trim().toLowerCase().includes("gitee.com")
+        ? React.createElement(
+            "div",
+            { style: { marginTop: 8, display: "flex", gap: 8, alignItems: "center" } },
+            React.createElement(
+              Text,
+              { type: "secondary", style: { fontSize: 12, whiteSpace: "nowrap" } },
+              "Gitee Token:",
+            ),
+            React.createElement(Input.Password, {
+              placeholder: "私有仓库请填写 Gitee 私人令牌（可选）",
+              value: newToken,
+              onChange: (e: any) => setNewToken(e.target.value),
+              style: { flex: 1 },
+            }),
+          )
+        : null,
     ),
     React.createElement(
       "div",
@@ -10159,7 +11694,12 @@ function SourceConfigModal({
               { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
               React.createElement(
                 Tag,
-                { color: "blue", style: { fontSize: 11 } },
+                { color: source.platform === "gitee" ? "orange" : source.platform === "oss" ? "green" : "blue", style: { fontSize: 11 } },
+                source.platform === "gitee" ? "Gitee" : source.platform === "oss" ? "OSS" : "GitHub",
+              ),
+              React.createElement(
+                Tag,
+                { style: { fontSize: 11 } },
                 source.label,
               ),
               source.skillsPath
@@ -10169,11 +11709,13 @@ function SourceConfigModal({
                     `/${source.skillsPath}`,
                   )
                 : null,
-              React.createElement(
-                Text,
-                { type: "secondary", style: { fontSize: 11 } },
-                `@${source.ref}`,
-              ),
+              source.platform !== "oss"
+                ? React.createElement(
+                    Text,
+                    { type: "secondary", style: { fontSize: 11 } },
+                    `@${source.ref}`,
+                  )
+                : null,
             ),
             React.createElement(
               Text,
@@ -10183,6 +11725,25 @@ function SourceConfigModal({
               },
               source.url,
             ),
+            // Gitee token input for existing Gitee sources
+            source.platform === "gitee"
+              ? React.createElement(
+                  "div",
+                  { style: { marginTop: 6, display: "flex", gap: 6, alignItems: "center" } },
+                  React.createElement(
+                    Text,
+                    { type: "secondary", style: { fontSize: 11, whiteSpace: "nowrap" } },
+                    "Token:",
+                  ),
+                  React.createElement(Input.Password, {
+                    size: "small",
+                    placeholder: "Gitee 私人令牌（可选，用于私有仓库）",
+                    value: source.accessToken || "",
+                    onChange: (e: any) => handleTokenChange(source.id, e.target.value),
+                    style: { flex: 1 },
+                  }),
+                )
+              : null,
           ),
         ),
     }),
@@ -10704,6 +12265,48 @@ async function pollHubInstallStatus(
   );
 }
 
+/** Parse an API error to extract a human-readable message. */
+function _parseApiError(err: any): string {
+  if (!err) return "";
+  const msg = err.message || String(err);
+  try {
+    const parsed = JSON.parse(msg);
+    if (parsed.detail) {
+      if (typeof parsed.detail === "string") return parsed.detail;
+      if (parsed.detail.message) return parsed.detail.message;
+    }
+  } catch {
+    // Not JSON, return as-is
+  }
+  return msg;
+}
+
+/** Import a skill directly into the skill pool (no agent required). */
+async function importSkillToPool(
+  bundleUrl: string,
+  accessToken?: string,
+): Promise<{
+  installed: boolean;
+  name: string;
+  source_url: string;
+  installed_from: string;
+}> {
+  const body: Record<string, any> = { bundle_url: bundleUrl };
+  if (accessToken) {
+    body.access_token = accessToken;
+  }
+  return apiFetch<{
+    installed: boolean;
+    name: string;
+    source_url: string;
+    installed_from: string;
+  }>("/skills/pool/import", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
+
 function MarketplacePage() {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
@@ -10725,6 +12328,7 @@ function MarketplacePage() {
     Tabs,
     Badge,
     Progress,
+    Modal,
   } = getHost().antd;
   const {
     ReloadOutlined,
@@ -10770,6 +12374,9 @@ function MarketplacePage() {
   const [mcpInstalling, setMcpInstalling] = useState<Record<string, boolean>>({});
   const [mcpInstallTargetAgent, setMcpInstallTargetAgent] = useState<string>("");
   const [existingMcpKeys, setExistingMcpKeys] = useState<Set<string>>(new Set());
+  // MCP install config modal (for templates that require token/env input)
+  const [mcpConfigTemplate, setMcpConfigTemplate] = useState<MCPTemplate | null>(null);
+  const [mcpConfigEnvValues, setMcpConfigEnvValues] = useState<Record<string, string>>({});
 
   // GitHub skill sources state
   const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
@@ -10785,6 +12392,21 @@ function MarketplacePage() {
   // Expert sources state
   const [expertSources, setExpertSources] = useState<GenericSource[]>([]);
   const [expertSourceConfigOpen, setExpertSourceConfigOpen] = useState(false);
+
+  // ── OSS MCP market state (dynamic from official manifest) ──
+  const [ossMcpServers, setOssMcpServers] = useState<OssMcpServer[]>([]);
+  const [ossMcpCategories, setOssMcpCategories] = useState<DynamicCategory[]>([]);
+  const [ossMcpLoading, setOssMcpLoading] = useState(false);
+  const [mcpSelectedCategory, setMcpSelectedCategory] = useState("");
+
+  // ── OSS Agents market state (dynamic from official manifest) ──
+  const [ossAgents, setOssAgents] = useState<OssAgent[]>([]);
+  const [ossAgentCategories, setOssAgentCategories] = useState<DynamicCategory[]>([]);
+  const [ossAgentLoading, setOssAgentLoading] = useState(false);
+  const [expertSelectedCategory, setExpertSelectedCategory] = useState("");
+
+  // ── Dynamic skill categories (from OSS manifest tags) ──
+  const [skillCategories, setSkillCategories] = useState<DynamicCategory[]>([]);
 
   const searchTimerRef = useRef<any>(null);
 
@@ -10819,6 +12441,8 @@ function MarketplacePage() {
     try {
       const { skills, errors } = await fetchAllGitHubSkills(srcs);
       setGithubSkills(skills);
+      // Extract dynamic categories from OSS skills that have tags
+      setSkillCategories(_extractSkillCategories(skills));
       if (errors.length > 0) {
         for (const err of errors) {
           console.warn(`[ugsci] GitHub source '${err.label}' error: ${err.message}`);
@@ -10828,19 +12452,50 @@ function MarketplacePage() {
         );
       }
     } catch (err: any) {
-      antdMsg.error(err.message || "加载 GitHub 技能源失败");
+      antdMsg.error(err.message || "加载技能源失败");
       setGithubSkills([]);
     } finally {
       setGithubLoading(false);
     }
   }, []);
 
+  // Load OSS MCP and Agents manifests on mount
+  const loadOssMarketData = useCallback(async () => {
+    // Fetch MCP manifest
+    setOssMcpLoading(true);
+    try {
+      const { servers, categories: cats } = await fetchOSSMcpManifest();
+      setOssMcpServers(servers);
+      setOssMcpCategories(cats);
+    } catch (err: any) {
+      console.warn(`[ugsci] MCP manifest error: ${err.message}`);
+      setOssMcpServers([]);
+      setOssMcpCategories([]);
+    } finally {
+      setOssMcpLoading(false);
+    }
+    // Fetch Agents manifest
+    setOssAgentLoading(true);
+    try {
+      const { agents, categories: cats } = await fetchOSSAgentsManifest();
+      setOssAgents(agents);
+      setOssAgentCategories(cats);
+    } catch (err: any) {
+      console.warn(`[ugsci] Agents manifest error: ${err.message}`);
+      setOssAgents([]);
+      setOssAgentCategories([]);
+    } finally {
+      setOssAgentLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     loadGithubSkills();
+    loadOssMarketData();
     // Load MCP and Expert sources from localStorage
     setMcpSources(loadMcpSources());
     setExpertSources(loadExpertSources());
-  }, [loadGithubSkills]);
+  }, [loadGithubSkills, loadOssMarketData]);
 
   const doSearch = useCallback(
     async (query: string, category: string, pages: Record<string, number>) => {
@@ -10901,53 +12556,22 @@ function MarketplacePage() {
   };
 
   const handleInstallSkill = async (item: MarketResult) => {
-    if (!installTargetAgent) {
-      antdMsg.warning("请先选择安装目标专家");
-      return;
-    }
     const itemKey = `${item.source}:${item.slug}`;
     try {
-      setInstalling((prev: any) => ({ ...prev, [itemKey]: "starting" }));
-      const task = await startHubInstall(
-        installTargetAgent,
-        item.source_url,
-        true,
-      );
       setInstalling((prev: any) => ({ ...prev, [itemKey]: "installing" }));
-
-      // Poll for completion
-      const maxPolls = 60;
-      for (let i = 0; i < maxPolls; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const status = await pollHubInstallStatus(
-          installTargetAgent,
-          task.task_id,
+      const result = await importSkillToPool(item.source_url);
+      if (result.installed) {
+        antdMsg.success(
+          `技能「${result.name || item.name}」已安装到技能池，可在技能中心查看`,
         );
-        if (status.status === "completed" && status.result?.installed) {
-          antdMsg.success(`技能「${status.result.name || item.name}」安装成功`);
-          setInstalling((prev: any) => {
-            const next = { ...prev };
-            delete next[itemKey];
-            return next;
-          });
-          return;
-        }
-        if (status.status === "failed") {
-          throw new Error(status.error || "安装失败");
-        }
-        if (status.status === "cancelled") {
-          antdMsg.info("安装已取消");
-          setInstalling((prev: any) => {
-            const next = { ...prev };
-            delete next[itemKey];
-            return next;
-          });
-          return;
-        }
       }
-      throw new Error("安装超时");
+      setInstalling((prev: any) => {
+        const next = { ...prev };
+        delete next[itemKey];
+        return next;
+      });
     } catch (err: any) {
-      antdMsg.error(err.message || "安装技能失败");
+      antdMsg.error(_parseApiError(err) || "安装技能失败");
       setInstalling((prev: any) => {
         const next = { ...prev };
         delete next[itemKey];
@@ -10962,52 +12586,25 @@ function MarketplacePage() {
   };
 
   const handleInstallGithubSkill = async (skill: GitHubSkill) => {
-    if (!installTargetAgent) {
-      antdMsg.warning("请先选择安装目标专家");
-      return;
-    }
     const itemKey = `github:${skill.sourceId}:${skill.name}`;
+    // Look up the source to get its access token (for Gitee private repos)
+    const source = githubSources.find((s) => s.id === skill.sourceId);
+    const accessToken = source?.accessToken || undefined;
     try {
-      setInstalling((prev: any) => ({ ...prev, [itemKey]: "starting" }));
-      const task = await startHubInstall(
-        installTargetAgent,
-        skill.source_url,
-        true,
-      );
       setInstalling((prev: any) => ({ ...prev, [itemKey]: "installing" }));
-
-      const maxPolls = 60;
-      for (let i = 0; i < maxPolls; i++) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const status = await pollHubInstallStatus(
-          installTargetAgent,
-          task.task_id,
+      const result = await importSkillToPool(skill.source_url, accessToken);
+      if (result.installed) {
+        antdMsg.success(
+          `技能「${result.name || skill.name}」已安装到技能池，可在技能中心查看`,
         );
-        if (status.status === "completed" && status.result?.installed) {
-          antdMsg.success(`技能「${status.result.name || skill.name}」安装成功`);
-          setInstalling((prev: any) => {
-            const next = { ...prev };
-            delete next[itemKey];
-            return next;
-          });
-          return;
-        }
-        if (status.status === "failed") {
-          throw new Error(status.error || "安装失败");
-        }
-        if (status.status === "cancelled") {
-          antdMsg.info("安装已取消");
-          setInstalling((prev: any) => {
-            const next = { ...prev };
-            delete next[itemKey];
-            return next;
-          });
-          return;
-        }
       }
-      throw new Error("安装超时");
+      setInstalling((prev: any) => {
+        const next = { ...prev };
+        delete next[itemKey];
+        return next;
+      });
     } catch (err: any) {
-      antdMsg.error(err.message || "安装技能失败");
+      antdMsg.error(_parseApiError(err) || "安装技能失败");
       setInstalling((prev: any) => {
         const next = { ...prev };
         delete next[itemKey];
@@ -11016,11 +12613,14 @@ function MarketplacePage() {
     }
   };
 
-  // Filtered GitHub skills based on search text and source filter
+  // Filtered GitHub skills based on search text, source filter, and category
   const filteredGithubSkills = useMemo(() => {
     let filtered = githubSkills;
     if (selectedSourceFilter) {
       filtered = filtered.filter((s) => s.sourceLabel === selectedSourceFilter);
+    }
+    if (selectedCategory) {
+      filtered = filtered.filter((s) => s.tag === selectedCategory);
     }
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
@@ -11031,7 +12631,7 @@ function MarketplacePage() {
       );
     }
     return filtered;
-  }, [githubSkills, searchText, selectedSourceFilter]);
+  }, [githubSkills, searchText, selectedSourceFilter, selectedCategory]);
 
   // Available providers
   const availableProviders = providers.filter((p) => p.available);
@@ -11081,7 +12681,7 @@ function MarketplacePage() {
         allowClear: true,
         style: { flex: 1, minWidth: 200, maxWidth: 400 },
       }),
-      categories.length > 0
+      skillCategories.length > 0
         ? React.createElement(Select, {
             value: selectedCategory || undefined,
             onChange: (v: string) => setSelectedCategory(v || ""),
@@ -11090,26 +12690,15 @@ function MarketplacePage() {
             style: { minWidth: 150 },
             options: [
               { value: "", label: "全部分类" },
-              ...categories.map((c) => ({ value: c.id, label: c.label })),
+              ...skillCategories.map((c) => ({ value: c.id, label: c.label })),
             ],
           })
         : null,
-      // Install target selector
+      // Pool install info
       React.createElement(
-        "div",
-        { style: { display: "flex", alignItems: "center", gap: 4 } },
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12 } },
-          "安装到",
-        ),
-        React.createElement(Select, {
-          value: installTargetAgent || undefined,
-          onChange: (v: string) => setInstallTargetAgent(v),
-          style: { minWidth: 140 },
-          placeholder: "选择专家",
-          options: agents.map((a) => ({ value: a.id, label: a.name })),
-        }),
+        Text,
+        { type: "secondary", style: { fontSize: 12 } },
+        "安装后进入技能池",
       ),
       // Configure skill source button
       React.createElement(
@@ -11155,8 +12744,10 @@ function MarketplacePage() {
             },
             "全部",
           ),
-          ...allSourceLabels.map((label) =>
-            React.createElement(
+          ...allSourceLabels.map((label) => {
+            const src = githubSources.find((s) => s.label === label);
+            const isOss = src?.platform === "oss";
+            return React.createElement(
               Tag,
               {
                 key: label,
@@ -11165,18 +12756,22 @@ function MarketplacePage() {
                   cursor: "pointer",
                   borderRadius: 12,
                 },
-                color: selectedSourceFilter === label ? "blue" : undefined,
-                icon: GithubOutlined && githubSources.some((s) => s.label === label)
-                  ? React.createElement(GithubOutlined)
+                color: selectedSourceFilter === label
+                  ? (isOss ? "green" : "blue")
                   : undefined,
+                icon: isOss
+                  ? (ApiOutlined ? React.createElement(ApiOutlined) : undefined)
+                  : (GithubOutlined && src
+                    ? React.createElement(GithubOutlined)
+                    : undefined),
                 onClick: () =>
                   setSelectedSourceFilter(
                     selectedSourceFilter === label ? "" : label,
                   ),
               },
               label,
-            ),
-          ),
+            );
+          }),
         )
       : null,
     // GitHub skills section
@@ -11185,7 +12780,7 @@ function MarketplacePage() {
           "div",
           { style: { textAlign: "center", padding: 40, marginBottom: 16 } },
           React.createElement(Spin, {
-            tip: "正在从 GitHub 加载技能...",
+            tip: "正在加载技能...",
             size: "large",
           }),
         )
@@ -11211,7 +12806,7 @@ function MarketplacePage() {
               React.createElement(
                 Text,
                 { strong: true, style: { fontSize: 13 } },
-                `GitHub 技能源 (${filteredGithubSkills.length})`,
+                `技能源 (${filteredGithubSkills.length})`,
               ),
             ),
             React.createElement(
@@ -11290,11 +12885,20 @@ function MarketplacePage() {
                       React.createElement(
                         "div",
                         { style: { display: "flex", gap: 4, flexWrap: "wrap" } },
-                        React.createElement(
-                          Tag,
-                          { color: "blue", style: { fontSize: 10 } },
-                          skill.sourceLabel,
-                        ),
+                        // Official OSS skills: show tag as category, no source label
+                        skill.isOfficial
+                          ? (skill.tag
+                              ? React.createElement(
+                                  Tag,
+                                  { color: "geekblue", style: { fontSize: 10 } },
+                                  skill.tag,
+                                )
+                              : null)
+                          : React.createElement(
+                              Tag,
+                              { color: "blue", style: { fontSize: 10 } },
+                              skill.sourceLabel,
+                            ),
                         skill.version
                           ? React.createElement(
                               Tag,
@@ -11313,7 +12917,7 @@ function MarketplacePage() {
                                 ? React.createElement(LoadingOutlined)
                                 : undefined,
                             },
-                            installState === "starting" ? "启动中" : "安装中",
+                            "安装中",
                           )
                         : React.createElement(
                             Button,
@@ -11474,7 +13078,7 @@ function MarketplacePage() {
                               ? React.createElement(LoadingOutlined)
                               : undefined,
                           },
-                          installState === "starting" ? "启动中" : "安装中",
+                          "安装中",
                         )
                       : React.createElement(
                           Button,
@@ -11543,7 +13147,7 @@ function MarketplacePage() {
                   handleInstallSkill(detailItem);
                 },
               },
-              "安装到专家",
+              "安装到技能池",
             ),
           },
           React.createElement(
@@ -11627,38 +13231,62 @@ function MarketplacePage() {
       : null,
   );
 
-  // Expert Templates Tab
-  const filteredTemplates = useMemo(() => {
-    if (!expertSearchText.trim()) return EXPERT_TEMPLATES;
-    const q = expertSearchText.toLowerCase();
-    return EXPERT_TEMPLATES.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) ||
-        t.description.toLowerCase().includes(q) ||
-        t.category.toLowerCase().includes(q),
-    );
-  }, [expertSearchText]);
+  // Expert Templates Tab — filtered from OSS agents (dynamic)
+  const filteredOssAgents = useMemo(() => {
+    let filtered = ossAgents;
+    if (expertSelectedCategory) {
+      filtered = filtered.filter((a) => a.category === expertSelectedCategory);
+    }
+    if (expertSearchText.trim()) {
+      const q = expertSearchText.toLowerCase();
+      filtered = filtered.filter(
+        (a) =>
+          a.name.toLowerCase().includes(q) ||
+          a.description.toLowerCase().includes(q) ||
+          a.tags.some((t) => t.toLowerCase().includes(q)),
+      );
+    }
+    return filtered;
+  }, [ossAgents, expertSearchText, expertSelectedCategory]);
 
-  const handleQuickCreateExpert = async (template: ExpertTemplate) => {
+  const handleCreateOssAgent = async (agent: OssAgent) => {
     try {
+      // Fetch instructions (AGENTS.md) from OSS if available
+      let systemPrompt = agent.description;
+      if (agent.instructions) {
+        try {
+          const resp = await fetch(`${UGSCI_OSS_BASE}/${agent.instructions}`);
+          if (resp.ok) {
+            systemPrompt = await resp.text();
+          }
+        } catch {}
+      }
+      // Fetch skills manifest from OSS if available
+      let skillNames: string[] = [];
+      if (agent.skills_manifest) {
+        try {
+          const resp = await fetch(`${UGSCI_OSS_BASE}/${agent.skills_manifest}`);
+          if (resp.ok) {
+            const data = await resp.json();
+            if (Array.isArray(data)) {
+              skillNames = data.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
+            } else if (data.skills) {
+              skillNames = data.skills.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
+            }
+          }
+        } catch {}
+      }
       const agentRef = await apiFetch<{ id: string }>("/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: template.name,
-          description: template.description,
-          skill_names: template.recommendedSkills,
+          name: agent.name,
+          description: agent.description,
+          skill_names: skillNames,
         }),
       });
-      await writeKnowledgeFile(agentRef.id, "AGENTS.md", template.systemPrompt);
-      const config = await fetchAgentConfig(agentRef.id);
-      config.approval_level = template.approvalLevel;
-      await apiFetch(`/agents/${encodeURIComponent(agentRef.id)}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
-      });
-      antdMsg.success(`专家「${template.name}」创建成功，已跳转至专家`);
+      await writeKnowledgeFile(agentRef.id, "AGENTS.md", systemPrompt);
+      antdMsg.success(`专家「${agent.name}」创建成功，已跳转至专家`);
       navigateTo("/ugsci-experts");
     } catch (err: any) {
       antdMsg.error(err.message || "创建专家失败");
@@ -11688,6 +13316,27 @@ function MarketplacePage() {
       antdMsg.warning("请先选择目标专家");
       return;
     }
+    // If template has env fields, open config modal for user to input tokens
+    if (mcpTemplateNeedsConfig(template)) {
+      const envEntries = Object.entries(template.env!);
+      const initialValues: Record<string, string> = {};
+      for (const [k] of envEntries) {
+        // Start with empty string so user must fill in their real value
+        initialValues[k] = "";
+      }
+      setMcpConfigEnvValues(initialValues);
+      setMcpConfigTemplate(template);
+      return;
+    }
+    // No env config needed — install directly
+    await doInstallMcp(template, template.env || {});
+  };
+
+  // ── MCP Market: actual install (called after config or directly) ──
+  const doInstallMcp = async (
+    template: MCPTemplate,
+    envValues: Record<string, string>,
+  ) => {
     setMcpInstalling((prev) => ({ ...prev, [template.id]: true }));
     try {
       const clientKey = template.id;
@@ -11701,7 +13350,7 @@ function MarketplacePage() {
           url: template.url || "",
           command: template.command || "",
           args: template.args || [],
-          env: template.env || {},
+          env: envValues,
           cwd: template.cwd || "",
           headers: template.headers || {},
         },
@@ -11715,17 +13364,44 @@ function MarketplacePage() {
     }
   };
 
-  // ── MCP Market: filtered templates ──
+  // ── MCP Market: confirm install from config modal ──
+  const confirmInstallMcp = async () => {
+    if (!mcpConfigTemplate) return;
+    // Validate that all required env fields are filled
+    const missing: string[] = [];
+    for (const [k, v] of Object.entries(mcpConfigEnvValues)) {
+      if (!v || !v.trim()) {
+        const hint = MCP_ENV_HINTS[k];
+        missing.push(hint?.label || k);
+      }
+    }
+    if (missing.length > 0) {
+      antdMsg.warning(`请填写以下配置项: ${missing.join(", ")}`);
+      return;
+    }
+    const template = mcpConfigTemplate;
+    setMcpConfigTemplate(null);
+    setMcpConfigEnvValues({});
+    await doInstallMcp(template, { ...mcpConfigEnvValues });
+  };
+
+  // ── MCP Market: filtered servers from OSS (dynamic) ──
   const filteredMcpTemplates = useMemo(() => {
-    if (!mcpSearchText.trim()) return MCP_TEMPLATES;
-    const q = mcpSearchText.toLowerCase();
-    return MCP_TEMPLATES.filter(
-      (t) =>
-        t.name.toLowerCase().includes(q) ||
-        t.description.toLowerCase().includes(q) ||
-        t.category.toLowerCase().includes(q),
-    );
-  }, [mcpSearchText]);
+    let filtered = ossMcpServers;
+    if (mcpSelectedCategory) {
+      filtered = filtered.filter((s) => s.category === mcpSelectedCategory);
+    }
+    if (mcpSearchText.trim()) {
+      const q = mcpSearchText.toLowerCase();
+      filtered = filtered.filter(
+        (s) =>
+          s.name.toLowerCase().includes(q) ||
+          s.description.toLowerCase().includes(q) ||
+          s.tags.some((t) => t.toLowerCase().includes(q)),
+      );
+    }
+    return filtered.map(ossMcpToTemplate);
+  }, [ossMcpServers, mcpSearchText, mcpSelectedCategory]);
 
   const mcpMarketTab = React.createElement(
     "div",
@@ -11743,13 +13419,26 @@ function MarketplacePage() {
         },
       },
       React.createElement(Input, {
-        placeholder: "搜索 MCP 模板...",
+        placeholder: "搜索 MCP 服务器...",
         prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
         value: mcpSearchText,
         onChange: (e: any) => setMcpSearchText(e.target.value),
         allowClear: true,
         style: { maxWidth: 300 },
       }),
+      ossMcpCategories.length > 0
+        ? React.createElement(Select, {
+            value: mcpSelectedCategory || undefined,
+            onChange: (v: string) => setMcpSelectedCategory(v || ""),
+            placeholder: "全部分类",
+            allowClear: true,
+            style: { minWidth: 150 },
+            options: [
+              { value: "", label: "全部分类" },
+              ...ossMcpCategories.map((c) => ({ value: c.id, label: c.label })),
+            ],
+          })
+        : null,
       React.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
@@ -11777,14 +13466,25 @@ function MarketplacePage() {
         "配置 MCP 源",
       ),
     ),
-    // MCP template cards
-    React.createElement(
-      Row,
-      { gutter: [12, 12] },
-      ...filteredMcpTemplates.map((template) =>
-        React.createElement(
-          Col,
-          { key: template.id, xs: 24, sm: 12, md: 8 },
+    // MCP server cards (dynamic from OSS)
+    ossMcpLoading && filteredMcpTemplates.length === 0
+      ? React.createElement(
+          "div",
+          { style: { textAlign: "center", padding: 40 } },
+          React.createElement(Spin, { tip: "正在加载 MCP 服务器...", size: "large" }),
+        )
+      : filteredMcpTemplates.length === 0
+        ? React.createElement(Empty, {
+            description: "未找到匹配的 MCP 服务器",
+            image: Empty.PRESENTED_IMAGE_SIMPLE,
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...filteredMcpTemplates.map((template) =>
+              React.createElement(
+                Col,
+                { key: template.id, xs: 24, sm: 12, md: 8 },
           React.createElement(
             Card,
             {
@@ -11917,10 +13617,112 @@ function MarketplacePage() {
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 12 } },
-        "更多 MCP 服务器模板持续更新中，也支持通过 JSON 配置自定义添加",
+        "MCP 服务器列表来自 UGSci 官方源，自动同步更新",
       ),
     ),
   );
+
+  // ── MCP Config Modal (for templates requiring token/secret input) ──
+  const mcpConfigModal = mcpConfigTemplate
+    ? React.createElement(
+        Modal,
+        {
+          title: React.createElement(
+            "div",
+            { style: { display: "flex", alignItems: "center", gap: 8 } },
+            React.createElement("span", { style: { fontSize: 20 } }, mcpConfigTemplate.emoji),
+            React.createElement("span", null, `配置 ${mcpConfigTemplate.name} 密钥`),
+          ),
+          open: !!mcpConfigTemplate,
+          onCancel: () => {
+            setMcpConfigTemplate(null);
+            setMcpConfigEnvValues({});
+          },
+          onOk: confirmInstallMcp,
+          okText: "安装",
+          cancelText: "取消",
+          width: 520,
+          destroyOnClose: true,
+        },
+        // Description
+        React.createElement(
+          Text,
+          { type: "secondary", style: { display: "block", marginBottom: 16, fontSize: 12 } },
+          mcpConfigTemplate.description,
+        ),
+        // Env fields
+        ...Object.entries(mcpConfigTemplate.env || {}).map(([envKey]) => {
+          const hint = MCP_ENV_HINTS[envKey];
+          const isSecret = hint?.isSecret !== false; // default to secret
+          return React.createElement(
+            "div",
+            { key: envKey, style: { marginBottom: 16 } },
+            React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
+              React.createElement(
+                Text,
+                { strong: true, style: { fontSize: 13 } },
+                hint?.label || envKey,
+              ),
+              React.createElement(
+                Tag,
+                { color: "orange", style: { fontSize: 10 } },
+                "必填",
+              ),
+            ),
+            // Help text with optional link
+            hint
+              ? React.createElement(
+                  "div",
+                  { style: { marginBottom: 6, fontSize: 12, color: "#8c8c8c" } },
+                  hint.help,
+                  hint.link
+                    ? React.createElement(
+                        "a",
+                        {
+                          href: hint.link,
+                          target: "_blank",
+                          rel: "noopener noreferrer",
+                          style: { marginLeft: 4, fontSize: 12 },
+                        },
+                        "获取方式 ↗",
+                      )
+                    : null,
+                )
+              : null,
+            // Input field
+            isSecret
+              ? React.createElement(Input.Password, {
+                  placeholder: `请输入 ${hint?.label || envKey}`,
+                  value: mcpConfigEnvValues[envKey] || "",
+                  onChange: (e: any) =>
+                    setMcpConfigEnvValues((prev: any) => ({
+                      ...prev,
+                      [envKey]: e.target.value,
+                    })),
+                  style: { width: "100%" },
+                })
+              : React.createElement(Input, {
+                  placeholder: `请输入 ${hint?.label || envKey}`,
+                  value: mcpConfigEnvValues[envKey] || "",
+                  onChange: (e: any) =>
+                    setMcpConfigEnvValues((prev: any) => ({
+                      ...prev,
+                      [envKey]: e.target.value,
+                    })),
+                  style: { width: "100%" },
+                }),
+            // Show env key name for reference
+            React.createElement(
+              Text,
+              { type: "secondary", style: { fontSize: 11, display: "block", marginTop: 2 } },
+              `环境变量名: ${envKey}`,
+            ),
+          );
+        }),
+      )
+    : null;
 
   const expertsMarketTab = React.createElement(
     "div",
@@ -11944,6 +13746,19 @@ function MarketplacePage() {
         allowClear: true,
         style: { maxWidth: 400, flex: 1, minWidth: 200 },
       }),
+      ossAgentCategories.length > 0
+        ? React.createElement(Select, {
+            value: expertSelectedCategory || undefined,
+            onChange: (v: string) => setExpertSelectedCategory(v || ""),
+            placeholder: "全部分类",
+            allowClear: true,
+            style: { minWidth: 150 },
+            options: [
+              { value: "", label: "全部分类" },
+              ...ossAgentCategories.map((c) => ({ value: c.id, label: c.label })),
+            ],
+          })
+        : null,
       React.createElement(
         Button,
         {
@@ -11954,108 +13769,118 @@ function MarketplacePage() {
         "配置专家源",
       ),
     ),
-    React.createElement(
-      Row,
-      { gutter: [12, 12] },
-      ...filteredTemplates.map((template) =>
-        React.createElement(
-          Col,
-          { key: template.id, xs: 24, sm: 12, md: 8 },
-          React.createElement(
-            Card,
-            {
-              hoverable: true,
-              size: "small",
-              style: { height: "100%", cursor: "pointer" },
-              onClick: () => handleQuickCreateExpert(template),
-            },
-            React.createElement(
-              "div",
-              {
-                style: {
-                  display: "flex",
-                  alignItems: "flex-start",
-                  gap: 10,
-                  marginBottom: 8,
-                },
-              },
-              React.createElement(ExpertAvatar, {
-                name: template.name,
-                size: 40,
-              }),
+    // Agent cards (dynamic from OSS)
+    ossAgentLoading && filteredOssAgents.length === 0
+      ? React.createElement(
+          "div",
+          { style: { textAlign: "center", padding: 40 } },
+          React.createElement(Spin, { tip: "正在加载专家模板...", size: "large" }),
+        )
+      : filteredOssAgents.length === 0
+        ? React.createElement(Empty, {
+            description: "未找到匹配的专家模板",
+            image: Empty.PRESENTED_IMAGE_SIMPLE,
+          })
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...filteredOssAgents.map((agent) =>
               React.createElement(
-                "div",
-                { style: { flex: 1 } },
+                Col,
+                { key: agent.id, xs: 24, sm: 12, md: 8 },
                 React.createElement(
-                  Text,
-                  { strong: true, style: { fontSize: 14 } },
-                  template.name,
-                ),
-                React.createElement(
-                  "div",
-                  { style: { display: "flex", gap: 4, marginTop: 4 } },
+                  Card,
+                  {
+                    hoverable: true,
+                    size: "small",
+                    style: { height: "100%", cursor: "pointer" },
+                    onClick: () => handleCreateOssAgent(agent),
+                  },
                   React.createElement(
-                    Tag,
-                    { color: "blue", style: { fontSize: 10 } },
-                    template.category,
-                  ),
-                  template.approvalLevel === "MANUAL"
-                    ? React.createElement(
-                        Tag,
-                        { color: "orange", style: { fontSize: 10 } },
-                        "需审批",
-                      )
-                    : React.createElement(
-                        Tag,
-                        { color: "green", style: { fontSize: 10 } },
-                        "自动",
+                    "div",
+                    {
+                      style: {
+                        display: "flex",
+                        alignItems: "flex-start",
+                        gap: 10,
+                        marginBottom: 8,
+                      },
+                    },
+                    React.createElement(ExpertAvatar, {
+                      name: agent.name,
+                      size: 40,
+                    }),
+                    React.createElement(
+                      "div",
+                      { style: { flex: 1 } },
+                      React.createElement(
+                        Text,
+                        { strong: true, style: { fontSize: 14 } },
+                        agent.name,
                       ),
+                      React.createElement(
+                        "div",
+                        { style: { display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" } },
+                        agent.category
+                          ? React.createElement(
+                              Tag,
+                              { color: "blue", style: { fontSize: 10 } },
+                              _tagGroupLabel(agent.category),
+                            )
+                          : null,
+                        agent.tags.includes("mcp")
+                          ? React.createElement(
+                              Tag,
+                              { color: "purple", style: { fontSize: 10 } },
+                              "MCP",
+                            )
+                          : null,
+                      ),
+                    ),
+                  ),
+                  React.createElement(
+                    Paragraph,
+                    {
+                      type: "secondary",
+                      style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
+                      ellipsis: { rows: 3 },
+                    },
+                    agent.description,
+                  ),
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 10,
+                        paddingTop: 8,
+                        borderTop: "1px solid #f0f0f0",
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                      },
+                    },
+                    React.createElement(
+                      Text,
+                      { type: "secondary", style: { fontSize: 11 } },
+                      agent.tags.filter((t) => t !== "agent" && t !== "template" && t !== "workspace").slice(0, 3).join(" · ") || "专家模板",
+                    ),
+                    React.createElement(
+                      Button,
+                      {
+                        type: "primary",
+                        size: "small",
+                        icon: AppstoreOutlined
+                          ? React.createElement(AppstoreOutlined)
+                          : undefined,
+                      },
+                      "一键创建",
+                    ),
+                  ),
                 ),
-              ),
-            ),
-            React.createElement(
-              Paragraph,
-              {
-                type: "secondary",
-                style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
-                ellipsis: { rows: 3 },
-              },
-              template.description.replace(/\*\*(.+?)\*\*/g, "$1"),
-            ),
-            React.createElement(
-              "div",
-              {
-                style: {
-                  marginTop: 10,
-                  paddingTop: 8,
-                  borderTop: "1px solid #f0f0f0",
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                },
-              },
-              React.createElement(
-                Text,
-                { type: "secondary", style: { fontSize: 11 } },
-                `推荐 ${template.recommendedSkills.length} 个技能`,
-              ),
-              React.createElement(
-                Button,
-                {
-                  type: "primary",
-                  size: "small",
-                  icon: AppstoreOutlined
-                    ? React.createElement(AppstoreOutlined)
-                    : undefined,
-                },
-                "一键创建",
               ),
             ),
           ),
-        ),
-      ),
-    ),
-    // Future expansion hint
+    // Info hint
     React.createElement(
       "div",
       {
@@ -12076,7 +13901,7 @@ function MarketplacePage() {
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 12 } },
-        "更多专家模板持续更新中，未来将支持 OpenScience、RPA 等行业扩展",
+        "专家模板来自 UGSci 官方源，自动同步更新",
       ),
     ),
   );
@@ -12139,8 +13964,9 @@ function MarketplacePage() {
             onClick: () => {
               doSearch(searchText, selectedCategory, {});
               loadGithubSkills();
+              loadOssMarketData();
             },
-            loading: loading || githubLoading,
+            loading: loading || githubLoading || ossMcpLoading || ossAgentLoading,
           },
           "刷新",
         ),
@@ -12169,6 +13995,8 @@ function MarketplacePage() {
       onChange: (next: GenericSource[]) => setMcpSources(next),
       type: "mcp",
     }),
+    // MCP token config modal (for templates requiring secrets)
+    mcpConfigModal,
     // Expert source config modal
     React.createElement(GenericSourceConfigModal, {
       open: expertSourceConfigOpen,
@@ -12446,13 +14274,15 @@ function buildPlugin() {
   // ── Simplify Navigation (Simple Mode only) ────────────────────────────
   // In simple mode, hide these built-in items because the three UGSci
   // centers provide a simpler, domain-focused alternative.
+  // Note: core.mcp is NOT hidden — the native /mcp page is reused for
+  // full MCP management (edit, OAuth, access policy) and is linked from
+  // the UGSci Capability Center's MCP tab.
   // In full mode, ALL built-in items remain visible (original QwenPaw).
   // Items are hidden (not removed) via menu.replace with visible callback.
 
   const hideItems = [
     "core.skills",
     "core.tools",
-    "core.mcp",
     "core.acp",
     "core.agent-config",
     "core.agent-stats",
