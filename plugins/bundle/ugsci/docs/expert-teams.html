@@ -375,7 +375,7 @@
 <p><strong>提示</strong>：为确保团队正常工作，建议专家名称与 Agent 名称保持一致，或至少包含相同的关键词。</p>
 </blockquote>
 <h2 id="_12">添加新预设专家团</h2>
-<p>在 <code>EXPERT_TEAMS</code> 数组中添加新对象：</p>
+<p>在后端 <code>team/presets.py</code> 的 <code>PRESET_UGSCI_TEAMS</code> 中添加新对象；前端会通过 <code>/api/ugsci/team/preset-teams</code> 自动加载：</p>
 <div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF">{</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;well-test-team&quot;</span><span style="color: #ABB2BF">,</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井分析团队&quot;</span><span style="color: #ABB2BF">,</span>

@@ -408,9 +408,10 @@ jobs:
       - name: Combine all coverage data
         shell: bash
         run: |
-          # Collect all coverage data files: unit, contract, and integration.
-          coverage combine \
-            .coverage.unit .coverage.contract .coverage.integration
+          # Combine every coverage artifact that actually arrived. A failed
+          # tier may omit its file; test-summary reports the tier failure
+          # without masking it behind a second "non-existent path" error.
+          coverage combine .coverage.*
           # Tolerate fail-under (exit 2): combined number is what matters
           # and reflected in the summary regardless.
           coverage xml -o coverage.combined.xml || [ "$?" -eq 2 ]

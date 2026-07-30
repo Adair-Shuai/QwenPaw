@@ -270,7 +270,7 @@ npm<span style="color: #ABB2BF"> </span>install
 </code></pre></div>
 
 <h2 id="_14">专家团定义</h2>
-<p>专家团定义在 <code>index.ts</code> 的 <code>EXPERT_TEAMS</code> 数组中：</p>
+<p>预设专家团由后端 <code>team/presets.py</code> 统一定义，前端通过 <code>GET /api/ugsci/team/preset-teams</code> 获取：</p>
 <div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">interface</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">ExpertTeam</span><span style="color: #ABB2BF"> {</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
@@ -316,7 +316,7 @@ npm<span style="color: #ABB2BF"> </span>install
 </tbody>
 </table>
 <h3 id="_16">添加新专家团</h3>
-<p>在 <code>EXPERT_TEAMS</code> 数组中添加新对象。成员的 <code>name</code> 字段会通过 <code>findAgentIdByName()</code> 与实际 Agent 进行模糊匹配。</p>
+<p>在 <code>team/presets.py</code> 的 <code>PRESET_UGSCI_TEAMS</code> 中添加新对象。成员的 <code>name</code> 字段会通过 <code>findAgentIdByName()</code> 与实际 Agent 进行模糊匹配。</p>
 <h2 id="_17">调试技巧</h2>
 <ol>
 <li><strong>查看注册日志</strong>：浏览器控制台搜索 <code>[ugsci]</code></li>

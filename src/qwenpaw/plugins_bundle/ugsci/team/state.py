@@ -24,7 +24,41 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from .constants import ALL_PHASES, PHASE_COMPLETED, PHASE_PLAN
+
 logger = logging.getLogger(__name__)
+
+WORKFLOW_ACTIVE = "active"
+WORKFLOW_COMPLETED = "completed"
+WORKFLOW_TERMINATED = "terminated"
+WORKFLOW_STATUSES = frozenset(
+    {WORKFLOW_ACTIVE, WORKFLOW_COMPLETED, WORKFLOW_TERMINATED},
+)
+
+
+class TeamStateInvalidError(ValueError):
+    """Raised when a workflow state document is malformed."""
+
+
+def validate_state_document(data: Any) -> dict[str, Any]:
+    """Validate and return a workflow state mapping.
+
+    State is controller-editable, so validation must happen at every read
+    boundary rather than relying only on the initial writer.
+    """
+    if not isinstance(data, dict):
+        raise TeamStateInvalidError("state document must be a JSON object")
+    phase = data.get("current_phase")
+    if phase not in ALL_PHASES:
+        raise TeamStateInvalidError(
+            f"current_phase must be one of {', '.join(ALL_PHASES)}",
+        )
+    workflow_status = data.get("workflow_status", WORKFLOW_ACTIVE)
+    if workflow_status not in WORKFLOW_STATUSES:
+        raise TeamStateInvalidError(
+            "workflow_status must be active, completed, or terminated",
+        )
+    return data
 
 
 class TeamWorkflowState:
@@ -68,17 +102,24 @@ class TeamWorkflowState:
         return wf
 
     def read_state(self) -> dict[str, Any]:
-        """Read state.json, returning empty dict if absent."""
+        """Read and validate ``state.json``.
+
+        A missing file still returns an empty mapping so callers can
+        distinguish "not created" from malformed state. Invalid JSON, a
+        non-object top level, and unknown phases raise
+        :class:`TeamStateInvalidError` and are never silently overwritten.
+        """
         if not self._instance_dir:
             return {}
         p = self._instance_dir / "state.json"
         if not p.exists():
             return {}
         try:
-            return json.loads(p.read_text(encoding="utf-8"))
-        except Exception:
+            data = json.loads(p.read_text(encoding="utf-8"))
+            return validate_state_document(data)
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
             logger.warning("Failed to read %s", p, exc_info=True)
-            return {}
+            raise TeamStateInvalidError("state JSON is invalid") from exc
 
     def write_state(self, data: dict[str, Any]) -> None:
         """Atomically replace state.json with *data*."""
@@ -97,6 +138,38 @@ class TeamWorkflowState:
         """
         data = self.read_state()
         data.update(patch)
+        self.write_state(data)
+        return data
+
+    def finalize(
+        self,
+        workflow_status: str,
+        reason: str,
+        fallback: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Persist a terminal snapshot that remains queryable after cleanup."""
+        if workflow_status not in {
+            WORKFLOW_COMPLETED,
+            WORKFLOW_TERMINATED,
+        }:
+            raise ValueError("final workflow status must be terminal")
+        try:
+            data = self.read_state()
+        except TeamStateInvalidError:
+            data = dict(fallback or {})
+        if not data:
+            data = dict(fallback or {})
+        data.setdefault("current_phase", PHASE_PLAN)
+        if workflow_status == WORKFLOW_COMPLETED:
+            data["current_phase"] = PHASE_COMPLETED
+        data.update(
+            {
+                "workflow_status": workflow_status,
+                "active": False,
+                "termination_reason": reason,
+                "finished_at_ns": time.time_ns(),
+            },
+        )
         self.write_state(data)
         return data
 
@@ -127,13 +200,13 @@ class TeamWorkflowState:
     def cleanup(self) -> None:
         """Remove temporary control files; keep audit artifacts.
 
-        Deletes ``state.json`` and ``prd.json`` (and ``*.tmp`` sidecars)
-        only.  Specs, plans, handoffs, worker results, reviews, and
-        ``progress.txt`` are retained for post-run inspection.
+        Deletes ``prd.json`` and ``*.tmp`` sidecars. The terminal
+        ``state.json`` is retained so the API can identify the latest run and
+        never fall back to an older active instance.
         """
         if not self._instance_dir or not self._instance_dir.exists():
             return
-        remove_names = {"state.json", "prd.json"}
+        remove_names = {"prd.json"}
         for child in list(self._instance_dir.iterdir()):
             should_remove = child.name in remove_names or (
                 child.is_file() and child.name.endswith(".tmp")
@@ -164,9 +237,25 @@ class TeamWorkflowState:
     def _atomic_write_json(path: Path, data: dict[str, Any]) -> None:
         """Write JSON via temp file + replace."""
         path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_suffix(path.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps(data, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        tmp.replace(path)
+        tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            tmp.write_text(
+                json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+            tmp.replace(path)
+        finally:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                logger.debug("Failed to remove state sidecar %s", tmp)
+
+
+__all__ = [
+    "TeamStateInvalidError",
+    "TeamWorkflowState",
+    "WORKFLOW_ACTIVE",
+    "WORKFLOW_COMPLETED",
+    "WORKFLOW_TERMINATED",
+    "validate_state_document",
+]

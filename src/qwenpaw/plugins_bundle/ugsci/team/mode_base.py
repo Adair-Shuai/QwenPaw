@@ -77,9 +77,13 @@ class UGSciModeBase(AgentMode):
         self,
         ctx: HookContext,  # pylint: disable=unused-argument
     ) -> None:
-        """Clear gate state on /new and /clear."""
+        """Persist cancellation and clear gate state on /new and /clear."""
         if self._gate is not None:
-            self._gate.reset_session()
+            terminate = getattr(self._gate, "terminate_current", None)
+            if callable(terminate):
+                terminate("conversation_reset")
+            else:
+                self._gate.reset_session()
 
     def claim_workflow(self) -> None:
         """Deactivate peer UGSci/OMP workflows so only this scope is active."""
@@ -106,7 +110,11 @@ class UGSciModeBase(AgentMode):
                     mode.name,
                     self.name,
                 )
-                peer_gate.reset_session()
+                terminate = getattr(peer_gate, "terminate_current", None)
+                if callable(terminate):
+                    terminate(f"superseded_by:{self.name}")
+                else:
+                    peer_gate.reset_session()
         UGSciModeBase._instances = alive
 
 

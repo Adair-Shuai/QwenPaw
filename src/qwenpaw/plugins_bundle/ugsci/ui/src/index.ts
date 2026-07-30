@@ -11,7 +11,11 @@
  * Uses window.QwenPaw plugin API for route + menu registration.
  */
 
-import { TeamWorkflowCard } from "./team/workflow";
+import {
+  fetchPresetTeamsFromBackend,
+  TeamWorkflowCard,
+  type PresetTeam,
+} from "./team/workflow";
 
 // ─── Types (mirrors console/src/api/types/) ──────────────────────────────────
 
@@ -1237,82 +1241,6 @@ function saveCustomTeams(teams: ExpertTeam[]): void {
   } catch {}
 }
 
-const EXPERT_TEAMS: ExpertTeam[] = [
-  {
-    id: "reservoir-eval-team",
-    name: "储层评价团队",
-    emoji: "🛢️",
-    category: "油气勘探",
-    mode: "pipeline",
-    description:
-      "从测井解释到储量计算的完整储层评价流程，依次调用测井分析师、地球物理专家和油藏工程师",
-    members: [
-      { name: "测井分析师", role: "岩性识别与孔隙度计算", emoji: "📡" },
-      { name: "地球物理专家", role: "储层预测与含油气检测", emoji: "🌍" },
-      { name: "油藏工程师", role: "储量评估与开发建议", emoji: "🛢️" },
-    ],
-    taskTemplate:
-      "请对以下区块进行储层评价：\n区块名称：{区块名}\n井号：{井号}\n评价要求：依次咨询测井分析师（岩性解释和孔隙度参数）、地球物理专家（储层预测和含油气性检测）、油藏工程师（储量计算和开发建议），综合形成储层评价报告。",
-    orchestrationPrompt:
-      "你是一个储层评价团队的协调者。请按照以下流程依次咨询团队成员：\n1. 先用 list_agents() 查看可用专家\n2. 向测井分析师发送岩性解释和孔隙度计算请求\n3. 将测井结果传递给地球物理专家，请求储层预测\n4. 将前两步结果传递给油藏工程师，请求储量评估\n5. 综合三位专家的结果，形成统一的储层评价报告\n\n重要：每步咨询使用 chat_with_agent，传递上一步的结果作为上下文。",
-  },
-  {
-    id: "drilling-design-team",
-    name: "钻井设计团队",
-    emoji: "⛏️",
-    category: "钻完井",
-    mode: "coordinator",
-    description:
-      "由钻井工程师主导，协调地球物理专家（地层预测）和采油工程师（完井方案），完成钻井工程设计",
-    members: [
-      { name: "钻井工程师", role: "井身结构与套管设计", emoji: "⛏️" },
-      { name: "地球物理专家", role: "地层压力预测", emoji: "🌍" },
-      { name: "采油工程师", role: "完井方案建议", emoji: "⚙️" },
-    ],
-    coordinatorName: "钻井工程师",
-    taskTemplate:
-      "请为以下井进行钻井工程设计：\n井名：{井名}\n设计深度：{深度}m\n设计要求：请协调地球物理专家进行地层压力预测，然后由你完成井身结构设计，最后咨询采油工程师确定完井方案。",
-    orchestrationPrompt:
-      "你是钻井设计团队的协调者（钻井工程师）。请按以下步骤工作：\n1. 用 list_agents() 查看可用专家\n2. 向地球物理专家发送地层压力预测请求\n3. 基于压力预测结果，完成井身结构设计和套管设计\n4. 向采油工程师发送完井方案咨询请求\n5. 综合所有结果，输出完整的钻井工程设计方案\n\n注意：每步使用 chat_with_agent 咨询，传递已获取的参数。",
-  },
-  {
-    id: "development-plan-team",
-    name: "开发方案评审团队",
-    emoji: "📋",
-    category: "油气开发",
-    mode: "roundtable",
-    description:
-      "油藏工程师、钻井工程师和采油工程师独立评估同一区块的开发方案，对比不同视角后综合出最优方案",
-    members: [
-      { name: "油藏工程师", role: "储量与开发方式评估", emoji: "🛢️" },
-      { name: "钻井工程师", role: "工程可行性评估", emoji: "⛏️" },
-      { name: "采油工程师", role: "生产工艺评估", emoji: "⚙️" },
-    ],
-    taskTemplate:
-      "请对以下区块的开发方案进行多角度评审：\n区块名称：{区块名}\n方案概述：{方案概述}\n评审要求：请分别咨询油藏工程师（储量和开发方式）、钻井工程师（工程可行性）、采油工程师（生产工艺），各自独立给出评估意见，然后对比综合形成最终建议。",
-    orchestrationPrompt:
-      "你是开发方案评审团队的协调者。请按以下步骤工作：\n1. 用 list_agents() 查看可用专家\n2. 分别向油藏工程师、钻井工程师、采油工程师发送同一评审请求（独立评估，不传递他人意见）\n3. 收集三位专家的独立意见后，对比分析各自观点\n4. 综合形成最终的开发方案建议，包含各专业领域的考虑\n\n重要：三位专家应独立评估，不要将一位专家的意见传递给另一位。",
-  },
-  {
-    id: "pvt-analysis-team",
-    name: "流体性质分析团队",
-    emoji: "🧪",
-    category: "流体性质",
-    mode: "pipeline",
-    description:
-      "PVT分析师进行流体物性计算，地球物理专家辅助相态验证，油藏工程师完成开发方案适配",
-    members: [
-      { name: "PVT 分析师", role: "PVT实验拟合与物性计算", emoji: "🧪" },
-      { name: "地球物理专家", role: "相态行为验证", emoji: "🌍" },
-      { name: "油藏工程师", role: "开发方式适配", emoji: "🛢️" },
-    ],
-    taskTemplate:
-      "请对以下流体样品进行PVT分析：\n样品来源：{井号}-{层位}\n实验数据：{实验数据概述}\n分析要求：依次咨询PVT分析师（物性计算和相态分析）、地球物理专家（相态验证）、油藏工程师（开发方式建议），形成完整的流体评价报告。",
-    orchestrationPrompt:
-      "你是流体性质分析团队的协调者。请按以下步骤工作：\n1. 用 list_agents() 查看可用专家\n2. 向PVT分析师发送流体物性计算和相态分析请求\n3. 将PVT分析结果传递给地球物理专家，请求相态行为验证\n4. 将前两步结果传递给油藏工程师，请求开发方式适配建议\n5. 综合形成完整的流体性质评价报告\n\n注意：每步使用 chat_with_agent 咨询，传递上一步的完整结果。",
-  },
-];
-
 // ─── Expert Team helpers ─────────────────────────────────────────────────────
 
 /**
@@ -2530,12 +2458,27 @@ const { Text } = Typography;
 
   const [searchText, setSearchText] = useState("");
   const [customTeams, setCustomTeams] = useState<ExpertTeam[]>([]);
+  const [presetTeams, setPresetTeams] = useState<ExpertTeam[]>([]);
+  const [presetLoadFailed, setPresetLoadFailed] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<ExpertTeam | null>(null);
 
   // Load custom teams from localStorage on mount
   useEffect(() => {
     setCustomTeams(loadCustomTeams());
+    let active = true;
+    void fetchPresetTeamsFromBackend().then((teams: PresetTeam[] | null) => {
+      if (!active) return;
+      if (teams) {
+        setPresetTeams(teams as ExpertTeam[]);
+        setPresetLoadFailed(false);
+      } else {
+        setPresetLoadFailed(true);
+      }
+    });
+    return () => {
+      active = false;
+    };
   }, []);
 
   const refreshCustomTeams = useCallback(() => {
@@ -2565,8 +2508,8 @@ const { Text } = Typography;
 
   // Combine preset + custom teams
   const allTeams = useMemo(() => {
-    return [...customTeams, ...EXPERT_TEAMS];
-  }, [customTeams]);
+    return [...customTeams, ...presetTeams];
+  }, [customTeams, presetTeams]);
 
   const filteredTeams = useMemo(() => {
     if (!searchText.trim()) return allTeams;
@@ -2588,6 +2531,15 @@ const { Text } = Typography;
     null,
     // Workflow status card (OMP-backed)
     React.createElement(TeamWorkflowCard),
+    presetLoadFailed
+      ? React.createElement(getHost().antd.Alert, {
+          type: "warning",
+          showIcon: true,
+          message: "预设专家团加载失败",
+          description: "请确认 UGSci 后端插件已启用，然后刷新页面。",
+          style: { marginBottom: 16 },
+        })
+      : null,
     // Info banner
     React.createElement(
       "div",
@@ -7568,7 +7520,13 @@ function UGSciMCPAccessModal({
     const hasUnknown = ruleHasUnknownUserValue(principalOptions, rule);
     const sourceValueOpts = [{ label: "所有渠道", value: "*" }, ...MCP_CHANNEL_SOURCE_VALUES.map(v => ({ label: channelLabel(v), value: v }))];
     const subjectTypeOpts = [{ label: "所有人", value: "all" }, { label: "指定用户", value: "user" }];
-    const updateFn = isToolRule ? updateToolRule : updateClientRule;
+    const updateRule = (patch: Partial<MCPAccessRule>) => {
+      if (isToolRule) {
+        updateToolRule(rule as MCPToolAccessOverride, patch);
+      } else {
+        updateClientRule(rule, patch);
+      }
+    };
     const setEffect = (e: MCPAccessEffect) => {
       if (isToolRule) {
         setPolicy((prev: MCPAccessPolicy | null) => prev ? upsertToolRule(prev, { ...(rule as MCPToolAccessOverride), effect: e }) : prev);
@@ -7593,7 +7551,7 @@ function UGSciMCPAccessModal({
         React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "来源类型"),
         React.createElement(Select, {
           size: "small", style: { width: "100%" }, value: rule.source_type || "channel",
-          onChange: (v: string) => updateFn(rule, { source_type: v as MCPAccessSourceType, source_value: v === "channel" ? (rule.source_value || "*") : rule.source_value } as any),
+          onChange: (v: string) => updateRule({ source_type: v as MCPAccessSourceType, source_value: v === "channel" ? (rule.source_value || "*") : rule.source_value }),
           options: [{ label: "渠道", value: "channel" }, ...(rule.source_type && rule.source_type !== "channel" ? [{ label: rule.source_type, value: rule.source_type }] : [])],
         }),
       ),
@@ -7601,13 +7559,13 @@ function UGSciMCPAccessModal({
       React.createElement("div", null,
         React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "来源"),
         rule.source_type === "channel"
-          ? React.createElement(Select, { size: "small", style: { width: "100%" }, value: rule.source_value || "*", onChange: (v: string) => updateFn(rule, { source_value: v } as any), options: sourceValueOpts })
-          : React.createElement(Input, { size: "small", placeholder: "来源标识", value: rule.source_value, onChange: (e: any) => updateFn(rule, { source_value: e.target.value } as any) }),
+          ? React.createElement(Select, { size: "small", style: { width: "100%" }, value: rule.source_value || "*", onChange: (v: string) => updateRule({ source_value: v }), options: sourceValueOpts })
+          : React.createElement(Input, { size: "small", placeholder: "来源标识", value: rule.source_value, onChange: (e: any) => updateRule({ source_value: e.target.value }) }),
       ),
       // subject_type
       React.createElement("div", null,
         React.createElement(Text, { style: { fontSize: 11, color: "#999", display: "block", marginBottom: 2 } }, "对象类型"),
-        React.createElement(Select, { size: "small", style: { width: "100%" }, value: rule.subject_type, onChange: (v: string) => updateFn(rule, { subject_type: v as MCPAccessSubjectType } as any), options: subjectTypeOpts }),
+        React.createElement(Select, { size: "small", style: { width: "100%" }, value: rule.subject_type, onChange: (v: string) => updateRule({ subject_type: v as MCPAccessSubjectType }), options: subjectTypeOpts }),
       ),
       // subject_value
       React.createElement("div", null,
@@ -7618,8 +7576,8 @@ function UGSciMCPAccessModal({
                 size: "small", style: { width: "100%" }, value: rule.subject_value,
                 options: subjectValueOptions,
                 placeholder: subjectValueOptions.length > 0 ? "用户 ID" : "无近期用户",
-                onChange: (v: string) => updateFn(rule, { subject_value: v } as any),
-                onSelect: (v: string) => updateFn(rule, { subject_value: v } as any),
+                onChange: (v: string) => updateRule({ subject_value: v }),
+                onSelect: (v: string) => updateRule({ subject_value: v }),
                 filterOption: (input: string, option: any) => String(option?.value || "").toLowerCase().includes(input.toLowerCase()),
               }),
               hasAmbiguous ? React.createElement(Text, { style: { fontSize: 10, color: "#fa8c16", display: "block" } }, "请先选择具体渠道") : null,
@@ -7849,7 +7807,7 @@ function UGSciMCPOAuthModal({
         React.createElement(
           "div",
           { style: { display: "flex", gap: 8 } },
-          (isAuthorized || isExpired) ? React.createElement(Button, { size: "small", onClick: handleRevoke, loading: phase === "revoking" }, "撤销") : null,
+          (isAuthorized || isExpired) ? React.createElement(Button, { size: "small", onClick: handleRevoke, loading: String(phase) === "revoking" }, "撤销") : null,
           React.createElement(Button, { size: "small", type: isAuthorized && !isExpired ? "default" : "primary", onClick: handleStart, loading: phase === "starting" || phase === "waiting", disabled: !client.url?.trim() }, isAuthorized && !isExpired ? "重新授权" : "授权"),
         ),
       ),

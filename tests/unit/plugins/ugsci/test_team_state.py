@@ -5,7 +5,12 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from plugins.bundle.ugsci.team.state import TeamWorkflowState
+import pytest
+
+from plugins.bundle.ugsci.team.state import (
+    TeamStateInvalidError,
+    TeamWorkflowState,
+)
 
 
 def test_state_round_trip_and_cleanup(tmp_path: Path) -> None:
@@ -23,7 +28,7 @@ def test_state_round_trip_and_cleanup(tmp_path: Path) -> None:
 
     workflow.cleanup()
 
-    assert not (instance / "state.json").exists()
+    assert (instance / "state.json").exists()
     assert (instance / "results" / "result.md").read_text(
         encoding="utf-8",
     ) == "ok"
@@ -32,12 +37,36 @@ def test_state_round_trip_and_cleanup(tmp_path: Path) -> None:
     )
 
 
-def test_invalid_json_recovers_as_empty_state(tmp_path: Path) -> None:
+def test_invalid_json_is_not_silently_rewritten(tmp_path: Path) -> None:
     workflow = TeamWorkflowState(tmp_path, "reservoir")
     instance = workflow.create_instance()
     (instance / "state.json").write_text("{invalid", encoding="utf-8")
 
-    assert workflow.read_state() == {}
+    with pytest.raises(TeamStateInvalidError):
+        workflow.read_state()
+
+
+def test_non_object_json_is_rejected(tmp_path: Path) -> None:
+    workflow = TeamWorkflowState(tmp_path, "reservoir")
+    instance = workflow.create_instance()
+    (instance / "state.json").write_text("[]", encoding="utf-8")
+
+    with pytest.raises(TeamStateInvalidError):
+        workflow.read_state()
+
+
+def test_finalize_preserves_queryable_terminal_state(tmp_path: Path) -> None:
+    workflow = TeamWorkflowState(tmp_path, "reservoir")
+    workflow.create_instance()
+    workflow.write_state({"current_phase": "dispatch"})
+
+    workflow.finalize("terminated", "conversation_reset")
+    workflow.cleanup()
+
+    state = workflow.read_state()
+    assert state["workflow_status"] == "terminated"
+    assert state["active"] is False
+    assert state["termination_reason"] == "conversation_reset"
 
 
 def test_instances_are_unique(tmp_path: Path) -> None:

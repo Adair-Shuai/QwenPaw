@@ -59,6 +59,12 @@ jobs:
         working-directory: plugins/bundle/ugsci/ui
         run: |
           npm ci
+          npm run typecheck
+          ../../../../console/node_modules/.bin/eslint \
+            --config ../../../../console/eslint.config.js \
+            src/team/workflow.ts
+          ../../../../console/node_modules/.bin/prettier \
+            --check "src/team/**/*.ts"
           npm run build
 
       - name: Coverage ratchet (blocks PR on regression)

@@ -23,11 +23,14 @@ export interface TeamWorkflowState {
   iteration?: number;
   verify_retries?: number;
   dispatch_retries?: number;
+  merge_waits?: number;
+  workflow_status?: "active" | "completed" | "terminated";
+  termination_reason?: string;
 }
 
 export interface TeamWorkflowResponse {
   active: boolean;
-  status: "idle" | "active" | "completed" | "unreadable";
+  status: "idle" | "active" | "completed" | "terminated" | "unreadable";
   state: TeamWorkflowState;
   instance_id?: string | null;
   error?: string | null;
@@ -41,7 +44,9 @@ export interface PresetTeam {
   mode: "pipeline" | "coordinator" | "roundtable";
   description: string;
   members: TeamMember[];
+  coordinatorName?: string;
   taskTemplate: string;
+  orchestrationPrompt: string;
 }
 
 export interface RoleDefinition {
@@ -52,17 +57,36 @@ export interface RoleDefinition {
   prompt: string;
 }
 
+interface AntdHost {
+  Card: ReactNamespace.ElementType;
+  Tag: ReactNamespace.ElementType;
+  Typography: {
+    Text: ReactNamespace.ElementType;
+    Paragraph: ReactNamespace.ElementType;
+  };
+  Button: ReactNamespace.ElementType;
+  Steps: ReactNamespace.ElementType;
+  Empty: ReactNamespace.ElementType;
+  Alert: ReactNamespace.ElementType;
+}
+
 interface QwenPawHost {
   React: typeof ReactNamespace;
-  antd: any;
-  antdIcons: any;
+  antd: AntdHost;
+  antdIcons?: {
+    ReloadOutlined?: ReactNamespace.ElementType;
+  };
   getApiUrl: (path: string) => string;
   getApiToken: () => string;
   useSelectedAgent?: () => { id: string };
 }
 
 function getHost(): QwenPawHost {
-  const host = (window as any).QwenPaw?.host;
+  const host = (
+    window as Window & {
+      QwenPaw?: { host?: unknown };
+    }
+  ).QwenPaw?.host;
   if (!host) throw new Error("[ugsci] QwenPaw.host not available");
   return host as QwenPawHost;
 }
@@ -79,10 +103,12 @@ function requestHeaders(agentId?: string): Record<string, string> {
 async function fetchJson<T>(
   path: string,
   agentId?: string,
+  signal?: AbortSignal,
 ): Promise<T | null> {
   try {
     const response = await fetch(getHost().getApiUrl(path), {
       headers: requestHeaders(agentId),
+      signal,
     });
     if (!response.ok) return null;
     return (await response.json()) as T;
@@ -93,8 +119,9 @@ async function fetchJson<T>(
 
 export function fetchTeamWorkflowState(
   agentId: string,
+  signal?: AbortSignal,
 ): Promise<TeamWorkflowResponse | null> {
-  return fetchJson<TeamWorkflowResponse>("/ugsci/team/state", agentId);
+  return fetchJson<TeamWorkflowResponse>("/ugsci/team/state", agentId, signal);
 }
 
 export async function fetchPresetTeamsFromBackend(): Promise<
@@ -149,48 +176,65 @@ export function TeamWorkflowCard() {
   const [loading, setLoading] = useState(false);
   const responseRef = useRef<TeamWorkflowResponse | null>(null);
   const failCountRef = useRef(0);
+  const requestIdRef = useRef(0);
+  const requestControllerRef = useRef<AbortController | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    const result = await fetchTeamWorkflowState(agentId);
-    if (result) {
-      failCountRef.current = 0;
-      responseRef.current = result;
-      setResponse(result);
-    } else {
-      failCountRef.current += 1;
-    }
-    setLoading(false);
-  }, [agentId]);
+  const loadState = useCallback(
+    async (showLoading: boolean) => {
+      requestControllerRef.current?.abort();
+      const controller = new AbortController();
+      requestControllerRef.current = controller;
+      const requestId = ++requestIdRef.current;
+      if (showLoading) setLoading(true);
+      const result = await fetchTeamWorkflowState(agentId, controller.signal);
+      if (controller.signal.aborted || requestId !== requestIdRef.current)
+        return;
+      if (result) {
+        failCountRef.current = 0;
+        responseRef.current = result;
+        setResponse(result);
+      } else {
+        failCountRef.current += 1;
+      }
+      setLoading(false);
+    },
+    [agentId],
+  );
+
+  const refresh = useCallback(() => loadState(true), [loadState]);
 
   useEffect(() => {
+    requestControllerRef.current?.abort();
+    requestIdRef.current += 1;
     failCountRef.current = 0;
     responseRef.current = null;
     setResponse(null);
     void refresh();
 
-    const interval = window.setInterval(async () => {
+    const interval = window.setInterval(() => {
       if (failCountRef.current >= TEAM_STATE_MAX_FAILURES) return;
-      const result = await fetchTeamWorkflowState(agentId);
-      if (!result) {
-        failCountRef.current += 1;
+      if (
+        responseRef.current?.status === "completed" ||
+        responseRef.current?.status === "terminated"
+      )
         return;
-      }
-      failCountRef.current = 0;
-      if (result.active || responseRef.current?.active) {
-        responseRef.current = result;
-        setResponse(result);
-      }
+      void loadState(false);
     }, 5000);
-    return () => window.clearInterval(interval);
-  }, [agentId, refresh]);
+    return () => {
+      window.clearInterval(interval);
+      requestControllerRef.current?.abort();
+      requestIdRef.current += 1;
+    };
+  }, [agentId, loadState, refresh]);
 
   if (response?.status === "unreadable") {
     return React.createElement(Alert, {
       type: "warning",
       showIcon: true,
       message: "专家团状态暂时无法读取",
-      description: `实例 ${response.instance_id || "未知"} 的状态文件需要检查。`,
+      description: `实例 ${
+        response.instance_id || "未知"
+      } 的状态文件需要检查。`,
       style: { marginBottom: 16 },
       action: React.createElement(
         Button,
@@ -201,6 +245,20 @@ export function TeamWorkflowCard() {
   }
 
   if (!response || !response.active) {
+    if (response?.status === "completed" || response?.status === "terminated") {
+      const completed = response.status === "completed";
+      return React.createElement(Alert, {
+        type: completed ? "success" : "info",
+        showIcon: true,
+        message: completed ? "专家团工作流已完成" : "专家团工作流已终止",
+        description: completed
+          ? `实例 ${
+              response.instance_id || "未知"
+            } 已完成，结果文件保留在工作区。`
+          : `原因：${response.state.termination_reason || "未知"}`,
+        style: { marginBottom: 16 },
+      });
+    }
     return React.createElement(Empty, {
       description: "暂无活跃的专家团工作流",
       style: { padding: 24 },
@@ -274,12 +332,12 @@ export function TeamWorkflowCard() {
             itemPhase === "plan"
               ? "分析任务，创建任务分解"
               : itemPhase === "dispatch"
-                ? "分派专家执行任务"
-                : itemPhase === "verify"
-                  ? "交叉验证专家结果"
-                  : itemPhase === "synthesize"
-                    ? "综合形成最终报告"
-                    : "工作流完成",
+              ? "分派专家执行任务"
+              : itemPhase === "verify"
+              ? "交叉验证专家结果"
+              : itemPhase === "synthesize"
+              ? "综合形成最终报告"
+              : "工作流完成",
         };
       }),
     }),

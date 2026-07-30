@@ -51,22 +51,42 @@ def _digest(path: Path) -> str:
 
 
 def find_drift(source: Path, destination: Path) -> list[str]:
-    """Return source-relative files missing or different in the mirror."""
+    """Return files missing, different, or obsolete in the mirror."""
     drift: list[str] = []
-    for source_file in _source_files(source):
+    source_files = _source_files(source)
+    source_relatives = {
+        source_file.relative_to(source) for source_file in source_files
+    }
+    for source_file in source_files:
         relative = source_file.relative_to(source)
         destination_file = destination / relative
         if not destination_file.is_file():
             drift.append(f"missing: {relative}")
         elif _digest(source_file) != _digest(destination_file):
             drift.append(f"different: {relative}")
+    if destination.is_dir():
+        for destination_file in _source_files(destination):
+            relative = destination_file.relative_to(destination)
+            if relative not in source_relatives:
+                drift.append(f"obsolete: {relative}")
     return drift
 
 
-def sync(source: Path, destination: Path) -> int:
-    """Copy all canonical source files to the packaging mirror."""
+def sync(source: Path, destination: Path) -> tuple[int, int]:
+    """Make the packaging mirror exactly match canonical included files."""
     copied = 0
-    for source_file in _source_files(source):
+    removed = 0
+    source_files = _source_files(source)
+    source_relatives = {
+        source_file.relative_to(source) for source_file in source_files
+    }
+    if destination.is_dir():
+        for destination_file in _source_files(destination):
+            relative = destination_file.relative_to(destination)
+            if relative not in source_relatives:
+                destination_file.unlink()
+                removed += 1
+    for source_file in source_files:
         relative = source_file.relative_to(source)
         destination_file = destination / relative
         destination_file.parent.mkdir(parents=True, exist_ok=True)
@@ -76,7 +96,15 @@ def sync(source: Path, destination: Path) -> int:
             continue
         shutil.copy2(source_file, destination_file)
         copied += 1
-    return copied
+    for directory in sorted(
+        (path for path in destination.rglob("*") if path.is_dir()),
+        reverse=True,
+    ):
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+    return copied, removed
 
 
 def _generated_bundle_targets(root: Path) -> list[Path]:
@@ -163,10 +191,11 @@ def main() -> int:
 
     if args.sync:
         generated = sync_generated_bundle(root, source)
-        copied = sync(source, destination)
+        copied, removed = sync(source, destination)
         print(
             f"[ugsci-sync] copied {copied} source file(s) and "
-            f"{generated} generated bundle(s)",
+            f"{generated} generated bundle(s); removed "
+            f"{removed} obsolete mirror file(s)",
         )
 
     drift = find_drift(source, destination)

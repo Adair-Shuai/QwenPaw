@@ -97,6 +97,8 @@ def test_invalid_latest_state_is_reported_without_falling_back(
         encoding="utf-8",
     )
     (latest / "state.json").write_text("{invalid", encoding="utf-8")
+    os.utime(older / "state.json", (100, 100))
+    os.utime(latest / "state.json", (200, 200))
     client = _client(lambda _agent_id: tmp_path)
 
     response = client.get(
@@ -142,6 +144,75 @@ def test_latest_state_is_selected_by_time_not_team_name(
     assert response.json()["instance_id"] == latest.name
 
 
+def test_completed_latest_state_never_falls_back_to_older_active(
+    tmp_path: Path,
+) -> None:
+    base = tmp_path / ".qwenpaw" / "ugsci_teams"
+    older = base / "old-team"
+    latest = base / "new-team"
+    older.mkdir(parents=True)
+    latest.mkdir()
+    (older / "state.json").write_text(
+        '{"current_phase":"dispatch","workflow_status":"active"}',
+        encoding="utf-8",
+    )
+    (latest / "state.json").write_text(
+        '{"current_phase":"completed","workflow_status":"completed"}',
+        encoding="utf-8",
+    )
+    os.utime(older / "state.json", (100, 100))
+    os.utime(latest / "state.json", (200, 200))
+
+    response = _client(lambda _agent_id: tmp_path).get(
+        "/api/ugsci/team/state",
+        headers={"X-Agent-Id": "agent-a"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    assert response.json()["instance_id"] == latest.name
+
+
+def test_non_object_state_is_reported_as_unreadable(tmp_path: Path) -> None:
+    instance = tmp_path / ".qwenpaw" / "ugsci_teams" / "team"
+    instance.mkdir(parents=True)
+    (instance / "state.json").write_text("[]", encoding="utf-8")
+
+    response = _client(lambda _agent_id: tmp_path).get(
+        "/api/ugsci/team/state",
+        headers={"X-Agent-Id": "agent-a"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "unreadable"
+    assert response.json()["error"] == "state_json_invalid"
+
+
+def test_explicit_termination_takes_precedence_over_completed_phase(
+    tmp_path: Path,
+) -> None:
+    instance = tmp_path / ".qwenpaw" / "ugsci_teams" / "team"
+    instance.mkdir(parents=True)
+    (instance / "state.json").write_text(
+        json.dumps(
+            {
+                "current_phase": "completed",
+                "workflow_status": "terminated",
+                "termination_reason": "conversation_reset",
+            },
+        ),
+        encoding="utf-8",
+    )
+
+    response = _client(lambda _agent_id: tmp_path).get(
+        "/api/ugsci/team/state",
+        headers={"X-Agent-Id": "agent-a"},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "terminated"
+
+
 def test_preset_and_role_responses_have_stable_shape(tmp_path: Path) -> None:
     client = _client(lambda _agent_id: tmp_path)
 
@@ -150,6 +221,7 @@ def test_preset_and_role_responses_have_stable_shape(tmp_path: Path) -> None:
 
     assert teams.status_code == 200
     assert teams.json()["teams"][0]["id"]
+    assert teams.json()["teams"][0]["orchestrationPrompt"]
     assert roles.status_code == 200
     assert {"key", "display_name", "allowed_tools", "skills", "prompt"} <= (
         roles.json()["roles"][0].keys()

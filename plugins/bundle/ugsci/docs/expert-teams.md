@@ -244,7 +244,8 @@ function findAgentIdByName(agents, name): string | null {
 
 ## 添加新预设专家团
 
-在 `EXPERT_TEAMS` 数组中添加新对象：
+在后端 `team/presets.py` 的 `PRESET_UGSCI_TEAMS` 中添加新对象；
+前端会通过 `/api/ugsci/team/preset-teams` 自动加载：
 
 ```typescript
 {

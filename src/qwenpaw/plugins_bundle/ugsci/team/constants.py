@@ -32,6 +32,10 @@ POST_DISPATCH_PHASES = frozenset({PHASE_VERIFY, PHASE_SYNTHESIZE, PHASE_COMPLETE
 UGSCI_TEAM_MAX_ITERATIONS = 40
 UGSCI_TEAM_MAX_VERIFY_RETRIES = 3
 UGSCI_TEAM_MAX_DISPATCH_RETRIES = 2
+# OMP intentionally does not consume workflow iterations while waiting for
+# fork integration.  Keep that semantic, but bound the independent wait loop
+# so a lost/stale fork scope cannot keep a conversation alive forever.
+UGSCI_TEAM_MAX_MERGE_WAITS = 12
 
 # ── Team orchestration modes ─────────────────────────────────────────
 MODE_PIPELINE = "pipeline"

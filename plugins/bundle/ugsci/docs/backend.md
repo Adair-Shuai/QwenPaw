@@ -2,14 +2,16 @@
 
 ## 概述
 
-UGSci 后端由两个 Python 文件组成：
+UGSci 后端按入口、引擎和专家团三个边界组织：
 
 | 文件 | 职责 |
 |------|------|
 | `plugin.py` | 插件入口：生命周期钩子注册、技能池同步、HTTP 路由注册 |
-| `software_detector.py` | 本地油气软件检测引擎 |
+| `engine/` | 本地仿真软件检测、配置管理和运行工具 |
+| `team/` | OMP 专家团状态机、状态 API、角色和预设团队 |
 
-后端通过 QwenPaw 的 PluginApi 注册自身能力，不直接处理 HTTP 请求（除软件检测路由外）。
+后端通过 QwenPaw 的 PluginApi 注册自身能力，HTTP 路由由引擎和
+专家团模块分别提供。
 
 ## 插件入口
 

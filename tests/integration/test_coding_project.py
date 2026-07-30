@@ -8,7 +8,7 @@ Coverage strategy (happy path first):
   - POST /create: create a fresh project, then GET /list + GET (root)
     reflect it (create also persists ``coding_mode.project_dir`` to
     agent.json and activates the project).
-  - POST /import-local: copy a real source dir (seeded under working_dir)
+  - POST /import-local: copy a real source dir (seeded under the user's home)
     into coding_projects/ and verify files landed + project activated.
   - POST /upload-zip: build an in-memory zip, upload, verify extraction +
     activation.
@@ -32,6 +32,8 @@ No LLM / external network deps required.
 from __future__ import annotations
 
 import io
+import shutil
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -182,8 +184,12 @@ def test_import_local_copies_source(app_server) -> None:
     API endpoints:
       - POST /api/workspace/coding-project/import-local
     """
-    src = app_server.working_dir / "integ-cp-import-src"
-    src.mkdir(parents=True, exist_ok=True)
+    src = Path(
+        tempfile.mkdtemp(
+            prefix="qwenpaw-integ-cp-import-",
+            dir=Path.home(),
+        ),
+    )
     (src / "marker.txt").write_text("imported\n", encoding="utf-8")
     name = "integ-cp-import-C"
     try:
@@ -198,6 +204,7 @@ def test_import_local_copies_source(app_server) -> None:
         assert (dest / "marker.txt").is_file(), resp.json()
     finally:
         _reset_project(app_server)
+        shutil.rmtree(src, ignore_errors=True)
 
 
 # ================================================================== #

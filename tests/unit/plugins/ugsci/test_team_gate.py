@@ -45,7 +45,7 @@ async def test_iteration_limit_terminates_and_deactivates(
     assert result.action == StopAction.TERMINATE
     assert "Iteration limit" in result.reason
     assert gate._state() is None
-    assert workflow.read_state() == {}
+    assert workflow.read_state()["workflow_status"] == "terminated"
 
 
 @pytest.mark.asyncio
@@ -67,6 +67,7 @@ async def test_completed_phase_terminates(
     assert result.action == StopAction.TERMINATE
     assert result.reason == "UGSci team workflow completed"
     assert gate._state() is None
+    assert workflow.read_state()["workflow_status"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -110,3 +111,67 @@ async def test_verify_waits_for_fork_integration(
     assert result.action == StopAction.INTERRUPT_AND_CONTINUE
     assert "forks not integrated" in result.reason
     assert workflow.read_state()["merge_blocked"] is True
+
+
+@pytest.mark.asyncio
+async def test_merge_wait_limit_terminates_without_burning_iterations(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    gate = UGSciTeamGate()
+    workflow = _activate(gate, tmp_path)
+    workflow.update_state({"current_phase": "verify"})
+    runtime_state = gate._state()
+    runtime_state.max_merge_waits = 1
+    monkeypatch.setattr(
+        "plugins.bundle.ugsci.team.gate.forks_integrated",
+        lambda *_args: False,
+    )
+
+    first = await gate.check({})
+    second = await gate.check({})
+
+    assert first is not None
+    assert first.action == StopAction.INTERRUPT_AND_CONTINUE
+    assert second is not None
+    assert second.action == StopAction.TERMINATE
+    assert runtime_state.iteration == 0
+    assert workflow.read_state()["termination_reason"] == "merge_wait_limit"
+
+
+@pytest.mark.asyncio
+async def test_invalid_state_terminates_with_complete_snapshot(
+    tmp_path: Path,
+) -> None:
+    gate = UGSciTeamGate()
+    workflow = _activate(gate, tmp_path)
+    assert workflow.instance_dir is not None
+    (workflow.instance_dir / "state.json").write_text(
+        "{invalid",
+        encoding="utf-8",
+    )
+
+    result = await gate.check({})
+
+    assert result is not None
+    assert result.action == StopAction.TERMINATE
+    state = workflow.read_state()
+    assert state["workflow_status"] == "terminated"
+    assert state["termination_reason"] == "state_invalid"
+    assert state["team_name"] == "储层评价团队"
+
+
+def test_explicit_termination_persists_terminal_snapshot(
+    tmp_path: Path,
+) -> None:
+    gate = UGSciTeamGate()
+    workflow = _activate(gate, tmp_path)
+
+    gate.terminate_current("conversation_reset")
+
+    assert gate._state() is None
+    state = workflow.read_state()
+    assert state["workflow_status"] == "terminated"
+    assert state["active"] is False
+    assert state["termination_reason"] == "conversation_reset"
+    assert isinstance(state["finished_at_ns"], int)

@@ -20,7 +20,7 @@
 <div id="main">
 <h1 id="_1">本地软件检测</h1>
 <h2 id="_2">概述</h2>
-<p>UGSci 内置本地油气仿真软件检测引擎（<code>software_detector.py</code>），扫描主机系统已安装的石油工程软件，报告可执行路径、版本和调用提示，并生成可注入 Agent 系统提示词的能力摘要。</p>
+<p>UGSci 的本地油气仿真软件检测位于 <code>engine/detector.py</code>，引擎定义由 <code>engine/manager.py</code> 管理。它扫描主机系统已安装的石油工程软件，报告可执行路径、版本和调用提示，并生成可注入 Agent 系统提示词的能力摘要。</p>
 <h2 id="_3">设计原则</h2>
 <ol>
 <li><strong>非侵入式</strong> — 只读取文件系统，从不启动软件</li>

@@ -261,7 +261,8 @@ interface ExpertTemplate {
 
 ## 专家团定义
 
-专家团定义在 `index.ts` 的 `EXPERT_TEAMS` 数组中：
+预设专家团由后端 `team/presets.py` 统一定义，前端通过
+`GET /api/ugsci/team/preset-teams` 获取：
 
 ```typescript
 interface ExpertTeam {
@@ -291,7 +292,8 @@ interface ExpertTeam {
 
 ### 添加新专家团
 
-在 `EXPERT_TEAMS` 数组中添加新对象。成员的 `name` 字段会通过 `findAgentIdByName()` 与实际 Agent 进行模糊匹配。
+在 `team/presets.py` 的 `PRESET_UGSCI_TEAMS` 中添加新对象。成员的
+`name` 字段会通过 `findAgentIdByName()` 与实际 Agent 进行模糊匹配。
 
 ## 调试技巧
 

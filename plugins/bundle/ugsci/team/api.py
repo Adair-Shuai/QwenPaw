@@ -18,6 +18,13 @@ from .constants import (
 )
 from .presets import PRESET_UGSCI_TEAMS
 from .roles import UGSCI_ROLE_PROMPTS
+from .state import (
+    TeamStateInvalidError,
+    WORKFLOW_ACTIVE,
+    WORKFLOW_COMPLETED,
+    WORKFLOW_TERMINATED,
+    validate_state_document,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +51,12 @@ class PresetTeamDefinition(BaseModel):
     mode: Literal["pipeline", "coordinator", "roundtable"]
     description: str
     members: list[TeamMemberDefinition]
+    coordinator_name: str | None = Field(
+        default=None,
+        alias="coordinatorName",
+    )
     task_template: str = Field(alias="taskTemplate")
+    orchestration_prompt: str = Field(alias="orchestrationPrompt")
 
 
 class PresetTeamsResponse(BaseModel):
@@ -73,7 +85,13 @@ class TeamStateResponse(BaseModel):
     """Latest workflow state for one registered Agent workspace."""
 
     active: bool = False
-    status: Literal["idle", "active", "completed", "unreadable"] = "idle"
+    status: Literal[
+        "idle",
+        "active",
+        "completed",
+        "terminated",
+        "unreadable",
+    ] = "idle"
     state: dict[str, Any] = Field(default_factory=dict)
     instance_id: str | None = None
     error: str | None = None
@@ -104,9 +122,16 @@ def _latest_team_state(workspace_dir: Path, agent_id: str) -> TeamStateResponse:
     """Read the newest workflow state under a trusted workspace root."""
     base = workspace_dir / ".qwenpaw" / "ugsci_teams"
     try:
+        base_resolved = base.resolve()
         instances = sorted(
-            (path for path in base.iterdir() if path.is_dir()),
-            key=_instance_mtime,
+            (
+                path
+                for path in base.iterdir()
+                if path.is_dir()
+                and not path.is_symlink()
+                and path.resolve().is_relative_to(base_resolved)
+            ),
+            key=_instance_sort_key,
             reverse=True,
         )
     except FileNotFoundError:
@@ -124,11 +149,17 @@ def _latest_team_state(workspace_dir: Path, agent_id: str) -> TeamStateResponse:
 
     for instance in instances:
         state_file = instance / "state.json"
-        if not state_file.is_file():
+        if not state_file.is_file() or state_file.is_symlink():
             continue
         try:
-            data = json.loads(state_file.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, UnicodeDecodeError):
+            data = validate_state_document(
+                json.loads(state_file.read_text(encoding="utf-8")),
+            )
+        except (
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            TeamStateInvalidError,
+        ):
             logger.warning(
                 "UGSci team state JSON is invalid",
                 extra={
@@ -157,11 +188,26 @@ def _latest_team_state(workspace_dir: Path, agent_id: str) -> TeamStateResponse:
                 error="state_file_unreadable",
             )
 
-        phase = data.get("current_phase")
-        active = phase not in (None, "completed")
+        phase = data["current_phase"]
+        workflow_status = data.get("workflow_status", WORKFLOW_ACTIVE)
+        active = (
+            workflow_status == WORKFLOW_ACTIVE
+            and phase != "completed"
+        )
+        if active:
+            response_status = "active"
+        elif workflow_status == WORKFLOW_TERMINATED:
+            response_status = "terminated"
+        elif (
+            workflow_status == WORKFLOW_COMPLETED
+            or phase == "completed"
+        ):
+            response_status = "completed"
+        else:
+            response_status = "unreadable"
         return TeamStateResponse(
             active=active,
-            status="active" if active else "completed",
+            status=response_status,
             state=data,
             instance_id=instance.name,
         )
@@ -169,17 +215,18 @@ def _latest_team_state(workspace_dir: Path, agent_id: str) -> TeamStateResponse:
     return TeamStateResponse()
 
 
-def _instance_mtime(instance: Path) -> float:
-    """Use state-file time so team-name prefixes cannot affect recency."""
+def _instance_sort_key(instance: Path) -> tuple[int, str]:
+    """Return a deterministic, cross-platform recency key."""
     try:
         state_file = instance / "state.json"
-        return (
-            state_file.stat().st_mtime
+        timestamp = (
+            state_file.stat().st_mtime_ns
             if state_file.exists()
-            else instance.stat().st_mtime
+            else instance.stat().st_mtime_ns
         )
+        return timestamp, instance.name
     except OSError:
-        return 0.0
+        return 0, instance.name
 
 
 def build_team_router(

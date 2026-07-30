@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -31,11 +32,17 @@ from .constants import (
     POST_DISPATCH_PHASES,
     UGSCI_TEAM_MAX_DISPATCH_RETRIES,
     UGSCI_TEAM_MAX_ITERATIONS,
+    UGSCI_TEAM_MAX_MERGE_WAITS,
     UGSCI_TEAM_MAX_VERIFY_RETRIES,
 )
 from .fork_guard import forks_integrated, merge_blocked_continuation
 from .roles import FORK_MERGE_PROTOCOL
-from .state import TeamWorkflowState
+from .state import (
+    TeamStateInvalidError,
+    TeamWorkflowState,
+    WORKFLOW_COMPLETED,
+    WORKFLOW_TERMINATED,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -59,6 +66,8 @@ class _TeamState:
     max_verify_retries: int = UGSCI_TEAM_MAX_VERIFY_RETRIES
     dispatch_retries: int = 0
     max_dispatch_retries: int = UGSCI_TEAM_MAX_DISPATCH_RETRIES
+    merge_waits: int = 0
+    max_merge_waits: int = UGSCI_TEAM_MAX_MERGE_WAITS
     phase: str = PHASE_PLAN
     blocked_on_merge: bool = False
 
@@ -116,8 +125,13 @@ class UGSciTeamGate(LoopGate):
                 "team_mode": team_mode,
                 "members": members,
                 "task": task,
+                "workflow_status": "active",
+                "active": True,
+                "iteration": 0,
                 "verify_retries": 0,
                 "dispatch_retries": 0,
+                "merge_waits": 0,
+                "created_at_ns": time.time_ns(),
             },
         )
         self.activate(state)
@@ -133,6 +147,63 @@ class UGSciTeamGate(LoopGate):
             },
         )
         return loop_dir
+
+    @staticmethod
+    def _fallback_state(st: _TeamState) -> dict[str, Any]:
+        """Build a complete terminal snapshot if the state file is damaged."""
+        return {
+            "current_phase": st.phase,
+            "agent_id": st.agent_id,
+            "team_id": st.team_id,
+            "team_name": st.team_name,
+            "team_mode": st.team_mode,
+            "members": st.members,
+            "task": st.task,
+            "iteration": st.iteration,
+            "verify_retries": st.verify_retries,
+            "dispatch_retries": st.dispatch_retries,
+            "merge_waits": st.merge_waits,
+        }
+
+    async def _finish(
+        self,
+        wf: TeamWorkflowState,
+        st: _TeamState,
+        workflow_status: str,
+        reason: str,
+        result_reason: str,
+    ) -> StopHandlerResult:
+        """Persist terminal state, clean temporary files, and deactivate."""
+        await asyncio.to_thread(
+            wf.finalize,
+            workflow_status,
+            reason,
+            self._fallback_state(st),
+        )
+        await asyncio.to_thread(wf.cleanup)
+        self.deactivate()
+        return StopHandlerResult(
+            action=StopAction.TERMINATE,
+            reason=result_reason,
+        )
+
+    def terminate_current(self, reason: str) -> None:
+        """Terminate the active session while preserving a queryable snapshot."""
+        st: _TeamState | None = self._state()
+        if st is None:
+            return
+        wf = TeamWorkflowState.from_existing(
+            st.workspace_dir,
+            st.team_id,
+            st.loop_dir,
+        )
+        wf.finalize(
+            WORKFLOW_TERMINATED,
+            reason,
+            self._fallback_state(st),
+        )
+        wf.cleanup()
+        self.deactivate()
 
     async def check(  # pylint: disable=too-many-return-statements
         self,
@@ -150,7 +221,43 @@ class UGSciTeamGate(LoopGate):
             st.team_id,
             st.loop_dir,
         )
-        data = await asyncio.to_thread(wf.read_state)
+        try:
+            data = await asyncio.to_thread(wf.read_state)
+        except TeamStateInvalidError:
+            logger.error(
+                "UGSci team state is invalid; terminating workflow",
+                extra={
+                    "agent_id": st.agent_id,
+                    "team_id": st.team_id,
+                    "instance_id": st.loop_dir.name,
+                    "phase": st.phase,
+                },
+                exc_info=True,
+            )
+            return await self._finish(
+                wf,
+                st,
+                WORKFLOW_TERMINATED,
+                "state_invalid",
+                "UGSci team state is invalid",
+            )
+        if not data:
+            logger.error(
+                "UGSci team state is missing; terminating workflow",
+                extra={
+                    "agent_id": st.agent_id,
+                    "team_id": st.team_id,
+                    "instance_id": st.loop_dir.name,
+                    "phase": st.phase,
+                },
+            )
+            return await self._finish(
+                wf,
+                st,
+                WORKFLOW_TERMINATED,
+                "state_missing",
+                "UGSci team state is missing",
+            )
 
         prev_phase = st.phase
         phase = data.get("current_phase", PHASE_PLAN)
@@ -166,13 +273,36 @@ class UGSciTeamGate(LoopGate):
             if not integrated:
                 st.blocked_on_merge = True
                 st.phase = phase
+                st.merge_waits += 1
                 await asyncio.to_thread(
                     wf.update_state,
                     {
                         "merge_blocked": True,
                         "resume_phase": phase,
+                        "merge_waits": st.merge_waits,
                     },
                 )
+                if st.merge_waits > st.max_merge_waits:
+                    logger.error(
+                        "UGSci team fork merge wait limit reached",
+                        extra={
+                            "agent_id": st.agent_id,
+                            "team_id": st.team_id,
+                            "instance_id": st.loop_dir.name,
+                            "phase": phase,
+                            "merge_waits": st.merge_waits,
+                        },
+                    )
+                    return await self._finish(
+                        wf,
+                        st,
+                        WORKFLOW_TERMINATED,
+                        "merge_wait_limit",
+                        (
+                            "Fork merge wait limit "
+                            f"({st.max_merge_waits})"
+                        ),
+                    )
                 return StopHandlerResult(
                     action=StopAction.INTERRUPT_AND_CONTINUE,
                     reason="UGSci team blocked: forks not integrated",
@@ -184,6 +314,7 @@ class UGSciTeamGate(LoopGate):
                 {"merge_blocked": False},
             )
         st.blocked_on_merge = False
+        st.merge_waits = int(data.get("merge_waits", st.merge_waits))
 
         # ── Iteration limit ─────────────────────────────────────────
         st.iteration += 1
@@ -202,11 +333,12 @@ class UGSciTeamGate(LoopGate):
                     "iteration": st.iteration,
                 },
             )
-            await asyncio.to_thread(wf.cleanup)
-            self.deactivate()
-            return StopHandlerResult(
-                action=StopAction.TERMINATE,
-                reason=f"Iteration limit ({st.max_iterations})",
+            return await self._finish(
+                wf,
+                st,
+                WORKFLOW_TERMINATED,
+                "iteration_limit",
+                f"Iteration limit ({st.max_iterations})",
             )
 
         # ── Completion ──────────────────────────────────────────────
@@ -221,11 +353,12 @@ class UGSciTeamGate(LoopGate):
                     "iteration": st.iteration,
                 },
             )
-            await asyncio.to_thread(wf.cleanup)
-            self.deactivate()
-            return StopHandlerResult(
-                action=StopAction.TERMINATE,
-                reason="UGSci team workflow completed",
+            return await self._finish(
+                wf,
+                st,
+                WORKFLOW_COMPLETED,
+                "completed",
+                "UGSci team workflow completed",
             )
 
         # ── Verify retry counter ────────────────────────────────────
@@ -242,14 +375,12 @@ class UGSciTeamGate(LoopGate):
                         "verify_retries": st.verify_retries,
                     },
                 )
-                await asyncio.to_thread(wf.cleanup)
-                self.deactivate()
-                return StopHandlerResult(
-                    action=StopAction.TERMINATE,
-                    reason=(
-                        f"Verify retry limit "
-                        f"({st.max_verify_retries})"
-                    ),
+                return await self._finish(
+                    wf,
+                    st,
+                    WORKFLOW_TERMINATED,
+                    "verify_retry_limit",
+                    f"Verify retry limit ({st.max_verify_retries})",
                 )
             await asyncio.to_thread(
                 wf.update_state,
@@ -270,14 +401,12 @@ class UGSciTeamGate(LoopGate):
                         "dispatch_retries": st.dispatch_retries,
                     },
                 )
-                await asyncio.to_thread(wf.cleanup)
-                self.deactivate()
-                return StopHandlerResult(
-                    action=StopAction.TERMINATE,
-                    reason=(
-                        f"Dispatch retry limit "
-                        f"({st.max_dispatch_retries})"
-                    ),
+                return await self._finish(
+                    wf,
+                    st,
+                    WORKFLOW_TERMINATED,
+                    "dispatch_retry_limit",
+                    f"Dispatch retry limit ({st.max_dispatch_retries})",
                 )
             await asyncio.to_thread(
                 wf.update_state,

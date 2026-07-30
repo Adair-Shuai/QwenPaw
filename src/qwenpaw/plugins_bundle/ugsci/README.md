@@ -104,7 +104,7 @@ CMG Builder · CMG IMEX · CMG GEM · CMG STARS · Eclipse · Intersect · Petre
 ugsci/
 ├── plugin.json              # 插件清单（元数据、入口、版本）
 ├── plugin.py                # 后端入口（技能池同步 + HTTP 路由注册）
-├── software_detector.py     # 本地油气软件检测引擎
+├── engine/                  # 仿真引擎检测、配置与运行工具
 ├── README.md                # 本文件
 ├── skills/                  # 内置技能目录（每个子目录含 SKILL.md）
 │   ├── oil-gas-foundation/
@@ -112,7 +112,8 @@ ugsci/
 │   ├── matplotlib/
 │   └── ...
 ├── ui/                      # 前端源码
-│   ├── src/index.ts         # 前端入口（6800+ 行，含全部页面与组件）
+│   ├── src/index.ts         # 前端入口
+│   ├── src/team/            # 专家团状态、类型与 API 客户端
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── dist/index.js        # 构建产物（ES module）

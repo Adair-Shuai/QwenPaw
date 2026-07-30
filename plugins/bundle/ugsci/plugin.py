@@ -469,25 +469,16 @@ def _get_or_fetch_avatar_png(seed: str) -> Path:
 
 # ── Avatar cache pre-warming ────────────────────────────────────────────────
 
-# Preset expert team member names (must match the frontend EXPERT_TEAMS array).
-# These are the fixed names that appear in every fresh installation, so we
-# can safely pre-fetch their avatars at startup.
-_PRESET_EXPERT_NAMES: list[str] = [
-    "测井分析师",
-    "地球物理专家",
-    "油藏工程师",
-    "钻井工程师",
-    "采油工程师",
-    "PVT 分析师",
-]
+def _preset_avatar_data() -> tuple[set[str], list[list[str]]]:
+    """Derive avatar warm-up inputs from the canonical team presets."""
+    from .team.presets import PRESET_UGSCI_TEAMS
 
-# Preset team compositions (must match the frontend EXPERT_TEAMS members).
-_PRESET_TEAMS: list[list[str]] = [
-    ["测井分析师", "地球物理专家", "油藏工程师"],
-    ["钻井工程师", "地球物理专家", "采油工程师"],
-    ["油藏工程师", "钻井工程师", "采油工程师"],
-    ["PVT 分析师", "地球物理专家", "油藏工程师"],
-]
+    teams = [
+        [str(member["name"]) for member in team["members"]]
+        for team in PRESET_UGSCI_TEAMS
+    ]
+    names = {name for members in teams for name in members}
+    return names, teams
 
 
 def _collect_agent_names() -> list[str]:
@@ -525,7 +516,7 @@ def _prewarm_avatar_cache() -> None:
     """
     try:
         # Collect all unique names that need avatars
-        all_names: set[str] = set(_PRESET_EXPERT_NAMES)
+        all_names, preset_teams = _preset_avatar_data()
 
         # Add dynamically configured agent names
         agent_names = _collect_agent_names()
@@ -548,7 +539,7 @@ def _prewarm_avatar_cache() -> None:
 
         # Pre-compose team avatars
         team_count = 0
-        for team_members in _PRESET_TEAMS:
+        for team_members in preset_teams:
             try:
                 team_hash = hashlib.md5(
                     ",".join(team_members).encode("utf-8"),

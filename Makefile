@@ -50,9 +50,9 @@ quick:
 
 # UGSci canonical source and focused regression checks
 ugsci-check:
+	cd plugins/bundle/ugsci/ui && npm run typecheck && npm run build
 	$(PYTHON) scripts/sync_ugsci_bundle.py --check
 	$(PYTEST) tests/unit/plugins/ugsci/ -q --tb=short
-	cd plugins/bundle/ugsci/ui && npm run build
 
 ugsci-sync:
 	$(PYTHON) scripts/sync_ugsci_bundle.py --sync
