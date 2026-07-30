@@ -877,8 +877,13 @@ class UGSciPlugin:
                 callback=self._on_startup_sync_skills,
                 priority=80,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[%s] Startup skill sync hook unavailable: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
 
         # Register cleanup on uninstall
         try:
@@ -886,8 +891,13 @@ class UGSciPlugin:
                 hook_name="ugsci_remove_pool_skills",
                 callback=self._on_uninstall_remove_skills,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[%s] Uninstall hook unavailable: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
 
         # Register startup hook for any future backend-side initialization
         try:
@@ -896,8 +906,50 @@ class UGSciPlugin:
                 callback=self._on_startup,
                 priority=50,
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug(
+                "[%s] Startup initialization hook unavailable: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+        # ── Register UGSci Team workflow mode (OMP-backed) ───────────
+        # Registers the /ugsci-team slash command and the 5-phase
+        # state machine (plan → dispatch → verify → synthesize → completed).
+        try:
+            from .team.mode import UGSciTeamMode
+
+            api.register_mode(UGSciTeamMode)
+            logger.info(
+                "[%s] UGSci Team mode registered (/ugsci-team)",
+                PLUGIN_ID,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register UGSci Team mode: %s",
+                PLUGIN_ID, exc,
+                exc_info=True,
+            )
+
+        # Register HTTP routes for team workflow state queries
+        try:
+            from .team.api import build_team_router
+
+            api.register_http_router(
+                build_team_router(),
+                prefix="/ugsci/team",
+                tags=["ugsci-team"],
+            )
+            logger.info(
+                "[%s] HTTP router registered at /api/ugsci/team",
+                PLUGIN_ID,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register team workflow HTTP router: %s",
+                PLUGIN_ID, exc,
+            )
 
         # Initialize default computation engines
         try:

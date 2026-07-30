@@ -2,7 +2,7 @@
 
 .PHONY: test test-unit test-contract test-integration test-channel test-channel-contract coverage-full clean \
         setup-dev hooks-install hooks-uninstall precommit lint format typecheck \
-        ci-local act-list act-run act-precommit act-tests
+        ugsci-check ugsci-sync ci-local act-list act-run act-precommit act-tests
 
 # Python path — prefer the project venv if it exists
 VENV      := .venv
@@ -47,6 +47,15 @@ clean:
 # Quick check (fast feedback)
 quick:
 	$(PYTEST) tests/unit/ -x -q --tb=line
+
+# UGSci canonical source and focused regression checks
+ugsci-check:
+	$(PYTHON) scripts/sync_ugsci_bundle.py --check
+	$(PYTEST) tests/unit/plugins/ugsci/ -q --tb=short
+	cd plugins/bundle/ugsci/ui && npm run build
+
+ugsci-sync:
+	$(PYTHON) scripts/sync_ugsci_bundle.py --sync
 
 # Channel-specific tests
 test-channel:

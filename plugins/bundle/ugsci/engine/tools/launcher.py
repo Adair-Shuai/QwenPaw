@@ -123,14 +123,7 @@ async def launch_simulation(
         )
 
     # ── Resolve executable from engine registry ──────────────────────
-    get_engine = None
-    try:
-        from .. import get_engine
-    except Exception:
-        try:
-            from ...engine_manager import get_engine
-        except Exception:
-            pass
+    from .. import get_engine
 
     # Map simulator name to engine ID
     engine_id_map = {

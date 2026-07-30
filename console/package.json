@@ -7,6 +7,7 @@
     "predev": "python ../scripts/dev_ensure_plugin_uis.py",
     "dev": "vite --host",
     "build": "tsc -b && vite build",
+    "build:budget": "npm run build:prod && node ../scripts/check_console_bundle_budget.mjs",
     "build:prod": "tsc -b && vite build --mode production",
     "build:tauri-bootstrap": "npm run build:prod && tsc -b && vite build --mode tauri --config src-tauri/vite.bootstrap.config.ts && node ../scripts/pack-tauri/finalize_tauri_bootstrap.mjs",
     "build:test": "tsc -b && vite build --mode test",
@@ -90,5 +91,5 @@
     "vite": "^6.3.5",
     "vitest": "^4.1.4"
   },
-  "repository": "https://github.com/agentscope-ai/agentscope-runtime.git"
+  "repository": "https://github.com/agentscope-ai/QwenPaw.git"
 }

@@ -55,7 +55,13 @@ if (typeof window !== "undefined") {
 
   console.error = function (...args: unknown[]) {
     const msg = args[0]?.toString() || "";
-    if (msg.includes(":first-child") || msg.includes("pseudo class")) {
+    if (
+      msg.includes(":first-child") ||
+      msg.includes("pseudo class") ||
+      // React forwardRef warning from @agentscope-ai/design SparkAnchor
+      // (the library's forwardRef render function omits the ref parameter).
+      msg.includes("forwardRef render functions accept exactly two parameters")
+    ) {
       return;
     }
     originalError.apply(console, args as []);
@@ -67,7 +73,13 @@ if (typeof window !== "undefined") {
       msg.includes(":first-child") ||
       msg.includes("pseudo class") ||
       msg.includes("potentially unsafe") ||
-      msg.includes("Message not found for content")
+      msg.includes("Message not found for content") ||
+      // antd v5 Tooltip/Popover deprecation warning from
+      // @agentscope-ai/design SparkTooltip and @agentscope-ai/chat
+      // UserMessageAnchors (both pass overlayClassName to antd Tooltip).
+      msg.includes("overlayClassName") ||
+      msg.includes("overlayStyle") ||
+      msg.includes("overlayInnerStyle")
     ) {
       return;
     }

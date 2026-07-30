@@ -1,12 +1,12 @@
 {
   "id": "ugsci",
   "name": "UGSci",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "general",
-  "description": "UGSci —— 面向石油领域的 QwenPaw 增强插件。将 Agent 转化为领域专家，以能力、技能、专家三大模块重新组织界面，降低使用门槛。专家展示层数据与 Agent 真实数据挂钩，实时显示 Agent 的技能、MCP 和功能简介。",
+  "description": "UGSci —— 面向石油领域的 QwenPaw 增强插件。以 OMP 工作流为底座重构专家团：5 阶段状态机（规划→分派→验证→综合→完成）、角色工具隔离、fork 并行执行、结构化交接、自动重试。将 Agent 转化为领域专家，以能力、技能、专家三大模块重新组织界面。",
   "description_i18n": {
-    "zh-CN": "UGSci —— 面向石油领域的 QwenPaw 增强插件。将 Agent 转化为领域专家，以能力、技能、专家三大模块重新组织界面，降低使用门槛。专家展示层数据与 Agent 真实数据挂钩，实时显示 Agent 的技能、MCP 和功能简介。",
-    "en-US": "UGSci — Petroleum-domain enhancement plugin for QwenPaw. Transforms Agents into domain experts with a three-module UI: Capabilities, Skills, and Experts. Expert display data is linked to real Agent data, showing skills, MCP, and descriptions in real time."
+    "zh-CN": "UGSci —— 面向石油领域的 QwenPaw 增强插件。以 OMP 工作流为底座重构专家团：5 阶段状态机（规划→分派→验证→综合→完成）、角色工具隔离、fork 并行执行、结构化交接、自动重试。将 Agent 转化为领域专家，以能力、技能、专家三大模块重新组织界面。",
+    "en-US": "UGSci — Petroleum-domain enhancement plugin for QwenPaw. Expert teams rebuilt on OMP workflow infrastructure: 5-phase state machine (plan→dispatch→verify→synthesize→completed), role-based tool isolation, fork parallel execution, structured handoffs, automatic retry."
   },
   "author": "UGSci Team",
   "entry": {
@@ -29,6 +29,7 @@
       "agent-data-linkage",
       "expert-team-builder",
       "multi-agent-orchestration",
+      "omp-team-workflow",
       "marketplace",
       "simulation-control"
     ]

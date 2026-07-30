@@ -1,4 +1,14 @@
 repos:
+  - repo: local
+    hooks:
+      - id: ugsci-python-syntax
+        name: UGSci hand-written Python syntax
+        entry: python -m py_compile
+        language: python
+        types: [python]
+        files: ^plugins/bundle/ugsci/(plugin\.py|engine/.*\.py|team/.*\.py)$
+        exclude: (^|/)(__pycache__|node_modules|skills|ui/dist|static)(/|$)
+
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.3.0
     hooks:
@@ -136,4 +146,3 @@ repos:
         additional_dependencies: [ 'prettier@3.0.0' ]
         files: \.(tsx?)$
         exclude: '(?x)(^web/|^console/|/dist/|.*/skills/.*|^scripts/pack/|^plugins/|^src/qwenpaw/plugins_bundle/)'
-

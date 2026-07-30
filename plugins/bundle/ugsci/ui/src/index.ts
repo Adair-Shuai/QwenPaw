@@ -11,6 +11,8 @@
  * Uses window.QwenPaw plugin API for route + menu registration.
  */
 
+import { TeamWorkflowCard } from "./team/workflow";
+
 // ─── Types (mirrors console/src/api/types/) ──────────────────────────────────
 
 interface AgentSummary {
@@ -2252,13 +2254,14 @@ function ExpertTeamCard({
   };
   const modeInfo = modeLabels[team.mode] || modeLabels.coordinator;
 
-  // Check which members exist in the agent list
+  // In OMP architecture, team members are spawned via spawn_subagent
+  // with role prompts — they don't need to exist as pre-created agents.
+  // We still check for informational purposes, but don't block.
   const memberStatus = team.members.map((m) => {
     const agentId = findAgentIdByName(agents, m.name);
     return { ...m, found: !!agentId, agentId };
   });
   const foundCount = memberStatus.filter((m) => m.found).length;
-  const allFound = foundCount === team.members.length;
 
   // Determine coordinator agent
   const coordinatorName = team.coordinatorName || team.members[0]?.name;
@@ -2317,16 +2320,28 @@ function ExpertTeamCard({
           ),
           React.createElement(
             Tag,
-            { style: { fontSize: 10 } },
-            `${foundCount}/${team.members.length}`,
+            { color: "green", style: { fontSize: 10 } },
+            `${team.members.length} 位专家`,
           ),
-          !allFound
+          foundCount < team.members.length
             ? React.createElement(
-                Tag,
-                { color: "orange", style: { fontSize: 10 } },
-                "缺少成员",
+                Tooltip,
+                {
+                  title:
+                    "OMP 架构下，未创建的专家将通过 spawn_subagent 自动派发，\n" +
+                    "控制器会根据角色 prompt 创建子 agent 执行任务。",
+                },
+                React.createElement(
+                  Tag,
+                  { color: "blue", style: { fontSize: 10 } },
+                  "OMP 自动派发",
+                ),
               )
-            : null,
+            : React.createElement(
+                Tag,
+                { color: "green", style: { fontSize: 10 } },
+                "全部就绪",
+              ),
         ),
       ),
       // Edit/delete for custom teams
@@ -2409,8 +2424,8 @@ function ExpertTeamCard({
                 gap: 4,
                 padding: "2px 8px",
                 borderRadius: 12,
-                background: m.found ? "#f0f5ff" : "#fff2f0",
-                border: `1px solid ${m.found ? "#d6e4ff" : "#ffccc7"}`,
+background: m.found ? "#f0f5ff" : "#f0f0ff",
+border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
                 fontSize: 11,
               },
             },
@@ -2418,7 +2433,7 @@ function ExpertTeamCard({
             React.createElement(
               Text,
               {
-                style: { fontSize: 11, color: m.found ? "#1f4e8c" : "#cf1322" },
+                style: { fontSize: 11, color: m.found ? "#1f4e8c" : "#531dab" },
               },
               m.name,
             ),
@@ -2496,21 +2511,22 @@ function ExpertTeamSection({
 }) {
   const React = getHost().React;
   const { useMemo, useState, useCallback, useEffect } = React;
-  const {
-    Row,
-    Col,
-    Input,
-    Empty,
-    Typography,
-    Tag,
-    Button,
-    Divider,
-    message: antdMsg,
-    Popconfirm,
-  } = getHost().antd;
-  const { SearchOutlined, TeamOutlined, PlusOutlined, RocketOutlined } =
-    getHost().antdIcons || {};
-  const { Text } = Typography;
+const {
+Row,
+Col,
+Input,
+Empty,
+Typography,
+Tag,
+Button,
+Divider,
+Tabs,
+message: antdMsg,
+Popconfirm,
+} = getHost().antd;
+const { SearchOutlined, TeamOutlined, PlusOutlined, RocketOutlined } =
+getHost().antdIcons || {};
+const { Text } = Typography;
 
   const [searchText, setSearchText] = useState("");
   const [customTeams, setCustomTeams] = useState<ExpertTeam[]>([]);
@@ -2570,6 +2586,8 @@ function ExpertTeamSection({
   return React.createElement(
     "div",
     null,
+    // Workflow status card (OMP-backed)
+    React.createElement(TeamWorkflowCard),
     // Info banner
     React.createElement(
       "div",
@@ -2588,7 +2606,7 @@ function ExpertTeamSection({
       React.createElement(
         Text,
         { style: { fontSize: 13, color: "#389e0d" } },
-        "多智能体协同 — 选择预设团队或创建自定义团队，支持流水线、圆桌讨论、协调者三种编排模式。",
+        "OMP 驱动的专家团工作流 — 5 阶段状态机（规划→分派→验证→综合→完成），支持结构化交接、角色工具隔离、fork 并行执行和自动重试。",
       ),
       React.createElement(
         Button,
@@ -2611,99 +2629,74 @@ function ExpertTeamSection({
       allowClear: true,
       style: { marginBottom: 16, maxWidth: 400 },
     }),
-    // Custom teams section
-    customFiltered.length > 0
-      ? React.createElement(
-          "div",
-          { style: { marginBottom: 20 } },
-          React.createElement(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 10,
-              },
-            },
-            React.createElement("span", { style: { fontSize: 16 } }),
-            React.createElement(
-              Text,
-              { strong: true, style: { fontSize: 14 } },
-              `自定义团队 (${customFiltered.length})`,
+    // Tabs: preset teams vs custom teams
+    React.createElement(
+      Tabs,
+      {
+        defaultActiveKey: "preset",
+        items: [
+          {
+            key: "preset",
+            label: `预设团队${presetFiltered.length ? ` (${presetFiltered.length})` : ""}`,
+            children: React.createElement(
+              "div",
+              null,
+              presetFiltered.length > 0
+                ? React.createElement(
+                    Row,
+                    { gutter: [12, 12] },
+                    ...presetFiltered.map((team) =>
+                      React.createElement(
+                        Col,
+                        { key: team.id, xs: 24, sm: 12, md: 8 },
+                        React.createElement(ExpertTeamCard, {
+                          team,
+                          agents,
+                          onLaunch,
+                        }),
+                      ),
+                    ),
+                  )
+                : React.createElement(Empty, {
+                    description: "未找到匹配的预设团队",
+                    image: Empty.PRESENTED_IMAGE_SIMPLE,
+                  }),
             ),
-          ),
-          React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...customFiltered.map((team) =>
-              React.createElement(
-                Col,
-                { key: team.id, xs: 24, sm: 12, md: 8 },
-                React.createElement(ExpertTeamCard, {
-                  team,
-                  agents,
-                  onLaunch,
-                  onEdit: handleEditTeam,
-                  onDelete: handleDeleteTeam,
-                }),
-              ),
+          },
+          {
+            key: "custom",
+            label: `自定义团队${customFiltered.length ? ` (${customFiltered.length})` : ""}`,
+            children: React.createElement(
+              "div",
+              null,
+              customFiltered.length > 0
+                ? React.createElement(
+                    Row,
+                    { gutter: [12, 12] },
+                    ...customFiltered.map((team) =>
+                      React.createElement(
+                        Col,
+                        { key: team.id, xs: 24, sm: 12, md: 8 },
+                        React.createElement(ExpertTeamCard, {
+                          team,
+                          agents,
+                          onLaunch,
+                          onEdit: handleEditTeam,
+                          onDelete: handleDeleteTeam,
+                        }),
+                      ),
+                    ),
+                  )
+                : React.createElement(Empty, {
+                    description:
+                      "暂无自定义团队，点击「创建专家团」自定义",
+                    image: Empty.PRESENTED_IMAGE_SIMPLE,
+                  }),
             ),
-          ),
-          React.createElement(Divider, { style: { margin: "16px 0" } }),
-        )
-      : null,
-    // Preset teams section
-    presetFiltered.length > 0
-      ? React.createElement(
-          "div",
-          null,
-          React.createElement(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 10,
-              },
-            },
-            React.createElement("span", { style: { fontSize: 16 } }),
-            React.createElement(
-              Text,
-              { strong: true, style: { fontSize: 14 } },
-              `预设团队 (${presetFiltered.length})`,
-            ),
-            React.createElement(
-              Text,
-              { type: "secondary", style: { fontSize: 12 } },
-              "· 行业典型工作流模板",
-            ),
-          ),
-          React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...presetFiltered.map((team) =>
-              React.createElement(
-                Col,
-                { key: team.id, xs: 24, sm: 12, md: 8 },
-                React.createElement(ExpertTeamCard, {
-                  team,
-                  agents,
-                  onLaunch,
-                }),
-              ),
-            ),
-          ),
-        )
-      : null,
-    // Empty state
-    filteredTeams.length === 0
-      ? React.createElement(Empty, {
-          description: "未找到匹配的专家团队，点击「创建专家团」自定义",
-          image: Empty.PRESENTED_IMAGE_SIMPLE,
-        })
-      : null,
+          },
+        ],
+      },
+    ),
     // Team Builder Modal
     React.createElement(TeamBuilderModal, {
       open: builderOpen,
@@ -6841,17 +6834,32 @@ function ExpertCenterPage() {
 
   const handleLaunchTeam = useCallback(
     async (team: ExpertTeam) => {
-      // Find coordinator agent
+      // In OMP architecture, any agent can be the workflow controller.
+      // Try to find the preferred coordinator by name first, but
+      // fall back to the first available agent if not found.
       const coordinatorName = team.coordinatorName || team.members[0]?.name;
-      if (!coordinatorName) {
-        antdMsg.error("无法确定协调者专家");
-        return;
+      let coordinatorId: string | null = null;
+
+      if (coordinatorName) {
+        coordinatorId = findAgentIdByName(rawAgents, coordinatorName);
       }
-      const coordinatorId = findAgentIdByName(rawAgents, coordinatorName);
+
       if (!coordinatorId) {
-        antdMsg.error(`未找到协调者专家「${coordinatorName}」，请先创建该专家`);
-        return;
+        // Coordinator not found — use first available agent as controller
+        const firstAgent = rawAgents[0];
+        if (firstAgent) {
+          coordinatorId = firstAgent.id;
+          antdMsg.warning(
+            `未找到专家「${coordinatorName || "协调者"}」，` +
+            `将使用「${firstAgent.name}」作为工作流控制器。` +
+            `控制器将通过 spawn_subagent 分派子任务。`,
+          );
+        } else {
+          antdMsg.error("没有可用的 Agent 作为工作流控制器");
+          return;
+        }
       }
+
       // Check if task template has placeholders
       const hasPlaceholders = /\{.+?\}/.test(team.taskTemplate);
       if (hasPlaceholders) {
@@ -6870,23 +6878,25 @@ function ExpertCenterPage() {
     async (team: ExpertTeam, coordinatorId: string, taskText: string) => {
       setTeamLaunching(true);
       try {
-        const fullMessage = buildTeamMessage(team);
-        // Replace template placeholders with user input if provided
-        const finalMessage = taskText
-          ? fullMessage.replace(team.taskTemplate, taskText)
-          : fullMessage;
+        // Build the task text (either user-filled or template)
+        const task = taskText || team.taskTemplate;
 
-        // Set coordinator as selected agent
+        // Construct the /ugsci-team slash command
+        // Format: /ugsci-team <mode> <team_name> <task...>
+        const command = `/ugsci-team ${team.mode} ${team.name} ${task}`;
+
+        // Set coordinator as selected agent (becomes the workflow controller)
         const host = getHost();
         if (host.setSelectedAgent) {
           host.setSelectedAgent(coordinatorId);
         }
 
-        // Send the message via console chat API
-        await sendTeamMessage(coordinatorId, finalMessage);
+        // Send the slash command via console chat API
+        // The mode handler will activate the gate and rewrite the message
+        await sendTeamMessage(coordinatorId, command);
 
         antdMsg.success(
-          `团队任务已发起，协调者：${team.coordinatorName || team.members[0]?.name}`,
+          `OMP 工作流已启动：${team.name}（${team.mode}模式）`,
         );
         setTeamLaunchModal(null);
 
@@ -10823,6 +10833,19 @@ function ossProxyUrl(ossPath: string): string {
   return apiUrl(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}`);
 }
 
+/**
+ * Fetch JSON from the official OSS bucket through QwenPaw's backend proxy.
+ * Skills, MCP, and Expert templates all use this CORS-safe data path.
+ */
+async function fetchOssJson(ossPath: string): Promise<any> {
+  const cleanPath = ossPath.replace(/^\/+/, "");
+  const resp = await fetch(ossProxyUrl(cleanPath));
+  if (!resp.ok) {
+    throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
+  }
+  return await resp.json();
+}
+
 // ─── MCP / Expert Source: types & helpers ─────────────────────────────────────
 
 /** Dynamic category extracted from OSS manifests. */
@@ -11079,29 +11102,12 @@ function loadGithubSources(): GitHubSkillSource[] {
   try {
     const raw = localStorage.getItem(UGSCI_GITHUB_SOURCES_KEY);
     if (!raw) {
-      // Seed with default sources: OSS + GitHub
+      // Official OSS is permanent and loaded outside localStorage, just like
+      // MCP and Experts. Only configurable sources are stored here.
       const seed: GitHubSkillSource[] = [];
-      // Default OSS source
-      const ossParsed = _parseOSSSkillSourceUrl(DEFAULT_OSS_SOURCE_URL);
-      if (ossParsed) {
-        seed.push({
-          id: _githubSourceId(
-            ossParsed.endpoint,
-            "",
-            ossParsed.prefix,
-            "oss",
-          ),
-          url: DEFAULT_OSS_SOURCE_URL,
-          label: ossParsed.label,
-          owner: ossParsed.endpoint,
-          repo: "",
-          ref: "",
-          skillsPath: ossParsed.prefix,
-          enabled: true,
-          platform: "oss",
-        });
-      }
-      // Default GitHub source
+      // GitHub remains optional because official OSS mirrors these skills.
+      // Users can manually enable it from the Source Config modal if
+      // they need direct GitHub access.
       const parsed = _parseGitHubSkillSourceUrl(DEFAULT_GITHUB_SOURCE_URL);
       if (parsed) {
         seed.push({
@@ -11117,7 +11123,7 @@ function loadGithubSources(): GitHubSkillSource[] {
           repo: parsed.repo,
           ref: parsed.ref,
           skillsPath: parsed.skillsPath,
-          enabled: true,
+          enabled: false,
           platform: parsed.platform,
         });
       }
@@ -11126,11 +11132,12 @@ function loadGithubSources(): GitHubSkillSource[] {
     }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
+    const migrated = parsed.filter(
       (s: any) =>
         s &&
         typeof s.id === "string" &&
-        (typeof s.owner === "string" || s.platform === "oss"),
+        (typeof s.owner === "string" || s.platform === "oss") &&
+        !(s.platform === "oss" && s.url === DEFAULT_OSS_SOURCE_URL),
     ).map((s: any) => ({
       ...s,
       platform: s.platform || "github",
@@ -11139,6 +11146,13 @@ function loadGithubSources(): GitHubSkillSource[] {
       ref: s.ref || "",
       skillsPath: s.skillsPath || "",
     }));
+    if (migrated.length !== parsed.length) {
+      localStorage.setItem(
+        UGSCI_GITHUB_SOURCES_KEY,
+        JSON.stringify(migrated),
+      );
+    }
+    return migrated;
   } catch {
     return [];
   }
@@ -11277,7 +11291,7 @@ async function fetchGitHubSourceSkills(
 
 async function fetchOSSSourceSkills(
   source: GitHubSkillSource,
-): Promise<GitHubSkill[]> {
+): Promise<{ skills: GitHubSkill[]; categories: DynamicCategory[] }> {
   const ossParsed = _parseOSSSkillSourceUrl(source.url);
   if (!ossParsed) {
     throw new Error(`Invalid OSS URL: ${source.url}`);
@@ -11294,6 +11308,24 @@ async function fetchOSSSourceSkills(
     );
   }
   const manifest = await manifestResp.json();
+
+  // Extract tag_groups from manifest (same pattern as MCP/Agents manifests).
+  // When tag_groups is present, categories are derived from it; otherwise
+  // we fall back to extracting unique tag values from individual skills.
+  const manifestCategories: DynamicCategory[] = [];
+  const tagGroups: Record<string, string[]> = {};
+  if (manifest && manifest.tag_groups && typeof manifest.tag_groups === "object") {
+    for (const [groupKey, tags] of Object.entries(manifest.tag_groups)) {
+      if (Array.isArray(tags)) {
+        tagGroups[groupKey] = tags as string[];
+        manifestCategories.push({
+          id: groupKey,
+          label: _tagGroupLabel(groupKey),
+          tags: tags as string[],
+        });
+      }
+    }
+  }
 
   const skills: GitHubSkill[] = [];
 
@@ -11356,7 +11388,7 @@ isOfficial: true,
     );
   }
 
-  return skills;
+  return { skills, categories: manifestCategories };
 }
 
 /** Fetch MCP servers from the UGSci official OSS manifest. */
@@ -11364,12 +11396,7 @@ async function fetchOSSMcpManifest(): Promise<{
   servers: OssMcpServer[];
   categories: DynamicCategory[];
 }> {
-  const manifestUrl = ossProxyUrl("mcp/manifest.json");
-  const resp = await fetch(manifestUrl);
-  if (!resp.ok) {
-    throw new Error(`无法获取 MCP 列表: ${resp.status}`);
-  }
-  const manifest = await resp.json();
+  const manifest = await fetchOssJson("mcp/manifest.json");
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
@@ -11415,17 +11442,91 @@ async function fetchOSSMcpManifest(): Promise<{
   return { servers, categories };
 }
 
+/**
+ * Fetch the official skill registry independently of browser source settings.
+ * This mirrors the permanent official-source behavior of MCP and Experts.
+ */
+async function fetchOSSSkillsManifest(): Promise<{
+  skills: GitHubSkill[];
+  categories: DynamicCategory[];
+}> {
+  const manifest = await fetchOssJson("skills/manifest.json");
+  const skills: GitHubSkill[] = [];
+  const tags = new Set<string>();
+
+  function processItems(items: any[], parentCollection?: string): void {
+    for (const item of items) {
+      if (item?.type === "collection" && Array.isArray(item.children)) {
+        processItems(item.children, item.name || parentCollection);
+        continue;
+      }
+
+      const skillPath = String(item?.path || item?.name || "").trim();
+      if (!skillPath) continue;
+      const encodedPath = skillPath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/");
+      const skillUrl = `${UGSCI_OSS_BASE}/skills/${encodedPath}`;
+      const tag =
+        typeof item.tag === "string" && item.tag.trim()
+          ? item.tag.trim()
+          : undefined;
+      if (tag) tags.add(tag);
+
+      let version: string | null = null;
+      if (typeof item.metadata === "string") {
+        const match = item.metadata.match(/version:\s*"?([\d.]+)"?/);
+        if (match) version = match[1];
+      }
+
+      skills.push({
+        sourceId: "oss:ugsci-official",
+        sourceLabel: "UGSci",
+        sourcePath: parentCollection
+          ? `UGSci/${parentCollection}`
+          : "UGSci",
+        name: item.name || skillPath.split("/").pop() || skillPath,
+        description: item.description || "",
+        source_url: skillUrl,
+        html_url: skillUrl,
+        version,
+        author: null,
+        tag,
+        isOfficial: true,
+      });
+    }
+  }
+
+  if (Array.isArray(manifest)) {
+    processItems(
+      manifest.map((item: any) =>
+        typeof item === "string" ? { name: item, path: item } : item,
+      ),
+    );
+  } else if (manifest && Array.isArray(manifest.skills)) {
+    processItems(manifest.skills);
+  }
+
+  if (skills.length === 0) {
+    throw new Error("OSS 技能清单中没有可用技能");
+  }
+
+  return {
+    skills,
+    categories: Array.from(tags).map((tag) => ({
+      id: tag,
+      label: tag,
+    })),
+  };
+}
+
 /** Fetch agents from the UGSci official OSS manifest. */
 async function fetchOSSAgentsManifest(): Promise<{
   agents: OssAgent[];
   categories: DynamicCategory[];
 }> {
-  const manifestUrl = ossProxyUrl("agents/manifest.json");
-  const resp = await fetch(manifestUrl);
-  if (!resp.ok) {
-    throw new Error(`无法获取 Agent 列表: ${resp.status}`);
-  }
-  const manifest = await resp.json();
+  const manifest = await fetchOssJson("agents/manifest.json");
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
@@ -11481,19 +11582,22 @@ function _extractSkillCategories(skills: GitHubSkill[]): DynamicCategory[] {
 
 async function fetchAllGitHubSkills(
   sources: GitHubSkillSource[],
-): Promise<{ skills: GitHubSkill[]; errors: { label: string; message: string }[] }> {
+): Promise<{ skills: GitHubSkill[]; errors: { label: string; message: string }[]; categories: DynamicCategory[] }> {
   const enabled = sources.filter((s) => s.enabled);
   const results = await Promise.all(
     enabled.map(async (s) => {
       try {
-        const skills =
-          s.platform === "oss"
-            ? await fetchOSSSourceSkills(s)
-            : await fetchGitHubSourceSkills(s);
-        return { skills, error: null as string | null, label: s.label };
+        if (s.platform === "oss") {
+          const { skills, categories } = await fetchOSSSourceSkills(s);
+          return { skills, categories, error: null as string | null, label: s.label };
+        } else {
+          const skills = await fetchGitHubSourceSkills(s);
+          return { skills, categories: [] as DynamicCategory[], error: null as string | null, label: s.label };
+        }
       } catch (e: any) {
         return {
           skills: [] as GitHubSkill[],
+          categories: [] as DynamicCategory[],
           error: e.message || String(e),
           label: s.label,
         };
@@ -11501,12 +11605,14 @@ async function fetchAllGitHubSkills(
     }),
   );
   const allSkills: GitHubSkill[] = [];
+  const allCategories: DynamicCategory[] = [];
   const errors: { label: string; message: string }[] = [];
   for (const r of results) {
     allSkills.push(...r.skills);
+    allCategories.push(...r.categories);
     if (r.error) errors.push({ label: r.label, message: r.error });
   }
-  return { skills: allSkills, errors };
+  return { skills: allSkills, errors, categories: allCategories };
 }
 
 // ─── Source Config Modal: manage GitHub skill sources ─────────────────────────
@@ -12354,6 +12460,7 @@ function MarketplacePage() {
     Badge,
     Progress,
     Modal,
+    Alert,
   } = getHost().antd;
   const {
     ReloadOutlined,
@@ -12406,6 +12513,10 @@ function MarketplacePage() {
   // GitHub skill sources state
   const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
   const [githubSkills, setGithubSkills] = useState<GitHubSkill[]>([]);
+  // Official OSS skills bypass localStorage so older saved source settings
+  // cannot accidentally hide the canonical registry.
+  const [ossSkills, setOssSkills] = useState<GitHubSkill[]>([]);
+  const [ossSkillsError, setOssSkillsError] = useState("");
   const [githubLoading, setGithubLoading] = useState(false);
   const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
 
@@ -12430,8 +12541,8 @@ function MarketplacePage() {
   const [expertSelectedCategory, setExpertSelectedCategory] = useState("");
   const [ossAgentCreating, setOssAgentCreating] = useState(false);
 
-  // ── Dynamic skill categories (from OSS manifest tags) ──
-  // (Categories are computed dynamically via unifiedCategories useMemo)
+  // ── Dynamic skill categories (from OSS manifest tag_groups) ──
+  const [ossSkillCategories, setOssSkillCategories] = useState<DynamicCategory[]>([]);
 
   const searchTimerRef = useRef<any>(null);
 
@@ -12464,8 +12575,9 @@ function MarketplacePage() {
     }
     setGithubLoading(true);
     try {
-      const { skills, errors } = await fetchAllGitHubSkills(srcs);
+      const { skills, errors, categories } = await fetchAllGitHubSkills(srcs);
       setGithubSkills(skills);
+      setOssSkillCategories(categories);
       // Extract dynamic categories from OSS skills that have tags
       // (Categories computed dynamically via unifiedCategories)
       if (errors.length > 0) {
@@ -12484,13 +12596,15 @@ function MarketplacePage() {
     }
   }, []);
 
-  // Load OSS MCP and Agents manifests on mount (parallel)
+  // Load all official OSS markets on mount (parallel).
   const loadOssMarketData = useCallback(async () => {
     setOssMcpLoading(true);
     setOssAgentLoading(true);
-    const [mcpResult, agentsResult] = await Promise.allSettled([
+    setGithubLoading(true);
+    const [mcpResult, agentsResult, skillsResult] = await Promise.allSettled([
       fetchOSSMcpManifest(),
       fetchOSSAgentsManifest(),
+      fetchOSSSkillsManifest(),
     ]);
     // Process MCP result
     if (mcpResult.status === "fulfilled") {
@@ -12512,6 +12626,18 @@ function MarketplacePage() {
       setOssAgentCategories([]);
     }
     setOssAgentLoading(false);
+    // Process Skills result
+    if (skillsResult.status === "fulfilled") {
+      setOssSkills(skillsResult.value.skills);
+      setOssSkillsError("");
+    } else {
+      const errorMessage =
+        skillsResult.reason?.message || String(skillsResult.reason);
+      console.warn(`[ugsci] Skills manifest error: ${errorMessage}`);
+      setOssSkills([]);
+      setOssSkillsError(errorMessage);
+    }
+    setGithubLoading(false);
   }, []);
 
   useEffect(() => {
@@ -12638,34 +12764,71 @@ function MarketplacePage() {
     }
   };
 
-  // Unified dynamic categories: OSS skill tags + imported custom source labels
+  // Merge the permanent OSS registry with configurable sources. Deduplication
+  // also handles legacy localStorage entries that still point at official OSS.
+  const allSkills = useMemo(() => {
+    const merged: GitHubSkill[] = [];
+    const seen = new Set<string>();
+    for (const skill of [...ossSkills, ...githubSkills]) {
+      const key = skill.source_url || `${skill.sourceLabel}:${skill.name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      merged.push(skill);
+    }
+    return merged;
+  }, [ossSkills, githubSkills]);
+
+  // Unified dynamic categories: prefer manifest tag_groups (like MCP/Agents),
+  // fall back to per-skill tag extraction, then add imported custom sources.
   const unifiedCategories = useMemo(() => {
     const cats: DynamicCategory[] = [];
     const seen = new Set<string>();
-    // 1. Tags from OSS skills manifest (dynamic, no hardcoding)
-    for (const s of githubSkills) {
+    // 1. If the OSS manifest defines tag_groups, use them as the primary
+    //    category source (consistent with MCP and Agents tabs).
+    if (ossSkillCategories.length > 0) {
+      for (const c of ossSkillCategories) {
+        if (!seen.has(c.id)) {
+          seen.add(c.id);
+          cats.push(c);
+        }
+      }
+    }
+    // 2. Fallback: extract unique tags from individual skills (when the
+    //    manifest has no tag_groups, or for skills without a group).
+    for (const s of allSkills) {
       if (s.tag && !seen.has(s.tag)) {
         seen.add(s.tag);
         cats.push({ id: s.tag, label: s.tag });
       }
     }
-    // 2. Custom imported source labels (non-official skills)
-    for (const s of githubSkills) {
+    // 3. Custom imported source labels (non-official skills)
+    for (const s of allSkills) {
       if (!s.isOfficial && s.sourceLabel && !seen.has(s.sourceLabel)) {
         seen.add(s.sourceLabel);
         cats.push({ id: s.sourceLabel, label: s.sourceLabel });
       }
     }
     return cats;
-  }, [githubSkills]);
+  }, [allSkills, ossSkillCategories]);
 
-  // Filtered GitHub skills based on search text and unified category
+  // Filtered skills based on search text and unified category
   const filteredGithubSkills = useMemo(() => {
-    let filtered = githubSkills;
+    let filtered = allSkills;
     if (selectedCategory) {
-      filtered = filtered.filter(
-        (s) => s.tag === selectedCategory || s.sourceLabel === selectedCategory,
-      );
+      // Check if the selected category is a tag_group (has `tags` array)
+      const groupCat = ossSkillCategories.find((c) => c.id === selectedCategory);
+      if (groupCat && groupCat.tags) {
+        // Filter by tag group membership: skill's tag must be in the group's tags
+        filtered = filtered.filter(
+          (s) =>
+            (s.tag && groupCat.tags!.includes(s.tag)) ||
+            s.sourceLabel === selectedCategory,
+        );
+      } else {
+        filtered = filtered.filter(
+          (s) => s.tag === selectedCategory || s.sourceLabel === selectedCategory,
+        );
+      }
     }
     if (searchText.trim()) {
       const q = searchText.toLowerCase();
@@ -12676,7 +12839,7 @@ function MarketplacePage() {
       );
     }
     return filtered;
-  }, [githubSkills, searchText, selectedCategory]);
+  }, [allSkills, searchText, selectedCategory, ossSkillCategories]);
 
   // Available providers
   const availableProviders = providers.filter((p) => p.available);
@@ -12736,6 +12899,15 @@ function MarketplacePage() {
       ),
     ),
     // Dynamic category filter tags (from OSS manifest tags + imported sources)
+    ossSkillsError && allSkills.length === 0
+      ? React.createElement(Alert, {
+          type: "warning",
+          showIcon: true,
+          message: "UGSci 官方 OSS 技能库加载失败",
+          description: "请检查网络或后端 OSS 代理服务，然后点击右上角“刷新”重试。",
+          style: { marginBottom: 12 },
+        })
+      : null,
     unifiedCategories.length > 0
       ? React.createElement(
           "div",
@@ -12797,7 +12969,7 @@ function MarketplacePage() {
         )
       : null,
     // GitHub skills section
-    githubLoading && githubSkills.length === 0
+    githubLoading && allSkills.length === 0
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 40, marginBottom: 16 } },

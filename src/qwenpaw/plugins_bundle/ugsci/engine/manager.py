@@ -80,9 +80,10 @@ DEFAULT_ENGINES: List[Dict[str, Any]] = [
         "install_dir": "",
         "category": "reservoir_simulation",
         "description": "CMG 油藏数值模拟套件 (IMEX/GEM/STARS/Builder/Results)",
-        "invocation_hint": "IMEX: <path>/mx2300.exe -f <model.dat> -o <output.out>; "
-        "GEM: <path>/gm2300.exe -f <model.dat> -o <output.out>; "
-        "STARS: <path>/st2300.exe -f <model.dat> -o <output.out>",
+        "invocation_hint": "IMEX: mx2300.exe -f <model.dat> -o <output.out>\n"
+        "GEM: gm2300.exe -f <model.dat> -o <output.out>\n"
+        "STARS: st2300.exe -f <model.dat> -o <output.out>\n"
+        "注意: CMG 使用 -f 指定输入文件, -o 指定输出文件。",
         "license_server": "",
         "extra_paths": [],
         "status": "configured",
@@ -98,7 +99,9 @@ DEFAULT_ENGINES: List[Dict[str, Any]] = [
         "install_dir": "",
         "category": "reservoir_simulation",
         "description": "Schlumberger Eclipse 行业标准油藏模拟器 (E100/E300)",
-        "invocation_hint": "Run: <eclipse_path> <model.DATA> to execute a simulation.",
+        "invocation_hint": "eclipse.exe <case_name>  (不带 .DATA 后缀!)\n"
+        "例如: e300.exe BAI6_E300  (而非 BAI6_E300.DATA)\n"
+        "模拟器会自动查找 <case_name>.DATA 文件。",
         "license_server": "",
         "extra_paths": [],
         "status": "configured",
@@ -114,7 +117,7 @@ DEFAULT_ENGINES: List[Dict[str, Any]] = [
         "install_dir": "",
         "category": "reservoir_simulation",
         "description": "Schlumberger Intersect 新一代高性能油藏模拟器",
-        "invocation_hint": "Run: <intersect_path> <model.DATA>",
+        "invocation_hint": "intersect.exe <case_name>  (不带 .DATA 后缀)",
         "license_server": "",
         "extra_paths": [],
         "status": "configured",
@@ -130,8 +133,8 @@ DEFAULT_ENGINES: List[Dict[str, Any]] = [
         "install_dir": "",
         "category": "multiphysics",
         "description": "COMSOL Multiphysics 多物理场耦合仿真平台",
-        "invocation_hint": "COMSOL can be run in batch mode: "
-        "comsolbatch -input <model.mph> -output <result.mph>",
+        "invocation_hint": "comsolbatch.exe -input <model.mph> -output <result.mph>\n"
+        "批处理模式运行, 不启动 GUI。",
         "license_server": "",
         "extra_paths": [],
         "status": "configured",
@@ -147,7 +150,7 @@ DEFAULT_ENGINES: List[Dict[str, Any]] = [
         "install_dir": "",
         "category": "reservoir_simulation",
         "description": "tNavigator 高性能并行油藏模拟器",
-        "invocation_hint": "Run: <tnav_path> <model.DATA> to execute a parallel simulation.",
+        "invocation_hint": "tnav.exe <model.DATA>  (需要完整文件名)",
         "license_server": "",
         "extra_paths": [],
         "status": "configured",
@@ -346,40 +349,93 @@ def engines_to_list(engines: List[EngineInfo]) -> List[Dict[str, Any]]:
 
 
 def build_capability_summary(engines: List[EngineInfo]) -> str:
-    """Build a concise text summary for agent system-prompt injection."""
+    """Build a concise text summary for agent system-prompt injection.
+
+    The summary is structured so the agent can quickly determine:
+    - Which engines are **ready** (detected) and how to invoke them.
+    - Which engines are **configured** but not yet detected.
+    """
+    if not engines:
+        return ""
+
+    detected = [
+        e for e in engines
+        if e.status == "detected" and e.executable_path
+    ]
     configured = [
         e for e in engines
-        if e.status in ("detected", "configured") and (
-            e.executable_path or e.invocation_hint
-        )
+        if e.status != "detected"
+        and not e.is_custom
     ]
-    if not configured:
-        return "No computation engines configured on this host."
-
-    lines = [
-        "## Computation Engines",
-        "",
-        "The following computation engines are available on this host:",
-        "",
+    # Custom engines that are configured but not verified
+    custom_pending = [
+        e for e in engines
+        if e.status != "detected"
+        and e.is_custom
     ]
 
-    for e in configured:
-        lines.append(f"### {e.name} ({e.vendor})" if e.vendor else f"### {e.name}")
-        if e.version:
-            lines.append(f"- **Version**: {e.version}")
-        if e.executable_path:
-            lines.append(f"- **Path**: `{e.executable_path}`")
-        if e.category:
-            lines.append(f"- **Category**: {e.category}")
-        if e.invocation_hint:
-            lines.append(f"- **Usage**: {e.invocation_hint}")
-        if e.modules:
-            lines.append(f"- **Modules**: {', '.join(e.modules)}")
-        lines.append(f"- **Status**: {e.status}")
+    if not detected and not configured and not custom_pending:
+        return ""
+
+    lines: List[str] = ["## 可用计算引擎", ""]
+
+    # ── Ready engines ──────────────────────────────────────────────
+    if detected:
+        lines.append("以下引擎已检测到并可直接调用：")
+        lines.append("")
+        for e in detected:
+            parts: List[str] = []
+            if e.version:
+                parts.append(f"v{e.version}")
+            if e.modules:
+                parts.append(f"模块: {', '.join(e.modules)}")
+            if e.license_status == "ok":
+                parts.append("许可证正常")
+            elif e.license_status == "no_license":
+                parts.append("许可证不可用")
+            info = f" ({', '.join(parts)})" if parts else ""
+            lines.append(f"- **{e.name}**{info}")
+            if e.invocation_hint:
+                lines.append(f"  调用: {e.invocation_hint}")
         lines.append("")
 
+    # ── Configured but not detected ───────────────────────────────
+    if configured:
+        names = ", ".join(e.name for e in configured)
+        lines.append(
+            f"已配置但尚未检测到安装: {names}。"
+            "可通过 /api/ugsci/engines/detect 触发自动检测。"
+        )
+        lines.append("")
+
+    if custom_pending:
+        names = ", ".join(e.name for e in custom_pending)
+        lines.append(
+            f"自定义引擎待验证: {names}。"
+            "请确认路径正确后再使用。"
+        )
+        lines.append("")
+
+    lines.append("## 模拟工具使用指南")
+    lines.append("")
     lines.append(
-        "Use the paths above to invoke the engines from scripts or commands. "
-        "Always verify the executable path before running.",
+        "本机已安装以下模拟工具，**必须优先使用这些工具**而非裸 shell 命令："
+    )
+    lines.append("")
+    lines.append("- `launch_simulation(simulator, deck_file)` — 启动模拟")
+    lines.append("  - simulator 可选: eclipse, cmg_imex, cmg_stars, cmg_gem, comsol")
+    lines.append("  - 工具会自动从引擎注册表解析可执行文件路径")
+    lines.append("  - 工具会自动处理各模拟器的参数约定 (如 Eclipse 不带 .DATA 后缀)")
+    lines.append("  - 返回 job_id，可用于后续监控")
+    lines.append("- `check_simulation_status(job_id)` — 查询运行状态")
+    lines.append("- `read_simulation_results(job_id)` — 读取结果数据")
+    lines.append("- `edit_simulation_deck(deck_file, edits)` — 修改输入文件")
+    lines.append("- `analyze_simulation(job_id, analysis_type)` — 分析结果")
+    lines.append("")
+    lines.append(
+        "⚠️ **禁止**直接使用 execute_shell_command 调用模拟器可执行文件。"
+        "裸 shell 调用会绕过适配器层，导致参数错误、许可证缺失、"
+        "路径解析失败等问题。如果 launch_simulation 返回错误，"
+        "应根据错误信息排查而非回退到 shell。"
     )
     return "\n".join(lines)

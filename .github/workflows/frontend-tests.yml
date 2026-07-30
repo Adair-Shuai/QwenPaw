@@ -5,11 +5,15 @@ on:
     branches: [main, master, dev, develop]
     paths:
       - 'console/**'
+      - 'plugins/bundle/ugsci/ui/**'
+      - 'scripts/check_console_bundle_budget.mjs'
       - '.github/workflows/frontend-tests.yml'
   pull_request:
     branches: [main, master, dev, develop]
     paths:
       - 'console/**'
+      - 'plugins/bundle/ugsci/ui/**'
+      - 'scripts/check_console_bundle_budget.mjs'
       - '.github/workflows/frontend-tests.yml'
 
 jobs:
@@ -47,6 +51,15 @@ jobs:
 
       - name: Run unit tests
         run: npm run test:run
+
+      - name: Build and enforce bundle budget
+        run: npm run build:budget
+
+      - name: Build UGSci plugin UI
+        working-directory: plugins/bundle/ugsci/ui
+        run: |
+          npm ci
+          npm run build
 
       - name: Coverage ratchet (blocks PR on regression)
         run: npm run test:coverage

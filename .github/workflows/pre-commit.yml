@@ -57,3 +57,6 @@ jobs:
             exit 1
           fi
           echo -e "\e[46m  ********************************Passed******************************** \e[0m"
+
+      - name: Verify UGSci packaging mirror
+        run: python scripts/sync_ugsci_bundle.py --check

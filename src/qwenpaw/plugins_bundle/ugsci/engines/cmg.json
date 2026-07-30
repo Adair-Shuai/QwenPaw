@@ -10,9 +10,14 @@
   "invocation_hint": "IMEX: <path>/mx2300.exe -f <model.dat> -o <output.out>; GEM: <path>/gm2300.exe -f <model.dat> -o <output.out>; STARS: <path>/st2300.exe -f <model.dat> -o <output.out>",
   "license_server": "",
   "extra_paths": [],
-  "status": "configured",
+  "status": "not_found",
   "is_default": true,
   "is_custom": false,
   "modules": [],
-  "module_paths": {}
+  "module_paths": {},
+  "arch": "",
+  "build": "",
+  "license_status": "",
+  "lmutil_path": "",
+  "extra_info": {}
 }

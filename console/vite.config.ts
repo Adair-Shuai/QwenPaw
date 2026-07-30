@@ -108,9 +108,31 @@ function pluginBundleWatcher() {
 
       for (const entry of watched) {
         let debounceTimer: NodeJS.Timeout | null = null;
+        // Track the last known content so we can skip spurious
+        // fs.watch events (common on macOS FSEvents — the file is
+        // reported as "changed" even when only its atime was updated).
+        let lastContent: Buffer | null = null;
+        try {
+          lastContent = fs.readFileSync(entry.source);
+        } catch {
+          lastContent = null;
+        }
+
         fs.watch(entry.source, () => {
           if (debounceTimer) clearTimeout(debounceTimer);
           debounceTimer = setTimeout(() => {
+            let newContent: Buffer | null = null;
+            try {
+              newContent = fs.readFileSync(entry.source);
+            } catch {
+              return;
+            }
+            if (lastContent && newContent.equals(lastContent)) {
+              // Content unchanged — spurious fs.watch event, skip.
+              return;
+            }
+            lastContent = newContent;
+
             const pluginName = path.basename(
               path.dirname(path.dirname(entry.source)),
             );
@@ -359,56 +381,26 @@ export default defineConfig(({ mode }) => {
         external: ["react-pdf", "@codesandbox/sandpack-react", /@tiptap\//],
         output: {
           manualChunks(id) {
-            // React core
-            if (
-              id.includes("node_modules/react/") ||
-              id.includes("node_modules/react-dom/") ||
-              id.includes("node_modules/react-router-dom/") ||
-              id.includes("node_modules/scheduler/")
-            ) {
-              return "react-vendor";
+            // Only isolate large, leaf-like feature runtimes. Grouping React,
+            // Ant Design and shared utilities by hand created circular chunks
+            // because those packages depend on each other. Rollup can split
+            // the application graph more safely when shared UI code is left
+            // to its default chunking algorithm.
+            if (id.includes("node_modules/monaco-editor/")) {
+              return "monaco-vendor";
             }
-            // Ant Design + AgentScope design system (merged to avoid circular deps)
-            if (
-              id.includes("node_modules/antd/") ||
-              id.includes("node_modules/antd-style/") ||
-              id.includes("node_modules/@ant-design/") ||
-              id.includes("node_modules/@agentscope-ai/")
-            ) {
-              return "ui-vendor";
+            if (id.includes("node_modules/mermaid/")) {
+              return "diagram-vendor";
             }
-            // i18n
-            if (
-              id.includes("node_modules/i18next/") ||
-              id.includes("node_modules/react-i18next/")
-            ) {
-              return "i18n-vendor";
+            if (id.includes("node_modules/pdfjs-dist/")) {
+              return "pdf-vendor";
             }
-            // Markdown rendering
             if (
-              id.includes("node_modules/react-markdown/") ||
-              id.includes("node_modules/remark-gfm/") ||
-              id.includes("node_modules/rehype") ||
-              id.includes("node_modules/remark") ||
-              id.includes("node_modules/unified/") ||
-              id.includes("node_modules/mdast") ||
-              id.includes("node_modules/hast") ||
-              id.includes("node_modules/micromark")
+              id.includes("node_modules/mammoth/") ||
+              id.includes("node_modules/read-excel-file/") ||
+              id.includes("node_modules/jszip/")
             ) {
-              return "markdown-vendor";
-            }
-            // Drag and drop
-            if (id.includes("node_modules/@dnd-kit/")) {
-              return "dnd-vendor";
-            }
-            // Utilities (dayjs, zustand, ahooks, etc.)
-            if (
-              id.includes("node_modules/dayjs/") ||
-              id.includes("node_modules/zustand/") ||
-              id.includes("node_modules/ahooks/") ||
-              id.includes("node_modules/@vvo/tzdb/")
-            ) {
-              return "utils-vendor";
+              return "document-vendor";
             }
           },
         },
