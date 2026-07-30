@@ -189,7 +189,7 @@
     ├── register_startup_hook(&quot;ugsci_sync_skills_to_pool&quot;, priority=80)
     │       │
     │       └── _on_startup_sync_skills()
-    │             └── _sync_plugin_skills_to_pool()
+    │             └── skill_pool.sync_plugin_skills_to_pool()
     │                   ├── 扫描 skills/ 目录
     │                   ├── 复制到共享技能池
     │                   ├── 注册 manifest 条目 (installed_from: &quot;plugin:ugsci&quot;)
@@ -200,14 +200,16 @@
     │
     ├── register_uninstall_hook(&quot;ugsci_remove_pool_skills&quot;)
     │       └── _on_uninstall_remove_skills()
-    │             └── _remove_plugin_pool_skills()
+    │             └── skill_pool.remove_plugin_pool_skills()
     │                   ├── 查找 installed_from == &quot;plugin:ugsci&quot; 的技能
     │                   ├── 从 manifest 移除
     │                   ├── 删除技能目录
     │                   └── reconcile_pool_manifest()
     │
-    └── register_http_router(router, prefix=&quot;/ugsci/software&quot;)
-            └── 5 个端点：detect / list / scan-path / summary / known
+    ├── register_http_router(engine.api, prefix=&quot;/ugsci/engines&quot;)
+    ├── register_http_router(avatar, prefix=&quot;/ugsci/avatar&quot;)
+    ├── register_http_router(sim_api, prefix=&quot;/ugsci/sim&quot;)
+    └── register_http_router(team.api, prefix=&quot;/ugsci/team&quot;)
 </code></pre></div>
 
 <h3 id="_13">技能池同步设计</h3>

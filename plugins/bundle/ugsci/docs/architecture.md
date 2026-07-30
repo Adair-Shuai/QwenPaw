@@ -157,7 +157,7 @@ QwenPaw 启动
     ├── register_startup_hook("ugsci_sync_skills_to_pool", priority=80)
     │       │
     │       └── _on_startup_sync_skills()
-    │             └── _sync_plugin_skills_to_pool()
+    │             └── skill_pool.sync_plugin_skills_to_pool()
     │                   ├── 扫描 skills/ 目录
     │                   ├── 复制到共享技能池
     │                   ├── 注册 manifest 条目 (installed_from: "plugin:ugsci")
@@ -168,14 +168,16 @@ QwenPaw 启动
     │
     ├── register_uninstall_hook("ugsci_remove_pool_skills")
     │       └── _on_uninstall_remove_skills()
-    │             └── _remove_plugin_pool_skills()
+    │             └── skill_pool.remove_plugin_pool_skills()
     │                   ├── 查找 installed_from == "plugin:ugsci" 的技能
     │                   ├── 从 manifest 移除
     │                   ├── 删除技能目录
     │                   └── reconcile_pool_manifest()
     │
-    └── register_http_router(router, prefix="/ugsci/software")
-            └── 5 个端点：detect / list / scan-path / summary / known
+    ├── register_http_router(engine.api, prefix="/ugsci/engines")
+    ├── register_http_router(avatar, prefix="/ugsci/avatar")
+    ├── register_http_router(sim_api, prefix="/ugsci/sim")
+    └── register_http_router(team.api, prefix="/ugsci/team")
 ```
 
 ### 技能池同步设计

@@ -57,9 +57,32 @@ def test_plugin_registers_team_mode_router_and_simulation_tools(
     UGSciPlugin().register(api)
 
     assert UGSciTeamMode in api.modes
-    assert "/ugsci/team" in api.routers
+    assert {
+        "/ugsci/team",
+        "/ugsci/engines",
+        "/ugsci/avatar",
+        "/ugsci/sim",
+    } <= api.routers.keys()
     team_paths = {route.path for route in api.routers["/ugsci/team"].routes}
     assert {"/preset-teams", "/roles", "/state"} <= team_paths
+    engine_paths = {
+        route.path for route in api.routers["/ugsci/engines"].routes
+    }
+    assert {
+        "/list",
+        "/summary",
+        "/detect",
+        "/detect/refresh",
+        "/icon/{engine_id}",
+        "/{engine_id}",
+        "/",
+    } <= engine_paths
+    avatar_paths = {
+        route.path for route in api.routers["/ugsci/avatar"].routes
+    }
+    assert {"/{seed}", "/team/{team_id}"} <= avatar_paths
+    sim_paths = {route.path for route in api.routers["/ugsci/sim"].routes}
+    assert {"/jobs", "/jobs/{job_id}/stream"} <= sim_paths
     assert {
         "launch_simulation",
         "check_simulation_status",

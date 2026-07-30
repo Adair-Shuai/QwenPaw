@@ -2,16 +2,20 @@
 
 ## 概述
 
-UGSci 后端按入口、引擎和专家团三个边界组织：
+UGSci 后端按入口、领域服务、引擎和专家团边界组织：
 
 | 文件 | 职责 |
 |------|------|
-| `plugin.py` | 插件入口：生命周期钩子注册、技能池同步、HTTP 路由注册 |
+| `plugin.py` | 轻量插件入口：只编排生命周期、路由、模式和工具注册 |
+| `skill_pool.py` | 技能池同步与卸载清理 |
+| `avatar.py` | 头像获取、缓存、团队合成与 HTTP 路由 |
+| `sim_api.py` | 仿真任务列表与 SSE 状态流 |
+| `engine/api.py` | 引擎管理 HTTP API 与检测缓存 |
 | `engine/` | 本地仿真软件检测、配置管理和运行工具 |
 | `team/` | OMP 专家团状态机、状态 API、角色和预设团队 |
 
-后端通过 QwenPaw 的 PluginApi 注册自身能力，HTTP 路由由引擎和
-专家团模块分别提供。
+后端通过 QwenPaw 的 PluginApi 注册自身能力。入口不再保存各领域
+实现细节，路由可以被单独导入和测试，同时保留旧私有工厂名作为兼容层。
 
 ## 插件入口
 
@@ -22,7 +26,7 @@ class UGSciPlugin:
     """UGSci plugin backend entry point."""
 
     def register(self, api) -> None:
-        # 注册三个钩子 + 一个 HTTP 路由
+        # 编排生命周期钩子、Team、领域路由和模拟工具
         ...
 ```
 

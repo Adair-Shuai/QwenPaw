@@ -20,7 +20,7 @@
 <div id="main">
 <h1 id="_1">后端开发指南</h1>
 <h2 id="_2">概述</h2>
-<p>UGSci 后端由两个 Python 文件组成：</p>
+<p>UGSci 后端按入口、领域服务、引擎和专家团边界组织：</p>
 <table>
 <thead>
 <tr>
@@ -31,22 +31,42 @@
 <tbody>
 <tr>
 <td><code>plugin.py</code></td>
-<td>插件入口：生命周期钩子注册、技能池同步、HTTP 路由注册</td>
+<td>轻量插件入口：只编排生命周期、路由、模式和工具注册</td>
+</tr>
+<tr>
+<td><code>skill_pool.py</code></td>
+<td>技能池同步与卸载清理</td>
+</tr>
+<tr>
+<td><code>avatar.py</code></td>
+<td>头像获取、缓存、团队合成与 HTTP 路由</td>
+</tr>
+<tr>
+<td><code>sim_api.py</code></td>
+<td>仿真任务列表与 SSE 状态流</td>
+</tr>
+<tr>
+<td><code>engine/api.py</code></td>
+<td>引擎管理 HTTP API 与检测缓存</td>
 </tr>
 <tr>
 <td><code>engine/</code></td>
 <td>本地仿真软件检测、配置管理和运行工具</td>
 </tr>
+<tr>
+<td><code>team/</code></td>
+<td>OMP 专家团状态机、状态 API、角色和预设团队</td>
+</tr>
 </tbody>
 </table>
-<p>后端通过 QwenPaw 的 PluginApi 注册自身能力，不直接处理 HTTP 请求（除软件检测路由外）。</p>
+<p>后端通过 QwenPaw 的 PluginApi 注册自身能力。入口不再保存各领域实现细节，路由可以被单独导入和测试，同时保留旧私有工厂名作为兼容层。</p>
 <h2 id="_3">插件入口</h2>
 <h3 id="ugsciplugin">UGSciPlugin 类</h3>
 <div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">class</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">UGSciPlugin</span><span style="color: #ABB2BF">:</span>
 <span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;&quot;&quot;UGSci plugin backend entry point.&quot;&quot;&quot;</span>
 
     <span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">register</span><span style="color: #ABB2BF">(</span><span style="color: #E5C07B">self</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">api</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">:</span>
-        <span style="color: #7F848E"># 注册三个钩子 + 一个 HTTP 路由</span>
+        <span style="color: #7F848E"># 编排生命周期钩子、Team、领域路由和模拟工具</span>
         <span style="color: #56B6C2">...</span>
 </code></pre></div>
 

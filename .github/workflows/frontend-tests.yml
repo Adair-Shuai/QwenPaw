@@ -62,9 +62,11 @@ jobs:
           npm run typecheck
           ../../../../console/node_modules/.bin/eslint \
             --config ../../../../console/eslint.config.js \
-            src/team/workflow.ts
+            src/core/runtime.ts \
+            src/components/avatars.ts \
+            src/team/*.ts
           ../../../../console/node_modules/.bin/prettier \
-            --check "src/team/**/*.ts"
+            --check "src/{core,components,team}/**/*.ts"
           npm run build
 
       - name: Coverage ratchet (blocks PR on regression)

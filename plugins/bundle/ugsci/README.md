@@ -103,8 +103,11 @@ CMG Builder · CMG IMEX · CMG GEM · CMG STARS · Eclipse · Intersect · Petre
 ```
 ugsci/
 ├── plugin.json              # 插件清单（元数据、入口、版本）
-├── plugin.py                # 后端入口（技能池同步 + HTTP 路由注册）
-├── engine/                  # 仿真引擎检测、配置与运行工具
+├── plugin.py                # 轻量后端入口（仅负责能力注册）
+├── avatar.py                # 头像缓存、组合与 HTTP 路由
+├── sim_api.py               # 仿真任务状态与 SSE 路由
+├── skill_pool.py            # 技能池安装/卸载生命周期
+├── engine/                  # 仿真引擎检测、配置、API 与运行工具
 ├── README.md                # 本文件
 ├── skills/                  # 内置技能目录（每个子目录含 SKILL.md）
 │   ├── oil-gas-foundation/
@@ -112,8 +115,10 @@ ugsci/
 │   ├── matplotlib/
 │   └── ...
 ├── ui/                      # 前端源码
-│   ├── src/index.ts         # 前端入口
-│   ├── src/team/            # 专家团状态、类型与 API 客户端
+│   ├── src/index.ts         # 前端注册及页面装配入口
+│   ├── src/core/            # Host 与 HTTP 运行时
+│   ├── src/components/      # 可复用视图组件
+│   ├── src/team/            # 专家团模型、状态和 API 客户端
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── dist/index.js        # 构建产物（ES module）
