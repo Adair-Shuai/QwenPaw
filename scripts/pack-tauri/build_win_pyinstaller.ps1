@@ -1,4 +1,4 @@
-# Build UGSci with Tauri for Windows (PyInstaller backend)
+# Build UGSci with Tauri for Windows (bundled Python backend)
 # Creates a self-contained desktop app with bundled Python backend
 #
 # Usage:
@@ -56,7 +56,7 @@ if (Test-Path $VERSION_FILE) {
 }
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "UGSci Tauri Build - Windows (PyInstaller)" -ForegroundColor Cyan
+Write-Host "UGSci Tauri Build - Windows (Bundled Python)" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Version: $VERSION"
 Write-Host ""
@@ -161,7 +161,7 @@ Write-Host ""
 
 # Step 1b: Build plugin frontend bundles
 # This ensures plugin JS bundles (e.g. ugsci/ui/dist/index.js) are present
-# before PyInstaller bundles them. Without this, plugins appear "loaded"
+# before the bundled Python package is installed. Without this, plugins appear "loaded"
 # in the backend but their custom UI silently fails to render.
 Write-Host "== Step 1b: Building Plugin Frontend Bundles ==" -ForegroundColor Yellow
 $pluginBuildScript = Join-Path $REPO_ROOT "scripts\pack-tauri\build_plugin_uis.ps1"
@@ -179,15 +179,15 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Host ""
 
-# Step 2: Build PyInstaller backend
-Write-Host "== Step 2: Building PyInstaller Backend ==" -ForegroundColor Yellow
+# Step 2: Stage the bundled Python backend
+Write-Host "== Step 2: Staging Bundled Python Backend ==" -ForegroundColor Yellow
 $PYINSTALLER_SCRIPT = Join-Path $REPO_ROOT "scripts\pack-tauri\build_pyinstaller.ps1"
 & $PYINSTALLER_SCRIPT
 
 if ($LASTEXITCODE -ne 0) {
-    throw "PyInstaller build failed"
+    throw "Bundled Python backend build failed"
 }
-Write-Host "PyInstaller backend ready" -ForegroundColor Green
+Write-Host "Bundled Python backend ready" -ForegroundColor Green
 Write-Host ""
 
 # Step 2b: Fetch Tauri Rust dependencies

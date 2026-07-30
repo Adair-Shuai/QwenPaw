@@ -1,12 +1,15 @@
-# Build UGSci backend with PyInstaller for Tauri sidecar (Windows)
-# Creates an onedir backend bundle with embedded Python runtime
+# Stage the self-contained Python backend for Tauri (Windows).
+#
+# Windows deliberately runs QwenPaw from the bundled standalone CPython
+# instead of freezing a second copy of Python and all dependencies with
+# PyInstaller. This keeps the desktop app zero-install while avoiding two
+# copies of large packages such as numpy, Pillow and python-docx.
 #
 # Usage:
 #   powershell ./scripts/pack-tauri/build_pyinstaller.ps1
 #
 # Prerequisites:
-#   - Python 3.10+ with virtual environment
-#   - PyInstaller 6.0+ (will be installed if not present)
+#   - Python 3.11+ with a virtual environment (used to stage the runtime)
 
 param()
 
@@ -33,7 +36,7 @@ if (Test-Path $VERSION_FILE) {
 }
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "UGSci PyInstaller Build - Windows" -ForegroundColor Cyan
+Write-Host "UGSci Bundled Python Build - Windows" -ForegroundColor Cyan
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Version: $VERSION"
 Write-Host "Repository: $REPO_ROOT"
@@ -65,154 +68,41 @@ if (-not (Test-Path $PYTHON_BIN)) {
 $pythonVersion = & $PYTHON_BIN --version
 Write-Host "Python: $pythonVersion" -ForegroundColor Green
 
-function Test-PythonImport {
-    param([string]$Statement)
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = "Continue"
-        & $PYTHON_BIN -c $Statement *> $null
-        return $LASTEXITCODE -eq 0
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-}
-
 function Assert-LastExit {
     param([string]$Message)
     if ($LASTEXITCODE -ne 0) { throw $Message }
 }
 
-function Install-PythonPackages {
-    param([string[]]$Packages)
-    if ($UV_BIN) {
-        & $UV_BIN pip install --python $PYTHON_BIN @Packages
-    } else {
-        & $PYTHON_BIN -m pip install @Packages
-    }
-    Assert-LastExit "Failed to install Python packages: $($Packages -join ', ')"
-}
-
-function Uninstall-PythonPackage {
-    param([string]$Package)
-    $previousErrorActionPreference = $ErrorActionPreference
-    try {
-        $ErrorActionPreference = "Continue"
-        if ($UV_BIN) {
-            & $UV_BIN pip uninstall --python $PYTHON_BIN -y $Package *> $null
-        } else {
-            & $PYTHON_BIN -m pip uninstall -y $Package *> $null
-        }
-    } finally {
-        $ErrorActionPreference = $previousErrorActionPreference
-    }
-}
-
-# Install PyInstaller if not present
-Write-Host "== Installing PyInstaller ==" -ForegroundColor Yellow
-if (Test-PythonImport "import PyInstaller") {
-    Write-Host "PyInstaller already installed" -ForegroundColor Green
-} else {
-    Write-Host "Installing PyInstaller..."
-    Install-PythonPackages -Packages @("pyinstaller>=6.0.0")
-    Write-Host "PyInstaller installed" -ForegroundColor Green
-}
-
-# Install python-dotenv if not present (required by PyInstaller collect_submodules)
-if (Test-PythonImport "import dotenv") {
-    Write-Host "python-dotenv already installed" -ForegroundColor Green
-} else {
-    Write-Host "Installing python-dotenv..."
-    Install-PythonPackages -Packages @("python-dotenv")
-    Write-Host "python-dotenv installed" -ForegroundColor Green
-}
-
-Write-Host ""
-
-# Install project dependencies (ensures ALL runtime deps are importable)
-Write-Host "== Installing project dependencies ==" -ForegroundColor Yellow
-Install-PythonPackages -Packages @("-e", ".[full]")
-Write-Host "Project dependencies installed with full extras" -ForegroundColor Green
-
-# Fix agent-client-protocol namespace collision
-# PyPI has an empty 'acp' stub that shadows the real package
-if (-not (Test-PythonImport "from acp import Agent")) {
-    Write-Host "Fixing agent-client-protocol namespace..."
-    Uninstall-PythonPackage "acp"
-    Install-PythonPackages -Packages @("agent-client-protocol>=0.9.0,<0.11.0")
-    Write-Host "agent-client-protocol installed" -ForegroundColor Green
-}
-
-# Run PyInstaller
-Write-Host "== Running PyInstaller ==" -ForegroundColor Yellow
-Write-Host "Building onedir backend bundle..."
-
-$SPEC_FILE = Join-Path $REPO_ROOT "scripts\pack-tauri\qwenpaw.spec"
-if (-not (Test-Path $SPEC_FILE)) {
-    Write-Host "ERROR: Spec file not found at $SPEC_FILE" -ForegroundColor Red
-    exit 1
-}
-
-& $PYTHON_BIN -m PyInstaller $SPEC_FILE `
-    --distpath "${DIST}\pyinstaller" `
-    --workpath "${DIST}\pyinstaller-build" `
-    --clean `
-    --noconfirm
-
-if ($LASTEXITCODE -ne 0) {
-    throw "PyInstaller build failed"
-}
-
-Write-Host "PyInstaller build complete" -ForegroundColor Green
-Write-Host ""
-
-# Verify output
-$BACKEND_DIR = Join-Path $DIST "pyinstaller\qwenpaw-backend"
-$BACKEND_EXE = Join-Path $BACKEND_DIR "qwenpaw-backend.exe"
-$CLI_EXE = Join-Path $BACKEND_DIR "qwenpaw.exe"
-if (-not (Test-Path $BACKEND_DIR)) {
-    Write-Host "ERROR: Backend bundle directory not found at $BACKEND_DIR" -ForegroundColor Red
-    exit 1
-}
-if (-not (Test-Path $BACKEND_EXE)) {
-    Write-Host "ERROR: Backend executable not found at $BACKEND_EXE" -ForegroundColor Red
-    exit 1
-}
-if (-not (Test-Path $CLI_EXE)) {
-    Write-Host "ERROR: CLI executable not found at $CLI_EXE" -ForegroundColor Red
-    exit 1
-}
-
-Write-Host "Backend bundle created: $BACKEND_DIR" -ForegroundColor Green
-
-# Get size
-$bundleSize = (Get-ChildItem $BACKEND_DIR -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB
-Write-Host "Bundle size: $([math]::Round($bundleSize, 2)) MB"
-Write-Host ""
-
-# Copy to Tauri resources directory
-Write-Host "== Copying to Tauri binaries directory ==" -ForegroundColor Yellow
+# Tauri's shared macOS/Windows config still declares qwenpaw-backend as a
+# resource. Keep only a tiny marker on Windows so a stale PyInstaller bundle
+# can never be included accidentally.
 $BINARIES_DIR = Join-Path $REPO_ROOT "console\src-tauri\binaries"
 New-Item -ItemType Directory -Force -Path $BINARIES_DIR | Out-Null
-
 $DEST = Join-Path $BINARIES_DIR "qwenpaw-backend"
 New-Item -ItemType Directory -Force -Path $DEST | Out-Null
 Get-ChildItem -LiteralPath $DEST -Force | Remove-Item -Recurse -Force
-Copy-Item -Recurse -Force (Join-Path $BACKEND_DIR "*") $DEST
-Write-Host "Copied to: $DEST" -ForegroundColor Green
-Write-Host ""
+Set-Content -Path (Join-Path $DEST "README.txt") -Encoding UTF8 `
+    -Value "Windows backend runs from binaries/python-runtime; no frozen duplicate."
 
-# Stage a standalone CPython (same X.Y/arch as this build's interpreter) so the
-# frozen backend can install third-party plugin dependencies at runtime.
+# Stage a standalone CPython matching this build interpreter's X.Y/architecture.
+# It runs the backend and can install third-party plugin dependencies at runtime.
 Write-Host "== Staging bundled Python runtime ==" -ForegroundColor Yellow
+$PYTHON_RUNTIME_DIR = Join-Path $BINARIES_DIR "python-runtime"
+if (Test-Path $PYTHON_RUNTIME_DIR) {
+    # A cached runtime may contain packages left by the former dual-runtime
+    # layout. Recreate it so every release is reproducible and contains only
+    # the dependency set installed below.
+    Remove-Item -Recurse -Force $PYTHON_RUNTIME_DIR
+}
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_python_runtime.py") `
-    --dest (Join-Path $BINARIES_DIR "python-runtime")
+    --dest $PYTHON_RUNTIME_DIR
 Assert-LastExit "Failed to stage bundled Python runtime"
 Write-Host ""
 
-# Pre-install common Python libraries into the bundled runtime so users on
-# machines without Python can handle files (Excel/Word/PPT/images/data
-# processing) without waiting for a pip download on first use.
-Write-Host "== Installing common Python packages into bundled runtime ==" -ForegroundColor Yellow
+# Install QwenPaw and the common data/document stack into this one interpreter.
+# Passing the repository path (without -e) builds a normal wheel, so the
+# installed app is self-contained and does not reference the checkout.
+Write-Host "== Installing QwenPaw and common packages into bundled runtime ==" -ForegroundColor Yellow
 $PyRuntimeBin = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
 if (-not (Test-Path $PyRuntimeBin)) {
     throw "Bundled Python executable not found at $PyRuntimeBin"
@@ -222,10 +112,68 @@ Write-Host "Using PyPI mirror: $PipIndexUrl"
 & $PyRuntimeBin -m pip install `
     --disable-pip-version-check `
     --no-input `
+    --upgrade `
     --index-url $PipIndexUrl `
-    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow
-Assert-LastExit "Failed to install common Python packages"
-Write-Host "Common Python packages installed" -ForegroundColor Green
+    ".[full]" `
+    numpy pandas scipy matplotlib requests openpyxl python-pptx
+Assert-LastExit "Failed to install QwenPaw into bundled Python"
+
+# PyPI also contains an empty package named "acp"; it must not shadow
+# agent-client-protocol's real acp namespace.
+& $PyRuntimeBin -m pip uninstall -y acp *> $null
+& $PyRuntimeBin -c "from acp import Agent; import qwenpaw, numpy, pandas, scipy, matplotlib, openpyxl, docx, pptx, PIL"
+Assert-LastExit "Bundled Python import verification failed"
+
+$ConsoleDist = Join-Path $REPO_ROOT "console\dist"
+$InstalledPackage = (& $PyRuntimeBin -c "import pathlib, qwenpaw; print(pathlib.Path(qwenpaw.__file__).resolve().parent)").Trim()
+Assert-LastExit "Failed to locate installed QwenPaw package"
+
+# The source wheel's broad plugins_bundle/** package-data rule also picks up
+# frontend node_modules. They are build inputs (and contain build-host native
+# binaries), not runtime assets. Keep only each plugin's compiled ui/dist.
+$InstalledPlugins = Join-Path $InstalledPackage "plugins_bundle"
+if (-not (Test-Path $InstalledPlugins)) {
+    throw "Bundled plugins are missing from installed QwenPaw package"
+}
+Get-ChildItem -LiteralPath $InstalledPlugins -Directory | ForEach-Object {
+    $PluginUi = Join-Path $_.FullName "ui"
+    if (Test-Path $PluginUi) {
+        if (-not (Test-Path (Join-Path $PluginUi "dist\index.js"))) {
+            throw "Compiled plugin UI is missing for $($_.Name)"
+        }
+        foreach ($BuildOnlyDir in @("node_modules", "src")) {
+            $BuildOnlyPath = Join-Path $PluginUi $BuildOnlyDir
+            if (Test-Path $BuildOnlyPath) {
+                Remove-Item -Recurse -Force $BuildOnlyPath
+            }
+        }
+    }
+}
+if (Get-ChildItem -LiteralPath $InstalledPlugins -Directory -Recurse |
+    Where-Object { $_.Name -eq "node_modules" }) {
+    throw "Build-only plugin node_modules remain in bundled Python"
+}
+
+if (-not (Test-Path (Join-Path $ConsoleDist "index.html"))) {
+    throw "Console build output not found at $ConsoleDist"
+}
+$InstalledConsole = Join-Path $InstalledPackage "console"
+if (Test-Path $InstalledConsole) {
+    Remove-Item -Recurse -Force $InstalledConsole
+}
+Copy-Item -Recurse -Force $ConsoleDist $InstalledConsole
+if (-not (Test-Path (Join-Path $InstalledConsole "index.html"))) {
+    throw "Failed to stage console assets into bundled QwenPaw package"
+}
+
+$RuntimeScripts = Join-Path $BINARIES_DIR "python-runtime\python\Scripts"
+$CliExe = Join-Path $RuntimeScripts "qwenpaw.exe"
+if (-not (Test-Path $CliExe)) {
+    throw "Bundled QwenPaw CLI not found at $CliExe"
+}
+$bundleSize = (Get-ChildItem (Join-Path $BINARIES_DIR "python-runtime") -Recurse -File |
+    Measure-Object -Property Length -Sum).Sum / 1MB
+Write-Host "Bundled Python is ready: $([math]::Round($bundleSize, 2)) MB" -ForegroundColor Green
 Write-Host ""
 
 Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
@@ -241,9 +189,9 @@ Assert-LastExit "Failed to stage bundled OfficeCLI"
 Write-Host ""
 
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "PyInstaller Build Complete!" -ForegroundColor Green
+Write-Host "Bundled Python Build Complete!" -ForegroundColor Green
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Output:"
-Write-Host "  Bundle: $BACKEND_DIR"
-Write-Host "  Tauri resource: $DEST"
+Write-Host "  Python backend: $PyRuntimeBin -m qwenpaw.tauri.entry"
+Write-Host "  CLI: $CliExe"
 Write-Host ""

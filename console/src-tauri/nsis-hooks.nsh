@@ -9,7 +9,7 @@ Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
 !macro QWENPAW_UPDATE_CLI_PATH ACTION
   InitPluginsDir
   File /oname=$PLUGINSDIR\qwenpaw-update-path.ps1 "..\..\..\..\nsis\update-qwenpaw-path.ps1"
-  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-path.ps1" -Action "${ACTION}" -Path "$INSTDIR\binaries\qwenpaw-backend"`
+  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-path.ps1" -Action "${ACTION}" -Path "$INSTDIR\binaries\python-runtime\python\Scripts"`
   Pop $0
   Pop $1
 !macroend
@@ -18,7 +18,7 @@ Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
   ${If} $QwenPawCliPathState == 0
     DetailPrint "$(qwenpawCliPathSkipped)"
   ${Else}
-    IfFileExists "$INSTDIR\binaries\qwenpaw-backend\qwenpaw.exe" 0 qwenpaw_cli_path_missing
+    IfFileExists "$INSTDIR\binaries\python-runtime\python\Scripts\qwenpaw.exe" 0 qwenpaw_cli_path_missing
     !insertmacro QWENPAW_UPDATE_CLI_PATH "Add"
     ${If} $0 == 0
       DetailPrint "$(qwenpawCliPathAdded)"
@@ -35,6 +35,18 @@ Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
 
 !macro QWENPAW_REMOVE_CLI_PATH
   !insertmacro QWENPAW_UPDATE_CLI_PATH "Remove"
+  ${If} $0 != 0
+    DetailPrint "$(qwenpawCliPathUpdateFailed)"
+    DetailPrint "$1"
+  ${EndIf}
+!macroend
+
+!macro QWENPAW_REMOVE_LEGACY_CLI_PATH
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\qwenpaw-update-legacy-path.ps1 "..\..\..\..\nsis\update-qwenpaw-path.ps1"
+  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-legacy-path.ps1" -Action "Remove" -Path "$INSTDIR\binaries\qwenpaw-backend"`
+  Pop $0
+  Pop $1
   ${If} $0 != 0
     DetailPrint "$(qwenpawCliPathUpdateFailed)"
     DetailPrint "$1"
@@ -99,7 +111,7 @@ FunctionEnd
 
 !macro QWENPAW_STOP_BACKEND_SIDECAR
   ; The Python backend is a Tauri sidecar, not a user-facing window. A leftover
-  ; (possibly orphaned, see #5550) backend keeps its PyInstaller ``.pyd`` modules
+  ; (possibly orphaned, see #5550) backend keeps Python ``.pyd`` modules
   ; memory-mapped, which locks them on Windows. The installer then fails to
   ; overwrite those files and shows the cryptic native "can't write file"
   ; abort/retry/ignore dialog.
@@ -129,9 +141,14 @@ FunctionEnd
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro QWENPAW_STOP_BACKEND_SIDECAR
+  ; Pre-dedup releases stored a complete PyInstaller environment here. NSIS
+  ; overwrites payload files but does not guarantee removal of obsolete files,
+  ; so explicitly remove it after all scoped backend processes have stopped.
+  RMDir /r "$INSTDIR\binaries\qwenpaw-backend"
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  !insertmacro QWENPAW_REMOVE_LEGACY_CLI_PATH
   !insertmacro QWENPAW_ADD_CLI_PATH_IF_SELECTED
   !insertmacro QWENPAW_INSTALL_DEBUG_LAUNCHER
 !macroend
@@ -140,4 +157,5 @@ FunctionEnd
   !insertmacro QWENPAW_STOP_BACKEND_SIDECAR
   !insertmacro QWENPAW_REMOVE_DEBUG_LAUNCHER
   !insertmacro QWENPAW_REMOVE_CLI_PATH
+  !insertmacro QWENPAW_REMOVE_LEGACY_CLI_PATH
 !macroend

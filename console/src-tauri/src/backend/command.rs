@@ -51,14 +51,23 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
 /// Builds the command used to start the packaged Python backend sidecar.
 #[cfg(not(debug_assertions))]
 pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
-    let backend = packaged_backend_executable(app)?;
+    let bundled_python = packaged_python_runtime(app);
+    let (backend, backend_args) = if cfg!(windows) {
+        let python = bundled_python
+            .clone()
+            .ok_or_else(|| "bundled Python runtime not found; reinstall QwenPaw".to_string())?;
+        (python, vec!["-m", "qwenpaw.tauri.entry"])
+    } else {
+        (packaged_backend_executable(app)?, Vec::new())
+    };
     let backend_dir = backend
         .parent()
         .ok_or_else(|| format!("backend executable has no parent: {}", backend.display()))?
         .to_path_buf();
     log::info!(
-        "[backend] packaged command: {} cwd={}",
+        "[backend] packaged command: {} {} cwd={}",
         backend.display(),
+        backend_args.join(" "),
         backend_dir.display(),
     );
     // Resolve the bundled officecli directory (if present) so it can be
@@ -73,17 +82,26 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
     let mut command = app
         .shell()
         .command(backend)
+        .args(backend_args)
         .current_dir(&backend_dir)
         .env(
             path_env_key(),
-            path_with_backend_dir(&backend_dir, officecli_dir.as_deref())?,
+            packaged_path(app, &backend_dir, officecli_dir.as_deref())?,
         )
         // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
         // See: src/qwenpaw/docs/proxy-bypass-design.md
         .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
-    // Bundled standalone Python used by the backend to install third-party
-    // plugin dependencies (sys.executable is the frozen backend, not Python).
-    if let Some(python) = packaged_python_runtime(app) {
+    if cfg!(windows) {
+        // The non-frozen Windows backend needs the explicit desktop marker.
+        // Ignore user-site packages so execution is reproducible and always
+        // prefers the dependencies shipped in the bundled interpreter.
+        command = command
+            .env("QWENPAW_DESKTOP_APP", "1")
+            .env("PYTHONNOUSERSITE", "1");
+    }
+    // Bundled standalone Python is the Windows backend interpreter and is also
+    // used to install third-party plugin dependencies on every platform.
+    if let Some(python) = bundled_python {
         log::info!("[backend] bundled python runtime: {}", python.display());
         command = command.env(
             "QWENPAW_DESKTOP_PY_RUNTIME",
@@ -190,13 +208,20 @@ fn packaged_backend_executable(app: &tauri::AppHandle) -> Result<PathBuf, String
 }
 
 #[cfg(not(debug_assertions))]
-fn path_with_backend_dir(
+fn packaged_path(
+    app: &tauri::AppHandle,
     backend_dir: &Path,
     officecli_dir: Option<&Path>,
 ) -> Result<String, String> {
-    let mut paths: Vec<PathBuf> = Vec::new();
-    // Prepend the officecli directory so `shutil.which("officecli")`
-    // resolves the bundled binary before any system-wide install.
+    let mut paths = Vec::new();
+    if cfg!(windows) {
+        if let Some(python) = packaged_python_runtime(app) {
+            if let Some(dir) = python.parent() {
+                paths.push(dir.to_path_buf());
+                paths.push(dir.join("Scripts"));
+            }
+        }
+    }
     if let Some(oc_dir) = officecli_dir {
         paths.push(oc_dir.to_path_buf());
     }
@@ -204,11 +229,10 @@ fn path_with_backend_dir(
     if let Some(existing) = std::env::var_os(path_env_key()) {
         paths.extend(std::env::split_paths(&existing));
     }
-
     std::env::join_paths(paths)
-        .map_err(|err| format!("failed to join backend PATH entries: {err}"))?
+        .map_err(|err| format!("failed to join packaged PATH entries: {err}"))?
         .into_string()
-        .map_err(|_| "backend PATH contains non-Unicode data".to_string())
+        .map_err(|_| "packaged PATH contains non-Unicode data".to_string())
 }
 
 #[cfg(all(not(debug_assertions), windows))]

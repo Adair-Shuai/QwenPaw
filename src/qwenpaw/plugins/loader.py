@@ -40,7 +40,13 @@ _IMPORT_NAME_OVERRIDES = {
 
 
 def _is_frozen() -> bool:
-    return bool(getattr(sys, "frozen", False))
+    # Windows desktop now runs directly from the bundled standalone CPython
+    # to avoid duplicating the complete dependency tree in PyInstaller. It
+    # still needs the desktop/frozen dependency-install policy because the
+    # interpreter lives under the read-only application install directory.
+    return bool(getattr(sys, "frozen", False)) or (
+        os.environ.get("QWENPAW_DESKTOP_APP") == "1"
+    )
 
 
 def _desktop_python() -> Optional[str]:
