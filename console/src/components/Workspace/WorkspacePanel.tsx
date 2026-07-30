@@ -32,7 +32,14 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Button, Dropdown, Tooltip, Space, ConfigProvider } from "antd";
+import {
+  Button,
+  Dropdown,
+  Tooltip,
+  Space,
+  ConfigProvider,
+  message,
+} from "antd";
 import type { MenuProps } from "antd";
 import {
   CloseOutlined,
@@ -49,6 +56,11 @@ import { rendererRegistry } from "./store/rendererRegistry";
 import { registerBuiltinRenderers } from "./store/builtinRenderers";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { WorkspaceArtifact, RendererContext, WorkspaceApi } from "./types";
+import { buildAuthHeaders } from "../../api/authHeaders";
+import {
+  DownloadCancelledError,
+  downloadFileFromUrl,
+} from "../../utils/downloadFileFromUrl";
 
 // 确保内置渲染器只注册一次
 let renderersRegistered = false;
@@ -121,9 +133,23 @@ const WorkspacePanel: React.FC = () => {
       updateArtifact,
       closeTab,
       openArtifact,
-      download: (artifact: WorkspaceArtifact) => {
+      download: async (artifact: WorkspaceArtifact) => {
         if (artifact.binaryUrl) {
-          window.open(artifact.binaryUrl, "_blank");
+          try {
+            await downloadFileFromUrl(artifact.binaryUrl, artifact.title, {
+              headers: buildAuthHeaders(),
+              errorMessage: t("workspace.downloadFailed", "文件下载失败"),
+              preferResponseFilename: true,
+            });
+          } catch (error) {
+            if (!(error instanceof DownloadCancelledError)) {
+              message.error(
+                error instanceof Error
+                  ? error.message
+                  : t("workspace.downloadFailed", "文件下载失败"),
+              );
+            }
+          }
         } else if (artifact.textContent) {
           const blob = new Blob([artifact.textContent], {
             type: artifact.mimeType,
@@ -132,13 +158,17 @@ const WorkspacePanel: React.FC = () => {
           const a = document.createElement("a");
           a.href = url;
           a.download = artifact.title;
+          document.body.appendChild(a);
           a.click();
-          URL.revokeObjectURL(url);
+          setTimeout(() => {
+            URL.revokeObjectURL(url);
+            a.remove();
+          }, 0);
         }
       },
-      fullscreen: (_artifact: WorkspaceArtifact) => toggleFullscreen(),
+      fullscreen: () => toggleFullscreen(),
     }),
-    [updateArtifact, closeTab, openArtifact, toggleFullscreen],
+    [updateArtifact, closeTab, openArtifact, toggleFullscreen, t],
   );
 
   // ── 获取当前激活的 Artifact ──

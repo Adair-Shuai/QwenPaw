@@ -1,43 +1,937 @@
-var __ff_css=document.createElement("style");__ff_css.textContent='/* this gets exported as style.css and can be used for the default theming */\n/* these are the necessary styles for React/Svelte Flow, they get used by base.css and style.css */\n.react-flow {\n  direction: ltr;\n\n  --xy-edge-stroke-default: #b1b1b7;\n  --xy-edge-stroke-width-default: 1;\n  --xy-edge-stroke-selected-default: #555;\n\n  --xy-connectionline-stroke-default: #b1b1b7;\n  --xy-connectionline-stroke-width-default: 1;\n\n  --xy-attribution-background-color-default: rgba(255, 255, 255, 0.5);\n\n  --xy-minimap-background-color-default: #fff;\n  --xy-minimap-mask-background-color-default: rgba(240, 240, 240, 0.6);\n  --xy-minimap-mask-stroke-color-default: transparent;\n  --xy-minimap-mask-stroke-width-default: 1;\n  --xy-minimap-node-background-color-default: #e2e2e2;\n  --xy-minimap-node-stroke-color-default: transparent;\n  --xy-minimap-node-stroke-width-default: 2;\n\n  --xy-background-color-default: transparent;\n  --xy-background-pattern-dots-color-default: #91919a;\n  --xy-background-pattern-lines-color-default: #eee;\n  --xy-background-pattern-cross-color-default: #e2e2e2;\n  background-color: var(--xy-background-color, var(--xy-background-color-default));\n  --xy-node-color-default: inherit;\n  --xy-node-border-default: 1px solid #1a192b;\n  --xy-node-background-color-default: #fff;\n  --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);\n  --xy-node-boxshadow-hover-default: 0 1px 4px 1px rgba(0, 0, 0, 0.08);\n  --xy-node-boxshadow-selected-default: 0 0 0 0.5px #1a192b;\n  --xy-node-border-radius-default: 3px;\n\n  --xy-handle-background-color-default: #1a192b;\n  --xy-handle-border-color-default: #fff;\n\n  --xy-selection-background-color-default: rgba(0, 89, 220, 0.08);\n  --xy-selection-border-default: 1px dotted rgba(0, 89, 220, 0.8);\n\n  --xy-controls-button-background-color-default: #fefefe;\n  --xy-controls-button-background-color-hover-default: #f4f4f4;\n  --xy-controls-button-color-default: inherit;\n  --xy-controls-button-color-hover-default: inherit;\n  --xy-controls-button-border-color-default: #eee;\n  --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);\n\n  --xy-edge-label-background-color-default: #ffffff;\n  --xy-edge-label-color-default: inherit;\n  --xy-resize-background-color-default: #3367d9;\n}\n.react-flow.dark {\n  --xy-edge-stroke-default: #3e3e3e;\n  --xy-edge-stroke-width-default: 1;\n  --xy-edge-stroke-selected-default: #727272;\n\n  --xy-connectionline-stroke-default: #b1b1b7;\n  --xy-connectionline-stroke-width-default: 1;\n\n  --xy-attribution-background-color-default: rgba(150, 150, 150, 0.25);\n\n  --xy-minimap-background-color-default: #141414;\n  --xy-minimap-mask-background-color-default: rgba(60, 60, 60, 0.6);\n  --xy-minimap-mask-stroke-color-default: transparent;\n  --xy-minimap-mask-stroke-width-default: 1;\n  --xy-minimap-node-background-color-default: #2b2b2b;\n  --xy-minimap-node-stroke-color-default: transparent;\n  --xy-minimap-node-stroke-width-default: 2;\n\n  --xy-background-color-default: #141414;\n  --xy-background-pattern-dots-color-default: #555;\n  --xy-background-pattern-lines-color-default: #333;\n  --xy-background-pattern-cross-color-default: #333;\n  --xy-node-color-default: #f8f8f8;\n  --xy-node-border-default: 1px solid #3c3c3c;\n  --xy-node-background-color-default: #1e1e1e;\n  --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);\n  --xy-node-boxshadow-hover-default: 0 1px 4px 1px rgba(255, 255, 255, 0.08);\n  --xy-node-boxshadow-selected-default: 0 0 0 0.5px #999;\n\n  --xy-handle-background-color-default: #bebebe;\n  --xy-handle-border-color-default: #1e1e1e;\n\n  --xy-selection-background-color-default: rgba(200, 200, 220, 0.08);\n  --xy-selection-border-default: 1px dotted rgba(200, 200, 220, 0.8);\n\n  --xy-controls-button-background-color-default: #2b2b2b;\n  --xy-controls-button-background-color-hover-default: #3e3e3e;\n  --xy-controls-button-color-default: #f8f8f8;\n  --xy-controls-button-color-hover-default: #fff;\n  --xy-controls-button-border-color-default: #5b5b5b;\n  --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);\n\n  --xy-edge-label-background-color-default: #141414;\n  --xy-edge-label-color-default: #f8f8f8;\n}\n.react-flow__background {\n  background-color: var(--xy-background-color-props, var(--xy-background-color, var(--xy-background-color-default)));\n  pointer-events: none;\n  z-index: -1;\n}\n.react-flow__container {\n  position: absolute;\n  width: 100%;\n  height: 100%;\n  top: 0;\n  left: 0;\n}\n.react-flow__pane {\n  z-index: 1;\n  touch-action: none;\n}\n.react-flow__pane.draggable {\n    cursor: grab;\n  }\n.react-flow__pane.dragging {\n    cursor: grabbing;\n  }\n.react-flow__pane.selection {\n    cursor: pointer;\n  }\n.react-flow__viewport {\n  transform-origin: 0 0;\n  z-index: 2;\n  pointer-events: none;\n}\n.react-flow__renderer {\n  z-index: 4;\n}\n.react-flow__selection {\n  z-index: 6;\n}\n.react-flow__nodesselection-rect:focus,\n.react-flow__nodesselection-rect:focus-visible {\n  outline: none;\n}\n.react-flow__edge-path {\n  stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));\n  stroke-width: var(--xy-edge-stroke-width, var(--xy-edge-stroke-width-default));\n  fill: none;\n}\n.react-flow__connection-path {\n  stroke: var(--xy-connectionline-stroke, var(--xy-connectionline-stroke-default));\n  stroke-width: var(--xy-connectionline-stroke-width, var(--xy-connectionline-stroke-width-default));\n  fill: none;\n}\n.react-flow .react-flow__edges {\n  position: absolute;\n}\n.react-flow .react-flow__edges svg {\n    overflow: visible;\n    position: absolute;\n    pointer-events: none;\n  }\n.react-flow__edge {\n  pointer-events: visibleStroke;\n}\n.react-flow__edge.selectable {\n    cursor: pointer;\n  }\n.react-flow__edge.animated path {\n    stroke-dasharray: 5;\n    animation: dashdraw 0.5s linear infinite;\n  }\n.react-flow__edge.animated path.react-flow__edge-interaction {\n    stroke-dasharray: none;\n    animation: none;\n  }\n.react-flow__edge.inactive {\n    pointer-events: none;\n  }\n.react-flow__edge.selected,\n  .react-flow__edge:focus,\n  .react-flow__edge:focus-visible {\n    outline: none;\n  }\n.react-flow__edge.selected .react-flow__edge-path,\n  .react-flow__edge.selectable:focus .react-flow__edge-path,\n  .react-flow__edge.selectable:focus-visible .react-flow__edge-path {\n    stroke: var(--xy-edge-stroke-selected, var(--xy-edge-stroke-selected-default));\n  }\n.react-flow__edge-textwrapper {\n    pointer-events: all;\n  }\n.react-flow__edge .react-flow__edge-text {\n    pointer-events: none;\n    -webkit-user-select: none;\n       -moz-user-select: none;\n            user-select: none;\n  }\n/* Arrowhead marker styles - use CSS custom properties as default */\n.react-flow__arrowhead polyline {\n  stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));\n}\n.react-flow__arrowhead polyline.arrowclosed {\n  fill: var(--xy-edge-stroke, var(--xy-edge-stroke-default));\n}\n.react-flow__connection {\n  pointer-events: none;\n}\n.react-flow__connection .animated {\n    stroke-dasharray: 5;\n    animation: dashdraw 0.5s linear infinite;\n  }\nsvg.react-flow__connectionline {\n  z-index: 1001;\n  overflow: visible;\n  position: absolute;\n}\n.react-flow__nodes {\n  pointer-events: none;\n  transform-origin: 0 0;\n}\n.react-flow__node {\n  position: absolute;\n  -webkit-user-select: none;\n     -moz-user-select: none;\n          user-select: none;\n  pointer-events: all;\n  transform-origin: 0 0;\n  box-sizing: border-box;\n  cursor: default;\n}\n.react-flow__node.selectable {\n    cursor: pointer;\n  }\n.react-flow__node.draggable {\n    cursor: grab;\n    pointer-events: all;\n  }\n.react-flow__node.draggable.dragging {\n      cursor: grabbing;\n    }\n.react-flow__nodesselection {\n  z-index: 3;\n  transform-origin: left top;\n  pointer-events: none;\n}\n.react-flow__nodesselection-rect {\n    position: absolute;\n    pointer-events: all;\n    cursor: grab;\n  }\n.react-flow__handle {\n  position: absolute;\n  pointer-events: none;\n  min-width: 5px;\n  min-height: 5px;\n  width: 6px;\n  height: 6px;\n  background-color: var(--xy-handle-background-color, var(--xy-handle-background-color-default));\n  border: 1px solid var(--xy-handle-border-color, var(--xy-handle-border-color-default));\n  border-radius: 100%;\n}\n.react-flow__handle.connectingfrom {\n    pointer-events: all;\n  }\n.react-flow__handle.connectionindicator {\n    pointer-events: all;\n    cursor: crosshair;\n  }\n.react-flow__handle-bottom {\n    top: auto;\n    left: 50%;\n    bottom: 0;\n    transform: translate(-50%, 50%);\n  }\n.react-flow__handle-top {\n    top: 0;\n    left: 50%;\n    transform: translate(-50%, -50%);\n  }\n.react-flow__handle-left {\n    top: 50%;\n    left: 0;\n    transform: translate(-50%, -50%);\n  }\n.react-flow__handle-right {\n    top: 50%;\n    right: 0;\n    transform: translate(50%, -50%);\n  }\n.react-flow__edgeupdater {\n  cursor: move;\n  pointer-events: all;\n}\n.react-flow__pane.selection .react-flow__panel {\n  pointer-events: none;\n}\n.react-flow__panel {\n  position: absolute;\n  z-index: 5;\n  margin: 15px;\n}\n.react-flow__panel.top {\n    top: 0;\n  }\n.react-flow__panel.bottom {\n    bottom: 0;\n  }\n.react-flow__panel.top.center, .react-flow__panel.bottom.center {\n      left: 50%;\n      transform: translateX(-15px) translateX(-50%);\n    }\n.react-flow__panel.left {\n    left: 0;\n  }\n.react-flow__panel.right {\n    right: 0;\n  }\n.react-flow__panel.left.center, .react-flow__panel.right.center {\n      top: 50%;\n      transform: translateY(-15px) translateY(-50%);\n    }\n.react-flow__attribution {\n  font-size: 10px;\n  background: var(--xy-attribution-background-color, var(--xy-attribution-background-color-default));\n  padding: 2px 3px;\n  margin: 0;\n}\n.react-flow__attribution a {\n    text-decoration: none;\n    color: #999;\n  }\n@keyframes dashdraw {\n  from {\n    stroke-dashoffset: 10;\n  }\n}\n.react-flow__edgelabel-renderer {\n  position: absolute;\n  width: 100%;\n  height: 100%;\n  pointer-events: none;\n  -webkit-user-select: none;\n     -moz-user-select: none;\n          user-select: none;\n  left: 0;\n  top: 0;\n}\n.react-flow__viewport-portal {\n  position: absolute;\n  width: 100%;\n  height: 100%;\n  left: 0;\n  top: 0;\n  -webkit-user-select: none;\n     -moz-user-select: none;\n          user-select: none;\n}\n.react-flow__minimap {\n  background: var(\n    --xy-minimap-background-color-props,\n    var(--xy-minimap-background-color, var(--xy-minimap-background-color-default))\n  );\n}\n.react-flow__minimap-svg {\n    display: block;\n  }\n.react-flow__minimap-mask {\n    fill: var(\n      --xy-minimap-mask-background-color-props,\n      var(--xy-minimap-mask-background-color, var(--xy-minimap-mask-background-color-default))\n    );\n    stroke: var(\n      --xy-minimap-mask-stroke-color-props,\n      var(--xy-minimap-mask-stroke-color, var(--xy-minimap-mask-stroke-color-default))\n    );\n    stroke-width: var(\n      --xy-minimap-mask-stroke-width-props,\n      var(--xy-minimap-mask-stroke-width, var(--xy-minimap-mask-stroke-width-default))\n    );\n  }\n.react-flow__minimap-node {\n    fill: var(\n      --xy-minimap-node-background-color-props,\n      var(--xy-minimap-node-background-color, var(--xy-minimap-node-background-color-default))\n    );\n    stroke: var(\n      --xy-minimap-node-stroke-color-props,\n      var(--xy-minimap-node-stroke-color, var(--xy-minimap-node-stroke-color-default))\n    );\n    stroke-width: var(\n      --xy-minimap-node-stroke-width-props,\n      var(--xy-minimap-node-stroke-width, var(--xy-minimap-node-stroke-width-default))\n    );\n  }\n.react-flow__background-pattern.dots {\n    fill: var(\n      --xy-background-pattern-color-props,\n      var(--xy-background-pattern-color, var(--xy-background-pattern-dots-color-default))\n    );\n  }\n.react-flow__background-pattern.lines {\n    stroke: var(\n      --xy-background-pattern-color-props,\n      var(--xy-background-pattern-color, var(--xy-background-pattern-lines-color-default))\n    );\n  }\n.react-flow__background-pattern.cross {\n    stroke: var(\n      --xy-background-pattern-color-props,\n      var(--xy-background-pattern-color, var(--xy-background-pattern-cross-color-default))\n    );\n  }\n.react-flow__controls {\n  display: flex;\n  flex-direction: column;\n  box-shadow: var(--xy-controls-box-shadow, var(--xy-controls-box-shadow-default));\n}\n.react-flow__controls.horizontal {\n    flex-direction: row;\n  }\n.react-flow__controls-button {\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    height: 26px;\n    width: 26px;\n    padding: 4px;\n    border: none;\n    background: var(--xy-controls-button-background-color, var(--xy-controls-button-background-color-default));\n    border-bottom: 1px solid\n      var(\n        --xy-controls-button-border-color-props,\n        var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))\n      );\n    color: var(\n      --xy-controls-button-color-props,\n      var(--xy-controls-button-color, var(--xy-controls-button-color-default))\n    );\n    cursor: pointer;\n    -webkit-user-select: none;\n       -moz-user-select: none;\n            user-select: none;\n  }\n.react-flow__controls-button svg {\n      width: 100%;\n      max-width: 12px;\n      max-height: 12px;\n      fill: currentColor;\n    }\n.react-flow__edge.updating .react-flow__edge-path {\n      stroke: #777;\n    }\n.react-flow__edge-text {\n    font-size: 10px;\n  }\n.react-flow__node.selectable:focus,\n  .react-flow__node.selectable:focus-visible {\n    outline: none;\n  }\n.react-flow__node-input,\n.react-flow__node-default,\n.react-flow__node-output,\n.react-flow__node-group {\n  padding: 10px;\n  border-radius: var(--xy-node-border-radius, var(--xy-node-border-radius-default));\n  width: 150px;\n  font-size: 12px;\n  color: var(--xy-node-color, var(--xy-node-color-default));\n  text-align: center;\n  border: var(--xy-node-border, var(--xy-node-border-default));\n  background-color: var(--xy-node-background-color, var(--xy-node-background-color-default));\n}\n.react-flow__node-input.selectable:hover, .react-flow__node-default.selectable:hover, .react-flow__node-output.selectable:hover, .react-flow__node-group.selectable:hover {\n      box-shadow: var(--xy-node-boxshadow-hover, var(--xy-node-boxshadow-hover-default));\n    }\n.react-flow__node-input.selectable.selected,\n    .react-flow__node-input.selectable:focus,\n    .react-flow__node-input.selectable:focus-visible,\n    .react-flow__node-default.selectable.selected,\n    .react-flow__node-default.selectable:focus,\n    .react-flow__node-default.selectable:focus-visible,\n    .react-flow__node-output.selectable.selected,\n    .react-flow__node-output.selectable:focus,\n    .react-flow__node-output.selectable:focus-visible,\n    .react-flow__node-group.selectable.selected,\n    .react-flow__node-group.selectable:focus,\n    .react-flow__node-group.selectable:focus-visible {\n      box-shadow: var(--xy-node-boxshadow-selected, var(--xy-node-boxshadow-selected-default));\n    }\n.react-flow__node-group {\n  background-color: var(--xy-node-group-background-color, var(--xy-node-group-background-color-default));\n}\n.react-flow__nodesselection-rect,\n.react-flow__selection {\n  background: var(--xy-selection-background-color, var(--xy-selection-background-color-default));\n  border: var(--xy-selection-border, var(--xy-selection-border-default));\n}\n.react-flow__nodesselection-rect:focus,\n  .react-flow__nodesselection-rect:focus-visible,\n  .react-flow__selection:focus,\n  .react-flow__selection:focus-visible {\n    outline: none;\n  }\n.react-flow__controls-button:hover {\n      background: var(\n        --xy-controls-button-background-color-hover-props,\n        var(--xy-controls-button-background-color-hover, var(--xy-controls-button-background-color-hover-default))\n      );\n      color: var(\n        --xy-controls-button-color-hover-props,\n        var(--xy-controls-button-color-hover, var(--xy-controls-button-color-hover-default))\n      );\n    }\n.react-flow__controls-button:disabled {\n      pointer-events: none;\n    }\n.react-flow__controls-button:disabled svg {\n        fill-opacity: 0.4;\n      }\n.react-flow__controls-button:last-child {\n    border-bottom: none;\n  }\n.react-flow__controls.horizontal .react-flow__controls-button {\n    border-bottom: none;\n    border-right: 1px solid\n      var(\n        --xy-controls-button-border-color-props,\n        var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))\n      );\n  }\n.react-flow__controls.horizontal .react-flow__controls-button:last-child {\n    border-right: none;\n  }\n.react-flow__resize-control {\n  position: absolute;\n}\n.react-flow__resize-control.left,\n.react-flow__resize-control.right {\n  cursor: ew-resize;\n}\n.react-flow__resize-control.top,\n.react-flow__resize-control.bottom {\n  cursor: ns-resize;\n}\n.react-flow__resize-control.top.left,\n.react-flow__resize-control.bottom.right {\n  cursor: nwse-resize;\n}\n.react-flow__resize-control.bottom.left,\n.react-flow__resize-control.top.right {\n  cursor: nesw-resize;\n}\n/* handle styles */\n.react-flow__resize-control.handle {\n  width: 5px;\n  height: 5px;\n  border: 1px solid #fff;\n  border-radius: 1px;\n  background-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));\n  translate: -50% -50%;\n}\n.react-flow__resize-control.handle.left {\n  left: 0;\n  top: 50%;\n}\n.react-flow__resize-control.handle.right {\n  left: 100%;\n  top: 50%;\n}\n.react-flow__resize-control.handle.top {\n  left: 50%;\n  top: 0;\n}\n.react-flow__resize-control.handle.bottom {\n  left: 50%;\n  top: 100%;\n}\n.react-flow__resize-control.handle.top.left {\n  left: 0;\n}\n.react-flow__resize-control.handle.bottom.left {\n  left: 0;\n}\n.react-flow__resize-control.handle.top.right {\n  left: 100%;\n}\n.react-flow__resize-control.handle.bottom.right {\n  left: 100%;\n}\n/* line styles */\n.react-flow__resize-control.line {\n  border-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));\n  border-width: 0;\n  border-style: solid;\n}\n.react-flow__resize-control.line.left,\n.react-flow__resize-control.line.right {\n  width: 1px;\n  transform: translate(-50%, 0);\n  top: 0;\n  height: 100%;\n}\n.react-flow__resize-control.line.left {\n  left: 0;\n  border-left-width: 1px;\n}\n.react-flow__resize-control.line.right {\n  left: 100%;\n  border-right-width: 1px;\n}\n.react-flow__resize-control.line.top,\n.react-flow__resize-control.line.bottom {\n  height: 1px;\n  transform: translate(0, -50%);\n  left: 0;\n  width: 100%;\n}\n.react-flow__resize-control.line.top {\n  top: 0;\n  border-top-width: 1px;\n}\n.react-flow__resize-control.line.bottom {\n  border-bottom-width: 1px;\n  top: 100%;\n}\n.react-flow__edge-textbg {\n  fill: var(--xy-edge-label-background-color, var(--xy-edge-label-background-color-default));\n}\n.react-flow__edge-text {\n  fill: var(--xy-edge-label-color, var(--xy-edge-label-color-default));\n}\n';document.head.appendChild(__ff_css);
-var __qp = typeof window !== "undefined" && window.QwenPaw || {};
-var __h = __qp.host || {};
-if (__h.React && !window.React) window.React = __h.React;
-if (__h.ReactDOM && !window.ReactDOM) window.ReactDOM = __h.ReactDOM;
-if (typeof process === "undefined") window.process = { env: { NODE_ENV: "production" }, platform: "browser", versions: {}, cwd: function() {
-  return "/";
-} };
-(function(React$2) {
+if (typeof window !== "undefined" && window.QwenPaw && window.QwenPaw.host) {
+  if (!window.React) window.React = window.QwenPaw.host.React;
+  if (!window.ReactDOM) window.ReactDOM = window.QwenPaw.host.ReactDOM;
+}
+if (typeof process === "undefined") {
+  var process = typeof window !== "undefined" && window.process ? window.process : { env: { NODE_ENV: "production" }, platform: "browser" };
+}
+(function(React2, reactDom) {
   "use strict";
-  function getReact() {
-    if (typeof window === "undefined") return null;
-    return window.React || window.QwenPaw && window.QwenPaw.host && window.QwenPaw.host.React;
+  function getDefaultExportFromCjs(x) {
+    return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
   }
-  function jsx(type, config, maybeKey) {
-    const R = getReact();
-    if (!R) {
-      throw new Error(
-        "[flowforge] Host React not available — ensure window.React is set before plugin loads"
-      );
+  var jsxRuntime = { exports: {} };
+  var reactJsxRuntime_production_min = {};
+  /**
+   * @license React
+   * react-jsx-runtime.production.min.js
+   *
+   * Copyright (c) Facebook, Inc. and its affiliates.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   */
+  var hasRequiredReactJsxRuntime_production_min;
+  function requireReactJsxRuntime_production_min() {
+    if (hasRequiredReactJsxRuntime_production_min) return reactJsxRuntime_production_min;
+    hasRequiredReactJsxRuntime_production_min = 1;
+    var f = React2, k = Symbol.for("react.element"), l = Symbol.for("react.fragment"), m = Object.prototype.hasOwnProperty, n = f.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED.ReactCurrentOwner, p = { key: true, ref: true, __self: true, __source: true };
+    function q(c, a, g) {
+      var b, d = {}, e = null, h = null;
+      void 0 !== g && (e = "" + g);
+      void 0 !== a.key && (e = "" + a.key);
+      void 0 !== a.ref && (h = a.ref);
+      for (b in a) m.call(a, b) && !p.hasOwnProperty(b) && (d[b] = a[b]);
+      if (c && c.defaultProps) for (b in a = c.defaultProps, a) void 0 === d[b] && (d[b] = a[b]);
+      return { $$typeof: k, type: c, key: e, ref: h, props: d, _owner: n.current };
     }
-    if (config == null) {
-      if (maybeKey !== void 0 && maybeKey !== null) {
-        return R.createElement(type, { key: maybeKey });
-      }
-      return R.createElement(type);
-    }
-    const props = {};
-    for (const k in config) {
-      if (Object.prototype.hasOwnProperty.call(config, k)) {
-        props[k] = config[k];
-      }
-    }
-    if (maybeKey !== void 0 && maybeKey !== null) {
-      props.key = maybeKey;
-    }
-    return R.createElement(type, props);
+    reactJsxRuntime_production_min.Fragment = l;
+    reactJsxRuntime_production_min.jsx = q;
+    reactJsxRuntime_production_min.jsxs = q;
+    return reactJsxRuntime_production_min;
   }
-  const jsxs = jsx;
-  const Fragment = getReact().Fragment;
+  var reactJsxRuntime_development = {};
+  /**
+   * @license React
+   * react-jsx-runtime.development.js
+   *
+   * Copyright (c) Facebook, Inc. and its affiliates.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   */
+  var hasRequiredReactJsxRuntime_development;
+  function requireReactJsxRuntime_development() {
+    if (hasRequiredReactJsxRuntime_development) return reactJsxRuntime_development;
+    hasRequiredReactJsxRuntime_development = 1;
+    if (process.env.NODE_ENV !== "production") {
+      (function() {
+        var React$1 = React2;
+        var REACT_ELEMENT_TYPE = Symbol.for("react.element");
+        var REACT_PORTAL_TYPE = Symbol.for("react.portal");
+        var REACT_FRAGMENT_TYPE = Symbol.for("react.fragment");
+        var REACT_STRICT_MODE_TYPE = Symbol.for("react.strict_mode");
+        var REACT_PROFILER_TYPE = Symbol.for("react.profiler");
+        var REACT_PROVIDER_TYPE = Symbol.for("react.provider");
+        var REACT_CONTEXT_TYPE = Symbol.for("react.context");
+        var REACT_FORWARD_REF_TYPE = Symbol.for("react.forward_ref");
+        var REACT_SUSPENSE_TYPE = Symbol.for("react.suspense");
+        var REACT_SUSPENSE_LIST_TYPE = Symbol.for("react.suspense_list");
+        var REACT_MEMO_TYPE = Symbol.for("react.memo");
+        var REACT_LAZY_TYPE = Symbol.for("react.lazy");
+        var REACT_OFFSCREEN_TYPE = Symbol.for("react.offscreen");
+        var MAYBE_ITERATOR_SYMBOL = Symbol.iterator;
+        var FAUX_ITERATOR_SYMBOL = "@@iterator";
+        function getIteratorFn(maybeIterable) {
+          if (maybeIterable === null || typeof maybeIterable !== "object") {
+            return null;
+          }
+          var maybeIterator = MAYBE_ITERATOR_SYMBOL && maybeIterable[MAYBE_ITERATOR_SYMBOL] || maybeIterable[FAUX_ITERATOR_SYMBOL];
+          if (typeof maybeIterator === "function") {
+            return maybeIterator;
+          }
+          return null;
+        }
+        var ReactSharedInternals = React$1.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED;
+        function error(format) {
+          {
+            {
+              for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+                args[_key2 - 1] = arguments[_key2];
+              }
+              printWarning("error", format, args);
+            }
+          }
+        }
+        function printWarning(level, format, args) {
+          {
+            var ReactDebugCurrentFrame2 = ReactSharedInternals.ReactDebugCurrentFrame;
+            var stack = ReactDebugCurrentFrame2.getStackAddendum();
+            if (stack !== "") {
+              format += "%s";
+              args = args.concat([stack]);
+            }
+            var argsWithFormat = args.map(function(item) {
+              return String(item);
+            });
+            argsWithFormat.unshift("Warning: " + format);
+            Function.prototype.apply.call(console[level], console, argsWithFormat);
+          }
+        }
+        var enableScopeAPI = false;
+        var enableCacheElement = false;
+        var enableTransitionTracing = false;
+        var enableLegacyHidden = false;
+        var enableDebugTracing = false;
+        var REACT_MODULE_REFERENCE;
+        {
+          REACT_MODULE_REFERENCE = Symbol.for("react.module.reference");
+        }
+        function isValidElementType(type) {
+          if (typeof type === "string" || typeof type === "function") {
+            return true;
+          }
+          if (type === REACT_FRAGMENT_TYPE || type === REACT_PROFILER_TYPE || enableDebugTracing || type === REACT_STRICT_MODE_TYPE || type === REACT_SUSPENSE_TYPE || type === REACT_SUSPENSE_LIST_TYPE || enableLegacyHidden || type === REACT_OFFSCREEN_TYPE || enableScopeAPI || enableCacheElement || enableTransitionTracing) {
+            return true;
+          }
+          if (typeof type === "object" && type !== null) {
+            if (type.$$typeof === REACT_LAZY_TYPE || type.$$typeof === REACT_MEMO_TYPE || type.$$typeof === REACT_PROVIDER_TYPE || type.$$typeof === REACT_CONTEXT_TYPE || type.$$typeof === REACT_FORWARD_REF_TYPE || // This needs to include all possible module reference object
+            // types supported by any Flight configuration anywhere since
+            // we don't know which Flight build this will end up being used
+            // with.
+            type.$$typeof === REACT_MODULE_REFERENCE || type.getModuleId !== void 0) {
+              return true;
+            }
+          }
+          return false;
+        }
+        function getWrappedName(outerType, innerType, wrapperName) {
+          var displayName = outerType.displayName;
+          if (displayName) {
+            return displayName;
+          }
+          var functionName = innerType.displayName || innerType.name || "";
+          return functionName !== "" ? wrapperName + "(" + functionName + ")" : wrapperName;
+        }
+        function getContextName(type) {
+          return type.displayName || "Context";
+        }
+        function getComponentNameFromType(type) {
+          if (type == null) {
+            return null;
+          }
+          {
+            if (typeof type.tag === "number") {
+              error("Received an unexpected object in getComponentNameFromType(). This is likely a bug in React. Please file an issue.");
+            }
+          }
+          if (typeof type === "function") {
+            return type.displayName || type.name || null;
+          }
+          if (typeof type === "string") {
+            return type;
+          }
+          switch (type) {
+            case REACT_FRAGMENT_TYPE:
+              return "Fragment";
+            case REACT_PORTAL_TYPE:
+              return "Portal";
+            case REACT_PROFILER_TYPE:
+              return "Profiler";
+            case REACT_STRICT_MODE_TYPE:
+              return "StrictMode";
+            case REACT_SUSPENSE_TYPE:
+              return "Suspense";
+            case REACT_SUSPENSE_LIST_TYPE:
+              return "SuspenseList";
+          }
+          if (typeof type === "object") {
+            switch (type.$$typeof) {
+              case REACT_CONTEXT_TYPE:
+                var context = type;
+                return getContextName(context) + ".Consumer";
+              case REACT_PROVIDER_TYPE:
+                var provider = type;
+                return getContextName(provider._context) + ".Provider";
+              case REACT_FORWARD_REF_TYPE:
+                return getWrappedName(type, type.render, "ForwardRef");
+              case REACT_MEMO_TYPE:
+                var outerName = type.displayName || null;
+                if (outerName !== null) {
+                  return outerName;
+                }
+                return getComponentNameFromType(type.type) || "Memo";
+              case REACT_LAZY_TYPE: {
+                var lazyComponent = type;
+                var payload = lazyComponent._payload;
+                var init2 = lazyComponent._init;
+                try {
+                  return getComponentNameFromType(init2(payload));
+                } catch (x) {
+                  return null;
+                }
+              }
+            }
+          }
+          return null;
+        }
+        var assign = Object.assign;
+        var disabledDepth = 0;
+        var prevLog;
+        var prevInfo;
+        var prevWarn;
+        var prevError;
+        var prevGroup;
+        var prevGroupCollapsed;
+        var prevGroupEnd;
+        function disabledLog() {
+        }
+        disabledLog.__reactDisabledLog = true;
+        function disableLogs() {
+          {
+            if (disabledDepth === 0) {
+              prevLog = console.log;
+              prevInfo = console.info;
+              prevWarn = console.warn;
+              prevError = console.error;
+              prevGroup = console.group;
+              prevGroupCollapsed = console.groupCollapsed;
+              prevGroupEnd = console.groupEnd;
+              var props = {
+                configurable: true,
+                enumerable: true,
+                value: disabledLog,
+                writable: true
+              };
+              Object.defineProperties(console, {
+                info: props,
+                log: props,
+                warn: props,
+                error: props,
+                group: props,
+                groupCollapsed: props,
+                groupEnd: props
+              });
+            }
+            disabledDepth++;
+          }
+        }
+        function reenableLogs() {
+          {
+            disabledDepth--;
+            if (disabledDepth === 0) {
+              var props = {
+                configurable: true,
+                enumerable: true,
+                writable: true
+              };
+              Object.defineProperties(console, {
+                log: assign({}, props, {
+                  value: prevLog
+                }),
+                info: assign({}, props, {
+                  value: prevInfo
+                }),
+                warn: assign({}, props, {
+                  value: prevWarn
+                }),
+                error: assign({}, props, {
+                  value: prevError
+                }),
+                group: assign({}, props, {
+                  value: prevGroup
+                }),
+                groupCollapsed: assign({}, props, {
+                  value: prevGroupCollapsed
+                }),
+                groupEnd: assign({}, props, {
+                  value: prevGroupEnd
+                })
+              });
+            }
+            if (disabledDepth < 0) {
+              error("disabledDepth fell below zero. This is a bug in React. Please file an issue.");
+            }
+          }
+        }
+        var ReactCurrentDispatcher = ReactSharedInternals.ReactCurrentDispatcher;
+        var prefix;
+        function describeBuiltInComponentFrame(name, source, ownerFn) {
+          {
+            if (prefix === void 0) {
+              try {
+                throw Error();
+              } catch (x) {
+                var match = x.stack.trim().match(/\n( *(at )?)/);
+                prefix = match && match[1] || "";
+              }
+            }
+            return "\n" + prefix + name;
+          }
+        }
+        var reentry = false;
+        var componentFrameCache;
+        {
+          var PossiblyWeakMap = typeof WeakMap === "function" ? WeakMap : Map;
+          componentFrameCache = new PossiblyWeakMap();
+        }
+        function describeNativeComponentFrame(fn, construct) {
+          if (!fn || reentry) {
+            return "";
+          }
+          {
+            var frame2 = componentFrameCache.get(fn);
+            if (frame2 !== void 0) {
+              return frame2;
+            }
+          }
+          var control;
+          reentry = true;
+          var previousPrepareStackTrace = Error.prepareStackTrace;
+          Error.prepareStackTrace = void 0;
+          var previousDispatcher;
+          {
+            previousDispatcher = ReactCurrentDispatcher.current;
+            ReactCurrentDispatcher.current = null;
+            disableLogs();
+          }
+          try {
+            if (construct) {
+              var Fake = function() {
+                throw Error();
+              };
+              Object.defineProperty(Fake.prototype, "props", {
+                set: function() {
+                  throw Error();
+                }
+              });
+              if (typeof Reflect === "object" && Reflect.construct) {
+                try {
+                  Reflect.construct(Fake, []);
+                } catch (x) {
+                  control = x;
+                }
+                Reflect.construct(fn, [], Fake);
+              } else {
+                try {
+                  Fake.call();
+                } catch (x) {
+                  control = x;
+                }
+                fn.call(Fake.prototype);
+              }
+            } else {
+              try {
+                throw Error();
+              } catch (x) {
+                control = x;
+              }
+              fn();
+            }
+          } catch (sample) {
+            if (sample && control && typeof sample.stack === "string") {
+              var sampleLines = sample.stack.split("\n");
+              var controlLines = control.stack.split("\n");
+              var s = sampleLines.length - 1;
+              var c = controlLines.length - 1;
+              while (s >= 1 && c >= 0 && sampleLines[s] !== controlLines[c]) {
+                c--;
+              }
+              for (; s >= 1 && c >= 0; s--, c--) {
+                if (sampleLines[s] !== controlLines[c]) {
+                  if (s !== 1 || c !== 1) {
+                    do {
+                      s--;
+                      c--;
+                      if (c < 0 || sampleLines[s] !== controlLines[c]) {
+                        var _frame = "\n" + sampleLines[s].replace(" at new ", " at ");
+                        if (fn.displayName && _frame.includes("<anonymous>")) {
+                          _frame = _frame.replace("<anonymous>", fn.displayName);
+                        }
+                        {
+                          if (typeof fn === "function") {
+                            componentFrameCache.set(fn, _frame);
+                          }
+                        }
+                        return _frame;
+                      }
+                    } while (s >= 1 && c >= 0);
+                  }
+                  break;
+                }
+              }
+            }
+          } finally {
+            reentry = false;
+            {
+              ReactCurrentDispatcher.current = previousDispatcher;
+              reenableLogs();
+            }
+            Error.prepareStackTrace = previousPrepareStackTrace;
+          }
+          var name = fn ? fn.displayName || fn.name : "";
+          var syntheticFrame = name ? describeBuiltInComponentFrame(name) : "";
+          {
+            if (typeof fn === "function") {
+              componentFrameCache.set(fn, syntheticFrame);
+            }
+          }
+          return syntheticFrame;
+        }
+        function describeFunctionComponentFrame(fn, source, ownerFn) {
+          {
+            return describeNativeComponentFrame(fn, false);
+          }
+        }
+        function shouldConstruct(Component) {
+          var prototype = Component.prototype;
+          return !!(prototype && prototype.isReactComponent);
+        }
+        function describeUnknownElementTypeFrameInDEV(type, source, ownerFn) {
+          if (type == null) {
+            return "";
+          }
+          if (typeof type === "function") {
+            {
+              return describeNativeComponentFrame(type, shouldConstruct(type));
+            }
+          }
+          if (typeof type === "string") {
+            return describeBuiltInComponentFrame(type);
+          }
+          switch (type) {
+            case REACT_SUSPENSE_TYPE:
+              return describeBuiltInComponentFrame("Suspense");
+            case REACT_SUSPENSE_LIST_TYPE:
+              return describeBuiltInComponentFrame("SuspenseList");
+          }
+          if (typeof type === "object") {
+            switch (type.$$typeof) {
+              case REACT_FORWARD_REF_TYPE:
+                return describeFunctionComponentFrame(type.render);
+              case REACT_MEMO_TYPE:
+                return describeUnknownElementTypeFrameInDEV(type.type, source, ownerFn);
+              case REACT_LAZY_TYPE: {
+                var lazyComponent = type;
+                var payload = lazyComponent._payload;
+                var init2 = lazyComponent._init;
+                try {
+                  return describeUnknownElementTypeFrameInDEV(init2(payload), source, ownerFn);
+                } catch (x) {
+                }
+              }
+            }
+          }
+          return "";
+        }
+        var hasOwnProperty = Object.prototype.hasOwnProperty;
+        var loggedTypeFailures = {};
+        var ReactDebugCurrentFrame = ReactSharedInternals.ReactDebugCurrentFrame;
+        function setCurrentlyValidatingElement(element) {
+          {
+            if (element) {
+              var owner = element._owner;
+              var stack = describeUnknownElementTypeFrameInDEV(element.type, element._source, owner ? owner.type : null);
+              ReactDebugCurrentFrame.setExtraStackFrame(stack);
+            } else {
+              ReactDebugCurrentFrame.setExtraStackFrame(null);
+            }
+          }
+        }
+        function checkPropTypes(typeSpecs, values, location, componentName, element) {
+          {
+            var has = Function.call.bind(hasOwnProperty);
+            for (var typeSpecName in typeSpecs) {
+              if (has(typeSpecs, typeSpecName)) {
+                var error$1 = void 0;
+                try {
+                  if (typeof typeSpecs[typeSpecName] !== "function") {
+                    var err = Error((componentName || "React class") + ": " + location + " type `" + typeSpecName + "` is invalid; it must be a function, usually from the `prop-types` package, but received `" + typeof typeSpecs[typeSpecName] + "`.This often happens because of typos such as `PropTypes.function` instead of `PropTypes.func`.");
+                    err.name = "Invariant Violation";
+                    throw err;
+                  }
+                  error$1 = typeSpecs[typeSpecName](values, typeSpecName, componentName, location, null, "SECRET_DO_NOT_PASS_THIS_OR_YOU_WILL_BE_FIRED");
+                } catch (ex) {
+                  error$1 = ex;
+                }
+                if (error$1 && !(error$1 instanceof Error)) {
+                  setCurrentlyValidatingElement(element);
+                  error("%s: type specification of %s `%s` is invalid; the type checker function must return `null` or an `Error` but returned a %s. You may have forgotten to pass an argument to the type checker creator (arrayOf, instanceOf, objectOf, oneOf, oneOfType, and shape all require an argument).", componentName || "React class", location, typeSpecName, typeof error$1);
+                  setCurrentlyValidatingElement(null);
+                }
+                if (error$1 instanceof Error && !(error$1.message in loggedTypeFailures)) {
+                  loggedTypeFailures[error$1.message] = true;
+                  setCurrentlyValidatingElement(element);
+                  error("Failed %s type: %s", location, error$1.message);
+                  setCurrentlyValidatingElement(null);
+                }
+              }
+            }
+          }
+        }
+        var isArrayImpl = Array.isArray;
+        function isArray(a) {
+          return isArrayImpl(a);
+        }
+        function typeName(value) {
+          {
+            var hasToStringTag = typeof Symbol === "function" && Symbol.toStringTag;
+            var type = hasToStringTag && value[Symbol.toStringTag] || value.constructor.name || "Object";
+            return type;
+          }
+        }
+        function willCoercionThrow(value) {
+          {
+            try {
+              testStringCoercion(value);
+              return false;
+            } catch (e) {
+              return true;
+            }
+          }
+        }
+        function testStringCoercion(value) {
+          return "" + value;
+        }
+        function checkKeyStringCoercion(value) {
+          {
+            if (willCoercionThrow(value)) {
+              error("The provided key is an unsupported type %s. This value must be coerced to a string before before using it here.", typeName(value));
+              return testStringCoercion(value);
+            }
+          }
+        }
+        var ReactCurrentOwner = ReactSharedInternals.ReactCurrentOwner;
+        var RESERVED_PROPS = {
+          key: true,
+          ref: true,
+          __self: true,
+          __source: true
+        };
+        var specialPropKeyWarningShown;
+        var specialPropRefWarningShown;
+        function hasValidRef(config) {
+          {
+            if (hasOwnProperty.call(config, "ref")) {
+              var getter = Object.getOwnPropertyDescriptor(config, "ref").get;
+              if (getter && getter.isReactWarning) {
+                return false;
+              }
+            }
+          }
+          return config.ref !== void 0;
+        }
+        function hasValidKey(config) {
+          {
+            if (hasOwnProperty.call(config, "key")) {
+              var getter = Object.getOwnPropertyDescriptor(config, "key").get;
+              if (getter && getter.isReactWarning) {
+                return false;
+              }
+            }
+          }
+          return config.key !== void 0;
+        }
+        function warnIfStringRefCannotBeAutoConverted(config, self) {
+          {
+            if (typeof config.ref === "string" && ReactCurrentOwner.current && self) ;
+          }
+        }
+        function defineKeyPropWarningGetter(props, displayName) {
+          {
+            var warnAboutAccessingKey = function() {
+              if (!specialPropKeyWarningShown) {
+                specialPropKeyWarningShown = true;
+                error("%s: `key` is not a prop. Trying to access it will result in `undefined` being returned. If you need to access the same value within the child component, you should pass it as a different prop. (https://reactjs.org/link/special-props)", displayName);
+              }
+            };
+            warnAboutAccessingKey.isReactWarning = true;
+            Object.defineProperty(props, "key", {
+              get: warnAboutAccessingKey,
+              configurable: true
+            });
+          }
+        }
+        function defineRefPropWarningGetter(props, displayName) {
+          {
+            var warnAboutAccessingRef = function() {
+              if (!specialPropRefWarningShown) {
+                specialPropRefWarningShown = true;
+                error("%s: `ref` is not a prop. Trying to access it will result in `undefined` being returned. If you need to access the same value within the child component, you should pass it as a different prop. (https://reactjs.org/link/special-props)", displayName);
+              }
+            };
+            warnAboutAccessingRef.isReactWarning = true;
+            Object.defineProperty(props, "ref", {
+              get: warnAboutAccessingRef,
+              configurable: true
+            });
+          }
+        }
+        var ReactElement = function(type, key, ref, self, source, owner, props) {
+          var element = {
+            // This tag allows us to uniquely identify this as a React Element
+            $$typeof: REACT_ELEMENT_TYPE,
+            // Built-in properties that belong on the element
+            type,
+            key,
+            ref,
+            props,
+            // Record the component responsible for creating this element.
+            _owner: owner
+          };
+          {
+            element._store = {};
+            Object.defineProperty(element._store, "validated", {
+              configurable: false,
+              enumerable: false,
+              writable: true,
+              value: false
+            });
+            Object.defineProperty(element, "_self", {
+              configurable: false,
+              enumerable: false,
+              writable: false,
+              value: self
+            });
+            Object.defineProperty(element, "_source", {
+              configurable: false,
+              enumerable: false,
+              writable: false,
+              value: source
+            });
+            if (Object.freeze) {
+              Object.freeze(element.props);
+              Object.freeze(element);
+            }
+          }
+          return element;
+        };
+        function jsxDEV(type, config, maybeKey, source, self) {
+          {
+            var propName;
+            var props = {};
+            var key = null;
+            var ref = null;
+            if (maybeKey !== void 0) {
+              {
+                checkKeyStringCoercion(maybeKey);
+              }
+              key = "" + maybeKey;
+            }
+            if (hasValidKey(config)) {
+              {
+                checkKeyStringCoercion(config.key);
+              }
+              key = "" + config.key;
+            }
+            if (hasValidRef(config)) {
+              ref = config.ref;
+              warnIfStringRefCannotBeAutoConverted(config, self);
+            }
+            for (propName in config) {
+              if (hasOwnProperty.call(config, propName) && !RESERVED_PROPS.hasOwnProperty(propName)) {
+                props[propName] = config[propName];
+              }
+            }
+            if (type && type.defaultProps) {
+              var defaultProps = type.defaultProps;
+              for (propName in defaultProps) {
+                if (props[propName] === void 0) {
+                  props[propName] = defaultProps[propName];
+                }
+              }
+            }
+            if (key || ref) {
+              var displayName = typeof type === "function" ? type.displayName || type.name || "Unknown" : type;
+              if (key) {
+                defineKeyPropWarningGetter(props, displayName);
+              }
+              if (ref) {
+                defineRefPropWarningGetter(props, displayName);
+              }
+            }
+            return ReactElement(type, key, ref, self, source, ReactCurrentOwner.current, props);
+          }
+        }
+        var ReactCurrentOwner$1 = ReactSharedInternals.ReactCurrentOwner;
+        var ReactDebugCurrentFrame$1 = ReactSharedInternals.ReactDebugCurrentFrame;
+        function setCurrentlyValidatingElement$1(element) {
+          {
+            if (element) {
+              var owner = element._owner;
+              var stack = describeUnknownElementTypeFrameInDEV(element.type, element._source, owner ? owner.type : null);
+              ReactDebugCurrentFrame$1.setExtraStackFrame(stack);
+            } else {
+              ReactDebugCurrentFrame$1.setExtraStackFrame(null);
+            }
+          }
+        }
+        var propTypesMisspellWarningShown;
+        {
+          propTypesMisspellWarningShown = false;
+        }
+        function isValidElement(object2) {
+          {
+            return typeof object2 === "object" && object2 !== null && object2.$$typeof === REACT_ELEMENT_TYPE;
+          }
+        }
+        function getDeclarationErrorAddendum() {
+          {
+            if (ReactCurrentOwner$1.current) {
+              var name = getComponentNameFromType(ReactCurrentOwner$1.current.type);
+              if (name) {
+                return "\n\nCheck the render method of `" + name + "`.";
+              }
+            }
+            return "";
+          }
+        }
+        function getSourceInfoErrorAddendum(source) {
+          {
+            return "";
+          }
+        }
+        var ownerHasKeyUseWarning = {};
+        function getCurrentComponentErrorInfo(parentType) {
+          {
+            var info = getDeclarationErrorAddendum();
+            if (!info) {
+              var parentName = typeof parentType === "string" ? parentType : parentType.displayName || parentType.name;
+              if (parentName) {
+                info = "\n\nCheck the top-level render call using <" + parentName + ">.";
+              }
+            }
+            return info;
+          }
+        }
+        function validateExplicitKey(element, parentType) {
+          {
+            if (!element._store || element._store.validated || element.key != null) {
+              return;
+            }
+            element._store.validated = true;
+            var currentComponentErrorInfo = getCurrentComponentErrorInfo(parentType);
+            if (ownerHasKeyUseWarning[currentComponentErrorInfo]) {
+              return;
+            }
+            ownerHasKeyUseWarning[currentComponentErrorInfo] = true;
+            var childOwner = "";
+            if (element && element._owner && element._owner !== ReactCurrentOwner$1.current) {
+              childOwner = " It was passed a child from " + getComponentNameFromType(element._owner.type) + ".";
+            }
+            setCurrentlyValidatingElement$1(element);
+            error('Each child in a list should have a unique "key" prop.%s%s See https://reactjs.org/link/warning-keys for more information.', currentComponentErrorInfo, childOwner);
+            setCurrentlyValidatingElement$1(null);
+          }
+        }
+        function validateChildKeys(node, parentType) {
+          {
+            if (typeof node !== "object") {
+              return;
+            }
+            if (isArray(node)) {
+              for (var i = 0; i < node.length; i++) {
+                var child = node[i];
+                if (isValidElement(child)) {
+                  validateExplicitKey(child, parentType);
+                }
+              }
+            } else if (isValidElement(node)) {
+              if (node._store) {
+                node._store.validated = true;
+              }
+            } else if (node) {
+              var iteratorFn = getIteratorFn(node);
+              if (typeof iteratorFn === "function") {
+                if (iteratorFn !== node.entries) {
+                  var iterator = iteratorFn.call(node);
+                  var step;
+                  while (!(step = iterator.next()).done) {
+                    if (isValidElement(step.value)) {
+                      validateExplicitKey(step.value, parentType);
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        function validatePropTypes(element) {
+          {
+            var type = element.type;
+            if (type === null || type === void 0 || typeof type === "string") {
+              return;
+            }
+            var propTypes;
+            if (typeof type === "function") {
+              propTypes = type.propTypes;
+            } else if (typeof type === "object" && (type.$$typeof === REACT_FORWARD_REF_TYPE || // Note: Memo only checks outer props here.
+            // Inner props are checked in the reconciler.
+            type.$$typeof === REACT_MEMO_TYPE)) {
+              propTypes = type.propTypes;
+            } else {
+              return;
+            }
+            if (propTypes) {
+              var name = getComponentNameFromType(type);
+              checkPropTypes(propTypes, element.props, "prop", name, element);
+            } else if (type.PropTypes !== void 0 && !propTypesMisspellWarningShown) {
+              propTypesMisspellWarningShown = true;
+              var _name = getComponentNameFromType(type);
+              error("Component %s declared `PropTypes` instead of `propTypes`. Did you misspell the property assignment?", _name || "Unknown");
+            }
+            if (typeof type.getDefaultProps === "function" && !type.getDefaultProps.isReactClassApproved) {
+              error("getDefaultProps is only used on classic React.createClass definitions. Use a static property named `defaultProps` instead.");
+            }
+          }
+        }
+        function validateFragmentProps(fragment) {
+          {
+            var keys = Object.keys(fragment.props);
+            for (var i = 0; i < keys.length; i++) {
+              var key = keys[i];
+              if (key !== "children" && key !== "key") {
+                setCurrentlyValidatingElement$1(fragment);
+                error("Invalid prop `%s` supplied to `React.Fragment`. React.Fragment can only have `key` and `children` props.", key);
+                setCurrentlyValidatingElement$1(null);
+                break;
+              }
+            }
+            if (fragment.ref !== null) {
+              setCurrentlyValidatingElement$1(fragment);
+              error("Invalid attribute `ref` supplied to `React.Fragment`.");
+              setCurrentlyValidatingElement$1(null);
+            }
+          }
+        }
+        var didWarnAboutKeySpread = {};
+        function jsxWithValidation(type, props, key, isStaticChildren, source, self) {
+          {
+            var validType = isValidElementType(type);
+            if (!validType) {
+              var info = "";
+              if (type === void 0 || typeof type === "object" && type !== null && Object.keys(type).length === 0) {
+                info += " You likely forgot to export your component from the file it's defined in, or you might have mixed up default and named imports.";
+              }
+              var sourceInfo = getSourceInfoErrorAddendum();
+              if (sourceInfo) {
+                info += sourceInfo;
+              } else {
+                info += getDeclarationErrorAddendum();
+              }
+              var typeString;
+              if (type === null) {
+                typeString = "null";
+              } else if (isArray(type)) {
+                typeString = "array";
+              } else if (type !== void 0 && type.$$typeof === REACT_ELEMENT_TYPE) {
+                typeString = "<" + (getComponentNameFromType(type.type) || "Unknown") + " />";
+                info = " Did you accidentally export a JSX literal instead of a component?";
+              } else {
+                typeString = typeof type;
+              }
+              error("React.jsx: type is invalid -- expected a string (for built-in components) or a class/function (for composite components) but got: %s.%s", typeString, info);
+            }
+            var element = jsxDEV(type, props, key, source, self);
+            if (element == null) {
+              return element;
+            }
+            if (validType) {
+              var children2 = props.children;
+              if (children2 !== void 0) {
+                if (isStaticChildren) {
+                  if (isArray(children2)) {
+                    for (var i = 0; i < children2.length; i++) {
+                      validateChildKeys(children2[i], type);
+                    }
+                    if (Object.freeze) {
+                      Object.freeze(children2);
+                    }
+                  } else {
+                    error("React.jsx: Static children should always be an array. You are likely explicitly calling React.jsxs or React.jsxDEV. Use the Babel transform instead.");
+                  }
+                } else {
+                  validateChildKeys(children2, type);
+                }
+              }
+            }
+            {
+              if (hasOwnProperty.call(props, "key")) {
+                var componentName = getComponentNameFromType(type);
+                var keys = Object.keys(props).filter(function(k) {
+                  return k !== "key";
+                });
+                var beforeExample = keys.length > 0 ? "{key: someKey, " + keys.join(": ..., ") + ": ...}" : "{key: someKey}";
+                if (!didWarnAboutKeySpread[componentName + beforeExample]) {
+                  var afterExample = keys.length > 0 ? "{" + keys.join(": ..., ") + ": ...}" : "{}";
+                  error('A props object containing a "key" prop is being spread into JSX:\n  let props = %s;\n  <%s {...props} />\nReact keys must be passed directly to JSX without using spread:\n  let props = %s;\n  <%s key={someKey} {...props} />', beforeExample, componentName, afterExample, componentName);
+                  didWarnAboutKeySpread[componentName + beforeExample] = true;
+                }
+              }
+            }
+            if (type === REACT_FRAGMENT_TYPE) {
+              validateFragmentProps(element);
+            } else {
+              validatePropTypes(element);
+            }
+            return element;
+          }
+        }
+        function jsxWithValidationStatic(type, props, key) {
+          {
+            return jsxWithValidation(type, props, key, true);
+          }
+        }
+        function jsxWithValidationDynamic(type, props, key) {
+          {
+            return jsxWithValidation(type, props, key, false);
+          }
+        }
+        var jsx = jsxWithValidationDynamic;
+        var jsxs = jsxWithValidationStatic;
+        reactJsxRuntime_development.Fragment = REACT_FRAGMENT_TYPE;
+        reactJsxRuntime_development.jsx = jsx;
+        reactJsxRuntime_development.jsxs = jsxs;
+      })();
+    }
+    return reactJsxRuntime_development;
+  }
+  if (process.env.NODE_ENV === "production") {
+    jsxRuntime.exports = requireReactJsxRuntime_production_min();
+  } else {
+    jsxRuntime.exports = requireReactJsxRuntime_development();
+  }
+  var jsxRuntimeExports = jsxRuntime.exports;
   function cc(names) {
     if (typeof names === "string" || typeof names === "number") return "" + names;
     let out = "";
@@ -2861,6 +3755,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     };
   };
   const getNodesBounds = (nodes, params = { nodeOrigin: [0, 0] }) => {
+    if (process.env.NODE_ENV === "development" && !params.nodeLookup) {
+      console.warn("Please use `getNodesBounds` from `useReactFlow`/`useSvelteFlow` hook to ensure correct values for sub flows. If not possible, you have to provide a nodeLookup to support sub flows.");
+    }
     if (nodes.length === 0) {
       return { x: 0, y: 0, width: 0, height: 0 };
     }
@@ -3096,6 +3993,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   const isRectObject = (obj) => isNumeric(obj.width) && isNumeric(obj.height) && isNumeric(obj.x) && isNumeric(obj.y);
   const isNumeric = (n) => !isNaN(n) && isFinite(n);
   const createDevWarn = (lib, helpUrl) => (id2, message) => {
+    if (process.env.NODE_ENV === "development") {
+      console.warn(`[${lib}]: ${message} Help: ${helpUrl}error#${id2}`);
+    }
   };
   const snapPosition = (position, snapGrid = [1, 1]) => {
     return {
@@ -5368,12 +6268,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       destroy
     };
   }
-  function getDefaultExportFromCjs(x) {
-    return x && x.__esModule && Object.prototype.hasOwnProperty.call(x, "default") ? x["default"] : x;
-  }
   var withSelector = { exports: {} };
   var withSelector_production = {};
-  var shim$2 = { exports: {} };
+  var shim = { exports: {} };
   var useSyncExternalStoreShim_production = {};
   /**
    * @license React
@@ -5384,52 +6281,138 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
    * This source code is licensed under the MIT license found in the
    * LICENSE file in the root directory of this source tree.
    */
-  var React$1 = React$2;
-  function is$1(x, y) {
-    return x === y && (0 !== x || 1 / x === 1 / y) || x !== x && y !== y;
-  }
-  var objectIs$1 = "function" === typeof Object.is ? Object.is : is$1, useState = React$1.useState, useEffect$1 = React$1.useEffect, useLayoutEffect = React$1.useLayoutEffect, useDebugValue$2 = React$1.useDebugValue;
-  function useSyncExternalStore$2(subscribe, getSnapshot) {
-    var value = getSnapshot(), _useState = useState({ inst: { value, getSnapshot } }), inst = _useState[0].inst, forceUpdate = _useState[1];
-    useLayoutEffect(
-      function() {
-        inst.value = value;
-        inst.getSnapshot = getSnapshot;
-        checkIfSnapshotChanged(inst) && forceUpdate({ inst });
-      },
-      [subscribe, value, getSnapshot]
-    );
-    useEffect$1(
-      function() {
-        checkIfSnapshotChanged(inst) && forceUpdate({ inst });
-        return subscribe(function() {
-          checkIfSnapshotChanged(inst) && forceUpdate({ inst });
-        });
-      },
-      [subscribe]
-    );
-    useDebugValue$2(value);
-    return value;
-  }
-  function checkIfSnapshotChanged(inst) {
-    var latestGetSnapshot = inst.getSnapshot;
-    inst = inst.value;
-    try {
-      var nextValue = latestGetSnapshot();
-      return !objectIs$1(inst, nextValue);
-    } catch (error) {
-      return true;
+  var hasRequiredUseSyncExternalStoreShim_production;
+  function requireUseSyncExternalStoreShim_production() {
+    if (hasRequiredUseSyncExternalStoreShim_production) return useSyncExternalStoreShim_production;
+    hasRequiredUseSyncExternalStoreShim_production = 1;
+    var React$1 = React2;
+    function is(x, y) {
+      return x === y && (0 !== x || 1 / x === 1 / y) || x !== x && y !== y;
     }
+    var objectIs = "function" === typeof Object.is ? Object.is : is, useState = React$1.useState, useEffect = React$1.useEffect, useLayoutEffect = React$1.useLayoutEffect, useDebugValue2 = React$1.useDebugValue;
+    function useSyncExternalStore$2(subscribe, getSnapshot) {
+      var value = getSnapshot(), _useState = useState({ inst: { value, getSnapshot } }), inst = _useState[0].inst, forceUpdate = _useState[1];
+      useLayoutEffect(
+        function() {
+          inst.value = value;
+          inst.getSnapshot = getSnapshot;
+          checkIfSnapshotChanged(inst) && forceUpdate({ inst });
+        },
+        [subscribe, value, getSnapshot]
+      );
+      useEffect(
+        function() {
+          checkIfSnapshotChanged(inst) && forceUpdate({ inst });
+          return subscribe(function() {
+            checkIfSnapshotChanged(inst) && forceUpdate({ inst });
+          });
+        },
+        [subscribe]
+      );
+      useDebugValue2(value);
+      return value;
+    }
+    function checkIfSnapshotChanged(inst) {
+      var latestGetSnapshot = inst.getSnapshot;
+      inst = inst.value;
+      try {
+        var nextValue = latestGetSnapshot();
+        return !objectIs(inst, nextValue);
+      } catch (error) {
+        return true;
+      }
+    }
+    function useSyncExternalStore$1(subscribe, getSnapshot) {
+      return getSnapshot();
+    }
+    var shim2 = "undefined" === typeof window || "undefined" === typeof window.document || "undefined" === typeof window.document.createElement ? useSyncExternalStore$1 : useSyncExternalStore$2;
+    useSyncExternalStoreShim_production.useSyncExternalStore = void 0 !== React$1.useSyncExternalStore ? React$1.useSyncExternalStore : shim2;
+    return useSyncExternalStoreShim_production;
   }
-  function useSyncExternalStore$1(subscribe, getSnapshot) {
-    return getSnapshot();
+  var useSyncExternalStoreShim_development = {};
+  /**
+   * @license React
+   * use-sync-external-store-shim.development.js
+   *
+   * Copyright (c) Meta Platforms, Inc. and affiliates.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   */
+  var hasRequiredUseSyncExternalStoreShim_development;
+  function requireUseSyncExternalStoreShim_development() {
+    if (hasRequiredUseSyncExternalStoreShim_development) return useSyncExternalStoreShim_development;
+    hasRequiredUseSyncExternalStoreShim_development = 1;
+    "production" !== process.env.NODE_ENV && function() {
+      function is(x, y) {
+        return x === y && (0 !== x || 1 / x === 1 / y) || x !== x && y !== y;
+      }
+      function useSyncExternalStore$2(subscribe, getSnapshot) {
+        didWarnOld18Alpha || void 0 === React$1.startTransition || (didWarnOld18Alpha = true, console.error(
+          "You are using an outdated, pre-release alpha of React 18 that does not support useSyncExternalStore. The use-sync-external-store shim will not work correctly. Upgrade to a newer pre-release."
+        ));
+        var value = getSnapshot();
+        if (!didWarnUncachedGetSnapshot) {
+          var cachedValue = getSnapshot();
+          objectIs(value, cachedValue) || (console.error(
+            "The result of getSnapshot should be cached to avoid an infinite loop"
+          ), didWarnUncachedGetSnapshot = true);
+        }
+        cachedValue = useState({
+          inst: { value, getSnapshot }
+        });
+        var inst = cachedValue[0].inst, forceUpdate = cachedValue[1];
+        useLayoutEffect(
+          function() {
+            inst.value = value;
+            inst.getSnapshot = getSnapshot;
+            checkIfSnapshotChanged(inst) && forceUpdate({ inst });
+          },
+          [subscribe, value, getSnapshot]
+        );
+        useEffect(
+          function() {
+            checkIfSnapshotChanged(inst) && forceUpdate({ inst });
+            return subscribe(function() {
+              checkIfSnapshotChanged(inst) && forceUpdate({ inst });
+            });
+          },
+          [subscribe]
+        );
+        useDebugValue2(value);
+        return value;
+      }
+      function checkIfSnapshotChanged(inst) {
+        var latestGetSnapshot = inst.getSnapshot;
+        inst = inst.value;
+        try {
+          var nextValue = latestGetSnapshot();
+          return !objectIs(inst, nextValue);
+        } catch (error) {
+          return true;
+        }
+      }
+      function useSyncExternalStore$1(subscribe, getSnapshot) {
+        return getSnapshot();
+      }
+      "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
+      var React$1 = React2, objectIs = "function" === typeof Object.is ? Object.is : is, useState = React$1.useState, useEffect = React$1.useEffect, useLayoutEffect = React$1.useLayoutEffect, useDebugValue2 = React$1.useDebugValue, didWarnOld18Alpha = false, didWarnUncachedGetSnapshot = false, shim2 = "undefined" === typeof window || "undefined" === typeof window.document || "undefined" === typeof window.document.createElement ? useSyncExternalStore$1 : useSyncExternalStore$2;
+      useSyncExternalStoreShim_development.useSyncExternalStore = void 0 !== React$1.useSyncExternalStore ? React$1.useSyncExternalStore : shim2;
+      "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
+    }();
+    return useSyncExternalStoreShim_development;
   }
-  var shim$1 = "undefined" === typeof window || "undefined" === typeof window.document || "undefined" === typeof window.document.createElement ? useSyncExternalStore$1 : useSyncExternalStore$2;
-  useSyncExternalStoreShim_production.useSyncExternalStore = void 0 !== React$1.useSyncExternalStore ? React$1.useSyncExternalStore : shim$1;
-  {
-    shim$2.exports = useSyncExternalStoreShim_production;
+  var hasRequiredShim;
+  function requireShim() {
+    if (hasRequiredShim) return shim.exports;
+    hasRequiredShim = 1;
+    if (process.env.NODE_ENV === "production") {
+      shim.exports = requireUseSyncExternalStoreShim_production();
+    } else {
+      shim.exports = requireUseSyncExternalStoreShim_development();
+    }
+    return shim.exports;
   }
-  var shimExports = shim$2.exports;
   /**
    * @license React
    * use-sync-external-store-shim/with-selector.production.js
@@ -5439,64 +6422,148 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
    * This source code is licensed under the MIT license found in the
    * LICENSE file in the root directory of this source tree.
    */
-  var React2 = React$2, shim = shimExports;
-  function is(x, y) {
-    return x === y && (0 !== x || 1 / x === 1 / y) || x !== x && y !== y;
-  }
-  var objectIs = "function" === typeof Object.is ? Object.is : is, useSyncExternalStore = shim.useSyncExternalStore, useRef = React2.useRef, useEffect = React2.useEffect, useMemo = React2.useMemo, useDebugValue$1 = React2.useDebugValue;
-  withSelector_production.useSyncExternalStoreWithSelector = function(subscribe, getSnapshot, getServerSnapshot, selector2, isEqual) {
-    var instRef = useRef(null);
-    if (null === instRef.current) {
-      var inst = { hasValue: false, value: null };
-      instRef.current = inst;
-    } else inst = instRef.current;
-    instRef = useMemo(
-      function() {
-        function memoizedSelector(nextSnapshot) {
-          if (!hasMemo) {
-            hasMemo = true;
-            memoizedSnapshot = nextSnapshot;
-            nextSnapshot = selector2(nextSnapshot);
-            if (void 0 !== isEqual && inst.hasValue) {
-              var currentSelection = inst.value;
-              if (isEqual(currentSelection, nextSnapshot))
-                return memoizedSelection = currentSelection;
+  var hasRequiredWithSelector_production;
+  function requireWithSelector_production() {
+    if (hasRequiredWithSelector_production) return withSelector_production;
+    hasRequiredWithSelector_production = 1;
+    var React$1 = React2, shim2 = requireShim();
+    function is(x, y) {
+      return x === y && (0 !== x || 1 / x === 1 / y) || x !== x && y !== y;
+    }
+    var objectIs = "function" === typeof Object.is ? Object.is : is, useSyncExternalStore = shim2.useSyncExternalStore, useRef = React$1.useRef, useEffect = React$1.useEffect, useMemo = React$1.useMemo, useDebugValue2 = React$1.useDebugValue;
+    withSelector_production.useSyncExternalStoreWithSelector = function(subscribe, getSnapshot, getServerSnapshot, selector2, isEqual) {
+      var instRef = useRef(null);
+      if (null === instRef.current) {
+        var inst = { hasValue: false, value: null };
+        instRef.current = inst;
+      } else inst = instRef.current;
+      instRef = useMemo(
+        function() {
+          function memoizedSelector(nextSnapshot) {
+            if (!hasMemo) {
+              hasMemo = true;
+              memoizedSnapshot = nextSnapshot;
+              nextSnapshot = selector2(nextSnapshot);
+              if (void 0 !== isEqual && inst.hasValue) {
+                var currentSelection = inst.value;
+                if (isEqual(currentSelection, nextSnapshot))
+                  return memoizedSelection = currentSelection;
+              }
+              return memoizedSelection = nextSnapshot;
             }
-            return memoizedSelection = nextSnapshot;
+            currentSelection = memoizedSelection;
+            if (objectIs(memoizedSnapshot, nextSnapshot)) return currentSelection;
+            var nextSelection = selector2(nextSnapshot);
+            if (void 0 !== isEqual && isEqual(currentSelection, nextSelection))
+              return memoizedSnapshot = nextSnapshot, currentSelection;
+            memoizedSnapshot = nextSnapshot;
+            return memoizedSelection = nextSelection;
           }
-          currentSelection = memoizedSelection;
-          if (objectIs(memoizedSnapshot, nextSnapshot)) return currentSelection;
-          var nextSelection = selector2(nextSnapshot);
-          if (void 0 !== isEqual && isEqual(currentSelection, nextSelection))
-            return memoizedSnapshot = nextSnapshot, currentSelection;
-          memoizedSnapshot = nextSnapshot;
-          return memoizedSelection = nextSelection;
-        }
-        var hasMemo = false, memoizedSnapshot, memoizedSelection, maybeGetServerSnapshot = void 0 === getServerSnapshot ? null : getServerSnapshot;
-        return [
+          var hasMemo = false, memoizedSnapshot, memoizedSelection, maybeGetServerSnapshot = void 0 === getServerSnapshot ? null : getServerSnapshot;
+          return [
+            function() {
+              return memoizedSelector(getSnapshot());
+            },
+            null === maybeGetServerSnapshot ? void 0 : function() {
+              return memoizedSelector(maybeGetServerSnapshot());
+            }
+          ];
+        },
+        [getSnapshot, getServerSnapshot, selector2, isEqual]
+      );
+      var value = useSyncExternalStore(subscribe, instRef[0], instRef[1]);
+      useEffect(
+        function() {
+          inst.hasValue = true;
+          inst.value = value;
+        },
+        [value]
+      );
+      useDebugValue2(value);
+      return value;
+    };
+    return withSelector_production;
+  }
+  var withSelector_development = {};
+  /**
+   * @license React
+   * use-sync-external-store-shim/with-selector.development.js
+   *
+   * Copyright (c) Meta Platforms, Inc. and affiliates.
+   *
+   * This source code is licensed under the MIT license found in the
+   * LICENSE file in the root directory of this source tree.
+   */
+  var hasRequiredWithSelector_development;
+  function requireWithSelector_development() {
+    if (hasRequiredWithSelector_development) return withSelector_development;
+    hasRequiredWithSelector_development = 1;
+    "production" !== process.env.NODE_ENV && function() {
+      function is(x, y) {
+        return x === y && (0 !== x || 1 / x === 1 / y) || x !== x && y !== y;
+      }
+      "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStart(Error());
+      var React$1 = React2, shim2 = requireShim(), objectIs = "function" === typeof Object.is ? Object.is : is, useSyncExternalStore = shim2.useSyncExternalStore, useRef = React$1.useRef, useEffect = React$1.useEffect, useMemo = React$1.useMemo, useDebugValue2 = React$1.useDebugValue;
+      withSelector_development.useSyncExternalStoreWithSelector = function(subscribe, getSnapshot, getServerSnapshot, selector2, isEqual) {
+        var instRef = useRef(null);
+        if (null === instRef.current) {
+          var inst = { hasValue: false, value: null };
+          instRef.current = inst;
+        } else inst = instRef.current;
+        instRef = useMemo(
           function() {
-            return memoizedSelector(getSnapshot());
+            function memoizedSelector(nextSnapshot) {
+              if (!hasMemo) {
+                hasMemo = true;
+                memoizedSnapshot = nextSnapshot;
+                nextSnapshot = selector2(nextSnapshot);
+                if (void 0 !== isEqual && inst.hasValue) {
+                  var currentSelection = inst.value;
+                  if (isEqual(currentSelection, nextSnapshot))
+                    return memoizedSelection = currentSelection;
+                }
+                return memoizedSelection = nextSnapshot;
+              }
+              currentSelection = memoizedSelection;
+              if (objectIs(memoizedSnapshot, nextSnapshot))
+                return currentSelection;
+              var nextSelection = selector2(nextSnapshot);
+              if (void 0 !== isEqual && isEqual(currentSelection, nextSelection))
+                return memoizedSnapshot = nextSnapshot, currentSelection;
+              memoizedSnapshot = nextSnapshot;
+              return memoizedSelection = nextSelection;
+            }
+            var hasMemo = false, memoizedSnapshot, memoizedSelection, maybeGetServerSnapshot = void 0 === getServerSnapshot ? null : getServerSnapshot;
+            return [
+              function() {
+                return memoizedSelector(getSnapshot());
+              },
+              null === maybeGetServerSnapshot ? void 0 : function() {
+                return memoizedSelector(maybeGetServerSnapshot());
+              }
+            ];
           },
-          null === maybeGetServerSnapshot ? void 0 : function() {
-            return memoizedSelector(maybeGetServerSnapshot());
-          }
-        ];
-      },
-      [getSnapshot, getServerSnapshot, selector2, isEqual]
-    );
-    var value = useSyncExternalStore(subscribe, instRef[0], instRef[1]);
-    useEffect(
-      function() {
-        inst.hasValue = true;
-        inst.value = value;
-      },
-      [value]
-    );
-    useDebugValue$1(value);
-    return value;
-  };
-  {
-    withSelector.exports = withSelector_production;
+          [getSnapshot, getServerSnapshot, selector2, isEqual]
+        );
+        var value = useSyncExternalStore(subscribe, instRef[0], instRef[1]);
+        useEffect(
+          function() {
+            inst.hasValue = true;
+            inst.value = value;
+          },
+          [value]
+        );
+        useDebugValue2(value);
+        return value;
+      };
+      "undefined" !== typeof __REACT_DEVTOOLS_GLOBAL_HOOK__ && "function" === typeof __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop && __REACT_DEVTOOLS_GLOBAL_HOOK__.registerInternalModuleStop(Error());
+    }();
+    return withSelector_development;
+  }
+  if (process.env.NODE_ENV === "production") {
+    withSelector.exports = requireWithSelector_production();
+  } else {
+    withSelector.exports = requireWithSelector_development();
   }
   var withSelectorExports = withSelector.exports;
   const useSyncExternalStoreExports = /* @__PURE__ */ getDefaultExportFromCjs(withSelectorExports);
@@ -5531,7 +6598,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     return api;
   };
   const createStore$1 = (createState) => createState ? createStoreImpl(createState) : createStoreImpl;
-  const { useDebugValue } = React$2;
+  const { useDebugValue } = React2;
   const { useSyncExternalStoreWithSelector } = useSyncExternalStoreExports;
   const identity = (arg) => arg;
   function useStoreWithEqualityFn(api, selector2 = identity, equalityFn) {
@@ -5588,22 +6655,22 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     }
     return true;
   }
-  const StoreContext = React$2.createContext(null);
+  const StoreContext = React2.createContext(null);
   const Provider$1 = StoreContext.Provider;
   const zustandErrorMessage = errorMessages["error001"]("react");
   function useStore(selector2, equalityFn) {
-    const store = React$2.useContext(StoreContext);
+    const store = React2.useContext(StoreContext);
     if (store === null) {
       throw new Error(zustandErrorMessage);
     }
     return useStoreWithEqualityFn(store, selector2, equalityFn);
   }
   function useStoreApi() {
-    const store = React$2.useContext(StoreContext);
+    const store = React2.useContext(StoreContext);
     if (store === null) {
       throw new Error(zustandErrorMessage);
     }
-    return React$2.useMemo(() => ({
+    return React2.useMemo(() => ({
       getState: store.getState,
       setState: store.setState,
       subscribe: store.subscribe
@@ -5628,23 +6695,23 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   const ariaLabelConfigSelector = (s) => s.ariaLabelConfig;
   function AriaLiveMessage({ rfId }) {
     const ariaLiveMessage = useStore(ariaLiveSelector);
-    return jsx("div", { id: `${ARIA_LIVE_MESSAGE}-${rfId}`, "aria-live": "assertive", "aria-atomic": "true", style: ariaLiveStyle, children: ariaLiveMessage });
+    return jsxRuntimeExports.jsx("div", { id: `${ARIA_LIVE_MESSAGE}-${rfId}`, "aria-live": "assertive", "aria-atomic": "true", style: ariaLiveStyle, children: ariaLiveMessage });
   }
   function A11yDescriptions({ rfId, disableKeyboardA11y }) {
     const ariaLabelConfig = useStore(ariaLabelConfigSelector);
-    return jsxs(Fragment, { children: [jsx("div", { id: `${ARIA_NODE_DESC_KEY}-${rfId}`, style, children: disableKeyboardA11y ? ariaLabelConfig["node.a11yDescription.default"] : ariaLabelConfig["node.a11yDescription.keyboardDisabled"] }), jsx("div", { id: `${ARIA_EDGE_DESC_KEY}-${rfId}`, style, children: ariaLabelConfig["edge.a11yDescription.default"] }), !disableKeyboardA11y && jsx(AriaLiveMessage, { rfId })] });
+    return jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("div", { id: `${ARIA_NODE_DESC_KEY}-${rfId}`, style, children: disableKeyboardA11y ? ariaLabelConfig["node.a11yDescription.default"] : ariaLabelConfig["node.a11yDescription.keyboardDisabled"] }), jsxRuntimeExports.jsx("div", { id: `${ARIA_EDGE_DESC_KEY}-${rfId}`, style, children: ariaLabelConfig["edge.a11yDescription.default"] }), !disableKeyboardA11y && jsxRuntimeExports.jsx(AriaLiveMessage, { rfId })] });
   }
-  const Panel = React$2.forwardRef(({ position = "top-left", children: children2, className, style: style2, ...rest }, ref) => {
+  const Panel = React2.forwardRef(({ position = "top-left", children: children2, className, style: style2, ...rest }, ref) => {
     const positionClasses = `${position}`.split("-");
-    return jsx("div", { className: cc(["react-flow__panel", className, ...positionClasses]), style: style2, ref, ...rest, children: children2 });
+    return jsxRuntimeExports.jsx("div", { className: cc(["react-flow__panel", className, ...positionClasses]), style: style2, ref, ...rest, children: children2 });
   });
   Panel.displayName = "Panel";
-  const link = `https://reactflow.dev${"?utm_source=attribution"}`;
+  const link = `https://reactflow.dev${process.env.NODE_ENV === "production" ? "?utm_source=attribution" : "/attribution"}`;
   function Attribution({ proOptions, position = "bottom-right" }) {
     if (proOptions?.hideAttribution) {
       return null;
     }
-    return jsx(Panel, { position, className: "react-flow__attribution", "data-message": `Please only hide this attribution when you are subscribed to React Flow Pro: ${link}`, children: jsx("a", { href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": "React Flow attribution", children: "React Flow" }) });
+    return jsxRuntimeExports.jsx(Panel, { position, className: "react-flow__attribution", "data-message": `Please only hide this attribution when you are subscribed to React Flow Pro: ${link}`, children: jsxRuntimeExports.jsx("a", { href: link, target: "_blank", rel: "noopener noreferrer", "aria-label": "React Flow attribution", children: "React Flow" }) });
   }
   const selector$l = (s) => {
     const selectedNodes = [];
@@ -5668,7 +6735,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   function SelectionListenerInner({ onSelectionChange }) {
     const store = useStoreApi();
     const { selectedNodes, selectedEdges } = useStore(selector$l, areEqual$1);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       const params = { nodes: selectedNodes, edges: selectedEdges };
       onSelectionChange?.(params);
       store.getState().onSelectionChangeHandlers.forEach((fn) => fn(params));
@@ -5679,7 +6746,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   function SelectionListener({ onSelectionChange }) {
     const storeHasSelectionChangeHandlers = useStore(changeSelector);
     if (onSelectionChange || storeHasSelectionChangeHandlers) {
-      return jsx(SelectionListenerInner, { onSelectionChange });
+      return jsxRuntimeExports.jsx(SelectionListenerInner, { onSelectionChange });
     }
     return null;
   }
@@ -5773,15 +6840,15 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   function StoreUpdater(props) {
     const { setNodes, setEdges, setMinZoom, setMaxZoom, setTranslateExtent, setNodeExtent, reset, setDefaultNodesAndEdges } = useStore(selector$k, shallow$1);
     const store = useStoreApi();
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       setDefaultNodesAndEdges(props.defaultNodes, props.defaultEdges);
       return () => {
         previousFields.current = initPrevValues;
         reset();
       };
     }, []);
-    const previousFields = React$2.useRef(initPrevValues);
-    React$2.useEffect(
+    const previousFields = React2.useRef(initPrevValues);
+    React2.useEffect(
       () => {
         for (const fieldName of fieldsToTrack) {
           const fieldValue = props[fieldName];
@@ -5825,8 +6892,8 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     return window.matchMedia("(prefers-color-scheme: dark)");
   }
   function useColorModeClass(colorMode) {
-    const [colorModeClass, setColorModeClass] = React$2.useState(colorMode === "system" ? null : colorMode);
-    React$2.useEffect(() => {
+    const [colorModeClass, setColorModeClass] = React2.useState(colorMode === "system" ? null : colorMode);
+    React2.useEffect(() => {
       if (colorMode !== "system") {
         setColorModeClass(colorMode);
         return;
@@ -5843,10 +6910,10 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   }
   const defaultDoc = typeof document !== "undefined" ? document : null;
   function useKeyPress(keyCode = null, options = { target: defaultDoc, actInsideInputWithModifier: true }) {
-    const [keyPressed, setKeyPressed] = React$2.useState(false);
-    const modifierPressed = React$2.useRef(false);
-    const pressedKeys = React$2.useRef(/* @__PURE__ */ new Set([]));
-    const [keyCodes, keysToWatch] = React$2.useMemo(() => {
+    const [keyPressed, setKeyPressed] = React2.useState(false);
+    const modifierPressed = React2.useRef(false);
+    const pressedKeys = React2.useRef(/* @__PURE__ */ new Set([]));
+    const [keyCodes, keysToWatch] = React2.useMemo(() => {
       if (keyCode !== null) {
         const keyCodeArr = Array.isArray(keyCode) ? keyCode : [keyCode];
         const keys = keyCodeArr.filter((kc) => typeof kc === "string").map((kc) => kc.replace("+", "\n").replace("\n\n", "\n+").split("\n"));
@@ -5855,7 +6922,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       }
       return [[], []];
     }, [keyCode]);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       const target = options?.target ?? defaultDoc;
       const actInsideInputWithModifier = options?.actInsideInputWithModifier ?? true;
       if (keyCode !== null) {
@@ -5915,7 +6982,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   }
   const useViewportHelper = () => {
     const store = useStoreApi();
-    return React$2.useMemo(() => {
+    return React2.useMemo(() => {
       return {
         zoomIn: async (options) => {
           const { panZoom } = store.getState();
@@ -6129,7 +7196,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       type: "remove"
     };
   }
-  const defaultOnError = createDevWarn();
+  const defaultOnError = createDevWarn("React Flow", "https://reactflow.dev/");
   function addEdge(edgeParams, edges, options = {}) {
     return addEdge$1(edgeParams, edges, {
       ...options,
@@ -6139,12 +7206,12 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   const isNode = (element) => isNodeBase(element);
   const isEdge = (element) => isEdgeBase(element);
   function fixedForwardRef(render) {
-    return React$2.forwardRef(render);
+    return React2.forwardRef(render);
   }
-  const useIsomorphicLayoutEffect = typeof window !== "undefined" ? React$2.useLayoutEffect : React$2.useEffect;
+  const useIsomorphicLayoutEffect = typeof window !== "undefined" ? React2.useLayoutEffect : React2.useEffect;
   function useQueue(runQueue) {
-    const [serial, setSerial] = React$2.useState(BigInt(0));
-    const [queue] = React$2.useState(() => createQueue(() => setSerial((n) => n + BigInt(1))));
+    const [serial, setSerial] = React2.useState(BigInt(0));
+    const [queue] = React2.useState(() => createQueue(() => setSerial((n) => n + BigInt(1))));
     useIsomorphicLayoutEffect(() => {
       const queueItems = queue.get();
       if (queueItems.length) {
@@ -6167,10 +7234,10 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       }
     };
   }
-  const BatchContext = React$2.createContext(null);
+  const BatchContext = React2.createContext(null);
   function BatchProvider({ children: children2 }) {
     const store = useStoreApi();
-    const nodeQueueHandler = React$2.useCallback((queueItems) => {
+    const nodeQueueHandler = React2.useCallback((queueItems) => {
       const { nodes = [], setNodes, hasDefaultNodes, onNodesChange, nodeLookup, fitViewQueued, onNodesChangeMiddlewareMap } = store.getState();
       let next = nodes;
       for (const payload of queueItems) {
@@ -6198,7 +7265,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       }
     }, []);
     const nodeQueue = useQueue(nodeQueueHandler);
-    const edgeQueueHandler = React$2.useCallback((queueItems) => {
+    const edgeQueueHandler = React2.useCallback((queueItems) => {
       const { edges = [], setEdges, hasDefaultEdges, onEdgesChange, edgeLookup } = store.getState();
       let next = edges;
       for (const payload of queueItems) {
@@ -6214,11 +7281,11 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       }
     }, []);
     const edgeQueue = useQueue(edgeQueueHandler);
-    const value = React$2.useMemo(() => ({ nodeQueue, edgeQueue }), []);
-    return jsx(BatchContext.Provider, { value, children: children2 });
+    const value = React2.useMemo(() => ({ nodeQueue, edgeQueue }), []);
+    return jsxRuntimeExports.jsx(BatchContext.Provider, { value, children: children2 });
   }
   function useBatchContext() {
-    const batchContext = React$2.useContext(BatchContext);
+    const batchContext = React2.useContext(BatchContext);
     if (!batchContext) {
       throw new Error("useBatchContext must be used within a BatchProvider");
     }
@@ -6230,7 +7297,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const store = useStoreApi();
     const batchContext = useBatchContext();
     const viewportInitialized = useStore(selector$j);
-    const generalHelper = React$2.useMemo(() => {
+    const generalHelper = React2.useMemo(() => {
       const getInternalNode = (id2) => store.getState().nodeLookup.get(id2);
       const setNodes = (payload) => {
         batchContext.nodeQueue.push(payload);
@@ -6387,7 +7454,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         }
       };
     }, []);
-    return React$2.useMemo(() => {
+    return React2.useMemo(() => {
       return {
         ...generalHelper,
         ...viewportHelper,
@@ -6402,20 +7469,20 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const { deleteElements } = useReactFlow();
     const deleteKeyPressed = useKeyPress(deleteKeyCode, { actInsideInputWithModifier: false });
     const multiSelectionKeyPressed = useKeyPress(multiSelectionKeyCode, { target: win$1 });
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (deleteKeyPressed) {
         const { edges, nodes } = store.getState();
         deleteElements({ nodes: nodes.filter(selected), edges: edges.filter(selected) });
         store.setState({ nodesSelectionActive: false });
       }
     }, [deleteKeyPressed]);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       store.setState({ multiSelectionActive: multiSelectionKeyPressed });
     }, [multiSelectionKeyPressed]);
   }
   function useResizeHandler(domNode) {
     const store = useStoreApi();
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       const updateDimensions = () => {
         if (!domNode.current || !(domNode.current.checkVisibility?.() ?? true)) {
           return false;
@@ -6454,18 +7521,18 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   });
   function ZoomPane({ onPaneContextMenu, zoomOnScroll = true, zoomOnPinch = true, panOnScroll = false, panOnScrollSpeed = 0.5, panOnScrollMode = PanOnScrollMode.Free, zoomOnDoubleClick = true, panOnDrag = true, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, zoomActivationKeyCode, preventScrolling = true, children: children2, noWheelClassName, noPanClassName, onViewportChange, isControlledViewport, paneClickDistance, selectionOnDrag }) {
     const store = useStoreApi();
-    const zoomPane = React$2.useRef(null);
+    const zoomPane = React2.useRef(null);
     const { userSelectionActive, lib, connectionInProgress } = useStore(selector$i, shallow$1);
     const zoomActivationKeyPressed = useKeyPress(zoomActivationKeyCode);
-    const panZoom = React$2.useRef();
+    const panZoom = React2.useRef();
     useResizeHandler(zoomPane);
-    const onTransformChange = React$2.useCallback((transform2) => {
+    const onTransformChange = React2.useCallback((transform2) => {
       onViewportChange?.({ x: transform2[0], y: transform2[1], zoom: transform2[2] });
       if (!isControlledViewport) {
         store.setState({ transform: transform2 });
       }
     }, [onViewportChange, isControlledViewport]);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (zoomPane.current) {
         panZoom.current = XYPanZoom({
           domNode: zoomPane.current,
@@ -6501,7 +7568,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         };
       }
     }, []);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       panZoom.current?.update({
         onPaneContextMenu,
         zoomOnScroll,
@@ -6542,7 +7609,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       selectionOnDrag,
       paneClickDistance
     ]);
-    return jsx("div", { className: "react-flow__renderer", ref: zoomPane, style: containerStyle, children: children2 });
+    return jsxRuntimeExports.jsx("div", { className: "react-flow__renderer", ref: zoomPane, style: containerStyle, children: children2 });
   }
   const selector$h = (s) => ({
     userSelectionActive: s.userSelectionActive,
@@ -6554,7 +7621,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     if (!isActive) {
       return null;
     }
-    return jsx("div", { className: "react-flow__selection react-flow__container", style: {
+    return jsxRuntimeExports.jsx("div", { className: "react-flow__selection react-flow__container", style: {
       width: userSelectionRect.width,
       height: userSelectionRect.height,
       transform: `translate(${userSelectionRect.x}px, ${userSelectionRect.y}px)`
@@ -6576,18 +7643,18 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     autoPanSpeed: s.autoPanSpeed
   });
   function Pane({ isSelecting, selectionKeyPressed, selectionMode = SelectionMode.Full, panOnDrag, autoPanOnSelection, paneClickDistance, selectionOnDrag, onSelectionStart, onSelectionEnd, onPaneClick, onPaneContextMenu, onPaneScroll, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, children: children2 }) {
-    const autoPanId = React$2.useRef(0);
+    const autoPanId = React2.useRef(0);
     const store = useStoreApi();
     const { userSelectionActive, elementsSelectable, dragging, panBy: panBy2, autoPanSpeed } = useStore(selector$g, shallow$1);
     const isSelectionEnabled = elementsSelectable && (isSelecting || userSelectionActive);
-    const container = React$2.useRef(null);
-    const containerBounds = React$2.useRef();
-    const selectedNodeIds = React$2.useRef(/* @__PURE__ */ new Set());
-    const selectedEdgeIds = React$2.useRef(/* @__PURE__ */ new Set());
-    const connectionEndedOnPane = React$2.useRef(false);
-    const selectionInProgress = React$2.useRef(false);
-    const position = React$2.useRef({ x: 0, y: 0 });
-    const autoPanStarted = React$2.useRef(false);
+    const container = React2.useRef(null);
+    const containerBounds = React2.useRef();
+    const selectedNodeIds = React2.useRef(/* @__PURE__ */ new Set());
+    const selectedEdgeIds = React2.useRef(/* @__PURE__ */ new Set());
+    const connectionEndedOnPane = React2.useRef(false);
+    const selectionInProgress = React2.useRef(false);
+    const position = React2.useRef({ x: 0, y: 0 });
+    const autoPanStarted = React2.useRef(false);
     const onClick = (event) => {
       if (selectionInProgress.current || connectionEndedOnPane.current || store.getState().connection.inProgress) {
         selectionInProgress.current = false;
@@ -6708,7 +7775,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       autoPanId.current = 0;
       autoPanStarted.current = false;
     };
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       return () => cleanupAutoPan();
     }, []);
     const onPointerMove = (event) => {
@@ -6766,7 +7833,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       cleanupAutoPan();
     };
     const draggable = panOnDrag === true || Array.isArray(panOnDrag) && panOnDrag.includes(0);
-    return jsxs("div", { className: cc(["react-flow__pane", { draggable, dragging, selection: isSelecting }]), onClick: isSelectionEnabled ? void 0 : wrapHandler(onClick, container), onContextMenu: wrapHandler(onContextMenu, container), onWheel: wrapHandler(onWheel, container), onPointerEnter: isSelectionEnabled ? void 0 : onPaneMouseEnter, onPointerMove: isSelectionEnabled ? onPointerMove : onPaneMouseMove, onPointerUp, onPointerCancel: isSelectionEnabled ? onPointerCancel : void 0, onPointerDownCapture: isSelectionEnabled ? onPointerDownCapture : void 0, onClickCapture: isSelectionEnabled ? onClickCapture : void 0, onPointerLeave: onPaneMouseLeave, ref: container, style: containerStyle, children: [children2, jsx(UserSelection, {})] });
+    return jsxRuntimeExports.jsxs("div", { className: cc(["react-flow__pane", { draggable, dragging, selection: isSelecting }]), onClick: isSelectionEnabled ? void 0 : wrapHandler(onClick, container), onContextMenu: wrapHandler(onContextMenu, container), onWheel: wrapHandler(onWheel, container), onPointerEnter: isSelectionEnabled ? void 0 : onPaneMouseEnter, onPointerMove: isSelectionEnabled ? onPointerMove : onPaneMouseMove, onPointerUp, onPointerCancel: isSelectionEnabled ? onPointerCancel : void 0, onPointerDownCapture: isSelectionEnabled ? onPointerDownCapture : void 0, onClickCapture: isSelectionEnabled ? onClickCapture : void 0, onPointerLeave: onPaneMouseLeave, ref: container, style: containerStyle, children: [children2, jsxRuntimeExports.jsx(UserSelection, {})] });
   }
   function handleNodeClick({ id: id2, store, unselect = false, nodeRef }) {
     const { addSelectedNodes, unselectNodesAndEdges, multiSelectionActive, nodeLookup, onError } = store.getState();
@@ -6785,9 +7852,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   }
   function useDrag({ nodeRef, disabled = false, noDragClassName, handleSelector, nodeId, isSelectable, nodeClickDistance }) {
     const store = useStoreApi();
-    const [dragging, setDragging] = React$2.useState(false);
-    const xyDrag = React$2.useRef();
-    React$2.useEffect(() => {
+    const [dragging, setDragging] = React2.useState(false);
+    const xyDrag = React2.useRef();
+    React2.useEffect(() => {
       if (disabled) {
         return;
       }
@@ -6812,7 +7879,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         xyDrag.current = void 0;
       };
     }, [disabled, store, nodeRef]);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (disabled || !nodeRef.current || !xyDrag.current) {
         return;
       }
@@ -6830,7 +7897,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   const selectedAndDraggable = (nodesDraggable) => (n) => n.selected && (n.draggable || nodesDraggable && typeof n.draggable === "undefined");
   function useMoveSelectedNodes() {
     const store = useStoreApi();
-    const moveSelectedNodes = React$2.useCallback((params) => {
+    const moveSelectedNodes = React2.useCallback((params) => {
       const { nodeExtent, snapToGrid, snapGrid, nodesDraggable, onError, updateNodePositions, nodeLookup, nodeOrigin } = store.getState();
       const nodeUpdates = /* @__PURE__ */ new Map();
       const isSelected = selectedAndDraggable(nodesDraggable);
@@ -6865,11 +7932,11 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     }, []);
     return moveSelectedNodes;
   }
-  const NodeIdContext = React$2.createContext(null);
+  const NodeIdContext = React2.createContext(null);
   const Provider = NodeIdContext.Provider;
   NodeIdContext.Consumer;
   const useNodeId = () => {
-    const nodeId = React$2.useContext(NodeIdContext);
+    const nodeId = React2.useContext(NodeIdContext);
     return nodeId;
   };
   const selector$f = (s) => ({
@@ -6877,13 +7944,13 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     noPanClassName: s.noPanClassName,
     rfId: s.rfId
   });
-  const HandleConfigContext = React$2.createContext(null);
+  const HandleConfigContext = React2.createContext(null);
   function HandleConfigProvider({ children: children2 }) {
     const config = useStore(selector$f, shallow$1);
-    return jsx(HandleConfigContext.Provider, { value: config, children: children2 });
+    return jsxRuntimeExports.jsx(HandleConfigContext.Provider, { value: config, children: children2 });
   }
   function useHandleConfig() {
-    const config = React$2.useContext(HandleConfigContext);
+    const config = React2.useContext(HandleConfigContext);
     if (!config) {
       throw new Error("useHandleConfig must be used within a HandleConfigProvider");
     }
@@ -7013,7 +8080,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       onClickConnectEnd?.(event, connectionClone);
       store.setState({ connectionClickStartHandle: null });
     };
-    return jsx("div", { "data-handleid": handleId, "data-nodeid": nodeId, "data-handlepos": position, "data-id": `${rfId}-${nodeId}-${handleId}-${type}`, className: cc([
+    return jsxRuntimeExports.jsx("div", { "data-handleid": handleId, "data-nodeid": nodeId, "data-handlepos": position, "data-id": `${rfId}-${nodeId}-${handleId}-${type}`, className: cc([
       "react-flow__handle",
       `react-flow__handle-${position}`,
       "nodrag",
@@ -7037,18 +8104,18 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       }
     ]), onMouseDown: onPointerDown2, onTouchStart: onPointerDown2, onClick: connectOnClick ? onClick : void 0, ref, ...rest, children: children2 });
   }
-  const Handle = React$2.memo(fixedForwardRef(HandleComponent));
+  const Handle = React2.memo(fixedForwardRef(HandleComponent));
   function InputNode({ data, isConnectable, sourcePosition = Position.Bottom }) {
-    return jsxs(Fragment, { children: [data?.label, jsx(Handle, { type: "source", position: sourcePosition, isConnectable })] });
+    return jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [data?.label, jsxRuntimeExports.jsx(Handle, { type: "source", position: sourcePosition, isConnectable })] });
   }
   function DefaultNode({ data, isConnectable, targetPosition = Position.Top, sourcePosition = Position.Bottom }) {
-    return jsxs(Fragment, { children: [jsx(Handle, { type: "target", position: targetPosition, isConnectable }), data?.label, jsx(Handle, { type: "source", position: sourcePosition, isConnectable })] });
+    return jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx(Handle, { type: "target", position: targetPosition, isConnectable }), data?.label, jsxRuntimeExports.jsx(Handle, { type: "source", position: sourcePosition, isConnectable })] });
   }
   function GroupNode() {
     return null;
   }
   function OutputNode({ data, isConnectable, targetPosition = Position.Top }) {
-    return jsxs(Fragment, { children: [jsx(Handle, { type: "target", position: targetPosition, isConnectable }), data?.label] });
+    return jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx(Handle, { type: "target", position: targetPosition, isConnectable }), data?.label] });
   }
   const arrowKeyDiffs = {
     ArrowUp: { x: 0, y: -1 },
@@ -7089,8 +8156,8 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const store = useStoreApi();
     const { width, height, transformString, userSelectionActive } = useStore(selector$e, shallow$1);
     const moveSelectedNodes = useMoveSelectedNodes();
-    const nodeRef = React$2.useRef(null);
-    React$2.useEffect(() => {
+    const nodeRef = React2.useRef(null);
+    React2.useEffect(() => {
       if (!disableKeyboardA11y) {
         nodeRef.current?.focus({
           preventScroll: true
@@ -7118,9 +8185,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         });
       }
     };
-    return jsx("div", { className: cc(["react-flow__nodesselection", "react-flow__container", noPanClassName]), style: {
+    return jsxRuntimeExports.jsx("div", { className: cc(["react-flow__nodesselection", "react-flow__container", noPanClassName]), style: {
       transform: transformString
-    }, children: jsx("div", { ref: nodeRef, className: "react-flow__nodesselection-rect", onContextMenu, tabIndex: disableKeyboardA11y ? void 0 : -1, onKeyDown: disableKeyboardA11y ? void 0 : onKeyDown, style: {
+    }, children: jsxRuntimeExports.jsx("div", { ref: nodeRef, className: "react-flow__nodesselection-rect", onContextMenu, tabIndex: disableKeyboardA11y ? void 0 : -1, onKeyDown: disableKeyboardA11y ? void 0 : onKeyDown, style: {
       width,
       height
     } }) });
@@ -7138,21 +8205,21 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const _selectionOnDrag = selectionOnDrag && panOnDrag !== true;
     const isSelecting = selectionKeyPressed || userSelectionActive || _selectionOnDrag;
     useGlobalKeyHandler({ deleteKeyCode, multiSelectionKeyCode });
-    return jsx(ZoomPane, { onPaneContextMenu, elementsSelectable, zoomOnScroll, zoomOnPinch, panOnScroll, panOnScrollSpeed, panOnScrollMode, zoomOnDoubleClick, panOnDrag: !selectionKeyPressed && panOnDrag, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, zoomActivationKeyCode, preventScrolling, noWheelClassName, noPanClassName, onViewportChange, isControlledViewport, paneClickDistance, selectionOnDrag: _selectionOnDrag, children: jsxs(Pane, { onSelectionStart, onSelectionEnd, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneContextMenu, onPaneScroll, panOnDrag, autoPanOnSelection, isSelecting: !!isSelecting, selectionMode, selectionKeyPressed, paneClickDistance, selectionOnDrag: _selectionOnDrag, children: [children2, nodesSelectionActive && jsx(NodesSelection, { onSelectionContextMenu, noPanClassName, disableKeyboardA11y })] }) });
+    return jsxRuntimeExports.jsx(ZoomPane, { onPaneContextMenu, elementsSelectable, zoomOnScroll, zoomOnPinch, panOnScroll, panOnScrollSpeed, panOnScrollMode, zoomOnDoubleClick, panOnDrag: !selectionKeyPressed && panOnDrag, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, zoomActivationKeyCode, preventScrolling, noWheelClassName, noPanClassName, onViewportChange, isControlledViewport, paneClickDistance, selectionOnDrag: _selectionOnDrag, children: jsxRuntimeExports.jsxs(Pane, { onSelectionStart, onSelectionEnd, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneContextMenu, onPaneScroll, panOnDrag, autoPanOnSelection, isSelecting: !!isSelecting, selectionMode, selectionKeyPressed, paneClickDistance, selectionOnDrag: _selectionOnDrag, children: [children2, nodesSelectionActive && jsxRuntimeExports.jsx(NodesSelection, { onSelectionContextMenu, noPanClassName, disableKeyboardA11y })] }) });
   }
   FlowRendererComponent.displayName = "FlowRenderer";
-  const FlowRenderer = React$2.memo(FlowRendererComponent);
+  const FlowRenderer = React2.memo(FlowRendererComponent);
   const selector$c = (onlyRenderVisible) => (s) => {
     return onlyRenderVisible ? getNodesInside(s.nodeLookup, { x: 0, y: 0, width: s.width, height: s.height }, s.transform, true).map((node) => node.id) : Array.from(s.nodeLookup.keys());
   };
   function useVisibleNodeIds(onlyRenderVisible) {
-    const nodeIds = useStore(React$2.useCallback(selector$c(onlyRenderVisible), [onlyRenderVisible]), shallow$1);
+    const nodeIds = useStore(React2.useCallback(selector$c(onlyRenderVisible), [onlyRenderVisible]), shallow$1);
     return nodeIds;
   }
   const selector$b = (s) => s.updateNodeInternals;
   function useResizeObserver() {
     const updateNodeInternals2 = useStore(selector$b);
-    const [resizeObserver] = React$2.useState(() => {
+    const [resizeObserver] = React2.useState(() => {
       if (typeof ResizeObserver === "undefined") {
         return null;
       }
@@ -7169,7 +8236,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         updateNodeInternals2(updates);
       });
     });
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       return () => {
         resizeObserver?.disconnect();
       };
@@ -7178,13 +8245,13 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   }
   function useNodeObserver({ node, nodeType, hasDimensions, resizeObserver }) {
     const store = useStoreApi();
-    const nodeRef = React$2.useRef(null);
-    const observedNode = React$2.useRef(null);
-    const prevSourcePosition = React$2.useRef(node.sourcePosition);
-    const prevTargetPosition = React$2.useRef(node.targetPosition);
-    const prevType = React$2.useRef(nodeType);
+    const nodeRef = React2.useRef(null);
+    const observedNode = React2.useRef(null);
+    const prevSourcePosition = React2.useRef(node.sourcePosition);
+    const prevTargetPosition = React2.useRef(node.targetPosition);
+    const prevType = React2.useRef(nodeType);
     const isInitialized = hasDimensions && !!node.internals.handleBounds;
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (nodeRef.current && !node.hidden && (!isInitialized || observedNode.current !== nodeRef.current)) {
         if (observedNode.current) {
           resizeObserver?.unobserve(observedNode.current);
@@ -7193,7 +8260,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         observedNode.current = nodeRef.current;
       }
     }, [isInitialized, node.hidden]);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       return () => {
         if (observedNode.current) {
           resizeObserver?.unobserve(observedNode.current);
@@ -7201,7 +8268,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         }
       };
     }, []);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (nodeRef.current) {
         const typeChanged = prevType.current !== nodeType;
         const sourcePosChanged = prevSourcePosition.current !== node.sourcePosition;
@@ -7317,7 +8384,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         });
       }
     };
-    return jsx("div", { className: cc([
+    return jsxRuntimeExports.jsx("div", { className: cc([
       "react-flow__node",
       `react-flow__node-${nodeType}`,
       {
@@ -7339,9 +8406,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       visibility: hasDimensions ? "visible" : "hidden",
       ...node.style,
       ...inlineDimensions
-    }, "data-id": id2, "data-testid": `rf__node-${id2}`, onMouseEnter: onMouseEnterHandler, onMouseMove: onMouseMoveHandler, onMouseLeave: onMouseLeaveHandler, onContextMenu: onContextMenuHandler, onClick: onSelectNodeHandler, onDoubleClick: onDoubleClickHandler, onKeyDown: isFocusable ? onKeyDown : void 0, tabIndex: isFocusable ? 0 : void 0, onFocus: isFocusable ? onFocus : void 0, role: node.ariaRole ?? (isFocusable ? "group" : void 0), "aria-roledescription": "node", "aria-describedby": disableKeyboardA11y ? void 0 : `${ARIA_NODE_DESC_KEY}-${rfId}`, "aria-label": node.ariaLabel, ...node.domAttributes, children: jsx(Provider, { value: id2, children: jsx(NodeComponent, { id: id2, data: node.data, type: nodeType, positionAbsoluteX: internals.positionAbsolute.x, positionAbsoluteY: internals.positionAbsolute.y, selected: node.selected ?? false, selectable: isSelectable, draggable: isDraggable, deletable: node.deletable ?? true, isConnectable, sourcePosition: node.sourcePosition, targetPosition: node.targetPosition, dragging, dragHandle: node.dragHandle, zIndex: internals.z, parentId: node.parentId, ...nodeDimensions }) }) });
+    }, "data-id": id2, "data-testid": `rf__node-${id2}`, onMouseEnter: onMouseEnterHandler, onMouseMove: onMouseMoveHandler, onMouseLeave: onMouseLeaveHandler, onContextMenu: onContextMenuHandler, onClick: onSelectNodeHandler, onDoubleClick: onDoubleClickHandler, onKeyDown: isFocusable ? onKeyDown : void 0, tabIndex: isFocusable ? 0 : void 0, onFocus: isFocusable ? onFocus : void 0, role: node.ariaRole ?? (isFocusable ? "group" : void 0), "aria-roledescription": "node", "aria-describedby": disableKeyboardA11y ? void 0 : `${ARIA_NODE_DESC_KEY}-${rfId}`, "aria-label": node.ariaLabel, ...node.domAttributes, children: jsxRuntimeExports.jsx(Provider, { value: id2, children: jsxRuntimeExports.jsx(NodeComponent, { id: id2, data: node.data, type: nodeType, positionAbsoluteX: internals.positionAbsolute.x, positionAbsoluteY: internals.positionAbsolute.y, selected: node.selected ?? false, selectable: isSelectable, draggable: isDraggable, deletable: node.deletable ?? true, isConnectable, sourcePosition: node.sourcePosition, targetPosition: node.targetPosition, dragging, dragHandle: node.dragHandle, zIndex: internals.z, parentId: node.parentId, ...nodeDimensions }) }) });
   }
-  var NodeWrapper$1 = React$2.memo(NodeWrapper);
+  var NodeWrapper$1 = React2.memo(NodeWrapper);
   const selector$a = (s) => ({
     nodesConnectable: s.nodesConnectable,
     nodesFocusable: s.nodesFocusable,
@@ -7352,7 +8419,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const { nodesConnectable, nodesFocusable, elementsSelectable, onError } = useStore(selector$a, shallow$1);
     const nodeIds = useVisibleNodeIds(props.onlyRenderVisibleElements);
     const resizeObserver = useResizeObserver();
-    return jsx("div", { className: "react-flow__nodes", style: containerStyle, children: nodeIds.map((nodeId) => {
+    return jsxRuntimeExports.jsx("div", { className: "react-flow__nodes", style: containerStyle, children: nodeIds.map((nodeId) => {
       return (
         /*
          * The split of responsibilities between NodeRenderer and
@@ -7379,14 +8446,14 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
          *   memorized – so if `NodeRenderer` *has* to rerender, it only
          *   needs to regenerate the list of nodes, nothing else.
          */
-        jsx(NodeWrapper$1, { id: nodeId, nodeTypes: props.nodeTypes, nodeExtent: props.nodeExtent, onClick: props.onNodeClick, onMouseEnter: props.onNodeMouseEnter, onMouseMove: props.onNodeMouseMove, onMouseLeave: props.onNodeMouseLeave, onContextMenu: props.onNodeContextMenu, onDoubleClick: props.onNodeDoubleClick, noDragClassName: props.noDragClassName, noPanClassName: props.noPanClassName, rfId: props.rfId, disableKeyboardA11y: props.disableKeyboardA11y, resizeObserver, nodesDraggable: props.nodesDraggable ?? true, nodesConnectable, nodesFocusable, elementsSelectable, nodeClickDistance: props.nodeClickDistance, onError }, nodeId)
+        jsxRuntimeExports.jsx(NodeWrapper$1, { id: nodeId, nodeTypes: props.nodeTypes, nodeExtent: props.nodeExtent, onClick: props.onNodeClick, onMouseEnter: props.onNodeMouseEnter, onMouseMove: props.onNodeMouseMove, onMouseLeave: props.onNodeMouseLeave, onContextMenu: props.onNodeContextMenu, onDoubleClick: props.onNodeDoubleClick, noDragClassName: props.noDragClassName, noPanClassName: props.noPanClassName, rfId: props.rfId, disableKeyboardA11y: props.disableKeyboardA11y, resizeObserver, nodesDraggable: props.nodesDraggable ?? true, nodesConnectable, nodesFocusable, elementsSelectable, nodeClickDistance: props.nodeClickDistance, onError }, nodeId)
       );
     }) });
   }
   NodeRendererComponent.displayName = "NodeRenderer";
-  const NodeRenderer = React$2.memo(NodeRendererComponent);
+  const NodeRenderer = React2.memo(NodeRendererComponent);
   function useVisibleEdgeIds(onlyRenderVisible) {
-    const edgeIds = useStore(React$2.useCallback((s) => {
+    const edgeIds = useStore(React2.useCallback((s) => {
       if (!onlyRenderVisible) {
         return s.edges.map((edge) => edge.id);
       }
@@ -7415,14 +8482,14 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       strokeWidth,
       ...color2 && { stroke: color2 }
     };
-    return jsx("polyline", { className: "arrow", style: style2, strokeLinecap: "round", fill: "none", strokeLinejoin: "round", points: "-5,-4 0,0 -5,4" });
+    return jsxRuntimeExports.jsx("polyline", { className: "arrow", style: style2, strokeLinecap: "round", fill: "none", strokeLinejoin: "round", points: "-5,-4 0,0 -5,4" });
   };
   const ArrowClosedSymbol = ({ color: color2 = "none", strokeWidth = 1 }) => {
     const style2 = {
       strokeWidth,
       ...color2 && { stroke: color2, fill: color2 }
     };
-    return jsx("polyline", { className: "arrowclosed", style: style2, strokeLinecap: "round", strokeLinejoin: "round", points: "-5,-4 0,0 -5,4 -5,-4" });
+    return jsxRuntimeExports.jsx("polyline", { className: "arrowclosed", style: style2, strokeLinecap: "round", strokeLinejoin: "round", points: "-5,-4 0,0 -5,4 -5,-4" });
   };
   const MarkerSymbols = {
     [MarkerType.Arrow]: ArrowSymbol,
@@ -7430,7 +8497,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   };
   function useMarkerSymbol(type) {
     const store = useStoreApi();
-    const symbol = React$2.useMemo(() => {
+    const symbol = React2.useMemo(() => {
       const symbolExists = Object.prototype.hasOwnProperty.call(MarkerSymbols, type);
       if (!symbolExists) {
         store.getState().onError?.("009", errorMessages["error009"](type));
@@ -7445,12 +8512,12 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     if (!Symbol2) {
       return null;
     }
-    return jsx("marker", { className: "react-flow__arrowhead", id: id2, markerWidth: `${width}`, markerHeight: `${height}`, viewBox: "-10 -10 20 20", markerUnits, orient, refX: "0", refY: "0", children: jsx(Symbol2, { color: color2, strokeWidth }) });
+    return jsxRuntimeExports.jsx("marker", { className: "react-flow__arrowhead", id: id2, markerWidth: `${width}`, markerHeight: `${height}`, viewBox: "-10 -10 20 20", markerUnits, orient, refX: "0", refY: "0", children: jsxRuntimeExports.jsx(Symbol2, { color: color2, strokeWidth }) });
   };
   const MarkerDefinitions = ({ defaultColor, rfId }) => {
     const edges = useStore((s) => s.edges);
     const defaultEdgeOptions = useStore((s) => s.defaultEdgeOptions);
-    const markers = React$2.useMemo(() => {
+    const markers = React2.useMemo(() => {
       const markers2 = createMarkerIds(edges, {
         id: rfId,
         defaultColor,
@@ -7462,15 +8529,15 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     if (!markers.length) {
       return null;
     }
-    return jsx("svg", { className: "react-flow__marker", "aria-hidden": "true", children: jsx("defs", { children: markers.map((marker) => jsx(Marker, { id: marker.id, type: marker.type, color: marker.color, width: marker.width, height: marker.height, markerUnits: marker.markerUnits, strokeWidth: marker.strokeWidth, orient: marker.orient }, marker.id)) }) });
+    return jsxRuntimeExports.jsx("svg", { className: "react-flow__marker", "aria-hidden": "true", children: jsxRuntimeExports.jsx("defs", { children: markers.map((marker) => jsxRuntimeExports.jsx(Marker, { id: marker.id, type: marker.type, color: marker.color, width: marker.width, height: marker.height, markerUnits: marker.markerUnits, strokeWidth: marker.strokeWidth, orient: marker.orient }, marker.id)) }) });
   };
   MarkerDefinitions.displayName = "MarkerDefinitions";
-  var MarkerDefinitions$1 = React$2.memo(MarkerDefinitions);
+  var MarkerDefinitions$1 = React2.memo(MarkerDefinitions);
   function EdgeTextComponent({ x, y, label, labelStyle, labelShowBg = true, labelBgStyle, labelBgPadding = [2, 4], labelBgBorderRadius = 2, children: children2, className, ...rest }) {
-    const [edgeTextBbox, setEdgeTextBbox] = React$2.useState({ x: 1, y: 0, width: 0, height: 0 });
+    const [edgeTextBbox, setEdgeTextBbox] = React2.useState({ x: 1, y: 0, width: 0, height: 0 });
     const edgeTextClasses = cc(["react-flow__edge-textwrapper", className]);
-    const edgeTextRef = React$2.useRef(null);
-    React$2.useEffect(() => {
+    const edgeTextRef = React2.useRef(null);
+    React2.useEffect(() => {
       if (edgeTextRef.current) {
         const textBbox = edgeTextRef.current.getBBox();
         setEdgeTextBbox({
@@ -7484,12 +8551,12 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     if (!label) {
       return null;
     }
-    return jsxs("g", { transform: `translate(${x - edgeTextBbox.width / 2} ${y - edgeTextBbox.height / 2})`, className: edgeTextClasses, visibility: edgeTextBbox.width ? "visible" : "hidden", ...rest, children: [labelShowBg && jsx("rect", { width: edgeTextBbox.width + 2 * labelBgPadding[0], x: -labelBgPadding[0], y: -labelBgPadding[1], height: edgeTextBbox.height + 2 * labelBgPadding[1], className: "react-flow__edge-textbg", style: labelBgStyle, rx: labelBgBorderRadius, ry: labelBgBorderRadius }), jsx("text", { className: "react-flow__edge-text", y: edgeTextBbox.height / 2, dy: "0.3em", ref: edgeTextRef, style: labelStyle, children: label }), children2] });
+    return jsxRuntimeExports.jsxs("g", { transform: `translate(${x - edgeTextBbox.width / 2} ${y - edgeTextBbox.height / 2})`, className: edgeTextClasses, visibility: edgeTextBbox.width ? "visible" : "hidden", ...rest, children: [labelShowBg && jsxRuntimeExports.jsx("rect", { width: edgeTextBbox.width + 2 * labelBgPadding[0], x: -labelBgPadding[0], y: -labelBgPadding[1], height: edgeTextBbox.height + 2 * labelBgPadding[1], className: "react-flow__edge-textbg", style: labelBgStyle, rx: labelBgBorderRadius, ry: labelBgBorderRadius }), jsxRuntimeExports.jsx("text", { className: "react-flow__edge-text", y: edgeTextBbox.height / 2, dy: "0.3em", ref: edgeTextRef, style: labelStyle, children: label }), children2] });
   }
   EdgeTextComponent.displayName = "EdgeText";
-  const EdgeText = React$2.memo(EdgeTextComponent);
+  const EdgeText = React2.memo(EdgeTextComponent);
   function BaseEdge({ path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, interactionWidth = 20, ...props }) {
-    return jsxs(Fragment, { children: [jsx("path", { ...props, d: path, fill: "none", className: cc(["react-flow__edge-path", props.className]) }), interactionWidth ? jsx("path", { d: path, fill: "none", strokeOpacity: 0, strokeWidth: interactionWidth, className: "react-flow__edge-interaction" }) : null, label && isNumeric(labelX) && isNumeric(labelY) ? jsx(EdgeText, { x: labelX, y: labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius }) : null] });
+    return jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx("path", { ...props, d: path, fill: "none", className: cc(["react-flow__edge-path", props.className]) }), interactionWidth ? jsxRuntimeExports.jsx("path", { d: path, fill: "none", strokeOpacity: 0, strokeWidth: interactionWidth, className: "react-flow__edge-interaction" }) : null, label && isNumeric(labelX) && isNumeric(labelY) ? jsxRuntimeExports.jsx(EdgeText, { x: labelX, y: labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius }) : null] });
   }
   function getControl({ pos, x1, y1, x2, y2 }) {
     if (pos === Position.Left || pos === Position.Right) {
@@ -7531,7 +8598,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     ];
   }
   function createSimpleBezierEdge(params) {
-    return React$2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth }) => {
+    return React2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth }) => {
       const [path, labelX, labelY] = getSimpleBezierPath({
         sourceX,
         sourceY,
@@ -7541,7 +8608,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         targetPosition
       });
       const _id = params.isInternal ? void 0 : id2;
-      return jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
+      return jsxRuntimeExports.jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
     });
   }
   const SimpleBezierEdge = createSimpleBezierEdge({ isInternal: false });
@@ -7549,7 +8616,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   SimpleBezierEdge.displayName = "SimpleBezierEdge";
   SimpleBezierEdgeInternal.displayName = "SimpleBezierEdgeInternal";
   function createSmoothStepEdge(params) {
-    return React$2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, sourcePosition = Position.Bottom, targetPosition = Position.Top, markerEnd, markerStart, pathOptions, interactionWidth }) => {
+    return React2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, sourcePosition = Position.Bottom, targetPosition = Position.Top, markerEnd, markerStart, pathOptions, interactionWidth }) => {
       const [path, labelX, labelY] = getSmoothStepPath({
         sourceX,
         sourceY,
@@ -7562,7 +8629,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         stepPosition: pathOptions?.stepPosition
       });
       const _id = params.isInternal ? void 0 : id2;
-      return jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
+      return jsxRuntimeExports.jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
     });
   }
   const SmoothStepEdge = createSmoothStepEdge({ isInternal: false });
@@ -7570,9 +8637,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   SmoothStepEdge.displayName = "SmoothStepEdge";
   SmoothStepEdgeInternal.displayName = "SmoothStepEdgeInternal";
   function createStepEdge(params) {
-    return React$2.memo(({ id: id2, ...props }) => {
+    return React2.memo(({ id: id2, ...props }) => {
       const _id = params.isInternal ? void 0 : id2;
-      return jsx(SmoothStepEdge, { ...props, id: _id, pathOptions: React$2.useMemo(() => ({ borderRadius: 0, offset: props.pathOptions?.offset }), [props.pathOptions?.offset]) });
+      return jsxRuntimeExports.jsx(SmoothStepEdge, { ...props, id: _id, pathOptions: React2.useMemo(() => ({ borderRadius: 0, offset: props.pathOptions?.offset }), [props.pathOptions?.offset]) });
     });
   }
   const StepEdge = createStepEdge({ isInternal: false });
@@ -7580,10 +8647,10 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   StepEdge.displayName = "StepEdge";
   StepEdgeInternal.displayName = "StepEdgeInternal";
   function createStraightEdge(params) {
-    return React$2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth }) => {
+    return React2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth }) => {
       const [path, labelX, labelY] = getStraightPath({ sourceX, sourceY, targetX, targetY });
       const _id = params.isInternal ? void 0 : id2;
-      return jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
+      return jsxRuntimeExports.jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
     });
   }
   const StraightEdge = createStraightEdge({ isInternal: false });
@@ -7591,7 +8658,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   StraightEdge.displayName = "StraightEdge";
   StraightEdgeInternal.displayName = "StraightEdgeInternal";
   function createBezierEdge(params) {
-    return React$2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, sourcePosition = Position.Bottom, targetPosition = Position.Top, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, pathOptions, interactionWidth }) => {
+    return React2.memo(({ id: id2, sourceX, sourceY, targetX, targetY, sourcePosition = Position.Bottom, targetPosition = Position.Top, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, pathOptions, interactionWidth }) => {
       const [path, labelX, labelY] = getBezierPath({
         sourceX,
         sourceY,
@@ -7602,7 +8669,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         curvature: pathOptions?.curvature
       });
       const _id = params.isInternal ? void 0 : id2;
-      return jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
+      return jsxRuntimeExports.jsx(BaseEdge, { id: _id, path, labelX, labelY, label, labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, style: style2, markerEnd, markerStart, interactionWidth });
     });
   }
   const BezierEdge = createBezierEdge({ isInternal: false });
@@ -7641,7 +8708,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   };
   const EdgeUpdaterClassName = "react-flow__edgeupdater";
   function EdgeAnchor({ position, centerX, centerY, radius = 10, onMouseDown, onMouseEnter, onMouseOut, type }) {
-    return jsx("circle", { onMouseDown, onMouseEnter, onMouseOut, className: cc([EdgeUpdaterClassName, `${EdgeUpdaterClassName}-${type}`]), cx: shiftX(centerX, radius, position), cy: shiftY(centerY, radius, position), r: radius, stroke: "transparent", fill: "transparent" });
+    return jsxRuntimeExports.jsx("circle", { onMouseDown, onMouseEnter, onMouseOut, className: cc([EdgeUpdaterClassName, `${EdgeUpdaterClassName}-${type}`]), cx: shiftX(centerX, radius, position), cy: shiftY(centerY, radius, position), r: radius, stroke: "transparent", fill: "transparent" });
   }
   function EdgeUpdateAnchors({ isReconnectable, reconnectRadius, edge, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, onReconnect, onReconnectStart, onReconnectEnd, setReconnecting, setUpdateHover }) {
     const store = useStoreApi();
@@ -7691,27 +8758,27 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const onReconnectTargetMouseDown = (event) => handleEdgeUpdater(event, { nodeId: edge.source, id: edge.sourceHandle ?? null, type: "source" });
     const onReconnectMouseEnter = () => setUpdateHover(true);
     const onReconnectMouseOut = () => setUpdateHover(false);
-    return jsxs(Fragment, { children: [(isReconnectable === true || isReconnectable === "source") && jsx(EdgeAnchor, { position: sourcePosition, centerX: sourceX, centerY: sourceY, radius: reconnectRadius, onMouseDown: onReconnectSourceMouseDown, onMouseEnter: onReconnectMouseEnter, onMouseOut: onReconnectMouseOut, type: "source" }), (isReconnectable === true || isReconnectable === "target") && jsx(EdgeAnchor, { position: targetPosition, centerX: targetX, centerY: targetY, radius: reconnectRadius, onMouseDown: onReconnectTargetMouseDown, onMouseEnter: onReconnectMouseEnter, onMouseOut: onReconnectMouseOut, type: "target" })] });
+    return jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [(isReconnectable === true || isReconnectable === "source") && jsxRuntimeExports.jsx(EdgeAnchor, { position: sourcePosition, centerX: sourceX, centerY: sourceY, radius: reconnectRadius, onMouseDown: onReconnectSourceMouseDown, onMouseEnter: onReconnectMouseEnter, onMouseOut: onReconnectMouseOut, type: "source" }), (isReconnectable === true || isReconnectable === "target") && jsxRuntimeExports.jsx(EdgeAnchor, { position: targetPosition, centerX: targetX, centerY: targetY, radius: reconnectRadius, onMouseDown: onReconnectTargetMouseDown, onMouseEnter: onReconnectMouseEnter, onMouseOut: onReconnectMouseOut, type: "target" })] });
   }
-  function EdgeWrapper({ id: id2, edgesFocusable, edgesReconnectable, elementsSelectable, onClick, onDoubleClick, onContextMenu, onMouseEnter, onMouseMove, onMouseLeave, reconnectRadius, onReconnect, onReconnectStart, onReconnectEnd, rfId, edgeTypes, noPanClassName, onError, disableKeyboardA11y }) {
+  function EdgeWrapper({ id: id2, edgesFocusable, edgesReconnectable, elementsSelectable, onClick, onDoubleClick, onContextMenu, onMouseEnter, onMouseMove, onMouseLeave, reconnectRadius, onReconnect, onReconnectStart, onReconnectEnd, rfId, edgeTypes: edgeTypes2, noPanClassName, onError, disableKeyboardA11y }) {
     let edge = useStore((s) => s.edgeLookup.get(id2));
     const defaultEdgeOptions = useStore((s) => s.defaultEdgeOptions);
     edge = defaultEdgeOptions ? { ...defaultEdgeOptions, ...edge } : edge;
     let edgeType = edge.type || "default";
-    let EdgeComponent = edgeTypes?.[edgeType] || builtinEdgeTypes[edgeType];
+    let EdgeComponent = edgeTypes2?.[edgeType] || builtinEdgeTypes[edgeType];
     if (EdgeComponent === void 0) {
       onError?.("011", errorMessages["error011"](edgeType));
       edgeType = "default";
-      EdgeComponent = edgeTypes?.["default"] || builtinEdgeTypes.default;
+      EdgeComponent = edgeTypes2?.["default"] || builtinEdgeTypes.default;
     }
     const isFocusable = !!(edge.focusable || edgesFocusable && typeof edge.focusable === "undefined");
     const isReconnectable = typeof onReconnect !== "undefined" && (edge.reconnectable || edgesReconnectable && typeof edge.reconnectable === "undefined");
     const isSelectable = !!(edge.selectable || elementsSelectable && typeof edge.selectable === "undefined");
-    const edgeRef = React$2.useRef(null);
-    const [updateHover, setUpdateHover] = React$2.useState(false);
-    const [reconnecting, setReconnecting] = React$2.useState(false);
+    const edgeRef = React2.useRef(null);
+    const [updateHover, setUpdateHover] = React2.useState(false);
+    const [reconnecting, setReconnecting] = React2.useState(false);
     const store = useStoreApi();
-    const { zIndex = edge.zIndex, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = useStore(React$2.useCallback((store2) => {
+    const { zIndex = edge.zIndex, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition } = useStore(React2.useCallback((store2) => {
       const sourceNode = store2.nodeLookup.get(edge.source);
       const targetNode = store2.nodeLookup.get(edge.target);
       if (!sourceNode || !targetNode) {
@@ -7739,8 +8806,8 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         zIndex: zIndex2
       };
     }, [edge.source, edge.target, edge.sourceHandle, edge.targetHandle, edge.selected, edge.zIndex]), shallow$1);
-    const markerStartUrl = React$2.useMemo(() => edge.markerStart ? `url('#${getMarkerId(edge.markerStart, rfId)}')` : void 0, [edge.markerStart, rfId]);
-    const markerEndUrl = React$2.useMemo(() => edge.markerEnd ? `url('#${getMarkerId(edge.markerEnd, rfId)}')` : void 0, [edge.markerEnd, rfId]);
+    const markerStartUrl = React2.useMemo(() => edge.markerStart ? `url('#${getMarkerId(edge.markerStart, rfId)}')` : void 0, [edge.markerStart, rfId]);
+    const markerEndUrl = React2.useMemo(() => edge.markerEnd ? `url('#${getMarkerId(edge.markerEnd, rfId)}')` : void 0, [edge.markerEnd, rfId]);
     if (edge.hidden || sourceX === null || sourceY === null || targetX === null || targetY === null) {
       return null;
     }
@@ -7786,7 +8853,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         }
       }
     };
-    return jsx("svg", { style: { zIndex }, children: jsxs("g", { className: cc([
+    return jsxRuntimeExports.jsx("svg", { style: { zIndex }, children: jsxRuntimeExports.jsxs("g", { className: cc([
       "react-flow__edge",
       `react-flow__edge-${edgeType}`,
       edge.className,
@@ -7798,9 +8865,9 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         updating: updateHover,
         selectable: isSelectable
       }
-    ]), onClick: onEdgeClick, onDoubleClick: onEdgeDoubleClick, onContextMenu: onEdgeContextMenu, onMouseEnter: onEdgeMouseEnter, onMouseMove: onEdgeMouseMove, onMouseLeave: onEdgeMouseLeave, onKeyDown: isFocusable ? onKeyDown : void 0, tabIndex: isFocusable ? 0 : void 0, role: edge.ariaRole ?? (isFocusable ? "group" : "img"), "aria-roledescription": "edge", "data-id": id2, "data-testid": `rf__edge-${id2}`, "aria-label": edge.ariaLabel === null ? void 0 : edge.ariaLabel || `Edge from ${edge.source} to ${edge.target}`, "aria-describedby": isFocusable ? `${ARIA_EDGE_DESC_KEY}-${rfId}` : void 0, ref: edgeRef, ...edge.domAttributes, children: [!reconnecting && jsx(EdgeComponent, { id: id2, source: edge.source, target: edge.target, type: edge.type, selected: edge.selected, animated: edge.animated, selectable: isSelectable, deletable: edge.deletable ?? true, label: edge.label, labelStyle: edge.labelStyle, labelShowBg: edge.labelShowBg, labelBgStyle: edge.labelBgStyle, labelBgPadding: edge.labelBgPadding, labelBgBorderRadius: edge.labelBgBorderRadius, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data: edge.data, style: edge.style, sourceHandleId: edge.sourceHandle, targetHandleId: edge.targetHandle, markerStart: markerStartUrl, markerEnd: markerEndUrl, pathOptions: "pathOptions" in edge ? edge.pathOptions : void 0, interactionWidth: edge.interactionWidth }), isReconnectable && jsx(EdgeUpdateAnchors, { edge, isReconnectable, reconnectRadius, onReconnect, onReconnectStart, onReconnectEnd, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, setUpdateHover, setReconnecting })] }) });
+    ]), onClick: onEdgeClick, onDoubleClick: onEdgeDoubleClick, onContextMenu: onEdgeContextMenu, onMouseEnter: onEdgeMouseEnter, onMouseMove: onEdgeMouseMove, onMouseLeave: onEdgeMouseLeave, onKeyDown: isFocusable ? onKeyDown : void 0, tabIndex: isFocusable ? 0 : void 0, role: edge.ariaRole ?? (isFocusable ? "group" : "img"), "aria-roledescription": "edge", "data-id": id2, "data-testid": `rf__edge-${id2}`, "aria-label": edge.ariaLabel === null ? void 0 : edge.ariaLabel || `Edge from ${edge.source} to ${edge.target}`, "aria-describedby": isFocusable ? `${ARIA_EDGE_DESC_KEY}-${rfId}` : void 0, ref: edgeRef, ...edge.domAttributes, children: [!reconnecting && jsxRuntimeExports.jsx(EdgeComponent, { id: id2, source: edge.source, target: edge.target, type: edge.type, selected: edge.selected, animated: edge.animated, selectable: isSelectable, deletable: edge.deletable ?? true, label: edge.label, labelStyle: edge.labelStyle, labelShowBg: edge.labelShowBg, labelBgStyle: edge.labelBgStyle, labelBgPadding: edge.labelBgPadding, labelBgBorderRadius: edge.labelBgBorderRadius, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data: edge.data, style: edge.style, sourceHandleId: edge.sourceHandle, targetHandleId: edge.targetHandle, markerStart: markerStartUrl, markerEnd: markerEndUrl, pathOptions: "pathOptions" in edge ? edge.pathOptions : void 0, interactionWidth: edge.interactionWidth }), isReconnectable && jsxRuntimeExports.jsx(EdgeUpdateAnchors, { edge, isReconnectable, reconnectRadius, onReconnect, onReconnectStart, onReconnectEnd, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, setUpdateHover, setReconnecting })] }) });
   }
-  var EdgeWrapper$1 = React$2.memo(EdgeWrapper);
+  var EdgeWrapper$1 = React2.memo(EdgeWrapper);
   const selector$9 = (s) => ({
     edgesFocusable: s.edgesFocusable,
     edgesReconnectable: s.edgesReconnectable,
@@ -7808,20 +8875,20 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     connectionMode: s.connectionMode,
     onError: s.onError
   });
-  function EdgeRendererComponent({ defaultMarkerColor, onlyRenderVisibleElements, rfId, edgeTypes, noPanClassName, onReconnect, onEdgeContextMenu, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, onEdgeClick, reconnectRadius, onEdgeDoubleClick, onReconnectStart, onReconnectEnd, disableKeyboardA11y }) {
+  function EdgeRendererComponent({ defaultMarkerColor, onlyRenderVisibleElements, rfId, edgeTypes: edgeTypes2, noPanClassName, onReconnect, onEdgeContextMenu, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, onEdgeClick, reconnectRadius, onEdgeDoubleClick, onReconnectStart, onReconnectEnd, disableKeyboardA11y }) {
     const { edgesFocusable, edgesReconnectable, elementsSelectable, onError } = useStore(selector$9, shallow$1);
     const edgeIds = useVisibleEdgeIds(onlyRenderVisibleElements);
-    return jsxs("div", { className: "react-flow__edges", children: [jsx(MarkerDefinitions$1, { defaultColor: defaultMarkerColor, rfId }), edgeIds.map((id2) => {
-      return jsx(EdgeWrapper$1, { id: id2, edgesFocusable, edgesReconnectable, elementsSelectable, noPanClassName, onReconnect, onContextMenu: onEdgeContextMenu, onMouseEnter: onEdgeMouseEnter, onMouseMove: onEdgeMouseMove, onMouseLeave: onEdgeMouseLeave, onClick: onEdgeClick, reconnectRadius, onDoubleClick: onEdgeDoubleClick, onReconnectStart, onReconnectEnd, rfId, onError, edgeTypes, disableKeyboardA11y }, id2);
+    return jsxRuntimeExports.jsxs("div", { className: "react-flow__edges", children: [jsxRuntimeExports.jsx(MarkerDefinitions$1, { defaultColor: defaultMarkerColor, rfId }), edgeIds.map((id2) => {
+      return jsxRuntimeExports.jsx(EdgeWrapper$1, { id: id2, edgesFocusable, edgesReconnectable, elementsSelectable, noPanClassName, onReconnect, onContextMenu: onEdgeContextMenu, onMouseEnter: onEdgeMouseEnter, onMouseMove: onEdgeMouseMove, onMouseLeave: onEdgeMouseLeave, onClick: onEdgeClick, reconnectRadius, onDoubleClick: onEdgeDoubleClick, onReconnectStart, onReconnectEnd, rfId, onError, edgeTypes: edgeTypes2, disableKeyboardA11y }, id2);
     })] });
   }
   EdgeRendererComponent.displayName = "EdgeRenderer";
-  const EdgeRenderer = React$2.memo(EdgeRendererComponent);
+  const EdgeRenderer = React2.memo(EdgeRendererComponent);
   const toTransformString = (transform2) => `translate(${transform2[0]}px,${transform2[1]}px) scale(${transform2[2]})`;
   function Viewport({ children: children2 }) {
     const store = useStoreApi();
-    const viewportRef = React$2.useRef(null);
-    const [initialTransform] = React$2.useState(() => store.getState().transform);
+    const viewportRef = React2.useRef(null);
+    const [initialTransform] = React2.useState(() => store.getState().transform);
     useIsomorphicLayoutEffect(() => {
       let prevTransform = null;
       const applyTransform = () => {
@@ -7837,12 +8904,12 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       applyTransform();
       return store.subscribe(applyTransform);
     }, [store]);
-    return jsx("div", { ref: viewportRef, className: "react-flow__viewport xyflow__viewport react-flow__container", style: { transform: toTransformString(initialTransform) }, children: children2 });
+    return jsxRuntimeExports.jsx("div", { ref: viewportRef, className: "react-flow__viewport xyflow__viewport react-flow__container", style: { transform: toTransformString(initialTransform) }, children: children2 });
   }
   function useOnInitHandler(onInit) {
     const rfInstance = useReactFlow();
-    const isInitialized = React$2.useRef(false);
-    React$2.useEffect(() => {
+    const isInitialized = React2.useRef(false);
+    React2.useEffect(() => {
       if (!isInitialized.current && rfInstance.viewportInitialized && onInit) {
         setTimeout(() => onInit(rfInstance), 1);
         isInitialized.current = true;
@@ -7853,7 +8920,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   function useViewportSync(viewport) {
     const syncViewport = useStore(selector$8);
     const store = useStoreApi();
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (viewport) {
         syncViewport?.(viewport);
         store.setState({ transform: [viewport.x, viewport.y, viewport.zoom] });
@@ -7884,7 +8951,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     if (!renderConnection) {
       return null;
     }
-    return jsx("svg", { style: containerStyle2, width, height, className: "react-flow__connectionline react-flow__container", children: jsx("g", { className: cc(["react-flow__connection", getConnectionStatus(isValid)]), children: jsx(ConnectionLine, { style: style2, type, CustomComponent: component, isValid }) }) });
+    return jsxRuntimeExports.jsx("svg", { style: containerStyle2, width, height, className: "react-flow__connectionline react-flow__container", children: jsxRuntimeExports.jsx("g", { className: cc(["react-flow__connection", getConnectionStatus(isValid)]), children: jsxRuntimeExports.jsx(ConnectionLine, { style: style2, type, CustomComponent: component, isValid }) }) });
   }
   const ConnectionLine = ({ style: style2, type = ConnectionLineType.Bezier, CustomComponent, isValid }) => {
     const { inProgress, from, fromNode, fromHandle, fromPosition, to, toNode, toHandle, toPosition, pointer: pointer2 } = useConnection();
@@ -7892,7 +8959,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       return;
     }
     if (CustomComponent) {
-      return jsx(CustomComponent, { connectionLineType: type, connectionLineStyle: style2, fromNode, fromHandle, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, fromPosition, toPosition, connectionStatus: getConnectionStatus(isValid), toNode, toHandle, pointer: pointer2 });
+      return jsxRuntimeExports.jsx(CustomComponent, { connectionLineType: type, connectionLineStyle: style2, fromNode, fromHandle, fromX: from.x, fromY: from.y, toX: to.x, toY: to.y, fromPosition, toPosition, connectionStatus: getConnectionStatus(isValid), toNode, toHandle, pointer: pointer2 });
     }
     let path = "";
     const pathParams = {
@@ -7922,33 +8989,52 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       default:
         [path] = getStraightPath(pathParams);
     }
-    return jsx("path", { d: path, fill: "none", className: "react-flow__connection-path", style: style2 });
+    return jsxRuntimeExports.jsx("path", { d: path, fill: "none", className: "react-flow__connection-path", style: style2 });
   };
   ConnectionLine.displayName = "ConnectionLine";
   const emptyTypes = {};
   function useNodeOrEdgeTypesWarning(nodeOrEdgeTypes = emptyTypes) {
-    React$2.useRef(nodeOrEdgeTypes);
-    useStoreApi();
-    React$2.useEffect(() => {
+    const typesRef = React2.useRef(nodeOrEdgeTypes);
+    const store = useStoreApi();
+    React2.useEffect(() => {
+      if (process.env.NODE_ENV === "development") {
+        const usedKeys = /* @__PURE__ */ new Set([...Object.keys(typesRef.current), ...Object.keys(nodeOrEdgeTypes)]);
+        for (const key of usedKeys) {
+          if (typesRef.current[key] !== nodeOrEdgeTypes[key]) {
+            store.getState().onError?.("002", errorMessages["error002"]());
+            break;
+          }
+        }
+        typesRef.current = nodeOrEdgeTypes;
+      }
     }, [nodeOrEdgeTypes]);
   }
   function useStylesLoadedWarning() {
-    useStoreApi();
-    React$2.useRef(false);
-    React$2.useEffect(() => {
+    const store = useStoreApi();
+    const checked = React2.useRef(false);
+    React2.useEffect(() => {
+      if (process.env.NODE_ENV === "development") {
+        if (!checked.current) {
+          const pane = document.querySelector(".react-flow__pane");
+          if (pane && !(window.getComputedStyle(pane).zIndex === "1")) {
+            store.getState().onError?.("013", errorMessages["error013"]("react"));
+          }
+          checked.current = true;
+        }
+      }
     }, []);
   }
-  function GraphViewComponent({ nodeTypes: nodeTypes2, edgeTypes, onInit, onNodeClick, onEdgeClick, onNodeDoubleClick, onEdgeDoubleClick, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, onSelectionContextMenu, onSelectionStart, onSelectionEnd, connectionLineType, connectionLineStyle, connectionLineComponent, connectionLineContainerStyle, selectionKeyCode, selectionOnDrag, selectionMode, multiSelectionKeyCode, panActivationKeyCode, zoomActivationKeyCode, deleteKeyCode, onlyRenderVisibleElements, elementsSelectable, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, preventScrolling, defaultMarkerColor, zoomOnScroll, zoomOnPinch, panOnScroll, panOnScrollSpeed, panOnScrollMode, zoomOnDoubleClick, panOnDrag, autoPanOnSelection, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneScroll, onPaneContextMenu, paneClickDistance, nodeClickDistance, onEdgeContextMenu, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius, onReconnect, onReconnectStart, onReconnectEnd, noDragClassName, noWheelClassName, noPanClassName, disableKeyboardA11y, nodeExtent, rfId, viewport, onViewportChange, nodesDraggable }) {
+  function GraphViewComponent({ nodeTypes: nodeTypes2, edgeTypes: edgeTypes2, onInit, onNodeClick, onEdgeClick, onNodeDoubleClick, onEdgeDoubleClick, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, onSelectionContextMenu, onSelectionStart, onSelectionEnd, connectionLineType, connectionLineStyle, connectionLineComponent, connectionLineContainerStyle, selectionKeyCode, selectionOnDrag, selectionMode, multiSelectionKeyCode, panActivationKeyCode, zoomActivationKeyCode, deleteKeyCode, onlyRenderVisibleElements, elementsSelectable, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, preventScrolling, defaultMarkerColor, zoomOnScroll, zoomOnPinch, panOnScroll, panOnScrollSpeed, panOnScrollMode, zoomOnDoubleClick, panOnDrag, autoPanOnSelection, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneScroll, onPaneContextMenu, paneClickDistance, nodeClickDistance, onEdgeContextMenu, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius, onReconnect, onReconnectStart, onReconnectEnd, noDragClassName, noWheelClassName, noPanClassName, disableKeyboardA11y, nodeExtent, rfId, viewport, onViewportChange, nodesDraggable }) {
     useNodeOrEdgeTypesWarning(nodeTypes2);
-    useNodeOrEdgeTypesWarning(edgeTypes);
+    useNodeOrEdgeTypesWarning(edgeTypes2);
     useStylesLoadedWarning();
     useOnInitHandler(onInit);
     useViewportSync(viewport);
-    return jsx(FlowRenderer, { onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneContextMenu, onPaneScroll, paneClickDistance, deleteKeyCode, selectionKeyCode, selectionOnDrag, selectionMode, onSelectionStart, onSelectionEnd, multiSelectionKeyCode, panActivationKeyCode, zoomActivationKeyCode, elementsSelectable, zoomOnScroll, zoomOnPinch, zoomOnDoubleClick, panOnScroll, panOnScrollSpeed, panOnScrollMode, panOnDrag, autoPanOnSelection, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, onSelectionContextMenu, preventScrolling, noDragClassName, noWheelClassName, noPanClassName, disableKeyboardA11y, onViewportChange, isControlledViewport: !!viewport, children: jsxs(Viewport, { children: [jsx(EdgeRenderer, { edgeTypes, onEdgeClick, onEdgeDoubleClick, onReconnect, onReconnectStart, onReconnectEnd, onlyRenderVisibleElements, onEdgeContextMenu, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius, defaultMarkerColor, noPanClassName, disableKeyboardA11y, rfId }), jsx(ConnectionLineWrapper, { style: connectionLineStyle, type: connectionLineType, component: connectionLineComponent, containerStyle: connectionLineContainerStyle }), jsx("div", { className: "react-flow__edgelabel-renderer" }), jsx(NodeRenderer, { nodeTypes: nodeTypes2, onNodeClick, onNodeDoubleClick, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, nodeClickDistance, onlyRenderVisibleElements, noPanClassName, noDragClassName, disableKeyboardA11y, nodeExtent, rfId, nodesDraggable }), jsx("div", { className: "react-flow__viewport-portal" })] }) });
+    return jsxRuntimeExports.jsx(FlowRenderer, { onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneContextMenu, onPaneScroll, paneClickDistance, deleteKeyCode, selectionKeyCode, selectionOnDrag, selectionMode, onSelectionStart, onSelectionEnd, multiSelectionKeyCode, panActivationKeyCode, zoomActivationKeyCode, elementsSelectable, zoomOnScroll, zoomOnPinch, zoomOnDoubleClick, panOnScroll, panOnScrollSpeed, panOnScrollMode, panOnDrag, autoPanOnSelection, defaultViewport: defaultViewport2, translateExtent, minZoom, maxZoom, onSelectionContextMenu, preventScrolling, noDragClassName, noWheelClassName, noPanClassName, disableKeyboardA11y, onViewportChange, isControlledViewport: !!viewport, children: jsxRuntimeExports.jsxs(Viewport, { children: [jsxRuntimeExports.jsx(EdgeRenderer, { edgeTypes: edgeTypes2, onEdgeClick, onEdgeDoubleClick, onReconnect, onReconnectStart, onReconnectEnd, onlyRenderVisibleElements, onEdgeContextMenu, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius, defaultMarkerColor, noPanClassName, disableKeyboardA11y, rfId }), jsxRuntimeExports.jsx(ConnectionLineWrapper, { style: connectionLineStyle, type: connectionLineType, component: connectionLineComponent, containerStyle: connectionLineContainerStyle }), jsxRuntimeExports.jsx("div", { className: "react-flow__edgelabel-renderer" }), jsxRuntimeExports.jsx(NodeRenderer, { nodeTypes: nodeTypes2, onNodeClick, onNodeDoubleClick, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, nodeClickDistance, onlyRenderVisibleElements, noPanClassName, noDragClassName, disableKeyboardA11y, nodeExtent, rfId, nodesDraggable }), jsxRuntimeExports.jsx("div", { className: "react-flow__viewport-portal" })] }) });
   }
   GraphViewComponent.displayName = "GraphView";
-  const GraphView = React$2.memo(GraphViewComponent);
-  const devWarn = createDevWarn();
+  const GraphView = React2.memo(GraphViewComponent);
+  const devWarn = createDevWarn("React Flow", "https://reactflow.dev/");
   const getInitialState = ({ nodes, edges, defaultNodes, defaultEdges, width, height, fitView, fitViewOptions, minZoom = 0.5, maxZoom = 2, nodeOrigin, nodeExtent, zIndexMode = "basic" } = {}) => {
     const nodeLookup = /* @__PURE__ */ new Map();
     const parentLookup = /* @__PURE__ */ new Map();
@@ -8317,7 +9403,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     };
   }, Object.is);
   function ReactFlowProvider({ initialNodes: nodes, initialEdges: edges, defaultNodes, defaultEdges, initialWidth: width, initialHeight: height, initialMinZoom: minZoom, initialMaxZoom: maxZoom, initialFitViewOptions: fitViewOptions, fitView, nodeOrigin, nodeExtent, zIndexMode, children: children2 }) {
-    const [store] = React$2.useState(() => createStore({
+    const [store] = React2.useState(() => createStore({
       nodes,
       edges,
       defaultNodes,
@@ -8332,14 +9418,14 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       nodeExtent,
       zIndexMode
     }));
-    return jsx(Provider$1, { value: store, children: jsx(BatchProvider, { children: jsx(HandleConfigProvider, { children: children2 }) }) });
+    return jsxRuntimeExports.jsx(Provider$1, { value: store, children: jsxRuntimeExports.jsx(BatchProvider, { children: jsxRuntimeExports.jsx(HandleConfigProvider, { children: children2 }) }) });
   }
   function Wrapper({ children: children2, nodes, edges, defaultNodes, defaultEdges, width, height, fitView, fitViewOptions, minZoom, maxZoom, nodeOrigin, nodeExtent, zIndexMode }) {
-    const isWrapped = React$2.useContext(StoreContext);
+    const isWrapped = React2.useContext(StoreContext);
     if (isWrapped) {
-      return jsx(Fragment, { children: children2 });
+      return jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: children2 });
     }
-    return jsx(ReactFlowProvider, { initialNodes: nodes, initialEdges: edges, defaultNodes, defaultEdges, initialWidth: width, initialHeight: height, fitView, initialFitViewOptions: fitViewOptions, initialMinZoom: minZoom, initialMaxZoom: maxZoom, nodeOrigin, nodeExtent, zIndexMode, children: children2 });
+    return jsxRuntimeExports.jsx(ReactFlowProvider, { initialNodes: nodes, initialEdges: edges, defaultNodes, defaultEdges, initialWidth: width, initialHeight: height, fitView, initialFitViewOptions: fitViewOptions, initialMinZoom: minZoom, initialMaxZoom: maxZoom, nodeOrigin, nodeExtent, zIndexMode, children: children2 });
   }
   const wrapperStyle = {
     width: "100%",
@@ -8348,31 +9434,39 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     position: "relative",
     zIndex: 0
   };
-  function ReactFlow({ nodes, edges, defaultNodes, defaultEdges, className, nodeTypes: nodeTypes2, edgeTypes, onNodeClick, onEdgeClick, onInit, onMove, onMoveStart, onMoveEnd, onConnect, onConnectStart, onConnectEnd, onClickConnectStart, onClickConnectEnd, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, onNodeDoubleClick, onNodeDragStart, onNodeDrag, onNodeDragStop, onNodesDelete, onEdgesDelete, onDelete, onSelectionChange, onSelectionDragStart, onSelectionDrag, onSelectionDragStop, onSelectionContextMenu, onSelectionStart, onSelectionEnd, onBeforeDelete, connectionMode, connectionLineType = ConnectionLineType.Bezier, connectionLineStyle, connectionLineComponent, connectionLineContainerStyle, deleteKeyCode = "Backspace", selectionKeyCode = "Shift", selectionOnDrag = false, selectionMode = SelectionMode.Full, panActivationKeyCode = "Space", multiSelectionKeyCode = isMacOs() ? "Meta" : "Control", zoomActivationKeyCode = isMacOs() ? "Meta" : "Control", snapToGrid, snapGrid, onlyRenderVisibleElements = false, selectNodesOnDrag, nodesDraggable, autoPanOnNodeFocus, nodesConnectable, nodesFocusable, nodeOrigin = defaultNodeOrigin, edgesFocusable, edgesReconnectable, elementsSelectable = true, defaultViewport: defaultViewport$1 = defaultViewport, minZoom = 0.5, maxZoom = 2, translateExtent = infiniteExtent, preventScrolling = true, nodeExtent, defaultMarkerColor = "#b1b1b7", zoomOnScroll = true, zoomOnPinch = true, panOnScroll = false, panOnScrollSpeed = 0.5, panOnScrollMode = PanOnScrollMode.Free, zoomOnDoubleClick = true, panOnDrag = true, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneScroll, onPaneContextMenu, paneClickDistance = 1, nodeClickDistance = 0, children: children2, onReconnect, onReconnectStart, onReconnectEnd, onEdgeContextMenu, onEdgeDoubleClick, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius = 10, onNodesChange, onEdgesChange, noDragClassName = "nodrag", noWheelClassName = "nowheel", noPanClassName = "nopan", fitView, fitViewOptions, connectOnClick, attributionPosition, proOptions, defaultEdgeOptions, elevateNodesOnSelect = true, elevateEdgesOnSelect = false, disableKeyboardA11y = false, autoPanOnConnect, autoPanOnNodeDrag, autoPanOnSelection = true, autoPanSpeed, connectionRadius, isValidConnection, onError, style: style2, id: id2, nodeDragThreshold, connectionDragThreshold, viewport, onViewportChange, width, height, colorMode = "light", debug, onScroll, ariaLabelConfig, zIndexMode = "basic", ...rest }, ref) {
+  function ReactFlow({ nodes, edges, defaultNodes, defaultEdges, className, nodeTypes: nodeTypes2, edgeTypes: edgeTypes2, onNodeClick, onEdgeClick, onInit, onMove, onMoveStart, onMoveEnd, onConnect, onConnectStart, onConnectEnd, onClickConnectStart, onClickConnectEnd, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, onNodeDoubleClick, onNodeDragStart, onNodeDrag, onNodeDragStop, onNodesDelete, onEdgesDelete, onDelete, onSelectionChange, onSelectionDragStart, onSelectionDrag, onSelectionDragStop, onSelectionContextMenu, onSelectionStart, onSelectionEnd, onBeforeDelete, connectionMode, connectionLineType = ConnectionLineType.Bezier, connectionLineStyle, connectionLineComponent, connectionLineContainerStyle, deleteKeyCode = "Backspace", selectionKeyCode = "Shift", selectionOnDrag = false, selectionMode = SelectionMode.Full, panActivationKeyCode = "Space", multiSelectionKeyCode = isMacOs() ? "Meta" : "Control", zoomActivationKeyCode = isMacOs() ? "Meta" : "Control", snapToGrid, snapGrid, onlyRenderVisibleElements = false, selectNodesOnDrag, nodesDraggable, autoPanOnNodeFocus, nodesConnectable, nodesFocusable, nodeOrigin = defaultNodeOrigin, edgesFocusable, edgesReconnectable, elementsSelectable = true, defaultViewport: defaultViewport$1 = defaultViewport, minZoom = 0.5, maxZoom = 2, translateExtent = infiniteExtent, preventScrolling = true, nodeExtent, defaultMarkerColor = "#b1b1b7", zoomOnScroll = true, zoomOnPinch = true, panOnScroll = false, panOnScrollSpeed = 0.5, panOnScrollMode = PanOnScrollMode.Free, zoomOnDoubleClick = true, panOnDrag = true, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneScroll, onPaneContextMenu, paneClickDistance = 1, nodeClickDistance = 0, children: children2, onReconnect, onReconnectStart, onReconnectEnd, onEdgeContextMenu, onEdgeDoubleClick, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius = 10, onNodesChange, onEdgesChange, noDragClassName = "nodrag", noWheelClassName = "nowheel", noPanClassName = "nopan", fitView, fitViewOptions, connectOnClick, attributionPosition, proOptions, defaultEdgeOptions, elevateNodesOnSelect = true, elevateEdgesOnSelect = false, disableKeyboardA11y = false, autoPanOnConnect, autoPanOnNodeDrag, autoPanOnSelection = true, autoPanSpeed, connectionRadius, isValidConnection, onError, style: style2, id: id2, nodeDragThreshold, connectionDragThreshold, viewport, onViewportChange, width, height, colorMode = "light", debug, onScroll, ariaLabelConfig, zIndexMode = "basic", ...rest }, ref) {
     const rfId = id2 || "1";
     const colorModeClassName = useColorModeClass(colorMode);
-    const wrapperOnScroll = React$2.useCallback((e) => {
+    const wrapperOnScroll = React2.useCallback((e) => {
       e.currentTarget.scrollTo({ top: 0, left: 0, behavior: "instant" });
       onScroll?.(e);
     }, [onScroll]);
-    return jsx("div", { "data-testid": "rf__wrapper", ...rest, onScroll: wrapperOnScroll, style: { ...style2, ...wrapperStyle }, ref, className: cc(["react-flow", className, colorModeClassName]), id: id2, role: "application", children: jsxs(Wrapper, { nodes, edges, width, height, fitView, fitViewOptions, minZoom, maxZoom, nodeOrigin, nodeExtent, zIndexMode, children: [jsx(StoreUpdater, { nodes, edges, defaultNodes, defaultEdges, onConnect, onConnectStart, onConnectEnd, onClickConnectStart, onClickConnectEnd, nodesDraggable, autoPanOnNodeFocus, nodesConnectable, nodesFocusable, edgesFocusable, edgesReconnectable, elementsSelectable, elevateNodesOnSelect, elevateEdgesOnSelect, minZoom, maxZoom, nodeExtent, onNodesChange, onEdgesChange, snapToGrid, snapGrid, connectionMode, translateExtent, connectOnClick, defaultEdgeOptions, fitView, fitViewOptions, onNodesDelete, onEdgesDelete, onDelete, onNodeDragStart, onNodeDrag, onNodeDragStop, onSelectionDrag, onSelectionDragStart, onSelectionDragStop, onMove, onMoveStart, onMoveEnd, noPanClassName, nodeOrigin, rfId, autoPanOnConnect, autoPanOnNodeDrag, autoPanSpeed, onError, connectionRadius, isValidConnection, selectNodesOnDrag, nodeDragThreshold, connectionDragThreshold, onBeforeDelete, debug, ariaLabelConfig, zIndexMode }), jsx(GraphView, { onInit, onNodeClick, onEdgeClick, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, onNodeDoubleClick, nodeTypes: nodeTypes2, edgeTypes, connectionLineType, connectionLineStyle, connectionLineComponent, connectionLineContainerStyle, selectionKeyCode, selectionOnDrag, selectionMode, deleteKeyCode, multiSelectionKeyCode, panActivationKeyCode, zoomActivationKeyCode, onlyRenderVisibleElements, defaultViewport: defaultViewport$1, translateExtent, minZoom, maxZoom, preventScrolling, zoomOnScroll, zoomOnPinch, zoomOnDoubleClick, panOnScroll, panOnScrollSpeed, panOnScrollMode, panOnDrag, autoPanOnSelection, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneScroll, onPaneContextMenu, paneClickDistance, nodeClickDistance, onSelectionContextMenu, onSelectionStart, onSelectionEnd, onReconnect, onReconnectStart, onReconnectEnd, onEdgeContextMenu, onEdgeDoubleClick, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius, defaultMarkerColor, noDragClassName, noWheelClassName, noPanClassName, rfId, disableKeyboardA11y, nodeExtent, viewport, onViewportChange, nodesDraggable }), jsx(SelectionListener, { onSelectionChange }), children2, jsx(Attribution, { proOptions, position: attributionPosition }), jsx(A11yDescriptions, { rfId, disableKeyboardA11y })] }) });
+    return jsxRuntimeExports.jsx("div", { "data-testid": "rf__wrapper", ...rest, onScroll: wrapperOnScroll, style: { ...style2, ...wrapperStyle }, ref, className: cc(["react-flow", className, colorModeClassName]), id: id2, role: "application", children: jsxRuntimeExports.jsxs(Wrapper, { nodes, edges, width, height, fitView, fitViewOptions, minZoom, maxZoom, nodeOrigin, nodeExtent, zIndexMode, children: [jsxRuntimeExports.jsx(StoreUpdater, { nodes, edges, defaultNodes, defaultEdges, onConnect, onConnectStart, onConnectEnd, onClickConnectStart, onClickConnectEnd, nodesDraggable, autoPanOnNodeFocus, nodesConnectable, nodesFocusable, edgesFocusable, edgesReconnectable, elementsSelectable, elevateNodesOnSelect, elevateEdgesOnSelect, minZoom, maxZoom, nodeExtent, onNodesChange, onEdgesChange, snapToGrid, snapGrid, connectionMode, translateExtent, connectOnClick, defaultEdgeOptions, fitView, fitViewOptions, onNodesDelete, onEdgesDelete, onDelete, onNodeDragStart, onNodeDrag, onNodeDragStop, onSelectionDrag, onSelectionDragStart, onSelectionDragStop, onMove, onMoveStart, onMoveEnd, noPanClassName, nodeOrigin, rfId, autoPanOnConnect, autoPanOnNodeDrag, autoPanSpeed, onError, connectionRadius, isValidConnection, selectNodesOnDrag, nodeDragThreshold, connectionDragThreshold, onBeforeDelete, debug, ariaLabelConfig, zIndexMode }), jsxRuntimeExports.jsx(GraphView, { onInit, onNodeClick, onEdgeClick, onNodeMouseEnter, onNodeMouseMove, onNodeMouseLeave, onNodeContextMenu, onNodeDoubleClick, nodeTypes: nodeTypes2, edgeTypes: edgeTypes2, connectionLineType, connectionLineStyle, connectionLineComponent, connectionLineContainerStyle, selectionKeyCode, selectionOnDrag, selectionMode, deleteKeyCode, multiSelectionKeyCode, panActivationKeyCode, zoomActivationKeyCode, onlyRenderVisibleElements, defaultViewport: defaultViewport$1, translateExtent, minZoom, maxZoom, preventScrolling, zoomOnScroll, zoomOnPinch, zoomOnDoubleClick, panOnScroll, panOnScrollSpeed, panOnScrollMode, panOnDrag, autoPanOnSelection, onPaneClick, onPaneMouseEnter, onPaneMouseMove, onPaneMouseLeave, onPaneScroll, onPaneContextMenu, paneClickDistance, nodeClickDistance, onSelectionContextMenu, onSelectionStart, onSelectionEnd, onReconnect, onReconnectStart, onReconnectEnd, onEdgeContextMenu, onEdgeDoubleClick, onEdgeMouseEnter, onEdgeMouseMove, onEdgeMouseLeave, reconnectRadius, defaultMarkerColor, noDragClassName, noWheelClassName, noPanClassName, rfId, disableKeyboardA11y, nodeExtent, viewport, onViewportChange, nodesDraggable }), jsxRuntimeExports.jsx(SelectionListener, { onSelectionChange }), children2, jsxRuntimeExports.jsx(Attribution, { proOptions, position: attributionPosition }), jsxRuntimeExports.jsx(A11yDescriptions, { rfId, disableKeyboardA11y })] }) });
   }
   var index = fixedForwardRef(ReactFlow);
+  const selector$6 = (s) => s.domNode?.querySelector(".react-flow__edgelabel-renderer");
+  function EdgeLabelRenderer({ children: children2 }) {
+    const edgeLabelRenderer = useStore(selector$6);
+    if (!edgeLabelRenderer) {
+      return null;
+    }
+    return reactDom.createPortal(children2, edgeLabelRenderer);
+  }
   function useNodesState(initialNodes) {
-    const [nodes, setNodes] = React$2.useState(initialNodes);
-    const onNodesChange = React$2.useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
+    const [nodes, setNodes] = React2.useState(initialNodes);
+    const onNodesChange = React2.useCallback((changes) => setNodes((nds) => applyNodeChanges(changes, nds)), []);
     return [nodes, setNodes, onNodesChange];
   }
   function useEdgesState(initialEdges) {
-    const [edges, setEdges] = React$2.useState(initialEdges);
-    const onEdgesChange = React$2.useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
+    const [edges, setEdges] = React2.useState(initialEdges);
+    const onEdgesChange = React2.useCallback((changes) => setEdges((eds) => applyEdgeChanges(changes, eds)), []);
     return [edges, setEdges, onEdgesChange];
   }
   function LinePattern({ dimensions, lineWidth, variant, className }) {
-    return jsx("path", { strokeWidth: lineWidth, d: `M${dimensions[0] / 2} 0 V${dimensions[1]} M0 ${dimensions[1] / 2} H${dimensions[0]}`, className: cc(["react-flow__background-pattern", variant, className]) });
+    return jsxRuntimeExports.jsx("path", { strokeWidth: lineWidth, d: `M${dimensions[0] / 2} 0 V${dimensions[1]} M0 ${dimensions[1] / 2} H${dimensions[0]}`, className: cc(["react-flow__background-pattern", variant, className]) });
   }
   function DotPattern({ radius, className }) {
-    return jsx("circle", { cx: radius, cy: radius, r: radius, className: cc(["react-flow__background-pattern", "dots", className]) });
+    return jsxRuntimeExports.jsx("circle", { cx: radius, cy: radius, r: radius, className: cc(["react-flow__background-pattern", "dots", className]) });
   }
   var BackgroundVariant;
   (function(BackgroundVariant2) {
@@ -8401,7 +9495,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     className,
     patternClassName
   }) {
-    const ref = React$2.useRef(null);
+    const ref = React2.useRef(null);
     const { transform: transform2, patternId } = useStore(selector$3, shallow$1);
     const patternSize = size || defaultSize[variant];
     const isDots = variant === BackgroundVariant.Dots;
@@ -8416,32 +9510,32 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       offsetXY[1] * transform2[2] || 1 + patternDimensions[1] / 2
     ];
     const _patternId = `${patternId}${id2 ? id2 : ""}`;
-    return jsxs("svg", { className: cc(["react-flow__background", className]), style: {
+    return jsxRuntimeExports.jsxs("svg", { className: cc(["react-flow__background", className]), style: {
       ...style2,
       ...containerStyle,
       "--xy-background-color-props": bgColor,
       "--xy-background-pattern-color-props": color2
-    }, ref, "data-testid": "rf__background", children: [jsx("pattern", { id: _patternId, x: transform2[0] % scaledGap[0], y: transform2[1] % scaledGap[1], width: scaledGap[0], height: scaledGap[1], patternUnits: "userSpaceOnUse", patternTransform: `translate(-${scaledOffset[0]},-${scaledOffset[1]})`, children: isDots ? jsx(DotPattern, { radius: scaledSize / 2, className: patternClassName }) : jsx(LinePattern, { dimensions: patternDimensions, lineWidth, variant, className: patternClassName }) }), jsx("rect", { x: "0", y: "0", width: "100%", height: "100%", fill: `url(#${_patternId})` })] });
+    }, ref, "data-testid": "rf__background", children: [jsxRuntimeExports.jsx("pattern", { id: _patternId, x: transform2[0] % scaledGap[0], y: transform2[1] % scaledGap[1], width: scaledGap[0], height: scaledGap[1], patternUnits: "userSpaceOnUse", patternTransform: `translate(-${scaledOffset[0]},-${scaledOffset[1]})`, children: isDots ? jsxRuntimeExports.jsx(DotPattern, { radius: scaledSize / 2, className: patternClassName }) : jsxRuntimeExports.jsx(LinePattern, { dimensions: patternDimensions, lineWidth, variant, className: patternClassName }) }), jsxRuntimeExports.jsx("rect", { x: "0", y: "0", width: "100%", height: "100%", fill: `url(#${_patternId})` })] });
   }
   BackgroundComponent.displayName = "Background";
-  const Background = React$2.memo(BackgroundComponent);
+  const Background = React2.memo(BackgroundComponent);
   function PlusIcon() {
-    return jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 32", children: jsx("path", { d: "M32 18.133H18.133V32h-4.266V18.133H0v-4.266h13.867V0h4.266v13.867H32z" }) });
+    return jsxRuntimeExports.jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 32", children: jsxRuntimeExports.jsx("path", { d: "M32 18.133H18.133V32h-4.266V18.133H0v-4.266h13.867V0h4.266v13.867H32z" }) });
   }
   function MinusIcon() {
-    return jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 5", children: jsx("path", { d: "M0 0h32v4.2H0z" }) });
+    return jsxRuntimeExports.jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 5", children: jsxRuntimeExports.jsx("path", { d: "M0 0h32v4.2H0z" }) });
   }
   function FitViewIcon() {
-    return jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 30", children: jsx("path", { d: "M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z" }) });
+    return jsxRuntimeExports.jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 32 30", children: jsxRuntimeExports.jsx("path", { d: "M3.692 4.63c0-.53.4-.938.939-.938h5.215V0H4.708C2.13 0 0 2.054 0 4.63v5.216h3.692V4.631zM27.354 0h-5.2v3.692h5.17c.53 0 .984.4.984.939v5.215H32V4.631A4.624 4.624 0 0027.354 0zm.954 24.83c0 .532-.4.94-.939.94h-5.215v3.768h5.215c2.577 0 4.631-2.13 4.631-4.707v-5.139h-3.692v5.139zm-23.677.94c-.531 0-.939-.4-.939-.94v-5.138H0v5.139c0 2.577 2.13 4.707 4.708 4.707h5.138V25.77H4.631z" }) });
   }
   function LockIcon() {
-    return jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 25 32", children: jsx("path", { d: "M21.333 10.667H19.81V7.619C19.81 3.429 16.38 0 12.19 0 8 0 4.571 3.429 4.571 7.619v3.048H3.048A3.056 3.056 0 000 13.714v15.238A3.056 3.056 0 003.048 32h18.285a3.056 3.056 0 003.048-3.048V13.714a3.056 3.056 0 00-3.048-3.047zM12.19 24.533a3.056 3.056 0 01-3.047-3.047 3.056 3.056 0 013.047-3.048 3.056 3.056 0 013.048 3.048 3.056 3.056 0 01-3.048 3.047zm4.724-13.866H7.467V7.619c0-2.59 2.133-4.724 4.723-4.724 2.591 0 4.724 2.133 4.724 4.724v3.048z" }) });
+    return jsxRuntimeExports.jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 25 32", children: jsxRuntimeExports.jsx("path", { d: "M21.333 10.667H19.81V7.619C19.81 3.429 16.38 0 12.19 0 8 0 4.571 3.429 4.571 7.619v3.048H3.048A3.056 3.056 0 000 13.714v15.238A3.056 3.056 0 003.048 32h18.285a3.056 3.056 0 003.048-3.048V13.714a3.056 3.056 0 00-3.048-3.047zM12.19 24.533a3.056 3.056 0 01-3.047-3.047 3.056 3.056 0 013.047-3.048 3.056 3.056 0 013.048 3.048 3.056 3.056 0 01-3.048 3.047zm4.724-13.866H7.467V7.619c0-2.59 2.133-4.724 4.723-4.724 2.591 0 4.724 2.133 4.724 4.724v3.048z" }) });
   }
   function UnlockIcon() {
-    return jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 25 32", children: jsx("path", { d: "M21.333 10.667H19.81V7.619C19.81 3.429 16.38 0 12.19 0c-4.114 1.828-1.37 2.133.305 2.438 1.676.305 4.42 2.59 4.42 5.181v3.048H3.047A3.056 3.056 0 000 13.714v15.238A3.056 3.056 0 003.048 32h18.285a3.056 3.056 0 003.048-3.048V13.714a3.056 3.056 0 00-3.048-3.047zM12.19 24.533a3.056 3.056 0 01-3.047-3.047 3.056 3.056 0 013.047-3.048 3.056 3.056 0 013.048 3.048 3.056 3.056 0 01-3.048 3.047z" }) });
+    return jsxRuntimeExports.jsx("svg", { xmlns: "http://www.w3.org/2000/svg", viewBox: "0 0 25 32", children: jsxRuntimeExports.jsx("path", { d: "M21.333 10.667H19.81V7.619C19.81 3.429 16.38 0 12.19 0c-4.114 1.828-1.37 2.133.305 2.438 1.676.305 4.42 2.59 4.42 5.181v3.048H3.047A3.056 3.056 0 000 13.714v15.238A3.056 3.056 0 003.048 32h18.285a3.056 3.056 0 003.048-3.048V13.714a3.056 3.056 0 00-3.048-3.047zM12.19 24.533a3.056 3.056 0 01-3.047-3.047 3.056 3.056 0 013.047-3.048 3.056 3.056 0 013.048 3.048 3.056 3.056 0 01-3.048 3.047z" }) });
   }
   function ControlButton({ children: children2, className, ...rest }) {
-    return jsx("button", { type: "button", className: cc(["react-flow__controls-button", className]), ...rest, children: children2 });
+    return jsxRuntimeExports.jsx("button", { type: "button", className: cc(["react-flow__controls-button", className]), ...rest, children: children2 });
   }
   const selector$2 = (s) => ({
     isInteractive: s.nodesDraggable || s.nodesConnectable || s.elementsSelectable,
@@ -8474,25 +9568,25 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       onInteractiveChange?.(!isInteractive);
     };
     const orientationClass = orientation === "horizontal" ? "horizontal" : "vertical";
-    return jsxs(Panel, { className: cc(["react-flow__controls", orientationClass, className]), position, style: style2, "data-testid": "rf__controls", "aria-label": ariaLabel ?? ariaLabelConfig["controls.ariaLabel"], children: [showZoom && jsxs(Fragment, { children: [jsx(ControlButton, { onClick: onZoomInHandler, className: "react-flow__controls-zoomin", title: ariaLabelConfig["controls.zoomIn.ariaLabel"], "aria-label": ariaLabelConfig["controls.zoomIn.ariaLabel"], disabled: maxZoomReached, children: jsx(PlusIcon, {}) }), jsx(ControlButton, { onClick: onZoomOutHandler, className: "react-flow__controls-zoomout", title: ariaLabelConfig["controls.zoomOut.ariaLabel"], "aria-label": ariaLabelConfig["controls.zoomOut.ariaLabel"], disabled: minZoomReached, children: jsx(MinusIcon, {}) })] }), showFitView && jsx(ControlButton, { className: "react-flow__controls-fitview", onClick: onFitViewHandler, title: ariaLabelConfig["controls.fitView.ariaLabel"], "aria-label": ariaLabelConfig["controls.fitView.ariaLabel"], children: jsx(FitViewIcon, {}) }), showInteractive && jsx(ControlButton, { className: "react-flow__controls-interactive", onClick: onToggleInteractivity, title: ariaLabelConfig["controls.interactive.ariaLabel"], "aria-label": ariaLabelConfig["controls.interactive.ariaLabel"], children: isInteractive ? jsx(UnlockIcon, {}) : jsx(LockIcon, {}) }), children2] });
+    return jsxRuntimeExports.jsxs(Panel, { className: cc(["react-flow__controls", orientationClass, className]), position, style: style2, "data-testid": "rf__controls", "aria-label": ariaLabel ?? ariaLabelConfig["controls.ariaLabel"], children: [showZoom && jsxRuntimeExports.jsxs(jsxRuntimeExports.Fragment, { children: [jsxRuntimeExports.jsx(ControlButton, { onClick: onZoomInHandler, className: "react-flow__controls-zoomin", title: ariaLabelConfig["controls.zoomIn.ariaLabel"], "aria-label": ariaLabelConfig["controls.zoomIn.ariaLabel"], disabled: maxZoomReached, children: jsxRuntimeExports.jsx(PlusIcon, {}) }), jsxRuntimeExports.jsx(ControlButton, { onClick: onZoomOutHandler, className: "react-flow__controls-zoomout", title: ariaLabelConfig["controls.zoomOut.ariaLabel"], "aria-label": ariaLabelConfig["controls.zoomOut.ariaLabel"], disabled: minZoomReached, children: jsxRuntimeExports.jsx(MinusIcon, {}) })] }), showFitView && jsxRuntimeExports.jsx(ControlButton, { className: "react-flow__controls-fitview", onClick: onFitViewHandler, title: ariaLabelConfig["controls.fitView.ariaLabel"], "aria-label": ariaLabelConfig["controls.fitView.ariaLabel"], children: jsxRuntimeExports.jsx(FitViewIcon, {}) }), showInteractive && jsxRuntimeExports.jsx(ControlButton, { className: "react-flow__controls-interactive", onClick: onToggleInteractivity, title: ariaLabelConfig["controls.interactive.ariaLabel"], "aria-label": ariaLabelConfig["controls.interactive.ariaLabel"], children: isInteractive ? jsxRuntimeExports.jsx(UnlockIcon, {}) : jsxRuntimeExports.jsx(LockIcon, {}) }), children2] });
   }
   ControlsComponent.displayName = "Controls";
-  const Controls = React$2.memo(ControlsComponent);
+  const Controls = React2.memo(ControlsComponent);
   function MiniMapNodeComponent({ id: id2, x, y, width, height, style: style2, color: color2, strokeColor, strokeWidth, className, borderRadius, shapeRendering, selected: selected2, onClick }) {
     const { background, backgroundColor } = style2 || {};
     const fill = color2 || background || backgroundColor;
-    return jsx("rect", { className: cc(["react-flow__minimap-node", { selected: selected2 }, className]), x, y, rx: borderRadius, ry: borderRadius, width, height, style: {
+    return jsxRuntimeExports.jsx("rect", { className: cc(["react-flow__minimap-node", { selected: selected2 }, className]), x, y, rx: borderRadius, ry: borderRadius, width, height, style: {
       fill,
       stroke: strokeColor,
       strokeWidth
     }, shapeRendering, onClick: onClick ? (event) => onClick(event, id2) : void 0 });
   }
-  const MiniMapNode = React$2.memo(MiniMapNodeComponent);
+  const MiniMapNode = React2.memo(MiniMapNodeComponent);
   const selectorNodeIds = (s) => s.nodes.map((node) => node.id);
   const getAttrFunction = (func) => func instanceof Function ? func : () => func;
   function MiniMapNodes({
     nodeStrokeColor,
-    nodeColor,
+    nodeColor: nodeColor2,
     nodeClassName = "",
     nodeBorderRadius = 5,
     nodeStrokeWidth,
@@ -8504,11 +9598,11 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     onClick
   }) {
     const nodeIds = useStore(selectorNodeIds, shallow$1);
-    const nodeColorFunc = getAttrFunction(nodeColor);
+    const nodeColorFunc = getAttrFunction(nodeColor2);
     const nodeStrokeColorFunc = getAttrFunction(nodeStrokeColor);
     const nodeClassNameFunc = getAttrFunction(nodeClassName);
     const shapeRendering = typeof window === "undefined" || !!window.chrome ? "crispEdges" : "geometricPrecision";
-    return jsx(Fragment, { children: nodeIds.map((nodeId) => (
+    return jsxRuntimeExports.jsx(jsxRuntimeExports.Fragment, { children: nodeIds.map((nodeId) => (
       /*
        * The split of responsibilities between MiniMapNodes and
        * NodeComponentWrapper may appear weird. However, it’s designed to
@@ -8516,7 +9610,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
        *
        * For more details, see a similar commit in `NodeRenderer/index.tsx`.
        */
-      jsx(NodeComponentWrapper, { id: nodeId, nodeColorFunc, nodeStrokeColorFunc, nodeClassNameFunc, nodeBorderRadius, nodeStrokeWidth, NodeComponent, onClick, shapeRendering }, nodeId)
+      jsxRuntimeExports.jsx(NodeComponentWrapper, { id: nodeId, nodeColorFunc, nodeStrokeColorFunc, nodeClassNameFunc, nodeBorderRadius, nodeStrokeWidth, NodeComponent, onClick, shapeRendering }, nodeId)
     )) });
   }
   function NodeComponentWrapperInner({ id: id2, nodeColorFunc, nodeStrokeColorFunc, nodeClassNameFunc, nodeBorderRadius, nodeStrokeWidth, shapeRendering, NodeComponent, onClick }) {
@@ -8539,10 +9633,10 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     if (!node || node.hidden || !nodeHasDimensions(node)) {
       return null;
     }
-    return jsx(NodeComponent, { x, y, width, height, style: node.style, selected: !!node.selected, className: nodeClassNameFunc(node), color: nodeColorFunc(node), borderRadius: nodeBorderRadius, strokeColor: nodeStrokeColorFunc(node), strokeWidth: nodeStrokeWidth, shapeRendering, onClick, id: node.id });
+    return jsxRuntimeExports.jsx(NodeComponent, { x, y, width, height, style: node.style, selected: !!node.selected, className: nodeClassNameFunc(node), color: nodeColorFunc(node), borderRadius: nodeBorderRadius, strokeColor: nodeStrokeColorFunc(node), strokeWidth: nodeStrokeWidth, shapeRendering, onClick, id: node.id });
   }
-  const NodeComponentWrapper = React$2.memo(NodeComponentWrapperInner);
-  var MiniMapNodes$1 = React$2.memo(MiniMapNodes);
+  const NodeComponentWrapper = React2.memo(NodeComponentWrapperInner);
+  var MiniMapNodes$1 = React2.memo(MiniMapNodes);
   const defaultWidth = 200;
   const defaultHeight = 150;
   const filterHidden = (node) => !node.hidden;
@@ -8571,7 +9665,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     style: style2,
     className,
     nodeStrokeColor,
-    nodeColor,
+    nodeColor: nodeColor2,
     nodeClassName = "",
     nodeBorderRadius = 5,
     nodeStrokeWidth,
@@ -8595,7 +9689,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     offsetScale = 5
   }) {
     const store = useStoreApi();
-    const svg = React$2.useRef(null);
+    const svg = React2.useRef(null);
     const { boundingRect, viewBB, rfId, panZoom, translateExtent, flowWidth, flowHeight, ariaLabelConfig } = useStore(selector$1, areEqual);
     const elementWidth = style2?.width ?? defaultWidth;
     const elementHeight = style2?.height ?? defaultHeight;
@@ -8610,10 +9704,10 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const width = viewWidth + offset * 2;
     const height = viewHeight + offset * 2;
     const labelledBy = `${ARIA_LABEL_KEY}-${rfId}`;
-    const viewScaleRef = React$2.useRef(0);
-    const minimapInstance = React$2.useRef();
+    const viewScaleRef = React2.useRef(0);
+    const minimapInstance = React2.useRef();
     viewScaleRef.current = viewScale;
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (svg.current && panZoom) {
         minimapInstance.current = XYMinimap({
           domNode: svg.current,
@@ -8626,7 +9720,7 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         };
       }
     }, [panZoom]);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       minimapInstance.current?.update({
         translateExtent,
         width: flowWidth,
@@ -8641,25 +9735,25 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       const [x2, y2] = minimapInstance.current?.pointer(event) || [0, 0];
       onClick(event, { x: x2, y: y2 });
     } : void 0;
-    const onSvgNodeClick = onNodeClick ? React$2.useCallback((event, nodeId) => {
+    const onSvgNodeClick = onNodeClick ? React2.useCallback((event, nodeId) => {
       const node = store.getState().nodeLookup.get(nodeId).internals.userNode;
       onNodeClick(event, node);
     }, []) : void 0;
     const _ariaLabel = ariaLabel ?? ariaLabelConfig["minimap.ariaLabel"];
-    return jsx(Panel, { position, style: {
+    return jsxRuntimeExports.jsx(Panel, { position, style: {
       ...style2,
       "--xy-minimap-background-color-props": typeof bgColor === "string" ? bgColor : void 0,
       "--xy-minimap-mask-background-color-props": typeof maskColor === "string" ? maskColor : void 0,
       "--xy-minimap-mask-stroke-color-props": typeof maskStrokeColor === "string" ? maskStrokeColor : void 0,
       "--xy-minimap-mask-stroke-width-props": typeof maskStrokeWidth === "number" ? maskStrokeWidth * viewScale : void 0,
-      "--xy-minimap-node-background-color-props": typeof nodeColor === "string" ? nodeColor : void 0,
+      "--xy-minimap-node-background-color-props": typeof nodeColor2 === "string" ? nodeColor2 : void 0,
       "--xy-minimap-node-stroke-color-props": typeof nodeStrokeColor === "string" ? nodeStrokeColor : void 0,
       "--xy-minimap-node-stroke-width-props": typeof nodeStrokeWidth === "number" ? nodeStrokeWidth : void 0
-    }, className: cc(["react-flow__minimap", className]), "data-testid": "rf__minimap", children: jsxs("svg", { width: elementWidth, height: elementHeight, viewBox: `${x} ${y} ${width} ${height}`, className: "react-flow__minimap-svg", role: "img", "aria-labelledby": labelledBy, ref: svg, onClick: onSvgClick, children: [_ariaLabel && jsx("title", { id: labelledBy, children: _ariaLabel }), jsx(MiniMapNodes$1, { onClick: onSvgNodeClick, nodeColor, nodeStrokeColor, nodeBorderRadius, nodeClassName, nodeStrokeWidth, nodeComponent }), jsx("path", { className: "react-flow__minimap-mask", d: `M${x - offset},${y - offset}h${width + offset * 2}v${height + offset * 2}h${-width - offset * 2}z
+    }, className: cc(["react-flow__minimap", className]), "data-testid": "rf__minimap", children: jsxRuntimeExports.jsxs("svg", { width: elementWidth, height: elementHeight, viewBox: `${x} ${y} ${width} ${height}`, className: "react-flow__minimap-svg", role: "img", "aria-labelledby": labelledBy, ref: svg, onClick: onSvgClick, children: [_ariaLabel && jsxRuntimeExports.jsx("title", { id: labelledBy, children: _ariaLabel }), jsxRuntimeExports.jsx(MiniMapNodes$1, { onClick: onSvgNodeClick, nodeColor: nodeColor2, nodeStrokeColor, nodeBorderRadius, nodeClassName, nodeStrokeWidth, nodeComponent }), jsxRuntimeExports.jsx("path", { className: "react-flow__minimap-mask", d: `M${x - offset},${y - offset}h${width + offset * 2}v${height + offset * 2}h${-width - offset * 2}z
         M${viewBB.x},${viewBB.y}h${viewBB.width}v${viewBB.height}h${-viewBB.width}z`, fillRule: "evenodd", pointerEvents: "none" })] }) });
   }
   MiniMapComponent.displayName = "MiniMap";
-  const MiniMap = React$2.memo(MiniMapComponent);
+  const MiniMap = React2.memo(MiniMapComponent);
   const scaleSelector = (calculateScale) => (store) => calculateScale ? `${Math.max(1 / store.transform[2], 1)}` : void 0;
   const defaultPositions = {
     [ResizeControlVariant.Line]: "right",
@@ -8669,12 +9763,12 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const contextNodeId = useNodeId();
     const id2 = typeof nodeId === "string" ? nodeId : contextNodeId;
     const store = useStoreApi();
-    const resizeControlRef = React$2.useRef(null);
+    const resizeControlRef = React2.useRef(null);
     const isHandleControl = variant === ResizeControlVariant.Handle;
-    const scale = useStore(React$2.useCallback(scaleSelector(isHandleControl && autoScale), [isHandleControl, autoScale]), shallow$1);
-    const resizer = React$2.useRef(null);
+    const scale = useStore(React2.useCallback(scaleSelector(isHandleControl && autoScale), [isHandleControl, autoScale]), shallow$1);
+    const resizer = React2.useRef(null);
     const controlPosition = position ?? defaultPositions[variant];
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       if (!resizeControlRef.current || !id2) {
         return;
       }
@@ -8795,13 +9889,23 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       shouldResize
     ]);
     const positionClassNames = controlPosition.split("-");
-    return jsx("div", { className: cc(["react-flow__resize-control", "nodrag", ...positionClassNames, variant, className]), ref: resizeControlRef, style: {
+    return jsxRuntimeExports.jsx("div", { className: cc(["react-flow__resize-control", "nodrag", ...positionClassNames, variant, className]), ref: resizeControlRef, style: {
       ...style2,
       scale,
       ...color2 && { [isHandleControl ? "backgroundColor" : "borderColor"]: color2 }
     }, children: children2 });
   }
-  React$2.memo(ResizeControl);
+  React2.memo(ResizeControl);
+  const reactFlowCss = "/* this gets exported as style.css and can be used for the default theming */\n/* these are the necessary styles for React/Svelte Flow, they get used by base.css and style.css */\n.react-flow {\n  direction: ltr;\n\n  --xy-edge-stroke-default: #b1b1b7;\n  --xy-edge-stroke-width-default: 1;\n  --xy-edge-stroke-selected-default: #555;\n\n  --xy-connectionline-stroke-default: #b1b1b7;\n  --xy-connectionline-stroke-width-default: 1;\n\n  --xy-attribution-background-color-default: rgba(255, 255, 255, 0.5);\n\n  --xy-minimap-background-color-default: #fff;\n  --xy-minimap-mask-background-color-default: rgba(240, 240, 240, 0.6);\n  --xy-minimap-mask-stroke-color-default: transparent;\n  --xy-minimap-mask-stroke-width-default: 1;\n  --xy-minimap-node-background-color-default: #e2e2e2;\n  --xy-minimap-node-stroke-color-default: transparent;\n  --xy-minimap-node-stroke-width-default: 2;\n\n  --xy-background-color-default: transparent;\n  --xy-background-pattern-dots-color-default: #91919a;\n  --xy-background-pattern-lines-color-default: #eee;\n  --xy-background-pattern-cross-color-default: #e2e2e2;\n  background-color: var(--xy-background-color, var(--xy-background-color-default));\n  --xy-node-color-default: inherit;\n  --xy-node-border-default: 1px solid #1a192b;\n  --xy-node-background-color-default: #fff;\n  --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);\n  --xy-node-boxshadow-hover-default: 0 1px 4px 1px rgba(0, 0, 0, 0.08);\n  --xy-node-boxshadow-selected-default: 0 0 0 0.5px #1a192b;\n  --xy-node-border-radius-default: 3px;\n\n  --xy-handle-background-color-default: #1a192b;\n  --xy-handle-border-color-default: #fff;\n\n  --xy-selection-background-color-default: rgba(0, 89, 220, 0.08);\n  --xy-selection-border-default: 1px dotted rgba(0, 89, 220, 0.8);\n\n  --xy-controls-button-background-color-default: #fefefe;\n  --xy-controls-button-background-color-hover-default: #f4f4f4;\n  --xy-controls-button-color-default: inherit;\n  --xy-controls-button-color-hover-default: inherit;\n  --xy-controls-button-border-color-default: #eee;\n  --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);\n\n  --xy-edge-label-background-color-default: #ffffff;\n  --xy-edge-label-color-default: inherit;\n  --xy-resize-background-color-default: #3367d9;\n}\n.react-flow.dark {\n  --xy-edge-stroke-default: #3e3e3e;\n  --xy-edge-stroke-width-default: 1;\n  --xy-edge-stroke-selected-default: #727272;\n\n  --xy-connectionline-stroke-default: #b1b1b7;\n  --xy-connectionline-stroke-width-default: 1;\n\n  --xy-attribution-background-color-default: rgba(150, 150, 150, 0.25);\n\n  --xy-minimap-background-color-default: #141414;\n  --xy-minimap-mask-background-color-default: rgba(60, 60, 60, 0.6);\n  --xy-minimap-mask-stroke-color-default: transparent;\n  --xy-minimap-mask-stroke-width-default: 1;\n  --xy-minimap-node-background-color-default: #2b2b2b;\n  --xy-minimap-node-stroke-color-default: transparent;\n  --xy-minimap-node-stroke-width-default: 2;\n\n  --xy-background-color-default: #141414;\n  --xy-background-pattern-dots-color-default: #555;\n  --xy-background-pattern-lines-color-default: #333;\n  --xy-background-pattern-cross-color-default: #333;\n  --xy-node-color-default: #f8f8f8;\n  --xy-node-border-default: 1px solid #3c3c3c;\n  --xy-node-background-color-default: #1e1e1e;\n  --xy-node-group-background-color-default: rgba(240, 240, 240, 0.25);\n  --xy-node-boxshadow-hover-default: 0 1px 4px 1px rgba(255, 255, 255, 0.08);\n  --xy-node-boxshadow-selected-default: 0 0 0 0.5px #999;\n\n  --xy-handle-background-color-default: #bebebe;\n  --xy-handle-border-color-default: #1e1e1e;\n\n  --xy-selection-background-color-default: rgba(200, 200, 220, 0.08);\n  --xy-selection-border-default: 1px dotted rgba(200, 200, 220, 0.8);\n\n  --xy-controls-button-background-color-default: #2b2b2b;\n  --xy-controls-button-background-color-hover-default: #3e3e3e;\n  --xy-controls-button-color-default: #f8f8f8;\n  --xy-controls-button-color-hover-default: #fff;\n  --xy-controls-button-border-color-default: #5b5b5b;\n  --xy-controls-box-shadow-default: 0 0 2px 1px rgba(0, 0, 0, 0.08);\n\n  --xy-edge-label-background-color-default: #141414;\n  --xy-edge-label-color-default: #f8f8f8;\n}\n.react-flow__background {\n  background-color: var(--xy-background-color-props, var(--xy-background-color, var(--xy-background-color-default)));\n  pointer-events: none;\n  z-index: -1;\n}\n.react-flow__container {\n  position: absolute;\n  width: 100%;\n  height: 100%;\n  top: 0;\n  left: 0;\n}\n.react-flow__pane {\n  z-index: 1;\n  touch-action: none;\n}\n.react-flow__pane.draggable {\n    cursor: grab;\n  }\n.react-flow__pane.dragging {\n    cursor: grabbing;\n  }\n.react-flow__pane.selection {\n    cursor: pointer;\n  }\n.react-flow__viewport {\n  transform-origin: 0 0;\n  z-index: 2;\n  pointer-events: none;\n}\n.react-flow__renderer {\n  z-index: 4;\n}\n.react-flow__selection {\n  z-index: 6;\n}\n.react-flow__nodesselection-rect:focus,\n.react-flow__nodesselection-rect:focus-visible {\n  outline: none;\n}\n.react-flow__edge-path {\n  stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));\n  stroke-width: var(--xy-edge-stroke-width, var(--xy-edge-stroke-width-default));\n  fill: none;\n}\n.react-flow__connection-path {\n  stroke: var(--xy-connectionline-stroke, var(--xy-connectionline-stroke-default));\n  stroke-width: var(--xy-connectionline-stroke-width, var(--xy-connectionline-stroke-width-default));\n  fill: none;\n}\n.react-flow .react-flow__edges {\n  position: absolute;\n}\n.react-flow .react-flow__edges svg {\n    overflow: visible;\n    position: absolute;\n    pointer-events: none;\n  }\n.react-flow__edge {\n  pointer-events: visibleStroke;\n}\n.react-flow__edge.selectable {\n    cursor: pointer;\n  }\n.react-flow__edge.animated path {\n    stroke-dasharray: 5;\n    animation: dashdraw 0.5s linear infinite;\n  }\n.react-flow__edge.animated path.react-flow__edge-interaction {\n    stroke-dasharray: none;\n    animation: none;\n  }\n.react-flow__edge.inactive {\n    pointer-events: none;\n  }\n.react-flow__edge.selected,\n  .react-flow__edge:focus,\n  .react-flow__edge:focus-visible {\n    outline: none;\n  }\n.react-flow__edge.selected .react-flow__edge-path,\n  .react-flow__edge.selectable:focus .react-flow__edge-path,\n  .react-flow__edge.selectable:focus-visible .react-flow__edge-path {\n    stroke: var(--xy-edge-stroke-selected, var(--xy-edge-stroke-selected-default));\n  }\n.react-flow__edge-textwrapper {\n    pointer-events: all;\n  }\n.react-flow__edge .react-flow__edge-text {\n    pointer-events: none;\n    -webkit-user-select: none;\n       -moz-user-select: none;\n            user-select: none;\n  }\n/* Arrowhead marker styles - use CSS custom properties as default */\n.react-flow__arrowhead polyline {\n  stroke: var(--xy-edge-stroke, var(--xy-edge-stroke-default));\n}\n.react-flow__arrowhead polyline.arrowclosed {\n  fill: var(--xy-edge-stroke, var(--xy-edge-stroke-default));\n}\n.react-flow__connection {\n  pointer-events: none;\n}\n.react-flow__connection .animated {\n    stroke-dasharray: 5;\n    animation: dashdraw 0.5s linear infinite;\n  }\nsvg.react-flow__connectionline {\n  z-index: 1001;\n  overflow: visible;\n  position: absolute;\n}\n.react-flow__nodes {\n  pointer-events: none;\n  transform-origin: 0 0;\n}\n.react-flow__node {\n  position: absolute;\n  -webkit-user-select: none;\n     -moz-user-select: none;\n          user-select: none;\n  pointer-events: all;\n  transform-origin: 0 0;\n  box-sizing: border-box;\n  cursor: default;\n}\n.react-flow__node.selectable {\n    cursor: pointer;\n  }\n.react-flow__node.draggable {\n    cursor: grab;\n    pointer-events: all;\n  }\n.react-flow__node.draggable.dragging {\n      cursor: grabbing;\n    }\n.react-flow__nodesselection {\n  z-index: 3;\n  transform-origin: left top;\n  pointer-events: none;\n}\n.react-flow__nodesselection-rect {\n    position: absolute;\n    pointer-events: all;\n    cursor: grab;\n  }\n.react-flow__handle {\n  position: absolute;\n  pointer-events: none;\n  min-width: 5px;\n  min-height: 5px;\n  width: 6px;\n  height: 6px;\n  background-color: var(--xy-handle-background-color, var(--xy-handle-background-color-default));\n  border: 1px solid var(--xy-handle-border-color, var(--xy-handle-border-color-default));\n  border-radius: 100%;\n}\n.react-flow__handle.connectingfrom {\n    pointer-events: all;\n  }\n.react-flow__handle.connectionindicator {\n    pointer-events: all;\n    cursor: crosshair;\n  }\n.react-flow__handle-bottom {\n    top: auto;\n    left: 50%;\n    bottom: 0;\n    transform: translate(-50%, 50%);\n  }\n.react-flow__handle-top {\n    top: 0;\n    left: 50%;\n    transform: translate(-50%, -50%);\n  }\n.react-flow__handle-left {\n    top: 50%;\n    left: 0;\n    transform: translate(-50%, -50%);\n  }\n.react-flow__handle-right {\n    top: 50%;\n    right: 0;\n    transform: translate(50%, -50%);\n  }\n.react-flow__edgeupdater {\n  cursor: move;\n  pointer-events: all;\n}\n.react-flow__pane.selection .react-flow__panel {\n  pointer-events: none;\n}\n.react-flow__panel {\n  position: absolute;\n  z-index: 5;\n  margin: 15px;\n}\n.react-flow__panel.top {\n    top: 0;\n  }\n.react-flow__panel.bottom {\n    bottom: 0;\n  }\n.react-flow__panel.top.center, .react-flow__panel.bottom.center {\n      left: 50%;\n      transform: translateX(-15px) translateX(-50%);\n    }\n.react-flow__panel.left {\n    left: 0;\n  }\n.react-flow__panel.right {\n    right: 0;\n  }\n.react-flow__panel.left.center, .react-flow__panel.right.center {\n      top: 50%;\n      transform: translateY(-15px) translateY(-50%);\n    }\n.react-flow__attribution {\n  font-size: 10px;\n  background: var(--xy-attribution-background-color, var(--xy-attribution-background-color-default));\n  padding: 2px 3px;\n  margin: 0;\n}\n.react-flow__attribution a {\n    text-decoration: none;\n    color: #999;\n  }\n@keyframes dashdraw {\n  from {\n    stroke-dashoffset: 10;\n  }\n}\n.react-flow__edgelabel-renderer {\n  position: absolute;\n  width: 100%;\n  height: 100%;\n  pointer-events: none;\n  -webkit-user-select: none;\n     -moz-user-select: none;\n          user-select: none;\n  left: 0;\n  top: 0;\n}\n.react-flow__viewport-portal {\n  position: absolute;\n  width: 100%;\n  height: 100%;\n  left: 0;\n  top: 0;\n  -webkit-user-select: none;\n     -moz-user-select: none;\n          user-select: none;\n}\n.react-flow__minimap {\n  background: var(\n    --xy-minimap-background-color-props,\n    var(--xy-minimap-background-color, var(--xy-minimap-background-color-default))\n  );\n}\n.react-flow__minimap-svg {\n    display: block;\n  }\n.react-flow__minimap-mask {\n    fill: var(\n      --xy-minimap-mask-background-color-props,\n      var(--xy-minimap-mask-background-color, var(--xy-minimap-mask-background-color-default))\n    );\n    stroke: var(\n      --xy-minimap-mask-stroke-color-props,\n      var(--xy-minimap-mask-stroke-color, var(--xy-minimap-mask-stroke-color-default))\n    );\n    stroke-width: var(\n      --xy-minimap-mask-stroke-width-props,\n      var(--xy-minimap-mask-stroke-width, var(--xy-minimap-mask-stroke-width-default))\n    );\n  }\n.react-flow__minimap-node {\n    fill: var(\n      --xy-minimap-node-background-color-props,\n      var(--xy-minimap-node-background-color, var(--xy-minimap-node-background-color-default))\n    );\n    stroke: var(\n      --xy-minimap-node-stroke-color-props,\n      var(--xy-minimap-node-stroke-color, var(--xy-minimap-node-stroke-color-default))\n    );\n    stroke-width: var(\n      --xy-minimap-node-stroke-width-props,\n      var(--xy-minimap-node-stroke-width, var(--xy-minimap-node-stroke-width-default))\n    );\n  }\n.react-flow__background-pattern.dots {\n    fill: var(\n      --xy-background-pattern-color-props,\n      var(--xy-background-pattern-color, var(--xy-background-pattern-dots-color-default))\n    );\n  }\n.react-flow__background-pattern.lines {\n    stroke: var(\n      --xy-background-pattern-color-props,\n      var(--xy-background-pattern-color, var(--xy-background-pattern-lines-color-default))\n    );\n  }\n.react-flow__background-pattern.cross {\n    stroke: var(\n      --xy-background-pattern-color-props,\n      var(--xy-background-pattern-color, var(--xy-background-pattern-cross-color-default))\n    );\n  }\n.react-flow__controls {\n  display: flex;\n  flex-direction: column;\n  box-shadow: var(--xy-controls-box-shadow, var(--xy-controls-box-shadow-default));\n}\n.react-flow__controls.horizontal {\n    flex-direction: row;\n  }\n.react-flow__controls-button {\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    height: 26px;\n    width: 26px;\n    padding: 4px;\n    border: none;\n    background: var(--xy-controls-button-background-color, var(--xy-controls-button-background-color-default));\n    border-bottom: 1px solid\n      var(\n        --xy-controls-button-border-color-props,\n        var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))\n      );\n    color: var(\n      --xy-controls-button-color-props,\n      var(--xy-controls-button-color, var(--xy-controls-button-color-default))\n    );\n    cursor: pointer;\n    -webkit-user-select: none;\n       -moz-user-select: none;\n            user-select: none;\n  }\n.react-flow__controls-button svg {\n      width: 100%;\n      max-width: 12px;\n      max-height: 12px;\n      fill: currentColor;\n    }\n.react-flow__edge.updating .react-flow__edge-path {\n      stroke: #777;\n    }\n.react-flow__edge-text {\n    font-size: 10px;\n  }\n.react-flow__node.selectable:focus,\n  .react-flow__node.selectable:focus-visible {\n    outline: none;\n  }\n.react-flow__node-input,\n.react-flow__node-default,\n.react-flow__node-output,\n.react-flow__node-group {\n  padding: 10px;\n  border-radius: var(--xy-node-border-radius, var(--xy-node-border-radius-default));\n  width: 150px;\n  font-size: 12px;\n  color: var(--xy-node-color, var(--xy-node-color-default));\n  text-align: center;\n  border: var(--xy-node-border, var(--xy-node-border-default));\n  background-color: var(--xy-node-background-color, var(--xy-node-background-color-default));\n}\n.react-flow__node-input.selectable:hover, .react-flow__node-default.selectable:hover, .react-flow__node-output.selectable:hover, .react-flow__node-group.selectable:hover {\n      box-shadow: var(--xy-node-boxshadow-hover, var(--xy-node-boxshadow-hover-default));\n    }\n.react-flow__node-input.selectable.selected,\n    .react-flow__node-input.selectable:focus,\n    .react-flow__node-input.selectable:focus-visible,\n    .react-flow__node-default.selectable.selected,\n    .react-flow__node-default.selectable:focus,\n    .react-flow__node-default.selectable:focus-visible,\n    .react-flow__node-output.selectable.selected,\n    .react-flow__node-output.selectable:focus,\n    .react-flow__node-output.selectable:focus-visible,\n    .react-flow__node-group.selectable.selected,\n    .react-flow__node-group.selectable:focus,\n    .react-flow__node-group.selectable:focus-visible {\n      box-shadow: var(--xy-node-boxshadow-selected, var(--xy-node-boxshadow-selected-default));\n    }\n.react-flow__node-group {\n  background-color: var(--xy-node-group-background-color, var(--xy-node-group-background-color-default));\n}\n.react-flow__nodesselection-rect,\n.react-flow__selection {\n  background: var(--xy-selection-background-color, var(--xy-selection-background-color-default));\n  border: var(--xy-selection-border, var(--xy-selection-border-default));\n}\n.react-flow__nodesselection-rect:focus,\n  .react-flow__nodesselection-rect:focus-visible,\n  .react-flow__selection:focus,\n  .react-flow__selection:focus-visible {\n    outline: none;\n  }\n.react-flow__controls-button:hover {\n      background: var(\n        --xy-controls-button-background-color-hover-props,\n        var(--xy-controls-button-background-color-hover, var(--xy-controls-button-background-color-hover-default))\n      );\n      color: var(\n        --xy-controls-button-color-hover-props,\n        var(--xy-controls-button-color-hover, var(--xy-controls-button-color-hover-default))\n      );\n    }\n.react-flow__controls-button:disabled {\n      pointer-events: none;\n    }\n.react-flow__controls-button:disabled svg {\n        fill-opacity: 0.4;\n      }\n.react-flow__controls-button:last-child {\n    border-bottom: none;\n  }\n.react-flow__controls.horizontal .react-flow__controls-button {\n    border-bottom: none;\n    border-right: 1px solid\n      var(\n        --xy-controls-button-border-color-props,\n        var(--xy-controls-button-border-color, var(--xy-controls-button-border-color-default))\n      );\n  }\n.react-flow__controls.horizontal .react-flow__controls-button:last-child {\n    border-right: none;\n  }\n.react-flow__resize-control {\n  position: absolute;\n}\n.react-flow__resize-control.left,\n.react-flow__resize-control.right {\n  cursor: ew-resize;\n}\n.react-flow__resize-control.top,\n.react-flow__resize-control.bottom {\n  cursor: ns-resize;\n}\n.react-flow__resize-control.top.left,\n.react-flow__resize-control.bottom.right {\n  cursor: nwse-resize;\n}\n.react-flow__resize-control.bottom.left,\n.react-flow__resize-control.top.right {\n  cursor: nesw-resize;\n}\n/* handle styles */\n.react-flow__resize-control.handle {\n  width: 5px;\n  height: 5px;\n  border: 1px solid #fff;\n  border-radius: 1px;\n  background-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));\n  translate: -50% -50%;\n}\n.react-flow__resize-control.handle.left {\n  left: 0;\n  top: 50%;\n}\n.react-flow__resize-control.handle.right {\n  left: 100%;\n  top: 50%;\n}\n.react-flow__resize-control.handle.top {\n  left: 50%;\n  top: 0;\n}\n.react-flow__resize-control.handle.bottom {\n  left: 50%;\n  top: 100%;\n}\n.react-flow__resize-control.handle.top.left {\n  left: 0;\n}\n.react-flow__resize-control.handle.bottom.left {\n  left: 0;\n}\n.react-flow__resize-control.handle.top.right {\n  left: 100%;\n}\n.react-flow__resize-control.handle.bottom.right {\n  left: 100%;\n}\n/* line styles */\n.react-flow__resize-control.line {\n  border-color: var(--xy-resize-background-color, var(--xy-resize-background-color-default));\n  border-width: 0;\n  border-style: solid;\n}\n.react-flow__resize-control.line.left,\n.react-flow__resize-control.line.right {\n  width: 1px;\n  transform: translate(-50%, 0);\n  top: 0;\n  height: 100%;\n}\n.react-flow__resize-control.line.left {\n  left: 0;\n  border-left-width: 1px;\n}\n.react-flow__resize-control.line.right {\n  left: 100%;\n  border-right-width: 1px;\n}\n.react-flow__resize-control.line.top,\n.react-flow__resize-control.line.bottom {\n  height: 1px;\n  transform: translate(0, -50%);\n  left: 0;\n  width: 100%;\n}\n.react-flow__resize-control.line.top {\n  top: 0;\n  border-top-width: 1px;\n}\n.react-flow__resize-control.line.bottom {\n  border-bottom-width: 1px;\n  top: 100%;\n}\n.react-flow__edge-textbg {\n  fill: var(--xy-edge-label-background-color, var(--xy-edge-label-background-color-default));\n}\n.react-flow__edge-text {\n  fill: var(--xy-edge-label-color, var(--xy-edge-label-color-default));\n}\n";
+  if (typeof document !== "undefined") {
+    const styleId = "flowforge-reactflow-css";
+    if (!document.getElementById(styleId)) {
+      const styleEl = document.createElement("style");
+      styleEl.id = styleId;
+      styleEl.textContent = reactFlowCss;
+      document.head.appendChild(styleEl);
+    }
+  }
   function getHost() {
     const host = window.QwenPaw?.host;
     if (!host) throw new Error("[flowforge] QwenPaw.host not available");
@@ -8819,17 +9923,10 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
   }
   function authHeaders(extra) {
     const token = getToken();
-    return {
-      "Content-Type": "application/json",
-      ...token ? { Authorization: `Bearer ${token}` } : {},
-      ...extra
-    };
+    return { "Content-Type": "application/json", ...token ? { Authorization: `Bearer ${token}` } : {}, ...extra };
   }
   async function apiFetch(path, opts) {
-    const resp = await fetch(apiUrl(path), {
-      ...opts,
-      headers: { ...authHeaders(), ...opts?.headers || {} }
-    });
+    const resp = await fetch(apiUrl(path), { ...opts, headers: { ...authHeaders(), ...opts?.headers || {} } });
     if (!resp.ok) {
       const text = await resp.text().catch(() => "");
       throw new Error(text || `HTTP ${resp.status}`);
@@ -8838,75 +9935,316 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     return resp.json();
   }
   const NODE_COLORS = {
+    StartNode: "#52c41a",
+    EndNode: "#fa541c",
     InputNode: "#52c41a",
     OutputNode: "#fa541c",
+    ToolCallNode: "#1677ff",
     ToolNode: "#1677ff",
     AgentNode: "#722ed1",
     ConditionNode: "#faad14",
+    LLMCallNode: "#13c2c2",
     LLMNode: "#13c2c2",
-    CodeNode: "#eb2f96"
+    CodeNode: "#eb2f96",
+    ScriptNode: "#eb2f96",
+    ParallelNode: "#874d00",
+    WaitNode: "#8c8c8c",
+    TransformNode: "#0958d9",
+    ErrorHandlerNode: "#cf1322",
+    HumanReviewNode: "#d4380d",
+    SubworkflowNode: "#5b8c00",
+    QualityGateNode: "#7cb305",
+    IterativeRefineNode: "#08979c",
+    AssetExportNode: "#c41d7f"
   };
+  function nodeColor(classType) {
+    return NODE_COLORS[classType] || "#1677ff";
+  }
+  function statusColor(s) {
+    return s === "completed" || s === "success" ? "#52c41a" : s === "running" ? "#1677ff" : s === "failed" || s === "error" ? "#ff4d4f" : s === "skipped" ? "#bfbfbf" : s === "blocked" ? "#faad14" : s === "cancelled" ? "#fa8c16" : "#d9d9d9";
+  }
   function NodeCard({ id: id2, data, selected: selected2 }) {
     const antd = getHost().antd;
     const Tag = antd?.Tag;
     const d = data;
     const classType = d?.class_type || d?.type || "ToolNode";
     const label = d?.label || classType;
-    const color2 = NODE_COLORS[classType] || "#1677ff";
-    const status = d?._status || "pending";
-    const statusColor = status === "completed" ? "#52c41a" : status === "running" ? "#1677ff" : status === "failed" ? "#ff4d4f" : status === "skipped" ? "#bfbfbf" : "#d9d9d9";
-    return React$2.createElement(
+    const color2 = nodeColor(classType);
+    const st = d?._status || "pending";
+    const stColor = statusColor(st);
+    const inputSockets = (d?.inputs_schema || []).filter((field) => field.forceInput || field.socket);
+    const outputSockets = d?.outputs_schema || [];
+    return React2.createElement(
       "div",
       {
         style: {
-          padding: "10px 16px",
+          padding: "10px 14px",
           borderRadius: 8,
-          border: `2px solid ${selected2 ? color2 : statusColor}`,
+          border: `2px solid ${selected2 ? color2 : stColor}`,
           background: "#fff",
-          width: 220,
+          width: "240px",
+          minWidth: "240px",
+          maxWidth: "240px",
+          minHeight: "120px",
           fontSize: 12,
-          boxSizing: "border-box",
-          boxShadow: status === "running" ? `0 0 0 3px ${color2}33` : "0 2px 8px rgba(0,0,0,0.08)"
+          boxShadow: st === "running" ? `0 0 0 3px ${color2}33` : selected2 ? "0 2px 8px rgba(0,0,0,0.12)" : "0 1px 4px rgba(0,0,0,0.08)",
+          transition: "border-color 0.2s, box-shadow 0.2s",
+          display: "flex",
+          flexDirection: "column"
         }
       },
-      React$2.createElement(Handle, { type: "target", position: Position.Left }),
-      React$2.createElement(
+      ...inputSockets.length ? inputSockets.map(
+        (field, index2) => React2.createElement(Handle, {
+          key: `in-${field.name}`,
+          id: field.name,
+          type: "target",
+          position: Position.Left,
+          style: { top: 38 + index2 * 18, background: field.color || color2 },
+          title: `${field.name}: ${field.type}`
+        })
+      ) : [React2.createElement(Handle, { key: "in-default", type: "target", position: Position.Left })],
+      // Header row: icon + label + status tag
+      React2.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        React$2.createElement("span", { style: { fontSize: 16 } }, d?.icon || "🔧"),
-        React$2.createElement(
-          "strong",
-          { style: { color: color2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-          label
-        ),
-        Tag ? React$2.createElement(
-          Tag,
-          {
-            color: statusColor,
-            style: { marginLeft: "auto", fontSize: 10, flexShrink: 0 }
-          },
-          status
-        ) : null
+        React2.createElement("span", { style: { fontSize: 16 } }, d?.icon || "🔧"),
+        React2.createElement("strong", { style: { color: color2, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, label),
+        Tag ? React2.createElement(Tag, { color: stColor, style: { marginLeft: "auto", fontSize: 10 } }, st) : null
       ),
-      d?.description ? React$2.createElement(
-        "div",
-        { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } },
-        d.description
-      ) : null,
-      React$2.createElement(Handle, { type: "source", position: Position.Right })
+      // Description
+      d?.description ? React2.createElement("div", { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, maxWidth: 212, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description) : null,
+      // Node ID footer
+      React2.createElement("div", { style: { marginTop: "auto", paddingTop: 4, color: "#bfbfbf", fontSize: 10, fontFamily: "monospace" } }, id2),
+      ...outputSockets.length ? outputSockets.map(
+        (field, index2) => React2.createElement(Handle, {
+          key: `out-${field.name}`,
+          id: field.name,
+          type: "source",
+          position: Position.Right,
+          style: { top: 38 + index2 * 18, background: field.color || color2 },
+          title: `${field.name}: ${field.type}`
+        })
+      ) : [React2.createElement(Handle, { key: "out-default", type: "source", position: Position.Right })]
     );
   }
-  const nodeTypes = { default: NodeCard, tool: NodeCard, agent: NodeCard, condition: NodeCard, io: NodeCard, llm: NodeCard, code: NodeCard };
+  function LabeledEdge(props) {
+    const { id: id2, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, data, selected: selected2, markerEnd } = props;
+    getHost().antd;
+    const [edgePath, labelX, labelY] = getBezierPath({
+      sourceX,
+      sourceY,
+      sourcePosition,
+      targetX,
+      targetY,
+      targetPosition
+    });
+    const [editing, setEditing] = React2.useState(false);
+    const [editValue, setEditValue] = React2.useState("");
+    const onDelete = React2.useCallback((e) => {
+      e.stopPropagation();
+      const evt = new CustomEvent("flowforge:edge-delete", { detail: { id: id2 } });
+      window.dispatchEvent(evt);
+    }, [id2]);
+    const startEdit = React2.useCallback((e) => {
+      e.stopPropagation();
+      setEditValue(data?.label || "");
+      setEditing(true);
+    }, [data]);
+    const commitEdit = React2.useCallback(() => {
+      setEditing(false);
+      const evt = new CustomEvent("flowforge:edge-label", { detail: { id: id2, label: editValue } });
+      window.dispatchEvent(evt);
+    }, [id2, editValue]);
+    return React2.createElement(
+      React2.Fragment,
+      null,
+      React2.createElement("path", {
+        id: id2,
+        d: edgePath,
+        stroke: selected2 ? "#1677ff" : data?.color || "#bfbfbf",
+        strokeWidth: selected2 ? 3 : 2,
+        fill: "none",
+        markerEnd,
+        style: { transition: "stroke 0.2s" }
+      }),
+      React2.createElement(
+        EdgeLabelRenderer,
+        null,
+        React2.createElement(
+          "div",
+          {
+            style: {
+              position: "absolute",
+              transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+              pointerEvents: "all",
+              display: "flex",
+              alignItems: "center",
+              gap: 4
+            },
+            className: "nodrag nopan"
+          },
+          editing ? React2.createElement("input", {
+            value: editValue,
+            onChange: (e) => setEditValue(e.target.value),
+            onBlur: commitEdit,
+            onKeyDown: (e) => {
+              if (e.key === "Enter") commitEdit();
+              if (e.key === "Escape") setEditing(false);
+            },
+            style: {
+              width: 80,
+              fontSize: 10,
+              border: "1px solid #1677ff",
+              borderRadius: 4,
+              padding: "2px 4px",
+              textAlign: "center"
+            },
+            autoFocus: true
+          }) : React2.createElement("div", {
+            onDoubleClick: startEdit,
+            style: {
+              background: "#fff",
+              border: selected2 ? "1px solid #1677ff" : "1px solid #d9d9d9",
+              borderRadius: 4,
+              padding: "2px 6px",
+              fontSize: 10,
+              textAlign: "center",
+              cursor: "pointer",
+              maxWidth: 100,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap"
+            },
+            title: "双击编辑标签"
+          }, data?.label || "···"),
+          selected2 ? React2.createElement("button", {
+            onClick: onDelete,
+            style: {
+              border: "none",
+              background: "#ff4d4f",
+              color: "#fff",
+              borderRadius: "50%",
+              width: 18,
+              height: 18,
+              fontSize: 11,
+              cursor: "pointer",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              lineHeight: 1,
+              padding: 0
+            },
+            title: "删除连线"
+          }, "×") : null
+        )
+      )
+    );
+  }
+  const nodeTypes = { workflow: NodeCard };
+  const edgeTypes = { labeled: LabeledEdge };
+  function TypedInput({ field, value, onChange }) {
+    const antd = getHost().antd;
+    const { Input, InputNumber, Select, Switch, Upload, Button, Input: { TextArea } } = antd;
+    const type = String(field?.type || "any").toLowerCase();
+    const name = field?.name || "";
+    const required = field?.required;
+    const label = name + (required ? " *" : "");
+    const placeholder = `${type}`;
+    if (type === "number" || type === "int" || type === "float") {
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(InputNumber, {
+          value: value ?? "",
+          onChange: (v) => onChange(v),
+          placeholder,
+          style: { width: "100%" }
+        })
+      );
+    }
+    if (type === "boolean" || type === "bool") {
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(Switch, { checked: !!value, onChange: (v) => onChange(v) })
+      );
+    }
+    if (type === "select" || type === "enum") {
+      const options = (field?.options || []).map((o) => ({ label: typeof o === "string" ? o : o.label, value: typeof o === "string" ? o : o.value }));
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(Select, { value: value ?? "", onChange: (v) => onChange(v), options, placeholder, allowClear: true })
+      );
+    }
+    if (type === "object" || type === "array") {
+      const rendered = typeof value === "string" ? value : JSON.stringify(value ?? (type === "array" ? [] : {}), null, 2);
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(TextArea, {
+          value: rendered,
+          autoSize: { minRows: 3, maxRows: 10 },
+          onChange: (e) => {
+            try {
+              onChange(JSON.parse(e.target.value));
+            } catch {
+              onChange(e.target.value);
+            }
+          },
+          placeholder: type === "array" ? "[]" : "{}"
+        })
+      );
+    }
+    if (type === "file" || type === "image" || type === "video" || type === "audio") {
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(Upload, {
+          beforeUpload: (file) => {
+            onChange({ name: file.name, path: file.path || "", type: file.type, size: file.size });
+            return false;
+          },
+          maxCount: 1,
+          showUploadList: true
+        }, React2.createElement(Button, null, value?.name ? `已选择 ${value.name}` : "选择文件"))
+      );
+    }
+    if (type === "textarea" || type === "multiline" || name === "prompt" || name === "system" || name === "instruction") {
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(TextArea, {
+          value: value ?? "",
+          onChange: (e) => onChange(e.target.value),
+          placeholder,
+          autoSize: { minRows: 2, maxRows: 6 }
+        })
+      );
+    }
+    return React2.createElement(
+      antd.Form.Item,
+      { key: name, label },
+      React2.createElement(Input, {
+        value: value ?? "",
+        onChange: (e) => onChange(e.target.value),
+        placeholder
+      })
+    );
+  }
   function FlowListPage({ onEdit, onRun }) {
     const antd = getHost().antd;
-    const { Table, Button, Space, Input, Modal, message, Typography } = antd;
+    const antdIcons = getHost().antdIcons;
+    const { Table, Button, Space, Input, Modal, message, Typography, Card, Empty } = antd;
     const { Title } = Typography;
-    const [flows, setFlows] = React$2.useState([]);
-    const [loading, setLoading] = React$2.useState(false);
-    const [search, setSearch] = React$2.useState("");
-    const [newName, setNewName] = React$2.useState("");
-    const [creating, setCreating] = React$2.useState(false);
-    const refresh = React$2.useCallback(async () => {
+    const PlusOutlined = antdIcons?.PlusOutlined;
+    const ReloadOutlined = antdIcons?.ReloadOutlined;
+    const [flows, setFlows] = React2.useState([]);
+    const [loading, setLoading] = React2.useState(false);
+    const [search, setSearch] = React2.useState("");
+    const [newName, setNewName] = React2.useState("");
+    const [newModalOpen, setNewModalOpen] = React2.useState(false);
+    const refresh = React2.useCallback(async () => {
       setLoading(true);
       try {
         const data = await apiFetch("/flowforge/flows");
@@ -8917,11 +10255,11 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         setLoading(false);
       }
     }, []);
-    React$2.useEffect(() => {
+    React2.useEffect(() => {
       refresh();
     }, [refresh]);
-    const filtered = flows.filter((f) => !search || f.name.includes(search) || f.id.includes(search));
-    const createFlow = React$2.useCallback(async () => {
+    const filtered = flows.filter((f) => !search || f.name.toLowerCase().includes(search.toLowerCase()) || f.id.toLowerCase().includes(search.toLowerCase()));
+    const createFlow = React2.useCallback(async () => {
       if (!newName.trim()) return;
       try {
         const doc = await apiFetch("/flowforge/flows", {
@@ -8930,12 +10268,26 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         });
         message?.success(`已创建工作流 ${doc.id}`);
         setNewName("");
+        setNewModalOpen(false);
         onEdit(doc.id);
       } catch (e) {
         message?.error(`创建失败: ${e.message}`);
       }
     }, [newName, onEdit]);
-    const deleteFlow = React$2.useCallback(async (id2) => {
+    const duplicateFlow = React2.useCallback(async (id2) => {
+      try {
+        const doc = await apiFetch(`/flowforge/flows/${encodeURIComponent(id2)}`);
+        const newId2 = `${id2}_copy_${Date.now().toString(36)}`;
+        doc.id = newId2;
+        doc.name = `${doc.name} (副本)`;
+        await apiFetch(`/flowforge/flows/${encodeURIComponent(newId2)}`, { method: "PUT", body: JSON.stringify(doc) });
+        message?.success(`已复制为 ${newId2}`);
+        refresh();
+      } catch (e) {
+        message?.error(`复制失败: ${e.message}`);
+      }
+    }, [refresh]);
+    const deleteFlow = React2.useCallback(async (id2) => {
       Modal.confirm({
         title: "删除工作流",
         content: `确认删除 "${id2}" 吗？此操作不可恢复。`,
@@ -8952,83 +10304,99 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       });
     }, [refresh]);
     const columns = [
-      { title: "ID", dataIndex: "id", key: "id" },
+      { title: "ID", dataIndex: "id", key: "id", render: (id2) => React2.createElement("span", { style: { fontFamily: "monospace", fontSize: 12 } }, id2) },
       { title: "名称", dataIndex: "name", key: "name" },
       { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
-      { title: "节点数", dataIndex: "node_count", key: "node_count", width: 80 },
-      { title: "版本", dataIndex: "version", key: "version", width: 80 },
+      { title: "节点", dataIndex: "node_count", key: "node_count", width: 70 },
+      { title: "版本", dataIndex: "version", key: "version", width: 70 },
       {
         title: "操作",
         key: "actions",
-        width: 240,
-        render: (_, row) => React$2.createElement(
+        width: 280,
+        render: (_, row) => React2.createElement(
           Space,
           null,
-          React$2.createElement(Button, { size: "small", onClick: () => onEdit(row.id) }, "编辑"),
-          React$2.createElement(Button, { size: "small", type: "primary", onClick: () => onRun(row.id) }, "运行"),
-          React$2.createElement(Button, { size: "small", danger: true, onClick: () => deleteFlow(row.id) }, "删除")
+          React2.createElement(Button, { size: "small", onClick: () => onEdit(row.id) }, "编辑"),
+          React2.createElement(Button, { size: "small", onClick: () => duplicateFlow(row.id) }, "复制"),
+          React2.createElement(Button, { size: "small", type: "primary", onClick: () => onRun(row.id) }, "运行"),
+          React2.createElement(Button, { size: "small", danger: true, onClick: () => deleteFlow(row.id) }, "删除")
         )
       }
     ];
-    return React$2.createElement(
+    return React2.createElement(
       "div",
       { style: { padding: 24 } },
-      React$2.createElement(
+      React2.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
-        React$2.createElement(Title, { level: 4, style: { margin: 0 } }, "工作流"),
-        React$2.createElement(
+        React2.createElement(Title, { level: 4, style: { margin: 0 } }, "工作流", React2.createElement("span", { style: { fontSize: 14, color: "#8c8c8c", marginLeft: 8 } }, "可视化 DAG 工作流引擎")),
+        React2.createElement(
           Space,
           null,
-          React$2.createElement(Input.Search, {
-            placeholder: "搜索工作流",
-            value: search,
-            onChange: (e) => setSearch(e.target.value),
-            style: { width: 240 },
-            onSearch: refresh
-          }),
-          React$2.createElement(Button, { onClick: refresh, loading }, "刷新")
+          React2.createElement(Input.Search, { placeholder: "搜索工作流", value: search, onChange: (e) => setSearch(e.target.value), style: { width: 220 }, allowClear: true }),
+          React2.createElement(Button, { icon: ReloadOutlined ? React2.createElement(ReloadOutlined) : void 0, onClick: refresh, loading }),
+          React2.createElement(Button, { type: "primary", icon: PlusOutlined ? React2.createElement(PlusOutlined) : void 0, onClick: () => setNewModalOpen(true) }, "新建工作流")
         )
       ),
-      React$2.createElement(
-        "div",
-        { style: { marginBottom: 16, display: "flex", gap: 8 } },
-        React$2.createElement(Input, {
-          placeholder: "新工作流名称",
-          value: newName,
-          onChange: (e) => setNewName(e.target.value),
-          style: { width: 240 },
-          onPressEnter: createFlow
-        }),
-        React$2.createElement(Button, { type: "dashed", onClick: createFlow, disabled: !newName.trim() }, "+ 新建工作流")
-      ),
-      React$2.createElement(Table, {
+      React2.createElement(Table, {
         rowKey: "id",
         columns,
         dataSource: filtered,
         loading,
         pagination: { pageSize: 20 },
-        size: "small"
-      })
+        size: "small",
+        locale: { emptyText: React2.createElement(Empty, { description: "暂无工作流，点击「新建工作流」创建" }) }
+      }),
+      React2.createElement(Modal, {
+        title: "新建工作流",
+        open: newModalOpen,
+        onOk: createFlow,
+        onCancel: () => {
+          setNewModalOpen(false);
+          setNewName("");
+        },
+        okText: "创建",
+        cancelText: "取消",
+        okButtonProps: { disabled: !newName.trim() }
+      }, React2.createElement(Input, {
+        placeholder: "输入工作流 ID（如 my-workflow）",
+        value: newName,
+        onChange: (e) => setNewName(e.target.value),
+        onPressEnter: createFlow
+      }))
     );
   }
-  function FlowEditorPage({ flowId, onBack, onRun }) {
+  function FlowEditorPage({ flowId, onBack, onRun, runStatuses }) {
     const antd = getHost().antd;
     const antdIcons = getHost().antdIcons;
-    const { Button, Space, Input, Drawer, Form, Select, message, Typography, Tag, Empty } = antd;
-    const { Title, Text } = Typography;
+    const { Button, Space, Input, Drawer, Form, Select, message, Typography, Tag, Empty, Tooltip, Popconfirm, Tabs, Spin, Collapse } = antd;
+    const { Title, Text, Paragraph } = Typography;
     const ArrowLeftOutlined = antdIcons?.ArrowLeftOutlined;
     const SaveOutlined = antdIcons?.SaveOutlined;
     const PlayCircleOutlined = antdIcons?.PlayCircleOutlined;
-    const [doc, setDoc] = React$2.useState(null);
-    const [nodeTypesList, setNodeTypesList] = React$2.useState([]);
+    const CopyOutlined = antdIcons?.CopyOutlined;
+    const DeleteOutlined = antdIcons?.DeleteOutlined;
+    const SearchOutlined = antdIcons?.SearchOutlined;
+    const CheckCircleOutlined = antdIcons?.CheckCircleOutlined;
+    const ExclamationCircleOutlined = antdIcons?.ExclamationCircleOutlined;
+    const AlignLeftOutlined = antdIcons?.AlignLeftOutlined;
+    const AlignRightOutlined = antdIcons?.AlignRightOutlined;
+    const VerticalAlignTopOutlined = antdIcons?.VerticalAlignTopOutlined;
+    const VerticalAlignBottomOutlined = antdIcons?.VerticalAlignBottomOutlined;
+    const [doc, setDoc] = React2.useState(null);
+    const [nodeTypesList, setNodeTypesList] = React2.useState([]);
     const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
     const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
-    const [selectedNode, setSelectedNode] = React$2.useState(null);
-    const [inspectorOpen, setInspectorOpen] = React$2.useState(false);
-    const [saving, setSaving] = React$2.useState(false);
-    const [loading, setLoading] = React$2.useState(true);
-    React$2.useEffect(() => {
+    const [selectedNode, setSelectedNode] = React2.useState(null);
+    const [inspectorOpen, setInspectorOpen] = React2.useState(false);
+    const [saving, setSaving] = React2.useState(false);
+    const [loading, setLoading] = React2.useState(true);
+    const [paletteSearch, setPaletteSearch] = React2.useState("");
+    const [validation, setValidation] = React2.useState(null);
+    const [activeTab, setActiveTab] = React2.useState("nodes");
+    const [ioModalOpen, setIoModalOpen] = React2.useState(false);
+    const rfWrapper = React2.useRef(null);
+    React2.useEffect(() => {
       let cancelled = false;
       (async () => {
         setLoading(true);
@@ -9041,27 +10409,38 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
           setDoc(flow);
           setNodeTypesList(types || []);
           const savedPositions = flow.metadata?.positions || {};
-          const rfNodes2 = Object.entries(flow.nodes || {}).map(([id2, n], idx) => {
+          const rfN = Object.entries(flow.nodes || {}).map(([id2, n], idx) => {
             const ct = n.class_type || n.type || "ToolNode";
             const spec = (types || []).find((t) => t.class_type === ct);
-            const pos = savedPositions[id2] || { x: 100 + idx % 4 * 260, y: 80 + Math.floor(idx / 4) * 140 };
+            const pos = savedPositions[id2] || { x: 100 + idx % 4 * 300, y: 80 + Math.floor(idx / 4) * 180 };
             return {
               id: id2,
-              type: "default",
+              type: "workflow",
               position: pos,
-              data: { ...n, label: n.label || spec?.display_name || ct, icon: spec?.icon, class_type: ct, description: spec?.description }
+              data: {
+                ...n,
+                label: n.label || spec?.display_name || ct,
+                icon: spec?.icon,
+                class_type: ct,
+                description: spec?.description,
+                inputs_schema: spec?.inputs_schema || [],
+                outputs_schema: spec?.outputs_schema || []
+              }
             };
           });
-          const rfEdges2 = (flow.edges || []).map((e, idx) => ({
+          const rfE = (flow.edges || []).map((e, idx) => ({
             id: e.id || `e${idx}`,
             source: e.source,
             target: e.target,
             sourceHandle: e.source_handle,
             targetHandle: e.target_handle,
-            animated: true
+            type: "labeled",
+            animated: true,
+            data: { label: e.label || "" },
+            markerEnd: { type: MarkerType.ArrowClosed, color: "#bfbfbf" }
           }));
-          setRfNodes(rfNodes2);
-          setRfEdges(rfEdges2);
+          setRfNodes(rfN);
+          setRfEdges(rfE);
         } catch (e) {
           message?.error(`加载工作流失败: ${e.message}`);
         } finally {
@@ -9072,54 +10451,148 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         cancelled = true;
       };
     }, [flowId]);
-    const onConnect = React$2.useCallback((conn) => {
-      setRfEdges((eds) => addEdge({ ...conn, animated: true }, eds));
+    React2.useEffect(() => {
+      setRfNodes((nds) => nds.map((n) => ({
+        ...n,
+        data: { ...n.data, _status: runStatuses[n.id] || n.data?._status || "pending" }
+      })));
+    }, [runStatuses]);
+    React2.useEffect(() => {
+      const onEdgeDelete = (e) => {
+        const edgeId = e.detail?.id;
+        if (edgeId) {
+          setRfEdges((eds) => eds.filter((ed) => ed.id !== edgeId));
+        }
+      };
+      const onEdgeLabel = (e) => {
+        const { id: id2, label } = e.detail || {};
+        if (id2) {
+          setRfEdges((eds) => eds.map((ed) => ed.id === id2 ? { ...ed, data: { ...ed.data, label } } : ed));
+        }
+      };
+      window.addEventListener("flowforge:edge-delete", onEdgeDelete);
+      window.addEventListener("flowforge:edge-label", onEdgeLabel);
+      return () => {
+        window.removeEventListener("flowforge:edge-delete", onEdgeDelete);
+        window.removeEventListener("flowforge:edge-label", onEdgeLabel);
+      };
     }, [setRfEdges]);
-    const addNode = React$2.useCallback((spec) => {
+    const onConnect = React2.useCallback((conn) => {
+      setRfEdges((eds) => addEdge({ ...conn, type: "labeled", animated: true, data: { label: "" }, markerEnd: { type: MarkerType.ArrowClosed, color: "#bfbfbf" } }, eds));
+    }, [setRfEdges]);
+    const isValidConnection = React2.useCallback((conn) => {
+      if (conn.source === conn.target) return false;
+      const exists = rfEdges.some((e) => e.source === conn.source && e.target === conn.target);
+      return !exists;
+    }, [rfEdges]);
+    const addNode = React2.useCallback((spec) => {
       const id2 = `${spec.class_type.toLowerCase()}_${Date.now().toString(36)}`;
       const newNode = {
         id: id2,
-        type: "default",
+        type: "workflow",
         position: { x: 200 + Math.random() * 200, y: 150 + Math.random() * 150 },
-        data: {
-          label: spec.display_name,
-          class_type: spec.class_type,
-          icon: spec.icon,
-          description: spec.description,
-          inputs: {},
-          control: {}
-        }
+        data: { label: spec.display_name, class_type: spec.class_type, icon: spec.icon, description: spec.description, inputs: {}, control: {} }
       };
       setRfNodes((nds) => nds.concat(newNode));
     }, [setRfNodes]);
-    const save = React$2.useCallback(async () => {
+    const duplicateNode = React2.useCallback((node) => {
+      const newId2 = `${node.id}_copy_${Date.now().toString(36)}`;
+      const newNode = {
+        ...node,
+        id: newId2,
+        position: { x: node.position.x + 40, y: node.position.y + 40 },
+        data: { ...node.data, label: `${node.data?.label || ""} (副本)` },
+        selected: false
+      };
+      setRfNodes((nds) => nds.concat(newNode));
+      message?.success("已复制节点");
+    }, [setRfNodes]);
+    const deleteNode = React2.useCallback((nodeId) => {
+      setRfNodes((nds) => nds.filter((n) => n.id !== nodeId));
+      setRfEdges((eds) => eds.filter((e) => e.source !== nodeId && e.target !== nodeId));
+      if (selectedNode?.id === nodeId) {
+        setSelectedNode(null);
+        setInspectorOpen(false);
+      }
+    }, [setRfNodes, setRfEdges, selectedNode]);
+    React2.useEffect(() => {
+      const handler = (e) => {
+        if ((e.key === "Delete" || e.key === "Backspace") && selectedNode && inspectorOpen) {
+          const tag = e.target?.tagName;
+          if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+          deleteNode(selectedNode.id);
+        }
+      };
+      window.addEventListener("keydown", handler);
+      return () => window.removeEventListener("keydown", handler);
+    }, [selectedNode, inspectorOpen, deleteNode]);
+    const alignNodes = React2.useCallback((direction) => {
+      const selected2 = rfNodes.filter((n) => n.selected);
+      if (selected2.length < 2) {
+        message?.warning("请先选中至少 2 个节点");
+        return;
+      }
+      const ref = direction === "left" ? Math.min(...selected2.map((n) => n.position.x)) : direction === "right" ? Math.max(...selected2.map((n) => n.position.x + 240)) : direction === "top" ? Math.min(...selected2.map((n) => n.position.y)) : Math.max(...selected2.map((n) => n.position.y + 120));
+      setRfNodes((nds) => nds.map((n) => {
+        if (!n.selected) return n;
+        const pos = direction === "left" ? { ...n.position, x: ref } : direction === "right" ? { ...n.position, x: ref - 240 } : direction === "top" ? { ...n.position, y: ref } : { ...n.position, y: ref - 120 };
+        return { ...n, position: pos };
+      }));
+    }, [rfNodes, setRfNodes]);
+    const distributeNodes = React2.useCallback((axis) => {
+      const selected2 = rfNodes.filter((n) => n.selected);
+      if (selected2.length < 3) {
+        message?.warning("请先选中至少 3 个节点");
+        return;
+      }
+      const sorted = [...selected2].sort((a, b) => axis === "h" ? a.position.x - b.position.x : a.position.y - b.position.y);
+      const first = sorted[0];
+      const last = sorted[sorted.length - 1];
+      const totalSpan = axis === "h" ? last.position.x - first.position.x : last.position.y - first.position.y;
+      const step = totalSpan / (sorted.length - 1);
+      const idToPos = /* @__PURE__ */ new Map();
+      sorted.forEach((n, i) => {
+        if (axis === "h") idToPos.set(n.id, { ...n.position, x: first.position.x + step * i });
+        else idToPos.set(n.id, { ...n.position, y: first.position.y + step * i });
+      });
+      setRfNodes((nds) => nds.map((n) => idToPos.has(n.id) ? { ...n, position: idToPos.get(n.id) } : n));
+    }, [rfNodes, setRfNodes]);
+    const save = React2.useCallback(async () => {
       if (!doc) return;
       setSaving(true);
       try {
         const nodes = {};
         const positions = {};
         for (const n of rfNodes) {
-          const { label, icon, description, _status, ...rest } = n.data || {};
+          const {
+            label,
+            icon,
+            description,
+            _status,
+            inputs_schema,
+            outputs_schema,
+            ...rest
+          } = n.data || {};
           nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
           positions[n.id] = n.position;
         }
-        const edges = rfEdges.map((e, idx) => ({
-          id: e.id || `e${idx}`,
-          source: e.source,
-          target: e.target,
-          source_handle: e.sourceHandle,
-          target_handle: e.targetHandle
-        }));
-        const payload = {
-          ...doc,
-          nodes,
-          edges,
-          metadata: { ...doc.metadata, positions }
-        };
-        const saved = await apiFetch(`/flowforge/flows/${encodeURIComponent(flowId)}`, {
-          method: "PUT",
-          body: JSON.stringify(payload)
+        const edges = rfEdges.map((e, idx) => {
+          const sourceNode = rfNodes.find((node) => node.id === e.source);
+          const outputFields = sourceNode?.data?.outputs_schema || [];
+          const sourceSlot = Math.max(0, outputFields.findIndex((field) => field.name === e.sourceHandle));
+          return {
+            id: e.id || `e${idx}`,
+            source: e.source,
+            target: e.target,
+            kind: e.data?.kind || "data",
+            source_handle: e.sourceHandle,
+            target_handle: e.targetHandle,
+            source_slot: sourceSlot,
+            label: e.data?.label || ""
+          };
         });
+        const payload = { ...doc, nodes, edges, metadata: { ...doc.metadata, positions } };
+        const saved = await apiFetch(`/flowforge/flows/${encodeURIComponent(flowId)}`, { method: "PUT", body: JSON.stringify(payload) });
         setDoc(saved);
         message?.success("已保存");
       } catch (e) {
@@ -9128,188 +10601,482 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         setSaving(false);
       }
     }, [doc, flowId, rfEdges, rfNodes]);
-    const palette = React$2.useMemo(() => {
+    const validateFlow = React2.useCallback(async () => {
+      if (!doc) return;
+      try {
+        const nodes = {};
+        for (const n of rfNodes) {
+          const {
+            label,
+            icon,
+            description,
+            _status,
+            inputs_schema,
+            outputs_schema,
+            ...rest
+          } = n.data || {};
+          nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
+        }
+        const edges = rfEdges.map((e, idx) => {
+          const sourceNode = rfNodes.find((node) => node.id === e.source);
+          const outputs = sourceNode?.data?.outputs_schema || [];
+          return {
+            id: e.id || `e${idx}`,
+            source: e.source,
+            target: e.target,
+            kind: e.data?.kind || "data",
+            source_handle: e.sourceHandle,
+            target_handle: e.targetHandle,
+            source_slot: Math.max(0, outputs.findIndex((field) => field.name === e.sourceHandle))
+          };
+        });
+        const payload = { ...doc, nodes, edges };
+        const result = await apiFetch("/flowforge/flows/validate", { method: "POST", body: JSON.stringify(payload) });
+        setValidation({ ok: result.ok, errors: result.errors || [] });
+        if (result.ok) message?.success("验证通过");
+        else message?.warning(`验证发现 ${result.errors.length} 个问题`);
+      } catch (e) {
+        message?.error(`验证失败: ${e.message}`);
+      }
+    }, [doc, rfNodes, rfEdges]);
+    const palette = React2.useMemo(() => {
       var _a;
       const groups = {};
-      for (const t of nodeTypesList) {
+      const filtered = nodeTypesList.filter(
+        (t) => !paletteSearch || t.display_name.toLowerCase().includes(paletteSearch.toLowerCase()) || t.class_type.toLowerCase().includes(paletteSearch.toLowerCase()) || t.description.toLowerCase().includes(paletteSearch.toLowerCase())
+      );
+      for (const t of filtered) {
         (groups[_a = t.category] || (groups[_a] = [])).push(t);
       }
       return groups;
-    }, [nodeTypesList]);
-    if (loading) return React$2.createElement(antd.Spin, { size: "large" });
-    return React$2.createElement(
+    }, [nodeTypesList, paletteSearch]);
+    if (loading) return React2.createElement("div", { style: { display: "flex", justifyContent: "center", alignItems: "center", height: "100%" } }, React2.createElement(Spin, { size: "large" }));
+    return React2.createElement(
       "div",
-      {
-        style: { display: "flex", flexDirection: "column", height: "100%", minHeight: 0, overflow: "hidden" },
-        "data-flowforge-editor": true
-      },
+      { style: { display: "flex", flexDirection: "column", height: "100%" }, "data-flowforge-editor": true },
       // Toolbar
-      React$2.createElement(
+      React2.createElement(
         "div",
         { style: { padding: "8px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 } },
-        React$2.createElement(Button, { icon: ArrowLeftOutlined ? React$2.createElement(ArrowLeftOutlined) : void 0, onClick: onBack }, "返回"),
-        React$2.createElement(Title, { level: 5, style: { margin: 0 } }, doc?.name || flowId),
-        React$2.createElement(Tag, null, `${rfNodes.length} 节点 / ${rfEdges.length} 连接`),
-        React$2.createElement(
+        React2.createElement(Button, { icon: ArrowLeftOutlined ? React2.createElement(ArrowLeftOutlined) : void 0, onClick: onBack }, "返回"),
+        React2.createElement(Title, { level: 5, style: { margin: 0 } }, doc?.name || flowId),
+        React2.createElement(Tag, null, `${rfNodes.length} 节点 / ${rfEdges.length} 连接`),
+        validation ? validation.ok ? React2.createElement(Tag, { icon: CheckCircleOutlined ? React2.createElement(CheckCircleOutlined) : void 0, color: "success" }, "验证通过") : React2.createElement(
+          Tooltip,
+          { title: validation.errors.join("\n") },
+          React2.createElement(Tag, { icon: ExclamationCircleOutlined ? React2.createElement(ExclamationCircleOutlined) : void 0, color: "error" }, `${validation.errors.length} 个问题`)
+        ) : null,
+        // Run status indicator
+        Object.keys(runStatuses).length > 0 ? React2.createElement(Tag, { color: "processing" }, `运行中: ${Object.values(runStatuses).filter((s) => s === "running").length} 执行中`) : null,
+        React2.createElement(
           Space,
           { style: { marginLeft: "auto" } },
-          React$2.createElement(Button, { icon: SaveOutlined ? React$2.createElement(SaveOutlined) : void 0, onClick: save, loading: saving }, "保存"),
-          React$2.createElement(Button, { type: "primary", icon: PlayCircleOutlined ? React$2.createElement(PlayCircleOutlined) : void 0, onClick: () => onRun(flowId) }, "运行")
+          React2.createElement(Button, { onClick: () => setIoModalOpen(true) }, "输入/输出配置"),
+          React2.createElement(Button, { icon: CheckCircleOutlined ? React2.createElement(CheckCircleOutlined) : void 0, onClick: validateFlow }, "验证"),
+          React2.createElement(Button, { icon: SaveOutlined ? React2.createElement(SaveOutlined) : void 0, onClick: save, loading: saving }, "保存"),
+          React2.createElement(Button, { type: "primary", icon: PlayCircleOutlined ? React2.createElement(PlayCircleOutlined) : void 0, onClick: () => onRun(flowId) }, "运行")
         )
       ),
-      // Body: palette + canvas (flex row, fills remaining height)
-      React$2.createElement(
+      // Body: palette + canvas + inspector
+      React2.createElement(
         "div",
-        { style: { display: "flex", flex: 1, minHeight: 0, overflow: "hidden" } },
-        // Palette
-        React$2.createElement(
+        { style: { display: "flex", flex: 1, minHeight: 0 } },
+        // Palette sidebar
+        React2.createElement(
           "div",
-          { style: { width: 220, flexShrink: 0, borderRight: "1px solid #f0f0f0", padding: 12, overflowY: "auto", background: "#fafafa" } },
-          React$2.createElement(Text, { strong: true }, "节点面板"),
-          Object.entries(palette).map(([cat, items]) => React$2.createElement(
+          { style: { width: 240, borderRight: "1px solid #f0f0f0", display: "flex", flexDirection: "column", background: "#fafafa" } },
+          React2.createElement(
             "div",
-            { key: cat, style: { marginTop: 12 } },
-            React$2.createElement(Text, { type: "secondary", style: { fontSize: 11, textTransform: "uppercase" } }, cat),
-            items.map((spec) => React$2.createElement(
+            { style: { padding: "8px 12px", borderBottom: "1px solid #f0f0f0" } },
+            React2.createElement(Input, {
+              placeholder: "搜索节点...",
+              prefix: SearchOutlined ? React2.createElement(SearchOutlined) : void 0,
+              value: paletteSearch,
+              onChange: (e) => setPaletteSearch(e.target.value),
+              allowClear: true,
+              size: "small"
+            })
+          ),
+          React2.createElement(
+            "div",
+            { style: { flex: 1, overflowY: "auto", padding: "8px 12px" } },
+            Object.entries(palette).map(([cat, items]) => React2.createElement(
               "div",
-              {
-                key: spec.class_type,
-                onClick: () => addNode(spec),
-                style: {
-                  padding: "6px 8px",
-                  margin: "4px 0",
-                  background: "#fff",
-                  border: "1px solid #e8e8e8",
-                  borderRadius: 4,
-                  cursor: "pointer",
-                  display: "flex",
-                  alignItems: "center",
-                  gap: 6,
-                  fontSize: 12
+              { key: cat, style: { marginBottom: 12 } },
+              React2.createElement(Text, { type: "secondary", style: { fontSize: 10, textTransform: "uppercase", fontWeight: 600 } }, cat),
+              items.map((spec) => React2.createElement(
+                "div",
+                {
+                  key: spec.class_type,
+                  onClick: () => addNode(spec),
+                  style: {
+                    padding: "6px 8px",
+                    margin: "4px 0",
+                    background: "#fff",
+                    border: "1px solid #e8e8e8",
+                    borderRadius: 4,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    fontSize: 12,
+                    borderLeft: `3px solid ${nodeColor(spec.class_type)}`
+                  },
+                  onMouseEnter: (e) => {
+                    e.currentTarget.style.borderColor = nodeColor(spec.class_type);
+                  },
+                  onMouseLeave: (e) => {
+                    e.currentTarget.style.borderColor = "#e8e8e8";
+                  },
+                  title: spec.description
                 },
-                onMouseEnter: (e) => {
-                  e.currentTarget.style.borderColor = "#1677ff";
-                },
-                onMouseLeave: (e) => {
-                  e.currentTarget.style.borderColor = "#e8e8e8";
-                }
-              },
-              React$2.createElement("span", null, spec.icon),
-              React$2.createElement("span", null, spec.display_name)
+                React2.createElement("span", { style: { fontSize: 14 } }, spec.icon),
+                React2.createElement("span", null, spec.display_name)
+              ))
             ))
-          ))
+          )
         ),
-        // Canvas — must have explicit height for ReactFlow to work.
-        // We use position:absolute + top/left/right/bottom:0 to ensure
-        // the container fills its flex parent regardless of CSS quirks.
-        React$2.createElement(
+        // Canvas
+        React2.createElement(
           "div",
-          { style: { flex: 1, position: "relative", minWidth: 0, minHeight: 200 } },
-          React$2.createElement(
-            ReactFlowProvider,
-            null,
-            React$2.createElement(
-              index,
-              {
-                nodes: rfNodes,
-                edges: rfEdges,
-                onNodesChange,
-                onEdgesChange,
-                onConnect,
-                onNodeClick: (_, node) => {
-                  setSelectedNode(node);
-                  setInspectorOpen(true);
-                },
-                nodeTypes,
-                fitView: true,
-                nodesDraggable: true,
-                nodesConnectable: true,
-                elementsSelectable: true,
-                style: { background: "#f5f5f5", width: "100%", height: "100%" }
+          { ref: rfWrapper, style: { flex: 1, position: "relative" } },
+          React2.createElement(
+            index,
+            {
+              nodes: rfNodes,
+              edges: rfEdges,
+              onNodesChange,
+              onEdgesChange,
+              onConnect,
+              onNodeClick: (_, node) => {
+                setSelectedNode(node);
+                setInspectorOpen(true);
               },
-              React$2.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
-              React$2.createElement(Controls, null),
-              React$2.createElement(MiniMap, { style: { background: "#fafafa" } })
+              nodeTypes,
+              edgeTypes,
+              isValidConnection,
+              fitView: true,
+              style: { background: "#f5f5f5" },
+              deleteKeyCode: null
+            },
+            React2.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
+            React2.createElement(Controls, null),
+            React2.createElement(MiniMap, { style: { background: "#fafafa" }, nodeColor: (n) => nodeColor(n.data?.class_type || ""), nodeStrokeWidth: 2 }),
+            // Alignment tools panel
+            React2.createElement(
+              Panel,
+              { position: "top-left" },
+              React2.createElement(
+                "div",
+                {
+                  style: {
+                    background: "#fff",
+                    borderRadius: 6,
+                    padding: "4px 8px",
+                    boxShadow: "0 1px 4px rgba(0,0,0,0.1)",
+                    display: "flex",
+                    gap: 4
+                  }
+                },
+                React2.createElement(
+                  Tooltip,
+                  { title: "左对齐" },
+                  React2.createElement(Button, { size: "small", type: "text", icon: AlignLeftOutlined ? React2.createElement(AlignLeftOutlined) : void 0, onClick: () => alignNodes("left") })
+                ),
+                React2.createElement(
+                  Tooltip,
+                  { title: "右对齐" },
+                  React2.createElement(Button, { size: "small", type: "text", icon: AlignRightOutlined ? React2.createElement(AlignRightOutlined) : void 0, onClick: () => alignNodes("right") })
+                ),
+                React2.createElement(
+                  Tooltip,
+                  { title: "顶部对齐" },
+                  React2.createElement(Button, { size: "small", type: "text", icon: VerticalAlignTopOutlined ? React2.createElement(VerticalAlignTopOutlined) : void 0, onClick: () => alignNodes("top") }, !VerticalAlignTopOutlined ? "⬆" : null)
+                ),
+                React2.createElement(
+                  Tooltip,
+                  { title: "底部对齐" },
+                  React2.createElement(Button, { size: "small", type: "text", icon: VerticalAlignBottomOutlined ? React2.createElement(VerticalAlignBottomOutlined) : void 0, onClick: () => alignNodes("bottom") }, !VerticalAlignBottomOutlined ? "⬇" : null)
+                ),
+                React2.createElement("div", { style: { width: 1, background: "#e8e8e8", margin: "0 2px" } }),
+                React2.createElement(
+                  Tooltip,
+                  { title: "水平分布" },
+                  React2.createElement(Button, { size: "small", type: "text", onClick: () => distributeNodes("h") }, "H··")
+                ),
+                React2.createElement(
+                  Tooltip,
+                  { title: "垂直分布" },
+                  React2.createElement(Button, { size: "small", type: "text", onClick: () => distributeNodes("v") }, "V··")
+                )
+              )
             )
           )
+        ),
+        // Inspector drawer
+        React2.createElement(
+          Drawer,
+          {
+            title: "节点属性",
+            open: inspectorOpen,
+            onClose: () => setInspectorOpen(false),
+            width: 380,
+            extra: selectedNode ? React2.createElement(
+              Space,
+              null,
+              React2.createElement(
+                Tooltip,
+                { title: "复制节点" },
+                React2.createElement(Button, { size: "small", icon: CopyOutlined ? React2.createElement(CopyOutlined) : void 0, onClick: () => duplicateNode(selectedNode) })
+              ),
+              React2.createElement(
+                Popconfirm,
+                { title: "确认删除此节点？", onConfirm: () => deleteNode(selectedNode.id) },
+                React2.createElement(Button, { size: "small", danger: true, icon: DeleteOutlined ? React2.createElement(DeleteOutlined) : void 0 })
+              )
+            ) : null
+          },
+          selectedNode ? React2.createElement(NodeInspector, {
+            node: selectedNode,
+            nodeTypes: nodeTypesList,
+            onUpdate: (updated) => {
+              setRfNodes((nds) => nds.map((n) => n.id === updated.id ? updated : n));
+              setSelectedNode(updated);
+            }
+          }) : React2.createElement(Empty, { description: "点击节点查看属性" })
         )
       ),
-      // Inspector drawer — rendered OUTSIDE the flex body so it overlays correctly
-      React$2.createElement(
-        Drawer,
-        {
-          title: "节点属性",
-          open: inspectorOpen,
-          onClose: () => setInspectorOpen(false),
-          width: 360
-        },
-        selectedNode ? React$2.createElement(NodeInspector, { node: selectedNode, nodeTypes: nodeTypesList, onUpdate: (updated) => {
-          setRfNodes((nds) => nds.map((n) => n.id === updated.id ? updated : n));
-          setSelectedNode(updated);
-        } }) : React$2.createElement(Empty, { description: "点击节点查看属性" })
-      )
+      // IO Config Modal
+      React2.createElement(IoConfigModal, {
+        open: ioModalOpen,
+        doc,
+        onClose: () => setIoModalOpen(false),
+        onSave: (inputs, outputs, startId) => {
+          setDoc((d) => d ? { ...d, inputs, outputs, start_id: startId } : d);
+          setIoModalOpen(false);
+          message?.success("输入/输出配置已更新（需保存生效）");
+        }
+      })
     );
   }
   function NodeInspector({ node, nodeTypes: nodeTypes2, onUpdate }) {
     const antd = getHost().antd;
-    const { Form, Input, Select, InputNumber, Typography } = antd;
+    const { Form, Input, Select, Typography, Divider, Collapse } = antd;
+    const { Title: AntTitle, Text: AntText, Paragraph } = Typography;
     const data = node.data || {};
     const classType = data.class_type || "ToolNode";
     const spec = nodeTypes2.find((t) => t.class_type === classType);
     const update = (key, value) => {
-      const newData = { ...data, [key]: value };
-      onUpdate({ ...node, data: newData });
+      onUpdate({ ...node, data: { ...data, [key]: value } });
     };
     const updateInput = (name, value) => {
-      const inputs = { ...data.inputs || {}, [name]: value };
-      update("inputs", inputs);
+      update("inputs", { ...data.inputs || {}, [name]: value });
     };
-    return React$2.createElement(
+    const updateControl = (key, value) => {
+      update("control", { ...data.control || {}, [key]: value });
+    };
+    const controlItems = [
+      React2.createElement(
+        Form.Item,
+        { key: "retry_count", label: "重试次数" },
+        React2.createElement(antd.InputNumber, { value: data.control?.retry_count ?? 0, onChange: (v) => updateControl("retry_count", v ?? 0), min: 0, max: 10, style: { width: "100%" } })
+      ),
+      React2.createElement(
+        Form.Item,
+        { key: "retry_delay", label: "重试延迟(秒)" },
+        React2.createElement(antd.InputNumber, { value: data.control?.retry_delay_sec ?? 1, onChange: (v) => updateControl("retry_delay_sec", v ?? 1), min: 0, step: 0.5, style: { width: "100%" } })
+      ),
+      React2.createElement(
+        Form.Item,
+        { key: "output_var", label: "输出变量名" },
+        React2.createElement(Input, { value: data.control?.output || "", onChange: (e) => updateControl("output", e.target.value), placeholder: "如：result" })
+      ),
+      React2.createElement(
+        Form.Item,
+        { key: "mode", label: "执行模式" },
+        React2.createElement(Select, {
+          value: data.control?.mode || "run",
+          onChange: (v) => updateControl("mode", v),
+          options: [
+            { label: "正常运行 (run)", value: "run" },
+            { label: "静默跳过 (mute)", value: "mute" },
+            { label: "直通上游 (bypass)", value: "bypass" }
+          ]
+        })
+      )
+    ];
+    for (const field of spec?.control_schema || []) {
+      if (["mode", "retry_count", "retry_delay_sec", "output"].includes(field)) continue;
+      if (field === "conditions" || field === "branches") {
+        const rendered = typeof data.control?.[field] === "string" ? data.control[field] : JSON.stringify(data.control?.[field] || [], null, 2);
+        controlItems.push(
+          React2.createElement(
+            Form.Item,
+            { key: field, label: field },
+            React2.createElement(antd.Input.TextArea, {
+              value: rendered,
+              autoSize: { minRows: 4, maxRows: 12 },
+              onChange: (event) => {
+                try {
+                  updateControl(field, JSON.parse(event.target.value));
+                } catch {
+                  updateControl(field, event.target.value);
+                }
+              }
+            })
+          )
+        );
+      } else {
+        controlItems.push(
+          React2.createElement(
+            Form.Item,
+            { key: field, label: field },
+            React2.createElement(Input, {
+              value: data.control?.[field] || "",
+              onChange: (event) => updateControl(field, event.target.value),
+              placeholder: "目标节点 ID"
+            })
+          )
+        );
+      }
+    }
+    return React2.createElement(
       Form,
       { layout: "vertical" },
-      React$2.createElement(Form.Item, { label: "节点 ID" }, React$2.createElement(Input, { value: node.id, disabled: true })),
-      React$2.createElement(Form.Item, { label: "类型" }, React$2.createElement(Select, {
-        value: classType,
-        onChange: (v) => update("class_type", v),
-        options: nodeTypes2.map((t) => ({ label: `${t.icon} ${t.display_name}`, value: t.class_type }))
-      })),
-      React$2.createElement(Form.Item, { label: "标签" }, React$2.createElement(Input, {
-        value: data.label || "",
-        onChange: (e) => update("label", e.target.value)
-      })),
-      spec?.description ? React$2.createElement(Typography.Paragraph, { type: "secondary", style: { fontSize: 12 } }, spec.description) : null,
-      React$2.createElement(Typography.Title, { level: 5 }, "输入参数"),
-      (spec?.inputs_schema || []).map((field) => React$2.createElement(
+      React2.createElement(Form.Item, { label: "节点 ID" }, React2.createElement(Input, { value: node.id, disabled: true, style: { fontFamily: "monospace", fontSize: 11 } })),
+      React2.createElement(
         Form.Item,
-        { key: field.name, label: field.name + (field.required ? " *" : "") },
-        React$2.createElement(Input, {
-          value: (data.inputs || {})[field.name] ?? "",
-          onChange: (e) => updateInput(field.name, e.target.value),
-          placeholder: `${field.type || "any"}`
+        { label: "节点类型" },
+        React2.createElement(Select, {
+          value: classType,
+          onChange: (v) => update("class_type", v),
+          options: nodeTypes2.map((t) => ({ label: `${t.icon} ${t.display_name}`, value: t.class_type })),
+          showSearch: true,
+          optionFilterProp: "label"
         })
-      ))
+      ),
+      React2.createElement(
+        Form.Item,
+        { label: "显示标签" },
+        React2.createElement(Input, { value: data.label || "", onChange: (e) => update("label", e.target.value), placeholder: "节点显示名称" })
+      ),
+      spec?.description ? React2.createElement(Paragraph, { type: "secondary", style: { fontSize: 12, background: "#f5f5f5", padding: 8, borderRadius: 4 } }, spec.description) : null,
+      React2.createElement(Divider, { style: { margin: "12px 0" } }),
+      React2.createElement(AntTitle, { level: 5 }, "输入参数"),
+      (spec?.inputs_schema || []).length === 0 ? React2.createElement(AntText, { type: "secondary", style: { fontSize: 12 } }, "此节点类型没有定义输入参数") : (spec?.inputs_schema || []).map(
+        (field) => React2.createElement(TypedInput, { key: field.name, field, value: (data.inputs || {})[field.name], onChange: (v) => updateInput(field.name, v) })
+      ),
+      React2.createElement(Divider, { style: { margin: "12px 0" } }),
+      React2.createElement(Collapse, {
+        ghost: true,
+        defaultActiveKey: ["control"],
+        items: [{ key: "control", label: "执行控制", children: controlItems }]
+      })
     );
   }
-  function RunMonitorDrawer({ runId, onClose }) {
+  function IoConfigModal({ open, doc, onClose, onSave }) {
     const antd = getHost().antd;
-    const { Drawer, Typography, Tag, Button, Spin, Empty, Timeline, message } = antd;
+    const { Modal: AntModal, Form, Input, Button, Select, Space, Typography, Empty } = antd;
+    const { Title: AntTitle, Text: AntText } = Typography;
+    const [inputs, setInputs] = React2.useState([]);
+    const [outputs, setOutputs] = React2.useState([]);
+    const [startId, setStartId] = React2.useState(null);
+    React2.useEffect(() => {
+      if (open && doc) {
+        setInputs(doc.inputs || []);
+        setOutputs(doc.outputs || []);
+        setStartId(doc.start_id || null);
+      }
+    }, [open, doc]);
+    const nodeIds = doc ? Object.keys(doc.nodes || {}) : [];
+    return React2.createElement(
+      AntModal,
+      {
+        title: "工作流输入/输出配置",
+        open,
+        onCancel: onClose,
+        width: 600,
+        footer: React2.createElement(
+          Space,
+          null,
+          React2.createElement(Button, { onClick: onClose }, "取消"),
+          React2.createElement(Button, { type: "primary", onClick: () => onSave(inputs, outputs, startId) }, "确定")
+        )
+      },
+      // Start node
+      React2.createElement(
+        Form.Item,
+        { label: "起始节点" },
+        React2.createElement(Select, {
+          value: startId,
+          onChange: (v) => setStartId(v || null),
+          options: [{ label: "(自动)", value: null }, ...nodeIds.map((id2) => ({ label: id2, value: id2 }))],
+          allowClear: true,
+          placeholder: "选择起始节点"
+        })
+      ),
+      React2.createElement(AntTitle, { level: 5 }, "工作流输入参数"),
+      inputs.length === 0 ? React2.createElement(AntText, { type: "secondary" }, "无输入参数定义") : null,
+      inputs.map((inp, idx) => React2.createElement(
+        Space,
+        { key: idx, style: { marginBottom: 8 } },
+        React2.createElement(Input, { placeholder: "名称", value: inp.name || "", onChange: (e) => {
+          const ni = [...inputs];
+          ni[idx] = { ...inp, name: e.target.value };
+          setInputs(ni);
+        }, style: { width: 120 } }),
+        React2.createElement(Select, {
+          value: inp.type || "any",
+          onChange: (v) => {
+            const ni = [...inputs];
+            ni[idx] = { ...inp, type: v };
+            setInputs(ni);
+          },
+          options: [{ label: "any", value: "any" }, { label: "string", value: "string" }, { label: "number", value: "number" }, { label: "boolean", value: "boolean" }, { label: "object", value: "object" }],
+          style: { width: 100 }
+        }),
+        React2.createElement(Input, { placeholder: "默认值", value: inp.default ?? "", onChange: (e) => {
+          const ni = [...inputs];
+          ni[idx] = { ...inp, default: e.target.value };
+          setInputs(ni);
+        }, style: { width: 120 } }),
+        React2.createElement(Button, { danger: true, size: "small", onClick: () => setInputs(inputs.filter((_, i) => i !== idx)) }, "删除")
+      )),
+      React2.createElement(Button, { size: "small", type: "dashed", onClick: () => setInputs([...inputs, { name: "", type: "any", default: "" }]), style: { marginTop: 4 } }, "+ 添加输入"),
+      React2.createElement(AntTitle, { level: 5, style: { marginTop: 16 } }, "工作流输出"),
+      React2.createElement(Select, {
+        mode: "tags",
+        value: Array.isArray(outputs) ? outputs : [],
+        onChange: (v) => setOutputs(v),
+        options: nodeIds.map((id2) => ({ label: id2, value: id2 })),
+        placeholder: "选择输出节点ID",
+        style: { width: "100%" }
+      })
+    );
+  }
+  function RunMonitorDrawer({ runId, onClose, onStatusUpdate }) {
+    const antd = getHost().antd;
+    const { Drawer, Typography, Tag, Button, Spin, Empty, Timeline, message, Tabs, List, Tooltip } = antd;
     const { Title, Text, Paragraph } = Typography;
-    const [run, setRun] = React$2.useState(null);
-    const [events, setEvents] = React$2.useState([]);
-    const [loading, setLoading] = React$2.useState(false);
-    const eventSourceRef = React$2.useRef(null);
-    const refresh = React$2.useCallback(async () => {
+    const [run, setRun] = React2.useState(null);
+    const [events, setEvents] = React2.useState([]);
+    const [loading, setLoading] = React2.useState(false);
+    const refresh = React2.useCallback(async () => {
       if (!runId) return;
       try {
         const data = await apiFetch(`/flowforge/runs/${encodeURIComponent(runId)}`);
         setRun(data);
+        if (onStatusUpdate && data?.node_statuses) {
+          onStatusUpdate(data.node_statuses);
+        }
       } catch (e) {
         message?.error(`获取运行状态失败: ${e.message}`);
       }
-    }, [runId]);
-    React$2.useEffect(() => {
+    }, [runId, onStatusUpdate]);
+    React2.useEffect(() => {
       if (!runId) return;
       setLoading(true);
+      setEvents([]);
       refresh().finally(() => setLoading(false));
       const es = new EventSource(apiUrl(`/flowforge/runs/${encodeURIComponent(runId)}/events`));
       es.onmessage = (ev) => {
@@ -9322,92 +11089,107 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       };
       es.onerror = () => {
       };
-      eventSourceRef.current = es;
       const timer2 = setInterval(refresh, 2e3);
       return () => {
         es.close();
         clearInterval(timer2);
       };
     }, [runId, refresh]);
-    const statusColor = (s) => s === "completed" ? "green" : s === "running" ? "blue" : s === "failed" ? "red" : s === "cancelled" ? "orange" : "default";
-    return React$2.createElement(
+    const isFinished = run?.status === "completed" || run?.status === "failed" || run?.status === "cancelled";
+    return React2.createElement(
       Drawer,
       {
         title: runId ? `运行监控 — ${runId.slice(0, 8)}` : "运行监控",
         open: !!runId,
         onClose,
-        width: 520
-      },
-      loading && !run ? React$2.createElement(Spin, null) : null,
-      run ? React$2.createElement(
-        React$2.Fragment,
-        null,
-        React$2.createElement(
-          "div",
-          { style: { marginBottom: 12, display: "flex", gap: 8, alignItems: "center" } },
-          React$2.createElement(Tag, { color: statusColor(run.status) }, run.status),
-          React$2.createElement(Text, { type: "secondary" }, `${run.duration_ms}ms`)
-        ),
-        React$2.createElement(Title, { level: 5 }, "节点状态"),
-        React$2.createElement(
-          "div",
-          null,
-          Object.entries(run.node_statuses || {}).map(([nid, st]) => React$2.createElement(
-            "div",
-            { key: nid, style: { display: "flex", gap: 8, marginBottom: 4 } },
-            React$2.createElement(Text, { style: { fontFamily: "monospace" } }, nid),
-            React$2.createElement(Tag, { color: statusColor(st) }, st)
-          ))
-        ),
-        run.errors?.length ? React$2.createElement(
-          React$2.Fragment,
-          null,
-          React$2.createElement(Title, { level: 5, style: { marginTop: 16 } }, "错误"),
-          run.errors.map((e, i) => React$2.createElement(Paragraph, { key: i, type: "danger", style: { fontSize: 12 } }, e))
-        ) : null,
-        Object.keys(run.outputs || {}).length ? React$2.createElement(
-          React$2.Fragment,
-          null,
-          React$2.createElement(Title, { level: 5, style: { marginTop: 16 } }, "输出"),
-          React$2.createElement(
-            "pre",
-            { style: { background: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto" } },
-            JSON.stringify(run.outputs, null, 2)
-          )
-        ) : null,
-        React$2.createElement(Title, { level: 5, style: { marginTop: 16 } }, "事件流"),
-        events.length === 0 ? React$2.createElement(Empty, { description: "等待事件..." }) : React$2.createElement(
-          Timeline,
-          {
-            items: events.slice(-30).map((ev, i) => ({
-              key: ev.type + "_" + i + "_" + (ev.node_id || ""),
-              color: ev.type === "execution_success" ? "green" : ev.type === "execution_failed" || ev.type?.includes("failed") ? "red" : ev.type?.includes("running") ? "blue" : ev.type?.includes("completed") ? "green" : "gray",
-              children: React$2.createElement(
-                "span",
-                { style: { fontSize: 12 } },
-                React$2.createElement(Text, { strong: true }, ev.type),
-                ev.node_id ? React$2.createElement(Text, { type: "secondary" }, ` · ${ev.node_id}`) : null,
-                ev.data ? React$2.createElement("pre", { style: { fontSize: 10, margin: 0 } }, JSON.stringify(ev.data)) : null
-              )
-            }))
+        width: 560,
+        extra: run && !isFinished ? React2.createElement(Button, { size: "small", danger: true, onClick: async () => {
+          try {
+            await apiFetch(`/flowforge/runs/${encodeURIComponent(runId)}/cancel`, { method: "POST" });
+            message?.success("已取消");
+          } catch (e) {
+            message?.error(`取消失败: ${e.message}`);
           }
-        )
-      ) : React$2.createElement(Empty, { description: "未找到运行" })
+        } }, "取消运行") : null
+      },
+      loading && !run ? React2.createElement(Spin, null) : null,
+      run ? React2.createElement(
+        React2.Fragment,
+        null,
+        // Status header
+        React2.createElement(
+          "div",
+          { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
+          React2.createElement(Tag, { color: statusColor(run.status) }, run.status),
+          React2.createElement(Text, { type: "secondary" }, `${run.duration_ms}ms`),
+          run.flow_id ? React2.createElement(Text, { type: "secondary", style: { fontFamily: "monospace", fontSize: 11 } }, `flow: ${run.flow_id}`) : null
+        ),
+        // Tabs
+        React2.createElement(Tabs, {
+          items: [
+            {
+              key: "nodes",
+              label: "节点状态",
+              children: React2.createElement(
+                "div",
+                null,
+                Object.entries(run.node_statuses || {}).length === 0 ? React2.createElement(Empty, { description: "无节点状态" }) : Object.entries(run.node_statuses || {}).map(([nid, st]) => React2.createElement(
+                  "div",
+                  {
+                    key: nid,
+                    style: { display: "flex", gap: 8, marginBottom: 6, alignItems: "center" }
+                  },
+                  React2.createElement(Text, { style: { fontFamily: "monospace", fontSize: 12, flex: 1, overflow: "hidden", textOverflow: "ellipsis" } }, nid),
+                  React2.createElement(Tag, { color: statusColor(st) }, st)
+                ))
+              )
+            },
+            {
+              key: "outputs",
+              label: "输出",
+              children: Object.keys(run.outputs || {}).length ? React2.createElement("pre", { style: { background: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 400 } }, JSON.stringify(run.outputs, null, 2)) : React2.createElement(Empty, { description: "无输出" })
+            },
+            {
+              key: "errors",
+              label: React2.createElement("span", null, "错误", run.errors?.length ? React2.createElement(Tag, { color: "error", style: { marginLeft: 4 } }, run.errors.length) : null),
+              children: run.errors?.length ? run.errors.map((e, i) => React2.createElement(Paragraph, { key: i, type: "danger", style: { fontSize: 12, background: "#fff2f0", padding: 8, borderRadius: 4, marginBottom: 4 } }, e)) : React2.createElement(Empty, { description: "无错误" })
+            },
+            {
+              key: "events",
+              label: `事件流 (${events.length})`,
+              children: events.length === 0 ? React2.createElement(Empty, { description: "等待事件..." }) : React2.createElement(Timeline, {
+                items: events.slice(-50).map((ev) => ({
+                  color: ev.type === "execution_success" ? "green" : ev.type === "execution_failed" || ev.type?.includes("failed") ? "red" : ev.type?.includes("running") ? "blue" : ev.type?.includes("completed") ? "green" : ev.type?.includes("blocked") ? "orange" : "gray",
+                  children: React2.createElement(
+                    "div",
+                    { style: { fontSize: 12 } },
+                    React2.createElement(Text, { strong: true }, ev.type),
+                    ev.node_id ? React2.createElement(Text, { type: "secondary" }, ` · ${ev.node_id}`) : null,
+                    ev.data ? React2.createElement("pre", { style: { fontSize: 10, margin: "4px 0 0 0", background: "#f5f5f5", padding: 4, borderRadius: 2, overflow: "auto", maxHeight: 120 } }, JSON.stringify(ev.data, null, 2)) : null
+                  )
+                }))
+              })
+            }
+          ]
+        })
+      ) : React2.createElement(Empty, { description: "未找到运行" })
     );
   }
   function FlowForgeApp() {
-    const [route, setRoute] = React$2.useState("list");
-    const [flowId, setFlowId] = React$2.useState(null);
-    const [runId, setRunId] = React$2.useState(null);
-    const editFlow = React$2.useCallback((id2) => {
+    const [route, setRoute] = React2.useState("list");
+    const [flowId, setFlowId] = React2.useState(null);
+    const [runId, setRunId] = React2.useState(null);
+    const [runStatuses, setRunStatuses] = React2.useState({});
+    const editFlow = React2.useCallback((id2) => {
       setFlowId(id2);
       setRoute("editor");
     }, []);
-    const backToList = React$2.useCallback(() => {
+    const backToList = React2.useCallback(() => {
       setRoute("list");
       setFlowId(null);
+      setRunStatuses({});
     }, []);
-    const runFlow = React$2.useCallback(async (id2) => {
+    const runFlow = React2.useCallback(async (id2) => {
       try {
         const res = await apiFetch(`/flowforge/flows/${encodeURIComponent(id2)}/run`, {
           method: "POST",
@@ -9419,19 +11201,26 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
         antd?.message?.error(`启动运行失败: ${e.message}`);
       }
     }, []);
+    const handleStatusUpdate = React2.useCallback((statuses) => {
+      setRunStatuses(statuses);
+    }, []);
+    const handleCloseRun = React2.useCallback(() => {
+      setRunId(null);
+      setRunStatuses({});
+    }, []);
     if (route === "editor" && flowId) {
-      return React$2.createElement(
-        React$2.Fragment,
+      return React2.createElement(
+        React2.Fragment,
         null,
-        React$2.createElement(FlowEditorPage, { flowId, onBack: backToList, onRun: runFlow }),
-        React$2.createElement(RunMonitorDrawer, { runId, onClose: () => setRunId(null) })
+        React2.createElement(FlowEditorPage, { flowId, onBack: backToList, onRun: runFlow, runStatuses }),
+        React2.createElement(RunMonitorDrawer, { runId, onClose: handleCloseRun, onStatusUpdate: handleStatusUpdate })
       );
     }
-    return React$2.createElement(
-      React$2.Fragment,
+    return React2.createElement(
+      React2.Fragment,
       null,
-      React$2.createElement(FlowListPage, { onEdit: editFlow, onRun: runFlow }),
-      React$2.createElement(RunMonitorDrawer, { runId, onClose: () => setRunId(null) })
+      React2.createElement(FlowListPage, { onEdit: editFlow, onRun: runFlow }),
+      React2.createElement(RunMonitorDrawer, { runId, onClose: handleCloseRun, onStatusUpdate: handleStatusUpdate })
     );
   }
   function buildPlugin() {
@@ -9445,15 +11234,6 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     const antdIcons = getHost().antdIcons || {};
     const ApartmentOutlined = antdIcons.ApartmentOutlined;
     const NodeIndexOutlined = antdIcons.NodeIndexOutlined;
-    const flowforgeCss = document.createElement("style");
-    flowforgeCss.textContent = `
-[data-flowforge-editor] { height: 100% !important; min-height: 0 !important; }
-[data-flowforge-editor] > div:first-child { flex-shrink: 0; }
-[data-flowforge-editor] .react-flow { background: #f5f5f5; }
-[data-flowforge-editor] .react-flow__node { cursor: grab; }
-[data-flowforge-editor] .react-flow__node.dragging { cursor: grabbing; }
-`;
-    document.head.appendChild(flowforgeCss);
     QP.route.add(PLUGIN_ID, {
       id: "flowforge.editor",
       path: "/flowforge",
@@ -9469,9 +11249,6 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
     });
     if (QP.sidebar?.registerSimpleModeItem) {
       QP.sidebar.registerSimpleModeItem("flowforge.editor");
-      console.info("[flowforge] Registered for simple-mode visibility");
-    } else {
-      console.warn("[flowforge] sidebar.registerSimpleModeItem not available");
     }
     console.info("[flowforge] Plugin registered: DAG editor route + menu active");
   }
@@ -9493,4 +11270,4 @@ if (typeof process === "undefined") window.process = { env: { NODE_ENV: "product
       }
     }, 100);
   }
-})(React);
+})(React, ReactDOM);

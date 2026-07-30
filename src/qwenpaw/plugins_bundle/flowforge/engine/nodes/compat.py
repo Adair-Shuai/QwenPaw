@@ -305,15 +305,27 @@ class NodeRegistry:
                 except Exception:
                     pass
             if schema:
+                inputs_schema = []
+                for inp in schema.inputs:
+                    raw = inp.as_dict()
+                    inputs_schema.append({
+                        "name": inp.id,
+                        "type": inp.get_io_type().lower(),
+                        "required": not inp.optional,
+                        **raw.get("options", {}),
+                    })
                 out.append({
                     "class_type": ct,
                     "display_name": schema.display_name or ct,
                     "description": schema.description or '',
                     "category": schema.category or 'general',
                     "icon": getattr(node, 'icon', '🔧'),
-                    "inputs_schema": [],
-                    "outputs_schema": [],
-                    "control_schema": [],
+                    "inputs_schema": inputs_schema,
+                    "outputs_schema": [
+                        {"name": output.id or f"out{index}", "type": output.get_io_type().lower()}
+                        for index, output in enumerate(schema.outputs)
+                    ],
+                    "control_schema": ["next", "error_handler"] if schema.control_flow else [],
                 })
             else:
                 out.append({
@@ -429,8 +441,13 @@ class NodeRunner:
             for key, val in raw_inputs.items():
                 inputs[key] = self._resolve_value(val, upstream_values, hidden)
 
-        # Call execute
-        return await node.execute(hidden=hidden, **inputs)
+        # Scope resumable inputs (for example HumanReviewNode) to this node.
+        scoped_hidden = (
+            hidden.with_unique_id(node_id)
+            if hasattr(hidden, "with_unique_id")
+            else hidden
+        )
+        return await node.execute(hidden=scoped_hidden, **inputs)
 
     @staticmethod
     def _resolve_value(value, upstream_values, hidden):

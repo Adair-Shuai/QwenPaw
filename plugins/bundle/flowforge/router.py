@@ -62,6 +62,13 @@ class RunRequest(BaseModel):
     inputs: dict[str, Any] = {}
 
 
+class GenerateRequest(BaseModel):
+    """Natural-language SOP generation request."""
+
+    prompt: str
+    name: str = ""
+
+
 def build_router(service: WorkflowService) -> APIRouter:
     """Build the FastAPI router bound to *service*."""
     router = APIRouter()
@@ -121,6 +128,11 @@ def build_router(service: WorkflowService) -> APIRouter:
     async def validate_payload(payload: FlowPayload = Body(...)) -> dict[str, Any]:
         return service.validate_flow(payload.model_dump())
 
+    @router.post("/generate")
+    async def generate_flow(payload: GenerateRequest = Body(...)) -> dict[str, Any]:
+        """Draft an editable workflow from a natural-language SOP."""
+        return service.generate_flow(payload.prompt, name=payload.name)
+
     # ---------------------------------------------------------------- #
     # Run lifecycle
     # ---------------------------------------------------------------- #
@@ -146,10 +158,10 @@ def build_router(service: WorkflowService) -> APIRouter:
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str) -> dict[str, Any]:
-        handle = service.get_run(run_id)
-        if handle is None:
+        record = service.get_run_record(run_id)
+        if record is None:
             raise HTTPException(404, f"run '{run_id}' not found")
-        return handle.to_dict()
+        return record
 
     @router.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str) -> dict[str, Any]:
@@ -159,14 +171,39 @@ def build_router(service: WorkflowService) -> APIRouter:
         cancelled = service.cancel_run(run_id)
         return {"run_id": run_id, "cancelled": cancelled}
 
+    @router.post("/runs/{run_id}/resume")
+    async def resume_run(
+        run_id: str,
+        body: RunRequest | None = Body(None),
+    ) -> dict[str, Any]:
+        inputs = (body.inputs if body else {}) or {}
+        try:
+            handle = service.resume_run(run_id, inputs)
+        except FileNotFoundError as exc:
+            raise HTTPException(404, str(exc))
+        return {
+            "run_id": handle.run_id,
+            "flow_id": handle.flow_id,
+            "status": handle.status.value,
+        }
+
     # ---------------------------------------------------------------- #
     # SSE event stream
     # ---------------------------------------------------------------- #
     @router.get("/runs/{run_id}/events")
     async def run_events(run_id: str) -> StreamingResponse:
         handle = service.get_run(run_id)
-        if handle is None:
+        record = service.get_run_record(run_id)
+        if record is None:
             raise HTTPException(404, f"run '{run_id}' not found")
+
+        if handle is None:
+            async def persisted_event_generator():
+                for event in record.get("events", []):
+                    yield _sse_pack(event)
+            return StreamingResponse(
+                persisted_event_generator(), media_type="text/event-stream",
+            )
 
         # Poll handle.progress.history() + handle.is_done on a short cadence.
         # We avoid asyncio.Queue here because events are emitted from the
@@ -181,15 +218,6 @@ def build_router(service: WorkflowService) -> APIRouter:
                     for ev in new_events:
                         yield _sse_pack(ev.to_dict())
                     if handle.is_done:
-                        # Emit terminal status and exit.
-                        yield _sse_pack({
-                            "type": f"execution_{handle.status.value}",
-                            "prompt_id": handle.run_id,
-                            "data": {
-                                "outputs": handle.result.outputs if handle.result else {},
-                                "errors": handle.result.errors if handle.result else [],
-                            },
-                        })
                         break
                     await asyncio.sleep(0.1)
             except asyncio.CancelledError:  # pragma: no cover
@@ -242,16 +270,30 @@ def build_router(service: WorkflowService) -> APIRouter:
                         subscribed_run = msg["run_id"]
                         handle = service.get_run(subscribed_run)
                         if handle is None:
+                            record = service.get_run_record(subscribed_run)
+                            if record is None:
+                                await websocket.send_text(
+                                    json.dumps(
+                                        {
+                                            "type": "error",
+                                            "error": f"run '{subscribed_run}' not found",
+                                        },
+                                    ),
+                                )
+                                subscribed_run = None
+                                continue
+                            for event in record.get("events", []):
+                                await websocket.send_text(json.dumps(event))
                             await websocket.send_text(
                                 json.dumps(
                                     {
-                                        "type": "error",
-                                        "error": f"run '{subscribed_run}' not found",
+                                        "type": "run_finished",
+                                        "run_id": subscribed_run,
+                                        "status": record.get("status"),
                                     },
                                 ),
                             )
-                            subscribed_run = None
-                            continue
+                            break
                         queue = handle.progress.attach_queue()
                         attached = True
                         for ev in handle.progress.history():

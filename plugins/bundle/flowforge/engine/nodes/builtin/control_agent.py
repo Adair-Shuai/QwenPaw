@@ -23,7 +23,8 @@ from typing import Any
 
 import logging
 
-from leagent.prompts.control_agent import (
+from ...adapter.log_compat import get_logger
+from ...adapter.prompts import (
     compose_control_messages,
     mode_choices,
     try_parse_json_payload,
@@ -33,7 +34,7 @@ from ..agent_model import agent_model_input, parse_agent_model_override
 from ..base import WorkflowNode
 from ..prompt_resolve import resolve_node_prompt
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ControlAgentNode(WorkflowNode):
@@ -196,7 +197,7 @@ class ControlAgentNode(WorkflowNode):
 
         started = time.monotonic()
         try:
-            from leagent.llm import ChatMessage
+            from ...adapter import ChatMessage
 
             messages = [
                 ChatMessage.system(system_msg),

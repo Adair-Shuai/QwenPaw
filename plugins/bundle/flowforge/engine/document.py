@@ -18,6 +18,7 @@ API; the executor consumes it directly.
 
 from __future__ import annotations
 
+import copy
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
@@ -52,6 +53,138 @@ class ValidationResult:
     errors: list[str] = field(default_factory=list)
 
 
+def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
+    """Normalize authoring edges into the scheduler's graph projection.
+
+    Canvas ``edges`` are authoritative whenever present. Legacy documents
+    without edges are upgraded from their input/control references first.
+    """
+    normalized = copy.deepcopy(data)
+    nodes = normalized.get("nodes") or {}
+    if not isinstance(nodes, dict):
+        return normalized
+    edges = [
+        dict(edge)
+        for edge in (normalized.get("edges") or [])
+        if isinstance(edge, dict)
+    ]
+
+    def append_edge(
+        source: str,
+        target: str,
+        *,
+        kind: str = "data",
+        source_handle: str | None = None,
+        target_handle: str | None = None,
+        source_slot: int = 0,
+    ) -> None:
+        if source not in nodes or target not in nodes:
+            return
+        candidate = {
+            "id": f"e-{source}-{target}-{kind}-{target_handle or source_handle or source_slot}",
+            "source": source,
+            "target": target,
+            "kind": kind,
+            "source_handle": source_handle,
+            "target_handle": target_handle,
+            "source_slot": source_slot,
+        }
+        signature = (
+            source, target, kind, source_handle, target_handle, source_slot,
+        )
+        for edge in edges:
+            try:
+                edge_slot = int(edge.get("source_slot", 0) or 0)
+            except (TypeError, ValueError):
+                edge_slot = 0
+            if (
+                str(edge.get("source") or ""),
+                str(edge.get("target") or ""),
+                str(edge.get("kind") or "data"),
+                edge.get("source_handle"),
+                edge.get("target_handle"),
+                edge_slot,
+            ) == signature:
+                return
+        edges.append(candidate)
+
+    if not edges:
+        for node_id, node in nodes.items():
+            if not isinstance(node, dict):
+                continue
+            for input_id, value in (node.get("inputs") or {}).items():
+                refs: list[list[Any]] = []
+                if (
+                    isinstance(value, list)
+                    and len(value) == 2
+                    and isinstance(value[0], str)
+                ):
+                    refs = [value]
+                elif (
+                    isinstance(value, list)
+                    and value
+                    and all(
+                        isinstance(ref, list)
+                        and len(ref) == 2
+                        and isinstance(ref[0], str)
+                        for ref in value
+                    )
+                ):
+                    refs = value
+                for upstream, slot in refs:
+                    append_edge(
+                        str(upstream), str(node_id),
+                        target_handle=(
+                            None
+                            if input_id == "__flow_dependencies"
+                            else input_id
+                        ),
+                        source_slot=int(slot),
+                    )
+            control = node.get("control") or {}
+            for handle in ("next", "else", "else_node", "on_reject", "error_handler"):
+                target = control.get(handle)
+                if target:
+                    append_edge(
+                        str(node_id), str(target), kind="control",
+                        source_handle=handle,
+                    )
+
+    # Scheduler fields are a deterministic projection, never a second source.
+    for node in nodes.values():
+        if isinstance(node, dict):
+            node.setdefault("inputs", {}).pop("__flow_dependencies", None)
+    incoming: dict[str, list[list[Any]]] = {}
+    for edge in edges:
+        source = str(edge.get("source") or "")
+        target = str(edge.get("target") or "")
+        if source not in nodes or target not in nodes:
+            continue
+        if str(edge.get("kind") or "data") == "control":
+            handle = edge.get("source_handle")
+            if isinstance(handle, str) and handle and not handle.startswith("condition:"):
+                nodes[source].setdefault("control", {})[handle] = target
+            continue
+        try:
+            slot = int(edge.get("source_slot", 0) or 0)
+        except (TypeError, ValueError):
+            slot = 0
+        reference = [source, slot]
+        dependencies = incoming.setdefault(target, [])
+        if reference not in dependencies:
+            dependencies.append(reference)
+        target_handle = edge.get("target_handle")
+        if isinstance(target_handle, str) and target_handle:
+            nodes[target].setdefault("inputs", {})[target_handle] = reference
+    for target, dependencies in incoming.items():
+        nodes[target].setdefault("inputs", {})[
+            "__flow_dependencies"
+        ] = dependencies
+    normalized["nodes"] = nodes
+    normalized["edges"] = edges
+    return normalized
+
+
 def load(data: dict[str, Any] | str) -> WorkflowDocument:
     """Parse a raw dict (or JSON string) into a :class:`WorkflowDocument`."""
     if isinstance(data, str):
@@ -60,6 +193,7 @@ def load(data: dict[str, Any] | str) -> WorkflowDocument:
         data = json.loads(data)
     if not isinstance(data, dict):
         raise ValidationError("workflow document must be a JSON object")
+    data = canonicalize(data)
     if "id" not in data or not data["id"]:
         raise ValidationError("workflow document missing required 'id' field")
     nodes = data.get("nodes") or {}
@@ -104,22 +238,37 @@ def validate(
         output_nodes = [str(k) for k in doc.outputs.keys()]
     if not output_nodes:
         # Fall back: every leaf node (no successors) is an output.
-        succ: set[str] = set()
+        non_leaves: set[str] = set()
         for nid, node in nodes.items():
             ctrl = node.get("control") or {}
             if ctrl.get("next"):
-                succ.add(ctrl["next"])
+                non_leaves.add(nid)
             for cond in ctrl.get("conditions", []) or []:
                 t = cond.get("then_node") or cond.get("then")
                 if t:
-                    succ.add(t)
+                    non_leaves.add(nid)
             for key in ("else_node", "else", "on_reject"):
                 if ctrl.get(key):
-                    succ.add(ctrl[key])
+                    non_leaves.add(nid)
+
+            def mark_upstream(value: Any) -> None:
+                if (
+                    isinstance(value, list)
+                    and len(value) == 2
+                    and isinstance(value[0], str)
+                ):
+                    non_leaves.add(value[0])
+                    return
+                if isinstance(value, dict):
+                    for nested in value.values():
+                        mark_upstream(nested)
+                elif isinstance(value, list):
+                    for nested in value:
+                        mark_upstream(nested)
+
             for inp in (node.get("inputs") or {}).values():
-                if isinstance(inp, list) and len(inp) == 2 and isinstance(inp[0], str):
-                    succ.add(inp[0])
-        output_nodes = [nid for nid in nodes if nid not in succ]
+                mark_upstream(inp)
+        output_nodes = [nid for nid in nodes if nid not in non_leaves]
         if not output_nodes:
             output_nodes = list(nodes.keys())
 
@@ -197,6 +346,7 @@ def graph_hash(doc: WorkflowDocument) -> str:
 __all__ = [
     "ValidationResult",
     "WorkflowDocument",
+    "canonicalize",
     "graph_hash",
     "load",
     "to_json",

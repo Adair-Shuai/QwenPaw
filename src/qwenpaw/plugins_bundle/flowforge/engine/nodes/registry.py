@@ -108,6 +108,64 @@ class NodeRegistry:
         with self._lock:
             return {nid: cls.get_schema().get_info_dict() for nid, cls in self._classes.items()}
 
+    def all_types(self) -> list[dict[str, Any]]:
+        """Frontend-friendly schema list used by the FlowForge editor."""
+        result: list[dict[str, Any]] = []
+        for node_id, cls in self.items():
+            schema = cls.get_schema()
+            inputs_schema = []
+            for item in schema.inputs:
+                descriptor = item.as_dict()
+                options = descriptor.get("options") or {}
+                raw_type = descriptor.get("type")
+                field_type = (
+                    "enum" if isinstance(raw_type, list)
+                    else str(raw_type or "any").lower()
+                )
+                inputs_schema.append(
+                    {
+                        "name": item.id,
+                        "type": field_type,
+                        "required": not item.optional,
+                        "default": getattr(item, "default", None),
+                        "options": (
+                            raw_type
+                            if isinstance(raw_type, list)
+                            else options.get("choices", [])
+                        ),
+                        **options,
+                    },
+                )
+            result.append(
+                {
+                    "class_type": node_id,
+                    "display_name": schema.display_name,
+                    "description": schema.description,
+                    "category": schema.category,
+                    "icon": (schema.metadata or {}).get("icon", "🔧"),
+                    "inputs_schema": inputs_schema,
+                    "outputs_schema": [
+                        {
+                            "name": output.id or f"out{index}",
+                            "type": output.get_io_type().lower(),
+                        }
+                        for index, output in enumerate(schema.outputs)
+                    ],
+                    "control_schema": (
+                        (schema.metadata or {}).get("control_schema")
+                        or {
+                            "ConditionNode": ["conditions", "else_node", "error_handler"],
+                            "ParallelNode": ["branches", "error_handler"],
+                            "HumanReviewNode": ["next", "error_handler"],
+                        }.get(
+                            node_id,
+                            ["next", "error_handler"] if schema.control_flow else [],
+                        )
+                    ),
+                },
+            )
+        return result
+
 
 _DEFAULT_REGISTRY: NodeRegistry | None = None
 

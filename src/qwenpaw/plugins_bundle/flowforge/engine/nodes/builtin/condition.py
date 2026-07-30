@@ -69,6 +69,9 @@ class ConditionNode(WorkflowNode):
 
 
 def _eval(state: Any, expr: Any) -> bool:
+    if isinstance(expr, dict):
+        from ...types import ConditionExpression
+        expr = ConditionExpression.model_validate(expr)
     if state is not None and hasattr(state, "evaluate_expression"):
         return bool(state.evaluate_expression(expr))
     return bool(expr)

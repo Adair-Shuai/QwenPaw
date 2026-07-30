@@ -62,6 +62,7 @@ from .errors import (
 )
 from .document import (
     WorkflowDocument,
+    canonicalize,
     graph_hash,
     load,
     to_json,
@@ -118,10 +119,7 @@ from .cache_provider import (
     CacheProvider,
     NullCacheProvider,
 )
-from .runner import (
-    NodeRunner,
-    NodeRunResult as NodeRunResultV2,
-)
+from .runner import NodeRunner, NodeRunResult
 
 # ── Executor ──────────────────────────────────────────────────────────────────
 from .executor import WorkflowExecutor
@@ -140,7 +138,7 @@ __all__ = [
     "BlockedError", "DependencyCycleError", "NodeExecutionError",
     "ValidationError", "WorkflowEngineError",
     # document
-    "WorkflowDocument", "graph_hash", "load", "to_json", "validate",
+    "WorkflowDocument", "canonicalize", "graph_hash", "load", "to_json", "validate",
     # graph
     "DynamicPrompt", "ExecutionList", "ExecutionState", "ExpandFrame",
     "TopologicalSort",

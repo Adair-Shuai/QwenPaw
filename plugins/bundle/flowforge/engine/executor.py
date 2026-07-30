@@ -27,7 +27,9 @@ from .errors import (
 )
 from .graph import DynamicPrompt, ExecutionList, ExpandFrame, TopologicalSort
 from .io import HiddenHolder, NodeOutput
-from .nodes import NodeRegistry, NodeRunner, bootstrap
+from .nodes import NodeRegistry, bootstrap
+from .runner import NodeRunner
+from .caching import BasicCache, CacheKeySetInputSignature
 from .progress import NodeStatus, ProgressEvent, ProgressHandler, ProgressRegistry
 from .state_store import WorkflowRunSnapshot, WorkflowStateStore
 from .types import NodeExecutionResult, WorkflowResult, WorkflowState, WorkflowStatus
@@ -131,12 +133,35 @@ class _ContextShim:
         return self._executor.tool_registry
 
     @property
+    def tool_executor(self) -> Any:
+        return self._executor.tool_executor
+
+    @property
     def agent_runtime(self) -> Any:
         return self._executor.agent_runtime
 
     @property
+    def agent_controller(self) -> Any:
+        return self._executor.agent_controller
+
+    @property
     def llm_service(self) -> Any:
         return self._executor.llm_service
+
+    @property
+    def workflow_registry(self) -> Any:
+        return self._executor.workflow_registry
+
+    @property
+    def tool_registry(self) -> Any:
+        return self._executor.tool_registry
+
+    def get_tool_context(self, state: Any = None) -> Any:
+        """Delegate to the tool executor's context resolver if available."""
+        te = self._executor.tool_executor
+        if te is not None and hasattr(te, "get_tool_context"):
+            return te.get_tool_context(state)
+        return state
 
 
 class WorkflowExecutor:
@@ -173,6 +198,7 @@ class WorkflowExecutor:
         self._active_lists: dict[str, ExecutionList] = {}
         self._states: dict[str, WorkflowState] = {}
         self._abort_events: dict[str, asyncio.Event] = {}
+        self._pending_prompt_cancellations: set[str] = set()
         self.state_store = state_store
         self.max_parallelism = max(1, int(max_parallelism or 1))
 
@@ -199,6 +225,7 @@ class WorkflowExecutor:
         outputs_to_execute: list[str] | None = None,
         resume_state: WorkflowState | None = None,
         abort_event: asyncio.Event | None = None,
+        progress_registry: ProgressRegistry | None = None,
     ) -> WorkflowResult:
         """Main entry point.
 
@@ -247,8 +274,12 @@ class WorkflowExecutor:
         if abort_event is None:
             abort_event = self._abort_events.get(state_id) or asyncio.Event()
         self._abort_events[state_id] = abort_event
+        if prompt_id in self._pending_prompt_cancellations:
+            abort_event.set()
+            state.status = WorkflowStatus.CANCELLED
+            self._pending_prompt_cancellations.discard(prompt_id)
 
-        progress = ProgressRegistry(prompt_id=prompt_id)
+        progress = progress_registry or ProgressRegistry(prompt_id=prompt_id)
         for h in self._progress_handlers:
             progress.add_handler(h)
         progress.emit(
@@ -263,6 +294,23 @@ class WorkflowExecutor:
         topo = TopologicalSort(prompt)
         exec_list = ExecutionList(prompt, topo)
         self._active_lists[state_id] = exec_list
+        upstream_values: dict[tuple[str, int], Any] = {}
+
+        # Resume from the durable checkpoint: completed nodes stay completed
+        # and their output slots are restored, while the blocked node is
+        # intentionally left pending so it can consume the resume payload.
+        if resume_state is not None:
+            for entry in state.execution_history:
+                if (
+                    entry.status == WorkflowStatus.COMPLETED
+                    and entry.node_id in doc.nodes
+                ):
+                    exec_list.state.completed.add(entry.node_id)
+                    values = state.outputs.get(entry.node_id, entry.output)
+                    if not isinstance(values, tuple):
+                        values = tuple(values) if isinstance(values, list) else (values,)
+                    for slot, value in enumerate(values):
+                        upstream_values[(entry.node_id, slot)] = value
 
         for out_id in output_nodes:
             exec_list.add_node(out_id)
@@ -270,8 +318,14 @@ class WorkflowExecutor:
         if cycles := exec_list.detect_cycles():
             raise DependencyCycleError(f"Dependency cycles detected: {cycles}")
 
+        output_cache = BasicCache()
         runner = NodeRunner(
             registry=self.node_registry,
+            output_cache=output_cache,
+            object_cache=BasicCache(),
+            cache_keys=CacheKeySetInputSignature(
+                doc.nodes, registry=self.node_registry,
+            ),
             progress=progress,
         )
         hidden = HiddenHolder(
@@ -287,9 +341,9 @@ class WorkflowExecutor:
             workflow_state=state,
             progress=progress,
             abort_event=abort_event,
+            extra_data=extra_data,
         )
 
-        upstream_values: dict[tuple[str, int], Any] = {}
         start_ts = time.monotonic()
         errors_list: list[str] = []
         try:
@@ -322,7 +376,7 @@ class WorkflowExecutor:
         ):
             state.status = WorkflowStatus.COMPLETED
 
-        resolved_outputs = self._resolve_outputs(doc, state)
+        resolved_outputs = self._resolve_outputs(doc, state, output_nodes)
         progress.emit(
             ProgressEvent(
                 type=(
@@ -627,7 +681,12 @@ class WorkflowExecutor:
         blocked = list(exec_list.state.blocked.keys())
         snapshot = WorkflowRunSnapshot(
             state=state,
-            output_cache={},
+            output_cache=dict(state.outputs),
+            dynamic_prompt={
+                node_id: exec_list.prompt.get(node_id)
+                for node_id in exec_list.prompt.all_ids
+                if exec_list.prompt.get(node_id) is not None
+            },
             blocked_nodes=blocked,
             prompt_id=prompt_id,
         )
@@ -647,6 +706,7 @@ class WorkflowExecutor:
         inputs: dict[str, Any] | None = None,
         *,
         prompt_id: str | None = None,
+        progress_registry: ProgressRegistry | None = None,
     ) -> WorkflowResult:
         """Resume a paused run from its persisted snapshot."""
         if self.state_store is None:
@@ -655,12 +715,20 @@ class WorkflowExecutor:
         if snapshot is None:
             raise RuntimeError(f"no snapshot for state_id {state_id}")
         doc = _ensure_document(definition)
+        if snapshot.dynamic_prompt:
+            doc = doc.model_copy(deep=True)
+            doc.nodes.update(snapshot.dynamic_prompt)
         pid = prompt_id or snapshot.prompt_id or str(uuid4())
+        resume_payload = dict(inputs or {})
+        snapshot.state.variables.update(resume_payload)
+        for node_id in snapshot.blocked_nodes:
+            snapshot.state.variables[f"__resume__{node_id}"] = resume_payload
         return await self.execute_async(
             doc,
-            inputs or {},
+            {},
             prompt_id=pid,
             resume_state=snapshot.state,
+            progress_registry=progress_registry,
         )
 
     def cancel(self, state_id: UUID | str) -> bool:
@@ -669,6 +737,9 @@ class WorkflowExecutor:
         exec_list = self._active_lists.get(sid)
         if exec_list is None:
             return False
+        abort_event = self._abort_events.get(sid)
+        if abort_event is not None:
+            abort_event.set()
         exec_list.cancel()
         state = self._states.get(sid)
         if state is not None and state.status not in (
@@ -678,6 +749,16 @@ class WorkflowExecutor:
             state.status = WorkflowStatus.CANCELLED
         return True
 
+    def cancel_by_prompt_id(self, prompt_id: str) -> bool:
+        """Cancel the active state correlated with a public run id."""
+        for sid, state in list(self._states.items()):
+            if state.metadata.get("prompt_id") == prompt_id:
+                return self.cancel(sid)
+        # Cancellation can race with coroutine startup. Remember it so the
+        # run observes the abort signal as soon as its state is registered.
+        self._pending_prompt_cancellations.add(prompt_id)
+        return True
+
     # ------------------------------------------------------------------
     # Outputs + deadline helpers
     # ------------------------------------------------------------------
@@ -685,11 +766,13 @@ class WorkflowExecutor:
         self,
         doc: WorkflowDocument,
         state: WorkflowState,
+        inferred_output_nodes: list[str] | None = None,
     ) -> dict[str, Any]:
         """Resolve declared outputs from ``doc.outputs`` against final state."""
         result: dict[str, Any] = {}
         if isinstance(doc.outputs, list):
-            for name in doc.outputs:
+            names = doc.outputs or list(inferred_output_nodes or [])
+            for name in names:
                 if name in state.outputs:
                     val = state.outputs[name]
                     # Unwrap single-slot tuples so OutputNode's declared

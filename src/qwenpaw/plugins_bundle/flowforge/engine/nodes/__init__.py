@@ -43,10 +43,12 @@ except ImportError:  # pragma: no cover
 
 
 def bootstrap():
-    """Synchronous bootstrap: register builtin nodes into the registry.
+    """Synchronously register schema-native builtin nodes.
 
-    Tries the loader's ``bootstrap_sync`` first; falls back to manually
-    registering builtin nodes if the loader is unavailable.
+    Dynamic/entrypoint discovery remains available through ``loader`` but is
+    deliberately not run here: executor construction may occur inside an
+    active event loop (for example a SubworkflowNode), where a sync wrapper
+    around an async loader is unsafe.
     """
     try:
         from .registry import get_registry
@@ -54,23 +56,11 @@ def bootstrap():
     except ImportError:
         return None
 
-    # Try loader's sync bootstrap
-    if _bootstrap_sync is not None:
-        try:
-            _bootstrap_sync()
-            return reg
-        except Exception:
-            pass
-
-    # Fallback: manually register builtin nodes
     try:
         from .builtin import BUILTIN_NODES
         for node_cls in BUILTIN_NODES:
             try:
-                if hasattr(reg, 'register'):
-                    reg.register(node_cls)
-                elif hasattr(reg, 'register_class'):
-                    reg.register_class(node_cls)
+                reg.register(node_cls)
             except Exception:
                 pass
     except ImportError:
@@ -130,36 +120,18 @@ def get_registry():
         return get_registry._instance
 
 
-# ── Compat layer: old simplified node API ────────────────────────────────────
-# Re-export the old node classes + old NodeRegistry/NodeRunner so that
-# executor.py, service.py, router.py and tests keep working unchanged.
-from .compat import (
+# Schema-native authoring nodes retained under their established class ids.
+from .builtin.core import (
     AgentNode,
     CodeNode,
     ConditionNode,
-    HiddenHolder,
     InputNode,
     LLMNode,
-    NodeOutput,
-    NodeRegistry,
     OutputNode,
     ToolNode,
-    NodeRunner,
-    NodeRunResult,
-    WorkflowNode as CompatWorkflowNode,
-    bootstrap as _compat_bootstrap,
-    get_registry as _compat_get_registry,
 )
-
-# Use compat WorkflowNode (non-ABC) as default so tests can instantiate
-# subclasses without implementing define_schema/execute.
-WorkflowNode = CompatWorkflowNode
-
-# Use compat bootstrap/get_registry as default (they use the old simplified API)
-bootstrap = _compat_bootstrap
-get_registry = _compat_get_registry
 
 __all__ += [
     "AgentNode", "CodeNode", "ConditionNode", "InputNode", "LLMNode",
-    "OutputNode", "ToolNode", "NodeRunner", "NodeRunResult",
+    "OutputNode", "ToolNode",
 ]

@@ -4,31 +4,22 @@ import { resolve } from "node:path";
 
 // FlowForge plugin UI build config.
 //
-// React / react-dom are treated as external because the host app
-// (window.QwenPaw.host.React) injects them at runtime — we must NOT
-// bundle a second copy. @xyflow/react (ReactFlow) is bundled into the
-// output so the host doesn't need to ship it.
+// React / react-dom / react/jsx-runtime are all externalized because the
+// host app (window.QwenPaw.host.React) provides them at runtime.
+// @xyflow/react (ReactFlow) is bundled into the output.
 //
-// CRITICAL: `react/jsx-runtime` is aliased to a local shim that delegates
-// to the host's React.createElement.  Without this, Vite would bundle the
-// jsx-runtime from the plugin's node_modules (which may be React 19 even
-// when the host runs React 18), producing elements with a mismatched
-// `$$typeof` symbol → "Objects are not valid as a React child".
+// Uses IIFE format with a banner that shims window.React, window.ReactDOM,
+// and the jsx-runtime globals from the host before the IIFE is evaluated.
+//
+// The jsx-runtime is externalized AND shimmed to prevent a bundled copy
+// from creating React elements incompatible with the host's React instance
+// (React error #31: "Objects are not valid as a React child").
 export default defineConfig({
-  plugins: [react()],
-  resolve: {
-    alias: {
-      "react/jsx-runtime": resolve(__dirname, "jsx-runtime-shim.mjs"),
-      "react/jsx-dev-runtime": resolve(__dirname, "jsx-runtime-shim.mjs"),
-    },
-  },
-  // Replace process.env.NODE_ENV at build time so the browser bundle
-  // doesn't reference the Node.js `process` global at runtime.
-  define: {
-    "process.env.NODE_ENV": JSON.stringify("production"),
-    "process.env": "{}",
-    "process.platform": JSON.stringify("browser"),
-  },
+  plugins: [
+    react({
+      jsxRuntime: "classic", // Use React.createElement, not jsx() from react/jsx-runtime
+    }),
+  ],
   build: {
     lib: {
       entry: resolve(__dirname, "src/index.ts"),
@@ -44,11 +35,16 @@ export default defineConfig({
           react: "React",
           "react-dom": "ReactDOM",
         },
-        // Inject a shim that maps window.QwenPaw.host.React to global
-        // React/ReactDOM so the externalized imports resolve correctly.
-        // Also define a minimal `process` global so Node.js-isms in
-        // @xyflow/react don't throw ReferenceError in the browser.
-        banner: `var __qp=typeof window!=="undefined"&&window.QwenPaw||{};var __h=__qp.host||{};if(__h.React&&!window.React)window.React=__h.React;if(__h.ReactDOM&&!window.ReactDOM)window.ReactDOM=__h.ReactDOM;if(typeof process==="undefined")window.process={env:{NODE_ENV:"production"},platform:"browser",versions:{},cwd:function(){return"/"}};`,
+        banner: [
+          "/* FlowForge plugin — React + process shim */",
+          "if (typeof window !== 'undefined' && window.QwenPaw && window.QwenPaw.host) {",
+          "  if (!window.React) window.React = window.QwenPaw.host.React;",
+          "  if (!window.ReactDOM) window.ReactDOM = window.QwenPaw.host.ReactDOM;",
+          "}",
+          "if (typeof process === 'undefined') {",
+          "  var process = (typeof window !== 'undefined' && window.process) ? window.process : { env: { NODE_ENV: 'production' }, platform: 'browser' };",
+          "}",
+        ].join("\n"),
       },
     },
     target: "es2020",

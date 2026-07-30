@@ -27,6 +27,7 @@ class WorkflowRunSnapshot:
 
     state: WorkflowState
     output_cache: dict[str, Any]
+    dynamic_prompt: dict[str, dict[str, Any]]
     blocked_nodes: list[str]
     prompt_id: str | None = None
     execution_id: UUID | None = None
@@ -36,6 +37,7 @@ class WorkflowRunSnapshot:
             {
                 "state": self.state.model_dump(mode="json"),
                 "output_cache": self.output_cache,
+                "dynamic_prompt": self.dynamic_prompt,
                 "blocked_nodes": self.blocked_nodes,
                 "prompt_id": self.prompt_id,
                 "execution_id": str(self.execution_id) if self.execution_id else None,
@@ -52,6 +54,7 @@ class WorkflowRunSnapshot:
         return cls(
             state=state,
             output_cache=dict(data.get("output_cache") or {}),
+            dynamic_prompt=dict(data.get("dynamic_prompt") or {}),
             blocked_nodes=list(data.get("blocked_nodes") or []),
             prompt_id=data.get("prompt_id"),
             execution_id=UUID(execution_id) if execution_id else None,

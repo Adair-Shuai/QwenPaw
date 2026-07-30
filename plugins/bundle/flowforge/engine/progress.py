@@ -10,6 +10,7 @@ server can publish WebSocket events.
 from __future__ import annotations
 
 import asyncio
+import copy
 import contextvars
 import inspect
 import threading
@@ -45,6 +46,20 @@ class NodeProgressState:
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "node_id": self.node_id,
+            "status": self.status.value,
+            "value": self.value,
+            "max": self.max,
+            "preview": self.preview,
+            "message": self.message,
+            "started_at_ms": self.started_at_ms,
+            "finished_at_ms": self.finished_at_ms,
+            "error": self.error,
+            "metadata": self.metadata,
+        }
+
 
 ProgressHandler = Callable[["ProgressEvent"], None | Awaitable[None]]
 
@@ -56,6 +71,15 @@ class ProgressEvent:
     node_id: str | None = None
     state: NodeProgressState | None = None
     data: dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "type": self.type,
+            "prompt_id": self.prompt_id,
+            "node_id": self.node_id,
+            "state": self.state.to_dict() if self.state is not None else None,
+            "data": self.data,
+        }
 
 
 _current_node: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_node", default=None)
@@ -117,6 +141,9 @@ class ProgressRegistry:
             return st
 
     def emit(self, event: ProgressEvent) -> None:
+        # Events are immutable historical facts. NodeProgressState continues
+        # to mutate as execution advances, so store and dispatch a snapshot.
+        event = copy.deepcopy(event)
         with self._lock:
             self._events.append(event)
             handlers = list(self._handlers)

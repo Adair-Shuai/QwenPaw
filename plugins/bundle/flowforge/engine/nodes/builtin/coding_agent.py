@@ -18,7 +18,7 @@ from typing import Any
 
 import logging
 
-from leagent.agent.coding_agent import DEFAULT_CODING_AGENT_TOOLS
+from ...adapter import DEFAULT_CODING_AGENT_TOOLS
 from ...io import (
     IO,
     Hidden,
@@ -193,8 +193,8 @@ class CodingAgentNode(WorkflowNode):
         if hidden.extra_data and isinstance(hidden.extra_data, dict):
             parent_run_id = hidden.extra_data.get("run_id")
 
-        from leagent.runtime.execution_factory import begin_execution, end_execution
-        from leagent.runtime.execution_run import ExecutionScope
+        from ...adapter import begin_execution, end_execution
+        from ...adapter import ExecutionScope
 
         session_id = None
         user_id = None

@@ -12,6 +12,13 @@ from ..base import WorkflowNode
 
 BUILTIN_NODES: list[type[WorkflowNode]] = []
 
+# ── FlowForge core authoring nodes (always available) ────────────────────────
+try:
+    from .core import CORE_NODES
+    BUILTIN_NODES.extend(CORE_NODES)
+except Exception:  # pragma: no cover
+    pass
+
 # ── Core control flow (always available) ─────────────────────────────────────
 try:
     from .start import StartNode

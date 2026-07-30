@@ -246,25 +246,50 @@ class CodeNode(WorkflowNode):
 # ── NodeRegistry (old API wrapper) ─────────────────────────────────────────────
 
 class NodeRegistry:
-    """Old API: maps class_type strings to node instances."""
+    """Old API: maps class_type strings to node instances.
+
+    Also supports new-style Schema-driven nodes that use ``define_schema()``
+    + ``execute()`` by accepting ``module_path`` keyword in ``register()``.
+    """
 
     def __init__(self):
         self._nodes: dict[str, WorkflowNode] = {}
+        self._new_classes: dict[str, type] = {}
 
-    def register(self, node):
+    def register(self, node, *, module_path: str | None = None):
         if isinstance(node, type):
+            # New-style Schema-driven node class
+            if hasattr(node, 'define_schema') and hasattr(node, 'execute'):
+                try:
+                    schema = node.get_schema()
+                    ct = schema.node_id or getattr(node, 'NODE_ID', None) or node.__name__
+                    self._new_classes[ct] = node
+                    self._nodes[ct] = node()  # Also instantiate for old API
+                    return
+                except Exception:
+                    pass
+            # Old-style: instantiate
             node = node()
         if not isinstance(node, WorkflowNode):
-            raise TypeError(f"register() requires a WorkflowNode, got {type(node).__name__}")
+            # Check if it's a new-style WorkflowNode (from base.py)
+            if hasattr(node, 'execute') and hasattr(node, 'define_schema'):
+                pass  # Accept it
+            else:
+                raise TypeError(f"register() requires a WorkflowNode, got {type(node).__name__}")
         ct = getattr(node, 'class_type', None) or getattr(node, 'NODE_ID', None)
         if not ct:
-            raise ValueError("node must define class_type")
+            raise ValueError("node must define class_type or NODE_ID")
         if ct in self._nodes:
-            raise ValueError(f"tool {ct!r} already registered")
+            # Allow re-registration (hot-reload)
+            pass
         self._nodes[ct] = node
 
     def get(self, class_type):
         return self._nodes.get(class_type)
+
+    def get_class(self, class_type):
+        """Return the registered class (new-style) or None."""
+        return self._new_classes.get(class_type)
 
     def names(self):
         return sorted(self._nodes.keys())
@@ -272,16 +297,47 @@ class NodeRegistry:
     def all_types(self):
         out = []
         for ct, node in sorted(self._nodes.items()):
-            out.append({
-                "class_type": ct,
-                "display_name": getattr(node, 'display_name', ct),
-                "description": getattr(node, 'description', ''),
-                "category": getattr(node, 'category', 'general'),
-                "icon": getattr(node, 'icon', '🔧'),
-                "inputs_schema": getattr(node, 'inputs_schema', []),
-                "outputs_schema": getattr(node, 'outputs_schema', []),
-                "control_schema": getattr(node, 'control_schema', []),
-            })
+            # Try new-style schema first
+            schema = None
+            if hasattr(node, 'get_schema'):
+                try:
+                    schema = node.get_schema()
+                except Exception:
+                    pass
+            if schema:
+                inputs_schema = []
+                for inp in schema.inputs:
+                    raw = inp.as_dict()
+                    inputs_schema.append({
+                        "name": inp.id,
+                        "type": inp.get_io_type().lower(),
+                        "required": not inp.optional,
+                        **raw.get("options", {}),
+                    })
+                out.append({
+                    "class_type": ct,
+                    "display_name": schema.display_name or ct,
+                    "description": schema.description or '',
+                    "category": schema.category or 'general',
+                    "icon": getattr(node, 'icon', '🔧'),
+                    "inputs_schema": inputs_schema,
+                    "outputs_schema": [
+                        {"name": output.id or f"out{index}", "type": output.get_io_type().lower()}
+                        for index, output in enumerate(schema.outputs)
+                    ],
+                    "control_schema": ["next", "error_handler"] if schema.control_flow else [],
+                })
+            else:
+                out.append({
+                    "class_type": ct,
+                    "display_name": getattr(node, 'display_name', ct),
+                    "description": getattr(node, 'description', ''),
+                    "category": getattr(node, 'category', 'general'),
+                    "icon": getattr(node, 'icon', '🔧'),
+                    "inputs_schema": getattr(node, 'inputs_schema', []),
+                    "outputs_schema": getattr(node, 'outputs_schema', []),
+                    "control_schema": getattr(node, 'control_schema', []),
+                })
         return out
 
     def __contains__(self, ct):
@@ -304,7 +360,11 @@ class NodeRunResult:
 
 
 class NodeRunner:
-    """Old API: runs a single node with progress reporting."""
+    """Old API: runs a single node with progress reporting.
+
+    Supports both old-style nodes (``run()`` method) and new-style
+    Schema-driven nodes (``execute()`` method).
+    """
     def __init__(self, *, registry, progress=None, **kwargs):
         self.registry = registry
         self.progress = progress
@@ -319,7 +379,18 @@ class NodeRunner:
         start = time.monotonic()
         try:
             with CurrentNodeContext(node_id):
-                output = await node.run(node_id, node_def, upstream_values, hidden)
+                # New-style Schema-driven node: call execute()
+                if hasattr(node, 'execute') and not hasattr(node, 'run'):
+                    output = await self._run_new_style(
+                        node, node_id, node_def, upstream_values, hidden,
+                    )
+                # Old-style node: call run()
+                elif hasattr(node, 'run'):
+                    output = await node.run(node_id, node_def, upstream_values, hidden)
+                else:
+                    raise NodeExecutionError(
+                        ct, f"node '{ct}' has neither run() nor execute()",
+                    )
         except Exception as exc:
             if self.progress:
                 self.progress.set_status(node_id, NodeStatus.FAILED, error=str(exc))
@@ -336,6 +407,68 @@ class NodeRunner:
             )
             self.progress.set_status(node_id, status, duration_ms=duration_ms, metadata=output.metadata)
         return NodeRunResult(output=output, duration_ms=duration_ms)
+
+    async def _run_new_style(
+        self, node, node_id, node_def, upstream_values, hidden,
+    ) -> NodeOutput:
+        """Execute a new-style Schema-driven node.
+
+        Resolves inputs from upstream_values using the node's schema,
+        then calls ``node.execute(hidden=hidden, **inputs)``.
+        """
+        # Get the node's schema to know input names
+        schema = None
+        try:
+            schema = node.get_schema()
+        except Exception:
+            pass
+
+        # Resolve inputs
+        inputs: dict[str, Any] = {}
+        raw_inputs = node_def.get("inputs") or {}
+
+        if schema is not None:
+            # Use schema input definitions to resolve values
+            for inp in schema.inputs:
+                inp_id = inp.id
+                if inp_id in raw_inputs:
+                    val = raw_inputs[inp_id]
+                    inputs[inp_id] = self._resolve_value(val, upstream_values, hidden)
+                elif hasattr(inp, 'default') and inp.default is not None:
+                    inputs[inp_id] = inp.default
+        else:
+            # Fallback: resolve all raw inputs
+            for key, val in raw_inputs.items():
+                inputs[key] = self._resolve_value(val, upstream_values, hidden)
+
+        # Scope resumable inputs (for example HumanReviewNode) to this node.
+        scoped_hidden = (
+            hidden.with_unique_id(node_id)
+            if hasattr(hidden, "with_unique_id")
+            else hidden
+        )
+        return await node.execute(hidden=scoped_hidden, **inputs)
+
+    @staticmethod
+    def _resolve_value(value, upstream_values, hidden):
+        """Resolve a value that may reference upstream node outputs."""
+        if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+            return upstream_values.get((value[0], int(value[1])))
+        if isinstance(value, list) and value and all(
+            isinstance(i, list) and len(i) == 2 and isinstance(i[0], str) for i in value
+        ):
+            return [upstream_values.get((i[0], int(i[1]))) for i in value]
+        if isinstance(value, dict):
+            return {k: NodeRunner._resolve_value(v, upstream_values, hidden) for k, v in value.items()}
+        if isinstance(value, list):
+            return [NodeRunner._resolve_value(i, upstream_values, hidden) for i in value]
+        # Template resolution against workflow state
+        state = getattr(hidden, 'workflow_state', None)
+        if state is not None and isinstance(value, str):
+            from ..types import _resolve_template
+            ctx = state._build_context() if hasattr(state, '_build_context') else {}
+            return _resolve_template(value, ctx)
+        return value
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -411,8 +544,22 @@ def bootstrap() -> NodeRegistry:
     global _registry
     if _registry is None:
         _registry = NodeRegistry()
+        # Old-style nodes
         for cls in (InputNode, OutputNode, ToolNode, AgentNode, ConditionNode, LLMNode, CodeNode):
-            _registry.register(cls())
+            try:
+                _registry.register(cls())
+            except Exception:
+                pass
+        # New-style Schema-driven builtin nodes
+        try:
+            from .builtin import BUILTIN_NODES
+            for node_cls in BUILTIN_NODES:
+                try:
+                    _registry.register(node_cls)
+                except Exception:
+                    pass
+        except ImportError:
+            pass
     return _registry
 
 

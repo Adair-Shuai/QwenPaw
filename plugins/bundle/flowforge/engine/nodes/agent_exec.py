@@ -37,8 +37,8 @@ from uuid import UUID
 
 import logging
 
-from leagent.prompts.playbooks import playbook_ids_from_context
-from leagent.sdk.events import AgentEventType
+from ..adapter import playbook_ids_from_context
+from ..adapter import AgentEventType
 from ..io import HiddenHolder, NodeOutput
 from .agent_model import apply_model_override, parse_agent_model_override
 

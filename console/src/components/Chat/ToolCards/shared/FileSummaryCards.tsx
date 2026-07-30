@@ -23,6 +23,9 @@ import {
   CodeOutlined,
   FolderOpenOutlined,
   SendOutlined,
+  EyeOutlined,
+  DownloadOutlined,
+  LoadingOutlined,
   DownOutlined,
   RightOutlined,
 } from "@ant-design/icons";
@@ -30,6 +33,11 @@ import { Tooltip, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import { workspaceApi } from "@/api/modules/workspace";
+import { buildAuthHeaders } from "@/api/authHeaders";
+import {
+  DownloadCancelledError,
+  downloadFileFromUrl,
+} from "@/utils/downloadFileFromUrl";
 import { stringifyResult, toDisplayUrl } from "./utils";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -59,6 +67,8 @@ interface FileInfo {
   fileUrl?: string;
   /** 是否是交付物（最终产物）vs 生成的中间文件 */
   isDeliverable: boolean;
+  /** 已知文件大小（字节）；旧工具结果可能不提供 */
+  fileSize?: number;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -287,6 +297,8 @@ function extractDeliverablePathsFromOutput(output: string): string[] {
   // Unix: /path/to/file.ext  Windows: C:\path\to\file.ext
   const extPattern = Array.from(DELIVERABLE_EXTENSIONS).join("|");
   const barePathRegex = new RegExp(
+    // Backslashes are intentional because this is a RegExp constructor string.
+    // eslint-disable-next-line no-useless-escape
     `(?:/[\w./-]+|[A-Za-z]:[\\/][\w.\\/-]+)\.(?:${extPattern})`,
     "gi",
   );
@@ -300,7 +312,9 @@ function extractDeliverablePathsFromOutput(output: string): string[] {
 /**
  * 从 response data 的 output 数组中提取所有文件相关的工具调用。
  */
-function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
+// Exported for contract tests that exercise the production parser.
+// eslint-disable-next-line react-refresh/only-export-components
+export function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
   const output = data.output as unknown[] | undefined;
   if (!Array.isArray(output)) return [];
 
@@ -470,6 +484,11 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       binaryUrl,
       fileUrl,
       isDeliverable,
+      fileSize:
+        extractFileSize(rawResult) ??
+        (typeof resultContent === "string"
+          ? new TextEncoder().encode(resultContent).byteLength
+          : undefined),
     });
   }
 
@@ -541,6 +560,7 @@ function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
         isBinary,
         binaryUrl,
         isDeliverable: true,
+        fileSize: extractFileSize(outputMap.get(callId || name)),
       });
     }
   }
@@ -595,6 +615,59 @@ function extractUrlFromResult(result: unknown): string | null {
   }
 
   return null;
+}
+
+/** 从工具结果块中尽力提取结构化文件大小。 */
+function extractFileSize(result: unknown): number | undefined {
+  let value = result;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      return undefined;
+    }
+  }
+
+  const queue: unknown[] = Array.isArray(value) ? [...value] : [value];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || typeof current !== "object") continue;
+    const record = current as Record<string, unknown>;
+    for (const key of ["file_size_bytes", "file_size", "size"]) {
+      const size = record[key];
+      if (typeof size === "number" && Number.isFinite(size) && size >= 0) {
+        return size;
+      }
+    }
+    for (const child of Object.values(record)) {
+      if (child && typeof child === "object") queue.push(child);
+    }
+  }
+  return undefined;
+}
+
+function formatFileSize(size?: number): string {
+  if (size === undefined) return "大小未知";
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function downloadTextContent(
+  content: string,
+  fileName: string,
+  mimeType: string,
+) {
+  const url = URL.createObjectURL(new Blob([content], { type: mimeType }));
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  setTimeout(() => {
+    URL.revokeObjectURL(url);
+    link.remove();
+  }, 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -740,6 +813,9 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
 }) => {
   const fileInfos = useMemo(() => extractFileInfos(data), [data]);
   const [expandedFiles, setExpandedFiles] = useState(false);
+  const [downloadingIds, setDownloadingIds] = useState<Set<string>>(
+    () => new Set(),
+  );
 
   // 分离交付物和中间文件
   const { deliverables, generatedFiles } = useMemo(() => {
@@ -855,9 +931,47 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
     }
   };
 
+  /** 直接保存交付物；二进制与远端文本走统一跨端下载链路。 */
+  const handleDownload = async (info: FileInfo) => {
+    setDownloadingIds((ids) => new Set(ids).add(info.toolCallId));
+    try {
+      const mimeType = getMimeType(info.extension || "");
+      const downloadUrl = info.binaryUrl || info.fileUrl;
+      if (downloadUrl) {
+        await downloadFileFromUrl(downloadUrl, info.fileName, {
+          headers: buildAuthHeaders(),
+          errorMessage: "文件下载失败",
+          preferResponseFilename: true,
+        });
+        return;
+      }
+
+      if (info.content !== undefined) {
+        downloadTextContent(info.content, info.fileName, mimeType);
+        return;
+      }
+
+      const result = await workspaceApi.loadCodeFile(info.filePath);
+      downloadTextContent(result.content, info.fileName, mimeType);
+    } catch (error) {
+      if (!(error instanceof DownloadCancelledError)) {
+        message.error(
+          error instanceof Error ? error.message : "文件下载失败，请稍后重试",
+        );
+      }
+    } finally {
+      setDownloadingIds((ids) => {
+        const next = new Set(ids);
+        next.delete(info.toolCallId);
+        return next;
+      });
+    }
+  };
+
   /** 渲染单个文件卡片（交付物用） */
   const renderCard = (info: FileInfo) => {
     const opConfig = OPERATION_CONFIG[info.operation];
+    const downloading = downloadingIds.has(info.toolCallId);
     const extIcon = EXTENSION_ICON[info.extension || ""] || (
       <FileTextOutlined />
     );
@@ -927,19 +1041,63 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             <div
               style={{
                 fontSize: 11,
-                color: opConfig.color,
+                color: "var(--ant-color-text-tertiary, rgba(0,0,0,0.45))",
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
               }}
             >
-              {opConfig.icon}
-              <span>{opConfig.label}</span>
+              <span>{(info.extension || "file").toUpperCase()}</span>
+              <span>·</span>
+              <span>{formatFileSize(info.fileSize)}</span>
+              <span>·</span>
+              <span style={{ color: opConfig.color }}>已生成</span>
             </div>
           </div>
         </div>
+        <Tooltip title="预览">
+          <button
+            aria-label={`预览 ${info.fileName}`}
+            onClick={() => handleOpenInWorkspace(info)}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: "pointer",
+              padding: 4,
+              display: "flex",
+              color: "var(--ant-color-text-quaternary, #bbb)",
+            }}
+          >
+            <EyeOutlined style={{ fontSize: 14 }} />
+          </button>
+        </Tooltip>
+        <Tooltip title="下载">
+          <button
+            aria-label={`下载 ${info.fileName}`}
+            disabled={downloading}
+            onClick={(e) => {
+              e.stopPropagation();
+              void handleDownload(info);
+            }}
+            style={{
+              border: "none",
+              background: "transparent",
+              cursor: downloading ? "wait" : "pointer",
+              padding: 4,
+              display: "flex",
+              color: "var(--ant-color-text-quaternary, #bbb)",
+            }}
+          >
+            {downloading ? (
+              <LoadingOutlined style={{ fontSize: 14 }} />
+            ) : (
+              <DownloadOutlined style={{ fontSize: 14 }} />
+            )}
+          </button>
+        </Tooltip>
         <Tooltip title="在文件管理器中显示">
           <button
+            aria-label={`定位 ${info.fileName}`}
             onClick={(e) => {
               e.stopPropagation();
               handleRevealInFileManager(info);

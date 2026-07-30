@@ -28,7 +28,7 @@ from typing import Any
 
 import logging
 
-from leagent.tools._sandbox.inproc import (
+from ...adapter.sandbox import (
     ScriptExecutionError,
     ScriptTimeoutError,
     execute_script,

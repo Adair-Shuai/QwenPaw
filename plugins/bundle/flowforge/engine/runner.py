@@ -14,7 +14,8 @@ import time
 from typing import Any
 
 import logging
-logger = logging.getLogger(__name__)
+from .adapter.log_compat import get_logger
+logger = get_logger(__name__)
 from .io import Hidden, HiddenHolder, NodeOutput
 from .io.contract import NOT_CACHEABLE
 from .nodes import NodeRegistry
@@ -24,7 +25,7 @@ from .caching import BaseCache, CacheEntry, CacheKeySet
 from .errors import NodeExecutionError, WorkflowEngineError
 from .progress import CurrentNodeContext, NodeStatus, ProgressRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 #: Exception types treated as transient (worth retrying). Network/timeout
 #: errors are the common case for generation backends and tool calls.
@@ -127,6 +128,8 @@ class NodeRunner:
         resolved_inputs: dict[str, Any] = {}
         linked_keys: set[str] = set()
         for key_name, value in (node_def.get("inputs") or {}).items():
+            if key_name.startswith("__"):
+                continue
             # Single link reference: [upstream_id, slot]
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
                 up_id, slot = value
@@ -152,7 +155,12 @@ class NodeRunner:
                 linked_keys.add(key_name)
                 continue
 
-            resolved_inputs[key_name] = value
+            state = hidden.workflow_state
+            resolved_inputs[key_name] = (
+                state.resolve_template(value)
+                if state is not None and hasattr(state, "resolve_template")
+                else value
+            )
 
         # -------------------- runtime input validation --------------------
         # Validate literal (widget) inputs against their declared type/range/

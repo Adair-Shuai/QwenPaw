@@ -9961,7 +9961,7 @@ if (typeof process === "undefined") {
     return NODE_COLORS[classType] || "#1677ff";
   }
   function statusColor(s) {
-    return s === "completed" ? "#52c41a" : s === "running" ? "#1677ff" : s === "failed" ? "#ff4d4f" : s === "skipped" ? "#bfbfbf" : s === "blocked" ? "#faad14" : s === "cancelled" ? "#fa8c16" : "#d9d9d9";
+    return s === "completed" || s === "success" ? "#52c41a" : s === "running" ? "#1677ff" : s === "failed" || s === "error" ? "#ff4d4f" : s === "skipped" ? "#bfbfbf" : s === "blocked" ? "#faad14" : s === "cancelled" ? "#fa8c16" : "#d9d9d9";
   }
   function NodeCard({ id: id2, data, selected: selected2 }) {
     const antd = getHost().antd;
@@ -9972,6 +9972,8 @@ if (typeof process === "undefined") {
     const color2 = nodeColor(classType);
     const st = d?._status || "pending";
     const stColor = statusColor(st);
+    const inputSockets = (d?.inputs_schema || []).filter((field) => field.forceInput || field.socket);
+    const outputSockets = d?.outputs_schema || [];
     return React2.createElement(
       "div",
       {
@@ -9991,7 +9993,16 @@ if (typeof process === "undefined") {
           flexDirection: "column"
         }
       },
-      React2.createElement(Handle, { type: "target", position: Position.Left }),
+      ...inputSockets.length ? inputSockets.map(
+        (field, index2) => React2.createElement(Handle, {
+          key: `in-${field.name}`,
+          id: field.name,
+          type: "target",
+          position: Position.Left,
+          style: { top: 38 + index2 * 18, background: field.color || color2 },
+          title: `${field.name}: ${field.type}`
+        })
+      ) : [React2.createElement(Handle, { key: "in-default", type: "target", position: Position.Left })],
       // Header row: icon + label + status tag
       React2.createElement(
         "div",
@@ -10004,7 +10015,16 @@ if (typeof process === "undefined") {
       d?.description ? React2.createElement("div", { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, maxWidth: 212, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description) : null,
       // Node ID footer
       React2.createElement("div", { style: { marginTop: "auto", paddingTop: 4, color: "#bfbfbf", fontSize: 10, fontFamily: "monospace" } }, id2),
-      React2.createElement(Handle, { type: "source", position: Position.Right })
+      ...outputSockets.length ? outputSockets.map(
+        (field, index2) => React2.createElement(Handle, {
+          key: `out-${field.name}`,
+          id: field.name,
+          type: "source",
+          position: Position.Right,
+          style: { top: 38 + index2 * 18, background: field.color || color2 },
+          title: `${field.name}: ${field.type}`
+        })
+      ) : [React2.createElement(Handle, { key: "out-default", type: "source", position: Position.Right })]
     );
   }
   function LabeledEdge(props) {
@@ -10124,8 +10144,8 @@ if (typeof process === "undefined") {
   const edgeTypes = { labeled: LabeledEdge };
   function TypedInput({ field, value, onChange }) {
     const antd = getHost().antd;
-    const { Input, InputNumber, Select, Switch, Input: { TextArea } } = antd;
-    const type = field?.type || "any";
+    const { Input, InputNumber, Select, Switch, Upload, Button, Input: { TextArea } } = antd;
+    const type = String(field?.type || "any").toLowerCase();
     const name = field?.name || "";
     const required = field?.required;
     const label = name + (required ? " *" : "");
@@ -10155,6 +10175,39 @@ if (typeof process === "undefined") {
         antd.Form.Item,
         { key: name, label },
         React2.createElement(Select, { value: value ?? "", onChange: (v) => onChange(v), options, placeholder, allowClear: true })
+      );
+    }
+    if (type === "object" || type === "array") {
+      const rendered = typeof value === "string" ? value : JSON.stringify(value ?? (type === "array" ? [] : {}), null, 2);
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(TextArea, {
+          value: rendered,
+          autoSize: { minRows: 3, maxRows: 10 },
+          onChange: (e) => {
+            try {
+              onChange(JSON.parse(e.target.value));
+            } catch {
+              onChange(e.target.value);
+            }
+          },
+          placeholder: type === "array" ? "[]" : "{}"
+        })
+      );
+    }
+    if (type === "file" || type === "image" || type === "video" || type === "audio") {
+      return React2.createElement(
+        antd.Form.Item,
+        { key: name, label },
+        React2.createElement(Upload, {
+          beforeUpload: (file) => {
+            onChange({ name: file.name, path: file.path || "", type: file.type, size: file.size });
+            return false;
+          },
+          maxCount: 1,
+          showUploadList: true
+        }, React2.createElement(Button, null, value?.name ? `已选择 ${value.name}` : "选择文件"))
       );
     }
     if (type === "textarea" || type === "multiline" || name === "prompt" || name === "system" || name === "instruction") {
@@ -10364,7 +10417,15 @@ if (typeof process === "undefined") {
               id: id2,
               type: "workflow",
               position: pos,
-              data: { ...n, label: n.label || spec?.display_name || ct, icon: spec?.icon, class_type: ct, description: spec?.description }
+              data: {
+                ...n,
+                label: n.label || spec?.display_name || ct,
+                icon: spec?.icon,
+                class_type: ct,
+                description: spec?.description,
+                inputs_schema: spec?.inputs_schema || [],
+                outputs_schema: spec?.outputs_schema || []
+              }
             };
           });
           const rfE = (flow.edges || []).map((e, idx) => ({
@@ -10503,18 +10564,33 @@ if (typeof process === "undefined") {
         const nodes = {};
         const positions = {};
         for (const n of rfNodes) {
-          const { label, icon, description, _status, ...rest } = n.data || {};
+          const {
+            label,
+            icon,
+            description,
+            _status,
+            inputs_schema,
+            outputs_schema,
+            ...rest
+          } = n.data || {};
           nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
           positions[n.id] = n.position;
         }
-        const edges = rfEdges.map((e, idx) => ({
-          id: e.id || `e${idx}`,
-          source: e.source,
-          target: e.target,
-          source_handle: e.sourceHandle,
-          target_handle: e.targetHandle,
-          label: e.data?.label || ""
-        }));
+        const edges = rfEdges.map((e, idx) => {
+          const sourceNode = rfNodes.find((node) => node.id === e.source);
+          const outputFields = sourceNode?.data?.outputs_schema || [];
+          const sourceSlot = Math.max(0, outputFields.findIndex((field) => field.name === e.sourceHandle));
+          return {
+            id: e.id || `e${idx}`,
+            source: e.source,
+            target: e.target,
+            kind: e.data?.kind || "data",
+            source_handle: e.sourceHandle,
+            target_handle: e.targetHandle,
+            source_slot: sourceSlot,
+            label: e.data?.label || ""
+          };
+        });
         const payload = { ...doc, nodes, edges, metadata: { ...doc.metadata, positions } };
         const saved = await apiFetch(`/flowforge/flows/${encodeURIComponent(flowId)}`, { method: "PUT", body: JSON.stringify(payload) });
         setDoc(saved);
@@ -10530,10 +10606,30 @@ if (typeof process === "undefined") {
       try {
         const nodes = {};
         for (const n of rfNodes) {
-          const { label, icon, description, _status, ...rest } = n.data || {};
+          const {
+            label,
+            icon,
+            description,
+            _status,
+            inputs_schema,
+            outputs_schema,
+            ...rest
+          } = n.data || {};
           nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
         }
-        const edges = rfEdges.map((e, idx) => ({ id: e.id || `e${idx}`, source: e.source, target: e.target }));
+        const edges = rfEdges.map((e, idx) => {
+          const sourceNode = rfNodes.find((node) => node.id === e.source);
+          const outputs = sourceNode?.data?.outputs_schema || [];
+          return {
+            id: e.id || `e${idx}`,
+            source: e.source,
+            target: e.target,
+            kind: e.data?.kind || "data",
+            source_handle: e.sourceHandle,
+            target_handle: e.targetHandle,
+            source_slot: Math.max(0, outputs.findIndex((field) => field.name === e.sourceHandle))
+          };
+        });
         const payload = { ...doc, nodes, edges };
         const result = await apiFetch("/flowforge/flows/validate", { method: "POST", body: JSON.stringify(payload) });
         setValidation({ ok: result.ok, errors: result.errors || [] });
@@ -10809,6 +10905,41 @@ if (typeof process === "undefined") {
         })
       )
     ];
+    for (const field of spec?.control_schema || []) {
+      if (["mode", "retry_count", "retry_delay_sec", "output"].includes(field)) continue;
+      if (field === "conditions" || field === "branches") {
+        const rendered = typeof data.control?.[field] === "string" ? data.control[field] : JSON.stringify(data.control?.[field] || [], null, 2);
+        controlItems.push(
+          React2.createElement(
+            Form.Item,
+            { key: field, label: field },
+            React2.createElement(antd.Input.TextArea, {
+              value: rendered,
+              autoSize: { minRows: 4, maxRows: 12 },
+              onChange: (event) => {
+                try {
+                  updateControl(field, JSON.parse(event.target.value));
+                } catch {
+                  updateControl(field, event.target.value);
+                }
+              }
+            })
+          )
+        );
+      } else {
+        controlItems.push(
+          React2.createElement(
+            Form.Item,
+            { key: field, label: field },
+            React2.createElement(Input, {
+              value: data.control?.[field] || "",
+              onChange: (event) => updateControl(field, event.target.value),
+              placeholder: "目标节点 ID"
+            })
+          )
+        );
+      }
+    }
     return React2.createElement(
       Form,
       { layout: "vertical" },

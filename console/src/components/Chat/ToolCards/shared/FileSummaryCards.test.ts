@@ -13,11 +13,48 @@
  *   }
  */
 import { describe, it, expect } from "vitest";
+import { extractFileInfos } from "./FileSummaryCards";
 
 // We test the parsing logic indirectly by simulating the data structure
 // that the vendor passes to FileSummaryCards via HostResponseCard.
 
 describe("FileSummaryCards data parsing", () => {
+  it("runs the production parser and exposes a downloadable deliverable", () => {
+    const infos = extractFileInfos({
+      output: [
+        {
+          id: "msg-write",
+          type: "plugin_call",
+          content: [
+            {
+              data: {
+                name: "write_file",
+                arguments: JSON.stringify({
+                  file_path: "/workspace/report.md",
+                  content: "# Delivery",
+                }),
+                call_id: "call-write",
+              },
+            },
+            { data: { output: "Wrote 10 bytes" } },
+          ],
+        },
+      ],
+    });
+
+    expect(infos).toMatchObject([
+      {
+        fileName: "report.md",
+        filePath: "/workspace/report.md",
+        operation: "write",
+        content: "# Delivery",
+        extension: "md",
+        isDeliverable: true,
+        fileSize: 10,
+      },
+    ]);
+  });
+
   it("extracts file info from plugin_call with merged output", () => {
     // Simulate a merged tool message (input + output in one message)
     const data = {

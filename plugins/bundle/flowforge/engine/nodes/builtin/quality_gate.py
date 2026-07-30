@@ -24,8 +24,9 @@ from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema
 from ...io.media import to_gen_ui_tree
 
 from ..base import WorkflowNode
+from ...adapter.log_compat import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class QualityGateNode(WorkflowNode):

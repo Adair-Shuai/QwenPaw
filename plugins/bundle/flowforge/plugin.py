@@ -87,21 +87,25 @@ class FlowForgePlugin:
     # Startup wiring
     # ------------------------------------------------------------------
     def _wire_services(self) -> None:
-        """Populate executor.tool_registry / agent_runtime / llm_service."""
+        """Populate executor.tool_registry / tool_executor / agent_runtime / llm_service.
+
+        Wires the adapter-layer components that bridge QwenPaw's native
+        systems (ToolRegistry, ProviderManager, workspace manager) into the
+        workflow engine.
+        """
         if self._service is None:
             return
         executor = self._service.executor
+
+        # ── 1. Tool layer ────────────────────────────────────────────────
+        # Wrap QwenPaw's native ToolRegistry with the adapter's ToolRegistry
+        # and create a ToolExecutor that calls tool functions directly.
         try:
             from qwenpaw.plugins.registry import PluginRegistry
 
             registry = PluginRegistry()
             mgr = registry.get_workspace_manager()
             if mgr is not None:
-                # The MultiAgentManager exposes per-workspace ToolRegistry
-                # instances. We attach the *first* agent's tool registry as
-                # the executor's tool_context (FlowForge runs tool nodes
-                # against a single agent's tools by default; future work
-                # can route per-node ``agent_id`` to the right workspace).
                 agents = getattr(mgr, "agents", None) or getattr(
                     mgr, "workspaces", None,
                 )
@@ -109,29 +113,35 @@ class FlowForgePlugin:
                     first_ws = next(iter(agents.values()))
                     plugins_ctx = getattr(first_ws, "plugins", None)
                     if plugins_ctx is not None:
-                        tool_reg = getattr(plugins_ctx, "tool_registry", None)
-                        if tool_reg is not None:
-                            executor.tool_registry = tool_reg
+                        qp_tool_reg = getattr(plugins_ctx, "tool_registry", None)
+                        if qp_tool_reg is not None:
+                            from .engine.adapter import ToolRegistry as AdapterToolRegistry
+                            from .engine.adapter import ToolExecutor as AdapterToolExecutor
+
+                            adapter_reg = AdapterToolRegistry(qp_tool_reg)
+                            executor.tool_registry = adapter_reg
+                            executor.tool_executor = AdapterToolExecutor(adapter_reg)
                             logger.info(
-                                "[%s] Wired tool_registry from workspace %s",
-                                PLUGIN_ID,
-                                getattr(first_ws, "agent_id", "?"),
+                                "[%s] Wired tool_registry + tool_executor (%d tools)",
+                                PLUGIN_ID, len(adapter_reg),
                             )
-                executor.agent_runtime = mgr
+                # Wire the agent runtime adapter
+                from .engine.adapter import AgentRuntime
+
+                executor.agent_runtime = AgentRuntime(workspace_manager=mgr)
                 logger.info("[%s] Wired agent_runtime", PLUGIN_ID)
         except Exception as exc:
-            logger.warning("[%s] Failed to wire services: %s", PLUGIN_ID, exc)
+            logger.warning("[%s] Failed to wire tool/agent services: %s", PLUGIN_ID, exc)
 
-        # Optionally attach an llm_service if the host exposes one.
+        # ── 2. LLM layer ────────────────────────────────────────────────
+        # Wire the LLMService adapter that uses ProviderManager.
         try:
-            from qwenpaw.providers.provider_manager import ProviderManager
+            from .engine.adapter import LLMService
 
-            executor.llm_service = ProviderManager()
+            executor.llm_service = LLMService()
             logger.info("[%s] Wired llm_service", PLUGIN_ID)
-        except Exception:
-            # LLM service is optional — LLMNode will return a clear error
-            # if no service is wired when it runs.
-            pass
+        except Exception as exc:
+            logger.warning("[%s] Failed to wire llm_service: %s", PLUGIN_ID, exc)
 
     # ------------------------------------------------------------------
     # Uninstall cleanup

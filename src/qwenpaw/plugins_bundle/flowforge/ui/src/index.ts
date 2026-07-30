@@ -126,8 +126,8 @@ const NODE_COLORS: Record<string, string> = {
 function nodeColor(classType: string): string { return NODE_COLORS[classType] || "#1677ff"; }
 
 function statusColor(s: string): string {
-  return s === "completed" ? "#52c41a" : s === "running" ? "#1677ff"
-    : s === "failed" ? "#ff4d4f" : s === "skipped" ? "#bfbfbf"
+  return s === "completed" || s === "success" ? "#52c41a" : s === "running" ? "#1677ff"
+    : s === "failed" || s === "error" ? "#ff4d4f" : s === "skipped" ? "#bfbfbf"
     : s === "blocked" ? "#faad14" : s === "cancelled" ? "#fa8c16" : "#d9d9d9";
 }
 
@@ -142,6 +142,8 @@ function NodeCard({ id, data, selected }: NodeProps) {
   const color = nodeColor(classType);
   const st: string = d?._status || "pending";
   const stColor = statusColor(st);
+  const inputSockets = (d?.inputs_schema || []).filter((field: any) => field.forceInput || field.socket);
+  const outputSockets = d?.outputs_schema || [];
 
   return React.createElement("div", {
     style: {
@@ -153,7 +155,16 @@ function NodeCard({ id, data, selected }: NodeProps) {
       display: "flex", flexDirection: "column",
     },
   },
-    React.createElement(Handle, { type: "target", position: Position.Left }),
+    ...(inputSockets.length
+      ? inputSockets.map((field: any, index: number) =>
+          React.createElement(Handle, {
+            key: `in-${field.name}`, id: field.name, type: "target",
+            position: Position.Left,
+            style: { top: 38 + index * 18, background: field.color || color },
+            title: `${field.name}: ${field.type}`,
+          }),
+        )
+      : [React.createElement(Handle, { key: "in-default", type: "target", position: Position.Left })]),
     // Header row: icon + label + status tag
     React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 6 } },
       React.createElement("span", { style: { fontSize: 16 } }, d?.icon || "🔧"),
@@ -164,7 +175,16 @@ function NodeCard({ id, data, selected }: NodeProps) {
     d?.description ? React.createElement("div", { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, maxWidth: 212, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description) : null,
     // Node ID footer
     React.createElement("div", { style: { marginTop: "auto", paddingTop: 4, color: "#bfbfbf", fontSize: 10, fontFamily: "monospace" } }, id),
-    React.createElement(Handle, { type: "source", position: Position.Right }),
+    ...(outputSockets.length
+      ? outputSockets.map((field: any, index: number) =>
+          React.createElement(Handle, {
+            key: `out-${field.name}`, id: field.name, type: "source",
+            position: Position.Right,
+            style: { top: 38 + index * 18, background: field.color || color },
+            title: `${field.name}: ${field.type}`,
+          }),
+        )
+      : [React.createElement(Handle, { key: "out-default", type: "source", position: Position.Right })]),
   );
 }
 
@@ -261,8 +281,8 @@ const edgeTypes = { labeled: LabeledEdge };
 
 function TypedInput({ field, value, onChange }: { field: any; value: any; onChange: (v: any) => void }) {
   const antd = getHost().antd;
-  const { Input, InputNumber, Select, Switch, Input: { TextArea } } = antd;
-  const type = field?.type || "any";
+  const { Input, InputNumber, Select, Switch, Upload, Button, Input: { TextArea } } = antd;
+  const type = String(field?.type || "any").toLowerCase();
   const name = field?.name || "";
   const required = field?.required;
   const label = name + (required ? " *" : "");
@@ -285,6 +305,27 @@ function TypedInput({ field, value, onChange }: { field: any; value: any; onChan
     const options = (field?.options || []).map((o: any) => ({ label: typeof o === "string" ? o : o.label, value: typeof o === "string" ? o : o.value }));
     return React.createElement(antd.Form.Item, { key: name, label },
       React.createElement(Select, { value: value ?? "", onChange: (v: any) => onChange(v), options, placeholder, allowClear: true }),
+    );
+  }
+  if (type === "object" || type === "array") {
+    const rendered = typeof value === "string" ? value : JSON.stringify(value ?? (type === "array" ? [] : {}), null, 2);
+    return React.createElement(antd.Form.Item, { key: name, label },
+      React.createElement(TextArea, {
+        value: rendered, autoSize: { minRows: 3, maxRows: 10 },
+        onChange: (e: any) => {
+          try { onChange(JSON.parse(e.target.value)); }
+          catch { onChange(e.target.value); }
+        },
+        placeholder: type === "array" ? "[]" : "{}",
+      }),
+    );
+  }
+  if (type === "file" || type === "image" || type === "video" || type === "audio") {
+    return React.createElement(antd.Form.Item, { key: name, label },
+      React.createElement(Upload, {
+        beforeUpload: (file: any) => { onChange({ name: file.name, path: file.path || "", type: file.type, size: file.size }); return false; },
+        maxCount: 1, showUploadList: true,
+      }, React.createElement(Button, null, value?.name ? `已选择 ${value.name}` : "选择文件")),
     );
   }
   if (type === "textarea" || type === "multiline" || name === "prompt" || name === "system" || name === "instruction") {
@@ -467,7 +508,12 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
           const spec = (types || []).find((t) => t.class_type === ct);
           const pos = savedPositions[id] || { x: 100 + (idx % 4) * 300, y: 80 + Math.floor(idx / 4) * 180 };
           return { id, type: "workflow", position: pos,
-            data: { ...n, label: n.label || spec?.display_name || ct, icon: spec?.icon, class_type: ct, description: spec?.description } };
+            data: {
+              ...n, label: n.label || spec?.display_name || ct,
+              icon: spec?.icon, class_type: ct, description: spec?.description,
+              inputs_schema: spec?.inputs_schema || [],
+              outputs_schema: spec?.outputs_schema || [],
+            } };
         });
         const rfE: Edge[] = (flow.edges || []).map((e: any, idx: number) => ({
           id: e.id || `e${idx}`, source: e.source, target: e.target,
@@ -606,15 +652,25 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
       const nodes: Record<string, any> = {};
       const positions: Record<string, { x: number; y: number }> = {};
       for (const n of rfNodes) {
-        const { label, icon, description, _status, ...rest } = (n.data || {}) as any;
+        const {
+          label, icon, description, _status,
+          inputs_schema, outputs_schema, ...rest
+        } = (n.data || {}) as any;
         nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
         positions[n.id] = n.position;
       }
-      const edges = rfEdges.map((e: Edge, idx: number) => ({
-        id: e.id || `e${idx}`, source: e.source, target: e.target,
-        source_handle: e.sourceHandle, target_handle: e.targetHandle,
-        label: (e.data as any)?.label || "",
-      }));
+      const edges = rfEdges.map((e: Edge, idx: number) => {
+        const sourceNode = rfNodes.find((node) => node.id === e.source);
+        const outputFields = ((sourceNode?.data as any)?.outputs_schema || []) as any[];
+        const sourceSlot = Math.max(0, outputFields.findIndex((field) => field.name === e.sourceHandle));
+        return {
+          id: e.id || `e${idx}`, source: e.source, target: e.target,
+          kind: (e.data as any)?.kind || "data",
+          source_handle: e.sourceHandle, target_handle: e.targetHandle,
+          source_slot: sourceSlot,
+          label: (e.data as any)?.label || "",
+        };
+      });
       const payload: FlowDocument = { ...doc, nodes, edges, metadata: { ...doc.metadata, positions } };
       const saved = await apiFetch<FlowDocument>(`/flowforge/flows/${encodeURIComponent(flowId)}`, { method: "PUT", body: JSON.stringify(payload) });
       setDoc(saved); message?.success("已保存");
@@ -627,10 +683,22 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
     try {
       const nodes: Record<string, any> = {};
       for (const n of rfNodes) {
-        const { label, icon, description, _status, ...rest } = (n.data || {}) as any;
+        const {
+          label, icon, description, _status,
+          inputs_schema, outputs_schema, ...rest
+        } = (n.data || {}) as any;
         nodes[n.id] = { ...rest, id: n.id, class_type: rest.class_type || "ToolNode" };
       }
-      const edges = rfEdges.map((e: Edge, idx: number) => ({ id: e.id || `e${idx}`, source: e.source, target: e.target }));
+      const edges = rfEdges.map((e: Edge, idx: number) => {
+        const sourceNode = rfNodes.find((node) => node.id === e.source);
+        const outputs = ((sourceNode?.data as any)?.outputs_schema || []) as any[];
+        return {
+          id: e.id || `e${idx}`, source: e.source, target: e.target,
+          kind: (e.data as any)?.kind || "data",
+          source_handle: e.sourceHandle, target_handle: e.targetHandle,
+          source_slot: Math.max(0, outputs.findIndex((field) => field.name === e.sourceHandle)),
+        };
+      });
       const payload = { ...doc, nodes, edges };
       const result = await apiFetch<{ ok: boolean; errors: string[] }>("/flowforge/flows/validate", { method: "POST", body: JSON.stringify(payload) });
       setValidation({ ok: result.ok, errors: result.errors || [] });
@@ -821,6 +889,35 @@ function NodeInspector({ node, nodeTypes, onUpdate }: { node: Node; nodeTypes: N
       }),
     ),
   ];
+  for (const field of spec?.control_schema || []) {
+    if (["mode", "retry_count", "retry_delay_sec", "output"].includes(field)) continue;
+    if (field === "conditions" || field === "branches") {
+      const rendered = typeof data.control?.[field] === "string"
+        ? data.control[field]
+        : JSON.stringify(data.control?.[field] || [], null, 2);
+      controlItems.push(
+        React.createElement(Form.Item, { key: field, label: field },
+          React.createElement(antd.Input.TextArea, {
+            value: rendered, autoSize: { minRows: 4, maxRows: 12 },
+            onChange: (event: any) => {
+              try { updateControl(field, JSON.parse(event.target.value)); }
+              catch { updateControl(field, event.target.value); }
+            },
+          }),
+        ),
+      );
+    } else {
+      controlItems.push(
+        React.createElement(Form.Item, { key: field, label: field },
+          React.createElement(Input, {
+            value: data.control?.[field] || "",
+            onChange: (event: any) => updateControl(field, event.target.value),
+            placeholder: "目标节点 ID",
+          }),
+        ),
+      );
+    }
+  }
 
   return React.createElement(Form, { layout: "vertical" },
     React.createElement(Form.Item, { label: "节点 ID" }, React.createElement(Input, { value: node.id, disabled: true, style: { fontFamily: "monospace", fontSize: 11 } })),

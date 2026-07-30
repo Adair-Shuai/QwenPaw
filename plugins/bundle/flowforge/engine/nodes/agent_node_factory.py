@@ -33,6 +33,7 @@ from uuid import UUID
 
 import logging
 
+from ..adapter.log_compat import get_logger
 from ..io import (
     IO,
     Hidden,
@@ -46,10 +47,10 @@ from .agent_model import agent_model_input
 from .prompt_resolve import resolve_node_prompt
 
 if TYPE_CHECKING:
-    from leagent.sdk import AgentDefinition, AgentRegistry
+    from ..adapter import AgentDefinition, AgentRegistry
     from .registry import NodeRegistry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 _NODE_ID_PREFIX = "Agent."
 _READ_ONLY_PROJECT_TOOLS = (
