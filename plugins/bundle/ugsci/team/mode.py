@@ -20,6 +20,7 @@ import re
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Optional
 
+from qwenpaw.runtime.hooks import HookContext
 from qwenpaw.runtime.slash_command_registry import CommandSpec
 
 from .gate import UGSciTeamGate
@@ -60,6 +61,31 @@ class UGSciTeamMode(UGSciModeBase):
     handler_name = "ugsci-team-stop-handler"
     scope = "ugsci-team"
 
+    async def on_turn_start(self, ctx: HookContext) -> None:
+        """Restore persisted team state before handler scope selection.
+
+        After a service restart the gate's in-memory ``_sessions`` dict
+        is empty even though ``state.json`` on disk still reports an
+        active workflow.  This hook scans the workspace for the latest
+        active instance and reactivates the gate so subsequent
+        ``check()`` calls continue the correct phase.
+        """
+        if self._gate is None:
+            return
+        # Skip when state is already loaded (same process, new turn).
+        # pylint: disable=protected-access
+        if self._gate._state() is not None:
+            return
+        workspace_dir = getattr(ctx, "workspace_dir", None)
+        if not workspace_dir:
+            return
+        agent_id = str(getattr(ctx, "agent_id", "") or "")
+        await asyncio.to_thread(
+            self._gate.restore,
+            Path(workspace_dir),
+            agent_id,
+        )
+
     def commands(self) -> list[CommandSpec]:
         return [
             CommandSpec(
@@ -82,11 +108,14 @@ class UGSciTeamMode(UGSciModeBase):
         parsed = _parse_args(args)
         if parsed is None:
             return info_msg("参数格式无效。\n\n" + _HELP)
+        if parsed.get("_error"):
+            return info_msg(parsed["_error"])
 
         team_mode = parsed["team_mode"]
         team_name = parsed["team_name"]
         task = parsed["task"]
         members = parsed["members"]
+        custom_team_def = parsed.get("custom_team_def")
 
         if len(task) < 5:
             return info_msg(
@@ -123,14 +152,48 @@ class UGSciTeamMode(UGSciModeBase):
             for m in members
         )
 
+        # If a custom team definition is available, include its
+        # orchestration prompt and structured steps in the plan
+        # prompt so the controller follows the user-defined workflow.
+        extra_sections = ""
+        if custom_team_def:
+            orch_prompt = custom_team_def.get(
+                "orchestration_prompt", "",
+            )
+            if orch_prompt:
+                extra_sections += f"\n---\n\n## 编排说明\n\n{orch_prompt}\n"
+
+            steps = custom_team_def.get("steps", [])
+            if steps:
+                step_lines = []
+                for idx, step in enumerate(steps):
+                    agent = step.get("agentName", step.get("agent_name", ""))
+                    instr = step.get("instruction", "")
+                    pass_ctx = step.get(
+                        "passContext", step.get("pass_context", False),
+                    )
+                    ctx_note = (
+                        "（传递上一步的结果作为上下文）"
+                        if pass_ctx
+                        else "（独立执行，不传递上下文）"
+                    )
+                    step_lines.append(
+                        f"{idx + 1}. 向「{agent}」发送请求：{instr} {ctx_note}",
+                    )
+                step_text = "\n".join(step_lines)
+                extra_sections += (
+                    f"\n---\n\n## 执行步骤\n\n{step_text}\n"
+                )
+
         prompt = (
             f"UGSci 专家团已激活。\n"
             f"团队: {team_name}\n"
             f"模式: {team_mode}\n"
             f"任务: {task}\n"
             f"状态目录: {loop_dir}\n\n"
-            f"团队成员:\n{member_list}\n\n"
-            f"阶段: plan — 分析任务并创建任务分解计划。\n"
+            f"团队成员:\n{member_list}\n"
+            f"{extra_sections}"
+            f"\n阶段: plan — 分析任务并创建任务分解计划。\n"
             f"请先读取 {loop_dir}/state.json 确认工作流状态，"
             f"然后开始规划。"
         )
@@ -155,12 +218,19 @@ def _parse_args(raw: str) -> dict | None:
     """Parse /ugsci-team arguments.
 
     Supported formats:
-    1. ``<mode> <team_name> <task...>``
-    2. ``<team_name> <task...>``  (defaults to pipeline)
+    1. ``<mode> @<team_id> <task...>`` — custom team by ID
+    2. ``@<team_id> <task...>`` — custom team, defaults to pipeline
+    3. ``<mode> <team_name> <task...>`` — preset team by name
+    4. ``<team_name> <task...>`` — preset team, defaults to pipeline
 
-    Team names may contain spaces (e.g. "开发方案评审团队").
-    The parser first tries to match against known preset team names
-    to correctly split the team name from the task.
+    Custom teams are referenced via ``@<team_id>`` — a whitespace-free
+    token returned by ``POST /api/ugsci/team/custom``.  This avoids
+    the team-name-with-spaces parsing problem (BUG-004) because the
+    ID is always a single token.
+
+    Preset team names may contain spaces (e.g. "开发方案评审团队").
+    The parser tries longest preset-name match first, then falls
+    back to splitting on the first whitespace.
 
     Returns None on invalid input.
     """
@@ -182,14 +252,54 @@ def _parse_args(raw: str) -> dict | None:
     if not remaining:
         return None
 
-    # ── Step 2: Try to match a preset team name ───────────────────
+    # ── Step 2: Check for @-prefixed custom team ID ──────────────
+    if remaining.startswith("@"):
+        parts = remaining[1:].split(None, 1)
+        if len(parts) < 2:
+            return {"_error": "请提供任务描述。用法: /ugsci-team <mode> @<team_id> <task>"}
+        custom_team_id = parts[0]
+        task = parts[1]
+
+        from .custom_store import load_custom_team
+
+        team_def = load_custom_team(custom_team_id)
+        if team_def is None:
+            logger.warning(
+                "Custom team '@%s' not found in store",
+                custom_team_id,
+            )
+            return {
+                "_error": (
+                    f"自定义团队 '@{custom_team_id}' 不存在或已过期。"
+                    f"请重新发起团队任务。"
+                ),
+            }
+
+        members = [
+            {
+                "name": m.get("name", ""),
+                "role": m.get("role", ""),
+                "emoji": m.get("emoji", ""),
+            }
+            for m in team_def.get("members", [])
+        ]
+
+        return {
+            "team_mode": team_mode,
+            "team_name": team_def.get("name", custom_team_id),
+            "task": task,
+            "members": members,
+            "custom_team_def": team_def,
+        }
+
+    # ── Step 3: Try to match a preset team name ───────────────────
     # Preset team names may contain spaces, so we try longest match first.
     team_name, task = _split_team_name(remaining)
 
     if not team_name or not task:
         return None
 
-    # ── Step 3: Resolve members ────────────────────────────────────
+    # ── Step 4: Resolve members ────────────────────────────────────
     members = resolve_team_members(team_name)
 
     return {

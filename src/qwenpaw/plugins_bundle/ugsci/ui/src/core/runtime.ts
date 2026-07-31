@@ -48,11 +48,53 @@ export function authHeaders(
   };
 }
 
-const apiCache = new Map<string, { data: unknown; ts: number }>();
+interface CacheEntry {
+  data: unknown;
+  ts: number;
+  /** Agent ID this entry is scoped to (undefined for global resources). */
+  agentId?: string;
+}
+
+const apiCache = new Map<string, CacheEntry>();
 const API_CACHE_TTL = 15_000;
+
+/** Extract X-Agent-Id from request headers (case-insensitive lookup). */
+function extractAgentId(
+  headers?: Record<string, string> | Headers,
+): string {
+  if (!headers) return "";
+  if (headers instanceof Headers) {
+    return headers.get("X-Agent-Id") || headers.get("x-agent-id") || "";
+  }
+  // Plain object — check common casing
+  return headers["X-Agent-Id"] || headers["x-agent-id"] || "";
+}
+
+/** Build a cache key that includes method, path, and agent scope.
+ *  This prevents data cross-contamination between agents that access
+ *  the same API path with different X-Agent-Id headers. */
+function buildCacheKey(
+  method: string,
+  path: string,
+  agentId: string,
+): string {
+  return `${method}:${path}:${agentId}`;
+}
 
 export function clearApiCache(): void {
   apiCache.clear();
+}
+
+/** Clear cache entries scoped to a specific agent.
+ *  If no agentId is provided, clears ALL agent-scoped entries
+ *  (entries that were cached with an X-Agent-Id header).
+ *  Call this when the selected agent changes to ensure fresh data. */
+export function clearAgentCache(agentId?: string): void {
+  for (const [key, entry] of apiCache) {
+    if (agentId ? entry.agentId === agentId : !!entry.agentId) {
+      apiCache.delete(key);
+    }
+  }
 }
 
 export async function apiFetch<T>(
@@ -64,9 +106,26 @@ export async function apiFetch<T>(
     bypassCache?: boolean;
   };
 
-  if (method !== "GET") clearApiCache();
+  // Extract X-Agent-Id from request headers for cache scoping.
+  // This ensures requests with different agents don't share cache entries.
+  const agentId = extractAgentId(
+    fetchOptions.headers as Record<string, string> | undefined,
+  );
+  const cacheKey = buildCacheKey(method, path, agentId);
+
+  // Non-GET requests invalidate cache. If the mutation targets a specific
+  // agent (X-Agent-Id present), only clear that agent's scoped entries;
+  // otherwise clear everything (global mutation like skill pool download).
+  if (method !== "GET") {
+    if (agentId) {
+      clearAgentCache(agentId);
+    } else {
+      clearApiCache();
+    }
+  }
+
   if (method === "GET" && !bypassCache) {
-    const cached = apiCache.get(path);
+    const cached = apiCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < API_CACHE_TTL) {
       return cached.data as T;
     }
@@ -84,7 +143,11 @@ export async function apiFetch<T>(
 
   const data = (await response.json()) as T;
   if (method === "GET") {
-    apiCache.set(path, { data, ts: Date.now() });
+    apiCache.set(cacheKey, {
+      data,
+      ts: Date.now(),
+      agentId: agentId || undefined,
+    });
   }
   return data;
 }

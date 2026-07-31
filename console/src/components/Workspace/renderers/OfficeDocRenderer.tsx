@@ -33,12 +33,32 @@ const API_BASE = "/api/workspace";
  * Key: fileUrl, Value: { html, engine, timestamp }
  * Avoids re-converting the same file when switching tabs back and forth.
  * Entries expire after 5 minutes to handle file edits.
+ * Capped at 50 entries; stale entries are evicted on read.
  */
 const _convertCache = new Map<
   string,
   { html: string; engine: string; ts: number }
 >();
 const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const CACHE_MAX_SIZE = 50;
+
+/** Evict expired and overflow entries from the module-level cache. */
+function _evictConvertCache() {
+  const now = Date.now();
+  for (const [key, val] of _convertCache) {
+    if (now - val.ts >= CACHE_TTL) {
+      _convertCache.delete(key);
+    }
+  }
+  if (_convertCache.size > CACHE_MAX_SIZE) {
+    const sorted = [..._convertCache.entries()].sort(
+      (a, b) => a[1].ts - b[1].ts,
+    );
+    for (let i = 0; i < _convertCache.size - CACHE_MAX_SIZE; i++) {
+      _convertCache.delete(sorted[i][0]);
+    }
+  }
+}
 
 /** 判断是否为 OOXML 格式（可走前端解析） */
 function isOoxml(mime: string, ext?: string): boolean {
@@ -73,7 +93,9 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
       return;
     }
 
-    // Check cache first — avoids re-converting when switching tabs
+    // Check cache first — avoids re-converting when switching tabs.
+    // Eviction runs here so stale entries are cleaned up on every access.
+    _evictConvertCache();
     const cached = _convertCache.get(fileUrl);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       setHtmlContent(cached.html);
@@ -342,7 +364,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         title={artifact.title}
         sandbox={
           rendererEngine === "officecli"
-            ? "allow-scripts allow-same-origin"
+            ? "allow-scripts"
             : "allow-same-origin"
         }
         style={{ width: "100%", flex: 1, border: "none", background: "#fff" }}

@@ -1,18 +1,13 @@
-/**
- * Subscribe to workspace file-change SSE stream.
- *
- * Uses a module-level singleton so that multiple React components can call
- * `useWorkspaceWatch` without opening redundant SSE connections – only one
- * persistent connection is maintained and events are fanned out to all
- * registered listeners.
- *
- * Usage:
- *   useWorkspaceWatch((events) => { ... })
- */
-
-import { useEffect, useRef } from "react";
+/** Subscribe to the workspace file-change SSE stream for one Agent/project. */
+import { useEffect, useMemo, useRef } from "react";
 import { workspaceApi } from "../api/modules/workspace";
 import { buildAuthHeaders } from "../api/authHeaders";
+import { useAgentStore } from "../stores/agentStore";
+import { useCodingModeStore } from "../stores/codingModeStore";
+import {
+  makeWorkspaceFileCacheKey,
+  type WorkspaceFileScope,
+} from "../stores/codeFileCacheStore";
 
 export interface FileChangeEvent {
   change: "added" | "modified" | "deleted";
@@ -21,25 +16,31 @@ export interface FileChangeEvent {
 
 type FileChangeCallback = (events: FileChangeEvent[]) => void;
 
-// ---------------------------------------------------------------------------
-// Singleton SSE manager
-// ---------------------------------------------------------------------------
+interface WatchConnection {
+  scope: WorkspaceFileScope;
+  listeners: Set<FileChangeCallback>;
+  controller: AbortController;
+  running: boolean;
+}
 
-const _listeners = new Set<FileChangeCallback>();
-let _controller: AbortController | null = null;
-let _running = false;
+const connections = new Map<string, WatchConnection>();
 
-function _emit(events: FileChangeEvent[]) {
-  _listeners.forEach((cb) => {
+function scopeKey(scope: WorkspaceFileScope): string {
+  return makeWorkspaceFileCacheKey(scope, "<watch>");
+}
+
+function emit(connection: WatchConnection, events: FileChangeEvent[]) {
+  connection.listeners.forEach((callback) => {
     try {
-      cb(events);
+      callback(events);
     } catch {
-      // ignore listener errors
+      // A consumer failure must not stop the shared SSE connection.
     }
   });
 }
 
-async function _runLoop(signal: AbortSignal) {
+async function runLoop(connection: WatchConnection) {
+  const { signal } = connection.controller;
   const url = workspaceApi.getWatchUrl();
   let retryDelay = 1_000;
 
@@ -47,17 +48,17 @@ async function _runLoop(signal: AbortSignal) {
     try {
       const response = await fetch(url, {
         method: "GET",
-        headers: buildAuthHeaders(),
+        headers: buildAuthHeaders(connection.scope.agentId),
         signal,
       });
 
       if (!response.ok || !response.body) {
-        await _sleep(retryDelay);
+        await sleep(retryDelay);
         retryDelay = Math.min(retryDelay * 2, 30_000);
         continue;
       }
 
-      retryDelay = 1_000; // reset on healthy connection
+      retryDelay = 1_000;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -75,73 +76,89 @@ async function _runLoop(signal: AbortSignal) {
           const raw = line.slice(5).trim();
           if (!raw) continue;
           try {
-            const msg = JSON.parse(raw) as {
+            const message = JSON.parse(raw) as {
               type: string;
               events?: FileChangeEvent[];
             };
-            if (msg.type === "file_change" && msg.events) {
-              _emit(msg.events);
+            if (message.type === "file_change" && message.events) {
+              emit(connection, message.events);
             }
           } catch {
-            // ignore parse errors
+            // Ignore malformed SSE messages and keep the stream alive.
           }
         }
       }
-    } catch (err) {
+    } catch (error) {
       if (signal.aborted) break;
-      if (err instanceof DOMException && err.name === "AbortError") break;
-      await _sleep(retryDelay);
+      if (error instanceof DOMException && error.name === "AbortError") break;
+      await sleep(retryDelay);
       retryDelay = Math.min(retryDelay * 2, 30_000);
     }
   }
 
-  _running = false;
+  connection.running = false;
 }
 
-function _ensureConnected() {
-  if (_running) return;
-  _running = true;
-  _controller = new AbortController();
-  void _runLoop(_controller.signal);
+function ensureConnection(scope: WorkspaceFileScope): WatchConnection {
+  const key = scopeKey(scope);
+  const existing = connections.get(key);
+  if (existing) return existing;
+
+  const connection: WatchConnection = {
+    scope,
+    listeners: new Set(),
+    controller: new AbortController(),
+    running: true,
+  };
+  connections.set(key, connection);
+  void runLoop(connection);
+  return connection;
 }
 
-function _maybeDisconnect() {
-  if (_listeners.size === 0 && _controller) {
-    _controller.abort();
-    _controller = null;
-    _running = false;
-  }
+function releaseConnection(connection: WatchConnection) {
+  if (connection.listeners.size > 0) return;
+  connection.controller.abort();
+  connection.running = false;
+  connections.delete(scopeKey(connection.scope));
 }
 
-function _sleep(ms: number): Promise<void> {
+function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
-// ---------------------------------------------------------------------------
-// Hook
-// ---------------------------------------------------------------------------
 
 export function useWorkspaceWatch(
   onFileChange: FileChangeCallback,
   enabled = true,
+  scopeOverride?: WorkspaceFileScope,
 ): void {
-  // Stable ref so callers don't need to memoize the callback.
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const projectRoot = useCodingModeStore(
+    (state) => state.projectDirByAgent[selectedAgent],
+  );
+  const scope = useMemo<WorkspaceFileScope>(
+    () =>
+      scopeOverride ?? {
+        agentId: selectedAgent,
+        projectRoot,
+      },
+    [projectRoot, scopeOverride, selectedAgent],
+  );
+  const key = scopeKey(scope);
+
   const callbackRef = useRef<FileChangeCallback>(onFileChange);
   callbackRef.current = onFileChange;
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) return undefined;
 
-    // Proxy listener that always calls the latest callback via ref.
+    const connection = ensureConnection(scope);
     const listener: FileChangeCallback = (events) =>
       callbackRef.current(events);
-
-    _listeners.add(listener);
-    _ensureConnected();
+    connection.listeners.add(listener);
 
     return () => {
-      _listeners.delete(listener);
-      _maybeDisconnect();
+      connection.listeners.delete(listener);
+      releaseConnection(connection);
     };
-  }, [enabled]);
+  }, [enabled, key, scope]);
 }

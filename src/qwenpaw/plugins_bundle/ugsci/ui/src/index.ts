@@ -21,6 +21,7 @@ import {
   apiUrl,
   authHeaders,
   clearApiCache,
+  clearAgentCache,
   getHost,
 } from "./core/runtime";
 import { ExpertAvatar, TeamAvatar } from "./components/avatars";
@@ -28,6 +29,7 @@ import {
   buildTeamMessage,
   findAgentIdByName,
   loadCustomTeams,
+  registerCustomTeam,
   saveCustomTeams,
   sendTeamMessage,
   type ExpertTeam,
@@ -2299,12 +2301,61 @@ async function writeKnowledgeFile(
   agentId: string,
   filename: string,
   content: string,
-): Promise<void> {
-  await apiFetch(`/workspace/files/${encodeURIComponent(filename)}`, {
+): Promise<{ written: boolean; filename?: string }> {
+  return apiFetch(`/workspace/files/${encodeURIComponent(filename)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
     body: JSON.stringify({ content }),
   });
+}
+
+interface KnowledgeFileSaveResult {
+  written: boolean;
+  filename: string;
+  system_prompt_files: string[];
+}
+
+async function saveKnowledgeFile(
+  agentId: string,
+  filename: string,
+  content: string,
+  enable: boolean | null,
+): Promise<KnowledgeFileSaveResult> {
+  return apiFetch<KnowledgeFileSaveResult>("/workspace/prompt-files", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    body: JSON.stringify({ filename, content, enable }),
+  });
+}
+
+const WINDOWS_RESERVED_FILENAMES = new Set([
+  "CON",
+  "PRN",
+  "AUX",
+  "NUL",
+  ...Array.from({ length: 9 }, (_, index) => `COM${index + 1}`),
+  ...Array.from({ length: 9 }, (_, index) => `LPT${index + 1}`),
+]);
+
+export function normalizeKnowledgeFilename(value: string): string {
+  let filename = value.trim();
+  if (!filename) throw new Error("请输入文件名");
+  if (/[\\/]/.test(filename)) throw new Error("文件名不能包含路径分隔符");
+  if (/[<>:\"|?*\u0000-\u001f]/.test(filename)) {
+    throw new Error("文件名包含系统不支持的字符");
+  }
+  if (/[ .]$/.test(filename)) throw new Error("文件名不能以空格或句点结尾");
+  if (!filename.toLowerCase().endsWith(".md")) filename += ".md";
+  else filename = `${filename.slice(0, -3)}.md`;
+  const stem = filename.split(".", 1)[0].toUpperCase();
+  if (!filename.slice(0, -3)) throw new Error("文件名不能为空");
+  if (WINDOWS_RESERVED_FILENAMES.has(stem)) {
+    throw new Error("该文件名是系统保留名称，请更换");
+  }
+  if (new TextEncoder().encode(filename).length > 255) {
+    throw new Error("文件名过长");
+  }
+  return filename;
 }
 
 async function updateAgentSystemPromptFiles(
@@ -5806,7 +5857,7 @@ function KnowledgeBaseTab({
   onRefresh: () => void;
 }) {
   const React = getHost().React;
-  const { useState, useEffect, useCallback } = React;
+  const { useState, useEffect, useCallback, useRef } = React;
   const {
     List,
     Tag,
@@ -5818,6 +5869,8 @@ function KnowledgeBaseTab({
     Empty,
     message: antdMsg,
     Typography,
+    Segmented,
+    Alert,
   } = getHost().antd;
   const { FileTextOutlined, PlusOutlined, EditOutlined, ReloadOutlined } =
     getHost().antdIcons || {};
@@ -5833,17 +5886,22 @@ function KnowledgeBaseTab({
   const [editContent, setEditContent] = useState("");
   const [newFileName, setNewFileName] = useState("");
   const [saving, setSaving] = useState(false);
+  const [editorMode, setEditorMode] = useState<"source" | "preview">("source");
+  const loadRequestRef = useRef(0);
 
   const loadFiles = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
     setLoading(true);
     try {
       const data = await fetchKnowledgeFiles(agentId);
-      setFiles(data);
+      if (requestId === loadRequestRef.current) setFiles(data);
     } catch (err: any) {
-      antdMsg.error(err.message || "加载记忆文件失败");
-      setFiles([]);
+      if (requestId === loadRequestRef.current) {
+        antdMsg.error(err.message || "加载工作区文档失败");
+        setFiles([]);
+      }
     } finally {
-      setLoading(false);
+      if (requestId === loadRequestRef.current) setLoading(false);
     }
   }, [agentId]);
 
@@ -5888,6 +5946,7 @@ function KnowledgeBaseTab({
       );
       setEditingFile(filename);
       setEditContent(content.content || "");
+      setEditorMode("source");
       setEditModalOpen(true);
     } catch (err: any) {
       antdMsg.error(err.message || "读取文件失败");
@@ -5898,31 +5957,50 @@ function KnowledgeBaseTab({
     setEditingFile(null);
     setEditContent("");
     setNewFileName("");
+    setEditorMode("source");
     setEditModalOpen(true);
   };
 
   const handleSaveFile = async () => {
-    const filename = editingFile || newFileName.trim();
-    if (!filename) {
-      antdMsg.warning("请输入文件名");
+    let finalName: string;
+    try {
+      finalName = normalizeKnowledgeFilename(editingFile || newFileName);
+    } catch (err: any) {
+      antdMsg.warning(err.message || "文件名无效");
       return;
     }
-    const finalName = filename.endsWith(".md") ? filename : `${filename}.md`;
+    if (!editContent.trim()) {
+      antdMsg.warning("Markdown 文档不能为空");
+      return;
+    }
+    if (new TextEncoder().encode(editContent).length > 1024 * 1024) {
+      antdMsg.warning("Markdown 文档不能超过 1 MB");
+      return;
+    }
     setSaving(true);
     try {
-      await writeKnowledgeFile(agentId, finalName, editContent);
-      // Auto-enable the new file in system_prompt_files
-      if (!editingFile && !enabledFiles.includes(finalName)) {
-        const newList = [...enabledFiles, finalName];
-        setEnabledFiles(newList);
-        await updateAgentSystemPromptFiles(agentId, newList);
+      if (editingFile) {
+        await writeKnowledgeFile(agentId, finalName, editContent);
+      } else {
+        const result = await saveKnowledgeFile(
+          agentId,
+          finalName,
+          editContent,
+          true,
+        );
+        setEnabledFiles(result.system_prompt_files);
       }
       antdMsg.success("保存成功");
       setEditModalOpen(false);
-      loadFiles();
+      void loadFiles();
       onRefresh();
     } catch (err: any) {
-      antdMsg.error(err.message || "保存失败");
+      const detail = err?.message ? `：${err.message}` : "";
+      antdMsg.error(
+        editingFile
+          ? err?.message || "保存失败"
+          : `创建并挂载失败，服务端已回滚文件${detail}`,
+      );
     } finally {
       setSaving(false);
     }
@@ -5960,12 +6038,12 @@ function KnowledgeBaseTab({
         React.createElement(
           Text,
           { strong: true },
-          `记忆文件 (${files.length})`,
+          `工作区文档 (${files.length})`,
         ),
         React.createElement(
           Text,
           { type: "secondary", style: { fontSize: 12 } },
-          `· 已挂载 ${enabledFiles.length} 个到专家记忆`,
+          `· ${enabledFiles.length} 个已挂载到系统提示`,
         ),
       ),
       React.createElement(
@@ -5990,13 +6068,13 @@ function KnowledgeBaseTab({
             icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
             onClick: handleNewFile,
           },
-          "新建记忆文件",
+          "新建 Markdown 文档",
         ),
       ),
     ),
     files.length === 0
       ? React.createElement(Empty, {
-          description: "暂无记忆文件，点击「新建记忆文件」添加",
+          description: "暂无 Markdown 文档，点击「新建 Markdown 文档」添加",
           image: Empty.PRESENTED_IMAGE_SIMPLE,
         })
       : React.createElement(List, {
@@ -6048,7 +6126,7 @@ function KnowledgeBaseTab({
                     : React.createElement(
                         Tag,
                         { color: "cyan", style: { fontSize: 10 } },
-                        "记忆库",
+                        "工作文档",
                       ),
                 ),
                 description: React.createElement(
@@ -6072,7 +6150,7 @@ function KnowledgeBaseTab({
       {
         open: editModalOpen,
         onCancel: () => setEditModalOpen(false),
-        title: editingFile ? `编辑 ${editingFile}` : "新建记忆文件",
+        title: editingFile ? `编辑 ${editingFile}` : "新建 Markdown 文档",
         width: 700,
         onOk: handleSaveFile,
         confirmLoading: saving,
@@ -6090,14 +6168,65 @@ function KnowledgeBaseTab({
             }),
           )
         : null,
-      React.createElement(Input.TextArea, {
-        value: editContent,
-        onChange: (e: any) => setEditContent(e.target.value),
-        rows: 12,
-        placeholder:
-          "输入记忆内容（支持 Markdown 格式）...\n\n例如：\n# 某区块油藏基础参数\n\n- 地层压力: 25 MPa\n- 地层温度: 85°C\n- 原油密度: 0.85 g/cm³",
-        style: { fontFamily: "monospace", fontSize: 13 },
-      }),
+      React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            gap: 12,
+            marginBottom: 10,
+          },
+        },
+        React.createElement(Segmented, {
+          size: "small",
+          value: editorMode,
+          options: [
+            { label: "源码", value: "source" },
+            { label: "预览", value: "preview" },
+          ],
+          onChange: (value: string | number) =>
+            setEditorMode(value as "source" | "preview"),
+        }),
+        React.createElement(
+          Text,
+          { type: "secondary", style: { fontSize: 12 } },
+          `${editContent.length} 字符 · 约 ${Math.ceil(editContent.length / 4)} tokens · ${editingFile && enabledFiles.includes(editingFile) ? "已挂载" : editingFile ? "未挂载" : "保存后自动挂载"}`,
+        ),
+      ),
+      !editContent.trim()
+        ? React.createElement(Alert, {
+            type: "warning",
+            showIcon: true,
+            message: "文档内容为空，保存前需要填写 Markdown 内容",
+            style: { marginBottom: 10 },
+          })
+        : null,
+      editorMode === "source"
+        ? React.createElement(Input.TextArea, {
+            value: editContent,
+            onChange: (e: any) => setEditContent(e.target.value),
+            rows: 14,
+            placeholder:
+              "输入 Markdown 内容...\n\n例如：\n# 某区块油藏基础参数\n\n- 地层压力: 25 MPa\n- 地层温度: 85°C\n- 原油密度: 0.85 g/cm³",
+            style: { fontFamily: "monospace", fontSize: 13 },
+          })
+        : React.createElement(
+            "div",
+            {
+              style: {
+                minHeight: 320,
+                maxHeight: 480,
+                overflow: "auto",
+                padding: "12px 16px",
+                border: "1px solid #d9d9d9",
+                borderRadius: 6,
+                background: "var(--ant-color-bg-container, #fff)",
+              },
+            },
+            renderMarkdown(editContent, React),
+          ),
     ),
   );
 }
@@ -6366,8 +6495,9 @@ function ExpertCenterPage() {
       // Check if task template has placeholders
       const hasPlaceholders = /\{.+?\}/.test(team.taskTemplate);
       if (hasPlaceholders) {
-        // Open modal for user to fill in placeholders
-        setTeamLaunchInput("");
+        // Open modal pre-filled with the template so the user can
+        // directly edit placeholders {参数名} inline.
+        setTeamLaunchInput(team.taskTemplate);
         setTeamLaunchModal(team);
         return;
       }
@@ -6384,9 +6514,20 @@ function ExpertCenterPage() {
         // Build the task text (either user-filled or template)
         const task = taskText || team.taskTemplate;
 
+        // For custom teams, register the full definition on the backend
+        // first so members, steps and orchestration prompt are available.
+        // The backend returns a whitespace-free team_id that we reference
+        // as @<team_id> in the slash command, avoiding the name-with-spaces
+        // parsing problem (BUG-004).
+        let teamRef = team.name;
+        if (team.custom) {
+          const teamId = await registerCustomTeam(team);
+          teamRef = `@${teamId}`;
+        }
+
         // Construct the /ugsci-team slash command
-        // Format: /ugsci-team <mode> <team_name> <task...>
-        const command = `/ugsci-team ${team.mode} ${team.name} ${task}`;
+        // Format: /ugsci-team <mode> <team_ref> <task...>
+        const command = `/ugsci-team ${team.mode} ${teamRef} ${task}`;
 
         // Set coordinator as selected agent (becomes the workflow controller)
         const host = getHost();
@@ -6396,15 +6537,22 @@ function ExpertCenterPage() {
 
         // Send the slash command via console chat API
         // The mode handler will activate the gate and rewrite the message
-        await sendTeamMessage(coordinatorId, command);
+        const chatId = await sendTeamMessage(
+          coordinatorId,
+          command,
+          team.name,
+        );
 
         antdMsg.success(
           `OMP 工作流已启动：${team.name}（${team.mode}模式）`,
         );
         setTeamLaunchModal(null);
 
-        // Navigate to chat page
-        navigateToExpert("/chat");
+        // Navigate to chat page with the specific chat ID so the user
+        // lands on the session where the workflow was started.
+        // BUG-008: previously navigated to /chat (no ID), which loaded
+        // a stale session instead of the one just created.
+        navigateToExpert(`/chat/${chatId}`);
       } catch (err: any) {
         antdMsg.error(err.message || "发起团队任务失败");
       } finally {
@@ -6640,45 +6788,17 @@ function ExpertCenterPage() {
                 antdMsg.error("无法找到协调者专家");
                 return;
               }
-              // Build final task text, replacing placeholders with user input
-              let taskText = teamLaunchModal.taskTemplate;
-              if (teamLaunchInput.trim()) {
-                // User provided free-form input — use as-is for the task description
-                taskText = teamLaunchInput.trim();
-              }
+              // The textarea is pre-filled with the task template.
+              // The user edits it directly (replacing {占位符} as needed),
+              // so the edited text IS the final task — no separate override.
+              const taskText =
+                teamLaunchInput.trim() || teamLaunchModal.taskTemplate;
               doLaunchTeam(teamLaunchModal, coordinatorId, taskText);
             },
             confirmLoading: teamLaunching,
             okText: "发起任务",
             width: 600,
           },
-          React.createElement(
-            "div",
-            { style: { marginBottom: 12 } },
-            React.createElement(
-              Text,
-              {
-                type: "secondary",
-                style: { fontSize: 12, display: "block", marginBottom: 8 },
-              },
-              "任务模板（包含占位符 {参数名}，可在下方编辑替换）：",
-            ),
-            React.createElement(
-              "div",
-              {
-                style: {
-                  padding: 12,
-                  background: "#f5f5f5",
-                  borderRadius: 6,
-                  fontSize: 12,
-                  fontFamily: "monospace",
-                  whiteSpace: "pre-wrap",
-                  lineHeight: 1.6,
-                },
-              },
-              teamLaunchModal.taskTemplate,
-            ),
-          ),
           React.createElement(
             "div",
             null,
@@ -6688,14 +6808,13 @@ function ExpertCenterPage() {
                 type: "secondary",
                 style: { fontSize: 12, display: "block", marginBottom: 8 },
               },
-              "输入具体任务描述（替换上面的占位符内容）：",
+              "任务内容（请替换 {参数名} 等占位符后发起）：",
             ),
             React.createElement(Input.TextArea, {
               value: teamLaunchInput,
               onChange: (e: any) => setTeamLaunchInput(e.target.value),
-              rows: 5,
-              placeholder: teamLaunchModal.taskTemplate,
-              style: { fontSize: 13 },
+              rows: 8,
+              style: { fontSize: 13, fontFamily: "monospace" },
             }),
           ),
           React.createElement(
@@ -8496,6 +8615,12 @@ function CapabilityCenterPage() {
   const selectedAgentInfo = useSelectedAgent ? useSelectedAgent() : null;
   const currentAgentId = selectedAgentInfo?.id || "default";
 
+  // Clear agent-scoped cache when the selected agent changes to ensure
+  // this page always loads fresh data for the current agent.
+  useEffect(() => {
+    clearAgentCache();
+  }, [currentAgentId]);
+
   const [mcps, setMcps] = useState<MCPClientInfo[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchText, setSearchText] = useState("");
@@ -10097,6 +10222,12 @@ function SkillCenterPage() {
   const useSelectedAgent = host.useSelectedAgent;
   const selectedAgentInfo = useSelectedAgent ? useSelectedAgent() : null;
   const currentAgentId = selectedAgentInfo?.id || "default";
+
+  // Clear agent-scoped cache when the selected agent changes to ensure
+  // this page always loads fresh data for the current agent.
+  useEffect(() => {
+    clearAgentCache();
+  }, [currentAgentId]);
 
   // Also fetch agent list to resolve names
   const [agents, setAgents] = useState<AgentSummary[]>([]);
@@ -13773,6 +13904,11 @@ function WelcomePromptsInjector() {
   useEffect(() => {
     if (lastInjectedRef.current === agentId) return;
     lastInjectedRef.current = agentId;
+
+    // Clear all agent-scoped cache entries when the selected agent changes.
+    // This prevents stale data from the previous agent from being served
+    // within the TTL window after a switch.
+    clearAgentCache();
 
     const locale = detectLocale();
     const description = UGSCI_DESCRIPTIONS[locale] || UGSCI_DESCRIPTIONS.en;

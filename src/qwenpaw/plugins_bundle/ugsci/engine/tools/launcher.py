@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import subprocess
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -21,6 +22,40 @@ from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
+
+
+def _ensure_path_in_workspace(
+    path: Path,
+    working_dir: str = "",
+) -> Path:
+    """Resolve *path* and verify it is within the agent workspace.
+
+    BUG-001: Without this check, an agent can pass arbitrary absolute
+    paths to ``working_dir`` or ``deck_file``, writing files and starting
+    processes outside the user's expected workspace boundary.
+
+    Returns the resolved absolute path on success.
+    Raises ``PermissionError`` if the path escapes the workspace.
+    """
+    resolved = path.expanduser().resolve()
+    # Determine the workspace root to check containment against.
+    ws_root: Path
+    if working_dir:
+        ws_root = Path(working_dir).expanduser().resolve()
+    else:
+        try:
+            from qwenpaw.config.context import get_current_workspace_dir
+            ws_root = get_current_workspace_dir().resolve()
+        except Exception:
+            ws_root = Path(os.getcwd()).resolve()
+    try:
+        resolved.relative_to(ws_root)
+    except ValueError as exc:
+        raise PermissionError(
+            f"Path '{resolved}' is outside the workspace '{ws_root}'. "
+            f"Simulation tools may only operate within the workspace.",
+        ) from exc
+    return resolved
 
 # ---------------------------------------------------------------------------
 # Shared job state (imported by monitor / result_reader / analyzer)
@@ -35,7 +70,7 @@ class SimJob:
     deck_file: str
     working_dir: str
     pid: int
-    status: str = "running"  # running | completed | failed | timeout | error
+    status: str = "running"  # running | completed | failed | timeout | error | interrupted
     start_time: float = 0.0  # loop.time() — for in-process elapsed calc
     start_ts: float = 0.0  # time.time() — wall clock, survives restart
     end_time: float | None = None  # loop.time()
@@ -44,6 +79,8 @@ class SimJob:
     returncode: int | None = None
     error: str | None = None
     process: Any | None = None  # asyncio.subprocess.Process
+    # BUG-002: file handle for redirected stdout/stderr log
+    _log_file: Any = field(default=None, repr=False)
     extra: dict[str, Any] = field(default_factory=dict)
 
 
@@ -106,10 +143,15 @@ async def launch_simulation(
     work_path = Path(working_dir).expanduser().resolve()
     work_path.mkdir(parents=True, exist_ok=True)
 
+    # BUG-001: Verify working directory is within the workspace.
+    _ensure_path_in_workspace(work_path, working_dir)
+
     # ── Resolve deck file path ───────────────────────────────────────
     deck_path = Path(deck_file)
     if not deck_path.is_absolute():
         deck_path = work_path / deck_file
+    # BUG-001: Verify deck file is within the workspace.
+    _ensure_path_in_workspace(deck_path, working_dir)
     if not deck_path.exists():
         return ToolChunk(
             is_last=True,
@@ -179,6 +221,13 @@ async def launch_simulation(
     output_file = str(deck_path.with_suffix(adapter.log_extension))
     command = adapter.build_command(executable, str(deck_path), output_file)
 
+    # ── Prepare log file for stdout/stderr ───────────────────────────
+    # BUG-002: Using PIPE without draining causes deadlock on high
+    # simulator output.  Redirect to log files in the working directory
+    # instead so the OS handles buffering and we can read them later.
+    log_path = work_path / f"{deck_path.stem}.sim.log"
+    log_file = open(log_path, "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+
     # ── Start subprocess ─────────────────────────────────────────────
     env = {**os.environ}
     if license_env:
@@ -188,8 +237,8 @@ async def launch_simulation(
         proc = await asyncio.create_subprocess_exec(
             *command,
             cwd=str(work_path),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
             env=env,
         )
     except Exception as exc:
@@ -225,6 +274,8 @@ async def launch_simulation(
         start_ts=wall_now,
         timeout=timeout,
         process=proc,
+        # BUG-002: store log file handle so _monitor_job can close it
+        _log_file=log_file,
     )
     _sim_jobs[job_id] = job
 
@@ -349,9 +400,23 @@ def _recover_job(job_id: str) -> SimJob | None:
                 return job
 
         if job.pid > 0 and not job_store.is_pid_alive(job.pid):
-            # Process has terminated — mark as completed (optimistic;
-            # Agent should verify with read_simulation_results)
-            job.status = "completed"
+            # Process is no longer running. Without a process handle we
+            # cannot determine the real return code.
+            #
+            # If the store has a return code from a prior _monitor_job
+            # completion, trust it. Otherwise mark as 'interrupted' —
+            # the Agent must verify results manually.
+            #
+            # BUG-007: never optimistically mark as 'completed' when
+            # we lack a credible exit code. A dead PID could mean
+            # crash, OOM, user-kill, or non-zero exit — all of which
+            # would be falsely presented as success.
+            if job.returncode is not None:
+                job.status = (
+                    "completed" if job.returncode == 0 else "failed"
+                )
+            else:
+                job.status = "interrupted"
             job.end_ts = time.time()
             job_store.update_job_status(
                 job_id,
@@ -359,14 +424,35 @@ def _recover_job(job_id: str) -> SimJob | None:
                 end_ts=job.end_ts,
             )
             logger.info(
-                "Recovered job %s: process dead, marked as completed",
-                job_id,
+                "Recovered job %s: process dead, marked as %s "
+                "(returncode=%s)",
+                job_id, job.status, job.returncode,
             )
         elif job.pid > 0:
-            logger.info(
-                "Recovered job %s: process still running (pid=%d)",
-                job_id, job.pid,
-            )
+            # PID is alive — verify it's the same process to detect
+            # PID reuse (BUG-007). If we can't confirm identity, be
+            # safe and mark as 'interrupted'.
+            if job_store.is_pid_ours(job.pid, job.start_ts,
+                                     job.deck_file):
+                logger.info(
+                    "Recovered job %s: process still running "
+                    "(pid=%d)",
+                    job_id, job.pid,
+                )
+            else:
+                job.status = "interrupted"
+                job.end_ts = time.time()
+                job_store.update_job_status(
+                    job_id,
+                    job.status,
+                    end_ts=job.end_ts,
+                )
+                logger.warning(
+                    "Recovered job %s: pid=%d is alive but does not "
+                    "match original process (PID reuse suspected), "
+                    "marked as interrupted",
+                    job_id, job.pid,
+                )
         else:
             logger.info(
                 "Recovered job %s: status=%s (no PID)",
@@ -419,12 +505,6 @@ async def _monitor_job(job_id: str) -> None:
     proc = job.process
 
     try:
-        loop = asyncio.get_running_loop()
-        mono_now = loop.time()
-    except RuntimeError:
-        mono_now = time.time()
-
-    try:
         await asyncio.wait_for(proc.wait(), timeout=job.timeout)
         job.returncode = proc.returncode
         job.status = "completed" if proc.returncode == 0 else "failed"
@@ -438,8 +518,26 @@ async def _monitor_job(job_id: str) -> None:
     except Exception as exc:
         job.status = "error"
         job.error = str(exc)
+    finally:
+        # BUG-002: Close the log file handle now that the process is
+        # done, whether it exited normally, timed out, or errored.
+        # The handle is stored on SimJob so _monitor_job can access
+        # it even though it runs as a separate asyncio task.
+        lf = getattr(job, "_log_file", None)
+        if lf is not None:
+            try:
+                lf.close()
+            except Exception:
+                pass
+            job._log_file = None  # type: ignore[union-assign]
 
-    job.end_time = mono_now
+    # Record the monotonic end time *after* the process has finished so
+    # that duration calculations (end_time - start_time) are correct.
+    try:
+        loop = asyncio.get_running_loop()
+        job.end_time = loop.time()
+    except RuntimeError:
+        job.end_time = time.time()
     job.end_ts = time.time()
 
     # ── Update persisted status ──────────────────────────────────────

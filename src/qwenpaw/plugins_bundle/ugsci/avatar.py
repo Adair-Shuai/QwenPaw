@@ -27,8 +27,19 @@ class AvatarService:
         self.plugin_dir = plugin_dir
 
     def resource_dir(self) -> Path:
-        """Return the shared avatar cache directory."""
-        directory = Path.home() / ".qwenpaw" / "workspaces" / "default" / "resource"
+        """Return the shared avatar cache directory.
+
+        Uses QwenPaw's ``WORKING_DIR`` which respects
+        ``QWENPAW_WORKING_DIR`` env var and the ``~/.copaw`` legacy
+        path, instead of hardcoding ``~/.qwenpaw`` (BUG-012).
+        """
+        try:
+            from qwenpaw.constant import WORKING_DIR
+
+            base = Path(WORKING_DIR)
+        except Exception:
+            base = Path.home() / ".qwenpaw"
+        directory = base / "workspaces" / "default" / "resource"
         directory.mkdir(parents=True, exist_ok=True)
         return directory
 

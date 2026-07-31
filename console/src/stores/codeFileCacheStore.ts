@@ -1,7 +1,7 @@
 /**
  * In-memory cache for Coding Mode file contents.
  *
- *   • Keyed by relative file path (the same path the backend uses).
+ *   • Keyed by Agent + coding project root + relative file path.
  *   • LRU-bounded so a marathon session doesn't bloat heap.
  *   • NOT persisted — file contents must never spill to localStorage.
  *   • Invalidated by the SSE workspace watcher when the file is modified
@@ -23,13 +23,43 @@ interface CacheEntry {
   touchedAt: number;
 }
 
+export interface WorkspaceFileScope {
+  agentId: string;
+  projectRoot: string | null | undefined;
+}
+
+function normalizeScopePart(value: string | null | undefined): string {
+  if (!value) return "<default>";
+  return value.replace(/\\/g, "/").replace(/\/+$/, "") || "<default>";
+}
+
+function normalizeFilePath(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "");
+}
+
+export function makeWorkspaceFileCacheKey(
+  scope: WorkspaceFileScope,
+  path: string,
+): string {
+  return [
+    scope.agentId || "default",
+    normalizeScopePart(scope.projectRoot),
+    normalizeFilePath(path),
+  ].join("\0");
+}
+
 interface CodeFileCacheState {
   entries: Map<string, CacheEntry>;
   counter: number;
 
-  get: (path: string) => CacheEntry | undefined;
-  set: (path: string, content: string, etag: string | null) => void;
-  invalidate: (path: string) => void;
+  get: (scope: WorkspaceFileScope, path: string) => CacheEntry | undefined;
+  set: (
+    scope: WorkspaceFileScope,
+    path: string,
+    content: string,
+    etag: string | null,
+  ) => void;
+  invalidate: (scope: WorkspaceFileScope, path: string) => void;
   clear: () => void;
 }
 
@@ -37,19 +67,23 @@ export const useCodeFileCacheStore = create<CodeFileCacheState>((set, get) => ({
   entries: new Map(),
   counter: 0,
 
-  get: (path) => {
-    const entry = get().entries.get(path);
+  get: (scope, path) => {
+    const entry = get().entries.get(makeWorkspaceFileCacheKey(scope, path));
     if (!entry) return undefined;
     // Bump touchedAt on read so LRU reflects access patterns
     entry.touchedAt = ++get().counter;
     return entry;
   },
 
-  set: (path, content, etag) => {
+  set: (scope, path, content, etag) => {
     set((state) => {
       const next = new Map(state.entries);
       const newCounter = state.counter + 1;
-      next.set(path, { content, etag, touchedAt: newCounter });
+      next.set(makeWorkspaceFileCacheKey(scope, path), {
+        content,
+        etag,
+        touchedAt: newCounter,
+      });
 
       // LRU eviction
       if (next.size > MAX_ENTRIES) {
@@ -68,11 +102,12 @@ export const useCodeFileCacheStore = create<CodeFileCacheState>((set, get) => ({
     });
   },
 
-  invalidate: (path) => {
+  invalidate: (scope, path) => {
     set((state) => {
-      if (!state.entries.has(path)) return state;
+      const key = makeWorkspaceFileCacheKey(scope, path);
+      if (!state.entries.has(key)) return state;
       const next = new Map(state.entries);
-      next.delete(path);
+      next.delete(key);
       return { entries: next };
     });
   },

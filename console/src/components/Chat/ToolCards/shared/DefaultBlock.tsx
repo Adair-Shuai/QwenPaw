@@ -26,6 +26,8 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { copyText } from "@/utils/clipboard";
 import { looksLikeMarkdown } from "./utils";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
+import { useAgentStore } from "@/stores/agentStore";
+import { useProjectDir } from "@/stores/codingModeStore";
 import styles from "./toolCards.module.less";
 
 export interface DefaultBlockProps {
@@ -132,6 +134,11 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
     () => (declared || isMarkdown ? null : tryParseJson(head)),
     [declared, head, isMarkdown],
   );
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const { projectDir } = useProjectDir();
+  const workspaceSessionId = useWorkspaceStore(
+    (state) => state.currentSessionId,
+  );
 
   // When workspaceTitle is provided, hide inline content by default
   const contentHidden = hideContent ?? !!workspaceTitle;
@@ -150,14 +157,27 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
     if (!content) return;
     const mimeType = detectMimeType(content, workspaceExtension);
     useWorkspaceStore.getState().openArtifact({
-      id: `block-${workspaceTitle || title}-${Date.now()}`,
+      id: `block-${workspaceSessionId}-${
+        workspaceTitle || title
+      }-${Date.now()}`,
       title: workspaceTitle || title,
       source: "tool_call",
       mimeType,
       extension: workspaceExtension,
       textContent: content,
+      sessionId: workspaceSessionId,
+      agentId: selectedAgent,
+      projectRoot: projectDir ?? null,
     });
-  }, [content, workspaceTitle, title, workspaceExtension]);
+  }, [
+    content,
+    projectDir,
+    selectedAgent,
+    workspaceExtension,
+    workspaceSessionId,
+    workspaceTitle,
+    title,
+  ]);
 
   const renderContent = () => {
     if (declared) {

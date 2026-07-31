@@ -8,17 +8,16 @@
  *   • csv    – parsed table
  */
 
-import { useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import { useMemo } from "react";
+import type { ComponentPropsWithoutRef } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
-import { invoke } from "@tauri-apps/api/core";
-import { workspaceApi } from "../../api/modules/workspace";
-import { buildAuthHeaders } from "../../api/authHeaders";
-import { isDesktopTauriRuntime } from "../../utils/openExternalLink";
 import { ExternalMarkdownLink } from "../../components/Markdown/externalLinkComponents";
 import { useAgentStore } from "../../stores/agentStore";
+import { useAuthenticatedWorkspaceBlob } from "../../hooks/useAuthenticatedWorkspaceBlob";
+import { resolveWorkspaceMarkdownTarget } from "../../utils/workspaceMarkdownLinks";
 import styles from "./FilePreview.module.less";
 
 // ---------------------------------------------------------------------------
@@ -55,115 +54,70 @@ export function isPreviewable(filePath: string): boolean {
 // CSV parser (no external dep)
 // ---------------------------------------------------------------------------
 
+/**
+ * RFC 4180-compliant CSV parser (character-level state machine).
+ *
+ * Handles quoted fields that contain newlines, commas, and escaped
+ * double-quotes ("") — cases the old line-split approach broke on.
+ *
+ * Supported line endings: \n (Unix), \r\n (Windows), \r (old Mac).
+ */
 function parseCsv(raw: string): string[][] {
-  const lines = raw.trimEnd().split(/\r?\n/);
-  return lines.map((line) => {
-    const cells: string[] = [];
-    let cur = "";
-    let inQuote = false;
-    for (let i = 0; i < line.length; i++) {
-      const ch = line[i];
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let inQuote = false;
+
+  for (let i = 0; i < raw.length; i++) {
+    const ch = raw[i];
+
+    if (inQuote) {
       if (ch === '"') {
-        if (inQuote && line[i + 1] === '"') {
-          cur += '"';
+        if (raw[i + 1] === '"') {
+          // Escaped quote inside a quoted field
+          cell += '"';
           i++;
         } else {
-          inQuote = !inQuote;
+          // End of quoted field
+          inQuote = false;
         }
-      } else if (ch === "," && !inQuote) {
-        cells.push(cur);
-        cur = "";
       } else {
-        cur += ch;
+        // Everything inside quotes — including newlines and commas
+        cell += ch;
+      }
+    } else {
+      if (ch === '"') {
+        inQuote = true;
+      } else if (ch === ",") {
+        row.push(cell);
+        cell = "";
+      } else if (ch === "\r") {
+        // \r\n (Windows) or \r alone (old Mac) — line break
+        row.push(cell);
+        cell = "";
+        rows.push(row);
+        row = [];
+        // Skip the \n in \r\n pairs
+        if (raw[i + 1] === "\n") i++;
+      } else if (ch === "\n") {
+        // \n alone (Unix) — line break
+        row.push(cell);
+        cell = "";
+        rows.push(row);
+        row = [];
+      } else {
+        cell += ch;
       }
     }
-    cells.push(cur);
-    return cells;
-  });
-}
+  }
 
-// ---------------------------------------------------------------------------
-// Authenticated blob loader — browser-native <img>/<embed> won't send
-// X-Agent-Id, so we fetch with headers and create an object URL.
-//
-// In Tauri desktop mode, reads the file directly from disk via a native
-// command so binary previews work offline (no backend HTTP required).
-// ---------------------------------------------------------------------------
+  // Flush the last row if there is pending content
+  if (cell !== "" || row.length > 0) {
+    row.push(cell);
+    rows.push(row);
+  }
 
-function useAuthBlobUrl(filePath: string): string | null {
-  const [blobUrl, setBlobUrl] = useState<string | null>(null);
-  const selectedAgent = useAgentStore((state) => state.selectedAgent);
-
-  useEffect(() => {
-    let revoked = false;
-
-    const loadBlob = async (): Promise<Blob | null> => {
-      // Tauri: read file directly from disk for offline support
-      if (isDesktopTauriRuntime()) {
-        try {
-          const response = await invoke<ArrayBuffer | number[]>(
-            "read_workspace_binary_file",
-            {
-              filePath,
-              agentId: selectedAgent,
-            },
-          );
-          const mimeType = guessMimeType(filePath);
-          // Tauri 2.11.1 on macOS may serialize a raw Vec<u8> as number[]
-          // instead of ArrayBuffer. Normalize both shapes into a Uint8Array
-          // so Blob construction uses the actual bytes, not a string join.
-          const bytes = Array.isArray(response)
-            ? new Uint8Array(response)
-            : new Uint8Array(response);
-          return new Blob([bytes], { type: mimeType });
-        } catch {
-          // Fall through to HTTP fetch as fallback
-        }
-      }
-
-      // Browser / online: fetch via backend API with auth headers
-      const url = workspaceApi.getBinaryFileUrl(filePath);
-      const res = await fetch(url, { headers: buildAuthHeaders() });
-      if (!res.ok) throw new Error(`${res.status}`);
-      return res.blob();
-    };
-
-    loadBlob()
-      .then((blob) => {
-        if (revoked || !blob) return;
-        setBlobUrl(URL.createObjectURL(blob));
-      })
-      .catch(() => {
-        if (!revoked) setBlobUrl(null);
-      });
-
-    return () => {
-      revoked = true;
-      setBlobUrl((prev) => {
-        if (prev) URL.revokeObjectURL(prev);
-        return null;
-      });
-    };
-  }, [filePath, selectedAgent]);
-
-  return blobUrl;
-}
-
-/** Guess a MIME type from the file extension for blob creation. */
-function guessMimeType(filePath: string): string {
-  const ext = filePath.split(".").pop()?.toLowerCase() ?? "";
-  const mimeMap: Record<string, string> = {
-    png: "image/png",
-    jpg: "image/jpeg",
-    jpeg: "image/jpeg",
-    gif: "image/gif",
-    webp: "image/webp",
-    svg: "image/svg+xml",
-    ico: "image/x-icon",
-    bmp: "image/bmp",
-    pdf: "application/pdf",
-  };
-  return mimeMap[ext] ?? "application/octet-stream";
+  return rows;
 }
 
 // ---------------------------------------------------------------------------
@@ -171,7 +125,8 @@ function guessMimeType(filePath: string): string {
 // ---------------------------------------------------------------------------
 
 function ImagePreview({ filePath }: { filePath: string }) {
-  const blobUrl = useAuthBlobUrl(filePath);
+  const agentId = useAgentStore((state) => state.selectedAgent);
+  const blobUrl = useAuthenticatedWorkspaceBlob(filePath, agentId);
   if (!blobUrl) return null;
   return (
     <div className={styles.imageWrap}>
@@ -185,7 +140,8 @@ function ImagePreview({ filePath }: { filePath: string }) {
 }
 
 function PdfPreview({ filePath }: { filePath: string }) {
-  const blobUrl = useAuthBlobUrl(filePath);
+  const agentId = useAgentStore((state) => state.selectedAgent);
+  const blobUrl = useAuthenticatedWorkspaceBlob(filePath, agentId);
   if (!blobUrl) return null;
   return (
     <embed
@@ -197,12 +153,22 @@ function PdfPreview({ filePath }: { filePath: string }) {
   );
 }
 
-const markdownComponents = {
-  a: ExternalMarkdownLink,
+const markdownCodeComponents: Components = {
   pre({ children }: { children?: React.ReactNode }) {
     return <>{children}</>;
   },
-  code({ node: _node, inline: _inline, className, children, ...rest }: any) {
+  code({
+    node,
+    inline,
+    className,
+    children,
+    ...rest
+  }: ComponentPropsWithoutRef<"code"> & {
+    node?: unknown;
+    inline?: boolean;
+  }) {
+    void node;
+    void inline;
     const match = /language-([\w-]+)/.exec(className || "");
     const codeText = String(children).replace(/\n$/, "");
     if (match) {
@@ -229,13 +195,90 @@ const markdownComponents = {
   },
 };
 
-function MarkdownPreview({ content }: { content: string }) {
+interface MarkdownPreviewProps {
+  filePath: string;
+  content: string;
+  onOpenWorkspaceFile?: (path: string) => void;
+}
+
+function MarkdownPreview({
+  filePath,
+  content,
+  onOpenWorkspaceFile,
+}: MarkdownPreviewProps) {
+  const agentId = useAgentStore((state) => state.selectedAgent);
+  const components = useMemo<Components>(() => {
+    const WorkspaceImage = ({
+      node,
+      src,
+      alt,
+      ...props
+    }: ComponentPropsWithoutRef<"img"> & { node?: unknown }) => {
+      void node;
+      const target = src
+        ? resolveWorkspaceMarkdownTarget(src, filePath)
+        : { kind: "invalid" as const };
+      const blobUrl = useAuthenticatedWorkspaceBlob(
+        target.kind === "workspace" ? target.path : null,
+        agentId,
+      );
+
+      if (target.kind === "external") {
+        return <img src={target.href} alt={alt} {...props} />;
+      }
+      if (target.kind !== "workspace") return <span>{alt}</span>;
+      return blobUrl ? <img src={blobUrl} alt={alt} {...props} /> : null;
+    };
+
+    const WorkspaceLink = ({
+      node,
+      href,
+      children,
+      ...props
+    }: ComponentPropsWithoutRef<"a"> & { node?: unknown }) => {
+      void node;
+      const target = href
+        ? resolveWorkspaceMarkdownTarget(href, filePath)
+        : { kind: "invalid" as const };
+      if (target.kind === "external") {
+        return (
+          <ExternalMarkdownLink href={target.href} {...props}>
+            {children}
+          </ExternalMarkdownLink>
+        );
+      }
+      if (target.kind === "anchor") {
+        return (
+          <a href={target.href} {...props}>
+            {children}
+          </a>
+        );
+      }
+      if (target.kind !== "workspace") return <span>{children}</span>;
+      return (
+        <a
+          href={target.path}
+          {...props}
+          onClick={(event) => {
+            event.preventDefault();
+            onOpenWorkspaceFile?.(target.path);
+          }}
+        >
+          {children}
+        </a>
+      );
+    };
+
+    return {
+      ...markdownCodeComponents,
+      a: WorkspaceLink,
+      img: WorkspaceImage,
+    };
+  }, [agentId, filePath, onOpenWorkspaceFile]);
+
   return (
     <div className={styles.markdownWrap}>
-      <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
-        components={markdownComponents}
-      >
+      <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
         {content}
       </ReactMarkdown>
     </div>
@@ -267,17 +310,14 @@ function CsvPreview({ content }: { content: string }) {
           <thead>
             <tr>
               {header.slice(0, MAX_CSV_COLS).map((h, i) => (
-                // eslint-disable-next-line react/no-array-index-key
                 <th key={i}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {body.map((row, ri) => (
-              // eslint-disable-next-line react/no-array-index-key
               <tr key={ri}>
                 {row.slice(0, MAX_CSV_COLS).map((cell, ci) => (
-                  // eslint-disable-next-line react/no-array-index-key
                   <td key={ci}>{cell}</td>
                 ))}
               </tr>
@@ -297,14 +337,27 @@ export interface FilePreviewProps {
   filePath: string;
   /** Text content – used by Markdown and CSV renderers. */
   content: string;
+  onOpenWorkspaceFile?: (path: string) => void;
 }
 
-export default function FilePreview({ filePath, content }: FilePreviewProps) {
+export default function FilePreview({
+  filePath,
+  content,
+  onOpenWorkspaceFile,
+}: FilePreviewProps) {
   const type = getPreviewType(filePath);
 
   if (type === "image") return <ImagePreview filePath={filePath} />;
   if (type === "pdf") return <PdfPreview filePath={filePath} />;
-  if (type === "markdown") return <MarkdownPreview content={content} />;
+  if (type === "markdown") {
+    return (
+      <MarkdownPreview
+        filePath={filePath}
+        content={content}
+        onOpenWorkspaceFile={onOpenWorkspaceFile}
+      />
+    );
+  }
   if (type === "csv") return <CsvPreview content={content} />;
   return null;
 }

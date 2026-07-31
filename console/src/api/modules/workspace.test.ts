@@ -1,5 +1,11 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 
+const { cacheGet, cacheSet, cacheInvalidate } = vi.hoisted(() => ({
+  cacheGet: vi.fn(),
+  cacheSet: vi.fn(),
+  cacheInvalidate: vi.fn(),
+}));
+
 vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
 vi.mock("@tauri-apps/plugin-dialog", () => ({ save: vi.fn() }));
 vi.mock("../request", () => ({ request: vi.fn() }));
@@ -7,11 +13,17 @@ vi.mock("../config", () => ({
   getApiUrl: (path: string) => `/api${path}`,
 }));
 vi.mock("../authHeaders", () => ({
-  buildAuthHeaders: vi.fn(() => ({})),
+  buildAuthHeaders: vi.fn((agentId?: string) => ({
+    "X-Agent-Id": agentId ?? "default",
+  })),
 }));
 vi.mock("../../stores/codeFileCacheStore", () => ({
   useCodeFileCacheStore: {
-    getState: () => ({ get: () => null, set: vi.fn(), invalidate: vi.fn() }),
+    getState: () => ({
+      get: cacheGet,
+      set: cacheSet,
+      invalidate: cacheInvalidate,
+    }),
   },
 }));
 vi.mock("../../utils/downloadFileFromUrl", () => ({
@@ -21,6 +33,8 @@ vi.mock("../../utils/downloadFileFromUrl", () => ({
 import { request } from "../request";
 import { workspaceApi } from "./workspace";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
+import { useAgentStore } from "../../stores/agentStore";
+import { useCodingModeStore } from "../../stores/codingModeStore";
 
 describe("workspaceApi.listFiles", () => {
   afterEach(() => vi.clearAllMocks());
@@ -190,5 +204,80 @@ describe("workspaceApi.setSystemPromptFiles", () => {
       method: "PUT",
       body: JSON.stringify(["a.md", "b.md"]),
     });
+  });
+});
+
+describe("workspaceApi scoped code-file cache", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.clearAllMocks();
+  });
+
+  it("uses Agent and project root for cache lookup and storage", async () => {
+    useAgentStore.setState({ selectedAgent: "agent-a" });
+    useCodingModeStore.setState({
+      projectDirByAgent: { "agent-a": "/projects/one" },
+    });
+    cacheGet.mockReturnValue(undefined);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ path: "README.md", content: "A" }),
+        headers: new Headers({ ETag: "etag-a" }),
+      } as unknown as Response),
+    );
+
+    await workspaceApi.loadCodeFile("README.md");
+
+    const scope = { agentId: "agent-a", projectRoot: "/projects/one" };
+    expect(cacheGet).toHaveBeenCalledWith(scope, "README.md");
+    expect(cacheSet).toHaveBeenCalledWith(scope, "README.md", "A", "etag-a");
+    expect(fetch).toHaveBeenCalledWith(
+      "/api/workspace/code-files/README.md",
+      expect.objectContaining({
+        headers: expect.objectContaining({ get: expect.any(Function) }),
+      }),
+    );
+  });
+
+  it("does not reuse a cache entry from another scope", async () => {
+    cacheGet.mockImplementation((scope: { agentId: string }) =>
+      scope.agentId === "agent-a"
+        ? { content: "A", etag: null, touchedAt: 1 }
+        : undefined,
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: () => Promise.resolve({ path: "README.md", content: "B" }),
+        headers: new Headers(),
+      } as unknown as Response),
+    );
+
+    const result = await workspaceApi.loadCodeFile("README.md", {
+      agentId: "agent-b",
+      projectRoot: "/projects/two",
+    });
+
+    expect(result.content).toBe("B");
+    expect(fetch).toHaveBeenCalledTimes(1);
+  });
+
+  it("saves and invalidates using the explicit Agent/project scope", async () => {
+    vi.mocked(request).mockResolvedValue({ path: "README.md", size: 7 });
+    const scope = { agentId: "agent-b", projectRoot: "/projects/two" };
+
+    await workspaceApi.saveCodeFile("README.md", "updated", scope);
+
+    expect(request).toHaveBeenCalledWith(
+      "/workspace/code-files/README.md",
+      expect.objectContaining({
+        method: "PUT",
+        headers: { "X-Agent-Id": "agent-b" },
+      }),
+    );
+    expect(cacheInvalidate).toHaveBeenCalledWith(scope, "README.md");
   });
 });

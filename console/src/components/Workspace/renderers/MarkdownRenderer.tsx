@@ -26,9 +26,27 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Markdown } from "@agentscope-ai/chat";
+import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
+import { ExternalMarkdownLink } from "../../Markdown/externalLinkComponents";
+import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
+import { mimeFromExtension } from "../../../utils/mimeForPreview";
+import { resolveWorkspaceMarkdownTarget } from "../../../utils/workspaceMarkdownLinks";
 import type { RendererContext } from "../types";
 
 type ViewMode = "preview" | "code";
+
+type XMarkdownElementProps<T extends "a" | "img"> =
+  React.ComponentPropsWithoutRef<T> & {
+    domNode?: unknown;
+    streamStatus?: unknown;
+  };
+
+function isTextMime(mimeType: string): boolean {
+  return (
+    mimeType.startsWith("text/") ||
+    /(?:json|javascript|xml|yaml|toml)$/.test(mimeType)
+  );
+}
 
 const MarkdownRenderer: React.FC<RendererContext> = ({
   artifact,
@@ -56,6 +74,139 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
   const handleFullscreen = useCallback(() => {
     if (workspace.fullscreen) workspace.fullscreen(artifact);
   }, [workspace, artifact]);
+
+  const handleOpenWorkspaceFile = useCallback(
+    async (path: string) => {
+      const mimeType = mimeFromExtension(path) ?? "application/octet-stream";
+      const extension = path.includes(".") ? path.split(".").pop() : undefined;
+      const title = path.split("/").pop() || path;
+      const id = `${artifact.id}:workspace-file:${path}`;
+      const baseArtifact = {
+        id,
+        title,
+        source: artifact.source,
+        mimeType,
+        extension,
+        workspacePath: path,
+        agentId: artifact.agentId,
+        projectRoot: artifact.projectRoot,
+        sessionId: artifact.sessionId,
+      } as const;
+
+      if (!isTextMime(mimeType)) {
+        workspace.openArtifact({
+          ...baseArtifact,
+          binaryUrl: workspaceFileApi.getBinaryFileUrl(path),
+        });
+        return;
+      }
+
+      workspace.openArtifact({
+        ...baseArtifact,
+        textContent: "",
+        isStreaming: true,
+      });
+      try {
+        const result = await workspaceFileApi.loadCodeFile(path, {
+          agentId: artifact.agentId ?? "default",
+          projectRoot: artifact.projectRoot,
+        });
+        workspace.updateArtifact(id, {
+          textContent: result.content,
+          isStreaming: false,
+        });
+      } catch {
+        workspace.updateArtifact(id, {
+          textContent: `无法加载文件内容。文件路径: ${path}`,
+          isStreaming: false,
+        });
+      }
+    },
+    [
+      artifact.agentId,
+      artifact.id,
+      artifact.projectRoot,
+      artifact.sessionId,
+      artifact.source,
+      workspace,
+    ],
+  );
+
+  const markdownComponents = useMemo(() => {
+    const markdownPath = artifact.workspacePath ?? artifact.title;
+
+    const WorkspaceImage = ({
+      domNode,
+      streamStatus,
+      src,
+      alt,
+      ...props
+    }: XMarkdownElementProps<"img">) => {
+      void domNode;
+      void streamStatus;
+      const target = src
+        ? resolveWorkspaceMarkdownTarget(src, markdownPath)
+        : { kind: "invalid" as const };
+      const blobUrl = useAuthenticatedWorkspaceBlob(
+        target.kind === "workspace" ? target.path : null,
+        artifact.agentId,
+      );
+
+      if (target.kind === "external") {
+        return <img src={target.href} alt={alt} {...props} />;
+      }
+      if (target.kind !== "workspace") return <span>{alt}</span>;
+      return blobUrl ? <img src={blobUrl} alt={alt} {...props} /> : null;
+    };
+
+    const WorkspaceLink = ({
+      domNode,
+      streamStatus,
+      href,
+      children,
+      ...props
+    }: XMarkdownElementProps<"a">) => {
+      void domNode;
+      void streamStatus;
+      const target = href
+        ? resolveWorkspaceMarkdownTarget(href, markdownPath)
+        : { kind: "invalid" as const };
+      if (target.kind === "external") {
+        return (
+          <ExternalMarkdownLink href={target.href} {...props}>
+            {children}
+          </ExternalMarkdownLink>
+        );
+      }
+      if (target.kind === "anchor") {
+        return (
+          <a href={target.href} {...props}>
+            {children}
+          </a>
+        );
+      }
+      if (target.kind !== "workspace") return <span>{children}</span>;
+      return (
+        <a
+          href={target.path}
+          {...props}
+          onClick={(event) => {
+            event.preventDefault();
+            void handleOpenWorkspaceFile(target.path);
+          }}
+        >
+          {children}
+        </a>
+      );
+    };
+
+    return { a: WorkspaceLink, img: WorkspaceImage };
+  }, [
+    artifact.agentId,
+    artifact.title,
+    artifact.workspacePath,
+    handleOpenWorkspaceFile,
+  ]);
 
   // ── 渲染预览 ──
   const previewContent = useMemo(() => {
@@ -86,11 +237,11 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
           minHeight: "100%",
         }}
       >
-        <Markdown content={content} />
+        <Markdown content={content} components={markdownComponents} />
         {artifact.isStreaming && <span className="cursor-blink">▋</span>}
       </div>
     );
-  }, [content, artifact.isStreaming, theme, t]);
+  }, [content, artifact.isStreaming, markdownComponents, theme, t]);
 
   // ── 渲染代码视图 ──
   const codeContent = useMemo(

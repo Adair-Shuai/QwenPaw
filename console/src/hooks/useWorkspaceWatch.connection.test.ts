@@ -6,7 +6,9 @@ vi.mock("../api/modules/workspace", () => ({
   workspaceApi: { getWatchUrl: vi.fn().mockReturnValue("http://test/watch") },
 }));
 vi.mock("../api/authHeaders", () => ({
-  buildAuthHeaders: vi.fn().mockReturnValue({}),
+  buildAuthHeaders: vi.fn((agentId?: string) => ({
+    "X-Agent-Id": agentId ?? "default",
+  })),
 }));
 
 // 创建一个永远挂起的 fetch（用于不关心 SSE 内容的测试）
@@ -27,7 +29,9 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
       },
     }));
     vi.doMock("../api/authHeaders", () => ({
-      buildAuthHeaders: vi.fn().mockReturnValue({}),
+      buildAuthHeaders: vi.fn((agentId?: string) => ({
+        "X-Agent-Id": agentId ?? "default",
+      })),
     }));
 
     ({ useWorkspaceWatch } = await import("./useWorkspaceWatch"));
@@ -111,5 +115,48 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
     });
 
     unmount();
+  });
+
+  it("Agent 或项目作用域变化时 abort 旧连接并建立新连接", async () => {
+    const mockFetch = makePendingFetchMock();
+    vi.stubGlobal("fetch", mockFetch);
+    const abortSpy = vi.spyOn(AbortController.prototype, "abort");
+
+    const { rerender, unmount } = renderHook(
+      ({ agentId, projectRoot }) =>
+        useWorkspaceWatch(vi.fn(), true, { agentId, projectRoot }),
+      {
+        initialProps: { agentId: "agent-a", projectRoot: "/project/one" },
+      },
+    );
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    const firstSignal = mockFetch.mock.calls[0][1].signal as AbortSignal;
+
+    rerender({ agentId: "agent-b", projectRoot: "/project/two" });
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+    expect(firstSignal.aborted).toBe(true);
+    expect(abortSpy).toHaveBeenCalled();
+    expect(mockFetch.mock.calls[1][1]).toEqual(
+      expect.objectContaining({
+        headers: { "X-Agent-Id": "agent-b" },
+      }),
+    );
+    unmount();
+  });
+
+  it("同一作用域的两个 Hook 共享一个连接", async () => {
+    const mockFetch = makePendingFetchMock();
+    vi.stubGlobal("fetch", mockFetch);
+    const scope = { agentId: "agent-a", projectRoot: "/project/one" };
+
+    const first = renderHook(() => useWorkspaceWatch(vi.fn(), true, scope));
+    const second = renderHook(() => useWorkspaceWatch(vi.fn(), true, scope));
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    first.unmount();
+    expect(mockFetch.mock.calls[0][1].signal.aborted).toBe(false);
+    second.unmount();
   });
 });

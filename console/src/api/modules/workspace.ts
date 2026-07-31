@@ -1,7 +1,12 @@
 import { request } from "../request";
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
-import { useCodeFileCacheStore } from "../../stores/codeFileCacheStore";
+import {
+  useCodeFileCacheStore,
+  type WorkspaceFileScope,
+} from "../../stores/codeFileCacheStore";
+import { useAgentStore } from "../../stores/agentStore";
+import { useCodingModeStore } from "../../stores/codingModeStore";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import type { MdFileInfo, MdFileContent, DailyMemoryFile } from "../types";
 
@@ -38,6 +43,22 @@ function generateFallbackFilename(): string {
 
 function encodePath(path: string): string {
   return path.split("/").map(encodeURIComponent).join("/");
+}
+
+function resolveFileScope(
+  scopeOrAgent?: WorkspaceFileScope | string,
+): WorkspaceFileScope {
+  const agentId =
+    typeof scopeOrAgent === "string"
+      ? scopeOrAgent
+      : scopeOrAgent?.agentId ?? useAgentStore.getState().selectedAgent;
+  return {
+    agentId,
+    projectRoot:
+      typeof scopeOrAgent === "object"
+        ? scopeOrAgent.projectRoot
+        : useCodingModeStore.getState().projectDirByAgent[agentId],
+  };
 }
 
 export const workspaceApi = {
@@ -150,9 +171,11 @@ export const workspaceApi = {
    */
   loadCodeFile: async (
     filePath: string,
+    scopeOrAgent?: WorkspaceFileScope | string,
   ): Promise<{ path: string; content: string }> => {
+    const scope = resolveFileScope(scopeOrAgent);
     const cache = useCodeFileCacheStore.getState();
-    const cached = cache.get(filePath);
+    const cached = cache.get(scope, filePath);
     if (cached) {
       return { path: filePath, content: cached.content };
     }
@@ -164,7 +187,7 @@ export const workspaceApi = {
         .join("/")}`,
     );
     const headers = new Headers();
-    for (const [k, v] of Object.entries(buildAuthHeaders())) {
+    for (const [k, v] of Object.entries(buildAuthHeaders(scope.agentId))) {
       headers.set(k, v);
     }
     // The browser handles `If-None-Match` automatically from its HTTP cache;
@@ -180,26 +203,33 @@ export const workspaceApi = {
 
     const data = (await response.json()) as { path: string; content: string };
     const etag = response.headers.get("ETag");
-    cache.set(filePath, data.content, etag);
+    cache.set(scope, filePath, data.content, etag);
     return data;
   },
 
-  saveCodeFile: (filePath: string, content: string) =>
-    request<{ path: string; size: number }>(
+  saveCodeFile: (
+    filePath: string,
+    content: string,
+    scopeOrAgent?: WorkspaceFileScope | string,
+  ) => {
+    const scope = resolveFileScope(scopeOrAgent);
+    return request<{ path: string; size: number }>(
       `/workspace/code-files/${filePath
         .split("/")
         .map(encodeURIComponent)
         .join("/")}`,
       {
         method: "PUT",
+        headers: buildAuthHeaders(scope.agentId),
         body: JSON.stringify({ content }),
       },
     ).then((result) => {
       // Local edit: drop the cached entry — next read will refetch with the
       // server's new ETag. Cheaper than threading content through here.
-      useCodeFileCacheStore.getState().invalidate(filePath);
+      useCodeFileCacheStore.getState().invalidate(scope, filePath);
       return result;
-    }),
+    });
+  },
 
   /** Returns the URL for the SSE file-watch stream (Coding Mode). */
   getWatchUrl: () => getApiUrl("/workspace/watch"),

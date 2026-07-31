@@ -44,6 +44,32 @@ async def read_simulation_results(
 
     from .launcher import _get_job
 
+    # ── Validate parameters ─────────────────────────────────────────
+    _VALID_DATA_TYPES = ("summary", "well", "report", "all")
+    if data_type not in _VALID_DATA_TYPES:
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        f"Error: Unknown data_type '{data_type}'. "
+                        f"Valid options: {', '.join(_VALID_DATA_TYPES)}"
+                    ),
+                ),
+            ],
+        )
+
+    # Guard against max_points <= 0 which would cause a ZeroDivisionError
+    # in the downsampling branch below.
+    if max_points <= 0:
+        _logger.warning(
+            "max_points=%d is not positive; falling back to default 200",
+            max_points,
+        )
+        max_points = 200
+
     job = _get_job(job_id)
     if not job:
         return ToolChunk(

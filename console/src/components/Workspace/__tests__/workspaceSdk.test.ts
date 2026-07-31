@@ -2,10 +2,14 @@
  * workspaceSdk.test.ts — 工作区插件 SDK 接口测试
  */
 import { describe, it, expect, beforeEach } from "vitest";
-import { createWorkspaceNamespace } from "../workspaceSdk";
+import {
+  createWorkspaceNamespace,
+  openArtifactFromToolCall,
+} from "../workspaceSdk";
 import { rendererRegistry } from "../store/rendererRegistry";
 import { useWorkspaceStore } from "../store/workspaceStore";
 import type { WorkspaceArtifact } from "../types";
+import { useAgentStore } from "../../../stores/agentStore";
 
 beforeEach(() => {
   rendererRegistry.__resetForTests();
@@ -19,6 +23,7 @@ beforeEach(() => {
     panelWidth: 480,
     isFullscreen: false,
   });
+  useAgentStore.setState({ selectedAgent: "default" });
 });
 
 function makeArtifact(
@@ -128,6 +133,29 @@ describe("Workspace SDK", () => {
       expect(useWorkspaceStore.getState().panelOpen).toBe(true);
       sdk.setPanelOpen(false);
       expect(useWorkspaceStore.getState().panelOpen).toBe(false);
+    });
+  });
+
+  describe("openArtifactFromToolCall", () => {
+    it("uses Agent, session, message, and tool identity in Artifact IDs", () => {
+      useAgentStore.setState({ selectedAgent: "agent-a" });
+      const first = openArtifactFromToolCall({
+        toolName: "write_file",
+        result: {},
+        sessionId: "session-1",
+        messageId: "message-1",
+      });
+      useAgentStore.setState({ selectedAgent: "agent-b" });
+      const second = openArtifactFromToolCall({
+        toolName: "write_file",
+        result: {},
+        sessionId: "session-1",
+        messageId: "message-1",
+      });
+
+      expect(first).not.toBe(second);
+      expect(first).toContain("agent-a:session-1");
+      expect(second).toContain("agent-b:session-1");
     });
   });
 });

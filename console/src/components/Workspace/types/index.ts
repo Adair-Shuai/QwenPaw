@@ -75,6 +75,12 @@ export interface WorkspaceArtifact {
   createdAt?: number;
   /** 最后更新时间戳 */
   updatedAt?: number;
+  /** Workspace-relative source path, used to resolve local Markdown resources. */
+  workspacePath?: string;
+  /** Agent that owns the workspace file, retained across Agent switches. */
+  agentId?: string;
+  /** Coding project root that owns the workspace file. */
+  projectRoot?: string | null;
 
   /** 渲染器特定的额外属性
    *

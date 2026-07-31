@@ -142,13 +142,13 @@ class TestAgentMdManagerReadWorkingMd:
         result = manager.read_working_md("notes")
         assert result == "content"
 
-    def test_strips_whitespace_from_content(self, manager, tmp_path):
+    def test_preserves_boundary_whitespace(self, manager, tmp_path):
         (tmp_path / "space.md").write_text(
             "  trimmed  \n\n",
             encoding="utf-8",
         )
         result = manager.read_working_md("space.md")
-        assert result == "trimmed"
+        assert result == "  trimmed  \n\n"
 
     def test_raises_file_not_found(self, manager):
         with pytest.raises(FileNotFoundError):
@@ -204,6 +204,17 @@ class TestAgentMdManagerWriteWorkingMd:
         (tmp_path / "over.md").write_text("old", encoding="utf-8")
         manager.write_working_md("over.md", "new")
         assert (tmp_path / "over.md").read_text(encoding="utf-8") == "new"
+
+    @pytest.mark.parametrize(
+        "filename",
+        ["dir/note.md", "dir\\note.md", "CON.md", "bad:name.md", "a?.md"],
+    )
+    def test_rejects_non_portable_filenames(self, manager, filename):
+        with pytest.raises(ValueError):
+            manager.write_working_md(filename, "content")
+
+    def test_returns_final_normalized_filename(self, manager):
+        assert manager.write_working_md("Report.MD", "content") == "Report.md"
 
 
 # ---------------------------------------------------------------------------

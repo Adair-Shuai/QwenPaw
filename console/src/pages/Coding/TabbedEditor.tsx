@@ -30,7 +30,7 @@ import {
   X,
 } from "lucide-react";
 import { Tooltip } from "antd";
-import FilePreview, { isPreviewable } from "./FilePreview";
+import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
 import { workspaceApi } from "../../api/modules/workspace";
 import { useWorkspaceWatch } from "../../hooks/useWorkspaceWatch";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -320,8 +320,14 @@ export default function TabbedEditor({
    */
   const { selectedAgent } = useAgentStore();
   const pendingDiffs = useCurrentDiffs();
-  const { setDiff, removeDiff, updateDiffModified, updateDiffOriginal } =
-    useCodingTabsStore();
+  const {
+    openTab,
+    setActiveTab,
+    setDiff,
+    removeDiff,
+    updateDiffModified,
+    updateDiffOriginal,
+  } = useCodingTabsStore();
 
   /**
    * Per-hunk Keep / Undo widgets are rendered as React JSX in an
@@ -356,6 +362,20 @@ export default function TabbedEditor({
     activeDiffRaw && activeDiffRaw.modified !== null
       ? { original: activeDiffRaw.original, modified: activeDiffRaw.modified }
       : undefined;
+
+  const handleOpenWorkspaceFile = useCallback(
+    async (path: string) => {
+      const previewType = getPreviewType(path);
+      let content = "";
+      if (previewType !== "image" && previewType !== "pdf") {
+        const result = await workspaceApi.loadCodeFile(path);
+        content = result.content ?? "";
+      }
+      openTab(selectedAgent, { path, content, dirty: false });
+      setActiveTab(selectedAgent, path);
+    },
+    [openTab, selectedAgent, setActiveTab],
+  );
 
   // Hydrate the `modified` side of any persisted diff by re-reading the
   // current disk content. Drop diffs whose file no longer exists.
@@ -934,7 +954,11 @@ export default function TabbedEditor({
       <div className={styles.editor}>
         {activeTab && activeInPreview ? (
           /* ── Preview mode (image / markdown / pdf / csv) ─────────────── */
-          <FilePreview filePath={activeTab.path} content={activeTab.content} />
+          <FilePreview
+            filePath={activeTab.path}
+            content={activeTab.content}
+            onOpenWorkspaceFile={handleOpenWorkspaceFile}
+          />
         ) : (
           activeTab &&
           (activeDiff ? (

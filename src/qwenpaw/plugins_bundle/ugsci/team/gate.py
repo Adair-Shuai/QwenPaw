@@ -14,6 +14,7 @@ The gate enforces:
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import time
 from dataclasses import dataclass, field
@@ -40,11 +41,27 @@ from .roles import FORK_MERGE_PROTOCOL
 from .state import (
     TeamStateInvalidError,
     TeamWorkflowState,
+    WORKFLOW_ACTIVE,
     WORKFLOW_COMPLETED,
     WORKFLOW_TERMINATED,
+    validate_state_document,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _instance_sort_key(instance: Path) -> tuple[int, str]:
+    """Return a deterministic, cross-platform recency key."""
+    try:
+        state_file = instance / "state.json"
+        timestamp = (
+            state_file.stat().st_mtime_ns
+            if state_file.exists()
+            else instance.stat().st_mtime_ns
+        )
+        return timestamp, instance.name
+    except OSError:
+        return 0, instance.name
 
 
 @dataclass
@@ -204,6 +221,147 @@ class UGSciTeamGate(LoopGate):
         )
         wf.cleanup()
         self.deactivate()
+
+    def restore(
+        self,
+        workspace_dir: Path,
+        agent_id: str = "",
+    ) -> bool:
+        """Restore the latest active workflow instance from disk.
+
+        Called by the mode's ``on_turn_start`` after a service restart.
+        Scans the workspace's ``.qwenpaw/ugsci_teams/`` directory for the
+        newest instance whose ``state.json`` reports an active workflow,
+        validates it, and reactivates the in-memory ``_TeamState``.
+
+        The method handles:
+        - Corrupted state files (skips them with a warning)
+        - Terminal workflows (completed / terminated are never restored)
+        - Agent-id mismatch (skips instances belonging to other agents)
+        - Concurrent instances (selects the most recently modified)
+
+        Returns ``True`` if state was restored, ``False`` otherwise.
+        """
+        if self._state() is not None:
+            return True  # already restored (or freshly activated)
+
+        base = workspace_dir / ".qwenpaw" / "ugsci_teams"
+        if not base.exists():
+            return False
+
+        try:
+            base_resolved = base.resolve()
+            instances = sorted(
+                (
+                    path
+                    for path in base.iterdir()
+                    if path.is_dir()
+                    and not path.is_symlink()
+                    and path.resolve().is_relative_to(base_resolved)
+                ),
+                key=_instance_sort_key,
+                reverse=True,
+            )
+        except OSError:
+            logger.warning(
+                "UGSci team restore: state directory unreadable",
+                extra={"agent_id": agent_id},
+                exc_info=True,
+            )
+            return False
+
+        for instance in instances:
+            state_file = instance / "state.json"
+            if not state_file.is_file() or state_file.is_symlink():
+                continue
+
+            try:
+                data = validate_state_document(
+                    json.loads(
+                        state_file.read_text(encoding="utf-8"),
+                    ),
+                )
+            except (
+                json.JSONDecodeError,
+                UnicodeDecodeError,
+                TeamStateInvalidError,
+            ):
+                logger.warning(
+                    "UGSci team restore: skipping invalid state file",
+                    extra={
+                        "agent_id": agent_id,
+                        "instance_id": instance.name,
+                    },
+                    exc_info=True,
+                )
+                continue
+            except OSError:
+                logger.warning(
+                    "UGSci team restore: state file unreadable",
+                    extra={
+                        "agent_id": agent_id,
+                        "instance_id": instance.name,
+                    },
+                    exc_info=True,
+                )
+                continue
+
+            # Skip terminal workflows — they should never be revived.
+            workflow_status = data.get(
+                "workflow_status",
+                WORKFLOW_ACTIVE,
+            )
+            if workflow_status != WORKFLOW_ACTIVE:
+                continue
+
+            phase = data.get("current_phase", PHASE_PLAN)
+            if phase == PHASE_COMPLETED:
+                continue
+
+            # Match agent_id when both sides are non-empty.
+            persisted_agent_id = data.get("agent_id", "")
+            if (
+                agent_id
+                and persisted_agent_id
+                and agent_id != persisted_agent_id
+            ):
+                continue
+
+            team_id = data.get("team_id", "ugsci-team")
+            st = _TeamState(
+                loop_dir=instance,
+                workspace_dir=workspace_dir,
+                agent_id=persisted_agent_id,
+                team_id=team_id,
+                team_mode=data.get("team_mode", "pipeline"),
+                team_name=data.get("team_name", ""),
+                members=data.get("members", []),
+                task=data.get("task", ""),
+                active=True,
+                iteration=int(data.get("iteration", 0)),
+                verify_retries=int(data.get("verify_retries", 0)),
+                dispatch_retries=int(
+                    data.get("dispatch_retries", 0),
+                ),
+                merge_waits=int(data.get("merge_waits", 0)),
+                phase=phase,
+                blocked_on_merge=bool(
+                    data.get("merge_blocked", False),
+                ),
+            )
+            self.activate(st)
+            logger.info(
+                "UGSci team workflow restored from disk",
+                extra={
+                    "agent_id": persisted_agent_id,
+                    "team_id": team_id,
+                    "instance_id": instance.name,
+                    "phase": phase,
+                },
+            )
+            return True
+
+        return False
 
     async def check(  # pylint: disable=too-many-return-statements
         self,

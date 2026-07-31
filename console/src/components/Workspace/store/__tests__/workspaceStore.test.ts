@@ -257,3 +257,77 @@ describe("WorkspaceStore.getActiveArtifact", () => {
     expect(useWorkspaceStore.getState().getActiveArtifact()).toBeUndefined();
   });
 });
+
+describe("WorkspaceStore session isolation", () => {
+  it("shows only the active Agent/session tabs", () => {
+    const store = useWorkspaceStore.getState();
+    store.setSession("agent-a:session-a");
+    store.openArtifact(makeArtifact({ id: "a-file", title: "A" }));
+
+    store.setSession("agent-b:session-b");
+    store.openArtifact(makeArtifact({ id: "b-file", title: "B" }));
+    expect(
+      useWorkspaceStore.getState().tabs.map((tab) => tab.artifactId),
+    ).toEqual(["b-file"]);
+
+    store.setSession("agent-a:session-a");
+    expect(
+      useWorkspaceStore.getState().tabs.map((tab) => tab.artifactId),
+    ).toEqual(["a-file"]);
+  });
+
+  it("clears deleted session tabs and artifacts", () => {
+    const store = useWorkspaceStore.getState();
+    store.setSession("agent-a:session-a");
+    store.openArtifact(makeArtifact({ id: "a-file" }));
+
+    store.clearSession("agent-a:session-a");
+
+    const state = useWorkspaceStore.getState();
+    expect(state.tabsBySession["agent-a:session-a"]).toBeUndefined();
+    expect(state.artifacts["a-file"]).toBeUndefined();
+    expect(state.tabs).toEqual([]);
+    expect(state.panelOpen).toBe(false);
+  });
+
+  it("prunes persisted tab IDs that have no in-memory Artifact", () => {
+    useWorkspaceStore.setState({
+      tabsBySession: { "agent-a:session-a": ["ghost"] },
+    });
+
+    useWorkspaceStore.getState().setSession("agent-a:session-a");
+
+    expect(
+      useWorkspaceStore.getState().tabsBySession["agent-a:session-a"],
+    ).toEqual([]);
+    expect(useWorkspaceStore.getState().tabs).toEqual([]);
+  });
+
+  it("moves temporary-session artifacts to the resolved session", () => {
+    const store = useWorkspaceStore.getState();
+    store.setSession("agent-a:temp");
+    store.openArtifact(makeArtifact({ id: "draft" }));
+
+    store.moveSession("agent-a:temp", "agent-a:real");
+
+    const state = useWorkspaceStore.getState();
+    expect(state.currentSessionId).toBe("agent-a:real");
+    expect(state.tabsBySession["agent-a:temp"]).toBeUndefined();
+    expect(state.tabsBySession["agent-a:real"]).toEqual(["draft"]);
+    expect(state.artifacts.draft.sessionId).toBe("agent-a:real");
+  });
+
+  it("refreshes visible tabs when another temporary scope merges into current", () => {
+    const store = useWorkspaceStore.getState();
+    store.setSession("agent-a:temp");
+    store.openArtifact(makeArtifact({ id: "temp-file" }));
+    store.setSession("agent-a:real");
+    store.openArtifact(makeArtifact({ id: "real-file" }));
+
+    store.moveSession("agent-a:temp", "agent-a:real");
+
+    expect(
+      useWorkspaceStore.getState().tabs.map((tab) => tab.artifactId),
+    ).toEqual(["real-file", "temp-file"]);
+  });
+});

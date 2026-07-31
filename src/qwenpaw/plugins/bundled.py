@@ -34,6 +34,7 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -165,9 +166,20 @@ _HASH_EXCLUDED_NAMES = frozenset(
         "__pycache__",
         "node_modules",
         ".git",
+        # User-generated engine configs may exist in the plugin dir
+        # on older installations.  Exclude from hash so they don't
+        # trigger spurious updates (cf. BUG-009).
+        "engines",
     },
 )
 _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
+
+# Directories inside a plugin installation that may contain user-generated
+# data and must be preserved across updates (rmtree + copytree).  Files
+# already present in the new bundle are kept; only **missing** files are
+# restored from the backup so bundle updates take precedence for code.
+# See BUG-009: engine configs were lost on plugin upgrade.
+_PRESERVE_ON_UPDATE_DIRS = frozenset({"engines"})
 
 
 def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
@@ -235,6 +247,7 @@ def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
         )
 
 
+# pylint: disable=too-many-branches,too-many-statements
 def _install_or_update_plugin(
     item: Path,
     target_dir: Path,
@@ -306,8 +319,47 @@ def _install_or_update_plugin(
             )
 
         has_marker = _is_uninstalled(target_dir)
+
+        # Preserve user-data directories before destructive rmtree
+        # so they survive version upgrades (cf. BUG-009).
+        preserved: dict[str, Path] = {}
+        for dirname in _PRESERVE_ON_UPDATE_DIRS:
+            user_dir = target_dir / dirname
+            if user_dir.is_dir() and any(user_dir.iterdir()):
+                tmp_base = Path(
+                    tempfile.mkdtemp(prefix=f"preserve_{dirname}_"),
+                )
+                shutil.copytree(user_dir, tmp_base / dirname)
+                preserved[dirname] = tmp_base
+                logger.debug(
+                    "Preserving user data dir '%s' for plugin '%s'",
+                    dirname,
+                    plugin_id,
+                )
+
         shutil.rmtree(target_dir, ignore_errors=True)
         shutil.copytree(item, target_dir)
+
+        # Restore preserved user data (only files missing in the new copy).
+        for dirname, tmp_base in preserved.items():
+            src_dir = tmp_base / dirname
+            dest_dir = target_dir / dirname
+            if dest_dir.is_dir():
+                for f in src_dir.rglob("*"):
+                    if not f.is_file():
+                        continue
+                    rel = f.relative_to(src_dir)
+                    target_file = dest_dir / rel
+                    if not target_file.exists():
+                        target_file.parent.mkdir(
+                            parents=True,
+                            exist_ok=True,
+                        )
+                        shutil.copy2(f, target_file)
+            else:
+                shutil.copytree(src_dir, dest_dir)
+            shutil.rmtree(tmp_base, ignore_errors=True)
+
         _write_bundle_hash(target_dir, bundled_hash)
         if has_marker:
             _mark_uninstalled(target_dir)

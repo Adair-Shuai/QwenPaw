@@ -6,6 +6,8 @@ basic line-level editing for CMG / COMSOL input files.
 """
 from __future__ import annotations
 
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -43,7 +45,8 @@ async def edit_simulation_deck(
             New content for the keyword block (used by replace/append/insert).
         section (`str`):
             Optional section hint (e.g. ``"SCHEDULE"``, ``"PROPS"``).
-            Used for validation only — the editor searches the whole file.
+            When provided, the search is limited to lines within that
+            section, preventing accidental edits in other sections.
         working_dir (`str`):
             Working directory for resolving relative paths.
 
@@ -95,15 +98,63 @@ async def edit_simulation_deck(
     lines = text.splitlines(keepends=True)
     keyword_upper = keyword.upper().strip()
 
+    # ── Determine section boundaries ─────────────────────────────────
+    # BUG-013: When section is specified, limit the keyword search to
+    # lines within that section rather than scanning the entire file.
+    search_start = 0
+    search_end = len(lines)
+    if section:
+        section_upper = section.upper().strip()
+        section_start = None
+        section_end = None
+        for i, line in enumerate(lines):
+            stripped = line.strip().upper()
+            # Detect section headers like "SCHEDULE" or "SCHEDULE" followed by data
+            if stripped == section_upper or stripped.startswith(section_upper + " "):
+                if section_start is None:
+                    section_start = i
+            elif section_start is not None:
+                # Detect end of section (next top-level keyword that is
+                # not a continuation of data lines)
+                if (
+                    stripped
+                    and not stripped.startswith("--")
+                    and stripped.split()[0].isupper()
+                    and stripped.split()[0] != section_upper
+                ):
+                    section_end = i
+                    break
+        if section_start is not None:
+            search_start = section_start
+            search_end = section_end if section_end is not None else len(lines)
+        # If section not found, fall back to full-file search with a warning
+        else:
+            _logger.warning(
+                "Section '%s' not found in %s; searching entire file",
+                section_upper,
+                deck_path.name,
+            )
+
     # ── Locate keyword block ─────────────────────────────────────────
+    # BUG-013: Use exact token matching instead of startswith() to avoid
+    # matching PERMX when searching for PERM, or PERMX2 when searching
+    # for PERMX.
     start_idx = None
     end_idx = None
 
-    for i, line in enumerate(lines):
+    for i in range(search_start, search_end):
+        line = lines[i]
         stripped = line.strip().upper()
-        if stripped == keyword_upper or stripped.startswith(keyword_upper):
+        if not stripped or stripped.startswith("--"):
+            continue
+
+        # Exact match: the first token equals the keyword (allowing
+        # trailing comments or whitespace)
+        first_token = stripped.split()[0] if stripped.split() else ""
+        if first_token == keyword_upper:
             start_idx = i
             continue
+
         if start_idx is not None and end_idx is None:
             # End of block: next keyword or "/" on its own line
             next_stripped = line.strip()
@@ -112,8 +163,9 @@ async def edit_simulation_deck(
             elif (
                 next_stripped
                 and not next_stripped.startswith("--")
+                and next_stripped.split()
                 and next_stripped.split()[0].isupper()
-                and next_stripped.upper() != keyword_upper
+                and next_stripped.split()[0] != keyword_upper
             ):
                 end_idx = i
 
@@ -124,13 +176,17 @@ async def edit_simulation_deck(
             content=[
                 TextBlock(
                     type="text",
-                    text=f"Error: Keyword '{keyword}' not found in {deck_path.name}.",
+                    text=(
+                        f"Error: Keyword '{keyword}' not found"
+                        + (f" in section '{section}'" if section else "")
+                        + f" in {deck_path.name}."
+                    ),
                 ),
             ],
         )
 
     if end_idx is None:
-        end_idx = len(lines)
+        end_idx = len(lines) if search_end == len(lines) else search_end
 
     # ── Perform action ───────────────────────────────────────────────
     block_lines = lines[start_idx:end_idx]
@@ -161,10 +217,29 @@ async def edit_simulation_deck(
             ],
         )
 
-    # ── Write file ───────────────────────────────────────────────────
+    # ── Write file atomically ────────────────────────────────────────
+    # BUG-013: Use a temporary file + os.replace() so an interrupted
+    # write does not leave a partially-written (and potentially corrupt)
+    # deck file.
     new_text = "".join(new_lines)
     try:
-        deck_path.write_text(new_text, encoding="utf-8")
+        dir_path = deck_path.parent
+        fd, tmp_path = tempfile.mkstemp(
+            dir=str(dir_path),
+            prefix=deck_path.stem + ".",
+            suffix=".tmp",
+        )
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as tmp_file:
+                tmp_file.write(new_text)
+            os.replace(tmp_path, deck_path)
+        except Exception:
+            # Clean up the temp file if the write or replace failed
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+            raise
     except Exception as exc:
         return ToolChunk(
             is_last=True,

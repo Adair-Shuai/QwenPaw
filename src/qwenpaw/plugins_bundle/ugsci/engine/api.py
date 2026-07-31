@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 import threading
 import time
 from pathlib import Path
@@ -88,15 +87,13 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
 
     @router.get("/icon/{engine_id}")
     def get_engine_icon(engine_id: str):
+        from . import get_engine
+
         icon_dir = plugin_dir / "engine" / "icons"
         sub_product = ""
-        engine_json = plugin_dir / "engines" / f"{engine_id}.json"
-        if engine_json.is_file():
-            try:
-                data = json.loads(engine_json.read_text(encoding="utf-8"))
-                sub_product = data.get("extra_info", {}).get("sub_product", "") or ""
-            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
-                pass
+        engine = get_engine(engine_id)
+        if engine:
+            sub_product = engine.extra_info.get("sub_product", "") or ""
 
         candidates: list[str] = []
         if sub_product:

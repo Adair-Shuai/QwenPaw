@@ -85,7 +85,7 @@ def test_api_workspace_working_file_list_put_get(app_server) -> None:
             headers=headers,
         )
         assert get_resp.status_code == 200, app_server.logs_tail()
-        assert get_resp.json()["content"] == content.strip()
+        assert get_resp.json()["content"] == content
 
         list_after = app_server.api_request(
             "GET",
@@ -225,7 +225,7 @@ def test_api_workspace_header_and_scoped_consistency(app_server) -> None:
             f"/api/agents/{agent_id}/workspace/files/{md_stem}",
         )
         assert get_scoped.status_code == 200, app_server.logs_tail()
-        assert get_scoped.json()["content"] == v1.strip()
+        assert get_scoped.json()["content"] == v1
 
         put_scoped = app_server.api_request(
             "PUT",
@@ -241,7 +241,7 @@ def test_api_workspace_header_and_scoped_consistency(app_server) -> None:
             headers=headers,
         )
         assert get_header.status_code == 200, app_server.logs_tail()
-        assert get_header.json()["content"] == v2.strip()
+        assert get_header.json()["content"] == v2
     finally:
         app_server.api_request("DELETE", f"/api/agents/{agent_id}")
 
@@ -380,7 +380,7 @@ def test_api_workspace_upload_zip_merge(app_server) -> None:
             headers=headers,
         )
         assert get_uploaded.status_code == 200, app_server.logs_tail()
-        assert get_uploaded.json().get("content") == uploaded_content.strip()
+        assert get_uploaded.json().get("content") == uploaded_content
     finally:
         app_server.api_request("DELETE", f"/api/agents/{agent_id}")
 
@@ -496,7 +496,7 @@ def test_api_workspace_upload_overwrite_existing_file(app_server) -> None:
             headers=headers,
         )
         assert get_after.status_code == 200, app_server.logs_tail()
-        assert get_after.json().get("content") == new_content.strip()
+        assert get_after.json().get("content") == new_content
     finally:
         app_server.api_request("DELETE", f"/api/agents/{agent_id}")
 
@@ -586,7 +586,7 @@ def test_api_workspace_download_upload_cross_agent_roundtrip(
             headers=target_headers,
         )
         assert get_target.status_code == 200, app_server.logs_tail()
-        assert get_target.json().get("content") == marker_content.strip()
+        assert get_target.json().get("content") == marker_content
     finally:
         app_server.api_request("DELETE", f"/api/agents/{source_agent}")
         app_server.api_request("DELETE", f"/api/agents/{target_agent}")

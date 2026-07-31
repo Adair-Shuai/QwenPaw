@@ -45,6 +45,7 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
   const [viewMode, setViewMode] = useState<ViewMode>("screenshot");
   const fileUrl = artifact.binaryUrl ?? "";
   const objectUrlRef = useRef<string>("");
+  const mountedRef = useRef(true);
 
   const fetchScreenshot = useCallback(
     async (page: number) => {
@@ -67,6 +68,9 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           body: JSON.stringify({ url: fileUrl, page }),
         });
 
+        // Bail out if the component unmounted during the fetch.
+        if (!mountedRef.current) return;
+
         if (res.status === 404) {
           // officecli not installed — fall back to OfficeDocRenderer
           setUseFallback(true);
@@ -82,9 +86,15 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
         // Revoke previous object URL to avoid memory leak
         if (objectUrlRef.current) {
           URL.revokeObjectURL(objectUrlRef.current);
+          objectUrlRef.current = "";
         }
 
         const blob = await res.blob();
+
+        // If the component unmounted while reading the blob, don't
+        // create an Object URL — it would never be revoked.
+        if (!mountedRef.current) return;
+
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
         setScreenshotUrl(url);
@@ -97,11 +107,14 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
             setPageCount(count);
           }
         }
-      } catch (err) {
+      } catch {
         // Network error or other failure — fall back to HTML rendering
+        if (!mountedRef.current) return;
         setUseFallback(true);
       } finally {
-        setLoading(false);
+        if (mountedRef.current) {
+          setLoading(false);
+        }
       }
     },
     [fileUrl, t],
@@ -114,11 +127,15 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchScreenshot, currentPage, viewMode, useFallback]);
 
-  // Cleanup object URL on unmount
+  // Cleanup object URL on unmount and mark as unmounted
+  // so in-flight fetches don't create leaked Object URLs.
   useEffect(() => {
+    mountedRef.current = true;
     return () => {
+      mountedRef.current = false;
       if (objectUrlRef.current) {
         URL.revokeObjectURL(objectUrlRef.current);
+        objectUrlRef.current = "";
       }
     };
   }, []);

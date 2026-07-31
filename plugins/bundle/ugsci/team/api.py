@@ -16,6 +16,7 @@ from .constants import (
     UGSCI_ROLE_DISPLAY_NAMES,
     UGSCI_ROLE_SKILLS,
 )
+from .custom_store import save_custom_team, list_custom_teams
 from .presets import PRESET_UGSCI_TEAMS
 from .roles import UGSCI_ROLE_PROMPTS
 from .state import (
@@ -79,6 +80,43 @@ class RolesResponse(BaseModel):
     """Collection of public UGSci role definitions."""
 
     roles: list[RoleDefinition]
+
+
+class CustomTeamMember(BaseModel):
+    """One expert in a custom team."""
+
+    name: str
+    role: str
+    emoji: str = ""
+
+
+class CustomTeamStep(BaseModel):
+    """One step in a custom team's orchestration sequence."""
+
+    agent_name: str = Field(alias="agentName")
+    instruction: str
+    pass_context: bool = Field(default=False, alias="passContext")
+
+
+class CustomTeamRequest(BaseModel):
+    """Payload for registering a custom team definition."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    name: str
+    mode: Literal["pipeline", "coordinator", "roundtable"] = "pipeline"
+    members: list[CustomTeamMember] = Field(default_factory=list)
+    steps: list[CustomTeamStep] = Field(default_factory=list)
+    orchestration_prompt: str = Field(default="", alias="orchestrationPrompt")
+    coordinator_name: str | None = Field(default=None, alias="coordinatorName")
+    task_template: str = Field(default="", alias="taskTemplate")
+
+
+class CustomTeamResponse(BaseModel):
+    """Result of registering a custom team."""
+
+    team_id: str
+    name: str
 
 
 class TeamStateResponse(BaseModel):
@@ -261,6 +299,29 @@ def build_team_router(
         ]
         return RolesResponse(roles=roles)
 
+    @router.post("/custom", response_model=CustomTeamResponse)
+    def register_custom_team(
+        req: CustomTeamRequest,
+    ) -> CustomTeamResponse:
+        """Register a custom team definition and return its team_id.
+
+        The frontend calls this before launching ``/ugsci-team`` so the
+        full team definition (members, steps, orchestration prompt)
+        is available to the backend without encoding complex JSON in
+        the slash command text.
+        """
+        team_def = req.model_dump(by_alias=True)
+        team_id = save_custom_team(team_def)
+        return CustomTeamResponse(team_id=team_id, name=req.name)
+
+    @router.get("/custom", response_model=list[CustomTeamResponse])
+    def list_custom_team_defs() -> list[CustomTeamResponse]:
+        """List all registered custom teams."""
+        return [
+            CustomTeamResponse(team_id=t["team_id"], name=t.get("name", t["team_id"]))
+            for t in list_custom_teams()
+        ]
+
     @router.get("/state", response_model=TeamStateResponse)
     def get_team_state(request: Request) -> TeamStateResponse:
         agent_id = request.headers.get("X-Agent-Id", "").strip()
@@ -282,6 +343,10 @@ def build_team_router(
 
 
 __all__ = [
+    "CustomTeamMember",
+    "CustomTeamRequest",
+    "CustomTeamResponse",
+    "CustomTeamStep",
     "PresetTeamsResponse",
     "PresetTeamDefinition",
     "RoleDefinition",

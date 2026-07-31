@@ -19,17 +19,18 @@ function makeSseMock() {
     },
   });
 
-  const mockFetch = vi.fn().mockResolvedValue({
+  const response = {
     ok: true,
     body: stream,
-  } as unknown as Response);
+  } as unknown as Response;
+  const mockFetch = vi.fn().mockResolvedValue(response);
 
   const push = (line: string) => {
     ctrl.enqueue(encoder.encode(line + "\n"));
   };
   const close = () => ctrl.close();
 
-  return { mockFetch, push, close };
+  return { mockFetch, response, push, close };
 }
 
 describe("useWorkspaceWatch — message handling", () => {
@@ -181,5 +182,52 @@ describe("useWorkspaceWatch — message handling", () => {
 
     close();
     unmount2();
+  });
+
+  it("作用域切换后不再投递旧连接的延迟事件", async () => {
+    const first = makeSseMock();
+    const second = makeSseMock();
+    const mockFetch = vi
+      .fn()
+      .mockResolvedValueOnce(first.response)
+      .mockResolvedValueOnce(second.response);
+    vi.stubGlobal("fetch", mockFetch);
+    const callback = vi.fn();
+
+    const { rerender, unmount } = renderHook(
+      ({ agentId }) =>
+        useWorkspaceWatch(callback, true, {
+          agentId,
+          projectRoot: "/project",
+        }),
+      { initialProps: { agentId: "agent-a" } },
+    );
+
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
+    rerender({ agentId: "agent-b" });
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
+
+    const stalePayload = JSON.stringify({
+      type: "file_change",
+      events: [{ change: "modified", path: "/stale.ts" }],
+    });
+    act(() => first.push(`data: ${stalePayload}`));
+    await act(async () => {});
+    expect(callback).not.toHaveBeenCalled();
+
+    const currentPayload = JSON.stringify({
+      type: "file_change",
+      events: [{ change: "modified", path: "/current.ts" }],
+    });
+    act(() => second.push(`data: ${currentPayload}`));
+    await waitFor(() =>
+      expect(callback).toHaveBeenCalledWith([
+        { change: "modified", path: "/current.ts" },
+      ]),
+    );
+
+    first.close();
+    second.close();
+    unmount();
   });
 });

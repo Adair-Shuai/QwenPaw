@@ -16,14 +16,41 @@ import json
 import logging
 import os
 import re
+import shutil
+import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.engine")
 
+# Plugin source directory — used only for legacy migration reference.
 PLUGIN_DIR = Path(__file__).resolve().parent.parent  # plugins/bundle/ugsci/
-ENGINES_DIR = PLUGIN_DIR / "engines"
+
+# Legacy engine-config location inside the plugin installation directory.
+# Kept as a module-level constant so tests can monkeypatch it.
+_LEGACY_ENGINES_DIR = PLUGIN_DIR / "engines"
+
+
+def _resolve_engines_dir() -> Path:
+    """Resolve the engine config directory under ``WORKING_DIR``.
+
+    Engine configs are stored in ``QWENPAW_WORKING_DIR/ugsci/engines``
+    so they survive plugin upgrades (cf. BUG-009).  Previously they
+    lived inside the plugin installation directory and were deleted
+    whenever the bundled plugin was updated via ``shutil.rmtree``.
+    """
+    try:
+        from qwenpaw.constant import WORKING_DIR
+
+        base = Path(WORKING_DIR)
+    except Exception:
+        base = Path.home() / ".qwenpaw"
+    return base / "ugsci" / "engines"
+
+
+# Module-level for backward compatibility — tests monkeypatch this.
+ENGINES_DIR = _resolve_engines_dir()
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -178,13 +205,25 @@ def _engine_file_path(engine_id: str) -> Path:
 
 
 def _write_engine(engine: EngineInfo) -> None:
-    """Write an engine record to its JSON file."""
+    """Write an engine record to its JSON file.
+
+    Uses a temporary file plus ``os.replace()`` so that an interrupted
+    write never leaves a partially-written (and thus corrupt) JSON
+    file that ``_read_all_engines()`` would silently skip.
+    """
     path = _engine_file_path(engine.id)
     data = asdict(engine)
-    path.write_text(
-        json.dumps(data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    payload = json.dumps(data, ensure_ascii=False, indent=2)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(payload, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink(missing_ok=True)
+        except OSError:
+            logger.debug("Failed to remove engine temp file %s", tmp)
     logger.debug("Engine '%s' written to %s", engine.id, path)
 
 
@@ -224,8 +263,50 @@ def _read_engine(engine_id: str) -> Optional[EngineInfo]:
         return None
 
 
+def _migrate_legacy_engines() -> int:
+    """Migrate engine configs from the old plugin-dir location.
+
+    Copies JSON files from ``_LEGACY_ENGINES_DIR`` (inside the plugin
+    installation directory) to the current ``ENGINES_DIR``
+    (``WORKING_DIR/ugsci/engines``).  Only copies files that don't
+    already exist in the new location, so user modifications are
+    never overwritten.
+
+    Returns the count of migrated files.
+    """
+    legacy_dir = _LEGACY_ENGINES_DIR
+    if not legacy_dir.is_dir():
+        return 0
+
+    new_dir = _ensure_engines_dir()
+    count = 0
+    for f in sorted(legacy_dir.glob("*.json")):
+        target = new_dir / f.name
+        if target.exists():
+            continue  # Don't overwrite existing configs
+        try:
+            shutil.copy2(f, target)
+            count += 1
+            logger.info("Migrated engine config: %s", f.name)
+        except Exception as exc:
+            logger.warning("Failed to migrate engine %s: %s", f, exc)
+
+    if count:
+        logger.info(
+            "Migrated %d engine config(s) from %s to %s",
+            count, legacy_dir, new_dir,
+        )
+    return count
+
+
 def init_default_engines() -> int:
-    """Ensure default engine JSON files exist. Returns count created."""
+    """Ensure default engine JSON files exist. Returns count created.
+
+    Also performs a one-time migration from the legacy plugin-dir
+    location so existing user configs are preserved across the
+    transition to ``WORKING_DIR``-based storage (BUG-009).
+    """
+    _migrate_legacy_engines()
     count = 0
     for def_eng in DEFAULT_ENGINES:
         path = _engine_file_path(def_eng["id"])

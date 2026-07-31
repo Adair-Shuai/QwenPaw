@@ -69,7 +69,10 @@ import {
 } from "../../plugins/registry/useChatExtensions";
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
 import { WorkspacePanel } from "../../components/Workspace";
-import { useWorkspaceStore } from "../../components/Workspace/store/workspaceStore";
+import {
+  buildWorkspaceSessionKey,
+  useWorkspaceStore,
+} from "../../components/Workspace/store/workspaceStore";
 import { useReaderContextInjector } from "../../features/pdf-reader";
 import {
   resolveLocalized,
@@ -2200,6 +2203,13 @@ export default function ChatPage() {
     ? null
     : getLastChatId(selectedAgent);
   const effectiveChatId = chatId || safeLastActive || safeLastStored;
+  const workspaceSessionKey = buildWorkspaceSessionKey(
+    selectedAgent,
+    effectiveChatId,
+  );
+  useEffect(() => {
+    useWorkspaceStore.getState().setSession(workspaceSessionKey);
+  }, [workspaceSessionKey]);
   if (effectiveChatId && sessionApi.preferredChatId !== effectiveChatId) {
     sessionApi.preferredChatId = effectiveChatId;
   }
@@ -2217,6 +2227,22 @@ export default function ChatPage() {
 
     sessionApi.onSessionIdResolved = (tempId, realId) => {
       if (!isChatActiveRef.current) return;
+      const agentId = selectedAgentRef.current;
+      const workspaceStore = useWorkspaceStore.getState();
+      const resolvedWorkspaceSession = buildWorkspaceSessionKey(
+        agentId,
+        realId,
+      );
+      // A brand-new chat stays on the base route until the backend resolves
+      // its real ID, so early artifacts may belong to either "new" or tempId.
+      workspaceStore.moveSession(
+        buildWorkspaceSessionKey(agentId, null),
+        resolvedWorkspaceSession,
+      );
+      workspaceStore.moveSession(
+        buildWorkspaceSessionKey(agentId, tempId),
+        resolvedWorkspaceSession,
+      );
       try {
         useMessageQueueStore.getState().migrateQueue(tempId, realId);
       } catch {
@@ -2236,6 +2262,9 @@ export default function ChatPage() {
       // at the removed session, so agent-switch restore doesn't resurrect a
       // deleted conversation.
       const agentId = selectedAgentRef.current;
+      useWorkspaceStore
+        .getState()
+        .clearSession(buildWorkspaceSessionKey(agentId, removedId));
       if (getLastChatIdRef.current(agentId) === removedId) {
         removeLastChatIdRef.current(agentId);
       }
@@ -3317,11 +3346,14 @@ export default function ChatPage() {
               const text = extractCopyableText(data);
               if (!text) return;
               useWorkspaceStore.getState().openArtifact({
-                id: `response-${Date.now()}`,
+                id: `response-${workspaceSessionKey}-${Date.now()}`,
                 title: t("workspace.assistantResponse", "AI 回复"),
                 mimeType: "text/markdown",
                 textContent: text,
                 source: "generated",
+                sessionId: workspaceSessionKey,
+                agentId: selectedAgent,
+                projectRoot: projectDir ?? null,
               });
             },
           },
@@ -3389,6 +3421,7 @@ export default function ChatPage() {
     consoleSkills,
     loopAvailableModes,
     selectedAgent,
+    workspaceSessionKey,
     selectedAgentBackend,
     backendCapabilities,
     backendCommands,

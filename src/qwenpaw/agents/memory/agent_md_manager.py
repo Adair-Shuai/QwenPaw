@@ -50,7 +50,7 @@ class AgentMdManager:
 
     @staticmethod
     def _sanitize_md_name(md_name: str) -> str:
-        """Normalize *md_name* to a plain filename (no path components).
+        """Validate *md_name* as a portable plain filename.
 
         Rejects names that contain path separators or ``..`` traversal
         sequences so that callers cannot escape the intended directory.
@@ -58,24 +58,64 @@ class AgentMdManager:
         Raises:
             ValueError: If the name contains illegal path components.
         """
-        # Normalise Windows-style backslashes before any other check
-        normalized = md_name.replace("\\", "/")
-
-        # Reject any component that looks like directory traversal
-        parts = normalized.split("/")
-        for part in parts:
-            if part == "..":
-                raise ValueError(
-                    f"Invalid md_name '{md_name}':"
-                    " path traversal is not allowed",
-                )
-
-        # Keep only the final component so that any remaining "/" is stripped
-        filename = parts[-1]
-
+        filename = md_name.strip()
         if not filename:
             raise ValueError(f"Invalid md_name '{md_name}': filename is empty")
 
+        if "/" in filename or "\\" in filename:
+            raise ValueError(
+                f"Invalid md_name '{md_name}': "
+                "path separators are not allowed",
+            )
+        if filename in {".", ".."}:
+            raise ValueError(
+                f"Invalid md_name '{md_name}': path traversal is not allowed",
+            )
+        if any(ord(char) < 32 for char in filename):
+            raise ValueError(
+                f"Invalid md_name '{md_name}': "
+                "control characters are not allowed",
+            )
+        if any(char in '<>:"|?*' for char in filename):
+            raise ValueError(
+                f"Invalid md_name '{md_name}': contains an illegal character",
+            )
+        if filename.endswith((" ", ".")):
+            raise ValueError(
+                f"Invalid md_name '{md_name}': cannot end with a space or dot",
+            )
+
+        stem = filename.split(".", 1)[0].upper()
+        reserved = {"CON", "PRN", "AUX", "NUL"}
+        reserved.update(f"COM{i}" for i in range(1, 10))
+        reserved.update(f"LPT{i}" for i in range(1, 10))
+        if stem in reserved:
+            raise ValueError(
+                f"Invalid md_name '{md_name}': reserved system filename",
+            )
+        if len(filename.encode("utf-8")) > 255:
+            raise ValueError(
+                f"Invalid md_name '{md_name}': filename is too long",
+            )
+
+        return filename
+
+    @classmethod
+    def normalize_working_md_name(cls, md_name: str) -> str:
+        """Return the validated final ``.md`` filename used on disk."""
+        filename = cls._sanitize_md_name(md_name)
+        if not filename.lower().endswith(".md"):
+            filename += ".md"
+        elif not filename.endswith(".md"):
+            filename = f"{filename[:-3]}.md"
+        if not filename[:-3]:
+            raise ValueError(
+                f"Invalid md_name '{md_name}': filename stem is empty",
+            )
+        if len(filename.encode("utf-8")) > 255:
+            raise ValueError(
+                f"Invalid md_name '{md_name}': filename is too long",
+            )
         return filename
 
     @staticmethod
@@ -147,24 +187,21 @@ class AgentMdManager:
         Returns:
             str: The file content as string
         """
-        md_name = self._sanitize_md_name(md_name)
-        if not md_name.endswith(".md"):
-            md_name += ".md"
+        md_name = self.normalize_working_md_name(md_name)
         file_path = self.working_dir / md_name
         self._assert_within_dir(file_path, self.working_dir)
         if not file_path.exists():
             raise FileNotFoundError(f"Working md file not found: {md_name}")
 
-        return read_text_file_with_encoding_fallback(file_path).strip()
+        return read_text_file_with_encoding_fallback(file_path)
 
-    def write_working_md(self, md_name: str, content: str):
+    def write_working_md(self, md_name: str, content: str) -> str:
         """Write markdown content to a file in the working directory."""
-        md_name = self._sanitize_md_name(md_name)
-        if not md_name.endswith(".md"):
-            md_name += ".md"
+        md_name = self.normalize_working_md_name(md_name)
         file_path = self.working_dir / md_name
         self._assert_within_dir(file_path, self.working_dir)
         file_path.write_text(content, encoding="utf-8")
+        return md_name
 
     def _memory_path_for_read_write(self, md_path: str) -> Path:
         rel_path = self._normalize_md_path(md_path)

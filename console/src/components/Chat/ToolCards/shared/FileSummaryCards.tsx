@@ -34,6 +34,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import { workspaceApi } from "@/api/modules/workspace";
 import { buildAuthHeaders } from "@/api/authHeaders";
+import { useAgentStore } from "@/stores/agentStore";
+import { useProjectDir } from "@/stores/codingModeStore";
 import {
   DownloadCancelledError,
   downloadFileFromUrl,
@@ -816,6 +818,11 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(
     () => new Set(),
   );
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const { projectDir } = useProjectDir();
+  const workspaceSessionId = useWorkspaceStore(
+    (state) => state.currentSessionId,
+  );
 
   // 分离交付物和中间文件
   const { deliverables, generatedFiles } = useMemo(() => {
@@ -837,7 +844,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   const handleOpenInWorkspace = async (info: FileInfo) => {
     const ext = info.extension || "";
     const mimeType = getMimeType(ext);
-    const artifactId = `filecard-${info.toolCallId}`;
+    const artifactId = `filecard-${workspaceSessionId}-${info.toolCallId}`;
 
     // For binary files, use binaryUrl directly
     if (info.isBinary) {
@@ -849,6 +856,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         extension: ext || undefined,
         binaryUrl: info.binaryUrl,
         toolName: info.toolName,
+        workspacePath: info.filePath,
+        agentId: selectedAgent,
+        projectRoot: projectDir ?? null,
+        sessionId: workspaceSessionId,
       });
       return;
     }
@@ -868,6 +879,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         extension: ext || undefined,
         textContent: info.content,
         toolName: info.toolName,
+        workspacePath: info.filePath,
+        agentId: selectedAgent,
+        projectRoot: projectDir ?? null,
+        sessionId: workspaceSessionId,
       });
       return;
     }
@@ -883,6 +898,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       textContent: "",
       isStreaming: true,
       toolName: info.toolName,
+      workspacePath: info.filePath,
+      agentId: selectedAgent,
+      projectRoot: projectDir ?? null,
+      sessionId: workspaceSessionId,
     });
 
     // For send_file_to_user, try fetching via the file preview URL first.

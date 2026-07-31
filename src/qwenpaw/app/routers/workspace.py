@@ -42,7 +42,11 @@ from ...config.config import load_agent_config, save_agent_config
 from ...agents.memory.agent_md_manager import AgentMdManager
 from ...agents.templates import get_workspace_md_template_id
 from ...agents.utils import copy_workspace_md_files
-from ...constant import BUILTIN_QA_AGENT_ID, SUPPORTED_AGENT_LANGUAGES
+from ...constant import (
+    BUILTIN_QA_AGENT_ID,
+    SUPPORTED_AGENT_LANGUAGES,
+    WORKING_DIR,
+)
 from ..agent_context import get_agent_for_request, get_coding_dir
 
 logger = logging.getLogger(__name__)
@@ -65,6 +69,18 @@ class MdFileContent(BaseModel):
     """Markdown file content."""
 
     content: str = Field(..., description="File content")
+
+
+class PromptFileWriteRequest(BaseModel):
+    """Create/update a root Markdown file and optionally change
+    prompt mount."""
+
+    filename: str = Field(..., description="Portable root Markdown filename")
+    content: str = Field(..., description="Markdown content")
+    enable: bool | None = Field(
+        None,
+        description="True to mount, false to unmount, null to preserve config",
+    )
 
 
 def _dir_stats(root: Path) -> tuple[int, int]:
@@ -148,6 +164,8 @@ async def read_working_file(
         return MdFileContent(content=content)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -172,8 +190,73 @@ async def write_working_file(
         )
         workspace_manager.write_working_md(md_name, body.content)
         return {"written": True}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.post(
+    "/prompt-files",
+    response_model=dict,
+    summary="Write a Markdown file and atomically update prompt mounting",
+)
+async def write_prompt_file(
+    body: PromptFileWriteRequest,
+    request: Request,
+) -> dict:
+    """Write Markdown and compensate the file if config persistence fails."""
+    workspace = await get_agent_for_request(request)
+    manager = AgentMdManager(
+        str(workspace.workspace_dir),
+        agent_id=workspace.agent_id,
+    )
+    try:
+        filename = manager.normalize_working_md_name(body.filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    file_path = manager.working_dir / filename
+    # pylint: disable=protected-access
+    manager._assert_within_dir(file_path, manager.working_dir)
+    existed = file_path.exists()
+    previous_bytes = file_path.read_bytes() if existed else None
+    agent_config = load_agent_config(workspace.agent_id)
+    previous_prompt_files = list(agent_config.system_prompt_files or [])
+    next_prompt_files = list(previous_prompt_files)
+
+    if body.enable is True and filename not in next_prompt_files:
+        next_prompt_files.append(filename)
+    elif body.enable is False:
+        next_prompt_files = [
+            name for name in next_prompt_files if name != filename
+        ]
+
+    try:
+        manager.write_working_md(filename, body.content)
+        if body.enable is not None:
+            agent_config.system_prompt_files = next_prompt_files
+            save_agent_config(workspace.agent_id, agent_config)
+    except Exception as exc:
+        try:
+            if existed and previous_bytes is not None:
+                file_path.write_bytes(previous_bytes)
+            elif file_path.exists():
+                file_path.unlink()
+        except OSError:
+            logger.exception("Failed to roll back prompt file %s", filename)
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    try:
+        schedule_agent_reload(request, workspace.agent_id)
+    except Exception:
+        logger.exception("Failed to schedule reload after saving %s", filename)
+
+    return {
+        "written": True,
+        "filename": filename,
+        "system_prompt_files": next_prompt_files,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -342,16 +425,28 @@ async def read_binary_file(
     # When the path looks like a URL (contains "://"), treat it as a URL;
     # otherwise check if it's an absolute filesystem path.
     if "://" in file_path:
-        target = _resolve_file_path_from_url(file_path, coding_dir)
+        target = _resolve_file_path_from_url(
+            file_path,
+            coding_dir,
+            workspace.workspace_dir,
+        )
     else:
         extracted = Path(file_path)
         if extracted.is_absolute():
-            target = extracted
+            target = _ensure_path_in_allowed_roots(
+                extracted,
+                coding_dir,
+                workspace.workspace_dir,
+            )
         else:
             try:
                 target = safe_join(coding_dir, file_path)
             except Exception:
-                target = extracted
+                target = _ensure_path_in_allowed_roots(
+                    extracted,
+                    coding_dir,
+                    workspace.workspace_dir,
+                )
 
     ext = target.suffix.lstrip(".").lower()
     mime = _MIME_MAP.get(ext)
@@ -656,6 +751,7 @@ def _convert_with_officecli(file_path: str) -> str | None:
 
 _page_count_cache: dict[str, tuple[int, float]] = {}
 _PAGE_COUNT_CACHE_TTL = 300.0  # 5 minutes
+_PAGE_COUNT_CACHE_MAX_SIZE = 100
 
 
 def _get_officecli_page_count(file_path: str) -> int:
@@ -668,8 +764,27 @@ def _get_officecli_page_count(file_path: str) -> int:
     """
     import time as _time
 
+    now = _time.time()
+
+    # Evict expired entries to prevent unbounded growth.
+    expired = [
+        k
+        for k, (_, ts) in _page_count_cache.items()
+        if now - ts >= _PAGE_COUNT_CACHE_TTL
+    ]
+    for k in expired:
+        del _page_count_cache[k]
+
+    # If still over the size cap, drop the oldest entries.
+    if len(_page_count_cache) > _PAGE_COUNT_CACHE_MAX_SIZE:
+        for k, _ in sorted(
+            _page_count_cache.items(),
+            key=lambda item: item[1][1],
+        )[: len(_page_count_cache) - _PAGE_COUNT_CACHE_MAX_SIZE]:
+            del _page_count_cache[k]
+
     cached = _page_count_cache.get(file_path)
-    if cached and (_time.time() - cached[1]) < _PAGE_COUNT_CACHE_TTL:
+    if cached and (now - cached[1]) < _PAGE_COUNT_CACHE_TTL:
         return cached[0]
 
     try:
@@ -710,16 +825,58 @@ def _get_officecli_page_count(file_path: str) -> int:
         or nested.get("totalPages")
         or 0
     )
-    _page_count_cache[file_path] = (count, _time.time())
+    _page_count_cache[file_path] = (count, now)
     return count
 
 
-def _resolve_file_path_from_url(url: str, coding_dir: Path) -> Path:
+def _ensure_path_in_allowed_roots(
+    target: Path,
+    coding_dir: Path,
+    workspace_dir: Path | None = None,
+) -> Path:
+    """Ensure *target* resolves within coding_dir, workspace_dir,
+    or WORKING_DIR.
+
+    Absolute paths (e.g. from ``file://`` URLs produced by tool-call
+    results) are accepted only when they resolve within the coding
+    project directory, the agent workspace, or the global QwenPaw
+    working directory.  This mirrors the Tauri backend's
+    ``resolve_workspace_file_path`` dual-root check and prevents
+    arbitrary filesystem reads via crafted absolute paths.
+
+    Raises ``HTTPException(403)`` when the path is outside all roots.
+    """
+    resolved = target.resolve()
+    allowed_roots: list[Path] = []
+    for root in (coding_dir, workspace_dir, WORKING_DIR):
+        if root is not None:
+            try:
+                allowed_roots.append(root.resolve())
+            except OSError:
+                pass
+    for root in allowed_roots:
+        try:
+            resolved.relative_to(root)
+            return resolved
+        except ValueError:
+            continue
+    raise HTTPException(
+        status_code=403,
+        detail="Path is outside the allowed workspace directories",
+    )
+
+
+def _resolve_file_path_from_url(
+    url: str,
+    coding_dir: Path,
+    workspace_dir: Path | None = None,
+) -> Path:
     """Resolve a frontend URL to an absolute file path.
 
     Handles ``/api/workspace/binary-files/<path>``, absolute paths, and
     ``file://`` URLs.  Raises ``HTTPException(404)`` if the file does
-    not exist.
+    not exist, or ``HTTPException(403)`` if the resolved path is outside
+    the allowed workspace roots.
     """
     if "/binary-files/" in url:
         file_path = url.split("/binary-files/", 1)[1].split("?")[0]
@@ -753,16 +910,25 @@ def _resolve_file_path_from_url(url: str, coding_dir: Path) -> Path:
         file_path = url
 
     # If the extracted path is absolute (common with file:// URLs from
-    # tool-call results), use it directly instead of trying safe_join
-    # which would reject it as a path-traversal attempt.
+    # tool-call results), verify it is within the allowed workspace roots
+    # before using it.  Relative paths go through safe_join for the same
+    # containment guarantee.
     extracted = Path(file_path)
     if extracted.is_absolute():
-        target = extracted
+        target = _ensure_path_in_allowed_roots(
+            extracted,
+            coding_dir,
+            workspace_dir,
+        )
     else:
         try:
             target = safe_join(coding_dir, file_path)
         except Exception:
-            target = extracted
+            target = _ensure_path_in_allowed_roots(
+                extracted,
+                coding_dir,
+                workspace_dir,
+            )
 
     if not target.exists():
         raise HTTPException(
@@ -971,6 +1137,18 @@ def _build_docx_transform(page_info: dict):
     return transform_document
 
 
+def _html_escape(text: str) -> str:
+    """Escape HTML special characters to prevent injection in legacy
+    conversion."""
+    return (
+        text.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+        .replace("'", "&#x27;")
+    )
+
+
 def _convert_docx_to_html(  # pylint: disable=R0912,R0915
     file_path: str,
 ) -> str:
@@ -1028,17 +1206,18 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
                     continue
                 style = (para.style.name or "").lower()
                 if "heading 1" in style:
-                    html_parts.append(f"<h1>{text}</h1>")
+                    html_parts.append(f"<h1>{_html_escape(text)}</h1>")
                 elif "heading 2" in style:
-                    html_parts.append(f"<h2>{text}</h2>")
+                    html_parts.append(f"<h2>{_html_escape(text)}</h2>")
                 elif "heading 3" in style:
-                    html_parts.append(f"<h3>{text}</h3>")
+                    html_parts.append(f"<h3>{_html_escape(text)}</h3>")
                 elif "title" in style:
                     html_parts.append(
-                        f"<h1 style='text-align:center'>{text}</h1>",
+                        f"<h1 style='text-align:center'>"
+                        f"{_html_escape(text)}</h1>",
                     )
                 else:
-                    html_parts.append(f"<p>{text}</p>")
+                    html_parts.append(f"<p>{_html_escape(text)}</p>")
             # Tables
             for table in doc.tables:
                 html_parts.append(
@@ -1047,7 +1226,9 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
                 for row in table.rows:
                     html_parts.append("<tr>")
                     for cell in row.cells:
-                        html_parts.append(f"<td>{cell.text}</td>")
+                        html_parts.append(
+                            f"<td>{_html_escape(cell.text)}</td>",
+                        )
                     html_parts.append("</tr>")
                 html_parts.append("</table>")
             return "\n".join(html_parts)
@@ -1076,15 +1257,18 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
             wb = openpyxl.load_workbook(file_path, read_only=True)
             html_parts = []
             for ws in wb.worksheets:
-                html_parts.append(f"<h3>Sheet: {ws.title}</h3>")
+                html_parts.append(
+                    f"<h3>Sheet: {_html_escape(ws.title)}</h3>",
+                )
                 html_parts.append(
                     "<table border='1' style='border-collapse:collapse'>",
                 )
                 for row in ws.iter_rows(max_row=100, values_only=True):
                     html_parts.append("<tr>")
                     for cell in row:
+                        cell_str = str(cell) if cell is not None else ""
                         html_parts.append(
-                            f"<td>{cell if cell is not None else ''}</td>",
+                            f"<td>{_html_escape(cell_str)}</td>",
                         )
                     html_parts.append("</tr>")
                 html_parts.append("</table>")
@@ -1113,7 +1297,9 @@ def _convert_docx_to_html(  # pylint: disable=R0912,R0915
                 html_parts.append("<div>")
                 for shape in slide.shapes:
                     if hasattr(shape, "text") and shape.text.strip():
-                        html_parts.append(f"<p>{shape.text}</p>")
+                        html_parts.append(
+                            f"<p>{_html_escape(shape.text)}</p>",
+                        )
                 html_parts.append("</div>")
             return "\n".join(html_parts)
         except ImportError as exc:
@@ -1151,7 +1337,11 @@ async def convert_office(
     workspace = await get_agent_for_request(request)
     coding_dir = get_coding_dir(workspace)
 
-    target = _resolve_file_path_from_url(body.url or "", coding_dir)
+    target = _resolve_file_path_from_url(
+        body.url or "",
+        coding_dir,
+        workspace.workspace_dir,
+    )
 
     def _convert() -> tuple[str, str]:
         # Try officecli first for high-fidelity rendering
@@ -1208,9 +1398,16 @@ async def office_screenshot(
 
     workspace = await get_agent_for_request(request)
     coding_dir = get_coding_dir(workspace)
-    target = _resolve_file_path_from_url(body.url, coding_dir)
+    target = _resolve_file_path_from_url(
+        body.url,
+        coding_dir,
+        workspace.workspace_dir,
+    )
 
-    tmp_path = tempfile.mktemp(suffix=".png")
+    # Use mkstemp instead of deprecated mktemp to avoid TOCTOU race.
+    # officecli will overwrite the empty file created here.
+    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
+    os.close(tmp_fd)  # Release the fd; officecli opens it via -o
 
     def _run_screenshot() -> subprocess.CompletedProcess:
         return subprocess.run(  # noqa: S603
@@ -1288,7 +1485,11 @@ async def office_outline(
 
     workspace = await get_agent_for_request(request)
     coding_dir = get_coding_dir(workspace)
-    target = _resolve_file_path_from_url(body.url, coding_dir)
+    target = _resolve_file_path_from_url(
+        body.url,
+        coding_dir,
+        workspace.workspace_dir,
+    )
 
     def _run_outline() -> dict:
         result = subprocess.run(  # noqa: S603
@@ -1347,7 +1548,11 @@ async def office_issues(
 
     workspace = await get_agent_for_request(request)
     coding_dir = get_coding_dir(workspace)
-    target = _resolve_file_path_from_url(body.url, coding_dir)
+    target = _resolve_file_path_from_url(
+        body.url,
+        coding_dir,
+        workspace.workspace_dir,
+    )
 
     def _run_issues() -> dict:
         result = subprocess.run(  # noqa: S603

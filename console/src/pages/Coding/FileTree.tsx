@@ -294,6 +294,11 @@ export default function FileTree({ onFileSelect }: FileTreeProps) {
   const [projectName, setProjectName] = useState<string>("workspace");
 
   const { projectDir, setProjectDir } = useProjectDir();
+  const { selectedAgent } = useAgentStore();
+  const fileScope = useMemo(
+    () => ({ agentId: selectedAgent, projectRoot: projectDir }),
+    [projectDir, selectedAgent],
+  );
 
   // Sync displayed project name from server; cancel stale in-flight requests
   useEffect(() => {
@@ -342,37 +347,39 @@ export default function FileTree({ onFileSelect }: FileTreeProps) {
     }
   }, [loadGitStatus]);
 
-  // Reload file tree when project switches (projectDir from store).
-  // The cached file contents belong to the previous project root and would
-  // be returned for matching paths in the new project — wipe them.
+  // Reload the tree when Agent/project scope changes. File content caches are
+  // scoped, so other projects remain available without cross-scope hits.
   useEffect(() => {
-    useCodeFileCacheStore.getState().clear();
     void load();
-  }, [load, projectDir]);
+  }, [fileScope, load]);
 
   // SSE handler: split by event type so saving an open file doesn't trigger
   // a full tree rescan, and so we drop stale entries from the file content
   // cache before the user opens the changed file again.
-  useWorkspaceWatch((events) => {
-    const cache = useCodeFileCacheStore.getState();
-    let hasStructural = false;
-    let hasModified = false;
-    for (const e of events) {
-      if (e.change === "added" || e.change === "deleted") {
-        hasStructural = true;
-        cache.invalidate(e.path);
-      } else if (e.change === "modified") {
-        hasModified = true;
-        cache.invalidate(e.path);
+  useWorkspaceWatch(
+    (events) => {
+      const cache = useCodeFileCacheStore.getState();
+      let hasStructural = false;
+      let hasModified = false;
+      for (const e of events) {
+        if (e.change === "added" || e.change === "deleted") {
+          hasStructural = true;
+          cache.invalidate(fileScope, e.path);
+        } else if (e.change === "modified") {
+          hasModified = true;
+          cache.invalidate(fileScope, e.path);
+        }
       }
-    }
-    if (hasStructural) {
-      void load();
-    } else if (hasModified) {
-      // Tree shape unchanged; only git decoration could have changed.
-      void loadGitStatus();
-    }
-  });
+      if (hasStructural) {
+        void load();
+      } else if (hasModified) {
+        // Tree shape unchanged; only git decoration could have changed.
+        void loadGitStatus();
+      }
+    },
+    true,
+    fileScope,
+  );
 
   const dirStatusMap = useMemo(
     () => buildDirStatusMap(gitStatusMap),
@@ -383,7 +390,7 @@ export default function FileTree({ onFileSelect }: FileTreeProps) {
     async (path: string) => {
       setSelectedPath(path);
       try {
-        const result = await workspaceApi.loadCodeFile(path);
+        const result = await workspaceApi.loadCodeFile(path, fileScope);
         onFileSelect(path, result.content ?? "");
       } catch (err: unknown) {
         const status =
@@ -398,13 +405,12 @@ export default function FileTree({ onFileSelect }: FileTreeProps) {
         onFileSelect(path, placeholder);
       }
     },
-    [onFileSelect],
+    [fileScope, onFileSelect],
   );
 
-  const { selectedAgent } = useAgentStore();
   const { clearAgent } = useCodingTabsStore();
 
-  const handleProjectConfirm = (_path: string | null) => {
+  const handleProjectConfirm = () => {
     setProjectModalOpen(false);
     // Clear editor tabs from the previous project so stale files don't linger
     clearAgent(selectedAgent);

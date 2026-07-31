@@ -38,6 +38,8 @@ interface WorkspaceStoreState extends WorkspaceState {
 
   // ── 扩展 Actions ──
   setSession: (sessionId: string) => void;
+  clearSession: (sessionId: string) => void;
+  moveSession: (fromSessionId: string, toSessionId: string) => void;
   getArtifact: (id: string) => WorkspaceArtifact | undefined;
   getActiveArtifact: () => WorkspaceArtifact | undefined;
   closeOtherTabs: (artifactId: string) => void;
@@ -71,8 +73,69 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
             .map((a) => toTab(a));
           return {
             currentSessionId: sessionId,
+            tabsBySession: {
+              ...state.tabsBySession,
+              [sessionId]: tabs.map((tab) => tab.artifactId),
+            },
             tabs,
             activeTabId: tabs[0]?.artifactId ?? null,
+            panelOpen: tabs.length > 0 ? state.panelOpen : false,
+          };
+        }),
+
+      clearSession: (sessionId) =>
+        set((state) => {
+          const artifactIds = state.tabsBySession[sessionId] ?? [];
+          const tabsBySession = { ...state.tabsBySession };
+          delete tabsBySession[sessionId];
+          const artifacts = { ...state.artifacts };
+          for (const id of artifactIds) delete artifacts[id];
+          if (state.currentSessionId !== sessionId) {
+            return { artifacts, tabsBySession };
+          }
+          return {
+            artifacts,
+            tabsBySession,
+            tabs: [],
+            activeTabId: null,
+            panelOpen: false,
+          };
+        }),
+
+      moveSession: (fromSessionId, toSessionId) =>
+        set((state) => {
+          if (fromSessionId === toSessionId) return state;
+          const fromIds = state.tabsBySession[fromSessionId] ?? [];
+          const toIds = state.tabsBySession[toSessionId] ?? [];
+          const mergedIds = [...new Set([...toIds, ...fromIds])];
+          const tabsBySession = { ...state.tabsBySession };
+          delete tabsBySession[fromSessionId];
+          tabsBySession[toSessionId] = mergedIds;
+          const artifacts = { ...state.artifacts };
+          for (const id of fromIds) {
+            if (artifacts[id]) {
+              artifacts[id] = { ...artifacts[id], sessionId: toSessionId };
+            }
+          }
+          if (
+            state.currentSessionId !== fromSessionId &&
+            state.currentSessionId !== toSessionId
+          ) {
+            return { artifacts, tabsBySession };
+          }
+          const tabs = mergedIds
+            .map((id) => artifacts[id])
+            .filter(Boolean)
+            .map((artifact) => toTab(artifact));
+          return {
+            artifacts,
+            tabsBySession,
+            currentSessionId:
+              state.currentSessionId === fromSessionId
+                ? toSessionId
+                : state.currentSessionId,
+            tabs,
+            activeTabId: state.activeTabId ?? tabs[0]?.artifactId ?? null,
           };
         }),
 
@@ -249,10 +312,15 @@ export const useWorkspaceStore = create<WorkspaceStoreState>()(
     }),
     {
       name: "qwenpaw-workspace",
-      // 只持久化尺寸和 session 映射，不持久化 artifact 内容（太大）
+      version: 2,
+      migrate: (persisted) => {
+        const state = persisted as { panelWidth?: number } | undefined;
+        return { panelWidth: state?.panelWidth ?? DEFAULT_PANEL_WIDTH };
+      },
+      // Artifact contents are intentionally in-memory. Persisting tab IDs
+      // without their contents creates ghost tabs after a reload.
       partialize: (state) => ({
         panelWidth: state.panelWidth,
-        tabsBySession: state.tabsBySession,
       }),
     },
   ),
@@ -273,3 +341,10 @@ function toTab(artifact: WorkspaceArtifact): WorkspaceTab {
 }
 
 export { DEFAULT_PANEL_WIDTH, MIN_PANEL_WIDTH, MAX_PANEL_WIDTH };
+
+export function buildWorkspaceSessionKey(
+  agentId: string,
+  sessionId: string | null | undefined,
+): string {
+  return `${agentId || "default"}:${sessionId || "new"}`;
+}

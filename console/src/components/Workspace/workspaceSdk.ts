@@ -29,8 +29,12 @@
  */
 import type { Disposable } from "../../plugins/registry/types";
 import { rendererRegistry } from "./store/rendererRegistry";
-import { useWorkspaceStore } from "./store/workspaceStore";
+import {
+  buildWorkspaceSessionKey,
+  useWorkspaceStore,
+} from "./store/workspaceStore";
 import type { RendererRegistration, WorkspaceArtifact } from "./types";
+import { useAgentStore } from "../../stores/agentStore";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDK 接口定义
@@ -162,7 +166,12 @@ export function openArtifactFromToolCall(params: {
   content?: string;
   url?: string;
 }): string {
-  const id = `artifact-${params.toolName}-${Date.now()}`;
+  const agentId = useAgentStore.getState().selectedAgent;
+  const workspaceSessionId = buildWorkspaceSessionKey(
+    agentId,
+    params.sessionId,
+  );
+  const id = `artifact-${workspaceSessionId}-${params.messageId}-${params.toolName}`;
   const artifact: WorkspaceArtifact = {
     id,
     title: params.title ?? `${params.toolName} output`,
@@ -171,7 +180,8 @@ export function openArtifactFromToolCall(params: {
     extension: params.extension,
     textContent: params.content,
     binaryUrl: params.url,
-    sessionId: params.sessionId,
+    sessionId: workspaceSessionId,
+    agentId,
     messageId: params.messageId,
     toolName: params.toolName,
     createdAt: Date.now(),

@@ -244,45 +244,60 @@ class UGSciPlugin:
                 wait_for_simulation,
             )
 
+            # Each tool declares its governance type and target parameter
+            # so the Tool Guard policy engine can perform proper Phase 0 / 1
+            # checks on the actual file or process targets (BUG-001).
             tools = [
                 (
                     "launch_simulation",
                     launch_simulation,
                     "启动数值模拟 (Eclipse/CMG/COMSOL)",
                     "🚀",
+                    "shell",
+                    "working_dir",
                 ),
                 (
                     "check_simulation_status",
                     check_simulation_status,
                     "查询模拟运行状态与收敛性",
                     "📊",
+                    "internal",
+                    "",
                 ),
                 (
                     "wait_for_simulation",
                     wait_for_simulation,
                     "等待模拟完成 (内部轮询，零token消耗)",
                     "⏳",
+                    "internal",
+                    "",
                 ),
                 (
                     "read_simulation_results",
                     read_simulation_results,
                     "读取模拟结果数据",
                     "📖",
+                    "file",
+                    "result_file",
                 ),
                 (
                     "edit_simulation_deck",
                     edit_simulation_deck,
                     "修改模拟器输入文件",
                     "✏️",
+                    "file",
+                    "deck_file",
                 ),
                 (
                     "analyze_simulation",
                     analyze_simulation,
                     "分析模拟结果 (收敛/平衡/性能/对比)",
                     "🔬",
+                    "file",
+                    "result_file",
                 ),
             ]
-            for tool_name, tool_func, description, icon in tools:
+            for tool_name, tool_func, description, icon, tool_type, target_param in tools:
                 try:
                     api.register_tool(
                         tool_name=tool_name,
@@ -290,6 +305,8 @@ class UGSciPlugin:
                         description=description,
                         icon=icon,
                         enabled=True,
+                        tool_type=tool_type,
+                        target_param=target_param,
                     )
                 except Exception as exc:
                     logger.error(
