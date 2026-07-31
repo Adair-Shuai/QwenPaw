@@ -99,7 +99,6 @@ function splitStdout(content: string): { head: string; stdout: string | null } {
     stdout: content.slice(match.index + match[0].length),
   };
 }
-}
 
 const highlighterStyle = {
   margin: 0,
