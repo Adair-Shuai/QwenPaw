@@ -74,6 +74,9 @@
         "compression": "lzma",
         "displayLanguageSelector": false
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "14.0"
     }
   },
   "plugins": {

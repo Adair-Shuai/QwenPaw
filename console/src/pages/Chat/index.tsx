@@ -18,6 +18,11 @@ import { useTranslation } from "react-i18next";
 import i18n from "../../i18n";
 import { useLocation, useNavigate } from "react-router-dom";
 import sessionApi from "./sessionApi";
+import {
+  attachClientMessageId,
+  createClientMessageId,
+  QWENPAW_CLIENT_MESSAGE_ID_KEY,
+} from "../../utils/clientMessageId";
 import defaultConfig, { getDefaultConfig } from "./OptionsPanel/defaultConfig";
 import { chatApi } from "../../api/modules/chat";
 import { agentApi } from "../../api/modules/agent";
@@ -51,6 +56,7 @@ import {
   patchContextMaxInputLength,
   wrapChatResponseUsageStream,
 } from "./turnUsage";
+import { wrapReplayFastForward } from "./replayFastForward";
 import { useTurnUsageStore } from "./turnUsageStore";
 import ChatHeaderTitle from "./components/ChatHeaderTitle";
 import ChatSessionInitializer from "./components/ChatSessionInitializer";
@@ -67,6 +73,7 @@ import { useWorkspaceStore } from "../../components/Workspace/store/workspaceSto
 import { useReaderContextInjector } from "../../features/pdf-reader";
 import {
   resolveLocalized,
+  type ChatApprovalRendererItem,
   type WelcomeRenderProps,
 } from "../../plugins/registry/types";
 import { ChatScalar, ChatList } from "../../plugins/registry/slotKeys";
@@ -99,6 +106,7 @@ interface ApprovalMessageData {
   isGeneralized?: boolean;
   exactTarget?: string;
   similarTarget?: string;
+  sourceType: string;
 }
 
 import WhisperSpeechButton, {
@@ -302,6 +310,7 @@ async function startBackgroundQueue(
       if (rs === "paused" || rs === "error") break;
 
       const item = current[0];
+      const clientMessageId = item.clientMessageId ?? item.id;
 
       // Wait until the backend finishes the currently running task before
       // sending the next one. This preserves order task1 → task2 → task3
@@ -334,7 +343,12 @@ async function startBackgroundQueue(
           { type: "text", text: item.text },
           ...buildAttachmentContentItems(item.attachments),
         ];
-        sessionApi.setLastUserMessage(chatIdForStatus, item.text, contentItems);
+        sessionApi.setLastUserMessage(
+          chatIdForStatus,
+          item.text,
+          contentItems,
+          clientMessageId,
+        );
       }
 
       let fetchSucceeded = false;
@@ -364,6 +378,9 @@ async function startBackgroundQueue(
             input: [
               {
                 role: "user",
+                metadata: {
+                  [QWENPAW_CLIENT_MESSAGE_ID_KEY]: clientMessageId,
+                },
                 content: [
                   { type: "text", text: item.text },
                   ...buildAttachmentContentItems(item.attachments),
@@ -377,7 +394,10 @@ async function startBackgroundQueue(
           }),
         });
 
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        if (!res.ok) {
+          sessionApi.discardLastUserMessage(chatIdForStatus, clientMessageId);
+          throw new Error(`HTTP ${res.status}`);
+        }
         fetchStarted = true;
 
         // Drain the stream; reaching `done` means the backend persisted the
@@ -1645,11 +1665,37 @@ export default function ChatPage() {
         isGeneralized: approval.is_generalized,
         exactTarget: approval.exact_target,
         similarTarget: approval.similar_target,
+        sourceType: approval.source_type,
       });
     }
 
     setApprovalRequests(newMap);
   }, [approvals, chatId]);
+
+  const approvalRenderers = useMemo(() => {
+    const renderers = new Map<
+      string,
+      { pluginId: string; item: ChatApprovalRendererItem }
+    >();
+    for (const entry of extLists[ChatList.approvalRenderers]) {
+      renderers.set(entry.item.sourceType, entry);
+    }
+    return renderers;
+  }, [extLists]);
+
+  const dismissApproval = useCallback(
+    (requestId: string) => {
+      setApprovals((previous) =>
+        previous.filter((item) => item.request_id !== requestId),
+      );
+      setApprovalRequests((previous) => {
+        const next = new Map(previous);
+        next.delete(requestId);
+        return next;
+      });
+    },
+    [setApprovals, setApprovalRequests],
+  );
 
   const handleApprove = useCallback(
     async (requestId: string, scope?: "exact" | "similar") => {
@@ -2426,15 +2472,24 @@ export default function ChatPage() {
       const session: SessionInfo = input[input.length - 1]?.session || {};
       const lastInput = input.slice(-1);
       const lastMsg = lastInput[0];
-      const rewrittenInput =
-        lastMsg?.content && Array.isArray(lastMsg.content)
+      const clientMessageId =
+        lastMsg?.role === "user" ? createClientMessageId() : undefined;
+      const rewrittenLastMsg: Record<string, unknown> | undefined = lastMsg
+        ? clientMessageId
+          ? attachClientMessageId(lastMsg, clientMessageId)
+          : lastMsg
+        : undefined;
+      const rewrittenInput: Array<Record<string, unknown>> =
+        rewrittenLastMsg?.content && Array.isArray(rewrittenLastMsg.content)
           ? [
               {
-                ...lastMsg,
-                content: lastMsg.content.map(normalizeContentUrls),
+                ...rewrittenLastMsg,
+                content: rewrittenLastMsg.content.map(normalizeContentUrls),
               },
             ]
-          : lastInput;
+          : rewrittenLastMsg
+          ? [rewrittenLastMsg]
+          : [];
 
       const identity = sessionApi.getSessionIdentity();
       let requestBody: Record<string, unknown> = {
@@ -2456,6 +2511,21 @@ export default function ChatPage() {
         });
         if (next && typeof next === "object") {
           requestBody = next;
+        }
+      }
+
+      if (clientMessageId && Array.isArray(requestBody.input)) {
+        const requestInput = [...requestBody.input] as Array<
+          Record<string, unknown>
+        >;
+        for (let i = requestInput.length - 1; i >= 0; i--) {
+          if (requestInput[i]?.role !== "user") continue;
+          requestInput[i] = attachClientMessageId(
+            requestInput[i],
+            clientMessageId,
+          );
+          requestBody.input = requestInput;
+          break;
         }
       }
 
@@ -2483,7 +2553,7 @@ export default function ChatPage() {
         String(requestBody.session_id || "");
       if (backendChatId) {
         const userText = rewrittenInput
-          .filter((m: any) => m.role === "user")
+          .filter((m) => m.role === "user")
           .map(extractUserMessageText)
           .join("\n")
           .trim();
@@ -2491,7 +2561,7 @@ export default function ChatPage() {
           // Also pass the full content array so patchLastUserMessage can
           // rebuild user card with images/files when reconnecting.
           const lastUserMsg = rewrittenInput
-            .filter((m: any) => m.role === "user")
+            .filter((m) => m.role === "user")
             .slice(-1)[0];
           const contentArr = Array.isArray(lastUserMsg?.content)
             ? (lastUserMsg.content as Array<{
@@ -2499,7 +2569,12 @@ export default function ChatPage() {
                 [key: string]: unknown;
               }>)
             : undefined;
-          sessionApi.setLastUserMessage(backendChatId, userText, contentArr);
+          sessionApi.setLastUserMessage(
+            backendChatId,
+            userText,
+            contentArr,
+            clientMessageId,
+          );
         }
       }
 
@@ -2511,6 +2586,10 @@ export default function ChatPage() {
         body: JSON.stringify(requestBody),
         signal: data.signal,
       });
+
+      if (!response.ok && backendChatId) {
+        sessionApi.discardLastUserMessage(backendChatId, clientMessageId);
+      }
 
       const localIdToResolve = sessionApi.lastActiveChatId ?? chatIdRef.current;
       if (response.ok && localIdToResolve) {
@@ -3140,6 +3219,15 @@ export default function ChatPage() {
             return { object: "message", type: "heartbeat" };
           }
 
+          // Replay boundary marker from the reconnect stream. The
+          // fast-forward wrapper strips it at the byte level; if one
+          // still slips through, map it to the SDK's heartbeat no-op —
+          // returning null here would crash the response builder
+          // mid-stream and drop every subsequent live token.
+          if (payload.type === "replay_end") {
+            return { object: "message", type: "heartbeat" } as any;
+          }
+
           if (payload.type === "rate_limited") {
             const alts =
               (payload.alternatives as typeof rateLimitAlternatives) || [];
@@ -3190,7 +3278,12 @@ export default function ChatPage() {
             signal: data.signal,
           });
 
-          return wrapChatResponseUsageStream(response, chatRef);
+          // Fast-forward the replayed section: render the already
+          // generated part instantly instead of re-animating it.
+          return wrapChatResponseUsageStream(
+            wrapReplayFastForward(response),
+            chatRef,
+          );
         },
       },
       customToolRenderConfig: withGenericFallback(mergedToolRenderers),
@@ -3401,19 +3494,10 @@ export default function ChatPage() {
         )}
 
         {/* Render approval cards as overlays */}
-        {Array.from(approvalRequests.values()).map((request) => (
-          <div
-            key={request.requestId}
-            data-approval-id={request.requestId}
-            style={{
-              position: "fixed",
-              bottom: 80,
-              right: 24,
-              zIndex: 1000,
-              maxWidth: 480,
-              width: "calc(100vw - 48px)",
-            }}
-          >
+        {Array.from(approvalRequests.values()).map((request) => {
+          const renderer = approvalRenderers.get(request.sourceType);
+          const CustomApprovalCard = renderer?.item.render;
+          const defaultApprovalCard = (
             <ApprovalCard
               requestId={request.requestId}
               agentId={request.agentId}
@@ -3463,8 +3547,38 @@ export default function ChatPage() {
                 }
               }}
             />
-          </div>
-        ))}
+          );
+
+          return (
+            <div
+              key={request.requestId}
+              data-approval-id={request.requestId}
+              style={{
+                position: "fixed",
+                bottom: 80,
+                right: 24,
+                zIndex: 1000,
+                maxWidth: 480,
+                width: "calc(100vw - 48px)",
+              }}
+            >
+              {CustomApprovalCard ? (
+                <PluginSlotBoundary
+                  slot={`approval:${request.sourceType}`}
+                  pluginId={renderer.pluginId}
+                  fallback={defaultApprovalCard}
+                >
+                  <CustomApprovalCard
+                    approval={request}
+                    onResolved={() => dismissApproval(request.requestId)}
+                  />
+                </PluginSlotBoundary>
+              ) : (
+                defaultApprovalCard
+              )}
+            </div>
+          );
+        })}
 
         <Modal
           open={usesQwenPawBackend && showModelPrompt}

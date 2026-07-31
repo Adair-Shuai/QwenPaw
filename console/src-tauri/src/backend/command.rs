@@ -45,13 +45,17 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
         // See: src/qwenpaw/docs/proxy-bypass-design.md
         .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
     };
-    Ok(command)
+    Ok(apply_contributed_environment(app, command))
 }
 
 /// Builds the command used to start the packaged Python backend sidecar.
 #[cfg(not(debug_assertions))]
 pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
     let bundled_python = packaged_python_runtime(app);
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
     let (backend, backend_args) = if cfg!(windows) {
         let python = bundled_python
             .clone()
@@ -88,6 +92,10 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
             path_env_key(),
             packaged_path(app, &backend_dir, officecli_dir.as_deref())?,
         )
+        .env(
+            "QWENPAW_TAURI_RESOURCE_DIR",
+            resource_dir.to_string_lossy().to_string(),
+        )
         // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
         // See: src/qwenpaw/docs/proxy-bypass-design.md
         .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
@@ -99,6 +107,7 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
             .env("QWENPAW_DESKTOP_APP", "1")
             .env("PYTHONNOUSERSITE", "1");
     }
+    let mut command = apply_contributed_environment(app, command);
     // Bundled standalone Python is the Windows backend interpreter and is also
     // used to install third-party plugin dependencies on every platform.
     if let Some(python) = bundled_python {
@@ -145,9 +154,23 @@ fn packaged_python_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
     let candidates = if cfg!(windows) {
         vec![base.join("python.exe")]
     } else {
-        vec![base.join("bin").join("python3"), base.join("bin").join("python")]
+        vec![
+            base.join("bin").join("python3"),
+            base.join("bin").join("python"),
+        ]
     };
     candidates.into_iter().find(|path| path.is_file())
+}
+
+/// Add the variables desktop features contribute to the backend's environment.
+///
+/// The set comes from [`crate::runtime_env`], so this stays independent of which
+/// feature needs what.
+fn apply_contributed_environment(app: &tauri::AppHandle, mut command: Command) -> Command {
+    for (key, value) in crate::runtime_env::collect(app) {
+        command = command.env(key, value);
+    }
+    command
 }
 
 #[cfg(not(debug_assertions))]

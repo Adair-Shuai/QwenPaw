@@ -1,6 +1,6 @@
 # UGSci Test & Coverage Makefile
 
-.PHONY: test test-unit test-contract test-integration test-channel test-channel-contract coverage-full clean \
+.PHONY: test test-unit test-contract test-integration test-channel test-channel-contract coverage-full clean gen-browser-manual \
         setup-dev hooks-install hooks-uninstall precommit lint format typecheck \
         ugsci-check ugsci-sync ci-local act-list act-run act-precommit act-tests
 
@@ -46,6 +46,9 @@ clean:
 
 # Quick check (fast feedback)
 quick:
+	@qp_test_workdir=$$(mktemp -d); \
+	trap 'rm -rf "$$qp_test_workdir"' EXIT; \
+	QWENPAW_WORKING_DIR="$$qp_test_workdir" \
 	$(PYTEST) tests/unit/ -x -q --tb=line
 
 # UGSci canonical source and focused regression checks
@@ -56,6 +59,9 @@ ugsci-check:
 
 ugsci-sync:
 	$(PYTHON) scripts/sync_ugsci_bundle.py --sync
+
+gen-browser-manual:
+	$(PYTHON) scripts/gen_browser_manual.py
 
 # Channel-specific tests
 test-channel:
