@@ -54,6 +54,32 @@ describe("RendererRegistry.register", () => {
     expect(rendererRegistry.get("a")).toBeUndefined();
     expect(rendererRegistry.get("b")).toBeUndefined();
   });
+
+  it("publishes a new snapshot for register, overwrite, and dispose", () => {
+    const snapshots: number[] = [];
+    const unsubscribe = rendererRegistry.subscribe(() => {
+      snapshots.push(rendererRegistry.getSnapshot());
+    });
+
+    const first = rendererRegistry.register({
+      id: "dynamic",
+      name: "First",
+      component: () => null,
+    });
+    const second = rendererRegistry.register({
+      id: "dynamic",
+      name: "Second",
+      component: () => null,
+    });
+
+    first.dispose();
+    expect(rendererRegistry.get("dynamic")?.name).toBe("Second");
+    second.dispose();
+    unsubscribe();
+
+    expect(snapshots).toEqual([1, 2, 3]);
+    expect(rendererRegistry.getSnapshot()).toBe(3);
+  });
 });
 
 describe("RendererRegistry.match", () => {

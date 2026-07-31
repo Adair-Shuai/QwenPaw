@@ -26,7 +26,7 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
 def _ensure_path_in_workspace(
     path: Path,
-    working_dir: str = "",
+    working_dir: str = "",  # noqa: ARG001  kept for API stability
 ) -> Path:
     """Resolve *path* and verify it is within the agent workspace.
 
@@ -34,20 +34,20 @@ def _ensure_path_in_workspace(
     paths to ``working_dir`` or ``deck_file``, writing files and starting
     processes outside the user's expected workspace boundary.
 
+    The workspace root is **always** obtained from the system context
+    (``get_current_workspace_dir``), never from the user-provided
+    ``working_dir`` — otherwise an attacker could pass
+    ``working_dir=/tmp/evil`` and the check would pass.
+
     Returns the resolved absolute path on success.
     Raises ``PermissionError`` if the path escapes the workspace.
     """
     resolved = path.expanduser().resolve()
-    # Determine the workspace root to check containment against.
-    ws_root: Path
-    if working_dir:
-        ws_root = Path(working_dir).expanduser().resolve()
-    else:
-        try:
-            from qwenpaw.config.context import get_current_workspace_dir
-            ws_root = get_current_workspace_dir().resolve()
-        except Exception:
-            ws_root = Path(os.getcwd()).resolve()
+    try:
+        from qwenpaw.config.context import get_current_workspace_dir
+        ws_root = get_current_workspace_dir().resolve()
+    except Exception:
+        ws_root = Path(os.getcwd()).resolve()
     try:
         resolved.relative_to(ws_root)
     except ValueError as exc:
@@ -141,17 +141,19 @@ async def launch_simulation(
         except Exception:
             working_dir = os.getcwd()
     work_path = Path(working_dir).expanduser().resolve()
-    work_path.mkdir(parents=True, exist_ok=True)
 
     # BUG-001: Verify working directory is within the workspace.
-    _ensure_path_in_workspace(work_path, working_dir)
+    # Check BEFORE mkdir so we don't create directories outside the
+    # workspace boundary even if the call later fails.
+    _ensure_path_in_workspace(work_path)
+    work_path.mkdir(parents=True, exist_ok=True)
 
     # ── Resolve deck file path ───────────────────────────────────────
     deck_path = Path(deck_file)
     if not deck_path.is_absolute():
         deck_path = work_path / deck_file
     # BUG-001: Verify deck file is within the workspace.
-    _ensure_path_in_workspace(deck_path, working_dir)
+    _ensure_path_in_workspace(deck_path)
     if not deck_path.exists():
         return ToolChunk(
             is_last=True,
@@ -242,6 +244,12 @@ async def launch_simulation(
             env=env,
         )
     except Exception as exc:
+        # BUG-002: Close the log file if subprocess creation failed
+        # to avoid leaking the file handle.
+        try:
+            log_file.close()
+        except Exception:
+            pass
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,

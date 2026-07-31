@@ -363,9 +363,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         srcDoc={htmlContent}
         title={artifact.title}
         sandbox={
-          rendererEngine === "officecli"
-            ? "allow-scripts"
-            : "allow-same-origin"
+          rendererEngine === "officecli" ? "allow-scripts" : "allow-same-origin"
         }
         style={{ width: "100%", flex: 1, border: "none", background: "#fff" }}
       />

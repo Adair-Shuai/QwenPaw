@@ -74,7 +74,7 @@ class _StallingTransport(ComputerUseTransport):
 
     def set_reverse_request_handler(
         self,
-        handler: ReverseRequestHandler,
+        handler: ReverseRequestHandler,  # pylint: disable=unused-argument
     ) -> None:
         return None
 

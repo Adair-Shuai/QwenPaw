@@ -349,6 +349,9 @@ async def list_code_files(request: Request) -> list[dict]:
 
 _CODE_FILE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 _BINARY_FILE_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
+_IMAGE_FILE_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
+_DOCUMENT_FILE_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
+_MEDIA_FILE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 
 _MIME_MAP: dict[str, str] = {
     # Images
@@ -403,6 +406,49 @@ _MIME_MAP: dict[str, str] = {
 }
 
 
+def _binary_file_size_limit(mime: str) -> int:
+    """Return the preview limit for the resource category."""
+    if mime.startswith(("video/", "audio/")):
+        return _MEDIA_FILE_MAX_BYTES
+    if mime.startswith("image/"):
+        return _IMAGE_FILE_MAX_BYTES
+    if mime == "application/pdf" or mime.startswith("application/vnd."):
+        return _DOCUMENT_FILE_MAX_BYTES
+    return _BINARY_FILE_MAX_BYTES
+
+
+def _parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
+    """Parse one RFC 7233 byte range and return inclusive bounds."""
+    if size <= 0 or not value.startswith("bytes="):
+        raise ValueError("Invalid byte range")
+
+    spec = value[6:].strip()
+    if not spec or "," in spec or "-" not in spec:
+        raise ValueError("Only a single byte range is supported")
+
+    start_text, end_text = (part.strip() for part in spec.split("-", 1))
+    if not start_text:
+        if not end_text.isdigit():
+            raise ValueError("Invalid suffix byte range")
+        suffix_length = int(end_text)
+        if suffix_length <= 0:
+            raise ValueError("Invalid suffix byte range")
+        start = max(size - suffix_length, 0)
+        return start, size - 1
+
+    if not start_text.isdigit() or (end_text and not end_text.isdigit()):
+        raise ValueError("Invalid byte range")
+
+    start = int(start_text)
+    if start >= size:
+        raise ValueError("Byte range starts beyond end of file")
+
+    end = int(end_text) if end_text else size - 1
+    if end < start:
+        raise ValueError("Byte range end precedes start")
+    return start, min(end, size - 1)
+
+
 @router.get(
     "/binary-files/{file_path:path}",
     summary="Serve a binary workspace file (images, PDFs, CSV) for preview",
@@ -416,7 +462,9 @@ async def read_binary_file(
     Intended for the IDE preview panel (images, PDFs, CSV).
     Accepts relative paths within the workspace or absolute paths
     (from ``file://`` URLs produced by tool-call results).
-    Rejects files that are not in ``_MIME_MAP`` or exceed 50 MB.
+    Supports one RFC 7233 byte range for seekable media playback. Size limits
+    vary by resource category; requests without Range still stream the full
+    file for clients that do not implement partial loading.
     """
     workspace = await get_agent_for_request(request)
     coding_dir = get_coding_dir(workspace)
@@ -463,27 +511,60 @@ async def read_binary_file(
     except OSError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    if size > _BINARY_FILE_MAX_BYTES:
+    size_limit = _binary_file_size_limit(mime)
+    if size > size_limit:
         raise HTTPException(
             status_code=413,
             detail=(
                 f"File too large for preview ({size // 1024 // 1024} MB"
-                f" > {_BINARY_FILE_MAX_BYTES // 1024 // 1024} MB limit)"
+                f" > {size_limit // 1024 // 1024} MB limit)"
             ),
         )
 
-    def _iter_chunks(chunk_size: int = 64 * 1024):
+    range_header = request.headers.get("range")
+    start = 0
+    end = size - 1
+    status_code = 200
+    headers = {
+        "Accept-Ranges": "bytes",
+        "Content-Length": str(size),
+    }
+    if range_header is not None:
+        try:
+            start, end = _parse_single_byte_range(range_header, size)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=416,
+                detail=str(exc),
+                headers={
+                    "Accept-Ranges": "bytes",
+                    "Content-Range": f"bytes */{size}",
+                },
+            ) from exc
+        status_code = 206
+        headers["Content-Length"] = str(end - start + 1)
+        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
+
+    chunk_size = (
+        1024 * 1024 if mime.startswith(("video/", "audio/")) else 64 * 1024
+    )
+
+    def _iter_chunks():
+        remaining = end - start + 1
         with open(target, "rb") as fh:
-            while True:
-                data = fh.read(chunk_size)
+            fh.seek(start)
+            while remaining > 0:
+                data = fh.read(min(chunk_size, remaining))
                 if not data:
                     break
+                remaining -= len(data)
                 yield data
 
     return StreamingResponse(
         _iter_chunks(),
+        status_code=status_code,
         media_type=mime,
-        headers={"Content-Length": str(size)},
+        headers=headers,
     )
 
 

@@ -27,12 +27,12 @@ UGSci 的文件查看能力涉及三条链路：
 
 ## 2. 当前结论
 
-复核后保留 5 个可确认缺陷和 6 个优化项。
+复核后保留 3 个可确认缺陷和 6 个优化项。
 
 | 分类 | 数量 | 当前重点 |
 | --- | ---: | --- |
 | P1 缺陷 | 1 | Workspace 图片、PDF、媒体预览缺少完整认证和 Agent 归属绑定 |
-| P2 缺陷 | 4 | 二进制重复读取、失败空白、媒体无 Range、动态 Renderer 不刷新 |
+| P2 缺陷 | 2 | 二进制重复读取、失败预览空白 |
 | 优化项 | 6 | 领域 Renderer、统一预览架构、版本冲突控制、大工作区扩展性等 |
 
 当前最高风险是二进制资源身份没有贯穿 Artifact、Renderer 和网络请求。Markdown 相对资源已经使用认证 Blob loader，但 Workspace 通用图片、PDF 和媒体 Renderer 仍直接消费 `binaryUrl`。
@@ -79,7 +79,7 @@ Artifact 类型已经包含可选 `agentId`，文件卡片也会在创建 Artifa
 
 1. 将 `useAuthenticatedWorkspaceBlob()` 扩展为判别状态 Hook：`loading`、`ready`、`error`、`retry`；
 2. ImageRenderer 和 PdfRenderer 使用 `artifact.workspacePath`、`artifact.agentId` 生成认证 Blob URL；
-3. MediaRenderer 不宜长期依赖整文件 Blob，应结合 PREVIEW-007 使用支持 Range 的认证流；
+3. MediaRenderer 使用后端已有的 Range 能力建立携带认证身份的流式加载链路；
 4. 下载链也必须使用 `artifact.agentId`，不能重新读取当前选中 Agent；
 5. 组件卸载、切换文件或 Agent 时 abort 请求并释放 Object URL。
 
@@ -143,51 +143,6 @@ type BinaryResourceState =
 ```
 
 预览器提供稳定尺寸的 loading、错误详情、重试和下载入口。HTTP 错误应保留状态码和后端详情。
-
-### PREVIEW-007：二进制接口不支持 Range，50 MB 上限不适合媒体预览
-
-**严重度：P2**  
-**类型：流媒体 / 大文件**
-
-#### 问题位置
-
-- `src/qwenpaw/app/routers/workspace.py`
-- `console/src/components/Workspace/renderers/MediaRenderer.tsx`
-
-#### 当前实现
-
-binary endpoint 仍使用统一的 `_BINARY_FILE_MAX_BYTES = 50 * 1024 * 1024`，没有处理 `Range`，也没有返回 `Accept-Ranges`、`Content-Range` 和 206。
-
-视频和部分音频依赖 Range 实现快速首播、拖动和断点加载。整文件 Blob 方案还会要求浏览器先下载全部内容。
-
-#### 可操作修复
-
-1. 支持单 Range 请求并严格校验边界；
-2. 返回 206、`Accept-Ranges: bytes` 和正确的 `Content-Range`；
-3. 图片、PDF 和媒体使用不同的大小与并发策略；
-4. 为不支持 Range 的客户端保留完整下载路径；
-5. 增加无效 Range、越界 Range 和跨 Agent 文件测试。
-
-### PREVIEW-008：动态注册 Renderer 后当前 Artifact 不会重新匹配
-
-**严重度：P2**  
-**类型：插件扩展机制**
-
-#### 问题位置
-
-- `console/src/components/Workspace/store/rendererRegistry.ts`
-- `console/src/components/Workspace/WorkspacePanel.tsx`
-- `console/src/components/Workspace/workspaceSdk.ts`
-
-#### 当前实现
-
-`RendererRegistry` 已提供 `subscribe()` 和变更通知，但 `WorkspacePanel` 没有订阅。`rendererMatch` 的 `useMemo` 只依赖 `activeArtifact`。
-
-插件在 fallback 已显示后注册更高优先级 Renderer，当前 Artifact 不会自动切换，通常要等 Artifact 变化或 Panel 重新挂载。
-
-#### 可操作修复
-
-通过 `useSyncExternalStore` 把 registry 版本接入 React，并让 Renderer 注册、注销和优先级覆盖都触发当前 Artifact 重新匹配。
 
 ## 5. 可操作优化项
 
@@ -257,11 +212,9 @@ Coding FileTree 的 `load()` catch 仍直接忽略错误并保留旧节点。网
 | 1 | PREVIEW-004 | 修复二进制预览认证和 Agent 归属 |
 | 2 | PREVIEW-006 | 为所有二进制预览补齐 loading、error、retry、download |
 | 3 | PREVIEW-005 | 避免二进制文件进入文本读取和缓存链路 |
-| 4 | PREVIEW-007 | 支持大媒体 Range 流式读取 |
-| 5 | PREVIEW-008 | 让插件 Renderer 注册后立即生效 |
-| 6 | OPT-002、OPT-004 | 统一预览架构并增加并发保存保护 |
-| 7 | OPT-001 | 建立 LAS、SEG-Y 等 UGSci 领域预览能力 |
-| 8 | OPT-003、OPT-005、OPT-006 | 完善编辑安全、规模化和产品语义 |
+| 4 | OPT-002、OPT-004 | 统一预览架构并增加并发保存保护 |
+| 5 | OPT-001 | 建立 LAS、SEG-Y 等 UGSci 领域预览能力 |
+| 6 | OPT-003、OPT-005、OPT-006 | 完善编辑安全、规模化和产品语义 |
 
 ## 8. 建议新增测试
 
@@ -270,14 +223,11 @@ Coding FileTree 的 `load()` catch 仍直接忽略错误并保留旧节点。网
 - Workspace Image/PDF/Media Renderer：认证 Header、固定 Agent、错误、abort、Object URL 回收；
 - `FileTree.binaryOpen.test.tsx`：二进制预览文件不调用文本接口；
 - `FilePreview.binaryStates.test.tsx`：loading、401、404、413、重试和下载；
-- `WorkspacePanel.registryUpdates.test.tsx`：运行时注册和注销 Renderer 后重新匹配；
 - `workspaceStore.dirty.test.ts`：只读更新不产生 dirty；
 - `FileTree.errorState.test.tsx`：列表失败显示 stale 和重试状态。
 
 ### 后端单元测试
 
-- binary endpoint 的完整请求、单 Range、206、416 和边界请求；
-- 不同 Agent 同路径二进制文件的隔离；
 - `If-Match` 成功、冲突和强制覆盖；
 - 超大目录分页、忽略规则和稳定排序。
 
@@ -285,10 +235,8 @@ Coding FileTree 的 `load()` catch 仍直接忽略错误并保留旧节点。网
 
 1. Agent A/B 创建同名图片、PDF 和视频，创建 Artifact 后切换 Agent；
 2. 开启 API Token 后预览图片、PDF、音频和视频；
-3. 播放大于 50 MB 视频并拖动进度；
-4. 文本与二进制文件交替打开，确认二进制内容不进入文本缓存；
-5. 插件运行时注册 LAS Renderer，当前 fallback 自动切换；
-6. 两个浏览器标签同时编辑 Markdown，确认冲突不会静默覆盖。
+3. 文本与二进制文件交替打开，确认二进制内容不进入文本缓存；
+4. 两个浏览器标签同时编辑 Markdown，确认冲突不会静默覆盖。
 
 ## 9. 建议的数据模型
 
@@ -321,8 +269,6 @@ interface WorkspaceArtifact {
 - 所有受保护二进制预览携带 Artifact 固化的身份；
 - 二进制文件不经过文本读取和文本缓存；
 - 失败预览始终有 loading、error、retry 和 download；
-- 媒体支持经过权限校验的 Range 请求；
-- 动态注册 Renderer 后当前 Artifact 立即重新匹配；
 - Markdown 保存具备版本冲突检测和差异确认；
 - UGSci 至少实现 LAS Renderer，或提供结构化摘要与转换入口。
 
@@ -330,4 +276,4 @@ interface WorkspaceArtifact {
 
 当前 Markdown 相对资源、作用域隔离、事务保存、文件名规范化、内容保真、源码预览和请求竞态问题已经关闭，因此不再出现在本文的问题清单中。
 
-现阶段最需要处理的是 PREVIEW-004：让 Workspace 图片、PDF 和媒体 Renderer 使用 Artifact 固化的 Agent 身份完成认证加载。随后应统一二进制加载状态、避免文本重复读取，并为大媒体补充 Range 支持。
+现阶段最需要处理的是 PREVIEW-004：让 Workspace 图片、PDF 和媒体 Renderer 使用 Artifact 固化的 Agent 身份完成认证加载。随后应统一二进制加载状态，并避免二进制文件进入文本读取和缓存链路。

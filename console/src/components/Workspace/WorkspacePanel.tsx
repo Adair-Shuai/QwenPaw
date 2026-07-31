@@ -31,6 +31,7 @@ import React, {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from "react";
 import {
   Button,
@@ -70,6 +71,10 @@ function ensureRenderers() {
     renderersRegistered = true;
   }
 }
+
+const subscribeRendererRegistry = (listener: () => void) =>
+  rendererRegistry.subscribe(listener);
+const getRendererRegistrySnapshot = () => rendererRegistry.getSnapshot();
 
 const WorkspacePanel: React.FC = () => {
   const { t } = useTranslation();
@@ -173,12 +178,17 @@ const WorkspacePanel: React.FC = () => {
 
   // ── 获取当前激活的 Artifact ──
   const activeArtifact = activeTabId ? getArtifact(activeTabId) : undefined;
+  const rendererRegistryVersion = useSyncExternalStore(
+    subscribeRendererRegistry,
+    getRendererRegistrySnapshot,
+    getRendererRegistrySnapshot,
+  );
 
   // ── 匹配渲染器 ──
   const rendererMatch = useMemo(() => {
     if (!activeArtifact) return null;
     return rendererRegistry.match(activeArtifact);
-  }, [activeArtifact]);
+  }, [activeArtifact, rendererRegistryVersion]);
 
   // ── 构建渲染器上下文 ──
   const rendererContext: RendererContext | null = useMemo(() => {

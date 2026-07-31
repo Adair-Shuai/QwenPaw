@@ -67,6 +67,11 @@ async def edit_simulation_deck(
                 deck_path = get_current_workspace_dir() / deck_file
             except Exception:
                 deck_path = Path(deck_file)
+    deck_path = deck_path.expanduser().resolve()
+
+    # BUG-001: Verify deck file is within the workspace boundary.
+    from .launcher import _ensure_path_in_workspace
+    _ensure_path_in_workspace(deck_path)
 
     if not deck_path.exists():
         return ToolChunk(
@@ -109,8 +114,10 @@ async def edit_simulation_deck(
         section_end = None
         for i, line in enumerate(lines):
             stripped = line.strip().upper()
-            # Detect section headers like "SCHEDULE" or "SCHEDULE" followed by data
-            if stripped == section_upper or stripped.startswith(section_upper + " "):
+            # BUG-013: Use exact token matching for section headers too,
+            # not startswith — same principle as keyword matching above.
+            first_token = stripped.split()[0] if stripped.split() else ""
+            if first_token == section_upper:
                 if section_start is None:
                     section_start = i
             elif section_start is not None:

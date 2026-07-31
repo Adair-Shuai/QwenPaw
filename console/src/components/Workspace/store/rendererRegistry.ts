@@ -29,6 +29,7 @@ import {
 class RendererRegistryImpl {
   private renderers = new Map<string, RendererRegistration>();
   private listeners = new Set<() => void>();
+  private version = 0;
 
   /**
    * 注册一个渲染器
@@ -45,8 +46,10 @@ class RendererRegistryImpl {
 
     return {
       dispose: () => {
-        this.renderers.delete(reg.id);
-        this.notify();
+        if (this.renderers.get(reg.id) === reg) {
+          this.renderers.delete(reg.id);
+          this.notify();
+        }
       },
     };
   }
@@ -172,7 +175,13 @@ class RendererRegistryImpl {
     return () => this.listeners.delete(fn);
   }
 
+  /** React external-store snapshot; changes after every registry mutation. */
+  getSnapshot(): number {
+    return this.version;
+  }
+
   private notify() {
+    this.version += 1;
     this.listeners.forEach((fn) => {
       try {
         fn();
@@ -186,6 +195,7 @@ class RendererRegistryImpl {
   __resetForTests(): void {
     this.renderers.clear();
     this.listeners.clear();
+    this.version = 0;
   }
 }
 
