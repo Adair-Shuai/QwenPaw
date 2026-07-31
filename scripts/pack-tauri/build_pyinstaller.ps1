@@ -126,14 +126,20 @@ Write-Host "Using PyPI mirror: $PipIndexUrl (extra: $PipExtraIndexUrl)"
     numpy pandas scipy matplotlib requests openpyxl python-pptx
 Assert-LastExit "Failed to install QwenPaw into bundled Python"
 
-# Strip transformers + tokenizers from the bundled runtime.
-# They are indirect deps of reme-ai but QwenPaw never imports them
-# directly, and ReMe degrades gracefully when they are absent.
-# Together they add ~500 MB; removing them keeps the NSIS installer
-# under the 2 GB 32-bit address-space limit.
-Write-Host "== Stripping transformers / tokenizers from bundled runtime ==" -ForegroundColor Yellow
-& $PyRuntimeBin -m pip uninstall -y transformers tokenizers *> $null
-Write-Host "transformers / tokenizers stripped" -ForegroundColor Green
+# Strip heavy optional packages from the bundled runtime.
+# These packages use lazy imports (try/except) in QwenPaw and degrade
+# gracefully when absent.  Together they add ~900 MB; removing them
+# keeps the NSIS installer under the 2 GB 32-bit address-space limit.
+# Users can pip install them at runtime if needed.
+Write-Host "== Stripping heavy optional packages from bundled runtime ==" -ForegroundColor Yellow
+& $PyRuntimeBin -m pip uninstall -y `
+    transformers tokenizers `
+    onnxruntime `
+    modelscope modelscope-hub `
+    playwright `
+    grpcio `
+    *> $null
+Write-Host "Heavy optional packages stripped (transformers, tokenizers, onnxruntime, modelscope, playwright, grpcio)" -ForegroundColor Green
 
 # PyPI also contains an empty package named "acp"; it must not shadow
 # agent-client-protocol's real acp namespace.
