@@ -16,7 +16,7 @@ vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
 vi.mock("@/api/authHeaders", () => ({ buildAuthenticatedMediaUrl }));
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
-    getBinaryFileUrl: (path: string) => `/binary/${path}`,
+    getBinaryFileUrl: (path: string) => `/api/workspace/binary-files/${path}`,
   },
 }));
 vi.mock("@/features/pdf-reader", () => ({
@@ -137,13 +137,13 @@ describe("authenticated Workspace binary renderers", () => {
       );
 
       expect(buildAuthenticatedMediaUrl).toHaveBeenCalledWith(
-        `/binary/media/${title}`,
+        `/api/workspace/binary-files/media/${title}`,
         "agent-b",
       );
       const media = container.querySelector(kind);
       expect(media).toHaveAttribute(
         "src",
-        `/binary/media/${title}?auth=agent-b`,
+        `/api/workspace/binary-files/media/${title}?auth=agent-b`,
       );
       expect(media).toHaveAttribute("preload", "metadata");
     },

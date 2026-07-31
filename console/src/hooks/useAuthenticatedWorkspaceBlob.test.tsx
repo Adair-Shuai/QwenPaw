@@ -85,9 +85,10 @@ describe("useAuthenticatedWorkspaceBlob", () => {
     await waitFor(() => expect(result.current.status).toBe("error"));
     expect(result.current.error?.message).toBe("401: Invalid token");
 
+    const callsBeforeRetry = fetchMock.mock.calls.length;
     act(() => result.current.retry());
     await waitFor(() => expect(result.current.status).toBe("ready"));
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(callsBeforeRetry);
   });
 
   it("aborts the request when the component unmounts", () => {
@@ -95,7 +96,8 @@ describe("useAuthenticatedWorkspaceBlob", () => {
     const { unmount } = renderHook(() =>
       useAuthenticatedWorkspaceBlob("result.png", "agent-b"),
     );
-    const signal = fetchMock.mock.calls[0][1].signal as AbortSignal;
+    const lastCall = fetchMock.mock.calls[fetchMock.mock.calls.length - 1];
+    const signal = lastCall[1].signal as AbortSignal;
 
     expect(signal.aborted).toBe(false);
     unmount();

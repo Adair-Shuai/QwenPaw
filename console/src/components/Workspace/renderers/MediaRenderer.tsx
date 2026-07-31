@@ -4,7 +4,7 @@
  * 使用原生 <video> / <audio> 标签渲染媒体文件。
  * 支持 MP4, WebM, MOV, MP3, WAV, FLAC, AAC, OGG 等。
  */
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { Button, Space, Tooltip } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
@@ -32,6 +32,12 @@ const MediaRenderer: React.FC<RendererContext> = ({
   const url = isWorkspaceUrl
     ? buildAuthenticatedMediaUrl(baseUrl, artifact.agentId)
     : baseUrl;
+
+  useEffect(() => {
+    setError(null);
+    setStatus(url ? "loading" : "error");
+    setLoadAttempt(0);
+  }, [url]);
   const isVideo =
     artifact.mimeType?.startsWith("video/") ||
     ["mp4", "webm", "avi", "mov", "mkv", "wmv", "flv"].includes(

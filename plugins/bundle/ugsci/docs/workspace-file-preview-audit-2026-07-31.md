@@ -27,70 +27,16 @@ UGSci 的文件查看能力涉及三条链路：
 
 ## 2. 当前结论
 
-复核后保留 3 个可确认缺陷和 6 个优化项。
+复核后保留 2 个可确认缺陷和 6 个优化项。
 
 | 分类 | 数量 | 当前重点 |
 | --- | ---: | --- |
-| P1 缺陷 | 1 | Workspace 图片、PDF、媒体预览缺少完整认证和 Agent 归属绑定 |
 | P2 缺陷 | 2 | 二进制重复读取、失败预览空白 |
 | 优化项 | 6 | 领域 Renderer、统一预览架构、版本冲突控制、大工作区扩展性等 |
 
-当前最高风险是二进制资源身份没有贯穿 Artifact、Renderer 和网络请求。Markdown 相对资源已经使用认证 Blob loader，但 Workspace 通用图片、PDF 和媒体 Renderer 仍直接消费 `binaryUrl`。
+当前主要风险转为 Coding 打开链路：二进制文件仍会先经过文本接口，认证 Blob 加载失败时 Coding 预览也缺少完整错误状态。
 
-## 3. P1 高优先级缺陷
-
-### PREVIEW-004：Workspace 图片、PDF 和媒体 Renderer 缺少认证与 Agent Header
-
-**严重度：P1**  
-**类型：认证 / Agent 选择 / 二进制预览**
-
-#### 问题位置
-
-- `console/src/components/Chat/ToolCards/shared/FileSummaryCards.tsx`
-- `console/src/components/Workspace/renderers/ImageRenderer.tsx`
-- `console/src/components/Workspace/renderers/MediaRenderer.tsx`
-- `console/src/components/Workspace/renderers/PdfRenderer.tsx`
-- `console/src/hooks/useAuthenticatedWorkspaceBlob.ts`
-- `console/src/components/Workspace/types/index.ts`
-
-#### 当前实现
-
-文件卡片把 `/api/workspace/binary-files/...` 写入 `artifact.binaryUrl`。随后：
-
-- `ImageRenderer` 使用 `<img src={artifact.binaryUrl}>`；
-- `MediaRenderer` 使用 `<video>` 或 `<audio>` 的原生 `src`；
-- `PdfRenderer` 把 URL 直接传给 `PdfReader`。
-
-这些内部请求不会自动附加：
-
-- `Authorization: Bearer ...`；
-- `X-Agent-Id: ...`。
-
-Artifact 类型已经包含可选 `agentId`，文件卡片也会在创建 Artifact 时写入当前 Agent，但三个通用二进制 Renderer 尚未使用该字段。现有 `useAuthenticatedWorkspaceBlob()` 只在 Coding 图片/PDF和 Markdown 相对图片链路使用。
-
-#### 影响
-
-- Token 认证开启时图片、PDF、音视频可能加载失败；
-- 非默认 Agent 的同路径文件可能请求到错误工作区；
-- 下载成功但预览失败，行为不一致；
-- Renderer 无法稳定复现 Artifact 创建时的资源身份。
-
-#### 可操作修复
-
-1. 将 `useAuthenticatedWorkspaceBlob()` 扩展为判别状态 Hook：`loading`、`ready`、`error`、`retry`；
-2. ImageRenderer 和 PdfRenderer 使用 `artifact.workspacePath`、`artifact.agentId` 生成认证 Blob URL；
-3. MediaRenderer 使用后端已有的 Range 能力建立携带认证身份的流式加载链路；
-4. 下载链也必须使用 `artifact.agentId`，不能重新读取当前选中 Agent；
-5. 组件卸载、切换文件或 Agent 时 abort 请求并释放 Object URL。
-
-#### 验收测试
-
-- Token 认证开启时图片、PDF、音频和视频均可预览；
-- Artifact 创建后切换 Agent，仍读取原所属 Agent 的文件；
-- 401、403、404 有明确错误和重试入口；
-- 组件卸载后请求被取消，Object URL 被释放。
-
-## 4. P2 中优先级缺陷
+## 3. P2 中优先级缺陷
 
 ### PREVIEW-005：选择二进制文件时仍先按文本读取并缓存
 
@@ -144,7 +90,7 @@ type BinaryResourceState =
 
 预览器提供稳定尺寸的 loading、错误详情、重试和下载入口。HTTP 错误应保留状态码和后端详情。
 
-## 5. 可操作优化项
+## 4. 可操作优化项
 
 ### OPT-001：为 UGSci 注册石油与科学数据 Renderer
 
@@ -156,7 +102,7 @@ type BinaryResourceState =
 
 Coding `FilePreview` 与 Workspace Renderer 分别维护图片、PDF、Markdown、CSV、认证加载和错误状态，能力已经分叉。
 
-建议将 Coding 文件转换为 `WorkspaceArtifact`，编辑模式保留 Monaco，预览模式交给统一 Registry。这样 PREVIEW-004 至 PREVIEW-006 的加载和错误处理只需维护一套。
+建议将 Coding 文件转换为 `WorkspaceArtifact`，编辑模式保留 Monaco，预览模式交给统一 Registry。这样 PREVIEW-005、PREVIEW-006 的加载和错误处理只需维护一套。
 
 ### OPT-003：增加保存前差异确认和版本恢复
 
@@ -191,36 +137,34 @@ UGSci 主界面已经使用“工作区文档”“Markdown 文档”和“挂�
 - **工作区文档**：普通报告和知识材料；
 - **长期记忆**：由 `/workspace/memory` 和记忆系统管理的内容。
 
-## 6. 其他观察
+## 5. 其他观察
 
-### 6.1 Renderer dirty 标记语义不准确
+### 5.1 Renderer dirty 标记语义不准确
 
 `workspaceStore.updateArtifact()` 在 `patch.isStreaming` 为 false 或未提供时会把标签标为 dirty。后端加载完成这类只读更新也可能触发 dirty，容易让用户误以为有未保存修改。
 
 建议由调用方显式传入 `dirty`，不要从 streaming 状态推断编辑状态。
 
-### 6.2 文件列表错误被静默处理
+### 5.2 文件列表错误被静默处理
 
 Coding FileTree 的 `load()` catch 仍直接忽略错误并保留旧节点。网络错误或 Agent 不可用时，用户可能把旧文件树误认为当前状态。
 
 建议保留旧数据时显示 stale 状态、错误详情和重试入口；Agent 或项目切换失败时尤其不能静默。
 
-## 7. 推荐修复顺序
+## 6. 推荐修复顺序
 
 | 顺序 | 项目 | 目标 |
 | ---: | --- | --- |
-| 1 | PREVIEW-004 | 修复二进制预览认证和 Agent 归属 |
-| 2 | PREVIEW-006 | 为所有二进制预览补齐 loading、error、retry、download |
-| 3 | PREVIEW-005 | 避免二进制文件进入文本读取和缓存链路 |
-| 4 | OPT-002、OPT-004 | 统一预览架构并增加并发保存保护 |
-| 5 | OPT-001 | 建立 LAS、SEG-Y 等 UGSci 领域预览能力 |
-| 6 | OPT-003、OPT-005、OPT-006 | 完善编辑安全、规模化和产品语义 |
+| 1 | PREVIEW-006 | 为 Coding 二进制预览补齐 loading、error、retry、download |
+| 2 | PREVIEW-005 | 避免二进制文件进入文本读取和缓存链路 |
+| 3 | OPT-002、OPT-004 | 统一预览架构并增加并发保存保护 |
+| 4 | OPT-001 | 建立 LAS、SEG-Y 等 UGSci 领域预览能力 |
+| 5 | OPT-003、OPT-005、OPT-006 | 完善编辑安全、规模化和产品语义 |
 
-## 8. 建议新增测试
+## 7. 建议新增测试
 
 ### 前端单元测试
 
-- Workspace Image/PDF/Media Renderer：认证 Header、固定 Agent、错误、abort、Object URL 回收；
 - `FileTree.binaryOpen.test.tsx`：二进制预览文件不调用文本接口；
 - `FilePreview.binaryStates.test.tsx`：loading、401、404、413、重试和下载；
 - `workspaceStore.dirty.test.ts`：只读更新不产生 dirty；
@@ -233,12 +177,10 @@ Coding FileTree 的 `load()` catch 仍直接忽略错误并保留旧节点。网
 
 ### E2E 场景
 
-1. Agent A/B 创建同名图片、PDF 和视频，创建 Artifact 后切换 Agent；
-2. 开启 API Token 后预览图片、PDF、音频和视频；
-3. 文本与二进制文件交替打开，确认二进制内容不进入文本缓存；
-4. 两个浏览器标签同时编辑 Markdown，确认冲突不会静默覆盖。
+1. 文本与二进制文件交替打开，确认二进制内容不进入文本缓存；
+2. 两个浏览器标签同时编辑 Markdown，确认冲突不会静默覆盖。
 
-## 9. 建议的数据模型
+## 8. 建议的数据模型
 
 建议所有文件链路统一使用资源身份：
 
@@ -264,16 +206,15 @@ interface WorkspaceArtifact {
 
 缓存、SSE、Renderer、下载和保存都应从同一个 resource identity 派生，避免各层重新猜测当前 Agent 或项目。
 
-## 10. 完成标准
+## 9. 完成标准
 
-- 所有受保护二进制预览携带 Artifact 固化的身份；
 - 二进制文件不经过文本读取和文本缓存；
 - 失败预览始终有 loading、error、retry 和 download；
 - Markdown 保存具备版本冲突检测和差异确认；
 - UGSci 至少实现 LAS Renderer，或提供结构化摘要与转换入口。
 
-## 11. 总结
+## 10. 总结
 
 当前 Markdown 相对资源、作用域隔离、事务保存、文件名规范化、内容保真、源码预览和请求竞态问题已经关闭，因此不再出现在本文的问题清单中。
 
-现阶段最需要处理的是 PREVIEW-004：让 Workspace 图片、PDF 和媒体 Renderer 使用 Artifact 固化的 Agent 身份完成认证加载。随后应统一二进制加载状态，并避免二进制文件进入文本读取和缓存链路。
+现阶段最需要处理的是 PREVIEW-006：为 Coding 图片和 PDF 预览补齐可见的加载、错误、重试和下载状态。随后应解决 PREVIEW-005，避免二进制文件进入文本读取和缓存链路。

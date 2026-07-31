@@ -141,8 +141,13 @@ const WorkspacePanel: React.FC = () => {
       download: async (artifact: WorkspaceArtifact) => {
         if (artifact.binaryUrl) {
           try {
+            const isWorkspaceBinaryUrl = artifact.binaryUrl.includes(
+              "/workspace/binary-files/",
+            );
             await downloadFileFromUrl(artifact.binaryUrl, artifact.title, {
-              headers: buildAuthHeaders(artifact.agentId),
+              headers: isWorkspaceBinaryUrl
+                ? buildAuthHeaders(artifact.agentId)
+                : undefined,
               errorMessage: t("workspace.downloadFailed", "文件下载失败"),
               preferResponseFilename: true,
             });

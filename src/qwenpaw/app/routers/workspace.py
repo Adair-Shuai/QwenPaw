@@ -453,7 +453,7 @@ def _parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
     "/binary-files/{file_path:path}",
     summary="Serve a binary workspace file (images, PDFs, CSV) for preview",
 )
-async def read_binary_file(
+async def read_binary_file(  # pylint: disable=too-many-statements
     file_path: str,
     request: Request,
     agent_id: str | None = None,
@@ -467,7 +467,11 @@ async def read_binary_file(
     vary by resource category; requests without Range still stream the full
     file for clients that do not implement partial loading.
     """
-    workspace = await get_agent_for_request(request, agent_id)
+    # Agent-scoped routes set request.state.agent_id and must not be
+    # overridden by a query parameter. The query form exists for native media
+    # elements, which cannot send X-Agent-Id headers.
+    agent_override = None if hasattr(request.state, "agent_id") else agent_id
+    workspace = await get_agent_for_request(request, agent_override)
     coding_dir = get_coding_dir(workspace)
 
     # Support absolute paths (from file:// URLs) as well as relative paths.
