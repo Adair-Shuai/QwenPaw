@@ -102,6 +102,12 @@ Write-Host ""
 # Install QwenPaw and the common data/document stack into this one interpreter.
 # Passing the repository path (without -e) builds a normal wheel, so the
 # installed app is self-contained and does not reference the checkout.
+#
+# NOTE: We install .[local,codex,qoder] instead of .[full] to exclude the
+# "whisper" extra.  openai-whisper pulls in torch (~2 GB), which pushes the
+# NSIS installer past the 2 GB 32-bit address-space limit and causes
+# "Internal compiler error #12345: error mmapping datablock".
+# Whisper can still be installed at runtime via pip if needed.
 Write-Host "== Installing QwenPaw and common packages into bundled runtime ==" -ForegroundColor Yellow
 $PyRuntimeBin = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
 if (-not (Test-Path $PyRuntimeBin)) {
@@ -116,7 +122,7 @@ Write-Host "Using PyPI mirror: $PipIndexUrl (extra: $PipExtraIndexUrl)"
     --upgrade `
     --index-url $PipIndexUrl `
     --extra-index-url $PipExtraIndexUrl `
-    ".[full]" `
+    ".[local,codex,qoder]" `
     numpy pandas scipy matplotlib requests openpyxl python-pptx
 Assert-LastExit "Failed to install QwenPaw into bundled Python"
 
