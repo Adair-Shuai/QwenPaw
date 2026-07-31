@@ -126,21 +126,6 @@ Write-Host "Using PyPI mirror: $PipIndexUrl (extra: $PipExtraIndexUrl)"
     numpy pandas scipy matplotlib requests openpyxl python-pptx
 Assert-LastExit "Failed to install QwenPaw into bundled Python"
 
-# Strip heavy optional packages from the bundled runtime.
-# These packages use lazy imports (try/except) in QwenPaw and degrade
-# gracefully when absent.  Together they add ~900 MB; removing them
-# keeps the NSIS installer under the 2 GB 32-bit address-space limit.
-# Users can pip install them at runtime if needed.
-Write-Host "== Stripping heavy optional packages from bundled runtime ==" -ForegroundColor Yellow
-& $PyRuntimeBin -m pip uninstall -y `
-    transformers tokenizers `
-    onnxruntime `
-    modelscope modelscope-hub `
-    playwright `
-    grpcio `
-    *> $null
-Write-Host "Heavy optional packages stripped (transformers, tokenizers, onnxruntime, modelscope, playwright, grpcio)" -ForegroundColor Green
-
 # PyPI also contains an empty package named "acp"; it must not shadow
 # agent-client-protocol's real acp namespace.
 & $PyRuntimeBin -m pip uninstall -y acp *> $null

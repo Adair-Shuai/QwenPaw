@@ -71,20 +71,6 @@ echo "== Installing project dependencies =="
 install_python_packages -e ".[full]"
 echo "Project dependencies installed with full extras"
 
-# Strip heavy optional packages from the build environment.
-# These packages use lazy imports (try/except) in QwenPaw and degrade
-# gracefully when absent.  Together they add ~900 MB; removing them
-# shrinks the bundle significantly.
-echo "== Stripping heavy optional packages =="
-uninstall_python_package transformers
-uninstall_python_package tokenizers
-uninstall_python_package onnxruntime
-uninstall_python_package modelscope
-uninstall_python_package modelscope-hub
-uninstall_python_package playwright
-uninstall_python_package grpcio
-echo "Heavy optional packages stripped"
-
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package
 if ! "$PYTHON_BIN" -c "from acp import Agent" 2> /dev/null; then

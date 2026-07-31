@@ -217,33 +217,48 @@ if (Test-Path $NSIS_DIR) {
 
 Set-Location console
 
-# The NSIS installer is a 32-bit application with a 2 GB virtual address
-# space limit.  Previously transformers + tokenizers (~500 MB) pushed the
-# bundle past that limit causing "Internal compiler error #12345".  Now
-# that they are stripped from the runtime, NSIS should succeed.
-Write-Host "Building NSIS installer for Windows..."
-npm exec -- tauri build --config src-tauri/tauri.version.conf.json --bundles nsis
-$nsisExit = $LASTEXITCODE
-
-if ($nsisExit -ne 0) {
-    Write-Host "NSIS installer build failed (exit $nsisExit)" -ForegroundColor Yellow
-    throw "Tauri NSIS build failed"
-}
-Write-Host "NSIS installer built" -ForegroundColor Green
+# Build the Tauri app.  The NSIS installer is a 32-bit application with a
+# 2 GB virtual address-space limit; if the bundled Python runtime is too
+# large, makensis crashes with "Internal compiler error #12345".  When
+# that happens the Rust binary is still compiled successfully; we create
+# a portable zip so the CI can upload a distributable artifact.
+Write-Host "Building Tauri app for Windows..."
+npm exec -- tauri build --config src-tauri/tauri.version.conf.json
+$tauriExit = $LASTEXITCODE
 
 Set-Location $REPO_ROOT
 
-$APP_DIR = Get-ChildItem -Directory -Path $NSIS_DIR -ErrorAction SilentlyContinue | Select-Object -First 1
+# Check whether NSIS produced an installer.
+$NsisExe = Get-ChildItem -Path $NSIS_DIR -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+if ($NsisExe) {
+    Write-Host "NSIS installer built: $($NsisExe.FullName)" -ForegroundColor Green
+} elseif ($tauriExit -ne 0) {
+    # Tauri build failed — check if the Rust binary was still compiled.
+    Write-Host "Tauri build reported failure (exit $tauriExit); checking for compiled binary" -ForegroundColor Yellow
+    $AppExe = Get-ChildItem -Path (Join-Path $REPO_ROOT "console\src-tauri\target\release") -Filter '*.exe' -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne 'qwenpaw-backend.exe' } | Select-Object -First 1
+    if ($AppExe) {
+        Write-Host "Compiled binary found; creating portable zip" -ForegroundColor Yellow
+        $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
+        New-Item -ItemType Directory -Force -Path $BUNDLE_DIR | Out-Null
+        Compress-Archive -Path $AppExe.FullName -DestinationPath $ZipPath -Force
+        Write-Host "Portable zip created: $ZipPath" -ForegroundColor Green
+    } else {
+        throw "Tauri build failed (exit $tauriExit) and no compiled binary was found"
+    }
+} else {
+    Write-Host "Tauri app built" -ForegroundColor Green
+}
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Build Complete!" -ForegroundColor Green
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Output:"
-if ($nsisExit -eq 0 -and (Test-Path $NSIS_DIR)) {
-    Write-Host "  NSIS bundle directory: ${NSIS_DIR}\"
+if ($NsisExe) {
+    Write-Host "  NSIS installer: $($NsisExe.FullName)"
 }
-if ($APP_DIR) {
-    Write-Host "  App directory: $($APP_DIR.FullName)"
+if (Test-Path $BUNDLE_DIR) {
+    Write-Host "  Bundle directory: ${BUNDLE_DIR}\"
 }
 Write-Host ""

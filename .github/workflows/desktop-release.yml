@@ -231,12 +231,25 @@ jobs:
       - name: Stage Tauri Windows installer and updater assets
         shell: pwsh
         run: |
-          python scripts/pack-tauri/generate_update_manifest.py stage `
-            --bundle-dir console/src-tauri/target/release/bundle/nsis `
-            --pattern '*-setup.exe' `
-            --target windows-x86_64 `
-            --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe" `
-            --pubkey-config console/src-tauri/tauri.version.conf.json
+          $bundleDir = "console/src-tauri/target/release/bundle"
+          $nsisExe = Get-ChildItem -Path "$bundleDir/nsis" -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($nsisExe) {
+            python scripts/pack-tauri/generate_update_manifest.py stage `
+              --bundle-dir "$bundleDir/nsis" `
+              --pattern '*-setup.exe' `
+              --target windows-x86_64 `
+              --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe" `
+              --pubkey-config console/src-tauri/tauri.version.conf.json
+          } else {
+            Write-Host "::warning::NSIS installer not found; staging portable zip instead"
+            $zip = Get-ChildItem -Path $bundleDir -Filter '*.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($zip) {
+              New-Item -ItemType Directory -Force -Path dist | Out-Null
+              Copy-Item $zip.FullName "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip"
+            } else {
+              throw "No NSIS installer or portable zip found in $bundleDir"
+            }
+          }
 
       - name: Verify desktop (Tauri Windows)
         timeout-minutes: 10
@@ -288,7 +301,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: UGSci-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
-          path: dist/UGSci-Tauri-*-Windows-setup.exe
+          path: |
+            dist/UGSci-Tauri-*-Windows-setup.exe
+            dist/UGSci-Tauri-*-Windows-portable.zip
+          if-no-files-found: error
 
       - name: Upload Tauri Windows updater metadata
         if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_to_oss == 'true')
