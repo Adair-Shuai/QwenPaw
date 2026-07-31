@@ -9,7 +9,9 @@ import {
   DownloadOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 import type { RendererContext } from "../types";
+import BinaryPreviewFeedback from "./BinaryPreviewFeedback";
 
 const ImageRenderer: React.FC<RendererContext> = ({
   artifact,
@@ -19,7 +21,11 @@ const ImageRenderer: React.FC<RendererContext> = ({
   const { t } = useTranslation();
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
-  const url = artifact.binaryUrl ?? "";
+  const resource = useAuthenticatedWorkspaceBlob(
+    artifact.workspacePath ?? null,
+    artifact.agentId,
+  );
+  const handleDownload = () => workspace.download?.(artifact);
 
   return (
     <div
@@ -81,7 +87,7 @@ const ImageRenderer: React.FC<RendererContext> = ({
               size="small"
               type="text"
               icon={<DownloadOutlined />}
-              onClick={() => workspace.download?.(artifact)}
+              onClick={handleDownload}
             />
           </Tooltip>
         </Space>
@@ -96,15 +102,26 @@ const ImageRenderer: React.FC<RendererContext> = ({
           padding: 16,
         }}
       >
-        <img
-          src={url}
-          alt={artifact.title}
-          style={{
-            maxWidth: "100%",
-            transform: `scale(${zoom}) rotate(${rotation}deg)`,
-            transition: "transform 0.2s",
-          }}
-        />
+        {resource.status === "ready" && resource.url ? (
+          <img
+            src={resource.url}
+            alt={artifact.title}
+            style={{
+              maxWidth: "100%",
+              transform: `scale(${zoom}) rotate(${rotation}deg)`,
+              transition: "transform 0.2s",
+            }}
+          />
+        ) : (
+          <BinaryPreviewFeedback
+            resource={resource}
+            theme={theme}
+            onDownload={handleDownload}
+            loadingLabel={t("workspace.loading", "正在加载文件")}
+            retryLabel={t("workspace.retry", "重试")}
+            downloadLabel={t("workspace.download", "下载")}
+          />
+        )}
       </div>
     </div>
   );

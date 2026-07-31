@@ -10,12 +10,12 @@
  * 当 react-pdf 不可用时，回退为下载按钮。
  */
 import React, { useState, useCallback } from "react";
-import { Button } from "antd";
-import { DownloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 import { PdfReader } from "../../../features/pdf-reader";
 import type { PdfReaderMode } from "../../../features/pdf-reader";
+import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
+import BinaryPreviewFeedback from "./BinaryPreviewFeedback";
 
 const PdfRenderer: React.FC<RendererContext> = ({
   artifact,
@@ -23,15 +23,17 @@ const PdfRenderer: React.FC<RendererContext> = ({
   workspace,
 }) => {
   const { t } = useTranslation();
-  const url = artifact.binaryUrl ?? "";
+  const resource = useAuthenticatedWorkspaceBlob(
+    artifact.workspacePath ?? null,
+    artifact.agentId,
+  );
   const [readerMode] = useState<PdfReaderMode>("simple");
 
   const handleDownload = useCallback(() => {
     workspace.download?.(artifact);
   }, [workspace, artifact]);
 
-  // 如果没有 URL，显示错误
-  if (!url) {
+  if (resource.status !== "ready" || !resource.url) {
     return (
       <div
         style={{
@@ -45,17 +47,21 @@ const PdfRenderer: React.FC<RendererContext> = ({
           color: "#ccc",
         }}
       >
-        <span>{t("workspace.noFileUrl", "无文件 URL")}</span>
-        <Button icon={<DownloadOutlined />} onClick={handleDownload}>
-          {t("workspace.download", "下载")}
-        </Button>
+        <BinaryPreviewFeedback
+          resource={resource}
+          theme={theme}
+          onDownload={handleDownload}
+          loadingLabel={t("workspace.loading", "正在加载文件")}
+          retryLabel={t("workspace.retry", "重试")}
+          downloadLabel={t("workspace.download", "下载")}
+        />
       </div>
     );
   }
 
   return (
     <PdfReader
-      fileUrl={url}
+      fileUrl={resource.url}
       fileName={artifact.title}
       theme={theme}
       onDownload={handleDownload}

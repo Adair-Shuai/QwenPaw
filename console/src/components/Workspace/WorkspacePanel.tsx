@@ -142,7 +142,7 @@ const WorkspacePanel: React.FC = () => {
         if (artifact.binaryUrl) {
           try {
             await downloadFileFromUrl(artifact.binaryUrl, artifact.title, {
-              headers: buildAuthHeaders(),
+              headers: buildAuthHeaders(artifact.agentId),
               errorMessage: t("workspace.downloadFailed", "文件下载失败"),
               preferResponseFilename: true,
             });

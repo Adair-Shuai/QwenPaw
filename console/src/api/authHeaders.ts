@@ -25,3 +25,17 @@ export function buildAuthHeaders(agentId?: string): Record<string, string> {
   if (agentId) headers["X-Agent-Id"] = agentId;
   return headers;
 }
+
+/** Add credentials usable by native media elements that cannot set headers. */
+export function buildAuthenticatedMediaUrl(
+  url: string,
+  agentId?: string,
+): string {
+  const params = new URLSearchParams();
+  const token = getApiToken();
+  if (token) params.set("token", token);
+  if (agentId) params.set("agent_id", agentId);
+  const query = params.toString();
+  if (!query) return url;
+  return `${url}${url.includes("?") ? "&" : "?"}${query}`;
+}

@@ -21,11 +21,11 @@ def binary_client(tmp_path, monkeypatch):
     for root in roots.values():
         root.mkdir()
 
-    async def get_workspace(request):
-        agent_id = request.headers.get("X-Agent-Id", "agent-a")
+    async def get_workspace(request, agent_id=None):
+        selected = agent_id or request.headers.get("X-Agent-Id", "agent-a")
         return SimpleNamespace(
-            agent_id=agent_id,
-            workspace_dir=roots[agent_id],
+            agent_id=selected,
+            workspace_dir=roots[selected],
         )
 
     monkeypatch.setattr(
@@ -130,6 +130,20 @@ def test_binary_range_uses_requested_agent_workspace(binary_client):
     assert response.status_code == 206
     assert response.content == b"BB"
     assert response.headers["content-range"] == "bytes 1-2/4"
+
+
+def test_binary_media_query_uses_requested_agent_workspace(binary_client):
+    client, roots = binary_client
+    (roots["agent-a"] / "same.mp4").write_bytes(b"AAAA")
+    (roots["agent-b"] / "same.mp4").write_bytes(b"BBBB")
+
+    response = client.get(
+        "/workspace/binary-files/same.mp4?agent_id=agent-b",
+        headers={"Range": "bytes=1-2"},
+    )
+
+    assert response.status_code == 206
+    assert response.content == b"BB"
 
 
 def test_binary_size_limits_vary_by_resource_category():

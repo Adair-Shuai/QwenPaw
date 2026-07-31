@@ -4,11 +4,15 @@
  * 使用原生 <video> / <audio> 标签渲染媒体文件。
  * 支持 MP4, WebM, MOV, MP3, WAV, FLAC, AAC, OGG 等。
  */
-import React from "react";
+import React, { useState } from "react";
 import { Button, Space, Tooltip } from "antd";
 import { DownloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
+import { buildAuthenticatedMediaUrl } from "../../../api/authHeaders";
+import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
+import type { AuthenticatedWorkspaceBlobResource } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 import type { RendererContext } from "../types";
+import BinaryPreviewFeedback from "./BinaryPreviewFeedback";
 
 const MediaRenderer: React.FC<RendererContext> = ({
   artifact,
@@ -16,7 +20,18 @@ const MediaRenderer: React.FC<RendererContext> = ({
   workspace,
 }) => {
   const { t } = useTranslation();
-  const url = artifact.binaryUrl ?? "";
+  const [loadAttempt, setLoadAttempt] = useState(0);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">(
+    "loading",
+  );
+  const [error, setError] = useState<Error | null>(null);
+  const baseUrl = artifact.workspacePath
+    ? workspaceFileApi.getBinaryFileUrl(artifact.workspacePath)
+    : artifact.binaryUrl ?? "";
+  const isWorkspaceUrl = baseUrl.includes("/workspace/binary-files/");
+  const url = isWorkspaceUrl
+    ? buildAuthenticatedMediaUrl(baseUrl, artifact.agentId)
+    : baseUrl;
   const isVideo =
     artifact.mimeType?.startsWith("video/") ||
     ["mp4", "webm", "avi", "mov", "mkv", "wmv", "flv"].includes(
@@ -24,6 +39,22 @@ const MediaRenderer: React.FC<RendererContext> = ({
     );
 
   const bgColor = theme === "dark" ? "#1e1e1e" : "#000";
+  const retry = () => {
+    setError(null);
+    setStatus("loading");
+    setLoadAttempt((value) => value + 1);
+  };
+  const resource: AuthenticatedWorkspaceBlobResource = {
+    status: url ? status : "error",
+    url: status === "ready" ? url : null,
+    error: url ? error : new Error("Workspace media URL is unavailable"),
+    retry,
+  };
+  const handleDownload = () => workspace.download?.(artifact);
+  const handleLoadError = () => {
+    setError(new Error(t("workspace.mediaLoadFailed", "媒体加载失败")));
+    setStatus("error");
+  };
 
   return (
     <div
@@ -55,7 +86,7 @@ const MediaRenderer: React.FC<RendererContext> = ({
               size="small"
               type="text"
               icon={<DownloadOutlined />}
-              onClick={() => workspace.download?.(artifact)}
+              onClick={handleDownload}
             />
           </Tooltip>
         </Space>
@@ -68,25 +99,54 @@ const MediaRenderer: React.FC<RendererContext> = ({
           justifyContent: "center",
           overflow: "hidden",
           padding: 8,
+          position: "relative",
         }}
       >
-        {url ? (
-          isVideo ? (
-            <video
-              src={url}
-              controls
-              style={{
-                maxWidth: "100%",
-                maxHeight: "100%",
-                borderRadius: 4,
-              }}
+        {url && status !== "error"
+          ? isVideo
+            ? (
+                <video
+                  key={`${url}:${loadAttempt}`}
+                  src={url}
+                  controls
+                  preload="metadata"
+                  onCanPlay={() => setStatus("ready")}
+                  onError={handleLoadError}
+                  style={{
+                    maxWidth: "100%",
+                    maxHeight: "100%",
+                    borderRadius: 4,
+                    visibility: status === "ready" ? "visible" : "hidden",
+                  }}
+                />
+              )
+            : (
+                <audio
+                  key={`${url}:${loadAttempt}`}
+                  src={url}
+                  controls
+                  preload="metadata"
+                  onCanPlay={() => setStatus("ready")}
+                  onError={handleLoadError}
+                  style={{
+                    width: "100%",
+                    visibility: status === "ready" ? "visible" : "hidden",
+                  }}
+                />
+              )
+          : null}
+        {status !== "ready" ? (
+          <div style={{ position: "absolute", inset: 0 }}>
+            <BinaryPreviewFeedback
+              resource={resource}
+              theme={theme}
+              onDownload={handleDownload}
+              loadingLabel={t("workspace.loadingMedia", "正在加载媒体")}
+              retryLabel={t("workspace.retry", "重试")}
+              downloadLabel={t("workspace.download", "下载")}
             />
-          ) : (
-            <audio src={url} controls style={{ width: "100%" }} />
-          )
-        ) : (
-          <span style={{ color: "#999" }}>No media URL available</span>
-        )}
+          </div>
+        ) : null}
       </div>
     </div>
   );

@@ -2,8 +2,18 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 const useAuthenticatedWorkspaceBlob = vi.fn<
-  (filePath: string | null, agentId?: string) => string
->(() => "blob:workspace-image");
+  (filePath: string | null, agentId?: string) => {
+    status: "ready";
+    url: string;
+    error: null;
+    retry: () => void;
+  }
+>(() => ({
+  status: "ready",
+  url: "blob:workspace-image",
+  error: null,
+  retry: vi.fn(),
+}));
 const openExternalLink = vi.fn();
 
 vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({

@@ -7,7 +7,12 @@ const { loadCodeFile, useAuthenticatedWorkspaceBlob } = vi.hoisted(() => ({
   loadCodeFile: vi.fn(() =>
     Promise.resolve({ path: "data/result.csv", content: "x,y\n1,2" }),
   ),
-  useAuthenticatedWorkspaceBlob: vi.fn(() => "blob:workspace-image"),
+  useAuthenticatedWorkspaceBlob: vi.fn(() => ({
+    status: "ready",
+    url: "blob:workspace-image",
+    error: null,
+    retry: vi.fn(),
+  })),
 }));
 
 vi.mock("@/api/modules/workspace", () => ({

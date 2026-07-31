@@ -126,12 +126,12 @@ function parseCsv(raw: string): string[][] {
 
 function ImagePreview({ filePath }: { filePath: string }) {
   const agentId = useAgentStore((state) => state.selectedAgent);
-  const blobUrl = useAuthenticatedWorkspaceBlob(filePath, agentId);
-  if (!blobUrl) return null;
+  const resource = useAuthenticatedWorkspaceBlob(filePath, agentId);
+  if (resource.status !== "ready" || !resource.url) return null;
   return (
     <div className={styles.imageWrap}>
       <img
-        src={blobUrl}
+        src={resource.url}
         alt={filePath.split("/").pop()}
         className={styles.image}
       />
@@ -141,11 +141,11 @@ function ImagePreview({ filePath }: { filePath: string }) {
 
 function PdfPreview({ filePath }: { filePath: string }) {
   const agentId = useAgentStore((state) => state.selectedAgent);
-  const blobUrl = useAuthenticatedWorkspaceBlob(filePath, agentId);
-  if (!blobUrl) return null;
+  const resource = useAuthenticatedWorkspaceBlob(filePath, agentId);
+  if (resource.status !== "ready" || !resource.url) return null;
   return (
     <embed
-      src={blobUrl}
+      src={resource.url}
       type="application/pdf"
       className={styles.pdfEmbed}
       title={filePath.split("/").pop()}
@@ -218,7 +218,7 @@ function MarkdownPreview({
       const target = src
         ? resolveWorkspaceMarkdownTarget(src, filePath)
         : { kind: "invalid" as const };
-      const blobUrl = useAuthenticatedWorkspaceBlob(
+      const resource = useAuthenticatedWorkspaceBlob(
         target.kind === "workspace" ? target.path : null,
         agentId,
       );
@@ -227,7 +227,9 @@ function MarkdownPreview({
         return <img src={target.href} alt={alt} {...props} />;
       }
       if (target.kind !== "workspace") return <span>{alt}</span>;
-      return blobUrl ? <img src={blobUrl} alt={alt} {...props} /> : null;
+      return resource.status === "ready" && resource.url ? (
+        <img src={resource.url} alt={alt} {...props} />
+      ) : null;
     };
 
     const WorkspaceLink = ({

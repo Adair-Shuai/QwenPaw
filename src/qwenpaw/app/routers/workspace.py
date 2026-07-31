@@ -456,6 +456,7 @@ def _parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
 async def read_binary_file(
     file_path: str,
     request: Request,
+    agent_id: str | None = None,
 ) -> StreamingResponse:
     """Return the raw bytes of *file_path* with the appropriate Content-Type.
 
@@ -466,7 +467,7 @@ async def read_binary_file(
     vary by resource category; requests without Range still stream the full
     file for clients that do not implement partial loading.
     """
-    workspace = await get_agent_for_request(request)
+    workspace = await get_agent_for_request(request, agent_id)
     coding_dir = get_coding_dir(workspace)
 
     # Support absolute paths (from file:// URLs) as well as relative paths.

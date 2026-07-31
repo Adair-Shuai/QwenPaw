@@ -147,7 +147,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       const target = src
         ? resolveWorkspaceMarkdownTarget(src, markdownPath)
         : { kind: "invalid" as const };
-      const blobUrl = useAuthenticatedWorkspaceBlob(
+      const resource = useAuthenticatedWorkspaceBlob(
         target.kind === "workspace" ? target.path : null,
         artifact.agentId,
       );
@@ -156,7 +156,9 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         return <img src={target.href} alt={alt} {...props} />;
       }
       if (target.kind !== "workspace") return <span>{alt}</span>;
-      return blobUrl ? <img src={blobUrl} alt={alt} {...props} /> : null;
+      return resource.status === "ready" && resource.url ? (
+        <img src={resource.url} alt={alt} {...props} />
+      ) : null;
     };
 
     const WorkspaceLink = ({
