@@ -217,21 +217,52 @@ if (Test-Path $NSIS_DIR) {
 
 Set-Location console
 
-Write-Host "Building for Windows..."
-npm exec -- tauri build --config src-tauri/tauri.version.conf.json
-$tauriExit = $LASTEXITCODE
+# The NSIS installer is a 32-bit application with a 2 GB virtual address
+# space limit.  When the bundled Python runtime (transformers, onnxruntime,
+# modelscope, playwright, …) exceeds that limit, makensis crashes with
+# "Internal compiler error #12345: error mmapping datablock".
+# Build the app target first, then attempt NSIS separately so that a
+# packaging failure does not discard a valid app build.
+Write-Host "Building app target for Windows..."
+npm exec -- tauri build --config src-tauri/tauri.version.conf.json --bundles app
+$appExit = $LASTEXITCODE
 
-if ($tauriExit -ne 0) {
-    throw "Tauri build failed"
+if ($appExit -ne 0) {
+    throw "Tauri app build failed"
+}
+Write-Host "Tauri app built" -ForegroundColor Green
+
+# Attempt NSIS installer; continue on failure so the CI can still upload
+# the app directory as a portable zip.
+Write-Host "Attempting NSIS installer build..."
+npm exec -- tauri build --config src-tauri/tauri.version.conf.json --bundles nsis
+$nsisExit = $LASTEXITCODE
+if ($nsisExit -ne 0) {
+    Write-Host "NSIS installer build failed (exit $nsisExit); falling back to portable zip" -ForegroundColor Yellow
+} else {
+    Write-Host "NSIS installer built" -ForegroundColor Green
 }
 
 Set-Location $REPO_ROOT
-Write-Host "Tauri app built" -ForegroundColor Green
+
+# Always produce a portable zip from the app directory so downstream
+# stages have a distributable artifact even when NSIS fails.
+$APP_DIR = Get-ChildItem -Directory -Path (Join-Path $BUNDLE_DIR "nsis") -ErrorAction SilentlyContinue | Select-Object -First 1
+if (-not $APP_DIR) {
+    # Tauri places the raw app under bundle\nsis only for NSIS; the app
+    # target itself puts it under bundle\<productName>.  Find it there.
+    $APP_DIR = Get-ChildItem -Directory -Path $BUNDLE_DIR -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "nsis" } | Select-Object -First 1
+}
 
 Write-Host ""
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Build Complete!" -ForegroundColor Green
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Output:"
-Write-Host "  NSIS bundle directory: ${NSIS_DIR}\"
+if ($nsisExit -eq 0 -and (Test-Path $NSIS_DIR)) {
+    Write-Host "  NSIS bundle directory: ${NSIS_DIR}\"
+}
+if ($APP_DIR) {
+    Write-Host "  App directory: $($APP_DIR.FullName)"
+}
 Write-Host ""

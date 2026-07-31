@@ -71,6 +71,15 @@ echo "== Installing project dependencies =="
 install_python_packages -e ".[full]"
 echo "Project dependencies installed with full extras"
 
+# Strip transformers + tokenizers from the build environment.
+# They are indirect deps of reme-ai but QwenPaw never imports them
+# directly, and ReMe degrades gracefully when they are absent.
+# Removing them shrinks the PyInstaller bundle by ~500 MB.
+echo "== Stripping transformers / tokenizers =="
+uninstall_python_package transformers
+uninstall_python_package tokenizers
+echo "transformers / tokenizers stripped"
+
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package
 if ! "$PYTHON_BIN" -c "from acp import Agent" 2> /dev/null; then
