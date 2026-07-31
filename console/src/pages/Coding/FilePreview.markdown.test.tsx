@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen } from "@testing-library/react";
 
 const useAuthenticatedWorkspaceBlob = vi.fn<
-  (filePath: string | null, agentId?: string) => {
+  (
+    filePath: string | null,
+    agentId?: string,
+  ) => {
     status: "ready";
     url: string;
     error: null;

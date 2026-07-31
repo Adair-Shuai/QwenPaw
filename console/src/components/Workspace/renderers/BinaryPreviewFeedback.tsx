@@ -42,7 +42,9 @@ const BinaryPreviewFeedback: React.FC<BinaryPreviewFeedbackProps> = ({
       </>
     ) : (
       <>
-        <span>{resource.error?.message || "Workspace file is unavailable"}</span>
+        <span>
+          {resource.error?.message || "Workspace file is unavailable"}
+        </span>
         <div style={{ display: "flex", gap: 8 }}>
           <Button icon={<ReloadOutlined />} onClick={resource.retry}>
             {retryLabel}

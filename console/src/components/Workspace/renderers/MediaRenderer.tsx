@@ -102,39 +102,37 @@ const MediaRenderer: React.FC<RendererContext> = ({
           position: "relative",
         }}
       >
-        {url && status !== "error"
-          ? isVideo
-            ? (
-                <video
-                  key={`${url}:${loadAttempt}`}
-                  src={url}
-                  controls
-                  preload="metadata"
-                  onCanPlay={() => setStatus("ready")}
-                  onError={handleLoadError}
-                  style={{
-                    maxWidth: "100%",
-                    maxHeight: "100%",
-                    borderRadius: 4,
-                    visibility: status === "ready" ? "visible" : "hidden",
-                  }}
-                />
-              )
-            : (
-                <audio
-                  key={`${url}:${loadAttempt}`}
-                  src={url}
-                  controls
-                  preload="metadata"
-                  onCanPlay={() => setStatus("ready")}
-                  onError={handleLoadError}
-                  style={{
-                    width: "100%",
-                    visibility: status === "ready" ? "visible" : "hidden",
-                  }}
-                />
-              )
-          : null}
+        {url && status !== "error" ? (
+          isVideo ? (
+            <video
+              key={`${url}:${loadAttempt}`}
+              src={url}
+              controls
+              preload="metadata"
+              onCanPlay={() => setStatus("ready")}
+              onError={handleLoadError}
+              style={{
+                maxWidth: "100%",
+                maxHeight: "100%",
+                borderRadius: 4,
+                visibility: status === "ready" ? "visible" : "hidden",
+              }}
+            />
+          ) : (
+            <audio
+              key={`${url}:${loadAttempt}`}
+              src={url}
+              controls
+              preload="metadata"
+              onCanPlay={() => setStatus("ready")}
+              onError={handleLoadError}
+              style={{
+                width: "100%",
+                visibility: status === "ready" ? "visible" : "hidden",
+              }}
+            />
+          )
+        ) : null}
         {status !== "ready" ? (
           <div style={{ position: "absolute", inset: 0 }}>
             <BinaryPreviewFeedback

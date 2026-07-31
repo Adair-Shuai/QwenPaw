@@ -96,7 +96,10 @@ export function useAuthenticatedWorkspaceBlob(
         setResource({ status: "ready", url: objectUrl, error: null });
       })
       .catch((error: unknown) => {
-        if (cancelled || (error instanceof Error && error.name === "AbortError")) {
+        if (
+          cancelled ||
+          (error instanceof Error && error.name === "AbortError")
+        ) {
           return;
         }
         setResource({

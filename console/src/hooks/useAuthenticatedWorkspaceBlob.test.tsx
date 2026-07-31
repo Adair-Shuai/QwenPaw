@@ -91,9 +91,7 @@ describe("useAuthenticatedWorkspaceBlob", () => {
   });
 
   it("aborts the request when the component unmounts", () => {
-    fetchMock.mockImplementation(
-      () => new Promise(() => undefined),
-    );
+    fetchMock.mockImplementation(() => new Promise(() => undefined));
     const { unmount } = renderHook(() =>
       useAuthenticatedWorkspaceBlob("result.png", "agent-b"),
     );
