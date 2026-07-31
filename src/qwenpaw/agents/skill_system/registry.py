@@ -970,6 +970,9 @@ def _build_reconciled_pool_entry(
     existing_installed_from = existing.get("installed_from")
     if existing_installed_from:
         new_entry["installed_from"] = existing_installed_from
+    existing_plugin_install_hash = existing.get("plugin_install_hash")
+    if existing_plugin_install_hash:
+        new_entry["plugin_install_hash"] = existing_plugin_install_hash
     for au_key in (
         "auto_update",
         "auto_update_targets",

@@ -80,6 +80,14 @@ def _register_pool_skill_entry(
     )
     if installed_from_final:
         entry["installed_from"] = installed_from_final
+        # Preserve the plugin install hash so that uninstall can detect
+        # user modifications.  When ``installed_from`` is explicitly
+        # cleared (e.g. during uninstall demotion) the hash is dropped.
+        existing_hash = str(
+            preserve_from.get("plugin_install_hash", "") or "",
+        )
+        if existing_hash:
+            entry["plugin_install_hash"] = existing_hash
 
     if config is not None:
         entry["config"] = dict(config)
