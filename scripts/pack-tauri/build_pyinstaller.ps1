@@ -108,12 +108,14 @@ if (-not (Test-Path $PyRuntimeBin)) {
     throw "Bundled Python executable not found at $PyRuntimeBin"
 }
 $PipIndexUrl = if ($env:PIP_INDEX_URL) { $env:PIP_INDEX_URL } else { "https://pypi.tuna.tsinghua.edu.cn/simple/" }
-Write-Host "Using PyPI mirror: $PipIndexUrl"
+$PipExtraIndexUrl = if ($env:PIP_EXTRA_INDEX_URL) { $env:PIP_EXTRA_INDEX_URL } else { "https://pypi.org/simple/" }
+Write-Host "Using PyPI mirror: $PipIndexUrl (extra: $PipExtraIndexUrl)"
 & $PyRuntimeBin -m pip install `
     --disable-pip-version-check `
     --no-input `
     --upgrade `
     --index-url $PipIndexUrl `
+    --extra-index-url $PipExtraIndexUrl `
     ".[full]" `
     numpy pandas scipy matplotlib requests openpyxl python-pptx
 Assert-LastExit "Failed to install QwenPaw into bundled Python"

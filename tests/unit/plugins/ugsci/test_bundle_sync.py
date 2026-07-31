@@ -23,4 +23,4 @@ def test_mirror_reports_and_removes_obsolete_files(tmp_path: Path) -> None:
     assert copied == 0
     assert removed == 1
     assert not obsolete.exists()
-    assert find_drift(source, destination) == []
+    assert not find_drift(source, destination)

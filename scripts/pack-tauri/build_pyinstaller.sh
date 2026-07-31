@@ -153,11 +153,13 @@ if [ ! -f "$PY_RUNTIME_BIN" ]; then
     PY_RUNTIME_BIN="${BINARIES_DIR}/python-runtime/python/bin/python"
 fi
 PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple/}"
-echo "Using PyPI mirror: ${PIP_INDEX_URL}"
+PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-https://pypi.org/simple/}"
+echo "Using PyPI mirror: ${PIP_INDEX_URL} (extra: ${PIP_EXTRA_INDEX_URL})"
 "$PY_RUNTIME_BIN" -m pip install \
     --disable-pip-version-check \
     --no-input \
     --index-url "$PIP_INDEX_URL" \
+    --extra-index-url "$PIP_EXTRA_INDEX_URL" \
     numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow
 echo "Common Python packages installed"
 echo ""
