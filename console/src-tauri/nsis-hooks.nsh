@@ -12,26 +12,18 @@ Var QwenPawOptionalPageInitialized
 Page custom QWENPAW_OPTIONAL_COMPONENTS_PAGE QWENPAW_OPTIONAL_COMPONENTS_PAGE_LEAVE
 Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
 
-!macro QWENPAW_INSTALL_OPTIONAL_COMPONENT COMPONENT DISPLAY_NAME
-  DetailPrint "$(qwenpawOptionalInstalling) ${DISPLAY_NAME}"
-  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-install-optional-components.ps1" -PythonPath "$INSTDIR\binaries\python-runtime\python\python.exe" -InstallDir "$INSTDIR" -Component "${COMPONENT}"`
-  Pop $0
-  ${If} $0 == 0
-    DetailPrint "$(qwenpawOptionalInstalled) ${DISPLAY_NAME}"
-  ${Else}
-    DetailPrint "$(qwenpawOptionalFailed) ${DISPLAY_NAME} ($0)"
-  ${EndIf}
-!macroend
-
-!macro QWENPAW_INSTALL_SELECTED_COMPONENTS
-  InitPluginsDir
-  File /oname=$PLUGINSDIR\qwenpaw-install-optional-components.ps1 "..\..\..\..\nsis\install-optional-components.ps1"
+!macro QWENPAW_QUEUE_SELECTED_COMPONENTS
+  CreateDirectory "$INSTDIR\optional-components"
+  FileOpen $0 "$INSTDIR\optional-components\pending.txt" w
   ${If} $QwenPawScienceState != 0
-    !insertmacro QWENPAW_INSTALL_OPTIONAL_COMPONENT "science" "$(qwenpawOptionalScienceName)"
+    FileWrite $0 "science$\r$\n"
+    DetailPrint "$(qwenpawOptionalQueued) $(qwenpawOptionalScienceName)"
   ${EndIf}
   ${If} $QwenPawWhisperState != 0
-    !insertmacro QWENPAW_INSTALL_OPTIONAL_COMPONENT "whisper" "$(qwenpawOptionalWhisperName)"
+    FileWrite $0 "whisper$\r$\n"
+    DetailPrint "$(qwenpawOptionalQueued) $(qwenpawOptionalWhisperName)"
   ${EndIf}
+  FileClose $0
 !macroend
 
 !macro QWENPAW_UPDATE_CLI_PATH ACTION
@@ -240,7 +232,7 @@ FunctionEnd
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro QWENPAW_REMOVE_LEGACY_CLI_PATH
   !insertmacro QWENPAW_ADD_CLI_PATH_IF_SELECTED
-  !insertmacro QWENPAW_INSTALL_SELECTED_COMPONENTS
+  !insertmacro QWENPAW_QUEUE_SELECTED_COMPONENTS
   !insertmacro QWENPAW_INSTALL_DEBUG_LAUNCHER
 !macroend
 

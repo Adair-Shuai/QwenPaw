@@ -291,6 +291,11 @@ def _run_backend_server(log_level: str) -> None:
     from qwenpaw.tauri.backend_guard import reconcile_singleton_backend
 
     reconcile_singleton_backend(WORKING_DIR)
+    from qwenpaw.tauri.optional_components import (
+        start_pending_component_install,
+    )
+
+    start_pending_component_install()
     if normalized_log_level in ("debug", "trace"):
         from qwenpaw.cli.main import log_init_timings
 
@@ -357,6 +362,12 @@ def main() -> None:
     _ensure_utf8_stdio()
     _install_subprocess_guard()
     _install_desktop_runtime()
+
+    from qwenpaw.tauri.optional_components import (
+        activate_installed_components,
+    )
+
+    activate_installed_components()
 
     from qwenpaw.constant import LOG_LEVEL_ENV, WORKING_DIR
 
