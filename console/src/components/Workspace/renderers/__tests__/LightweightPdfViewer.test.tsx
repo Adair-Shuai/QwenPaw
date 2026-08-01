@@ -181,7 +181,9 @@ describe("LightweightPdfViewer", () => {
       />,
     );
 
-    await waitFor(() => expect(renderPage).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(screen.getByLabelText("PDF 页面 1")).toBeVisible(),
+    );
     expect(getDocument).toHaveBeenCalledWith(
       expect.objectContaining({
         url: "/api/workspace/binary-files/report.pdf",
@@ -196,20 +198,24 @@ describe("LightweightPdfViewer", () => {
       }),
     );
     expect(getPage).toHaveBeenCalledWith(1);
-    expect(screen.getByLabelText("PDF 页面 1")).toBeVisible();
+    expect(renderPage).toHaveBeenCalled();
   });
 
   it("renders a continuous virtual page window and jumps from the page input", async () => {
     const { unmount } = render(
       <LightweightPdfViewer url="/report.pdf" theme="dark" />,
     );
-    await waitFor(() => expect(renderPage).toHaveBeenCalledTimes(2));
+    await waitFor(() =>
+      expect(screen.getByLabelText("PDF 页面 1")).toBeVisible(),
+    );
+    await waitFor(() =>
+      expect(screen.getByLabelText("PDF 页面 2")).toBeVisible(),
+    );
 
     expect(getPage).toHaveBeenCalledWith(1);
     expect(getPage).toHaveBeenCalledWith(2);
     expect(getPage).not.toHaveBeenCalledWith(3);
-    expect(screen.getByLabelText("PDF 页面 1")).toBeVisible();
-    expect(screen.getByLabelText("PDF 页面 2")).toBeVisible();
+    expect(renderPage).toHaveBeenCalledTimes(2);
 
     fireEvent.change(screen.getByLabelText("页码"), {
       target: { value: "4" },
