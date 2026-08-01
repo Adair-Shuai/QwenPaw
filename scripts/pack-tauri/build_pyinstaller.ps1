@@ -99,7 +99,7 @@ if (Test-Path $PYTHON_RUNTIME_DIR) {
 Assert-LastExit "Failed to stage bundled Python runtime"
 Write-Host ""
 
-# Install QwenPaw and the common data/document stack into this one interpreter.
+# Install QwenPaw and the core document stack into this one interpreter.
 # Passing the repository path (without -e) builds a normal wheel, so the
 # installed app is self-contained and does not reference the checkout.
 #
@@ -107,8 +107,10 @@ Write-Host ""
 # "whisper" extra.  openai-whisper pulls in torch (~2 GB), which pushes the
 # NSIS installer past the 2 GB 32-bit address-space limit and causes
 # "Internal compiler error #12345: error mmapping datablock".
-# Whisper can still be installed at runtime via pip if needed.
-Write-Host "== Installing QwenPaw and common packages into bundled runtime ==" -ForegroundColor Yellow
+# Scientific computing and local Whisper are downloaded by the Windows
+# installer only when the user selects those optional components. Keeping
+# them out of this directory is what reduces the installer payload itself.
+Write-Host "== Installing QwenPaw and core packages into bundled runtime ==" -ForegroundColor Yellow
 $PyRuntimeBin = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
 if (-not (Test-Path $PyRuntimeBin)) {
     throw "Bundled Python executable not found at $PyRuntimeBin"
@@ -123,14 +125,16 @@ Write-Host "Using PyPI mirror: $PipIndexUrl (extra: $PipExtraIndexUrl)"
     --index-url $PipIndexUrl `
     --extra-index-url $PipExtraIndexUrl `
     ".[local,codex,qoder]" `
-    numpy pandas scipy matplotlib requests openpyxl python-pptx
+    numpy requests openpyxl python-pptx
 Assert-LastExit "Failed to install QwenPaw into bundled Python"
 
 # PyPI also contains an empty package named "acp"; it must not shadow
 # agent-client-protocol's real acp namespace.
 & $PyRuntimeBin -m pip uninstall -y acp *> $null
-& $PyRuntimeBin -c "from acp import Agent; import qwenpaw, numpy, pandas, scipy, matplotlib, openpyxl, docx, pptx, PIL"
+& $PyRuntimeBin -c "from acp import Agent; import qwenpaw, numpy, openpyxl, docx, pptx, PIL"
 Assert-LastExit "Bundled Python import verification failed"
+& $PyRuntimeBin -c "import importlib.util; optional = ('pandas', 'scipy', 'matplotlib', 'whisper', 'torch'); found = [name for name in optional if importlib.util.find_spec(name)]; assert not found, f'Optional packages leaked into base runtime: {found}'"
+Assert-LastExit "Optional packages leaked into bundled Python"
 
 $ConsoleDist = Join-Path $REPO_ROOT "console\dist"
 $InstalledPackage = (& $PyRuntimeBin -c "import pathlib, qwenpaw; print(pathlib.Path(qwenpaw.__file__).resolve().parent)").Trim()

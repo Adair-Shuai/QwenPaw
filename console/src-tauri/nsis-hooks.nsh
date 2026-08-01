@@ -3,8 +3,36 @@
 
 Var QwenPawCliPathCheckbox
 Var QwenPawCliPathState
+Var QwenPawScienceCheckbox
+Var QwenPawScienceState
+Var QwenPawWhisperCheckbox
+Var QwenPawWhisperState
+Var QwenPawOptionalPageInitialized
 
+Page custom QWENPAW_OPTIONAL_COMPONENTS_PAGE QWENPAW_OPTIONAL_COMPONENTS_PAGE_LEAVE
 Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
+
+!macro QWENPAW_INSTALL_OPTIONAL_COMPONENT COMPONENT DISPLAY_NAME
+  DetailPrint "$(qwenpawOptionalInstalling) ${DISPLAY_NAME}"
+  nsExec::ExecToLog `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-install-optional-components.ps1" -PythonPath "$INSTDIR\binaries\python-runtime\python\python.exe" -InstallDir "$INSTDIR" -Component "${COMPONENT}"`
+  Pop $0
+  ${If} $0 == 0
+    DetailPrint "$(qwenpawOptionalInstalled) ${DISPLAY_NAME}"
+  ${Else}
+    DetailPrint "$(qwenpawOptionalFailed) ${DISPLAY_NAME} ($0)"
+  ${EndIf}
+!macroend
+
+!macro QWENPAW_INSTALL_SELECTED_COMPONENTS
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\qwenpaw-install-optional-components.ps1 "..\..\..\..\nsis\install-optional-components.ps1"
+  ${If} $QwenPawScienceState != 0
+    !insertmacro QWENPAW_INSTALL_OPTIONAL_COMPONENT "science" "$(qwenpawOptionalScienceName)"
+  ${EndIf}
+  ${If} $QwenPawWhisperState != 0
+    !insertmacro QWENPAW_INSTALL_OPTIONAL_COMPONENT "whisper" "$(qwenpawOptionalWhisperName)"
+  ${EndIf}
+!macroend
 
 !macro QWENPAW_UPDATE_CLI_PATH ACTION
   InitPluginsDir
@@ -109,6 +137,68 @@ Function QWENPAW_CLI_PATH_PAGE_LEAVE
   ${NSD_GetState} $QwenPawCliPathCheckbox $QwenPawCliPathState
 FunctionEnd
 
+Function QWENPAW_OPTIONAL_COMPONENTS_PAGE
+  ${If} $QwenPawOptionalPageInitialized == ""
+    StrCpy $QwenPawOptionalPageInitialized 1
+    StrCpy $QwenPawScienceState 0
+    StrCpy $QwenPawWhisperState 0
+
+    ${GetOptions} $CMDLINE "/WITH_SCIENCE" $0
+    ${IfNot} ${Errors}
+      StrCpy $QwenPawScienceState 1
+    ${EndIf}
+    ${GetOptions} $CMDLINE "/WITH_WHISPER" $0
+    ${IfNot} ${Errors}
+      StrCpy $QwenPawWhisperState 1
+    ${EndIf}
+  ${EndIf}
+
+  ${If} ${Silent}
+    Abort
+  ${EndIf}
+  ${GetOptions} $CMDLINE "/P" $0
+  ${IfNot} ${Errors}
+    Abort
+  ${EndIf}
+  ${GetOptions} $CMDLINE "/NO_OPTIONAL_COMPONENTS" $0
+  ${IfNot} ${Errors}
+    Abort
+  ${EndIf}
+
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "$(qwenpawOptionalPageTitle)" "$(qwenpawOptionalPageSubtitle)"
+  ${NSD_CreateLabel} 0 0 100% 28u "$(qwenpawOptionalPageDescription)"
+  Pop $0
+  ${NSD_CreateCheckbox} 0 40u 100% 12u "$(qwenpawOptionalScienceCheckbox)"
+  Pop $QwenPawScienceCheckbox
+  ${NSD_CreateLabel} 14u 56u 94% 22u "$(qwenpawOptionalScienceDescription)"
+  Pop $0
+  ${NSD_CreateCheckbox} 0 86u 100% 12u "$(qwenpawOptionalWhisperCheckbox)"
+  Pop $QwenPawWhisperCheckbox
+  ${NSD_CreateLabel} 14u 102u 94% 26u "$(qwenpawOptionalWhisperDescription)"
+  Pop $0
+
+  ${If} $QwenPawOptionalPageInitialized == 1
+    SendMessage $QwenPawScienceCheckbox ${BM_SETCHECK} 1 0
+    StrCpy $QwenPawOptionalPageInitialized 2
+  ${Else}
+    SendMessage $QwenPawScienceCheckbox ${BM_SETCHECK} $QwenPawScienceState 0
+  ${EndIf}
+  SendMessage $QwenPawWhisperCheckbox ${BM_SETCHECK} $QwenPawWhisperState 0
+
+  nsDialogs::Show
+FunctionEnd
+
+Function QWENPAW_OPTIONAL_COMPONENTS_PAGE_LEAVE
+  ${NSD_GetState} $QwenPawScienceCheckbox $QwenPawScienceState
+  ${NSD_GetState} $QwenPawWhisperCheckbox $QwenPawWhisperState
+FunctionEnd
+
 !macro QWENPAW_STOP_BACKEND_SIDECAR
   ; The Python backend is a Tauri sidecar, not a user-facing window. A leftover
   ; (possibly orphaned, see #5550) backend keeps Python ``.pyd`` modules
@@ -150,6 +240,7 @@ FunctionEnd
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro QWENPAW_REMOVE_LEGACY_CLI_PATH
   !insertmacro QWENPAW_ADD_CLI_PATH_IF_SELECTED
+  !insertmacro QWENPAW_INSTALL_SELECTED_COMPONENTS
   !insertmacro QWENPAW_INSTALL_DEBUG_LAUNCHER
 !macroend
 
