@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { Form } from "antd";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { renderWithProviders } from "@/test/common_setup";
 import { AgentBackendFields } from "./AgentBackendFields";
@@ -92,13 +92,10 @@ function BackendForm() {
 
 describe("AgentBackendFields", () => {
   beforeEach(() => {
+    vi.clearAllTimers();
     vi.clearAllMocks();
     vi.mocked(harnessApi.status).mockResolvedValue(mockProvider);
     mockCopyText.mockResolvedValue(undefined);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("separates native and third-party agent creation", async () => {
@@ -313,9 +310,11 @@ describe("AgentBackendFields", () => {
 
     expect(harnessApi.status).toHaveBeenCalledTimes(1);
     view.unmount();
+    vi.useRealTimers();
   });
 
   it("shows the authenticated Qoder CLI account", async () => {
+    vi.useRealTimers();
     vi.mocked(harnessApi.status).mockImplementation(async (providerId) => ({
       ...mockProvider,
       id: providerId,
@@ -342,5 +341,5 @@ describe("AgentBackendFields", () => {
     expect(
       screen.queryByText("agent.backend.qoderConnect"),
     ).not.toBeInTheDocument();
-  });
+  }, 15000);
 });

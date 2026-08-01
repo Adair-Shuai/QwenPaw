@@ -1002,17 +1002,18 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         style={{
           display: "flex",
           alignItems: "center",
-          gap: 8,
-          padding: "8px 12px",
+          gap: 2,
+          minHeight: 58,
+          padding: "8px 10px",
           borderRadius: 8,
           border:
             "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
           background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
           transition: "all 0.15s ease",
           overflow: "hidden",
-          flex: "1 1 180px",
-          maxWidth: 280,
-          minWidth: 160,
+          width: "100%",
+          minWidth: 0,
+          boxSizing: "border-box",
         }}
       >
         <div
@@ -1047,6 +1048,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
           </span>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div
+              title={info.fileName}
               style={{
                 fontSize: 13,
                 fontWeight: 500,
@@ -1065,13 +1067,26 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
+                minWidth: 0,
+                overflow: "hidden",
+                whiteSpace: "nowrap",
               }}
             >
-              <span>{(info.extension || "file").toUpperCase()}</span>
-              <span>·</span>
-              <span>{formatFileSize(info.fileSize)}</span>
-              <span>·</span>
-              <span style={{ color: opConfig.color }}>已生成</span>
+              <span
+                style={{
+                  minWidth: 0,
+                  overflow: "hidden",
+                  textOverflow: "ellipsis",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {(info.extension || "file").toUpperCase()} ·{" "}
+                {formatFileSize(info.fileSize)}
+              </span>
+              <span style={{ flexShrink: 0 }}>·</span>
+              <span style={{ color: opConfig.color, flexShrink: 0 }}>
+                已生成
+              </span>
             </div>
           </div>
         </div>
@@ -1083,8 +1098,14 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               border: "none",
               background: "transparent",
               cursor: "pointer",
-              padding: 4,
+              width: 26,
+              height: 26,
+              padding: 0,
               display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              borderRadius: 4,
               color: "var(--ant-color-text-quaternary, #bbb)",
             }}
           >
@@ -1103,8 +1124,14 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               border: "none",
               background: "transparent",
               cursor: downloading ? "wait" : "pointer",
-              padding: 4,
+              width: 26,
+              height: 26,
+              padding: 0,
               display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              flexShrink: 0,
+              borderRadius: 4,
               color: "var(--ant-color-text-quaternary, #bbb)",
             }}
           >
@@ -1126,10 +1153,14 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               border: "none",
               background: "transparent",
               cursor: "pointer",
-              padding: 4,
+              width: 26,
+              height: 26,
+              padding: 0,
               display: "flex",
               alignItems: "center",
+              justifyContent: "center",
               flexShrink: 0,
+              borderRadius: 4,
               color: "var(--ant-color-text-quaternary, #bbb)",
               transition: "color 0.15s ease",
             }}
@@ -1234,10 +1265,11 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       {deliverables.length > 0 && (
         <div
           style={{
-            display: "flex",
-            flexWrap: "wrap",
+            display: "grid",
+            gridTemplateColumns:
+              "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
             gap: 8,
-            maxWidth: "100%",
+            width: "min(100%, 856px)",
           }}
         >
           {deliverables.map(renderCard)}

@@ -77,6 +77,7 @@ function makeResolvedEvents(
 
 describe("useInboxData", () => {
   beforeEach(() => {
+    vi.clearAllTimers();
     mockGetInboxEvents.mockReset();
     mockMarkInboxRead.mockReset();
     mockDeleteInboxEvent.mockReset();
@@ -86,7 +87,6 @@ describe("useInboxData", () => {
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 

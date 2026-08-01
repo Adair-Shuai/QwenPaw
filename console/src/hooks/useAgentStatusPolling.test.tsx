@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { AgentSummary } from "@/api/types/agents";
 import { useAgentStatusPolling } from "./useAgentStatusPolling";
 
@@ -14,8 +14,8 @@ const agent = (startup_status: AgentSummary["startup_status"]) => ({
 });
 
 describe("useAgentStatusPolling", () => {
-  afterEach(() => {
-    vi.useRealTimers();
+  beforeEach(() => {
+    vi.clearAllTimers();
   });
 
   it("keeps refreshing while an agent remains starting", async () => {

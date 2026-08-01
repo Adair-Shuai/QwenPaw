@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 dayjs.extend(relativeTime);
@@ -7,12 +7,9 @@ import { formatTimeAgo, isDailyMemoryFile } from "./utils";
 
 describe("formatTimeAgo", () => {
   beforeEach(() => {
+    vi.clearAllTimers();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2024-06-01T12:00:00Z"));
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("returns a relative time string for a recent timestamp", () => {

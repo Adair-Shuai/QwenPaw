@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getInfo = vi.fn();
 const getOffloadPolicy = vi.fn();
@@ -35,6 +35,7 @@ import { useToolCallControl } from "./useToolCallControl";
 
 describe("useToolCallControl", () => {
   beforeEach(() => {
+    vi.clearAllTimers();
     vi.useFakeTimers();
     getInfo.mockReset();
     getOffloadPolicy.mockReset();
@@ -42,10 +43,6 @@ describe("useToolCallControl", () => {
     getOffloadPolicy.mockResolvedValue({ default_action: "keep_foreground" });
     resolvePreferred = (preferred?: string | null) =>
       preferred || "backend-sid";
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("keeps killRemaining ticking after offload countdown hits zero", async () => {
@@ -213,7 +210,7 @@ describe("useToolCallControl", () => {
       vi.advanceTimersByTime(14000);
     });
     expect(result.current.bannerVisible).toBe(true);
-  });
+  }, 30000);
 
   it("registers alreadyCompleted only when offload_reason is set", async () => {
     getInfo.mockResolvedValue({

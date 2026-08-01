@@ -8,7 +8,7 @@
  * - percentage lower bound when totalSeconds equals one day
  * - setInterval fires every second, decrementing remaining seconds
  */
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useHarvestCountdown } from "./useHarvestCountdown";
 
@@ -17,12 +17,9 @@ const BASELINE = new Date("2026-01-01T00:00:00.000Z");
 
 describe("useHarvestCountdown", () => {
   beforeEach(() => {
+    vi.clearAllTimers();
     vi.useFakeTimers();
     vi.setSystemTime(BASELINE);
-  });
-
-  afterEach(() => {
-    vi.useRealTimers();
   });
 
   it("marks overdue when nextRun is in the past", () => {

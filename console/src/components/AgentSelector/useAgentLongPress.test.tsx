@@ -1,6 +1,6 @@
 import { act, renderHook } from "@testing-library/react";
 import type { PointerEvent } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AgentSummary } from "../../api/types/agents";
 import { useAgentLongPress } from "./useAgentLongPress";
@@ -16,8 +16,8 @@ const agent: AgentSummary = {
 };
 
 describe("useAgentLongPress", () => {
-  afterEach(() => {
-    vi.useRealTimers();
+  beforeEach(() => {
+    vi.clearAllTimers();
   });
 
   it("fires after the long-press threshold", () => {
