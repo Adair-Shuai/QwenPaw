@@ -7,14 +7,7 @@
  * 提交时 customFetch 会解析 @AgentName 并将 target_agent_id
  * 加入请求体，实现消息转发到指定 Agent。
  */
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { useAgentStore } from "../../../stores/agentStore";
+import React, { useEffect, useMemo, useRef } from "react";
 import { getAgentDisplayName } from "../../../utils/agentDisplayName";
 import { useTranslation } from "react-i18next";
 import { Bot } from "lucide-react";
@@ -72,6 +65,15 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
       });
     }
   }, [activeIndex, visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onDismiss();
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [visible, onDismiss]);
 
   if (!visible || filtered.length === 0) return null;
 
