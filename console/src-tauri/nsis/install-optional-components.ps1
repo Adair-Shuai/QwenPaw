@@ -28,15 +28,27 @@ if (-not (Test-Path -LiteralPath $PythonPath -PathType Leaf)) {
 }
 
 $packages = switch ($Component) {
-    "science" { @("pandas", "scipy", "matplotlib") }
-    "whisper" { @("openai-whisper>=20231117", "imageio-ffmpeg>=0.6.0") }
+    "science" {
+        @(
+            "numpy>=1.24.0",
+            "pandas>=2.0.0",
+            "scipy>=1.11.0",
+            "matplotlib>=3.7.0"
+        )
+    }
+    "whisper" {
+        @(
+            "torch>=2.1.0",
+            "openai-whisper>=20231117",
+            "imageio-ffmpeg>=0.6.0"
+        )
+    }
 }
 
 Write-Output "Installing optional component '$Component' from $indexUrl"
 & $PythonPath -m pip install `
     --disable-pip-version-check `
     --no-input `
-    --upgrade `
     --prefer-binary `
     --index-url $indexUrl `
     --extra-index-url $extraIndexUrl `

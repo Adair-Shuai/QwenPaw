@@ -192,6 +192,11 @@ Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
     --dest (Join-Path $BINARIES_DIR "node-runtime")
 Assert-LastExit "Failed to stage bundled Node runtime"
+
+# Building the Computer Use helper invokes the shared Tauri build script,
+# which validates every configured resource even though OfficeCLI is staged
+# later. Ensure the declared directory exists before that release build.
+New-Item -ItemType Directory -Force -Path (Join-Path $BINARIES_DIR "officecli") | Out-Null
 Write-Host "== Building Computer Use helper ==" -ForegroundColor Yellow
 $CARGO_BIN = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $CARGO_BIN) {
