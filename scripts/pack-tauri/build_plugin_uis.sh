@@ -13,10 +13,10 @@
 set -e
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
-BUNDLE_DIR="$REPO_ROOT/plugins/bundle"
+PLUGIN_STAGE_SCRIPT="$REPO_ROOT/scripts/pack-tauri/stage_bundled_plugins.py"
 
-if [ ! -d "$BUNDLE_DIR" ]; then
-    echo "[build_plugin_uis] No plugins/bundle/ directory found; skipping."
+if [ ! -f "$PLUGIN_STAGE_SCRIPT" ]; then
+    echo "[build_plugin_uis] Plugin discovery script is missing; skipping."
     exit 0
 fi
 
@@ -25,7 +25,9 @@ echo "[build_plugin_uis] Building plugin frontend bundles..."
 built=0
 skipped=0
 
-for plugin_dir in "$BUNDLE_DIR"/*/; do
+python_cmd="python3"
+command -v "$python_cmd" >/dev/null 2>&1 || python_cmd="python"
+while IFS= read -r plugin_dir; do
     plugin_name=$(basename "$plugin_dir")
     ui_dir="$plugin_dir/ui"
 
@@ -66,6 +68,6 @@ for plugin_dir in "$BUNDLE_DIR"/*/; do
         mkdir -p "$src_mirror"
         cp -R "$ui_dir/dist/"* "$src_mirror/"
     fi
-done
+done < <("$python_cmd" "$PLUGIN_STAGE_SCRIPT" --repo "$REPO_ROOT" --list-sources)
 
 echo "[build_plugin_uis] Done: $built built, $skipped skipped."

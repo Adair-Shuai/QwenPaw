@@ -33,10 +33,27 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import io
 import json
 import sys
 from pathlib import Path
+
+
+def _plugin_packaging_helper(repo: Path):
+    helper_path = repo / "scripts" / "pack-tauri" / "stage_bundled_plugins.py"
+    spec = importlib.util.spec_from_file_location(
+        "qwenpaw_bundled_plugin_stage",
+        helper_path,
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError(
+            f"Cannot load plugin packaging helper: {helper_path}",
+        )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
 
 # Force UTF-8 output on Windows to avoid cp1252 UnicodeEncodeError with emoji.
 if sys.platform == "win32":
@@ -89,17 +106,15 @@ def _check_console_dist(repo: Path) -> list[str]:
 def _check_plugins(repo: Path) -> list[str]:
     """Verify every plugin with a frontend_entry has its dist file."""
     errors: list[str] = []
-    plugins_bundle = repo / "plugins" / "bundle"
+    try:
+        plugin_dirs = _plugin_packaging_helper(repo).discover_bundled_plugins(
+            repo,
+        )
+    except Exception as exc:
+        return [f"Failed to discover bundled plugins: {exc}"]
 
-    if not plugins_bundle.is_dir():
-        return errors  # No bundled plugins — nothing to check
-
-    for plugin_dir in sorted(plugins_bundle.iterdir()):
-        if not plugin_dir.is_dir():
-            continue
+    for plugin_dir in plugin_dirs:
         manifest_path = plugin_dir / "plugin.json"
-        if not manifest_path.is_file():
-            continue
 
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))

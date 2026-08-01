@@ -11,10 +11,10 @@
 
 $ErrorActionPreference = "Stop"
 $REPO_ROOT = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
-$BUNDLE_DIR = Join-Path $REPO_ROOT "plugins\bundle"
+$PLUGIN_STAGE_SCRIPT = Join-Path $PSScriptRoot "stage_bundled_plugins.py"
 
-if (-not (Test-Path $BUNDLE_DIR)) {
-    Write-Host "[build_plugin_uis] No plugins/bundle/ directory found; skipping."
+if (-not (Test-Path $PLUGIN_STAGE_SCRIPT)) {
+    Write-Host "[build_plugin_uis] Plugin discovery script is missing; skipping."
     exit 0
 }
 
@@ -23,9 +23,14 @@ Write-Host "[build_plugin_uis] Building plugin frontend bundles..."
 $built = 0
 $skipped = 0
 
-Get-ChildItem -Path $BUNDLE_DIR -Directory | ForEach-Object {
-    $pluginName = $_.Name
-    $uiDir = Join-Path $_.FullName "ui"
+$pluginSources = python $PLUGIN_STAGE_SCRIPT --repo $REPO_ROOT --list-sources
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to discover bundled plugins"
+}
+$pluginSources | ForEach-Object {
+    $pluginDir = Get-Item -LiteralPath $_
+    $pluginName = $pluginDir.Name
+    $uiDir = Join-Path $pluginDir.FullName "ui"
 
     # Skip if no ui/ directory
     if (-not (Test-Path $uiDir)) {

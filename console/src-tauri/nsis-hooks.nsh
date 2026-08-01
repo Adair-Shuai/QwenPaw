@@ -8,14 +8,49 @@ Var QwenPawScienceState
 Var QwenPawWhisperCheckbox
 Var QwenPawWhisperState
 Var QwenPawOptionalPageInitialized
+Var QwenPawExecutionBuiltinRadio
+Var QwenPawExecutionExternalRadio
+Var QwenPawExecutionPythonText
+Var QwenPawExecutionPythonBrowse
+Var QwenPawExecutionMode
+Var QwenPawExecutionPythonPath
+Var QwenPawExecutionPageInitialized
 
+Page custom QWENPAW_EXECUTION_RUNTIME_PAGE QWENPAW_EXECUTION_RUNTIME_PAGE_LEAVE
 Page custom QWENPAW_OPTIONAL_COMPONENTS_PAGE QWENPAW_OPTIONAL_COMPONENTS_PAGE_LEAVE
 Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
+
+!macro QWENPAW_WRITE_EXECUTION_RUNTIME
+  CreateDirectory "$INSTDIR\execution-runtime"
+  FileOpen $0 "$INSTDIR\execution-runtime\selection.txt" w
+  FileWrite $0 "$QwenPawExecutionMode$\r$\n"
+  ${If} $QwenPawExecutionMode == "external"
+    FileWrite $0 "$QwenPawExecutionPythonPath$\r$\n"
+  ${EndIf}
+  FileClose $0
+!macroend
+
+Function QWENPAW_LOAD_EXECUTION_RUNTIME_SELECTION
+  StrCpy $QwenPawExecutionMode "builtin"
+  IfFileExists "$INSTDIR\execution-runtime\selection.txt" 0 qwenpaw_execution_selection_done
+  FileOpen $0 "$INSTDIR\execution-runtime\selection.txt" r
+  FileRead $0 $1
+  ${TrimNewLines} $1 $1
+  ${If} $1 == "external"
+    FileRead $0 $1
+    ${TrimNewLines} $1 $QwenPawExecutionPythonPath
+    IfFileExists "$QwenPawExecutionPythonPath" 0 +2
+    StrCpy $QwenPawExecutionMode "external"
+  ${EndIf}
+  FileClose $0
+  qwenpaw_execution_selection_done:
+FunctionEnd
 
 !macro QWENPAW_QUEUE_SELECTED_COMPONENTS
   CreateDirectory "$INSTDIR\optional-components"
   FileOpen $0 "$INSTDIR\optional-components\pending.txt" w
-  ${If} $QwenPawScienceState != 0
+  ${If} $QwenPawExecutionMode != "external"
+  ${AndIf} $QwenPawScienceState != 0
     FileWrite $0 "science$\r$\n"
     DetailPrint "$(qwenpawOptionalQueued) $(qwenpawOptionalScienceName)"
   ${EndIf}
@@ -25,6 +60,101 @@ Page custom QWENPAW_CLI_PATH_PAGE QWENPAW_CLI_PATH_PAGE_LEAVE
   ${EndIf}
   FileClose $0
 !macroend
+
+Function QWENPAW_EXECUTION_RUNTIME_UPDATE_CONTROLS
+  ${NSD_GetState} $QwenPawExecutionExternalRadio $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $QwenPawExecutionMode "external"
+    EnableWindow $QwenPawExecutionPythonText 1
+    EnableWindow $QwenPawExecutionPythonBrowse 1
+  ${Else}
+    StrCpy $QwenPawExecutionMode "builtin"
+    EnableWindow $QwenPawExecutionPythonText 0
+    EnableWindow $QwenPawExecutionPythonBrowse 0
+  ${EndIf}
+FunctionEnd
+
+Function QWENPAW_EXECUTION_RUNTIME_UPDATE_PATH
+  ${NSD_GetText} $QwenPawExecutionPythonText $QwenPawExecutionPythonPath
+FunctionEnd
+
+Function QWENPAW_EXECUTION_RUNTIME_BROWSE
+  nsDialogs::SelectFileDialog open "$QwenPawExecutionPythonPath" "Python executable|*.exe"
+  Pop $0
+  ${If} $0 != ""
+    StrCpy $QwenPawExecutionPythonPath $0
+    ${NSD_SetText} $QwenPawExecutionPythonText $0
+  ${EndIf}
+FunctionEnd
+
+Function QWENPAW_EXECUTION_RUNTIME_PAGE
+  ${If} $QwenPawExecutionPageInitialized == ""
+    StrCpy $QwenPawExecutionPageInitialized 1
+    Call QWENPAW_LOAD_EXECUTION_RUNTIME_SELECTION
+  ${EndIf}
+  ${If} ${Silent}
+    Abort
+  ${EndIf}
+  ${GetOptions} $CMDLINE "/P" $0
+  ${IfNot} ${Errors}
+    Abort
+  ${EndIf}
+
+  ${If} $QwenPawExecutionPythonPath == ""
+    SearchPath $QwenPawExecutionPythonPath "python.exe"
+  ${EndIf}
+
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  !insertmacro MUI_HEADER_TEXT "$(qwenpawExecutionPageTitle)" "$(qwenpawExecutionPageSubtitle)"
+  ${NSD_CreateLabel} 0 0 100% 28u "$(qwenpawExecutionPageDescription)"
+  Pop $0
+  ${NSD_CreateRadioButton} 0 38u 100% 12u "$(qwenpawExecutionBuiltinRadio)"
+  Pop $QwenPawExecutionBuiltinRadio
+  ${NSD_CreateLabel} 14u 54u 94% 20u "$(qwenpawExecutionBuiltinDescription)"
+  Pop $0
+  ${NSD_CreateRadioButton} 0 82u 100% 12u "$(qwenpawExecutionExternalRadio)"
+  Pop $QwenPawExecutionExternalRadio
+  ${NSD_CreateLabel} 14u 98u 94% 20u "$(qwenpawExecutionExternalDescription)"
+  Pop $0
+  ${NSD_CreateText} 14u 124u 76% 13u "$QwenPawExecutionPythonPath"
+  Pop $QwenPawExecutionPythonText
+  ${NSD_CreateBrowseButton} 82% 123u 18% 15u "$(qwenpawExecutionBrowse)"
+  Pop $QwenPawExecutionPythonBrowse
+  ${NSD_OnClick} $QwenPawExecutionBuiltinRadio QWENPAW_EXECUTION_RUNTIME_UPDATE_CONTROLS
+  ${NSD_OnClick} $QwenPawExecutionExternalRadio QWENPAW_EXECUTION_RUNTIME_UPDATE_CONTROLS
+  ${NSD_OnClick} $QwenPawExecutionPythonBrowse QWENPAW_EXECUTION_RUNTIME_BROWSE
+  ${NSD_OnChange} $QwenPawExecutionPythonText QWENPAW_EXECUTION_RUNTIME_UPDATE_PATH
+
+  ${If} $QwenPawExecutionMode == "external"
+    ${NSD_Check} $QwenPawExecutionExternalRadio
+  ${Else}
+    ${NSD_Check} $QwenPawExecutionBuiltinRadio
+  ${EndIf}
+  Call QWENPAW_EXECUTION_RUNTIME_UPDATE_CONTROLS
+  nsDialogs::Show
+FunctionEnd
+
+Function QWENPAW_EXECUTION_RUNTIME_PAGE_LEAVE
+  ${NSD_GetState} $QwenPawExecutionExternalRadio $0
+  ${If} $0 != ${BST_CHECKED}
+    StrCpy $QwenPawExecutionMode "builtin"
+    Return
+  ${EndIf}
+
+  ${NSD_GetText} $QwenPawExecutionPythonText $QwenPawExecutionPythonPath
+  IfFileExists "$QwenPawExecutionPythonPath" 0 qwenpaw_execution_python_invalid
+  StrCpy $QwenPawExecutionMode "external"
+  Return
+
+  qwenpaw_execution_python_invalid:
+  MessageBox MB_OK|MB_ICONEXCLAMATION "$(qwenpawExecutionInvalid)"
+  Abort
+FunctionEnd
 
 !macro QWENPAW_UPDATE_CLI_PATH ACTION
   InitPluginsDir
@@ -182,6 +312,11 @@ Function QWENPAW_OPTIONAL_COMPONENTS_PAGE
     SendMessage $QwenPawScienceCheckbox ${BM_SETCHECK} $QwenPawScienceState 0
   ${EndIf}
   SendMessage $QwenPawWhisperCheckbox ${BM_SETCHECK} $QwenPawWhisperState 0
+  ${If} $QwenPawExecutionMode == "external"
+    SendMessage $QwenPawScienceCheckbox ${BM_SETCHECK} 0 0
+    EnableWindow $QwenPawScienceCheckbox 0
+    StrCpy $QwenPawScienceState 0
+  ${EndIf}
 
   nsDialogs::Show
 FunctionEnd
@@ -230,8 +365,12 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
+  ${If} $QwenPawExecutionMode == ""
+    StrCpy $QwenPawExecutionMode "builtin"
+  ${EndIf}
   !insertmacro QWENPAW_REMOVE_LEGACY_CLI_PATH
   !insertmacro QWENPAW_ADD_CLI_PATH_IF_SELECTED
+  !insertmacro QWENPAW_WRITE_EXECUTION_RUNTIME
   !insertmacro QWENPAW_QUEUE_SELECTED_COMPONENTS
   !insertmacro QWENPAW_INSTALL_DEBUG_LAUNCHER
 !macroend

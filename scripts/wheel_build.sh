@@ -28,19 +28,10 @@ else
 fi
 
 echo "[wheel_build] Syncing bundled plugins -> src/qwenpaw/plugins_bundle/"
-BUNDLE_SRC="$REPO_ROOT/plugins/bundle"
 BUNDLE_DEST="$REPO_ROOT/src/qwenpaw/plugins_bundle"
-if [[ -d "$BUNDLE_SRC" ]]; then
-  for plugin_dir in "$BUNDLE_SRC"/*/; do
-    plugin_name=$(basename "$plugin_dir")
-    if [[ -f "$plugin_dir/plugin.json" ]]; then
-      rm -rf "$BUNDLE_DEST/$plugin_name"
-      mkdir -p "$BUNDLE_DEST/$plugin_name"
-      cp -R "$plugin_dir"* "$BUNDLE_DEST/$plugin_name/"
-      echo "  - Synced: $plugin_name"
-    fi
-  done
-fi
+python3 "$REPO_ROOT/scripts/pack-tauri/stage_bundled_plugins.py" \
+  --repo "$REPO_ROOT" \
+  --dest "$BUNDLE_DEST"
 
 echo "[wheel_build] Bundling website docs into package..."
 DOCS_SRC="$REPO_ROOT/website/public/docs"

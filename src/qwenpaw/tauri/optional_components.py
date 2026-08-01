@@ -114,7 +114,11 @@ def _add_site_dir(site_dir: Path) -> None:
 
 def activate_installed_components() -> None:
     """Expose completed component sites to this process and child Python."""
+    from qwenpaw.tauri.execution_runtime import execution_mode
+
     for name in _COMPONENTS:
+        if name == "science" and execution_mode() == "external":
+            continue
         component_dir = _component_dir(name)
         if component_dir is None or not _status_matches(name, component_dir):
             continue
@@ -256,10 +260,14 @@ def _install_component(python: str, name: str) -> None:
 
 
 def _install_pending_components() -> None:
+    from qwenpaw.tauri.execution_runtime import execution_mode
+
     python = os.environ.get("QWENPAW_DESKTOP_PY_RUNTIME", "").strip()
     if not python or not Path(python).is_file():
         return
     for name in _selected_components():
+        if name == "science" and execution_mode() == "external":
+            continue
         _install_component(python, name)
 
 

@@ -144,15 +144,21 @@ Assert-LastExit "Failed to locate installed QwenPaw package"
 # frontend node_modules. They are build inputs (and contain build-host native
 # binaries), not runtime assets. Keep only each plugin's compiled ui/dist.
 $InstalledPlugins = Join-Path $InstalledPackage "plugins_bundle"
-if (-not (Test-Path $InstalledPlugins)) {
-    throw "Bundled plugins are missing from installed QwenPaw package"
-}
+$PluginStageScript = Join-Path $REPO_ROOT "scripts\pack-tauri\stage_bundled_plugins.py"
+& $PYTHON_BIN $PluginStageScript --repo $REPO_ROOT --dest $InstalledPlugins
+Assert-LastExit "Failed to stage bundled plugins"
 Get-ChildItem -LiteralPath $InstalledPlugins -Directory | ForEach-Object {
+    $ManifestPath = Join-Path $_.FullName "plugin.json"
+    $Manifest = Get-Content -LiteralPath $ManifestPath -Raw | ConvertFrom-Json
+    $FrontendEntry = $Manifest.entry.frontend
+    if ($FrontendEntry) {
+        $FrontendPath = Join-Path $_.FullName ($FrontendEntry -replace '/', '\')
+        if (-not (Test-Path $FrontendPath)) {
+            throw "Plugin frontend is missing for $($_.Name): $FrontendEntry"
+        }
+    }
     $PluginUi = Join-Path $_.FullName "ui"
     if (Test-Path $PluginUi) {
-        if (-not (Test-Path (Join-Path $PluginUi "dist\index.js"))) {
-            throw "Compiled plugin UI is missing for $($_.Name)"
-        }
         foreach ($BuildOnlyDir in @("node_modules", "src")) {
             $BuildOnlyPath = Join-Path $PluginUi $BuildOnlyDir
             if (Test-Path $BuildOnlyPath) {

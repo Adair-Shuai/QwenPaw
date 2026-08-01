@@ -77,6 +77,17 @@ Write-Host "Installed at: $tauriExe"
 
 # 2b. Verify WebView2 bootstrapper is bundled in the install.
 $installRoot = Split-Path $tauriExe -Parent
+$runtimeSelection = Join-Path $installRoot "execution-runtime\selection.txt"
+if (-not (Test-Path $runtimeSelection)) {
+  throw "Execution runtime selection was not written by the installer"
+}
+$runtimeMode = (Get-Content $runtimeSelection -ErrorAction Stop |
+  Select-Object -First 1).Trim()
+if ($runtimeMode -ne "builtin") {
+  throw "Silent install must select bundled Python, got '$runtimeMode'"
+}
+Write-Host "Execution runtime selection: $runtimeMode"
+
 $wv2Files = Get-ChildItem -Path $installRoot -Filter "*WebView2*" `
   -Recurse -Depth 3 -ErrorAction SilentlyContinue
 if ($wv2Files) {

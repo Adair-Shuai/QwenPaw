@@ -12,6 +12,7 @@ Covers:
 - smart_decode
 - execute_shell_command (mocked subprocess)
 """
+
 # pylint: disable=protected-access,unused-argument
 
 import os
@@ -46,7 +47,6 @@ from qwenpaw.sandbox import (
     SandboxConfig,
     SandboxMode,
 )
-
 
 # ---------------------------------------------------------------------------
 # _shell_basename
@@ -696,6 +696,65 @@ class TestExecuteShellCommand:
             "MASKED_SECRET": "",
         }
         assert config.timeout_seconds == 30
+
+    @pytest.mark.asyncio
+    async def test_sandbox_carries_task_python_routing(self, tmp_path):
+        config = SandboxConfig(
+            mode=SandboxMode.NONE,
+            workspace_dir=str(tmp_path),
+        )
+        sandbox = AsyncMock()
+        sandbox.execute.return_value = ExecutionResult(0, "ok", "")
+        context_manager = MagicMock()
+        context_manager.__aenter__ = AsyncMock(return_value=sandbox)
+        context_manager.__aexit__ = AsyncMock(return_value=None)
+        env = {
+            "PATH": "runtime-path",
+            "PIP_TARGET": "user-site",
+            "PYTHONPATH": "user-site",
+            "PYTHONNOUSERSITE": "",
+            "QWENPAW_EXECUTION_PYTHON": "external-python",
+            "QWENPAW_EXECUTION_PYTHON_MODE": "external",
+        }
+
+        with patch(
+            "qwenpaw.sandbox.create_sandbox",
+            return_value=context_manager,
+        ) as create_sandbox:
+            await _execute_in_sandbox(
+                "echo ok",
+                config,
+                12,
+                str(tmp_path),
+                env,
+            )
+
+        effective_config = create_sandbox.call_args.args[0]
+        assert effective_config.env_vars == env
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "command",
+    ["python script.py", '& "python" script.py', "& 'pip' install numpy"],
+)
+async def test_invalid_external_python_does_not_fall_back(
+    monkeypatch,
+    command,
+):
+    from qwenpaw.agents.tools.shell import execute_shell_command
+
+    monkeypatch.setenv(
+        "QWENPAW_EXECUTION_PYTHON_MODE",
+        "external-invalid",
+    )
+    with patch(
+        "qwenpaw.agents.tools.shell.asyncio.create_subprocess_shell",
+    ) as create_subprocess:
+        result = await execute_shell_command(command)
+
+    assert "selected external Python is unavailable" in result.content[0].text
+    create_subprocess.assert_not_called()
 
 
 @pytest.mark.asyncio

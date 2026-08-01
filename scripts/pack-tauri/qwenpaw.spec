@@ -10,6 +10,7 @@ option.
 
 import os
 import sys
+import importlib.util
 from pathlib import Path
 
 from PyInstaller.utils.hooks import (
@@ -39,6 +40,17 @@ def collect_tree(source_dir, target_dir):
     ]
 
 
+_plugin_helper_path = REPO_ROOT / "scripts" / "pack-tauri" / "stage_bundled_plugins.py"
+_plugin_helper_spec = importlib.util.spec_from_file_location(
+    "qwenpaw_bundled_plugin_stage",
+    _plugin_helper_path,
+)
+if _plugin_helper_spec is None or _plugin_helper_spec.loader is None:
+    raise SystemExit(f"cannot load plugin staging helper: {_plugin_helper_path}")
+_plugin_helper = importlib.util.module_from_spec(_plugin_helper_spec)
+_plugin_helper_spec.loader.exec_module(_plugin_helper)
+
+
 # Match the legacy desktop package: the FastAPI backend serves the web console
 # from qwenpaw/console, so Tauri can navigate to the backend-hosted same-origin
 # console after the sidecar is ready.
@@ -62,6 +74,19 @@ datas = [
     (str(SRC / src), dst) for src, dst in _data_dirs if (SRC / src).is_dir()
 ]
 datas += collect_tree(CONSOLE_DIST, "qwenpaw/console")
+for _plugin_dir in _plugin_helper.discover_bundled_plugins(REPO_ROOT):
+    for _plugin_file in _plugin_helper.iter_runtime_files(_plugin_dir):
+        _relative = _plugin_file.relative_to(_plugin_dir)
+        datas.append(
+            (
+                str(_plugin_file),
+                str(
+                    Path("qwenpaw/plugins_bundle")
+                    / _plugin_dir.name
+                    / _relative.parent
+                ),
+            ),
+        )
 datas.append(
     (
         str(SRC / "browser/control_link/injected/engine.js"),

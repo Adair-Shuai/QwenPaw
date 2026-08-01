@@ -203,6 +203,11 @@ _PS_CMD_RE = re.compile(
     r"\s+-Command\s+",
     re.IGNORECASE,
 )
+_PYTHON_COMMAND_RE = re.compile(
+    r"(?i)(?:^|[\s;&|()])['\"]?"
+    r"(?:python(?:3(?:\.\d+)?)?|pip(?:3(?:\.\d+)?)?|py)"
+    r"(?:\.exe)?['\"]?(?=\s|$)",
+)
 
 
 def _extract_powershell_command(cmd: str) -> tuple[str | None, str]:
@@ -520,14 +525,20 @@ async def _execute_in_sandbox(
     )
 
     # Sandbox backends rebuild their environment from os.environ. Carry over
-    # the PATH adjusted by the shell entrypoint unless policy set one itself.
+    # the task-runtime routing variables unless policy set them itself.
     sandbox_env = dict(sandbox_config.env_vars)
-    if not any(key.upper() == "PATH" for key in sandbox_env):
-        path_key = next(
-            (key for key in env if key.upper() == "PATH"),
-            "PATH",
-        )
-        sandbox_env[path_key] = env[path_key]
+    routed_keys = {
+        "PATH",
+        "PIP_TARGET",
+        "PYTHONPATH",
+        "PYTHONNOUSERSITE",
+        "QWENPAW_EXECUTION_PYTHON",
+        "QWENPAW_EXECUTION_PYTHON_MODE",
+    }
+    configured_keys = {key.upper() for key in sandbox_env}
+    for key, value in env.items():
+        if key.upper() in routed_keys and key.upper() not in configured_keys:
+            sandbox_env[key] = value
 
     ctx = get_call_context()
     # Under ToolCallContext the coordinator owns kill via cancellable_wait /
@@ -660,41 +671,6 @@ def _is_dangerous_self_kill(cmd: str) -> bool:
     return False
 
 
-# Cached PATH prefix for the bundled Python runtime (frozen desktop build).
-# Computed once on first use; the path never changes during the process
-# lifetime, so we avoid repeated ``os.path.isfile`` / ``os.path.isdir``
-# calls that would block the event loop on every shell command.
-_bundled_python_path_prefix: str | None = None
-
-
-def _resolve_bundled_python_path_prefix() -> str:
-    """Return the PATH entries for the bundled CPython, or ``""`` if absent.
-
-    On Windows the ``Scripts/`` subdirectory (holding ``pip.exe`` and other
-    CLI shims) is included alongside the interpreter directory.
-    """
-    global _bundled_python_path_prefix
-    if _bundled_python_path_prefix is not None:
-        return _bundled_python_path_prefix
-
-    bundled_python = os.environ.get("QWENPAW_DESKTOP_PY_RUNTIME", "")
-    if not bundled_python or not os.path.isfile(bundled_python):
-        _bundled_python_path_prefix = ""
-        return ""
-
-    bundled_bin = str(Path(bundled_python).parent)
-    # On Windows, pip.exe and other CLI shims live in a ``Scripts``
-    # subdirectory alongside python.exe.
-    bundled_scripts = str(Path(bundled_bin) / "Scripts")
-    if os.path.isdir(bundled_scripts):
-        _bundled_python_path_prefix = (
-            bundled_bin + os.pathsep + bundled_scripts
-        )
-    else:
-        _bundled_python_path_prefix = bundled_bin
-    return _bundled_python_path_prefix
-
-
 async def _cleanup_proc(
     proc: asyncio.subprocess.Process,
     stderr_suffix: str,
@@ -733,7 +709,7 @@ async def _cleanup_proc(
     return stdout_str, stderr_str
 
 
-# pylint: disable=too-many-branches, too-many-statements
+# pylint: disable=too-many-branches, too-many-statements,too-many-return-statements
 @tool_descriptor(
     requires_sandbox=("shell_exec",),
     async_execution=True,
@@ -790,6 +766,24 @@ async def execute_shell_command(
         shell_executable=shell_executable,
     )
 
+    if os.environ.get(
+        "QWENPAW_EXECUTION_PYTHON_MODE",
+    ) == "external-invalid" and _PYTHON_COMMAND_RE.search(cmd):
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        "The selected external Python is unavailable or "
+                        "unsupported. Reinstall QwenPaw or select a valid "
+                        "64-bit Python 3.11, 3.12, or 3.13."
+                    ),
+                ),
+            ],
+        )
+
     if _is_dangerous_self_kill(cmd):
         return ToolChunk(
             is_last=True,
@@ -825,24 +819,21 @@ async def execute_shell_command(
     else:
         working_dir = get_current_workspace_dir() or WORKING_DIR
 
-    # Ensure the venv Python is on PATH for subprocesses
+    # Route task-level python and pip commands independently from the Python
+    # interpreter that keeps the QwenPaw backend running.
     env = os.environ.copy()
-    python_bin_dir = str(Path(sys.executable).parent)
+    if os.environ.get("QWENPAW_DESKTOP_APP") == "1":
+        from ...tauri.execution_runtime import prepare_execution_env
 
-    # In the frozen desktop build the bundled standalone CPython lives in
-    # a sibling resource directory. Prepend its bin dir (and ``Scripts``
-    # on Windows) so shell commands like ``python script.py`` and
-    # ``pip install ...`` resolve to the bundled interpreter when the
-    # user has no system Python installed. The prefix is cached to avoid
-    # blocking disk I/O on every call.
-    bundled_prefix = _resolve_bundled_python_path_prefix()
-    if bundled_prefix:
-        python_bin_dir = bundled_prefix + os.pathsep + python_bin_dir
+        prepare_execution_env(env)
+        python_bin_dir = ""
+    else:
+        python_bin_dir = str(Path(sys.executable).parent)
 
     existing_path = env.get("PATH", "")
-    if existing_path:
+    if python_bin_dir and existing_path:
         env["PATH"] = python_bin_dir + os.pathsep + existing_path
-    else:
+    elif python_bin_dir:
         env["PATH"] = python_bin_dir
 
     if sandbox_config is not None:
