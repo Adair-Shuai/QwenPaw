@@ -378,6 +378,8 @@ export default defineConfig(({ mode }) => {
         // Optional Workspace renderer deps — not installed by default.
         // They are dynamically imported inside try/catch, so marking them
         // external prevents Rollup from failing the build at resolution time.
+        // PdfRenderer uses pdfjs-dist directly; keep react-pdf external so the
+        // legacy research reader cannot inflate the default application graph.
         external: ["react-pdf", "@codesandbox/sandpack-react", /@tiptap\//],
         output: {
           manualChunks(id) {

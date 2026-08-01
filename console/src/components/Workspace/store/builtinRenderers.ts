@@ -213,40 +213,29 @@ const builtinRenderers: RendererRegistration[] = [
   },
 
   // Office 文档 HTML 渲染器（后端 officecli 转换 + 前端 OOXML fallback）
-  // 适用于 DOCX/XLSX：HTML 渲染速度快、支持文本选择和搜索
+  // 适用于 DOCX/XLSX/PPTX：HTML 连续渲染，支持上下滚动阅读、文本选择和搜索
   {
     id: "office-doc",
     name: "Office Document",
     component: OfficeDocRenderer,
-    mimeTypes: [MimeTypes.DOCX, MimeTypes.XLSX],
-    extensions: ["docx", "xlsx", "doc", "xls"],
+    mimeTypes: [MimeTypes.DOCX, MimeTypes.XLSX, MimeTypes.PPTX],
+    extensions: ["docx", "xlsx", "pptx", "doc", "xls", "ppt"],
     priority: 15,
     description:
-      "Office 文档渲染（三级 fallback：后端转换 → 前端 OOXML 解析 → 下载）",
+      "Office 文档渲染（三级 fallback：后端转换 → 前端 OOXML 解析 → 下载），支持 DOCX/XLSX/PPTX 连续滚动阅读",
   },
 
-  // Office 文档截图渲染器（OfficeCLI 高保真截图，不可用时降级到 office-doc）
-  // 仅适用于 PPTX：幻灯片以图片形式展示，视觉效果最佳
+  // Office 文档截图渲染器（OfficeCLI 高保真截图，按需启用）
+  // 作为 PPTX 的低优先级备选：逐页截图模式，适合需要高保真视觉预览的场景
   {
     id: "office-screenshot",
     name: "Office Screenshot",
     component: OfficeScreenshotRenderer,
     mimeTypes: [MimeTypes.PPTX],
     extensions: ["pptx"],
-    priority: 15,
+    priority: 5,
     description:
-      "PPTX 幻灯片截图预览（OfficeCLI 高保真渲染，不可用时自动降级到 HTML 预览）",
-  },
-
-  // PPTX 也注册 office-doc 作为 fallback 渲染器（低优先级）
-  {
-    id: "office-doc-pptx",
-    name: "Office Document (PPTX)",
-    component: OfficeDocRenderer,
-    mimeTypes: [MimeTypes.PPTX],
-    extensions: ["pptx", "ppt"],
-    priority: 10,
-    description: "PPTX 文档 HTML 渲染（当截图渲染不可用时的 fallback）",
+      "PPTX 幻灯片逐页截图预览（OfficeCLI 高保真渲染，优先级低于连续 HTML 模式）",
   },
 
   // ═══════════════════════════════════════════════════════════════════════

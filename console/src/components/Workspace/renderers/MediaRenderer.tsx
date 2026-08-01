@@ -6,7 +6,7 @@
  */
 import React, { useEffect, useState } from "react";
 import { Button, Space, Tooltip } from "antd";
-import { DownloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { buildAuthenticatedMediaUrl } from "../../../api/authHeaders";
 import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
@@ -95,6 +95,15 @@ const MediaRenderer: React.FC<RendererContext> = ({
               onClick={handleDownload}
             />
           </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
+            />
+          </Tooltip>
         </Space>
       </div>
       <div
@@ -148,6 +157,9 @@ const MediaRenderer: React.FC<RendererContext> = ({
               loadingLabel={t("workspace.loadingMedia", "正在加载媒体")}
               retryLabel={t("workspace.retry", "重试")}
               downloadLabel={t("workspace.download", "下载")}
+              onRevealInFileManager={() => workspace.revealInFileManager?.(artifact)}
+              canRevealInFileManager={!!artifact.workspacePath}
+              revealLabel={t("workspace.revealInFileManager", "在文件夹中打开")}
             />
           </div>
         ) : null}

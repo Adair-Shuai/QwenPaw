@@ -18,6 +18,7 @@ import {
   LeftOutlined,
   RightOutlined,
   CodeOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
@@ -207,6 +208,14 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           >
             {t("workspace.download")}
           </Button>
+          {artifact.workspacePath && (
+            <Button
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+            >
+              {t("workspace.revealInFileManager", "在文件夹中打开")}
+            </Button>
+          )}
         </Space>
       </div>
     );
@@ -294,6 +303,16 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
               type="text"
               icon={<DownloadOutlined />}
               onClick={() => workspace.download?.(artifact)}
+            />
+          </Tooltip>
+          {/* Reveal in file manager */}
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
             />
           </Tooltip>
         </Space>

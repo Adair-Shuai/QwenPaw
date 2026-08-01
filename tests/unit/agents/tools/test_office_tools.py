@@ -4,10 +4,14 @@
 Covers:
 - _run_officecli error handling (stdout JSON on non-zero exit)
 - _run_officecli when officecli not installed
+- _flatten_props nested dict → dotted-key flattening
+- _props_to_args boolean conversion and --prop formatting
 - office_batch_operations uses --input (not --file)
+- office_batch_operations normalises legacy "action" → "command"
+- office_batch_operations flattens nested props in commands
 - office_view_document "html" mode uses -o temp file
 - office_create_document command format
-- office_add_element props formatting
+- office_add_element props formatting (flat, nested, bool)
 - office_view_screenshot when officecli not installed
 - _not_installed_error and _json_toolchunk helpers
 """
@@ -68,6 +72,83 @@ class TestJsonToolchunk:
         data = json.loads(chunk.content[0].text)
         assert data["success"] is True
         assert data["path"] == "/slide[1]"
+
+
+# ---------------------------------------------------------------------------
+# _flatten_props / _props_to_args
+# ---------------------------------------------------------------------------
+
+
+class TestFlattenProps:
+    """Tests for _flatten_props and _props_to_args helpers."""
+
+    def test_flat_props_passthrough(self):
+        """Already-flat dotted keys pass through unchanged."""
+        from qwenpaw.agents.tools.office_tools import _flatten_props
+
+        result = _flatten_props({"font.eastAsia": "宋体", "size": "12pt"})
+        assert result == {"font.eastAsia": "宋体", "size": "12pt"}
+
+    def test_nested_dict_flattened(self):
+        """Nested dicts are flattened to dotted keys."""
+        from qwenpaw.agents.tools.office_tools import _flatten_props
+
+        result = _flatten_props(
+            {"font": {"eastAsia": "宋体", "ascii": "Times New Roman"}},
+        )
+        assert result == {
+            "font.eastAsia": "宋体",
+            "font.ascii": "Times New Roman",
+        }
+
+    def test_bool_converted_to_string(self):
+        """Python booleans become 'true'/'false' strings."""
+        from qwenpaw.agents.tools.office_tools import _flatten_props
+
+        result = _flatten_props({"bold": True, "italic": False})
+        assert result == {"bold": "true", "italic": "false"}
+
+    def test_none_values_skipped(self):
+        """None values are silently dropped."""
+        from qwenpaw.agents.tools.office_tools import _flatten_props
+
+        result = _flatten_props({"text": "hi", "color": None})
+        assert result == {"text": "hi"}
+        assert "color" not in result
+
+    def test_empty_or_none_props(self):
+        """Empty dict or None returns empty dict."""
+        from qwenpaw.agents.tools.office_tools import _flatten_props
+
+        assert not _flatten_props({})
+        assert not _flatten_props(None)
+
+    def test_deeply_nested_dict(self):
+        """Two-level nesting like {'a': {'b': {'c': 'd'}}} → 'a.b.c=d'."""
+        from qwenpaw.agents.tools.office_tools import _flatten_props
+
+        result = _flatten_props({"a": {"b": {"c": "d"}}})
+        assert result == {"a.b.c": "d"}
+
+    def test_props_to_args_format(self):
+        """_props_to_args produces a list of --prop key=value strings."""
+        from qwenpaw.agents.tools.office_tools import _props_to_args
+
+        args = _props_to_args(
+            {"text": "正文", "font": {"eastAsia": "宋体"}, "bold": True},
+        )
+        # Should contain --prop markers and key=value pairs
+        assert "--prop" in args
+        assert "text=正文" in args
+        assert "font.eastAsia=宋体" in args
+        assert "bold=true" in args
+
+    def test_props_to_args_empty(self):
+        """_props_to_args with no props returns empty list."""
+        from qwenpaw.agents.tools.office_tools import _props_to_args
+
+        assert not _props_to_args(None)
+        assert not _props_to_args({})
 
 
 # ---------------------------------------------------------------------------
@@ -293,6 +374,51 @@ class TestOfficeAddElement:
         args = mock_run.call_args[0]
         assert "--prop" not in args
 
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    async def test_nested_dict_props_flattened(self, mock_run):
+        """Nested dict props like {"font": {"eastAsia": "宋体"}} are
+        flattened to font.eastAsia=宋体."""
+        mock_run.return_value = {"success": True, "ok": True}
+        from qwenpaw.agents.tools.office_tools import office_add_element
+
+        await office_add_element(
+            "test.docx",
+            "/body",
+            "paragraph",
+            {
+                "text": "正文",
+                "font": {"eastAsia": "宋体", "ascii": "Times New Roman"},
+            },
+        )
+        args = mock_run.call_args[0]
+        prop_args = [
+            args[i] for i in range(len(args)) if args[i - 1] == "--prop"
+        ]
+        assert "text=正文" in prop_args
+        assert "font.eastAsia=宋体" in prop_args
+        assert "font.ascii=Times New Roman" in prop_args
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    async def test_bool_props_converted_to_strings(self, mock_run):
+        """Python True/False are converted to 'true'/'false' strings."""
+        mock_run.return_value = {"success": True, "ok": True}
+        from qwenpaw.agents.tools.office_tools import office_add_element
+
+        await office_add_element(
+            "test.docx",
+            "/body",
+            "paragraph",
+            {"text": "标题", "bold": True, "italic": False},
+        )
+        args = mock_run.call_args[0]
+        prop_args = [
+            args[i] for i in range(len(args)) if args[i - 1] == "--prop"
+        ]
+        assert "bold=true" in prop_args
+        assert "italic=false" in prop_args
+
 
 # ---------------------------------------------------------------------------
 # office_batch_operations — verify --input (not --file)
@@ -317,11 +443,152 @@ class TestOfficeBatchOperations:
 
         await office_batch_operations(
             "test.pptx",
-            [{"action": "set", "path": "/slide[1]", "props": {"text": "Hi"}}],
+            [{"command": "set", "path": "/slide[1]", "props": {"text": "Hi"}}],
         )
         args = mock_run.call_args[0]
         assert "--input" in args
         assert "--file" not in args
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    @patch("qwenpaw.agents.tools.office_tools.get_current_workspace_dir")
+    async def test_legacy_action_field_normalised(self, mock_ws, mock_run):
+        """Legacy 'action' field is normalised to 'command' in the JSON
+        written to the temp file."""
+        import tempfile
+        from pathlib import Path
+
+        mock_ws.return_value = Path(tempfile.gettempdir())
+        mock_run.return_value = {"success": True, "ok": True}
+
+        from qwenpaw.agents.tools.office_tools import office_batch_operations
+
+        # Capture the temp file content by intercepting json.dump
+        original_dump = json.dump
+        captured: list = []
+
+        def spy_dump(data, f, **kw):
+            captured.append(data)
+            return original_dump(data, f, **kw)
+
+        with patch("json.dump", side_effect=spy_dump):
+            await office_batch_operations(
+                "test.pptx",
+                [
+                    {
+                        "action": "set",
+                        "path": "/slide[1]",
+                        "props": {"text": "Hi"},
+                    },
+                ],
+            )
+
+        assert len(captured) == 1
+        written = captured[0]
+        assert written[0]["command"] == "set"
+        assert "action" not in written[0]
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    @patch("qwenpaw.agents.tools.office_tools.get_current_workspace_dir")
+    async def test_op_field_normalised_to_command(self, mock_ws, mock_run):
+        """'op' field is also normalised to 'command'."""
+        import tempfile
+        from pathlib import Path
+
+        mock_ws.return_value = Path(tempfile.gettempdir())
+        mock_run.return_value = {"success": True, "ok": True}
+
+        from qwenpaw.agents.tools.office_tools import office_batch_operations
+
+        original_dump = json.dump
+        captured: list = []
+
+        def spy_dump(data, f, **kw):
+            captured.append(data)
+            return original_dump(data, f, **kw)
+
+        with patch("json.dump", side_effect=spy_dump):
+            await office_batch_operations(
+                "test.xlsx",
+                [
+                    {
+                        "op": "set",
+                        "path": "/Sheet1/A1",
+                        "props": {"value": "Done"},
+                    },
+                ],
+            )
+
+        assert len(captured) == 1
+        written = captured[0]
+        assert written[0]["command"] == "set"
+        assert "op" not in written[0]
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    @patch("qwenpaw.agents.tools.office_tools.get_current_workspace_dir")
+    async def test_nested_props_flattened_in_batch(self, mock_ws, mock_run):
+        """Nested props in batch commands are flattened to dotted keys."""
+        import tempfile
+        from pathlib import Path
+
+        mock_ws.return_value = Path(tempfile.gettempdir())
+        mock_run.return_value = {"success": True, "ok": True}
+
+        from qwenpaw.agents.tools.office_tools import office_batch_operations
+
+        original_dump = json.dump
+        captured: list = []
+
+        def spy_dump(data, f, **kw):
+            captured.append(data)
+            return original_dump(data, f, **kw)
+
+        with patch("json.dump", side_effect=spy_dump):
+            await office_batch_operations(
+                "test.docx",
+                [
+                    {
+                        "command": "set",
+                        "path": "/body/p[1]",
+                        "props": {"font": {"eastAsia": "宋体"}, "size": "12pt"},
+                    },
+                ],
+            )
+
+        assert len(captured) == 1
+        written = captured[0]
+        assert written[0]["props"]["font.eastAsia"] == "宋体"
+        assert written[0]["props"]["size"] == "12pt"
+        assert "font" not in written[0]["props"]  # nested dict was flattened
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    @patch("qwenpaw.agents.tools.office_tools.get_current_workspace_dir")
+    async def test_caller_dict_not_mutated(self, mock_ws, mock_run):
+        """The original commands list must not be mutated."""
+        import tempfile
+        from pathlib import Path
+
+        mock_ws.return_value = Path(tempfile.gettempdir())
+        mock_run.return_value = {"success": True, "ok": True}
+
+        from qwenpaw.agents.tools.office_tools import office_batch_operations
+
+        commands = [
+            {"action": "set", "path": "/slide[1]", "props": {"text": "Hi"}},
+        ]
+        commands_copy = [
+            {"action": "set", "path": "/slide[1]", "props": {"text": "Hi"}},
+        ]
+
+        await office_batch_operations("test.pptx", commands)
+
+        # Caller's list should be untouched
+        assert commands == commands_copy
+        assert "action" in commands[0]
+        assert "command" not in commands[0]
 
 
 # ---------------------------------------------------------------------------

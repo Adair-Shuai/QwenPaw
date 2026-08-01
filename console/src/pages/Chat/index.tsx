@@ -11,6 +11,7 @@ import {
   ExclamationCircleOutlined,
   SettingOutlined,
   FolderOpenOutlined,
+  FileMarkdownOutlined,
 } from "@ant-design/icons";
 import { SparkCopyLine, SparkAttachmentLine } from "@agentscope-ai/icons";
 import { usePlugins } from "../../plugins/PluginContext";
@@ -121,6 +122,7 @@ import {
   toStoredName,
   copyText,
   extractCopyableText,
+  buildWorkspaceMarkdown,
   buildModelError,
   normalizeContentUrls,
   extractUserMessageText,
@@ -140,6 +142,9 @@ import { openExternalLink } from "../../utils/openExternalLink";
 import { getLastEditorCopy } from "../Coding/lastEditorCopy";
 import { useUploadLimitStore } from "../../stores/uploadLimitStore";
 import ChatSenderTabsPanel from "./components/ChatSenderTabsPanel";
+import AgentMentionPopup from "./components/AgentMentionPopup";
+import { useAgentMention } from "./components/useAgentMention";
+import { getAgentDisplayName } from "../../utils/agentDisplayName";
 import {
   selectTasksForSession,
   useBackgroundTasksStore,
@@ -1823,6 +1828,112 @@ export default function ChatPage() {
     return () => window.removeEventListener("model-switched", handler);
   }, [fetchMultimodalCaps]);
 
+  // ── @ Agent mention ──────────────────────────────────────────────────
+  const agentMention = useAgentMention();
+  const [mentionActive, setMentionActive] = useState(false);
+
+  // Attach @ detection to the chat textarea
+  useEffect(() => {
+    if (!isChatActive()) return;
+
+    const getChatTextarea = (): HTMLTextAreaElement | null => {
+      const sender = document.querySelector('[class*="sender"]');
+      return sender?.querySelector("textarea") as HTMLTextAreaElement | null;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const textarea = getChatTextarea();
+      if (!textarea) return;
+
+      // Let @ mention handle its keys first
+      if (agentMention.handleKeyDown(e, textarea)) return;
+
+      // Detect bare "@" key press (not in composition, not after a non-space)
+      if (e.key === "@" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const cursorPos = textarea.selectionStart;
+        const textBefore = textarea.value.substring(0, cursorPos);
+        // Only trigger if @ is at start or preceded by whitespace
+        if (cursorPos === 0 || /\s/.test(textBefore[textBefore.length - 1])) {
+          // Delay to let the "@" character appear in the textarea
+          requestAnimationFrame(() => {
+            agentMention.handleInputChange(textarea);
+            setMentionActive(true);
+          });
+        }
+      }
+    };
+
+    const onInput = (e: Event) => {
+      const target = e.target;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      if (!target.closest('[class*="sender"]')) return;
+      agentMention.handleInputChange(target);
+      setMentionActive(agentMention.mentionState.visible);
+    };
+
+    const onClickOutside = (e: MouseEvent) => {
+      const target = e.target;
+      if (!(target instanceof Element)) return;
+      // If click is outside the popup and textarea, close
+      const popup = document.querySelector("[data-agent-mention-popup]");
+      const textarea = getChatTextarea();
+      if (
+        popup &&
+        !popup.contains(target) &&
+        (!textarea || !textarea.contains(target))
+      ) {
+        agentMention.reset();
+        setMentionActive(false);
+      }
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("input", onInput, true);
+    document.addEventListener("mousedown", onClickOutside, true);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("input", onInput, true);
+      document.removeEventListener("mousedown", onClickOutside, true);
+    };
+  }, [isChatActive, agentMention]);
+
+  // ── @ Agent mention: extract target agent from message text ──
+  /**
+   * Parse @AgentName mentions from the user message text.
+   * Returns { agentId, cleanedText } where agentId is the ID of the
+   * mentioned agent (if found in the agents list) and cleanedText
+   * is the message with the @mention prefix removed.
+   */
+  const extractMentionedAgent = useCallback(
+    (text: string): { agentId: string | null; cleanedText: string } => {
+      const allAgents = useAgentStore.getState().agents;
+      // Match @AgentName at the start of the message or after whitespace
+      const mentionRegex = /(?:^|\s)@([^\s@]+)(?:\s|$)/;
+      const match = text.match(mentionRegex);
+      if (!match) return { agentId: null, cleanedText: text };
+
+      const mentionedName = match[1];
+      // Try to find the agent by display name or ID
+      const tFn = i18n.getFixedT(i18n.language);
+      const agent = allAgents.find((a) => {
+        const displayName = getAgentDisplayName(a, tFn);
+        return (
+          displayName === mentionedName ||
+          a.name === mentionedName ||
+          a.id === mentionedName
+        );
+      });
+
+      if (!agent) return { agentId: null, cleanedText: text };
+
+      // Remove the @mention from the text
+      const cleanedText = text.replace(mentionRegex, "").trim();
+      return { agentId: agent.id, cleanedText };
+    },
+    [],
+  );
+
   const pendingClearHistoryRef = useRef(false);
   const whisperSpeechRef = useRef<WhisperSpeechButtonRef>(null);
   const [whisperEnabled, setWhisperEnabled] = useState(false);
@@ -2521,12 +2632,49 @@ export default function ChatPage() {
           : [];
 
       const identity = sessionApi.getSessionIdentity();
+
+      // ── @ Agent mention: extract target_agent_id from user text ──
+      const userTextForMention = rewrittenInput
+        .filter((m) => m.role === "user")
+        .map(extractUserMessageText)
+        .join("\n")
+        .trim();
+      const { agentId: mentionedAgentId, cleanedText: cleanedMentionText } =
+        extractMentionedAgent(userTextForMention);
+
+      // If a target agent was mentioned, rewrite the user message text
+      // to remove the @mention prefix and add target_agent_id to the
+      // request body so the backend forwards the message to that agent.
+      let finalInput = rewrittenInput;
+      if (mentionedAgentId && cleanedMentionText !== userTextForMention) {
+        finalInput = rewrittenInput.map((m) => {
+          if (m.role !== "user" || !Array.isArray(m.content)) return m;
+          const newContent = (m.content as Array<Record<string, unknown>>).map(
+            (part) => {
+              if (part.type === "text" && typeof part.text === "string") {
+                // Replace the first @mention occurrence in the text
+                const mentionRegex = /(?:^|\s)@([^\s@]+)(?:\s|$)/;
+                return {
+                  ...part,
+                  text: part.text.replace(mentionRegex, "").trim(),
+                };
+              }
+              return part;
+            },
+          );
+          return { ...m, content: newContent };
+        });
+      }
+
       let requestBody: Record<string, unknown> = {
-        input: rewrittenInput,
+        input: finalInput,
         session_id: identity.sessionId || session?.session_id || "",
         user_id: identity.userId || session?.user_id || DEFAULT_USER_ID,
         channel: identity.channel || session?.channel || DEFAULT_CHANNEL,
         stream: true,
+        ...(mentionedAgentId
+          ? { target_agent_id: mentionedAgentId }
+          : {}),
         ...biz_params,
       };
 
@@ -3339,11 +3487,11 @@ export default function ChatPage() {
           {
             icon: (
               <span title={t("workspace.openInWorkspace", "在工作区打开")}>
-                <FolderOpenOutlined />
+                <FileMarkdownOutlined />
               </span>
             ),
             onClick: ({ data }: { data: CopyableResponse }) => {
-              const text = extractCopyableText(data);
+              const text = buildWorkspaceMarkdown(data);
               if (!text) return;
               useWorkspaceStore.getState().openArtifact({
                 id: `response-${workspaceSessionKey}-${Date.now()}`,
@@ -3480,6 +3628,48 @@ export default function ChatPage() {
             options={options}
           />
           <StreamingTokenBadge />
+          {mentionActive && agentMention.mentionState.visible && (
+            <div
+              data-agent-mention-popup
+              style={{
+                position: "absolute",
+                bottom: 0,
+                left: 0,
+                right: 0,
+                pointerEvents: "none",
+                zIndex: 9999,
+              }}
+            >
+              <div
+                style={{
+                  position: "relative",
+                  maxWidth: 480,
+                  margin: "0 auto",
+                }}
+              >
+                <AgentMentionPopup
+                  visible={agentMention.mentionState.visible}
+                  query={agentMention.mentionState.query}
+                  agents={agentMention.filteredAgents}
+                  activeIndex={agentMention.activeIndex}
+                  theme={isDark ? "dark" : "light"}
+                  onSelect={(agent) => {
+                    const textarea = document
+                      .querySelector('[class*="sender"]')
+                      ?.querySelector("textarea") as HTMLTextAreaElement | null;
+                    if (textarea) {
+                      agentMention.insertMention(agent, textarea);
+                    }
+                    setMentionActive(false);
+                  }}
+                  onDismiss={() => {
+                    agentMention.reset();
+                    setMentionActive(false);
+                  }}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Rate-limit guidance banner */}

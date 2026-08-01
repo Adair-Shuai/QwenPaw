@@ -2,26 +2,46 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { RendererContext, WorkspaceArtifact } from "../../types";
 
-const { useAuthenticatedWorkspaceBlob, buildAuthenticatedMediaUrl } =
-  vi.hoisted(() => ({
-    useAuthenticatedWorkspaceBlob: vi.fn(),
-    buildAuthenticatedMediaUrl: vi.fn(
-      (url: string, agentId?: string) => `${url}?auth=${agentId}`,
-    ),
-  }));
+const {
+  useAuthenticatedWorkspaceBlob,
+  buildAuthenticatedMediaUrl,
+  buildAuthHeaders,
+} = vi.hoisted(() => ({
+  useAuthenticatedWorkspaceBlob: vi.fn(),
+  buildAuthenticatedMediaUrl: vi.fn(
+    (url: string, agentId?: string) => `${url}?auth=${agentId}`,
+  ),
+  buildAuthHeaders: vi.fn((agentId?: string) => ({
+    Authorization: "Bearer token",
+    "X-Agent-Id": agentId,
+  })),
+}));
 
 vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
   useAuthenticatedWorkspaceBlob,
 }));
-vi.mock("@/api/authHeaders", () => ({ buildAuthenticatedMediaUrl }));
+vi.mock("@/api/authHeaders", () => ({
+  buildAuthenticatedMediaUrl,
+  buildAuthHeaders,
+}));
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
     getBinaryFileUrl: (path: string) => `/api/workspace/binary-files/${path}`,
   },
 }));
-vi.mock("@/features/pdf-reader", () => ({
-  PdfReader: ({ fileUrl }: { fileUrl: string }) => (
-    <div data-testid="pdf-reader" data-url={fileUrl} />
+vi.mock("../LightweightPdfViewer", () => ({
+  default: ({
+    url,
+    headers,
+  }: {
+    url: string;
+    headers?: Record<string, string>;
+  }) => (
+    <div
+      data-testid="pdf-viewer"
+      data-url={url}
+      data-agent={headers?.["X-Agent-Id"]}
+    />
   ),
 }));
 
@@ -63,6 +83,7 @@ describe("authenticated Workspace binary renderers", () => {
       retry: vi.fn(),
     });
     buildAuthenticatedMediaUrl.mockClear();
+    buildAuthHeaders.mockClear();
   });
 
   it("loads images with the Artifact workspace path and Agent", () => {
@@ -78,7 +99,7 @@ describe("authenticated Workspace binary renderers", () => {
     );
   });
 
-  it("passes an authenticated Blob URL to PdfReader", () => {
+  it("passes a stable authenticated Range request to the PDF.js viewer", () => {
     render(
       <PdfRenderer
         {...makeContext({
@@ -90,13 +111,14 @@ describe("authenticated Workspace binary renderers", () => {
       />,
     );
 
-    expect(useAuthenticatedWorkspaceBlob).toHaveBeenCalledWith(
-      "reports/report.pdf",
-      "agent-b",
-    );
-    expect(screen.getByTestId("pdf-reader")).toHaveAttribute(
+    expect(buildAuthHeaders).toHaveBeenCalledWith("agent-b");
+    expect(screen.getByTestId("pdf-viewer")).toHaveAttribute(
       "data-url",
-      "blob:authenticated",
+      "/api/workspace/binary-files/reports/report.pdf",
+    );
+    expect(screen.getByTestId("pdf-viewer")).toHaveAttribute(
+      "data-agent",
+      "agent-b",
     );
   });
 

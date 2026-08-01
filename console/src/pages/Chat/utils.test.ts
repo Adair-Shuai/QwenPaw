@@ -3,6 +3,7 @@ import {
   extractCopyableText,
   extractUserMessageText,
   buildModelError,
+  buildWorkspaceMarkdown,
   toStoredName,
   normalizeContentUrls,
   toDisplayUrl,
@@ -104,6 +105,251 @@ describe("extractCopyableText", () => {
       ],
     };
     expect(extractCopyableText(response)).toBe("第一句\n\n第二句");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// buildWorkspaceMarkdown
+// ---------------------------------------------------------------------------
+describe("buildWorkspaceMarkdown", () => {
+  it("separates thinking and text via message-level type", () => {
+    // AgentScope runtime: reasoning messages have type "reasoning",
+    // reply messages have type "message". Both use { type: "text" } content blocks.
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "reasoning",
+          content: [{ type: "text", text: "让我想想..." }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "这是回复内容" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toContain("让我想想...");
+    expect(result).toContain("这是回复内容");
+    // thinking section uses blockquote syntax with 💭 marker
+    expect(result).toContain("> 💭 让我想想...");
+    // thinking before reply, separated by ---
+    const thinkingIdx = result.indexOf("让我想想...");
+    const replyIdx = result.indexOf("这是回复内容");
+    expect(thinkingIdx).toBeLessThan(replyIdx);
+    expect(result).toContain("---");
+  });
+
+  it("returns only reply text when no thinking messages", () => {
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "纯回复" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toBe("纯回复");
+    expect(result).not.toContain(">");
+  });
+
+  it("treats messages without type as reply (backward-compatible)", () => {
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          content: [{ type: "text", text: "无类型消息" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toBe("无类型消息");
+  });
+
+  it("handles string content in reasoning message", () => {
+    const response: CopyableResponse = {
+      output: [
+        { role: "assistant", type: "reasoning", content: "字符串思考" },
+        { role: "assistant", type: "message", content: "字符串回复" },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toContain("> 💭 字符串思考");
+    expect(result).toContain("字符串回复");
+    // thinking before reply
+    expect(result.indexOf("字符串思考")).toBeLessThan(
+      result.indexOf("字符串回复"),
+    );
+  });
+
+  it("falls back to extractCopyableText when no content found", () => {
+    const response: CopyableResponse = {
+      output: [{ role: "user", content: "仅用户消息" }],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toBe(JSON.stringify(response));
+  });
+
+  it("merges consecutive reasoning and message segments", () => {
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "reasoning",
+          content: [{ type: "text", text: "思考1" }],
+        },
+        {
+          role: "assistant",
+          type: "reasoning",
+          content: [{ type: "text", text: "思考2" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "回复1" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "回复2" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    // Consecutive reasoning messages merged into one blockquote section
+    expect(result).toContain("> 💭 思考1");
+    expect(result).toContain("> 思考2");
+    // Consecutive message messages merged into one text section
+    expect(result).toContain("回复1\n\n回复2");
+    // Only one --- separator between the two sections
+    expect(result).toContain("---");
+  });
+
+  it("includes refusal blocks in reply section", () => {
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "refusal", refusal: "无法回答" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toBe("无法回答");
+  });
+
+  it("only processes assistant messages", () => {
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "user",
+          type: "message",
+          content: [{ type: "text", text: "用户消息" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "AI回复" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toBe("AI回复");
+    expect(result).not.toContain("用户消息");
+  });
+
+  it("handles thinking type at message level", () => {
+    // Some providers may use "thinking" as the message type instead of "reasoning"
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "thinking",
+          content: [{ type: "text", text: "思考内容" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "回复内容" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toContain("> 💭 思考内容");
+    expect(result).toContain("回复内容");
+    // thinking before reply
+    expect(result.indexOf("思考内容")).toBeLessThan(
+      result.indexOf("回复内容"),
+    );
+  });
+
+  it("preserves interleaved order of thinking and reply", () => {
+    // The key requirement: don't group all thinking together.
+    // If the response alternates reasoning → message → reasoning → message,
+    // the output must preserve that order.
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "reasoning",
+          content: [{ type: "text", text: "思考A" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "回复A" }],
+        },
+        {
+          role: "assistant",
+          type: "reasoning",
+          content: [{ type: "text", text: "思考B" }],
+        },
+        {
+          role: "assistant",
+          type: "message",
+          content: [{ type: "text", text: "回复B" }],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    // Order: 思考A → 回复A → 思考B → 回复B
+    const idxA = result.indexOf("思考A");
+    const replyA = result.indexOf("回复A");
+    const idxB = result.indexOf("思考B");
+    const replyB = result.indexOf("回复B");
+    expect(idxA).toBeLessThan(replyA);
+    expect(replyA).toBeLessThan(idxB);
+    expect(idxB).toBeLessThan(replyB);
+    // Each thinking section has its own blockquote
+    expect(result).toContain("> 💭 思考A");
+    expect(result).toContain("> 💭 思考B");
+    // Multiple --- separators
+    const sepCount = (result.match(/---/g) || []).length;
+    expect(sepCount).toBe(3); // 4 sections → 3 separators
+  });
+
+  it("falls back to content-block-level thinking type for edge cases", () => {
+    // Edge case: some providers may put thinking text directly in a
+    // content block with type "thinking" instead of using message-level type
+    const response: CopyableResponse = {
+      output: [
+        {
+          role: "assistant",
+          type: "message",
+          content: [
+            { type: "thinking", thinking: "块级思考" },
+            { type: "text", text: "块级回复" },
+          ],
+        },
+      ],
+    };
+    const result = buildWorkspaceMarkdown(response);
+    expect(result).toContain("> 💭 块级思考");
+    expect(result).toContain("块级回复");
   });
 });
 

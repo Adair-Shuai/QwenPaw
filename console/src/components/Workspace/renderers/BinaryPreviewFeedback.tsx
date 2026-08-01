@@ -1,6 +1,6 @@
 import React from "react";
 import { Button, Spin } from "antd";
-import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
 import type { AuthenticatedWorkspaceBlobResource } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 
 interface BinaryPreviewFeedbackProps {
@@ -10,6 +10,11 @@ interface BinaryPreviewFeedbackProps {
   loadingLabel: string;
   retryLabel: string;
   downloadLabel: string;
+  /** 在文件管理器中定位回调 */
+  onRevealInFileManager?: () => void;
+  /** 是否可在文件管理器中定位 */
+  canRevealInFileManager?: boolean;
+  revealLabel?: string;
 }
 
 const BinaryPreviewFeedback: React.FC<BinaryPreviewFeedbackProps> = ({
@@ -19,6 +24,9 @@ const BinaryPreviewFeedback: React.FC<BinaryPreviewFeedbackProps> = ({
   loadingLabel,
   retryLabel,
   downloadLabel,
+  onRevealInFileManager,
+  canRevealInFileManager,
+  revealLabel,
 }) => (
   <div
     style={{
@@ -52,6 +60,14 @@ const BinaryPreviewFeedback: React.FC<BinaryPreviewFeedbackProps> = ({
           <Button icon={<DownloadOutlined />} onClick={onDownload}>
             {downloadLabel}
           </Button>
+          {canRevealInFileManager && onRevealInFileManager && (
+            <Button
+              icon={<FolderOpenOutlined />}
+              onClick={onRevealInFileManager}
+            >
+              {revealLabel || "在文件夹中打开"}
+            </Button>
+          )}
         </div>
       </>
     )}

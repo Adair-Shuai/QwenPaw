@@ -394,6 +394,9 @@
     "convertFailed": "转换失败",
     "retry": "重试",
     "download": "下载",
+    "revealInFileManager": "在文件夹中打开",
+    "revealDesktopOnly": "此功能仅在桌面应用中可用",
+    "pdfPreviewUnavailable": "当前 WebView 不支持 PDF 内联预览，请下载后查看",
     "reload": "重新加载",
     "noFileUrl": "未提供文件 URL",
     "basicRender": "基础渲染",
@@ -2532,9 +2535,14 @@
     "greeting": "你好，我今天能帮你做什么？",
     "description": "您好，UGSci 智能助手在线。无论是油气藏分析、数值模拟还是工程决策，描述您的场景，我来交付结果。",
     "prompt1": "能告诉我你都能做点什么吗",
-    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令（审批时 \"/approve\" 或 \"/deny\"）",
+    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令 · \"@\" 指派 Agent（审批时 \"/approve\" 或 \"/deny\"）",
     "longTextUploadPrompt": "请读取已上传的提示词文件，并根据文件内容回答。",
     "emptyOutputError": "助手返回了空响应。",
+    "mention": {
+      "selectAgent": "选择要指派的 Agent",
+      "noMatch": "没有匹配的 Agent",
+      "hint": "输入 @ 并选择目标 Agent，消息将转发给该 Agent 处理"
+    },
     "commands": {
       "clear": {
         "description": "清空对话上下文"

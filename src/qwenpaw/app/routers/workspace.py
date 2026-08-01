@@ -533,6 +533,9 @@ async def read_binary_file(  # pylint: disable=too-many-statements
     headers = {
         "Accept-Ranges": "bytes",
         "Content-Length": str(size),
+        # Explicitly tell the browser/WebView to display inline rather
+        # than triggering a download dialog (especially for PDFs).
+        "Content-Disposition": "inline",
     }
     if range_header is not None:
         try:

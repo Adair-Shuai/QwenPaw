@@ -1,7 +1,7 @@
 /** MermaidRenderer — Mermaid 图表渲染器 */
 import React, { useEffect, useRef, useState } from "react";
 import { Button, Tooltip, Spin } from "antd";
-import { DownloadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 
@@ -76,6 +76,15 @@ const MermaidRenderer: React.FC<RendererContext> = ({
             type="text"
             icon={<DownloadOutlined />}
             onClick={() => workspace.download?.(artifact)}
+          />
+        </Tooltip>
+        <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+          <Button
+            size="small"
+            type="text"
+            icon={<FolderOpenOutlined />}
+            onClick={() => workspace.revealInFileManager?.(artifact)}
+            disabled={!artifact.workspacePath}
           />
         </Tooltip>
       </div>

@@ -31,6 +31,7 @@ import {
   CodeOutlined,
   ExpandOutlined,
   CompressOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
@@ -498,6 +499,15 @@ const JsonRenderer: React.FC<RendererContext> = (props) => {
               type="text"
               icon={<DownloadOutlined />}
               onClick={() => workspace.download?.(artifact)}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
             />
           </Tooltip>
         </Space>

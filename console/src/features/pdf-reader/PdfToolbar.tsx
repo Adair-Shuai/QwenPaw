@@ -15,6 +15,7 @@ import {
   RightOutlined,
   SearchOutlined,
   DownloadOutlined,
+  FolderOpenOutlined,
   ReadOutlined,
   FileTextOutlined,
 } from "@ant-design/icons";
@@ -34,6 +35,10 @@ interface PdfToolbarProps {
   onModeChange: (mode: PdfReaderMode) => void;
   onToggleSearch: () => void;
   onDownload: () => void;
+  /** 在文件管理器中定位回调 */
+  onRevealInFileManager?: () => void;
+  /** 是否可在文件管理器中定位 */
+  canRevealInFileManager?: boolean;
   theme: "light" | "dark";
 }
 
@@ -61,6 +66,8 @@ const PdfToolbar: React.FC<PdfToolbarProps> = ({
   onModeChange,
   onToggleSearch,
   onDownload,
+  onRevealInFileManager,
+  canRevealInFileManager,
   theme,
 }) => {
   const { t } = useTranslation();
@@ -159,6 +166,17 @@ const PdfToolbar: React.FC<PdfToolbarProps> = ({
             style={{ color: "#ccc" }}
           />
         </Tooltip>
+        {canRevealInFileManager && onRevealInFileManager && (
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={onRevealInFileManager}
+              style={{ color: "#ccc" }}
+            />
+          </Tooltip>
+        )}
       </Space>
     </div>
   );

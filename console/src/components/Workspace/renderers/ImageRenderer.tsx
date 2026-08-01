@@ -7,6 +7,7 @@ import {
   RotateLeftOutlined,
   RotateRightOutlined,
   DownloadOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
@@ -90,6 +91,15 @@ const ImageRenderer: React.FC<RendererContext> = ({
               onClick={handleDownload}
             />
           </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
+            />
+          </Tooltip>
         </Space>
       </div>
       <div
@@ -120,6 +130,9 @@ const ImageRenderer: React.FC<RendererContext> = ({
             loadingLabel={t("workspace.loading", "正在加载文件")}
             retryLabel={t("workspace.retry", "重试")}
             downloadLabel={t("workspace.download", "下载")}
+            onRevealInFileManager={() => workspace.revealInFileManager?.(artifact)}
+            canRevealInFileManager={!!artifact.workspacePath}
+            revealLabel={t("workspace.revealInFileManager", "在文件夹中打开")}
           />
         )}
       </div>

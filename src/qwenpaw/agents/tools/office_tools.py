@@ -140,6 +140,60 @@ def _not_installed_error() -> ToolChunk:
     )
 
 
+# ---------------------------------------------------------------------------
+# Props flattening helper
+# ---------------------------------------------------------------------------
+
+
+def _flatten_props(props: dict[str, Any] | None) -> dict[str, str]:
+    """Flatten nested dict props into dotted-key strings for ``--prop``.
+
+    officecli uses dotted attribute syntax (e.g. ``font.eastAsia``,
+    ``font.size``) rather than nested objects.  This helper lets callers
+    pass either form:
+
+    * ``{"font.eastAsia": "宋体"}``  — already flat (passthrough)
+    * ``{"font": {"eastAsia": "宋体"}}``  — nested dict (flattened)
+    * ``{"size": "12pt"}``  — simple scalar (passthrough)
+
+    Both produce ``--prop font.eastAsia=宋体 --prop size=12pt`` on the
+    CLI command line.
+    """
+    if not props:
+        return {}
+    flat: dict[str, str] = {}
+    for key, value in props.items():
+        if isinstance(value, dict):
+            for sub_key, sub_val in value.items():
+                flat_key = f"{key}.{sub_key}"
+                # Recurse one more level for deeply nested dicts
+                if isinstance(sub_val, dict):
+                    for deep_key, deep_val in sub_val.items():
+                        flat[f"{flat_key}.{deep_key}"] = str(deep_val)
+                else:
+                    flat[flat_key] = str(sub_val)
+        elif isinstance(value, bool):
+            flat[key] = "true" if value else "false"
+        elif value is None:
+            continue
+        else:
+            flat[key] = str(value)
+    return flat
+
+
+def _props_to_args(props: dict[str, Any] | None) -> list[str]:
+    """Convert a props dict into a list of ``--prop key=value`` arguments.
+
+    Handles nested dicts via dotted-key flattening (see ``_flatten_props``)
+    and boolean → ``"true"``/``"false"`` conversion.
+    """
+    flat = _flatten_props(props)
+    args: list[str] = []
+    for key, value in flat.items():
+        args.extend(["--prop", f"{key}={value}"])
+    return args
+
+
 def _json_toolchunk(data: Any) -> ToolChunk:
     """Wrap a dict/list as a ToolChunk with pretty-printed JSON text."""
     return ToolChunk(
@@ -304,18 +358,55 @@ async def office_add_element(
 ) -> ToolChunk:
     """Add an element to an Office document.
 
+    Many formatting properties can be set directly at add-time,
+    eliminating the need for a separate ``office_set_properties``
+    call.  For example, a paragraph can carry text, font, size,
+    alignment, indentation, and spacing all in one ``add`` call.
+
+    Nested dict props are automatically flattened to dotted keys:
+    ``{"font": {"eastAsia": "宋体"}}`` becomes
+    ``--prop font.eastAsia=宋体``.
+
     Args:
         file_path (`str`):
             Document path.
         parent_path (`str`):
-            Parent element path (e.g. "/" for root, "/slide[1]" for
-            slide 1).
+            Parent element path (e.g. "/" for root, "/body" for
+            docx body, "/slide[1]" for slide 1).
         element_type (`str`):
-            Element type (slide, shape, paragraph, sheet, row, cell,
-            etc.).
+            Element type. Common types:
+
+            - **docx**: paragraph, run, table, row, cell, image,
+              header, footer, section, bookmark, comment, footnote,
+              field, hyperlink, style, toc, watermark, break,
+              equation
+            - **pptx**: slide, shape, picture, table, chart, text,
+              connector, group
+            - **xlsx**: sheet, row, cell, chart, image, table
         props (`dict[str, Any] | None`):
-            Element properties (e.g. {"title": "Hello",
-            "background": "1A1A2E"}).
+            Element properties.  Supports both flat dotted keys
+            (``{"font.eastAsia": "宋体"}``) and nested dicts
+            (``{"font": {"eastAsia": "宋体"}}``).
+
+            Common docx paragraph props:
+
+            - ``text``: paragraph text
+            - ``style``: ``Heading1``, ``Heading2``, ``Normal``,
+              ``Title``, etc.
+            - ``size``: font size, e.g. ``"12pt"``, ``"14pt"``
+            - ``bold``: ``True`` / ``False``
+            - ``italic``: ``True`` / ``False``
+            - ``font.eastAsia``: East Asian font, e.g. ``"宋体"``,
+              ``"黑体"``, ``"楷体"``
+            - ``font.ascii`` / ``font.latin``: Latin font, e.g.
+              ``"Times New Roman"``
+            - ``align``: ``left``, ``center``, ``right``, ``justify``
+            - ``firstLineIndent``: first-line indent in twips (e.g.
+              ``480`` for 2 chars at 12pt; **not** CSS units like
+              ``"2em"``)
+            - ``lineSpacing``: e.g. ``"1.5x"``, ``"1.15x"``
+            - ``spaceBefore`` / ``spaceAfter``: e.g. ``"12pt"``
+            - ``pageBreakBefore``: ``True`` / ``False``
 
     Returns:
         `ToolChunk`:
@@ -323,8 +414,7 @@ async def office_add_element(
     """
     resolved = _resolve_workspace_path(file_path)
     args = ["add", resolved, parent_path, "--type", element_type]
-    for key, value in (props or {}).items():
-        args.extend(["--prop", f"{key}={value}"])
+    args.extend(_props_to_args(props))
     result = await _run_officecli(*args)
     return _json_toolchunk(result)
 
@@ -350,13 +440,35 @@ async def office_set_properties(
 ) -> ToolChunk:
     """Set properties on an element in an Office document.
 
+    Nested dict props are automatically flattened to dotted keys:
+    ``{"font": {"eastAsia": "宋体"}}`` becomes
+    ``--prop font.eastAsia=宋体``.
+
     Args:
         file_path (`str`):
             Document path.
         path (`str`):
-            Element path (e.g. "/slide[1]/shape[2]").
+            Element path (e.g. "/body/p[1]/r[1]", "/slide[1]/shape[2]").
         props (`dict[str, Any]`):
-            Properties to set (e.g. {"width": "10cm", "fill": "FF0000"}).
+            Properties to set.  Supports both flat dotted keys
+            (``{"font.eastAsia": "宋体"}``) and nested dicts
+            (``{"font": {"eastAsia": "宋体"}}``).
+
+            Common docx properties:
+
+            - ``text``: replace text content
+            - ``size``: font size, e.g. ``"12pt"``, ``"14pt"``
+            - ``bold`` / ``italic``: ``True`` / ``False``
+            - ``font.eastAsia``: East Asian font, e.g. ``"宋体"``,
+              ``"黑体"``, ``"楷体"``
+            - ``font.ascii`` / ``font.latin``: Latin font
+            - ``color``: hex color, e.g. ``"FF0000"``, ``"1F4E79"``
+            - ``align``: ``left``, ``center``, ``right``, ``justify``
+            - ``firstLineIndent``: twips (``480`` ≈ 2 chars at 12pt)
+            - ``lineSpacing``: e.g. ``"1.5x"``, ``"1.15x"``
+            - ``spaceBefore`` / ``spaceAfter``: e.g. ``"12pt"``
+            - ``fill``: cell/shape background color
+            - ``width`` / ``height``: e.g. ``"10cm"``, ``"2in"``
 
     Returns:
         `ToolChunk`:
@@ -364,8 +476,7 @@ async def office_set_properties(
     """
     resolved = _resolve_workspace_path(file_path)
     args = ["set", resolved, path]
-    for key, value in props.items():
-        args.extend(["--prop", f"{key}={value}"])
+    args.extend(_props_to_args(props))
     result = await _run_officecli(*args)
     return _json_toolchunk(result)
 
@@ -811,12 +922,32 @@ async def office_batch_operations(
 ) -> ToolChunk:
     """Execute multiple operations on an Office document in sequence.
 
+    Each command dict uses ``"command"`` (or ``"op"``) as the
+    operation-type field.  For backward compatibility, ``"action"`` is
+    also accepted and automatically normalised to ``"command"``.
+
+    Supported operations: ``add``, ``set``, ``get``, ``query``,
+    ``remove``, ``move``, ``swap``, ``view``, ``raw``, ``raw-set``,
+    ``validate``.
+
+    Nested dict props inside each command are automatically flattened
+    to dotted keys (e.g. ``{"font": {"eastAsia": "宋体"}}`` →
+    ``{"font.eastAsia": "宋体"}``).
+
     Args:
         file_path (`str`):
             Document path.
         commands (`list[dict[str, Any]]`):
-            List of operations, each with "action" (add/set/remove/get)
-            and relevant parameters (path, type, props, etc.).
+            List of operations.  Each dict has:
+
+            - ``command`` (or ``op``): operation type, e.g.
+              ``"add"``, ``"set"``, ``"remove"``
+            - ``path``: target element path
+            - ``parent``: parent path (for ``add``)
+            - ``type``: element type (for ``add``)
+            - ``props``: properties dict (supports nested dicts)
+            - other fields: ``after``, ``before``, ``index``,
+              ``from``, ``to``, ``selector``, etc.
 
     Returns:
         `ToolChunk`:
@@ -824,11 +955,28 @@ async def office_batch_operations(
     """
     resolved = _resolve_workspace_path(file_path)
 
+    # Normalise commands: map legacy "action" → "command",
+    # and flatten nested props dicts.
+    normalised: list[dict[str, Any]] = []
+    for cmd in commands:
+        cmd = dict(cmd)  # shallow copy — don't mutate caller's dict
+        # Backward compat: "action" was the old field name; CLI expects
+        # "command" (or "op").  Map it so existing callers keep working.
+        if "action" in cmd and "command" not in cmd and "op" not in cmd:
+            cmd["command"] = cmd.pop("action")
+        # Also accept "op" → normalise to "command" for consistency.
+        elif "op" in cmd and "command" not in cmd:
+            cmd["command"] = cmd.pop("op")
+        # Flatten nested props so dotted keys like font.eastAsia work.
+        if "props" in cmd and isinstance(cmd["props"], dict):
+            cmd["props"] = _flatten_props(cmd["props"])
+        normalised.append(cmd)
+
     # Write commands to a temp JSON file
     workspace_dir = get_current_workspace_dir() or WORKING_DIR
     cmd_file = str(workspace_dir / f"batch_cmds_{os.getpid()}.json")
     with open(cmd_file, "w", encoding="utf-8") as f:
-        json.dump(commands, f, ensure_ascii=False)
+        json.dump(normalised, f, ensure_ascii=False)
 
     try:
         result = await _run_officecli(

@@ -28,6 +28,7 @@ import {
   EyeOutlined,
   DownloadOutlined,
   ReloadOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
@@ -243,6 +244,15 @@ const HtmlRenderer: React.FC<RendererContext> = ({
               type="text"
               icon={<DownloadOutlined />}
               onClick={handleDownload}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
             />
           </Tooltip>
         </Space>

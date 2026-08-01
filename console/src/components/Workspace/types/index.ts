@@ -128,6 +128,8 @@ export interface WorkspaceApi {
   download: (artifact: WorkspaceArtifact) => void;
   /** 全屏查看 */
   fullscreen: (artifact: WorkspaceArtifact) => void;
+  /** 在系统文件管理器中定位文件 */
+  revealInFileManager?: (artifact: WorkspaceArtifact) => void;
 }
 
 /**

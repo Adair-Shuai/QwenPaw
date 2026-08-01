@@ -59,6 +59,19 @@
   height: calc(100vh - 64px) !important;
   padding: 0 16px;
 
+  // Optimize Sider width transition: Ant Design defaults to
+  // `transition: all 0.2s` which animates too many properties and
+  // causes stutter when content swaps simultaneously. Restrict to
+  // `width` only and add `will-change` for GPU compositing hint.
+  transition: width 0.2s ease !important;
+  will-change: width;
+
+  :global {
+    .qwenpaw-layout-sider-children {
+      transition: none !important;
+    }
+  }
+
   // Hide scrollbar in browser
   &::-webkit-scrollbar {
     display: none;
@@ -177,19 +190,42 @@
     flex-direction: column;
     padding: 0 8px;
 
+    // The Ant Design children wrapper must be a flex column so that
+    // collapsedNav (flex:1) pushes collapseToggleContainer to the bottom.
+    :global {
+      .qwenpaw-layout-sider-children {
+        display: flex;
+        flex-direction: column;
+        min-height: 0;
+        flex: 1;
+      }
+    }
+
     .agentSelectorContainer {
       display: flex;
       justify-content: center;
     }
 
     .collapseToggleContainer {
-      // Gear + expand toggle stack vertically — the narrow rail
-      // (56/72px) cannot fit two buttons side by side.
-      flex-direction: column;
-      justify-content: center;
+      // Push the fold/expand toggle to the very bottom of the sider.
+      flex-shrink: 0;
+      margin-top: auto;
       width: calc(100% + 16px);
-      margin: 0 -8px;
+      margin-left: -8px;
+      margin-right: -8px;
       padding: 8px 0;
+      justify-content: center;
+    }
+
+    // In collapsed mode, hide the mode toggle text button — only show
+    // the fold/expand icon at the very bottom.
+    .modeToggleBtn {
+      display: none;
+    }
+
+    .foldToggleBtn {
+      width: 40px;
+      height: 40px;
     }
 
     :global {
@@ -502,6 +538,7 @@
   z-index: 10;
   width: calc(100% + 32px);
   margin: 0 -16px;
+  margin-top: auto;
   padding: 8px 16px;
   display: flex;
   align-items: center;
@@ -514,11 +551,43 @@
   color: rgba(0, 0, 0, 0.45);
   border-radius: 8px;
   transition: all 0.2s;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 
   &:hover {
     background: rgba(0, 0, 0, 0.06) !important;
     color: #0072f5 !important;
   }
+}
+
+/* Mode toggle: same height as fold button, icon+text aligned */
+.modeToggleBtn {
+  height: 36px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+
+  :global {
+    .qwenpaw-btn-icon {
+      display: inline-flex;
+      align-items: center;
+    }
+  }
+}
+
+/* Fold toggle: icon-only, fixed square size matching mode toggle height */
+.foldToggleBtn {
+  width: 36px;
+  height: 36px;
+  padding: 0 !important;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
 .modeToggleActive {

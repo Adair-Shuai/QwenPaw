@@ -22,15 +22,14 @@
  * - 支持超时取消（防止大文件卡死）
  */
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Space, Tooltip, Spin, Alert, Tag, InputNumber } from "antd";
+import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
   FileTextOutlined,
   FileExcelOutlined,
   FilePptOutlined,
-  LeftOutlined,
-  RightOutlined,
   ReloadOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import JSZip from "jszip";
@@ -293,11 +292,19 @@ const OfficeOoxmlPreview: React.FC<{
         });
       } else if (kind === "pptx") {
         const { slidesHtml, count } = await convertPptx(buf);
+        // Concatenate all slides into one continuous HTML string
+        // with slide separators, matching the DOCX continuous-read UX
+        const continuousHtml = slidesHtml
+          .map(
+            (slide, i) =>
+              `<div class="pptx-slide-separator">Slide ${i + 1} / ${count}</div><div class="pptx-slide">${slide}</div>`,
+          )
+          .join("");
         setState({
           ...EMPTY_STATE,
           loading: false,
           pptxSlides: slidesHtml,
-          html: slidesHtml[0] ?? "",
+          html: continuousHtml,
           slideCount: count,
           currentSlide: 1,
         });
@@ -319,19 +326,9 @@ const OfficeOoxmlPreview: React.FC<{
     }
   }, [fileUrl, kind, selectedAgent]);
 
-  useEffect(() => {
+    useEffect(() => {
     convert();
   }, [convert]);
-
-  // PPTX 幻灯片切换：更新 state.html 为当前页
-  useEffect(() => {
-    if (kind === "pptx" && state.pptxSlides.length > 0) {
-      setState((s) => ({
-        ...s,
-        html: s.pptxSlides[s.currentSlide - 1] ?? "",
-      }));
-    }
-  }, [kind, state.currentSlide, state.pptxSlides]);
 
   // 样式
   const bgColor = isDark ? "#1e1e1e" : "#ffffff";
@@ -404,6 +401,14 @@ const OfficeOoxmlPreview: React.FC<{
           >
             {t("workspace.download", "下载")}
           </Button>
+          {artifact.workspacePath && (
+            <Button
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+            >
+              {t("workspace.revealInFileManager", "在文件夹中打开")}
+            </Button>
+          )}
         </Space>
       </div>
     );
@@ -474,6 +479,15 @@ const OfficeOoxmlPreview: React.FC<{
                 type="text"
                 icon={<DownloadOutlined />}
                 onClick={() => workspace.download?.(artifact)}
+              />
+            </Tooltip>
+            <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
               />
             </Tooltip>
           </Space>
@@ -597,6 +611,16 @@ const OfficeOoxmlPreview: React.FC<{
     a { color: ${isDark ? "#4d9eff" : "#1677ff"}; }
     ul, ol { padding-left: 1.5em; }
     p { margin: 0.5em 0; }
+    .pptx-slide-separator {
+      text-align: center;
+      font-size: 11px;
+      color: ${isDark ? "#888" : "#999"};
+      border-top: 1px dashed ${isDark ? "#555" : "#ccc"};
+      padding: 8px 0 4px;
+      margin-top: 24px;
+    }
+    .pptx-slide:first-child .pptx-slide-separator { border-top: none; margin-top: 0; }
+    .pptx-slide { padding: 8px 0; }
   </style></head><body>${state.html}</body></html>`;
 
   return (
@@ -620,45 +644,9 @@ const OfficeOoxmlPreview: React.FC<{
             {t("workspace.clientSidePreview", "前端解析")}
           </Tag>
           {isPptx && state.slideCount > 0 && (
-            <>
-              <Button
-                size="small"
-                type="text"
-                icon={<LeftOutlined />}
-                disabled={state.currentSlide <= 1}
-                onClick={() =>
-                  setState((s) => ({
-                    ...s,
-                    currentSlide: Math.max(1, s.currentSlide - 1),
-                  }))
-                }
-              />
-              <span style={{ fontSize: 11, color: "#999" }}>
-                {state.currentSlide} / {state.slideCount}
-              </span>
-              <Button
-                size="small"
-                type="text"
-                icon={<RightOutlined />}
-                disabled={state.currentSlide >= state.slideCount}
-                onClick={() =>
-                  setState((s) => ({
-                    ...s,
-                    currentSlide: Math.min(s.slideCount, s.currentSlide + 1),
-                  }))
-                }
-              />
-              <InputNumber
-                size="small"
-                min={1}
-                max={state.slideCount}
-                value={state.currentSlide}
-                onChange={(v) =>
-                  v && setState((s) => ({ ...s, currentSlide: v }))
-                }
-                style={{ width: 50 }}
-              />
-            </>
+            <span style={{ fontSize: 11, color: "#999" }}>
+              {state.slideCount} slides · continuous scroll
+            </span>
           )}
         </Space>
         <Space size={2}>
@@ -676,6 +664,15 @@ const OfficeOoxmlPreview: React.FC<{
               type="text"
               icon={<DownloadOutlined />}
               onClick={() => workspace.download?.(artifact)}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
             />
           </Tooltip>
         </Space>

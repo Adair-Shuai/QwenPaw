@@ -7,7 +7,6 @@ import {
   Form,
   Tooltip,
   Badge,
-  Popover,
 } from "antd";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -17,14 +16,13 @@ import AgentSelector from "../components/AgentSelector";
 import {
   SparkChatTabFill,
   SparkExitFullscreenLine,
+  SparkFullscreenLine,
   SparkSearchUserLine,
   SparkMenuExpandLine,
   SparkMenuFoldLine,
   SparkEmailLine,
-  SparkSettingLine,
 } from "@agentscope-ai/icons";
 import SidebarSessionList from "./SidebarSessionList";
-import SidebarSettingsPanel from "./SidebarSettingsPanel";
 import { clearAuthToken } from "../api/config";
 import { authApi } from "../api/modules/auth";
 import api from "../api";
@@ -129,7 +127,6 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   // Start collapsed on mobile so the first paint does not overlay/obscure
   // the main content on narrow viewports.
   const [collapsed, setCollapsed] = useState(isMobileSidebarViewport);
-  const [settingsOpen, setSettingsOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(isMobileSidebarViewport);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [hasPendingApprovals, setHasPendingApprovals] = useState(false);
@@ -139,7 +136,8 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   const seenApprovalIdsRef = useRef<Set<string>>(new Set());
 
   // Sidebar mode: "simple" (only core items) or "full" (everything)
-  const { mode: sidebarMode } = useSidebarModeStore();
+  const { mode: sidebarMode, toggleMode: toggleSidebarMode } =
+    useSidebarModeStore();
   const { selectedAgent, agents } = useAgentStore();
   const currentAgent = agents.find((agent) => agent.id === selectedAgent);
   const backendCapabilities = currentAgent
@@ -704,24 +702,24 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       )}
 
       <div className={styles.collapseToggleContainer}>
-        {/* Gear stays visible in collapsed state too — otherwise users
-            (especially on mobile, where the sidebar starts collapsed)
-            cannot discover how to restore full mode. */}
-        <Popover
-          open={settingsOpen}
-          onOpenChange={setSettingsOpen}
-          placement={collapsed ? "rightBottom" : "topRight"}
-          trigger="click"
-          content={
-            <SidebarSettingsPanel onClose={() => setSettingsOpen(false)} />
+        {/* Mode toggle: switches between simple and full sidebar mode. */}
+        <Button
+          type="text"
+          icon={
+            sidebarMode === "simple" ? (
+              <SparkFullscreenLine size={20} />
+            ) : (
+              <SparkExitFullscreenLine size={20} />
+            )
           }
+          onClick={() => toggleSidebarMode()}
+          className={`${styles.collapseToggle} ${styles.modeToggleBtn}`}
         >
-          <Button
-            type="text"
-            icon={<SparkSettingLine size={18} />}
-            className={styles.collapseToggle}
-          />
-        </Popover>
+          {!collapsed &&
+            (sidebarMode === "simple"
+              ? t("sidebar.fullMode", "Full Mode")
+              : t("sidebar.simpleMode", "Simple Mode"))}
+        </Button>
         <Button
           type="text"
           icon={
@@ -732,7 +730,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
             )
           }
           onClick={() => setCollapsed(!collapsed)}
-          className={styles.collapseToggle}
+          className={`${styles.collapseToggle} ${styles.foldToggleBtn}`}
         />
       </div>
 

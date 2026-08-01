@@ -65,7 +65,7 @@ export function UGSciMCPAccessModal({
   const React = getHost().React;
   const { useState, useEffect, useMemo, useCallback } = React;
   const { Modal, Spin, Empty, Button, Tag, Segmented, Select, Input, AutoComplete, Typography, message: antdMsg } = getHost().antd;
-  const { PlusOutlined, DeleteOutlined } = getHost().antdIcons || {};
+  const { PlusOutlined, DeleteOutlined, ReloadOutlined } = getHost().antdIcons || {};
   const { Text } = Typography;
 
   const [policy, setPolicy] = useState<MCPAccessPolicy | null>(null);
@@ -74,7 +74,23 @@ export function UGSciMCPAccessModal({
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [toolsError, setToolsError] = useState("");
+  const [toolsLoading, setToolsLoading] = useState(false);
   const [initialSig, setInitialSig] = useState("");
+
+  // ── Reload tools (manual refresh / retry after 503) ──
+  const reloadTools = useCallback(async () => {
+    if (!client.enabled) { setToolsError("MCP 客户端未启用，无法获取工具列表"); return; }
+    setToolsLoading(true); setToolsError("");
+    try {
+      const t = await listMCPToolsForCapabilities(agentId, client.key);
+      setTools(t);
+    } catch (err: any) {
+      setToolsError(err?.message || "无法加载工具列表");
+      setTools([]);
+    } finally {
+      setToolsLoading(false);
+    }
+  }, [agentId, client.key, client.enabled]);
 
   useEffect(() => {
     if (!open) return;
@@ -92,11 +108,8 @@ export function UGSciMCPAccessModal({
           const principals = await listMCPAccessPrincipalsForCapabilities(agentId);
           if (!cancelled) setPrincipalOptions(principals);
         } catch { if (!cancelled) setPrincipalOptions([]); }
-        if (!client.enabled) { if (!cancelled) setToolsError("MCP 客户端未启用，无法获取工具列表"); return; }
-        try {
-          const t = await listMCPToolsForCapabilities(agentId, client.key);
-          if (!cancelled) setTools(t);
-        } catch (err: any) { if (!cancelled) setToolsError(err?.message || "无法加载工具列表"); }
+        // Tools are NOT loaded automatically — user clicks "刷新工具" to fetch.
+        // This avoids 503 errors when the MCP client is still connecting.
       } catch { if (!cancelled) { setPolicy(null); setInitialSig(""); setToolsError("加载访问策略失败"); } }
       finally { if (!cancelled) setLoading(false); }
     };
@@ -290,12 +303,54 @@ export function UGSciMCPAccessModal({
                 ? React.createElement(Text, { style: { fontSize: 12, color: "#999" } }, "暂无客户端级覆盖规则")
                 : React.createElement("div", null, ...policy.client_overrides.map((r) => renderRuleRow(r, false))),
             ),
-            // ── Error message ──
-            toolsError ? React.createElement("div", { style: { color: "#ff4d4f", fontSize: 12, marginBottom: 8 } }, toolsError) : null,
+            // ── Error message with retry button ──
+            toolsError
+              ? React.createElement(
+                  "div",
+                  {
+                    style: {
+                      color: "#ff4d4f",
+                      fontSize: 12,
+                      marginBottom: 8,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    },
+                  },
+                  React.createElement("span", null, toolsError),
+                  React.createElement(
+                    Button,
+                    {
+                      size: "small",
+                      icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+                      onClick: reloadTools,
+                      loading: toolsLoading,
+                    },
+                    "重试",
+                  ),
+                )
+              : null,
             // ── Tool-level panel ──
-            React.createElement(Text, { strong: true, style: { display: "block", marginBottom: 8 } }, "工具访问策略"),
+            React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+              React.createElement(Text, { strong: true }, "工具访问策略"),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  type: "text",
+                  icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
+                  onClick: reloadTools,
+                  loading: toolsLoading,
+                },
+                "刷新工具",
+              ),
+            ),
             groups.length === 0
-              ? React.createElement(Empty, { description: "暂无工具" })
+              ? React.createElement(Empty, {
+                  description: toolsLoading ? "正在加载工具..." : "点击「刷新工具」加载工具列表",
+                })
               : React.createElement(
                   "div",
                   null,

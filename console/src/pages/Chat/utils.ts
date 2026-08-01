@@ -6,10 +6,18 @@ export type CopyableContent = {
   type?: string;
   text?: string;
   refusal?: string;
+  /** Thinking / reasoning content (Anthropic-style content blocks) */
+  thinking?: string;
+  /** Reasoning content (OpenAI Response API style) */
+  reasoning?: string;
+  /** OpenAI Chat Completions reasoning_content field */
+  reasoning_content?: string;
 };
 
 export type CopyableMessage = {
   role?: string;
+  /** AgentScope message type: "message" (reply) | "reasoning" (thinking) | tool types */
+  type?: string;
   content?: string | CopyableContent[];
 };
 
@@ -57,6 +65,148 @@ export function extractCopyableText(response: CopyableResponse): string {
   };
 
   return collectText(true) || JSON.stringify(response);
+}
+
+// ---------------------------------------------------------------------------
+// Workspace markdown builder — separates thinking from reply
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a well-structured markdown document from an assistant response,
+ * separating "thinking" (reasoning) messages from "reply" (text) messages.
+ *
+ * In the AgentScope runtime, reasoning content is a **message-level** type:
+ * messages with `type: "reasoning"` contain the thinking text, while
+ * messages with `type: "message"` contain the reply text. Both use
+ * regular `{ type: "text", text: "..." }` content blocks.
+ *
+ * The output **strictly preserves the original message order**. Consecutive
+ * messages of the same type are merged into one section; each section is
+ * separated by a horizontal rule. Thinking sections are wrapped in a
+ * blockquote for visual distinction:
+ *
+ * ```markdown
+ * > 💭 thinking content...
+ *
+ * ---
+ *
+ * reply content...
+ *
+ * ---
+ *
+ * > 💭 more thinking...
+ *
+ * ---
+ *
+ * more reply...
+ * ```
+ *
+ * If no thinking blocks are present, only the reply text is returned
+ * (no blockquotes or separators).
+ * If no content is found at all, falls back to {@link extractCopyableText}.
+ */
+export function buildWorkspaceMarkdown(response: CopyableResponse): string {
+  // Collect ordered segments: each is { reasoning: boolean, text: string }
+  const segments: { reasoning: boolean; text: string }[] = [];
+
+  for (const msg of response.output || []) {
+    if (msg.role && msg.role !== "assistant") continue;
+
+    // Determine whether this message is thinking or reply based on the
+    // message-level `type` field.  The AgentScope runtime sets
+    // `type: "reasoning"` for thinking and `type: "message"` for reply.
+    // Messages without a type are treated as reply (backward-compatible).
+    const msgType = (msg.type || "").toLowerCase();
+    const isReasoning =
+      msgType === "reasoning" || msgType === "thinking";
+
+    // String content
+    if (typeof msg.content === "string") {
+      const trimmed = msg.content.trim();
+      if (trimmed) {
+        segments.push({ reasoning: isReasoning, text: trimmed });
+      }
+      continue;
+    }
+
+    if (!Array.isArray(msg.content)) continue;
+
+    // Extract text from content blocks — both reasoning and message types
+    // use regular { type: "text", text: "..." } content blocks.
+    const parts: string[] = [];
+    for (const block of msg.content) {
+      const blockType = (block.type || "").toLowerCase();
+
+      // Text blocks
+      if (blockType === "text" && typeof block.text === "string") {
+        if (block.text.trim()) parts.push(block.text.trim());
+        continue;
+      }
+
+      // Refusal blocks → always reply text
+      if (
+        blockType === "refusal" &&
+        typeof block.refusal === "string"
+      ) {
+        if (block.refusal.trim()) parts.push(block.refusal.trim());
+        continue;
+      }
+
+      // Fallback: some edge-case providers may put thinking text directly
+      // in a content block with type "thinking"/"reasoning" instead of
+      // using the message-level type.
+      if (blockType === "thinking" || blockType === "reasoning") {
+        const thinkingText =
+          block.thinking || block.reasoning || block.reasoning_content || "";
+        if (typeof thinkingText === "string" && thinkingText.trim()) {
+          segments.push({ reasoning: true, text: thinkingText.trim() });
+        }
+      }
+    }
+
+    if (parts.length > 0) {
+      segments.push({ reasoning: isReasoning, text: parts.join("\n\n") });
+    }
+  }
+
+  // If we found nothing at all, fall back to extractCopyableText
+  if (segments.length === 0) {
+    return extractCopyableText(response);
+  }
+
+  // Merge consecutive segments of the same type
+  const merged: { reasoning: boolean; text: string }[] = [];
+  for (const seg of segments) {
+    const last = merged[merged.length - 1];
+    if (last && last.reasoning === seg.reasoning) {
+      last.text += "\n\n" + seg.text;
+    } else {
+      merged.push({ ...seg });
+    }
+  }
+
+  // If all segments are reply (no thinking), just join with double newlines
+  const hasThinking = merged.some((s) => s.reasoning);
+  if (!hasThinking) {
+    return merged.map((s) => s.text).join("\n\n").trim();
+  }
+
+  // Build sections preserving original order
+  const sections: string[] = [];
+  for (const seg of merged) {
+    if (seg.reasoning) {
+      // Wrap thinking text in a blockquote with 💭 marker on first line
+      const lines = seg.text.split("\n");
+      const blockquoted = lines
+        .map((line, i) => (i === 0 ? `> 💭 ${line}` : `> ${line}`))
+        .join("\n");
+      sections.push(blockquoted);
+    } else {
+      sections.push(seg.text);
+    }
+  }
+
+  return sections.join("\n\n---\n\n").trim();
 }
 
 /** Extract plain text from user message content. */

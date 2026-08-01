@@ -1,7 +1,7 @@
 /** FallbackRenderer — 未知文件类型的兜底渲染器 */
 import React from "react";
 import { Button, Typography } from "antd";
-import { DownloadOutlined, FileUnknownOutlined } from "@ant-design/icons";
+import { DownloadOutlined, FileUnknownOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 
@@ -40,6 +40,14 @@ const FallbackRenderer: React.FC<RendererContext> = ({
           onClick={() => workspace.download?.(artifact)}
         >
           {t("workspace.download")}
+        </Button>
+      )}
+      {artifact.workspacePath && (
+        <Button
+          icon={<FolderOpenOutlined />}
+          onClick={() => workspace.revealInFileManager?.(artifact)}
+        >
+          {t("workspace.revealInFileManager", "在文件夹中打开")}
         </Button>
       )}
     </div>

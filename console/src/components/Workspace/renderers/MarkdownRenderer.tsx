@@ -23,6 +23,7 @@ import {
   EyeOutlined,
   DownloadOutlined,
   FullscreenOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Markdown } from "@agentscope-ai/chat";
@@ -304,6 +305,15 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
               type="text"
               icon={<DownloadOutlined />}
               onClick={handleDownload}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
             />
           </Tooltip>
           <Tooltip title={t("workspace.fullscreen")}>

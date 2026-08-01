@@ -860,6 +860,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         agentId: selectedAgent,
         projectRoot: projectDir ?? null,
         sessionId: workspaceSessionId,
+        size: info.fileSize,
       });
       return;
     }

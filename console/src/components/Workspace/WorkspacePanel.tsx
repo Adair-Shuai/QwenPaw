@@ -51,6 +51,7 @@ import {
   ExpandOutlined,
   FileTextOutlined,
 } from "@ant-design/icons";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { useWorkspaceStore } from "./store/workspaceStore";
 import { rendererRegistry } from "./store/rendererRegistry";
@@ -177,6 +178,18 @@ const WorkspacePanel: React.FC = () => {
         }
       },
       fullscreen: () => toggleFullscreen(),
+      revealInFileManager: (artifact: WorkspaceArtifact) => {
+        const filePath = artifact.workspacePath;
+        if (!filePath) return;
+        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
+          invoke("reveal_in_file_manager", { path: filePath }).catch((err) => {
+            console.warn("[WorkspacePanel] reveal failed:", err);
+            message.error(`无法打开文件管理器: ${err}`);
+          });
+        } else {
+          message.warning(t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"));
+        }
+      },
     }),
     [updateArtifact, closeTab, openArtifact, toggleFullscreen, t],
   );

@@ -60,6 +60,10 @@ interface PdfReaderProps {
   theme: "light" | "dark";
   /** 下载回调 */
   onDownload: () => void;
+  /** 在文件管理器中定位回调 */
+  onRevealInFileManager?: () => void;
+  /** 是否可在文件管理器中定位 */
+  canRevealInFileManager?: boolean;
   /** 初始模式 */
   initialMode?: PdfReaderMode;
 }
@@ -69,6 +73,8 @@ const PdfReader: React.FC<PdfReaderProps> = ({
   fileName,
   theme,
   onDownload,
+  onRevealInFileManager,
+  canRevealInFileManager,
   initialMode = "simple",
 }) => {
   const { t } = useTranslation();
@@ -301,6 +307,8 @@ const PdfReader: React.FC<PdfReaderProps> = ({
         onModeChange={handleModeChange}
         onToggleSearch={() => setSearchVisible(!searchVisible)}
         onDownload={onDownload}
+        onRevealInFileManager={onRevealInFileManager}
+        canRevealInFileManager={canRevealInFileManager}
         theme={theme}
       />
 

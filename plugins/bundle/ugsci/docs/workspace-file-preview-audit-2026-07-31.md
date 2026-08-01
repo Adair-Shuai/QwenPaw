@@ -102,6 +102,8 @@ type BinaryResourceState =
 
 Coding `FilePreview` 与 Workspace Renderer 分别维护图片、PDF、Markdown、CSV、认证加载和错误状态，能力已经分叉。
 
+Workspace PDF 已改为轻量 PDF.js 连续滚动 Canvas Viewer：页面采用纵向虚拟列表，仅挂载视口内页面及上下各一页，页面离开挂载范围后会取消渲染并释放 PDF.js Page 和 Canvas；所有页面渲染进入单一串行队列，避免 Windows WebView2 和 macOS WKWebView 并发占用过多线程与内存。运行时和 worker 均懒加载，多个标签共享单 worker，大文件使用 256 KB Range，并将单 Canvas 限制在约 8MP。两层预览工具栏均使用白底、浅边框和中性灰文字，与 Office 文件预览保持一致。该实现解决了原生 PDF 插件不稳定、整文件等待、单页翻页阅读割裂和完整 `react-pdf` 阅读器资源过重的问题，但 Coding PDF 仍使用另一套预览链路。
+
 建议将 Coding 文件转换为 `WorkspaceArtifact`，编辑模式保留 Monaco，预览模式交给统一 Registry。这样 PREVIEW-005、PREVIEW-006 的加载和错误处理只需维护一套。
 
 ### OPT-003：增加保存前差异确认和版本恢复
