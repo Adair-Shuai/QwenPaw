@@ -38,9 +38,9 @@ describe("ThemeProvider + useTheme", () => {
 
   it("provides default theme context", () => {
     const { result } = renderHook(() => useTheme(), { wrapper });
-    // Default is "system" when no localStorage
-    expect(["light", "dark", "system"]).toContain(result.current.themeMode);
-    expect(typeof result.current.isDark).toBe("boolean");
+    // Default is "light" when no localStorage
+    expect(result.current.themeMode).toBe("light");
+    expect(result.current.isDark).toBe(false);
   });
 
   it("setThemeMode changes themeMode and isDark", () => {

@@ -38,7 +38,7 @@ function getInitialMode(): ThemeMode {
   } catch {
     // ignore storage errors
   }
-  return "system";
+  return "light";
 }
 
 function resolveIsDark(mode: ThemeMode): boolean {
