@@ -8,7 +8,12 @@
  */
 import React, { useState, useEffect } from "react";
 import { Button, Segmented, Space, Tooltip, Spin } from "antd";
-import { CodeOutlined, EyeOutlined, DownloadOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import {
+  CodeOutlined,
+  EyeOutlined,
+  DownloadOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 

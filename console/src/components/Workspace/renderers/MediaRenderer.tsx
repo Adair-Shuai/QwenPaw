@@ -157,7 +157,9 @@ const MediaRenderer: React.FC<RendererContext> = ({
               loadingLabel={t("workspace.loadingMedia", "正在加载媒体")}
               retryLabel={t("workspace.retry", "重试")}
               downloadLabel={t("workspace.download", "下载")}
-              onRevealInFileManager={() => workspace.revealInFileManager?.(artifact)}
+              onRevealInFileManager={() =>
+                workspace.revealInFileManager?.(artifact)
+              }
               canRevealInFileManager={!!artifact.workspacePath}
               revealLabel={t("workspace.revealInFileManager", "在文件夹中打开")}
             />

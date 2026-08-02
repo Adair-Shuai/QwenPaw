@@ -130,7 +130,9 @@ const ImageRenderer: React.FC<RendererContext> = ({
             loadingLabel={t("workspace.loading", "正在加载文件")}
             retryLabel={t("workspace.retry", "重试")}
             downloadLabel={t("workspace.download", "下载")}
-            onRevealInFileManager={() => workspace.revealInFileManager?.(artifact)}
+            onRevealInFileManager={() =>
+              workspace.revealInFileManager?.(artifact)
+            }
             canRevealInFileManager={!!artifact.workspacePath}
             revealLabel={t("workspace.revealInFileManager", "在文件夹中打开")}
           />

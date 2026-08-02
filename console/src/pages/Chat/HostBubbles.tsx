@@ -11,24 +11,38 @@
  *   so it re-renders when plugins register/dispose — no need to rebuild the
  *   parent useMemo (and avoid re-mounting bubbles on every plugin change).
  *
- * The vendor's Card components are deep-imported because they're not in the
+ * Vendor response primitives are deep-imported because they're not in the
  * package's top-level exports. If the SDK reorganizes its internal paths,
- * update the two import statements below.
+ * update the imports below.
  */
-import React from "react";
-// eslint-disable-next-line import/no-unresolved
+import React, { useEffect, useMemo, useState } from "react";
+import { Avatar, Flex } from "antd";
+import {
+  CheckCircleOutlined,
+  LoadingOutlined,
+  ToolOutlined,
+} from "@ant-design/icons";
+import { Bubble } from "@agentscope-ai/chat";
+import { useTranslation } from "react-i18next";
 import VendorRequestCardOriginal from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
-// eslint-disable-next-line import/no-unresolved
-import VendorResponseCardOriginal from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Card";
+import AgentScopeRuntimeResponseBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Builder";
+import VendorMessage from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Message";
+import VendorTool from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Tool";
+import VendorReasoning from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Reasoning";
+import VendorError from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Error";
+import VendorActions from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Actions";
+import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
+import {
+  AgentScopeRuntimeMessageType,
+  AgentScopeRuntimeRunStatus,
+  type IAgentScopeRuntimeMessage,
+} from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/types";
 // Vendor `.d.ts` doesn't yet describe the contentPrepend/contentAppend
 // slots we added in the patched .js (Response/Card.js + Request/Card.js).
 // Loosen the prop type so TS doesn't reject the passthrough; runtime
 // behaviour is unchanged.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const VendorRequestCard = VendorRequestCardOriginal as React.ComponentType<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const VendorResponseCard =
-  VendorResponseCardOriginal as React.ComponentType<any>;
 import {
   useChatScalarSnapshot,
   useChatListSnapshot,
@@ -40,6 +54,7 @@ import type {
   ChatResponseData,
 } from "../../plugins/registry/types";
 import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
+import { groupResponseMessages } from "./responseMessageGrouping";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -49,6 +64,137 @@ function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCardProps = any;
+
+function ToolExecutionGroup({ items }: { items: IAgentScopeRuntimeMessage[] }) {
+  const { t } = useTranslation();
+  const hasRunningTool = items.some(
+    (item) => item.status === AgentScopeRuntimeRunStatus.InProgress,
+  );
+  const [open, setOpen] = useState(hasRunningTool);
+
+  useEffect(() => {
+    if (hasRunningTool) {
+      setOpen(true);
+      return;
+    }
+    const timer = window.setTimeout(() => setOpen(false), 600);
+    return () => window.clearTimeout(timer);
+  }, [hasRunningTool]);
+
+  return (
+    <details
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      style={{
+        margin: "4px 0",
+        borderRadius: 6,
+        background: open
+          ? "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))"
+          : "transparent",
+      }}
+    >
+      <summary
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 8,
+          minHeight: 28,
+          padding: "0 8px",
+          borderRadius: 6,
+          cursor: "pointer",
+          listStyle: "none",
+          color: "var(--ant-color-text-secondary, rgba(0,0,0,0.65))",
+          fontSize: 12,
+          userSelect: "none",
+        }}
+      >
+        {hasRunningTool ? (
+          <LoadingOutlined spin style={{ color: "#1677ff" }} />
+        ) : (
+          <CheckCircleOutlined style={{ color: "#52c41a" }} />
+        )}
+        <span style={{ flex: 1, minWidth: 0 }}>
+          {hasRunningTool
+            ? t("tool.executionRunning", "正在执行工具")
+            : t("tool.executionHistory", "工具执行记录")}
+          （{items.length}）
+        </span>
+        <ToolOutlined
+          style={{
+            color: "var(--ant-color-text-quaternary, rgba(0,0,0,0.25))",
+          }}
+        />
+      </summary>
+      <div style={{ padding: "2px 8px 6px 8px" }}>
+        {items.map((item) => (
+          <VendorTool key={item.id} data={item} />
+        ))}
+      </div>
+    </details>
+  );
+}
+
+function HostDefaultResponseCard(props: {
+  data: ChatResponseData;
+  isLast?: boolean;
+  contentPrepend?: React.ReactNode;
+  contentAppend?: React.ReactNode;
+}) {
+  const avatar = useChatAnywhereOptions((options) => options.welcome?.avatar);
+  const nick = useChatAnywhereOptions((options) => options.welcome?.nick);
+  const messages = useMemo(
+    () =>
+      AgentScopeRuntimeResponseBuilder.mergeToolMessages(
+        props.data.output as IAgentScopeRuntimeMessage[],
+      ),
+    [props.data.output],
+  );
+  const groups = useMemo(() => groupResponseMessages(messages), [messages]);
+
+  if (
+    messages.length === 0 &&
+    AgentScopeRuntimeResponseBuilder.maybeGenerating(props.data as AnyCardProps)
+  ) {
+    return <Bubble.Spin />;
+  }
+
+  return (
+    <>
+      {avatar ? (
+        <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
+          <Avatar src={avatar} />
+          {nick ? <span>{nick}</span> : null}
+        </Flex>
+      ) : null}
+      {props.contentPrepend}
+      {groups.map((group) => {
+        if (group.kind === "tools") {
+          return <ToolExecutionGroup key={group.key} items={group.items} />;
+        }
+        const item = group.item;
+        switch (item.type) {
+          case AgentScopeRuntimeMessageType.MESSAGE:
+            return <VendorMessage key={item.id} data={item} />;
+          case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
+            return <VendorTool key={item.id} data={item} isApproval />;
+          case AgentScopeRuntimeMessageType.REASONING:
+            return <VendorReasoning key={item.id} data={item} />;
+          case AgentScopeRuntimeMessageType.ERROR:
+            return <VendorError key={item.id} data={item} />;
+          case AgentScopeRuntimeMessageType.HEARTBEAT:
+            return null;
+          default:
+            return null;
+        }
+      })}
+      {props.data.error ? (
+        <VendorError data={props.data.error as IAgentScopeRuntimeMessage} />
+      ) : null}
+      {props.contentAppend}
+      <VendorActions data={props.data as AnyCardProps} isLast={props.isLast} />
+    </>
+  );
+}
 
 export function HostRequestCard(props: { data: ChatRequestData }) {
   const extScalar = useChatScalarSnapshot();
@@ -169,11 +315,11 @@ export function HostResponseCard(props: {
     );
 
   const fallback = () => (
-    <VendorResponseCard
-      data={props.data as AnyCardProps}
+    <HostDefaultResponseCard
+      data={props.data}
       isLast={props.isLast}
-      contentPrepend={contentPrepend as AnyCardProps}
-      contentAppend={contentAppend as AnyCardProps}
+      contentPrepend={contentPrepend}
+      contentAppend={contentAppend}
     />
   );
 

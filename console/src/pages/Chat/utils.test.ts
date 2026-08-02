@@ -282,9 +282,7 @@ describe("buildWorkspaceMarkdown", () => {
     expect(result).toContain("> 💭 思考内容");
     expect(result).toContain("回复内容");
     // thinking before reply
-    expect(result.indexOf("思考内容")).toBeLessThan(
-      result.indexOf("回复内容"),
-    );
+    expect(result.indexOf("思考内容")).toBeLessThan(result.indexOf("回复内容"));
   });
 
   it("preserves interleaved order of thinking and reply", () => {

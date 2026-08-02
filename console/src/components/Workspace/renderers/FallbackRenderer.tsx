@@ -1,7 +1,11 @@
 /** FallbackRenderer — 未知文件类型的兜底渲染器 */
 import React from "react";
 import { Button, Typography } from "antd";
-import { DownloadOutlined, FileUnknownOutlined, FolderOpenOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  FileUnknownOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 

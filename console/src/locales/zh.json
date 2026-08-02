@@ -3354,6 +3354,8 @@
       "status": "状态"
     },
     "loading": "处理中...",
+    "executionRunning": "正在执行工具",
+    "executionHistory": "工具执行记录",
     "inputProgress": "已接收 {{count}} 个字符",
     "rawInputPreview": "实时原始参数（最后 4096 个字符）",
     "browserAction": {

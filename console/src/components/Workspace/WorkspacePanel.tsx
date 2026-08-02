@@ -187,7 +187,9 @@ const WorkspacePanel: React.FC = () => {
             message.error(`无法打开文件管理器: ${err}`);
           });
         } else {
-          message.warning(t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"));
+          message.warning(
+            t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"),
+          );
         }
       },
     }),

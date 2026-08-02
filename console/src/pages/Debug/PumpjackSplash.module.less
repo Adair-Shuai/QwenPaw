@@ -1,0 +1,476 @@
+/* ---------------------------------------------------------------------------
+ * PumpjackSplash — 抽油机（磕头机）加载动画方案
+ * 用抽油机往复运动替代圆环进度，保留阶段化进度 / 步骤列表 / 成功失败态
+ * ------------------------------------------------------------------------- */
+
+@keyframes pj-bg-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes pj-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes pj-logo-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* 游梁绕支架顶铰点摆动：+4°（前端低）→ -4°（前端高） */
+@keyframes pj-beam {
+  from {
+    transform: rotate(4deg);
+  }
+  to {
+    transform: rotate(-4deg);
+  }
+}
+
+/* 驴头弧面微摆（跟随游梁） */
+@keyframes pj-horsehead {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(-1.2deg);
+  }
+}
+
+/* 抽油杆垂直往复：与游梁反相位（前端上抬时杆向上） */
+@keyframes pj-rod {
+  from {
+    transform: translateY(0px);
+  }
+  to {
+    transform: translateY(-20px);
+  }
+}
+
+/* 曲柄匀速旋转（驱动游梁） */
+@keyframes pj-crank {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 曲柄带动游梁后端的视觉联动（小幅摆动） */
+@keyframes pj-crankbehind {
+  from {
+    transform: rotate(-6deg);
+  }
+  to {
+    transform: rotate(6deg);
+  }
+}
+
+/* 井口油管中液体上涌的“油花” */
+@keyframes pj-oil {
+  0% {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+  35% {
+    opacity: 0.9;
+  }
+  100% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+}
+
+@keyframes pj-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 6px 18px rgba(0, 114, 245, 0.18));
+  }
+  50% {
+    filter: drop-shadow(0 6px 30px rgba(0, 114, 245, 0.38));
+  }
+}
+
+@keyframes pj-ready-pop {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pj-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.page {
+  position: relative;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.pageLight {
+  background: linear-gradient(135deg, #eef4fb 0%, #dbe7f6 50%, #c3d4ec 100%);
+  background-size: 200% 200%;
+  animation: pj-bg-flow 8s ease-in-out infinite;
+}
+
+.pageDark {
+  background: linear-gradient(
+    135deg,
+    #0f0c29 0%,
+    #1e1b3a 40%,
+    #302b63 70%,
+    #24243e 100%
+  );
+  background-size: 300% 300%;
+  animation: pj-bg-flow 10s ease-in-out infinite;
+}
+
+.page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgba(0, 114, 245, 0.1),
+    transparent 62%
+  );
+}
+
+.card {
+  position: relative;
+  z-index: 1;
+  width: 460px;
+  padding: 36px 40px 32px;
+  border-radius: 16px;
+  text-align: center;
+  animation: pj-fadein 0.6s ease-out;
+}
+
+.pageLight .card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 12px 40px rgba(30, 60, 110, 0.12);
+}
+
+.pageDark .card {
+  background: rgba(28, 27, 30, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.logo {
+  height: 60px;
+  margin-bottom: 6px;
+  animation: pj-logo-breathe 2.4s ease-in-out infinite;
+}
+
+/* 抽油机主视觉（替代原圆环） */
+.pumpjack {
+  position: relative;
+  width: 340px;
+  height: 260px;
+  margin: 8px auto 0;
+  animation: pj-glow 2.6s ease-in-out infinite;
+}
+
+.pumpjack svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 曲柄：匀速旋转（绕 crank 中心） */
+.crank {
+  transform-origin: 392px 252px;
+  animation: pj-crank 2.4s linear infinite;
+}
+
+/* 游梁 + 驴头 + 配重：绕支架顶铰点摆动 */
+.beam {
+  transform-origin: 300px 160px;
+  animation: pj-beam 2.4s ease-in-out infinite alternate;
+}
+
+/* 抽油杆：独立垂直往复，与游梁反相位 */
+.rod {
+  animation: pj-rod 2.4s ease-in-out infinite alternate;
+}
+
+/* 连杆 + 曲柄销（视觉装饰，随曲柄转动方向微摆） */
+.pitman {
+  transform-origin: 392px 208px;
+  animation: pj-crankbehind 2.4s ease-in-out infinite alternate;
+}
+
+.oilBubble {
+  animation: pj-oil 2.4s ease-out infinite;
+}
+
+/* 失败时抽油机整体变红并停止 */
+.failed .pumpjack {
+  animation: none;
+}
+
+.failed .crank,
+.failed .beam,
+.failed .rod,
+.failed .pitman,
+.failed .oilBubble {
+  animation: none;
+}
+
+/* 就绪成功态：抽油机定格在当前动作（不跳回初始位） */
+.ready .crank,
+.ready .beam,
+.ready .rod,
+.ready .pitman,
+.ready .oilBubble {
+  animation-play-state: paused;
+}
+
+.progressMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.percentLabel {
+  font-size: 26px;
+  font-weight: 700;
+  color: #333;
+  font-variant-numeric: tabular-nums;
+}
+
+.pageDark .percentLabel {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.elapsedLabel {
+  font-size: 13px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.pageDark .elapsedLabel {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.statusText {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #333;
+}
+
+.pageDark .statusText {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.failedText {
+  color: var(--qwenpaw-error-color) !important;
+}
+
+.steps {
+  margin: 18px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #9a9a9a;
+}
+
+.stepDone {
+  color: #52c41a;
+}
+
+.stepActive {
+  color: #333;
+  font-weight: 500;
+}
+
+.pageDark .stepActive {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.stepFailed {
+  color: var(--qwenpaw-error-color);
+}
+
+.stepDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex: none;
+}
+
+.stepDotDone {
+  background: #52c41a;
+  color: #fff;
+}
+
+.stepDotActive {
+  border: 2px solid var(--qwenpaw-brand-color);
+  border-top-color: transparent;
+  animation: pj-spin 0.9s linear infinite;
+}
+
+.stepDotFailed {
+  border: 2px solid var(--qwenpaw-error-color);
+  color: var(--qwenpaw-error-color);
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+}
+
+.stepDotPending {
+  border: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+.pageDark .stepDotPending {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+/* 成功态：抽油机停止 + 井口上方弹出绿色对勾 */
+.readyBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.readyCheck {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #52c41a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  animation: pj-ready-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.readyText {
+  font-size: 16px;
+  font-weight: 500;
+  color: #52c41a;
+}
+
+.fadeOut {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.hint {
+  color: #888;
+  font-size: 13px;
+  margin: 6px 0 20px;
+}
+
+.pageDark .hint {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.details {
+  margin: 0 0 22px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  text-align: left;
+}
+
+.pageDark .details {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.summary {
+  cursor: pointer;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pageDark .summary {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.errorDetails {
+  max-height: 96px;
+  overflow: auto;
+  margin: 8px 0 0;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pageDark .errorDetails {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* 尊重系统的“减弱动态效果”设置 */
+@media (prefers-reduced-motion: reduce) {
+  .pageLight,
+  .pageDark,
+  .logo,
+  .pumpjack,
+  .crank,
+  .beam,
+  .rod,
+  .pitman,
+  .oilBubble,
+  .stepDotActive {
+    animation: none;
+  }
+  .card {
+    animation: none;
+  }
+}

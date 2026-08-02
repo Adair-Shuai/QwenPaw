@@ -1,7 +1,11 @@
 /** MermaidRenderer — Mermaid 图表渲染器 */
 import React, { useEffect, useRef, useState } from "react";
 import { Button, Tooltip, Spin } from "antd";
-import { DownloadOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  FolderOpenOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 

@@ -52,9 +52,7 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
     if (!query) return agents;
     const q = query.toLowerCase();
     return agents.filter(
-      (a) =>
-        a.name.toLowerCase().includes(q) ||
-        a.id.toLowerCase().includes(q),
+      (a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
     );
   }, [agents, query]);
 
@@ -92,8 +90,7 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
         background: isDark ? "#1f1f1f" : "#fff",
         border: `1px solid ${isDark ? "#3a3a3a" : "#e8e8e8"}`,
         borderRadius: 8,
-        boxShadow:
-          "0 6px 16px rgba(0,0,0,0.08), 0 3px 6px rgba(0,0,0,0.04)",
+        boxShadow: "0 6px 16px rgba(0,0,0,0.08), 0 3px 6px rgba(0,0,0,0.04)",
         padding: 4,
       }}
     >

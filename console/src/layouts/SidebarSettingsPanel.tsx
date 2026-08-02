@@ -19,9 +19,7 @@ interface SidebarSettingsPanelProps {
   onClose?: () => void;
 }
 
-export default function SidebarSettingsPanel(
-  {}: SidebarSettingsPanelProps,
-) {
+export default function SidebarSettingsPanel({}: SidebarSettingsPanelProps) {
   const { t } = useTranslation();
   const [closeBehavior, setCloseBehavior] = React.useState<CloseBehavior>(() =>
     isTauriRuntime() ? getRememberedCloseAction() ?? "ask" : "ask",

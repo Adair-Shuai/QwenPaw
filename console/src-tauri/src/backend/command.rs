@@ -107,6 +107,20 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
             .env("QWENPAW_DESKTOP_APP", "1")
             .env("PYTHONNOUSERSITE", "1");
     }
+    // Default PyPI mirror for runtime pip installs (plugin deps, optional
+    // packages).  Mirrors the build-script defaults (build_pyinstaller.sh /
+    // build_pyinstaller.ps1).  Only set when the user has not already
+    // configured their own mirror or proxy.
+    if std::env::var_os("PIP_INDEX_URL").is_none() {
+        command = command.env(
+            "PIP_INDEX_URL",
+            "https://pypi.tuna.tsinghua.edu.cn/simple/",
+        );
+    }
+    if std::env::var_os("PIP_EXTRA_INDEX_URL").is_none() {
+        command = command.env("PIP_EXTRA_INDEX_URL", "https://pypi.org/simple/");
+    }
+
     let mut command = apply_contributed_environment(app, command);
     // Bundled standalone Python is the Windows backend interpreter and is also
     // used to install third-party plugin dependencies on every platform.

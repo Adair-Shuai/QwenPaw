@@ -117,8 +117,7 @@ export function buildWorkspaceMarkdown(response: CopyableResponse): string {
     // `type: "reasoning"` for thinking and `type: "message"` for reply.
     // Messages without a type are treated as reply (backward-compatible).
     const msgType = (msg.type || "").toLowerCase();
-    const isReasoning =
-      msgType === "reasoning" || msgType === "thinking";
+    const isReasoning = msgType === "reasoning" || msgType === "thinking";
 
     // String content
     if (typeof msg.content === "string") {
@@ -144,10 +143,7 @@ export function buildWorkspaceMarkdown(response: CopyableResponse): string {
       }
 
       // Refusal blocks → always reply text
-      if (
-        blockType === "refusal" &&
-        typeof block.refusal === "string"
-      ) {
+      if (blockType === "refusal" && typeof block.refusal === "string") {
         if (block.refusal.trim()) parts.push(block.refusal.trim());
         continue;
       }
@@ -188,7 +184,10 @@ export function buildWorkspaceMarkdown(response: CopyableResponse): string {
   // If all segments are reply (no thinking), just join with double newlines
   const hasThinking = merged.some((s) => s.reasoning);
   if (!hasThinking) {
-    return merged.map((s) => s.text).join("\n\n").trim();
+    return merged
+      .map((s) => s.text)
+      .join("\n\n")
+      .trim();
   }
 
   // Build sections preserving original order

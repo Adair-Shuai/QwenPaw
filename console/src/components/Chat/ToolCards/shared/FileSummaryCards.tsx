@@ -1266,10 +1266,10 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns:
-              "repeat(auto-fit, minmax(min(100%, 240px), 1fr))",
+            gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
             gap: 8,
-            width: "min(100%, 856px)",
+            width: "100%",
+            maxWidth: 856,
           }}
         >
           {deliverables.map(renderCard)}

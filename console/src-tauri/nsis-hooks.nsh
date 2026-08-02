@@ -35,10 +35,11 @@ Function QWENPAW_LOAD_EXECUTION_RUNTIME_SELECTION
   IfFileExists "$INSTDIR\execution-runtime\selection.txt" 0 qwenpaw_execution_selection_done
   FileOpen $0 "$INSTDIR\execution-runtime\selection.txt" r
   FileRead $0 $1
-  ${TrimNewLines} $1 $1
+  ; Strip trailing $\r$\n written by QWENPAW_WRITE_EXECUTION_RUNTIME
+  StrCpy $1 $1 -2
   ${If} $1 == "external"
     FileRead $0 $1
-    ${TrimNewLines} $1 $QwenPawExecutionPythonPath
+    StrCpy $QwenPawExecutionPythonPath $1 -2
     IfFileExists "$QwenPawExecutionPythonPath" 0 +2
     StrCpy $QwenPawExecutionMode "external"
   ${EndIf}

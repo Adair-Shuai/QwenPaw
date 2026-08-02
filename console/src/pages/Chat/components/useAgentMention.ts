@@ -31,10 +31,7 @@ export interface UseAgentMentionResult {
   setActiveIndex: (index: number) => void;
   handleKeyDown: (e: KeyboardEvent, textarea: HTMLTextAreaElement) => boolean;
   handleInputChange: (textarea: HTMLTextAreaElement) => void;
-  insertMention: (
-    agent: AgentSummary,
-    textarea: HTMLTextAreaElement,
-  ) => void;
+  insertMention: (agent: AgentSummary, textarea: HTMLTextAreaElement) => void;
   reset: () => void;
 }
 
@@ -60,9 +57,7 @@ export function useAgentMention(): UseAgentMentionResult {
     if (!mentionState.visible || !mentionState.query) return enabledAgents;
     const q = mentionState.query.toLowerCase();
     return enabledAgents.filter(
-      (a) =>
-        a.name.toLowerCase().includes(q) ||
-        a.id.toLowerCase().includes(q),
+      (a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
     );
   }, [enabledAgents, mentionState]);
 
@@ -71,7 +66,9 @@ export function useAgentMention(): UseAgentMentionResult {
    * 返回 null 表示不在提及模式，否则返回 { startIndex, query }
    */
   const detectMention = useCallback(
-    (textarea: HTMLTextAreaElement): { startIndex: number; query: string } | null => {
+    (
+      textarea: HTMLTextAreaElement,
+    ): { startIndex: number; query: string } | null => {
       const cursorPos = textarea.selectionStart;
       const textBeforeCursor = textarea.value.substring(0, cursorPos);
 

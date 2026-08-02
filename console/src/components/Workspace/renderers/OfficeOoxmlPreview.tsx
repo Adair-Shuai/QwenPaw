@@ -297,7 +297,9 @@ const OfficeOoxmlPreview: React.FC<{
         const continuousHtml = slidesHtml
           .map(
             (slide, i) =>
-              `<div class="pptx-slide-separator">Slide ${i + 1} / ${count}</div><div class="pptx-slide">${slide}</div>`,
+              `<div class="pptx-slide-separator">Slide ${
+                i + 1
+              } / ${count}</div><div class="pptx-slide">${slide}</div>`,
           )
           .join("");
         setState({
@@ -326,7 +328,7 @@ const OfficeOoxmlPreview: React.FC<{
     }
   }, [fileUrl, kind, selectedAgent]);
 
-    useEffect(() => {
+  useEffect(() => {
     convert();
   }, [convert]);
 
@@ -481,7 +483,9 @@ const OfficeOoxmlPreview: React.FC<{
                 onClick={() => workspace.download?.(artifact)}
               />
             </Tooltip>
-            <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
               <Button
                 size="small"
                 type="text"

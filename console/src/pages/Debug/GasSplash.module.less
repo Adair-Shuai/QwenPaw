@@ -1,0 +1,464 @@
+/* GasSplash — 地下储气库采气流程加载动画（SVG 剖面图 + CSS 动画） */
+
+@keyframes gs-bg-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+@keyframes gs-fadein {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes gs-logo-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+@keyframes gs-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 6px 18px rgba(0, 114, 245, 0.16));
+  }
+  50% {
+    filter: drop-shadow(0 6px 28px rgba(0, 114, 245, 0.34));
+  }
+}
+
+/* 井筒内气流向上（dashoffset 递减 = 向上移动） */
+@keyframes gs-gas-well {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+/* 地面管线气流向右 */
+@keyframes gs-gas-pipe {
+  to {
+    stroke-dashoffset: -32;
+  }
+}
+
+/* 盐穴内储气气泡缓慢浮动 */
+@keyframes gs-bubble {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-4px);
+    opacity: 0.95;
+  }
+}
+
+/* 处理厂指示灯闪烁 */
+@keyframes gs-lamp {
+  0%,
+  100% {
+    opacity: 0.25;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* 并网输出端脉冲扩散 */
+@keyframes gs-pulse {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.9;
+  }
+  70% {
+    opacity: 0.25;
+  }
+  100% {
+    transform: scale(1.5);
+    opacity: 0;
+  }
+}
+
+@keyframes gs-ready-pop {
+  from {
+    transform: scale(0);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes gs-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.page {
+  position: relative;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.pageLight {
+  background: linear-gradient(135deg, #eef4fb 0%, #dbe7f6 50%, #c3d4ec 100%);
+  background-size: 200% 200%;
+  animation: gs-bg-flow 8s ease-in-out infinite;
+}
+
+.pageDark {
+  background: linear-gradient(
+    135deg,
+    #0f0c29 0%,
+    #1e1b3a 40%,
+    #302b63 70%,
+    #24243e 100%
+  );
+  background-size: 300% 300%;
+  animation: gs-bg-flow 10s ease-in-out infinite;
+}
+
+.page::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(
+    circle at 50% 40%,
+    rgba(0, 114, 245, 0.1),
+    transparent 62%
+  );
+}
+
+.card {
+  position: relative;
+  z-index: 1;
+  width: 460px;
+  padding: 36px 40px 32px;
+  border-radius: 16px;
+  text-align: center;
+  animation: gs-fadein 0.6s ease-out;
+}
+
+.pageLight .card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 12px 40px rgba(30, 60, 110, 0.12);
+}
+
+.pageDark .card {
+  background: rgba(28, 27, 30, 0.85);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5);
+}
+
+.logo {
+  height: 60px;
+  margin-bottom: 6px;
+  animation: gs-logo-breathe 2.4s ease-in-out infinite;
+}
+
+/* 采气流程主视觉 */
+.scene {
+  position: relative;
+  width: 340px;
+  height: 260px;
+  margin: 8px auto 0;
+  animation: gs-glow 2.6s ease-in-out infinite;
+}
+
+.scene svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* 井筒气流线 */
+.gasWell {
+  animation: gs-gas-well 1.15s linear infinite;
+}
+
+/* 管线气流线 */
+.gasPipe {
+  animation: gs-gas-pipe 1.5s linear infinite;
+}
+
+/* 盐穴气泡 */
+.bubble {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gs-bubble 2.6s ease-in-out infinite;
+}
+
+/* 处理厂指示灯 */
+.lamp {
+  animation: gs-lamp 1.4s ease-in-out infinite;
+}
+
+/* 并网输出脉冲 */
+.pulse {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: gs-pulse 1.8s ease-out infinite;
+}
+
+/* 失败：整体停止 */
+.failed .scene {
+  animation: none;
+}
+
+.failed .gasWell,
+.failed .gasPipe,
+.failed .bubble,
+.failed .lamp,
+.failed .pulse {
+  animation: none;
+}
+
+/* 就绪：定格（不跳回初始位） */
+.ready .gasWell,
+.ready .gasPipe,
+.ready .bubble,
+.ready .lamp,
+.ready .pulse {
+  animation-play-state: paused;
+}
+
+.progressMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.percentLabel {
+  font-size: 26px;
+  font-weight: 700;
+  color: #333;
+  font-variant-numeric: tabular-nums;
+}
+
+.pageDark .percentLabel {
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.elapsedLabel {
+  font-size: 13px;
+  color: #888;
+  font-variant-numeric: tabular-nums;
+}
+
+.pageDark .elapsedLabel {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.statusText {
+  margin: 8px 0 0;
+  font-size: 15px;
+  font-weight: 500;
+  color: #333;
+}
+
+.pageDark .statusText {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.failedText {
+  color: var(--qwenpaw-error-color) !important;
+}
+
+.steps {
+  margin: 18px 0 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  text-align: left;
+}
+
+.step {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: #9a9a9a;
+}
+
+.stepDone {
+  color: #52c41a;
+}
+
+.stepActive {
+  color: #333;
+  font-weight: 500;
+}
+
+.pageDark .stepActive {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.stepFailed {
+  color: var(--qwenpaw-error-color);
+}
+
+.stepDot {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  flex: none;
+}
+
+.stepDotDone {
+  background: #52c41a;
+  color: #fff;
+}
+
+.stepDotActive {
+  border: 2px solid var(--qwenpaw-brand-color);
+  border-top-color: transparent;
+  animation: gs-spin 0.9s linear infinite;
+}
+
+.stepDotFailed {
+  border: 2px solid var(--qwenpaw-error-color);
+  color: var(--qwenpaw-error-color);
+  font-size: 12px;
+  font-weight: 700;
+  background: transparent;
+}
+
+.stepDotPending {
+  border: 1px solid rgba(0, 0, 0, 0.14);
+}
+
+.pageDark .stepDotPending {
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.readyBox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.readyCheck {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: #52c41a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  animation: gs-ready-pop 0.45s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+.readyText {
+  font-size: 16px;
+  font-weight: 500;
+  color: #52c41a;
+}
+
+.fadeOut {
+  opacity: 0;
+  transition: opacity 0.6s ease;
+}
+
+.hint {
+  color: #888;
+  font-size: 13px;
+  margin: 6px 0 20px;
+}
+
+.pageDark .hint {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.details {
+  margin: 0 0 22px;
+  padding: 12px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.04);
+  text-align: left;
+}
+
+.pageDark .details {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.summary {
+  cursor: pointer;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.pageDark .summary {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+.errorDetails {
+  max-height: 96px;
+  overflow: auto;
+  margin: 8px 0 0;
+  color: #888;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pageDark .errorDetails {
+  color: rgba(255, 255, 255, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pageLight,
+  .pageDark,
+  .logo,
+  .scene,
+  .gasWell,
+  .gasPipe,
+  .bubble,
+  .lamp,
+  .pulse,
+  .stepDotActive {
+    animation: none;
+  }
+  .card {
+    animation: none;
+  }
+}

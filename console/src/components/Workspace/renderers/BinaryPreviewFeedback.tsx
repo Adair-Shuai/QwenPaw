@@ -1,6 +1,10 @@
 import React from "react";
 import { Button, Spin } from "antd";
-import { DownloadOutlined, FolderOpenOutlined, ReloadOutlined } from "@ant-design/icons";
+import {
+  DownloadOutlined,
+  FolderOpenOutlined,
+  ReloadOutlined,
+} from "@ant-design/icons";
 import type { AuthenticatedWorkspaceBlobResource } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 
 interface BinaryPreviewFeedbackProps {

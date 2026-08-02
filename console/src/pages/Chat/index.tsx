@@ -2672,9 +2672,7 @@ export default function ChatPage() {
         user_id: identity.userId || session?.user_id || DEFAULT_USER_ID,
         channel: identity.channel || session?.channel || DEFAULT_CHANNEL,
         stream: true,
-        ...(mentionedAgentId
-          ? { target_agent_id: mentionedAgentId }
-          : {}),
+        ...(mentionedAgentId ? { target_agent_id: mentionedAgentId } : {}),
         ...biz_params,
       };
 

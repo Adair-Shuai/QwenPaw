@@ -24,6 +24,8 @@ import type { Route } from "../../plugins/registry/types";
 // Eager pages
 import Chat from "../../pages/Chat";
 import CodingPage from "../../pages/Coding";
+// Dev-only demo page for the backend startup splash (BackendLoadingPage).
+import StartupSplashDemoPage from "../../pages/Debug/StartupSplashDemo";
 
 // Lazy pages
 const ChannelsPage = lazyImportWithRetry("../../pages/Control/Channels");
@@ -129,6 +131,12 @@ export const BUILTIN_ROUTES: Route[] = [
     component: VoiceTranscriptionPage,
   },
   { id: "core.debug", path: "/debug", component: DebugPage },
+  // Dev-only: backend startup splash demo (not shown in sidebar menu).
+  {
+    id: "core.startup-splash-demo",
+    path: "/test/startup",
+    component: StartupSplashDemoPage,
+  },
   { id: "core.backups", path: "/backups", component: BackupsPage },
   { id: "core.network", path: "/network", component: NetworkPage },
   {
