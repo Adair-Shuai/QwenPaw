@@ -1,11 +1,11 @@
 /**
- * Computation engine types, API, card, and section components.
+ * Engine types, API, card, and section components.
  */
 
 import { getHost, apiUrl, apiFetch } from "../core/runtime";
 import { PRIMARY_BTN_STYLE, PageHeader } from "../core/shared";
 
-// ─── Computation Engine Types & Helpers ───────────────────────────────────────
+// ─── Engine Types & Helpers ──────────────────────────────────────────────────
 
 export interface EngineInfo {
   id: string;
@@ -497,7 +497,7 @@ export function EngineSection() {
           { style: { textAlign: "center", padding: 60 } },
           React.createElement(Spin, {
             size: "large",
-            tip: "正在加载计算引擎...",
+            tip: "正在加载引擎...",
           }),
         )
       : filteredEngines.length === 0
@@ -783,7 +783,7 @@ export function EngineSection() {
     React.createElement(
       Modal,
       {
-        title: editingEngine ? "编辑引擎" : "添加计算引擎",
+        title: editingEngine ? "编辑引擎" : "添加引擎",
         open: editModalOpen,
         onOk: handleSave,
         onCancel: () => setEditModalOpen(false),
@@ -815,4 +815,3 @@ export function EngineSection() {
     ),
   );
 }
-

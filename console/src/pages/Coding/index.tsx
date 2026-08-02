@@ -11,6 +11,9 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+// Load Monaco only when Coding Mode is opened; it is one of the largest
+// frontend dependencies and should not compete with the first workspace paint.
+import "../../monacoSetup";
 import { Navigate, useLocation } from "react-router-dom";
 import { Group, Panel, Separator } from "react-resizable-panels";
 import { Badge, Tooltip } from "antd";

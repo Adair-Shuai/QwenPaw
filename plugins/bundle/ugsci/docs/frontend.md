@@ -126,25 +126,25 @@ function isSimpleMode(): boolean {
 - 点击「发起任务」：如有占位符 `{参数名}` 则弹窗让用户输入，否则直接发送
 - 通过 `POST /api/console/chat` 发送编排消息给协调者 Agent
 
-### CapabilityCenterPage（能力中心）
+### ToolsSkillsCenterPage（工具·技能）
 
-**文件位置**：`index.ts` ~L5094
+**文件位置**：`ui/src/capability/ToolsSkillsCenterPage.ts`
 
-**Tab 结构**：
-1. `mcp` — MCP 客户端列表
-2. `software` — 本地软件检测
+**一级 Tab 结构**：
+1. `tools` — MCP 接入、平台内置工具
+2. `engines` — 仿真软件、领域计算、运行服务
+3. `skills` — 当前专家技能、技能池
 
-**MCP 客户端卡片**：
-- 名称、Key、传输方式（stdio/sse/streamable_http）
-- URL 或命令、工具数量
-- 启用/停用状态标签
-- 点击打开 Drawer 查看详情
+**原生功能嵌入**：
+- MCP 直接异步加载 QwenPaw 原生 `MCPPage`，保留 Provider 托管服务、JSON/表单创建、OAuth、访问策略和 CRUD
+- 平台内置工具直接异步加载原生 `ToolsPage`
+- 运行服务直接异步加载原生 `ACPPage`
+- 宿主只开放固定页面白名单；UGSci 不复制这些页面的 API、状态或业务规则
 
-**本地软件检测**：
-- 软件卡片网格：按类别分组（油藏模拟/地质建模/测井分析/采油工程/后处理）
-- 已检测/未安装状态标签
-- 「重新检测」按钮：调用 `GET /detect`
-- 「添加扫描路径」功能
+**引擎与技能**：
+- 仿真软件复用 `EngineSection`，支持检测、搜索、查看、添加、编辑和删除
+- 领域计算保留注册位，用于后续接入 PVT、气藏工程等计算内核
+- 技能复用 `SkillCenterPage`，嵌入模式下继续维护当前专家技能和技能池
 
 ### SkillCenterPage（技能中心）
 
@@ -194,18 +194,18 @@ buildPlugin()
 │   ├── ExpertTemplateModal (创建专家)
 │   └── TeamLaunchModal (发起团队任务)
 │
-├── CapabilityCenterPage
-├── PageHeader
-├── Tabs
-│   ├── MCP Tab
-│   │   ├── Input.Search + Button
-│   │   └── Row > Col > CapabilityCard
-│   │       └── (点击) → Drawer
-│   └── Software Tab
-│       └── LocalSoftwareSection
-│           ├── Button (重新检测)
-│           ├── Row > Col > SoftwareCard
-│           └── Modal (添加扫描路径)
+├── ToolsSkillsCenterPage
+│   ├── PageHeader
+│   └── Tabs
+│       ├── 工具 Tab
+│       │   ├── HostBuiltinPage(MCPPage)
+│       │   └── HostBuiltinPage(ToolsPage)
+│       ├── 引擎 Tab
+│       │   ├── EngineSection
+│       │   ├── DomainComputeSection
+│       │   └── HostBuiltinPage(ACPPage)
+│       └── 技能 Tab
+│           └── SkillCenterPage(embedded)
 │
 ├── SkillCenterPage
 │   ├── PageHeader

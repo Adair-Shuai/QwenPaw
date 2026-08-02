@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import threading
 import time
 import re
@@ -122,7 +123,9 @@ class WorkflowService:
         self._flows_dir = Path(flows_dir)
         self._flows_dir.mkdir(parents=True, exist_ok=True)
         self._execution_repository = ExecutionRepository(self._flows_dir)
-        recovered = self._execution_repository.recover_incomplete()
+        recovered = self._execution_repository.recover_incomplete(
+            active_owner_pid=os.getpid(),
+        )
         if recovered:
             logger.warning("recovered %d interrupted FlowForge run(s)", recovered)
         self._executor = executor or WorkflowExecutor(
@@ -220,7 +223,13 @@ class WorkflowService:
             "output_nodes": result.output_nodes,
         }
 
-    def generate_flow(self, prompt: str, *, name: str = "") -> dict[str, Any]:
+    def generate_flow(
+        self,
+        prompt: str,
+        *,
+        name: str = "",
+        agent_id: str = "default",
+    ) -> dict[str, Any]:
         """Turn a plain-language SOP into a portable, editable draft."""
         prompt = (prompt or "").strip()
         if not prompt:
@@ -255,8 +264,13 @@ class WorkflowService:
                 "id": node_id, "class_type": "AgentNode",
                 "label": f"步骤 {index}",
                 "inputs": {
-                    "agent_id": "CloudPaw-Master",
-                    "query": f"请严格执行以下 SOP 步骤：{step}\n业务输入：${{inputs.request}}",
+                    # Bind by the runtime's stable agent identifier. Display
+                    # names are mutable and may not be accepted by the agent
+                    # runtime (for example CloudPaw-Master is commonly stored
+                    # as ``cloud-orchestrator``).
+                    "agent_id": agent_id.strip() or "default",
+                    "query": f"请严格执行以下 SOP 步骤：{step}",
+                    "context": [previous, 0],
                     "__flow_dependencies": [[previous, 0]],
                 },
                 "control": {"next": next_id},
@@ -308,7 +322,11 @@ class WorkflowService:
         prompt_id = run_id  # 1:1 mapping for FlowForge
         progress = ProgressRegistry(prompt_id=prompt_id)
         self._execution_repository.create(
-            run_id, flow_id, status="queued", started_at=time.time(),
+            run_id,
+            flow_id,
+            status="queued",
+            started_at=time.time(),
+            owner_pid=os.getpid(),
         )
         progress.add_handler(
             lambda event: self._execution_repository.append_event(
@@ -417,6 +435,7 @@ class WorkflowService:
             started_at=time.time(),
             parent_run_id=run_id,
             state_id=str(state_id),
+            owner_pid=os.getpid(),
         )
         progress.add_handler(
             lambda event: self._execution_repository.append_event(

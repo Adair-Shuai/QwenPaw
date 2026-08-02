@@ -54,7 +54,6 @@ import {
   fetchAgentConfig,
   fetchAgentSkills,
   fetchPoolSkills,
-  fetchMCPClients,
 } from "../core/api";
 import {
   fetchPresetTeamsFromBackend,
@@ -62,14 +61,50 @@ import {
   type PresetTeam,
 } from "../team/workflow";
 import {
-  buildTeamMessage,
   findAgentIdByName,
-  registerCustomTeam,
   sendTeamMessage,
   type ExpertTeam,
 } from "../team/model";
 import { ExpertAvatar, TeamAvatar } from "../components/avatars";
 import { KnowledgeBaseTab, PresetPromptsTab } from "./expertTabs";
+import { CollaborationWorkflowSection } from "../workflow/CollaborationWorkflowSection";
+
+function resolveTeamControllerId(
+  team: ExpertTeam,
+  agents: AgentSummary[],
+): string | null {
+  const coordinatorName = team.coordinatorName || team.members[0]?.name;
+  const coordinator =
+    team.members.find((member) => member.name === coordinatorName) ||
+    team.members[0];
+
+  if (
+    coordinator?.bindingMode !== "temporary" &&
+    coordinator?.agentId &&
+    agents.some((agent) => agent.id === coordinator.agentId)
+  ) {
+    return coordinator.agentId;
+  }
+
+  if (coordinatorName && coordinator?.bindingMode !== "temporary") {
+    const matched = findAgentIdByName(agents, coordinatorName);
+    if (matched) return matched;
+  }
+
+  if (coordinator?.bindingMode === "fixed") return null;
+
+  // OMP only needs a live controller process. A preferred or temporary
+  // binding may therefore fall back to another available agent while the
+  // team prompt retains the requested expert roles.
+  return agents[0]?.id || null;
+}
+
+function sectionFromLocation(): "experts" | "teams" | "workflows" {
+  const section = new URLSearchParams(window.location.search).get("section");
+  return section === "teams" || section === "workflows"
+    ? section
+    : "experts";
+}
 
 // ─── Knowledge Base Tab ──────────────────────────────────────────────────────
 
@@ -103,7 +138,7 @@ export function ExpertCenterPage() {
   const [activeExpert, setActiveExpert] = useState<ExpertData | null>(null);
   const [searchText, setSearchText] = useState("");
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState("experts");
+  const [activeTab, setActiveTab] = useState(sectionFromLocation);
   const [teamLaunchModal, setTeamLaunchModal] = useState<ExpertTeam | null>(
     null,
   );
@@ -163,6 +198,12 @@ export function ExpertCenterPage() {
     loadExperts();
   }, [loadExperts]);
 
+  useEffect(() => {
+    const restoreSection = () => setActiveTab(sectionFromLocation());
+    window.addEventListener("popstate", restoreSection);
+    return () => window.removeEventListener("popstate", restoreSection);
+  }, []);
+
   // Sync configExpert with the refreshed experts list so tab labels
   // (skill count, MCP count) stay in sync after edits inside the modal.
   useEffect(() => {
@@ -182,26 +223,18 @@ export function ExpertCenterPage() {
       // Try to find the preferred coordinator by name first, but
       // fall back to the first available agent if not found.
       const coordinatorName = team.coordinatorName || team.members[0]?.name;
-      let coordinatorId: string | null = null;
-
-      if (coordinatorName) {
-        coordinatorId = findAgentIdByName(rawAgents, coordinatorName);
-      }
+      const coordinatorId = resolveTeamControllerId(team, rawAgents);
 
       if (!coordinatorId) {
-        // Coordinator not found — use first available agent as controller
-        const firstAgent = rawAgents[0];
-        if (firstAgent) {
-          coordinatorId = firstAgent.id;
-          antdMsg.warning(
-            `未找到专家「${coordinatorName || "协调者"}」，` +
-            `将使用「${firstAgent.name}」作为工作流控制器。` +
-            `控制器将通过 spawn_subagent 分派子任务。`,
-          );
-        } else {
-          antdMsg.error("没有可用的 Agent 作为工作流控制器");
-          return;
-        }
+        const requested = team.members.find(
+          (member) => member.name === coordinatorName,
+        );
+        antdMsg.error(
+          requested?.bindingMode === "fixed"
+            ? `固定协调者「${coordinatorName || "协调者"}」当前不可用，请修复绑定后再运行`
+            : "没有可用的 Agent 作为工作流控制器",
+        );
+        return;
       }
 
       // Check if task template has placeholders
@@ -226,16 +259,10 @@ export function ExpertCenterPage() {
         // Build the task text (either user-filled or template)
         const task = taskText || team.taskTemplate;
 
-        // For custom teams, register the full definition on the backend
-        // first so members, steps and orchestration prompt are available.
-        // The backend returns a whitespace-free team_id that we reference
-        // as @<team_id> in the slash command, avoiding the name-with-spaces
-        // parsing problem (BUG-004).
-        let teamRef = team.name;
-        if (team.custom) {
-          const teamId = await registerCustomTeam(team);
-          teamRef = `@${teamId}`;
-        }
+        // Custom teams are already persisted by the builder. Launching only
+        // references the stable ID, so a run cannot overwrite a definition
+        // that another browser/device edited after this page was loaded.
+        const teamRef = team.custom ? `@${team.id}` : team.name;
 
         // Construct the /ugsci-team slash command
         // Format: /ugsci-team <mode> <team_ref> <task...>
@@ -337,7 +364,7 @@ export function ExpertCenterPage() {
         UserOutlined
           ? React.createElement(UserOutlined, { style: { fontSize: 14 } })
           : null,
-        "专家列表",
+        "专家",
       ),
       children: React.createElement(
         "div",
@@ -410,44 +437,73 @@ export function ExpertCenterPage() {
         onLaunch: handleLaunchTeam,
       }),
     },
+    {
+      key: "workflows",
+      label: React.createElement(
+        "span",
+        { style: { display: "flex", alignItems: "center", gap: 6 } },
+        getHost().antdIcons?.ApartmentOutlined
+          ? React.createElement(getHost().antdIcons.ApartmentOutlined, {
+              style: { fontSize: 14 },
+            })
+          : null,
+        "协作工作流",
+      ),
+      children: React.createElement(CollaborationWorkflowSection),
+    },
   ];
 
   return React.createElement(
     "div",
     { style: { padding: 24 } },
     React.createElement(PageHeader, {
-      title: "专家",
-      subtitle: `共 ${experts.length} 位专家（${enabledCount} 位启用）· ${totalSkills} 个技能 · ${totalMCPs} 个 MCP 客户端`,
+      title: "专家·协作",
+      subtitle:
+        activeTab === "experts"
+          ? `共 ${experts.length} 位专家（${enabledCount} 位启用）· ${totalSkills} 个技能 · ${totalMCPs} 个 MCP 客户端`
+          : activeTab === "teams"
+            ? "开放式多专家讨论、联合研判与 OMP 动态协作"
+            : "流程化、可观测、可验证的油气与储气库协作流程",
       extra: React.createElement(
         React.Fragment,
         null,
-        React.createElement(
-          Button,
-          {
-            icon: ReloadOutlined
-              ? React.createElement(ReloadOutlined)
-              : undefined,
-            onClick: () => { clearApiCache(); loadExperts(); },
-            loading,
-          },
-          "刷新",
-        ),
-        React.createElement(
-          Button,
-          {
-            type: "primary",
-            icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
-            onClick: () => setTemplateModalOpen(true),
-            style: PRIMARY_BTN_STYLE,
-          },
-          "创建专家",
-        ),
+        activeTab === "experts"
+          ? React.createElement(
+              Button,
+              {
+                icon: ReloadOutlined
+                  ? React.createElement(ReloadOutlined)
+                  : undefined,
+                onClick: () => { clearApiCache(); loadExperts(); },
+                loading,
+              },
+              "刷新",
+            )
+          : null,
+        activeTab === "experts"
+          ? React.createElement(
+              Button,
+              {
+                type: "primary",
+                icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
+                onClick: () => setTemplateModalOpen(true),
+                style: PRIMARY_BTN_STYLE,
+              },
+              "创建专家",
+            )
+          : null,
       ),
     }),
     React.createElement(Tabs, {
       items: tabItems,
       activeKey: activeTab,
-      onChange: (k: string) => setActiveTab(k),
+      onChange: (key: string) => {
+        setActiveTab(key as "experts" | "teams" | "workflows");
+        const url = new URL(window.location.href);
+        if (key === "experts") url.searchParams.delete("section");
+        else url.searchParams.set("section", key);
+        window.history.pushState({}, "", `${url.pathname}${url.search}`);
+      },
     }),
     // Drawer
     React.createElement(ExpertDrawer, {
@@ -490,14 +546,12 @@ export function ExpertCenterPage() {
             ),
             onCancel: () => setTeamLaunchModal(null),
             onOk: () => {
-              const coordinatorName =
-                teamLaunchModal.coordinatorName ||
-                teamLaunchModal.members[0]?.name;
-              const coordinatorId = coordinatorName
-                ? findAgentIdByName(rawAgents, coordinatorName)
-                : null;
+              const coordinatorId = resolveTeamControllerId(
+                teamLaunchModal,
+                rawAgents,
+              );
               if (!coordinatorId) {
-                antdMsg.error("无法找到协调者专家");
+                antdMsg.error("固定协调者不可用或没有可用的控制器 Agent");
                 return;
               }
               // The textarea is pre-filled with the task template.
@@ -549,4 +603,3 @@ export function ExpertCenterPage() {
       : null,
   );
 }
-

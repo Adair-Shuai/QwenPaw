@@ -1,0 +1,28 @@
+{
+  "id": "uideas",
+  "name": "UIdeas",
+  "version": "0.1.0",
+  "description": "科研灵感管理应用：记录、整理、扩充油气储气库研究灵感，并主动结合记忆提出建议。",
+  "author": "UGSci Team",
+  "type": "app",
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.0.1"
+  },
+  "meta": {
+    "pawapp": {
+      "icon": "💡",
+      "category": "research",
+      "entry_page": "/apps/uideas",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": true,
+      "storage": true
+    },
+    "settings": []
+  }
+}

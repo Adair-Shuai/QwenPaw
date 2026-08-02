@@ -74,9 +74,20 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             # Empty list means deny-all workspace tools (unlike
             # ToolRegistry.filter, where empty allowed == unrestricted).
             if not subagent_whitelist:
-                return []
-            sa_set = set(subagent_whitelist)
-            allowed = (allowed & sa_set) if allowed is not None else sa_set
+                if not (request_context or {}).get(
+                    "agent_coordination_requested",
+                ):
+                    return []
+                allowed = set()
+            else:
+                sa_set = set(subagent_whitelist)
+                allowed = (allowed & sa_set) if allowed is not None else sa_set
+
+        allowed, denied = self._apply_coordination_tool_gates(
+            allowed,
+            denied,
+            request_context,
+        )
 
         descs = self._tool_registry.filter(
             active_modes=set(active_modes),
@@ -96,6 +107,27 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
         ]
 
     # -------------------------------------------------------------- internal
+
+    @staticmethod
+    def _apply_coordination_tool_gates(
+        allowed: set[str] | None,
+        denied: set[str],
+        request_context: dict[str, Any] | None,
+    ) -> tuple[set[str] | None, set[str]]:
+        """Enable only inter-Agent tools for an explicit coordination turn.
+
+        The override is request-scoped and does not persist changes to the
+        Agent's configured tool permissions.
+        """
+        if (request_context or {}).get(
+            "agent_coordination_requested",
+        ) is not True:
+            return allowed, denied
+        required = {"list_agents", "chat_with_agent"}
+        next_allowed = (
+            (set(allowed) | required) if allowed is not None else None
+        )
+        return next_allowed, set(denied) - required
 
     def _resolve_config_gates(
         self,

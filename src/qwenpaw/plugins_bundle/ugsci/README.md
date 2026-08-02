@@ -6,18 +6,19 @@
 [![QwenPaw](https://img.shields.io/badge/QwenPaw-%E2%89%A51.1.7-green)](./plugin.json)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
-UGSci 将 QwenPaw 的通用 Agent 界面重新组织为石油领域友好的 **专家 — 能力 — 技能** 三层架构，降低行业用户的使用门槛。所有展示层数据与 Agent 真实配置实时挂钩，所见即所得。
+UGSci 将 QwenPaw 的通用 Agent 界面重新组织为石油领域友好的 **专家 — 工具/引擎 — 技能** 分层架构，降低行业用户的使用门槛。所有展示层数据与 Agent 真实配置实时挂钩，所见即所得。
 
 ## 核心功能
 
-### 四大模块
+### 三大模块
 
 | 模块 | 路由 | 说明 |
 |------|------|------|
-| **专家中心** | `/ugsci-experts` | 将 Agent 转化为领域专家卡片，展示技能/MCP/功能简介，支持创建专家、专家团多智能体协同 |
-| **能力中心** | `/ugsci-capabilities` | 以 MCP 客户端粒度展示底层工具能力；内置本地油气软件检测（CMG/Eclipse/Petrel 等 12 款） |
-| **技能中心** | `/ugsci-skills` | 展示技能池全量技能，查看详情与已安装专家列表 |
+| **专家·协作** | `/ugsci-experts` | 将 Agent 转化为领域专家卡片，展示技能/MCP/功能简介，支持创建专家、专家团多智能体协同 |
+| **工具·技能** | `/ugsci-tools-skills` | 统一管理 MCP 与内置工具、仿真/领域/运行服务引擎、当前专家技能与技能库；完整嵌入原生 MCP、工具与 ACP 管理 |
 | **市场** | `/ugsci-market` | 搜索技能市场并一键安装到指定 Agent；内置 6 个石油领域专家模板 |
+
+旧路由 `/ugsci-capabilities` 与 `/ugsci-skills` 保持兼容，分别打开统一页面的工具、技能视图。
 
 ### 数据联动
 
@@ -69,13 +70,15 @@ CMG Builder · CMG IMEX · CMG GEM · CMG STARS · Eclipse · Intersect · Petre
 
 | 隐藏项 | 说明 |
 |--------|------|
-| `core.skills` | 技能管理（移至技能中心） |
-| `core.tools` | 工具管理 |
-| `core.mcp` | MCP 管理（移至能力中心） |
-| `core.acp` | ACP 配置 |
+| `core.skills` | 技能管理（统一入口位于工具·技能） |
+| `core.tools` | 内置工具管理（原生功能嵌入工具·技能） |
+| `core.mcp` | MCP 管理（原生功能嵌入工具·技能） |
+| `core.acp` | ACP 配置（原生功能作为引擎运行服务嵌入工具·技能） |
 | `core.agent-config` | Agent 配置（可在专家中心编辑） |
 | `core.agent-stats` | Agent 统计 |
-| `core.skill-pool` | 技能池管理（移至技能中心） |
+| `core.skill-pool` | 技能池管理（统一入口位于工具·技能） |
+
+原生 `/mcp` 路由保持可用；统一页直接复用同一个 `MCPPage`，不维护独立 MCP 管理链路。
 
 > Full Mode（完整模式）下所有内置菜单项保持可见，不影响原有 QwenPaw 体验。
 

@@ -142,8 +142,32 @@ import { openExternalLink } from "../../utils/openExternalLink";
 import { getLastEditorCopy } from "../Coding/lastEditorCopy";
 import { useUploadLimitStore } from "../../stores/uploadLimitStore";
 import ChatSenderTabsPanel from "./components/ChatSenderTabsPanel";
-import AgentMentionPopup from "./components/AgentMentionPopup";
-import { useAgentMention } from "./components/useAgentMention";
+import AgentMentionController from "./components/AgentMentionController";
+import ComposerTokenHighlights, {
+  COMPOSER_VALUE_CHANGE_EVENT,
+} from "./components/ComposerTokenHighlights";
+import {
+  buildSkillSuggestions,
+  extractPotentialSkillName,
+  isSkillAvailableInConsole,
+  normalizeCommandName,
+} from "./components/skillSuggestions";
+import {
+  extractAgentMentions,
+  withAgentCoordinationContext,
+} from "./components/agentMentionUtils";
+import {
+  buildAgentMentionDispatch,
+  captureAgentMentionModesForSubmit,
+  consumeAgentMentionModesForSubmit,
+  getAgentMentionModesSnapshot,
+  restoreAgentMentionModes,
+  shouldCoordinateAgentMentions,
+} from "./components/agentMentionModes";
+import {
+  isCommandInput,
+  normalizeCommandPrefix,
+} from "../../utils/commandPrefix";
 import { getAgentDisplayName } from "../../utils/agentDisplayName";
 import {
   selectTasksForSession,
@@ -326,7 +350,7 @@ async function startBackgroundQueue(
       const idle = await waitForChatIdle(
         chatIdForStatus,
         ctrl.signal,
-        item.agentId,
+        item.agentDispatch?.targetAgentId ?? item.agentId,
       );
       if (!idle) break;
 
@@ -366,10 +390,12 @@ async function startBackgroundQueue(
       // and the foreground SDK's reconnect will pick it up.
       let fetchStarted = false;
       try {
-        const authHeaders = buildAuthHeaders();
+        const authHeaders = buildAuthHeaders(
+          item.agentDispatch?.targetAgentId ?? item.agentId,
+        );
         // Use the agent ID captured at enqueue time to prevent cross-agent
         // delivery when the user switches agents after queueing.
-        if (item.agentId) {
+        if (item.agentId && !item.agentDispatch?.targetAgentId) {
           authHeaders["X-Agent-Id"] = item.agentId;
         }
         // Intentionally do NOT pass ctrl.signal to fetch. This keeps the
@@ -390,7 +416,10 @@ async function startBackgroundQueue(
                   [QWENPAW_CLIENT_MESSAGE_ID_KEY]: clientMessageId,
                 },
                 content: [
-                  { type: "text", text: item.text },
+                  {
+                    type: "text",
+                    text: item.agentDispatch?.requestText ?? item.text,
+                  },
                   ...buildAttachmentContentItems(item.attachments),
                 ],
               },
@@ -399,6 +428,14 @@ async function startBackgroundQueue(
             user_id: item.userId || DEFAULT_USER_ID,
             channel: item.channel || DEFAULT_CHANNEL,
             stream: true,
+            ...(item.agentDispatch?.targetAgentId
+              ? { target_agent_id: item.agentDispatch.targetAgentId }
+              : {}),
+            ...(item.agentDispatch?.coordinationRequested
+              ? {
+                  request_context: withAgentCoordinationContext(undefined),
+                }
+              : {}),
           }),
         });
 
@@ -611,12 +648,6 @@ const WIDE_MODE_STORAGE_KEY = "qwenpaw_chat_wide_mode";
 // Stable fallback so an absent queue entry doesn't produce a fresh array
 // reference on every render (which would invalidate the options memo).
 const EMPTY_QUEUE: QueueItem[] = [];
-
-function isSkillAvailableInConsole(skill: SkillSpec): boolean {
-  if (!skill.enabled) return false;
-  const channels = skill.channels?.length ? skill.channels : ["all"];
-  return channels.includes("all") || channels.includes(DEFAULT_CHANNEL);
-}
 
 function sanitizeHeadlinePayload(
   node: unknown,
@@ -871,7 +902,7 @@ function useMessageHistoryNavigation(
   };
 
   const isSuggestionPopupOpen = (textarea: HTMLTextAreaElement): boolean =>
-    textarea.value.startsWith("/");
+    isCommandInput(textarea.value);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -888,6 +919,7 @@ function useMessageHistoryNavigation(
       if (e.ctrlKey || e.metaKey || e.altKey) return;
 
       const textarea = target as HTMLTextAreaElement;
+      if (textarea.dataset.agentMentionActive === "true") return;
       const hasSelection = textarea.selectionStart !== textarea.selectionEnd;
       if (hasSelection) return;
 
@@ -1115,6 +1147,46 @@ function useChatPasteFromEditor() {
       document.removeEventListener("paste", handlePaste, true);
     };
   }, []);
+}
+
+function useLocalizedCommandPrefix(
+  isChatActive: () => boolean,
+  isComposingRef: React.MutableRefObject<boolean>,
+) {
+  useEffect(() => {
+    const normalizeTextarea = (target: EventTarget | null) => {
+      if (!isChatActive() || isComposingRef.current) return;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      if (!target.closest('[class*="sender"]')) return;
+      const normalized = normalizeCommandPrefix(target.value);
+      if (normalized === target.value) return;
+
+      const selectionStart = target.selectionStart;
+      const selectionEnd = target.selectionEnd;
+      setTextareaValue(target, normalized);
+      target.selectionStart = selectionStart;
+      target.selectionEnd = selectionEnd;
+    };
+
+    const handleInput = (event: Event) => {
+      if (event instanceof InputEvent && event.isComposing) return;
+      normalizeTextarea(event.target);
+    };
+    const handleCompositionEnd = (event: CompositionEvent) => {
+      normalizeTextarea(event.target);
+    };
+
+    document.addEventListener("input", handleInput, true);
+    document.addEventListener("compositionend", handleCompositionEnd, true);
+    return () => {
+      document.removeEventListener("input", handleInput, true);
+      document.removeEventListener(
+        "compositionend",
+        handleCompositionEnd,
+        true,
+      );
+    };
+  }, [isChatActive, isComposingRef]);
 }
 
 function RuntimeLoadingBridge({
@@ -1596,8 +1668,8 @@ export default function ChatPage() {
       if (!(textarea instanceof HTMLTextAreaElement)) return;
       if (!textarea.closest('[class*="sender"]')) return;
       if (
-        !textarea.value.startsWith("/") ||
-        /\s/.test(textarea.value.slice(1))
+        !isCommandInput(textarea.value) ||
+        /\s/.test(normalizeCommandPrefix(textarea.value).slice(1))
       ) {
         return;
       }
@@ -1828,110 +1900,21 @@ export default function ChatPage() {
     return () => window.removeEventListener("model-switched", handler);
   }, [fetchMultimodalCaps]);
 
-  // ── @ Agent mention ──────────────────────────────────────────────────
-  const agentMention = useAgentMention();
-  const [mentionActive, setMentionActive] = useState(false);
-
-  // Attach @ detection to the chat textarea
-  useEffect(() => {
-    if (!isChatActive()) return;
-
-    const getChatTextarea = (): HTMLTextAreaElement | null => {
-      const sender = document.querySelector('[class*="sender"]');
-      return sender?.querySelector("textarea") as HTMLTextAreaElement | null;
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      const textarea = getChatTextarea();
-      if (!textarea) return;
-
-      // Let @ mention handle its keys first
-      if (agentMention.handleKeyDown(e, textarea)) return;
-
-      // Detect bare "@" key press (not in composition, not after a non-space)
-      if (e.key === "@" && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        const cursorPos = textarea.selectionStart;
-        const textBefore = textarea.value.substring(0, cursorPos);
-        // Only trigger if @ is at start or preceded by whitespace
-        if (cursorPos === 0 || /\s/.test(textBefore[textBefore.length - 1])) {
-          // Delay to let the "@" character appear in the textarea
-          requestAnimationFrame(() => {
-            agentMention.handleInputChange(textarea);
-            setMentionActive(true);
-          });
-        }
-      }
-    };
-
-    const onInput = (e: Event) => {
-      const target = e.target;
-      if (!(target instanceof HTMLTextAreaElement)) return;
-      if (!target.closest('[class*="sender"]')) return;
-      agentMention.handleInputChange(target);
-      setMentionActive(agentMention.mentionState.visible);
-    };
-
-    const onClickOutside = (e: MouseEvent) => {
-      const target = e.target;
-      if (!(target instanceof Element)) return;
-      // If click is outside the popup and textarea, close
-      const popup = document.querySelector("[data-agent-mention-popup]");
-      const textarea = getChatTextarea();
-      if (
-        popup &&
-        !popup.contains(target) &&
-        (!textarea || !textarea.contains(target))
-      ) {
-        agentMention.reset();
-        setMentionActive(false);
-      }
-    };
-
-    document.addEventListener("keydown", onKeyDown, true);
-    document.addEventListener("input", onInput, true);
-    document.addEventListener("mousedown", onClickOutside, true);
-
-    return () => {
-      document.removeEventListener("keydown", onKeyDown, true);
-      document.removeEventListener("input", onInput, true);
-      document.removeEventListener("mousedown", onClickOutside, true);
-    };
-  }, [isChatActive, agentMention]);
-
-  // ── @ Agent mention: extract target agent from message text ──
-  /**
-   * Parse @AgentName mentions from the user message text.
-   * Returns { agentId, cleanedText } where agentId is the ID of the
-   * mentioned agent (if found in the agents list) and cleanedText
-   * is the message with the @mention prefix removed.
-   */
-  const extractMentionedAgent = useCallback(
-    (text: string): { agentId: string | null; cleanedText: string } => {
-      const allAgents = useAgentStore.getState().agents;
-      // Match @AgentName at the start of the message or after whitespace
-      const mentionRegex = /(?:^|\s)@([^\s@]+)(?:\s|$)/;
-      const match = text.match(mentionRegex);
-      if (!match) return { agentId: null, cleanedText: text };
-
-      const mentionedName = match[1];
-      // Try to find the agent by display name or ID
+  const buildQueuedAgentMetadata = useCallback(
+    (text: string) => {
       const tFn = i18n.getFixedT(i18n.language);
-      const agent = allAgents.find((a) => {
-        const displayName = getAgentDisplayName(a, tFn);
-        return (
-          displayName === mentionedName ||
-          a.name === mentionedName ||
-          a.id === mentionedName
-        );
-      });
-
-      if (!agent) return { agentId: null, cleanedText: text };
-
-      // Remove the @mention from the text
-      const cleanedText = text.replace(mentionRegex, "").trim();
-      return { agentId: agent.id, cleanedText };
+      const modeSnapshot = getAgentMentionModesSnapshot();
+      return {
+        agentMentionModes: { ...modeSnapshot },
+        agentDispatch: buildAgentMentionDispatch(
+          text,
+          agents ?? [],
+          (agent) => getAgentDisplayName(agent, tFn),
+          modeSnapshot,
+        ),
+      };
     },
-    [],
+    [agents, i18n],
   );
 
   const pendingClearHistoryRef = useRef(false);
@@ -1966,6 +1949,7 @@ export default function ChatPage() {
   useMessageHistoryNavigation(chatRef, isChatActive, isComposingRef);
   useChatInputDraft(isChatActive, selectedAgent);
   useChatPasteFromEditor();
+  useLocalizedCommandPrefix(isChatActive, isComposingRef);
 
   // ── PDF Reader → Chat composer 桥接 ──
   // 订阅 readerComposerBridge，将 PDF 选中文字/笔记注入 sender textarea
@@ -2096,9 +2080,11 @@ export default function ChatPage() {
         return;
       }
       const queueText = prepareLoopModeMessage(val);
+      const agentMetadata = buildQueuedAgentMetadata(queueText);
       const enqueueIdentity = sessionApi.getSessionIdentity();
       useMessageQueueStore.getState().enqueue(queueSessionId, {
         text: queueText,
+        ...agentMetadata,
         attachments:
           pendingFileListRef.current.length > 0
             ? pendingFileListRef.current.map((f) => ({
@@ -2122,7 +2108,7 @@ export default function ChatPage() {
     document.addEventListener("keydown", handleEnterEnqueue, true);
     return () =>
       document.removeEventListener("keydown", handleEnterEnqueue, true);
-  }, [isChatActive, queueSessionId]);
+  }, [buildQueuedAgentMetadata, isChatActive, queueSessionId]);
 
   const handleQueueRemove = useCallback(
     (id: string) => {
@@ -2133,9 +2119,18 @@ export default function ChatPage() {
 
   const handleQueueEdit = useCallback(
     (id: string, text: string) => {
-      useMessageQueueStore.getState().edit(queueSessionId, id, text);
+      const metadata = buildQueuedAgentMetadata(text);
+      useMessageQueueStore
+        .getState()
+        .edit(
+          queueSessionId,
+          id,
+          text,
+          metadata.agentMentionModes,
+          metadata.agentDispatch,
+        );
     },
-    [queueSessionId],
+    [buildQueuedAgentMetadata, queueSessionId],
   );
 
   const handleQueueReorder = useCallback(
@@ -2160,6 +2155,7 @@ export default function ChatPage() {
       setTimeout(() => {
         void withSendLock(queueSessionId, () => {
           useMessageQueueStore.getState().setCurrentSendingId(item.id);
+          restoreAgentMentionModes(item.agentMentionModes);
           chatRef.current?.input.submit({
             query: beginLoopModeSubmission(item.text),
             fileList: buildFileList(item),
@@ -2584,30 +2580,6 @@ export default function ChatPage() {
       biz_params?: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<Response> => {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...buildAuthHeaders(),
-      };
-
-      if (usesQwenPawBackend) {
-        try {
-          const activeModels = await providerApi.getActiveModels({
-            scope: "effective",
-            agent_id: selectedAgent,
-          });
-          if (
-            !activeModels?.active_llm?.provider_id ||
-            !activeModels?.active_llm?.model
-          ) {
-            setShowModelPrompt(true);
-            return buildModelError();
-          }
-        } catch {
-          setShowModelPrompt(true);
-          return buildModelError();
-        }
-      }
-
       const { input = [], biz_params } = data;
       const session: SessionInfo = input[input.length - 1]?.session || {};
       const lastInput = input.slice(-1);
@@ -2639,27 +2611,56 @@ export default function ChatPage() {
         .map(extractUserMessageText)
         .join("\n")
         .trim();
-      const { agentId: mentionedAgentId, cleanedText: cleanedMentionText } =
-        extractMentionedAgent(userTextForMention);
+      const submittedMentionModes = consumeAgentMentionModesForSubmit();
+      const tFn = i18n.getFixedT(i18n.language);
+      const agentDispatch = buildAgentMentionDispatch(
+        userTextForMention,
+        agents ?? [],
+        (agent) => getAgentDisplayName(agent, tFn),
+        submittedMentionModes,
+      );
+      const isAgentCoordination = agentDispatch.coordinationRequested;
+      const mentionedAgentId = agentDispatch.targetAgentId ?? null;
+      const requestAgentId = mentionedAgentId ?? selectedAgent;
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...buildAuthHeaders(requestAgentId),
+      };
 
-      // If a target agent was mentioned, rewrite the user message text
-      // to remove the @mention prefix and add target_agent_id to the
-      // request body so the backend forwards the message to that agent.
+      if (usesQwenPawBackend) {
+        try {
+          const activeModels = await providerApi.getActiveModels({
+            scope: "effective",
+            agent_id: requestAgentId,
+          });
+          if (
+            !activeModels?.active_llm?.provider_id ||
+            !activeModels?.active_llm?.model
+          ) {
+            setShowModelPrompt(true);
+            return buildModelError();
+          }
+        } catch {
+          setShowModelPrompt(true);
+          return buildModelError();
+        }
+      }
+
+      // Multi-Agent assignments and an explicitly collaborative single @ use
+      // the current Agent as coordinator. Direct single @ keeps target routing.
       let finalInput = rewrittenInput;
-      if (mentionedAgentId && cleanedMentionText !== userTextForMention) {
+      if (isAgentCoordination || mentionedAgentId) {
+        let replacedText = false;
         finalInput = rewrittenInput.map((m) => {
           if (m.role !== "user" || !Array.isArray(m.content)) return m;
           const newContent = (m.content as Array<Record<string, unknown>>).map(
             (part) => {
-              if (part.type === "text" && typeof part.text === "string") {
-                // Replace the first @mention occurrence in the text
-                const mentionRegex = /(?:^|\s)@([^\s@]+)(?:\s|$)/;
-                return {
-                  ...part,
-                  text: part.text.replace(mentionRegex, "").trim(),
-                };
+              if (part.type !== "text" || typeof part.text !== "string") {
+                return part;
               }
-              return part;
+              if (replacedText) return { ...part, text: "" };
+              replacedText = true;
+              return { ...part, text: agentDispatch.requestText };
             },
           );
           return { ...m, content: newContent };
@@ -2675,7 +2676,6 @@ export default function ChatPage() {
         ...(mentionedAgentId ? { target_agent_id: mentionedAgentId } : {}),
         ...biz_params,
       };
-
       for (const entry of sortByOrder(
         extLists[ChatList.requestPayloadTransforms],
       )) {
@@ -2687,6 +2687,11 @@ export default function ChatPage() {
         if (next && typeof next === "object") {
           requestBody = next;
         }
+      }
+      if (isAgentCoordination) {
+        requestBody.request_context = withAgentCoordinationContext(
+          requestBody.request_context,
+        );
       }
 
       if (clientMessageId && Array.isArray(requestBody.input)) {
@@ -2773,7 +2778,14 @@ export default function ChatPage() {
 
       return wrapChatResponseUsageStream(response, chatRef);
     },
-    [extLists, selectedAgent, runningConfigApprovalLevel, usesQwenPawBackend],
+    [
+      agents,
+      extLists,
+      i18n,
+      selectedAgent,
+      runningConfigApprovalLevel,
+      usesQwenPawBackend,
+    ],
   );
 
   const handleFileUpload = useCallback(
@@ -2833,6 +2845,17 @@ export default function ChatPage() {
 
   const options = useMemo(() => {
     const i18nConfig = getDefaultConfig(t);
+    const locale = i18n.language;
+    const pluginSuggestions = extLists[ChatList.senderSuggestions].flatMap(
+      (entry) => {
+        const resolved = resolveLocalized(entry.item.items, locale) ?? [];
+        return resolved.map((suggestion) => ({
+          label: suggestion.label,
+          value: suggestion.value,
+        }));
+      },
+    );
+    const activePluginSuggestions = usesQwenPawBackend ? pluginSuggestions : [];
     const hostCommands: CommandSuggestion[] = [
       {
         command: "/new",
@@ -2873,29 +2896,86 @@ export default function ChatPage() {
     const loopCommandNames = new Set(
       loopAvailableModes.map((mode) => mode.slash_command).filter(Boolean),
     );
-    const skillSuggestions: CommandSuggestion[] = consoleSkills
-      .filter(
-        (skill) =>
-          !reservedCommands.has(skill.name) &&
-          !loopCommandNames.has(skill.name),
-      )
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((skill) => ({
-        command: `/${skill.name}`,
-        value: skill.name,
-        description: "",
-      }));
+    const skillSuggestions: CommandSuggestion[] = buildSkillSuggestions(
+      consoleSkills,
+      reservedCommands,
+      loopCommandNames,
+    );
     const handleBeforeSubmit = async () => {
       if (isComposingRef.current) return false;
+      const textarea = document
+        .querySelector('[class*="sender"]')
+        ?.querySelector("textarea") as HTMLTextAreaElement | null;
+      const rawValue = textarea?.value.trim() ?? "";
+
+      if (usesQwenPawBackend && rawValue) {
+        const tFn = i18n.getFixedT(i18n.language);
+        const mentioned = extractAgentMentions(
+          rawValue,
+          agents ?? [],
+          (agent) => getAgentDisplayName(agent, tFn),
+        );
+        const potentialSkill = extractPotentialSkillName(rawValue, [
+          ...commandSuggestions.map((item) => item.value),
+          ...loopAvailableModes
+            .map((mode) => mode.slash_command)
+            .filter(Boolean),
+          ...activePluginSuggestions.map((item) => item.value),
+        ]);
+
+        const isAgentCoordination = shouldCoordinateAgentMentions(
+          mentioned.agentIds,
+        );
+
+        if (isAgentCoordination && potentialSkill) {
+          message.warning(t("chat.skills.multiAgentConflict"));
+          return false;
+        }
+
+        if (
+          mentioned.agentIds.length === 1 &&
+          !isAgentCoordination &&
+          potentialSkill
+        ) {
+          const targetAgentId = mentioned.agentIds[0];
+          try {
+            const targetSkills =
+              targetAgentId === selectedAgent
+                ? consoleSkills
+                : await skillApi.listSkills(targetAgentId);
+            const skillAvailable = targetSkills.some(
+              (skill) =>
+                normalizeCommandName(skill.name) === potentialSkill &&
+                isSkillAvailableInConsole(skill),
+            );
+            if (!skillAvailable) {
+              const targetAgent = agents?.find(
+                (agent) => agent.id === targetAgentId,
+              );
+              message.error(
+                t("chat.skills.unavailableForAgent", {
+                  skill: potentialSkill,
+                  agent: targetAgent
+                    ? getAgentDisplayName(targetAgent, tFn)
+                    : targetAgentId,
+                }),
+              );
+              return false;
+            }
+          } catch (error) {
+            console.warn("Failed to validate target Agent Skill:", error);
+            message.error(t("chat.skills.validationFailed"));
+            return false;
+          }
+        }
+      }
+
       // Single-tab ownership: non-owner tabs are queue-only. Re-route every
       // submit (Enter / send button / programmatic) to the shared queue and
       // abort the actual SDK send. The owner tab will pick the item up via
       // cross-tab broadcast and send it.
       if (!isOwnerRef.current) {
-        const textarea = document
-          .querySelector('[class*="sender"]')
-          ?.querySelector("textarea") as HTMLTextAreaElement | null;
-        const val = textarea?.value.trim() ?? "";
+        const val = rawValue;
         if (!val) return false;
         const currentQ = useMessageQueueStore
           .getState()
@@ -2907,9 +2987,11 @@ export default function ChatPage() {
         const queueText = usesQwenPawBackend
           ? prepareLoopModeMessage(val)
           : val;
+        const agentMetadata = buildQueuedAgentMetadata(queueText);
         const enqueueIdentity = sessionApi.getSessionIdentity();
         useMessageQueueStore.getState().enqueue(queueSessionId, {
           text: queueText,
+          ...agentMetadata,
           attachments:
             pendingFileListRef.current.length > 0
               ? pendingFileListRef.current.map((f) => ({
@@ -2935,9 +3017,6 @@ export default function ChatPage() {
       // Clear pending attachments when sending directly (not through queue)
       pendingFileListRef.current = [];
 
-      const textarea = document
-        .querySelector('[class*="sender"]')
-        ?.querySelector("textarea") as HTMLTextAreaElement | null;
       if (textarea) {
         const prepared = usesQwenPawBackend
           ? beginLoopModeSubmission(textarea.value)
@@ -2947,11 +3026,11 @@ export default function ChatPage() {
         }
       }
 
+      captureAgentMentionModesForSubmit();
       return true;
     };
 
     // ── Resolve plugin extension snapshots ────────────────────────────────
-    const locale = i18n.language;
     const extGreeting = resolveLocalized(
       extScalar[ChatScalar.welcomeGreeting]?.value,
       locale,
@@ -3030,14 +3109,6 @@ export default function ChatPage() {
         </PluginSlotBoundary>
       ),
     );
-    const pluginSuggestions = extLists[ChatList.senderSuggestions].flatMap(
-      (e) => {
-        const resolved = resolveLocalized(e.item.items, locale) ?? [];
-        return resolved.map((s) => ({ label: s.label, value: s.value }));
-      },
-    );
-    const activePluginSuggestions = usesQwenPawBackend ? pluginSuggestions : [];
-
     const wrapActionSpec = (
       pluginId: string,
       slot: string,
@@ -3192,32 +3263,56 @@ export default function ChatPage() {
       },
       sender: {
         ...(i18nConfig as any)?.sender,
+        onChange: (data: { query: string }) => {
+          (i18nConfig as any)?.sender?.onChange?.(data);
+          window.dispatchEvent(
+            new CustomEvent(COMPOSER_VALUE_CHANGE_EVENT, {
+              detail: data.query,
+            }),
+          );
+        },
         beforeSubmit: handleBeforeSubmit,
         allowSpeech: whisperChecked && !whisperEnabled,
-        beforeUI: showSenderBeforeUI ? (
+        beforeUI: (
           <>
-            {isQueueOnlyTab && (
-              <Alert
-                type="info"
-                showIcon
-                banner
-                message={t("chat.queue.otherTabOwner")}
-              />
-            )}
-            <ChatSenderTabsPanel
-              bgSessionId={bgBackendSessionId}
-              queueSessionId={queueSessionId}
-              onRemove={handleQueueRemove}
-              onEdit={handleQueueEdit}
-              onReorder={handleQueueReorder}
-              onInterruptAndSend={handleQueueInterruptAndSend}
-              onClear={handleQueueClear}
-              onPauseResume={handleQueuePauseResume}
-              onRetry={handleQueueRetry}
-              onSkip={handleQueueSkip}
+            <ComposerTokenHighlights
+              agents={agents ?? []}
+              selectedAgentId={selectedAgent}
+              skillNames={consoleSkills.map((skill) => skill.name)}
+              commandNames={[
+                ...commandSuggestions.map((item) => item.value),
+                ...loopAvailableModes
+                  .map((mode) => mode.slash_command)
+                  .filter(Boolean),
+                ...activePluginSuggestions.map((item) => item.value),
+              ]}
             />
+            {showSenderBeforeUI && (
+              <>
+                {isQueueOnlyTab && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    banner
+                    message={t("chat.queue.otherTabOwner")}
+                  />
+                )}
+                <ChatSenderTabsPanel
+                  bgSessionId={bgBackendSessionId}
+                  queueSessionId={queueSessionId}
+                  onRemove={handleQueueRemove}
+                  onEdit={handleQueueEdit}
+                  onReorder={handleQueueReorder}
+                  onInterruptAndSend={handleQueueInterruptAndSend}
+                  onClear={handleQueueClear}
+                  onPauseResume={handleQueuePauseResume}
+                  onRetry={handleQueueRetry}
+                  onSkip={handleQueueSkip}
+                />
+              </>
+            )}
           </>
-        ) : undefined,
+        ),
         prefix: (
           <>
             <LoopModeSelector />
@@ -3553,6 +3648,8 @@ export default function ChatPage() {
       },
     } as unknown as IAgentScopeRuntimeWebUIOptions;
   }, [
+    agents,
+    buildQueuedAgentMetadata,
     customFetch,
     copyResponse,
     handleFileUpload,
@@ -3626,48 +3723,12 @@ export default function ChatPage() {
             options={options}
           />
           <StreamingTokenBadge />
-          {mentionActive && agentMention.mentionState.visible && (
-            <div
-              data-agent-mention-popup
-              style={{
-                position: "absolute",
-                bottom: 0,
-                left: 0,
-                right: 0,
-                pointerEvents: "none",
-                zIndex: 9999,
-              }}
-            >
-              <div
-                style={{
-                  position: "relative",
-                  maxWidth: 480,
-                  margin: "0 auto",
-                }}
-              >
-                <AgentMentionPopup
-                  visible={agentMention.mentionState.visible}
-                  query={agentMention.mentionState.query}
-                  agents={agentMention.filteredAgents}
-                  activeIndex={agentMention.activeIndex}
-                  theme={isDark ? "dark" : "light"}
-                  onSelect={(agent) => {
-                    const textarea = document
-                      .querySelector('[class*="sender"]')
-                      ?.querySelector("textarea") as HTMLTextAreaElement | null;
-                    if (textarea) {
-                      agentMention.insertMention(agent, textarea);
-                    }
-                    setMentionActive(false);
-                  }}
-                  onDismiss={() => {
-                    agentMention.reset();
-                    setMentionActive(false);
-                  }}
-                />
-              </div>
-            </div>
-          )}
+          <AgentMentionController
+            active={isChatActive()}
+            theme={isDark ? "dark" : "light"}
+            agents={agents ?? []}
+            selectedAgent={selectedAgent}
+          />
         </div>
 
         {/* Rate-limit guidance banner */}

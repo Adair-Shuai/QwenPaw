@@ -109,6 +109,7 @@ class UGSciTeamGate(LoopGate):
         members: list[dict[str, str]],
         task: str,
         agent_id: str = "",
+        max_dispatch_retries: int = UGSCI_TEAM_MAX_DISPATCH_RETRIES,
     ) -> Path:
         """Create the workflow instance directory and activate the gate."""
         try:
@@ -132,6 +133,7 @@ class UGSciTeamGate(LoopGate):
             team_mode=team_mode,
             members=members,
             task=task,
+            max_dispatch_retries=max(1, min(5, max_dispatch_retries)),
         )
         wf.write_state(
             {
@@ -147,6 +149,7 @@ class UGSciTeamGate(LoopGate):
                 "iteration": 0,
                 "verify_retries": 0,
                 "dispatch_retries": 0,
+                "max_dispatch_retries": state.max_dispatch_retries,
                 "merge_waits": 0,
                 "created_at_ns": time.time_ns(),
             },
@@ -342,6 +345,18 @@ class UGSciTeamGate(LoopGate):
                 verify_retries=int(data.get("verify_retries", 0)),
                 dispatch_retries=int(
                     data.get("dispatch_retries", 0),
+                ),
+                max_dispatch_retries=max(
+                    1,
+                    min(
+                        5,
+                        int(
+                            data.get(
+                                "max_dispatch_retries",
+                                UGSCI_TEAM_MAX_DISPATCH_RETRIES,
+                            ),
+                        ),
+                    ),
                 ),
                 merge_waits=int(data.get("merge_waits", 0)),
                 phase=phase,

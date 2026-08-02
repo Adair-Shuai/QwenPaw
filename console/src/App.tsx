@@ -4,7 +4,7 @@ import {
   bailianDarkTheme,
   bailianTheme,
 } from "@agentscope-ai/design";
-import { App as AntdApp } from "antd";
+import { App as AntdApp, Spin } from "antd";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -67,6 +67,26 @@ const GlobalStyle = createGlobalStyle`
 }
 `;
 
+function FullPagePreparing({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        minHeight: "100vh",
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 16,
+        background: "var(--ant-color-bg-layout, #f8f8f8)",
+        color: "var(--ant-color-text-secondary, #666)",
+      }}
+    >
+      <Spin size="large" />
+      <span>{message}</span>
+    </div>
+  );
+}
+
 function AuthGuard({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<"loading" | "auth-required" | "ok">(
     "loading",
@@ -113,7 +133,9 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  if (status === "loading") return null;
+  if (status === "loading") {
+    return <FullPagePreparing message="正在确认本地账户…" />;
+  }
   if (status === "auth-required")
     return (
       <Navigate
@@ -192,7 +214,7 @@ function AppInner() {
 
   // Wait for plugins to load before rendering routes that might be patched
   if (pluginsLoading) {
-    return null;
+    return <FullPagePreparing message="正在加载功能模块…" />;
   }
 
   return (

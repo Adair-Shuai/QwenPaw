@@ -174,6 +174,130 @@ _HASH_EXCLUDED_NAMES = frozenset(
 )
 _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
 
+
+def _copy_bundle(source: Path, target: Path) -> None:
+    """Copy only runtime files; development dependencies never reach users."""
+    shutil.copytree(
+        source,
+        target,
+        ignore=shutil.ignore_patterns(
+            "node_modules",
+            "__pycache__",
+            ".git",
+            "*.pyc",
+            "*.pyo",
+            "*.map",
+        ),
+    )
+
+
+def _installation_has_required_entries(
+    plugin_dir: Path,
+    manifest: dict[str, Any],
+) -> bool:
+    """Return whether the installed plugin still has every declared entry."""
+    if not (plugin_dir / "plugin.json").is_file():
+        return False
+    entry = manifest.get("entry")
+    if not isinstance(entry, dict):
+        return True
+    root = plugin_dir.resolve()
+    for relative in entry.values():
+        if not isinstance(relative, str) or not relative.strip():
+            continue
+        candidate = (plugin_dir / relative).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            return False
+        if not candidate.is_file():
+            return False
+    return True
+
+
+def _copy_missing_tree(source: Path, target: Path) -> None:
+    """Merge files missing from target without overwriting bundled files."""
+    if not source.is_dir():
+        return
+    if not target.exists():
+        shutil.copytree(source, target)
+        return
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        destination = target / path.relative_to(source)
+        if destination.exists():
+            continue
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, destination)
+
+
+def _stage_and_replace_bundle(
+    source: Path,
+    target: Path,
+    bundle_hash: str,
+    preserve_dirs: frozenset[str],
+) -> None:
+    """Build a complete replacement beside target and swap with rollback."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    staging_root = Path(
+        tempfile.mkdtemp(
+            prefix=f".{target.name}.staging-",
+            dir=target.parent,
+        ),
+    )
+    staged = staging_root / "plugin"
+    # Keep the rollback copy outside ``staging_root``.  If Windows refuses
+    # both the new-file rename and the rollback rename (for example because
+    # an antivirus scanner briefly holds a handle), the unconditional
+    # staging cleanup must not delete the user's last working installation.
+    previous = target.parent / staging_root.name.replace(
+        ".staging-",
+        ".previous-",
+        1,
+    )
+    try:
+        _copy_bundle(source, staged)
+        if target.is_dir():
+            for dirname in preserve_dirs:
+                _copy_missing_tree(target / dirname, staged / dirname)
+        _write_bundle_hash(staged, bundle_hash)
+
+        if target.exists():
+            target.replace(previous)
+        try:
+            staged.replace(target)
+        except Exception:
+            if previous.exists() and not target.exists():
+                try:
+                    previous.replace(target)
+                except Exception as rollback_exc:
+                    logger.exception(
+                        "Failed to restore previous bundled plugin at %s; "
+                        "backup retained at %s",
+                        target,
+                        previous,
+                    )
+                    raise RuntimeError(
+                        f"Failed to restore previous plugin; backup retained "
+                        f"at {previous}",
+                    ) from rollback_exc
+            raise
+        if previous.exists():
+            try:
+                shutil.rmtree(previous)
+            except OSError:
+                # The replacement is already live.  A locked hidden backup
+                # is harmless and safer than failing a successful startup.
+                logger.warning(
+                    "Could not remove previous bundled plugin backup at %s",
+                    previous,
+                    exc_info=True,
+                )
+    finally:
+        shutil.rmtree(staging_root, ignore_errors=True)
+
+
 # Directories inside a plugin installation that may contain user-generated
 # data and must be preserved across updates (rmtree + copytree).  Files
 # already present in the new bundle are kept; only **missing** files are
@@ -248,6 +372,7 @@ def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
 
 
 # pylint: disable=too-many-branches,too-many-statements
+# pylint: disable=too-many-return-statements
 def _install_or_update_plugin(
     item: Path,
     target_dir: Path,
@@ -267,7 +392,7 @@ def _install_or_update_plugin(
             this function).
     """
     bundled_version = str(bundled_manifest.get("version", "0.0.0"))
-    bundled_hash = _compute_bundle_hash(item, bundled_manifest)
+    bundled_hash: str | None = None
 
     # If target_dir is a junction/symlink (development convenience
     # for hot-reload), skip the update entirely — the link already
@@ -298,6 +423,28 @@ def _install_or_update_plugin(
 
             if existing_cmp == bundled_cmp:
                 installed_hash = _read_installed_hash(target_dir)
+                # Release bundles are immutable: a matching version and a
+                # completed install marker are enough. Development keeps the
+                # full content-hash check so unversioned source edits sync.
+                if (
+                    os.environ.get("QWENPAW_DESKTOP_APP") == "1"
+                    and installed_hash
+                    and _installation_has_required_entries(
+                        target_dir,
+                        bundled_manifest,
+                    )
+                ):
+                    return False
+                if (
+                    os.environ.get("QWENPAW_DESKTOP_APP") == "1"
+                    and installed_hash
+                ):
+                    logger.warning(
+                        "Repairing bundled plugin '%s': required entry "
+                        "file is missing",
+                        plugin_id,
+                    )
+                bundled_hash = _compute_bundle_hash(item, bundled_manifest)
                 if installed_hash == bundled_hash:
                     return False  # Content identical
                 logger.info(
@@ -318,57 +465,25 @@ def _install_or_update_plugin(
                 plugin_id,
             )
 
-        has_marker = _is_uninstalled(target_dir)
-
-        # Preserve user-data directories before destructive rmtree
-        # so they survive version upgrades (cf. BUG-009).
-        preserved: dict[str, Path] = {}
-        for dirname in _PRESERVE_ON_UPDATE_DIRS:
-            user_dir = target_dir / dirname
-            if user_dir.is_dir() and any(user_dir.iterdir()):
-                tmp_base = Path(
-                    tempfile.mkdtemp(prefix=f"preserve_{dirname}_"),
-                )
-                shutil.copytree(user_dir, tmp_base / dirname)
-                preserved[dirname] = tmp_base
-                logger.debug(
-                    "Preserving user data dir '%s' for plugin '%s'",
-                    dirname,
-                    plugin_id,
-                )
-
-        shutil.rmtree(target_dir, ignore_errors=True)
-        shutil.copytree(item, target_dir)
-
-        # Restore preserved user data (only files missing in the new copy).
-        for dirname, tmp_base in preserved.items():
-            src_dir = tmp_base / dirname
-            dest_dir = target_dir / dirname
-            if dest_dir.is_dir():
-                for f in src_dir.rglob("*"):
-                    if not f.is_file():
-                        continue
-                    rel = f.relative_to(src_dir)
-                    target_file = dest_dir / rel
-                    if not target_file.exists():
-                        target_file.parent.mkdir(
-                            parents=True,
-                            exist_ok=True,
-                        )
-                        shutil.copy2(f, target_file)
-            else:
-                shutil.copytree(src_dir, dest_dir)
-            shutil.rmtree(tmp_base, ignore_errors=True)
-
-        _write_bundle_hash(target_dir, bundled_hash)
-        if has_marker:
-            _mark_uninstalled(target_dir)
+        if bundled_hash is None:
+            bundled_hash = _compute_bundle_hash(item, bundled_manifest)
+        _stage_and_replace_bundle(
+            item,
+            target_dir,
+            bundled_hash,
+            _PRESERVE_ON_UPDATE_DIRS,
+        )
         return True
 
     logger.info("Installing bundled plugin '%s'", plugin_id)
     try:
-        shutil.copytree(item, target_dir)
-        _write_bundle_hash(target_dir, bundled_hash)
+        bundled_hash = _compute_bundle_hash(item, bundled_manifest)
+        _stage_and_replace_bundle(
+            item,
+            target_dir,
+            bundled_hash,
+            frozenset(),
+        )
         return True
     except Exception as exc:
         logger.warning(

@@ -259,15 +259,27 @@ def _install_component(python: str, name: str) -> None:
         logger.exception("Optional component installation failed: %s", name)
 
 
-def _install_pending_components() -> None:
+def install_pending_components() -> None:
+    """Install selected components synchronously during visible startup."""
     from qwenpaw.tauri.execution_runtime import execution_mode
+    from qwenpaw.app.startup_state import startup_state
 
     python = os.environ.get("QWENPAW_DESKTOP_PY_RUNTIME", "").strip()
     if not python or not Path(python).is_file():
         return
-    for name in _selected_components():
+    selected = _selected_components()
+    for index, name in enumerate(selected, start=1):
         if name == "science" and execution_mode() == "external":
             continue
+        label = "科学计算组件" if name == "science" else "语音识别组件"
+        startup_state.update(
+            "components",
+            f"正在准备{label}…",
+            91 + round(7 * index / max(1, len(selected))),
+            current=index,
+            total=len(selected),
+            detail=name,
+        )
         _install_component(python, name)
 
 
@@ -281,7 +293,7 @@ def start_pending_component_install() -> threading.Thread | None:
     if _INSTALL_THREAD is not None and _INSTALL_THREAD.is_alive():
         return _INSTALL_THREAD
     _INSTALL_THREAD = threading.Thread(
-        target=_install_pending_components,
+        target=install_pending_components,
         name="qwenpaw-optional-components",
         daemon=True,
     )

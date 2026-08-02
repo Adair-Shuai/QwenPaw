@@ -12,11 +12,14 @@
  *   // 在 textarea 的 onInput / onChange 中调用 handleInputChange
  *   // 弹窗渲染时使用 filteredAgents 和 activeIndex
  */
-import { useCallback, useMemo, useState } from "react";
-import { useAgentStore } from "../../../stores/agentStore";
+import { useCallback, useMemo, useRef, useState } from "react";
 import type { AgentSummary } from "../../../api/types/agents";
 import { getAgentDisplayName } from "../../../utils/agentDisplayName";
 import { useTranslation } from "react-i18next";
+import {
+  setAgentMentionMode,
+  type AgentMentionMode,
+} from "./agentMentionModes";
 
 export interface AgentMentionState {
   visible: boolean;
@@ -28,11 +31,14 @@ export interface UseAgentMentionResult {
   mentionState: AgentMentionState;
   filteredAgents: AgentSummary[];
   activeIndex: number;
+  selectionMode: AgentMentionMode;
+  collaborationLocked: boolean;
   setActiveIndex: (index: number) => void;
+  setSelectionMode: (mode: AgentMentionMode) => void;
   handleKeyDown: (e: KeyboardEvent, textarea: HTMLTextAreaElement) => boolean;
   handleInputChange: (textarea: HTMLTextAreaElement) => void;
   insertMention: (agent: AgentSummary, textarea: HTMLTextAreaElement) => void;
-  reset: () => void;
+  reset: (textarea?: HTMLTextAreaElement | null) => void;
 }
 
 const IDLE_STATE: AgentMentionState = {
@@ -40,26 +46,59 @@ const IDLE_STATE: AgentMentionState = {
   query: "",
   startIndex: -1,
 };
+const EMPTY_SELECTED_AGENT_IDS: readonly string[] = [];
 
-export function useAgentMention(): UseAgentMentionResult {
+export function useAgentMention(
+  agents: AgentSummary[],
+  selectedAgent: string,
+  selectedMentionAgentIds: readonly string[] = EMPTY_SELECTED_AGENT_IDS,
+): UseAgentMentionResult {
   const { t } = useTranslation();
-  const { agents, selectedAgent } = useAgentStore();
   const [mentionState, setMentionState] =
     useState<AgentMentionState>(IDLE_STATE);
   const [activeIndex, setActiveIndex] = useState(0);
+  const [selectionMode, setSelectionMode] =
+    useState<AgentMentionMode>("delegate");
+  const mentionStateRef = useRef(mentionState);
+  const activeIndexRef = useRef(activeIndex);
 
-  const enabledAgents = useMemo(
-    () => agents.filter((a) => a.enabled && a.id !== selectedAgent),
+  mentionStateRef.current = mentionState;
+  activeIndexRef.current = activeIndex;
+
+  const mentionableAgents = useMemo(
+    () => agents.filter((agent) => agent.enabled && agent.id !== selectedAgent),
     [agents, selectedAgent],
+  );
+  const enabledAgents = useMemo(() => {
+    const alreadyMentioned = new Set(selectedMentionAgentIds);
+    return mentionableAgents.filter((agent) => !alreadyMentioned.has(agent.id));
+  }, [mentionableAgents, selectedMentionAgentIds]);
+  const collaborationLocked = selectedMentionAgentIds.length >= 1;
+
+  const filterAgents = useCallback(
+    (query: string) => {
+      if (!query) return enabledAgents;
+      const q = query.toLowerCase();
+      return enabledAgents.filter(
+        (agent) =>
+          agent.name.toLowerCase().includes(q) ||
+          agent.id.toLowerCase().includes(q),
+      );
+    },
+    [enabledAgents],
   );
 
   const filteredAgents = useMemo(() => {
-    if (!mentionState.visible || !mentionState.query) return enabledAgents;
-    const q = mentionState.query.toLowerCase();
-    return enabledAgents.filter(
-      (a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
-    );
-  }, [enabledAgents, mentionState]);
+    if (!mentionState.visible) return enabledAgents;
+    return filterAgents(mentionState.query);
+  }, [enabledAgents, filterAgents, mentionState.query, mentionState.visible]);
+  const filteredAgentsRef = useRef(filteredAgents);
+  filteredAgentsRef.current = filteredAgents;
+
+  const updateActiveIndex = useCallback((index: number) => {
+    activeIndexRef.current = index;
+    setActiveIndex(index);
+  }, []);
 
   /**
    * 检测 textarea 中光标位置前是否有未完成的 @ 触发
@@ -70,35 +109,27 @@ export function useAgentMention(): UseAgentMentionResult {
       textarea: HTMLTextAreaElement,
     ): { startIndex: number; query: string } | null => {
       const cursorPos = textarea.selectionStart;
-      const textBeforeCursor = textarea.value.substring(0, cursorPos);
+      const textBeforeCursor = textarea.value.slice(0, cursorPos);
 
-      // 从光标位置向前查找最近的 @
-      // @ 必须在行首或前面是空白字符
-      let atIdx = -1;
-      for (let i = textBeforeCursor.length - 1; i >= 0; i--) {
-        const ch = textBeforeCursor[i];
-        if (ch === "@") {
-          // @ 前面必须是行首或空白字符
-          if (i === 0 || /\s/.test(textBeforeCursor[i - 1])) {
-            atIdx = i;
-          }
-          break;
-        }
-        // 遇到空白字符后停止回溯（@ 后不能有空格）
-        if (/\s/.test(ch) && atIdx === -1) {
-          // 继续往前找，可能 @ 在更前面
-          continue;
-        }
+      // 中文里常直接写“然后@专家”，因此允许 @ 紧跟 CJK 文本；但排除
+      // ASCII 单词/邮箱内部的 @，避免输入邮箱地址时误触发候选框。
+      const tokenStart = textBeforeCursor.lastIndexOf("@");
+      if (tokenStart < 0) return null;
+      if (
+        tokenStart > 0 &&
+        /[A-Za-z0-9._%+-]/.test(textBeforeCursor[tokenStart - 1])
+      ) {
+        return null;
+      }
+      const query = textBeforeCursor.slice(tokenStart + 1);
+      if (query && /[@\s,，。；;：:！？!?、()（）[\]【】{}“”"']/.test(query)) {
+        return null;
       }
 
-      if (atIdx === -1) return null;
-
-      // 提取 @ 后面的文本作为搜索词
-      const query = textBeforeCursor.substring(atIdx + 1);
-      // 如果 @ 后面有空格，说明已经完成输入
-      if (/\s/.test(query)) return null;
-
-      return { startIndex: atIdx, query };
+      return {
+        startIndex: tokenStart,
+        query,
+      };
     },
     [],
   );
@@ -107,17 +138,34 @@ export function useAgentMention(): UseAgentMentionResult {
     (textarea: HTMLTextAreaElement) => {
       const detected = detectMention(textarea);
       if (detected) {
-        setMentionState({
+        if (
+          !mentionStateRef.current.visible &&
+          selectedMentionAgentIds.length === 0
+        ) {
+          setSelectionMode("delegate");
+        }
+        const nextState = {
           visible: true,
           query: detected.query,
           startIndex: detected.startIndex,
-        });
-        setActiveIndex(0);
-      } else if (mentionState.visible) {
+        };
+        mentionStateRef.current = nextState;
+        filteredAgentsRef.current = filterAgents(detected.query);
+        setMentionState(nextState);
+        updateActiveIndex(0);
+        textarea.dataset.agentMentionActive = "true";
+      } else if (mentionStateRef.current.visible) {
+        mentionStateRef.current = IDLE_STATE;
         setMentionState(IDLE_STATE);
+        delete textarea.dataset.agentMentionActive;
       }
     },
-    [detectMention, mentionState.visible],
+    [
+      detectMention,
+      filterAgents,
+      selectedMentionAgentIds.length,
+      updateActiveIndex,
+    ],
   );
 
   const insertMention = useCallback(
@@ -125,7 +173,10 @@ export function useAgentMention(): UseAgentMentionResult {
       const displayName = getAgentDisplayName(agent, t);
       // 构造插入文本: @AgentName (带空格结尾)
       const insertText = `@${displayName} `;
-      const before = textarea.value.substring(0, mentionState.startIndex);
+      const before = textarea.value.substring(
+        0,
+        mentionStateRef.current.startIndex,
+      );
       const after = textarea.value.substring(textarea.selectionStart);
       const newValue = before + insertText + after;
 
@@ -145,66 +196,157 @@ export function useAgentMention(): UseAgentMentionResult {
       textarea.selectionStart = textarea.selectionEnd = newCursorPos;
 
       // 触发 input 事件以同步 React 状态
+      setAgentMentionMode(
+        agent.id,
+        collaborationLocked ? "collaborate" : selectionMode,
+      );
       const event = new Event("input", { bubbles: true });
       textarea.dispatchEvent(event);
 
+      mentionStateRef.current = IDLE_STATE;
       setMentionState(IDLE_STATE);
+      delete textarea.dataset.agentMentionActive;
       textarea.focus();
     },
-    [mentionState.startIndex, t],
+    [collaborationLocked, selectionMode, t],
   );
 
-  const reset = useCallback(() => {
-    setMentionState(IDLE_STATE);
-    setActiveIndex(0);
-  }, []);
+  const reset = useCallback(
+    (textarea?: HTMLTextAreaElement | null) => {
+      mentionStateRef.current = IDLE_STATE;
+      setMentionState(IDLE_STATE);
+      updateActiveIndex(0);
+      if (textarea) delete textarea.dataset.agentMentionActive;
+    },
+    [updateActiveIndex],
+  );
+
+  const deleteMentionBeforeCursor = useCallback(
+    (e: KeyboardEvent, textarea: HTMLTextAreaElement): boolean => {
+      if (
+        e.key !== "Backspace" ||
+        textarea.selectionStart !== textarea.selectionEnd
+      ) {
+        return false;
+      }
+
+      const cursor = textarea.selectionStart;
+      const beforeCursor = textarea.value.slice(0, cursor);
+      const candidates = mentionableAgents
+        .map((agent) => `@${getAgentDisplayName(agent, t)}`)
+        .sort((a, b) => b.length - a.length);
+      const mention = candidates.find((candidate) => {
+        const withoutTrailingSpace = beforeCursor.endsWith(candidate);
+        const withTrailingSpace = beforeCursor.endsWith(`${candidate} `);
+        if (!withoutTrailingSpace && !withTrailingSpace) return false;
+        const start = cursor - candidate.length - (withTrailingSpace ? 1 : 0);
+        return (
+          start === 0 || !/[A-Za-z0-9._%+-]/.test(textarea.value[start - 1])
+        );
+      });
+      if (!mention) return false;
+
+      const hasTrailingSpace = beforeCursor.endsWith(`${mention} `);
+      const start = cursor - mention.length - (hasTrailingSpace ? 1 : 0);
+      const nextValue =
+        textarea.value.slice(0, start) + textarea.value.slice(cursor);
+      e.preventDefault();
+      e.stopImmediatePropagation();
+
+      const nativeValueSetter = Object.getOwnPropertyDescriptor(
+        HTMLTextAreaElement.prototype,
+        "value",
+      )?.set;
+      nativeValueSetter?.call(textarea, nextValue);
+      if (!nativeValueSetter) textarea.value = nextValue;
+      textarea.selectionStart = textarea.selectionEnd = start;
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      reset(textarea);
+      return true;
+    },
+    [mentionableAgents, reset, t],
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent, textarea: HTMLTextAreaElement): boolean => {
-      if (!mentionState.visible || filteredAgents.length === 0) return false;
+      if (deleteMentionBeforeCursor(e, textarea)) return true;
+      if (!mentionStateRef.current.visible) return false;
+
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        reset(textarea);
+        return true;
+      }
+
+      if (filteredAgentsRef.current.length === 0) {
+        return false;
+      }
+
+      const currentAgents = filteredAgentsRef.current;
 
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setActiveIndex((prev) =>
-          prev + 1 >= filteredAgents.length ? 0 : prev + 1,
+        e.stopImmediatePropagation();
+        updateActiveIndex(
+          activeIndexRef.current + 1 >= currentAgents.length
+            ? 0
+            : activeIndexRef.current + 1,
         );
         return true;
       }
 
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setActiveIndex((prev) =>
-          prev - 1 < 0 ? filteredAgents.length - 1 : prev - 1,
+        e.stopImmediatePropagation();
+        updateActiveIndex(
+          activeIndexRef.current - 1 < 0
+            ? currentAgents.length - 1
+            : activeIndexRef.current - 1,
         );
         return true;
       }
 
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
+        if (!collaborationLocked) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+          setSelectionMode((current) =>
+            current === "delegate" ? "collaborate" : "delegate",
+          );
+          return true;
+        }
+      }
+
       if (e.key === "Enter" || e.key === "Tab") {
-        const agent = filteredAgents[activeIndex];
+        const agent = currentAgents[activeIndexRef.current];
         if (agent) {
           e.preventDefault();
-          e.stopPropagation();
+          e.stopImmediatePropagation();
           insertMention(agent, textarea);
           return true;
         }
       }
 
-      if (e.key === "Escape") {
-        e.preventDefault();
-        reset();
-        return true;
-      }
-
       return false;
     },
-    [mentionState.visible, filteredAgents, activeIndex, insertMention, reset],
+    [
+      collaborationLocked,
+      deleteMentionBeforeCursor,
+      insertMention,
+      reset,
+      updateActiveIndex,
+    ],
   );
 
   return {
     mentionState,
     filteredAgents,
     activeIndex,
-    setActiveIndex,
+    selectionMode: collaborationLocked ? "collaborate" : selectionMode,
+    collaborationLocked,
+    setActiveIndex: updateActiveIndex,
+    setSelectionMode,
     handleKeyDown,
     handleInputChange,
     insertMention,

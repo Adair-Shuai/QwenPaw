@@ -1,0 +1,61 @@
+{
+  "id": "ulit",
+  "name": "ULit 文研",
+  "version": "0.1.0",
+  "type": "app",
+  "description": "Local-first, evidence-grounded literature reading and research workspace.",
+  "description_i18n": {
+    "zh-CN": "本地优先、证据可追溯的文献阅读与科研工作台。",
+    "en-US": "Local-first, evidence-grounded literature reading and research workspace."
+  },
+  "author": "QwenPaw Team",
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.0.1"
+  },
+  "meta": {
+    "pawapp": {
+      "icon": "📚",
+      "entry_page": "/apps/ulit",
+      "launch_scope": "page",
+      "category": "research"
+    },
+    "permissions": {
+      "chat": true,
+      "storage": false
+    },
+    "settings": [
+      {
+        "name": "data_root",
+        "label": "数据目录",
+        "type": "text",
+        "required": false,
+        "help": "覆盖默认数据存储路径，必须为绝对路径。环境变量: ULIT_DATA_ROOT"
+      },
+      {
+        "name": "ai_fulltext_policy",
+        "label": "允许发送给 AI 的内容范围",
+        "type": "select",
+        "default": "retrieved_chunks",
+        "options": ["never", "selected_text", "retrieved_chunks"]
+      },
+      {
+        "name": "metadata_email",
+        "label": "学术元数据 API 联系邮箱",
+        "type": "text",
+        "required": false,
+        "help": "用于 Crossref/OpenAlex polite pool"
+      },
+      {
+        "name": "grobid_url",
+        "label": "GROBID 服务地址",
+        "type": "text",
+        "required": false,
+        "help": "可选，增强 PDF 结构化解析"
+      }
+    ]
+  }
+}

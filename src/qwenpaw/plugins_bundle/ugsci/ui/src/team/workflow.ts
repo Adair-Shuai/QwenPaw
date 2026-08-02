@@ -1,4 +1,6 @@
 import type * as ReactNamespace from "react";
+import { hostFetch } from "../core/runtime";
+import type { TeamMode } from "./model";
 
 export type TeamPhase =
   | "plan"
@@ -17,7 +19,7 @@ export interface TeamWorkflowState {
   current_phase?: TeamPhase;
   team_id?: string;
   team_name?: string;
-  team_mode?: "pipeline" | "coordinator" | "roundtable";
+  team_mode?: TeamMode;
   members?: TeamMember[];
   task?: string;
   iteration?: number;
@@ -36,12 +38,25 @@ export interface TeamWorkflowResponse {
   error?: string | null;
 }
 
+export interface TeamRunSummary {
+  instance_id: string;
+  team_id: string;
+  team_name: string;
+  team_mode: TeamMode;
+  status: "active" | "completed" | "terminated" | "unreadable";
+  current_phase: TeamPhase;
+  iteration: number;
+  task: string;
+  created_at_ns: number;
+  finished_at_ns: number;
+}
+
 export interface PresetTeam {
   id: string;
   name: string;
   emoji: string;
   category: string;
-  mode: "pipeline" | "coordinator" | "roundtable";
+  mode: TeamMode;
   description: string;
   members: TeamMember[];
   coordinatorName?: string;
@@ -68,6 +83,7 @@ interface AntdHost {
   Steps: ReactNamespace.ElementType;
   Empty: ReactNamespace.ElementType;
   Alert: ReactNamespace.ElementType;
+  Spin: ReactNamespace.ElementType;
 }
 
 interface QwenPawHost {
@@ -76,8 +92,6 @@ interface QwenPawHost {
   antdIcons?: {
     ReloadOutlined?: ReactNamespace.ElementType;
   };
-  getApiUrl: (path: string) => string;
-  getApiToken: () => string;
   useSelectedAgent?: () => { id: string };
 }
 
@@ -91,23 +105,14 @@ function getHost(): QwenPawHost {
   return host as QwenPawHost;
 }
 
-function requestHeaders(agentId?: string): Record<string, string> {
-  const token = getHost().getApiToken() || "";
-  return {
-    "Content-Type": "application/json",
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    ...(agentId ? { "X-Agent-Id": agentId } : {}),
-  };
-}
-
 async function fetchJson<T>(
   path: string,
   agentId?: string,
   signal?: AbortSignal,
 ): Promise<T | null> {
   try {
-    const response = await fetch(getHost().getApiUrl(path), {
-      headers: requestHeaders(agentId),
+    const response = await hostFetch(path, {
+      headers: agentId ? { "X-Agent-Id": agentId } : undefined,
       signal,
     });
     if (!response.ok) return null;
@@ -122,6 +127,102 @@ export function fetchTeamWorkflowState(
   signal?: AbortSignal,
 ): Promise<TeamWorkflowResponse | null> {
   return fetchJson<TeamWorkflowResponse>("/ugsci/team/state", agentId, signal);
+}
+
+export async function fetchTeamRuns(
+  agentId: string,
+  signal?: AbortSignal,
+): Promise<TeamRunSummary[]> {
+  const response = await hostFetch("/ugsci/team/runs", {
+    headers: { "X-Agent-Id": agentId },
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load team runs: ${response.status}`);
+  }
+  return (await response.json()) as TeamRunSummary[];
+}
+
+export function TeamRunHistory({ activeOnly = false }: { activeOnly?: boolean }) {
+  const host = getHost();
+  const React = host.React;
+  const { useCallback, useEffect, useRef, useState } = React;
+  const { Alert, Button, Card, Empty, Spin, Tag, Typography } = host.antd;
+  const { Text, Paragraph } = Typography;
+  const selectedAgent = host.useSelectedAgent
+    ? host.useSelectedAgent()
+    : { id: "default" };
+  const agentId = selectedAgent?.id || "default";
+  const [runs, setRuns] = useState<TeamRunSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [failed, setFailed] = useState(false);
+  const requestControllerRef = useRef<AbortController | null>(null);
+  const requestIdRef = useRef(0);
+
+  const load = useCallback(async () => {
+    requestControllerRef.current?.abort();
+    const controller = new AbortController();
+    requestControllerRef.current = controller;
+    const requestId = ++requestIdRef.current;
+    setLoading(true);
+    try {
+      const result = await fetchTeamRuns(agentId, controller.signal);
+      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+      setRuns(result);
+      setFailed(false);
+    } catch {
+      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+      setFailed(true);
+    } finally {
+      if (!controller.signal.aborted && requestId === requestIdRef.current) {
+        setLoading(false);
+      }
+    }
+  }, [agentId]);
+
+  useEffect(() => {
+    void load();
+    return () => {
+      requestControllerRef.current?.abort();
+      requestIdRef.current += 1;
+    };
+  }, [load]);
+
+  if (loading) return React.createElement(Spin);
+  if (failed) {
+    return React.createElement(Alert, {
+      type: "warning",
+      message: "讨论运行记录加载失败",
+      action: React.createElement(Button, { size: "small", onClick: () => void load() }, "重试"),
+    });
+  }
+  const visibleRuns = runs.filter((run) =>
+    activeOnly ? run.status === "active" : run.status !== "active",
+  );
+  if (visibleRuns.length === 0) {
+    return React.createElement(Empty, {
+      description: activeOnly ? "暂无进行中的专家团讨论" : "暂无历史讨论",
+    });
+  }
+  return React.createElement(
+    "div",
+    { style: { display: "flex", flexDirection: "column", gap: 8 } },
+    ...visibleRuns.map((run) =>
+      React.createElement(
+        Card,
+        { key: run.instance_id, size: "small" },
+        React.createElement(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 8 } },
+          React.createElement(Text, { strong: true }, run.team_name || run.team_id),
+          React.createElement(Tag, { color: run.status === "completed" ? "green" : run.status === "terminated" ? "orange" : "blue" }, run.status),
+          React.createElement(Tag, null, run.current_phase),
+          React.createElement(Text, { type: "secondary" }, `迭代 ${run.iteration}`),
+        ),
+        React.createElement(Paragraph, { ellipsis: { rows: 2 }, style: { margin: "8px 0 0" } }, run.task || "暂无任务描述"),
+      ),
+    ),
+  );
 }
 
 export async function fetchPresetTeamsFromBackend(): Promise<
@@ -274,9 +375,12 @@ export function TeamWorkflowCard() {
   const members = state.members || [];
   const verifyRetries = state.verify_retries || 0;
   const modeLabels: Record<string, string> = {
-    pipeline: "流水线模式",
-    coordinator: "协调者模式",
-    roundtable: "圆桌讨论",
+    pipeline: "顺序交接",
+    coordinator: "主管协作",
+    roundtable: "并行汇聚",
+    router: "智能路由",
+    review_loop: "评审迭代",
+    debate: "多方论证",
   };
 
   return React.createElement(

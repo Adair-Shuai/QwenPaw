@@ -9,7 +9,12 @@ import { fetchAgents, fetchPoolSkills, fetchWorkspaceSkills } from "../core/api"
 import { CurrentAgentSkillsTab } from "./CurrentAgentSkillsTab";
 import { SkillPoolTab } from "./SkillPoolTab";
 
-export function SkillCenterPage() {
+export function SkillCenterPage({
+  embedded = false,
+}: {
+  /** Omit the page header when hosted by the unified Tools & Skills page. */
+  embedded?: boolean;
+} = {}) {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
   const { Tabs, message: antdMsg } = getHost().antd;
@@ -79,7 +84,7 @@ export function SkillCenterPage() {
         ThunderboltOutlined
           ? React.createElement(ThunderboltOutlined, { style: { fontSize: 14 } })
           : null,
-        "当前Agent加载技能",
+        "当前专家",
       ),
       children: React.createElement(CurrentAgentSkillsTab, {
         agentId: currentAgentId,
@@ -95,7 +100,7 @@ export function SkillCenterPage() {
         AppstoreOutlined
           ? React.createElement(AppstoreOutlined, { style: { fontSize: 14 } })
           : null,
-        "技能池",
+        "技能库",
       ),
       children: React.createElement(SkillPoolTab, {
         poolSkills,
@@ -109,6 +114,14 @@ export function SkillCenterPage() {
     },
   ];
 
+  const tabs = React.createElement(Tabs, {
+    items: tabItems,
+    activeKey: activeTab,
+    onChange: (k: string) => setActiveTab(k),
+  });
+
+  if (embedded) return tabs;
+
   return React.createElement(
     "div",
     { style: { padding: 24 } },
@@ -116,11 +129,6 @@ export function SkillCenterPage() {
       title: "技能",
       subtitle: `技能池共 ${poolSkills.length} 个技能 · 当前智能体：${currentAgentName}`,
     }),
-    React.createElement(Tabs, {
-      items: tabItems,
-      activeKey: activeTab,
-      onChange: (k: string) => setActiveTab(k),
-    }),
+    tabs,
   );
 }
-

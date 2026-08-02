@@ -114,6 +114,15 @@ describe("loopStore", () => {
     expect(useLoopStore.getState().sessionState).toBe("idle");
   });
 
+  it("normalizes Chinese dunhao commands before mode dispatch", () => {
+    useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);
+
+    expect(beginLoopModeSubmission("、goal fix the tests")).toBe(
+      "/goal fix the tests",
+    );
+    expect(useLoopStore.getState().activeMode).toEqual(goal);
+  });
+
   it("does not prefix Default or messages in an active session", () => {
     expect(beginLoopModeSubmission("hello")).toBe("hello");
     useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);

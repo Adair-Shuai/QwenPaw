@@ -1,9 +1,12 @@
-import { apiUrl, authHeaders } from "../core/runtime";
+import { hostFetch } from "../core/runtime";
 
 export interface ExpertTeamMember {
   name: string;
   role: string;
   emoji: string;
+  agentId?: string;
+  roleKey?: string;
+  bindingMode?: "fixed" | "preferred" | "temporary";
 }
 
 export interface ExpertTeamStep {
@@ -12,13 +15,21 @@ export interface ExpertTeamStep {
   passContext: boolean;
 }
 
+export type TeamMode =
+  | "pipeline"
+  | "roundtable"
+  | "coordinator"
+  | "router"
+  | "review_loop"
+  | "debate";
+
 export interface ExpertTeam {
   id: string;
   name: string;
   emoji: string;
   category: string;
   description: string;
-  mode: "coordinator" | "pipeline" | "roundtable";
+  mode: TeamMode;
   members: ExpertTeamMember[];
   coordinatorName?: string;
   taskTemplate: string;
@@ -26,6 +37,9 @@ export interface ExpertTeam {
   steps?: ExpertTeamStep[];
   custom?: boolean;
   createdAt?: number;
+  maxReviewRounds?: number;
+  routingInstruction?: string;
+  successCriteria?: string;
 }
 
 export interface TeamAgentSummary {
@@ -64,6 +78,122 @@ export function saveCustomTeams(teams: ExpertTeam[]): void {
   } catch {
     // Custom teams remain usable for this session if storage is unavailable.
   }
+}
+
+function teamPayload(team: ExpertTeam): Record<string, unknown> {
+  return {
+    id: team.id,
+    name: team.name,
+    description: team.description,
+    emoji: team.emoji,
+    category: team.category,
+    mode: team.mode,
+    members: team.members,
+    steps: team.steps || [],
+    orchestrationPrompt: team.orchestrationPrompt,
+    coordinatorName: team.coordinatorName || undefined,
+    taskTemplate: team.taskTemplate,
+    maxReviewRounds: team.maxReviewRounds || 2,
+    routingInstruction: team.routingInstruction || "",
+    successCriteria: team.successCriteria || "",
+  };
+}
+
+interface StoredExpertTeam {
+  team_id: string;
+  name: string;
+  description: string;
+  emoji: string;
+  category: string;
+  mode: TeamMode;
+  members: ExpertTeamMember[];
+  steps: ExpertTeamStep[];
+  orchestrationPrompt: string;
+  coordinatorName?: string;
+  taskTemplate: string;
+  maxReviewRounds: number;
+  routingInstruction: string;
+  successCriteria: string;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function fromStoredTeam(team: StoredExpertTeam): ExpertTeam {
+  return {
+    id: team.team_id,
+    name: team.name,
+    emoji: team.emoji || "🤝",
+    category: team.category || "自定义",
+    description: team.description || `${team.name}（${team.members.length} 位专家）`,
+    mode: team.mode,
+    members: team.members,
+    steps: team.steps,
+    orchestrationPrompt: team.orchestrationPrompt || "",
+    coordinatorName: team.coordinatorName,
+    taskTemplate: team.taskTemplate || "请执行以下任务：\n任务描述：{任务描述}",
+    maxReviewRounds: team.maxReviewRounds || 2,
+    routingInstruction: team.routingInstruction || "",
+    successCriteria: team.successCriteria || "",
+    createdAt: team.createdAt ? team.createdAt * 1000 : Date.now(),
+    custom: true,
+  };
+}
+
+export async function fetchCustomTeams(
+  updateOfflineCache = true,
+): Promise<ExpertTeam[]> {
+  const response = await hostFetch("/ugsci/team/custom");
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail || `HTTP ${response.status}`);
+  }
+  const records = (await response.json()) as StoredExpertTeam[];
+  const teams = records.map(fromStoredTeam);
+  if (updateOfflineCache) {
+    saveCustomTeams(teams); // Offline cache only; backend remains source of truth.
+  }
+  return teams;
+}
+
+export async function saveCustomTeamToBackend(
+  team: ExpertTeam,
+): Promise<ExpertTeam> {
+  const response = await hostFetch("/ugsci/team/custom", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(teamPayload(team)),
+  });
+  if (!response.ok) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail || `HTTP ${response.status}`);
+  }
+  const result = (await response.json()) as { team_id: string };
+  return { ...team, id: result.team_id };
+}
+
+export async function deleteCustomTeamFromBackend(teamId: string): Promise<void> {
+  const response = await hostFetch(
+    `/ugsci/team/custom/${encodeURIComponent(teamId)}`,
+    { method: "DELETE" },
+  );
+  if (!response.ok && response.status !== 404) {
+    const detail = await response.text().catch(() => "");
+    throw new Error(detail || `HTTP ${response.status}`);
+  }
+}
+
+export async function migrateCachedCustomTeams(): Promise<void> {
+  const cached = loadCustomTeams();
+  if (cached.length === 0) return;
+  // Read without mutating the offline cache. If any upload fails, every
+  // not-yet-migrated legacy definition remains recoverable locally.
+  const existing = await fetchCustomTeams(false);
+  const existingIds = new Set(existing.map((team) => team.id));
+  await Promise.all(
+    cached
+      .filter((team) => !existingIds.has(team.id))
+      .map((team) => saveCustomTeamToBackend(team)),
+  );
 }
 
 /**
@@ -183,10 +313,10 @@ export async function sendTeamMessage(
     .slice(2, 8)}`;
 
   // 1. Create a chat session so it shows up in the session drawer.
-  const createResponse = await fetch(apiUrl("/chats"), {
+  const createResponse = await hostFetch("/chats", {
     method: "POST",
     headers: {
-      ...authHeaders(),
+      "Content-Type": "application/json",
       "X-Agent-Id": agentId,
     },
     body: JSON.stringify({
@@ -206,10 +336,10 @@ export async function sendTeamMessage(
   const chatId = chat.id;
 
   // 2. Send the slash command with stream:true so we can consume SSE.
-  const response = await fetch(apiUrl("/console/chat"), {
+  const response = await hostFetch("/console/chat", {
     method: "POST",
     headers: {
-      ...authHeaders(),
+      "Content-Type": "application/json",
       "X-Agent-Id": agentId,
     },
     body: JSON.stringify({
@@ -244,18 +374,10 @@ export async function registerCustomTeam(
   /** Register a custom team definition on the backend and return its team_id.
    *  The team_id is a whitespace-free token used in the /ugsci-team slash
    *  command as @<team_id>, avoiding the name-with-spaces parsing problem. */
-  const response = await fetch(apiUrl("/ugsci/team/custom"), {
+  const response = await hostFetch("/ugsci/team/custom", {
     method: "POST",
-    headers: { ...authHeaders(), "Content-Type": "application/json" },
-    body: JSON.stringify({
-      name: team.name,
-      mode: team.mode,
-      members: team.members,
-      steps: team.steps || [],
-      orchestrationPrompt: team.orchestrationPrompt,
-      coordinatorName: team.coordinatorName || undefined,
-      taskTemplate: team.taskTemplate,
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(teamPayload(team)),
   });
   if (!response.ok) {
     const detail = await response.text().catch(() => "");

@@ -78,6 +78,19 @@ def sync_plugin_skills_to_pool(plugin_id: str, skills_dir: Path) -> int:
             )
             continue
 
+        source_hash = compute_skill_md_hash(source)
+        recorded_hash = str(
+            existing_entry.get("plugin_install_hash", "") or "",
+        )
+        if destination.exists() and recorded_hash:
+            destination_hash = compute_skill_md_hash(destination)
+            if (
+                destination_hash == recorded_hash
+                and source_hash == recorded_hash
+            ):
+                # The common startup path: no disk copy and no manifest write.
+                continue
+
         # Safe to write: either a brand-new name or our own prior install
         # (legitimate upgrade).
         copy_skill_dir(source, destination)

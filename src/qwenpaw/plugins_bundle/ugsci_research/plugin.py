@@ -14,6 +14,7 @@ unknown fields, we read the raw JSON directly — see
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from pathlib import Path
@@ -874,65 +875,20 @@ class UGSciResearchPlugin:
             return
 
         try:
-            from qwenpaw.agents.skill_system.store import (
-                copy_skill_dir,
-                get_skill_pool_dir,
-                safe_skill_dir,
-                get_pool_skill_manifest_path,
-                default_pool_manifest,
-                mutate_json,
+            from qwenpaw.plugins_bundle.ugsci.skill_pool import (
+                sync_plugin_skills_to_pool,
             )
-            from qwenpaw.agents.skill_system.registry import (
-                ensure_skill_pool_initialized,
-                reconcile_pool_manifest,
-            )
-            from qwenpaw.agents.skill_system.pool_service import (
-                _register_pool_skill_entry,
-            )
-            import shutil
-
-            ensure_skill_pool_initialized()
-            pool_dir = get_skill_pool_dir()
-            source_tag = f"plugin:{PLUGIN_ID}"
-
-            skill_names = [
-                d.name
-                for d in skills_dir.iterdir()
-                if d.is_dir() and (d / "SKILL.md").exists()
-            ]
-
-            if not skill_names:
-                return
-
-            for skill_name in skill_names:
-                src = skills_dir / skill_name
-                dst = safe_skill_dir(pool_dir, skill_name)
-                if dst.exists():
-                    shutil.rmtree(dst)
-                copy_skill_dir(src, dst)
-
-                def _update(payload, _name=skill_name, _dir=dst, _src=source_tag):
-                    _register_pool_skill_entry(
-                        payload,
-                        _name,
-                        _dir,
-                        source="customized",
-                        installed_from=_src,
-                    )
-                    return payload
-
-                mutate_json(
-                    get_pool_skill_manifest_path(),
-                    default_pool_manifest(),
-                    _update,
-                )
-
-            reconcile_pool_manifest()
-            logger.info(
-                "[%s] Synced %d skill(s) to skill pool",
+            count = await asyncio.to_thread(
+                sync_plugin_skills_to_pool,
                 PLUGIN_ID,
-                len(skill_names),
+                skills_dir,
             )
+            if count:
+                logger.info(
+                    "[%s] Synced %d skill(s) to skill pool",
+                    PLUGIN_ID,
+                    count,
+                )
         except Exception as exc:
             logger.error(
                 "[%s] Failed to sync skills to pool: %s",

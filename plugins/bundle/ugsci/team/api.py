@@ -6,10 +6,10 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any, Callable, Literal, TypeAlias
 
 from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .constants import (
     UGSCI_ROLE_ALLOWED_TOOLS,
@@ -30,6 +30,14 @@ from .state import (
 logger = logging.getLogger(__name__)
 
 WorkspaceResolver = Callable[[str], Path | None]
+TeamMode: TypeAlias = Literal[
+    "pipeline",
+    "coordinator",
+    "roundtable",
+    "router",
+    "review_loop",
+    "debate",
+]
 
 
 class TeamMemberDefinition(BaseModel):
@@ -49,7 +57,7 @@ class PresetTeamDefinition(BaseModel):
     name: str
     emoji: str
     category: str
-    mode: Literal["pipeline", "coordinator", "roundtable"]
+    mode: TeamMode
     description: str
     members: list[TeamMemberDefinition]
     coordinator_name: str | None = Field(
@@ -88,6 +96,19 @@ class CustomTeamMember(BaseModel):
     name: str
     role: str
     emoji: str = ""
+    agent_id: str | None = Field(default=None, alias="agentId")
+    role_key: str | None = Field(default=None, alias="roleKey")
+    binding_mode: Literal["fixed", "preferred", "temporary"] = Field(
+        default="preferred",
+        alias="bindingMode",
+    )
+
+    @field_validator("role_key")
+    @classmethod
+    def validate_role_key(cls, value: str | None) -> str | None:
+        if value is not None and value not in UGSCI_ROLE_DISPLAY_NAMES:
+            raise ValueError(f"Unknown UGSci role key: {value}")
+        return value
 
 
 class CustomTeamStep(BaseModel):
@@ -104,12 +125,24 @@ class CustomTeamRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     name: str
-    mode: Literal["pipeline", "coordinator", "roundtable"] = "pipeline"
+    id: str | None = None
+    description: str = ""
+    emoji: str = "🤝"
+    category: str = "自定义"
+    mode: TeamMode = "pipeline"
     members: list[CustomTeamMember] = Field(default_factory=list)
     steps: list[CustomTeamStep] = Field(default_factory=list)
     orchestration_prompt: str = Field(default="", alias="orchestrationPrompt")
     coordinator_name: str | None = Field(default=None, alias="coordinatorName")
     task_template: str = Field(default="", alias="taskTemplate")
+    max_review_rounds: int = Field(
+        default=2,
+        ge=1,
+        le=5,
+        alias="maxReviewRounds",
+    )
+    routing_instruction: str = Field(default="", alias="routingInstruction")
+    success_criteria: str = Field(default="", alias="successCriteria")
 
 
 class CustomTeamResponse(BaseModel):
@@ -117,6 +150,32 @@ class CustomTeamResponse(BaseModel):
 
     team_id: str
     name: str
+    description: str = ""
+    emoji: str = "🤝"
+    category: str = "自定义"
+
+
+class StoredCustomTeamResponse(BaseModel):
+    """Complete stored expert-team definition returned to the UI."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    team_id: str
+    name: str
+    description: str = ""
+    emoji: str = "🤝"
+    category: str = "自定义"
+    mode: TeamMode
+    members: list[CustomTeamMember] = Field(default_factory=list)
+    steps: list[CustomTeamStep] = Field(default_factory=list)
+    orchestration_prompt: str = Field(default="", alias="orchestrationPrompt")
+    coordinator_name: str | None = Field(default=None, alias="coordinatorName")
+    task_template: str = Field(default="", alias="taskTemplate")
+    max_review_rounds: int = Field(default=2, alias="maxReviewRounds")
+    routing_instruction: str = Field(default="", alias="routingInstruction")
+    success_criteria: str = Field(default="", alias="successCriteria")
+    created_at: float = Field(default=0, alias="createdAt")
+    updated_at: float = Field(default=0, alias="updatedAt")
 
 
 class TeamStateResponse(BaseModel):
@@ -133,6 +192,19 @@ class TeamStateResponse(BaseModel):
     state: dict[str, Any] = Field(default_factory=dict)
     instance_id: str | None = None
     error: str | None = None
+
+
+class TeamRunSummary(BaseModel):
+    instance_id: str
+    team_id: str = ""
+    team_name: str = ""
+    team_mode: str = "pipeline"
+    status: Literal["active", "completed", "terminated", "unreadable"]
+    current_phase: str = "plan"
+    iteration: int = 0
+    task: str = ""
+    created_at_ns: int = 0
+    finished_at_ns: int = 0
 
 
 def _resolve_registered_workspace(agent_id: str) -> Path | None:
@@ -314,13 +386,40 @@ def build_team_router(
         team_id = save_custom_team(team_def)
         return CustomTeamResponse(team_id=team_id, name=req.name)
 
-    @router.get("/custom", response_model=list[CustomTeamResponse])
-    def list_custom_team_defs() -> list[CustomTeamResponse]:
-        """List all registered custom teams."""
-        return [
-            CustomTeamResponse(team_id=t["team_id"], name=t.get("name", t["team_id"]))
-            for t in list_custom_teams()
-        ]
+    @router.get("/custom", response_model=list[StoredCustomTeamResponse])
+    def list_custom_team_defs() -> list[StoredCustomTeamResponse]:
+        """List complete custom team definitions (backend is source of truth)."""
+        return [_stored_team_response(team) for team in list_custom_teams()]
+
+    @router.get("/custom/{team_id}", response_model=StoredCustomTeamResponse)
+    def get_custom_team_def(team_id: str) -> StoredCustomTeamResponse:
+        from .custom_store import load_custom_team
+
+        team = load_custom_team(team_id)
+        if team is None:
+            raise HTTPException(status_code=404, detail="Expert team not found")
+        return _stored_team_response(team)
+
+    @router.put("/custom/{team_id}", response_model=CustomTeamResponse)
+    def update_custom_team(
+        team_id: str,
+        req: CustomTeamRequest,
+    ) -> CustomTeamResponse:
+        from .custom_store import load_custom_team
+
+        if load_custom_team(team_id) is None:
+            raise HTTPException(status_code=404, detail="Expert team not found")
+        team_def = req.model_dump(by_alias=True)
+        team_def["id"] = team_id
+        saved_id = save_custom_team(team_def)
+        return CustomTeamResponse(team_id=saved_id, name=req.name)
+
+    @router.delete("/custom/{team_id}", status_code=204)
+    def delete_custom_team_def(team_id: str) -> None:
+        from .custom_store import delete_custom_team
+
+        if not delete_custom_team(team_id):
+            raise HTTPException(status_code=404, detail="Expert team not found")
 
     @router.get("/state", response_model=TeamStateResponse)
     def get_team_state(request: Request) -> TeamStateResponse:
@@ -339,7 +438,106 @@ def build_team_router(
             )
         return _latest_team_state(workspace_dir, agent_id)
 
+    @router.get("/runs", response_model=list[TeamRunSummary])
+    def list_team_runs(request: Request) -> list[TeamRunSummary]:
+        """List expert-team runs for the selected controller workspace."""
+        agent_id = request.headers.get("X-Agent-Id", "").strip()
+        if not agent_id:
+            raise HTTPException(status_code=400, detail="X-Agent-Id header is required")
+        workspace_dir = resolve_workspace(agent_id)
+        if workspace_dir is None:
+            raise HTTPException(status_code=404, detail="Agent workspace is not registered")
+        return _list_team_runs(workspace_dir)
+
     return router
+
+
+def _stored_team_response(team: dict[str, Any]) -> StoredCustomTeamResponse:
+    """Normalize the storage representation into the public API model."""
+    return StoredCustomTeamResponse.model_validate(
+        {
+            "team_id": team["team_id"],
+            "name": team.get("name", team["team_id"]),
+            "description": team.get("description", ""),
+            "emoji": team.get("emoji", "🤝"),
+            "category": team.get("category", "自定义"),
+            "mode": team.get("mode", "pipeline"),
+            "members": team.get("members", []),
+            "steps": team.get("steps", []),
+            "orchestrationPrompt": team.get("orchestration_prompt", ""),
+            "coordinatorName": team.get("coordinator_name") or None,
+            "taskTemplate": team.get("task_template", ""),
+            "maxReviewRounds": team.get("max_review_rounds", 2),
+            "routingInstruction": team.get("routing_instruction", ""),
+            "successCriteria": team.get("success_criteria", ""),
+            "createdAt": team.get("created_at", 0),
+            "updatedAt": team.get("updated_at", 0),
+        },
+    )
+
+
+def _list_team_runs(workspace_dir: Path) -> list[TeamRunSummary]:
+    base = workspace_dir / ".qwenpaw" / "ugsci_teams"
+    try:
+        base_resolved = base.resolve()
+        instances = [
+            path
+            for path in base.iterdir()
+            if path.is_dir()
+            and not path.is_symlink()
+            and path.resolve().is_relative_to(base_resolved)
+        ]
+    except (FileNotFoundError, OSError):
+        return []
+    runs: list[TeamRunSummary] = []
+    for instance in instances:
+        state_file = instance / "state.json"
+        if not state_file.is_file() or state_file.is_symlink():
+            continue
+        try:
+            data = validate_state_document(
+                json.loads(state_file.read_text(encoding="utf-8")),
+            )
+            workflow_status = data.get("workflow_status", WORKFLOW_ACTIVE)
+            if workflow_status == WORKFLOW_TERMINATED:
+                status = "terminated"
+            elif (
+                workflow_status == WORKFLOW_COMPLETED
+                or data.get("current_phase") == "completed"
+            ):
+                status = "completed"
+            else:
+                status = (
+                    "active"
+                    if workflow_status == WORKFLOW_ACTIVE
+                    else workflow_status
+                )
+            runs.append(
+                TeamRunSummary(
+                    instance_id=instance.name,
+                    team_id=data.get("team_id", ""),
+                    team_name=data.get("team_name", ""),
+                    team_mode=data.get("team_mode", "pipeline"),
+                    status=status,
+                    current_phase=data.get("current_phase", "plan"),
+                    iteration=int(data.get("iteration", 0)),
+                    task=data.get("task", ""),
+                    created_at_ns=int(data.get("created_at_ns", 0)),
+                    finished_at_ns=int(data.get("finished_at_ns", 0)),
+                ),
+            )
+        except (
+            OSError,
+            UnicodeDecodeError,
+            json.JSONDecodeError,
+            TeamStateInvalidError,
+        ):
+            runs.append(TeamRunSummary(instance_id=instance.name, status="unreadable"))
+    return sorted(
+        runs,
+        key=lambda run: (run.created_at_ns, run.instance_id),
+        reverse=True,
+    )
 
 
 __all__ = [
@@ -353,5 +551,7 @@ __all__ = [
     "RolesResponse",
     "TeamMemberDefinition",
     "TeamStateResponse",
+    "TeamRunSummary",
+    "StoredCustomTeamResponse",
     "build_team_router",
 ]

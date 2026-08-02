@@ -106,66 +106,6 @@ export interface MCPClientInfo {
   access_summary: MCPAccessSummary;
 }
 
-export interface MCPToolInfo {
-  name: string;
-  description: string;
-  enabled: boolean;
-  input_schema: Record<string, unknown>;
-}
-
-export type MCPAccessSourceType = "channel" | (string & {});
-export type MCPAccessSubjectType = "all" | "user";
-
-export interface MCPAccessRule {
-  source_type: MCPAccessSourceType;
-  source_value: string;
-  subject_type: MCPAccessSubjectType;
-  subject_value: string;
-  effect: MCPAccessEffect;
-}
-
-export interface MCPAccessPrincipalOption {
-  source_type: MCPAccessSourceType;
-  source_value: string;
-  subject_type: "user";
-  subject_value: string;
-  label: string;
-  chat_id: string;
-  chat_name: string;
-  session_id: string;
-  updated_at: string | null;
-}
-
-export interface MCPToolDefaultPolicy {
-  tool_name: string;
-  effect: MCPAccessEffect;
-}
-
-export interface MCPToolAccessOverride extends MCPAccessRule {
-  tool_name: string;
-}
-
-export interface MCPAccessPolicy {
-  default_effect: MCPAccessEffect;
-  client_overrides: MCPAccessRule[];
-  tool_defaults: MCPToolDefaultPolicy[];
-  tool_overrides: MCPToolAccessOverride[];
-  unmanaged_rules_count: number;
-}
-
-export interface MCPClientUpdate {
-  name?: string;
-  description?: string;
-  command?: string;
-  enabled?: boolean;
-  transport?: "stdio" | "streamable_http" | "sse";
-  url?: string;
-  headers?: Record<string, string>;
-  args?: string[];
-  env?: Record<string, string>;
-  cwd?: string;
-}
-
 // ─── Expert Aggregate Type ────────────────────────────────────────────────────
 
 /** Aggregated expert data — the VIEW layer on top of Agent data. */

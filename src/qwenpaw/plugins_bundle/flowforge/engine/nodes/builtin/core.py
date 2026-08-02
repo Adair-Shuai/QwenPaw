@@ -65,6 +65,7 @@ class AgentNode(WorkflowNode):
             inputs=[
                 IO.String.Input(id="agent_id"),
                 IO.String.Input(id="query", multiline=True),
+                IO.Any_.Input(id="context", optional=True),
             ],
             outputs=[IO.String.Output(id="reply")],
             hidden=[Hidden.AGENT_RUNTIME],
@@ -77,8 +78,19 @@ class AgentNode(WorkflowNode):
         if runtime is None:
             return NodeOutput(error="AgentNode requires agent_runtime")
         try:
+            query = str(inputs["query"])
+            context = inputs.get("context")
+            if context is not None:
+                query += (
+                    "\n\n## 上游输入/产物\n"
+                    + (
+                        context
+                        if isinstance(context, str)
+                        else json.dumps(context, ensure_ascii=False, default=str)
+                    )
+                )
             reply = await _dispatch_agent_turn(
-                runtime, str(inputs["agent_id"]), str(inputs["query"]),
+                runtime, str(inputs["agent_id"]), query,
             )
         except Exception as exc:  # noqa: BLE001
             return NodeOutput(error=f"{type(exc).__name__}: {exc}")

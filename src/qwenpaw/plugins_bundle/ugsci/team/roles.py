@@ -144,7 +144,7 @@ def resolve_role(role: str) -> str:
     1. Direct key match.
     2. Chinese display name → role key.
     3. Alias map.
-    4. Fallback to ``"executor"``.
+    4. Fail closed to the restricted ``"analyst"`` role.
     """
     if role in UGSCI_ROLE_PROMPTS:
         return role
@@ -158,7 +158,7 @@ def resolve_role(role: str) -> str:
     lower = role.lower().replace("-", "_").replace("_", "-")
     if lower in UGSCI_ROLE_PROMPTS:
         return lower
-    return "executor"
+    return "analyst"
 
 
 def get_display_name(role: str) -> str:

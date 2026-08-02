@@ -11176,18 +11176,24 @@ if (typeof process === "undefined") {
     );
   }
   function FlowForgeApp() {
-    const [route, setRoute] = React2.useState("list");
-    const [flowId, setFlowId] = React2.useState(null);
-    const [runId, setRunId] = React2.useState(null);
+    const initialFlowId = new URLSearchParams(window.location.search).get("flow");
+    const initialRunId = new URLSearchParams(window.location.search).get("run");
+    const [route, setRoute] = React2.useState(
+      initialFlowId ? "editor" : "list"
+    );
+    const [flowId, setFlowId] = React2.useState(initialFlowId);
+    const [runId, setRunId] = React2.useState(initialRunId);
     const [runStatuses, setRunStatuses] = React2.useState({});
     const editFlow = React2.useCallback((id2) => {
       setFlowId(id2);
       setRoute("editor");
+      window.history.replaceState({}, "", `/flowforge?flow=${encodeURIComponent(id2)}`);
     }, []);
     const backToList = React2.useCallback(() => {
       setRoute("list");
       setFlowId(null);
       setRunStatuses({});
+      window.history.replaceState({}, "", "/flowforge");
     }, []);
     const runFlow = React2.useCallback(async (id2) => {
       try {
@@ -11225,32 +11231,17 @@ if (typeof process === "undefined") {
   }
   function buildPlugin() {
     const QP = window.QwenPaw;
-    if (!QP?.menu || !QP?.route) {
-      console.warn("[flowforge] QwenPaw.menu/route API not available — plugin disabled");
+    if (!QP?.route) {
+      console.warn("[flowforge] QwenPaw.route API not available — plugin disabled");
       return;
     }
-    const React22 = getHost().React;
     const PLUGIN_ID = "flowforge";
-    const antdIcons = getHost().antdIcons || {};
-    const ApartmentOutlined = antdIcons.ApartmentOutlined;
-    const NodeIndexOutlined = antdIcons.NodeIndexOutlined;
     QP.route.add(PLUGIN_ID, {
       id: "flowforge.editor",
       path: "/flowforge",
       component: FlowForgeApp
     });
-    QP.menu.add(PLUGIN_ID, {
-      id: "flowforge.editor",
-      location: "primary.agentScoped",
-      label: () => "工作流",
-      icon: ApartmentOutlined ? React22.createElement(ApartmentOutlined, { style: { fontSize: 16 } }) : React22.createElement(NodeIndexOutlined || "span", NodeIndexOutlined ? { style: { fontSize: 16 } } : null, "⚡"),
-      route: "flowforge.editor",
-      order: 9
-    });
-    if (QP.sidebar?.registerSimpleModeItem) {
-      QP.sidebar.registerSimpleModeItem("flowforge.editor");
-    }
-    console.info("[flowforge] Plugin registered: DAG editor route + menu active");
+    console.info("[flowforge] Plugin registered: DAG editor route active");
   }
   function tryBuildPlugin() {
     try {

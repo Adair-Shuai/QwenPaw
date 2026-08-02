@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import sys
 import time
@@ -71,8 +72,10 @@ def test_canvas_edge_materializes_order_and_target_socket() -> None:
 class _RecordingRuntime:
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.queries: list[str] = []
 
     async def run_agent_turn(self, _agent_id: str, query: str) -> str:
+        self.queries.append(query)
         step = query.split("：", 1)[-1].split("\n", 1)[0]
         self.calls.append(step)
         await asyncio.sleep(0.005)
@@ -85,7 +88,13 @@ def test_generated_sop_is_strictly_ordered_and_streams_progress(
     service = WorkflowService(flows_dir=tmp_path)
     runtime = _RecordingRuntime()
     service.executor.agent_runtime = runtime
-    flow = service.generate_flow("步骤一；步骤二；步骤三")
+    flow = service.generate_flow(
+        "步骤一；步骤二；步骤三",
+        agent_id="stable-controller-id",
+    )
+    assert flow["nodes"]["step_1"]["inputs"]["agent_id"] == (
+        "stable-controller-id"
+    )
     service.save_flow(flow["id"], flow)
 
     handle = service.start_run(flow["id"], {"request": "test"})
@@ -95,6 +104,7 @@ def test_generated_sop_is_strictly_ordered_and_streams_progress(
 
     assert handle.result is not None
     assert runtime.calls == ["步骤一", "步骤二", "步骤三"]
+    assert "## 上游输入/产物\n步骤一" in runtime.queries[1]
     assert [entry.node_id for entry in handle.result.execution_history] == [
         "input",
         "step_1",
@@ -110,6 +120,28 @@ def test_generated_sop_is_strictly_ordered_and_streams_progress(
         "step_3": "success",
         "output": "success",
     }
+
+
+def test_generate_route_binds_nodes_to_stable_agent_id(
+    tmp_path: Path,
+) -> None:
+    service = WorkflowService(flows_dir=tmp_path)
+    app = FastAPI()
+    app.include_router(build_router(service))
+
+    response = TestClient(app).post(
+        "/generate",
+        json={
+            "prompt": "检查数据；形成结论",
+            "name": "稳定绑定",
+            "agent_id": "cloud-orchestrator",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["nodes"]["step_1"]["inputs"]["agent_id"] == (
+        "cloud-orchestrator"
+    )
 
 
 def test_implicit_outputs_are_graph_leaves_not_dependency_targets() -> None:
@@ -489,6 +521,22 @@ def test_repository_recovers_runs_interrupted_by_restart(
     assert record["status"] == "failed"
     assert record["finished_at"] is not None
     assert "stopped before" in record["error"]
+
+
+def test_repository_does_not_recover_run_owned_by_live_process(
+    tmp_path: Path,
+) -> None:
+    repository = ExecutionRepository(tmp_path)
+    repository.create(
+        "live-run",
+        "flow",
+        status="running",
+        started_at=time.time(),
+        owner_pid=os.getpid(),
+    )
+
+    assert repository.recover_incomplete(active_owner_pid=os.getpid()) == 0
+    assert repository.get("live-run")["status"] == "running"
 
 
 def test_websocket_replays_persisted_run_after_restart(tmp_path: Path) -> None:

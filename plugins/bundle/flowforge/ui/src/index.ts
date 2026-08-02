@@ -1124,13 +1124,26 @@ function RunMonitorDrawer({ runId, onClose, onStatusUpdate }: { runId: string | 
 // ─── Top-level App ──────────────────────────────────────────────────────────
 
 function FlowForgeApp() {
-  const [route, setRoute] = useState<"list" | "editor">("list");
-  const [flowId, setFlowId] = useState<string | null>(null);
-  const [runId, setRunId] = useState<string | null>(null);
+  const initialFlowId = new URLSearchParams(window.location.search).get("flow");
+  const initialRunId = new URLSearchParams(window.location.search).get("run");
+  const [route, setRoute] = useState<"list" | "editor">(
+    initialFlowId ? "editor" : "list",
+  );
+  const [flowId, setFlowId] = useState<string | null>(initialFlowId);
+  const [runId, setRunId] = useState<string | null>(initialRunId);
   const [runStatuses, setRunStatuses] = useState<Record<string, string>>({});
 
-  const editFlow = useCallback((id: string) => { setFlowId(id); setRoute("editor"); }, []);
-  const backToList = useCallback(() => { setRoute("list"); setFlowId(null); setRunStatuses({}); }, []);
+  const editFlow = useCallback((id: string) => {
+    setFlowId(id);
+    setRoute("editor");
+    window.history.replaceState({}, "", `/flowforge?flow=${encodeURIComponent(id)}`);
+  }, []);
+  const backToList = useCallback(() => {
+    setRoute("list");
+    setFlowId(null);
+    setRunStatuses({});
+    window.history.replaceState({}, "", "/flowforge");
+  }, []);
   const runFlow = useCallback(async (id: string) => {
     try {
       const res = await apiFetch<{ run_id: string }>(`/flowforge/flows/${encodeURIComponent(id)}/run`, {
@@ -1168,38 +1181,21 @@ function FlowForgeApp() {
 
 function buildPlugin() {
   const QP = (window as any).QwenPaw;
-  if (!QP?.menu || !QP?.route) {
-    console.warn("[flowforge] QwenPaw.menu/route API not available — plugin disabled");
+  if (!QP?.route) {
+    console.warn("[flowforge] QwenPaw.route API not available — plugin disabled");
     return;
   }
-  const React = getHost().React;
   const PLUGIN_ID = "flowforge";
-  const antdIcons = getHost().antdIcons || {};
-  const ApartmentOutlined = antdIcons.ApartmentOutlined;
-  const NodeIndexOutlined = antdIcons.NodeIndexOutlined;
-
   QP.route.add(PLUGIN_ID, {
     id: "flowforge.editor",
     path: "/flowforge",
     component: FlowForgeApp,
   });
 
-  QP.menu.add(PLUGIN_ID, {
-    id: "flowforge.editor",
-    location: "primary.agentScoped",
-    label: () => "工作流",
-    icon: ApartmentOutlined
-      ? React.createElement(ApartmentOutlined, { style: { fontSize: 16 } })
-      : React.createElement(NodeIndexOutlined || "span", NodeIndexOutlined ? { style: { fontSize: 16 } } : null, "⚡"),
-    route: "flowforge.editor",
-    order: 9,
-  });
-
-  if (QP.sidebar?.registerSimpleModeItem) {
-    QP.sidebar.registerSimpleModeItem("flowforge.editor");
-  }
-
-  console.info("[flowforge] Plugin registered: DAG editor route + menu active");
+  // FlowForge is the execution/editor surface behind
+  // “专家·协作 / 协作工作流”, so it intentionally has no competing top-level
+  // sidebar entry. The route remains directly navigable from that module.
+  console.info("[flowforge] Plugin registered: DAG editor route active");
 }
 
 function tryBuildPlugin() {

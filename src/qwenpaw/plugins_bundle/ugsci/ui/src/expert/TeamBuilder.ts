@@ -6,23 +6,58 @@ import { getHost } from "../core/runtime";
 import type { AgentSummary } from "../core/types";
 import {
   buildTeamMessage,
+  deleteCustomTeamFromBackend,
+  fetchCustomTeams,
   findAgentIdByName,
   loadCustomTeams,
-  registerCustomTeam,
+  migrateCachedCustomTeams,
+  saveCustomTeamToBackend,
   saveCustomTeams,
   sendTeamMessage,
   type ExpertTeam,
   type ExpertTeamMember,
   type ExpertTeamStep,
+  type TeamMode,
 } from "../team/model";
 import { ExpertAvatar, TeamAvatar } from "../components/avatars";
 import { PRIMARY_BTN_STYLE } from "../core/shared";
 import {
   fetchPresetTeamsFromBackend,
+  fetchUgsciRoles,
+  TeamRunHistory,
   TeamWorkflowCard,
   type PresetTeam,
+  type RoleDefinition,
 } from "../team/workflow";
 import { TeamFlowDiagram } from "../team/flowDiagram";
+
+function inferRoleKey(name: string): string {
+  const compact = name.replace(/\s+/g, "").toLowerCase();
+  if (compact.includes("测井")) return "log-analyst";
+  if (compact.includes("地球物理")) return "geophysicist";
+  if (compact.includes("油藏")) return "reservoir-engineer";
+  if (compact.includes("钻井")) return "drilling-engineer";
+  if (compact.includes("采油") || compact.includes("生产")) return "production-engineer";
+  if (compact.includes("pvt") || compact.includes("物性")) return "pvt-analyst";
+  if (compact.includes("审核") || compact.includes("verifier")) return "domain-reviewer";
+  if (compact.includes("master") || compact.includes("planner")) return "planner";
+  // Unknown display names fail closed to the restricted analyst role. Users
+  // can select a more specific role explicitly in the builder.
+  return "analyst";
+}
+
+const FALLBACK_ROLE_OPTIONS: RoleDefinition[] = [
+  { key: "analyst", display_name: "需求分析师", allowed_tools: [], skills: [], prompt: "" },
+  { key: "reservoir-engineer", display_name: "油藏工程师", allowed_tools: [], skills: [], prompt: "" },
+  { key: "log-analyst", display_name: "测井分析师", allowed_tools: [], skills: [], prompt: "" },
+  { key: "geophysicist", display_name: "地球物理专家", allowed_tools: [], skills: [], prompt: "" },
+  { key: "drilling-engineer", display_name: "钻井工程师", allowed_tools: [], skills: [], prompt: "" },
+  { key: "production-engineer", display_name: "采油工程师", allowed_tools: [], skills: [], prompt: "" },
+  { key: "pvt-analyst", display_name: "PVT 分析师", allowed_tools: [], skills: [], prompt: "" },
+  { key: "domain-reviewer", display_name: "领域审核专家", allowed_tools: [], skills: [], prompt: "" },
+  { key: "planner", display_name: "规划者", allowed_tools: [], skills: [], prompt: "" },
+  { key: "verifier", display_name: "验证者", allowed_tools: [], skills: [], prompt: "" },
+];
 
 // ─── Expert Teams (多智能体协同) ─────────────────────────────────────────────
 
@@ -65,14 +100,38 @@ export function TeamBuilderModal({
   const [name, setName] = useState("");
   const [emoji, setEmoji] = useState("🤝");
   const [description, setDescription] = useState("");
-  const [mode, setMode] = useState<"coordinator" | "pipeline" | "roundtable">(
-    "pipeline",
-  );
+  const [mode, setMode] = useState<TeamMode>("pipeline");
   const [coordinatorName, setCoordinatorName] = useState<string>("");
   const [taskTemplate, setTaskTemplate] = useState("");
   const [steps, setSteps] = useState<ExpertTeamStep[]>([]);
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [maxReviewRounds, setMaxReviewRounds] = useState(2);
+  const [successCriteria, setSuccessCriteria] = useState("");
+  const [routingInstruction, setRoutingInstruction] = useState("");
+  const [memberBindings, setMemberBindings] = useState<
+    Record<string, "fixed" | "preferred" | "temporary">
+  >({});
+  const [memberRoleKeys, setMemberRoleKeys] = useState<Record<string, string>>({});
+  const [roleOptions, setRoleOptions] = useState<RoleDefinition[]>(
+    FALLBACK_ROLE_OPTIONS,
+  );
+
+  const workflowTemplates: Array<{
+    value: TeamMode;
+    icon: string;
+    title: string;
+    description: string;
+    topology: string;
+    accent: string;
+  }> = [
+    { value: "pipeline", icon: "→", title: "顺序交接", description: "上一步产物成为下一位专家的上下文", topology: "A → B → C", accent: "#08979c" },
+    { value: "roundtable", icon: "⇉", title: "并行汇聚", description: "独立并行分析，避免观点相互污染", topology: "A ∥ B ∥ C → 汇总", accent: "#531dab" },
+    { value: "coordinator", icon: "◎", title: "主管协作", description: "主控专家拆解任务并按需组织成员", topology: "主管 → 专家组", accent: "#0958d9" },
+    { value: "router", icon: "◇", title: "智能路由", description: "按任务能力需求选择最小充分专家集合", topology: "任务 → 路由 → 子集", accent: "#d46b08" },
+    { value: "review_loop", icon: "↻", title: "评审迭代", description: "产出、独立审查、修订，直到满足标准", topology: "执行 ⇄ 评审", accent: "#389e0d" },
+    { value: "debate", icon: "⚖", title: "多方论证", description: "独立立场、交叉质询，再由裁决者综合", topology: "观点 ⇄ 反驳 → 裁决", accent: "#c41d7f" },
+  ];
 
   // Reset form when modal opens
   useEffect(() => {
@@ -86,6 +145,25 @@ export function TeamBuilderModal({
         setTaskTemplate(editingTeam.taskTemplate);
         setSteps(editingTeam.steps || []);
         setSelectedMembers(editingTeam.members.map((m) => m.name));
+        setMaxReviewRounds(editingTeam.maxReviewRounds || 2);
+        setSuccessCriteria(editingTeam.successCriteria || "");
+        setRoutingInstruction(editingTeam.routingInstruction || "");
+        setMemberBindings(
+          Object.fromEntries(
+            editingTeam.members.map((member) => [
+              member.name,
+              member.bindingMode || (member.agentId ? "fixed" : "preferred"),
+            ]),
+          ),
+        );
+        setMemberRoleKeys(
+          Object.fromEntries(
+            editingTeam.members.map((member) => [
+              member.name,
+              member.roleKey || inferRoleKey(member.name),
+            ]),
+          ),
+        );
       } else {
         setName("");
         setEmoji("🤝");
@@ -95,13 +173,25 @@ export function TeamBuilderModal({
         setTaskTemplate("请执行以下任务：\n任务描述：{任务描述}");
         setSteps([]);
         setSelectedMembers([]);
+        setMaxReviewRounds(2);
+        setSuccessCriteria("");
+        setRoutingInstruction("");
+        setMemberBindings({});
+        setMemberRoleKeys({});
       }
     }
   }, [open, editingTeam]);
 
+  useEffect(() => {
+    if (!open) return;
+    void fetchUgsciRoles().then((roles) => {
+      if (roles?.length) setRoleOptions(roles);
+    });
+  }, [open]);
+
   // Sync steps when mode or members change
   const syncStepsFromMembers = useCallback(() => {
-    if (mode === "roundtable") {
+    if (mode === "roundtable" || mode === "debate" || mode === "router") {
       // Each member gets an independent step
       const newSteps = selectedMembers.map((agentName) => ({
         agentName,
@@ -129,18 +219,30 @@ export function TeamBuilderModal({
   const handleAddMember = (agentName: string) => {
     if (!selectedMembers.includes(agentName)) {
       setSelectedMembers([...selectedMembers, agentName]);
-      // For coordinator mode, set first member as coordinator
-      if (mode === "coordinator" && !coordinatorName) {
+      setMemberBindings({ ...memberBindings, [agentName]: "fixed" });
+      setMemberRoleKeys({
+        ...memberRoleKeys,
+        [agentName]: inferRoleKey(agentName),
+      });
+      // Supervisor / debate templates require an explicit control role.
+      if ((mode === "coordinator" || mode === "debate") && !coordinatorName) {
         setCoordinatorName(agentName);
       }
     }
   };
 
   const handleRemoveMember = (agentName: string) => {
-    setSelectedMembers(selectedMembers.filter((n) => n !== agentName));
+    const remainingMembers = selectedMembers.filter((n) => n !== agentName);
+    setSelectedMembers(remainingMembers);
     setSteps(steps.filter((s) => s.agentName !== agentName));
+    const nextBindings = { ...memberBindings };
+    delete nextBindings[agentName];
+    setMemberBindings(nextBindings);
+    const nextRoles = { ...memberRoleKeys };
+    delete nextRoles[agentName];
+    setMemberRoleKeys(nextRoles);
     if (coordinatorName === agentName) {
-      setCoordinatorName(selectedMembers[0] || "");
+      setCoordinatorName(remainingMembers[0] || "");
     }
   };
 
@@ -154,7 +256,7 @@ export function TeamBuilderModal({
     setSteps(newSteps);
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!name.trim()) {
       antdMsg.warning("请输入团队名称");
       return;
@@ -167,21 +269,36 @@ export function TeamBuilderModal({
       antdMsg.warning("请输入任务模板");
       return;
     }
-    if (mode === "coordinator" && !coordinatorName) {
-      antdMsg.warning("请选择协调者");
+    if ((mode === "coordinator" || mode === "debate") && !coordinatorName) {
+      antdMsg.warning(mode === "debate" ? "请选择裁决者" : "请选择主控专家");
       return;
     }
 
     setSaving(true);
     try {
       // Build member objects from agent list
-      const memberObjs: ExpertTeamMember[] = selectedMembers.map(
+      let orderedMembers = [...selectedMembers];
+      if (mode === "coordinator" && coordinatorName) {
+        orderedMembers = [coordinatorName, ...orderedMembers.filter((n) => n !== coordinatorName)];
+      } else if (mode === "debate" && coordinatorName) {
+        orderedMembers = [...orderedMembers.filter((n) => n !== coordinatorName), coordinatorName];
+      }
+      const memberObjs: ExpertTeamMember[] = orderedMembers.map(
         (agentName) => {
           const agent = agents.find((a) => a.name === agentName);
+          const bindingMode = memberBindings[agentName] || "fixed";
+          const roleKey = memberRoleKeys[agentName] || inferRoleKey(agentName);
+          const roleDefinition = roleOptions.find((role) => role.key === roleKey);
           return {
             name: agentName,
-            role: agent?.description?.slice(0, 30) || "团队成员",
+            role:
+              roleDefinition?.display_name ||
+              agent?.description?.slice(0, 30) ||
+              "需求分析师",
             emoji: "",
+            agentId: bindingMode === "temporary" ? undefined : agent?.id,
+            roleKey,
+            bindingMode,
           };
         },
       );
@@ -206,21 +323,26 @@ export function TeamBuilderModal({
           `${name.trim()}（${selectedMembers.length}人团队）`,
         mode,
         members: memberObjs,
-        coordinatorName: mode === "coordinator" ? coordinatorName : undefined,
+        coordinatorName:
+          mode === "coordinator" || mode === "debate" ? coordinatorName : undefined,
         taskTemplate: taskTemplate.trim(),
         orchestrationPrompt: "", // Custom teams use steps-based instructions
         steps: finalSteps,
         custom: true,
         createdAt: editingTeam?.createdAt || Date.now(),
+        maxReviewRounds,
+        successCriteria: successCriteria.trim(),
+        routingInstruction: routingInstruction.trim(),
       };
 
-      // Save to localStorage
+      // Persist to the backend source of truth, then refresh the offline cache.
+      const savedTeam = await saveCustomTeamToBackend(team);
       const existing = loadCustomTeams();
-      const idx = existing.findIndex((t) => t.id === team.id);
+      const idx = existing.findIndex((t) => t.id === savedTeam.id);
       if (idx >= 0) {
-        existing[idx] = team;
+        existing[idx] = savedTeam;
       } else {
-        existing.push(team);
+        existing.push(savedTeam);
       }
       saveCustomTeams(existing);
 
@@ -272,9 +394,9 @@ export function TeamBuilderModal({
           editingTeam ? "编辑专家团" : "创建专家团",
         ),
       ),
-      width: 720,
+      width: 860,
       onOk: handleSave,
-      okText: "保存团队",
+      okText: "保存专家团",
       confirmLoading: saving,
       okButtonProps: {
         icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined,
@@ -290,7 +412,7 @@ export function TeamBuilderModal({
           strong: true,
           style: { display: "block", marginBottom: 8, fontSize: 13 },
         },
-        "1. 基本信息",
+        "1. 定义任务工作流",
       ),
       React.createElement(
         "div",
@@ -302,36 +424,63 @@ export function TeamBuilderModal({
             })
           : null,
         React.createElement(Input, {
-          placeholder: "团队名称（如：储层评价团队）",
+          placeholder: "专家团名称（如：储层评价与质量复核专家团）",
           value: name,
           onChange: (e: any) => setName(e.target.value),
           style: { flex: 1 },
         }),
       ),
       React.createElement(Input.TextArea, {
-        placeholder: "团队描述（简述团队的目标和适用场景）",
+        placeholder: "说明这个工作流解决什么问题、适用于什么场景",
         value: description,
         onChange: (e: any) => setDescription(e.target.value),
         rows: 2,
         style: { marginBottom: 8 },
       }),
       React.createElement(
+        Text,
+        { strong: true, style: { display: "block", margin: "12px 0 8px", fontSize: 13 } },
+        "选择协同模式",
+      ),
+      React.createElement(
         "div",
-        { style: { display: "flex", gap: 8, alignItems: "center" } },
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12 } },
-          "协同模式：",
-        ),
-        React.createElement(Select, {
-          value: mode,
-          onChange: (v: any) => setMode(v),
-          style: { width: 160 },
-          options: [
-            { value: "pipeline", label: "🔄 流水线（依次执行）" },
-            { value: "roundtable", label: "🔀 圆桌讨论（独立评估）" },
-            { value: "coordinator", label: "🎯 协调者（由协调者主导）" },
-          ],
+        {
+          style: {
+            display: "grid",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gap: 8,
+          },
+        },
+        ...workflowTemplates.map((template) => {
+          const active = mode === template.value;
+          return React.createElement(
+            "button",
+            {
+              key: template.value,
+              type: "button",
+              onClick: () => {
+                setMode(template.value);
+                if (template.value !== "coordinator" && template.value !== "debate") setCoordinatorName("");
+              },
+              style: {
+                textAlign: "left",
+                padding: 10,
+                borderRadius: 8,
+                cursor: "pointer",
+                background: active ? `${template.accent}0d` : "#fff",
+                border: `1px solid ${active ? template.accent : "#d9d9d9"}`,
+                boxShadow: active ? `0 0 0 2px ${template.accent}1a` : "none",
+              },
+            },
+            React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 7, color: template.accent, fontWeight: 600 } },
+              React.createElement("span", { style: { fontSize: 18 } }, template.icon),
+              template.title,
+            ),
+            React.createElement("div", { style: { fontSize: 11, color: "#595959", marginTop: 5, lineHeight: 1.45 } }, template.description),
+            React.createElement("div", { style: { fontSize: 10, color: template.accent, marginTop: 5, fontFamily: "monospace" } }, template.topology),
+          );
         }),
       ),
     ),
@@ -346,7 +495,7 @@ export function TeamBuilderModal({
           strong: true,
           style: { display: "block", marginBottom: 8, fontSize: 13 },
         },
-        "2. 选择团队成员",
+        "2. 配置专家角色",
       ),
       // Available agents
       availableAgents.length > 0
@@ -412,18 +561,41 @@ export function TeamBuilderModal({
                     { strong: true, style: { fontSize: 13 } },
                     memberName,
                   ),
-                  mode === "coordinator" && coordinatorName === memberName
+                  (mode === "coordinator" || mode === "debate") && coordinatorName === memberName
                     ? React.createElement(
                         Tag,
                         { color: "blue", style: { fontSize: 10 } },
-                        "协调者",
+                        mode === "debate" ? "裁决者" : "主控",
                       )
                     : null,
                 ),
                 React.createElement(
                   "div",
                   { style: { display: "flex", gap: 4 } },
-                  mode === "coordinator"
+                  React.createElement(Select, {
+                    size: "small",
+                    value: memberRoleKeys[memberName] || inferRoleKey(memberName),
+                    style: { width: 132 },
+                    onChange: (value: string) =>
+                      setMemberRoleKeys({ ...memberRoleKeys, [memberName]: value }),
+                    options: roleOptions.map((role) => ({
+                      value: role.key,
+                      label: role.display_name,
+                    })),
+                  }),
+                  React.createElement(Select, {
+                    size: "small",
+                    value: memberBindings[memberName] || "fixed",
+                    style: { width: 118 },
+                    onChange: (value: "fixed" | "preferred" | "temporary") =>
+                      setMemberBindings({ ...memberBindings, [memberName]: value }),
+                    options: [
+                      { value: "fixed", label: "固定实例" },
+                      { value: "preferred", label: "优先实例" },
+                      { value: "temporary", label: "临时派生" },
+                    ],
+                  }),
+                  mode === "coordinator" || mode === "debate"
                     ? React.createElement(
                         Button,
                         {
@@ -431,7 +603,7 @@ export function TeamBuilderModal({
                           type: "link",
                           onClick: () => setCoordinatorName(memberName),
                         },
-                        "设为协调者",
+                        mode === "debate" ? "设为裁决者" : "设为主控",
                       )
                     : null,
                   React.createElement(
@@ -452,6 +624,40 @@ export function TeamBuilderModal({
             ),
           ),
     ),
+    mode === "review_loop" || mode === "router"
+      ? React.createElement(
+          "div",
+          {
+            style: {
+              margin: "0 0 16px",
+              padding: 12,
+              borderRadius: 8,
+              background: "#fafafa",
+              border: "1px solid #f0f0f0",
+            },
+          },
+          mode === "review_loop"
+            ? React.createElement(
+                "div",
+                { style: { display: "grid", gridTemplateColumns: "150px 1fr", gap: 10 } },
+                React.createElement(Select, {
+                  value: maxReviewRounds,
+                  onChange: (value: number) => setMaxReviewRounds(value),
+                  options: [1, 2, 3, 4, 5].map((value) => ({ value, label: `最多 ${value} 轮` })),
+                }),
+                React.createElement(Input, {
+                  value: successCriteria,
+                  onChange: (e: any) => setSuccessCriteria(e.target.value),
+                  placeholder: "验收标准，例如：关键结论均有数据依据，且无高风险缺陷",
+                }),
+              )
+            : React.createElement(Input, {
+                value: routingInstruction,
+                onChange: (e: any) => setRoutingInstruction(e.target.value),
+                placeholder: "路由偏好，例如：仅调用任务必需的专家；涉及模拟时优先油藏工程师",
+              }),
+        )
+      : null,
     React.createElement(Divider, { style: { margin: "12px 0" } }),
     // Step 3: Define execution steps (for pipeline/roundtable)
     selectedMembers.length > 0
@@ -464,7 +670,7 @@ export function TeamBuilderModal({
               strong: true,
               style: { display: "block", marginBottom: 8, fontSize: 13 },
             },
-            `3. 编排执行步骤${mode === "roundtable" ? "（各步独立执行）" : mode === "pipeline" ? "（依次执行，可传递上下文）" : "（由协调者决定调用顺序）"}`,
+            `3. 配置专家任务${mode === "roundtable" ? "（并行独立）" : mode === "pipeline" ? "（顺序交接）" : mode === "router" ? "（作为候选能力）" : mode === "review_loop" ? "（首位执行、末位评审）" : mode === "debate" ? "（末位为裁决者）" : "（由主控动态编排）"}`,
           ),
           // Auto-sync button
           React.createElement(
@@ -630,7 +836,7 @@ export function ExpertTeamCard({
 }) {
   const React = getHost().React;
   const { useState } = React;
-  const { Card, Tag, Typography, Button, Tooltip } = getHost().antd;
+  const { Card, Tag, Typography, Button, Tooltip, Popconfirm } = getHost().antd;
   const {
     TeamOutlined,
     RocketOutlined,
@@ -645,9 +851,12 @@ export function ExpertTeamCard({
   const [showFlow, setShowFlow] = useState(false);
 
   const modeLabels: Record<string, { label: string; color: string }> = {
-    coordinator: { label: "协调者模式", color: "blue" },
-    pipeline: { label: "流水线模式", color: "cyan" },
-    roundtable: { label: "圆桌讨论", color: "purple" },
+    coordinator: { label: "主管协作", color: "blue" },
+    pipeline: { label: "顺序交接", color: "cyan" },
+    roundtable: { label: "并行汇聚", color: "purple" },
+    router: { label: "智能路由", color: "orange" },
+    review_loop: { label: "评审迭代", color: "green" },
+    debate: { label: "多方论证", color: "magenta" },
   };
   const modeInfo = modeLabels[team.mode] || modeLabels.coordinator;
 
@@ -655,17 +864,18 @@ export function ExpertTeamCard({
   // with role prompts — they don't need to exist as pre-created agents.
   // We still check for informational purposes, but don't block.
   const memberStatus = team.members.map((m) => {
-    const agentId = findAgentIdByName(agents, m.name);
-    return { ...m, found: !!agentId, agentId };
+    const temporary = m.bindingMode === "temporary";
+    const agentId = temporary
+      ? null
+      : (m.agentId && agents.some((agent) => agent.id === m.agentId)
+          ? m.agentId
+          : null) || findAgentIdByName(agents, m.name);
+    return { ...m, found: !!agentId, agentId, temporary };
   });
   const foundCount = memberStatus.filter((m) => m.found).length;
 
   // Determine coordinator agent
   const coordinatorName = team.coordinatorName || team.members[0]?.name;
-  const coordinatorAgent = coordinatorName
-    ? findAgentIdByName(agents, coordinatorName)
-    : null;
-
   return React.createElement(
     Card,
     {
@@ -767,18 +977,26 @@ export function ExpertTeamCard({
               ? React.createElement(
                   Tooltip,
                   { title: "删除" },
-                  React.createElement(Button, {
-                    type: "text",
-                    size: "small",
-                    danger: true,
-                    icon: DeleteOutlined
-                      ? React.createElement(DeleteOutlined)
-                      : undefined,
-                    onClick: (e: any) => {
-                      e.stopPropagation();
-                      onDelete(team);
+                  React.createElement(
+                    Popconfirm,
+                    {
+                      title: `删除专家团「${team.name}」？`,
+                      description: "此操作会删除后端定义，但不会删除既有讨论记录。",
+                      okText: "删除",
+                      cancelText: "取消",
+                      okButtonProps: { danger: true },
+                      onConfirm: () => onDelete(team),
                     },
-                  }),
+                    React.createElement(Button, {
+                      type: "text",
+                      size: "small",
+                      danger: true,
+                      icon: DeleteOutlined
+                        ? React.createElement(DeleteOutlined)
+                        : undefined,
+                      onClick: (e: any) => e.stopPropagation(),
+                    }),
+                  ),
                 )
               : null,
           )
@@ -810,7 +1028,13 @@ export function ExpertTeamCard({
           Tooltip,
           {
             key: m.name,
-            title: `${m.name}（${m.role}）${m.found ? "" : " - 未创建"}`,
+            title: `${m.name}（${m.role}）${
+              m.temporary
+                ? " - OMP 临时派生"
+                : m.found
+                  ? " - 已绑定实例"
+                  : " - OMP 按角色派发"
+            }`,
           },
           React.createElement(
             "div",
@@ -821,8 +1045,8 @@ export function ExpertTeamCard({
                 gap: 4,
                 padding: "2px 8px",
                 borderRadius: 12,
-background: m.found ? "#f0f5ff" : "#f0f0ff",
-border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
+                background: m.found ? "#f0f5ff" : "#f0f0ff",
+                border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
                 fontSize: 11,
               },
             },
@@ -834,6 +1058,13 @@ border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
               },
               m.name,
             ),
+            m.temporary
+              ? React.createElement(
+                  Tag,
+                  { color: "purple", style: { fontSize: 9, marginInlineEnd: 0 } },
+                  "派生",
+                )
+              : null,
           ),
         ),
       ),
@@ -876,7 +1107,9 @@ border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 11 } },
-        coordinatorName ? `协调者: ${coordinatorName}` : "",
+        coordinatorName
+          ? `${team.mode === "debate" ? "裁决者" : "主控"}: ${coordinatorName}`
+          : "OMP 动态编排",
       ),
       React.createElement(
         Button,
@@ -886,11 +1119,11 @@ border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
           icon: RocketOutlined
             ? React.createElement(RocketOutlined)
             : undefined,
-          disabled: !coordinatorAgent,
+          disabled: agents.length === 0,
           onClick: () => onLaunch(team),
           style: PRIMARY_BTN_STYLE,
         },
-        "发起团队任务",
+        "运行工作流",
       ),
     ),
   );
@@ -919,7 +1152,6 @@ Button,
 Divider,
 Tabs,
 message: antdMsg,
-Popconfirm,
 } = getHost().antd;
 const { SearchOutlined, TeamOutlined, PlusOutlined, RocketOutlined } =
 getHost().antdIcons || {};
@@ -932,10 +1164,21 @@ const { Text } = Typography;
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<ExpertTeam | null>(null);
 
-  // Load custom teams from localStorage on mount
+  // Show the offline cache immediately, then reconcile with the backend source
+  // of truth and migrate legacy browser-only definitions once.
   useEffect(() => {
     setCustomTeams(loadCustomTeams());
     let active = true;
+    void (async () => {
+      try {
+        await migrateCachedCustomTeams();
+        const teams = await fetchCustomTeams();
+        if (active) setCustomTeams(teams);
+      } catch (error) {
+        console.warn("[ugsci] Failed to load backend expert teams:", error);
+        if (active) antdMsg.warning("专家团后端同步失败，当前显示本地缓存");
+      }
+    })();
     void fetchPresetTeamsFromBackend().then((teams: PresetTeam[] | null) => {
       if (!active) return;
       if (teams) {
@@ -951,16 +1194,25 @@ const { Text } = Typography;
   }, []);
 
   const refreshCustomTeams = useCallback(() => {
-    setCustomTeams(loadCustomTeams());
+    void fetchCustomTeams()
+      .then(setCustomTeams)
+      .catch((error) => {
+        console.warn("[ugsci] Failed to refresh expert teams:", error);
+        setCustomTeams(loadCustomTeams());
+      });
   }, []);
 
   const handleDeleteTeam = useCallback(
     (team: ExpertTeam) => {
-      const existing = loadCustomTeams();
-      const filtered = existing.filter((t) => t.id !== team.id);
-      saveCustomTeams(filtered);
-      setCustomTeams(filtered);
-      antdMsg.success(`团队「${team.name}」已删除`);
+      void deleteCustomTeamFromBackend(team.id)
+        .then(() => {
+          const existing = loadCustomTeams();
+          const filtered = existing.filter((t) => t.id !== team.id);
+          saveCustomTeams(filtered);
+          setCustomTeams(filtered);
+          antdMsg.success(`团队「${team.name}」已删除`);
+        })
+        .catch((error) => antdMsg.error(error.message || "删除专家团失败"));
     },
     [antdMsg],
   );
@@ -998,8 +1250,6 @@ const { Text } = Typography;
   return React.createElement(
     "div",
     null,
-    // Workflow status card (OMP-backed)
-    React.createElement(TeamWorkflowCard),
     presetLoadFailed
       ? React.createElement(getHost().antd.Alert, {
           type: "warning",
@@ -1027,7 +1277,7 @@ const { Text } = Typography;
       React.createElement(
         Text,
         { style: { fontSize: 13, color: "#389e0d" } },
-        "OMP 驱动的专家团工作流 — 5 阶段状态机（规划→分派→验证→综合→完成），支持结构化交接、角色工具隔离、fork 并行执行和自动重试。",
+        "OMP 协作工作流 — 专家是可组合的角色节点，可按顺序、并行、路由、评审闭环或多方论证运行，并由统一状态机负责交接、验证与失败恢复。",
       ),
       React.createElement(
         Button,
@@ -1115,6 +1365,21 @@ const { Text } = Typography;
                   }),
             ),
           },
+          {
+            key: "active",
+            label: "进行中的讨论",
+            children: React.createElement(
+              React.Fragment,
+              null,
+              React.createElement(TeamWorkflowCard),
+              React.createElement(TeamRunHistory, { activeOnly: true }),
+            ),
+          },
+          {
+            key: "history",
+            label: "讨论历史",
+            children: React.createElement(TeamRunHistory),
+          },
         ],
       },
     ),
@@ -1131,4 +1396,3 @@ const { Text } = Typography;
     }),
   );
 }
-

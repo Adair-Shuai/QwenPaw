@@ -10,13 +10,28 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
     pipeline: "→",
     roundtable: "⇄",
     coordinator: "⊙",
+    router: "◇",
+    review_loop: "↻",
+    debate: "⇄",
   };
   const modeColors: Record<string, string> = {
     pipeline: "#13c2c2",
     roundtable: "#722ed1",
     coordinator: "#1677ff",
+    router: "#d46b08",
+    review_loop: "#389e0d",
+    debate: "#c41d7f",
   };
   const steps = team.steps || [];
+  const parallel = team.mode === "roundtable" || team.mode === "router";
+  const modeNames: Record<string, string> = {
+    pipeline: "顺序交接",
+    roundtable: "并行汇聚",
+    coordinator: "主管协作",
+    router: "智能路由",
+    review_loop: "评审迭代",
+    debate: "多方论证",
+  };
 
   return React.createElement(
     "div",
@@ -34,29 +49,23 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
         type: "secondary",
         style: { fontSize: 12, display: "block", marginBottom: 8 },
       },
-      `执行流程 (${
-        team.mode === "pipeline"
-          ? "流水线"
-          : team.mode === "roundtable"
-          ? "圆桌讨论"
-          : "协调者模式"
-      })`,
+      `OMP 编排拓扑 · ${modeNames[team.mode] || team.mode}`,
     ),
     React.createElement(
       "div",
       {
         style: {
           display: "flex",
-          flexDirection: team.mode === "roundtable" ? "row" : "column",
+          flexDirection: parallel ? "row" : "column",
           gap: 8,
-          alignItems: team.mode === "roundtable" ? "flex-start" : "stretch",
+          alignItems: parallel ? "flex-start" : "stretch",
           flexWrap: "wrap",
         },
       },
       ...(steps.length > 0
         ? steps
             .map((step, index) => [
-              index > 0 && team.mode !== "roundtable"
+              index > 0 && !parallel
                 ? React.createElement(
                     "div",
                     {
@@ -83,7 +92,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                     borderRadius: 6,
                     border: `1px solid ${modeColors[team.mode]}33`,
                     fontSize: 12,
-                    flex: team.mode === "roundtable" ? "1 1 200px" : "initial",
+                    flex: parallel ? "1 1 200px" : "initial",
                   },
                 },
                 React.createElement(ExpertAvatar, {
@@ -123,7 +132,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
             .flat()
         : team.members
             .map((member, index) => [
-              index > 0 && team.mode !== "roundtable"
+              index > 0 && !parallel
                 ? React.createElement(
                     "div",
                     {
@@ -150,7 +159,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                     borderRadius: 6,
                     border: `1px solid ${modeColors[team.mode]}33`,
                     fontSize: 12,
-                    flex: team.mode === "roundtable" ? "1 1 150px" : "initial",
+                    flex: parallel ? "1 1 150px" : "initial",
                   },
                 },
                 React.createElement(ExpertAvatar, {

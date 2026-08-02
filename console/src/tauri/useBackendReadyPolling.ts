@@ -10,9 +10,22 @@ import {
 export type BackendReadyStatus = "checking" | "ready" | "timeout" | "error";
 
 export const BACKEND_POLL_INTERVAL_MS = 1000;
-export const BACKEND_POLL_TIMEOUT_SECONDS = 180;
+export const BACKEND_POLL_TIMEOUT_SECONDS = 1800;
 export const BACKEND_REQUEST_TIMEOUT_MS = 2500;
 export const BACKEND_STARTUP_ERROR_POLL_INTERVAL_MS = 3000;
+
+export interface StartupProgress {
+  ready: boolean;
+  stage: string;
+  message: string;
+  progress: number;
+  current?: number | null;
+  total?: number | null;
+  detail?: string | null;
+  first_run?: boolean;
+  error?: string | null;
+  elapsed_seconds?: number;
+}
 
 interface BackendReadyPollingState {
   shouldGate: boolean;
@@ -21,6 +34,7 @@ interface BackendReadyPollingState {
   totalSec: number;
   errorMessage: string;
   readyUrl: string;
+  startup: StartupProgress | null;
   retry: () => void;
 }
 
@@ -30,6 +44,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
   const [elapsed, setElapsed] = useState(0);
   const [errorMessage, setErrorMessage] = useState("");
   const [readyUrl, setReadyUrl] = useState("");
+  const [startup, setStartup] = useState<StartupProgress | null>(null);
   const runRef = useRef(0);
   const cancelPollingRef = useRef<(() => void) | null>(null);
 
@@ -44,6 +59,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
       const startupError = await getBackendStartupError().catch(() => "");
       if (runRef.current !== runId) return;
       if (startupError) {
+        setStartup(null);
         setErrorMessage(startupError);
         setStatus("error");
       } else {
@@ -72,6 +88,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
     setElapsed(0);
     setErrorMessage("");
     setReadyUrl("");
+    setStartup(null);
 
     const start = Date.now();
     let lastStartupErrorCheckAt = 0;
@@ -81,6 +98,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
       if (runRef.current !== runId) return true;
       if (!startupError) return false;
 
+      setStartup(null);
       setErrorMessage(startupError);
       setStatus("error");
       return true;
@@ -98,14 +116,28 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
             BACKEND_REQUEST_TIMEOUT_MS,
           );
           try {
-            const res = await fetch(`${apiBaseUrl}/api/version`, {
+            const res = await fetch(`${apiBaseUrl}/api/startup/status`, {
               signal: controller.signal,
               cache: "no-store",
             });
             if (runRef.current === runId && res.ok) {
-              setReadyUrl(backendConsoleUrl(apiBaseUrl));
-              setStatus("ready");
-              return;
+              const progress = (await res.json()) as StartupProgress;
+              setStartup(progress);
+              setElapsed(
+                Math.round(
+                  progress.elapsed_seconds ?? (Date.now() - start) / 1000,
+                ),
+              );
+              if (progress.error) {
+                setErrorMessage(progress.error);
+                setStatus("error");
+                return;
+              }
+              if (progress.ready) {
+                setReadyUrl(backendConsoleUrl(apiBaseUrl));
+                setStatus("ready");
+                return;
+              }
             }
           } finally {
             clearTimeout(timeoutId);
@@ -153,6 +185,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
     setElapsed(0);
     setErrorMessage("");
     setReadyUrl("");
+    setStartup(null);
 
     restartBackend()
       .then(() => {
@@ -179,6 +212,7 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
     totalSec: BACKEND_POLL_TIMEOUT_SECONDS,
     errorMessage,
     readyUrl,
+    startup,
     retry,
   };
 }

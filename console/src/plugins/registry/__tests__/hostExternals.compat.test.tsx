@@ -36,6 +36,19 @@ describe("legacy registerRoutes shim", () => {
     expect(typeof window.QwenPaw.route?.add).toBe("function");
     expect(typeof window.QwenPaw.slot?.fill).toBe("function");
     expect(typeof window.QwenPaw.audit?.overrides).toBe("function");
+    expect(typeof window.QwenPaw.host.loadBuiltinPage).toBe("function");
+  });
+
+  it("loads allow-listed native pages for plugin composition", async () => {
+    const [toolsPage, mcpPage, acpPage] = await Promise.all([
+      window.QwenPaw.host.loadBuiltinPage!("tools"),
+      window.QwenPaw.host.loadBuiltinPage!("mcp"),
+      window.QwenPaw.host.loadBuiltinPage!("acp"),
+    ]);
+
+    expect(typeof toolsPage).toBe("function");
+    expect(typeof mcpPage).toBe("function");
+    expect(typeof acpPage).toBe("function");
   });
 
   it("translates CloudPaw-shape registerRoutes into menu+route", () => {

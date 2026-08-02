@@ -84,7 +84,10 @@ Issues = "https://github.com/agentscope-ai/QwenPaw/issues"  # 上游 issues
 version = {attr = "qwenpaw.__version__.__version__"}
 
 [tool.setuptools]
-packages = { find = { where = ["src"] } }
+packages = { find = { where = ["src"], exclude = [
+    "qwenpaw.plugins_bundle.*.ui.node_modules*",
+    "qwenpaw.*.__pycache__*",
+] } }
 include-package-data = true
 
 [tool.setuptools.package-data]
@@ -108,6 +111,27 @@ include-package-data = true
     "docs/*.md",
     "app/channels/yuanbao/proto/**",
     "plugins_bundle/**",
+]
+
+[tool.setuptools.exclude-package-data]
+"*" = [
+    "node_modules/**",
+    "**/node_modules/**",
+    "__pycache__/**",
+    "**/__pycache__/**",
+    "*.pyc",
+    "*.pyo",
+    "*.map",
+    "**/*.pyc",
+    "**/*.pyo",
+    "**/*.map",
+]
+"qwenpaw" = [
+    "plugins_bundle/**/node_modules/**",
+    "plugins_bundle/**/__pycache__/**",
+    "plugins_bundle/**/*.pyc",
+    "plugins_bundle/**/*.pyo",
+    "plugins_bundle/**/*.map",
 ]
 
 [build-system]

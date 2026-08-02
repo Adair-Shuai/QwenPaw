@@ -49,6 +49,7 @@ _current_approval_route: ContextVar[Optional[dict]] = ContextVar(
 )
 
 
+# pylint: disable=too-many-branches
 async def get_agent_for_request(
     request: Request,
     agent_id: Optional[str] = None,
@@ -83,6 +84,17 @@ async def get_agent_for_request(
     # Check X-Agent-Id header
     if not target_agent_id:
         target_agent_id = request.headers.get("X-Agent-Id")
+
+    # IDs supplied by headers, scoped routes, and explicit overrides should
+    # resolve identically.  In particular, do not turn an accidental blank
+    # header into the confusing error ``Agent '   ' not found``.
+    if target_agent_id is not None:
+        if not isinstance(target_agent_id, str):
+            raise HTTPException(
+                status_code=400,
+                detail="Agent ID must be a string",
+            )
+        target_agent_id = target_agent_id.strip() or None
 
     # Load config once for fallback and validation
     config = None
@@ -124,6 +136,10 @@ async def get_agent_for_request(
                 detail=f"Agent '{target_agent_id}' not found",
             )
         return workspace
+    except HTTPException:
+        # Preserve deliberate 4xx/5xx status codes raised while resolving the
+        # workspace instead of wrapping them as a generic 500 response.
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=404,

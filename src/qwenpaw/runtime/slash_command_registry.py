@@ -24,6 +24,20 @@ CommandHandler = Callable[["HookContext", str], Awaitable["Msg | None"]]
 FallbackHandler = Callable[[str, "HookContext"], Awaitable["Msg | None"]]
 
 
+def normalize_command_prefix(raw_text: str) -> str:
+    """Normalize the Chinese IME-friendly ``、`` prefix to ``/``.
+
+    Only a command prefix (after optional leading whitespace) is rewritten;
+    dunhao punctuation inside ordinary Chinese prose remains untouched.
+    """
+    if not raw_text:
+        return raw_text
+    leading_len = len(raw_text) - len(raw_text.lstrip())
+    if raw_text[leading_len:].startswith("、"):
+        return raw_text[:leading_len] + "/" + raw_text[leading_len + 1 :]
+    return raw_text
+
+
 @dataclass(frozen=True)
 class CommandSpec:
     """Declarative description of one slash command.
@@ -89,7 +103,7 @@ class SlashCommandRegistry:
         """
         if not raw_text:
             return None
-        text = raw_text.lstrip()
+        text = normalize_command_prefix(raw_text).lstrip()
         if not text.startswith("/"):
             return None
         body = text[1:]
@@ -143,16 +157,17 @@ class SlashCommandRegistry:
         ctx: "HookContext",
     ) -> "Msg | None":
         """Resolve and execute. Returns ``None`` if nothing matched."""
-        match = self.resolve(raw_text)
+        normalized_text = normalize_command_prefix(raw_text)
+        match = self.resolve(normalized_text)
         if match is not None:
             spec, args = match
             return await spec.handler(ctx, args)
         if (
             self._fallback is not None
-            and raw_text
-            and raw_text.lstrip().startswith("/")
+            and normalized_text
+            and normalized_text.lstrip().startswith("/")
         ):
-            return await self._fallback(raw_text, ctx)
+            return await self._fallback(normalized_text, ctx)
         return None
 
 
@@ -161,4 +176,5 @@ __all__ = [
     "CommandSpec",
     "FallbackHandler",
     "SlashCommandRegistry",
+    "normalize_command_prefix",
 ]

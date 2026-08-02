@@ -157,21 +157,21 @@ npm<span style="color: #ABB2BF"> </span>install
 - 团队卡片：emoji、名称、模式标签、成员状态（已找到/缺少）<br />
 - 点击「发起任务」：如有占位符 <code>{参数名}</code> 则弹窗让用户输入，否则直接发送<br />
 - 通过 <code>POST /api/console/chat</code> 发送编排消息给协调者 Agent</p>
-<h3 id="capabilitycenterpage">CapabilityCenterPage（能力中心）</h3>
-<p><strong>文件位置</strong>：<code>index.ts</code> ~L5094</p>
-<p><strong>Tab 结构</strong>：<br />
-1. <code>mcp</code> — MCP 客户端列表<br />
-2. <code>software</code> — 本地软件检测</p>
-<p><strong>MCP 客户端卡片</strong>：<br />
-- 名称、Key、传输方式（stdio/sse/streamable_http）<br />
-- URL 或命令、工具数量<br />
-- 启用/停用状态标签<br />
-- 点击打开 Drawer 查看详情</p>
-<p><strong>本地软件检测</strong>：<br />
-- 软件卡片网格：按类别分组（油藏模拟/地质建模/测井分析/采油工程/后处理）<br />
-- 已检测/未安装状态标签<br />
-- 「重新检测」按钮：调用 <code>GET /detect</code><br />
-- 「添加扫描路径」功能</p>
+<h3 id="toolsskillscenterpage">ToolsSkillsCenterPage（工具·技能）</h3>
+<p><strong>文件位置</strong>：<code>ui/src/capability/ToolsSkillsCenterPage.ts</code></p>
+<p><strong>一级 Tab 结构</strong>：<br />
+1. <code>tools</code> — MCP 接入、平台内置工具<br />
+2. <code>engines</code> — 仿真软件、领域计算、运行服务<br />
+3. <code>skills</code> — 当前专家技能、技能池</p>
+<p><strong>原生功能嵌入</strong>：<br />
+- MCP 直接异步加载 QwenPaw 原生 <code>MCPPage</code>，保留 Provider 托管服务、JSON/表单创建、OAuth、访问策略和 CRUD<br />
+- 平台内置工具直接异步加载原生 <code>ToolsPage</code><br />
+- 运行服务直接异步加载原生 <code>ACPPage</code><br />
+- 宿主只开放固定页面白名单；UGSci 不复制这些页面的 API、状态或业务规则</p>
+<p><strong>引擎与技能</strong>：<br />
+- 仿真软件复用 <code>EngineSection</code>，支持检测、搜索、查看、添加、编辑和删除<br />
+- 领域计算保留注册位，用于后续接入 PVT、气藏工程等计算内核<br />
+- 技能复用 <code>SkillCenterPage</code>，嵌入模式下继续维护当前专家技能和技能池</p>
 <h3 id="skillcenterpage">SkillCenterPage（技能中心）</h3>
 <p><strong>文件位置</strong>：<code>index.ts</code> ~L5407</p>
 <p><strong>功能</strong>：<br />
@@ -210,18 +210,18 @@ npm<span style="color: #ABB2BF"> </span>install
 │   ├── ExpertTemplateModal (创建专家)
 │   └── TeamLaunchModal (发起团队任务)
 │
-├── CapabilityCenterPage
-├── PageHeader
-├── Tabs
-│   ├── MCP Tab
-│   │   ├── Input.Search + Button
-│   │   └── Row &gt; Col &gt; CapabilityCard
-│   │       └── (点击) → Drawer
-│   └── Software Tab
-│       └── LocalSoftwareSection
-│           ├── Button (重新检测)
-│           ├── Row &gt; Col &gt; SoftwareCard
-│           └── Modal (添加扫描路径)
+├── ToolsSkillsCenterPage
+│   ├── PageHeader
+│   └── Tabs
+│       ├── 工具 Tab
+│       │   ├── HostBuiltinPage(MCPPage)
+│       │   └── HostBuiltinPage(ToolsPage)
+│       ├── 引擎 Tab
+│       │   ├── EngineSection
+│       │   ├── DomainComputeSection
+│       │   └── HostBuiltinPage(ACPPage)
+│       └── 技能 Tab
+│           └── SkillCenterPage(embedded)
 │
 ├── SkillCenterPage
 │   ├── PageHeader
@@ -270,7 +270,8 @@ npm<span style="color: #ABB2BF"> </span>install
 </code></pre></div>
 
 <h2 id="_14">专家团定义</h2>
-<p>预设专家团由后端 <code>team/presets.py</code> 统一定义，前端通过 <code>GET /api/ugsci/team/preset-teams</code> 获取：</p>
+<p>预设专家团由后端 <code>team/presets.py</code> 统一定义，前端通过<br />
+<code>GET /api/ugsci/team/preset-teams</code> 获取：</p>
 <div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">interface</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">ExpertTeam</span><span style="color: #ABB2BF"> {</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
@@ -316,7 +317,8 @@ npm<span style="color: #ABB2BF"> </span>install
 </tbody>
 </table>
 <h3 id="_16">添加新专家团</h3>
-<p>在 <code>team/presets.py</code> 的 <code>PRESET_UGSCI_TEAMS</code> 中添加新对象。成员的 <code>name</code> 字段会通过 <code>findAgentIdByName()</code> 与实际 Agent 进行模糊匹配。</p>
+<p>在 <code>team/presets.py</code> 的 <code>PRESET_UGSCI_TEAMS</code> 中添加新对象。成员的<br />
+<code>name</code> 字段会通过 <code>findAgentIdByName()</code> 与实际 Agent 进行模糊匹配。</p>
 <h2 id="_17">调试技巧</h2>
 <ol>
 <li><strong>查看注册日志</strong>：浏览器控制台搜索 <code>[ugsci]</code></li>

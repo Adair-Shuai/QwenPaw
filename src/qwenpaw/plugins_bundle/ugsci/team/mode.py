@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Any, Optional
 from qwenpaw.runtime.hooks import HookContext
 from qwenpaw.runtime.slash_command_registry import CommandSpec
 
+from .constants import UGSCI_TEAM_MAX_DISPATCH_RETRIES
 from .gate import UGSciTeamGate
 from .mode_base import UGSciModeBase, info_msg, rewrite_user_msg
 from .presets import PRESET_TEAM_NAMES, resolve_team_members
@@ -38,7 +39,10 @@ _HELP = (
     "模式:\n"
     "  pipeline   — 流水线：专家按顺序执行，结果逐步传递\n"
     "  coordinator — 协调者：由协调者按需调用专家\n"
-    "  roundtable  — 圆桌讨论：专家并行独立评估\n\n"
+    "  roundtable  — 并行汇聚：专家并行独立评估\n"
+    "  router      — 智能路由：按任务动态选择专家\n"
+    "  review_loop — 评审迭代：执行、审查、修订闭环\n"
+    "  debate      — 多方论证：观点交锋后由裁决者综合\n\n"
     "示例:\n"
     "  `/ugsci-team pipeline 储层评价团队 对XX区块进行储层评价`\n"
     "  `/ugsci-team roundtable 开发方案评审团队 评估XX区块开发方案`\n"
@@ -47,7 +51,7 @@ _HELP = (
 )
 
 _TEAM_MODE_RE = re.compile(
-    r"^(pipeline|coordinator|roundtable)$",
+    r"^(pipeline|coordinator|roundtable|router|review_loop|debate)$",
     re.IGNORECASE,
 )
 
@@ -116,6 +120,11 @@ class UGSciTeamMode(UGSciModeBase):
         task = parsed["task"]
         members = parsed["members"]
         custom_team_def = parsed.get("custom_team_def")
+        max_dispatch_retries = UGSCI_TEAM_MAX_DISPATCH_RETRIES
+        if custom_team_def and team_mode == "review_loop":
+            max_dispatch_retries = int(
+                custom_team_def.get("max_review_rounds", 2),
+            )
 
         if len(task) < 5:
             return info_msg(
@@ -126,10 +135,13 @@ class UGSciTeamMode(UGSciModeBase):
         if not workspace_dir:
             return info_msg("ERROR: 无法获取工作区目录。")
 
-        # Generate a team_id from team_name (keep only word chars + CJK)
-        team_id = re.sub(
-            r"[^\w\u4e00-\u9fff]", "-", team_name,
-        )[:30].strip("-")
+        # Custom definitions already own a stable persistent ID. Presets and
+        # legacy name-based invocations still receive a deterministic slug.
+        team_id = str(parsed.get("team_id") or "")
+        if not team_id:
+            team_id = re.sub(
+                r"[^\w\u4e00-\u9fff]", "-", team_name,
+            )[:30].strip("-")
         if not team_id:
             team_id = "ugsci-team"
 
@@ -143,6 +155,7 @@ class UGSciTeamMode(UGSciModeBase):
             members,
             task,
             str(getattr(ctx, "agent_id", "") or ""),
+            max_dispatch_retries,
         )
 
         # Build the initial prompt for the plan phase
@@ -162,6 +175,24 @@ class UGSciTeamMode(UGSciModeBase):
             )
             if orch_prompt:
                 extra_sections += f"\n---\n\n## 编排说明\n\n{orch_prompt}\n"
+
+            success_criteria = custom_team_def.get("success_criteria", "")
+            if success_criteria:
+                extra_sections += (
+                    f"\n---\n\n## 验收标准\n\n{success_criteria}\n"
+                )
+            routing_instruction = custom_team_def.get(
+                "routing_instruction", "",
+            )
+            if routing_instruction:
+                extra_sections += (
+                    f"\n---\n\n## 路由策略\n\n{routing_instruction}\n"
+                )
+            if team_mode == "review_loop":
+                rounds = custom_team_def.get("max_review_rounds", 2)
+                extra_sections += (
+                    f"\n评审迭代上限：{rounds} 轮。规划时写入 plan.json。\n"
+                )
 
             steps = custom_team_def.get("steps", [])
             if steps:
@@ -240,7 +271,7 @@ def _parse_args(raw: str) -> dict | None:
 
     # ── Step 1: Check if first token is a mode keyword ────────────
     first_token = raw.split(None, 1)[0] if raw else ""
-    has_mode_prefix = bool(_TEAM_MODE_RE.match(first_token))
+    has_mode_prefix = bool(_TEAM_MODE_RE.fullmatch(first_token))
 
     if has_mode_prefix:
         team_mode = first_token.lower()
@@ -280,11 +311,23 @@ def _parse_args(raw: str) -> dict | None:
                 "name": m.get("name", ""),
                 "role": m.get("role", ""),
                 "emoji": m.get("emoji", ""),
+                "agent_id": m.get("agentId", m.get("agent_id")),
+                "role_key": m.get("roleKey", m.get("role_key")),
+                "binding_mode": m.get(
+                    "bindingMode",
+                    m.get("binding_mode", "preferred"),
+                ),
             }
             for m in team_def.get("members", [])
         ]
 
+        # A custom workflow owns its saved orchestration policy unless the
+        # caller explicitly overrides it in the slash command.
+        if not has_mode_prefix:
+            team_mode = str(team_def.get("mode", "pipeline"))
+
         return {
+            "team_id": custom_team_id,
             "team_mode": team_mode,
             "team_name": team_def.get("name", custom_team_id),
             "task": task,

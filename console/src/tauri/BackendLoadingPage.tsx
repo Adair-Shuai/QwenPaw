@@ -3,7 +3,10 @@ import { type CSSProperties } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { useTranslation } from "react-i18next";
 import styles from "./BackendLoadingPage.module.less";
-import { type BackendReadyStatus } from "./useBackendReadyPolling";
+import {
+  type BackendReadyStatus,
+  type StartupProgress,
+} from "./useBackendReadyPolling";
 
 const BRAND_COLOR = "#0072f5";
 const ERROR_COLOR = "#ff4d4f";
@@ -13,6 +16,7 @@ interface BackendLoadingPageProps {
   elapsed: number;
   totalSec: number;
   errorMessage?: string;
+  startup?: StartupProgress | null;
   onRetry?: () => void;
 }
 
@@ -21,24 +25,34 @@ export default function BackendLoadingPage({
   elapsed,
   totalSec,
   errorMessage,
+  startup,
   onRetry,
 }: BackendLoadingPageProps) {
   const { isDark } = useTheme();
   const { t } = useTranslation();
   const hasFailed = status === "timeout" || status === "error";
-  const statusText =
+  const failureText =
     status === "error"
       ? t("startup.error", "Backend failed to start.")
-      : status === "checking"
-      ? elapsed === 0
-        ? t("startup.starting", "Starting backend...")
-        : t("startup.checking", "Connecting to backend...")
       : t("startup.timeout", {
           seconds: elapsed,
           defaultValue: "Backend failed to start within {{seconds}} seconds.",
         });
+  const statusText = hasFailed
+    ? startup?.message || failureText
+    : startup?.message ||
+      (status === "checking"
+        ? elapsed === 0
+          ? t("startup.starting", "Starting backend...")
+          : t("startup.checking", "Connecting to backend...")
+        : t("startup.timeout", {
+            seconds: elapsed,
+            defaultValue: "Backend failed to start within {{seconds}} seconds.",
+          }));
 
-  const percent = Math.min(Math.round((elapsed / totalSec) * 100), 100);
+  const percent = hasFailed
+    ? Math.min(Math.round((elapsed / totalSec) * 100), 100)
+    : startup?.progress ?? Math.min(Math.round((elapsed / totalSec) * 100), 95);
   const style = {
     "--qwenpaw-brand-color": BRAND_COLOR,
     "--qwenpaw-error-color": ERROR_COLOR,
@@ -62,7 +76,7 @@ export default function BackendLoadingPage({
           trailColor={isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)"}
           gapPosition="bottom"
           format={() => (
-            <div className={styles.progressLabel}>{`${elapsed}s`}</div>
+            <div className={styles.progressLabel}>{`${percent}%`}</div>
           )}
           size={160}
           strokeWidth={8}
@@ -75,6 +89,27 @@ export default function BackendLoadingPage({
         >
           {statusText}
         </p>
+
+        {!hasFailed && (
+          <div className={styles.progressMeta}>
+            {startup?.first_run && (
+              <span>{t("startup.firstRun", "首次启动正在准备完整资料")}</span>
+            )}
+            {startup?.current != null && startup?.total != null && (
+              <span>{`${startup.current}/${startup.total}`}</span>
+            )}
+            <span>
+              {t("startup.elapsed", {
+                seconds: elapsed,
+                defaultValue: "已用 {{seconds}} 秒",
+              })}
+            </span>
+          </div>
+        )}
+
+        {!hasFailed && startup?.detail && (
+          <p className={styles.detail}>{startup.detail}</p>
+        )}
 
         {hasFailed && (
           <>

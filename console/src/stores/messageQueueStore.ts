@@ -29,6 +29,12 @@ export interface QueueMention {
   name: string;
 }
 
+export interface QueueAgentDispatch {
+  requestText: string;
+  targetAgentId?: string;
+  coordinationRequested: boolean;
+}
+
 /** Quote reference */
 export interface QueueQuote {
   messageId: string;
@@ -43,6 +49,8 @@ export interface QueueItem {
   attachments?: QueueAttachment[];
   images?: QueueImage[];
   mentions?: QueueMention[];
+  agentMentionModes?: Record<string, "delegate" | "collaborate">;
+  agentDispatch?: QueueAgentDispatch;
   quote?: QueueQuote;
   /** Agent ID captured at enqueue time to prevent cross-agent delivery */
   agentId?: string;
@@ -63,6 +71,8 @@ export interface QueueItemInput {
   attachments?: QueueAttachment[];
   images?: QueueImage[];
   mentions?: QueueMention[];
+  agentMentionModes?: Record<string, "delegate" | "collaborate">;
+  agentDispatch?: QueueAgentDispatch;
   quote?: QueueQuote;
   userId?: string;
   channel?: string;
@@ -307,7 +317,13 @@ interface MessageQueueStore {
   // Actions
   enqueue: (sessionId: string, input: QueueItemInput) => void;
   remove: (sessionId: string, id: string) => void;
-  edit: (sessionId: string, id: string, text: string) => void;
+  edit: (
+    sessionId: string,
+    id: string,
+    text: string,
+    agentMentionModes?: Record<string, "delegate" | "collaborate">,
+    agentDispatch?: QueueAgentDispatch,
+  ) => void;
   reorder: (sessionId: string, items: QueueItem[]) => void;
   clear: (sessionId: string) => void;
   /** Move all items from one session id to another (and clear the source). */
@@ -377,6 +393,8 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
       attachments: input.attachments,
       images: input.images,
       mentions: input.mentions,
+      agentMentionModes: input.agentMentionModes,
+      agentDispatch: input.agentDispatch,
       quote: input.quote,
       agentId,
       backendSessionId,
@@ -414,11 +432,17 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     });
   },
 
-  edit: (sessionId: string, id: string, text: string) => {
+  edit: (
+    sessionId: string,
+    id: string,
+    text: string,
+    agentMentionModes?: Record<string, "delegate" | "collaborate">,
+    agentDispatch?: QueueAgentDispatch,
+  ) => {
     set((state) => {
       const current = state.queues[sessionId] ?? [];
       const nextItems = current.map((it) =>
-        it.id === id ? { ...it, text } : it,
+        it.id === id ? { ...it, text, agentMentionModes, agentDispatch } : it,
       );
       const next = { ...state.queues, [sessionId]: nextItems };
       writeQueueToStorage(

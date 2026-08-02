@@ -72,7 +72,12 @@ const defaultForm = {
   cwd: "",
 };
 
-function MCPPage() {
+export interface MCPPageProps {
+  /** Render inside a plugin-owned page without route breadcrumbs. */
+  embedded?: boolean;
+}
+
+function MCPPage({ embedded = false }: MCPPageProps = {}) {
   const { t } = useTranslation();
   const {
     clients,
@@ -264,20 +269,36 @@ function MCPPage() {
   const isHttpTransport =
     form.transport === "streamable_http" || form.transport === "sse";
 
+  const createButton = (
+    <Button
+      type="primary"
+      icon={<Plus size={14} />}
+      onClick={() => setCreateModalOpen(true)}
+    >
+      {t("mcp.create")}
+    </Button>
+  );
+
   return (
-    <div className={styles.mcpPage}>
-      <PageHeader
-        items={[{ title: t("nav.agent") }, { title: t("mcp.title") }]}
-        extra={
-          <Button
-            type="primary"
-            icon={<Plus size={14} />}
-            onClick={() => setCreateModalOpen(true)}
-          >
-            {t("mcp.create")}
-          </Button>
-        }
-      />
+    <div
+      className={`${styles.mcpPage} ${embedded ? styles.embeddedPage : ""}`}
+    >
+      {embedded ? (
+        <div className={styles.embeddedHeader}>
+          <div>
+            <h2 className={styles.embeddedTitle}>{t("mcp.title")}</h2>
+            <p className={styles.embeddedDescription}>
+              {t("mcp.qwenpawManagedHint")}
+            </p>
+          </div>
+          {createButton}
+        </div>
+      ) : (
+        <PageHeader
+          items={[{ title: t("nav.agent") }, { title: t("mcp.title") }]}
+          extra={createButton}
+        />
+      )}
 
       {loading ? (
         <div className={styles.loading}>

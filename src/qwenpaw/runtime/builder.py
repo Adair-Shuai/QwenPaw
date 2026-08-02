@@ -146,11 +146,29 @@ class AgentBuilder:
             effective_skills,
             workspace_dir,
         )
+        coordination_skill_dir = self._resolve_coordination_skill_loader_dir(
+            request_context,
+        )
+        if coordination_skill_dir and coordination_skill_dir not in skill_dirs:
+            skill_dirs.append(coordination_skill_dir)
         for extra in _bound_skill_loader_dirs(tools):
             if extra not in skill_dirs:
                 skill_dirs.append(extra)
 
         return Toolkit(tools=tools, skills_or_loaders=skill_dirs)
+
+    @staticmethod
+    def _resolve_coordination_skill_loader_dir(
+        request_context: dict[str, Any] | None,
+    ) -> str | None:
+        """Load the packaged coordination Skill for an explicit @ turn."""
+        if (request_context or {}).get(
+            "agent_coordination_requested",
+        ) is not True:
+            return None
+        from ..agents.skill_system import resolve_builtin_skill_dir
+
+        return resolve_builtin_skill_dir("chat_with_agent")
 
     @staticmethod
     def _tool_name(tool: Any) -> str:
@@ -179,9 +197,15 @@ class AgentBuilder:
         whitelist = (request_context or {}).get("subagent_allowed_tools")
         if not isinstance(whitelist, list):
             return items
-        if not whitelist:
+        coordination_tools = (
+            {"list_agents", "chat_with_agent"}
+            if (request_context or {}).get("agent_coordination_requested")
+            is True
+            else set()
+        )
+        allow = set(whitelist) | coordination_tools
+        if not allow:
             return []
-        allow = set(whitelist)
         return [t for t in items if cls._tool_name(t) in allow]
 
     @classmethod

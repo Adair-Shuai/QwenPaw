@@ -122,7 +122,12 @@ function getSelectedNodeValue(
   return status.effective_node_path || undefined;
 }
 
-function ACPPage() {
+export interface ACPPageProps {
+  /** Render inside a plugin-owned page without route breadcrumbs. */
+  embedded?: boolean;
+}
+
+function ACPPage({ embedded = false }: ACPPageProps = {}) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { selectedAgent } = useAgentStore();
@@ -393,38 +398,61 @@ function ACPPage() {
     { key: "custom", label: t("acp.custom") },
   ];
 
+  const filterControls = (
+    <div className={styles.filterTabs}>
+      {FILTER_TABS.map(({ key, label }) => (
+        <button
+          key={key}
+          className={`${styles.filterTab} ${
+            filter === key ? styles.filterTabActive : ""
+          }`}
+          onClick={() => setFilter(key)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
+  const headerActions = (
+    <div className={stylesACP.headerActions}>
+      <Button onClick={handleNodeSettingsClick}>{t("acp.nodeSettings")}</Button>
+      <Button type="primary" onClick={handleCreateClick}>
+        {t("acp.create")}
+      </Button>
+    </div>
+  );
+
   return (
-    <div className={styles.channelsPage}>
-      <PageHeader
-        className={stylesACP.pageHeader}
-        items={[{ title: t("nav.agent") }, { title: t("acp.title") }]}
-        center={
-          <div className={styles.filterTabs}>
-            {FILTER_TABS.map(({ key, label }) => (
-              <button
-                key={key}
-                className={`${styles.filterTab} ${
-                  filter === key ? styles.filterTabActive : ""
-                }`}
-                onClick={() => setFilter(key)}
-              >
-                {label}
-              </button>
-            ))}
+    <div
+      className={`${styles.channelsPage} ${
+        embedded ? stylesACP.embeddedPage : ""
+      }`}
+    >
+      {embedded ? (
+        <div className={stylesACP.embeddedHeader}>
+          <div className={stylesACP.embeddedHeading}>
+            <div className={stylesACP.embeddedTitle}>{t("acp.title")}</div>
+            <div className={stylesACP.embeddedDescription}>
+              {t("acp.description")}
+            </div>
           </div>
-        }
-        extra={
-          <div className={stylesACP.headerActions}>
-            <Button onClick={handleNodeSettingsClick}>
-              {t("acp.nodeSettings")}
-            </Button>
-            <Button type="primary" onClick={handleCreateClick}>
-              {t("acp.create")}
-            </Button>
-          </div>
-        }
-      />
-      <div className={styles.channelsContainer}>
+          {filterControls}
+          {headerActions}
+        </div>
+      ) : (
+        <PageHeader
+          className={stylesACP.pageHeader}
+          items={[{ title: t("nav.agent") }, { title: t("acp.title") }]}
+          center={filterControls}
+          extra={headerActions}
+        />
+      )}
+      <div
+        className={`${styles.channelsContainer} ${
+          embedded ? stylesACP.embeddedContainer : ""
+        }`}
+      >
         {loading ? (
           <div className={styles.loading}>
             <span className={styles.loadingText}>{t("acp.loading")}</span>

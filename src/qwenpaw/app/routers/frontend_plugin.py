@@ -10,9 +10,12 @@ Only read operations are exposed here.  All plugin management operations
 require a valid Bearer token.
 """
 
+import asyncio
+
 from fastapi import APIRouter, Request
 
 from .plugins import (
+    _frontend_revision,
     _list_plugins_from_disk,
     serve_plugin_ui_file,
 )
@@ -38,11 +41,17 @@ async def list_frontend_plugins(request: Request):
     loader = getattr(request.app.state, "plugin_loader", None)
 
     if loader is None:
-        return _list_plugins_from_disk()
+        return await asyncio.to_thread(_list_plugins_from_disk)
 
     result = []
     for _plugin_id, record in loader.get_all_loaded_plugins().items():
         manifest = record.manifest
+        frontend_revision = await asyncio.to_thread(
+            _frontend_revision,
+            record.source_path,
+            manifest.entry.frontend,
+            manifest.version,
+        )
         result.append(
             {
                 "id": manifest.id,
@@ -54,6 +63,7 @@ async def list_frontend_plugins(request: Request):
                 "loaded": True,
                 "plugin_type": manifest.plugin_type,
                 "frontend_entry": manifest.entry.frontend,
+                "frontend_revision": frontend_revision,
             },
         )
 

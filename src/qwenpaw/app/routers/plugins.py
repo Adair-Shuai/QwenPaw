@@ -4,7 +4,7 @@
 static files.  Also provides runtime install / uninstall endpoints."""
 
 import asyncio
-import inspect
+import hashlib
 import json
 import logging
 import mimetypes
@@ -21,6 +21,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..utils import schedule_agent_reload
+from ...plugins.runtime import invoke_plugin_callback
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +34,30 @@ def _log_safe(value: object) -> str:
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+
+def _frontend_revision(
+    plugin_dir: Path,
+    frontend_entry: str | None,
+    version: object,
+) -> str:
+    """Return a stable cache key that changes with frontend content."""
+    bundle_hash = plugin_dir / ".bundle_hash"
+    try:
+        revision = bundle_hash.read_text(encoding="utf-8").strip()
+        if revision:
+            return f"{version}-{revision[:20]}"
+    except OSError:
+        pass
+    if frontend_entry:
+        entry_path = (plugin_dir / frontend_entry).resolve()
+        try:
+            entry_path.relative_to(plugin_dir.resolve())
+            content = entry_path.read_bytes()
+            return f"{version}-{hashlib.sha256(content).hexdigest()[:20]}"
+        except (OSError, ValueError):
+            pass
+    return str(version)
 
 
 def _list_plugins_from_disk() -> list[dict]:
@@ -85,6 +110,11 @@ def _list_plugins_from_disk() -> list[dict]:
                 "loaded": False,
                 "plugin_type": disk_manifest.plugin_type,
                 "frontend_entry": frontend_entry,
+                "frontend_revision": _frontend_revision(
+                    item,
+                    frontend_entry,
+                    manifest.get("version", "0.0.0"),
+                ),
             },
         )
     return result
@@ -211,9 +241,7 @@ async def _post_load_setup(  # pylint: disable=too-many-branches
         if hook.plugin_id != plugin_id:
             continue
         try:
-            result = hook.callback()
-            if inspect.iscoroutine(result) or inspect.isawaitable(result):
-                await result
+            await invoke_plugin_callback(hook.callback)
         except Exception as exc:
             logger.error(
                 f"Startup hook '{hook.hook_name}' failed: {exc}",
@@ -1068,8 +1096,11 @@ async def serve_plugin_ui_file(
     # revalidate on every request or browsers keep serving stale bundles
     # after a plugin hot update.
     hashed_asset = re.search(r"-[A-Za-z0-9_]{8,}\.[a-z0-9]+$", full_path.name)
+    versioned_entry = bool(request.query_params.get("v"))
     cache_control = (
-        "public, max-age=31536000, immutable" if hashed_asset else "no-cache"
+        "public, max-age=31536000, immutable"
+        if hashed_asset or versioned_entry
+        else "no-cache"
     )
     headers = {"Cache-Control": cache_control}
 
@@ -1149,30 +1180,23 @@ async def oss_proxy(path: str):
     directly.  This endpoint fetches server-side and returns the content
     with permissive CORS headers.
     """
-    import httpx
+    from ...plugins.oss_cache import fetch_oss_resource
 
     clean_path = path.lstrip("/")
-    url = f"{_OSS_BASE_URL}/{clean_path}"
     try:
-        async with httpx.AsyncClient(timeout=_OSS_PROXY_TIMEOUT) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            # Guess content type from the URL extension
-            content_type, _ = mimetypes.guess_type(clean_path)
-            if not content_type:
-                content_type = "application/octet-stream"
-            from fastapi.responses import Response
+        content, content_type, cache_state = await fetch_oss_resource(
+            clean_path,
+        )
+        from fastapi.responses import Response
 
-            return Response(
-                content=resp.content,
-                media_type=content_type,
-                headers={"Cache-Control": "public, max-age=300"},
-            )
-    except httpx.HTTPStatusError as exc:
-        raise HTTPException(
-            status_code=exc.response.status_code,
-            detail=f"OSS returned {exc.response.status_code} for {clean_path}",
-        ) from exc
+        return Response(
+            content=content,
+            media_type=content_type,
+            headers={
+                "Cache-Control": "public, max-age=21600",
+                "X-QwenPaw-Cache": cache_state,
+            },
+        )
     except Exception as exc:
         logger.warning("OSS proxy failed for %s: %s", clean_path, exc)
         raise HTTPException(

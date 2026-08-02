@@ -283,6 +283,7 @@
   },
   "acp": {
     "title": "ACP",
+    "description": "Configure external agents invoked through ACP and their Node runtime.",
     "loading": "Loading ACP configuration...",
     "builtin": "Built-in",
     "custom": "Custom",
@@ -2676,13 +2677,34 @@
     "greeting": "Hello, how can I help you today?",
     "description": "UGSci AI assistant is online. From reservoir analysis to numerical simulation and engineering decisions — describe your scenario and I'll deliver results.",
     "prompt1": "Can you tell me what you can do?",
-    "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands · \"@\" to mention an Agent (\"/approve\" or \"/deny\" during approvals)",
+    "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" or \"、\" for quick commands · \"@\" to mention an Agent (\"/approve\" or \"/deny\" during approvals)",
     "longTextUploadPrompt": "Please read the uploaded prompt file and answer it.",
     "emptyOutputError": "The assistant returned an empty response.",
     "mention": {
       "selectAgent": "Select an Agent to mention",
       "noMatch": "No matching agent found",
-      "hint": "Type @ and select a target Agent — the message will be forwarded to that Agent"
+      "hint": "Mention one Agent for direct routing, or multiple Agents for ordered coordination by the current Agent",
+      "selectedCount": "{{count}} Agents selected",
+      "delegate": "Assign directly",
+      "collaborate": "Collaborate",
+      "delegateShort": "Assigned",
+      "collaborateShort": "Collaborating",
+      "delegateHint": "The target Agent handles the task independently",
+      "collaborateHint": "The current Agent collaborates with the target Agent",
+      "multiAgentHint": "Additional Agents will be coordinated by the current Agent",
+      "addToCollaboration": "Add",
+      "assign": "Assign",
+      "noMoreAgents": "No more Agents available",
+      "coordinatorLabel": "{{agent}} · Coordinator"
+    },
+    "highlights": {
+      "activeTokens": "Active Agents, skills, and commands",
+      "removeToken": "Remove {{token}}"
+    },
+    "skills": {
+      "multiAgentConflict": "A global Skill command cannot be combined with Agent collaboration. Remove the Skill or use a direct single-Agent assignment.",
+      "unavailableForAgent": "Agent “{{agent}}” does not have the Skill “/{{skill}}” enabled for this chat. The message was not sent.",
+      "validationFailed": "The target Agent's Skill availability could not be verified. Please try again."
     },
     "commands": {
       "clear": {

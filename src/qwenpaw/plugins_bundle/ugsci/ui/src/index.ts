@@ -2,7 +2,8 @@
  * UGSci frontend plugin for QwenPaw
  *
  * Transforms the QwenPaw UI into a petroleum-domain-friendly interface with
- * three core modules: Capabilities, Skills, and Experts.
+ * three user-facing modules: Experts & Collaboration, Tools & Skills, and
+ * Marketplace.
  *
  * Key design: Expert display data is LINKED to real Agent data — each expert
  * card/drawer fetches the agent's actual skills, MCP clients, tools, and
@@ -14,8 +15,11 @@
 import { getHost } from "./core/runtime";
 import { isSimpleMode } from "./core/shared";
 import { ExpertCenterPage } from "./expert/ExpertCenterPage";
-import { CapabilityCenterPage } from "./capability/CapabilityCenterPage";
-import { SkillCenterPage } from "./skill/SkillCenterPage";
+import {
+  LegacySkillsCenterPage,
+  LegacyToolsCenterPage,
+  ToolsSkillsCenterPage,
+} from "./capability/ToolsSkillsCenterPage";
 import { MarketplacePage } from "./market/MarketplacePage";
 import { WelcomePromptsInjector } from "./WelcomePromptsInjector";
 
@@ -55,7 +59,6 @@ function buildPlugin() {
   const antdIcons = getHost().antdIcons || {};
   const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
   const ToolOutlined = antdIcons.ToolOutlined;
-  const ThunderboltOutlined = antdIcons.ThunderboltOutlined;
   const ShopOutlined = antdIcons.ShopOutlined;
 
   // Expert Center
@@ -68,7 +71,7 @@ function buildPlugin() {
   QP.menu.add(PLUGIN_ID, {
     id: "ugsci.experts",
     location: "primary.agentScoped",
-    label: () => "专家",
+    label: () => "专家·协作",
     icon: UserSwitchOutlined
       ? React.createElement(UserSwitchOutlined, { style: { fontSize: 16 } })
       : undefined,
@@ -77,42 +80,37 @@ function buildPlugin() {
     visible: () => isSimpleMode(),
   });
 
-  // Capability Center → Tools
+  // Unified Tools & Skills Center
   QP.route.add(PLUGIN_ID, {
-    id: "ugsci.capabilities",
-    path: "/ugsci-capabilities",
-    component: CapabilityCenterPage,
+    id: "ugsci.tools-skills",
+    path: "/ugsci-tools-skills",
+    component: ToolsSkillsCenterPage,
   });
 
   QP.menu.add(PLUGIN_ID, {
-    id: "ugsci.capabilities",
+    id: "ugsci.tools-skills",
     location: "primary.agentScoped",
-    label: () => "工具",
+    label: () => "工具·技能",
     icon: ToolOutlined
       ? React.createElement(ToolOutlined, { style: { fontSize: 16 } })
       : undefined,
-    route: "ugsci.capabilities",
+    route: "ugsci.tools-skills",
     order: 6,
     visible: () => isSimpleMode(),
   });
 
-  // Skill Center → Skills
+  // Compatibility routes: keep old bookmarks and in-plugin links working,
+  // while rendering them through the unified composition layer.
+  QP.route.add(PLUGIN_ID, {
+    id: "ugsci.capabilities",
+    path: "/ugsci-capabilities",
+    component: LegacyToolsCenterPage,
+  });
+
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.skills-center",
     path: "/ugsci-skills",
-    component: SkillCenterPage,
-  });
-
-  QP.menu.add(PLUGIN_ID, {
-    id: "ugsci.skills-center",
-    location: "primary.agentScoped",
-    label: () => "技能",
-    icon: ThunderboltOutlined
-      ? React.createElement(ThunderboltOutlined, { style: { fontSize: 16 } })
-      : undefined,
-    route: "ugsci.skills-center",
-    order: 7,
-    visible: () => isSimpleMode(),
+    component: LegacySkillsCenterPage,
   });
 
   // Marketplace
@@ -130,7 +128,7 @@ function buildPlugin() {
       ? React.createElement(ShopOutlined, { style: { fontSize: 16 } })
       : undefined,
     route: "ugsci.market",
-    order: 8,
+    order: 7,
     visible: () => isSimpleMode(),
   });
 
@@ -140,11 +138,10 @@ function buildPlugin() {
   if (QP.sidebar?.registerSimpleModeItems) {
     QP.sidebar.registerSimpleModeItems([
       "ugsci.experts",
-      "ugsci.capabilities",
-      "ugsci.skills-center",
+      "ugsci.tools-skills",
       "ugsci.market",
     ]);
-    console.info("[ugsci] Registered 4 items for simple-mode visibility");
+    console.info("[ugsci] Registered 3 items for simple-mode visibility");
   } else {
     console.warn(
       "[ugsci] window.QwenPaw.sidebar.registerSimpleModeItems not available — items will not appear in simple mode",
@@ -152,7 +149,7 @@ function buildPlugin() {
   }
 
   // ── Simplify Navigation (Simple Mode only) ────────────────────────────
-  // In simple mode, hide these built-in items because the three UGSci
+  // In simple mode, hide these built-in items because the unified UGSci
   // centers provide a simpler, domain-focused alternative.
   // Note: core.mcp is NOT hidden — the native /mcp page is reused for
   // full MCP management (edit, OAuth, access policy) and is linked from
@@ -195,7 +192,7 @@ function buildPlugin() {
   }
 
   console.info(
-    "[ugsci] Plugin registered: 4 routes + menu items, simple-mode whitelist + simplified navigation active",
+    "[ugsci] Plugin registered: unified Tools & Skills center + compatibility routes, simple-mode navigation active",
   );
 }
 

@@ -67,6 +67,7 @@ class GenerateRequest(BaseModel):
 
     prompt: str
     name: str = ""
+    agent_id: str = "default"
 
 
 def build_router(service: WorkflowService) -> APIRouter:
@@ -131,7 +132,11 @@ def build_router(service: WorkflowService) -> APIRouter:
     @router.post("/generate")
     async def generate_flow(payload: GenerateRequest = Body(...)) -> dict[str, Any]:
         """Draft an editable workflow from a natural-language SOP."""
-        return service.generate_flow(payload.prompt, name=payload.name)
+        return service.generate_flow(
+            payload.prompt,
+            name=payload.name,
+            agent_id=payload.agent_id,
+        )
 
     # ---------------------------------------------------------------- #
     # Run lifecycle

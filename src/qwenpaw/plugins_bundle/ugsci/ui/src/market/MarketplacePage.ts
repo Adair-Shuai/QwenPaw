@@ -25,7 +25,7 @@ import {
   type OssMcpServer,
   type OssAgent,
   type GenericSource,
-  ossProxyUrl,
+  fetchOssResponse,
   fetchOssJson,
   ossMcpToTemplate,
   loadGenericSources,
@@ -1177,7 +1177,7 @@ export function MarketplacePage() {
       if (agent.instructions) {
         try {
           const instrPath = agent.instructions.replace(/^\/+/, "");
-          const resp = await fetch(ossProxyUrl(instrPath));
+          const resp = await fetchOssResponse(instrPath);
           if (resp.ok) {
             systemPrompt = await resp.text();
           }
@@ -1188,7 +1188,7 @@ export function MarketplacePage() {
       if (agent.skills_manifest) {
         try {
           const manifestPath = agent.skills_manifest.replace(/^\/+/, "");
-          const resp = await fetch(ossProxyUrl(manifestPath));
+          const resp = await fetchOssResponse(manifestPath);
           if (resp.ok) {
             const data = await resp.json();
             if (Array.isArray(data)) {
@@ -2188,4 +2188,3 @@ template.iconUrl
       : null,
   );
 }
-

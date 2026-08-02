@@ -595,6 +595,7 @@
   },
   "acp": {
     "title": "ACP",
+    "description": "配置通过 ACP 调用的外部 Agent 及其 Node 运行环境。",
     "loading": "加载 ACP 配置中...",
     "builtin": "内置",
     "custom": "自定义",
@@ -2535,13 +2536,34 @@
     "greeting": "你好，我今天能帮你做什么？",
     "description": "您好，UGSci 智能助手在线。无论是油气藏分析、数值模拟还是工程决策，描述您的场景，我来交付结果。",
     "prompt1": "能告诉我你都能做点什么吗",
-    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令 · \"@\" 指派 Agent（审批时 \"/approve\" 或 \"/deny\"）",
+    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 或 \"、\" 快捷指令 · \"@\" 指派 Agent（审批时 \"/approve\" 或 \"/deny\"）",
     "longTextUploadPrompt": "请读取已上传的提示词文件，并根据文件内容回答。",
     "emptyOutputError": "助手返回了空响应。",
     "mention": {
       "selectAgent": "选择要指派的 Agent",
       "noMatch": "没有匹配的 Agent",
-      "hint": "输入 @ 并选择目标 Agent，消息将转发给该 Agent 处理"
+      "hint": "输入 @ 并选择目标 Agent；多个 Agent 将由当前 Agent 按出现顺序协调执行",
+      "selectedCount": "已选择 {{count}} 位 Agent",
+      "delegate": "直接指派",
+      "collaborate": "共同协作",
+      "delegateShort": "指派",
+      "collaborateShort": "协作",
+      "delegateHint": "目标 Agent 独立处理",
+      "collaborateHint": "当前 Agent 与目标 Agent 协作",
+      "multiAgentHint": "继续添加将由当前 Agent 统一协调",
+      "addToCollaboration": "加入协作",
+      "assign": "指派",
+      "noMoreAgents": "没有其他可添加的 Agent",
+      "coordinatorLabel": "{{agent}} · 协调"
+    },
+    "highlights": {
+      "activeTokens": "已使用的 Agent、Skill 和指令",
+      "removeToken": "移除 {{token}}"
+    },
+    "skills": {
+      "multiAgentConflict": "Agent 协作模式不能同时使用全局 Skill 指令。请移除 Skill，或改为单 Agent 直接指派。",
+      "unavailableForAgent": "Agent“{{agent}}”未启用或不支持 Skill“/{{skill}}”，消息未发送。",
+      "validationFailed": "无法验证目标 Agent 的 Skill，请稍后重试。"
     },
     "commands": {
       "clear": {

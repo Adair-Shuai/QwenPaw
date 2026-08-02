@@ -6,6 +6,9 @@ from __future__ import annotations
 import hashlib
 import logging
 import math
+import threading
+import time
+from concurrent.futures import ThreadPoolExecutor
 from io import BytesIO
 from pathlib import Path
 from typing import Any
@@ -17,6 +20,15 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.avatar")
 
 CANVAS_SIZE = 256
 BACKGROUND_COLOR = (240, 240, 240, 255)
+AVATAR_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
+AVATAR_FAILURE_TTL_SECONDS = 6 * 60 * 60
+_LOCKS_GUARD = threading.Lock()
+_SEED_LOCKS: dict[str, threading.Lock] = {}
+
+
+def _seed_lock(seed: str) -> threading.Lock:
+    with _LOCKS_GUARD:
+        return _SEED_LOCKS.setdefault(seed, threading.Lock())
 
 
 class AvatarService:
@@ -77,27 +89,45 @@ class AvatarService:
     def get_or_fetch_avatar_png(self, seed: str) -> Path:
         """Resolve an avatar from cache, network, or bundled fallback."""
         cached = self.cached_avatar_path(seed)
-        if cached.is_file():
+        failed = cached.with_suffix(".failed")
+        now = time.time()
+        if cached.is_file() and now - cached.stat().st_mtime < AVATAR_CACHE_TTL_SECONDS:
             return cached
-        try:
-            cached.write_bytes(self.fetch_avatar_png_online(seed))
-            logger.info(
-                "[%s] Fetched and cached avatar for seed '%s'",
-                self.plugin_id,
-                seed,
-            )
-            return cached
-        except Exception as exc:
-            logger.warning(
-                "[%s] Failed to fetch avatar for seed '%s': %s",
-                self.plugin_id,
-                seed,
-                exc,
-            )
-            default = self.default_avatar_path()
-            if default.is_file():
-                return default
-            raise
+        with _seed_lock(seed):
+            now = time.time()
+            if cached.is_file() and now - cached.stat().st_mtime < AVATAR_CACHE_TTL_SECONDS:
+                return cached
+            if (
+                failed.is_file()
+                and now - failed.stat().st_mtime < AVATAR_FAILURE_TTL_SECONDS
+            ):
+                return cached if cached.is_file() else self.default_avatar_path()
+            try:
+                content = self.fetch_avatar_png_online(seed)
+                temporary = cached.with_suffix(f".{threading.get_ident()}.tmp")
+                temporary.write_bytes(content)
+                temporary.replace(cached)
+                failed.unlink(missing_ok=True)
+                logger.info(
+                    "[%s] Fetched and cached avatar for seed '%s'",
+                    self.plugin_id,
+                    seed,
+                )
+                return cached
+            except Exception as exc:
+                failed.touch()
+                logger.warning(
+                    "[%s] Failed to fetch avatar for seed '%s': %s",
+                    self.plugin_id,
+                    seed,
+                    exc,
+                )
+                if cached.is_file():
+                    return cached
+                default = self.default_avatar_path()
+                if default.is_file():
+                    return default
+                raise
 
     @staticmethod
     def preset_avatar_data() -> tuple[set[str], list[list[str]]]:
@@ -144,13 +174,17 @@ class AvatarService:
                 len(all_names),
             )
 
-            fetched = 0
-            for name in all_names:
+            def _warm_one(name: str) -> bool:
                 try:
-                    if self.get_or_fetch_avatar_png(name).is_file():
-                        fetched += 1
+                    return self.get_or_fetch_avatar_png(name).is_file()
                 except Exception:
-                    continue
+                    return False
+
+            with ThreadPoolExecutor(
+                max_workers=min(6, max(1, len(all_names))),
+                thread_name_prefix="ugsci-avatar",
+            ) as executor:
+                fetched = sum(executor.map(_warm_one, sorted(all_names)))
 
             team_count = 0
             for members in preset_teams:
@@ -317,7 +351,7 @@ class AvatarService:
             return FileResponse(
                 str(path),
                 media_type="image/png",
-                headers={"Cache-Control": "public, max-age=3600"},
+                headers={"Cache-Control": "public, max-age=86400"},
             )
 
         @router.get("/team/{team_id}")
@@ -333,7 +367,7 @@ class AvatarService:
                 return FileResponse(
                     str(team_cache),
                     media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=3600"},
+                    headers={"Cache-Control": "public, max-age=86400"},
                 )
             try:
                 content = self.compose_team_avatar(seeds)
@@ -341,7 +375,7 @@ class AvatarService:
                 return Response(
                     content=content,
                     media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=3600"},
+                    headers={"Cache-Control": "public, max-age=86400"},
                 )
             except Exception as exc:
                 logger.error(
@@ -362,7 +396,7 @@ class AvatarService:
                 return FileResponse(
                     str(path),
                     media_type="image/png",
-                    headers={"Cache-Control": "public, max-age=3600"},
+                    headers={"Cache-Control": "public, max-age=86400"},
                 )
 
         return router

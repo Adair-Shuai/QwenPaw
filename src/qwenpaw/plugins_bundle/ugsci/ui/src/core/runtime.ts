@@ -1,5 +1,7 @@
 import type React from "react";
 
+export type BuiltinPageId = "tools" | "mcp" | "acp";
+
 export interface QwenPawHost {
   React: typeof React;
   // Host-owned namespaces are intentionally dynamic across console versions.
@@ -8,11 +10,16 @@ export interface QwenPawHost {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   antdIcons: any;
   getApiUrl: (path: string) => string;
-  getApiToken: () => string;
+  getApiToken: () => string | null;
+  /** Host-owned transport that tracks authentication and Agent scoping. */
+  fetch?: (path: string, init?: RequestInit) => Promise<Response>;
   setSelectedAgent?: (agentId: string) => void;
   useSelectedAgent?: () => { id: string };
   ReactMarkdown?: React.ElementType;
   remarkGfm?: unknown;
+  loadBuiltinPage?: (
+    page: BuiltinPageId,
+  ) => Promise<React.ComponentType<{ embedded?: boolean }>>;
 }
 
 export function getHost(): QwenPawHost {
@@ -46,6 +53,35 @@ export function authHeaders(
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...extra,
   };
+}
+
+function headersToRecord(headers?: HeadersInit): Record<string, string> {
+  const normalized = new Headers(headers);
+  const result: Record<string, string> = {};
+  normalized.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+/**
+ * Send a QwenPaw API request through the host-owned transport. The fallback is
+ * only for older hosts that predate host.fetch; current hosts therefore remain
+ * the single owner of URL resolution, authentication, and Agent headers.
+ */
+export function hostFetch(
+  path: string,
+  init?: RequestInit,
+): Promise<Response> {
+  const host = getHost();
+  const callerHeaders = headersToRecord(init?.headers);
+  if (host.fetch) {
+    return host.fetch(path, { ...init, headers: callerHeaders });
+  }
+  return fetch(host.getApiUrl(path), {
+    ...init,
+    headers: { ...authHeaders(), ...callerHeaders },
+  });
 }
 
 interface CacheEntry {
@@ -131,10 +167,7 @@ export async function apiFetch<T>(
     }
   }
 
-  const response = await fetch(apiUrl(path), {
-    ...fetchOptions,
-    headers: { ...authHeaders(), ...(fetchOptions.headers || {}) },
-  });
+  const response = await hostFetch(path, fetchOptions);
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(text || `HTTP ${response.status}`);

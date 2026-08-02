@@ -100,7 +100,7 @@ QP.menu.add(PLUGIN_ID, {
 
 插件通过 `localStorage.getItem("qwenpaw_sidebar_mode")` 判断当前模式：
 
-- **Simple Mode** (`simple`)：显示 UGSci 的 4 个模块菜单，隐藏 7 个内置菜单项
+- **Simple Mode** (`simple`)：显示 UGSci 的“专家·协作 / 工具·技能 / 市场”入口，隐藏已被统一入口覆盖的内置菜单项
 - **Full Mode**（其他值）：所有内置菜单项保持可见，UGSci 模块菜单隐藏
 
 ### 数据流
@@ -110,16 +110,12 @@ QP.menu.add(PLUGIN_ID, {
 ```
 ExpertCenterPage
   │
-  ├── fetchAgents()           → GET /api/agents
-  ├── fetchMCPClients()       → GET /api/mcp
+  ├── fetchAgents()             → GET /api/agents
   │
   └── for each agent (并行):
-        ├── fetchAgentConfig()  → GET /api/agents/{id}
-        ├── fetchAgentSkills()  → GET /api/skills (X-Agent-Id)
-        │
-        └── extractMCPKeys(config.mcp)
-              └── 交叉引用全局 MCP 列表
-              └── 得到 agentMCPs
+        ├── fetchAgentConfig()     → GET /api/agents/{id}
+        ├── fetchAgentSkills()     → GET /api/skills (X-Agent-Id)
+        └── fetchAgentMCPClients() → GET /api/mcp (X-Agent-Id)
 ```
 
 #### 技能中心数据流
@@ -135,14 +131,16 @@ SkillCenterPage
               └── 遍历 workspaceSkills，找出安装了该技能的 Agent
 ```
 
-#### 软件检测数据流
+#### 仿真引擎数据流
 
 ```
-CapabilityCenterPage → LocalSoftwareSection
+ToolsSkillsCenterPage → EngineSection
   │
-  ├── fetchSoftwareDetection() → GET /api/ugsci/software/detect
-  ├── fetchSoftwareList()      → GET /api/ugsci/software/list
-  └── addScanPath(paths)       → POST /api/ugsci/software/scan-path
+  ├── fetchEngines()            → GET  /api/ugsci/engines/list
+  ├── detectEngines()           → POST /api/ugsci/engines/detect/refresh
+  ├── addEngine(data)           → POST /api/ugsci/engines/
+  ├── updateEngine(id, data)    → PUT  /api/ugsci/engines/{id}
+  └── deleteEngine(id)          → DELETE /api/ugsci/engines/{id}
 ```
 
 ## 后端架构

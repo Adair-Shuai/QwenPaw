@@ -24,7 +24,7 @@
   "meta": {
     "pawapp": {
       "icon": "🎬",
-      "icon_url": "/api/frontend_plugin/qwenpaw-creator/files/ui/dist/app/logo-mark.png",
+      "icon_url": "/api/frontend_plugin/qwenpaw-creator/files/ui/public/logo-mark.png",
       "entry_page": "/apps/qwenpaw-creator",
       "launch_scope": "page"
     },

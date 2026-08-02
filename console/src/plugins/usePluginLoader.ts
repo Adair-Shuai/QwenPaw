@@ -18,6 +18,8 @@ interface PluginInfo {
   id: string;
   name: string;
   frontend_entry?: string;
+  version?: string;
+  frontend_revision?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -51,12 +53,15 @@ function resolveUrl(pluginId: string, apiPath: string): string {
  *    a direct same-origin `import()`. This requires the HTTP origin
  *    to be in `script-src`.
  */
-async function executePluginScript(entryUrl: string): Promise<void> {
-  // Append a cache-busting query parameter so the browser always fetches
-  // the latest plugin bundle instead of serving a stale cached version.
-  const cacheBustUrl = `${entryUrl}${
+async function executePluginScript(
+  entryUrl: string,
+  version: string,
+): Promise<void> {
+  // Versioned URLs re-use the WebView disk cache between launches while still
+  // invalidating immediately after a plugin upgrade.
+  const versionedUrl = `${entryUrl}${
     entryUrl.includes("?") ? "&" : "?"
-  }_t=${Date.now()}`;
+  }v=${encodeURIComponent(version)}`;
 
   // Strategy 1: Fetch + Blob URL import (most reliable in Tauri WebView).
   const token = getApiToken();
@@ -64,9 +69,9 @@ async function executePluginScript(entryUrl: string): Promise<void> {
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
   try {
-    const response = await fetch(cacheBustUrl, {
+    const response = await fetch(versionedUrl, {
       headers,
-      cache: "no-store",
+      cache: "default",
     });
     if (!response.ok) {
       throw new Error(`HTTP ${response.status} for ${entryUrl}`);
@@ -92,7 +97,7 @@ async function executePluginScript(entryUrl: string): Promise<void> {
   // Strategy 2: Direct same-origin dynamic import (fallback).
   // In some environments (e.g. web dev mode), this may work when the
   // Blob URL approach doesn't.
-  await import(/* @vite-ignore */ cacheBustUrl);
+  await import(/* @vite-ignore */ versionedUrl);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -132,7 +137,10 @@ export async function loadAllPlugins(): Promise<{
 
   const results = await Promise.allSettled(
     frontendPlugins.map(async (p) => {
-      await executePluginScript(resolveUrl(p.id, p.frontend_entry!));
+      await executePluginScript(
+        resolveUrl(p.id, p.frontend_entry!),
+        p.frontend_revision || p.version || "0",
+      );
       console.info(`[PluginLoader] ✓ ${p.id}`);
     }),
   );

@@ -29,6 +29,20 @@ def test_api_version_ok(app_server) -> None:
 
 
 @pytest.mark.integration
+@pytest.mark.p0
+def test_startup_status_is_public_and_structured(app_server) -> None:
+    """The desktop splash must receive real, machine-readable progress."""
+    response = app_server.api_request("GET", "/api/startup/status")
+    assert response.status_code == 200, app_server.logs_tail()
+    payload = response.json()
+    assert isinstance(payload["ready"], bool)
+    assert isinstance(payload["stage"], str)
+    assert isinstance(payload["message"], str)
+    assert 0 <= payload["progress"] <= 100
+    assert payload["elapsed_seconds"] >= 0
+
+
+@pytest.mark.integration
 @pytest.mark.p1
 def test_console_entry_or_fallback_ok(app_server) -> None:
     """Test purpose:

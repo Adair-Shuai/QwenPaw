@@ -262,7 +262,12 @@ function ToolConfigModal({
   );
 }
 
-export default function ToolsPage() {
+export interface ToolsPageProps {
+  /** Render inside a plugin-owned page without route breadcrumbs. */
+  embedded?: boolean;
+}
+
+export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
   const { t } = useTranslation();
   const {
     tools,
@@ -314,25 +319,43 @@ export default function ToolsPage() {
     }
   };
 
+  const batchSwitch = (
+    <Switch
+      checked={enabledTools.length > 0 && disabledTools.length === 0}
+      onChange={() =>
+        disabledTools.length > 0 ? enableAll() : disableAll()
+      }
+      disabled={batchLoading || loading}
+      checkedChildren={t("tools.enableAll")}
+      unCheckedChildren={t("tools.disableAll")}
+    />
+  );
+
   return (
-    <div className={styles.toolsPage}>
-      <PageHeader
-        items={[{ title: t("nav.agent") }, { title: t("tools.title") }]}
-        extra={
-          <div className={styles.headerAction}>
-            <Switch
-              checked={enabledTools.length > 0 && disabledTools.length === 0}
-              onChange={() =>
-                disabledTools.length > 0 ? enableAll() : disableAll()
-              }
-              disabled={batchLoading || loading}
-              checkedChildren={t("tools.enableAll")}
-              unCheckedChildren={t("tools.disableAll")}
-            />
+    <div
+      className={`${styles.toolsPage} ${embedded ? styles.embeddedPage : ""}`}
+    >
+      {embedded ? (
+        <div className={styles.embeddedHeader}>
+          <div>
+            <div className={styles.embeddedTitle}>{t("tools.title")}</div>
+            <div className={styles.embeddedDescription}>
+              {t("tools.description")}
+            </div>
           </div>
-        }
-      />
-      <div className={styles.toolsContainer}>
+          <div className={styles.headerAction}>{batchSwitch}</div>
+        </div>
+      ) : (
+        <PageHeader
+          items={[{ title: t("nav.agent") }, { title: t("tools.title") }]}
+          extra={<div className={styles.headerAction}>{batchSwitch}</div>}
+        />
+      )}
+      <div
+        className={`${styles.toolsContainer} ${
+          embedded ? styles.embeddedContainer : ""
+        }`}
+      >
         {loading ? (
           <div className={styles.loading}>
             <p>{t("common.loading")}</p>

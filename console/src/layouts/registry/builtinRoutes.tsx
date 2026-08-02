@@ -23,12 +23,12 @@ import type { Route } from "../../plugins/registry/types";
 
 // Eager pages
 import Chat from "../../pages/Chat";
-import CodingPage from "../../pages/Coding";
 // Dev-only demo page for the backend startup splash (BackendLoadingPage).
 import StartupSplashDemoPage from "../../pages/Debug/StartupSplashDemo";
 
 // Lazy pages
 const ChannelsPage = lazyImportWithRetry("../../pages/Control/Channels");
+const CodingPage = lazyImportWithRetry("../../pages/Coding");
 const SessionsPage = lazyImportWithRetry("../../pages/Control/Sessions");
 const InboxPage = lazyImportWithRetry("../../pages/Inbox");
 const CronJobsPage = lazyImportWithRetry("../../pages/Control/CronJobs");

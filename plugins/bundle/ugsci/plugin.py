@@ -9,8 +9,8 @@ compatibility aliases.
 
 from __future__ import annotations
 
+import asyncio
 import logging
-import threading
 from pathlib import Path
 from typing import Any, Callable
 
@@ -329,13 +329,9 @@ class UGSciPlugin:
             )
 
     async def _on_startup(self) -> None:
-        """Start non-blocking avatar cache warming."""
+        """Finish avatar warming before the desktop enters the workspace."""
         logger.info("[%s] Startup hook executed", PLUGIN_ID)
-        threading.Thread(
-            target=_prewarm_avatar_cache,
-            name="ugsci-avatar-prewarm",
-            daemon=True,
-        ).start()
+        await asyncio.to_thread(_prewarm_avatar_cache)
 
     async def _on_startup_sync_skills(self) -> None:
         """Synchronize bundled skills into the shared pool."""
@@ -343,7 +339,11 @@ class UGSciPlugin:
         if not skills_dir.exists():
             return
         try:
-            count = _sync_plugin_skills_to_pool(PLUGIN_ID, skills_dir)
+            count = await asyncio.to_thread(
+                _sync_plugin_skills_to_pool,
+                PLUGIN_ID,
+                skills_dir,
+            )
             if count:
                 logger.info(
                     "[%s] Synced %d skill(s) to skill pool",

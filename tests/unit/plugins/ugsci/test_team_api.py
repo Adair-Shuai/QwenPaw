@@ -7,10 +7,12 @@ import json
 import os
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from plugins.bundle.ugsci.team.api import build_team_router
+from plugins.bundle.ugsci.team import custom_store
 
 
 def _client(resolver) -> TestClient:
@@ -226,3 +228,142 @@ def test_preset_and_role_responses_have_stable_shape(tmp_path: Path) -> None:
     assert {"key", "display_name", "allowed_tools", "skills", "prompt"} <= (
         roles.json()["roles"][0].keys()
     )
+
+
+def test_custom_team_crud_uses_stable_id_and_complete_definition(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    client = _client(lambda _agent_id: tmp_path)
+    payload = {
+        "id": "stable-team",
+        "name": "储气库联合研判",
+        "description": "Stored on the backend",
+        "emoji": "🧪",
+        "category": "科研验证",
+        "mode": "debate",
+        "members": [
+            {
+                "name": "油藏工程师",
+                "role": "油藏分析",
+                "agentId": "agent-reservoir",
+                "roleKey": "reservoir-engineer",
+                "bindingMode": "fixed",
+            },
+            {
+                "name": "完整性评审",
+                "role": "风险审查",
+                "roleKey": "domain-reviewer",
+                "bindingMode": "temporary",
+            },
+        ],
+        "taskTemplate": "评价 {储气库} 的运行风险",
+        "successCriteria": "风险均有证据支持",
+    }
+
+    created = client.post("/api/ugsci/team/custom", json=payload)
+    assert created.status_code == 200
+    assert created.json()["team_id"] == "stable-team"
+
+    listed = client.get("/api/ugsci/team/custom")
+    assert listed.status_code == 200
+    assert listed.json()[0]["description"] == "Stored on the backend"
+    assert listed.json()[0]["emoji"] == "🧪"
+    assert listed.json()[0]["category"] == "科研验证"
+    assert listed.json()[0]["members"][0]["agentId"] == "agent-reservoir"
+    assert listed.json()[0]["members"][1]["bindingMode"] == "temporary"
+
+    payload["name"] = "储气库联合研判（更新）"
+    updated = client.put("/api/ugsci/team/custom/stable-team", json=payload)
+    assert updated.status_code == 200
+    detail = client.get("/api/ugsci/team/custom/stable-team")
+    assert detail.json()["name"] == "储气库联合研判（更新）"
+
+    deleted = client.delete("/api/ugsci/team/custom/stable-team")
+    assert deleted.status_code == 204
+    assert client.get("/api/ugsci/team/custom/stable-team").status_code == 404
+
+
+def test_custom_team_generated_ids_do_not_collide(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    client = _client(lambda _agent_id: tmp_path)
+    payload = {
+        "name": "同名专家团",
+        "members": [
+            {"name": "专家甲", "role": "分析"},
+            {"name": "专家乙", "role": "复核"},
+        ],
+    }
+
+    first = client.post("/api/ugsci/team/custom", json=payload)
+    second = client.post("/api/ugsci/team/custom", json=payload)
+
+    assert first.status_code == second.status_code == 200
+    assert first.json()["team_id"] != second.json()["team_id"]
+
+
+def test_custom_team_rejects_unknown_role_key(tmp_path: Path) -> None:
+    response = _client(lambda _agent_id: tmp_path).post(
+        "/api/ugsci/team/custom",
+        json={
+            "name": "越权角色测试",
+            "members": [
+                {
+                    "name": "未知专家",
+                    "role": "未知角色",
+                    "roleKey": "unrestricted-mystery-role",
+                },
+            ],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_corrupt_custom_team_store_is_not_silently_overwritten(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    store_file = tmp_path / "custom_teams.json"
+    store_file.write_text("{broken", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="unreadable"):
+        custom_store.save_custom_team({"name": "不能覆盖"})
+
+    assert store_file.read_text(encoding="utf-8") == "{broken"
+
+
+def test_list_team_runs_returns_newest_first(tmp_path: Path) -> None:
+    base = tmp_path / ".qwenpaw" / "ugsci_teams"
+    for index, status in enumerate(("completed", "active"), start=1):
+        instance = base / f"run-{index}"
+        instance.mkdir(parents=True)
+        (instance / "state.json").write_text(
+            json.dumps(
+                {
+                    "current_phase": "dispatch"
+                    if status == "active"
+                    else "completed",
+                    "workflow_status": status,
+                    "team_id": f"team-{index}",
+                    "team_name": f"团队 {index}",
+                    "team_mode": "pipeline",
+                    "task": "测试任务",
+                    "created_at_ns": index,
+                },
+            ),
+            encoding="utf-8",
+        )
+
+    response = _client(lambda _agent_id: tmp_path).get(
+        "/api/ugsci/team/runs",
+        headers={"X-Agent-Id": "agent-a"},
+    )
+
+    assert response.status_code == 200
+    assert [run["team_id"] for run in response.json()] == ["team-2", "team-1"]

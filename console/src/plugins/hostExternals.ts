@@ -67,6 +67,48 @@ export interface HostExternals {
   ReactMarkdown?: typeof ReactMarkdown;
   /** remarkGfm plugin for ReactMarkdown. */
   remarkGfm?: typeof remarkGfm;
+  /**
+   * Load an allow-listed QwenPaw page for in-place plugin composition.
+   * The page remains code-split and keeps its native state/validation logic.
+   */
+  loadBuiltinPage?: (
+    page: BuiltinPageId,
+  ) => Promise<React.ComponentType<BuiltinPageProps>>;
+}
+
+export type BuiltinPageId = "tools" | "mcp" | "acp";
+
+export interface BuiltinPageProps {
+  /** Hide route-level chrome and adapt scrolling when composed by a plugin. */
+  embedded?: boolean;
+}
+
+const BUILTIN_PAGE_LOADERS: Record<
+  BuiltinPageId,
+  () => Promise<React.ComponentType<BuiltinPageProps>>
+> = {
+  tools: () =>
+    import("../pages/Agent/Tools").then(
+      (module) => module.default as React.ComponentType<BuiltinPageProps>,
+    ),
+  mcp: () =>
+    import("../pages/Agent/MCP").then(
+      (module) => module.default as React.ComponentType<BuiltinPageProps>,
+    ),
+  acp: () =>
+    import("../pages/Agent/ACP").then(
+      (module) => module.default as React.ComponentType<BuiltinPageProps>,
+    ),
+};
+
+export function loadBuiltinPage(
+  page: BuiltinPageId,
+): Promise<React.ComponentType<BuiltinPageProps>> {
+  const loader = BUILTIN_PAGE_LOADERS[page];
+  if (!loader) {
+    return Promise.reject(new Error(`Unsupported built-in page: ${page}`));
+  }
+  return loader();
 }
 
 export interface PluginRouteDeclaration {
@@ -285,7 +327,12 @@ export function installHostExternals(): void {
         useAgentStore.getState().setSelectedAgent(agentId),
       ReactMarkdown,
       remarkGfm,
+      loadBuiltinPage,
     };
+  } else if (!window.QwenPaw.host.loadBuiltinPage) {
+    // Keep development hot reload and hosts created by older bootstraps
+    // forward-compatible without replacing their existing dependencies.
+    window.QwenPaw.host.loadBuiltinPage = loadBuiltinPage;
   }
 
   // ── Console-wide extension API ─────────────────────────────────────────

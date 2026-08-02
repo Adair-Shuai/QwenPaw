@@ -15,7 +15,11 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ._state_utils import StateProxy
-from .slash_command_registry import CommandSpec, FallbackHandler
+from .slash_command_registry import (
+    CommandSpec,
+    FallbackHandler,
+    normalize_command_prefix,
+)
 
 if TYPE_CHECKING:
     from agentscope.message import Msg
@@ -577,7 +581,8 @@ def _parse_skill_query(query: str) -> tuple[str, str] | None:
     return (name, user_input) if name else None
 
 
-# pylint: disable-next=too-many-return-statements
+# pylint: disable=too-many-return-statements,too-many-branches
+# pylint: disable=too-many-statements
 async def _skill_fallback_handler(
     raw_text: str,
     ctx: Any,
@@ -589,50 +594,83 @@ async def _skill_fallback_handler(
     """
     from agentscope.message import Msg, TextBlock
 
+    def skill_error(message: str) -> "Msg":
+        return Msg(
+            name="assistant",
+            role="assistant",
+            content=[TextBlock(type="text", text=message)],
+        )
+
+    raw_text = normalize_command_prefix(raw_text)
+    parsed = _parse_skill_query(raw_text)
+    if not parsed:
+        return skill_error(
+            "Skill 指令格式无效。请使用 `/skill-name 请求内容`，"
+            "名称包含空格时使用 `/[skill name] 请求内容`。",
+        )
+    skill_name, user_input = parsed
+
     workspace = getattr(ctx, "workspace", None)
     if workspace is None:
-        return None
+        return skill_error("当前会话没有可用的工作区，无法调用 Skill。")
 
     workspace_dir = getattr(workspace, "workspace_dir", None)
     if not workspace_dir:
-        return None
-
-    parsed = _parse_skill_query(raw_text)
-    if not parsed:
-        return None
-    skill_name, user_input = parsed
+        return skill_error("当前 Agent 没有可用的工作区，无法调用 Skill。")
 
     from ..agents.skill_system.registry import (
         get_workspace_skills_dir,
-        resolve_effective_skills,
     )
+    from ..agents.skill_system.store import read_skill_manifest
 
     request = getattr(ctx, "request", None)
     channel = (getattr(request, "channel", "") if request else "") or "console"
 
     try:
-        effective_skills = resolve_effective_skills(
-            Path(workspace_dir),
-            channel,
-        )
+        manifest = read_skill_manifest(Path(workspace_dir))
     except Exception:
-        return None
+        logger.exception("Failed to read Skill manifest for %s", workspace_dir)
+        return skill_error("读取当前 Agent 的 Skill 配置失败，请稍后重试。")
 
-    skills_dir = get_workspace_skills_dir(Path(workspace_dir))
-    skill_dir = next(
+    manifest_skills = manifest.get("skills", {})
+    matched_skill = next(
         (
-            skills_dir / sn
-            for sn in effective_skills
-            if sn.lower() == skill_name
+            (name, entry)
+            for name, entry in manifest_skills.items()
+            if name.lower() == skill_name
         ),
         None,
     )
-    if skill_dir is None or not skill_dir.exists():
-        return None
+    if matched_skill is None:
+        return skill_error(
+            f"未找到 Skill `/{skill_name}`。使用 `/skills` 查看当前 Agent " "可用的 Skill。",
+        )
+
+    resolved_name, entry = matched_skill
+    if not isinstance(entry, dict) or not entry.get("enabled", False):
+        return skill_error(
+            f"Skill `/{resolved_name}` 当前未启用，请先在 Skill 管理中启用。",
+        )
+
+    channels = entry.get("channels") or ["all"]
+    if "all" not in channels and channel not in channels:
+        return skill_error(
+            f"Skill `/{resolved_name}` 不支持当前渠道 `{channel}`。"
+            f"允许的渠道：{', '.join(map(str, channels))}。",
+        )
+
+    skills_dir = get_workspace_skills_dir(Path(workspace_dir))
+    skill_dir = skills_dir / resolved_name
+    if not skill_dir.exists():
+        return skill_error(
+            f"Skill `/{resolved_name}` 的目录不存在，请重新安装或同步该 Skill。",
+        )
 
     skill_md = skill_dir / "SKILL.md"
     if not skill_md.exists():
-        return None
+        return skill_error(
+            f"Skill `/{resolved_name}` 缺少 `SKILL.md`，无法调用。",
+        )
 
     from ..agents.utils.file_handling import (
         read_text_file_with_encoding_fallback,
@@ -640,8 +678,14 @@ async def _skill_fallback_handler(
 
     import frontmatter as fm
 
-    raw = read_text_file_with_encoding_fallback(skill_md)
-    post = fm.loads(raw)
+    try:
+        raw = read_text_file_with_encoding_fallback(skill_md)
+        post = fm.loads(raw)
+    except Exception:
+        logger.exception("Failed to load Skill instructions from %s", skill_md)
+        return skill_error(
+            f"读取 Skill `/{resolved_name}` 的指令失败，请检查 `SKILL.md`。",
+        )
     display_name = post.get("name") or skill_name
     description = post.get("description") or ""
 

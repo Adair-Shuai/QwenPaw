@@ -41,8 +41,18 @@ UGSCI_TEAM_MAX_MERGE_WAITS = 12
 MODE_PIPELINE = "pipeline"
 MODE_COORDINATOR = "coordinator"
 MODE_ROUNDTABLE = "roundtable"
+MODE_ROUTER = "router"
+MODE_REVIEW_LOOP = "review_loop"
+MODE_DEBATE = "debate"
 
-ALL_TEAM_MODES = (MODE_PIPELINE, MODE_COORDINATOR, MODE_ROUNDTABLE)
+ALL_TEAM_MODES = (
+    MODE_PIPELINE,
+    MODE_COORDINATOR,
+    MODE_ROUNDTABLE,
+    MODE_ROUTER,
+    MODE_REVIEW_LOOP,
+    MODE_DEBATE,
+)
 
 # ── Registered QwenPaw tool names ────────────────────────────────────
 # Keep in sync with the ToolRegistry names used by the host.

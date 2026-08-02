@@ -35,6 +35,30 @@ def _activate(
     )
 
 
+def test_review_round_limit_is_persisted_and_restored(tmp_path: Path) -> None:
+    gate = UGSciTeamGate()
+    instance = gate.activate_for_team(
+        tmp_path,
+        "review-team",
+        "评审团队",
+        "review_loop",
+        [{"name": "执行者", "role": "executor"}],
+        "完成评审",
+        "agent-a",
+        4,
+    )
+    state = TeamWorkflowState.from_existing(
+        tmp_path,
+        "review-team",
+        instance,
+    ).read_state()
+
+    assert state["max_dispatch_retries"] == 4
+    restored = UGSciTeamGate()
+    assert restored.restore(tmp_path, "agent-a") is True
+    assert restored._state().max_dispatch_retries == 4
+
+
 @pytest.mark.asyncio
 async def test_iteration_limit_terminates_and_deactivates(
     tmp_path: Path,

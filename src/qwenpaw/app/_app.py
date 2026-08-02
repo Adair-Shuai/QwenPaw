@@ -2,7 +2,6 @@
 # pylint: disable=redefined-outer-name,unused-argument
 import asyncio
 import hmac
-import inspect
 import mimetypes
 import os
 import sys
@@ -30,6 +29,7 @@ from ..constant import (
 from ..envs import load_envs_into_environ
 from ..local_models.manager import LocalModelManager
 from ..providers.provider_manager import ProviderManager
+from ..plugins.runtime import invoke_plugin_callback
 from ..utils.logging import (
     LOG_FILE_PATH,
     add_project_file_handler,
@@ -57,6 +57,7 @@ from .routers.healthz import router as healthz_router
 from .routers.loops import router as loops_router
 from .routers.tool_calls import router as tool_calls_router
 from .routers.voice import voice_router
+from .startup_state import startup_state
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
@@ -116,6 +117,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app: FastAPI,
 ):
     startup_start_time = time.time()
+    startup_state.reset()
     add_project_file_handler(LOG_FILE_PATH)
 
     # ================================================================
@@ -152,44 +154,12 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             exc_info=True,
         )
 
-    try:
-        from ..utils.telemetry import (
-            collect_and_upload_telemetry,
-            has_telemetry_been_collected,
-            is_telemetry_opted_out,
-        )
-
-        if not is_telemetry_opted_out(
-            WORKING_DIR,
-        ) and not has_telemetry_been_collected(WORKING_DIR):
-            collect_and_upload_telemetry(WORKING_DIR)
-    except Exception:
-        logger.debug(
-            "Telemetry collection skipped due to error",
-            exc_info=True,
-        )
-
+    startup_state.update("migration", "正在检查本地资料…", 8)
     logger.debug("Checking for legacy config migration...")
     migrate_legacy_workspace_to_default_agent()
     ensure_default_agent_exists()
     migrate_legacy_skills_to_skill_pool()
     ensure_qa_agent_exists()
-
-    # Migrate old conversations from sessions/*.json into each scroll agent's
-    # history.db, so chats from before scroll existed stay recallable. This is
-    # a one-off backfill, not core startup work: if it fails, we log and keep
-    # booting — that agent just won't have its old chats imported (scroll still
-    # records new turns normally). The import sits inside the try for the same
-    # reason — even a failed import must not block init.
-    #
-    # Note: being pure backfill, this could later run asynchronously (off the
-    # boot path) to speed up startup.
-    try:
-        from ..agents.context.scroll.sync import sync_all_scroll_agents
-
-        sync_all_scroll_agents()
-    except Exception:  # noqa: BLE001 - session sync must never block startup
-        logger.warning("session-sync: import/launch failed", exc_info=True)
 
     # Create core managers (instant — no I/O)
     provider_manager = ProviderManager.get_instance()
@@ -489,6 +459,39 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
     async def _background_startup():  # pylint: disable=too-many-statements
         try:
+            startup_state.update("maintenance", "正在整理本地资料…", 14)
+
+            def _run_noncritical_maintenance() -> None:
+                try:
+                    from ..utils.telemetry import (
+                        collect_and_upload_telemetry,
+                        has_telemetry_been_collected,
+                        is_telemetry_opted_out,
+                    )
+
+                    if not is_telemetry_opted_out(
+                        WORKING_DIR,
+                    ) and not has_telemetry_been_collected(WORKING_DIR):
+                        collect_and_upload_telemetry(WORKING_DIR)
+                except Exception:
+                    logger.debug(
+                        "Telemetry collection skipped due to error",
+                        exc_info=True,
+                    )
+                try:
+                    from ..agents.context.scroll.sync import (
+                        sync_all_scroll_agents,
+                    )
+
+                    sync_all_scroll_agents()
+                except Exception:
+                    logger.warning(
+                        "session-sync: import/launch failed",
+                        exc_info=True,
+                    )
+
+            await asyncio.to_thread(_run_noncritical_maintenance)
+
             # ---- Plugin System (phase 1: channel plugins) ----
             # Load channel-type plugins *before* agents start so that
             # ChannelManager discovers them via get_channel_registry()
@@ -505,7 +508,14 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     ensure_bundled_plugins_installed,
                 )
 
-                newly_installed = ensure_bundled_plugins_installed()
+                startup_state.update(
+                    "plugins",
+                    "正在准备内置专家与扩展…",
+                    24,
+                )
+                newly_installed = await asyncio.to_thread(
+                    ensure_bundled_plugins_installed,
+                )
                 if newly_installed:
                     logger.info(
                         "Bundled plugins synced: %s",
@@ -546,6 +556,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             )
             logger.debug("Phase 1: channel plugins loaded")
 
+            startup_state.update("agents", "正在启动专家服务…", 42)
+
             def _mark_core_agents_ready(_results: dict[str, bool]) -> None:
                 """Publish readiness after the core agent phase."""
                 core_elapsed = time.time() - startup_start_time
@@ -562,7 +574,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 startup_display.mark_failed(
                     "Default agent failed to start",
                 )
-            elif app.state.startup_ready.is_set():
+                raise RuntimeError("Default agent failed to start")
+            if app.state.startup_ready.is_set():
                 startup_display.mark_finalizing()
 
             provider_manager.start_local_model_resume(local_model_manager)
@@ -573,6 +586,13 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 configs=plugin_configs,
             )
             logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
+            startup_state.update(
+                "plugins",
+                "正在加载功能模块…",
+                62,
+                current=len(loaded_plugins),
+                total=len(loaded_plugins),
+            )
 
             runtime_helpers = RuntimeHelpers(
                 provider_manager=provider_manager,
@@ -635,19 +655,24 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # ---- Startup Hooks ----
             logger.debug("Executing plugin startup hooks...")
             startup_hooks = plugin_loader.registry.get_startup_hooks()
-            for hook in startup_hooks:
+            hook_total = len(startup_hooks)
+            for hook_index, hook in enumerate(startup_hooks, start=1):
                 try:
+                    startup_state.update(
+                        "resources",
+                        "正在准备专家资料与图像…",
+                        64 + round(18 * hook_index / max(1, hook_total)),
+                        current=hook_index,
+                        total=hook_total,
+                        detail=hook.plugin_id,
+                    )
                     logger.debug(
                         f"Executing startup hook '{hook.hook_name}' "
                         f"from plugin '{hook.plugin_id}' "
                         f"(priority={hook.priority})",
                     )
 
-                    result = hook.callback()
-                    if inspect.iscoroutine(
-                        result,
-                    ) or inspect.isawaitable(result):
-                        await result
+                    await invoke_plugin_callback(hook.callback)
 
                     logger.debug(
                         f"Completed startup hook '{hook.hook_name}' "
@@ -677,6 +702,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
             # ---- Skill pool auto-update sync ----
             try:
+                startup_state.update("skills", "正在更新技能资料…", 84)
                 from ..agents.skill_system import run_pool_auto_update_sync
                 from .routers.skills import post_auto_update_inbox
 
@@ -688,6 +714,35 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     exc_info=True,
                 )
 
+            try:
+                startup_state.update("market", "正在缓存市场资料与图标…", 88)
+                from ..plugins.oss_cache import prewarm_oss_market
+
+                market_cache = await prewarm_oss_market()
+                logger.info("Market cache prepared: %s", market_cache)
+            except Exception:
+                logger.warning(
+                    "Market cache warm-up skipped",
+                    exc_info=True,
+                )
+
+            try:
+                startup_state.update(
+                    "components",
+                    "正在检查 Windows 功能组件…",
+                    91,
+                )
+                from ..tauri.optional_components import (
+                    install_pending_components,
+                )
+
+                await asyncio.to_thread(install_pending_components)
+            except Exception:
+                logger.warning(
+                    "Optional component preparation skipped",
+                    exc_info=True,
+                )
+
             startup_elapsed = time.time() - startup_start_time
             logger.info(
                 "Background startup completed in "
@@ -695,12 +750,14 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             )
             if app.state.startup_ready.is_set():
                 startup_display.complete(startup_elapsed)
+            startup_state.mark_ready()
 
-        except Exception:
+        except Exception as exc:
             logger.error(
                 "Background startup encountered an error",
                 exc_info=True,
             )
+            startup_state.mark_error(str(exc))
 
     _bg_task = asyncio.create_task(_background_startup())
 
@@ -731,11 +788,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                         f"={hook.priority})",
                     )
 
-                    result = hook.callback()
-                    if inspect.iscoroutine(result) or inspect.isawaitable(
-                        result,
-                    ):
-                        await result
+                    await invoke_plugin_callback(hook.callback)
 
                     logger.info(
                         f"✓ Completed shutdown hook '{hook.hook_name}' "
@@ -922,6 +975,12 @@ def get_version():
     return {
         "version": __version__,
     }
+
+
+@app.get("/api/startup/status")
+def get_startup_status():
+    """Return real preparation progress for the desktop splash screen."""
+    return startup_state.snapshot()
 
 
 @app.get("/api/doctor/runtime")

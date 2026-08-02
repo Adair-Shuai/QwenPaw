@@ -81,7 +81,7 @@ vi.mock("@agentscope-ai/design", () => ({
 }));
 
 vi.mock("@/components/PageHeader", () => ({
-  PageHeader: () => <div />,
+  PageHeader: () => <div data-testid="route-page-header" />,
 }));
 
 import ToolsPage, { BrowserExperimentalToggle } from "./index";
@@ -102,6 +102,15 @@ function ToggleHarness({
 }
 
 describe("BrowserExperimentalToggle", () => {
+  it("keeps native controls while removing route chrome in embedded mode", () => {
+    render(<ToolsPage embedded />);
+
+    expect(screen.queryByTestId("route-page-header")).not.toBeInTheDocument();
+    expect(screen.getByText("tools.title")).toBeInTheDocument();
+    expect(screen.getByText("tools.description")).toBeInTheDocument();
+    expect(screen.getByRole("switch")).toBeInTheDocument();
+  });
+
   it("shows the selected unified-browser mode after enabling it", async () => {
     render(<ToggleHarness initialExperimental={false} />);
 

@@ -21,6 +21,7 @@ import logging
 import re
 import threading
 import time
+import uuid
 from pathlib import Path
 from typing import Any
 
@@ -56,15 +57,17 @@ def _store_file() -> Path:
 
 def _load_store() -> dict[str, dict[str, Any]]:
     """Load the custom team store from disk."""
+    f = _store_file()
+    if not f.is_file():
+        return {}
     try:
-        f = _store_file()
-        if f.is_file():
-            data = json.loads(f.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
+        data = json.loads(f.read_text(encoding="utf-8"))
+        if isinstance(data, dict):
+            return data
     except Exception as exc:
         logger.warning("Failed to load custom team store: %s", exc)
-    return {}
+        raise RuntimeError("Custom expert team store is unreadable") from exc
+    raise RuntimeError("Custom expert team store must contain a JSON object")
 
 
 def _save_store(store: dict[str, dict[str, Any]]) -> None:
@@ -84,6 +87,7 @@ def _save_store(store: dict[str, dict[str, Any]]) -> None:
         logger.warning("Failed to save custom team store: %s", exc)
         if tmp.exists():
             tmp.unlink(missing_ok=True)
+        raise RuntimeError("Failed to persist custom expert team") from exc
 
 
 def _generate_team_id(team_def: dict[str, Any]) -> str:
@@ -93,8 +97,9 @@ def _generate_team_id(team_def: dict[str, Any]) -> str:
     slug = re.sub(r"[^\w\u4e00-\u9fff]", "-", name)[:40].strip("-")
     if not slug:
         slug = "custom"
-    # Append a short timestamp suffix to avoid collisions
-    return f"{slug}-{int(time.time())}"[-60:]
+    # A short random suffix prevents same-second requests from overwriting
+    # one another. The returned ID is then persisted and remains stable.
+    return f"{slug}-{uuid.uuid4().hex[:8]}"[-60:]
 
 
 def save_custom_team(team_def: dict[str, Any]) -> str:
@@ -108,23 +113,37 @@ def save_custom_team(team_def: dict[str, Any]) -> str:
     if not team_id:
         team_id = _generate_team_id(team_def)
 
-    # Ensure the team_id is whitespace-free and URL-safe
-    team_id = re.sub(r"\s+", "-", team_id)[:60]
+    # Ensure the team_id is stable, whitespace-free and URL-safe.
+    team_id = re.sub(r"[^\w\u4e00-\u9fff-]", "-", team_id)
+    team_id = re.sub(r"-+", "-", team_id).strip("-")[:60] or "custom"
 
-    record = {
-        "team_id": team_id,
-        "name": team_def.get("name", team_id),
-        "mode": team_def.get("mode", "pipeline"),
-        "members": team_def.get("members", []),
-        "steps": team_def.get("steps", []),
-        "orchestration_prompt": team_def.get("orchestrationPrompt", ""),
-        "coordinator_name": team_def.get("coordinatorName", ""),
-        "task_template": team_def.get("taskTemplate", ""),
-        "created_at": team_def.get("createdAt") or time.time(),
-    }
+    now = time.time()
 
     with _lock:
         store = _load_store()
+        existing = store.get(team_id, {})
+        record = {
+            "team_id": team_id,
+            "name": team_def.get("name", team_id),
+            "description": team_def.get("description", ""),
+            "emoji": team_def.get("emoji", "🤝"),
+            "category": team_def.get("category", "自定义"),
+            "mode": team_def.get("mode", "pipeline"),
+            "members": team_def.get("members", []),
+            "steps": team_def.get("steps", []),
+            "max_review_rounds": team_def.get("maxReviewRounds", 2),
+            "routing_instruction": team_def.get("routingInstruction", ""),
+            "success_criteria": team_def.get("successCriteria", ""),
+            "orchestration_prompt": team_def.get("orchestrationPrompt", ""),
+            "coordinator_name": team_def.get("coordinatorName", ""),
+            "task_template": team_def.get("taskTemplate", ""),
+            "created_at": (
+                team_def.get("createdAt")
+                or existing.get("created_at")
+                or now
+            ),
+            "updated_at": now,
+        }
         store[team_id] = record
         # Prune old entries
         if len(store) > _MAX_STORED_TEAMS:

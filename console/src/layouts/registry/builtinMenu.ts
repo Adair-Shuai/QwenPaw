@@ -72,7 +72,9 @@ export const BUILTIN_MENU: MenuItem[] = [
     label: navLabel("nav.apps", "Apps"),
     icon: SparkMyApplicationLine,
     route: "core.app-center",
-    order: 15,
+    // order 7 ties with ugsci.market; builtin items are registered before
+    // plugin items, so stable sort places "Apps" just above "Market".
+    order: 7,
   },
 
   // control-group

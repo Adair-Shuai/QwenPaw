@@ -42,6 +42,16 @@ def _source_files(source: Path) -> list[Path]:
     )
 
 
+def _destination_files(destination: Path) -> list[Path]:
+    """Return every mirror file, including files excluded from the source.
+
+    The destination is generated package data and must not retain independent
+    docs, caches, or build trees. Scanning it without source exclusions makes
+    those files visible as obsolete and preserves the single-source invariant.
+    """
+    return sorted(path for path in destination.rglob("*") if path.is_file())
+
+
 def _digest(path: Path) -> str:
     hasher = hashlib.sha256()
     with path.open("rb") as stream:
@@ -65,7 +75,7 @@ def find_drift(source: Path, destination: Path) -> list[str]:
         elif _digest(source_file) != _digest(destination_file):
             drift.append(f"different: {relative}")
     if destination.is_dir():
-        for destination_file in _source_files(destination):
+        for destination_file in _destination_files(destination):
             relative = destination_file.relative_to(destination)
             if relative not in source_relatives:
                 drift.append(f"obsolete: {relative}")
@@ -81,7 +91,7 @@ def sync(source: Path, destination: Path) -> tuple[int, int]:
         source_file.relative_to(source) for source_file in source_files
     }
     if destination.is_dir():
-        for destination_file in _source_files(destination):
+        for destination_file in _destination_files(destination):
             relative = destination_file.relative_to(destination)
             if relative not in source_relatives:
                 destination_file.unlink()

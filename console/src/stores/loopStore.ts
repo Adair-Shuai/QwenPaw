@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { request } from "@/api/request";
+import { normalizeCommandPrefix } from "@/utils/commandPrefix";
 
 export type LoopModeSource = "builtin" | "custom" | "plugin";
 export type LoopSessionState =
@@ -126,7 +127,7 @@ export function applyLoopModeCommand(text: string, mode: LoopModeInfo): string {
 }
 
 export function findLoopModeForCommand(text: string): LoopModeInfo | null {
-  const command = text
+  const command = normalizeCommandPrefix(text)
     .trimStart()
     .match(/^\/(\S+)/)?.[1]
     ?.toLowerCase();
@@ -141,6 +142,7 @@ export function findLoopModeForCommand(text: string): LoopModeInfo | null {
 }
 
 export function prepareLoopModeMessage(text: string): string {
+  text = normalizeCommandPrefix(text);
   const state = useLoopStore.getState();
   if (state.sessionState !== "idle") return text;
   const selected = getSelectedLoopMode();
@@ -152,6 +154,7 @@ export function prepareLoopModeMessage(text: string): string {
 }
 
 export function beginLoopModeSubmission(text: string): string {
+  text = normalizeCommandPrefix(text);
   const state = useLoopStore.getState();
   const manual = findLoopModeForCommand(text);
   if (!manual && text.trimStart().startsWith("/")) return text;

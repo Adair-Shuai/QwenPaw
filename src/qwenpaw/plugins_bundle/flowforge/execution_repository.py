@@ -9,6 +9,7 @@ import threading
 import time
 from pathlib import Path
 from typing import Any
+from uuid import uuid4
 
 
 class ExecutionRepository:
@@ -79,11 +80,18 @@ class ExecutionRepository:
             records, key=lambda item: item.get("started_at") or 0, reverse=True,
         )
 
-    def recover_incomplete(self) -> int:
+    def recover_incomplete(self, *, active_owner_pid: int | None = None) -> int:
         """Mark process-local runs left behind by a crash as failed."""
         recovered = 0
         for record in self.list():
             if record.get("status") not in {"queued", "running"}:
+                continue
+            if (
+                active_owner_pid is not None
+                and record.get("owner_pid") == active_owner_pid
+            ):
+                # Another service instance in this same live process may
+                # still own the run during hot reload/startup overlap.
                 continue
             record.update(
                 {
@@ -102,11 +110,18 @@ class ExecutionRepository:
     def save(self, record: dict[str, Any]) -> None:
         run_id = str(record["run_id"])
         path = self._path(run_id)
-        temporary = path.with_suffix(".tmp")
+        # Repository instances can overlap briefly during a service restart.
+        # A fixed ``<run>.tmp`` name lets one instance replace/delete another
+        # instance's temporary file. A unique sidecar preserves atomic writes
+        # without requiring a process-global lock.
+        temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
         payload = json.dumps(record, ensure_ascii=False, default=str, indent=2)
         with self._lock:
-            temporary.write_text(payload, encoding="utf-8")
-            os.replace(temporary, path)
+            try:
+                temporary.write_text(payload, encoding="utf-8")
+                os.replace(temporary, path)
+            finally:
+                temporary.unlink(missing_ok=True)
 
     def _path(self, run_id: str) -> Path:
         safe = "".join(char if char.isalnum() or char in "-_." else "_" for char in run_id)

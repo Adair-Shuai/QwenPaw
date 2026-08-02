@@ -15,6 +15,7 @@ export default function BackendReadyGate({ children }: Props) {
     totalSec,
     errorMessage,
     readyUrl,
+    startup,
     retry,
   } = useBackendReadyPolling();
 
@@ -35,6 +36,7 @@ export default function BackendReadyGate({ children }: Props) {
       elapsed={elapsed}
       totalSec={totalSec}
       errorMessage={errorMessage}
+      startup={startup}
       onRetry={retry}
     />
   );

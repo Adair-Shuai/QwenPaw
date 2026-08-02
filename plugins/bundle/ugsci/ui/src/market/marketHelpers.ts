@@ -4,7 +4,7 @@
  * and source config modals.
  */
 
-import { getHost, apiUrl, apiFetch } from "../core/runtime";
+import { getHost, apiUrl, apiFetch, hostFetch } from "../core/runtime";
 import { PRIMARY_BTN_STYLE } from "../core/shared";
 
 export interface MCPTemplate {
@@ -153,13 +153,19 @@ export function ossProxyUrl(ossPath: string): string {
   return apiUrl(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}`);
 }
 
+/** Fetch one OSS resource through QwenPaw's auth-aware proxy transport. */
+export function fetchOssResponse(ossPath: string): Promise<Response> {
+  const cleanPath = ossPath.replace(/^\/+/, "");
+  return hostFetch(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}`);
+}
+
 /**
  * Fetch JSON from the official OSS bucket through QwenPaw's backend proxy.
  * Skills, MCP, and Expert templates all use this CORS-safe data path.
  */
 export async function fetchOssJson(ossPath: string): Promise<any> {
   const cleanPath = ossPath.replace(/^\/+/, "");
-  const resp = await fetch(ossProxyUrl(cleanPath));
+  const resp = await fetchOssResponse(cleanPath);
   if (!resp.ok) {
     throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
   }
@@ -620,8 +626,9 @@ export async function fetchOSSSourceSkills(
   const encodedPrefix = prefix.split("/").map(encodeURIComponent).join("/");
 
   // Fetch manifest.json — the authoritative source for skill metadata + tags
-  const manifestUrl = ossProxyUrl(`${encodedPrefix}/manifest.json`);
-  const manifestResp = await fetch(manifestUrl);
+  const manifestResp = await fetchOssResponse(
+    `${encodedPrefix}/manifest.json`,
+  );
   if (!manifestResp.ok) {
     throw new Error(
       `无法获取技能列表: manifest.json (${manifestResp.status})`,
@@ -1659,4 +1666,3 @@ export interface MarketCategory {
   id: string;
   label: string;
 }
-

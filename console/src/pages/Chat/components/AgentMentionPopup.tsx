@@ -1,79 +1,45 @@
-/**
- * AgentMentionPopup — @ 提及 Agent 选择弹窗
- *
- * 当用户在聊天框输入 "@" 时弹出 Agent 列表，
- * 选中后在文本中插入 @AgentName 标记。
- *
- * 提交时 customFetch 会解析 @AgentName 并将 target_agent_id
- * 加入请求体，实现消息转发到指定 Agent。
- */
-import React, { useEffect, useMemo, useRef } from "react";
-import { getAgentDisplayName } from "../../../utils/agentDisplayName";
+import React, { memo, useEffect, useRef } from "react";
 import { useTranslation } from "react-i18next";
-import { Bot } from "lucide-react";
-import { AgentStatusIndicator } from "../../../components/AgentStatusIndicator";
+import { Bot, Users } from "lucide-react";
 import type { AgentSummary } from "../../../api/types/agents";
-
-export interface AgentMentionState {
-  /** 弹窗是否可见 */
-  visible: boolean;
-  /** 搜索关键词（@ 后输入的文本） */
-  query: string;
-  /** @ 符号在文本中的起始位置 */
-  startIndex: number;
-  /** 选中的 Agent */
-  selectedAgent: AgentSummary | null;
-}
+import { AgentStatusIndicator } from "../../../components/AgentStatusIndicator";
+import { getAgentDisplayName } from "../../../utils/agentDisplayName";
+import type { AgentMentionMode } from "./agentMentionModes";
 
 interface AgentMentionPopupProps {
   visible: boolean;
-  query: string;
   agents: AgentSummary[];
   activeIndex: number;
   onSelect: (agent: AgentSummary) => void;
-  onDismiss: () => void;
+  mode: AgentMentionMode;
+  collaborationLocked: boolean;
+  selectedCount: number;
+  onModeChange: (mode: AgentMentionMode) => void;
   theme: "light" | "dark";
 }
 
 const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
   visible,
-  query,
   agents,
   activeIndex,
   onSelect,
-  onDismiss,
+  mode,
+  collaborationLocked,
+  selectedCount,
+  onModeChange,
   theme,
 }) => {
   const { t } = useTranslation();
-  const itemRefs = useRef<(HTMLDivElement | null)[]>([]);
+  const itemRefs = useRef<(HTMLButtonElement | null)[]>([]);
   const isDark = theme === "dark";
-
-  const filtered = useMemo(() => {
-    if (!query) return agents;
-    const q = query.toLowerCase();
-    return agents.filter(
-      (a) => a.name.toLowerCase().includes(q) || a.id.toLowerCase().includes(q),
-    );
-  }, [agents, query]);
 
   useEffect(() => {
     if (visible && itemRefs.current[activeIndex]) {
-      itemRefs.current[activeIndex]?.scrollIntoView({
-        block: "nearest",
-      });
+      itemRefs.current[activeIndex]?.scrollIntoView?.({ block: "nearest" });
     }
   }, [activeIndex, visible]);
 
-  useEffect(() => {
-    if (!visible) return;
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onDismiss();
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [visible, onDismiss]);
-
-  if (!visible || filtered.length === 0) return null;
+  if (!visible) return null;
 
   return (
     <div
@@ -81,65 +47,146 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
         position: "absolute",
         bottom: "100%",
         left: 0,
-        marginBottom: 4,
         zIndex: 10000,
-        minWidth: 240,
-        maxWidth: 360,
-        maxHeight: 280,
+        minWidth: 320,
+        maxWidth: 440,
+        maxHeight: 320,
+        marginBottom: 4,
         overflowY: "auto",
+        padding: 4,
         background: isDark ? "#1f1f1f" : "#fff",
         border: `1px solid ${isDark ? "#3a3a3a" : "#e8e8e8"}`,
-        borderRadius: 8,
-        boxShadow: "0 6px 16px rgba(0,0,0,0.08), 0 3px 6px rgba(0,0,0,0.04)",
-        padding: 4,
+        borderRadius: 10,
+        boxShadow: "0 10px 28px rgba(0,0,0,0.12), 0 3px 8px rgba(0,0,0,0.06)",
       }}
     >
       <div
         style={{
-          padding: "4px 8px",
-          fontSize: 11,
-          color: "#999",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 10,
+          padding: "6px 8px 9px",
+          marginBottom: 3,
           borderBottom: `1px solid ${isDark ? "#333" : "#f0f0f0"}`,
-          marginBottom: 2,
         }}
       >
-        {t("chat.mention.selectAgent", "选择要指派的 Agent")}
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 12, fontWeight: 500 }}>
+            {selectedCount > 0
+              ? t("chat.mention.selectedCount", "已选择 {{count}} 位 Agent", {
+                  count: selectedCount,
+                })
+              : t("chat.mention.selectAgent", "选择要指派的 Agent")}
+          </div>
+          <div style={{ marginTop: 2, fontSize: 10, color: "#999" }}>
+            {collaborationLocked
+              ? t(
+                  "chat.mention.multiAgentHint",
+                  "继续添加将由当前 Agent 统一协调",
+                )
+              : mode === "delegate"
+              ? t("chat.mention.delegateHint", "目标 Agent 独立处理")
+              : t(
+                  "chat.mention.collaborateHint",
+                  "当前 Agent 与目标 Agent 协作",
+                )}
+          </div>
+        </div>
+        <div
+          style={{
+            display: "inline-flex",
+            flexShrink: 0,
+            padding: 2,
+            borderRadius: 8,
+            background: isDark ? "#141414" : "#f3f4f6",
+          }}
+        >
+          {(["delegate", "collaborate"] as AgentMentionMode[]).map((option) => {
+            const selected = mode === option;
+            const disabled = collaborationLocked && option === "delegate";
+            const Icon = option === "collaborate" ? Users : Bot;
+            return (
+              <button
+                key={option}
+                type="button"
+                disabled={disabled}
+                aria-pressed={selected}
+                onClick={() => onModeChange(option)}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 4,
+                  padding: "4px 7px",
+                  border: 0,
+                  borderRadius: 6,
+                  color: disabled
+                    ? "#888"
+                    : selected
+                    ? isDark
+                      ? option === "collaborate"
+                        ? "#d3adf7"
+                        : "#91caff"
+                      : option === "collaborate"
+                      ? "#531dab"
+                      : "#0958d9"
+                    : "#777",
+                  background: selected
+                    ? isDark
+                      ? "#303030"
+                      : "#fff"
+                    : "transparent",
+                  boxShadow: selected ? "0 1px 3px rgba(0,0,0,.12)" : "none",
+                  cursor: disabled ? "not-allowed" : "pointer",
+                  fontSize: 11,
+                }}
+              >
+                <Icon size={11} aria-hidden />
+                {option === "delegate"
+                  ? t("chat.mention.delegate", "直接指派")
+                  : t("chat.mention.collaborate", "共同协作")}
+              </button>
+            );
+          })}
+        </div>
       </div>
-      {filtered.map((agent, index) => {
+
+      {agents.length === 0 && (
+        <div style={{ padding: "12px 10px", color: "#999", fontSize: 12 }}>
+          {t("chat.mention.noMoreAgents", "没有其他可添加的 Agent")}
+        </div>
+      )}
+
+      {agents.map((agent, index) => {
         const isActive = index === activeIndex;
         const displayName = getAgentDisplayName(agent, t);
         return (
-          <div
+          <button
+            type="button"
             key={agent.id}
-            ref={(el) => {
-              itemRefs.current[index] = el;
+            ref={(element) => {
+              itemRefs.current[index] = element;
             }}
             onClick={() => onSelect(agent)}
             style={{
               display: "flex",
               alignItems: "center",
               gap: 8,
-              padding: "6px 10px",
-              borderRadius: 6,
+              width: "100%",
+              padding: "7px 9px",
+              border: 0,
+              borderRadius: 7,
+              color: "inherit",
+              textAlign: "left",
               cursor: "pointer",
               transition: "background 0.1s",
               background: isActive
                 ? isDark
                   ? "#2a2a2a"
+                  : mode === "collaborate"
+                  ? "#f9f0ff"
                   : "#f0f5ff"
                 : "transparent",
-            }}
-            onMouseEnter={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.background = isDark
-                  ? "#252525"
-                  : "#f5f5f5";
-              }
-            }}
-            onMouseLeave={(e) => {
-              if (!isActive) {
-                e.currentTarget.style.background = "transparent";
-              }
             }}
           >
             <AgentStatusIndicator
@@ -150,10 +197,20 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
             <div style={{ flex: 1, minWidth: 0 }}>
               <div
                 style={{
+                  overflow: "hidden",
+                  color: isActive
+                    ? isDark
+                      ? mode === "collaborate"
+                        ? "#d3adf7"
+                        : "#69b1ff"
+                      : mode === "collaborate"
+                      ? "#531dab"
+                      : "#0958d9"
+                    : isDark
+                    ? "#e0e0e0"
+                    : "#333",
                   fontSize: 13,
                   fontWeight: 500,
-                  color: isDark ? "#e0e0e0" : "#333",
-                  overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                 }}
@@ -163,9 +220,9 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
               {agent.description && (
                 <div
                   style={{
-                    fontSize: 11,
-                    color: "#999",
                     overflow: "hidden",
+                    color: "#999",
+                    fontSize: 11,
                     textOverflow: "ellipsis",
                     whiteSpace: "nowrap",
                   }}
@@ -174,21 +231,16 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
                 </div>
               )}
             </div>
-            <span
-              style={{
-                fontSize: 10,
-                color: "#aaa",
-                fontFamily: "monospace",
-                flexShrink: 0,
-              }}
-            >
-              {agent.id}
+            <span style={{ flexShrink: 0, color: "#aaa", fontSize: 10 }}>
+              {collaborationLocked || mode === "collaborate"
+                ? t("chat.mention.addToCollaboration", "加入协作")
+                : t("chat.mention.assign", "指派")}
             </span>
-          </div>
+          </button>
         );
       })}
     </div>
   );
 };
 
-export default AgentMentionPopup;
+export default memo(AgentMentionPopup);
