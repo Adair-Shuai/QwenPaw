@@ -38,25 +38,23 @@ _IMPORT_NAME_OVERRIDES = {
     "protobuf": "google.protobuf",
 }
 
-# Default PyPI mirrors — same defaults as the build scripts
-# (build_pyinstaller.sh / build_pyinstaller.ps1).  Users can override by
-# setting PIP_INDEX_URL / PIP_EXTRA_INDEX_URL before launching the app.
-_DEFAULT_PIP_INDEX_URL = "https://pypi.tuna.tsinghua.edu.cn/simple/"
-_DEFAULT_PIP_EXTRA_INDEX_URL = "https://pypi.org/simple/"
-
 
 def _pip_index_args() -> list[str]:
     """Return ``--index-url`` / ``--extra-index-url`` flags for pip.
 
-    Respects ``PIP_INDEX_URL`` / ``PIP_EXTRA_INDEX_URL`` environment
-    variables so corporate proxies or custom mirrors are honoured.
+    Only passes flags when the corresponding environment variables are
+    explicitly set. The desktop app sets these via the Tauri backend
+    command builder (``command.rs``); in CI / dev / test environments
+    pip uses its default index, avoiding slow mirror lookups.
     """
-    index_url = os.environ.get("PIP_INDEX_URL", _DEFAULT_PIP_INDEX_URL)
-    extra_index_url = os.environ.get(
-        "PIP_EXTRA_INDEX_URL",
-        _DEFAULT_PIP_EXTRA_INDEX_URL,
-    )
-    return ["--index-url", index_url, "--extra-index-url", extra_index_url]
+    args: list[str] = []
+    index_url = os.environ.get("PIP_INDEX_URL")
+    if index_url:
+        args.extend(["--index-url", index_url])
+    extra_index_url = os.environ.get("PIP_EXTRA_INDEX_URL")
+    if extra_index_url:
+        args.extend(["--extra-index-url", extra_index_url])
+    return args
 
 
 def _is_frozen() -> bool:
