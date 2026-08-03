@@ -322,9 +322,7 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
   const batchSwitch = (
     <Switch
       checked={enabledTools.length > 0 && disabledTools.length === 0}
-      onChange={() =>
-        disabledTools.length > 0 ? enableAll() : disableAll()
-      }
+      onChange={() => (disabledTools.length > 0 ? enableAll() : disableAll())}
       disabled={batchLoading || loading}
       checkedChildren={t("tools.enableAll")}
       unCheckedChildren={t("tools.disableAll")}

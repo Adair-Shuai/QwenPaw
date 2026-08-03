@@ -280,9 +280,7 @@ function MCPPage({ embedded = false }: MCPPageProps = {}) {
   );
 
   return (
-    <div
-      className={`${styles.mcpPage} ${embedded ? styles.embeddedPage : ""}`}
-    >
+    <div className={`${styles.mcpPage} ${embedded ? styles.embeddedPage : ""}`}>
       {embedded ? (
         <div className={styles.embeddedHeader}>
           <div>
