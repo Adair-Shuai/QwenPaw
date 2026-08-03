@@ -65,13 +65,13 @@ Write-Host ""
 Write-Host "== Step 0: Checking Prerequisites ==" -ForegroundColor Yellow
 $missing = @()
 
-# npm
-if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
-    Write-Host "  [MISSING] npm" -ForegroundColor Red
-    Write-Host "    Install Node.js: https://nodejs.org/" -ForegroundColor Gray
-    $missing += "npm"
+# pnpm
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) {
+    Write-Host "  [MISSING] pnpm" -ForegroundColor Red
+    Write-Host "    Install Node.js + pnpm: https://pnpm.io/installation" -ForegroundColor Gray
+    $missing += "pnpm"
 } else {
-    Write-Host "  [OK] npm ($(npm --version))" -ForegroundColor Green
+    Write-Host "  [OK] pnpm ($(pnpm --version))" -ForegroundColor Green
 }
 
 # rustc
@@ -126,19 +126,13 @@ Write-Host "== Step 1: Building Console Static Assets ==" -ForegroundColor Yello
 Set-Location console
 
 Write-Host "Installing frontend dependencies..."
-# Remove lock file to allow npm to resolve Windows-specific optional
-# dependencies (e.g. @tauri-apps/cli-win32-x64-msvc) that may be
-# missing from a macOS-generated lock file.
-if (Test-Path package-lock.json) {
-    Remove-Item package-lock.json -Force
-}
-npm install
+pnpm install --frozen-lockfile
 if ($LASTEXITCODE -ne 0) {
-    throw "npm install failed"
+    throw "pnpm install failed"
 }
 
 Write-Host "Generating Tauri icons..."
-npm exec -- tauri icon ../scripts/pack/assets/icon.svg
+pnpm exec tauri icon ../scripts/pack/assets/icon.svg
 if ($LASTEXITCODE -ne 0) {
     throw "Tauri icon generation failed"
 }
@@ -150,7 +144,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Building console frontend..."
-npm run build:prod
+pnpm run build:prod
 if ($LASTEXITCODE -ne 0) {
     throw "console frontend build failed"
 }
@@ -223,7 +217,7 @@ Set-Location console
 # that happens the Rust binary is still compiled successfully; we create
 # a portable zip so the CI can upload a distributable artifact.
 Write-Host "Building Tauri app for Windows..."
-npm exec -- tauri build --config src-tauri/tauri.version.conf.json
+pnpm exec tauri build --config src-tauri/tauri.version.conf.json
 $tauriExit = $LASTEXITCODE
 
 Set-Location $REPO_ROOT

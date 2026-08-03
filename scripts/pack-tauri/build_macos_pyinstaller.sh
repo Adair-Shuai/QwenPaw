@@ -24,12 +24,12 @@ SIGN_MACOS_BUNDLE="${REPO_ROOT}/scripts/pack-tauri/sign_macos_bundle.sh"
 echo "== Step 0: Checking Prerequisites =="
 missing=()
 
-if command -v npm &>/dev/null; then
-    echo "  [OK] npm ($(npm --version))"
+if command -v pnpm &>/dev/null; then
+    echo "  [OK] pnpm ($(pnpm --version))"
 else
-    echo "  [MISSING] npm"
-    echo "    Install Node.js: https://nodejs.org/"
-    missing+=("npm")
+    echo "  [MISSING] pnpm"
+    echo "    Install Node.js + pnpm: https://pnpm.io/installation"
+    missing+=("pnpm")
 fi
 
 if command -v rustc &>/dev/null; then
@@ -79,14 +79,13 @@ echo ""
 # Step 1: Build console static assets
 echo "== Step 1: Building Console Static Assets =="
 cd console
-rm -rf node_modules package-lock.json
-npm install
+pnpm install --frozen-lockfile
 echo "Generating Tauri icons..."
-npm exec -- tauri icon ../scripts/pack/assets/icon.svg
+pnpm exec tauri icon ../scripts/pack/assets/icon.svg
 echo "Syncing Tauri version..."
 node ../scripts/pack-tauri/sync_tauri_version.mjs
 echo "Building console frontend..."
-npm run build:prod
+pnpm run build:prod
 cd ..
 echo "Console static assets built"
 echo ""
@@ -130,7 +129,7 @@ BUNDLE_DIR="${REPO_ROOT}/console/src-tauri/target/release/bundle"
 rm -rf "${BUNDLE_DIR}/dmg" "${BUNDLE_DIR}/macos"
 cd console
 echo "Building for macOS..."
-npm exec -- tauri build \
+pnpm exec tauri build \
     --config src-tauri/tauri.version.conf.json \
     --bundles app
 cd ..
