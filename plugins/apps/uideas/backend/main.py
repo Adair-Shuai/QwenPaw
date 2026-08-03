@@ -53,7 +53,8 @@ app.include_router(router)
 # ─── 请求/响应模型 ───────────────────────────────────────────────────
 
 class IdeaCreate(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
+    # 允许空标题：前端支持只写内容，store 会从内容自动提炼标题
+    title: str = Field("", max_length=200)
     content: str = ""
     tags: List[str] = []
     source: str = "user"

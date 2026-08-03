@@ -63,18 +63,18 @@ async def collect_session_memories(ctx: Any) -> str:
     """
     blocks: List[str] = []
     try:
-        # 默认会话（不含 pawapp 专属会话）是主要来源
-        history = await ctx.get_session_history()
+        # 软件主对话（session_id="default"）——其他 Agent 的主要记忆来源
+        history = await ctx.get_session_history(session_id="default")
         if history:
-            summary = _compress_history(history)
+            summary = _compress_history(history, label="global")
             if summary:
                 blocks.append("【全局会话记忆】\n" + summary)
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("[uideas] read default session history failed: %s", exc)
 
     try:
-        # 尝试读取 pawapp 专属会话（如果存在）
-        own = await ctx.get_session_history(session_id=f"pawapp:{ctx.app_id}")
+        # UIdeas 专属会话（默认 session_id="pawapp:{app_id}"）
+        own = await ctx.get_session_history()
         if own:
             summary = _compress_history(own, label="pawapp")
             if summary:

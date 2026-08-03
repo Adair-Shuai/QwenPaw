@@ -92,10 +92,16 @@ async def create_idea(
 ) -> Dict[str, Any]:
     ideas = await get_ideas(ctx)
     now = now_iso()
+    title = title.strip()
+    content = content.strip()
+    if not title:
+        # 仅填写内容时，从内容首行提炼标题
+        first_line = content.splitlines()[0] if content.splitlines() else content
+        title = (first_line[:40] or "未命名灵感").strip()
     idea: Dict[str, Any] = {
         "id": _new_id("idea"),
-        "title": title.strip(),
-        "content": content.strip(),
+        "title": title,
+        "content": content,
         "tags": [t.strip() for t in (tags or []) if t.strip()],
         "status": "raw",
         "source": source,

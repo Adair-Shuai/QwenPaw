@@ -412,8 +412,12 @@
       API.organize()
         .then(function (res) {
           message.destroy("organize");
-          var n = (res && res.created) || 0;
-          message.success("整理完成" + (n ? "，新发现 " + n + " 个聚类方向" : ""));
+          var n = (res && res.cluster_count) || 0;
+          var tagged = (res && res.tagged) || 0;
+          message.success(
+            "整理完成" + (n ? "，新发现 " + n + " 个聚类方向" : "") +
+            (tagged ? "，标注 " + tagged + " 条灵感" : "")
+          );
           if (onDataVersion) onDataVersion();
         })
         .catch(function (e) {
@@ -559,8 +563,8 @@
         .then(function (res) {
           if (res && res.skipped) {
             message.info("暂时没有可主动建议的灵感：" + (res.reason || ""));
-          } else if (res && res.created) {
-            message.success("已完成一次主动思考，生成 " + res.created + " 条建议");
+          } else if (res && res.created && res.created.length) {
+            message.success("已完成一次主动思考，生成 " + res.created.length + " 条建议");
             if (onDataVersion) onDataVersion();
           } else {
             message.info("思考完成，暂无新建议");
@@ -777,26 +781,40 @@
         .catch(function () { /* 非致命 */ });
     }, [dataVersion]);
 
-    // SSE 实时事件
+    // SSE 实时事件（网络抖动自动重连）
     useEffect(function () {
-      var es = new EventSource(sseUrl("/uideas/stream"));
-      esRef.current = es;
+      var timer = null;
 
-      es.onopen = function () { setSseState("live"); };
-      es.onmessage = function (ev) {
-        var data;
-        try { data = JSON.parse(ev.data); } catch (e) { return; }
-        if (!data || !data.type) return;
-        if (data.type === "suggestion" && data.suggestions && data.suggestions.length) {
-          message.info("收到 " + data.suggestions.length + " 条新的主动建议");
-        }
-        bumpDataVersion();
-      };
-      es.onerror = function () { setSseState("closed"); };
+      function connect() {
+        var es = new EventSource(sseUrl("/uideas/stream"));
+        esRef.current = es;
 
+        es.onopen = function () {
+          setSseState("live");
+          if (timer) { clearTimeout(timer); timer = null; }
+        };
+        es.onmessage = function (ev) {
+          var data;
+          try { data = JSON.parse(ev.data); } catch (e) { return; }
+          if (!data || !data.type) return;
+          if (data.type === "suggestion" && data.suggestions && data.suggestions.length) {
+            message.info("收到 " + data.suggestions.length + " 条新的主动建议");
+          }
+          bumpDataVersion();
+        };
+        es.onerror = function () {
+          // onerror 也会由网络抖动/服务端重启触发，标记重连中并自动重连
+          setSseState("connecting");
+          es.close();
+          esRef.current = null;
+          if (!timer) timer = setTimeout(connect, 3000);
+        };
+      }
+
+      connect();
       return function () {
-        es.close();
-        esRef.current = null;
+        if (timer) { clearTimeout(timer); timer = null; }
+        if (esRef.current) { esRef.current.close(); esRef.current = null; }
       };
     }, []);
 
