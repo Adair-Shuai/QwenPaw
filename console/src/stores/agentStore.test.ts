@@ -105,6 +105,53 @@ describe("agentStore", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // refreshAgents — selectedAgent validation
+  // ---------------------------------------------------------------------------
+
+  it("resets selectedAgent to default when it no longer exists after refresh", async () => {
+    useAgentStore.setState({ selectedAgent: "deleted-agent" });
+    mocks.listAgents.mockResolvedValue({
+      agents: [mockAgent("default"), mockAgent("agent-1")],
+    });
+
+    await useAgentStore.getState().refreshAgents();
+
+    expect(useAgentStore.getState().selectedAgent).toBe("default");
+    expect(useAgentStore.getState().agents).toHaveLength(2);
+  });
+
+  it("keeps selectedAgent when it still exists after refresh", async () => {
+    useAgentStore.setState({ selectedAgent: "agent-1" });
+    mocks.listAgents.mockResolvedValue({
+      agents: [mockAgent("default"), mockAgent("agent-1")],
+    });
+
+    await useAgentStore.getState().refreshAgents();
+
+    expect(useAgentStore.getState().selectedAgent).toBe("agent-1");
+  });
+
+  it("falls back to first agent when default is not in the list and selected is stale", async () => {
+    useAgentStore.setState({ selectedAgent: "deleted-agent" });
+    mocks.listAgents.mockResolvedValue({
+      agents: [mockAgent("agent-1"), mockAgent("agent-2")],
+    });
+
+    await useAgentStore.getState().refreshAgents();
+
+    expect(useAgentStore.getState().selectedAgent).toBe("agent-1");
+  });
+
+  it("falls back to 'default' string when agent list is empty and selected is stale", async () => {
+    useAgentStore.setState({ selectedAgent: "deleted-agent" });
+    mocks.listAgents.mockResolvedValue({ agents: [] });
+
+    await useAgentStore.getState().refreshAgents();
+
+    expect(useAgentStore.getState().selectedAgent).toBe("default");
+  });
+
+  // ---------------------------------------------------------------------------
   // addAgent
   // ---------------------------------------------------------------------------
 

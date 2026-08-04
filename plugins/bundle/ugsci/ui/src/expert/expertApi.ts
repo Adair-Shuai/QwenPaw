@@ -7,6 +7,10 @@ import { apiFetch } from "../core/runtime";
 import { fetchAgentConfig } from "../core/api";
 import type { SkillSpec, MCPClientInfo } from "../core/types";
 
+function agentSkillsPath(agentId: string, suffix = ""): string {
+  return `/agents/${encodeURIComponent(agentId)}/skills${suffix}`;
+}
+
 // ─── Preset Prompt Extraction ────────────────────────────────────────────────
 
 /**
@@ -186,10 +190,12 @@ export async function enableSkillForAgent(
   agentId: string,
   skillName: string,
 ): Promise<void> {
-  await apiFetch(`/skills/${encodeURIComponent(skillName)}/enable`, {
-    method: "POST",
-    headers: { "X-Agent-Id": agentId },
-  });
+  await apiFetch(
+    agentSkillsPath(agentId, `/${encodeURIComponent(skillName)}/enable`),
+    {
+      method: "POST",
+    },
+  );
 }
 
 /** Delete a skill from an agent's workspace. */
@@ -197,9 +203,8 @@ export async function deleteSkillForAgent(
   agentId: string,
   skillName: string,
 ): Promise<void> {
-  await apiFetch(`/skills/${encodeURIComponent(skillName)}`, {
+  await apiFetch(agentSkillsPath(agentId, `/${encodeURIComponent(skillName)}`), {
     method: "DELETE",
-    headers: { "X-Agent-Id": agentId },
   });
 }
 
@@ -213,9 +218,9 @@ export async function batchEnableSkillsForAgent(
   agentId: string,
   skillNames: string[],
 ): Promise<BatchSkillResult> {
-  return apiFetch<BatchSkillResult>("/skills/batch-enable", {
+  return apiFetch<BatchSkillResult>(agentSkillsPath(agentId, "/batch-enable"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(skillNames),
   });
 }
@@ -224,9 +229,9 @@ export async function batchDisableSkillsForAgent(
   agentId: string,
   skillNames: string[],
 ): Promise<BatchSkillResult> {
-  return apiFetch<BatchSkillResult>("/skills/batch-disable", {
+  return apiFetch<BatchSkillResult>(agentSkillsPath(agentId, "/batch-disable"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(skillNames),
   });
 }
@@ -235,9 +240,9 @@ export async function batchDeleteSkillsForAgent(
   agentId: string,
   skillNames: string[],
 ): Promise<BatchSkillResult> {
-  return apiFetch<BatchSkillResult>("/skills/batch-delete", {
+  return apiFetch<BatchSkillResult>(agentSkillsPath(agentId, "/batch-delete"), {
     method: "POST",
-    headers: { "Content-Type": "application/json", "X-Agent-Id": agentId },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(skillNames),
   });
 }
@@ -294,10 +299,12 @@ export async function disableSkillForAgent(
   agentId: string,
   skillName: string,
 ): Promise<void> {
-  await apiFetch(`/skills/${encodeURIComponent(skillName)}/disable`, {
-    method: "POST",
-    headers: { "X-Agent-Id": agentId },
-  });
+  await apiFetch(
+    agentSkillsPath(agentId, `/${encodeURIComponent(skillName)}/disable`),
+    {
+      method: "POST",
+    },
+  );
 }
 
 /** Delete a skill from the pool (non-protected only). */

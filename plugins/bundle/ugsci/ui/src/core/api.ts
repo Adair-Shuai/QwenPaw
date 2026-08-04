@@ -33,9 +33,9 @@ export async function fetchAgentConfig(
 export async function fetchAgentSkills(
   agentId: string,
 ): Promise<SkillSpec[]> {
-  const data = await apiFetch<SkillSpec[]>("/skills", {
-    headers: { "X-Agent-Id": agentId },
-  });
+  const data = await apiFetch<SkillSpec[]>(
+    `/agents/${encodeURIComponent(agentId)}/skills`,
+  );
   return data || [];
 }
 

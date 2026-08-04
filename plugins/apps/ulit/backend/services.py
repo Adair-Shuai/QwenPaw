@@ -13,8 +13,12 @@ import json
 import logging
 import re
 import hashlib
+import os
+from html import unescape
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import quote
+from urllib.request import Request, urlopen
 
 from . import repository as repo
 from .database import compute_sha256, file_path_for_hash, get_data_root
@@ -138,7 +142,7 @@ class LibraryService:
 
     @staticmethod
     async def search(query: str, *, project_id: Optional[str] = None, limit: int = 50) -> list[dict]:
-        """Full-text search over papers using FTS5."""
+        """Search metadata and parsed full text using FTS5."""
         def _search():
             from .database import get_db
             fts_query = query.strip()
@@ -157,6 +161,26 @@ class LibraryService:
                 {k: r[k] for k in r.keys()} for r in rows
             ]
         results = await asyncio.to_thread(_search)
+        # A title/abstract hit is still the primary paper result.  If a query
+        # only occurs in the parsed PDF, append that paper once and expose the
+        # matching page/chunk so the UI and agent can jump to the source.
+        chunk_hits = await asyncio.to_thread(repo.search_chunks, query, limit=limit)
+        by_id = {p["id"]: p for p in results}
+        for hit in chunk_hits:
+            paper_id = hit.get("paper_id")
+            if not paper_id:
+                continue
+            if paper_id not in by_id:
+                paper = await asyncio.to_thread(repo.get_paper, paper_id)
+                if paper:
+                    by_id[paper_id] = paper
+            if paper_id in by_id:
+                by_id[paper_id].setdefault("matches", []).append({
+                    "chunk_id": hit.get("id"),
+                    "page_start": hit.get("page_start"),
+                    "text": hit.get("text", "")[:500],
+                })
+        results = list(by_id.values())[:limit]
         # Enrich
         for p in results:
             files = await asyncio.to_thread(repo.get_paper_files, p["id"])
@@ -292,13 +316,15 @@ class IngestService:
         *,
         project_id: Optional[str] = None,
     ) -> list[dict]:
-        """Import papers by DOI / arXiv ID — creates metadata-only entries."""
+        """Import papers by DOI / arXiv ID and resolve metadata best-effort."""
         results = []
         for ident in identifiers:
             ident = ident.strip()
             if not ident:
                 continue
             # Detect type
+            if ident.lower().startswith(("https://doi.org/", "http://doi.org/")):
+                ident = ident.split("/", 3)[-1]
             if ident.startswith("10."):
                 scheme = "doi"
                 existing = await asyncio.to_thread(repo.find_paper_by_doi, ident)
@@ -308,13 +334,19 @@ class IngestService:
                     existing["duplicate"] = True
                     results.append(existing)
                     continue
+                metadata = await asyncio.to_thread(_resolve_crossref, ident)
                 paper = await asyncio.to_thread(
                     repo.create_paper,
-                    title=f"DOI: {ident}",
+                    title=metadata.get("title") or f"DOI: {ident}",
+                    abstract=metadata.get("abstract", ""),
+                    year=metadata.get("year"),
+                    venue=metadata.get("venue", ""),
                     doi=ident,
-                    paper_type="journal",
+                    paper_type=metadata.get("type", "journal"),
                     inbox=True,
                 )
+                if metadata.get("authors"):
+                    await asyncio.to_thread(repo.set_paper_authors, paper["id"], metadata["authors"])
             else:
                 paper = await asyncio.to_thread(
                     repo.create_paper,
@@ -343,6 +375,7 @@ class IngestService:
         await asyncio.to_thread(repo.update_document, doc["id"], status="parsing")
 
         try:
+            await asyncio.to_thread(repo.clear_document_content, doc["id"])
             page_texts = await asyncio.to_thread(
                 _extract_pdf_text, file_rec["path"]
             )
@@ -504,6 +537,12 @@ class AIService:
         """Find or create an AI session for a paper or project."""
         existing = await asyncio.to_thread(repo.find_ai_session, scope_type, scope_id)
         if existing:
+            # Refresh title if a new one was provided and it differs
+            if title and existing.get("title") != title:
+                await asyncio.to_thread(
+                    repo.update_ai_session, existing["id"], title=title
+                )
+                existing["title"] = title
             return existing
         if scope_type == "paper":
             sid = paper_session_id(scope_id)
@@ -580,6 +619,15 @@ class AIService:
                 # Verify quotes exist in chunks
                 claims = parsed.get("claims", [])
                 for claim in claims:
+                    refs = claim.get("source_refs", []) if isinstance(claim, dict) else []
+                    if refs:
+                        verified_refs = [ref for ref in refs if _verify_source_ref(ref, paper_id, chunks)]
+                        claim["verified_source_refs"] = verified_refs
+                        if len(verified_refs) != len(refs):
+                            claim["source_refs_verified"] = False
+                            grounding = "partially_grounded"
+                        else:
+                            claim["source_refs_verified"] = True
                     quotes = claim.get("quotes", [])
                     for q in quotes:
                         if not _verify_quote(q, chunks):
@@ -941,6 +989,57 @@ def _extract_pdf_text(file_path: str) -> list[str]:
         return []
 
 
+def _resolve_crossref(doi: str) -> dict[str, Any]:
+    """Resolve DOI metadata without making DOI import depend on the network.
+
+    Crossref is used as a polite, best-effort source.  A timeout or an API
+    response error simply returns an empty dict; the caller keeps the DOI
+    entry so users can retry enrichment later.
+    """
+    normalized = doi.strip().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    if not normalized:
+        return {}
+    url = "https://api.crossref.org/works/" + quote(normalized, safe="")
+    email = os.environ.get("ULIT_METADATA_EMAIL", "")
+    user_agent = "ULit/0.1 (local research app)" + (f" mailto:{email}" if email else "")
+    try:
+        request = Request(url, headers={"Accept": "application/json", "User-Agent": user_agent})
+        with urlopen(request, timeout=8) as response:  # nosec B310 — fixed HTTPS host
+            payload = json.loads(response.read().decode("utf-8"))
+        item = payload.get("message", {})
+        title = (item.get("title") or [""])[0]
+        abstract = unescape(re.sub(r"<[^>]+>", "", item.get("abstract", ""))).strip()
+        date_parts = (item.get("published-print") or item.get("published-online") or item.get("issued") or {}).get("date-parts", [])
+        year = date_parts[0][0] if date_parts and date_parts[0] else None
+        authors = []
+        for author in item.get("author", []):
+            name = " ".join(filter(None, [author.get("given", ""), author.get("family", "")])).strip()
+            if name:
+                authors.append(name)
+        return {
+            "title": title,
+            "abstract": abstract,
+            "year": year,
+            "venue": (item.get("container-title") or [""])[0],
+            "authors": authors,
+            "type": _crossref_type_to_paper(item.get("type", "")),
+        }
+    except Exception as exc:  # network failures are intentionally non-fatal
+        logger.info("[ulit] Crossref metadata unavailable for %s: %s", normalized, exc)
+        return {}
+
+
+def _crossref_type_to_paper(value: str) -> str:
+    return {
+        "journal-article": "journal",
+        "proceedings-article": "conference",
+        "posted-content": "preprint",
+        "monograph": "book",
+        "book-chapter": "chapter",
+        "report": "report",
+    }.get(value, "other")
+
+
 def _extract_json(text: str) -> dict | None:
     """Try to extract a JSON object from LLM response text."""
     # Try direct parse first
@@ -977,6 +1076,16 @@ def _verify_quote(quote: str, chunks: list[dict]) -> bool:
         if q in ch.get("text", "").lower():
             return True
     return False
+
+
+def _verify_source_ref(source_ref: str, paper_id: str, chunks: list[dict]) -> bool:
+    """Validate the source-ref format emitted by the Q&A prompt."""
+    if not isinstance(source_ref, str) or not source_ref:
+        return False
+    match = re.fullmatch(r"paper:([^/]+)/chunk:([^/]+)", source_ref.strip())
+    if not match or match.group(1) != paper_id:
+        return False
+    return any(ch.get("id") == match.group(2) for ch in chunks)
 
 
 def _parse_bibtex(content: str) -> list[dict]:

@@ -46,19 +46,22 @@ async def export(body: ExportRequest) -> PlainTextResponse:
         if not body.project_id:
             raise HTTPException(400, "project_id required for CSV export")
         evidence = await asyncio.to_thread(repo.list_evidence, body.project_id)
-        lines = ["id,paper_id,claim,quote,kind,verification_status,page_index"]
+        import csv as _csv
+        import io as _io
+
+        buf = _io.StringIO()
+        writer = _csv.writer(buf)
+        writer.writerow(["id", "paper_id", "claim", "quote", "kind", "verification_status", "page_index"])
         for e in evidence:
-            claim = e.get("claim", "").replace('"', '""')
-            quote = e.get("quote", "").replace('"', '""')
-            eid = e.get("id", "")
-            pid = e.get("paper_id", "")
-            ekind = e.get("kind", "")
-            vstatus = e.get("verification_status", "")
-            pidx = e.get("page_index", "")
-            lines.append(
-                '"' + eid + '","' + pid + '","' + claim + '","' + quote + '",'
-                '"' + ekind + '","' + vstatus + '","' + str(pidx) + '"'
-            )
-        return PlainTextResponse("\n".join(lines), media_type="text/csv")
+            writer.writerow([
+                e.get("id", ""),
+                e.get("paper_id", ""),
+                e.get("claim", ""),
+                e.get("quote", ""),
+                e.get("kind", ""),
+                e.get("verification_status", ""),
+                str(e.get("page_index", "")),
+            ])
+        return PlainTextResponse(buf.getvalue(), media_type="text/csv")
     else:
         raise HTTPException(400, f"Unknown format: {fmt}")

@@ -5,14 +5,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
+
+from qwenpaw.pawapp import get_ctx
 
 from .. import repository as repo
 from ..database import get_data_root
-from ..enums import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE
+from ..enums import ALLOWED_EXTENSIONS, MAX_UPLOAD_SIZE, ReadingStatus
 from ..schemas import (
     BibliographyImport,
     IdentifierImport,
@@ -61,10 +64,12 @@ async def capabilities() -> dict:
         pdf_text = False
     return {
         "pdf_text_extraction": pdf_text,
-        "grobid": False,
+        "grobid": bool(__import__("os").environ.get("ULIT_GROBID_URL", "").strip()),
         "ocr": False,
         "vector_search": False,
-        "external_sources": [],
+        "fulltext_search": True,
+        "external_sources": ["crossref"],
+        "async_import": True,
     }
 
 
@@ -130,6 +135,20 @@ async def add_paper_to_project(project_id: str, body: dict) -> dict:
 async def remove_paper_from_project(project_id: str, paper_id: str) -> dict:
     await LibraryService.remove_paper_from_project(project_id, paper_id)
     return {"ok": True}
+
+
+@router.patch("/projects/{project_id}/papers/{paper_id}/status")
+async def update_reading_status(project_id: str, paper_id: str, body: dict) -> dict:
+    """Update the per-project reading state and mirror the paper status."""
+    status = str(body.get("status", "")).strip().lower()
+    allowed = {item.value for item in ReadingStatus}
+    if status not in allowed:
+        raise HTTPException(400, f"status must be one of {sorted(allowed)}")
+    linked = await asyncio.to_thread(repo.get_project_papers, project_id)
+    if not any(p["id"] == paper_id for p in linked):
+        raise HTTPException(404, "Paper is not in this project")
+    await asyncio.to_thread(repo.set_reading_status, project_id, paper_id, status)
+    return {"project_id": project_id, "paper_id": paper_id, "status": status}
 
 
 # ── Papers ──────────────────────────────────────────────────────────
@@ -205,39 +224,59 @@ async def search(body: SearchQuery) -> dict:
 async def import_files(
     files: List[UploadFile] = File(...),
     project_id: Optional[str] = None,
+    ctx=Depends(get_ctx),
 ) -> dict:
     """Upload one or more PDF files. Returns import results."""
     results = []
     for upload in files:
-        # Validate file type
-        ext = "." + upload.filename.rsplit(".", 1)[-1].lower() if "." in upload.filename else ""
+        filename = upload.filename or "upload.pdf"
+        # Validate file type — record per-file failure instead of aborting
+        # the whole batch so the remaining files still get imported.
+        ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
         if ext not in ALLOWED_EXTENSIONS:
-            raise HTTPException(400, f"File type {ext} not allowed. Allowed: {ALLOWED_EXTENSIONS}")
+            results.append({
+                "filename": filename,
+                "status": "failed",
+                "error": f"File type {ext} not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
+            })
+            continue
 
         data = await upload.read()
         if len(data) > MAX_UPLOAD_SIZE:
-            raise HTTPException(400, f"File too large (max {MAX_UPLOAD_SIZE // (1024*1024)}MB)")
+            results.append({
+                "filename": filename,
+                "status": "failed",
+                "error": f"File too large (max {MAX_UPLOAD_SIZE // (1024*1024)}MB)",
+            })
+            continue
 
         try:
             paper = await IngestService.import_pdf_bytes(
-                data, upload.filename, project_id=project_id
+                data, filename, project_id=project_id
             )
-            # Try to parse if we have a file
+            # Parsing is a durable background job.  The upload request stays
+            # responsive and the task center can expose failures/retries.
+            parse_job = None
             if paper.get("file"):
-                try:
-                    await IngestService.parse_document(paper["file"]["id"])
-                except Exception:
-                    logger.warning("[ulit] PDF parsing failed for %s", paper.get("id"))
+                from ..job_runner import JobRunner
+                parse_job = JobRunner.enqueue(
+                    "parse_document",
+                    payload={"file_id": paper["file"]["id"]},
+                    ctx=ctx,
+                    paper_id=paper.get("id"),
+                    project_id=project_id,
+                )
 
             results.append({
                 "paper": paper,
-                "filename": upload.filename,
+                "filename": filename,
                 "status": "imported",
+                "parse_job": parse_job,
             })
         except Exception as exc:
-            logger.exception("[ulit] Import failed for %s", upload.filename)
+            logger.exception("[ulit] Import failed for %s", filename)
             results.append({
-                "filename": upload.filename,
+                "filename": filename,
                 "status": "failed",
                 "error": str(exc),
             })
@@ -275,8 +314,12 @@ async def get_file_content(file_id: str) -> FileResponse:
     file_rec = await asyncio.to_thread(repo.get_file, file_id)
     if file_rec is None:
         raise HTTPException(404, "File not found")
+    path = Path(file_rec["path"]).resolve()
+    root = get_data_root().resolve()
+    if root not in path.parents or not path.is_file():
+        raise HTTPException(404, "File content unavailable")
     return FileResponse(
-        file_rec["path"],
+        str(path),
         media_type=file_rec.get("mime", "application/pdf"),
         filename=file_rec.get("filename", "document.pdf"),
     )
@@ -287,11 +330,10 @@ async def get_file_document(file_id: str) -> dict:
     """Get parsed document info: pages, sections, chunks."""
     doc = await asyncio.to_thread(repo.get_document_by_file, file_id)
     if doc is None:
-        # Auto-parse if not yet parsed
-        try:
-            doc = await IngestService.parse_document(file_id)
-        except Exception as exc:
-            raise HTTPException(500, f"Failed to parse document: {exc}") from exc
+        # Parsing is normally scheduled at import time.  Do not block a UI
+        # request on a potentially large PDF; the caller can explicitly
+        # reparse or poll the task center.
+        raise HTTPException(409, "Document is not parsed yet; wait for the parse job")
 
     page_texts = await asyncio.to_thread(repo.get_page_texts, doc["id"])
     return {

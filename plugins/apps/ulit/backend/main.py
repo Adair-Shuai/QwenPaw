@@ -15,11 +15,16 @@ import logging
 
 from qwenpaw.pawapp import PawApp, get_ctx
 
-from .database import close_db, get_data_root, get_db
-from . import repository as repo
-from .job_runner import JobRunner
-from .routes import router as ulit_router
-from .services import LibraryService
+# PluginLoader imports this file with the plugin root as the package path
+# (for example ``plugin_ulit.backend.main``).  Keep the backend package in
+# the import path explicitly; importing ``.database`` would look for a
+# non-existent ``plugin_ulit.database`` module and prevent the app from
+# loading at all.
+from .backend.database import close_db, get_data_root, get_db
+from .backend import repository as repo
+from .backend.job_runner import JobRunner
+from .backend.routes import router as ulit_router
+from .backend.services import LibraryService
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ulit")
 

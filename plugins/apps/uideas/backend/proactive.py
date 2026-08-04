@@ -45,6 +45,7 @@ MAX_SUGGESTIONS_PER_ROUND = 3
 _LAST_CTX: Dict[str, Any] = {}
 # 后台任务引用
 _THINK_TASK: Optional[asyncio.Task] = None
+_THINK_LOCK = asyncio.Lock()
 
 
 def cache_ctx(ctx: Any) -> Any:
@@ -98,6 +99,12 @@ async def _proactive_loop() -> None:
 
 
 async def think_once(ctx: Any) -> Dict[str, Any]:
+    """Run one deduplicated thinking round at a time."""
+    async with _THINK_LOCK:
+        return await _think_once_unlocked(ctx)
+
+
+async def _think_once_unlocked(ctx: Any) -> Dict[str, Any]:
     """执行一轮主动思考：聚合记忆 -> 生成建议 -> 去重入库 -> 推送。"""
     context = await build_think_context(ctx)
 

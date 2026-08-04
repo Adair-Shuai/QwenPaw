@@ -81,6 +81,8 @@ export type BuiltinPageId = "tools" | "mcp" | "acp";
 export interface BuiltinPageProps {
   /** Hide route-level chrome and adapt scrolling when composed by a plugin. */
   embedded?: boolean;
+  /** Optional presentation copy owned by the composing plugin surface. */
+  embeddedLabels?: Record<string, string>;
 }
 
 const BUILTIN_PAGE_LOADERS: Record<

@@ -18,7 +18,7 @@ from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+_SCHEMA_VERSION = 2
 
 _SCHEMA_SQL = """
 -- ── Projects ──────────────────────────────────────────────────────
@@ -271,6 +271,16 @@ CREATE VIRTUAL TABLE IF NOT EXISTS papers_fts USING fts5(
     content_rowid='rowid'
 );
 
+-- Full-text index for parsed document content.  This is intentionally a
+-- small, explicit index rather than an external-content FTS table so it can
+-- be rebuilt safely when a document is reparsed.
+CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
+    chunk_id UNINDEXED,
+    paper_id UNINDEXED,
+    page_start UNINDEXED,
+    text
+);
+
 -- Triggers to keep FTS in sync
 CREATE TRIGGER IF NOT EXISTS papers_ai AFTER INSERT ON papers BEGIN
     INSERT INTO papers_fts(rowid, paper_id, title, abstract)
@@ -331,7 +341,21 @@ class Database:
             "SELECT value FROM schema_meta WHERE key='version'"
         ).fetchone()
         current = int(row["value"]) if row else 0
-        if current < _SCHEMA_VERSION:
+        if current < 2:
+            # Existing installations created before document search was
+            # introduced have chunks but no chunk index.  Rebuild it once;
+            # INSERT OR IGNORE is not suitable for FTS5, so clear first.
+            conn.execute("DELETE FROM chunks_fts")
+            conn.execute(
+                """INSERT INTO chunks_fts(chunk_id, paper_id, page_start, text)
+                   SELECT c.id, f.paper_id, c.page_start, c.text
+                   FROM chunks c
+                   JOIN documents d ON d.id = c.document_id
+                   JOIN files f ON f.id = d.file_id
+                   WHERE f.paper_id IS NOT NULL"""
+            )
+            current = 2
+        if current != _SCHEMA_VERSION:
             conn.execute(
                 "UPDATE schema_meta SET value=? WHERE key='version'",
                 (str(_SCHEMA_VERSION),),

@@ -16,6 +16,9 @@
   "qwenpaw_version": {
     "min": "2.0.1"
   },
+  "dependencies": [
+    "PyMuPDF>=1.24"
+  ],
   "meta": {
     "pawapp": {
       "icon": "📚",

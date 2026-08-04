@@ -435,6 +435,22 @@ def add_page_text(doc_id: str, page_index: int, text: str, text_hash: str = "") 
     )
 
 
+def clear_document_content(doc_id: str) -> None:
+    """Remove parsed pages/chunks before a document is rebuilt.
+
+    Reparse is an update operation, not an append operation.  Clearing the
+    FTS rows first prevents stale pages and duplicate retrieval chunks from
+    surviving a second parse.
+    """
+    db = get_db()
+    db.execute(
+        "DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id=?)",
+        (doc_id,),
+    )
+    db.execute("DELETE FROM chunks WHERE document_id=?", (doc_id,))
+    db.execute("DELETE FROM page_texts WHERE document_id=?", (doc_id,))
+
+
 def get_page_texts(doc_id: str) -> list[dict]:
     rows = get_db().query(
         "SELECT * FROM page_texts WHERE document_id=? ORDER BY page_index",
@@ -463,11 +479,23 @@ def add_chunk(
 ) -> str:
     cid = _uid()
     token_count = len(text) // 4  # rough estimate
-    get_db().execute(
+    db = get_db()
+    db.execute(
         "INSERT INTO chunks (id, document_id, section_id, page_start, page_end, text, token_count, char_start, char_end) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
         (cid, doc_id, section_id, page_start, page_end, text, token_count, char_start, char_end),
     )
+    # Keep parsed content searchable by paper and page.  FTS5 stores the
+    # searchable text and the identifiers are returned as UNINDEXED fields.
+    row = db.query_one(
+        "SELECT f.paper_id FROM documents d JOIN files f ON f.id=d.file_id WHERE d.id=?",
+        (doc_id,),
+    )
+    if row and row["paper_id"]:
+        db.execute(
+            "INSERT INTO chunks_fts(chunk_id, paper_id, page_start, text) VALUES (?,?,?,?)",
+            (cid, row["paper_id"], page_start, text),
+        )
     return cid
 
 
@@ -480,6 +508,29 @@ def get_chunks_for_paper(paper_id: str) -> list[dict]:
         (paper_id,),
     )
     return _rows_to_dicts(rows)
+
+
+def search_chunks(query: str, *, paper_id: str | None = None, limit: int = 50) -> list[dict]:
+    """Search parsed full text and return source-ready chunk records."""
+    if not query.strip():
+        return []
+    # Quote the complete query to avoid malformed FTS expressions from user
+    # punctuation while retaining phrase matching for normal searches.
+    fts_query = '"' + query.strip().replace('"', '""') + '"'
+    sql = (
+        "SELECT c.*, f.paper_id FROM chunks_fts x "
+        "JOIN chunks c ON c.id=x.chunk_id "
+        "JOIN documents d ON d.id=c.document_id "
+        "JOIN files f ON f.id=d.file_id "
+        "WHERE chunks_fts MATCH ?"
+    )
+    params: list[Any] = [fts_query]
+    if paper_id:
+        sql += " AND f.paper_id=?"
+        params.append(paper_id)
+    sql += " ORDER BY bm25(chunks_fts) LIMIT ?"
+    params.append(max(1, min(limit, 200)))
+    return _rows_to_dicts(get_db().query(sql, tuple(params)))
 
 
 # ════════════════════════════════════════════════════════════════════
@@ -693,6 +744,26 @@ def find_ai_session(scope_type: str, scope_id: str) -> dict | None:
     return _row_to_dict(row)
 
 
+def update_ai_session(session_id: str, **fields: Any) -> dict | None:
+    # NOTE: ai_sessions has no updated_at column — only update allowed fields.
+    allowed = {"title", "qwen_session_id"}
+    sets: list[str] = []
+    vals: list[Any] = []
+    for k in fields:
+        if k not in allowed:
+            continue
+        sets.append(f"{k}=?")
+        vals.append(fields[k])
+    if not sets:
+        return get_ai_session(session_id)
+    vals.append(session_id)
+    get_db().execute(
+        f"UPDATE ai_sessions SET {', '.join(sets)} WHERE id=?",
+        tuple(vals),
+    )
+    return get_ai_session(session_id)
+
+
 def create_ai_run(session_id: str, model: str = "", prompt_version: str = "", input_refs: list = None) -> dict:
     rid = _uid()
     get_db().execute(
@@ -705,13 +776,20 @@ def create_ai_run(session_id: str, model: str = "", prompt_version: str = "", in
 
 def update_ai_run(run_id: str, **fields: Any) -> None:
     allowed = {"status", "output_json", "grounding_status"}
-    sets = [f"{k}=?" for k in fields if k in allowed]
-    vals = [v for k, v in fields.items() if k in allowed]
+    sets: list[str] = []
+    vals: list[Any] = []
+    # Build sets/vals by field name (not .index()) so identical values for
+    # different fields (e.g. output_json == grounding_status) can't collide.
+    for k in fields:
+        if k not in allowed:
+            continue
+        v = fields[k]
+        if k == "output_json" and isinstance(v, (dict, list)):
+            v = json.dumps(v, ensure_ascii=False)
+        sets.append(f"{k}=?")
+        vals.append(v)
     if not sets:
         return
-    # JSON-encode output_json
-    if "output_json" in fields and isinstance(fields["output_json"], (dict, list)):
-        vals[vals.index(fields["output_json"])] = json.dumps(fields["output_json"], ensure_ascii=False)
     get_db().execute(
         f"UPDATE ai_runs SET {', '.join(sets)} WHERE id=?",
         tuple(vals) + (run_id,),

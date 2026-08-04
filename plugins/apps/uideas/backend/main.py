@@ -2,14 +2,15 @@
 """UIdeas - 科研灵感管理应用后端。
 
 API（前缀 /api/uideas）：
-- GET    /ideas            灵感列表（支持 ?status=）
+- GET    /ideas            灵感列表（支持 ?status= 和 ?tag=）
 - POST   /ideas            新建灵感
 - GET    /ideas/{id}       灵感详情（含扩充结果）
 - PATCH  /ideas/{id}       更新灵感（标题/内容/标签/状态/归档）
 - DELETE /ideas/{id}       删除灵感
-- POST   /analyze          L1 聚类整理
-- POST   /expand/{id}      L2 单条扩充
-- POST   /think            立即执行一轮 L3 主动思考
+- POST   /analyze          L1 聚类整理（异步任务）
+- POST   /expand/{id}      L2 单条扩充（异步任务）
+- POST   /think            立即执行一轮 L3 主动思考（异步任务）
+- GET    /jobs/{id}        查询异步任务
 - GET    /suggestions      建议列表（支持 ?status=）
 - PATCH  /suggestions/{id} 更新建议状态（accepted/dismissed）
 - GET    /clusters         聚类方向列表
@@ -24,8 +25,11 @@ import json
 import logging
 import os
 import sys
+import asyncio
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Optional
 
 # PluginLoader 将 backend/main.py 以插件根目录为包的搜索路径加载，
 # 相对导入不可靠。这里把 backend 目录加入 sys.path，统一使用绝对导入。
@@ -55,15 +59,17 @@ app.include_router(router)
 class IdeaCreate(BaseModel):
     # 允许空标题：前端支持只写内容，store 会从内容自动提炼标题
     title: str = Field("", max_length=200)
-    content: str = ""
-    tags: List[str] = []
+    content: str = Field("", max_length=10000)
+    tags: List[str] = Field(default_factory=list, max_length=50)
+    related_experiments: List[str] = Field(default_factory=list, max_length=20)
     source: str = "user"
 
 
 class IdeaUpdate(BaseModel):
     title: Optional[str] = Field(None, max_length=200)
-    content: Optional[str] = None
-    tags: Optional[List[str]] = None
+    content: Optional[str] = Field(None, max_length=10000)
+    tags: Optional[List[str]] = Field(None, max_length=50)
+    related_experiments: Optional[List[str]] = Field(None, max_length=20)
     status: Optional[str] = None
     cluster_id: Optional[str] = None
 
@@ -74,11 +80,95 @@ class SuggestionStatusUpdate(BaseModel):
 
 class MetaUpdate(BaseModel):
     proactive_enabled: Optional[bool] = None
-    interval_minutes: Optional[int] = None
-    min_ideas: Optional[int] = None
+    interval_minutes: Optional[int] = Field(None, ge=10, le=720)
+    min_ideas: Optional[int] = Field(None, ge=1, le=100)
     analyze_skill: Optional[str] = None
     expand_skill: Optional[str] = None
     think_skill: Optional[str] = None
+
+
+# Long-running Agent operations are detached from the HTTP request.  The
+# generic app SSE stream carries lifecycle events so the UI stays responsive
+# while the result is being generated.
+_JOBS: Dict[str, Dict[str, Any]] = {}
+_JOB_TASKS: Dict[str, asyncio.Task] = {}
+
+
+def _job_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _run_job(
+    job_id: str,
+    job_type: str,
+    handler: Callable[[], Awaitable[Dict[str, Any]]],
+) -> None:
+    from sse import broadcast
+
+    job = _JOBS[job_id]
+    job["status"] = "running"
+    job["started_at"] = _job_now()
+    await broadcast({"type": "job:started", "job_id": job_id, "job_type": job_type})
+    try:
+        result = await handler()
+        job["status"] = "done"
+        job["result"] = result
+        job["finished_at"] = _job_now()
+        await broadcast(
+            {
+                "type": "job:done",
+                "job_id": job_id,
+                "job_type": job_type,
+                "result": {
+                    "cluster_count": result.get("cluster_count", 0),
+                    "tagged": result.get("tagged", 0),
+                    "created_count": len(result.get("created", [])),
+                    "idea_id": result.get("idea", {}).get("id"),
+                    "warning": result.get("warning"),
+                },
+            }
+        )
+    except asyncio.CancelledError:
+        job["status"] = "cancelled"
+        job["finished_at"] = _job_now()
+        raise
+    except Exception as exc:  # pylint: disable=broad-except
+        logger.exception("[uideas] %s job %s failed", job_type, job_id)
+        job["status"] = "error"
+        job["error"] = str(exc)
+        job["finished_at"] = _job_now()
+        await broadcast(
+            {
+                "type": "job:error",
+                "job_id": job_id,
+                "job_type": job_type,
+                "message": str(exc),
+            }
+        )
+    finally:
+        _JOB_TASKS.pop(job_id, None)
+
+
+async def _enqueue_job(
+    job_type: str,
+    handler: Callable[[], Awaitable[Dict[str, Any]]],
+) -> str:
+    if len(_JOBS) >= 100:
+        completed = [
+            key for key, value in _JOBS.items()
+            if value.get("status") in ("done", "error", "cancelled")
+        ]
+        for key in completed[: max(1, len(completed) - 80)]:
+            _JOBS.pop(key, None)
+    job_id = f"job_{uuid.uuid4().hex[:12]}"
+    _JOBS[job_id] = {
+        "id": job_id,
+        "type": job_type,
+        "status": "queued",
+        "created_at": _job_now(),
+    }
+    _JOB_TASKS[job_id] = asyncio.create_task(_run_job(job_id, job_type, handler))
+    return job_id
 
 
 # ─── 灵感 ───────────────────────────────────────────────────────────
@@ -86,6 +176,7 @@ class MetaUpdate(BaseModel):
 @router.get("/ideas")
 async def list_ideas(
     status: Optional[str] = None,
+    tag: Optional[str] = None,
     ctx=Depends(get_ctx),
 ):
     proactive.cache_ctx(ctx)
@@ -94,6 +185,8 @@ async def list_ideas(
     ideas = await get_ideas(ctx)
     if status:
         ideas = [i for i in ideas if i.get("status") == status]
+    if tag:
+        ideas = [i for i in ideas if tag in (i.get("tags") or [])]
     # 按创建时间倒序
     ideas.sort(key=lambda i: i.get("created_at", ""), reverse=True)
     return {"ideas": ideas}
@@ -109,6 +202,7 @@ async def create_idea(body: IdeaCreate, ctx=Depends(get_ctx)):
         title=body.title,
         content=body.content,
         tags=body.tags,
+        related_experiments=body.related_experiments,
         source=body.source,
     )
     from sse import broadcast
@@ -140,6 +234,7 @@ async def update_idea(idea_id: str, body: IdeaUpdate, ctx=Depends(get_ctx)):
             title=body.title,
             content=body.content,
             tags=body.tags,
+            related_experiments=body.related_experiments,
             status=body.status,
             cluster_id=body.cluster_id,
         )
@@ -174,41 +269,29 @@ async def analyze(ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
     from analyze import organize_ideas
 
-    try:
-        result = await organize_ideas(ctx)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("[uideas] analyze failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    from sse import broadcast
-
-    await broadcast(
-        {
-            "type": "analyze:done",
-            "cluster_count": result.get("cluster_count", 0),
-            "tagged": result.get("tagged", 0),
-        }
-    )
-    return result
+    job_id = await _enqueue_job("analyze", lambda: organize_ideas(ctx))
+    return {"job_id": job_id, "status": "queued"}
 
 
 @router.post("/expand/{idea_id}")
 async def expand(idea_id: str, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from analyze import expand_idea
     from store import get_idea
 
     idea = await get_idea(ctx, idea_id)
     if idea is None:
         raise HTTPException(status_code=404, detail="not found")
-    try:
-        result = await expand_idea(ctx, idea)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("[uideas] expand failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    from sse import broadcast
+    job_id = await _enqueue_job(
+        "expand",
+        lambda: _expand_job(ctx, idea),
+    )
+    return {"job_id": job_id, "status": "queued", "idea_id": idea_id}
 
-    await broadcast({"type": "expand:done", "idea": result})
-    return {"idea": result}
+
+async def _expand_job(ctx: Any, idea: Dict[str, Any]) -> Dict[str, Any]:
+    from analyze import expand_idea
+
+    return {"idea": await expand_idea(ctx, idea)}
 
 
 @router.post("/think")
@@ -216,21 +299,27 @@ async def think(ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
     from store import is_thinking_available
 
-    if not await is_thinking_available(ctx):
+    # Manual thinking is an explicit user action: it may bypass the global
+    # proactive switch and cooldown, but still requires enough active ideas.
+    if not await is_thinking_available(ctx, manual=True):
         from store import get_meta
 
         meta = await get_meta(ctx)
         return {
             "skipped": True,
-            "reason": "cooldown",
+            "reason": "min_ideas",
             "meta": meta,
         }
-    try:
-        result = await proactive.think_once(ctx)
-    except Exception as exc:  # pylint: disable=broad-except
-        logger.warning("[uideas] think failed: %s", exc)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    return result
+    job_id = await _enqueue_job("think", lambda: proactive.think_once(ctx))
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.get("/jobs/{job_id}")
+async def get_job(job_id: str):
+    job = _JOBS.get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    return {"job": job}
 
 
 # ─── 建议 ───────────────────────────────────────────────────────────
@@ -294,18 +383,20 @@ async def get_meta(ctx=Depends(get_ctx)):
     meta["suggestion_count"] = len(suggestions)
     meta["raw_count"] = sum(1 for i in ideas if i.get("status") == "raw")
     meta["active_suggestion_count"] = sum(1 for s in suggestions if s.get("status") == "new")
+    meta["todo_count"] = sum(1 for item in meta.get("todo_queue", []) if item.get("status") == "todo")
     return {"meta": meta}
 
 
 @router.patch("/meta")
 async def patch_meta(body: MetaUpdate, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from store import get_meta, save_meta
+    from store import get_meta, save_meta, transaction
 
-    meta = await get_meta(ctx)
-    patch = body.model_dump(exclude_none=True)
-    meta.update(patch)
-    await save_meta(ctx, meta)
+    async with transaction():
+        meta = await get_meta(ctx)
+        patch = body.model_dump(exclude_none=True)
+        meta.update(patch)
+        await save_meta(ctx, meta)
     from sse import broadcast
 
     await broadcast({"type": "meta:updated", "meta": meta})

@@ -172,4 +172,33 @@ describe("useAgentMention", () => {
       "writer",
     ]);
   });
+
+  it("does not inherit stale collaboration mode after replacing the composer", () => {
+    const { result, rerender } = renderHook(
+      ({ selectedIds }: { selectedIds: string[] }) =>
+        useAgentMention(agents, "default", selectedIds),
+      { initialProps: { selectedIds: ["reviewer"] } },
+    );
+    const textarea = textareaWithValue("@");
+
+    act(() => result.current.setSelectionMode("collaborate"));
+    act(() => result.current.reset(textarea));
+    act(() => result.current.handleInputChange(textarea));
+    rerender({ selectedIds: [] });
+
+    expect(result.current.selectionMode).toBe("delegate");
+  });
+
+  it("uses actual composer mentions instead of a stale collaboration lock", () => {
+    const { result } = renderHook(() =>
+      useAgentMention(agents, "default", ["reviewer"]),
+    );
+    const textarea = textareaWithValue("@");
+
+    act(() => result.current.setSelectionMode("collaborate"));
+    act(() => result.current.handleInputChange(textarea));
+    act(() => result.current.insertMention(agents[2], textarea));
+
+    expect(getAgentMentionMode("writer")).toBe("delegate");
+  });
 });

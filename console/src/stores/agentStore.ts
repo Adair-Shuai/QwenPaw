@@ -104,7 +104,29 @@ export const useAgentStore = create<AgentStore>()(
         }
 
         agentRefreshPromise = agentsApi.listAgents().then((response) => {
-          set({ agents: response.agents });
+          const fetchedAgents = response.agents;
+          const currentSelected = get().selectedAgent;
+          // If the currently selected agent no longer exists in the backend,
+          // reset to "default" to prevent 404 errors on agent-scoped API calls
+          // (e.g. /api/skills, /api/mcp) that send X-Agent-Id.
+          const stillExists = fetchedAgents.some(
+            (a) => a.id === currentSelected,
+          );
+          if (!stillExists) {
+            const fallback =
+              fetchedAgents.find((a) => a.id === "default")?.id ||
+              fetchedAgents[0]?.id ||
+              "default";
+            set({ agents: fetchedAgents, selectedAgent: fallback });
+            try {
+              localStorage.setItem(LAST_USED_AGENT_KEY, fallback);
+            } catch {
+              /* ignore */
+            }
+            menuRegistry.refresh();
+          } else {
+            set({ agents: fetchedAgents });
+          }
         });
         try {
           await agentRefreshPromise;

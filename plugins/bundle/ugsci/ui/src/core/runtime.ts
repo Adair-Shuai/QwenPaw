@@ -19,7 +19,12 @@ export interface QwenPawHost {
   remarkGfm?: unknown;
   loadBuiltinPage?: (
     page: BuiltinPageId,
-  ) => Promise<React.ComponentType<{ embedded?: boolean }>>;
+  ) => Promise<
+    React.ComponentType<{
+      embedded?: boolean;
+      embeddedLabels?: Record<string, string>;
+    }>
+  >;
 }
 
 export function getHost(): QwenPawHost {

@@ -20,6 +20,7 @@ import {
   setAgentMentionMode,
   type AgentMentionMode,
 } from "./agentMentionModes";
+import { findAgentMentionRanges } from "./agentMentionUtils";
 
 export interface AgentMentionState {
   visible: boolean;
@@ -138,11 +139,15 @@ export function useAgentMention(
     (textarea: HTMLTextAreaElement) => {
       const detected = detectMention(textarea);
       if (detected) {
-        if (
-          !mentionStateRef.current.visible &&
-          selectedMentionAgentIds.length === 0
-        ) {
-          setSelectionMode("delegate");
+        if (!mentionStateRef.current.visible) {
+          const completedMentions = findAgentMentionRanges(
+            textarea.value,
+            mentionableAgents,
+            (agent) => getAgentDisplayName(agent, t),
+          ).filter((range) => range.start !== detected.startIndex);
+          setSelectionMode(
+            completedMentions.length > 0 ? "collaborate" : "delegate",
+          );
         }
         const nextState = {
           visible: true,
@@ -163,7 +168,8 @@ export function useAgentMention(
     [
       detectMention,
       filterAgents,
-      selectedMentionAgentIds.length,
+      mentionableAgents,
+      t,
       updateActiveIndex,
     ],
   );
@@ -196,9 +202,14 @@ export function useAgentMention(
       textarea.selectionStart = textarea.selectionEnd = newCursorPos;
 
       // 触发 input 事件以同步 React 状态
+      const existingMentionCount = findAgentMentionRanges(
+        before + after,
+        mentionableAgents,
+        (candidate) => getAgentDisplayName(candidate, t),
+      ).length;
       setAgentMentionMode(
         agent.id,
-        collaborationLocked ? "collaborate" : selectionMode,
+        existingMentionCount > 0 ? "collaborate" : selectionMode,
       );
       const event = new Event("input", { bubbles: true });
       textarea.dispatchEvent(event);
@@ -208,7 +219,7 @@ export function useAgentMention(
       delete textarea.dataset.agentMentionActive;
       textarea.focus();
     },
-    [collaborationLocked, selectionMode, t],
+    [mentionableAgents, selectionMode, t],
   );
 
   const reset = useCallback(

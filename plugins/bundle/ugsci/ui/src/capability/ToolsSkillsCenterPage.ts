@@ -58,6 +58,7 @@ function HostBuiltinPage({ page }: { page: BuiltinPageId }) {
   const { Alert, Spin } = getHost().antd;
   const [Page, setPage] = useState<ComponentType<{
     embedded?: boolean;
+    embeddedLabels?: Record<string, string>;
   }> | null>(null);
   const [error, setError] = useState("");
 
@@ -110,7 +111,18 @@ function HostBuiltinPage({ page }: { page: BuiltinPageId }) {
     );
   }
 
-  return React.createElement(Page, { embedded: true });
+  const embeddedLabels =
+    page === "mcp"
+      ? {
+          title: "UGSci MCP",
+          description: "连接外部工具、数据服务与计算能力，扩展当前专家的可调用范围",
+          managedTitle: "已接入服务",
+          managedDescription: "启用后可由当前专家调用，并可按工具配置访问权限",
+          create: "接入 MCP 服务",
+        }
+      : undefined;
+
+  return React.createElement(Page, { embedded: true, embeddedLabels });
 }
 
 function ToolsWorkspaceSection() {
@@ -187,13 +199,15 @@ function EngineWorkspaceSection() {
 }
 
 export function ToolsSkillsCenterPage({
-  initialTab = "tools",
+  initialTab = "engines",
 }: {
   initialTab?: CenterTab;
 } = {}) {
   const React = getHost().React;
   const { useEffect, useState } = React;
   const { Tabs, Tag } = getHost().antd;
+  const { RocketOutlined, ToolOutlined, ThunderboltOutlined } =
+    getHost().antdIcons || {};
   const selected = getHost().useSelectedAgent?.();
   const agentId = selected?.id || "default";
   const [activeTab, setActiveTab] = useState<CenterTab>(() =>
@@ -216,12 +230,23 @@ export function ToolsSkillsCenterPage({
     updateTabInLocation(tab);
   };
 
+  const tabLabel = (
+    label: string,
+    Icon?: ComponentType<{ style?: Record<string, unknown> }>,
+  ) =>
+    React.createElement(
+      "span",
+      { style: { display: "inline-flex", alignItems: "center", gap: 6 } },
+      Icon ? React.createElement(Icon, { style: { fontSize: 14 } }) : null,
+      label,
+    );
+
   return React.createElement(
     "div",
     { style: { padding: 24 } },
     React.createElement(PageHeader, {
       title: "工具·技能",
-      subtitle: "管理当前专家可调用的工具、引擎、运行服务与专业技能",
+      subtitle: "管理当前专家可调用的引擎、工具、运行服务与专业技能",
       extra: React.createElement(
         Tag,
         { color: "blue" },
@@ -233,18 +258,18 @@ export function ToolsSkillsCenterPage({
       onChange: (key: string) => changeTab(key as CenterTab),
       items: [
         {
-          key: "tools",
-          label: "工具",
-          children: React.createElement(ToolsWorkspaceSection),
-        },
-        {
           key: "engines",
-          label: "引擎",
+          label: tabLabel("引擎", RocketOutlined),
           children: React.createElement(EngineWorkspaceSection),
         },
         {
+          key: "tools",
+          label: tabLabel("工具", ToolOutlined),
+          children: React.createElement(ToolsWorkspaceSection),
+        },
+        {
           key: "skills",
-          label: "技能",
+          label: tabLabel("技能", ThunderboltOutlined),
           children: React.createElement(EmbeddedSkillCenter, {
             embedded: true,
           }),

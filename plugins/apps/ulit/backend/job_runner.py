@@ -284,9 +284,16 @@ async def _handle_import_file(job_id: str, payload: dict, ctx: Any) -> None:
     project_id = payload.get("project_id")
 
     import base64
+    import binascii
+
+    if not file_data_b64:
+        raise ValueError("file_data required for import_file job")
 
     await JobRunner.update_progress(job_id, 0.1, "receiving", "接收文件")
-    data = base64.b64decode(file_data_b64) if file_data_b64 else b""
+    try:
+        data = base64.b64decode(file_data_b64, validate=True)
+    except (ValueError, binascii.Error):
+        raise ValueError("Invalid base64 file_data payload") from None
 
     await JobRunner.update_progress(job_id, 0.3, "hashing", "计算文件哈希")
     paper = await IngestService.import_pdf_bytes(data, filename, project_id=project_id)
@@ -384,6 +391,27 @@ async def _handle_export(job_id: str, payload: dict, ctx: Any) -> None:
         content = await ExportService.export_json(
             project_id=project_id, paper_ids=paper_ids or None,
         )
+    elif fmt == "csv":
+        if not project_id:
+            raise ValueError("project_id required for CSV export")
+        import csv as _csv
+        import io as _io
+        from . import repository as repo
+        evidence = await asyncio.to_thread(repo.list_evidence, project_id)
+        buf = _io.StringIO()
+        writer = _csv.writer(buf)
+        writer.writerow(["id", "paper_id", "claim", "quote", "kind", "verification_status", "page_index"])
+        for e in evidence:
+            writer.writerow([
+                e.get("id", ""),
+                e.get("paper_id", ""),
+                e.get("claim", ""),
+                e.get("quote", ""),
+                e.get("kind", ""),
+                e.get("verification_status", ""),
+                str(e.get("page_index", "")),
+            ])
+        content = buf.getvalue()
     else:
         raise ValueError(f"Unknown export format: {fmt}")
 

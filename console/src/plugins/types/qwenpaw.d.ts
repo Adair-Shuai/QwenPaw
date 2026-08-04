@@ -282,7 +282,12 @@ export interface QwenPawHostNamespace {
   /** Load an allow-listed native page for in-place plugin composition. */
   loadBuiltinPage(
     page: "tools" | "mcp" | "acp",
-  ): Promise<React.ComponentType<{ embedded?: boolean }>>;
+  ): Promise<
+    React.ComponentType<{
+      embedded?: boolean;
+      embeddedLabels?: Record<string, string>;
+    }>
+  >;
 }
 
 export interface QwenPawAuditNamespace {

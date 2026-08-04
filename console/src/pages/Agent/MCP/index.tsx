@@ -75,9 +75,20 @@ const defaultForm = {
 export interface MCPPageProps {
   /** Render inside a plugin-owned page without route breadcrumbs. */
   embedded?: boolean;
+  /** Host-supplied presentation copy for a branded embedded surface. */
+  embeddedLabels?: {
+    title?: string;
+    description?: string;
+    managedTitle?: string;
+    managedDescription?: string;
+    create?: string;
+  };
 }
 
-function MCPPage({ embedded = false }: MCPPageProps = {}) {
+function MCPPage({
+  embedded = false,
+  embeddedLabels,
+}: MCPPageProps = {}) {
   const { t } = useTranslation();
   const {
     clients,
@@ -275,7 +286,7 @@ function MCPPage({ embedded = false }: MCPPageProps = {}) {
       icon={<Plus size={14} />}
       onClick={() => setCreateModalOpen(true)}
     >
-      {t("mcp.create")}
+      {embeddedLabels?.create || t("mcp.create")}
     </Button>
   );
 
@@ -284,9 +295,11 @@ function MCPPage({ embedded = false }: MCPPageProps = {}) {
       {embedded ? (
         <div className={styles.embeddedHeader}>
           <div>
-            <h2 className={styles.embeddedTitle}>{t("mcp.title")}</h2>
+            <h2 className={styles.embeddedTitle}>
+              {embeddedLabels?.title || t("mcp.title")}
+            </h2>
             <p className={styles.embeddedDescription}>
-              {t("mcp.qwenpawManagedHint")}
+              {embeddedLabels?.description || t("mcp.qwenpawManagedHint")}
             </p>
           </div>
           {createButton}
@@ -308,14 +321,28 @@ function MCPPage({ embedded = false }: MCPPageProps = {}) {
         </div>
       ) : (
         <div className={styles.mcpSections}>
-          <section className={styles.mcpSection}>
+          <section
+            className={`${styles.mcpSection} ${
+              embedded ? styles.embeddedManagedSection : ""
+            }`}
+          >
             <div className={styles.sectionHeader}>
-              <div className={styles.sectionIcon}>
-                <Server size={17} />
-              </div>
+              {!embedded && (
+                <div className={styles.sectionIcon}>
+                  <Server size={17} />
+                </div>
+              )}
               <div>
-                <h2>{t("mcp.qwenpawManaged")}</h2>
-                <p>{t("mcp.qwenpawManagedHint")}</p>
+                <h2>
+                  {embeddedLabels?.managedTitle || t("mcp.qwenpawManaged")}
+                  {embedded && (
+                    <span className={styles.serviceCount}>{clients.length}</span>
+                  )}
+                </h2>
+                <p>
+                  {embeddedLabels?.managedDescription ||
+                    t("mcp.qwenpawManagedHint")}
+                </p>
               </div>
             </div>
             {clients.length === 0 ? (

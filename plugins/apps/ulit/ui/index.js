@@ -174,6 +174,7 @@
     getProjectPapers: function (id) { return apiFetch("/ulit/projects/" + id + "/papers"); },
     addPaperToProject: function (pid, paperId) { return apiFetch("/ulit/projects/" + pid + "/papers", { method: "POST", body: { paper_id: paperId } }); },
     removePaperFromProject: function (pid, paperId) { return apiFetch("/ulit/projects/" + pid + "/papers/" + paperId, { method: "DELETE" }); },
+    updateReadingStatus: function (pid, paperId, status) { return apiFetch("/ulit/projects/" + pid + "/papers/" + paperId + "/status", { method: "PATCH", body: { status: status } }); },
 
     // Papers
     listPapers: function (params) {
@@ -278,24 +279,28 @@
     var loading = _useState5[0];
     var setLoading = _useState5[1];
 
-    var handleUpload = useCallback(async function (info) {
-      if (info.file.status === "done" || info.file.status === "error" || !info.file.status) {
-        setLoading(true);
-        try {
-          var result = await API.uploadFiles([info.file.originFileObj || info.file], props.projectId);
-          if (result.results) {
-            var ok = result.results.filter(function (r) { return r.status === "imported"; });
-            var fail = result.results.filter(function (r) { return r.status === "failed"; });
-            if (ok.length) message.success(ok.length + " 篇文献导入成功");
-            if (fail.length) message.error(fail.length + " 篇导入失败");
-          }
-          props.onClose();
-          props.onRefresh();
-        } catch (e) {
-          message.error("导入失败: " + e.message);
-        } finally {
-          setLoading(false);
+    var handleUpload = useCallback(async function (options) {
+      // antd customRequest: called with { file, onSuccess, onError, ... } and
+      // file.status is already "uploading" at this point — so never gate on
+      // the file status here (previously this made uploads a no-op).
+      var file = (options && options.file) || {};
+      setLoading(true);
+      try {
+        var result = await API.uploadFiles([file.originFileObj || file], props.projectId);
+        if (result.results) {
+          var ok = result.results.filter(function (r) { return r.status === "imported"; });
+          var fail = result.results.filter(function (r) { return r.status === "failed"; });
+          if (ok.length) message.success(ok.length + " 篇文献导入成功");
+          if (fail.length) message.error(fail.length + " 篇导入失败");
         }
+        if (options && typeof options.onSuccess === "function") options.onSuccess(result);
+        props.onClose();
+        props.onRefresh();
+      } catch (e) {
+        if (options && typeof options.onError === "function") options.onError(e);
+        message.error("导入失败: " + e.message);
+      } finally {
+        setLoading(false);
       }
     }, [props.projectId, props.onClose, props.onRefresh]);
 
@@ -359,7 +364,8 @@
                 h("p", { style: { color: C.sub, fontSize: 12 } }, "支持单个或批量上传，单个文件最大 200MB")
               ),
               loading && h("div", { style: { textAlign: "center", marginTop: 16 } },
-                h(Spin, { tip: "正在导入..." })
+                h(Spin, null),
+                h("span", { style: { marginLeft: 8, color: C.sub } }, "正在导入...")
               )
             )
           },
@@ -677,6 +683,11 @@
     var _s7 = useState(false); var aiLoading = _s7[0]; var setAiLoading = _s7[1];
     var _s8 = useState(null); var readingCard = _s8[0]; var setReadingCard = _s8[1];
     var _s9 = useState(false); var cardLoading = _s9[0]; var setCardLoading = _s9[1];
+    var _s10 = useState(1); var readerPage = _s10[0]; var setReaderPage = _s10[1];
+    var _s11 = useState([]); var pageTexts = _s11[0]; var setPageTexts = _s11[1];
+    var _s12 = useState(null); var documentState = _s12[0]; var setDocumentState = _s12[1];
+    var _s13 = useState(false); var annotationModal = _s13[0]; var setAnnotationModal = _s13[1];
+    var _s14 = useState({ page: 1, comment: "", selected_text: "" }); var annotationDraft = _s14[0]; var setAnnotationDraft = _s14[1];
 
     var fileId = paper && paper.files && paper.files[0] ? paper.files[0].id : null;
 
@@ -688,6 +699,15 @@
         if (data.files && data.files[0]) {
           var annos = await API.listAnnotations(data.files[0].id);
           setAnnotations(annos.annotations || []);
+          try {
+            var docData = await API.getFileDocument(data.files[0].id);
+            setDocumentState(docData.document || null);
+            setPageTexts(docData.page_texts || []);
+          } catch (docErr) {
+            // A 409 means the durable parse job is still running.  Keep the
+            // PDF usable and show the state instead of blocking the reader.
+            setDocumentState({ status: "pending", error: docErr.message });
+          }
         }
       } catch (e) {
         message.error("加载文献失败: " + e.message);
@@ -697,6 +717,24 @@
     }, [paperId]);
 
     useEffect(function () { load(); }, [load]);
+
+    // Import parsing runs as a durable backend job.  If the reader opens
+    // before it finishes, poll the document endpoint and replace the status
+    // chip/page cache automatically instead of requiring a manual reload.
+    useEffect(function () {
+      if (!fileId || !documentState || documentState.status !== "pending") return undefined;
+      var timer = setInterval(async function () {
+        try {
+          var docData = await API.getFileDocument(fileId);
+          setDocumentState(docData.document || null);
+          setPageTexts(docData.page_texts || []);
+          clearInterval(timer);
+        } catch (e) {
+          // Keep polling while the parse job is in progress.
+        }
+      }, 2500);
+      return function () { clearInterval(timer); };
+    }, [fileId, documentState]);
 
     var handleAsk = useCallback(async function () {
       if (!aiQuestion.trim()) return;
@@ -726,21 +764,28 @@
 
     var handleAddAnnotation = useCallback(async function () {
       if (!fileId) { message.warning("此文獻没有PDF附件"); return; }
+      setAnnotationDraft({ page: readerPage, comment: "", selected_text: "" });
+      setAnnotationModal(true);
+    }, [fileId, readerPage]);
+
+    var saveAnnotation = useCallback(async function () {
+      if (!fileId) return;
       try {
         await API.createAnnotation(fileId, {
           file_id: fileId,
-          page_index: 0,
+          page_index: Math.max(0, parseInt(annotationDraft.page || 1, 10) - 1),
           type: "note",
-          comment: "新批注",
-          selected_text: "",
+          comment: annotationDraft.comment || "",
+          selected_text: annotationDraft.selected_text || "",
         });
         message.success("批注已添加");
+        setAnnotationModal(false);
         var annos = await API.listAnnotations(fileId);
         setAnnotations(annos.annotations || []);
       } catch (e) {
         message.error("添加失败: " + e.message);
       }
-    }, [fileId]);
+    }, [fileId, annotationDraft]);
 
     if (loading) return h(Spin, { style: { display: "block", margin: "60px auto" } });
     if (!paper) return h(Empty, { description: "文献不存在" });
@@ -769,11 +814,22 @@
       }),
       // Content area
       h("div", { style: { flex: 1, overflow: "auto", background: C.bg } },
-        activeTab === "reader" && h("div", { style: { height: "100%" } },
+        activeTab === "reader" && h("div", { style: { height: "100%", display: "flex", flexDirection: "column" } },
+          h("div", { style: { padding: "8px 16px", background: "#fff", borderBottom: "1px solid " + C.border, display: "flex", alignItems: "center", gap: 8 } },
+            h(Typography.Text, { type: "secondary" }, "页码"),
+            h(Input, {
+              size: "small", type: "number", min: 1, value: readerPage,
+              onChange: function (e) { var p = Math.max(1, parseInt(e.target.value || 1, 10)); setReaderPage(p); },
+              style: { width: 72 }
+            }),
+            documentState && h(Tag, { color: documentState.status === "parsed" ? "green" : "gold" }, documentState.status === "parsed" ? ("已解析 · " + (documentState.page_count || pageTexts.length) + " 页") : "正在解析全文"),
+            h(Button, { size: "small", onClick: handleAddAnnotation }, "在此页添加批注"),
+            pageTexts.length > 0 && h(Button, { size: "small", onClick: function () { setActiveTab("annotations"); } }, "查看标注")
+          ),
           fileId ?
             h("iframe", {
-              src: fileContentUrl(fileId),
-              style: { width: "100%", height: "100%", border: 0 },
+              src: fileContentUrl(fileId) + "#page=" + readerPage,
+              style: { width: "100%", flex: 1, border: 0 },
               title: "PDF Reader",
             }) :
             h("div", { style: { padding: 40, textAlign: "center" } },
@@ -811,7 +867,8 @@
                   h(List.Item.Meta, {
                     title: h(Space, null,
                       h(Tag, { color: a.type === "highlight" ? "gold" : a.type === "note" ? "blue" : "default" }, a.type),
-                      h(Typography.Text, { type: "secondary", style: { fontSize: 12 } }, "第 " + (a.page_index + 1) + " 页")
+                      h(Typography.Text, { type: "secondary", style: { fontSize: 12 } }, "第 " + (a.page_index + 1) + " 页"),
+                      h(Button, { size: "small", type: "link", onClick: function () { setReaderPage(a.page_index + 1); setActiveTab("reader"); } }, "定位")
                     ),
                     description: h("div", null,
                       a.selected_text && h("blockquote", { style: { borderLeft: "3px solid " + C.primary, paddingLeft: 12, margin: "4px 0", color: C.sub } }, a.selected_text.substring(0, 200)),
@@ -855,7 +912,10 @@
                 style: { background: C.ai, borderColor: C.ai },
               }, "提问")
             ),
-            aiLoading && h(Spin, { tip: "AI 正在分析文献...", style: { display: "block", padding: 20 } }),
+            aiLoading && h("div", { style: { display: "flex", alignItems: "center", justifyContent: "center", gap: 8, padding: 20 } },
+              h(Spin, null),
+              h("span", { style: { color: C.sub } }, "AI 正在分析文献...")
+            ),
             aiResult && h("div", { style: { marginTop: 16 } },
               aiResult.grounding_status && h(Alert, {
                 type: aiResult.grounding_status === "grounded" ? "success" :
@@ -917,6 +977,19 @@
               paper.identifiers && paper.identifiers.length > 0 && h("dd", null, paper.identifiers.map(function (i) { return h(Tag, { key: i.scheme + ":" + i.value, size: "small" }, i.scheme + ": " + i.value); }))
             )
           )
+        )
+      ),
+      h(Modal, {
+        open: annotationModal,
+        title: "添加批注",
+        onCancel: function () { setAnnotationModal(false); },
+        onOk: saveAnnotation,
+        okButtonProps: { style: { background: C.primary, borderColor: C.primary } }
+      },
+        h(Space, { direction: "vertical", style: { width: "100%" } },
+          h(Input, { type: "number", min: 1, value: annotationDraft.page, addonBefore: "页码", onChange: function (e) { setAnnotationDraft(Object.assign({}, annotationDraft, { page: e.target.value })); } }),
+          h(TextArea, { rows: 3, value: annotationDraft.selected_text, onChange: function (e) { setAnnotationDraft(Object.assign({}, annotationDraft, { selected_text: e.target.value })); }, placeholder: "摘录原文（可选）" }),
+          h(TextArea, { rows: 4, value: annotationDraft.comment, onChange: function (e) { setAnnotationDraft(Object.assign({}, annotationDraft, { comment: e.target.value })); }, placeholder: "批注内容" })
         )
       )
     );
@@ -1249,7 +1322,7 @@
                   columns: [
                     { title: "标题", dataIndex: "title", key: "title", render: function (t, r) { return h("a", { onClick: function () { props.onOpenPaper(r.id); }, style: { color: C.primary } }, t || "(未命名)"); } },
                     { title: "年份", dataIndex: "year", key: "year", width: 80 },
-                    { title: "状态", dataIndex: "reading_status", key: "reading_status", width: 100, render: function (s) { return h(Tag, { color: STATUS_COLORS[s] || C.muted }, STATUS_LABELS[s] || s); } },
+                    { title: "状态", dataIndex: "reading_status", key: "reading_status", width: 120, render: function (s, r) { return h(Select, { size: "small", value: s || "unread", options: Object.keys(STATUS_LABELS).map(function (k) { return { value: k, label: STATUS_LABELS[k] }; }), onChange: async function (v) { try { await API.updateReadingStatus(projectId, r.id, v); message.success("阅读状态已更新"); load(); } catch (e) { message.error("状态更新失败: " + e.message); } } }); } },
                     { title: "PDF", dataIndex: "has_pdf", key: "has_pdf", width: 60, render: function (v) { return v ? "✓" : "—"; } },
                     {
                       title: "", key: "action", width: 80,

@@ -151,6 +151,29 @@
     return (v || "").split(/[,，、;；\s]+/).map(function (t) { return t.trim(); }).filter(Boolean);
   }
 
+  function parseInlineMarkers(text) {
+    var tags = [];
+    var experiments = [];
+    var tagRe = /(^|[^\w])#([^\s#@，。；;,.!?！？]+)/g;
+    var expRe = /(^|[^\w])@([^\s#@，。；;,.!?！？]+)/g;
+    var match;
+    while ((match = tagRe.exec(text || ""))) tags.push(match[2]);
+    while ((match = expRe.exec(text || ""))) experiments.push(match[2]);
+    return {
+      tags: Array.from(new Set(tags)),
+      experiments: Array.from(new Set(experiments)),
+    };
+  }
+
+  function errorText(error, fallback) {
+    var text = error && error.message ? error.message : "";
+    try {
+      var parsed = JSON.parse(text);
+      if (parsed && parsed.detail) return parsed.detail;
+    } catch (e) { /* keep original text */ }
+    return text || fallback || "操作失败";
+  }
+
   function ideaTitle(idea) {
     return idea.title || (idea.content || "").slice(0, 40) + ((idea.content || "").length > 40 ? "…" : "");
   }
@@ -176,24 +199,26 @@
         message.warning("请先写下灵感内容");
         return;
       }
+      var markers = parseInlineMarkers(form.title + "\n" + form.content);
       setSubmitting(true);
       API.createIdea({
         title: form.title.trim(),
         content: form.content.trim(),
-        tags: splitTags(form.tags),
+        tags: Array.from(new Set(splitTags(form.tags).concat(markers.tags))),
+        related_experiments: markers.experiments,
       })
         .then(function () {
           message.success("灵感已记录");
           setForm({ title: "", content: "", tags: "" });
           if (onCreated) onCreated();
         })
-        .catch(function (e) { message.error("记录失败：" + (e.message || "unknown")); })
+        .catch(function (e) { message.error("记录失败：" + errorText(e, "请稍后重试")); })
         .finally(function () { setSubmitting(false); });
     }
 
     return h(Card, {
       style: { borderRadius: 12, marginBottom: 16, boxShadow: "0 1px 2px rgba(0,0,0,0.04)" },
-      bodyStyle: { padding: 16 },
+      styles: { body: { padding: 16 } },
     },
       h("div", { style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center" } },
         h("div", { style: { fontSize: 20, lineHeight: 1 } }, "💡"),
@@ -211,6 +236,12 @@
         placeholder: "写下你的研究灵感…\n例如：储气库注采过程中可用数字孪生对井口压力做实时校正",
         rows: 3,
         maxLength: 2000,
+        onKeyDown: function (e) {
+          if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            e.preventDefault();
+            submit();
+          }
+        },
         style: { marginBottom: 8 },
       }),
       h("div", { style: { display: "flex", gap: 8, alignItems: "center" } },
@@ -221,6 +252,9 @@
           style: { flex: 1 },
         }),
         h(Button, { type: "primary", onClick: submit, loading: submitting }, "记录灵感")
+      ),
+      h("div", { style: { marginTop: 8, color: "rgba(0,0,0,0.45)", fontSize: 12 } },
+        "回车快速记录，Shift+Enter 换行；支持 #标签 和 @实验编号"
       )
     );
   }
@@ -237,23 +271,25 @@
 
     function toggleArchive() {
       API.updateIdea(idea.id, {
-        status: idea.status === "archived" ? "organized" : "archived",
+        status: idea.status === "archived"
+          ? (idea.status_before_archive || "organized")
+          : "archived",
       })
         .then(function () { message.success(idea.status === "archived" ? "已恢复" : "已归档"); if (onChanged) onChanged(); })
-        .catch(function (e) { message.error(e.message || "操作失败"); });
+        .catch(function (e) { message.error(errorText(e, "操作失败")); });
     }
 
     function remove() {
       API.deleteIdea(idea.id)
         .then(function () { message.success("已删除"); if (onChanged) onChanged(); })
-        .catch(function (e) { message.error(e.message || "删除失败"); });
+        .catch(function (e) { message.error(errorText(e, "删除失败")); });
     }
 
     function doExpand() {
       setExpanding(true);
       API.expand(idea.id)
-        .then(function () { message.success("扩充完成，已进入 L2 研究方向扩展"); if (onExpanded) onExpanded(); })
-        .catch(function (e) { message.error("扩充失败：" + (e.message || "unknown")); })
+        .then(function () { message.info("已加入扩充队列，完成后会自动刷新"); })
+        .catch(function (e) { message.error("扩充失败：" + errorText(e, "请稍后重试")); })
         .finally(function () { setExpanding(false); });
     }
 
@@ -315,6 +351,14 @@
             idea.tags.map(function (t) { return h(Tag, { key: t, style: { marginBottom: 4 } }, t); })
           )
         : null),
+      (idea.related_experiments && idea.related_experiments.length
+        ? h("div", { style: { marginBottom: 4 } },
+            h("span", { style: { fontSize: 12, color: "rgba(0,0,0,0.45)", marginRight: 6 } }, "关联实验"),
+            idea.related_experiments.map(function (exp) {
+              return h(Tag, { key: exp, color: "cyan", style: { marginBottom: 4 } }, "@" + exp);
+            })
+          )
+        : null),
       (idea.expansion && showExpansion
         ? h("div", {
             style: {
@@ -355,10 +399,11 @@
       API.updateIdea(idea.id, {
         title: form.title.trim(),
         content: form.content.trim(),
-        tags: splitTags(form.tags),
+        tags: Array.from(new Set(splitTags(form.tags).concat(parseInlineMarkers(form.content).tags))),
+        related_experiments: parseInlineMarkers(form.content).experiments,
       })
         .then(function () { message.success("已保存"); props.onClose(); if (props.onSaved) props.onSaved(); })
-        .catch(function (e) { message.error(e.message || "保存失败"); })
+        .catch(function (e) { message.error(errorText(e, "保存失败")); })
         .finally(function () { setSaving(false); });
     }
 
@@ -386,8 +431,10 @@
     var refreshKey = props.refreshKey;
     var onDataVersion = props.onDataVersion;
     var [ideas, setIdeas] = useState([]);
+    var [allTags, setAllTags] = useState([]);
     var [loading, setLoading] = useState(false);
     var [filter, setFilter] = useState("");
+    var [tagFilter, setTagFilter] = useState("");
     var [organizing, setOrganizing] = useState(false);
     var mounted = useRef(true);
 
@@ -398,11 +445,22 @@
 
     var load = useCallback(function () {
       setLoading(true);
-      API.listIdeas(filter ? { status: filter } : {})
-        .then(function (res) { if (mounted.current) setIdeas((res && res.ideas) || []); })
+      var params = {};
+      if (filter) params.status = filter;
+      if (tagFilter) params.tag = tagFilter;
+      Promise.all([API.listIdeas(params), API.listIdeas({})])
+        .then(function (res) {
+          if (!mounted.current) return;
+          setIdeas((res[0] && res[0].ideas) || []);
+          var tags = [];
+          ((res[1] && res[1].ideas) || []).forEach(function (idea) {
+            (idea.tags || []).forEach(function (tag) { if (tags.indexOf(tag) < 0) tags.push(tag); });
+          });
+          setAllTags(tags.sort());
+        })
         .catch(function (e) { if (mounted.current) message.error("加载灵感失败：" + (e.message || "unknown")); })
         .finally(function () { if (mounted.current) setLoading(false); });
-    }, [filter]);
+    }, [filter, tagFilter]);
 
     useEffect(function () { load(); }, [load, refreshKey]);
 
@@ -412,17 +470,16 @@
       API.organize()
         .then(function (res) {
           message.destroy("organize");
-          var n = (res && res.cluster_count) || 0;
-          var tagged = (res && res.tagged) || 0;
-          message.success(
-            "整理完成" + (n ? "，新发现 " + n + " 个聚类方向" : "") +
-            (tagged ? "，标注 " + tagged + " 条灵感" : "")
-          );
-          if (onDataVersion) onDataVersion();
+          if (res && res.job_id) {
+            message.info("已加入整理队列，完成后会自动刷新");
+          } else {
+            message.success("整理完成");
+            if (onDataVersion) onDataVersion();
+          }
         })
         .catch(function (e) {
           message.destroy("organize");
-          message.error("整理失败：" + (e.message || "unknown"));
+          message.error("整理失败：" + errorText(e, "请稍后重试"));
         })
         .finally(function () { setOrganizing(false); });
     }
@@ -439,6 +496,14 @@
             size: "small",
             onClick: function () { setFilter(f.value); },
           }, f.label);
+        }),
+        h(Select, {
+          allowClear: true,
+          placeholder: "按标签筛选",
+          value: tagFilter || undefined,
+          style: { width: 150 },
+          onChange: function (v) { setTagFilter(v || ""); },
+          options: allTags.map(function (tag) { return { value: tag, label: "#" + tag }; }),
         }),
         h("div", { style: { flex: 1 } }),
         h(Badge, { count: rawCount, size: "small", overflowCount: 99 },
@@ -475,10 +540,10 @@
     function setStatus(status) {
       API.updateSuggestion(sug.id, { status: status })
         .then(function () {
-          message.success(status === "accepted" ? "已采纳，转化为研究行动" : "已忽略");
+          message.success(status === "accepted" ? "已采纳，并加入行动队列" : "已忽略");
           if (onChanged) onChanged();
         })
-        .catch(function (e) { message.error(e.message || "操作失败"); });
+        .catch(function (e) { message.error(errorText(e, "操作失败")); });
     }
 
     var sourceIdeas = (sug.source_idea_ids || []).map(function (id) { return ideaMap[id]; }).filter(Boolean);
@@ -562,21 +627,21 @@
       API.think()
         .then(function (res) {
           if (res && res.skipped) {
-            message.info("暂时没有可主动建议的灵感：" + (res.reason || ""));
-          } else if (res && res.created && res.created.length) {
-            message.success("已完成一次主动思考，生成 " + res.created.length + " 条建议");
-            if (onDataVersion) onDataVersion();
+            message.info("暂时没有足够的活跃灵感，至少需要 " + ((res.meta && res.meta.min_ideas) || 3) + " 条");
+          } else if (res && res.job_id) {
+            message.info("已加入主动思考队列，完成后会自动刷新");
           } else {
-            message.info("思考完成，暂无新建议");
+            message.info("思考任务已提交");
           }
         })
-        .catch(function (e) { message.error("思考失败：" + (e.message || "unknown")); })
+        .catch(function (e) { message.error("思考失败：" + errorText(e, "请稍后重试")); })
         .finally(function () { setThinking(false); });
     }
 
     var ideaMap = {};
     ideas.forEach(function (i) { ideaMap[i.id] = i; });
     var activeCount = sugs.filter(function (s) { return s.status === "new"; }).length;
+    var todos = (meta && meta.todo_queue || []).filter(function (item) { return item.status === "todo"; });
 
     return h("div", null,
       h("div", { style: { display: "flex", flexWrap: "wrap", gap: 12, marginBottom: 16, alignItems: "center" } },
@@ -598,6 +663,22 @@
           ],
         })
       ),
+      (todos.length
+        ? h(Card, {
+            size: "small",
+            style: { marginBottom: 16, borderRadius: 10, background: "#fffbe6", borderColor: "#ffe58f" },
+          },
+            h("div", { style: { fontWeight: 600, marginBottom: 6 } }, "✅ 待执行行动 · " + todos.length),
+            todos.slice(0, 5).map(function (item) {
+              return h("div", { key: item.id, style: { fontSize: 13, padding: "4px 0", color: "rgba(0,0,0,0.75)" } },
+                "• " + (item.title || item.body || "未命名行动")
+              );
+            }),
+            todos.length > 5
+              ? h("div", { style: { fontSize: 12, color: "rgba(0,0,0,0.45)", marginTop: 4 } }, "还有 " + (todos.length - 5) + " 个行动")
+              : null
+          )
+        : null),
       (loading
         ? h("div", { style: { textAlign: "center", padding: 40 } }, h(Spin, null))
         : (sugs.length === 0
@@ -800,6 +881,25 @@
           if (data.type === "suggestion" && data.suggestions && data.suggestions.length) {
             message.info("收到 " + data.suggestions.length + " 条新的主动建议");
           }
+          if (data.type === "job:started") {
+            message.loading({ key: data.job_id, content: jobLabel(data.job_type) + "处理中…", duration: 0 });
+          }
+          if (data.type === "job:done") {
+            message.destroy(data.job_id);
+            var result = data.result || {};
+            if (data.job_type === "analyze") {
+              if (result.warning) message.warning("整理结果不完整，已保留原聚类");
+              else message.success("整理完成");
+            } else if (data.job_type === "expand") {
+              message.success("扩充完成，研究方向已更新");
+            } else if (data.job_type === "think") {
+              message.success("主动思考完成" + (result.created_count ? "，新增 " + result.created_count + " 条建议" : "，暂无新建议"));
+            }
+          }
+          if (data.type === "job:error") {
+            message.destroy(data.job_id);
+            message.error(jobLabel(data.job_type) + "失败：" + (data.message || "请稍后重试"));
+          }
           bumpDataVersion();
         };
         es.onerror = function () {
@@ -818,8 +918,13 @@
       };
     }, []);
 
+    function jobLabel(kind) {
+      return kind === "analyze" ? "灵感整理" : kind === "expand" ? "灵感扩充" : "主动思考";
+    }
+
     var ideasCount = (meta && meta.idea_count) || 0;
     var activeSuggestionsCount = (meta && meta.active_suggestion_count) || 0;
+    var todoCount = (meta && meta.todo_count) || 0;
 
     var headerStyle = {
       display: "flex", alignItems: "center", gap: 10,
@@ -863,6 +968,9 @@
         ),
         h(Tag, { style: { background: "rgba(255,255,255,0.18)", color: "#fff", border: "none" } },
           activeSuggestionsCount + " 条建议"
+        ),
+        h(Tag, { style: { background: "rgba(255,255,255,0.18)", color: "#fff", border: "none" } },
+          todoCount + " 个行动"
         ),
         h(Tag, { style: { background: "rgba(255,255,255,0.18)", color: "#fff", border: "none" } },
           sseState === "live" ? "实时连接" : "离线"

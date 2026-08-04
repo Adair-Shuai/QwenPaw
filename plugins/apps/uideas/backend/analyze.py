@@ -62,7 +62,7 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
 
     返回 {"clusters": [...], "ideas": [...]}，并写回存储。
     """
-    from store import get_ideas, save_clusters, save_ideas
+    from store import get_clusters, get_ideas, save_clusters, save_ideas, transaction
 
     ideas = await get_ideas(ctx)
     active = [i for i in ideas if i.get("status") != "archived"]
@@ -93,30 +93,53 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
     reply = await _chat(ctx, prompt, skill=skill)
     data = _extract_json(reply)
 
+    old_clusters = await get_clusters(ctx)
+    if not isinstance(data, dict) or not isinstance(data.get("clusters"), list):
+        logger.warning("[uideas] organize returned invalid JSON; keeping old clusters")
+        return {
+            "clusters": old_clusters,
+            "ideas": ideas,
+            "cluster_count": len(old_clusters),
+            "tagged": 0,
+            "warning": "agent_output_invalid",
+        }
+
     clusters: List[Dict[str, Any]] = []
     tag_map: Dict[str, List[str]] = {}
 
-    if data and isinstance(data, dict):
-        clusters_raw = data.get("clusters") or []
-        for c in clusters_raw:
-            if isinstance(c, dict) and c.get("name"):
-                clusters.append(
-                    {
-                        "id": _new_id("cl"),
-                        "name": str(c.get("name"))[:40],
-                        "description": str(c.get("description") or "")[:200],
-                        "idea_ids": [
-                            iid
-                            for iid in (c.get("idea_ids") or [])
-                            if isinstance(iid, str)
-                        ],
-                    }
-                )
-        tags_raw = data.get("tags") or {}
-        if isinstance(tags_raw, dict):
-            for iid, tlist in tags_raw.items():
-                if isinstance(tlist, list):
-                    tag_map[str(iid)] = [str(t) for t in tlist if str(t).strip()]
+    clusters_raw = data.get("clusters") or []
+    valid_ids = {str(i.get("id")) for i in active}
+    assigned: set[str] = set()
+    for c in clusters_raw:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        idea_ids = []
+        for iid in c.get("idea_ids") or []:
+            if isinstance(iid, str) and iid in valid_ids and iid not in assigned:
+                idea_ids.append(iid)
+                assigned.add(iid)
+        clusters.append(
+            {
+                "id": _new_id("cl"),
+                "name": str(c.get("name"))[:40],
+                "description": str(c.get("description") or "")[:200],
+                "idea_ids": idea_ids,
+                "formed_at": _now_iso(),
+            }
+        )
+    if not clusters:
+        return {
+            "clusters": old_clusters,
+            "ideas": ideas,
+            "cluster_count": len(old_clusters),
+            "tagged": 0,
+            "warning": "agent_output_empty",
+        }
+    tags_raw = data.get("tags") or {}
+    if isinstance(tags_raw, dict):
+        for iid, tlist in tags_raw.items():
+            if isinstance(tlist, list):
+                tag_map[str(iid)] = [str(t) for t in tlist if str(t).strip()]
 
     # 回写：更新灵感状态、标签、聚类归属
     by_id = {i["id"]: i for i in ideas}
@@ -125,7 +148,7 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
             idea = by_id.get(iid)
             if idea:
                 idea["cluster_id"] = cl["id"]
-                idea["status"] = "organized" if idea["status"] == "raw" else idea["status"]
+                idea["status"] = "organized" if idea.get("status") == "raw" else idea.get("status", "raw")
     for iid, tags in tag_map.items():
         idea = by_id.get(iid)
         if idea:
@@ -133,12 +156,24 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
             existing.update(tags)
             idea["tags"] = sorted(existing)
 
-    from datetime import datetime, timezone
-
-    now = datetime.now(timezone.utc).isoformat()
     clusters.sort(key=lambda c: len(c.get("idea_ids") or []), reverse=True)
-    await save_clusters(ctx, clusters)
-    await save_ideas(ctx, ideas)
+    async with transaction():
+        # Re-read before commit so a user-created idea during the Agent call
+        # is not lost. Only update IDs that were in the analysis snapshot.
+        current = await get_ideas(ctx)
+        current_by_id = {i.get("id"): i for i in current}
+        for snapshot_idea in ideas:
+            target = current_by_id.get(snapshot_idea.get("id"))
+            if target is not None:
+                target.update(
+                    {
+                        key: snapshot_idea[key]
+                        for key in ("tags", "status", "cluster_id")
+                        if key in snapshot_idea
+                    }
+                )
+        await save_clusters(ctx, clusters)
+        await save_ideas(ctx, current)
 
     return {
         "clusters": clusters,
@@ -165,7 +200,7 @@ def _new_id(prefix: str) -> str:
 async def expand_idea(ctx: Any, idea: Dict[str, Any]) -> Dict[str, Any]:
     """对单条灵感调用 Agent 扩充，返回扩充结果并写回灵感。"""
     from memory import build_expand_context
-    from store import update_idea
+    from store import save_expansion
 
     context = await build_expand_context(ctx, idea)
     prompt = (
@@ -195,36 +230,18 @@ async def expand_idea(ctx: Any, idea: Dict[str, Any]) -> Dict[str, Any]:
             str(t).strip() for t in (data.get("related_tags") or []) if str(t).strip()
         ]
 
-    if expansion:
-        updated = await update_idea(
-            ctx,
-            idea["id"],
-            title=new_title,
-            content=idea.get("content", ""),
-            tags=list(dict.fromkeys((idea.get("tags") or []) + related_tags)),
-            status="expanded",
-        )
-        if updated:
-            updated["expansion"] = expansion
-            updated["expanded_at"] = _now_iso()
-            await _persist_expansion(ctx, updated)
-            return updated
-
-    # 失败兜底：直接返回原灵感
-    return idea
-
-
-async def _persist_expansion(ctx: Any, idea: Dict[str, Any]) -> None:
-    """将扩充结果写回存储（保存在灵感记录的 expansion 字段）。"""
-    from store import get_ideas, save_ideas
-
-    ideas = await get_ideas(ctx)
-    for i in ideas:
-        if i.get("id") == idea.get("id"):
-            i["expansion"] = idea.get("expansion", "")
-            i["expanded_at"] = idea.get("expanded_at")
-            break
-    await save_ideas(ctx, ideas)
+    if not expansion:
+        raise ValueError("Agent returned an empty expansion")
+    updated = await save_expansion(
+        ctx,
+        idea["id"],
+        title=new_title,
+        expansion=expansion,
+        related_tags=related_tags,
+    )
+    if updated is None:
+        raise ValueError("idea disappeared while expanding")
+    return updated
 
 
 def _now_iso() -> str:
