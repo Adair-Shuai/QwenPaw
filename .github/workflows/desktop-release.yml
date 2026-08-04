@@ -298,6 +298,7 @@ jobs:
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ~/AppData/Local/io.agentscope.qwenpaw.desktop/logs/
             ~/AppData/Local/com.qwenpaw.desktop/logs/
           if-no-files-found: ignore
           retention-days: 7
@@ -434,6 +435,7 @@ jobs:
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ~/Library/Logs/io.agentscope.qwenpaw.desktop/
             ~/Library/Logs/com.qwenpaw.desktop/
           if-no-files-found: ignore
           retention-days: 7
@@ -490,7 +492,7 @@ jobs:
             UGSci-Tauri-*-Windows-setup.exe
             UGSci-Tauri-*-macOS.zip
             UGSci-Tauri-*-macOS.app.tar.gz
-            ugsci-tauri-latest.json
+            qwenpaw-tauri-latest.json
           fail_on_unmatched_files: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -506,8 +508,8 @@ jobs:
       needs.build-tauri-macos.result == 'success'
     runs-on: ubuntu-latest
     env:
-      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
-      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/apps/desktop' }}
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
+      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://download.qwenpaw.agentscope.io/files/apps/desktop' }}
     steps:
       - name: Checkout (for scripts)
         uses: actions/checkout@v4
@@ -750,9 +752,9 @@ jobs:
             --target-base "darwin-aarch64=${OSS_BASE}/mac-tauri" \
             "${metadata_args[@]}" \
             --notes "$NOTES" \
-            --output ugsci-tauri-latest-oss.json
-          ossutil cp ugsci-tauri-latest-oss.json \
-            "oss://${OSS_BUCKET}/metadata/ugsci-tauri-latest.json" \
+            --output qwenpaw-tauri-latest-oss.json
+          ossutil cp qwenpaw-tauri-latest-oss.json \
+            "oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest.json" \
             --acl public-read \
             --force
 

@@ -22,7 +22,7 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     env:
-      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -80,7 +80,7 @@ jobs:
           version = os.environ['VERSION']
           # Keep files matching current version, "latest", or essential
           # non-versioned files like index.json and the updater manifest.
-          keep_patterns = [version, 'latest', 'index.json', 'ugsci-tauri-latest.json']
+          keep_patterns = [version, 'latest', 'index.json', 'qwenpaw-tauri-latest.json']
 
           dirs_to_clean = [
               f"oss://{bucket}/files/apps/desktop/win/",

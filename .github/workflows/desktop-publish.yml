@@ -48,10 +48,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           shopt -s nullglob
-          mv QwenPaw-Desktop-Tauri-Windows-*/QwenPaw-Tauri-*-Windows-setup.exe . 2>/dev/null || true
-          mv QwenPaw-Desktop-Tauri-macOS-*/QwenPaw-Tauri-*-macOS.zip . 2>/dev/null || true
-          mv tauri-updater-meta-macos/QwenPaw-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
-          files=(QwenPaw-Tauri-*-Windows-setup.exe QwenPaw-Tauri-*-macOS.zip QwenPaw-Tauri-*-macOS.app.tar.gz)
+          mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-setup.exe . 2>/dev/null || true
+          mv UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip . 2>/dev/null || true
+          mv tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
+          files=(UGSci-Tauri-*-Windows-setup.exe UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::No desktop installers found to attach to the release"
             exit 1
@@ -107,7 +107,7 @@ jobs:
         # manifest and index are promoted AFTER the release is published — see
         # desktop-promote.yml — so the auto-updater is never pointed at a version
         # whose release/PyPI/Docker publish might still fail.
-        if: hashFiles('QwenPaw-Desktop-Tauri-*/*') != ''
+        if: hashFiles('UGSci-Desktop-Tauri-*/*') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
@@ -144,17 +144,17 @@ jobs:
           }
 
           upload_versioned \
-            "QwenPaw-Desktop-Tauri-Windows-*" \
-            "QwenPaw-Tauri-*-Windows-setup.exe" \
+            "UGSci-Desktop-Tauri-Windows-*" \
+            "UGSci-Tauri-*-Windows-setup.exe" \
             "win-tauri" \
-            "QwenPaw-Tauri-${VERSION}-Windows-setup.exe" \
+            "UGSci-Tauri-${VERSION}-Windows-setup.exe" \
             "win-tauri-metadata.json"
 
           upload_versioned \
-            "QwenPaw-Desktop-Tauri-macOS-*" \
-            "QwenPaw-Tauri-*-macOS.zip" \
+            "UGSci-Desktop-Tauri-macOS-*" \
+            "UGSci-Tauri-*-macOS.zip" \
             "mac-tauri" \
-            "QwenPaw-Tauri-${VERSION}-macOS.zip" \
+            "UGSci-Tauri-${VERSION}-macOS.zip" \
             "mac-tauri-metadata.json"
 
       - name: Upload Tauri macOS updater archive to OSS
@@ -162,13 +162,13 @@ jobs:
         if: hashFiles('tauri-updater-meta-macos/*.app.tar.gz') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          APP_TAR_GZ=$(find tauri-updater-meta-macos -name "QwenPaw-Tauri-*-macOS.app.tar.gz" | head -1)
+          APP_TAR_GZ=$(find tauri-updater-meta-macos -name "UGSci-Tauri-*-macOS.app.tar.gz" | head -1)
           if [ -z "$APP_TAR_GZ" ]; then
             echo "No macOS .app.tar.gz found, skipping"
             exit 0
           fi
           ossutil cp "$APP_TAR_GZ" \
-            "oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/QwenPaw-Tauri-${VERSION}-macOS.app.tar.gz" \
+            "oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz" \
             --acl public-read \
             --force
 
