@@ -13,7 +13,6 @@ import LanguageSwitcher, {
   LANGUAGE_LIST,
 } from "../components/LanguageSwitcher/index";
 import ThemeToggleButton from "../components/ThemeToggleButton";
-import CodingModeToggle from "../components/CodingModeToggle";
 import { useTranslation } from "react-i18next";
 import { Button, Modal } from "@agentscope-ai/design";
 import styles from "./index.module.less";
@@ -49,6 +48,7 @@ import {
   ReadOutlined,
   PlayCircleOutlined,
   InfoCircleOutlined,
+  DownOutlined,
   SyncOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
@@ -128,15 +128,8 @@ export default function Header() {
   };
 
   // Web-only PyPI fallback: desktop path is owned by DesktopUpdateContext.
-  // Disabled for private/internal forks that are not published to PyPI —
-  // the fetch always fails and pollutes the console with network errors.
   useEffect(() => {
     if (onDesktop) return;
-
-    // PyPI version check is only useful for public packages on PyPI.
-    // Skip it entirely to avoid console noise from failed requests.
-    // To re-enable, set window.__QWENPAW_CHECK_PYPI = true in dev tools.
-    if (!(window as any).__QWENPAW_CHECK_PYPI) return;
 
     fetch(PYPI_URL)
       .then((res) => res.json())
@@ -284,8 +277,8 @@ export default function Header() {
     fetch(url, { cache: "no-cache" })
       .then((res) => (res.ok ? res.text() : Promise.reject()))
       .then((text) => {
-        const zhPattern = /###\s*UGSci如何更新[\s\S]*?(?=\n###|$)/;
-        const enPattern = /###\s*How to update UGSci[\s\S]*?(?=\n###|$)/;
+        const zhPattern = /###\s*QwenPaw如何更新[\s\S]*?(?=\n###|$)/;
+        const enPattern = /###\s*How to update QwenPaw[\s\S]*?(?=\n###|$)/;
         const match = text.match(faqLang === "zh" ? zhPattern : enPattern);
         setUpdateMarkdown(
           match && lang !== "ru"
@@ -353,7 +346,7 @@ export default function Header() {
           <Slot name="header.logo" kind="replace">
             <img
               src={isDark ? "/logo-dark.svg" : "/logo-light.svg"}
-              alt="UGSci"
+              alt="QwenPaw"
               className={styles.logoImg}
             />
           </Slot>
@@ -437,7 +430,6 @@ export default function Header() {
         <Slot name="header.left" kind="fill" />
         <Space size="middle">
           <Slot name="header.right" kind="fill" />
-          {/* ── "文档资料" and "GitHub" buttons hidden — commented out, not deleted ──
           {resourcesMenuItems.length > 0 && (
             <Dropdown menu={{ items: resourcesMenuItems }}>
               <Button type="text" className={styles.hideOnMobile}>
@@ -455,12 +447,6 @@ export default function Header() {
               {t("header.github")}
             </Button>
           </Tooltip>
-          ── end hidden buttons ── */}
-          <div className={styles.headerDivider} />
-          <span className={styles.hideOnMobile}>
-            <CodingModeToggle />
-          </span>
-          <Slot name="header.toggle" kind="fill" />
           <div className={styles.headerDivider} />
           <span className={styles.hideOnMobile}>
             <LanguageSwitcher />

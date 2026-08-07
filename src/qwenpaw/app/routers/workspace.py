@@ -10,25 +10,28 @@ from __future__ import annotations
 import asyncio
 import io
 import json
-import logging
+import secrets
 import shutil
 import stat
-import subprocess
-import sys
 import tempfile
 import os
+import sys
+import unicodedata
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import unquote
+from typing import Any, AsyncIterator, Literal
 
-from fastapi import APIRouter, Body, HTTPException, UploadFile, File, Request
-from fastapi.responses import (
-    FileResponse,
-    ORJSONResponse,
-    Response,
-    StreamingResponse,
+from fastapi import (
+    APIRouter,
+    Body,
+    File,
+    HTTPException,
+    Query,
+    Request,
+    UploadFile,
 )
+from fastapi.responses import ORJSONResponse, Response, StreamingResponse
 from watchfiles import awatch, Change
 from pydantic import BaseModel, Field
 
@@ -42,17 +45,32 @@ from ...config.config import load_agent_config, save_agent_config
 from ...agents.memory.agent_md_manager import AgentMdManager
 from ...agents.templates import get_workspace_md_template_id
 from ...agents.utils import copy_workspace_md_files
-from ...constant import (
-    BUILTIN_QA_AGENT_ID,
-    SUPPORTED_AGENT_LANGUAGES,
-    WORKING_DIR,
+from ...constant import BUILTIN_QA_AGENT_ID, SUPPORTED_AGENT_LANGUAGES
+from ...services.workspace_files import (
+    DEFAULT_CHUNK_SIZE,
+    DEFAULT_PAGE_SIZE,
+    FileVersionConflict,
+    InvalidCursor,
+    InvalidWorkspacePath,
+    MAX_PAGE_SIZE,
+    file_etag,
+    get_file_metadata,
+    list_directory,
+    read_file_chunk,
+    resolve_workspace_path,
+    save_text_file,
 )
-from ..agent_context import get_agent_for_request, get_coding_dir
-
-logger = logging.getLogger(__name__)
+from ..agent_context import (
+    get_agent_for_request,
+    get_agent_project_dir,
+    get_project_dir_for_request,
+)
 
 
 router = APIRouter(prefix="/workspace", tags=["workspace"])
+_FILESYSTEM_SEMAPHORE = asyncio.Semaphore(8)
+_WATCH_HEARTBEAT_SECONDS = 30.0
+_WATCH_POLL_TIMEOUT_MS = 1_000
 
 
 class MdFileInfo(BaseModel):
@@ -69,18 +87,6 @@ class MdFileContent(BaseModel):
     """Markdown file content."""
 
     content: str = Field(..., description="File content")
-
-
-class PromptFileWriteRequest(BaseModel):
-    """Create/update a root Markdown file and optionally change
-    prompt mount."""
-
-    filename: str = Field(..., description="Portable root Markdown filename")
-    content: str = Field(..., description="Markdown content")
-    enable: bool | None = Field(
-        None,
-        description="True to mount, false to unmount, null to preserve config",
-    )
 
 
 def _dir_stats(root: Path) -> tuple[int, int]:
@@ -164,8 +170,6 @@ async def read_working_file(
         return MdFileContent(content=content)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
@@ -190,73 +194,8 @@ async def write_working_file(
         )
         workspace_manager.write_working_md(md_name, body.content)
         return {"written": True}
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-
-@router.post(
-    "/prompt-files",
-    response_model=dict,
-    summary="Write a Markdown file and atomically update prompt mounting",
-)
-async def write_prompt_file(
-    body: PromptFileWriteRequest,
-    request: Request,
-) -> dict:
-    """Write Markdown and compensate the file if config persistence fails."""
-    workspace = await get_agent_for_request(request)
-    manager = AgentMdManager(
-        str(workspace.workspace_dir),
-        agent_id=workspace.agent_id,
-    )
-    try:
-        filename = manager.normalize_working_md_name(body.filename)
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-    file_path = manager.working_dir / filename
-    # pylint: disable=protected-access
-    manager._assert_within_dir(file_path, manager.working_dir)
-    existed = file_path.exists()
-    previous_bytes = file_path.read_bytes() if existed else None
-    agent_config = load_agent_config(workspace.agent_id)
-    previous_prompt_files = list(agent_config.system_prompt_files or [])
-    next_prompt_files = list(previous_prompt_files)
-
-    if body.enable is True and filename not in next_prompt_files:
-        next_prompt_files.append(filename)
-    elif body.enable is False:
-        next_prompt_files = [
-            name for name in next_prompt_files if name != filename
-        ]
-
-    try:
-        manager.write_working_md(filename, body.content)
-        if body.enable is not None:
-            agent_config.system_prompt_files = next_prompt_files
-            save_agent_config(workspace.agent_id, agent_config)
-    except Exception as exc:
-        try:
-            if existed and previous_bytes is not None:
-                file_path.write_bytes(previous_bytes)
-            elif file_path.exists():
-                file_path.unlink()
-        except OSError:
-            logger.exception("Failed to roll back prompt file %s", filename)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    try:
-        schedule_agent_reload(request, workspace.agent_id)
-    except Exception:
-        logger.exception("Failed to schedule reload after saving %s", filename)
-
-    return {
-        "written": True,
-        "filename": filename,
-        "system_prompt_files": next_prompt_files,
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -333,6 +272,513 @@ def _list_all_files(workspace_dir: Path) -> list[dict]:
     return files
 
 
+async def _resolve_files_root(
+    request: Request,
+    workspace: Any,
+    root: str,
+) -> Path:
+    """Resolve the selected project or agent configuration directory."""
+    if root == "workspace":
+        return workspace.workspace_dir
+    if root == "project":
+        return await get_project_dir_for_request(request, workspace)
+    raise HTTPException(
+        status_code=400,
+        detail="root must be project or workspace",
+    )
+
+
+@router.get(
+    "/tree",
+    summary="List one workspace directory page",
+)
+async def list_workspace_tree(
+    request: Request,
+    path: str = Query(default=""),
+    cursor: str | None = Query(default=None),
+    root: str = Query(default="project"),
+    limit: int = Query(
+        default=DEFAULT_PAGE_SIZE,
+        ge=1,
+        le=MAX_PAGE_SIZE,
+    ),
+) -> dict:
+    """List immediate children without materializing the full project."""
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            return await asyncio.to_thread(
+                list_directory,
+                files_root,
+                path,
+                cursor,
+                limit,
+            )
+    except InvalidCursor as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Directory not found",
+        ) from exc
+
+
+@router.get(
+    "/file-metadata",
+    summary="Read workspace file metadata",
+)
+async def read_workspace_file_metadata(
+    request: Request,
+    path: str = Query(...),
+    root: str = Query(default="project"),
+) -> dict:
+    """Return file metadata before content is requested."""
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            return await asyncio.to_thread(
+                get_file_metadata,
+                files_root,
+                path,
+            )
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+
+
+@router.get(
+    "/file-content",
+    summary="Read a bounded workspace text chunk",
+)
+async def read_workspace_file_content(
+    request: Request,
+    path: str = Query(...),
+    root: str = Query(default="project"),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(default=DEFAULT_CHUNK_SIZE, ge=1),
+) -> dict:
+    """Read text by byte range with UTF-8 boundary protection."""
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            return await asyncio.to_thread(
+                read_file_chunk,
+                files_root,
+                path,
+                offset,
+                limit,
+            )
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=416, detail=str(exc)) from exc
+    except FileVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="File changed while it was being read",
+        ) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+
+
+@router.put(
+    "/file-content",
+    summary="Save workspace text with optimistic concurrency",
+)
+async def write_workspace_file_content(
+    request: Request,
+    path: str = Query(...),
+    root: str = Query(default="project"),
+    body: dict = Body(...),
+) -> dict:
+    """Atomically save text when the supplied ETag still matches."""
+    content = body.get("content")
+    if not isinstance(content, str):
+        raise HTTPException(status_code=422, detail="content must be a string")
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            return await asyncio.to_thread(
+                save_text_file,
+                files_root,
+                path,
+                content,
+                request.headers.get("if-match"),
+            )
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileVersionConflict as exc:
+        raise HTTPException(
+            status_code=409,
+            detail="File changed on disk",
+        ) from exc
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+
+@router.get(
+    "/file-download",
+    summary="Stream one workspace file",
+)
+async def download_workspace_file(
+    request: Request,
+    path: str = Query(...),
+    root: str = Query(default="project"),
+) -> StreamingResponse:
+    """Stream one safe workspace file without buffering it in memory."""
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+
+    def _resolve_download() -> tuple[Path, os.stat_result]:
+        target = resolve_workspace_path(files_root, path)
+        return target, target.stat()
+
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            target, info = await asyncio.to_thread(_resolve_download)
+        if not stat.S_ISREG(info.st_mode):
+            raise FileNotFoundError(path)
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+
+    def _stream_file(chunk_size: int = 256 * 1024):
+        with target.open("rb") as handle:
+            while chunk := handle.read(chunk_size):
+                yield chunk
+
+    filename = target.name.replace('"', "")
+    return StreamingResponse(
+        _stream_file(),
+        media_type="application/octet-stream",
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Disposition": (f'attachment; filename="{filename}"'),
+            "Content-Length": str(info.st_size),
+            "ETag": file_etag(info),
+        },
+    )
+
+
+@router.get(
+    "/html-file-uri",
+    summary="Resolve one workspace HTML file for the desktop browser",
+)
+async def resolve_workspace_html_file_uri(
+    request: Request,
+    path: str = Query(...),
+    root: str = Query(default="project"),
+) -> dict:
+    """Return the URI of one validated HTML file in the selected workspace."""
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+
+    def _resolve_html() -> Path:
+        target = resolve_workspace_path(files_root, path)
+        if target.suffix.lower() not in {".html", ".htm"}:
+            raise InvalidWorkspacePath("Path must reference an HTML file")
+        if not target.is_file():
+            raise FileNotFoundError(path)
+        return target
+
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            target = await asyncio.to_thread(_resolve_html)
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, OSError) as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+
+    return {"uri": target.as_uri()}
+
+
+def _reserve_path(target: Path) -> bool:
+    """Atomically reserve one upload target without truncating a file."""
+    try:
+        descriptor = os.open(
+            target,
+            os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+            0o600,
+        )
+    except FileExistsError:
+        return False
+    os.close(descriptor)
+    return True
+
+
+def _reserve_upload_targets(
+    upload_targets: list[tuple[UploadFile, str, Path]],
+    conflict: str | None,
+) -> tuple[list[tuple[UploadFile, str, Path | None, Path]], set[Path]]:
+    """Atomically allocate all non-overwrite upload destinations."""
+    allocated: list[tuple[UploadFile, str, Path | None, Path]] = []
+    reservations: set[Path] = set()
+    try:
+        for upload, filename, target in upload_targets:
+            if conflict == "overwrite":
+                allocated.append((upload, filename, target, target))
+                continue
+            if _reserve_path(target):
+                reservations.add(target)
+                allocated.append((upload, filename, target, target))
+                continue
+            if conflict == "skip":
+                allocated.append((upload, filename, None, target))
+                continue
+            if conflict != "rename":
+                raise FileExistsError(filename)
+            for index in range(1, 10_000):
+                candidate = target.with_name(
+                    f"{target.stem} ({index}){target.suffix}",
+                )
+                if _reserve_path(candidate):
+                    reservations.add(candidate)
+                    allocated.append((upload, filename, candidate, target))
+                    break
+            else:
+                raise OSError("Unable to allocate a conflict-free filename")
+    except BaseException:
+        for reservation in reservations:
+            reservation.unlink(missing_ok=True)
+        raise
+    return allocated, reservations
+
+
+def _write_reserved_upload(upload: UploadFile, target: Path) -> int:
+    """Copy one upload and atomically replace its reserved target."""
+    temporary = target.with_name(
+        f".{target.name}.{secrets.token_hex(6)}.qwenpaw.tmp",
+    )
+    size = 0
+    try:
+        upload.file.seek(0)
+        with temporary.open("wb") as handle:
+            while chunk := upload.file.read(256 * 1024):
+                size += len(chunk)
+                handle.write(chunk)
+            handle.flush()
+        os.replace(temporary, target)
+    except BaseException:
+        temporary.unlink(missing_ok=True)
+        raise
+    return size
+
+
+def _cleanup_upload_reservations(reservations: set[Path]) -> None:
+    """Remove placeholders that were not replaced by completed uploads."""
+    for reservation in reservations:
+        reservation.unlink(missing_ok=True)
+
+
+def _probe_name_alias(directory: Path, first: str, second: str) -> bool:
+    """Return whether two spellings address the same directory entry."""
+    first_path = directory / first
+    second_path = directory / second
+    descriptor = os.open(
+        first_path,
+        os.O_CREAT | os.O_EXCL | os.O_WRONLY,
+        0o600,
+    )
+    os.close(descriptor)
+    try:
+        return second_path.exists()
+    finally:
+        first_path.unlink(missing_ok=True)
+
+
+def _filesystem_name_rules(directory: Path) -> tuple[bool, bool]:
+    """Detect case and Unicode normalization sensitivity for a directory."""
+    token = secrets.token_hex(8)
+    try:
+        case_aliases = _probe_name_alias(
+            directory,
+            f".qwenpaw-case-{token}-a",
+            f".QWENPAW-CASE-{token}-A",
+        )
+        normalization_aliases = _probe_name_alias(
+            directory,
+            f".qwenpaw-unicode-{token}-é",
+            f".qwenpaw-unicode-{token}-e\u0301",
+        )
+    except OSError:
+        case_aliases = os.name == "nt" or sys.platform == "darwin"
+        normalization_aliases = sys.platform == "darwin"
+    return not case_aliases, not normalization_aliases
+
+
+def _upload_name_key(
+    filename: str,
+    *,
+    case_sensitive: bool,
+    normalization_sensitive: bool,
+) -> str:
+    """Build a filename comparison key matching the target filesystem."""
+    comparable = (
+        filename
+        if normalization_sensitive
+        else unicodedata.normalize("NFC", filename)
+    )
+    return comparable if case_sensitive else comparable.casefold()
+
+
+def _prepare_upload_targets(
+    directory: Path,
+    files: list[UploadFile],
+) -> tuple[list[tuple[UploadFile, str, Path]], list[str]]:
+    """Validate upload names and collect conflicts before writing files."""
+    upload_targets: list[tuple[UploadFile, str, Path]] = []
+    seen_names: set[str] = set()
+    conflicts: list[str] = []
+    case_sensitive, normalization_sensitive = _filesystem_name_rules(
+        directory,
+    )
+    for upload in files:
+        filename = upload.filename or ""
+        if "/" in filename or "\\" in filename:
+            raise HTTPException(
+                status_code=400,
+                detail="Upload filename must not contain a path",
+            )
+        try:
+            target = resolve_workspace_path(
+                directory,
+                filename,
+                portable=True,
+            )
+        except InvalidWorkspacePath as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        comparable_name = _upload_name_key(
+            filename,
+            case_sensitive=case_sensitive,
+            normalization_sensitive=normalization_sensitive,
+        )
+        if target.exists() or comparable_name in seen_names:
+            conflicts.append(filename)
+        seen_names.add(comparable_name)
+        upload_targets.append((upload, filename, target))
+    return upload_targets, conflicts
+
+
+@router.post(
+    "/file-upload",
+    summary="Stream ordinary files into one workspace directory",
+)
+async def upload_workspace_files(
+    request: Request,
+    files: list[UploadFile] = File(...),
+    path: str = Query(default=""),
+    root: str = Query(default="project"),
+    conflict: str | None = Query(default=None),
+) -> dict:
+    """Upload files, requesting a policy only when names conflict."""
+    if conflict is not None and conflict not in {
+        "overwrite",
+        "skip",
+        "rename",
+    }:
+        raise HTTPException(
+            status_code=400,
+            detail="conflict must be overwrite, skip, or rename",
+        )
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+
+    def _resolve_directory() -> Path:
+        directory = resolve_workspace_path(
+            files_root,
+            path,
+            allow_root=True,
+        )
+        if not directory.is_dir():
+            raise NotADirectoryError(path)
+        return directory
+
+    try:
+        directory = await asyncio.to_thread(_resolve_directory)
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (FileNotFoundError, NotADirectoryError) as exc:
+        raise HTTPException(
+            status_code=404,
+            detail="Upload directory not found",
+        ) from exc
+
+    upload_targets, conflicts = await asyncio.to_thread(
+        _prepare_upload_targets,
+        directory,
+        files,
+    )
+
+    if conflicts and conflict is None:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "upload_conflict",
+                "files": conflicts,
+            },
+        )
+
+    try:
+        allocated, reservations = await asyncio.to_thread(
+            _reserve_upload_targets,
+            upload_targets,
+            conflict,
+        )
+    except FileExistsError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "upload_conflict",
+                "files": [str(exc)],
+            },
+        ) from exc
+
+    results: list[dict] = []
+    try:
+        for upload, filename, target, requested_target in allocated:
+            if target is None:
+                results.append(
+                    {
+                        "name": filename,
+                        "path": requested_target.relative_to(
+                            files_root,
+                        ).as_posix(),
+                        "status": "skipped",
+                    },
+                )
+                continue
+            async with _FILESYSTEM_SEMAPHORE:
+                size = await asyncio.to_thread(
+                    _write_reserved_upload,
+                    upload,
+                    target,
+                )
+                reservations.discard(target)
+
+            results.append(
+                {
+                    "name": filename,
+                    "path": target.relative_to(files_root).as_posix(),
+                    "size": size,
+                    "status": "uploaded",
+                },
+            )
+    finally:
+        await asyncio.to_thread(
+            _cleanup_upload_reservations,
+            reservations,
+        )
+    return {"files": results}
+
+
 @router.get(
     "/code-files",
     summary="List all workspace files (Coding Mode)",
@@ -340,18 +786,13 @@ def _list_all_files(workspace_dir: Path) -> list[dict]:
 async def list_code_files(request: Request) -> list[dict]:
     """List every non-hidden file in the active coding project directory."""
     workspace = await get_agent_for_request(request)
-    return await asyncio.get_event_loop().run_in_executor(
-        None,
-        _list_all_files,
-        get_coding_dir(workspace),
+    return await asyncio.to_thread(
+        lambda: _list_all_files(get_agent_project_dir(workspace)),
     )
 
 
 _CODE_FILE_MAX_BYTES = 5 * 1024 * 1024  # 5 MB
 _BINARY_FILE_MAX_BYTES = 50 * 1024 * 1024  # 50 MB
-_IMAGE_FILE_MAX_BYTES = 100 * 1024 * 1024  # 100 MB
-_DOCUMENT_FILE_MAX_BYTES = 200 * 1024 * 1024  # 200 MB
-_MEDIA_FILE_MAX_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB
 
 _MIME_MAP: dict[str, str] = {
     # Images
@@ -363,143 +804,30 @@ _MIME_MAP: dict[str, str] = {
     "svg": "image/svg+xml",
     "ico": "image/x-icon",
     "bmp": "image/bmp",
-    "tiff": "image/tiff",
-    "tif": "image/tiff",
     # Documents
     "pdf": "application/pdf",
-    # Office (served as binary for download/preview)
-    "doc": "application/msword",
-    "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # noqa: E501
-    "xls": "application/vnd.ms-excel",
-    "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # noqa: E501
-    "ppt": "application/vnd.ms-powerpoint",
-    "pptx": (
-        "application/vnd.openxmlformats-officedocument"
-        ".presentationml.presentation"
-    ),
-    "odt": "application/vnd.oasis.opendocument.text",
-    "ods": "application/vnd.oasis.opendocument.spreadsheet",
-    "odp": "application/vnd.oasis.opendocument.presentation",
-    # Video
-    "mp4": "video/mp4",
-    "webm": "video/webm",
-    "avi": "video/x-msvideo",
-    "mov": "video/quicktime",
-    "mkv": "video/x-matroska",
-    "wmv": "video/x-ms-wmv",
-    "flv": "video/x-flv",
-    # Audio
-    "mp3": "audio/mpeg",
-    "wav": "audio/wav",
-    "flac": "audio/flac",
-    "aac": "audio/aac",
-    "ogg": "audio/ogg",
-    "wma": "audio/x-ms-wma",
-    # Archives
-    "zip": "application/zip",
-    "tar": "application/x-tar",
-    "gz": "application/gzip",
-    "7z": "application/x-7z-compressed",
-    "rar": "application/vnd.rar",
     # Data
     "csv": "text/csv",
 }
 
 
-def _binary_file_size_limit(mime: str) -> int:
-    """Return the preview limit for the resource category."""
-    if mime.startswith(("video/", "audio/")):
-        return _MEDIA_FILE_MAX_BYTES
-    if mime.startswith("image/"):
-        return _IMAGE_FILE_MAX_BYTES
-    if mime == "application/pdf" or mime.startswith("application/vnd."):
-        return _DOCUMENT_FILE_MAX_BYTES
-    return _BINARY_FILE_MAX_BYTES
-
-
-def _parse_single_byte_range(value: str, size: int) -> tuple[int, int]:
-    """Parse one RFC 7233 byte range and return inclusive bounds."""
-    if size <= 0 or not value.startswith("bytes="):
-        raise ValueError("Invalid byte range")
-
-    spec = value[6:].strip()
-    if not spec or "," in spec or "-" not in spec:
-        raise ValueError("Only a single byte range is supported")
-
-    start_text, end_text = (part.strip() for part in spec.split("-", 1))
-    if not start_text:
-        if not end_text.isdigit():
-            raise ValueError("Invalid suffix byte range")
-        suffix_length = int(end_text)
-        if suffix_length <= 0:
-            raise ValueError("Invalid suffix byte range")
-        start = max(size - suffix_length, 0)
-        return start, size - 1
-
-    if not start_text.isdigit() or (end_text and not end_text.isdigit()):
-        raise ValueError("Invalid byte range")
-
-    start = int(start_text)
-    if start >= size:
-        raise ValueError("Byte range starts beyond end of file")
-
-    end = int(end_text) if end_text else size - 1
-    if end < start:
-        raise ValueError("Byte range end precedes start")
-    return start, min(end, size - 1)
-
-
 @router.get(
     "/binary-files/{file_path:path}",
-    summary="Serve a binary workspace file (images, PDFs, CSV) for preview",
+    summary="Serve a binary workspace file (images, PDFs) for preview",
 )
-async def read_binary_file(  # pylint: disable=too-many-statements
+async def read_binary_file(
     file_path: str,
     request: Request,
-    agent_id: str | None = None,
 ) -> StreamingResponse:
     """Return the raw bytes of *file_path* with the appropriate Content-Type.
 
     Intended for the IDE preview panel (images, PDFs, CSV).
-    Accepts relative paths within the workspace or absolute paths
-    (from ``file://`` URLs produced by tool-call results).
-    Supports one RFC 7233 byte range for seekable media playback. Size limits
-    vary by resource category; requests without Range still stream the full
-    file for clients that do not implement partial loading.
+    Rejects files that are not in ``_MIME_MAP`` or exceed 50 MB.
     """
-    # Agent-scoped routes set request.state.agent_id and must not be
-    # overridden by a query parameter. The query form exists for native media
-    # elements, which cannot send X-Agent-Id headers.
-    agent_override = None if hasattr(request.state, "agent_id") else agent_id
-    workspace = await get_agent_for_request(request, agent_override)
-    coding_dir = get_coding_dir(workspace)
-
-    # Support absolute paths (from file:// URLs) as well as relative paths.
-    # When the path looks like a URL (contains "://"), treat it as a URL;
-    # otherwise check if it's an absolute filesystem path.
-    if "://" in file_path:
-        target = _resolve_file_path_from_url(
-            file_path,
-            coding_dir,
-            workspace.workspace_dir,
-        )
-    else:
-        extracted = Path(file_path)
-        if extracted.is_absolute():
-            target = _ensure_path_in_allowed_roots(
-                extracted,
-                coding_dir,
-                workspace.workspace_dir,
-            )
-        else:
-            try:
-                target = safe_join(coding_dir, file_path)
-            except Exception:
-                target = _ensure_path_in_allowed_roots(
-                    extracted,
-                    coding_dir,
-                    workspace.workspace_dir,
-                )
+    workspace = await get_agent_for_request(request)
+    target = await asyncio.to_thread(
+        lambda: safe_join(get_agent_project_dir(workspace), file_path),
+    )
 
     ext = target.suffix.lstrip(".").lower()
     mime = _MIME_MAP.get(ext)
@@ -516,63 +844,27 @@ async def read_binary_file(  # pylint: disable=too-many-statements
     except OSError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-    size_limit = _binary_file_size_limit(mime)
-    if size > size_limit:
+    if size > _BINARY_FILE_MAX_BYTES:
         raise HTTPException(
             status_code=413,
             detail=(
                 f"File too large for preview ({size // 1024 // 1024} MB"
-                f" > {size_limit // 1024 // 1024} MB limit)"
+                f" > {_BINARY_FILE_MAX_BYTES // 1024 // 1024} MB limit)"
             ),
         )
 
-    range_header = request.headers.get("range")
-    start = 0
-    end = size - 1
-    status_code = 200
-    headers = {
-        "Accept-Ranges": "bytes",
-        "Content-Length": str(size),
-        # Explicitly tell the browser/WebView to display inline rather
-        # than triggering a download dialog (especially for PDFs).
-        "Content-Disposition": "inline",
-    }
-    if range_header is not None:
-        try:
-            start, end = _parse_single_byte_range(range_header, size)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=416,
-                detail=str(exc),
-                headers={
-                    "Accept-Ranges": "bytes",
-                    "Content-Range": f"bytes */{size}",
-                },
-            ) from exc
-        status_code = 206
-        headers["Content-Length"] = str(end - start + 1)
-        headers["Content-Range"] = f"bytes {start}-{end}/{size}"
-
-    chunk_size = (
-        1024 * 1024 if mime.startswith(("video/", "audio/")) else 64 * 1024
-    )
-
-    def _iter_chunks():
-        remaining = end - start + 1
+    def _iter_chunks(chunk_size: int = 64 * 1024):
         with open(target, "rb") as fh:
-            fh.seek(start)
-            while remaining > 0:
-                data = fh.read(min(chunk_size, remaining))
+            while True:
+                data = fh.read(chunk_size)
                 if not data:
                     break
-                remaining -= len(data)
                 yield data
 
     return StreamingResponse(
         _iter_chunks(),
-        status_code=status_code,
         media_type=mime,
-        headers=headers,
+        headers={"Content-Length": str(size)},
     )
 
 
@@ -594,7 +886,9 @@ async def read_code_file(file_path: str, request: Request):
     avoid flooding the browser with huge binary or log files.
     """
     workspace = await get_agent_for_request(request)
-    target = safe_join(get_coding_dir(workspace), file_path)
+    target = await asyncio.to_thread(
+        lambda: safe_join(get_agent_project_dir(workspace), file_path),
+    )
 
     def _stat() -> os.stat_result:
         return target.stat()
@@ -651,7 +945,9 @@ async def write_code_file(
         {"content": "<new file content>"}
     """
     workspace = await get_agent_for_request(request)
-    target = safe_join(get_coding_dir(workspace), file_path)
+    target = await asyncio.to_thread(
+        lambda: safe_join(get_agent_project_dir(workspace), file_path),
+    )
     content = body.get("content", "")
     if not isinstance(content, str):
         raise HTTPException(status_code=422, detail="content must be a string")
@@ -668,1023 +964,14 @@ async def write_code_file(
     return {"path": file_path, "size": size}
 
 
-# ---------------------------------------------------------------------------
-# Office document conversion (DOCX → HTML)
-# ---------------------------------------------------------------------------
-
-
-class ConvertOfficeRequest(BaseModel):
-    """Request body for /convert-office."""
-
-    url: str = Field(..., description="File URL or path")
-    mime_type: str | None = Field(None, description="MIME type of the file")
-
-
-class OfficeViewRequest(BaseModel):
-    """Request body for /office-screenshot and /office-outline."""
-
-    url: str = Field(..., description="File URL or path")
-    page: int = Field(1, description="Page/slide number (1-based)")
-
-
-# ---------------------------------------------------------------------------
-# OfficeCLI integration helpers
-# ---------------------------------------------------------------------------
-
-_OFFICECLI_TIMEOUT = 30  # seconds
-
-# Cache for officecli availability check (avoids repeated subprocess calls)
-_officecli_checked: bool = False
-_officecli_ok: bool = False
-
-
-def _bundled_officecli_path() -> str | None:
-    """Return the path to a bundled officecli binary, if available.
-
-    In the Tauri desktop build, the officecli binary is shipped as a
-    resource under ``binaries/officecli/``. The Rust backend launcher
-    sets ``QWENPAW_DESKTOP_OFFICECLI_DIR`` to that directory.
-
-    Returns the full path to the executable, or ``None`` if not found.
-    """
-    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
-    if not oc_dir:
-        return None
-    exe_name = "officecli.exe" if sys.platform == "win32" else "officecli"
-    candidate = Path(oc_dir) / exe_name
-    if candidate.is_file():
-        return str(candidate)
-    return None
-
-
-def _officecli_bin() -> str:
-    """Return the resolved officecli executable path.
-
-    Priority:
-    1. Bundled binary in the Tauri resource directory (desktop app)
-    2. ``shutil.which("officecli")`` (system PATH — npm install, etc.)
-    3. Bare ``"officecli"`` as a last resort (will likely fail)
-    """
-    bundled = _bundled_officecli_path()
-    if bundled:
-        return bundled
-    resolved = shutil.which("officecli")
-    return resolved or "officecli"
-
-
-def _is_officecli_available() -> bool:
-    """Check if the correct officecli binary is available and supports
-    ``view``.
-
-    The npm package ``officecli`` (v0.2.x) is a *different* tool — an AI
-    document generator that does NOT have a ``view`` subcommand.  This
-    function verifies that the installed binary is the OfficeCLI from
-    https://github.com/iOfficeAI/OfficeCLI/releases which supports
-    ``view <file> html``, ``view <file> screenshot``, etc.
-
-    The check is cached after the first call to avoid repeated subprocess
-    invocations.
-    """
-    global _officecli_checked, _officecli_ok  # noqa: PLW0603
-    if _officecli_checked:
-        return _officecli_ok
-
-    _officecli_checked = True
-    resolved = _bundled_officecli_path() or shutil.which("officecli")
-    if resolved is None:
-        _officecli_ok = False
-        return False
-
-    # Verify it supports the "view" subcommand by checking --help output.
-    # The wrong officecli (npm AI generator) will either error out or
-    # not list "view" in its commands.
-    try:
-        result = subprocess.run(  # noqa: S603
-            [resolved, "--help"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        _officecli_ok = False
-        return False
-
-    if result.returncode != 0:
-        # Some CLIs print help to stderr with non-zero exit
-        help_text = (result.stdout or "") + (result.stderr or "")
-    else:
-        help_text = result.stdout or ""
-
-    # The correct OfficeCLI has "view" in its help/commands list.
-    # The npm officecli has "new", "doctor", "login", etc. but NOT "view".
-    _officecli_ok = "view" in help_text
-    if not _officecli_ok:
-        logger.warning(
-            "officecli binary found at %s but does not support 'view' "
-            "subcommand — likely the wrong npm package. "
-            "Install the correct one from "
-            "https://github.com/iOfficeAI/OfficeCLI/releases",
-            resolved,
-        )
-    else:
-        logger.info("officecli (with view support) detected at %s", resolved)
-    return _officecli_ok
-
-
-def _convert_with_officecli(file_path: str) -> str | None:
-    """High-fidelity HTML conversion via ``officecli view <file> html``.
-
-    Reads HTML directly from stdout (no temp file needed), which is
-    significantly faster than the ``-o <tmpfile>`` approach because it
-    avoids filesystem I/O.
-    Returns an HTML string on success, or *None* on any failure so the
-    caller can fall back to the legacy conversion path.
-    """
-    try:
-        result = subprocess.run(  # noqa: S603
-            [
-                _officecli_bin(),
-                "view",
-                file_path,
-                "html",
-            ],
-            capture_output=True,
-            timeout=_OFFICECLI_TIMEOUT,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
-        logger.warning(
-            "officecli conversion failed for %s: %s",
-            file_path,
-            exc,
-        )
-        return None
-    if result.returncode != 0:
-        stderr = (
-            result.stderr.decode(errors="replace") if result.stderr else ""
-        )
-        logger.warning(
-            "officecli returned non-zero exit %d for %s: %s",
-            result.returncode,
-            file_path,
-            stderr[:200],
-        )
-        return None
-    html = result.stdout.decode(errors="replace") if result.stdout else ""
-    if not html.strip():
-        logger.warning("officecli returned empty HTML for %s", file_path)
-        return None
-    return html
-
-
-_page_count_cache: dict[str, tuple[int, float]] = {}
-_PAGE_COUNT_CACHE_TTL = 300.0  # 5 minutes
-_PAGE_COUNT_CACHE_MAX_SIZE = 100
-
-
-def _get_officecli_page_count(file_path: str) -> int:
-    """Get the total page/slide count of an Office document via officecli.
-
-    Uses ``officecli view <file> stats --json``.
-    Results are cached for 5 minutes per file to avoid repeated subprocess
-    invocations on every screenshot request.
-    Returns 0 if the count cannot be determined (best-effort).
-    """
-    import time as _time
-
-    now = _time.time()
-
-    # Evict expired entries to prevent unbounded growth.
-    expired = [
-        k
-        for k, (_, ts) in _page_count_cache.items()
-        if now - ts >= _PAGE_COUNT_CACHE_TTL
-    ]
-    for k in expired:
-        del _page_count_cache[k]
-
-    # If still over the size cap, drop the oldest entries.
-    if len(_page_count_cache) > _PAGE_COUNT_CACHE_MAX_SIZE:
-        for k, _ in sorted(
-            _page_count_cache.items(),
-            key=lambda item: item[1][1],
-        )[: len(_page_count_cache) - _PAGE_COUNT_CACHE_MAX_SIZE]:
-            del _page_count_cache[k]
-
-    cached = _page_count_cache.get(file_path)
-    if cached and (now - cached[1]) < _PAGE_COUNT_CACHE_TTL:
-        return cached[0]
-
-    try:
-        result = subprocess.run(  # noqa: S603
-            [
-                _officecli_bin(),
-                "view",
-                file_path,
-                "stats",
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_OFFICECLI_TIMEOUT,
-            check=False,
-        )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return 0
-    if result.returncode != 0:
-        return 0
-    try:
-        data = json.loads(result.stdout)
-    except json.JSONDecodeError:
-        return 0
-    # officecli stats --json returns:
-    #   {"success": true, "data": {"slides": 5, ...}}   (PPTX)
-    #   {"success": true, "data": {"pageCount": 3, ...}} (DOCX)
-    # Try top-level and nested "data" keys
-    nested = data.get("data") or {}
-    count = (
-        data.get("pageCount")
-        or data.get("page_count")
-        or data.get("slides")
-        or data.get("totalPages")
-        or nested.get("pageCount")
-        or nested.get("page_count")
-        or nested.get("slides")
-        or nested.get("totalPages")
-        or 0
-    )
-    _page_count_cache[file_path] = (count, now)
-    return count
-
-
-def _ensure_path_in_allowed_roots(
-    target: Path,
-    coding_dir: Path,
-    workspace_dir: Path | None = None,
-) -> Path:
-    """Ensure *target* resolves within coding_dir, workspace_dir,
-    or WORKING_DIR.
-
-    Absolute paths (e.g. from ``file://`` URLs produced by tool-call
-    results) are accepted only when they resolve within the coding
-    project directory, the agent workspace, or the global QwenPaw
-    working directory.  This mirrors the Tauri backend's
-    ``resolve_workspace_file_path`` dual-root check and prevents
-    arbitrary filesystem reads via crafted absolute paths.
-
-    Raises ``HTTPException(403)`` when the path is outside all roots.
-    """
-    resolved = target.resolve()
-    allowed_roots: list[Path] = []
-    for root in (coding_dir, workspace_dir, WORKING_DIR):
-        if root is not None:
-            try:
-                allowed_roots.append(root.resolve())
-            except OSError:
-                pass
-    for root in allowed_roots:
-        try:
-            resolved.relative_to(root)
-            return resolved
-        except ValueError:
-            continue
-    raise HTTPException(
-        status_code=403,
-        detail="Path is outside the allowed workspace directories",
-    )
-
-
-def _resolve_file_path_from_url(
-    url: str,
-    coding_dir: Path,
-    workspace_dir: Path | None = None,
-) -> Path:
-    """Resolve a frontend URL to an absolute file path.
-
-    Handles ``/api/workspace/binary-files/<path>``, absolute paths, and
-    ``file://`` URLs.  Raises ``HTTPException(404)`` if the file does
-    not exist, or ``HTTPException(403)`` if the resolved path is outside
-    the allowed workspace roots.
-    """
-    if "/binary-files/" in url:
-        file_path = url.split("/binary-files/", 1)[1].split("?")[0]
-        file_path = unquote(file_path)
-    elif url.startswith("/"):
-        file_path = url.lstrip("/")
-    elif url.startswith("file://"):
-        # file:///tmp/test.docx → /tmp/test.docx (Unix absolute)
-        # file:///C:/Users/...  → C:/Users/...  (Windows drive letter)
-        # file://localhost/path → /path          (localhost authority)
-        # file://host/share/... → //host/share/  (UNC)
-        rest = url[len("file://") :]
-        if rest.startswith("/"):
-            # file:///path → /path (Unix) or file:///C:/... → /C:/... (Windows)
-            file_path = unquote(rest)
-            # On Windows, strip leading "/" before a drive letter: /C:/x → C:/x
-            if (
-                len(file_path) > 2
-                and file_path[0] == "/"
-                and file_path[2] == ":"
-                and file_path[1].isalpha()
-            ):
-                file_path = file_path[1:]
-        elif rest.startswith("localhost/"):
-            # file://localhost/path → /path
-            file_path = unquote(rest[len("localhost") :])
-        else:
-            # file://host/share/... → //host/share/... (UNC)
-            file_path = unquote("//" + rest)
-    else:
-        file_path = url
-
-    # If the extracted path is absolute (common with file:// URLs from
-    # tool-call results), verify it is within the allowed workspace roots
-    # before using it.  Relative paths go through safe_join for the same
-    # containment guarantee.
-    extracted = Path(file_path)
-    if extracted.is_absolute():
-        target = _ensure_path_in_allowed_roots(
-            extracted,
-            coding_dir,
-            workspace_dir,
-        )
-    else:
-        try:
-            target = safe_join(coding_dir, file_path)
-        except Exception:
-            target = _ensure_path_in_allowed_roots(
-                extracted,
-                coding_dir,
-                workspace_dir,
-            )
-
-    if not target.exists():
-        raise HTTPException(
-            status_code=404,
-            detail=f"File not found: {file_path}",
-        )
-    return target
-
-
-def _get_docx_page_info(file_path: str) -> dict:
-    """Parse DOCX XML to get page dimensions and estimate lines/chars."""
-    import xml.etree.ElementTree as ET
-
-    W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
-    # Defaults: US Letter, 1-inch margins
-    defaults = {
-        "lines_per_page": 45,
-        "chars_per_line": 78,
-    }
-
-    try:
-        with zipfile.ZipFile(file_path) as z:
-            root = ET.fromstring(z.read("word/document.xml"))
-    except Exception:
-        return defaults
-
-    body = root.find(f"{{{W_NS}}}body")
-    if body is None:
-        return defaults
-
-    # Find section properties (document-level)
-    sect_pr = body.find(f"{{{W_NS}}}sectPr")
-    if sect_pr is None:
-        for child in body:
-            pPr = child.find(f"{{{W_NS}}}pPr")
-            if pPr is not None:
-                s = pPr.find(f"{{{W_NS}}}sectPr")
-                if s is not None:
-                    sect_pr = s
-                    break
-    if sect_pr is None:
-        return defaults
-
-    pg_sz = sect_pr.find(f"{{{W_NS}}}pgSz")
-    pg_mar = sect_pr.find(f"{{{W_NS}}}pgMar")
-
-    page_w = 12240
-    page_h = 15840
-    margin_top = 1440
-    margin_bottom = 1440
-    margin_left = 1440
-    margin_right = 1440
-    header_h = 0
-    footer_h = 0
-
-    if pg_sz is not None:
-        page_w = int(pg_sz.get(f"{{{W_NS}}}w", page_w))
-        page_h = int(pg_sz.get(f"{{{W_NS}}}h", page_h))
-    if pg_mar is not None:
-        margin_top = int(pg_mar.get(f"{{{W_NS}}}top", margin_top))
-        margin_bottom = int(pg_mar.get(f"{{{W_NS}}}bottom", margin_bottom))
-        margin_left = int(pg_mar.get(f"{{{W_NS}}}left", margin_left))
-        margin_right = int(pg_mar.get(f"{{{W_NS}}}right", margin_right))
-        header_h = int(pg_mar.get(f"{{{W_NS}}}header", 0))
-        footer_h = int(pg_mar.get(f"{{{W_NS}}}footer", 0))
-
-    usable_h = (
-        page_h
-        - margin_top
-        - margin_bottom
-        - max(0, header_h)
-        - max(0, footer_h)
-    )
-    usable_w = page_w - margin_left - margin_right
-
-    # 11pt font, 1.15 line spacing → ~253 twips/line
-    lines_per_page = max(10, usable_h // 253)
-    # 11pt font → avg char width ~120 twips
-    chars_per_line = max(20, usable_w // 120)
-
-    return {
-        "lines_per_page": lines_per_page,
-        "chars_per_line": chars_per_line,
-    }
-
-
-def _has_page_break(element) -> bool:
-    """Recursively check if an element tree contains a page break."""
-    try:
-        from mammoth import documents
-    except ImportError:
-        return False
-    if isinstance(element, documents.Break) and element.break_type == "page":
-        return True
-    if hasattr(element, "children"):
-        return any(_has_page_break(c) for c in element.children)
-    return False
-
-
-def _estimate_element_lines(  # pylint: disable=too-many-return-statements
-    element,
-    chars_per_line: int,
-) -> float:
-    """Estimate the number of visual lines an element occupies."""
-    try:
-        from mammoth import documents
-    except ImportError:
-        return 1.0
-
-    if isinstance(element, documents.Paragraph):
-        # Collect text content
-        text = []
-
-        def collect_text(el):
-            if isinstance(el, documents.Text):
-                text.append(el.value)
-            elif hasattr(el, "children"):
-                for c in el.children:
-                    collect_text(c)
-
-        collect_text(element)
-        full_text = "".join(text)
-
-        if not full_text.strip():
-            return 1.0
-
-        text_lines = max(1.0, len(full_text) / chars_per_line)
-
-        style_name = (element.style_name or "").lower()
-        if "heading 1" in style_name:
-            return text_lines + 2.0
-        elif "heading 2" in style_name:
-            return text_lines + 1.5
-        elif "heading 3" in style_name:
-            return text_lines + 1.0
-        elif "title" in style_name:
-            return text_lines + 3.0
-        return text_lines
-
-    elif isinstance(element, documents.Table):
-        row_count = len(element.children)
-        return max(3.0, row_count * 1.5)
-
-    elif hasattr(element, "children"):
-        total = 0.0
-        for child in element.children:
-            total += _estimate_element_lines(child, chars_per_line)
-        return max(1.0, total)
-
-    return 1.0
-
-
-# Sentinel text used as a page-break marker inside mammoth's HTML output.
-_PAGE_BREAK_MARKER = "\u0000PAGE_BREAK\u0000"
-
-
-def _build_docx_transform(page_info: dict):
-    """Build a transform_document function that inserts page-break markers."""
-    try:
-        from mammoth import documents
-    except ImportError:
-        return None
-
-    lines_per_page = page_info.get("lines_per_page", 45)
-    chars_per_line = page_info.get("chars_per_line", 78)
-
-    def transform_document(document):
-        new_children = []
-        accumulated_lines = 0.0
-
-        for child in document.children:
-            has_explicit = _has_page_break(child)
-            element_lines = _estimate_element_lines(child, chars_per_line)
-
-            needs_break = False
-            if has_explicit:
-                needs_break = True
-                accumulated_lines = element_lines
-            elif (
-                accumulated_lines > 0
-                and accumulated_lines + element_lines > lines_per_page
-            ):
-                needs_break = True
-                accumulated_lines = element_lines
-            else:
-                accumulated_lines += element_lines
-
-            if needs_break:
-                marker_run = documents.run(
-                    children=[documents.text(_PAGE_BREAK_MARKER)],
-                )
-                marker_para = documents.paragraph(
-                    style_id="PageBreakMarker",
-                    style_name="Page Break Marker",
-                    numbering=None,
-                    alignment=None,
-                    indent=None,
-                    children=[marker_run],
-                )
-                new_children.append(marker_para)
-
-            new_children.append(child)
-
-        return document.copy(children=new_children)
-
-    return transform_document
-
-
-def _html_escape(text: str) -> str:
-    """Escape HTML special characters to prevent injection in legacy
-    conversion."""
-    return (
-        text.replace("&", "&amp;")
-        .replace("<", "&lt;")
-        .replace(">", "&gt;")
-        .replace('"', "&quot;")
-        .replace("'", "&#x27;")
-    )
-
-
-def _convert_docx_to_html(  # pylint: disable=R0912,R0915
-    file_path: str,
-) -> str:
-    """Convert a .docx/.xlsx/.pptx file to HTML for preview (legacy fallback).
-
-    Uses python libraries (mammoth, openpyxl, python-pptx) for conversion.
-    The caller (:func:`convert_office`) is responsible for trying officecli
-    first; this function is only the low-fidelity fallback.
-    """
-    ext = Path(file_path).suffix.lstrip(".").lower()
-
-    if ext == "docx":
-        try:
-            import mammoth
-
-            # Parse page dimensions for page-break estimation
-            page_info = _get_docx_page_info(file_path)
-            transform = _build_docx_transform(page_info)
-
-            with open(file_path, "rb") as f:
-                if transform:
-                    result = mammoth.convert_to_html(
-                        f,
-                        transform_document=transform,
-                    )
-                else:
-                    result = mammoth.convert_to_html(f)
-
-            html: str = result.value or ""
-
-            # Replace markers with styled page-break divs
-            if _PAGE_BREAK_MARKER in html:
-                html = html.replace(
-                    f"<p>{_PAGE_BREAK_MARKER}</p>",
-                    '<div class="docx-page-break"></div>',
-                )
-                # Clean up any remaining marker text
-                html = html.replace(_PAGE_BREAK_MARKER, "")
-
-            return html
-
-        except ImportError:
-            pass
-
-        # Fallback: python-docx (basic text extraction)
-        try:
-            from docx import Document
-
-            doc = Document(file_path)
-            html_parts = []
-            for para in doc.paragraphs:
-                text = para.text.strip()
-                if not text:
-                    html_parts.append("<br/>")
-                    continue
-                style = (para.style.name or "").lower()
-                if "heading 1" in style:
-                    html_parts.append(f"<h1>{_html_escape(text)}</h1>")
-                elif "heading 2" in style:
-                    html_parts.append(f"<h2>{_html_escape(text)}</h2>")
-                elif "heading 3" in style:
-                    html_parts.append(f"<h3>{_html_escape(text)}</h3>")
-                elif "title" in style:
-                    html_parts.append(
-                        f"<h1 style='text-align:center'>"
-                        f"{_html_escape(text)}</h1>",
-                    )
-                else:
-                    html_parts.append(f"<p>{_html_escape(text)}</p>")
-            # Tables
-            for table in doc.tables:
-                html_parts.append(
-                    "<table border='1' style='border-collapse:collapse'>",
-                )
-                for row in table.rows:
-                    html_parts.append("<tr>")
-                    for cell in row.cells:
-                        html_parts.append(
-                            f"<td>{_html_escape(cell.text)}</td>",
-                        )
-                    html_parts.append("</tr>")
-                html_parts.append("</table>")
-            return "\n".join(html_parts)
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail="No docx conversion library available "  # noqa: E501
-                "(mammoth or python-docx required)",
-            ) from exc
-
-    # For .doc, .xls, .ppt — try LibreOffice if available
-    if ext in ("doc", "xls", "ppt", "odt", "ods", "odp"):
-        raise HTTPException(
-            status_code=415,
-            detail=(
-                f"Direct preview of .{ext} files is not supported. "
-                f"Please convert to .docx/.xlsx/.pptx first."
-            ),
-        )
-
-    # For .xlsx — basic table extraction
-    if ext == "xlsx":
-        try:
-            import openpyxl
-
-            wb = openpyxl.load_workbook(file_path, read_only=True)
-            html_parts = []
-            for ws in wb.worksheets:
-                html_parts.append(
-                    f"<h3>Sheet: {_html_escape(ws.title)}</h3>",
-                )
-                html_parts.append(
-                    "<table border='1' style='border-collapse:collapse'>",
-                )
-                for row in ws.iter_rows(max_row=100, values_only=True):
-                    html_parts.append("<tr>")
-                    for cell in row:
-                        cell_str = str(cell) if cell is not None else ""
-                        html_parts.append(
-                            f"<td>{_html_escape(cell_str)}</td>",
-                        )
-                    html_parts.append("</tr>")
-                html_parts.append("</table>")
-            return "\n".join(html_parts)
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail="openpyxl not installed for .xlsx preview",
-            ) from exc
-        except Exception as exc:
-            logger.exception("XLSX conversion failed for %s", file_path)
-            raise HTTPException(
-                status_code=500,
-                detail=f"XLSX preview error: {exc}",
-            ) from exc
-
-    # For .pptx — basic slide extraction
-    if ext == "pptx":
-        try:
-            from pptx import Presentation
-
-            prs = Presentation(file_path)
-            html_parts = []
-            for i, slide in enumerate(prs.slides, 1):
-                html_parts.append(f"<h3>Slide {i}</h3>")
-                html_parts.append("<div>")
-                for shape in slide.shapes:
-                    if hasattr(shape, "text") and shape.text.strip():
-                        html_parts.append(
-                            f"<p>{_html_escape(shape.text)}</p>",
-                        )
-                html_parts.append("</div>")
-            return "\n".join(html_parts)
-        except ImportError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail="python-pptx not installed for .pptx preview",
-            ) from exc
-        except Exception as exc:
-            logger.exception("PPTX conversion failed for %s", file_path)
-            raise HTTPException(
-                status_code=500,
-                detail=f"PPTX preview error: {exc}",
-            ) from exc
-
-    raise HTTPException(
-        status_code=415,
-        detail=f"Unsupported file type: .{ext}",
-    )
-
-
-@router.post(
-    "/convert-office",
-    summary="Convert an Office document to HTML for preview",
-)
-async def convert_office(
-    request: Request,
-    body: ConvertOfficeRequest,
-) -> dict:
-    """Convert a .docx/.xlsx/.pptx file to HTML for in-browser preview.
-
-    Accepts a file URL (from the binary-files endpoint) or a workspace
-    file path. Uses officecli (high fidelity) when available, falling
-    back to mammoth for DOCX, openpyxl for XLSX, python-pptx for PPTX.
-    """
-    workspace = await get_agent_for_request(request)
-    coding_dir = get_coding_dir(workspace)
-
-    target = _resolve_file_path_from_url(
-        body.url or "",
-        coding_dir,
-        workspace.workspace_dir,
-    )
-
-    def _convert() -> tuple[str, str]:
-        # Try officecli first for high-fidelity rendering
-        if _is_officecli_available():
-            html = _convert_with_officecli(str(target))
-            if html:
-                logger.info("officecli conversion succeeded for %s", target)
-                return html, "officecli"
-            logger.info(
-                "officecli conversion returned None, falling back"
-                " to legacy for %s",
-                target,
-            )
-        else:
-            logger.debug(
-                "officecli not available, using legacy conversion for %s",
-                target,
-            )
-        # Fallback to legacy conversion
-        return _convert_docx_to_html(str(target)), "legacy"
-
-    try:
-        html, engine = await asyncio.to_thread(_convert)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.exception("convert-office failed for %s", target)
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return {"html": html, "engine": engine}
-
-
-@router.post(
-    "/office-screenshot",
-    summary="Render an Office document page as PNG screenshot",
-)
-async def office_screenshot(
-    request: Request,
-    body: OfficeViewRequest,
-) -> Response:
-    """Render a specific page/slide of an Office document as a PNG image.
-
-    Uses ``officecli view <file> screenshot --page N -o <tmp>``.
-    Returns the PNG file as a ``FileResponse``.
-
-    Raises ``HTTPException(404)`` if officecli is not installed.
-    """
-    if not _is_officecli_available():
-        raise HTTPException(
-            status_code=404,
-            detail="officecli is not installed. "
-            "Install from: https://github.com/iOfficeAI/OfficeCLI/releases",
-        )
-
-    workspace = await get_agent_for_request(request)
-    coding_dir = get_coding_dir(workspace)
-    target = _resolve_file_path_from_url(
-        body.url,
-        coding_dir,
-        workspace.workspace_dir,
-    )
-
-    # Use mkstemp instead of deprecated mktemp to avoid TOCTOU race.
-    # officecli will overwrite the empty file created here.
-    tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
-    os.close(tmp_fd)  # Release the fd; officecli opens it via -o
-
-    def _run_screenshot() -> subprocess.CompletedProcess:
-        return subprocess.run(  # noqa: S603
-            [
-                _officecli_bin(),
-                "view",
-                str(target),
-                "screenshot",
-                "--page",
-                str(body.page),
-                "-o",
-                tmp_path,
-            ],
-            capture_output=True,
-            timeout=60,
-            check=False,
-        )
-
-    try:
-        result = await asyncio.to_thread(_run_screenshot)
-    except subprocess.TimeoutExpired as exc:
-        Path(tmp_path).unlink(missing_ok=True)
-        raise HTTPException(
-            status_code=504,
-            detail="officecli screenshot timed out",
-        ) from exc
-
-    if result.returncode != 0 or not Path(tmp_path).exists():
-        Path(tmp_path).unlink(missing_ok=True)
-        stderr = (
-            result.stderr.decode(
-                errors="replace",
-            )
-            if result.stderr
-            else ""
-        )
-        raise HTTPException(
-            status_code=500,
-            detail=f"officecli screenshot failed: {stderr}",
-        )
-
-    # Get page count for frontend pagination (best-effort)
-    page_count = _get_officecli_page_count(str(target))
-
-    from starlette.background import BackgroundTask
-
-    return FileResponse(
-        tmp_path,
-        media_type="image/png",
-        filename=f"page_{body.page}.png",
-        headers={"X-Total-Pages": str(page_count)} if page_count > 0 else {},
-        background=BackgroundTask(
-            lambda: Path(tmp_path).unlink(missing_ok=True),
-        ),
-    )
-
-
-@router.post(
-    "/office-outline",
-    summary="Get document outline (headings/structure)",
-)
-async def office_outline(
-    request: Request,
-    body: ConvertOfficeRequest,
-) -> dict:
-    """Get the outline (heading structure) of an Office document.
-
-    Uses ``officecli view <file> outline --json``.
-    """
-    if not _is_officecli_available():
-        raise HTTPException(
-            status_code=404,
-            detail="officecli is not installed.",
-        )
-
-    workspace = await get_agent_for_request(request)
-    coding_dir = get_coding_dir(workspace)
-    target = _resolve_file_path_from_url(
-        body.url,
-        coding_dir,
-        workspace.workspace_dir,
-    )
-
-    def _run_outline() -> dict:
-        result = subprocess.run(  # noqa: S603
-            [
-                _officecli_bin(),
-                "view",
-                str(target),
-                "outline",
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_OFFICECLI_TIMEOUT,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail=f"officecli: {result.stderr}",
-            )
-        try:
-            return json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail="officecli returned invalid JSON",
-            ) from exc
-
-    try:
-        data = await asyncio.to_thread(_run_outline)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return data
-
-
-@router.post(
-    "/office-issues",
-    summary="Detect document issues (formatting/accessibility)",
-)
-async def office_issues(
-    request: Request,
-    body: ConvertOfficeRequest,
-) -> dict:
-    """Detect issues in an Office document (formatting, accessibility).
-
-    Uses ``officecli view <file> issues --json``.
-    """
-    if not _is_officecli_available():
-        raise HTTPException(
-            status_code=404,
-            detail="officecli is not installed.",
-        )
-
-    workspace = await get_agent_for_request(request)
-    coding_dir = get_coding_dir(workspace)
-    target = _resolve_file_path_from_url(
-        body.url,
-        coding_dir,
-        workspace.workspace_dir,
-    )
-
-    def _run_issues() -> dict:
-        result = subprocess.run(  # noqa: S603
-            [
-                _officecli_bin(),
-                "view",
-                str(target),
-                "issues",
-                "--json",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=_OFFICECLI_TIMEOUT,
-            check=False,
-        )
-        if result.returncode != 0:
-            raise HTTPException(
-                status_code=500,
-                detail=f"officecli: {result.stderr}",
-            )
-        try:
-            return json.loads(result.stdout)
-        except json.JSONDecodeError as exc:
-            raise HTTPException(
-                status_code=500,
-                detail="officecli returned invalid JSON",
-            ) from exc
-
-    try:
-        data = await asyncio.to_thread(_run_issues)
-    except HTTPException:
-        raise
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-
-    return data
-
-
 @router.get(
     "/watch",
-    summary="SSE stream for workspace file changes (Coding Mode)",
+    summary="SSE stream for agent workspace file changes",
 )
-async def watch_workspace_files(request: Request) -> StreamingResponse:
+async def watch_workspace_files(
+    request: Request,
+    root: str = Query(default="project"),
+) -> StreamingResponse:
     """Server-Sent Events that emit file-change notifications.
 
     Each SSE payload has the form::
@@ -1694,68 +981,10 @@ async def watch_workspace_files(request: Request) -> StreamingResponse:
     A heartbeat comment (``": heartbeat"``) is sent every 30 s when idle.
     """
     workspace = await get_agent_for_request(request)
-    watch_dir = get_coding_dir(workspace)
-
-    async def event_generator():
-        yield 'data: {"type": "connected"}\n\n'
-        watcher = awatch(watch_dir)
-        try:
-            while True:
-                if await request.is_disconnected():
-                    break
-                try:
-                    raw_changes = await asyncio.wait_for(
-                        watcher.__anext__(),
-                        timeout=30.0,
-                    )
-                except asyncio.TimeoutError:
-                    yield ": heartbeat\n\n"
-                    continue
-                except (
-                    StopAsyncIteration,
-                    asyncio.CancelledError,
-                    GeneratorExit,
-                ):
-                    # StopAsyncIteration  – watcher stopped naturally
-                    # CancelledError      – app shutdown cancelled the task
-                    # GeneratorExit       – streaming response closed
-                    break
-
-                events = []
-                for change_type, path in raw_changes:
-                    try:
-                        rel = Path(path).relative_to(watch_dir)
-                    except ValueError:
-                        continue
-                    if _should_skip(rel.parts):
-                        continue
-                    change_name = (
-                        "added"
-                        if change_type is Change.added
-                        else "deleted"
-                        if change_type is Change.deleted
-                        else "modified"
-                    )
-                    events.append(
-                        {"change": change_name, "path": rel.as_posix()},
-                    )
-
-                if events:
-                    payload = json.dumps(
-                        {"type": "file_change", "events": events},
-                        ensure_ascii=False,
-                    )
-                    yield f"data: {payload}\n\n"
-        except (asyncio.CancelledError, GeneratorExit):
-            pass  # normal during app shutdown
-        finally:
-            try:
-                await watcher.aclose()
-            except Exception:
-                pass
+    watch_dir = await _resolve_files_root(request, workspace, root)
 
     return StreamingResponse(
-        event_generator(),
+        workspace_watch_events(request, watch_dir),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -1763,6 +992,70 @@ async def watch_workspace_files(request: Request) -> StreamingResponse:
             "X-Accel-Buffering": "no",
         },
     )
+
+
+async def workspace_watch_events(
+    request: Request,
+    watch_dir: Path,
+) -> AsyncIterator[str]:
+    """Yield workspace file changes without cancelling the watcher on idle."""
+    yield 'data: {"type": "connected"}\n\n'
+    watcher = awatch(
+        watch_dir,
+        rust_timeout=_WATCH_POLL_TIMEOUT_MS,
+        yield_on_timeout=True,
+    )
+    last_emit = asyncio.get_running_loop().time()
+    try:
+        while True:
+            if await request.is_disconnected():
+                break
+            try:
+                raw_changes = await watcher.__anext__()
+            except (
+                StopAsyncIteration,
+                asyncio.CancelledError,
+                GeneratorExit,
+            ):
+                break
+
+            events = []
+            for change_type, path in raw_changes:
+                try:
+                    rel = Path(path).relative_to(watch_dir)
+                except ValueError:
+                    continue
+                if _should_skip(rel.parts):
+                    continue
+                change_name = (
+                    "added"
+                    if change_type is Change.added
+                    else "deleted"
+                    if change_type is Change.deleted
+                    else "modified"
+                )
+                events.append(
+                    {"change": change_name, "path": rel.as_posix()},
+                )
+
+            now = asyncio.get_running_loop().time()
+            if events:
+                payload = json.dumps(
+                    {"type": "file_change", "events": events},
+                    ensure_ascii=False,
+                )
+                yield f"data: {payload}\n\n"
+                last_emit = now
+            elif now - last_emit >= _WATCH_HEARTBEAT_SECONDS:
+                yield ": heartbeat\n\n"
+                last_emit = now
+    except (asyncio.CancelledError, GeneratorExit):
+        pass
+    finally:
+        try:
+            await watcher.aclose()
+        except Exception:
+            pass
 
 
 @router.get(
@@ -1773,6 +1066,7 @@ async def watch_workspace_files(request: Request) -> StreamingResponse:
 )
 async def list_memory_files(
     request: Request,
+    section: Literal["daily", "digest"] | None = Query(default=None),
 ) -> list[MdFileInfo]:
     """List memory directory markdown files."""
     try:
@@ -1781,7 +1075,10 @@ async def list_memory_files(
             str(workspace.workspace_dir),
             agent_id=workspace.agent_id,
         )
-        raw_files = await asyncio.to_thread(workspace_manager.list_memory_mds)
+        raw_files = await asyncio.to_thread(
+            workspace_manager.list_memory_mds,
+            section,
+        )
         files = [MdFileInfo.model_validate(file) for file in raw_files]
         return files
     except Exception as exc:
@@ -1797,6 +1094,7 @@ async def list_memory_files(
 async def read_memory_file(
     md_path: str,
     request: Request,
+    section: Literal["daily", "digest"] | None = Query(default=None),
 ) -> MdFileContent:
     """Read a memory directory markdown file."""
     try:
@@ -1808,6 +1106,7 @@ async def read_memory_file(
         content = await asyncio.to_thread(
             workspace_manager.read_memory_md,
             md_path,
+            section,
         )
         return MdFileContent(content=content)
     except FileNotFoundError as exc:
@@ -1826,6 +1125,7 @@ async def write_memory_file(
     md_path: str,
     body: MdFileContent,
     request: Request,
+    section: Literal["daily", "digest"] | None = Query(default=None),
 ) -> dict:
     """Write a memory directory markdown file."""
     try:
@@ -1838,6 +1138,7 @@ async def write_memory_file(
             workspace_manager.write_memory_md,
             md_path,
             body.content,
+            section,
         )
         return {"written": True}
     except Exception as exc:

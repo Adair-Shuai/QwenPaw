@@ -107,6 +107,7 @@ class OllamaProvider(OpenAIProvider):
         )
         return OpenAIChatModelCompat(
             credential=credential,
+            provider_id=self.id,
             model=model_id,
             parameters=parameters,
             stream=True,

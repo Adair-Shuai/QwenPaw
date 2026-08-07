@@ -1,4 +1,16 @@
-import { Layout, Menu, Button, Modal, Input, Form, Tooltip, Badge } from "antd";
+import {
+  Layout,
+  Menu,
+  Button,
+  Modal,
+  Input,
+  Form,
+  Tooltip,
+  Badge,
+  Popover,
+  Tour,
+} from "antd";
+import type { TourProps } from "antd";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -7,13 +19,14 @@ import AgentSelector from "../components/AgentSelector";
 import {
   SparkChatTabFill,
   SparkExitFullscreenLine,
-  SparkFullscreenLine,
   SparkSearchUserLine,
   SparkMenuExpandLine,
   SparkMenuFoldLine,
   SparkEmailLine,
+  SparkSettingLine,
 } from "@agentscope-ai/icons";
 import SidebarSessionList from "./SidebarSessionList";
+import SidebarSettingsPanel from "./SidebarSettingsPanel";
 import { clearAuthToken } from "../api/config";
 import { authApi } from "../api/modules/auth";
 import api from "../api";
@@ -21,10 +34,9 @@ import {
   syncSessionsGlobal,
   type ExtendedSession,
 } from "../stores/sessionListStore";
-import { useCodingMode } from "../stores/codingModeStore";
 import { useSidebarModeStore } from "../stores/sidebarModeStore";
+import { buildChatPath, getSessionIdFromPath } from "../utils/sessionRoute";
 import { useAgentStore } from "../stores/agentStore";
-import { buildSessionPath, getSessionIdFromPath } from "../utils/sessionRoute";
 import sessionApi from "../pages/Chat/sessionApi";
 import { useInboxWobble } from "../hooks/useInboxWobble";
 import styles from "./index.module.less";
@@ -43,7 +55,10 @@ import type { FlatMenuEntry } from "./registry/adapter";
 import { filterMenuForAgentCapabilities } from "./registry/capabilities";
 import type { MenuItem } from "../plugins/registry/types";
 import type { ReactNode } from "react";
-import { simpleModeWhitelist } from "./registry/simpleModeWhitelist";
+import {
+  dismissDesktopModeHint,
+  shouldShowDesktopModeHint,
+} from "../utils/desktopModeHint";
 
 // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -60,11 +75,16 @@ function isMobileSidebarViewport() {
 const INBOX_BADGE_POLLING_MS = 6000;
 
 // ── Simple mode whitelist ─────────────────────────────────────────────────
-//
-// The whitelist is now a mutable singleton exported from
-// `registry/simpleModeWhitelist.ts`. Builtin IDs are seeded there, and
-// plugins can add their own IDs at runtime via
-// `window.QwenPaw.sidebar.registerSimpleModeItem(id)`.
+
+/** Menu item IDs that remain visible in simple sidebar mode (no groups). */
+const SIMPLE_MODE_WHITELIST = new Set([
+  "core.files",
+  "core.inbox",
+  "core.app-center",
+  "core.cron-jobs",
+  "core.agent-config",
+  "core.models",
+]);
 
 /**
  * Flatten a MenuItem tree into a leaf-only list for simple sidebar mode.
@@ -77,11 +97,11 @@ function flattenMenuForSimpleMode(items: MenuItem[]): MenuItem[] {
     const item = rawItem as MenuItem & { __children?: MenuItem[] };
     if (item.__children && item.__children.length > 0) {
       for (const child of item.__children) {
-        if (simpleModeWhitelist.has(child.id)) {
+        if (SIMPLE_MODE_WHITELIST.has(child.id)) {
           result.push(child);
         }
       }
-    } else if (simpleModeWhitelist.has(item.id)) {
+    } else if (SIMPLE_MODE_WHITELIST.has(item.id)) {
       result.push(item);
     }
   }
@@ -103,14 +123,8 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const { isDark } = useTheme();
-  // When coding mode is on, the sidebar "Chat" entry should land on /coding
-  // (FileTree + Editor + Chat panel) rather than the bare Chat page.
-  const { codingMode } = useCodingMode();
   const currentSessionId = getSessionIdFromPath(location.pathname);
-  const chatPath = buildSessionPath(
-    codingMode ? "coding" : "chat",
-    currentSessionId,
-  );
+  const chatPath = buildChatPath(currentSessionId);
   const [authEnabled, setAuthEnabled] = useState(false);
   const [accountModalOpen, setAccountModalOpen] = useState(false);
   const [accountLoading, setAccountLoading] = useState(false);
@@ -118,6 +132,9 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   // Start collapsed on mobile so the first paint does not overlay/obscure
   // the main content on narrow viewports.
   const [collapsed, setCollapsed] = useState(isMobileSidebarViewport);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const settingsButtonRef = useRef<HTMLButtonElement>(null);
+  const [desktopModeHintOpen, setDesktopModeHintOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(isMobileSidebarViewport);
   const [hasUnreadMessages, setHasUnreadMessages] = useState(false);
   const [hasPendingApprovals, setHasPendingApprovals] = useState(false);
@@ -127,19 +144,22 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   const seenApprovalIdsRef = useRef<Set<string>>(new Set());
 
   // Sidebar mode: "simple" (only core items) or "full" (everything)
-  const { mode: sidebarMode, toggleMode: toggleSidebarMode } =
-    useSidebarModeStore();
+  const { mode: sidebarMode } = useSidebarModeStore();
   const { selectedAgent, agents } = useAgentStore();
   const currentAgent = agents.find((agent) => agent.id === selectedAgent);
-  const backendCapabilities = currentAgent
-    ? {
-        ...currentAgent.backend_capabilities,
-        workspace_ui:
-          currentAgent.backend === "qwenpaw"
-            ? currentAgent.backend_capabilities?.workspace_ui ?? true
-            : false,
-      }
-    : undefined;
+  const backendCapabilities = useMemo(
+    () =>
+      currentAgent
+        ? {
+            ...currentAgent.backend_capabilities,
+            workspace_ui:
+              currentAgent.backend === "qwenpaw"
+                ? currentAgent.backend_capabilities?.workspace_ui ?? true
+                : false,
+          }
+        : undefined,
+    [currentAgent],
+  );
 
   // Menu + route snapshots from registry (builtin + plugin registrations merged).
   const rawAgentMenu = useMenuItems("primary.agentScoped");
@@ -181,6 +201,35 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       .then((res) => setAuthEnabled(res.enabled))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (!isMobile && shouldShowDesktopModeHint(window.localStorage)) {
+      setDesktopModeHintOpen(true);
+    }
+  }, [isMobile]);
+
+  const dismissDesktopHint = useCallback(() => {
+    dismissDesktopModeHint(window.localStorage);
+    setDesktopModeHintOpen(false);
+  }, []);
+
+  const desktopModeHintSteps = useMemo<TourProps["steps"]>(
+    () => [
+      {
+        title: t("sidebar.desktopModeHint.title", "Try Desktop Mode"),
+        description: t(
+          "sidebar.desktopModeHint.description",
+          "Open quick settings here, then choose Desktop Mode for a window-based workspace.",
+        ),
+        target: () => settingsButtonRef.current as HTMLButtonElement,
+        placement: "rightBottom",
+        nextButtonProps: {
+          children: t("sidebar.desktopModeHint.gotIt", "Got it"),
+        },
+      },
+    ],
+    [t],
+  );
 
   useEffect(() => {
     if (
@@ -403,31 +452,26 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
    * the chat page will auto-create a new session on mount.
    */
   const handleNewChat = useCallback(() => {
-    const onChatPage =
-      location.pathname.startsWith("/chat") ||
-      location.pathname.startsWith("/coding");
+    const onChatPage = location.pathname.startsWith("/chat");
     if (onChatPage) {
       window.dispatchEvent(new CustomEvent("qwenpaw:sidebar-new-chat"));
     } else {
       sessionStorage.setItem("qwenpaw_pending_new_chat", "1");
-      const mode = codingMode ? "coding" : "chat";
-      navigate(`/${mode}`);
+      navigate("/chat");
     }
-  }, [location.pathname, navigate, codingMode]);
+  }, [location.pathname, navigate]);
 
   /**
    * Session click: navigate directly without relying on ChatSessionInitializer.
-   * buildSessionPath handles coding-mode paths.
    * Resolve realId (backend UUID) to avoid exposing local timestamp in URL.
    */
   const handleSidebarSessionClick = useCallback(
     (sessionId: string) => {
-      const mode = codingMode ? "coding" : "chat";
       const effectiveId = sessionApi.getEffectiveSessionId(sessionId);
-      const targetPath = buildSessionPath(mode, effectiveId);
+      const targetPath = buildChatPath(effectiveId);
       navigate(targetPath);
     },
-    [codingMode, navigate],
+    [navigate],
   );
 
   const handleUpdateProfile = async (values: {
@@ -486,9 +530,7 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
   // ── Render ────────────────────────────────────────────────────────────────
 
   const siderWidth = collapsed ? (isMobile ? 56 : 72) : 240;
-  // Sticky chat is active when on /chat* or /coding routes.
-  const isChatActive =
-    selectedKey === "core.chat" || selectedKey === "core.coding";
+  const isChatActive = selectedKey === "core.chat";
   // `renderIcon` retained for tree-shaking awareness.
   void renderIcon;
 
@@ -517,11 +559,9 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
                 key={item.key}
                 title={item.label}
                 placement="right"
-                styles={{
-                  body: {
-                    background: "rgba(0,0,0,0.75)",
-                    color: "#fff",
-                  },
+                overlayInnerStyle={{
+                  background: "rgba(0,0,0,0.75)",
+                  color: "#fff",
                 }}
               >
                 <button
@@ -532,11 +572,13 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
                       ? ` ${styles.inboxShake}`
                       : ""
                   }`}
-                  onClick={() =>
-                    item.href
-                      ? window.open(item.href, "_blank", "noopener,noreferrer")
-                      : navigate(item.path)
-                  }
+                  onClick={() => {
+                    if (item.href) {
+                      window.open(item.href, "_blank", "noopener,noreferrer");
+                    } else {
+                      navigate(item.path);
+                    }
+                  }}
                   onMouseEnter={
                     item.key === "core.inbox" ? handleInboxHover : undefined
                   }
@@ -568,15 +610,17 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
                       isInbox && effectiveShake ? ` ${styles.inboxShake}` : ""
                     }`}
                     onMouseEnter={isInbox ? handleInboxHover : undefined}
-                    onClick={() =>
-                      entry.href
-                        ? window.open(
-                            entry.href,
-                            "_blank",
-                            "noopener,noreferrer",
-                          )
-                        : navigate(entry.path)
-                    }
+                    onClick={() => {
+                      if (entry.href) {
+                        window.open(
+                          entry.href,
+                          "_blank",
+                          "noopener,noreferrer",
+                        );
+                      } else {
+                        navigate(entry.path);
+                      }
+                    }}
                   >
                     {isInbox ? (
                       <span
@@ -693,24 +737,25 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
       )}
 
       <div className={styles.collapseToggleContainer}>
-        {/* Mode toggle: switches between simple and full sidebar mode. */}
-        <Button
-          type="text"
-          icon={
-            sidebarMode === "simple" ? (
-              <SparkFullscreenLine size={20} />
-            ) : (
-              <SparkExitFullscreenLine size={20} />
-            )
+        {/* Gear stays visible in collapsed state too — otherwise users
+            (especially on mobile, where the sidebar starts collapsed)
+            cannot discover how to restore full mode. */}
+        <Popover
+          open={settingsOpen}
+          onOpenChange={setSettingsOpen}
+          placement={collapsed ? "rightBottom" : "topRight"}
+          trigger="click"
+          content={
+            <SidebarSettingsPanel onClose={() => setSettingsOpen(false)} />
           }
-          onClick={() => toggleSidebarMode()}
-          className={`${styles.collapseToggle} ${styles.modeToggleBtn}`}
         >
-          {!collapsed &&
-            (sidebarMode === "simple"
-              ? t("sidebar.fullMode", "Full Mode")
-              : t("sidebar.simpleMode", "Simple Mode"))}
-        </Button>
+          <Button
+            ref={settingsButtonRef}
+            type="text"
+            icon={<SparkSettingLine size={18} />}
+            className={styles.collapseToggle}
+          />
+        </Popover>
         <Button
           type="text"
           icon={
@@ -721,9 +766,17 @@ export default function Sidebar({ selectedKey }: SidebarProps) {
             )
           }
           onClick={() => setCollapsed(!collapsed)}
-          className={`${styles.collapseToggle} ${styles.foldToggleBtn}`}
+          className={styles.collapseToggle}
         />
       </div>
+
+      <Tour
+        open={desktopModeHintOpen}
+        steps={desktopModeHintSteps}
+        onClose={dismissDesktopHint}
+        onFinish={dismissDesktopHint}
+        mask={{ color: "rgba(9, 9, 11, 0.2)" }}
+      />
 
       <Modal
         open={accountModalOpen}

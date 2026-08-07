@@ -121,76 +121,11 @@ jobs:
           ossutil cp "oss://${OSS_BUCKET}/metadata/plugins/index.json" \
             existing-index.json 2>/dev/null || echo '{}' > existing-index.json
 
-      - name: Clean up old plugin versions and removed plugins from OSS
-        env:
-          OSS_BUCKET: ${{ env.OSS_BUCKET }}
-        run: |
-          # Delete ALL old version zips from OSS so that only the latest
-          # version of each plugin (and only currently-published plugins)
-          # remains on the CDN.
-          python3 - << 'PYEOF'
-          import json, os, subprocess, sys
-
-          bucket = os.environ['OSS_BUCKET']
-
-          with open('existing-index.json') as f:
-              old = json.load(f)
-          with open('dist/plugins/index.json') as f:
-              new = json.load(f)
-
-          # Build a set of (kind, plugin_id, filename) that should be kept
-          keep = set()
-          for entry in new.get('files', {}).values():
-              pid = entry.get('plugin_id')
-              kind = entry.get('platform')  # 'bundle', 'tool', 'apps'
-              fname = entry.get('filename')
-              if pid and kind and fname:
-                  keep.add((kind, pid, fname))
-
-          # Plugins that existed before but are no longer published
-          old_ids = {(v.get('platform'), v.get('plugin_id')) for v in old.get('files', {}).values() if v.get('plugin_id')}
-          new_ids = {(v.get('platform'), v.get('plugin_id')) for v in new.get('files', {}).values() if v.get('plugin_id')}
-          removed = old_ids - new_ids
-
-          if removed:
-              print(f'Removed plugins to clean from OSS: {removed}')
-              for kind, plugin_id in removed:
-                  prefix = f"oss://{bucket}/files/plugins/{kind}/{plugin_id}/"
-                  result = subprocess.run(
-                      ['ossutil', 'ls', prefix, '-s'],
-                      capture_output=True, text=True
-                  )
-                  for line in result.stdout.strip().split('\n'):
-                      line = line.strip()
-                      if line.startswith('oss://'):
-                          print(f'  Deleting removed plugin: {line}')
-                          subprocess.run(
-                              ['ossutil', 'rm', line, '--force'],
-                              capture_output=True, text=True
-                          )
-
-          # For each currently published plugin, delete old version zips
-          for kind, plugin_id, fname in keep:
-              prefix = f"oss://{bucket}/files/plugins/{kind}/{plugin_id}/"
-              result = subprocess.run(
-                  ['ossutil', 'ls', prefix, '-s'],
-                  capture_output=True, text=True
-              )
-              for line in result.stdout.strip().split('\n'):
-                  line = line.strip()
-                  if not line.startswith('oss://'):
-                      continue
-                  remote_fname = line.rsplit('/', 1)[-1]
-                  if remote_fname == fname:
-                      continue  # keep current version
-                  print(f'  Deleting old version: {line}')
-                  subprocess.run(
-                      ['ossutil', 'rm', line, '--force'],
-                      capture_output=True, text=True
-                  )
-
-          print('✓ Old plugin versions cleaned up')
-          PYEOF
+          python3 scripts/pack/merge_plugin_index.py \
+            --new dist/plugins/index.json \
+            --old existing-index.json \
+            --out dist/plugins/index.json \
+            --retire-plugin-id computer-use-tool
 
       - name: Upload plugins index (short-cache)
         run: |

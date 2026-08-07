@@ -30,6 +30,7 @@ from ..envs import load_envs_into_environ
 from ..local_models.manager import LocalModelManager
 from ..providers.provider_manager import ProviderManager
 from ..plugins.runtime import invoke_plugin_callback
+from ..utils.io_utils import run_sync_io
 from ..utils.logging import (
     LOG_FILE_PATH,
     add_project_file_handler,
@@ -76,6 +77,16 @@ mimetypes.add_type("image/svg+xml", ".svg")
 load_envs_into_environ()
 
 
+async def _sync_scroll_history_on_startup() -> None:
+    """Run the composed legacy-history migration outside the event loop."""
+    try:
+        from ..agents.context.scroll.sync import sync_all_scroll_agents
+
+        await run_sync_io(sync_all_scroll_agents)
+    except Exception:  # noqa: BLE001 - session sync must never block startup
+        logger.warning("session-sync: import/launch failed", exc_info=True)
+
+
 async def _browser_idle_watchdog(kernel: Any, interval: float) -> None:
     """Periodically reclaim idle browser workers for this app process."""
     while True:
@@ -110,6 +121,11 @@ async def _stop_browser_runtime(app: FastAPI) -> None:
             await browser_kernel.discard_all_workers()
         except Exception:
             logger.error("Error shutting down browser workers", exc_info=True)
+    from ..browser.runtime.managed_playwright import (
+        stop_managed_chromium_download,
+    )
+
+    await stop_managed_chromium_download()
 
 
 @asynccontextmanager
@@ -160,6 +176,17 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     ensure_default_agent_exists()
     migrate_legacy_skills_to_skill_pool()
     ensure_qa_agent_exists()
+
+    # Migrate old conversations from sessions/*.json into each scroll agent's
+    # history.db, so chats from before scroll existed stay recallable. This is
+    # a one-off backfill, not core startup work: if it fails, we log and keep
+    # booting — that agent just won't have its old chats imported (scroll still
+    # records new turns normally). The import sits inside the try for the same
+    # reason — even a failed import must not block init.
+    #
+    # Note: being pure backfill, this could later run asynchronously (off the
+    # boot path) to speed up startup.
+    await _sync_scroll_history_on_startup()
 
     # Create core managers (instant — no I/O)
     provider_manager = ProviderManager.get_instance()
@@ -270,130 +297,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 exc_info=True,
             )
 
-        # --- Built-in slash commands (daemon, control, conversation) ---
-        try:
-            from ..runtime.builtin_commands import (
-                collect_builtin_command_specs,
-                get_skill_fallback_handler,
-            )
-
-            _api_action_command_specs.extend(collect_builtin_command_specs())
-            # pylint: disable-next=protected-access
-            workspace_registry._bootstrap_kwargs[
-                "builtin_fallback_handler"
-            ] = get_skill_fallback_handler()
-            logger.debug("Built-in slash commands collected")
-        except Exception:
-            logger.debug(
-                "Built-in slash command collection skipped",
-                exc_info=True,
-            )
-
-        # --- Built-in lifecycle hooks ---
-        try:
-            from ..hooks.bootstrap.bootstrap_hook import BootstrapHook
-            from ..hooks.cron.cron_hook import (
-                CronContextHook,
-                CronMemoryIsolateHook,
-                CronMemoryRestoreHook,
-            )
-            from ..hooks.error.error_hook import (
-                CancelCleanupHook,
-                ErrorNormalizeHook,
-            )
-            from ..hooks.request_setup.contextvars_hook import (
-                ContextVarsSetupHook,
-            )
-            from ..hooks.request_setup.media_hook import MediaProcessHook
-            from ..hooks.session.session_hook import (
-                SessionLoadHook,
-                SessionSaveHook,
-            )
-            from ..hooks.skill_env.skill_env_hook import (
-                SkillEnvCleanupHook,
-                SkillEnvHook,
-            )
-
-            # pylint: disable-next=protected-access
-            workspace_registry._bootstrap_kwargs["builtin_hook_clses"] = [
-                CronContextHook,
-                CronMemoryIsolateHook,
-                CronMemoryRestoreHook,
-                SessionLoadHook,
-                SessionSaveHook,
-                BootstrapHook,
-                SkillEnvHook,
-                SkillEnvCleanupHook,
-                ContextVarsSetupHook,
-                MediaProcessHook,
-                ErrorNormalizeHook,
-                CancelCleanupHook,
-            ]
-
-            try:
-                from ..hooks.observability.langfuse_hook import (
-                    LangfuseTraceCleanupHook,
-                    LangfuseTraceHook,
-                )
-
-                # pylint: disable=protected-access
-                workspace_registry._bootstrap_kwargs.setdefault(
-                    "builtin_hook_clses",
-                    [],
-                ).extend([LangfuseTraceHook, LangfuseTraceCleanupHook])
-            except Exception:
-                logger.debug(
-                    "Langfuse hooks not available",
-                    exc_info=True,
-                )
-
-            logger.debug("Built-in lifecycle hooks collected")
-        except Exception:
-            logger.debug(
-                "Built-in lifecycle hook collection skipped",
-                exc_info=True,
-            )
-
-        # --- Built-in prompt contributors ---
-        try:
-            from ..runtime.prompt_contributors import _ALL_CONTRIBUTORS
-
-            # pylint: disable-next=protected-access
-            workspace_registry._bootstrap_kwargs[
-                "builtin_contributor_clses"
-            ] = _ALL_CONTRIBUTORS
-            logger.debug("Built-in prompt contributors collected")
-        except Exception:
-            logger.debug(
-                "Built-in prompt contributor collection skipped",
-                exc_info=True,
-            )
-
-        # --- Built-in modes (CodingMode, MissionMode) ---
-        try:
-            from ..modes.coding import CodingMode
-            from ..modes.goal import GoalMode
-            from ..modes.mission import MissionMode
-
-            # pylint: disable-next=protected-access
-            workspace_registry._bootstrap_kwargs["builtin_mode_clses"] = [
-                CodingMode,
-                MissionMode,
-                GoalMode,
-            ]
-            logger.debug("Built-in modes collected")
-        except Exception:
-            logger.debug(
-                "Built-in mode collection skipped",
-                exc_info=True,
-            )
-
-        if _api_action_command_specs:
-            # pylint: disable-next=protected-access
-            workspace_registry._bootstrap_kwargs[
-                "builtin_command_specs"
-            ] = _api_action_command_specs
-
     except Exception:
         logger.debug(
             "Runtime infrastructure init skipped",
@@ -435,6 +338,12 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         get_default_kernel_manager(),
         max(0.1, browser_config.idle_ttl_seconds),
     )
+    if browser_config.experimental:
+        from ..browser.runtime.managed_playwright import (
+            start_managed_chromium_download,
+        )
+
+        start_managed_chromium_download()
     try:
         from ..browser.control_link.chrome.ws_handler import prime_bridge_token
 

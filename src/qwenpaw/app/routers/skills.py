@@ -35,7 +35,6 @@ from ...agents.skill_system import (
     SkillService,
     run_pool_auto_update_sync,
 )
-from ...agents.skill_system.models import SkillInfo
 from ...agents.skill_system.registry import (
     BUILTIN_SKILL_LANGUAGES,
     get_pool_builtin_sync_status,
@@ -48,19 +47,19 @@ from ...agents.skill_system.registry import (
     update_single_builtin,
 )
 from ...agents.skill_system.store import (
+    build_skill_metadata,
     default_pool_manifest,
     default_workspace_manifest,
     get_pool_skill_manifest_path,
-    get_skill_mtime,
-    get_skill_pool_dir,
     get_workspace_skill_manifest_path,
     get_workspace_skills_dir,
     mutate_json,
     normalize_skill_manifest_entry,
-    read_skill_from_dir,
+    read_skill_content_and_metadata_from_dir,
     read_skill_manifest,
     read_skill_pool_manifest,
     resolve_pool_skill_dir,
+    safe_skill_dir,
     suggest_conflict_name,
 )
 from ...security.skill_scanner import SkillScanError
@@ -190,37 +189,57 @@ def _scan_error_response(exc: SkillScanError) -> JSONResponse:
     )
 
 
-class SkillSpec(SkillInfo):
+class SkillSpec(BaseModel):
+    """Workspace skill metadata returned by list endpoints."""
+
+    name: str
+    description: str = ""
+    source: str
+    emoji: str = ""
     enabled: bool = False
     channels: list[str] = Field(default_factory=lambda: ["all"])
     tags: list[str] = Field(default_factory=list)
-    config: dict[str, Any] = Field(default_factory=dict)
     last_updated: str = ""
+
+
+class SkillDetail(SkillSpec):
+    """Workspace skill fields loaded only when its editor is opened."""
+
+    content: str
+    config: dict[str, Any] = Field(default_factory=dict)
     installed_from: str = ""
 
 
-class PoolSkillSpec(SkillInfo):
-    protected: bool = False
+class PoolSkillSpec(BaseModel):
+    """Skill-pool metadata returned by list endpoints."""
+
+    name: str
+    description: str = ""
+    source: str
+    emoji: str = ""
     external: bool = False
     external_path: str = ""
-    commit_text: str = ""
     sync_status: str = ""
-    latest_version_text: str = ""
+    tags: list[str] = Field(default_factory=list)
+    last_updated: str = ""
+    auto_update: bool = False
+
+
+class PoolSkillDetail(PoolSkillSpec):
+    """Skill-pool fields loaded only when its editor is opened."""
+
+    content: str
+    config: dict[str, Any] = Field(default_factory=dict)
+    installed_from: str = ""
     builtin_language: str = ""
     available_builtin_languages: list[str] = Field(default_factory=list)
-    tags: list[str] = Field(default_factory=list)
-    config: dict[str, Any] = Field(default_factory=dict)
-    last_updated: str = ""
-    installed_from: str = ""
-    auto_update: bool = False
     auto_update_targets: list[str] | None = None
 
 
 class WorkspaceSkillSummary(BaseModel):
     agent_id: str
     agent_name: str = ""
-    workspace_dir: str
-    skills: list[SkillSpec] = Field(default_factory=list)
+    skill_names: list[str] = Field(default_factory=list)
 
 
 class HubSkillSpec(BaseModel):
@@ -338,10 +357,6 @@ class HubInstallRequest(BaseModel):
     version: str = Field(default="", description="Optional version tag")
     enable: bool = Field(default=True, description="Enable after import")
     target_name: str = Field(default="", description="Optional renamed skill")
-    access_token: str = Field(
-        default="",
-        description="Optional access token for private repos (e.g. Gitee)",
-    )
 
 
 class HubInstallTaskStatus(str, Enum):
@@ -564,7 +579,6 @@ async def _run_hub_install_task(
             enable=body.enable,
             target_name=body.target_name,
             cancel_checker=cancel_event.is_set,
-            access_token=body.access_token,
         )
         imported_skill_name = result.name
         if cancel_event.is_set():
@@ -649,22 +663,24 @@ def _build_workspace_skill_specs(workspace_dir: Path) -> list[SkillSpec]:
             )
         try:
             source = entry.get("source", "customized")
-            skill_dir = skill_root / skill_name
-            skill = read_skill_from_dir(skill_dir, source)
-            if skill is None:
+            skill_dir = safe_skill_dir(skill_root, skill_name)
+            if not (skill_dir / "SKILL.md").is_file():
                 continue
-            dump = skill.model_dump()
-            dump["tags"] = entry.get("tags") or []
+            metadata = build_skill_metadata(
+                skill_name,
+                skill_dir,
+                source=source,
+            )
             specs.append(
                 SkillSpec(
-                    **dump,
+                    name=skill_name,
+                    description=str(metadata.get("description", "") or ""),
+                    source=source,
+                    emoji=str(metadata.get("emoji", "") or ""),
                     enabled=entry.get("enabled", False),
                     channels=entry.get("channels") or ["all"],
-                    config=entry.get("config") or {},
-                    last_updated=get_skill_mtime(skill_dir),
-                    installed_from=str(
-                        entry.get("installed_from", "") or "",
-                    ),
+                    tags=entry.get("tags") or [],
+                    last_updated=str(metadata.get("updated_at", "") or ""),
                 ),
             )
         except Exception:
@@ -676,22 +692,9 @@ def _build_workspace_skill_specs(workspace_dir: Path) -> list[SkillSpec]:
     return specs
 
 
-def _build_pool_skill_specs(
-    *,
-    summary: bool = False,
-) -> list[PoolSkillSpec]:
-    """Build pool skill specifications.
-
-    Args:
-        summary: When ``True``, omit the full ``content`` field
-            (entire SKILL.md) from each spec.  The content can be
-            fetched on demand via ``GET /pool/{skill_name}/content``.
-            This dramatically reduces payload size when the caller
-            only needs the skill list for card display.
-    """
+def _build_pool_skill_specs() -> list[PoolSkillSpec]:
     manifest = read_skill_pool_manifest()
     entries = manifest.get("skills", {})
-    pool_dir = get_skill_pool_dir()
     sync_info = get_pool_builtin_sync_status(pool_skills=entries)
     specs: list[PoolSkillSpec] = []
     for skill_name, raw_entry in sorted(entries.items()):
@@ -703,59 +706,28 @@ def _build_pool_skill_specs(
             )
         try:
             source = entry.get("source", "customized")
-            skill_dir = resolve_pool_skill_dir(skill_name) or (
-                pool_dir / skill_name
-            )
-            skill = read_skill_from_dir(skill_dir, source)
-            if skill is None:
+            skill_dir = resolve_pool_skill_dir(skill_name)
+            if skill_dir is None:
                 continue
+            metadata = build_skill_metadata(
+                skill_name,
+                skill_dir,
+                source=source,
+            )
             info = sync_info.get(skill_name, {})
-            exclude_fields = {"version_text"}
-            if summary:
-                exclude_fields.add("content")
-            dump = skill.model_dump(exclude=exclude_fields)
-            if summary:
-                dump["content"] = ""
-            dump["tags"] = entry.get("tags") or []
             is_external = bool(entry.get("external", False))
             specs.append(
                 PoolSkillSpec(
-                    **dump,
-                    protected=bool(entry.get("protected", False)),
+                    name=skill_name,
+                    description=str(metadata.get("description", "") or ""),
+                    source=source,
+                    emoji=str(metadata.get("emoji", "") or ""),
                     external=is_external,
                     external_path=str(skill_dir) if is_external else "",
-                    version_text=str(entry.get("version_text", "") or ""),
-                    commit_text=str(entry.get("commit_text", "") or ""),
                     sync_status=str(info.get("sync_status", "") or ""),
-                    latest_version_text=str(
-                        info.get("latest_version_text", "") or "",
-                    ),
-                    builtin_language=str(
-                        entry.get("builtin_language", "") or "",
-                    ),
-                    available_builtin_languages=[
-                        str(language)
-                        for language in (
-                            info.get("available_languages")
-                            or entry.get("available_builtin_languages")
-                            or []
-                        )
-                        if str(language)
-                    ],
-                    config=entry.get("config") or {},
-                    last_updated=get_skill_mtime(skill_dir),
-                    installed_from=str(
-                        entry.get("installed_from", "") or "",
-                    ),
+                    tags=entry.get("tags") or [],
+                    last_updated=str(metadata.get("updated_at", "") or ""),
                     auto_update=bool(entry.get("auto_update", False)),
-                    auto_update_targets=(
-                        list(entry["auto_update_targets"])
-                        if isinstance(
-                            entry.get("auto_update_targets"),
-                            list,
-                        )
-                        else None
-                    ),
                 ),
             )
         except Exception:
@@ -765,6 +737,117 @@ def _build_pool_skill_specs(
                 exc_info=True,
             )
     return specs
+
+
+def _build_workspace_skill_detail(
+    workspace_dir: Path,
+    skill_name: str,
+) -> SkillDetail | None:
+    manifest = read_skill_manifest(workspace_dir)
+    raw_entry = manifest.get("skills", {}).get(skill_name)
+    if raw_entry is None:
+        return None
+    entry = normalize_skill_manifest_entry(raw_entry)
+    try:
+        skill_dir = safe_skill_dir(
+            get_workspace_skills_dir(workspace_dir),
+            skill_name,
+        )
+    except AppBaseException:
+        return None
+    source = str(entry.get("source", "customized") or "customized")
+    skill_data = read_skill_content_and_metadata_from_dir(
+        skill_name,
+        skill_dir,
+        source=source,
+    )
+    if skill_data is None:
+        return None
+    content, metadata = skill_data
+    return SkillDetail(
+        name=skill_name,
+        description=str(metadata.get("description", "") or ""),
+        source=source,
+        emoji=str(metadata.get("emoji", "") or ""),
+        enabled=bool(entry.get("enabled", False)),
+        channels=entry.get("channels") or ["all"],
+        tags=entry.get("tags") or [],
+        last_updated=str(metadata.get("updated_at", "") or ""),
+        content=content,
+        config=entry.get("config") or {},
+        installed_from=str(entry.get("installed_from", "") or ""),
+    )
+
+
+def _build_pool_skill_detail(skill_name: str) -> PoolSkillDetail | None:
+    manifest = read_skill_pool_manifest()
+    entries = manifest.get("skills", {})
+    raw_entry = entries.get(skill_name)
+    if raw_entry is None:
+        return None
+    entry = normalize_skill_manifest_entry(raw_entry)
+    skill_dir = resolve_pool_skill_dir(skill_name)
+    if skill_dir is None:
+        return None
+    source = str(entry.get("source", "customized") or "customized")
+    skill_data = read_skill_content_and_metadata_from_dir(
+        skill_name,
+        skill_dir,
+        source=source,
+    )
+    if skill_data is None:
+        return None
+    content, metadata = skill_data
+    info = get_pool_builtin_sync_status(pool_skills=entries).get(
+        skill_name,
+        {},
+    )
+    is_external = bool(entry.get("external", False))
+    return PoolSkillDetail(
+        name=skill_name,
+        description=str(metadata.get("description", "") or ""),
+        source=source,
+        emoji=str(metadata.get("emoji", "") or ""),
+        external=is_external,
+        external_path=str(skill_dir) if is_external else "",
+        sync_status=str(info.get("sync_status", "") or ""),
+        tags=entry.get("tags") or [],
+        last_updated=str(metadata.get("updated_at", "") or ""),
+        auto_update=bool(entry.get("auto_update", False)),
+        content=content,
+        config=entry.get("config") or {},
+        installed_from=str(entry.get("installed_from", "") or ""),
+        builtin_language=str(entry.get("builtin_language", "") or ""),
+        available_builtin_languages=[
+            str(language)
+            for language in (
+                info.get("available_languages")
+                or entry.get("available_builtin_languages")
+                or []
+            )
+            if str(language)
+        ],
+        auto_update_targets=(
+            list(entry["auto_update_targets"])
+            if isinstance(entry.get("auto_update_targets"), list)
+            else None
+        ),
+    )
+
+
+def _list_workspace_skill_names(workspace_dir: Path) -> list[str]:
+    """List names that the former full workspace index would have returned."""
+    manifest = read_skill_manifest(workspace_dir)
+    skill_root = get_workspace_skills_dir(workspace_dir)
+    names: list[str] = []
+    for skill_name in sorted(manifest.get("skills", {})):
+        try:
+            skill_dir = safe_skill_dir(skill_root, skill_name)
+        except AppBaseException:
+            continue
+        if (skill_dir / "SKILL.md").is_file():
+            names.append(skill_name)
+    return names
 
 
 @router.get("")
@@ -811,8 +894,7 @@ async def list_workspace_skill_sources() -> list[WorkspaceSkillSummary]:
             WorkspaceSkillSummary(
                 agent_id=workspace["agent_id"],
                 agent_name=workspace.get("agent_name", ""),
-                workspace_dir=str(workspace_dir),
-                skills=_build_workspace_skill_specs(workspace_dir),
+                skill_names=_list_workspace_skill_names(workspace_dir),
             ),
         )
     return summaries
@@ -875,44 +957,16 @@ async def cancel_hub_install(task_id: str) -> dict[str, Any]:
 
 
 @router.get("/pool")
-async def list_pool_skills(
-    summary: bool = False,
-) -> list[PoolSkillSpec]:
-    """List all pool skills.
-
-    Args:
-        summary: When ``True``, omit the full ``content`` field from
-            each skill spec to reduce payload size.  Use
-            ``GET /pool/{skill_name}/content`` to fetch a single
-            skill's content on demand.
-    """
-    return _build_pool_skill_specs(summary=summary)
-
-
-@router.get("/pool/{skill_name}/content")
-async def get_pool_skill_content(skill_name: str) -> dict[str, str]:
-    """Fetch the full ``content`` (SKILL.md) of a single pool skill.
-
-    This is the lazy-load complement to ``GET /pool?summary=true``.
-    """
-    pool_dir = get_skill_pool_dir()
-    skill_dir = resolve_pool_skill_dir(skill_name) or (pool_dir / skill_name)
-    if not skill_dir.is_dir():
-        raise HTTPException(404, f"Skill '{skill_name}' not found")
-    skill = read_skill_from_dir(skill_dir, "customized")
-    if skill is None:
-        raise HTTPException(404, f"SKILL.md not found for '{skill_name}'")
-    return {"name": skill_name, "content": skill.content}
+async def list_pool_skills() -> list[PoolSkillSpec]:
+    return _build_pool_skill_specs()
 
 
 @router.post("/pool/refresh")
-async def refresh_pool_skills(
-    summary: bool = False,
-) -> list[PoolSkillSpec]:
+async def refresh_pool_skills() -> list[PoolSkillSpec]:
     """Force reconcile and return updated pool skill list."""
     reconcile_pool_manifest()
     await _follow_auto_update()
-    return _build_pool_skill_specs(summary=summary)
+    return _build_pool_skill_specs()
 
 
 @router.get("/pool/builtin-sources")
@@ -1290,7 +1344,6 @@ def _download_one_or_raise(
 
 @router.post("/pool/download")
 async def download_pool_skill_to_workspaces(
-    request: Request,
     body: DownloadFromPoolRequest,
 ) -> dict[str, Any]:
     """Download one pool skill into one or more workspaces.
@@ -1330,16 +1383,6 @@ async def download_pool_skill_to_workspaces(
             backup_dir = plan["snapshot"].get("backup_dir")
             if backup_dir is not None:
                 shutil.rmtree(Path(backup_dir).parent, ignore_errors=True)
-
-    # Reload each affected agent so the new skill is picked up immediately
-    for target in targets:
-        try:
-            schedule_agent_reload(request, target.workspace_id)
-        except Exception:
-            logger.warning(
-                "Failed to schedule agent reload for '%s' after pool download",
-                target.workspace_id,
-            )
 
     return {"downloaded": downloaded}
 
@@ -1381,6 +1424,14 @@ async def update_pool_builtin(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     await _follow_auto_update()
     return result
+
+
+@router.get("/pool/{skill_name}")
+async def get_pool_skill(skill_name: str) -> PoolSkillDetail:
+    detail = _build_pool_skill_detail(skill_name)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Pool skill not found")
+    return detail
 
 
 @router.delete("/pool/{skill_name}")
@@ -1502,10 +1553,7 @@ async def batch_delete_skills(
     skills: list[str],
 ) -> dict[str, Any]:
     """Auto-disable then delete each skill. Per-skill results."""
-    from ..agent_context import get_agent_for_request
-
-    workspace = await get_agent_for_request(request)
-    workspace_dir = Path(workspace.workspace_dir)
+    workspace_dir = await _request_workspace_dir(request)
     service = SkillService(workspace_dir)
     results: dict[str, Any] = {}
     for skill_name in skills:
@@ -1521,8 +1569,6 @@ async def batch_delete_skills(
                 "success": False,
                 "reason": str(exc),
             }
-    if any(r.get("success") for r in results.values()):
-        schedule_agent_reload(request, workspace.agent_id)
     return {"results": results}
 
 
@@ -1638,15 +1684,21 @@ async def enable_skill(
     return {"enabled": True, **result}
 
 
+@router.get("/{skill_name}")
+async def get_skill(request: Request, skill_name: str) -> SkillDetail:
+    workspace_dir = await _request_workspace_dir(request)
+    detail = _build_workspace_skill_detail(workspace_dir, skill_name)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Skill not found")
+    return detail
+
+
 @router.delete("/{skill_name}")
 async def delete_skill(
     request: Request,
     skill_name: str,
 ) -> dict[str, Any]:
-    from ..agent_context import get_agent_for_request
-
-    workspace = await get_agent_for_request(request)
-    workspace_dir = Path(workspace.workspace_dir)
+    workspace_dir = await _request_workspace_dir(request)
     service = SkillService(workspace_dir)
     service.disable_skill(skill_name)
     deleted = service.delete_skill(skill_name)
@@ -1655,7 +1707,6 @@ async def delete_skill(
             status_code=409,
             detail="Only disabled workspace skills can be deleted",
         )
-    schedule_agent_reload(request, workspace.agent_id)
     return {"deleted": True}
 
 

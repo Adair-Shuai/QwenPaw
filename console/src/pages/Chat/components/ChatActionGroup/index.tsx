@@ -10,15 +10,19 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Dropdown, Flex, Tooltip } from "antd";
+import { Files } from "lucide-react";
 import type { MenuProps } from "antd";
 import { useCreateNewSession } from "../../hooks/useCreateNewSession";
 import { useIsMobile } from "../../../../hooks/useIsMobile";
+import styles from "./ChatActionGroup.module.less";
 
 interface ChatActionGroupProps {
   /** Callback to toggle the right-side history panel */
   onToggleHistory?: () => void;
   /** Whether the history panel is currently visible */
   historyOpen?: boolean;
+  onToggleWorkspace?: () => void;
+  workspaceOpen?: boolean;
   isWideMode?: boolean;
   onToggleWideMode?: () => void;
   /** Callback to toggle the workspace panel */
@@ -30,6 +34,8 @@ interface ChatActionGroupProps {
 const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
   onToggleHistory,
   historyOpen = false,
+  onToggleWorkspace,
+  workspaceOpen = false,
   isWideMode = false,
   onToggleWideMode,
   onToggleWorkspace,
@@ -94,6 +100,39 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
           onClick={createNewSession}
         />
       </Tooltip>
+      {onToggleWorkspace && (
+        <Tooltip
+          title={t(
+            workspaceOpen ? "files.closeWorkspace" : "files.openWorkspace",
+          )}
+          mouseEnterDelay={0.5}
+        >
+          <IconButton
+            className={styles.workspaceButton}
+            bordered={false}
+            aria-label={t(
+              workspaceOpen ? "files.closeWorkspace" : "files.openWorkspace",
+            )}
+            aria-pressed={workspaceOpen}
+            icon={
+              <Files
+                size={16}
+                strokeWidth={2}
+                style={{ width: 16, height: 16 }}
+              />
+            }
+            style={{
+              width: 32,
+              height: 32,
+              padding: 0,
+              ...(workspaceOpen
+                ? { color: "var(--color-primary, #ff9d4d)" }
+                : {}),
+            }}
+            onClick={onToggleWorkspace}
+          />
+        </Tooltip>
+      )}
 
       {/* History + WideMode: inline when NOT compact */}
       {!isCompact && onToggleHistory && (

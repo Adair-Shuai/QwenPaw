@@ -122,9 +122,15 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
     }
 
     let mut command = apply_contributed_environment(app, command);
-    // Bundled standalone Python is the Windows backend interpreter and is also
-    // used to install third-party plugin dependencies on every platform.
-    if let Some(python) = bundled_python {
+    // A complete Playwright Chromium payload exceeds the practical NSIS
+    // installer mapping limit on Windows. The sidecar downloads the exact
+    // driver-matched revision into the user's QwenPaw data directory instead.
+    if cfg!(windows) {
+        command = command.env("QWENPAW_DESKTOP_MANAGED_PLAYWRIGHT", "1");
+    }
+    // Bundled standalone Python used by the backend to install third-party
+    // plugin dependencies (sys.executable is the frozen backend, not Python).
+    if let Some(python) = packaged_python_runtime(app) {
         log::info!("[backend] bundled python runtime: {}", python.display());
         command = command.env(
             "QWENPAW_DESKTOP_PY_RUNTIME",

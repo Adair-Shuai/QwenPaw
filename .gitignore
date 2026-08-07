@@ -167,3 +167,6 @@ final_verify.py
 /conflict_chat.txt
 test_inspector.py
 docs-site/
+
+# Local review notes
+docs/reviews/

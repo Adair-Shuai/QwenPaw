@@ -1,13 +1,19 @@
-/** Subscribe to the workspace file-change SSE stream for one Agent/project. */
-import { useEffect, useMemo, useRef } from "react";
+/**
+ * Subscribe to workspace file-change SSE stream.
+ *
+ * Uses a module-level singleton so that multiple React components can call
+ * `useWorkspaceWatch` without opening redundant SSE connections – only one
+ * persistent connection is maintained and events are fanned out to all
+ * registered listeners.
+ *
+ * Usage:
+ *   useWorkspaceWatch((events) => { ... })
+ */
+
+import { useEffect, useRef } from "react";
 import { workspaceApi } from "../api/modules/workspace";
 import { buildAuthHeaders } from "../api/authHeaders";
-import { useAgentStore } from "../stores/agentStore";
-import { useCodingModeStore } from "../stores/codingModeStore";
-import {
-  makeWorkspaceFileCacheKey,
-  type WorkspaceFileScope,
-} from "../stores/codeFileCacheStore";
+import type { WorkspaceRoot } from "../features/files-workspace/types";
 
 export interface FileChangeEvent {
   change: "added" | "modified" | "deleted";
@@ -16,49 +22,55 @@ export interface FileChangeEvent {
 
 type FileChangeCallback = (events: FileChangeEvent[]) => void;
 
-interface WatchConnection {
-  scope: WorkspaceFileScope;
-  listeners: Set<FileChangeCallback>;
-  controller: AbortController;
-  running: boolean;
-}
+// ---------------------------------------------------------------------------
+// Singleton SSE manager
+// ---------------------------------------------------------------------------
 
-const connections = new Map<string, WatchConnection>();
+const _listeners = new Map<string, Set<FileChangeCallback>>();
+const _controllers = new Map<string, AbortController>();
+const _running = new Set<string>();
 
-function scopeKey(scope: WorkspaceFileScope): string {
-  return makeWorkspaceFileCacheKey(scope, "<watch>");
-}
-
-function emit(connection: WatchConnection, events: FileChangeEvent[]) {
-  connection.listeners.forEach((callback) => {
+function _emit(key: string, events: FileChangeEvent[]) {
+  _listeners.get(key)?.forEach((cb) => {
     try {
-      callback(events);
+      cb(events);
     } catch {
-      // A consumer failure must not stop the shared SSE connection.
+      // ignore listener errors
     }
   });
 }
 
-async function runLoop(connection: WatchConnection) {
-  const { signal } = connection.controller;
-  const url = workspaceApi.getWatchUrl();
+async function _runLoop(
+  key: string,
+  chatId: string | undefined,
+  projectDirOverride: string | undefined,
+  root: WorkspaceRoot,
+  signal: AbortSignal,
+) {
+  const url = workspaceApi.getWatchUrl(root);
   let retryDelay = 1_000;
 
   while (!signal.aborted) {
     try {
       const response = await fetch(url, {
         method: "GET",
-        headers: buildAuthHeaders(connection.scope.agentId),
+        headers: {
+          ...buildAuthHeaders(),
+          ...(chatId ? { "X-Chat-Id": chatId } : {}),
+          ...(!chatId && projectDirOverride
+            ? { "X-Session-Project-Dir": projectDirOverride }
+            : {}),
+        },
         signal,
       });
 
       if (!response.ok || !response.body) {
-        await sleep(retryDelay);
+        await _sleep(retryDelay, signal);
         retryDelay = Math.min(retryDelay * 2, 30_000);
         continue;
       }
 
-      retryDelay = 1_000;
+      retryDelay = 1_000; // reset on healthy connection
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
@@ -76,89 +88,95 @@ async function runLoop(connection: WatchConnection) {
           const raw = line.slice(5).trim();
           if (!raw) continue;
           try {
-            const message = JSON.parse(raw) as {
+            const msg = JSON.parse(raw) as {
               type: string;
               events?: FileChangeEvent[];
             };
-            if (message.type === "file_change" && message.events) {
-              emit(connection, message.events);
+            if (msg.type === "file_change" && msg.events) {
+              _emit(key, msg.events);
             }
           } catch {
-            // Ignore malformed SSE messages and keep the stream alive.
+            // ignore parse errors
           }
         }
       }
-    } catch (error) {
+    } catch (err) {
       if (signal.aborted) break;
-      if (error instanceof DOMException && error.name === "AbortError") break;
-      await sleep(retryDelay);
+      if (err instanceof DOMException && err.name === "AbortError") break;
+      await _sleep(retryDelay, signal);
       retryDelay = Math.min(retryDelay * 2, 30_000);
     }
   }
 
-  connection.running = false;
+  _running.delete(key);
 }
 
-function ensureConnection(scope: WorkspaceFileScope): WatchConnection {
-  const key = scopeKey(scope);
-  const existing = connections.get(key);
-  if (existing) return existing;
-
-  const connection: WatchConnection = {
-    scope,
-    listeners: new Set(),
-    controller: new AbortController(),
-    running: true,
-  };
-  connections.set(key, connection);
-  void runLoop(connection);
-  return connection;
+function _ensureConnected(
+  key: string,
+  chatId: string | undefined,
+  projectDirOverride: string | undefined,
+  root: WorkspaceRoot,
+) {
+  if (_running.has(key)) return;
+  _running.add(key);
+  const controller = new AbortController();
+  _controllers.set(key, controller);
+  void _runLoop(key, chatId, projectDirOverride, root, controller.signal);
 }
 
-function releaseConnection(connection: WatchConnection) {
-  if (connection.listeners.size > 0) return;
-  connection.controller.abort();
-  connection.running = false;
-  connections.delete(scopeKey(connection.scope));
+function _maybeDisconnect(key: string) {
+  if ((_listeners.get(key)?.size ?? 0) === 0) {
+    _listeners.delete(key);
+    _controllers.get(key)?.abort();
+    _controllers.delete(key);
+    _running.delete(key);
+  }
 }
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function _sleep(ms: number, signal: AbortSignal): Promise<void> {
+  if (signal.aborted) return Promise.resolve();
+  return new Promise((resolve) => {
+    const finish = () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timeout = setTimeout(finish, ms);
+    signal.addEventListener("abort", finish, { once: true });
+  });
 }
+
+// ---------------------------------------------------------------------------
+// Hook
+// ---------------------------------------------------------------------------
 
 export function useWorkspaceWatch(
   onFileChange: FileChangeCallback,
   enabled = true,
-  scopeOverride?: WorkspaceFileScope,
+  chatId?: string,
+  root: WorkspaceRoot = "project",
+  projectDirOverride?: string,
 ): void {
-  const selectedAgent = useAgentStore((state) => state.selectedAgent);
-  const projectRoot = useCodingModeStore(
-    (state) => state.projectDirByAgent[selectedAgent],
-  );
-  const scope = useMemo<WorkspaceFileScope>(
-    () =>
-      scopeOverride ?? {
-        agentId: selectedAgent,
-        projectRoot,
-      },
-    [projectRoot, scopeOverride, selectedAgent],
-  );
-  const key = scopeKey(scope);
-
+  // Stable ref so callers don't need to memoize the callback.
   const callbackRef = useRef<FileChangeCallback>(onFileChange);
   callbackRef.current = onFileChange;
 
   useEffect(() => {
-    if (!enabled) return undefined;
+    if (!enabled) return;
 
-    const connection = ensureConnection(scope);
+    // Proxy listener that always calls the latest callback via ref.
     const listener: FileChangeCallback = (events) =>
       callbackRef.current(events);
-    connection.listeners.add(listener);
+
+    const key = `${chatId ?? ""}:${projectDirOverride ?? ""}:${root}`;
+    const listeners = _listeners.get(key) ?? new Set<FileChangeCallback>();
+    listeners.add(listener);
+    _listeners.set(key, listeners);
+    _ensureConnected(key, chatId, projectDirOverride, root);
 
     return () => {
-      connection.listeners.delete(listener);
-      releaseConnection(connection);
+      listeners.delete(listener);
+      _maybeDisconnect(key);
     };
-  }, [enabled, key, scope]);
+  }, [chatId, enabled, projectDirOverride, root]);
 }

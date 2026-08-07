@@ -95,6 +95,7 @@ repos:
           | \.html$
           | .*/skills/.*
           | ^e2e/
+          | ^plugins/apps/qwenpaw-creator/e2e/
           | ^plugins/
           | ^src/qwenpaw/plugins_bundle/
           | ^COMSOL_Multiphysics_MCP/

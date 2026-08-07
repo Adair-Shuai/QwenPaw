@@ -42,6 +42,7 @@ pub fn run() {
             backend::restart_backend,
             external_link::open_external_link,
             reveal::reveal_in_file_manager,
+            external_link::open_workspace_html,
             updates::check_desktop_update,
             updates::install_desktop_update,
             updates::download_desktop_update,

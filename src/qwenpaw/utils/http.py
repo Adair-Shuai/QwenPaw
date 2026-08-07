@@ -17,6 +17,30 @@ from urllib.parse import urlparse
 logger = logging.getLogger(__name__)
 
 _LOOPBACK_HOSTNAMES = {"localhost"}
+# Wildcard bind addresses mapped to the loopback address of the same
+# address family.  Winsock rejects ``INADDR_ANY`` and ``in6addr_any`` as
+# ``connect`` targets with ``WSAEADDRNOTAVAIL``, and a socket bound to
+# ``::`` is not reachable over IPv4, so the families must not be mixed.
+_WILDCARD_PROBE_HOSTS = {
+    "": "127.0.0.1",
+    "0.0.0.0": "127.0.0.1",
+    "::": "::1",
+}
+
+
+def probe_host_for_bind_host(host: str) -> str:
+    """Return an address that can be connected to for a bind address.
+
+    A wildcard bind address accepts connections but cannot be used as a
+    ``connect`` target, so callers probing their own listener must use
+    the loopback address of the matching family instead.  A blank host
+    binds every interface of both families, so it maps to IPv4 loopback.
+    Any other host is returned unchanged, minus whitespace and IPv6 URL
+    brackets.
+    """
+    normalized = host.strip().strip("[]")
+    return _WILDCARD_PROBE_HOSTS.get(normalized, normalized)
+
 
 # [PROXY-BYPASS] Module-level cache of the network config. Updated by
 # ``apply_network_config()`` at startup and whenever the user
