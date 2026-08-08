@@ -7,7 +7,7 @@ vi.mock("../api/modules/workspace", () => ({
   workspaceApi: { getWatchUrl: vi.fn().mockReturnValue("http://test/watch") },
 }));
 vi.mock("../api/authHeaders", () => ({
-  buildAuthHeaders: vi.fn().mockReturnValue({}),
+  buildWorkspaceScopeHeaders: vi.fn().mockReturnValue({}),
 }));
 
 // SSE mock 辅助函数：创建可手动推送数据的 ReadableStream

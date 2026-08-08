@@ -12,7 +12,7 @@
 
 import { useEffect, useRef } from "react";
 import { workspaceApi } from "../api/modules/workspace";
-import { buildAuthHeaders } from "../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../api/authHeaders";
 import type { WorkspaceRoot } from "../features/files-workspace/types";
 
 export interface FileChangeEvent {
@@ -61,13 +61,11 @@ async function _runLoop(
     try {
       const response = await fetch(url, {
         method: "GET",
-        headers: {
-          ...buildAuthHeaders(agentId),
-          ...(!legacyScope && chatId ? { "X-Chat-Id": chatId } : {}),
-          ...(!legacyScope && !chatId && projectDirOverride
-            ? { "X-Session-Project-Dir": projectDirOverride }
-            : {}),
-        },
+        headers: buildWorkspaceScopeHeaders({
+          agentId,
+          chatId: legacyScope ? undefined : chatId,
+          projectDirOverride: legacyScope ? undefined : projectDirOverride,
+        }),
         signal,
       });
 

@@ -175,7 +175,7 @@ const AgentMentionPopup: React.FC<AgentMentionPopupProps> = ({
               width: "100%",
               padding: "7px 9px",
               border: 0,
-              borderRadius: 7,
+              borderRadius: 8,
               color: "inherit",
               textAlign: "left",
               cursor: "pointer",

@@ -231,8 +231,8 @@ export function SkillPickerModal({
                     background: isSelected
                       ? "rgba(0, 114, 245, 0.06)"
                       : isInstalled
-                        ? "#fafafa"
-                        : "#fff",
+                        ? "var(--ant-color-fill-quaternary, #fafafa)"
+                        : "var(--ant-color-bg-container, #fff)",
                     opacity: isInstalled ? 0.5 : 1,
                     minHeight: 64,
                   },

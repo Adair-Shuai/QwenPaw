@@ -398,7 +398,7 @@ export function KnowledgeBaseTab({
                 maxHeight: 480,
                 overflow: "auto",
                 padding: "12px 16px",
-                border: "1px solid #d9d9d9",
+                border: "1px solid var(--ant-color-border, #d9d9d9)",
                 borderRadius: 6,
                 background: "var(--ant-color-bg-container, #fff)",
               },

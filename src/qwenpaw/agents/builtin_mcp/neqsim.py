@@ -159,7 +159,6 @@ async def ensure_neqsim_driver_registered(
         name=NEQSIM_CLIENT_KEY,
         protocol=PROTOCOL_MCP,
         endpoint=_build_endpoint(),
-        credentials=None,
         config={
             "display_name": _DEFAULT_DISPLAY_NAME,
             "description": _DEFAULT_DESCRIPTION,

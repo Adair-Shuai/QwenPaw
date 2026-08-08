@@ -1,6 +1,6 @@
 /** Open raw HTML in a new browser context across browser and desktop shells. */
 import { invoke } from "@tauri-apps/api/core";
-import { buildAuthHeaders } from "../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../api/authHeaders";
 import { workspaceApi } from "../api/modules/workspace";
 import type { WorkspaceRoot } from "../features/files-workspace/types";
 import { isDesktopTauriRuntime } from "./openExternalLink";
@@ -19,13 +19,7 @@ function workspaceHeaders(
   chatId?: string,
   projectDirOverride?: string,
 ): Record<string, string> {
-  return {
-    ...buildAuthHeaders(),
-    ...(chatId ? { "X-Chat-Id": chatId } : {}),
-    ...(!chatId && projectDirOverride
-      ? { "X-Session-Project-Dir": projectDirOverride }
-      : {}),
-  };
+  return buildWorkspaceScopeHeaders({ chatId, projectDirOverride });
 }
 
 function openBlobHtml(content: string): void {

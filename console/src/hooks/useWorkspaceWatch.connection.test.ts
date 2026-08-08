@@ -7,8 +7,12 @@ vi.mock("../api/modules/workspace", () => ({
   workspaceApi: { getWatchUrl: vi.fn().mockReturnValue("http://test/watch") },
 }));
 vi.mock("../api/authHeaders", () => ({
-  buildAuthHeaders: vi.fn((agentId?: string) => ({
-    "X-Agent-Id": agentId ?? "default",
+  buildWorkspaceScopeHeaders: vi.fn((opts?: { agentId?: string; chatId?: string; projectDirOverride?: string }) => ({
+    "X-Agent-Id": opts?.agentId ?? "default",
+    ...(opts?.chatId ? { "X-Chat-Id": opts.chatId } : {}),
+    ...(!opts?.chatId && opts?.projectDirOverride
+      ? { "X-Session-Project-Dir": opts.projectDirOverride }
+      : {}),
   })),
 }));
 
@@ -30,8 +34,12 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
       },
     }));
     vi.doMock("../api/authHeaders", () => ({
-      buildAuthHeaders: vi.fn((agentId?: string) => ({
-        "X-Agent-Id": agentId ?? "default",
+      buildWorkspaceScopeHeaders: vi.fn((opts?: { agentId?: string; chatId?: string; projectDirOverride?: string }) => ({
+        "X-Agent-Id": opts?.agentId ?? "default",
+        ...(opts?.chatId ? { "X-Chat-Id": opts.chatId } : {}),
+        ...(!opts?.chatId && opts?.projectDirOverride
+          ? { "X-Session-Project-Dir": opts.projectDirOverride }
+          : {}),
       })),
     }));
 

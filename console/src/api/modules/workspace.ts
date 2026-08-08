@@ -1,9 +1,6 @@
 import { request } from "../request";
 import { getApiUrl } from "../config";
-import {
-  buildAuthHeaders,
-  buildWorkspaceScopeHeaders,
-} from "../authHeaders";
+import { buildAuthHeaders, buildWorkspaceScopeHeaders } from "../authHeaders";
 import {
   useCodeFileCacheStore,
   type WorkspaceFileScope,

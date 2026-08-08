@@ -547,6 +547,9 @@ def _tree_dict_from_parsed(parsed: dict[str, Any]) -> dict[str, Any] | None:
         return inner
     if "root" in parsed or "schemaVersion" in parsed:
         return parsed
+    # Bare root node: has "kind" or "type" but no envelope keys.
+    if isinstance(parsed.get("kind"), str) or isinstance(parsed.get("type"), str):
+        return parsed
     return None
 
 

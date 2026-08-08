@@ -1,11 +1,8 @@
 import { request } from "../request";
-import { buildAuthHeaders } from "../authHeaders";
+import { buildWorkspaceScopeHeaders } from "../authHeaders";
 
 function projectHeaders(chatId?: string): Record<string, string> {
-  return {
-    ...buildAuthHeaders(),
-    ...(chatId ? { "X-Chat-Id": chatId } : {}),
-  };
+  return buildWorkspaceScopeHeaders({ chatId });
 }
 
 export interface GitChangedFile {

@@ -40,7 +40,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
         padding: "12px 16px",
         background: "var(--ant-color-fill-quaternary, #fafafa)",
         borderRadius: 8,
-        border: "1px dashed #d9d9d9",
+        border: "1px dashed var(--ant-color-border, #d9d9d9)",
       },
     },
     React.createElement(

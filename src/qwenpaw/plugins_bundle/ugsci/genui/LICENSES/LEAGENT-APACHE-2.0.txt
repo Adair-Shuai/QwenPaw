@@ -1,0 +1,30 @@
+Apache License, Version 2.0
+
+Copyright 2024-2025 LeAgent Contributors
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+---
+
+This license applies to code ported from the LeAgent project
+(https://github.com/leagent/leagent) into the QwenPaw UGSci plugin's
+GenUI module. The following files contain code derived from LeAgent:
+
+- schema.py        — UI tree schema, component catalog, validation
+- json_repair.py   — JSON repair pipeline for malformed LLM output
+- guide.py         — GenUI guide payload for the model
+- tools.py         — emit_ui_tree, list_ui_components, get_genui_guide tools
+
+Modifications: Removed LeAgent-specific dependencies (ServiceManager,
+CanvasService, ArtifactService, BaseTool, ToolContext). Adapted to
+QwenPaw's plugin tool registration system and ToolChunk result format.

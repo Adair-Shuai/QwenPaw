@@ -1080,7 +1080,7 @@ export function ExpertTemplateModal({
                     style: {
                       cursor: "pointer",
                       height: "100%",
-                      border: "2px dashed #d9d9d9",
+                      border: "2px dashed var(--ant-color-border, #d9d9d9)",
                       background: "var(--ant-color-fill-quaternary, #fafafa)",
                     },
                   },
