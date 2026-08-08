@@ -85,10 +85,7 @@ export interface MCPPageProps {
   };
 }
 
-function MCPPage({
-  embedded = false,
-  embeddedLabels,
-}: MCPPageProps = {}) {
+function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
   const { t } = useTranslation();
   const {
     clients,
@@ -336,7 +333,9 @@ function MCPPage({
                 <h2>
                   {embeddedLabels?.managedTitle || t("mcp.qwenpawManaged")}
                   {embedded && (
-                    <span className={styles.serviceCount}>{clients.length}</span>
+                    <span className={styles.serviceCount}>
+                      {clients.length}
+                    </span>
                   )}
                 </h2>
                 <p>

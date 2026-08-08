@@ -51,7 +51,8 @@ export default function AgentMentionController({
           ? document.activeElement.closest('[class*="sender"]')
           : null;
       const focusedTextarea = focused?.querySelector("textarea");
-      if (focusedTextarea instanceof HTMLTextAreaElement) return focusedTextarea;
+      if (focusedTextarea instanceof HTMLTextAreaElement)
+        return focusedTextarea;
       return document.querySelector('[class*="sender"] textarea');
     };
 

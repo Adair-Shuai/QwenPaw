@@ -283,9 +283,7 @@ export interface QwenPawHostNamespace {
   refreshAgents(options?: { force?: boolean }): Promise<void>;
 
   /** Load an allow-listed native page for in-place plugin composition. */
-  loadBuiltinPage(
-    page: "tools" | "mcp" | "acp",
-  ): Promise<
+  loadBuiltinPage(page: "tools" | "mcp" | "acp"): Promise<
     React.ComponentType<{
       embedded?: boolean;
       embeddedLabels?: Record<string, string>;

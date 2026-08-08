@@ -9,7 +9,7 @@
     "build": "tsc -b && vite build && npm run verify:monaco-css",
     "build:budget": "npm run build:prod && node ../scripts/check_console_bundle_budget.mjs",
     "build:prod": "tsc -b && vite build --mode production && npm run verify:monaco-css",
-    "build:tauri-bootstrap": "tsc -b && vite build --mode tauri --config src-tauri/vite.bootstrap.config.ts && node ../scripts/pack-tauri/finalize_tauri_bootstrap.mjs", 
+    "build:tauri-bootstrap": "tsc -b && vite build --mode tauri --config src-tauri/vite.bootstrap.config.ts && node ../scripts/pack-tauri/finalize_tauri_bootstrap.mjs",
     "build:test": "tsc -b && vite build --mode test",
     "format": "tsc -b --noEmit && prettier --write --cache .",
     "format:check": "tsc -b --noEmit && prettier --check .",

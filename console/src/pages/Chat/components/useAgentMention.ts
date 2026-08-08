@@ -165,13 +165,7 @@ export function useAgentMention(
         delete textarea.dataset.agentMentionActive;
       }
     },
-    [
-      detectMention,
-      filterAgents,
-      mentionableAgents,
-      t,
-      updateActiveIndex,
-    ],
+    [detectMention, filterAgents, mentionableAgents, t, updateActiveIndex],
   );
 
   const insertMention = useCallback(
