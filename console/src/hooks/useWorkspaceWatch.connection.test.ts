@@ -7,13 +7,19 @@ vi.mock("../api/modules/workspace", () => ({
   workspaceApi: { getWatchUrl: vi.fn().mockReturnValue("http://test/watch") },
 }));
 vi.mock("../api/authHeaders", () => ({
-  buildWorkspaceScopeHeaders: vi.fn((opts?: { agentId?: string; chatId?: string; projectDirOverride?: string }) => ({
-    "X-Agent-Id": opts?.agentId ?? "default",
-    ...(opts?.chatId ? { "X-Chat-Id": opts.chatId } : {}),
-    ...(!opts?.chatId && opts?.projectDirOverride
-      ? { "X-Session-Project-Dir": opts.projectDirOverride }
-      : {}),
-  })),
+  buildWorkspaceScopeHeaders: vi.fn(
+    (opts?: {
+      agentId?: string;
+      chatId?: string;
+      projectDirOverride?: string;
+    }) => ({
+      "X-Agent-Id": opts?.agentId ?? "default",
+      ...(opts?.chatId ? { "X-Chat-Id": opts.chatId } : {}),
+      ...(!opts?.chatId && opts?.projectDirOverride
+        ? { "X-Session-Project-Dir": opts.projectDirOverride }
+        : {}),
+    }),
+  ),
 }));
 
 // 创建一个永远挂起的 fetch（用于不关心 SSE 内容的测试）
@@ -34,13 +40,19 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
       },
     }));
     vi.doMock("../api/authHeaders", () => ({
-      buildWorkspaceScopeHeaders: vi.fn((opts?: { agentId?: string; chatId?: string; projectDirOverride?: string }) => ({
-        "X-Agent-Id": opts?.agentId ?? "default",
-        ...(opts?.chatId ? { "X-Chat-Id": opts.chatId } : {}),
-        ...(!opts?.chatId && opts?.projectDirOverride
-          ? { "X-Session-Project-Dir": opts.projectDirOverride }
-          : {}),
-      })),
+      buildWorkspaceScopeHeaders: vi.fn(
+        (opts?: {
+          agentId?: string;
+          chatId?: string;
+          projectDirOverride?: string;
+        }) => ({
+          "X-Agent-Id": opts?.agentId ?? "default",
+          ...(opts?.chatId ? { "X-Chat-Id": opts.chatId } : {}),
+          ...(!opts?.chatId && opts?.projectDirOverride
+            ? { "X-Session-Project-Dir": opts.projectDirOverride }
+            : {}),
+        }),
+      ),
     }));
 
     ({ useWorkspaceWatch } = await import("./useWorkspaceWatch"));

@@ -47,7 +47,7 @@ describe("useWorkspaceWatch — message handling", () => {
       },
     }));
     vi.doMock("../api/authHeaders", () => ({
-      buildAuthHeaders: vi.fn().mockReturnValue({}),
+      buildWorkspaceScopeHeaders: vi.fn().mockReturnValue({}),
     }));
 
     ({ useWorkspaceWatch } = await import("./useWorkspaceWatch"));
