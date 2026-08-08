@@ -121,9 +121,7 @@ import AgentMentionController from "./components/AgentMentionController";
 import ComposerTokenHighlights from "./components/ComposerTokenHighlights";
 import StreamingTokenBadge from "./components/StreamingTokenBadge";
 import { getAgentDisplayName } from "../../utils/agentDisplayName";
-import {
-  withAgentCoordinationContext,
-} from "./components/agentMentionUtils";
+import { withAgentCoordinationContext } from "./components/agentMentionUtils";
 import {
   buildAgentMentionDispatch,
   captureAgentMentionModesForSubmit,
