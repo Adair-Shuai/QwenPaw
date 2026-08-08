@@ -210,7 +210,7 @@ export function KnowledgeBaseTab({
         { style: { display: "flex", alignItems: "center", gap: 6 } },
         FileTextOutlined
           ? React.createElement(FileTextOutlined, {
-              style: { fontSize: 14, color: "#1677ff" },
+              style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" },
             })
           : null,
         React.createElement(
@@ -282,7 +282,7 @@ export function KnowledgeBaseTab({
                 avatar: React.createElement(FileTextOutlined, {
                   style: {
                     fontSize: 20,
-                    color: isEnabled ? "#1677ff" : "var(--ant-color-text-quaternary, #bfbfbf)",
+                    color: isEnabled ? "var(--ant-color-primary, #1677ff)" : "var(--ant-color-text-quaternary, #bfbfbf)",
                   },
                 }),
                 title: React.createElement(
@@ -476,7 +476,7 @@ export function PresetPromptsTab({
       },
       ThunderboltOutlined
         ? React.createElement(ThunderboltOutlined, {
-            style: { fontSize: 14, color: "#1677ff" },
+            style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" },
           })
         : null,
       React.createElement(
@@ -522,7 +522,7 @@ export function PresetPromptsTab({
               {
                 style: {
                   cursor: "pointer",
-                  color: "#1677ff",
+                  color: "var(--ant-color-primary, #1677ff)",
                 },
                 onClick: () => handleUsePrompt(prompt),
               },

@@ -295,7 +295,7 @@ function ResearchModeHeaderToggle() {
       null,
       React.createElement(
         "div",
-        { style: { fontSize: 12, color: "#999", marginBottom: 4 } },
+        { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #999)", marginBottom: 4 } },
         "研究领域",
       ),
       React.createElement(Select, {
@@ -489,7 +489,7 @@ function ArtifactPanel() {
           }),
           React.createElement(
             "p",
-            { style: { color: "#999", fontSize: 12 } },
+            { style: { color: "var(--ant-color-text-quaternary, #999)", fontSize: 12 } },
             "CSV file — use data_analysis tool for detailed analysis",
           ),
         );
@@ -498,7 +498,7 @@ function ArtifactPanel() {
           "pre",
           {
             style: {
-              background: "rgba(0,0,0,0.04)",
+              background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
               padding: 12,
               borderRadius: 8,
               overflow: "auto",
@@ -514,14 +514,14 @@ function ArtifactPanel() {
           React.createElement(Tag, { color: "orange" }, "LAS Well Log"),
           React.createElement(
             "p",
-            { style: { fontSize: 12, color: "#999" } },
+            { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #999)" } },
             "Use data_analysis tool with operation='las_curves' for details",
           ),
           React.createElement(
             "pre",
             {
               style: {
-                background: "rgba(0,0,0,0.04)",
+                background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
                 padding: 12,
                 borderRadius: 8,
                 overflow: "auto",
@@ -667,7 +667,7 @@ function ArtifactPanelWrapper() {
     flexShrink: 0,
     height: "100%",
     overflow: "hidden",
-    borderLeft: "1px solid rgba(0,0,0,0.06)",
+    borderLeft: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
     transition: "width 0.2s ease",
     display: "flex",
     flexDirection: "column" as const,
@@ -707,7 +707,7 @@ function ArtifactPanelWrapper() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "8px 12px",
-          borderBottom: "1px solid rgba(0,0,0,0.06)",
+          borderBottom: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
           fontSize: 13,
           fontWeight: 600,
           color: isDark ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.85)",
@@ -861,7 +861,7 @@ function ResearchDashboardPage() {
           Space,
           { align: "center", size: 12 },
           React.createElement(ExperimentOutlined, {
-            style: { fontSize: 28, color: rmConfig.enabled ? "#06b6d4" : "#999" },
+            style: { fontSize: 28, color: rmConfig.enabled ? "#06b6d4" : "var(--ant-color-text-quaternary, #999)" },
           }),
           React.createElement(
             "div",
@@ -927,7 +927,7 @@ function ResearchDashboardPage() {
             prefix: React.createElement(ExperimentOutlined),
             valueStyle: rmConfig.enabled
               ? { color: "#06b6d4" }
-              : { color: "#999" },
+              : { color: "var(--ant-color-text-quaternary, #999)" },
           }),
         }),
       ),
@@ -978,7 +978,7 @@ function ResearchDashboardPage() {
       !rmConfig.enabled &&
         React.createElement(
           "div",
-          { style: { marginTop: 8, fontSize: 12, color: "#999" } },
+          { style: { marginTop: 8, fontSize: 12, color: "var(--ant-color-text-quaternary, #999)" } },
           "请先启用研究模式",
         ),
     ),
@@ -1033,7 +1033,7 @@ function ResearchDashboardPage() {
                 ),
                 React.createElement(
                   "div",
-                  { style: { fontSize: 11, color: "#999" } },
+                  { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)" } },
                   stage.desc,
                 ),
               ),
@@ -1221,13 +1221,13 @@ function LiteratureSearchCard(props: any) {
                 r.year &&
                   React.createElement(
                     "span",
-                    { style: { color: "#999", marginLeft: 8 } },
+                    { style: { color: "var(--ant-color-text-quaternary, #999)", marginLeft: 8 } },
                     `(${r.year})`,
                   ),
                 r.authors &&
                   React.createElement(
                     "div",
-                    { style: { fontSize: 11, color: "#666" } },
+                    { style: { fontSize: 11, color: "var(--ant-color-text-secondary, #666)" } },
                     Array.isArray(r.authors) ? r.authors.join(", ") : r.authors,
                   ),
                 r.doi &&
@@ -1239,7 +1239,7 @@ function LiteratureSearchCard(props: any) {
                 r.abstract &&
                   React.createElement(
                     "div",
-                    { style: { fontSize: 11, color: "#999", marginTop: 4 } },
+                    { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginTop: 4 } },
                     r.abstract.substring(0, 200) + "...",
                   ),
                 React.createElement(
@@ -1335,7 +1335,7 @@ function getToolCardShared() {
       { style: { margin: "4px 0 2px 18px" } },
       React.createElement(
         "div",
-        { style: { fontSize: 11, color: "#999", marginBottom: 2 } },
+        { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginBottom: 2 } },
         title,
       ),
       React.createElement(
@@ -1345,7 +1345,7 @@ function getToolCardShared() {
             fontSize: 12,
             lineHeight: 1.5,
             padding: "8px 12px",
-            background: "rgba(0,0,0,0.03)",
+            background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.03))",
             borderRadius: 8,
             overflow: "auto",
             maxHeight: 360,
@@ -1373,7 +1373,7 @@ function getToolCardShared() {
         open: isLoading || isError,
         style: {
           margin: "4px 0",
-          border: "1px solid rgba(0,0,0,0.06)",
+          border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
           borderRadius: 8,
           padding: "4px 8px",
         },
@@ -1399,7 +1399,7 @@ function getToolCardShared() {
           inlineResult &&
           React.createElement(
             "span",
-            { style: { fontSize: 11, color: "#999", marginLeft: "auto" } },
+            { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginLeft: "auto" } },
             inlineResult,
           ),
       ),

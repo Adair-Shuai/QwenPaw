@@ -149,7 +149,7 @@ function NodeCard({ id, data, selected }: NodeProps) {
     style: {
       padding: "10px 14px", borderRadius: 8,
       border: `2px solid ${selected ? color : stColor}`,
-      background: "#fff", width: "240px", minWidth: "240px", maxWidth: "240px", minHeight: "120px", fontSize: 12,
+      background: "var(--ant-color-bg-container, #fff)", width: "240px", minWidth: "240px", maxWidth: "240px", minHeight: "120px", fontSize: 12,
       boxShadow: st === "running" ? `0 0 0 3px ${color}33` : selected ? "0 2px 8px rgba(0,0,0,0.12)" : "0 1px 4px rgba(0,0,0,0.08)",
       transition: "border-color 0.2s, box-shadow 0.2s",
       display: "flex", flexDirection: "column",
@@ -172,9 +172,9 @@ function NodeCard({ id, data, selected }: NodeProps) {
       Tag ? React.createElement(Tag, { color: stColor, style: { marginLeft: "auto", fontSize: 10 } }, st) : null,
     ),
     // Description
-    d?.description ? React.createElement("div", { style: { color: "#8c8c8c", marginTop: 4, fontSize: 11, maxWidth: 212, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description) : null,
+    d?.description ? React.createElement("div", { style: { color: "var(--ant-color-text-tertiary, #8c8c8c)", marginTop: 4, fontSize: 11, maxWidth: 212, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" } }, d.description) : null,
     // Node ID footer
-    React.createElement("div", { style: { marginTop: "auto", paddingTop: 4, color: "#bfbfbf", fontSize: 10, fontFamily: "monospace" } }, id),
+    React.createElement("div", { style: { marginTop: "auto", paddingTop: 4, color: "var(--ant-color-text-quaternary, #bfbfbf)", fontSize: 10, fontFamily: "monospace" } }, id),
     ...(outputSockets.length
       ? outputSockets.map((field: any, index: number) =>
           React.createElement(Handle, {
@@ -221,7 +221,7 @@ function LabeledEdge(props: EdgeProps & any) {
   return React.createElement(React.Fragment, null,
     React.createElement("path", {
       id, d: edgePath,
-      stroke: selected ? "#1677ff" : (data?.color || "#bfbfbf"),
+      stroke: selected ? "var(--ant-color-primary, #1677ff)" : (data?.color || "var(--ant-color-text-quaternary, #bfbfbf)"),
       strokeWidth: selected ? 3 : 2,
       fill: "none",
       markerEnd: markerEnd,
@@ -244,7 +244,7 @@ function LabeledEdge(props: EdgeProps & any) {
               onBlur: commitEdit,
               onKeyDown: (e: any) => { if (e.key === "Enter") commitEdit(); if (e.key === "Escape") setEditing(false); },
               style: {
-                width: 80, fontSize: 10, border: "1px solid #1677ff",
+                width: 80, fontSize: 10, border: "1px solid var(--ant-color-primary, #1677ff)",
                 borderRadius: 4, padding: "2px 4px", textAlign: "center",
               },
               autoFocus: true,
@@ -252,7 +252,7 @@ function LabeledEdge(props: EdgeProps & any) {
           : React.createElement("div", {
               onDoubleClick: startEdit,
               style: {
-                background: "#fff", border: selected ? "1px solid #1677ff" : "1px solid #d9d9d9",
+                background: "var(--ant-color-bg-container, #fff)", border: selected ? "1px solid var(--ant-color-primary, #1677ff)" : "1px solid var(--ant-color-border, #d9d9d9)",
                 borderRadius: 4, padding: "2px 6px", fontSize: 10, textAlign: "center",
                 cursor: "pointer", maxWidth: 100,
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
@@ -262,7 +262,7 @@ function LabeledEdge(props: EdgeProps & any) {
         selected ? React.createElement("button", {
           onClick: onDelete,
           style: {
-            border: "none", background: "#ff4d4f", color: "#fff",
+            border: "none", background: "var(--ant-color-error, #ff4d4f)", color: "#fff",
             borderRadius: "50%", width: 18, height: 18, fontSize: 11,
             cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
             lineHeight: 1, padding: 0,
@@ -426,7 +426,7 @@ function FlowListPage({ onEdit, onRun }: { onEdit: (id: string) => void; onRun: 
 
   return React.createElement("div", { style: { padding: 24 } },
     React.createElement("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 } },
-      React.createElement(Title, { level: 4, style: { margin: 0 } }, "工作流", React.createElement("span", { style: { fontSize: 14, color: "#8c8c8c", marginLeft: 8 } }, "可视化 DAG 工作流引擎")),
+      React.createElement(Title, { level: 4, style: { margin: 0 } }, "工作流", React.createElement("span", { style: { fontSize: 14, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginLeft: 8 } }, "可视化 DAG 工作流引擎")),
       React.createElement(Space, null,
         React.createElement(Input.Search, { placeholder: "搜索工作流", value: search, onChange: (e: any) => setSearch(e.target.value), style: { width: 220 }, allowClear: true }),
         React.createElement(Button, { icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined, onClick: refresh, loading: loading }),
@@ -519,7 +519,7 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
           id: e.id || `e${idx}`, source: e.source, target: e.target,
           sourceHandle: e.source_handle, targetHandle: e.target_handle,
           type: "labeled", animated: true, data: { label: e.label || "" },
-          markerEnd: { type: MarkerType.ArrowClosed, color: "#bfbfbf" },
+          markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ant-color-text-quaternary, #bfbfbf)" },
         }));
         setRfNodes(rfN); setRfEdges(rfE);
       } catch (e: any) { message?.error(`加载工作流失败: ${e.message}`); }
@@ -559,7 +559,7 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
   }, [setRfEdges]);
 
   const onConnect = useCallback((conn: Connection) => {
-    setRfEdges((eds: Edge[]) => addEdge({ ...conn, type: "labeled", animated: true, data: { label: "" }, markerEnd: { type: MarkerType.ArrowClosed, color: "#bfbfbf" } }, eds));
+    setRfEdges((eds: Edge[]) => addEdge({ ...conn, type: "labeled", animated: true, data: { label: "" }, markerEnd: { type: MarkerType.ArrowClosed, color: "var(--ant-color-text-quaternary, #bfbfbf)" } }, eds));
   }, [setRfEdges]);
 
   // Connection validation: no self-loops, no duplicates
@@ -723,7 +723,7 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
 
   return React.createElement("div", { style: { display: "flex", flexDirection: "column", height: "100%" }, "data-flowforge-editor": true },
     // Toolbar
-    React.createElement("div", { style: { padding: "8px 16px", borderBottom: "1px solid #f0f0f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 } },
+    React.createElement("div", { style: { padding: "8px 16px", borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 } },
       React.createElement(Button, { icon: ArrowLeftOutlined ? React.createElement(ArrowLeftOutlined) : undefined, onClick: onBack }, "返回"),
       React.createElement(Title, { level: 5, style: { margin: 0 } }, doc?.name || flowId),
       React.createElement(Tag, null, `${rfNodes.length} 节点 / ${rfEdges.length} 连接`),
@@ -744,8 +744,8 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
     // Body: palette + canvas + inspector
     React.createElement("div", { style: { display: "flex", flex: 1, minHeight: 0 } },
       // Palette sidebar
-      React.createElement("div", { style: { width: 240, borderRight: "1px solid #f0f0f0", display: "flex", flexDirection: "column", background: "#fafafa" } },
-        React.createElement("div", { style: { padding: "8px 12px", borderBottom: "1px solid #f0f0f0" } },
+      React.createElement("div", { style: { width: 240, borderRight: "1px solid var(--ant-color-border-secondary, #f0f0f0)", display: "flex", flexDirection: "column", background: "var(--ant-color-fill-quaternary, #fafafa)" } },
+        React.createElement("div", { style: { padding: "8px 12px", borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)" } },
           React.createElement(Input, {
             placeholder: "搜索节点...", prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
             value: paletteSearch, onChange: (e: any) => setPaletteSearch(e.target.value),
@@ -759,13 +759,13 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
               key: spec.class_type,
               onClick: () => addNode(spec),
               style: {
-                padding: "6px 8px", margin: "4px 0", background: "#fff",
-                border: "1px solid #e8e8e8", borderRadius: 4, cursor: "pointer",
+                padding: "6px 8px", margin: "4px 0", background: "var(--ant-color-bg-container, #fff)",
+                border: "1px solid var(--ant-color-border-secondary, #e8e8e8)", borderRadius: 4, cursor: "pointer",
                 display: "flex", alignItems: "center", gap: 6, fontSize: 12,
                 borderLeft: `3px solid ${nodeColor(spec.class_type)}`,
               },
               onMouseEnter: (e: any) => { e.currentTarget.style.borderColor = nodeColor(spec.class_type); },
-              onMouseLeave: (e: any) => { e.currentTarget.style.borderColor = "#e8e8e8"; },
+              onMouseLeave: (e: any) => { e.currentTarget.style.borderColor = "var(--ant-color-border-secondary, #e8e8e8)"; },
               title: spec.description,
             },
               React.createElement("span", { style: { fontSize: 14 } }, spec.icon),
@@ -782,17 +782,17 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
           onNodeClick: (_: any, node: Node) => { setSelectedNode(node); setInspectorOpen(true); },
           nodeTypes, edgeTypes,
           isValidConnection,
-          fitView: true, style: { background: "#f5f5f5" },
+          fitView: true, style: { background: "var(--ant-color-fill-quaternary, #f5f5f5)" },
           deleteKeyCode: null,
         },
           React.createElement(Background, { variant: BackgroundVariant.Dots, gap: 16, size: 1 }),
           React.createElement(Controls, null),
-          React.createElement(MiniMap, { style: { background: "#fafafa" }, nodeColor: (n: Node) => nodeColor((n.data as any)?.class_type || ""), nodeStrokeWidth: 2 }),
+          React.createElement(MiniMap, { style: { background: "var(--ant-color-fill-quaternary, #fafafa)" }, nodeColor: (n: Node) => nodeColor((n.data as any)?.class_type || ""), nodeStrokeWidth: 2 }),
           // Alignment tools panel
           React.createElement(Panel, { position: "top-left" },
             React.createElement("div", {
               style: {
-                background: "#fff", borderRadius: 6, padding: "4px 8px",
+                background: "var(--ant-color-bg-container, #fff)", borderRadius: 6, padding: "4px 8px",
                 boxShadow: "0 1px 4px rgba(0,0,0,0.1)", display: "flex", gap: 4,
               },
             },
@@ -808,7 +808,7 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
               React.createElement(Tooltip, { title: "底部对齐" },
                 React.createElement(Button, { size: "small", type: "text", icon: VerticalAlignBottomOutlined ? React.createElement(VerticalAlignBottomOutlined) : undefined, onClick: () => alignNodes("bottom") }, !VerticalAlignBottomOutlined ? "⬇" : null),
               ),
-              React.createElement("div", { style: { width: 1, background: "#e8e8e8", margin: "0 2px" } }),
+              React.createElement("div", { style: { width: 1, background: "var(--ant-color-border-secondary, #e8e8e8)", margin: "0 2px" } }),
               React.createElement(Tooltip, { title: "水平分布" },
                 React.createElement(Button, { size: "small", type: "text", onClick: () => distributeNodes("h") }, "H··"),
               ),
@@ -931,7 +931,7 @@ function NodeInspector({ node, nodeTypes, onUpdate }: { node: Node; nodeTypes: N
     React.createElement(Form.Item, { label: "显示标签" },
       React.createElement(Input, { value: data.label || "", onChange: (e: any) => update("label", e.target.value), placeholder: "节点显示名称" }),
     ),
-    spec?.description ? React.createElement(Paragraph, { type: "secondary", style: { fontSize: 12, background: "#f5f5f5", padding: 8, borderRadius: 4 } }, spec.description) : null,
+    spec?.description ? React.createElement(Paragraph, { type: "secondary", style: { fontSize: 12, background: "var(--ant-color-fill-tertiary, #f5f5f5)", padding: 8, borderRadius: 4 } }, spec.description) : null,
     React.createElement(Divider, { style: { margin: "12px 0" } }),
     React.createElement(AntTitle, { level: 5 }, "输入参数"),
     (spec?.inputs_schema || []).length === 0
@@ -1084,14 +1084,14 @@ function RunMonitorDrawer({ runId, onClose, onStatusUpdate }: { runId: string | 
             key: "outputs",
             label: "输出",
             children: Object.keys(run.outputs || {}).length
-              ? React.createElement("pre", { style: { background: "#f5f5f5", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 400 } }, JSON.stringify(run.outputs, null, 2))
+              ? React.createElement("pre", { style: { background: "var(--ant-color-fill-tertiary, #f5f5f5)", padding: 8, borderRadius: 4, fontSize: 11, overflow: "auto", maxHeight: 400 } }, JSON.stringify(run.outputs, null, 2))
               : React.createElement(Empty, { description: "无输出" }),
           },
           {
             key: "errors",
             label: React.createElement("span", null, "错误", run.errors?.length ? React.createElement(Tag, { color: "error", style: { marginLeft: 4 } }, run.errors.length) : null),
             children: run.errors?.length
-              ? run.errors.map((e, i) => React.createElement(Paragraph, { key: i, type: "danger", style: { fontSize: 12, background: "#fff2f0", padding: 8, borderRadius: 4, marginBottom: 4 } }, e))
+              ? run.errors.map((e, i) => React.createElement(Paragraph, { key: i, type: "danger", style: { fontSize: 12, background: "var(--ant-color-error-bg, #fff2f0)", padding: 8, borderRadius: 4, marginBottom: 4 } }, e))
               : React.createElement(Empty, { description: "无错误" }),
           },
           {
@@ -1110,7 +1110,7 @@ function RunMonitorDrawer({ runId, onClose, onStatusUpdate }: { runId: string | 
                   children: React.createElement("div", { style: { fontSize: 12 } },
                     React.createElement(Text, { strong: true }, ev.type),
                     ev.node_id ? React.createElement(Text, { type: "secondary" }, ` · ${ev.node_id}`) : null,
-                    ev.data ? React.createElement("pre", { style: { fontSize: 10, margin: "4px 0 0 0", background: "#f5f5f5", padding: 4, borderRadius: 2, overflow: "auto", maxHeight: 120 } }, JSON.stringify(ev.data, null, 2)) : null,
+                    ev.data ? React.createElement("pre", { style: { fontSize: 10, margin: "4px 0 0 0", background: "var(--ant-color-fill-tertiary, #f5f5f5)", padding: 4, borderRadius: 2, overflow: "auto", maxHeight: 120 } }, JSON.stringify(ev.data, null, 2)) : null,
                   ),
                 })),
               }),

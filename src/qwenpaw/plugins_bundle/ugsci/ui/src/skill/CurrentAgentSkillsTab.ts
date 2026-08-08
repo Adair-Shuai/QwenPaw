@@ -399,7 +399,7 @@ export function CurrentAgentSkillsTab({
                       position: "relative",
                       borderColor:
                         batchMode && selectedSkills.has(skill.name)
-                          ? "#0072f5"
+                          ? "var(--ant-color-primary, #0072f5)"
                           : undefined,
                       borderWidth:
                         batchMode && selectedSkills.has(skill.name)
@@ -532,7 +532,7 @@ export function CurrentAgentSkillsTab({
                           style: {
                             marginTop: 8,
                             paddingTop: 8,
-                            borderTop: "1px solid #f0f0f0",
+                            borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
                             display: "flex",
                             gap: 8,
                             justifyContent: "flex-end",

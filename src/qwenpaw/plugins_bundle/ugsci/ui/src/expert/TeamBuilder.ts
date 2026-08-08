@@ -478,7 +478,7 @@ export function TeamBuilderModal({
               React.createElement("span", { style: { fontSize: 18 } }, template.icon),
               template.title,
             ),
-            React.createElement("div", { style: { fontSize: 11, color: "#595959", marginTop: 5, lineHeight: 1.45 } }, template.description),
+            React.createElement("div", { style: { fontSize: 11, color: "var(--ant-color-text-secondary, #595959)", marginTop: 5, lineHeight: 1.45 } }, template.description),
             React.createElement("div", { style: { fontSize: 10, color: template.accent, marginTop: 5, fontFamily: "monospace" } }, template.topology),
           );
         }),
@@ -547,9 +547,9 @@ export function TeamBuilderModal({
                     alignItems: "center",
                     justifyContent: "space-between",
                     padding: "6px 10px",
-                    background: "#f0f5ff",
+                    background: "var(--ant-color-primary-bg, #f0f5ff)",
                     borderRadius: 6,
-                    border: "1px solid #d6e4ff",
+                    border: "1px solid var(--ant-color-primary-border, #d6e4ff)",
                   },
                 },
                 React.createElement(
@@ -633,7 +633,7 @@ export function TeamBuilderModal({
               padding: 12,
               borderRadius: 8,
               background: "var(--ant-color-fill-quaternary, #fafafa)",
-              border: "1px solid #f0f0f0",
+              border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
             },
           },
           mode === "review_loop"
@@ -702,7 +702,7 @@ export function TeamBuilderModal({
                         padding: 8,
                         background: "var(--ant-color-bg-container, #fff)",
                         borderRadius: 6,
-                        border: "1px solid #e8e8e8",
+                        border: "1px solid var(--ant-color-border-secondary, #e8e8e8)",
                       },
                     },
                     React.createElement(
@@ -1045,8 +1045,8 @@ export function ExpertTeamCard({
                 gap: 4,
                 padding: "2px 8px",
                 borderRadius: 12,
-                background: m.found ? "#f0f5ff" : "#f0f0ff",
-                border: `1px solid ${m.found ? "#d6e4ff" : "#d3adf7"}`,
+                background: m.found ? "var(--ant-color-primary-bg, #f0f5ff)" : "var(--ant-color-fill-tertiary, #f0f0ff)",
+                border: `1px solid ${m.found ? "var(--ant-color-primary-border, #d6e4ff)" : "var(--ant-color-purple, #d3adf7)"}`,
                 fontSize: 11,
               },
             },
@@ -1054,7 +1054,7 @@ export function ExpertTeamCard({
             React.createElement(
               Text,
               {
-                style: { fontSize: 11, color: m.found ? "#1f4e8c" : "#531dab" },
+                style: { fontSize: 11, color: m.found ? "var(--ant-color-primary-text, #1f4e8c)" : "var(--ant-color-purple, #531dab)" },
               },
               m.name,
             ),
@@ -1098,7 +1098,7 @@ export function ExpertTeamCard({
         style: {
           marginTop: "auto",
           paddingTop: 8,
-          borderTop: "1px solid #f0f0f0",
+          borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",

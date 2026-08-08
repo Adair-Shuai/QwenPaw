@@ -47,7 +47,7 @@ export const CFG_LABEL_STYLE: Record<string, unknown> = {
   marginBottom: 4,
   fontSize: 13,
   fontWeight: 500,
-  color: "rgba(0,0,0,0.85)",
+  color: "var(--ant-color-text, rgba(0,0,0,0.85))",
   display: "flex",
   alignItems: "center",
   gap: 4,
@@ -64,15 +64,15 @@ export const CFG_GRID_2COL_STYLE: Record<string, unknown> = {
 export const CFG_SECTION_TITLE_STYLE: Record<string, unknown> = {
   fontSize: 13,
   fontWeight: 600,
-  color: "rgba(0,0,0,0.85)",
+  color: "var(--ant-color-text, rgba(0,0,0,0.85))",
   marginBottom: 12,
   paddingBottom: 8,
-  borderBottom: "1px solid #f0f0f0",
+  borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
 };
 // Tooltip hint text next to a control
 export const CFG_HINT_STYLE: Record<string, unknown> = {
   fontSize: 12,
-  color: "rgba(0,0,0,0.45)",
+  color: "var(--ant-color-text-tertiary, rgba(0,0,0,0.45))",
   marginLeft: 8,
 };
 

@@ -75,7 +75,7 @@ export function PageHeader({
         alignItems: "center",
         marginBottom: 20,
         paddingBottom: 12,
-        borderBottom: "1px solid #f0f0f0",
+        borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
       },
     },
     React.createElement(

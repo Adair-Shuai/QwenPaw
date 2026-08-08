@@ -417,7 +417,7 @@ export function SkillPoolTab({
                           style: {
                             marginTop: 8,
                             paddingTop: 8,
-                            borderTop: "1px solid #f0f0f0",
+                            borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
                             display: "flex",
                             gap: 8,
                             justifyContent: "flex-end",

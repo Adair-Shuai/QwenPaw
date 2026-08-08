@@ -224,12 +224,12 @@ export function SkillPickerModal({
                   style: {
                     position: "relative",
                     padding: "10px 12px",
-                    border: `1px solid ${isSelected ? "#0072f5" : "var(--ant-color-border-secondary, #e8e8e8)"}`,
+                    border: `1px solid ${isSelected ? "var(--ant-color-primary, #0072f5)" : "var(--ant-color-border-secondary, #e8e8e8)"}`,
                     borderRadius: 6,
                     cursor: isInstalled ? "not-allowed" : "pointer",
                     transition: "all 0.15s ease",
                     background: isSelected
-                      ? "rgba(0, 114, 245, 0.06)"
+                      ? "var(--ant-color-primary-bg, rgba(0, 114, 245, 0.06))"
                       : isInstalled
                         ? "var(--ant-color-fill-quaternary, #fafafa)"
                         : "var(--ant-color-bg-container, #fff)",
