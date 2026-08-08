@@ -13,9 +13,9 @@ vi.mock("../config", () => ({
   getApiUrl: (path: string) => `/api${path}`,
 }));
 vi.mock("../authHeaders", () => ({
-  buildAuthHeaders: vi.fn((agentId?: string) => ({
-    "X-Agent-Id": agentId ?? "default",
-  })),
+  buildAuthHeaders: vi.fn((agentId?: string) =>
+    agentId ? { "X-Agent-Id": agentId } : {},
+  ),
 }));
 vi.mock("../../stores/codeFileCacheStore", () => ({
   useCodeFileCacheStore: {
@@ -35,6 +35,7 @@ import { workspaceApi } from "./workspace";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import { useAgentStore } from "../../stores/agentStore";
 import { useCodingModeStore } from "../../stores/codingModeStore";
+import { useProjectDirectoryStore } from "../../stores/projectDirectoryStore";
 
 describe("workspaceApi.listDirectory", () => {
   afterEach(() => vi.clearAllMocks());
@@ -496,12 +497,16 @@ describe("workspaceApi scoped code-file cache", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.clearAllMocks();
+    useProjectDirectoryStore.setState({ projectDirByAgent: {} });
   });
 
   it("uses Agent and project root for cache lookup and storage", async () => {
     useAgentStore.setState({ selectedAgent: "agent-a" });
     useCodingModeStore.setState({
       codingModeByAgent: { "agent-a": true },
+    });
+    useProjectDirectoryStore.setState({
+      projectDirByAgent: { "agent-a": "/projects/one" },
     });
     cacheGet.mockReturnValue(undefined);
     vi.stubGlobal(

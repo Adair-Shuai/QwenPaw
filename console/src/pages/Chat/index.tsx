@@ -120,6 +120,16 @@ import type { ParsedFileReference } from "./fileReferenceFormatting";
 import AgentMentionController from "./components/AgentMentionController";
 import ComposerTokenHighlights from "./components/ComposerTokenHighlights";
 import StreamingTokenBadge from "./components/StreamingTokenBadge";
+import {
+  withAgentCoordinationContext,
+} from "./components/agentMentionUtils";
+import {
+  buildAgentMentionDispatch,
+  captureAgentMentionModesForSubmit,
+  consumeAgentMentionModesForSubmit,
+  getAgentMentionModesSnapshot,
+  restoreAgentMentionModes,
+} from "./components/agentMentionModes";
 
 interface ApprovalMessageData {
   requestId: string;
@@ -1875,6 +1885,23 @@ export default function ChatPage() {
     return () => window.removeEventListener("model-switched", handler);
   }, [fetchMultimodalCaps]);
 
+  const buildQueuedAgentMetadata = useCallback(
+    (text: string) => {
+      const tFn = i18n.getFixedT(i18n.language);
+      const modeSnapshot = getAgentMentionModesSnapshot();
+      return {
+        agentMentionModes: { ...modeSnapshot },
+        agentDispatch: buildAgentMentionDispatch(
+          text,
+          agents ?? [],
+          (agent) => getAgentDisplayName(agent, tFn),
+          modeSnapshot,
+        ),
+      };
+    },
+    [agents, i18n],
+  );
+
   const pendingClearHistoryRef = useRef(false);
   const whisperSpeechRef = useRef<WhisperSpeechButtonRef>(null);
   const [whisperEnabled, setWhisperEnabled] = useState(false);
@@ -2013,9 +2040,11 @@ export default function ChatPage() {
         return;
       }
       const queueText = prepareLoopModeMessage(val);
+      const agentMetadata = buildQueuedAgentMetadata(queueText);
       const enqueueIdentity = sessionApi.getSessionIdentity();
       useMessageQueueStore.getState().enqueue(queueSessionId, {
         text: queueText,
+        ...agentMetadata,
         attachments:
           pendingFileListRef.current.length > 0
             ? pendingFileListRef.current.map((f) => ({
@@ -2050,9 +2079,18 @@ export default function ChatPage() {
 
   const handleQueueEdit = useCallback(
     (id: string, text: string) => {
-      useMessageQueueStore.getState().edit(queueSessionId, id, text);
+      const metadata = buildQueuedAgentMetadata(text);
+      useMessageQueueStore
+        .getState()
+        .edit(
+          queueSessionId,
+          id,
+          text,
+          metadata.agentMentionModes,
+          metadata.agentDispatch,
+        );
     },
-    [queueSessionId],
+    [buildQueuedAgentMetadata, queueSessionId],
   );
 
   const handleQueueReorder = useCallback(
@@ -2077,6 +2115,7 @@ export default function ChatPage() {
       setTimeout(() => {
         void withSendLock(queueSessionId, () => {
           useMessageQueueStore.getState().setCurrentSendingId(item.id);
+          restoreAgentMentionModes(item.agentMentionModes);
           chatRef.current?.input.submit({
             query: beginLoopModeSubmission(item.text),
             fileList: buildFileList(item),
@@ -2128,6 +2167,7 @@ export default function ChatPage() {
           if (!target) return;
           useMessageQueueStore.getState().setCurrentSendingId(id);
           useMessageQueueStore.getState().remove(queueSessionId, id);
+          restoreAgentMentionModes(target.agentMentionModes);
           chatRef.current?.input.submit({
             query: beginLoopModeSubmission(target.text),
             fileList: buildFileList(target),
@@ -2535,11 +2575,6 @@ export default function ChatPage() {
       biz_params?: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<Response> => {
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...buildAuthHeaders(),
-      };
-
       if (usesQwenPawBackend) {
         try {
           const activeModels = await providerApi.getActiveModels({
@@ -2592,12 +2627,58 @@ export default function ChatPage() {
           : [];
 
       const identity = sessionApi.getSessionIdentity();
+
+      // ── @ Agent mention: extract target_agent_id from user text ──
+      const userTextForMention = rewrittenInput
+        .filter((m) => m.role === "user")
+        .map(extractUserMessageText)
+        .join("\n")
+        .trim();
+      const submittedMentionModes = consumeAgentMentionModesForSubmit();
+      const tFn = i18n.getFixedT(i18n.language);
+      const agentDispatch = buildAgentMentionDispatch(
+        userTextForMention,
+        agents ?? [],
+        (agent) => getAgentDisplayName(agent, tFn),
+        submittedMentionModes,
+      );
+      const isAgentCoordination = agentDispatch.coordinationRequested;
+      const mentionedAgentId = agentDispatch.targetAgentId ?? null;
+      const requestAgentId = mentionedAgentId ?? selectedAgent;
+
+      // Multi-Agent assignments and an explicitly collaborative single @ use
+      // the current Agent as coordinator. Direct single @ keeps target routing.
+      let finalInput = rewrittenInput;
+      if (isAgentCoordination || mentionedAgentId) {
+        let replacedText = false;
+        finalInput = rewrittenInput.map((m) => {
+          if (m.role !== "user" || !Array.isArray(m.content)) return m;
+          const newContent = (m.content as Array<Record<string, unknown>>).map(
+            (part) => {
+              if (part.type !== "text" || typeof part.text !== "string") {
+                return part;
+              }
+              if (replacedText) return { ...part, text: "" };
+              replacedText = true;
+              return { ...part, text: agentDispatch.requestText };
+            },
+          );
+          return { ...m, content: newContent };
+        });
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...buildAuthHeaders(requestAgentId),
+      };
+
       let requestBody: Record<string, unknown> = {
-        input: rewrittenInput,
+        input: finalInput,
         session_id: identity.sessionId || session?.session_id || "",
         user_id: identity.userId || session?.user_id || DEFAULT_USER_ID,
         channel: identity.channel || session?.channel || DEFAULT_CHANNEL,
         stream: true,
+        ...(mentionedAgentId ? { target_agent_id: mentionedAgentId } : {}),
         ...biz_params,
       };
 
@@ -2616,6 +2697,12 @@ export default function ChatPage() {
 
       let projectSessionId: string | null = null;
       let appliedProjectDir: string | null = null;
+
+      if (isAgentCoordination) {
+        requestBody.request_context = withAgentCoordinationContext(
+          requestBody.request_context,
+        );
+      }
 
       if (clientMessageId && Array.isArray(requestBody.input)) {
         const requestInput = [...requestBody.input] as Array<
@@ -2898,6 +2985,7 @@ export default function ChatPage() {
         pendingSenderClearRef.current = prepared;
       }
 
+      captureAgentMentionModesForSubmit();
       return true;
     };
 

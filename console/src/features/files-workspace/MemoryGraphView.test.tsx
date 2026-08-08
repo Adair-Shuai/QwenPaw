@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { agentsApi } from "../../api/modules/agents";
 import MemoryGraphView from "./MemoryGraphView";
 
@@ -23,6 +23,12 @@ vi.mock("../../api/modules/agents", () => ({
 const openFile = vi.fn();
 
 describe("MemoryGraphView", () => {
+  beforeAll(() => {
+    Element.prototype.setPointerCapture = vi.fn();
+    Element.prototype.releasePointerCapture = vi.fn();
+    Element.prototype.hasPointerCapture = vi.fn(() => false);
+  });
+
   beforeEach(() => {
     openFile.mockClear();
     vi.mocked(agentsApi.getMemoryGraph).mockResolvedValue({
@@ -226,11 +232,6 @@ describe("MemoryGraphView", () => {
       .length;
     const parentStart = parent.style.transform;
     const childStart = child.style.transform;
-    Object.defineProperties(parent, {
-      setPointerCapture: { value: vi.fn() },
-      hasPointerCapture: { value: vi.fn(() => false) },
-      releasePointerCapture: { value: vi.fn() },
-    });
 
     fireEvent.pointerDown(parent, {
       button: 0,

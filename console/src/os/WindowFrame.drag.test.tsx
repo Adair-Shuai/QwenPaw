@@ -8,7 +8,7 @@ import {
   vi,
 } from "vitest";
 import { Profiler } from "react";
-import { fireEvent, screen } from "@testing-library/react";
+import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { MessageSquare, Inbox } from "lucide-react";
 import { renderWithProviders } from "@/test/common_setup";
 import WindowFrame from "./WindowFrame";
@@ -62,6 +62,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  cleanup();
 });
 
 describe("WindowFrame drag", () => {

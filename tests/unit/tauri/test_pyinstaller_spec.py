@@ -36,7 +36,6 @@ def test_desktop_spec_collects_pawapp_sdk_for_runtime_loaded_plugins():
 
 def test_desktop_packagers_use_denylist_plugin_discovery():
     spec = SPEC_PATH.read_text(encoding="utf-8")
-    windows_build = WINDOWS_BUILD_PATH.read_text(encoding="utf-8")
 
     assert "discover_bundled_plugins(REPO_ROOT)" in spec
-    assert "stage_bundled_plugins.py" in windows_build
+    assert "stage_bundled_plugins" in spec

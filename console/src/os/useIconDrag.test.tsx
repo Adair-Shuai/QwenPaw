@@ -7,7 +7,7 @@ import {
   afterEach,
   vi,
 } from "vitest";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useIconDrag } from "./useIconDrag";
 
 /** jsdom lacks the pointer-capture API used by the drag handlers. */
@@ -22,6 +22,7 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.useRealTimers();
+  cleanup();
 });
 
 function Harness({
