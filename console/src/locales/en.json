@@ -3511,6 +3511,8 @@
     "viewVideo": "View video {{file}}",
     "viewVideoDefault": "View video",
     "desktopScreenshot": "Screenshot desktop",
+    "officeScreenshot": "Screenshot · {{file}} (page {{page}})",
+    "officeScreenshotDefault": "Office screenshot (page {{page}})",
     "sendFile": "Send {{file}}",
     "sendFileDefault": "Send file",
     "browserUse": "Browse {{detail}}",

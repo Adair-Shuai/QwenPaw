@@ -437,16 +437,6 @@ export default function Header() {
               </Button>
             </Dropdown>
           )}
-          <Tooltip title={t("header.github")}>
-            <Button
-              type="text"
-              icon={<GithubOutlined />}
-              onClick={() => handleNavClick(GITHUB_URL)}
-              className={styles.hideOnMobile}
-            >
-              {t("header.github")}
-            </Button>
-          </Tooltip>
           <div className={styles.headerDivider} />
           <span className={styles.hideOnMobile}>
             <LanguageSwitcher />

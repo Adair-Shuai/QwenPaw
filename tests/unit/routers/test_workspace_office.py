@@ -12,7 +12,10 @@ Covers:
 
 import json
 import subprocess
+from pathlib import Path
 from unittest.mock import patch, MagicMock
+
+import pytest
 
 
 # ---------------------------------------------------------------------------
@@ -57,6 +60,60 @@ class TestIsOfficecliAvailable:
         mock_bundled.return_value = None
         mock_which.return_value = None
         assert ws._is_officecli_available() is False
+
+    @patch("qwenpaw.app.routers.workspace._bundled_officecli_path")
+    def test_bundled_doc_plugin_is_exported_to_subprocess_environment(
+        self,
+        mock_bundled,
+        tmp_path,
+    ):
+        import qwenpaw.app.routers.workspace as ws
+
+        officecli_dir = tmp_path / "officecli"
+        plugin = officecli_dir / "plugins" / "dump-reader" / "doc" / "plugin"
+        plugin.parent.mkdir(parents=True)
+        plugin.write_bytes(b"plugin")
+        binary = officecli_dir / "officecli"
+        binary.write_bytes(b"officecli")
+        mock_bundled.return_value = str(binary)
+
+        env = ws._officecli_env()
+        assert env["OFFICECLI_PLUGIN_DUMP_READER_DOC"] == str(plugin)
+
+
+class TestLegacyDocFallback:
+    """Tests for the compatibility path used without the licensed plugin."""
+
+    @patch("qwenpaw.app.routers.workspace._convert_docx_to_html")
+    @patch("qwenpaw.app.routers.workspace.shutil.which")
+    def test_doc_is_converted_to_docx_before_legacy_rendering(
+        self,
+        mock_which,
+        mock_render,
+        tmp_path,
+    ):
+        import qwenpaw.app.routers.workspace as ws
+
+        source = tmp_path / "legacy.doc"
+        source.write_bytes(b"legacy")
+        mock_which.return_value = "/usr/bin/soffice"
+        mock_render.return_value = "<p>converted</p>"
+
+        def fake_run(command, **kwargs):
+            output_dir = Path(command[command.index("--outdir") + 1])
+            output_dir.mkdir(parents=True, exist_ok=True)
+            (output_dir / "legacy.docx").write_bytes(b"docx")
+            return MagicMock(returncode=0, stdout="", stderr="")
+
+        with patch(
+            "qwenpaw.app.routers.workspace.subprocess.run",
+            side_effect=fake_run,
+        ):
+            html = ws._convert_legacy_office_to_html(str(source))
+
+        assert html == "<p>converted</p>"
+        mock_render.assert_called_once()
+        assert Path(mock_render.call_args.args[0]).suffix == ".docx"
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +220,137 @@ class TestConvertWithOfficecli:
             f for f in new_files if f.endswith(".html") or f.endswith(".htm")
         ]
         assert not html_temp_files, f"Temp files created: {html_temp_files}"
+
+
+class TestResolveWorkspaceFileDownloadUrl:
+    """Resolve URLs emitted by the unified /files workspace."""
+
+    def test_resolves_project_root_download_url(self, tmp_path):
+        from qwenpaw.app.routers.workspace import _resolve_file_path_from_url
+
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        target = project_dir / "docs" / "report.docx"
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"docx")
+        workspace_dir.mkdir()
+
+        resolved = _resolve_file_path_from_url(
+            "/api/workspace/file-download"
+            "?path=docs%2Freport.docx&root=project",
+            project_dir,
+            workspace_dir,
+        )
+
+        assert resolved == target
+
+    def test_resolves_agent_workspace_download_url(self, tmp_path):
+        from qwenpaw.app.routers.workspace import _resolve_file_path_from_url
+
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        target = workspace_dir / "assets" / "slides.pptx"
+        project_dir.mkdir()
+        target.parent.mkdir(parents=True)
+        target.write_bytes(b"pptx")
+
+        resolved = _resolve_file_path_from_url(
+            "http://127.0.0.1:8000/api/workspace/file-download"
+            "?path=assets%2Fslides.pptx&root=workspace",
+            project_dir,
+            workspace_dir,
+        )
+
+        assert resolved == target
+
+    def test_resolves_chat_file_preview_url(self, tmp_path):
+        from urllib.parse import quote
+        from qwenpaw.app.routers.workspace import _resolve_file_path_from_url
+
+        project_dir = tmp_path / "project"
+        target = tmp_path / "generated" / "储层数据表.xlsx"
+        project_dir.mkdir()
+        target.parent.mkdir()
+        target.write_bytes(b"xlsx")
+
+        resolved = _resolve_file_path_from_url(
+            "/api/files/preview/" + quote(str(target), safe="/"),
+            project_dir,
+            tmp_path,
+        )
+
+        assert resolved == target
+
+    def test_rejects_unknown_workspace_root(self, tmp_path):
+        from fastapi import HTTPException
+        from qwenpaw.app.routers.workspace import _resolve_file_path_from_url
+
+        with pytest.raises(HTTPException) as exc_info:
+            _resolve_file_path_from_url(
+                "/api/workspace/file-download?path=report.docx&root=outside",
+                tmp_path,
+                tmp_path,
+            )
+
+        assert exc_info.value.status_code == 400
+
+
+class TestConvertOfficeEndpoint:
+    """The endpoint must pass /files URLs through OfficeCLI."""
+
+    @pytest.mark.asyncio
+    async def test_converts_workspace_download_url_with_officecli(
+        self,
+        tmp_path,
+    ):
+        from starlette.requests import Request
+        from qwenpaw.app.routers.workspace import (
+            ConvertOfficeRequest,
+            convert_office,
+        )
+
+        project_dir = tmp_path / "project"
+        workspace_dir = tmp_path / "workspace"
+        target = workspace_dir / "sample.docx"
+        project_dir.mkdir()
+        workspace_dir.mkdir()
+        target.write_bytes(b"docx")
+        workspace = MagicMock(workspace_dir=workspace_dir)
+        request = Request({"type": "http", "headers": []})
+        body = ConvertOfficeRequest(
+            url="/api/workspace/file-download"
+            "?path=sample.docx&root=workspace",
+            mime_type=(
+                "application/vnd.openxmlformats"
+                "-officedocument.wordprocessingml.document"
+            ),
+        )
+
+        with (
+            patch(
+                "qwenpaw.app.routers.workspace.get_agent_for_request",
+                return_value=workspace,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace.get_project_dir_for_request",
+                return_value=project_dir,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace._is_officecli_available",
+                return_value=True,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace._convert_with_officecli",
+                return_value="<html>OfficeCLI</html>",
+            ) as convert_mock,
+        ):
+            result = await convert_office(request, body)
+
+        assert result == {
+            "html": "<html>OfficeCLI</html>",
+            "engine": "officecli",
+        }
+        convert_mock.assert_called_once_with(str(target))
 
 
 # ---------------------------------------------------------------------------

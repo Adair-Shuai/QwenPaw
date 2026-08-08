@@ -10,13 +10,34 @@ import LightweightPdfViewer from "./LightweightPdfViewer";
 
 const PdfRenderer: React.FC<RendererContext> = ({ artifact, workspace }) => {
   const { t } = useTranslation();
+  const usesUnifiedWorkspaceScope = Boolean(
+    artifact.workspaceRoot || artifact.chatId || artifact.projectDirOverride,
+  );
   const baseUrl = artifact.workspacePath
-    ? workspaceFileApi.getBinaryFileUrl(artifact.workspacePath)
+    ? usesUnifiedWorkspaceScope && artifact.binaryUrl
+      ? artifact.binaryUrl
+      : workspaceFileApi.getBinaryFileUrl(artifact.workspacePath)
     : artifact.binaryUrl ?? "";
-  const isWorkspaceUrl = baseUrl.includes("/workspace/binary-files/");
+  const isWorkspaceUrl =
+    baseUrl.includes("/workspace/binary-files/") ||
+    baseUrl.includes("/workspace/file-download");
   const requestHeaders = useMemo(
-    () => (isWorkspaceUrl ? buildAuthHeaders(artifact.agentId) : undefined),
-    [artifact.agentId, isWorkspaceUrl],
+    () =>
+      isWorkspaceUrl
+        ? {
+            ...buildAuthHeaders(artifact.agentId),
+            ...(artifact.chatId ? { "X-Chat-Id": artifact.chatId } : {}),
+            ...(!artifact.chatId && artifact.projectDirOverride
+              ? { "X-Session-Project-Dir": artifact.projectDirOverride }
+              : {}),
+          }
+        : undefined,
+    [
+      artifact.agentId,
+      artifact.chatId,
+      artifact.projectDirOverride,
+      isWorkspaceUrl,
+    ],
   );
   const handleDownload = useCallback(() => {
     workspace.download?.(artifact);

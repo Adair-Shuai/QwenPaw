@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { useAgentStore } from "../stores/agentStore";
 
 // 顶层 mock（Vitest 会提升这些），使用 doMock 以兼容 resetModules
 vi.mock("../api/modules/workspace", () => ({
@@ -195,11 +196,10 @@ describe("useWorkspaceWatch — message handling", () => {
     const callback = vi.fn();
 
     const { rerender, unmount } = renderHook(
-      ({ agentId }) =>
-        useWorkspaceWatch(callback, true, {
-          agentId,
-          projectRoot: "/project",
-        }),
+      ({ agentId }) => {
+        useAgentStore.setState({ selectedAgent: agentId });
+        return useWorkspaceWatch(callback, true);
+      },
       { initialProps: { agentId: "agent-a" } },
     );
 

@@ -37,8 +37,8 @@ jobs:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     env:
-      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
-      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://download.qwenpaw.agentscope.io/files/apps/desktop' }}
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/apps/desktop' }}
     steps:
       - name: Checkout (for scripts)
         uses: actions/checkout@v4
@@ -144,7 +144,24 @@ jobs:
           metadata_args=()
           for f in tauri-updater-meta-windows/tauri-windows-*-updater.json \
                    tauri-updater-meta-macos/tauri-darwin-*-updater.json; do
-            [ -f "$f" ] && metadata_args+=(--metadata "$f")
+            [ -f "$f" ] || continue
+            target=$(jq -r '.target // empty' "$f")
+            artifact=$(jq -r '.artifact // empty' "$f")
+            case "$target" in
+              windows-x86_64) platform="win-tauri" ;;
+              darwin-aarch64|darwin-x86_64) platform="mac-tauri" ;;
+              *)
+                echo "::error::Unsupported updater target in $f: $target"
+                exit 1
+                ;;
+            esac
+            if [ -z "$artifact" ] || ! ossutil ls \
+                "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${artifact}" \
+                >/dev/null 2>&1; then
+              echo "::error::Updater artifact is missing from OSS: ${platform}/${artifact}"
+              exit 1
+            fi
+            metadata_args+=(--metadata "$f")
           done
           if [ ${#metadata_args[@]} -eq 0 ]; then
             echo "No Tauri updater sidecars found, skipping OSS manifest"

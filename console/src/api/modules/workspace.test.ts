@@ -501,7 +501,7 @@ describe("workspaceApi scoped code-file cache", () => {
   it("uses Agent and project root for cache lookup and storage", async () => {
     useAgentStore.setState({ selectedAgent: "agent-a" });
     useCodingModeStore.setState({
-      projectDirByAgent: { "agent-a": "/projects/one" },
+      codingModeByAgent: { "agent-a": true },
     });
     cacheGet.mockReturnValue(undefined);
     vi.stubGlobal(

@@ -208,10 +208,13 @@ def cmd_manifest(args: argparse.Namespace) -> None:
         manifest_entry: dict[str, str] = {
             "url": f"{base}/{quote(meta['artifact'])}",
         }
-        if "signature" in meta:
-            manifest_entry["signature"] = _signature_text(
-                workdir / meta["signature"],
+        if "signature" not in meta:
+            raise SystemExit(
+                f"{meta_path} has no updater signature; refusing to publish an unsigned entry",
             )
+        manifest_entry["signature"] = _signature_text(
+            workdir / meta["signature"],
+        )
         platforms[meta["target"]] = manifest_entry
     if not platforms:
         raise SystemExit("no updater platforms were provided")

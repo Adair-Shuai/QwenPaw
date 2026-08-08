@@ -24,10 +24,13 @@ import {
 export function CurrentAgentSkillsTab({
   agentId,
   agentName,
+  refreshKey = 0,
   onNavigate,
 }: {
   agentId: string;
   agentName: string;
+  /** Incremented by the skill-pool tab after an install completes. */
+  refreshKey?: number;
   onNavigate: (path: string) => void;
 }) {
   const React = getHost().React;
@@ -87,7 +90,7 @@ export function CurrentAgentSkillsTab({
 
   useEffect(() => {
     loadSkills();
-  }, [loadSkills]);
+  }, [loadSkills, refreshKey]);
 
   // ── Batch helpers ─────────────────────────────────────────────────────────
   const toggleSelect = (name: string) => {

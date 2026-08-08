@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RendererContext, WorkspaceArtifact } from "../../types";
 
 const {
@@ -75,6 +75,8 @@ function makeContext(overrides: Partial<WorkspaceArtifact>): RendererContext {
 }
 
 describe("authenticated Workspace binary renderers", () => {
+  afterEach(() => cleanup());
+
   beforeEach(() => {
     useAuthenticatedWorkspaceBlob.mockReturnValue({
       status: "ready",

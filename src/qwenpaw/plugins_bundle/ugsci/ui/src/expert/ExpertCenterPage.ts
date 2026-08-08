@@ -372,7 +372,16 @@ export function ExpertCenterPage() {
         // Search bar
         React.createElement(
           "div",
-          { style: { marginBottom: 16 } },
+          {
+            style: {
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              flexWrap: "wrap",
+              marginBottom: 16,
+            },
+          },
           React.createElement(Input, {
             placeholder: "搜索专家名称、描述或技能...",
             prefix: SearchOutlined
@@ -381,8 +390,20 @@ export function ExpertCenterPage() {
             value: searchText,
             onChange: (e: any) => setSearchText(e.target.value),
             allowClear: true,
-            style: { maxWidth: 400 },
+            style: { flex: "1 1 280px", maxWidth: 400 },
           }),
+          React.createElement(
+            Button,
+            {
+              type: "primary",
+              icon: PlusOutlined
+                ? React.createElement(PlusOutlined)
+                : undefined,
+              onClick: () => setTemplateModalOpen(true),
+              style: PRIMARY_BTN_STYLE,
+            },
+            "创建专家",
+          ),
         ),
         // Content
         loading
@@ -478,18 +499,6 @@ export function ExpertCenterPage() {
                 loading,
               },
               "刷新",
-            )
-          : null,
-        activeTab === "experts"
-          ? React.createElement(
-              Button,
-              {
-                type: "primary",
-                icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
-                onClick: () => setTemplateModalOpen(true),
-                style: PRIMARY_BTN_STYLE,
-              },
-              "创建专家",
             )
           : null,
       ),

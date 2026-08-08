@@ -1,10 +1,16 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Stage the OfficeCLI binary for the Tauri desktop bundle.
+"""Stage the OfficeCLI binary and optional legacy .doc plugin.
 
 Downloads the correct pre-built ``officecli`` executable from the
 OfficeCLI GitHub releases for the current platform / architecture and
 places it into ``<dest>/officecli`` (or ``officecli.exe`` on Windows).
+
+The legacy Word ``.doc`` reader is an independently licensed OfficeCLI
+plugin.  It is staged when ``--doc-plugin`` is supplied (or when
+``QWENPAW_OFFICECLI_DOC_PLUGIN`` points at the platform-specific plugin
+binary).  The plugin is placed at OfficeCLI's documented side-by-side
+location: ``plugins/dump-reader/doc/plugin``.
 
 The resulting directory is listed in ``tauri.conf.json`` under
 ``bundle.resources`` so Tauri ships it inside the final .app / .exe.
@@ -108,6 +114,50 @@ def _sha256_file(path: Path) -> str:
     return h.hexdigest()
 
 
+def _doc_plugin_path(dest: Path) -> Path:
+    """Return OfficeCLI's documented side-by-side .doc plugin path."""
+    return dest / "plugins" / "dump-reader" / "doc" / "plugin"
+
+
+def _stage_doc_plugin(source: str | None, dest: Path) -> None:
+    """Stage an authorized .doc plugin, if one was supplied.
+
+    The build remains usable without the optional asset: OfficeCLI continues
+    to handle OOXML formats and QwenPaw keeps its existing fallback behavior.
+    """
+    if not source:
+        print(
+            "  No OfficeCLI .doc plugin supplied; "
+            "legacy .doc preview will use the fallback path.",
+        )
+        return
+
+    source_path = Path(source).expanduser().resolve()
+    if not source_path.is_file():
+        raise SystemExit(f"OfficeCLI .doc plugin not found: {source_path}")
+
+    target = _doc_plugin_path(dest)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    digest = _sha256_file(source_path)
+    marker = target.parent / "plugin.sha256"
+    if (
+        target.is_file()
+        and marker.is_file()
+        and marker.read_text().strip() == digest
+    ):
+        print(
+            f"OfficeCLI .doc plugin already staged ({digest[:12]}...); skipping",
+        )
+        return
+
+    shutil.copy2(source_path, target)
+    if platform.system() != "Windows":
+        st = target.stat()
+        target.chmod(st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+    marker.write_text(digest + "\n", encoding="utf-8")
+    print(f"Staged OfficeCLI .doc plugin at {target} (sha256={digest})")
+
+
 def _http_download(url: str, dest: Path) -> None:
     """Download *url* to *dest* with a progress indicator."""
     request = urllib.request.Request(url)
@@ -146,6 +196,12 @@ def main() -> None:
         help="OfficeCLI version tag (e.g. v1.0.141). "
         "Defaults to env QWENPAW_OFFICECLI_VERSION or latest release.",
     )
+    parser.add_argument(
+        "--doc-plugin",
+        default=os.environ.get("QWENPAW_OFFICECLI_DOC_PLUGIN"),
+        help="Path to the authorized platform-specific OfficeCLI .doc plugin. "
+        "Defaults to QWENPAW_OFFICECLI_DOC_PLUGIN.",
+    )
     args = parser.parse_args()
 
     platform_name, arch = _target()
@@ -165,6 +221,7 @@ def main() -> None:
         and marker.read_text(encoding="utf-8").strip() == expected_marker
     ):
         print(f"officecli already staged ({expected_marker}); skipping")
+        _stage_doc_plugin(args.doc_plugin, dest)
         return
 
     url = f"{GITHUB_DOWNLOAD_BASE}/{version}/{asset_name}"
@@ -225,6 +282,7 @@ def main() -> None:
 
     marker.write_text(expected_marker, encoding="utf-8")
     print(f"Staged officecli at {dest / binary_name}")
+    _stage_doc_plugin(args.doc_plugin, dest)
 
 
 if __name__ == "__main__":

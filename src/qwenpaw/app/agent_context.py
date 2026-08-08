@@ -50,6 +50,28 @@ _current_approval_route: ContextVar[Optional[dict]] = ContextVar(
 )
 
 
+def _normalize_agent_id(value: object) -> Optional[str]:
+    """Normalize explicit agent IDs from path params and headers."""
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        from fastapi import HTTPException
+
+        raise HTTPException(
+            status_code=400,
+            detail="Agent ID must be a string",
+        )
+
+    # Duplicate X-Agent-Id headers can be folded by ASGI/Starlette into a
+    # comma-separated value. Prefer the rightmost value because plugin requests
+    # add their explicit target after the host's currently selected agent.
+    parts = [part.strip() for part in value.split(",")]
+    for part in reversed(parts):
+        if part:
+            return part
+    return None
+
+
 # pylint: disable=too-many-branches
 async def get_agent_for_request(
     request: Request,
@@ -89,13 +111,7 @@ async def get_agent_for_request(
     # IDs supplied by headers, scoped routes, and explicit overrides should
     # resolve identically.  In particular, do not turn an accidental blank
     # header into the confusing error ``Agent '   ' not found``.
-    if target_agent_id is not None:
-        if not isinstance(target_agent_id, str):
-            raise HTTPException(
-                status_code=400,
-                detail="Agent ID must be a string",
-            )
-        target_agent_id = target_agent_id.strip() or None
+    target_agent_id = _normalize_agent_id(target_agent_id)
 
     # Load config once for fallback and validation
     config = None

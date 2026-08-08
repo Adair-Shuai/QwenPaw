@@ -90,6 +90,33 @@ describe("agentStore", () => {
     expect(mocks.listAgents).toHaveBeenCalledTimes(2);
   });
 
+  it("force refresh re-queries after an in-flight stale refresh", async () => {
+    let resolveInitial!: (value: { agents: AgentSummary[] }) => void;
+    mocks.listAgents
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          resolveInitial = resolve;
+        }),
+      )
+      .mockResolvedValueOnce({
+        agents: [mockAgent("default"), mockAgent("new-agent")],
+      });
+
+    const initialRefresh = useAgentStore.getState().refreshAgents();
+    const forcedRefresh = useAgentStore
+      .getState()
+      .refreshAgents({ force: true });
+
+    resolveInitial({ agents: [mockAgent("default")] });
+    await Promise.all([initialRefresh, forcedRefresh]);
+
+    expect(mocks.listAgents).toHaveBeenCalledTimes(2);
+    expect(useAgentStore.getState().agents.map((agent) => agent.id)).toEqual([
+      "default",
+      "new-agent",
+    ]);
+  });
+
   it("allows a new refresh after the previous request fails", async () => {
     mocks.listAgents
       .mockRejectedValueOnce(new Error("request failed"))

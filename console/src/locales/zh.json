@@ -3529,6 +3529,8 @@
     "viewVideo": "查看视频 {{file}}",
     "viewVideoDefault": "查看视频",
     "desktopScreenshot": "截图 桌面",
+    "officeScreenshot": "截图 · {{file}} (第 {{page}} 页)",
+    "officeScreenshotDefault": "Office 截图 (第 {{page}} 页)",
     "sendFile": "发送 {{file}}",
     "sendFileDefault": "发送 文件",
     "browserUse": "浏览 {{detail}}",

@@ -83,7 +83,7 @@
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDVFQzVFM0JBRjJCNEE3NUUKUldSZXA3VHl1dVBGWGhvb1JqQzNySlYwWVNsVmZNQTN5YnRiaUc5WVh2d3RTQnE1aHhrK1M4NVUK",
       "endpoints": [
-        "https://download.qwenpaw.agentscope.io/metadata/qwenpaw-tauri-latest.json"
+        "https://ugsci-download.oss-cn-beijing.aliyuncs.com/metadata/qwenpaw-tauri-latest.json"
       ],
       "windows": {
         "installMode": "passive"

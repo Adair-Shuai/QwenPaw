@@ -13,6 +13,7 @@ import type React from "react";
 import { chatExtensions } from "../registry/chatExtensions";
 import { auditStore } from "../registry/audit";
 import { pluginSystem } from "../hostExternals";
+import { useAgentStore } from "../../stores/agentStore";
 import { combineDisposables } from "../registry/types";
 import { ChatScalar } from "../registry/slotKeys";
 import type {
@@ -404,6 +405,10 @@ export function installHostSdk(): void {
   if (!host.useCurrentSession) host.useCurrentSession = useHostCurrentSession;
   if (!host.getSelectedAgentId) host.getSelectedAgentId = getSelectedAgentId;
   if (!host.getCurrentSessionId) host.getCurrentSessionId = getCurrentSessionId;
+  if (!host.refreshAgents) {
+    host.refreshAgents = (options?: { force?: boolean }) =>
+      useAgentStore.getState().refreshAgents(options);
+  }
   if (!host.fetch) host.fetch = hostFetch;
 
   // ── Workspace API ──────────────────────────────────────────────────────

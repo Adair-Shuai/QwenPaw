@@ -218,6 +218,11 @@ if ls "${BUNDLE_DIR}/macos/"*.app.tar.gz >/dev/null 2>&1; then
         --output "${UPDATER_NAME}" \
         --pubkey-config "${REPO_ROOT}/console/src-tauri/tauri.version.conf.json"
 else
+    if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
+        echo "ERROR: TAURI_SIGNING_PRIVATE_KEY is set, but no .app.tar.gz updater archive was produced"
+        echo "The macOS release must not continue without a signed updater artifact."
+        exit 1
+    fi
     echo "warning: no .app.tar.gz updater archive found; skipping updater staging"
     echo "(This is expected when building without TAURI_SIGNING_PRIVATE_KEY)"
     UPDATER_NAME="(skipped - no signing key)"

@@ -9,6 +9,7 @@ import {
   syncAgentMentionModes,
   useAgentMentionModes,
 } from "./agentMentionModes";
+import { getSenderTextareaFromTarget } from "../utils";
 
 interface AgentMentionControllerProps {
   active: boolean;
@@ -40,21 +41,37 @@ export default function AgentMentionController({
   useEffect(() => {
     if (!active) return;
 
-    const getTextarea = (): HTMLTextAreaElement | null =>
-      document.querySelector('[class*="sender"] textarea');
+    const getTextarea = (): HTMLTextAreaElement | null => {
+      // When RichFileReferenceInput (Lexical editor) is active, the visible
+      // input is a ContentEditable, not a <textarea>.  The hidden textarea
+      // synced by the rich editor is still inside the sender container, so
+      // the selector finds it for both plain-textarea and rich-editor modes.
+      const focused =
+        document.activeElement instanceof HTMLElement
+          ? document.activeElement.closest('[class*="sender"]')
+          : null;
+      const focusedTextarea = focused?.querySelector("textarea");
+      if (focusedTextarea instanceof HTMLTextAreaElement) return focusedTextarea;
+      return document.querySelector('[class*="sender"] textarea');
+    };
 
     const onKeyDown = (event: KeyboardEvent) => {
-      const textarea = getTextarea();
-      if (!textarea || event.target !== textarea) return;
+      // Resolve the sender's hidden textarea from either a plain <textarea> or
+      // a Lexical ContentEditable event target.
+      const textarea = getSenderTextareaFromTarget(event.target);
+      if (!textarea) return;
       handleKeyDown(event, textarea);
     };
 
     const onInput = (event: Event) => {
-      const target = event.target;
-      if (!(target instanceof HTMLTextAreaElement)) return;
-      if (!target.closest('[class*="sender"]')) return;
-      handleInputChange(target);
-      syncAgentMentionModes(target.value, agents, (agent) =>
+      // The rich editor dispatches a synthetic input event on the hidden
+      // textarea via setTextareaValue().  That event has the textarea as
+      // target.  The native ContentEditable input event (target = div) is
+      // also handled by getSenderTextareaFromTarget.
+      const textarea = getSenderTextareaFromTarget(event.target);
+      if (!textarea) return;
+      handleInputChange(textarea);
+      syncAgentMentionModes(textarea.value, agents, (agent) =>
         getAgentDisplayName(agent, t),
       );
     };

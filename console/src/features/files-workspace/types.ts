@@ -1,6 +1,7 @@
 export type FileSource =
   | "workspace"
   | "attachment"
+  | "artifact"
   | "profile"
   | "memory"
   | "daily"
@@ -14,6 +15,8 @@ export interface FileTarget {
   root?: WorkspaceRoot;
   /** Stable URL emitted by a chat tool result for a historical artifact. */
   artifactUrl?: string;
+  /** Inline or generated content that is not necessarily backed by a file. */
+  artifact?: import("../../components/Workspace/types").WorkspaceArtifact;
   line?: number;
   endLine?: number;
   column?: number;

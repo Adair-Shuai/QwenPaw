@@ -31,11 +31,10 @@ import {
 } from "@ant-design/icons";
 import { Tooltip, message } from "antd";
 import { invoke } from "@tauri-apps/api/core";
-import { useWorkspaceStore } from "@/components/Workspace/store/workspaceStore";
 import { workspaceApi } from "@/api/modules/workspace";
 import { buildAuthHeaders } from "@/api/authHeaders";
 import { useAgentStore } from "@/stores/agentStore";
-import { useProjectDir } from "@/stores/codingModeStore";
+import { openFilePreview } from "@/features/files-workspace/openFilePreview";
 import {
   DownloadCancelledError,
   downloadFileFromUrl,
@@ -448,7 +447,10 @@ export function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     if (isBinary) {
       // Try extracting URL from result blocks (send_file_to_user returns
       // a DataBlock with URLSource)
-      binaryUrl = extractUrlFromResult(rawResult) || undefined;
+      const extractedBinaryUrl = extractUrlFromResult(rawResult);
+      binaryUrl = extractedBinaryUrl
+        ? toDisplayUrl(extractedBinaryUrl)
+        : undefined;
       // Fall back to workspace binary file API for workspace files
       if (!binaryUrl) {
         binaryUrl = workspaceApi.getBinaryFileUrl(filePath);
@@ -818,11 +820,6 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(
     () => new Set(),
   );
-  const selectedAgent = useAgentStore((state) => state.selectedAgent);
-  const { projectDir } = useProjectDir();
-  const workspaceSessionId = useWorkspaceStore(
-    (state) => state.currentSessionId,
-  );
 
   // 分离交付物和中间文件
   const { deliverables, generatedFiles } = useMemo(() => {
@@ -841,101 +838,42 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   if (deliverables.length === 0 && generatedFiles.length === 0) return null;
 
   /** 点击卡片/列表项：在工作区打开文件内容预览 */
-  const handleOpenInWorkspace = async (info: FileInfo) => {
+  const handleOpenInWorkspace = (info: FileInfo) => {
     const ext = info.extension || "";
     const mimeType = getMimeType(ext);
-    const artifactId = `filecard-${workspaceSessionId}-${info.toolCallId}`;
+    const artifactId = `filecard-${info.toolCallId}`;
 
-    // For binary files, use binaryUrl directly
-    if (info.isBinary) {
-      useWorkspaceStore.getState().openArtifact({
-        id: artifactId,
-        title: info.fileName,
-        source: "tool_call",
-        mimeType,
-        extension: ext || undefined,
-        binaryUrl: info.binaryUrl,
-        toolName: info.toolName,
-        workspacePath: info.filePath,
-        agentId: selectedAgent,
-        projectRoot: projectDir ?? null,
-        sessionId: workspaceSessionId,
-        size: info.fileSize,
-      });
-      return;
-    }
-
-    // For write_file / append_file: content is the actual file content
-    // (extracted from tool call params). Use it directly — no need to
-    // fetch from backend.
+    // Content supplied directly by a write/append tool is an inline artifact.
     if (
       (info.operation === "write" || info.operation === "append") &&
       info.content
     ) {
-      useWorkspaceStore.getState().openArtifact({
-        id: artifactId,
-        title: info.fileName,
-        source: "tool_call",
-        mimeType,
-        extension: ext || undefined,
-        textContent: info.content,
-        toolName: info.toolName,
-        workspacePath: info.filePath,
-        agentId: selectedAgent,
-        projectRoot: projectDir ?? null,
-        sessionId: workspaceSessionId,
+      openFilePreview({
+        source: "artifact",
+        path: info.filePath || info.fileName,
+        artifact: {
+          id: artifactId,
+          title: info.fileName,
+          source: "tool_call",
+          mimeType,
+          extension: ext || undefined,
+          textContent: info.content,
+          toolName: info.toolName,
+          workspacePath: info.filePath,
+          agentId: useAgentStore.getState().selectedAgent,
+          size: info.fileSize,
+        },
       });
       return;
     }
 
-    // For edit_file / send_file_to_user: we don't have full content,
-    // try fetching from backend. Open with loading state first.
-    useWorkspaceStore.getState().openArtifact({
-      id: artifactId,
-      title: info.fileName,
-      source: "tool_call",
-      mimeType,
-      extension: ext || undefined,
-      textContent: "",
-      isStreaming: true,
-      toolName: info.toolName,
-      workspacePath: info.filePath,
-      agentId: selectedAgent,
-      projectRoot: projectDir ?? null,
-      sessionId: workspaceSessionId,
+    const artifactUrl = info.fileUrl || info.binaryUrl;
+    openFilePreview({
+      source: artifactUrl ? "attachment" : "workspace",
+      path: info.filePath || info.fileName,
+      root: artifactUrl ? undefined : "project",
+      artifactUrl,
     });
-
-    // For send_file_to_user, try fetching via the file preview URL first.
-    if (info.fileUrl) {
-      try {
-        const resp = await fetch(info.fileUrl);
-        if (resp.ok) {
-          const text = await resp.text();
-          useWorkspaceStore.getState().updateArtifact(artifactId, {
-            textContent: text,
-            isStreaming: false,
-          });
-          return;
-        }
-      } catch {
-        // Fall through to workspace code-files API
-      }
-    }
-
-    try {
-      const result = await workspaceApi.loadCodeFile(info.filePath);
-      useWorkspaceStore.getState().updateArtifact(artifactId, {
-        textContent: result.content,
-        isStreaming: false,
-      });
-    } catch {
-      // Fallback: show whatever content we have, or a helpful message
-      useWorkspaceStore.getState().updateArtifact(artifactId, {
-        textContent:
-          info.content || `无法加载文件内容。文件路径: ${info.filePath}`,
-        isStreaming: false,
-      });
-    }
   };
 
   /** 点击文件夹图标：在系统文件资源管理器中定位文件 */

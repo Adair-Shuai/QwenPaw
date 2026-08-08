@@ -22,6 +22,7 @@ export { default as GlobSearchCard } from "./GlobSearchCard";
 export { default as ViewImageCard } from "./ViewImageCard";
 export { default as ViewVideoCard } from "./ViewVideoCard";
 export { default as DesktopScreenshotCard } from "./DesktopScreenshotCard";
+export { default as OfficeScreenshotCard } from "./OfficeScreenshotCard";
 export { default as SendFileCard } from "./SendFileCard";
 export { default as BrowserCard } from "./BrowserCard";
 // ── DEPRECATED BROWSER (remove together with backend deprecated_browser/) ──
@@ -51,6 +52,7 @@ import GlobSearchCard from "./GlobSearchCard";
 import ViewImageCard from "./ViewImageCard";
 import ViewVideoCard from "./ViewVideoCard";
 import DesktopScreenshotCard from "./DesktopScreenshotCard";
+import OfficeScreenshotCard from "./OfficeScreenshotCard";
 import SendFileCard from "./SendFileCard";
 import BrowserCard from "./BrowserCard";
 // ── DEPRECATED BROWSER (remove together with backend deprecated_browser/) ──
@@ -95,6 +97,7 @@ export const BUILTIN_CARD_REGISTRY: Record<string, BuiltinCardComponent> = {
   view_image: ViewImageCard,
   view_video: ViewVideoCard,
   desktop_screenshot: DesktopScreenshotCard,
+  office_view_screenshot: OfficeScreenshotCard,
   send_file_to_user: SendFileCard,
 
   // Unified Browser SDK

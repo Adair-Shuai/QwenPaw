@@ -63,6 +63,8 @@ export interface HostExternals {
   fetch?: (path: string, init?: RequestInit) => Promise<Response>;
   /** Set the currently selected agent (updates Zustand store + persists). */
   setSelectedAgent?: (agentId: string) => void;
+  /** Refresh agents, optionally forcing a post-mutation re-query. */
+  refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   /** ReactMarkdown component for rendering markdown text. */
   ReactMarkdown?: typeof ReactMarkdown;
   /** remarkGfm plugin for ReactMarkdown. */
@@ -327,6 +329,8 @@ export function installHostExternals(): void {
       getApiToken,
       setSelectedAgent: (agentId: string) =>
         useAgentStore.getState().setSelectedAgent(agentId),
+      refreshAgents: (options?: { force?: boolean }) =>
+        useAgentStore.getState().refreshAgents(options),
       ReactMarkdown,
       remarkGfm,
       loadBuiltinPage,
@@ -335,6 +339,10 @@ export function installHostExternals(): void {
     // Keep development hot reload and hosts created by older bootstraps
     // forward-compatible without replacing their existing dependencies.
     window.QwenPaw.host.loadBuiltinPage = loadBuiltinPage;
+  }
+  if (!window.QwenPaw.host.refreshAgents) {
+    window.QwenPaw.host.refreshAgents = (options?: { force?: boolean }) =>
+      useAgentStore.getState().refreshAgents(options);
   }
 
   // ── Console-wide extension API ─────────────────────────────────────────

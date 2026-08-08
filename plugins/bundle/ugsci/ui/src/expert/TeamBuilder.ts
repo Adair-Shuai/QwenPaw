@@ -1153,14 +1153,13 @@ Divider,
 Tabs,
 message: antdMsg,
 } = getHost().antd;
-const { SearchOutlined, TeamOutlined, PlusOutlined, RocketOutlined } =
-getHost().antdIcons || {};
+const { SearchOutlined, PlusOutlined, RocketOutlined } =
+  getHost().antdIcons || {};
 const { Text } = Typography;
 
   const [searchText, setSearchText] = useState("");
   const [customTeams, setCustomTeams] = useState<ExpertTeam[]>([]);
   const [presetTeams, setPresetTeams] = useState<ExpertTeam[]>([]);
-  const [presetLoadFailed, setPresetLoadFailed] = useState(false);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<ExpertTeam | null>(null);
 
@@ -1183,9 +1182,6 @@ const { Text } = Typography;
       if (!active) return;
       if (teams) {
         setPresetTeams(teams as ExpertTeam[]);
-        setPresetLoadFailed(false);
-      } else {
-        setPresetLoadFailed(true);
       }
     });
     return () => {
@@ -1250,35 +1246,27 @@ const { Text } = Typography;
   return React.createElement(
     "div",
     null,
-    presetLoadFailed
-      ? React.createElement(getHost().antd.Alert, {
-          type: "warning",
-          showIcon: true,
-          message: "预设专家团加载失败",
-          description: "请确认 UGSci 后端插件已启用，然后刷新页面。",
-          style: { marginBottom: 16 },
-        })
-      : null,
-    // Info banner
+    // Toolbar
     React.createElement(
       "div",
       {
         style: {
-          marginBottom: 16,
-          padding: "12px 16px",
-          background: "linear-gradient(135deg, #f6ffed 0%, #f0fff0 100%)",
-          borderRadius: 8,
-          border: "1px solid #b7eb8f",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: 8,
+          flexWrap: "wrap",
+          marginBottom: 16,
         },
       },
-      React.createElement(
-        Text,
-        { style: { fontSize: 13, color: "#389e0d" } },
-        "OMP 协作工作流 — 专家是可组合的角色节点，可按顺序、并行、路由、评审闭环或多方论证运行，并由统一状态机负责交接、验证与失败恢复。",
-      ),
+      React.createElement(Input, {
+        placeholder: "搜索团队名称、描述或类别...",
+        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        value: searchText,
+        onChange: (e: any) => setSearchText(e.target.value),
+        allowClear: true,
+        style: { flex: "1 1 280px", maxWidth: 400 },
+      }),
       React.createElement(
         Button,
         {
@@ -1291,15 +1279,6 @@ const { Text } = Typography;
         "创建专家团",
       ),
     ),
-    // Search
-    React.createElement(Input, {
-      placeholder: "搜索团队名称、描述或类别...",
-      prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
-      value: searchText,
-      onChange: (e: any) => setSearchText(e.target.value),
-      allowClear: true,
-      style: { marginBottom: 16, maxWidth: 400 },
-    }),
     // Tabs: preset teams vs custom teams
     React.createElement(
       Tabs,

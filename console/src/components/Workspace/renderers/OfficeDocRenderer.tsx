@@ -84,8 +84,19 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     "legacy",
   );
   const fileUrl = artifact.binaryUrl ?? "";
+  const cacheKey = [
+    artifact.agentId ?? "",
+    artifact.chatId ?? "",
+    artifact.projectDirOverride ?? "",
+    artifact.workspaceRoot ?? "",
+    fileUrl,
+  ].join("|");
 
-  const canClientSideParse = isOoxml(artifact.mimeType, artifact.extension);
+  // Workspace files must use the backend OfficeCLI pipeline. Browser-side
+  // OOXML parsing remains only as compatibility for detached uploads whose
+  // backend URL may no longer be reachable.
+  const canClientSideParse =
+    !artifact.workspaceRoot && isOoxml(artifact.mimeType, artifact.extension);
 
   const convertDocument = useCallback(async () => {
     if (!fileUrl) {
@@ -97,7 +108,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     // Check cache first — avoids re-converting when switching tabs.
     // Eviction runs here so stale entries are cleaned up on every access.
     _evictConvertCache();
-    const cached = _convertCache.get(fileUrl);
+    const cached = _convertCache.get(cacheKey);
     if (cached && Date.now() - cached.ts < CACHE_TTL) {
       setHtmlContent(cached.html);
       setRendererEngine(cached.engine as "officecli" | "legacy");
@@ -112,23 +123,27 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     // Always try backend conversion first. The backend runs locally
     // (both in Tauri desktop and Vite dev mode) and can access local
     // files, including file:// paths. If the backend is unreachable or
-    // returns 404/405, the error handling below falls back to
-    // client-side OOXML parsing or download-only mode.
+    // returns 404/405, detached uploads may use the compatibility parser;
+    // workspace-backed files stay on the backend pipeline.
     try {
       const res = await fetch(`${API_BASE}/convert-office`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...buildAuthHeaders(),
+          ...buildAuthHeaders(artifact.agentId),
+          ...(artifact.chatId ? { "X-Chat-Id": artifact.chatId } : {}),
+          ...(!artifact.chatId && artifact.projectDirOverride
+            ? { "X-Session-Project-Dir": artifact.projectDirOverride }
+            : {}),
         },
         body: JSON.stringify({
           url: fileUrl,
-          mimeType: artifact.mimeType,
+          mime_type: artifact.mimeType,
         }),
       });
       if (!res.ok) {
-        // 405 / 404 means the endpoint doesn't exist —
-        // 优先走前端解析（仅 OOXML），否则走下载模式
+        // A detached OOXML upload may use the compatibility parser. Files
+        // owned by /files never silently switch away from the backend.
         if (res.status === 405 || res.status === 404) {
           if (canClientSideParse) {
             setFallbackStage("client-side");
@@ -152,7 +167,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         // Do NOT wrap it in our template — use it as-is so scripts
         // and styles work correctly.
         setHtmlContent(rawHtml);
-        _convertCache.set(fileUrl, {
+        _convertCache.set(cacheKey, {
           html: rawHtml,
           engine: "officecli",
           ts: Date.now(),
@@ -196,23 +211,36 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           }
         </style></head><body>${rawHtml}</body></html>`;
         setHtmlContent(styledHtml);
-        _convertCache.set(fileUrl, {
+        _convertCache.set(cacheKey, {
           html: styledHtml,
           engine: "legacy",
           ts: Date.now(),
         });
       }
     } catch (err) {
-      // 网络错误 → 优先前端解析，否则下载
+      // Detached uploads retain the browser fallback. Workspace-backed files
+      // surface the backend error instead of silently changing render engines.
       if (canClientSideParse) {
         setFallbackStage("client-side");
       } else {
-        setFallbackStage("download-only");
+        setError(
+          err instanceof Error ? err.message : t("workspace.convertFailed"),
+        );
       }
     } finally {
       setLoading(false);
     }
-  }, [fileUrl, artifact.mimeType, t, theme, canClientSideParse]);
+  }, [
+    artifact.agentId,
+    artifact.chatId,
+    artifact.mimeType,
+    artifact.projectDirOverride,
+    cacheKey,
+    canClientSideParse,
+    fileUrl,
+    t,
+    theme,
+  ]);
 
   useEffect(() => {
     convertDocument();

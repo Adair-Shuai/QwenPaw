@@ -26,12 +26,14 @@ import {
   FolderOpenOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { Markdown } from "@agentscope-ai/chat";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
 import { ExternalMarkdownLink } from "../../Markdown/externalLinkComponents";
 import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 import { mimeFromExtension } from "../../../utils/mimeForPreview";
 import { resolveWorkspaceMarkdownTarget } from "../../../utils/workspaceMarkdownLinks";
+import { parseMarkdownFrontmatter } from "../../../utils/markdown";
 import type { RendererContext } from "../types";
 
 type ViewMode = "preview" | "code";
@@ -59,6 +61,10 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
   const containerRef = useRef<HTMLDivElement>(null);
 
   const content = artifact.textContent ?? "";
+  const parsedMarkdown = useMemo(
+    () => parseMarkdownFrontmatter(content),
+    [content],
+  );
 
   // 流式模式自动滚动到底部
   useEffect(() => {
@@ -91,13 +97,19 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         workspacePath: path,
         agentId: artifact.agentId,
         projectRoot: artifact.projectRoot,
+        workspaceRoot: artifact.workspaceRoot,
+        chatId: artifact.chatId,
+        projectDirOverride: artifact.projectDirOverride,
         sessionId: artifact.sessionId,
       } as const;
 
       if (!isTextMime(mimeType)) {
         workspace.openArtifact({
           ...baseArtifact,
-          binaryUrl: workspaceFileApi.getBinaryFileUrl(path),
+          binaryUrl: workspaceFileApi.getFileDownloadUrl(
+            path,
+            artifact.workspaceRoot,
+          ),
         });
         return;
       }
@@ -108,10 +120,17 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         isStreaming: true,
       });
       try {
-        const result = await workspaceFileApi.loadCodeFile(path, {
-          agentId: artifact.agentId ?? "default",
-          projectRoot: artifact.projectRoot,
-        });
+        const result = workspaceFileApi.loadFileText
+          ? await workspaceFileApi.loadFileText(
+              path,
+              artifact.chatId,
+              artifact.workspaceRoot,
+              artifact.projectDirOverride,
+            )
+          : await workspaceFileApi.loadCodeFile(path, {
+              agentId: artifact.agentId ?? "default",
+              projectRoot: artifact.projectRoot,
+            });
         workspace.updateArtifact(id, {
           textContent: result.content,
           isStreaming: false,
@@ -125,10 +144,13 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
     },
     [
       artifact.agentId,
+      artifact.chatId,
       artifact.id,
       artifact.projectRoot,
+      artifact.projectDirOverride,
       artifact.sessionId,
       artifact.source,
+      artifact.workspaceRoot,
       workspace,
     ],
   );
@@ -150,7 +172,14 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         : { kind: "invalid" as const };
       const resource = useAuthenticatedWorkspaceBlob(
         target.kind === "workspace" ? target.path : null,
-        artifact.agentId,
+        artifact.chatId || artifact.projectDirOverride || artifact.workspaceRoot
+          ? {
+              agentId: artifact.agentId,
+              chatId: artifact.chatId,
+              root: artifact.workspaceRoot,
+              projectDirOverride: artifact.projectDirOverride,
+            }
+          : artifact.agentId,
       );
 
       if (target.kind === "external") {
@@ -206,8 +235,11 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
     return { a: WorkspaceLink, img: WorkspaceImage };
   }, [
     artifact.agentId,
+    artifact.chatId,
+    artifact.projectDirOverride,
     artifact.title,
     artifact.workspacePath,
+    artifact.workspaceRoot,
     handleOpenWorkspaceFile,
   ]);
 
@@ -240,11 +272,44 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
           minHeight: "100%",
         }}
       >
-        <Markdown content={content} components={markdownComponents} />
+        {parsedMarkdown.entries.length > 0 && (
+          <dl
+            aria-label="Front matter"
+            style={{
+              margin: "0 0 16px",
+              padding: "10px 12px",
+              borderRadius: 8,
+              background: theme === "dark" ? "#262626" : "#f5f5f5",
+            }}
+          >
+            {parsedMarkdown.entries.map(({ key, value }, index) => (
+              <div
+                key={`${key}:${index}`}
+                style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}
+              >
+                <dt style={{ fontWeight: 600 }}>{key}</dt>
+                <dd style={{ margin: 0 }}>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        )}
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={markdownComponents}
+        >
+          {parsedMarkdown.body}
+        </ReactMarkdown>
         {artifact.isStreaming && <span className="cursor-blink">▋</span>}
       </div>
     );
-  }, [content, artifact.isStreaming, markdownComponents, theme, t]);
+  }, [
+    artifact.isStreaming,
+    content,
+    markdownComponents,
+    parsedMarkdown,
+    theme,
+    t,
+  ]);
 
   // ── 渲染代码视图 ──
   const codeContent = useMemo(

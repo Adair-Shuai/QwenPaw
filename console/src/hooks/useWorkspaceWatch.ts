@@ -22,6 +22,11 @@ export interface FileChangeEvent {
 
 type FileChangeCallback = (events: FileChangeEvent[]) => void;
 
+interface LegacyWorkspaceWatchScope {
+  agentId: string;
+  projectRoot?: string | null;
+}
+
 // ---------------------------------------------------------------------------
 // Singleton SSE manager
 // ---------------------------------------------------------------------------
@@ -42,9 +47,11 @@ function _emit(key: string, events: FileChangeEvent[]) {
 
 async function _runLoop(
   key: string,
+  agentId: string | undefined,
   chatId: string | undefined,
   projectDirOverride: string | undefined,
   root: WorkspaceRoot,
+  legacyScope: boolean,
   signal: AbortSignal,
 ) {
   const url = workspaceApi.getWatchUrl(root);
@@ -55,9 +62,9 @@ async function _runLoop(
       const response = await fetch(url, {
         method: "GET",
         headers: {
-          ...buildAuthHeaders(),
-          ...(chatId ? { "X-Chat-Id": chatId } : {}),
-          ...(!chatId && projectDirOverride
+          ...buildAuthHeaders(agentId),
+          ...(!legacyScope && chatId ? { "X-Chat-Id": chatId } : {}),
+          ...(!legacyScope && !chatId && projectDirOverride
             ? { "X-Session-Project-Dir": projectDirOverride }
             : {}),
         },
@@ -113,15 +120,25 @@ async function _runLoop(
 
 function _ensureConnected(
   key: string,
+  agentId: string | undefined,
   chatId: string | undefined,
   projectDirOverride: string | undefined,
   root: WorkspaceRoot,
+  legacyScope: boolean,
 ) {
   if (_running.has(key)) return;
   _running.add(key);
   const controller = new AbortController();
   _controllers.set(key, controller);
-  void _runLoop(key, chatId, projectDirOverride, root, controller.signal);
+  void _runLoop(
+    key,
+    agentId,
+    chatId,
+    projectDirOverride,
+    root,
+    legacyScope,
+    controller.signal,
+  );
 }
 
 function _maybeDisconnect(key: string) {
@@ -153,10 +170,19 @@ function _sleep(ms: number, signal: AbortSignal): Promise<void> {
 export function useWorkspaceWatch(
   onFileChange: FileChangeCallback,
   enabled = true,
-  chatId?: string,
+  chatOrScope?: string | LegacyWorkspaceWatchScope,
   root: WorkspaceRoot = "project",
   projectDirOverride?: string,
 ): void {
+  const isLegacyScope = typeof chatOrScope === "object" && chatOrScope !== null;
+  const legacyAgentId = isLegacyScope ? chatOrScope.agentId : undefined;
+  const legacyProjectRoot = isLegacyScope ? chatOrScope.projectRoot : undefined;
+  const agentId = legacyAgentId;
+  const chatId = typeof chatOrScope === "string" ? chatOrScope : undefined;
+  const effectiveProjectDir = isLegacyScope ? undefined : projectDirOverride;
+  const scopeKey = isLegacyScope
+    ? `legacy:${legacyAgentId}:${legacyProjectRoot ?? ""}`
+    : `${chatId ?? ""}:${effectiveProjectDir ?? ""}:${root}`;
   // Stable ref so callers don't need to memoize the callback.
   const callbackRef = useRef<FileChangeCallback>(onFileChange);
   callbackRef.current = onFileChange;
@@ -168,15 +194,31 @@ export function useWorkspaceWatch(
     const listener: FileChangeCallback = (events) =>
       callbackRef.current(events);
 
-    const key = `${chatId ?? ""}:${projectDirOverride ?? ""}:${root}`;
-    const listeners = _listeners.get(key) ?? new Set<FileChangeCallback>();
+    const listeners = _listeners.get(scopeKey) ?? new Set<FileChangeCallback>();
     listeners.add(listener);
-    _listeners.set(key, listeners);
-    _ensureConnected(key, chatId, projectDirOverride, root);
+    _listeners.set(scopeKey, listeners);
+    _ensureConnected(
+      scopeKey,
+      agentId,
+      chatId,
+      effectiveProjectDir,
+      root,
+      isLegacyScope,
+    );
 
     return () => {
       listeners.delete(listener);
-      _maybeDisconnect(key);
+      _maybeDisconnect(scopeKey);
     };
-  }, [chatId, enabled, projectDirOverride, root]);
+  }, [
+    agentId,
+    chatId,
+    effectiveProjectDir,
+    enabled,
+    isLegacyScope,
+    legacyAgentId,
+    legacyProjectRoot,
+    root,
+    scopeKey,
+  ]);
 }

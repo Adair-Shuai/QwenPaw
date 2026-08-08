@@ -56,3 +56,17 @@ async def test_get_agent_normalizes_header_id(monkeypatch):
 
     assert result is workspace
     manager.get_agent.assert_awaited_once_with("reviewer")
+
+
+@pytest.mark.asyncio
+async def test_get_agent_uses_rightmost_folded_header_id(monkeypatch):
+    workspace = object()
+    manager = SimpleNamespace(get_agent=AsyncMock(return_value=workspace))
+    monkeypatch.setattr(agent_context, "load_config", _config)
+
+    result = await agent_context.get_agent_for_request(
+        _request(manager, header_agent_id="default, reviewer"),
+    )
+
+    assert result is workspace
+    manager.get_agent.assert_awaited_once_with("reviewer")

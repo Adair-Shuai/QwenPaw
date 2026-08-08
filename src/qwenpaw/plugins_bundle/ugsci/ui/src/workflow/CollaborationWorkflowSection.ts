@@ -70,7 +70,6 @@ export function CollaborationWorkflowSection() {
   const React = getHost().React;
   const { useCallback, useEffect, useState } = React;
   const {
-    Alert,
     Button,
     Card,
     Col,
@@ -92,11 +91,6 @@ export function CollaborationWorkflowSection() {
     ? useSelectedAgent()
     : { id: "default" };
   const controllerAgentId = selectedAgent?.id || "default";
-  const controllerAgentName = (selectedAgent as { name?: string } | null)?.name || controllerAgentId;
-  const controllerLabel =
-    controllerAgentName === controllerAgentId
-      ? controllerAgentId
-      : `${controllerAgentName}（${controllerAgentId}）`;
 
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [runs, setRuns] = useState<FlowRun[]>([]);
@@ -257,17 +251,6 @@ export function CollaborationWorkflowSection() {
   const templatesTab = React.createElement(
     "div",
     null,
-    React.createElement(
-      Alert,
-      {
-        type: "info",
-        showIcon: true,
-        message: "领域协作工作流",
-        description:
-          `工作流使用 FlowForge 确定性 DAG 调度；新建草稿默认将节点绑定到当前控制器「${controllerLabel}」，可在编辑器中调整节点 Agent ID。开放研判可嵌入专家团讨论步骤。`,
-        style: { marginBottom: 16 },
-      },
-    ),
     React.createElement(
       Card,
       {
@@ -437,16 +420,6 @@ export function CollaborationWorkflowSection() {
   return React.createElement(
     "div",
     null,
-    !available
-      ? React.createElement(Alert, {
-          type: "warning",
-          showIcon: true,
-          message: "协作工作流引擎当前不可用",
-          description: "请确认 FlowForge 插件已启用。专家和专家团功能不受影响。",
-          action: React.createElement(Button, { size: "small", onClick: () => void load() }, "重试"),
-          style: { marginBottom: 16 },
-        })
-      : null,
     React.createElement(Tabs, {
       items: [
         { key: "templates", label: "工作流模板", children: templatesTab },

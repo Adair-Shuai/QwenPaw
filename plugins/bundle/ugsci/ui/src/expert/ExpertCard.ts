@@ -50,6 +50,22 @@ import { KnowledgeBaseTab, PresetPromptsTab } from "./expertTabs";
 import { ExpertAvatar } from "../components/avatars";
 import { fetchPoolSkills, fetchAgentConfig } from "../core/api";
 
+/** Refresh the host agent store before selecting an agent just created here. */
+async function selectCreatedAgent(agentId: string): Promise<void> {
+  const host = getHost();
+  if (host.refreshAgents) {
+    try {
+      await host.refreshAgents({ force: true });
+    } catch (err) {
+      // The agent was already created successfully. Leave selection to the
+      // next normal refresh rather than selecting against a stale host list.
+      console.warn("[ugsci] Failed to refresh newly created agent:", err);
+      return;
+    }
+  }
+  host.setSelectedAgent?.(agentId);
+}
+
 // ─── Expert Center Page ───────────────────────────────────────────────────────
 
 export function ExpertCard({
@@ -912,27 +928,45 @@ export function ExpertTemplateModal({
   const [searchText, setSearchText] = useState("");
   const [blankModalOpen, setBlankModalOpen] = useState(false);
 
-  const handleCreateBlank = async (name: string, description: string) => {
+  const handleCreateBlank = async (values: BlankExpertCreateValues) => {
     setCreating(true);
     try {
       const agentRef = await apiFetch<{ id: string }>("/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: name || "新专家",
-          description: description || "",
-          skill_names: [],
+          id: values.id || undefined,
+          name: values.name,
+          description: values.description,
+          skill_names: values.skillNames,
         }),
       });
 
-      // Write a minimal AGENTS.md
-      await writeKnowledgeFile(
-        agentRef.id,
-        "AGENTS.md",
-        `# ${name || "新专家"}\n\n请在此处编写该专家的系统提示词。\n`,
-      );
+      const systemPrompt = values.systemPrompt.trim() ||
+        `# ${values.name}\n\n你是${values.name}。${
+          values.description ? `\n\n职责：${values.description}` : ""
+        }\n`;
+      const setupResults = await Promise.allSettled([
+        writeKnowledgeFile(agentRef.id, "AGENTS.md", systemPrompt),
+        ...values.mcpClients.map(({ clientKey, client }) =>
+          createMCPForAgent(agentRef.id, {
+            client_key: clientKey,
+            client,
+          }),
+        ),
+      ]);
+      const failedSetups = setupResults.filter(
+        (result) => result.status === "rejected",
+      ).length;
 
-      antdMsg.success("专家「" + (name || "新专家") + "」创建成功");
+      if (failedSetups > 0) {
+        antdMsg.warning(
+          `专家「${values.name}」已创建，${failedSetups} 项初始配置失败，可在专家配置中重试`,
+        );
+      } else {
+        antdMsg.success(`专家「${values.name}」创建成功`);
+      }
+      await selectCreatedAgent(agentRef.id);
       setBlankModalOpen(false);
       // Defer closing the outer modal to avoid simultaneous closing race condition
       // when BlankExpertModal and ExpertTemplateModal try to close at the same time
@@ -983,6 +1017,7 @@ export function ExpertTemplateModal({
         body: JSON.stringify(config),
       });
 
+      await selectCreatedAgent(agentRef.id);
       antdMsg.success(`专家「${template.name}」创建成功`);
       onClose();
       onCreated();
@@ -1178,6 +1213,86 @@ export function ExpertTemplateModal({
 
 // ─── Blank Expert Creation Modal ─────────────────────────────────────────────
 
+export interface InitialMCPClient {
+  clientKey: string;
+  client: Record<string, unknown>;
+}
+
+export interface BlankExpertCreateValues {
+  id: string;
+  name: string;
+  description: string;
+  systemPrompt: string;
+  skillNames: string[];
+  mcpClients: InitialMCPClient[];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function parseInitialMCPConfig(value: string): InitialMCPClient[] {
+  const text = value.trim();
+  if (!text) return [];
+
+  const parsed = JSON.parse(text) as unknown;
+  if (!isRecord(parsed)) {
+    throw new Error("MCP 配置必须是 JSON 对象");
+  }
+
+  const servers = parsed.mcpServers ?? parsed;
+  if (!isRecord(servers)) {
+    throw new Error("mcpServers 必须是 JSON 对象");
+  }
+
+  return Object.entries(servers).map(([rawKey, rawConfig]) => {
+    const clientKey = rawKey.trim();
+    if (!clientKey || !isRecord(rawConfig)) {
+      throw new Error(`MCP「${rawKey || "未命名"}」配置无效`);
+    }
+
+    const url = typeof rawConfig.url === "string" ? rawConfig.url : "";
+    const command =
+      typeof rawConfig.command === "string" ? rawConfig.command : "";
+    if (!url && !command) {
+      throw new Error(`MCP「${clientKey}」需要配置 url 或 command`);
+    }
+
+    const declaredTransport =
+      typeof rawConfig.transport === "string"
+        ? rawConfig.transport
+        : typeof rawConfig.type === "string"
+          ? rawConfig.type
+          : "";
+    const transport = declaredTransport === "sse"
+      ? "sse"
+      : url
+        ? "streamable_http"
+        : "stdio";
+
+    return {
+      clientKey,
+      client: {
+        name:
+          typeof rawConfig.name === "string" ? rawConfig.name : clientKey,
+        description:
+          typeof rawConfig.description === "string"
+            ? rawConfig.description
+            : "",
+        enabled:
+          typeof rawConfig.enabled === "boolean" ? rawConfig.enabled : true,
+        transport,
+        url,
+        command,
+        args: Array.isArray(rawConfig.args) ? rawConfig.args : [],
+        env: isRecord(rawConfig.env) ? rawConfig.env : {},
+        cwd: typeof rawConfig.cwd === "string" ? rawConfig.cwd : "",
+        headers: isRecord(rawConfig.headers) ? rawConfig.headers : {},
+      },
+    };
+  });
+}
+
 export function BlankExpertModal({
   open,
   onCancel,
@@ -1185,85 +1300,295 @@ export function BlankExpertModal({
 }: {
   open: boolean;
   onCancel: () => void;
-  onCreate: (name: string, description: string) => Promise<void> | void;
+  onCreate: (values: BlankExpertCreateValues) => Promise<void> | void;
 }) {
   const React = getHost().React;
-  const { useState, useEffect } = React;
-  const { Modal, Input, message: antdMsg } = getHost().antd;
+  const { useState, useEffect, useMemo } = React;
+  const {
+    Modal,
+    Input,
+    Select,
+    Button,
+    Row,
+    Col,
+    Spin,
+    Tag,
+    Typography,
+    message: antdMsg,
+  } = getHost().antd;
+  const { CheckCircleOutlined } = getHost().antdIcons || {};
+  const { Text } = Typography;
   const [name, setName] = useState("");
+  const [agentId, setAgentId] = useState("");
   const [description, setDescription] = useState("");
+  const [systemPrompt, setSystemPrompt] = useState("");
+  const [poolSkills, setPoolSkills] = useState<PoolSkillSpec[]>([]);
+  const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
+  const [mcpJson, setMcpJson] = useState("");
   const [loading, setLoading] = useState(false);
 
   // Reset form fields whenever the modal is opened
   useEffect(() => {
     if (open) {
       setName("");
+      setAgentId("");
       setDescription("");
+      setSystemPrompt("");
+      setSelectedSkills([]);
+      setMcpJson("");
       setLoading(false);
+      setSkillsLoading(true);
+      fetchPoolSkills(true)
+        .then(setPoolSkills)
+        .catch((err: any) => {
+          setPoolSkills([]);
+          antdMsg.error(err.message || "加载技能池失败");
+        })
+        .finally(() => setSkillsLoading(false));
     }
   }, [open]);
+
+  const trimmedAgentId = agentId.trim();
+  const agentIdError = useMemo(() => {
+    if (!trimmedAgentId) return "";
+    if (trimmedAgentId.length < 2 || trimmedAgentId.length > 64) {
+      return "ID 长度需为 2-64 个字符";
+    }
+    if (!/^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$/.test(trimmedAgentId)) {
+      return "仅允许字母、数字、连字符和下划线，且不能以符号开头或结尾";
+    }
+    if (trimmedAgentId === "default") return "default 是系统保留 ID";
+    return "";
+  }, [trimmedAgentId]);
+
+  const mcpPreview = useMemo(() => {
+    try {
+      return { clients: parseInitialMCPConfig(mcpJson), error: "" };
+    } catch (err: any) {
+      return { clients: [] as InitialMCPClient[], error: err.message || "MCP 配置无效" };
+    }
+  }, [mcpJson]);
+
+  const handleCreate = () => {
+    const expertName = name.trim();
+    if (!expertName) {
+      antdMsg.warning("请输入专家名称");
+      return;
+    }
+    if (agentIdError) {
+      antdMsg.warning(agentIdError);
+      return;
+    }
+    if (mcpPreview.error) {
+      antdMsg.warning(mcpPreview.error);
+      return;
+    }
+
+    setLoading(true);
+    Promise.resolve(
+      onCreate({
+        id: trimmedAgentId,
+        name: expertName,
+        description: description.trim(),
+        systemPrompt,
+        skillNames: selectedSkills,
+        mcpClients: mcpPreview.clients,
+      }),
+    ).finally(() => setLoading(false));
+  };
+
+  const selectBuiltinSkills = () => {
+    setSelectedSkills(
+      poolSkills
+        .filter((skill) => skill.source === "builtin")
+        .map((skill) => skill.name),
+    );
+  };
+
+  const sectionTitle = (title: string, detail?: string) =>
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 12,
+          marginBottom: 12,
+        },
+      },
+      React.createElement(Text, { strong: true, style: { fontSize: 15 } }, title),
+      detail
+        ? React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, detail)
+        : null,
+    );
 
   return React.createElement(
     Modal,
     {
       open,
-      title: "从空白模版创建专家",
+      title: "创建专家",
       onCancel,
-      onOk: () => {
-        if (!name.trim()) {
-          antdMsg.warning("请输入专家名称");
-          return;
-        }
-        setLoading(true);
-        // Fire-and-forget: do NOT return the Promise so antd
-        // doesn't set its internal okButtonLoading state which
-        // can prevent the modal from closing when open becomes false.
-        //
-        // IMPORTANT: Use okButtonProps.loading instead of confirmLoading.
-        // In Ant Design 5.x, Modal's handleCancel checks `confirmLoading`
-        // and blocks closing (returns early) when it is true.  Using
-        // okButtonProps.loading shows the spinner on the OK button without
-        // preventing the user from closing the modal via X / Cancel / mask / ESC.
-        Promise.resolve(onCreate(name.trim(), description.trim())).finally(() => {
-          setLoading(false);
-        });
-      },
-      okText: "创建",
+      onOk: handleCreate,
+      okText: "创建专家",
       cancelText: "取消",
       okButtonProps: { loading: loading },
       maskClosable: true,
       keyboard: true,
+      width: 880,
+      styles: { body: { maxHeight: "72vh", overflowY: "auto", paddingTop: 8 } },
     },
     React.createElement(
       "div",
-      { style: { marginBottom: 16 } },
+      { style: { paddingBottom: 20 } },
+      sectionTitle("基本信息", "ID 留空时自动生成"),
       React.createElement(
-        "div",
-        { style: { fontSize: 13, marginBottom: 6, color: "#595959" } },
-        "专家名称",
+        Row,
+        { gutter: [16, 12] },
+        React.createElement(
+          Col,
+          { xs: 24, md: 12 },
+          React.createElement(
+            "label",
+            { style: { display: "block", fontSize: 13, marginBottom: 6 } },
+            "专家名称",
+            React.createElement("span", { style: { color: "#ff4d4f", marginLeft: 4 } }, "*"),
+          ),
+          React.createElement(Input, {
+            placeholder: "例如：合同审查专家",
+            value: name,
+            onChange: (e: any) => setName(e.target.value),
+            maxLength: 50,
+          }),
+        ),
+        React.createElement(
+          Col,
+          { xs: 24, md: 12 },
+          React.createElement(
+            "label",
+            { style: { display: "block", fontSize: 13, marginBottom: 6 } },
+            "智能体 ID（可选）",
+          ),
+          React.createElement(Input, {
+            placeholder: "例如：contract-reviewer",
+            value: agentId,
+            onChange: (e: any) => setAgentId(e.target.value),
+            maxLength: 64,
+            status: agentIdError ? "error" : undefined,
+          }),
+          agentIdError
+            ? React.createElement("div", { style: { color: "#ff4d4f", fontSize: 12, marginTop: 4 } }, agentIdError)
+            : null,
+        ),
+        React.createElement(
+          Col,
+          { span: 24 },
+          React.createElement(
+            "label",
+            { style: { display: "block", fontSize: 13, marginBottom: 6 } },
+            "专家描述（可选）",
+          ),
+          React.createElement(Input.TextArea, {
+            placeholder: "简要描述该专家的职责和能力",
+            value: description,
+            onChange: (e: any) => setDescription(e.target.value),
+            rows: 2,
+            maxLength: 200,
+            showCount: true,
+          }),
+        ),
       ),
-      React.createElement(Input, {
-        placeholder: "输入专家名称",
-        value: name,
-        onChange: (e: any) => setName(e.target.value),
-        maxLength: 50,
+    ),
+    React.createElement(
+      "div",
+      { style: { borderTop: "1px solid #f0f0f0", padding: "20px 0" } },
+      sectionTitle("角色指令", "保存为 AGENTS.md"),
+      React.createElement(Input.TextArea, {
+        placeholder: "定义专家的角色、目标、工作方式和输出要求；留空时将根据名称与描述生成基础指令",
+        value: systemPrompt,
+        onChange: (e: any) => setSystemPrompt(e.target.value),
+        rows: 6,
+        style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 },
       }),
     ),
     React.createElement(
       "div",
-      null,
+      { style: { borderTop: "1px solid #f0f0f0", paddingTop: 20 } },
+      sectionTitle("初始能力"),
       React.createElement(
-        "div",
-        { style: { fontSize: 13, marginBottom: 6, color: "#595959" } },
-        "专家描述（可选）",
+        Row,
+        { gutter: [20, 16], align: "top" },
+        React.createElement(
+          Col,
+          { xs: 24, md: 12 },
+          React.createElement(
+            "div",
+            { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+            React.createElement(Text, { strong: true }, "初始技能"),
+            React.createElement(
+              "div",
+              { style: { display: "flex", gap: 4 } },
+              React.createElement(Button, { size: "small", onClick: selectBuiltinSkills, disabled: skillsLoading }, "内置"),
+              React.createElement(Button, { size: "small", onClick: () => setSelectedSkills([]), disabled: selectedSkills.length === 0 }, "清空"),
+            ),
+          ),
+          skillsLoading
+            ? React.createElement("div", { style: { textAlign: "center", padding: 32 } }, React.createElement(Spin, { size: "small" }))
+            : React.createElement(Select, {
+                mode: "multiple",
+                value: selectedSkills,
+                onChange: setSelectedSkills,
+                placeholder: "搜索并选择技能",
+                showSearch: true,
+                allowClear: true,
+                optionFilterProp: "label",
+                maxTagCount: "responsive",
+                style: { width: "100%" },
+                options: poolSkills.map((skill) => ({
+                  value: skill.name,
+                  label: skill.name,
+                })),
+                notFoundContent: "暂无可用技能",
+              }),
+          React.createElement(
+            "div",
+            { style: { marginTop: 8, minHeight: 22 } },
+            selectedSkills.length > 0
+              ? React.createElement(Tag, { color: "blue" }, `已选择 ${selectedSkills.length} 个技能`)
+              : React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, "暂不添加技能"),
+          ),
+        ),
+        React.createElement(
+          Col,
+          { xs: 24, md: 12 },
+          React.createElement(Text, { strong: true, style: { display: "block", marginBottom: 8 } }, "初始 MCP"),
+          React.createElement(Input.TextArea, {
+            placeholder: '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem"]\n    }\n  }\n}',
+            value: mcpJson,
+            onChange: (e: any) => setMcpJson(e.target.value),
+            rows: 8,
+            status: mcpPreview.error ? "error" : undefined,
+            style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 },
+          }),
+          React.createElement(
+            "div",
+            { style: { marginTop: 8, minHeight: 22 } },
+            mcpPreview.error
+              ? React.createElement(Text, { type: "danger", style: { fontSize: 12 } }, mcpPreview.error)
+              : mcpPreview.clients.length > 0
+                ? React.createElement(
+                    Tag,
+                    {
+                      color: "green",
+                      icon: CheckCircleOutlined ? React.createElement(CheckCircleOutlined) : undefined,
+                    },
+                    `已识别 ${mcpPreview.clients.length} 个 MCP`,
+                  )
+                : React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, "暂不添加 MCP"),
+          ),
+        ),
       ),
-      React.createElement(Input.TextArea, {
-        placeholder: "简要描述该专家的职责和能力...",
-        value: description,
-        onChange: (e: any) => setDescription(e.target.value),
-        rows: 3,
-        maxLength: 200,
-      }),
     ),
   );
 }

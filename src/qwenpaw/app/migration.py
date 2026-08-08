@@ -619,13 +619,30 @@ def _do_migrate_legacy_skills() -> bool:
             _update,
         )
 
+    # A fresh installation should be usable immediately.  The default agent
+    # used to stop at an empty workspace while the packaged skills only lived
+    # in the shared pool.  Seed the default workspace with builtin skills once
+    # when there were no pre-existing workspace skills.  Existing workspace
+    # manifests and their enable/disable choices remain untouched.
+    bootstrapped_default_skills = 0
+    if str(default_workspace) not in workspaces_with_existing_skills:
+        bootstrapped_default_skills = _bootstrap_default_agent_workspace(
+            default_workspace,
+            language=config.agents.language or "zh",
+        )
+
     if copied_workspace_skills > 0:
         logger.info(
             "Legacy skill migration completed: %d workspace copies",
             copied_workspace_skills,
         )
+    if bootstrapped_default_skills > 0:
+        logger.info(
+            "Bootstrapped default agent with %d builtin skill(s)",
+            bootstrapped_default_skills,
+        )
 
-    return copied_workspace_skills > 0
+    return copied_workspace_skills > 0 or bootstrapped_default_skills > 0
 
 
 def _ensure_workspace_json_files(
@@ -656,6 +673,36 @@ def ensure_default_agent_exists() -> None:
             "Application may not work correctly.",
             exc_info=True,
         )
+
+
+def _bootstrap_default_agent_workspace(
+    workspace_dir: Path,
+    *,
+    language: str,
+) -> int:
+    """Seed a newly-created default workspace with packaged builtin skills.
+
+    The shared skill pool is deliberately kept separate from each agent's
+    workspace.  This helper bridges that gap only for a fresh ``default``
+    agent, so installation provides an immediately useful agent without
+    changing existing users' skill choices.
+    """
+    from ..agents.skill_system import SkillPoolService
+    from .routers.agents import _initialize_agent_workspace
+
+    workspace_dir.mkdir(parents=True, exist_ok=True)
+    pool = SkillPoolService()
+    builtin_names = [
+        skill.name
+        for skill in pool.list_all_skills()
+        if skill.source == "builtin"
+    ]
+    _initialize_agent_workspace(
+        workspace_dir,
+        skill_names=builtin_names,
+        language=language,
+    )
+    return len(builtin_names)
 
 
 def _do_ensure_default_agent() -> None:
@@ -700,6 +747,10 @@ def _do_ensure_default_agent() -> None:
         if not config.agents.active_agent:
             config.agents.active_agent = "default"
 
+        _bootstrap_default_agent_workspace(
+            default_workspace,
+            language=template_result.agent_config.language,
+        )
         save_config(config)
         save_agent_config("default", template_result.agent_config)
         logger.info(

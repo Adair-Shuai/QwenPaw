@@ -12,8 +12,11 @@
  *     ]
  *   }
  */
-import { describe, it, expect } from "vitest";
-import { extractFileInfos } from "./FileSummaryCards";
+// @vitest-environment jsdom
+import { fireEvent, render, screen } from "@testing-library/react";
+import { createElement } from "react";
+import { describe, it, expect, vi } from "vitest";
+import FileSummaryCards, { extractFileInfos } from "./FileSummaryCards";
 
 // We test the parsing logic indirectly by simulating the data structure
 // that the vendor passes to FileSummaryCards via HostResponseCard.
@@ -243,6 +246,70 @@ describe("FileSummaryCards data parsing", () => {
 
     const args = JSON.parse(callData.arguments as string);
     expect(args.image_path).toBe("/tmp/screenshot.png");
+  });
+
+  it("opens a binary send_file_to_user result through its attachment URL", () => {
+    const listener = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", listener);
+
+    render(
+      createElement(FileSummaryCards, {
+        data: {
+          output: [
+            {
+              id: "msg-send-image",
+              type: "mcp_call",
+              status: "completed",
+              content: [
+                {
+                  type: "data",
+                  data: {
+                    name: "send_file_to_user",
+                    arguments: JSON.stringify({
+                      image_path:
+                        "/Users/lzw/Documents/文件预览测试/well_log_figure.png",
+                    }),
+                    call_id: "call-send-image",
+                  },
+                },
+                {
+                  type: "data",
+                  data: {
+                    output: [
+                      {
+                        type: "image",
+                        source: {
+                          type: "url",
+                          url: "file:///Users/lzw/Documents/%E6%96%87%E4%BB%B6%E9%A2%84%E8%A7%88%E6%B5%8B%E8%AF%95/well_log_figure.png",
+                        },
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "预览 well_log_figure.png" }),
+    );
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    const event = listener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail.target).toMatchObject({
+      source: "attachment",
+      path: "/Users/lzw/Documents/文件预览测试/well_log_figure.png",
+    });
+    expect(event.detail.target.artifactUrl).toContain("/files/preview/");
+    expect(event.detail.target.artifactUrl).toContain("%2FUsers/");
+    expect(event.detail.target.artifactUrl).not.toContain(
+      "/workspace/file-download",
+    );
+
+    window.removeEventListener("qwenpaw:open-file-preview", listener);
   });
 
   it("non-file tools are not included", () => {

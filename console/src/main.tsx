@@ -63,7 +63,15 @@ if (typeof window !== "undefined") {
       msg.includes("pseudo class") ||
       // React forwardRef warning from @agentscope-ai/design SparkAnchor
       // (the library's forwardRef render function omits the ref parameter).
-      msg.includes("forwardRef render functions accept exactly two parameters")
+      msg.includes("forwardRef render functions accept exactly two parameters") ||
+      // antd v5 emits deprecation warnings via console.error (not
+      // console.warn). These come from third-party packages
+      // (@agentscope-ai/design, @agentscope-ai/chat) that we cannot
+      // control, so suppress them here to keep the console clean.
+      msg.includes("overlayClassName") ||
+      msg.includes("overlayStyle") ||
+      msg.includes("overlayInnerStyle") ||
+      msg.includes("[antd: Spin] `tip` only work in nest or fullscreen pattern")
     ) {
       return;
     }

@@ -2,10 +2,10 @@
  * Skill pool tab — browse and manage the shared skill pool.
  */
 
-import { getHost, clearApiCache } from "../core/runtime";
-import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
+import { getHost } from "../core/runtime";
+import { PRIMARY_BTN_STYLE, renderMarkdown } from "../core/shared";
 import type { PoolSkillSpec, WorkspaceSkillSummary, AgentSummary } from "../core/types";
-import { fetchPoolSkills, fetchPoolSkillContent, fetchWorkspaceSkills } from "../core/api";
+import { fetchPoolSkillContent } from "../core/api";
 import { deletePoolSkill, installSkillFromPool } from "../expert/expertApi";
 import { ExpertAvatar } from "../components/avatars";
 
@@ -15,6 +15,7 @@ export function SkillPoolTab({
   agents,
   loading,
   onReload,
+  onSkillInstalled,
   agentId,
   agentName,
 }: {
@@ -22,12 +23,13 @@ export function SkillPoolTab({
   workspaceSkills: WorkspaceSkillSummary[];
   agents: AgentSummary[];
   loading: boolean;
-  onReload: () => void;
+  onReload: () => void | Promise<void>;
+  onSkillInstalled: (skill: PoolSkillSpec) => void;
   agentId: string;
   agentName: string;
 }) {
   const React = getHost().React;
-  const { useState, useMemo, useCallback } = React;
+  const { useState, useMemo, useCallback, useEffect, useRef } = React;
   const {
     Spin,
     Empty,
@@ -62,6 +64,18 @@ export function SkillPoolTab({
   const [displayCount, setDisplayCount] = useState(24);
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const scrollTopRef = useRef(0);
+  const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
+
+  const installedForCurrentAgent = useMemo(
+    () =>
+      new Set(
+        workspaceSkills
+          .find((workspace) => workspace.agent_id === agentId)
+          ?.skills.map((skill) => skill.name) || [],
+      ),
+    [workspaceSkills, agentId],
+  );
 
   const filteredSkills = useMemo(() => {
     if (!searchText.trim()) return poolSkills;
@@ -79,10 +93,65 @@ export function SkillPoolTab({
     [filteredSkills, displayCount],
   );
 
+  // Load the next page as the user approaches the end of the list. The
+  // sentinel is deliberately placed below the grid so appending cards does
+  // not replace the existing DOM or disturb the user's scroll position.
+  useEffect(() => {
+    if (visibleSkills.length >= filteredSkills.length) return;
+    const sentinel = loadMoreSentinelRef.current;
+    if (!sentinel) return;
+
+    const loadNextPage = () => {
+      setDisplayCount((current) =>
+        Math.min(current + 24, filteredSkills.length),
+      );
+    };
+
+    if (typeof IntersectionObserver !== "undefined") {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) loadNextPage();
+        },
+        { rootMargin: "240px 0px" },
+      );
+      observer.observe(sentinel);
+      return () => observer.disconnect();
+    }
+
+    // Older embedded WebViews may not expose IntersectionObserver. Keep the
+    // same behavior with a lightweight scroll fallback.
+    const onScroll = () => {
+      if (sentinel.getBoundingClientRect().top <= window.innerHeight + 240) {
+        loadNextPage();
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [filteredSkills.length, visibleSkills.length]);
+
   const handleSearchChange = useCallback((val: string) => {
     setSearchText(val);
     setDisplayCount(24);
   }, []);
+
+  const restoreScrollPosition = useCallback(() => {
+    const top = scrollTopRef.current;
+    requestAnimationFrame(() => {
+      window.scrollTo({ top, behavior: "auto" });
+      if (document.scrollingElement) document.scrollingElement.scrollTop = top;
+    });
+  }, []);
+
+  const handleReload = useCallback(async () => {
+    scrollTopRef.current =
+      document.scrollingElement?.scrollTop ?? window.scrollY ?? 0;
+    try {
+      await onReload();
+    } finally {
+      restoreScrollPosition();
+    }
+  }, [onReload, restoreScrollPosition]);
 
   const computeInstalledAgents = useCallback(
     (skillName: string): string[] => {
@@ -119,6 +188,12 @@ export function SkillPoolTab({
     [computeInstalledAgents],
   );
 
+  useEffect(() => {
+    if (activeSkill) {
+      setInstalledAgents(computeInstalledAgents(activeSkill.name));
+    }
+  }, [activeSkill, computeInstalledAgents, workspaceSkills]);
+
   // ── Hover action handlers ─────────────────────────────────────────────────
   const handleInstallToAgent = async (skill: PoolSkillSpec) => {
     setActionLoading(true);
@@ -127,7 +202,10 @@ export function SkillPoolTab({
       antdMsg.success(
         `已将技能「${skill.name}」加载到当前专家「${agentName}」`,
       );
-      onReload();
+      // Installing an agent skill does not change the pool itself. Avoid a
+      // full pool reload so the user's current list and scroll position stay
+      // exactly where they are; notify the sibling tab instead.
+      onSkillInstalled(skill);
     } catch (err: any) {
       antdMsg.error(err.message || "加载技能失败");
     } finally {
@@ -152,7 +230,7 @@ export function SkillPoolTab({
         try {
           await deletePoolSkill(skill.name);
           antdMsg.success(`已从技能池删除「${skill.name}」`);
-          onReload();
+          await handleReload();
         } catch (err: any) {
           antdMsg.error(err.message || "删除失败");
         } finally {
@@ -199,7 +277,7 @@ export function SkillPoolTab({
             icon: ReloadOutlined
               ? React.createElement(ReloadOutlined)
               : undefined,
-            onClick: onReload,
+            onClick: handleReload,
             loading,
             size: "small",
           },
@@ -353,13 +431,16 @@ export function SkillPoolTab({
                             icon: PlusOutlined
                               ? React.createElement(PlusOutlined)
                               : undefined,
-                            disabled: actionLoading,
+                            disabled:
+                              actionLoading || installedForCurrentAgent.has(skill.name),
                             onClick: (e: any) => {
                               e.stopPropagation();
                               handleInstallToAgent(skill);
                             },
                           },
-                          "加载到当前Agent",
+                          installedForCurrentAgent.has(skill.name)
+                            ? "已加载"
+                            : "加载到当前Agent",
                         ),
                         React.createElement(
                           Button,
@@ -382,18 +463,24 @@ export function SkillPoolTab({
                 ),
               ),
             ),
-            // Load more button
+            // Infinite-scroll sentinel
             visibleSkills.length < filteredSkills.length
               ? React.createElement(
                   "div",
-                  { style: { textAlign: "center", marginTop: 16 } },
-                  React.createElement(
-                    Button,
-                    {
-                      onClick: () => setDisplayCount((c: number) => c + 24),
-                      size: "small",
+                  {
+                    ref: loadMoreSentinelRef,
+                    style: {
+                      minHeight: 40,
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      marginTop: 16,
                     },
-                    `加载更多 (剩余 ${filteredSkills.length - visibleSkills.length} 个)`,
+                  },
+                  React.createElement(
+                    Text,
+                    { type: "secondary", style: { fontSize: 12 } },
+                    `继续下滑自动加载 · 还剩 ${filteredSkills.length - visibleSkills.length} 个`,
                   ),
                 )
               : null,
@@ -581,4 +668,3 @@ export function SkillPoolTab({
       : null,
   );
 }
-

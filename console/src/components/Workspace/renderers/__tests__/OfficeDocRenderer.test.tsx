@@ -25,7 +25,7 @@ vi.mock("@/api/authHeaders", () => ({
 // Using @/ alias path (same approach as @/api/authHeaders mock above).
 vi.mock("@/components/Workspace/renderers/OfficeOoxmlPreview", () => ({
   default: function MockOoxmlPreview() {
-    return null as any;
+    return null;
   },
 }));
 
@@ -315,7 +315,7 @@ describe("OfficeDocRenderer", () => {
   });
 
   it("sends auth headers in the fetch request", async () => {
-    const fetchMock = vi.fn((_url: string, _opts: RequestInit) =>
+    const fetchMock = vi.fn(() =>
       Promise.resolve({
         ok: true,
         status: 200,
@@ -340,7 +340,7 @@ describe("OfficeDocRenderer", () => {
   });
 
   it("sends file URL in request body", async () => {
-    const fetchMock = vi.fn((_url: string, _opts: RequestInit) =>
+    const fetchMock = vi.fn(() =>
       Promise.resolve({
         ok: true,
         status: 200,
@@ -370,5 +370,80 @@ describe("OfficeDocRenderer", () => {
     const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
     const body = JSON.parse(calls[0][1].body as string);
     expect(body.url).toBe("/api/workspace/binary-files/report.docx");
+  });
+
+  it("sends workspace session scope to the OfficeCLI endpoint", async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            html: "<html>OfficeCLI</html>",
+            engine: "officecli",
+          }),
+      }),
+    );
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+
+    render(
+      <OfficeDocRenderer
+        {...makeContext({
+          artifact: {
+            id: "workspace-doc",
+            title: "report.docx",
+            source: "link",
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            extension: "docx",
+            binaryUrl:
+              "/api/workspace/file-download?path=docs%2Freport.docx&root=workspace",
+            workspacePath: "docs/report.docx",
+            workspaceRoot: "workspace",
+            agentId: "agent-a",
+            chatId: "chat-a",
+          },
+        })}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    const calls = fetchMock.mock.calls as unknown as [string, RequestInit][];
+    const headers = calls[0][1].headers as Record<string, string>;
+    expect(headers["X-Chat-Id"]).toBe("chat-a");
+  });
+
+  it("does not silently use browser OOXML parsing for workspace files", async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        status: 500,
+        json: () => Promise.resolve({ detail: "officecli failed" }),
+      }),
+    ) as unknown as typeof global.fetch;
+
+    render(
+      <OfficeDocRenderer
+        {...makeContext({
+          artifact: {
+            id: "workspace-doc-error",
+            title: "report.docx",
+            source: "link",
+            mimeType:
+              "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            extension: "docx",
+            binaryUrl:
+              "/api/workspace/file-download?path=report.docx&root=project",
+            workspacePath: "report.docx",
+            workspaceRoot: "project",
+          },
+        })}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Conversion failed")).toBeInTheDocument();
+      expect(screen.getByText("officecli failed")).toBeInTheDocument();
+    });
   });
 });

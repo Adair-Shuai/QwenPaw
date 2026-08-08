@@ -23,6 +23,7 @@ import { setTextareaValue } from "../../pages/Chat/utils";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import type { FileMetadata, FilesDrawerEvent, FilesDrawerState } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
+import { normalizeArtifactUrl } from "./openFilePreview";
 import styles from "./FilesWorkspace.module.less";
 
 const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
@@ -74,6 +75,7 @@ export default function FilesDrawer({
   const chatId = scope.chatId;
   const projectDirOverride = scope.projectDirOverride;
   const target = state.target;
+  const artifactUrl = normalizeArtifactUrl(target?.artifactUrl);
   const widthStorageKey = isWorkspace
     ? WORKSPACE_WIDTH_STORAGE_KEY
     : PREVIEW_WIDTH_STORAGE_KEY;
@@ -112,90 +114,123 @@ export default function FilesDrawer({
     const controller = new AbortController();
     setLoading(true);
     setLoadFailed(false);
-    const loadMetadata = target.artifactUrl
-      ? fetch(target.artifactUrl, {
-          headers: buildAuthHeaders(),
-          signal: controller.signal,
-        }).then(async (response) => {
-          if (!response.ok) throw new Error(`${response.status}`);
-          const contentType = response.headers.get("Content-Type") ?? "";
-          const isText =
-            contentType.startsWith("text/") ||
-            /\.(?:md|mdx|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
-              target.path,
-            );
-          const previewKind = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(
-            target.path,
-          )
-            ? "image"
-            : /\.pdf$/i.test(target.path)
-            ? "pdf"
-            : /\.csv$/i.test(target.path)
-            ? "csv"
-            : isText
-            ? "text"
-            : "binary";
-          const nextContent = isText ? await response.text() : "";
-          return {
+    const loadMetadata =
+      target.source === "artifact" && target.artifact
+        ? Promise.resolve({
             metadata: {
               path: target.path,
-              size: Number(response.headers.get("Content-Length")) || 0,
-              modified_at: response.headers.get("Last-Modified") ?? "",
-              preview_kind: previewKind,
-              etag: response.headers.get("ETag") ?? "",
+              size:
+                target.artifact.size ??
+                new Blob([target.artifact.textContent ?? ""]).size,
+              modified_at: target.artifact.updatedAt
+                ? new Date(target.artifact.updatedAt).toISOString()
+                : "",
+              preview_kind: target.artifact.mimeType.startsWith("image/")
+                ? ("image" as const)
+                : target.artifact.mimeType === "application/pdf"
+                ? ("pdf" as const)
+                : target.artifact.mimeType === "text/csv"
+                ? ("csv" as const)
+                : target.artifact.textContent !== undefined
+                ? ("text" as const)
+                : ("binary" as const),
+              etag: "",
             } as FileMetadata,
-            content: nextContent,
-          };
-        })
-      : target.source === "workspace"
-      ? workspaceApi
-          .getFileMetadata(target.path, chatId, target.root, projectDirOverride)
-          .then(async (nextMetadata) => {
-            const loaded =
-              nextMetadata.preview_kind === "text" ||
-              nextMetadata.preview_kind === "csv"
-                ? await workspaceApi.loadFileText(
-                    target.path,
-                    chatId,
-                    target.root,
-                    projectDirOverride,
-                  )
-                : null;
+            content:
+              target.artifact.textContent ??
+              (target.artifact.jsonContent === undefined
+                ? ""
+                : JSON.stringify(target.artifact.jsonContent, null, 2)),
+          })
+        : artifactUrl
+        ? fetch(artifactUrl, {
+            headers: buildAuthHeaders(),
+            signal: controller.signal,
+          }).then(async (response) => {
+            if (!response.ok) throw new Error(`${response.status}`);
+            const contentType = response.headers.get("Content-Type") ?? "";
+            const isText =
+              contentType.startsWith("text/") ||
+              /\.(?:md|mdx|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
+                target.path,
+              );
+            const previewKind = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(
+              target.path,
+            )
+              ? "image"
+              : /\.pdf$/i.test(target.path)
+              ? "pdf"
+              : /\.csv$/i.test(target.path)
+              ? "csv"
+              : isText
+              ? "text"
+              : "binary";
+            const nextContent = isText ? await response.text() : "";
             return {
-              metadata: loaded
-                ? { ...nextMetadata, etag: loaded.etag }
-                : nextMetadata,
-              content: loaded?.content ?? "",
+              metadata: {
+                path: target.path,
+                size: Number(response.headers.get("Content-Length")) || 0,
+                modified_at: response.headers.get("Last-Modified") ?? "",
+                preview_kind: previewKind,
+                etag: response.headers.get("ETag") ?? "",
+              } as FileMetadata,
+              content: nextContent,
             };
           })
-      : target.source === "profile"
-      ? workspaceApi.loadFile(target.path).then((file) => ({
-          metadata: {
-            path: target.path,
-            size: new Blob([file.content]).size,
-            modified_at: "",
-            preview_kind: "text" as const,
-            etag: "",
-          },
-          content: file.content,
-        }))
-      : target.source === "memory" ||
-        target.source === "daily" ||
-        target.source === "digest"
-      ? (target.source === "daily" || target.source === "digest"
-          ? workspaceApi.loadMemoryFile(target.path, target.source)
-          : workspaceApi.loadDailyMemory(target.path)
-        ).then((file) => ({
-          metadata: {
-            path: target.path,
-            size: new Blob([file.content]).size,
-            modified_at: "",
-            preview_kind: "text" as const,
-            etag: "",
-          },
-          content: file.content,
-        }))
-      : Promise.reject(new Error("Unsupported preview source"));
+        : target.source === "workspace"
+        ? workspaceApi
+            .getFileMetadata(
+              target.path,
+              chatId,
+              target.root,
+              projectDirOverride,
+            )
+            .then(async (nextMetadata) => {
+              const loaded =
+                nextMetadata.preview_kind === "text" ||
+                nextMetadata.preview_kind === "csv"
+                  ? await workspaceApi.loadFileText(
+                      target.path,
+                      chatId,
+                      target.root,
+                      projectDirOverride,
+                    )
+                  : null;
+              return {
+                metadata: loaded
+                  ? { ...nextMetadata, etag: loaded.etag }
+                  : nextMetadata,
+                content: loaded?.content ?? "",
+              };
+            })
+        : target.source === "profile"
+        ? workspaceApi.loadFile(target.path).then((file) => ({
+            metadata: {
+              path: target.path,
+              size: new Blob([file.content]).size,
+              modified_at: "",
+              preview_kind: "text" as const,
+              etag: "",
+            },
+            content: file.content,
+          }))
+        : target.source === "memory" ||
+          target.source === "daily" ||
+          target.source === "digest"
+        ? (target.source === "daily" || target.source === "digest"
+            ? workspaceApi.loadMemoryFile(target.path, target.source)
+            : workspaceApi.loadDailyMemory(target.path)
+          ).then((file) => ({
+            metadata: {
+              path: target.path,
+              size: new Blob([file.content]).size,
+              modified_at: "",
+              preview_kind: "text" as const,
+              etag: "",
+            },
+            content: file.content,
+          }))
+        : Promise.reject(new Error("Unsupported preview source"));
     void loadMetadata
       .then(({ metadata: nextMetadata, content: nextContent }) => {
         if (controller.signal.aborted) return;
@@ -213,7 +248,7 @@ export default function FilesDrawer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [chatId, projectDirOverride, target]);
+  }, [artifactUrl, chatId, projectDirOverride, target]);
 
   const resizeFromPointer = (event: React.PointerEvent) => {
     event.preventDefault();
@@ -341,14 +376,14 @@ export default function FilesDrawer({
             {t("files.backToPreview")}
           </button>
         )}
-        {target && (target.source === "workspace" || target.artifactUrl) && (
+        {target && (target.source === "workspace" || artifactUrl) && (
           <button
             type="button"
             className={styles.iconButton}
             aria-label={t("files.download")}
             onClick={() =>
               void downloadFileFromUrl(
-                target.artifactUrl ??
+                artifactUrl ??
                   workspaceApi.getFileDownloadUrl(target.path, target.root),
                 filename,
                 {
@@ -415,15 +450,20 @@ export default function FilesDrawer({
                   <div className={styles.empty}>{t("common.loading")}</div>
                 ) : loadFailed ? (
                   <div className={styles.empty}>{t("files.loadFailed")}</div>
-                ) : target && metadata && isPreviewable(target.path) ? (
+                ) : target &&
+                  metadata &&
+                  (target.artifact || isPreviewable(target.path)) ? (
                   <FilePreview
                     filePath={target.path}
                     content={content}
                     chatId={chatId}
-                    binaryUrl={target.artifactUrl}
+                    binaryUrl={artifactUrl}
                     root={target.root}
                     projectDirOverride={projectDirOverride}
                     workspaceBacked={target.source === "workspace"}
+                    mimeType={target.artifact?.mimeType}
+                    size={metadata.size}
+                    artifact={target.artifact}
                   />
                 ) : metadata?.preview_kind === "text" ? (
                   <pre className={styles.textPreview}>{content}</pre>
@@ -434,7 +474,7 @@ export default function FilesDrawer({
                 )}
               </div>
               <footer className={styles.drawerFooter}>
-                {target && (
+                {target && target.source !== "artifact" && (
                   <button
                     type="button"
                     className={styles.secondaryButton}
@@ -446,7 +486,7 @@ export default function FilesDrawer({
                     {t("files.mentionInChat")}
                   </button>
                 )}
-                {target && (
+                {target && target.source !== "artifact" && (
                   <button
                     type="button"
                     className={styles.primaryButton}

@@ -12,10 +12,17 @@
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Markdown } from "@agentscope-ai/chat";
-import { CopyOutlined, CheckOutlined } from "@ant-design/icons";
+import {
+  CopyOutlined,
+  CheckOutlined,
+  FolderOpenOutlined,
+} from "@ant-design/icons";
+import { Tooltip } from "antd";
 import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
 import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { copyText } from "@/utils/clipboard";
+import { openFilePreview } from "@/features/files-workspace/openFilePreview";
+import { useAgentStore } from "@/stores/agentStore";
 import { looksLikeMarkdown } from "./utils";
 import styles from "./toolCards.module.less";
 
@@ -23,6 +30,9 @@ export interface DefaultBlockProps {
   title: string;
   content: string;
   copyTitle?: string;
+  workspaceTitle?: string;
+  workspaceExtension?: string;
+  hideContent?: boolean;
   language?: string;
 }
 
@@ -40,6 +50,33 @@ function tryParseJson(text: string): unknown | null {
     }
   }
   return null;
+}
+
+function detectMimeType(content: string, extension?: string): string {
+  const extMap: Record<string, string> = {
+    md: "text/markdown",
+    markdown: "text/markdown",
+    json: "application/json",
+    html: "text/html",
+    css: "text/css",
+    js: "text/javascript",
+    ts: "text/typescript",
+    py: "text/x-python",
+    sh: "application/x-sh",
+    yaml: "application/x-yaml",
+    yml: "application/x-yaml",
+    xml: "application/xml",
+    svg: "image/svg+xml",
+  };
+  if (extension && extMap[extension.toLowerCase()]) {
+    return extMap[extension.toLowerCase()];
+  }
+  const trimmed = content.trim();
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    return "application/json";
+  }
+  if (looksLikeMarkdown(content)) return "text/markdown";
+  return "text/plain";
 }
 
 function splitStdout(content: string): { head: string; stdout: string | null } {
@@ -119,10 +156,14 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
   title,
   content,
   copyTitle,
+  workspaceTitle,
+  workspaceExtension,
+  hideContent,
   language,
 }) => {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [expanded, setExpanded] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const { head, stdout } = useMemo(() => splitStdout(content), [content]);
   const largeContent = useMemo(
@@ -145,6 +186,8 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
     () => (largeExcerpt || declared || isMarkdown ? null : tryParseJson(head)),
     [largeExcerpt, declared, head, isMarkdown],
   );
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const contentHidden = hideContent ?? Boolean(workspaceTitle);
 
   const handleCopy = useCallback(() => {
     void copyText(content)
@@ -155,6 +198,23 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
       })
       .catch(() => {});
   }, [content]);
+
+  const handleOpenInWorkspace = useCallback(() => {
+    if (!content) return;
+    openFilePreview({
+      source: "artifact",
+      path: workspaceTitle || title,
+      artifact: {
+        id: `block-${selectedAgent}-${workspaceTitle || title}-${Date.now()}`,
+        title: workspaceTitle || title,
+        source: "generated",
+        mimeType: detectMimeType(content, workspaceExtension),
+        extension: workspaceExtension,
+        textContent: content,
+        agentId: selectedAgent,
+      },
+    });
+  }, [content, selectedAgent, title, workspaceExtension, workspaceTitle]);
 
   const renderContent = () => {
     if (largeExcerpt) {
@@ -224,18 +284,45 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
   return (
     <div className={styles.defaultBlock}>
       <div className={styles.defaultBlockHeader}>
-        <span className={styles.defaultBlockTitle}>{title}</span>
-        <button
-          type="button"
-          className={styles.defaultBlockCopy}
-          onClick={handleCopy}
-          title={copyTitle}
+        <span
+          className={styles.defaultBlockTitle}
+          style={contentHidden ? { cursor: "pointer", flex: 1 } : undefined}
+          onClick={
+            contentHidden ? () => setExpanded((value) => !value) : undefined
+          }
         >
-          {copied ? <CheckOutlined /> : <CopyOutlined />}
-        </button>
+          {contentHidden && (
+            <span style={{ marginRight: 4, fontSize: 10, opacity: 0.6 }}>
+              {expanded ? "▼" : "▶"}
+            </span>
+          )}
+          {title}
+        </span>
+        <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+          {workspaceTitle && content && (
+            <Tooltip title="在工作区打开">
+              <button
+                type="button"
+                className={styles.defaultBlockCopy}
+                onClick={handleOpenInWorkspace}
+                title="在工作区打开"
+              >
+                <FolderOpenOutlined />
+              </button>
+            </Tooltip>
+          )}
+          <button
+            type="button"
+            className={styles.defaultBlockCopy}
+            onClick={handleCopy}
+            title={copyTitle}
+          >
+            {copied ? <CheckOutlined /> : <CopyOutlined />}
+          </button>
+        </div>
       </div>
-      {renderContent()}
-      {stdout !== null && !largeExcerpt && (
+      {(!contentHidden || expanded) && renderContent()}
+      {(!contentHidden || expanded) && stdout !== null && !largeExcerpt && (
         <SyntaxHighlighter
           language="text"
           style={oneDark}

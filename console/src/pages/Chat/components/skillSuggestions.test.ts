@@ -10,14 +10,12 @@ import {
 const skills: SkillSpec[] = [
   {
     name: "reservoir-analysis",
-    content: "",
     source: "workspace",
     enabled: true,
     channels: ["console"],
   },
   {
     name: "disabled-skill",
-    content: "",
     source: "workspace",
     enabled: false,
     channels: ["console"],
@@ -53,7 +51,6 @@ describe("buildSkillSuggestions", () => {
   it("filters command collisions case-insensitively", () => {
     const collidingSkill: SkillSpec = {
       name: "Compact",
-      content: "",
       source: "workspace",
       enabled: true,
       channels: ["console"],

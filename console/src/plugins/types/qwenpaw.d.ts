@@ -279,6 +279,9 @@ export interface QwenPawHostNamespace {
   /** Auth-aware fetch. Automatically injects `Authorization` and `X-Agent-Id`. */
   fetch(path: string, init?: RequestInit): Promise<Response>;
 
+  /** Re-query agents after a host-side agent mutation. */
+  refreshAgents(options?: { force?: boolean }): Promise<void>;
+
   /** Load an allow-listed native page for in-place plugin composition. */
   loadBuiltinPage(
     page: "tools" | "mcp" | "acp",

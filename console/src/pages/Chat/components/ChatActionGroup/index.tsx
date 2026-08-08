@@ -21,8 +21,6 @@ interface ChatActionGroupProps {
   onToggleHistory?: () => void;
   /** Whether the history panel is currently visible */
   historyOpen?: boolean;
-  onToggleWorkspace?: () => void;
-  workspaceOpen?: boolean;
   isWideMode?: boolean;
   onToggleWideMode?: () => void;
   /** Callback to toggle the workspace panel */
@@ -34,8 +32,6 @@ interface ChatActionGroupProps {
 const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
   onToggleHistory,
   historyOpen = false,
-  onToggleWorkspace,
-  workspaceOpen = false,
   isWideMode = false,
   onToggleWideMode,
   onToggleWorkspace,
@@ -146,27 +142,6 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
                 : undefined
             }
             onClick={onToggleHistory}
-          />
-        </Tooltip>
-      )}
-      {!isCompact && onToggleWorkspace && (
-        <Tooltip
-          title={
-            workspaceOpen
-              ? t("chat.closeWorkspace", "Close Workspace")
-              : t("chat.openWorkspace", "Open Workspace")
-          }
-          mouseEnterDelay={0.5}
-        >
-          <IconButton
-            bordered={false}
-            icon={<AppstoreOutlined />}
-            style={
-              workspaceOpen
-                ? { color: "var(--color-primary, #ff9d4d)" }
-                : undefined
-            }
-            onClick={onToggleWorkspace}
           />
         </Tooltip>
       )}

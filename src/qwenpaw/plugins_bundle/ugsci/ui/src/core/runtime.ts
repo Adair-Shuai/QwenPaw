@@ -14,6 +14,7 @@ export interface QwenPawHost {
   /** Host-owned transport that tracks authentication and Agent scoping. */
   fetch?: (path: string, init?: RequestInit) => Promise<Response>;
   setSelectedAgent?: (agentId: string) => void;
+  refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   useSelectedAgent?: () => { id: string };
   ReactMarkdown?: React.ElementType;
   remarkGfm?: unknown;

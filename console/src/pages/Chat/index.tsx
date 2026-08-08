@@ -96,6 +96,10 @@ import type {
   FilesDrawerEvent,
   FileTarget,
 } from "../../features/files-workspace/types";
+import {
+  OPEN_FILE_PREVIEW_EVENT,
+  type OpenFilePreviewDetail,
+} from "../../features/files-workspace/openFilePreview";
 import { chatProjectDirectoryApi } from "../../api/modules/chatProjectDirectory";
 import { projectDirectoryApi } from "../../api/modules/projectDirectory";
 import {
@@ -113,6 +117,9 @@ import RichFileReferenceInput, {
   RichFileReferenceInputProvider,
 } from "./RichFileReferenceInput";
 import type { ParsedFileReference } from "./fileReferenceFormatting";
+import AgentMentionController from "./components/AgentMentionController";
+import ComposerTokenHighlights from "./components/ComposerTokenHighlights";
+import StreamingTokenBadge from "./components/StreamingTokenBadge";
 
 interface ApprovalMessageData {
   requestId: string;
@@ -1225,19 +1232,16 @@ export default function ChatPage() {
 
   useEffect(() => {
     const openPreview = (event: Event) => {
-      const customEvent = event as CustomEvent<{
-        target: FileTarget;
-        trigger?: HTMLElement | null;
-      }>;
+      const customEvent = event as CustomEvent<OpenFilePreviewDetail>;
       dispatchFilesDrawer({
         type: "OPEN_PREVIEW",
         target: customEvent.detail.target,
         trigger: customEvent.detail.trigger ?? null,
       });
     };
-    window.addEventListener("qwenpaw:open-file-preview", openPreview);
+    window.addEventListener(OPEN_FILE_PREVIEW_EVENT, openPreview);
     return () =>
-      window.removeEventListener("qwenpaw:open-file-preview", openPreview);
+      window.removeEventListener(OPEN_FILE_PREVIEW_EVENT, openPreview);
   }, [dispatchFilesDrawer]);
 
   const handleInternalFileLink = useCallback(
@@ -3144,30 +3148,46 @@ export default function ChatPage() {
         },
         beforeSubmit: handleBeforeSubmit,
         allowSpeech: whisperChecked && !whisperEnabled,
-        beforeUI: showSenderBeforeUI ? (
+        beforeUI: (
           <>
-            {isQueueOnlyTab && (
-              <Alert
-                type="info"
-                showIcon
-                banner
-                message={t("chat.queue.otherTabOwner")}
-              />
-            )}
-            <ChatSenderTabsPanel
-              bgSessionId={bgBackendSessionId}
-              queueSessionId={queueSessionId}
-              onRemove={handleQueueRemove}
-              onEdit={handleQueueEdit}
-              onReorder={handleQueueReorder}
-              onInterruptAndSend={handleQueueInterruptAndSend}
-              onClear={handleQueueClear}
-              onPauseResume={handleQueuePauseResume}
-              onRetry={handleQueueRetry}
-              onSkip={handleQueueSkip}
+            <ComposerTokenHighlights
+              agents={agents ?? []}
+              selectedAgentId={selectedAgent}
+              skillNames={consoleSkills.map((skill) => skill.name)}
+              commandNames={[
+                ...commandSuggestions.map((item) => item.value),
+                ...loopAvailableModes
+                  .map((mode) => mode.slash_command)
+                  .filter(Boolean),
+                ...activePluginSuggestions.map((item) => item.value),
+              ]}
             />
+            {showSenderBeforeUI && (
+              <>
+                {isQueueOnlyTab && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    banner
+                    message={t("chat.queue.otherTabOwner")}
+                  />
+                )}
+                <ChatSenderTabsPanel
+                  bgSessionId={bgBackendSessionId}
+                  queueSessionId={queueSessionId}
+                  onRemove={handleQueueRemove}
+                  onEdit={handleQueueEdit}
+                  onReorder={handleQueueReorder}
+                  onInterruptAndSend={handleQueueInterruptAndSend}
+                  onClear={handleQueueClear}
+                  onPauseResume={handleQueuePauseResume}
+                  onRetry={handleQueueRetry}
+                  onSkip={handleQueueSkip}
+                />
+              </>
+            )}
           </>
-        ) : undefined,
+        ),
         prefix: (
           <>
             {whisperEnabled ? (
@@ -3555,6 +3575,13 @@ export default function ChatPage() {
               ref={chatRef}
               key={refreshKey}
               options={options}
+            />
+            <StreamingTokenBadge />
+            <AgentMentionController
+              active={isChatActive()}
+              theme={isDark ? "dark" : "light"}
+              agents={agents ?? []}
+              selectedAgent={selectedAgent}
             />
           </RichFileReferenceInputProvider>
         </div>

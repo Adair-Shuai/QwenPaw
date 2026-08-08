@@ -456,7 +456,7 @@ def _detect_comsol_from_base(base_dir: str) -> Optional[Tuple[str, str, str]]:
 
     COMSOL structure:
       ``<BASE>\\COMSOL<version>\\bin\\win64\\comsol.exe``
-    e.g. ``C:\\Program Files\\COMSOL\\COMSOL61\\bin\\win64\\comsol.exe``
+    e.g. ``<install_root>\\COMSOL61\\bin\\win64\\comsol.exe``
 
     Returns ``(executable_path, install_dir, version)`` or ``None``.
     """
@@ -1111,9 +1111,9 @@ def _infer_schlumberger_version_and_root(
     """Extract version, install root, and arch from an executable path.
 
     Typical paths:
-      ``C:\\ecl\\2022.2\\bin\\pc_x86_64\\eclipse.exe``
-      ``C:\\ecl\\2022.1\\IX\\bin\\intersect.exe``
-      ``C:\\Program Files\\Schlumberger\\Petrel 2022.2\\Petrel.exe``
+      ``<install_root>\\2022.2\\bin\\pc_x86_64\\eclipse.exe``
+      ``<install_root>\\2022.1\\IX\\bin\\intersect.exe``
+      ``<install_root>\\Petrel 2022.2\\Petrel.exe``
     """
     parts = exe.parts
     version: Optional[str] = None
@@ -1221,44 +1221,71 @@ def _verify_schlumberger_license(engine: EngineInfo) -> None:
 
 
 def _find_lmutil(engine: EngineInfo) -> Optional[str]:
-    """Locate lmutil.exe across multiple sources."""
+    """Locate ``lmutil`` without assuming a particular install location.
+
+    Vendor installers place ``lmutil`` in different directories and may be
+    installed on any drive.  Prefer explicit environment/configuration and
+    then derive candidate locations from the engine that was actually found.
+    This keeps license detection portable across machines and platforms.
+    """
     candidates: List[str] = []
 
-    # 1. PATH
-    path_lmutil = shutil.which("lmutil")
-    if path_lmutil:
-        candidates.append(path_lmutil)
+    # 1. Explicit override and PATH.
+    for env_name in ("LMUTIL_PATH", "LMUTIL"):
+        value = os.environ.get(env_name, "").strip()
+        if value:
+            candidates.append(value)
+    for command in ("lmutil", "lmutil.exe"):
+        found = shutil.which(command)
+        if found:
+            candidates.append(found)
 
-    # 2. Common install locations
-    common_paths = [
-        r"C:\ecl\home\lmutil.exe",
-        r"C:\ecl\macros\lmutil.exe",
-        r"C:\Program Files\Schlumberger\lmutil.exe",
-        r"C:\Program Files (x86)\Schlumberger\lmutil.exe",
-        r"C:\Program Files\FLEXlm\lmutil.exe",
-    ]
+    # 2. User-provided extra paths. They may be either a direct executable or
+    # an installation directory.
+    search_roots: List[Path] = []
+    for configured in engine.extra_paths:
+        if configured:
+            candidates.append(configured)
+            search_roots.append(Path(configured))
 
-    # 3. Derive from detected engine install root
-    if engine.install_dir:
-        install_root = Path(engine.install_dir)
-        common_paths.extend([
-            str(install_root / "bin" / "lmutil.exe"),
-            str(install_root / "home" / "lmutil.exe"),
-            str(install_root.parent / "home" / "lmutil.exe"),
-        ])
+    # 3. Derive locations from the detected executable and install directory.
+    # Walk a bounded number of parents so an unrelated filesystem root is
+    # never scanned. The common relative locations cover Eclipse/Intersect
+    # layouts without embedding a drive letter or vendor-specific root.
+    for configured in (engine.executable_path, engine.install_dir):
+        if not configured:
+            continue
+        configured_path = Path(configured)
+        search_roots.append(
+            configured_path.parent
+            if configured_path.suffix
+            else configured_path,
+        )
 
-    for c in common_paths:
-        if c and os.path.isfile(c):
-            candidates.append(c)
+    relative_locations = (
+        Path("lmutil"),
+        Path("lmutil.exe"),
+        Path("bin") / "lmutil",
+        Path("bin") / "lmutil.exe",
+        Path("home") / "lmutil",
+        Path("home") / "lmutil.exe",
+        Path("macros") / "lmutil",
+        Path("macros") / "lmutil.exe",
+    )
+    for root in search_roots:
+        for candidate_root in (root, *list(root.parents)[:5]):
+            for relative in relative_locations:
+                candidates.append(str(candidate_root / relative))
 
-    # Deduplicate
-    seen: set = set()
-    for c in candidates:
-        cl = c.lower()
-        if cl not in seen:
-            seen.add(cl)
-            if os.path.isfile(c):
-                return c
+    # Deduplicate while preserving priority.
+    seen: set[str] = set()
+    for candidate in candidates:
+        normalized = os.path.normcase(os.path.normpath(candidate))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if os.path.isfile(candidate):
+            return candidate
 
     return None
 

@@ -16,6 +16,11 @@ const STORAGE_KEY = "qwenpaw-agent-storage";
  */
 const LAST_USED_AGENT_KEY = "qwenpaw-last-used-agent";
 
+export interface RefreshAgentsOptions {
+  /** Re-query after waiting for any in-flight refresh (used after creation). */
+  force?: boolean;
+}
+
 /** Returns true for temporary local session ids like 1785114733908-0l0jmai. */
 const isLocalTimestamp = (id: string): boolean => /^\d+-[a-z0-9]+$/.test(id);
 
@@ -28,7 +33,7 @@ interface AgentStore {
   lastChatIdByAgent: Record<string, string>;
   setSelectedAgent: (agentId: string) => void;
   setAgents: (agents: AgentSummary[]) => void;
-  refreshAgents: () => Promise<void>;
+  refreshAgents: (options?: RefreshAgentsOptions) => Promise<void>;
   addAgent: (agent: AgentSummary) => void;
   removeAgent: (agentId: string) => void;
   updateAgent: (agentId: string, updates: Partial<AgentSummary>) => void;
@@ -98,12 +103,30 @@ export const useAgentStore = create<AgentStore>()(
 
       setAgents: (agents) => set({ agents }),
 
-      refreshAgents: async () => {
+      refreshAgents: async (options) => {
+        const force = options?.force === true;
         if (agentRefreshPromise !== null) {
-          return agentRefreshPromise;
+          if (!force) return agentRefreshPromise;
+
+          // A creation can race with the initial sidebar refresh. Wait for
+          // that stale request, then perform a new request so the just-created
+          // agent is present before callers select it.
+          const pending = agentRefreshPromise;
+          try {
+            await pending;
+          } catch {
+            // The forced request below gets a chance to recover from failure.
+          }
+          // Another forced caller may already have started the fresh request.
+          // Reuse it instead of issuing a third request.
+          if (agentRefreshPromise !== pending) {
+            if (agentRefreshPromise) return agentRefreshPromise;
+            // The original request completed and cleared the shared promise;
+            // continue below and start the required fresh request.
+          }
         }
 
-        agentRefreshPromise = agentsApi.listAgents().then((response) => {
+        const request = agentsApi.listAgents().then((response) => {
           const fetchedAgents = response.agents;
           const currentSelected = get().selectedAgent;
           // If the currently selected agent no longer exists in the backend,
@@ -128,10 +151,13 @@ export const useAgentStore = create<AgentStore>()(
             set({ agents: fetchedAgents });
           }
         });
+        agentRefreshPromise = request;
         try {
-          await agentRefreshPromise;
+          await request;
         } finally {
-          agentRefreshPromise = null;
+          if (agentRefreshPromise === request) {
+            agentRefreshPromise = null;
+          }
         }
       },
 

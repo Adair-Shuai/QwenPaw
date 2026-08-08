@@ -41,6 +41,7 @@ export function SkillCenterPage({
   >([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("agent-skills");
+  const [agentSkillsRevision, setAgentSkillsRevision] = useState(0);
 
   const loadPoolData = useCallback(async () => {
     setLoading(true);
@@ -70,6 +71,41 @@ export function SkillCenterPage({
     return agent?.name || currentAgentId;
   }, [agents, currentAgentId]);
 
+  // Keep both skill tabs in sync without reloading the whole skill pool after
+  // every install. The pool tab updates its local workspace summary, while
+  // this revision tells the current-agent tab to fetch the authoritative list.
+  const handleSkillInstalled = useCallback(
+    (skill: PoolSkillSpec) => {
+      setWorkspaceSkills((previous) =>
+        previous.map((workspace) => {
+          if (workspace.agent_id !== currentAgentId) return workspace;
+          if (workspace.skills.some((item) => item.name === skill.name)) {
+            return workspace;
+          }
+          return {
+            ...workspace,
+            skills: [
+              ...workspace.skills,
+              {
+                name: skill.name,
+                description: skill.description,
+                version_text: skill.version_text,
+                content: skill.content || "",
+                source: skill.source || "pool",
+                enabled: true,
+                tags: skill.tags,
+                emoji: skill.emoji,
+                installed_from: skill.installed_from,
+              },
+            ],
+          };
+        }),
+      );
+      setAgentSkillsRevision((revision) => revision + 1);
+    },
+    [currentAgentId],
+  );
+
   const navigateTo = (path: string) => {
     window.history.pushState({}, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
@@ -89,6 +125,7 @@ export function SkillCenterPage({
       children: React.createElement(CurrentAgentSkillsTab, {
         agentId: currentAgentId,
         agentName: currentAgentName,
+        refreshKey: agentSkillsRevision,
         onNavigate: navigateTo,
       }),
     },
@@ -108,6 +145,7 @@ export function SkillCenterPage({
         agents,
         loading,
         onReload: loadPoolData,
+        onSkillInstalled: handleSkillInstalled,
         agentId: currentAgentId,
         agentName: currentAgentName,
       }),

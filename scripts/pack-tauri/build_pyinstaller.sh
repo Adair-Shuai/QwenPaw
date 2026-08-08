@@ -183,8 +183,13 @@ echo "== Staging bundled Node runtime =="
 echo ""
 
 echo "== Staging bundled OfficeCLI =="
+OFFICECLI_DOC_PLUGIN_ARGS=()
+if [ -n "${QWENPAW_OFFICECLI_DOC_PLUGIN:-}" ]; then
+    OFFICECLI_DOC_PLUGIN_ARGS=(--doc-plugin "$QWENPAW_OFFICECLI_DOC_PLUGIN")
+fi
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_officecli.py" \
-    --dest "${BINARIES_DIR}/officecli"
+    --dest "${BINARIES_DIR}/officecli" \
+    "${OFFICECLI_DOC_PLUGIN_ARGS[@]}"
 echo ""
 
 echo "========================================="

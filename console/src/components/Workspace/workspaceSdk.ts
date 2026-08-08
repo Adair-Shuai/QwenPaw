@@ -35,6 +35,10 @@ import {
 } from "./store/workspaceStore";
 import type { RendererRegistration, WorkspaceArtifact } from "./types";
 import { useAgentStore } from "../../stores/agentStore";
+import {
+  openArtifactPreview,
+  updateArtifactPreview,
+} from "../../features/files-workspace/openFilePreview";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SDK 接口定义
@@ -107,6 +111,7 @@ export function createWorkspaceNamespace(): QwenPawWorkspaceNamespace {
 
     openArtifact: (artifact) => {
       useWorkspaceStore.getState().openArtifact(artifact);
+      openArtifactPreview(artifact);
     },
 
     closeTab: (artifactId) => {
@@ -115,6 +120,7 @@ export function createWorkspaceNamespace(): QwenPawWorkspaceNamespace {
 
     updateArtifact: (id, patch) => {
       useWorkspaceStore.getState().updateArtifact(id, patch);
+      updateArtifactPreview(id, patch);
     },
 
     getActiveArtifact: () => {

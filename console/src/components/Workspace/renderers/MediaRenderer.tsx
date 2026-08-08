@@ -25,8 +25,13 @@ const MediaRenderer: React.FC<RendererContext> = ({
     "loading",
   );
   const [error, setError] = useState<Error | null>(null);
+  const usesUnifiedWorkspaceScope = Boolean(
+    artifact.workspaceRoot || artifact.chatId || artifact.projectDirOverride,
+  );
   const baseUrl = artifact.workspacePath
-    ? workspaceFileApi.getBinaryFileUrl(artifact.workspacePath)
+    ? usesUnifiedWorkspaceScope && artifact.binaryUrl
+      ? artifact.binaryUrl
+      : workspaceFileApi.getBinaryFileUrl(artifact.workspacePath)
     : artifact.binaryUrl ?? "";
   const isWorkspaceUrl = baseUrl.includes("/workspace/binary-files/");
   const url = isWorkspaceUrl

@@ -22,9 +22,19 @@ const ImageRenderer: React.FC<RendererContext> = ({
   const { t } = useTranslation();
   const [zoom, setZoom] = useState(1);
   const [rotation, setRotation] = useState(0);
+  const scopedBlobRequest =
+    artifact.chatId || artifact.workspaceRoot || artifact.projectDirOverride;
   const resource = useAuthenticatedWorkspaceBlob(
-    artifact.workspacePath ?? null,
-    artifact.agentId,
+    artifact.workspacePath ?? (artifact.binaryUrl ? artifact.title : null),
+    scopedBlobRequest || !artifact.workspacePath
+      ? {
+          agentId: artifact.agentId,
+          chatId: artifact.chatId,
+          root: artifact.workspaceRoot,
+          projectDirOverride: artifact.projectDirOverride,
+          url: artifact.binaryUrl,
+        }
+      : artifact.agentId,
   );
   const handleDownload = () => workspace.download?.(artifact);
 

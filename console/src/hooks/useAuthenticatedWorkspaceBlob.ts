@@ -18,6 +18,14 @@ export interface AuthenticatedWorkspaceBlobResource {
   retry: () => void;
 }
 
+export interface AuthenticatedWorkspaceBlobScope {
+  agentId?: string;
+  chatId?: string;
+  root?: "project" | "workspace";
+  projectDirOverride?: string;
+  url?: string;
+}
+
 class WorkspaceBinaryLoadError extends Error {
   status: number;
 
@@ -42,8 +50,20 @@ async function responseError(response: Response): Promise<Error> {
 /** Load a workspace binary with the owning Agent's credentials. */
 export function useAuthenticatedWorkspaceBlob(
   filePath: string | null,
-  agentId?: string,
+  agentOrScope?: string | AuthenticatedWorkspaceBlobScope,
 ): AuthenticatedWorkspaceBlobResource {
+  const agentId =
+    typeof agentOrScope === "string" ? agentOrScope : agentOrScope?.agentId;
+  const chatId =
+    typeof agentOrScope === "string" ? undefined : agentOrScope?.chatId;
+  const root =
+    typeof agentOrScope === "string" ? undefined : agentOrScope?.root;
+  const projectDirOverride =
+    typeof agentOrScope === "string"
+      ? undefined
+      : agentOrScope?.projectDirOverride;
+  const explicitUrl =
+    typeof agentOrScope === "string" ? undefined : agentOrScope?.url;
   const [attempt, setAttempt] = useState(0);
   const [resource, setResource] = useState<
     Omit<AuthenticatedWorkspaceBlobResource, "retry">
@@ -65,7 +85,9 @@ export function useAuthenticatedWorkspaceBlob(
     }
 
     const loadBlob = async (): Promise<Blob> => {
-      if (isDesktopTauriRuntime()) {
+      const scopedRequest = chatId || projectDirOverride || root || explicitUrl;
+
+      if (isDesktopTauriRuntime() && !scopedRequest) {
         try {
           const response = await invoke<ArrayBuffer | number[]>(
             "read_workspace_binary_file",
@@ -80,8 +102,19 @@ export function useAuthenticatedWorkspaceBlob(
         }
       }
 
-      const response = await fetch(workspaceApi.getBinaryFileUrl(filePath), {
-        headers: buildAuthHeaders(agentId),
+      const url =
+        explicitUrl ??
+        (scopedRequest
+          ? workspaceApi.getFileDownloadUrl(filePath, root ?? "project")
+          : workspaceApi.getBinaryFileUrl(filePath));
+      const response = await fetch(url, {
+        headers: {
+          ...buildAuthHeaders(agentId),
+          ...(chatId ? { "X-Chat-Id": chatId } : {}),
+          ...(!chatId && projectDirOverride
+            ? { "X-Session-Project-Dir": projectDirOverride }
+            : {}),
+        },
         signal: controller.signal,
       });
       if (!response.ok) throw await responseError(response);
@@ -114,7 +147,15 @@ export function useAuthenticatedWorkspaceBlob(
       controller.abort();
       if (objectUrl) URL.revokeObjectURL(objectUrl);
     };
-  }, [agentId, attempt, filePath]);
+  }, [
+    agentId,
+    attempt,
+    chatId,
+    explicitUrl,
+    filePath,
+    projectDirOverride,
+    root,
+  ]);
 
   return { ...resource, retry };
 }

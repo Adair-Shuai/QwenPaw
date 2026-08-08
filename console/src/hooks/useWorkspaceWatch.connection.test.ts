@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { useAgentStore } from "../stores/agentStore";
 
 // 顶层 mock（Vitest 会提升这些），使用 doMock 以兼容 resetModules
 vi.mock("../api/modules/workspace", () => ({
@@ -191,17 +192,19 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
     const abortSpy = vi.spyOn(AbortController.prototype, "abort");
 
     const { rerender, unmount } = renderHook(
-      ({ agentId, projectRoot }) =>
-        useWorkspaceWatch(vi.fn(), true, { agentId, projectRoot }),
+      ({ agentId }) => {
+        useAgentStore.setState({ selectedAgent: agentId });
+        return useWorkspaceWatch(vi.fn(), true);
+      },
       {
-        initialProps: { agentId: "agent-a", projectRoot: "/project/one" },
+        initialProps: { agentId: "agent-a" },
       },
     );
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
     const firstSignal = mockFetch.mock.calls[0][1].signal as AbortSignal;
 
-    rerender({ agentId: "agent-b", projectRoot: "/project/two" });
+    rerender({ agentId: "agent-b" });
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(2));
     expect(firstSignal.aborted).toBe(true);
@@ -217,10 +220,8 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
   it("同一作用域的两个 Hook 共享一个连接", async () => {
     const mockFetch = makePendingFetchMock();
     vi.stubGlobal("fetch", mockFetch);
-    const scope = { agentId: "agent-a", projectRoot: "/project/one" };
-
-    const first = renderHook(() => useWorkspaceWatch(vi.fn(), true, scope));
-    const second = renderHook(() => useWorkspaceWatch(vi.fn(), true, scope));
+    const first = renderHook(() => useWorkspaceWatch(vi.fn(), true));
+    const second = renderHook(() => useWorkspaceWatch(vi.fn(), true));
 
     await waitFor(() => expect(mockFetch).toHaveBeenCalledTimes(1));
     first.unmount();

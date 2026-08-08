@@ -35,7 +35,7 @@ def binary_client(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(
         workspace_router,
-        "get_coding_dir",
+        "get_agent_project_dir",
         lambda workspace: workspace.workspace_dir,
     )
 
@@ -137,9 +137,11 @@ def test_binary_media_query_uses_requested_agent_workspace(binary_client):
     (roots["agent-a"] / "same.mp4").write_bytes(b"AAAA")
     (roots["agent-b"] / "same.mp4").write_bytes(b"BBBB")
 
+    # Upstream removed query-param agent selection; use the X-Agent-Id
+    # header which is the supported path for non-browser media clients.
     response = client.get(
         "/workspace/binary-files/same.mp4?agent_id=agent-b",
-        headers={"Range": "bytes=1-2"},
+        headers={"X-Agent-Id": "agent-b", "Range": "bytes=1-2"},
     )
 
     assert response.status_code == 206

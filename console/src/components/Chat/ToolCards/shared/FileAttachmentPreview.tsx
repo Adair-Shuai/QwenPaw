@@ -4,6 +4,7 @@ import {
   parseInternalFileLink,
   filePathFromPreviewUrl,
 } from "../../../../features/files-workspace/internalFileLinks";
+import { openFilePreview } from "../../../../features/files-workspace/openFilePreview";
 import type { FileTarget } from "../../../../features/files-workspace/types";
 import MediaPreview from "./MediaPreview";
 import type { ToolCallContent } from "./types";
@@ -37,14 +38,6 @@ function targetForPath(
   };
 }
 
-function openTarget(target: FileTarget, trigger: HTMLElement) {
-  window.dispatchEvent(
-    new CustomEvent("qwenpaw:open-file-preview", {
-      detail: { target, trigger },
-    }),
-  );
-}
-
 const FileAttachmentPreview: React.FC<FileAttachmentPreviewProps> = ({
   content,
 }) => {
@@ -56,7 +49,9 @@ const FileAttachmentPreview: React.FC<FileAttachmentPreviewProps> = ({
   return (
     <MediaPreview
       media={media}
-      onFileOpen={target ? (trigger) => openTarget(target, trigger) : undefined}
+      onFileOpen={
+        target ? (trigger) => openFilePreview(target, trigger) : undefined
+      }
     />
   );
 };
@@ -77,7 +72,7 @@ export const FilePreviewLink: React.FC<FileAttachmentPreviewProps> = ({
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
-        openTarget(target, event.currentTarget);
+        openFilePreview(target, event.currentTarget);
       }}
       aria-label={`${shortFileName(previewPath)} ${t("files.preview")}`}
     >

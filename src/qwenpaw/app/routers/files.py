@@ -72,13 +72,16 @@ async def _resolve_relative_path(normalized: str, request: Request) -> Path:
 
     # Try to get the agent workspace from the request context
     try:
-        from ..agent_context import get_agent_for_request, get_coding_dir
+        from ..agent_context import (
+            get_agent_for_request,
+            get_agent_project_dir,
+        )
 
         workspace = await get_agent_for_request(request)
         ws_dir = workspace.workspace_dir
         candidates.append(ws_dir / normalized)
         candidates.append(ws_dir / "media" / normalized)
-        candidates.append(get_coding_dir(workspace) / normalized)
+        candidates.append(get_agent_project_dir(workspace) / normalized)
     except Exception:
         pass
 

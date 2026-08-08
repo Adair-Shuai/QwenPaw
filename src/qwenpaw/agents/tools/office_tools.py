@@ -1292,7 +1292,7 @@ async def office_refresh_fields(file_path: str) -> ToolChunk:
 @tool_descriptor(
     requires_sandbox=("file_read",),
     async_execution=True,
-    enabled_by_default=False,
+    enabled_by_default=True,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeRawGet",
@@ -1341,7 +1341,7 @@ async def office_raw_get(
 @tool_descriptor(
     requires_sandbox=("file_write",),
     async_execution=True,
-    enabled_by_default=False,
+    enabled_by_default=True,
     tool_type="file",
     target_param="file_path",
     policy_name="OfficeRawSet",
