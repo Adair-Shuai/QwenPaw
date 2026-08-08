@@ -2945,9 +2945,11 @@ export default function ChatPage() {
         const queueText = usesQwenPawBackend
           ? prepareLoopModeMessage(val)
           : val;
+        const agentMetadata = buildQueuedAgentMetadata(queueText);
         const enqueueIdentity = sessionApi.getSessionIdentity();
         useMessageQueueStore.getState().enqueue(queueSessionId, {
           text: queueText,
+          ...agentMetadata,
           attachments:
             pendingFileListRef.current.length > 0
               ? pendingFileListRef.current.map((f) => ({

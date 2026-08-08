@@ -46,3 +46,18 @@ global.ResizeObserver = vi.fn().mockImplementation(function () {
     disconnect: vi.fn(),
   };
 });
+
+// PointerEvent polyfill — jsdom 25 doesn't expose PointerEvent as a global,
+// so @testing-library/dom falls back to plain Event which drops clientX/clientY.
+// Alias to MouseEvent so pointer event tests can read coordinates.
+if (typeof globalThis.PointerEvent === "undefined") {
+  // @ts-expect-error – MouseEvent is a valid supertype for PointerEvent in tests
+  globalThis.PointerEvent = MouseEvent;
+}
+if (typeof window.PointerEvent === "undefined") {
+  Object.defineProperty(window, "PointerEvent", {
+    value: globalThis.PointerEvent,
+    writable: true,
+    configurable: true,
+  });
+}

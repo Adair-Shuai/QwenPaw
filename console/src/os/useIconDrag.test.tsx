@@ -16,12 +16,17 @@ beforeAll(() => {
   Element.prototype.releasePointerCapture = vi.fn();
 });
 
+let _rafCb: ((t: number) => void) | null = null;
 beforeEach(() => {
-  vi.useFakeTimers();
+  vi.stubGlobal("requestAnimationFrame", (cb: (t: number) => void) => {
+    _rafCb = cb;
+    return 0;
+  });
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
 });
 
 afterEach(() => {
-  vi.useRealTimers();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -60,7 +65,7 @@ describe("useIconDrag", () => {
     // Mid-gesture: zero persisted writes.
     expect(setPosition).not.toHaveBeenCalled();
     // Visual position advances via rAF-coalesced DOM writes.
-    vi.advanceTimersByTime(32);
+    _rafCb?.(0);
     expect(icon.style.left).toBe("110px");
     expect(icon.style.top).toBe("140px");
 
@@ -104,7 +109,7 @@ describe("useIconDrag", () => {
 
     fireEvent.pointerDown(icon, { pointerId: 1, clientX: 20, clientY: 50 });
     fireEvent.pointerMove(icon, { pointerId: 1, clientX: 80, clientY: 100 });
-    vi.advanceTimersByTime(32);
+    _rafCb?.(0);
     fireEvent.pointerUp(icon, { pointerId: 1, clientX: 80, clientY: 100 });
 
     expect(onDragEnd).toHaveBeenCalledWith(

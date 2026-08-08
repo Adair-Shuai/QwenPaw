@@ -36,6 +36,7 @@ function win(id: string, x: number, y: number): OsWindow {
 const winA = win("core.chat", 100, 100);
 const winB = win("core.inbox", 400, 300);
 
+let _rafCb: ((t: number) => void) | null = null;
 beforeEach(() => {
   Object.defineProperty(window, "innerWidth", {
     value: 1920,
@@ -57,11 +58,15 @@ beforeEach(() => {
     saved: {},
     missionControlOpen: false,
   });
-  vi.useFakeTimers();
+  vi.stubGlobal("requestAnimationFrame", (cb: (t: number) => void) => {
+    _rafCb = cb;
+    return 0;
+  });
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
 });
 
 afterEach(() => {
-  vi.useRealTimers();
+  vi.unstubAllGlobals();
   cleanup();
 });
 
@@ -133,7 +138,7 @@ describe("WindowFrame drag", () => {
     expect(onRenderB).not.toHaveBeenCalled();
 
     // The dragged frame moves visually via rAF-coalesced DOM writes.
-    vi.advanceTimersByTime(32);
+    _rafCb?.(0);
     const frameA = title.parentElement!.parentElement as HTMLElement;
     expect(frameA.style.left).toBe("350px");
     expect(frameA.style.top).toBe("290px");
