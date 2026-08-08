@@ -61,7 +61,7 @@ async def _resolve_relative_path(normalized: str, request: Request) -> Path:
     Search order:
     1. Agent workspace_dir (e.g. ``~/.qwenpaw/workspaces/default/``)
     2. Agent workspace_dir/media (uploaded files)
-    3. Agent coding_dir (agent's working folder)
+    3. Current session project_dir (falling back to the Agent project_dir)
     4. WORKING_DIR (fallback)
 
     Returns the first match that exists as a file. If none match,
@@ -74,14 +74,20 @@ async def _resolve_relative_path(normalized: str, request: Request) -> Path:
     try:
         from ..agent_context import (
             get_agent_for_request,
-            get_agent_project_dir,
+            get_project_dir_for_request,
         )
 
         workspace = await get_agent_for_request(request)
         ws_dir = workspace.workspace_dir
         candidates.append(ws_dir / normalized)
         candidates.append(ws_dir / "media" / normalized)
-        candidates.append(get_agent_project_dir(workspace) / normalized)
+        project_dir = await get_project_dir_for_request(
+            request,
+            workspace,
+        )
+        candidates.append(project_dir / normalized)
+    except HTTPException:
+        raise
     except Exception:
         pass
 

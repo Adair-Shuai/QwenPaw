@@ -16,6 +16,7 @@ export function toDisplayUrl(url: string): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
   if (url.startsWith("data:")) return url;
+  if (url.startsWith("/api/")) return url;
   // filePreviewUrl handles file:// URLs and absolute/relative paths.
   return chatApi.filePreviewUrl(url);
 }

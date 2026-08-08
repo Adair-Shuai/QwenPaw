@@ -860,7 +860,7 @@ export function MCPConfigTab({
                 mcp.tools && mcp.tools.length > 0
                   ? React.createElement(
                       "div",
-                      { style: { marginTop: 4, fontSize: 11, color: "#8c8c8c" } },
+                      { style: { marginTop: 4, fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
                       `提供 ${mcp.tools.length} 个工具`,
                     )
                   : null,
@@ -881,7 +881,7 @@ export function MCPConfigTab({
       },
       React.createElement(
         "div",
-        { style: { marginBottom: 8, fontSize: 12, color: "#8c8c8c" } },
+        { style: { marginBottom: 8, fontSize: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
         "粘贴 MCP 配置 JSON（支持 mcpServers 格式），将创建到当前专家工作区：",
       ),
       React.createElement(TextArea, {

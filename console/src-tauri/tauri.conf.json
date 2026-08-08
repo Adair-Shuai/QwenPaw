@@ -43,7 +43,9 @@
       "binaries/qwenpaw-backend",
       "binaries/python-runtime",
       "binaries/node-runtime",
-      "binaries/officecli"
+      "binaries/officecli",
+      "binaries/java-runtime",
+      "binaries/neqsim"
     ],
     "windows": {
       "webviewInstallMode": {

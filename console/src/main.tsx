@@ -1,6 +1,9 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./i18n";
+// Keep Monaco fully local (workers + stylesheet) for both Coding Mode and
+// compact workspace previews. This must run before any editor mounts.
+import "./monacoSetup";
 import { installHostExternals } from "./plugins/hostExternals";
 import { installHostSdk } from "./plugins/hostSdk/install";
 import { registerHostModulesDynamic } from "./plugins/dynamicModuleRegistry";

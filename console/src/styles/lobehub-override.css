@@ -523,6 +523,12 @@ html.dark-mode [class*="chat-anywhere"] [class*="toolCallResultMd"] {
    4. Buttons — Dark Mode
    ═══════════════════════════════════════════════════════════════════════════ */
 
+/* Primary button — force white text in both light & dark mode */
+.ant-btn-primary,
+.qwenpaw-btn-primary {
+  color: #fff !important;
+}
+
 /* Default button — subtle dark surface */
 html.dark-mode .ant-btn-default,
 html.dark-mode .qwenpaw-btn-default {
@@ -602,4 +608,146 @@ html.dark-mode .debug-log-container {
 html.dark-mode .debug-log-container mark {
   background: rgba(255, 214, 102, 0.35) !important;
   color: rgba(0, 0, 0, 0.9);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   9. Global dark-mode fallback for uncovered modules
+   These rules provide dark-mode coverage for pages whose CSS Modules do
+   not yet have explicit dark-mode blocks (Backups, PluginManager, ACP,
+   Network, PawApps, Models filter, etc.).
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Descriptions / Statistic */
+html.dark-mode .ant-descriptions,
+html.dark-mode .qwenpaw-descriptions {
+  background: transparent !important;
+}
+
+html.dark-mode .ant-descriptions-item-label,
+html.dark-mode .qwenpaw-descriptions-item-label {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+
+html.dark-mode .ant-descriptions-item-content,
+html.dark-mode .qwenpaw-descriptions-item-content {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Divider */
+html.dark-mode .ant-divider,
+html.dark-mode .qwenpaw-divider {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* List */
+html.dark-mode .ant-list,
+html.dark-mode .qwenpaw-list {
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+html.dark-mode .ant-list-item,
+html.dark-mode .qwenpaw-list-item {
+  border-bottom-color: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+/* Collapse */
+html.dark-mode .ant-collapse,
+html.dark-mode .qwenpaw-collapse {
+  background: #1c1b1e !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark-mode .ant-collapse-header,
+html.dark-mode .qwenpaw-collapse-header {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+html.dark-mode .ant-collapse-content,
+html.dark-mode .qwenpaw-collapse-content {
+  background: #1c1b1e !important;
+  border-top-color: rgba(255, 255, 255, 0.06) !important;
+  color: rgba(255, 255, 255, 0.75) !important;
+}
+
+/* Steps */
+html.dark-mode .ant-steps-item-title,
+html.dark-mode .qwenpaw-steps-item-title {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+html.dark-mode .ant-steps-item-description,
+html.dark-mode .qwenpaw-steps-item-description {
+  color: rgba(255, 255, 255, 0.45) !important;
+}
+
+/* Switch checked — blue */
+html.dark-mode .ant-switch-checked,
+html.dark-mode .qwenpaw-switch-checked {
+  background: #2563eb !important;
+}
+
+/* Tag default */
+html.dark-mode .ant-tag,
+html.dark-mode .qwenpaw-tag {
+  background: rgba(255, 255, 255, 0.06) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* Alert */
+html.dark-mode .ant-alert,
+html.dark-mode .qwenpaw-alert {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark-mode .ant-alert-message,
+html.dark-mode .qwenpaw-alert-message {
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+html.dark-mode .ant-alert-description,
+html.dark-mode .qwenpaw-alert-description {
+  color: rgba(255, 255, 255, 0.65) !important;
+}
+
+/* Tabs tab bar */
+html.dark-mode .ant-tabs-tab,
+html.dark-mode .qwenpaw-tabs-tab {
+  color: rgba(255, 255, 255, 0.55) !important;
+}
+
+html.dark-mode .ant-tabs-tab-active .ant-tabs-tab-btn,
+html.dark-mode .qwenpaw-tabs-tab-active .qwenpaw-tabs-tab-btn {
+  color: #fff !important;
+}
+
+/* Badge count — blue instead of orange/red */
+html.dark-mode .ant-badge-count,
+html.dark-mode .qwenpaw-badge-count {
+  background: #2563eb !important;
+}
+
+/* Progress bar */
+html.dark-mode .ant-progress-bg,
+html.dark-mode .qwenpaw-progress-bg {
+  background: #2563eb !important;
+}
+
+/* Tree */
+html.dark-mode .ant-tree,
+html.dark-mode .qwenpaw-tree {
+  background: transparent !important;
+  color: rgba(255, 255, 255, 0.85) !important;
+}
+
+html.dark-mode .ant-tree-node-content-wrapper:hover,
+html.dark-mode .qwenpaw-tree-node-content-wrapper:hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark-mode .ant-tree-node-selected,
+html.dark-mode .qwenpaw-tree-node-selected {
+  background: rgba(37, 99, 235, 0.15) !important;
 }

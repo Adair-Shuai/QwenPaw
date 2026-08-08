@@ -1,7 +1,7 @@
 import { FileWarning, Files, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { buildAuthHeaders } from "../../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
 import { chatProjectDirectoryApi } from "../../api/modules/chatProjectDirectory";
 import { projectDirectoryApi } from "../../api/modules/projectDirectory";
 import { getPendingProjectDirectory } from "../project-directory/pendingProjectDirectory";
@@ -46,7 +46,7 @@ function inferPreviewKind(
   if (/\.csv$/i.test(path)) return "csv";
   if (
     contentType.startsWith("text/") ||
-    /\.(?:md|mdx|txt|log|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
+    /\.(?:md|mdx|markdown|mmd|mermaid|txt|log|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
       path,
     ) ||
     !path.split("/").pop()?.includes(".")
@@ -243,7 +243,11 @@ export default function FilesWorkspace({
         throw new Error(`Missing artifact URL for ${target.source}`);
       }
       const response = await fetch(target.artifactUrl, {
-        headers: buildAuthHeaders(),
+        headers: buildWorkspaceScopeHeaders({
+          agentId: scope.agentId,
+          chatId,
+          projectDirOverride,
+        }),
       });
       if (!response.ok) throw new Error(`${response.status}`);
       const previewKind = inferPreviewKind(
@@ -260,7 +264,7 @@ export default function FilesWorkspace({
         etag: response.headers.get("ETag") ?? "",
       };
     },
-    [chatId, projectDirOverride],
+    [chatId, projectDirOverride, scope.agentId],
   );
 
   const loadTabContent = useCallback(
@@ -479,7 +483,11 @@ export default function FilesWorkspace({
               const filename = sourcePath.split("/").pop() ?? sourcePath;
               if (tab?.artifactUrl) {
                 await downloadFileFromUrl(tab.artifactUrl, filename, {
-                  headers: buildAuthHeaders(),
+                  headers: buildWorkspaceScopeHeaders({
+                    agentId: scope.agentId,
+                    chatId,
+                    projectDirOverride,
+                  }),
                   errorMessage: t("files.downloadFailed"),
                 });
                 return;
@@ -492,15 +500,11 @@ export default function FilesWorkspace({
                   ),
                   filename,
                   {
-                    headers: {
-                      ...buildAuthHeaders(),
-                      ...(chatId ? { "X-Chat-Id": chatId } : {}),
-                      ...(!chatId && projectDirOverride
-                        ? {
-                            "X-Session-Project-Dir": projectDirOverride,
-                          }
-                        : {}),
-                    },
+                    headers: buildWorkspaceScopeHeaders({
+                      agentId: scope.agentId,
+                      chatId,
+                      projectDirOverride,
+                    }),
                     errorMessage: t("files.downloadFailed"),
                   },
                 );

@@ -23,7 +23,7 @@ const BUILTIN_SIMPLE_MODE_IDS = [
   "core.inbox",
   "core.app-center",
   "core.cron-jobs",
-  "core.models",
+  // "core.models" — hidden in simple mode; only visible in full mode.
 ];
 
 // ── Mutable singleton ────────────────────────────────────────────────────────

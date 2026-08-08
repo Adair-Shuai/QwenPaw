@@ -312,6 +312,53 @@ describe("FileSummaryCards data parsing", () => {
     window.removeEventListener("qwenpaw:open-file-preview", listener);
   });
 
+  it("uses the file preview API when an absolute generated image has no result URL", () => {
+    const listener = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", listener);
+
+    render(
+      createElement(FileSummaryCards, {
+        data: {
+          output: [
+            {
+              id: "msg-write-image",
+              type: "plugin_call",
+              content: [
+                {
+                  data: {
+                    name: "write_file",
+                    arguments: JSON.stringify({
+                      file_path:
+                        "/Users/lzw/Documents/文件预览测试/测试图片.jpg",
+                      content: "binary-placeholder",
+                    }),
+                    call_id: "call-write-image",
+                  },
+                },
+                { data: { output: "Wrote image" } },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "预览 测试图片.jpg" }));
+
+    const event = listener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail.target).toMatchObject({
+      source: "attachment",
+      path: "/Users/lzw/Documents/文件预览测试/测试图片.jpg",
+    });
+    expect(event.detail.target.artifactUrl).toContain("/files/preview/");
+    expect(event.detail.target.artifactUrl).toContain("%2FUsers/");
+    expect(event.detail.target.artifactUrl).not.toContain(
+      "/workspace/binary-files",
+    );
+
+    window.removeEventListener("qwenpaw:open-file-preview", listener);
+  });
+
   it("non-file tools are not included", () => {
     const data = {
       output: [

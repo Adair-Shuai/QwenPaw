@@ -1,0 +1,60 @@
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  registerBuiltinRenderers,
+  unregisterBuiltinRenderers,
+} from "../builtinRenderers";
+import { rendererRegistry } from "../rendererRegistry";
+import type { WorkspaceArtifact } from "../../types";
+
+function match(extension: string, mimeType: string): string | undefined {
+  const artifact: WorkspaceArtifact = {
+    id: extension,
+    title: `file.${extension}`,
+    source: "generated",
+    mimeType,
+    extension,
+  };
+  return rendererRegistry.match(artifact)?.renderer.id;
+}
+
+describe("builtin renderer integration boundaries", () => {
+  beforeEach(() => {
+    unregisterBuiltinRenderers();
+    rendererRegistry.__resetForTests();
+    registerBuiltinRenderers();
+  });
+
+  afterEach(() => {
+    unregisterBuiltinRenderers();
+    rendererRegistry.__resetForTests();
+  });
+
+  it("routes Markdown, code and JSON through their workspace adapters", () => {
+    expect(match("md", "text/markdown")).toBe("markdown");
+    expect(match("ts", "text/typescript")).toBe("code");
+    expect(match("json", "application/json")).toBe("json");
+  });
+
+  it("keeps standalone Mermaid, PDF and Office renderers isolated", () => {
+    expect(match("mmd", "text/x-mermaid")).toBe("mermaid");
+    expect(match("pdf", "application/pdf")).toBe("pdf");
+    expect(
+      match(
+        "docx",
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      ),
+    ).toBe("office-doc");
+    expect(
+      match(
+        "xlsx",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      ),
+    ).toBe("office-doc");
+    expect(
+      match(
+        "pptx",
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      ),
+    ).toBe("office-doc");
+  });
+});

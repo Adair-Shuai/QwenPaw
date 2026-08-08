@@ -1,6 +1,9 @@
 import { request } from "../request";
 import { getApiUrl } from "../config";
-import { buildAuthHeaders } from "../authHeaders";
+import {
+  buildAuthHeaders,
+  buildWorkspaceScopeHeaders,
+} from "../authHeaders";
 import {
   useCodeFileCacheStore,
   type WorkspaceFileScope,
@@ -70,13 +73,7 @@ function projectHeaders(
   chatId?: string,
   projectDirOverride?: string,
 ): Record<string, string> {
-  return {
-    ...buildAuthHeaders(),
-    ...(chatId ? { "X-Chat-Id": chatId } : {}),
-    ...(!chatId && projectDirOverride
-      ? { "X-Session-Project-Dir": projectDirOverride }
-      : {}),
-  };
+  return buildWorkspaceScopeHeaders({ chatId, projectDirOverride });
 }
 
 function resolveFileScope(

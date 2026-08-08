@@ -23,6 +23,8 @@ const EXT_TO_MIME: Record<string, string> = {
   md: "text/markdown",
   markdown: "text/markdown",
   mdx: "text/markdown",
+  mmd: "text/x-mermaid",
+  mermaid: "text/x-mermaid",
   html: "text/html",
   htm: "text/html",
   csv: "text/csv",

@@ -5,10 +5,12 @@ export type WorkspaceMarkdownTarget =
   | { kind: "invalid" };
 
 const URI_SCHEME = /^[a-zA-Z][a-zA-Z\d+.-]*:/;
+const WINDOWS_ABSOLUTE_PATH = /^([a-zA-Z]):[\\/]/;
 
 /**
  * Resolve a Markdown URL against the Markdown file rather than the browser
- * route. Workspace paths are always normalized to a root-relative form.
+ * route. Relative workspace paths stay root-relative, while resources beside
+ * an absolute Markdown file retain their filesystem-absolute base.
  */
 export function resolveWorkspaceMarkdownTarget(
   href: string,
@@ -17,7 +19,10 @@ export function resolveWorkspaceMarkdownTarget(
   const value = href.trim();
   if (!value || value.includes("\0")) return { kind: "invalid" };
   if (value.startsWith("#")) return { kind: "anchor", href: value };
-  if (value.startsWith("//") || URI_SCHEME.test(value)) {
+  if (
+    !WINDOWS_ABSOLUTE_PATH.test(value) &&
+    (value.startsWith("//") || URI_SCHEME.test(value))
+  ) {
     return { kind: "external", href: value };
   }
 
@@ -30,13 +35,30 @@ export function resolveWorkspaceMarkdownTarget(
   }
 
   const normalizedMarkdownPath = markdownPath.replace(/\\/g, "/");
-  const baseParts = normalizedMarkdownPath
-    .replace(/^\/+/, "")
-    .split("/")
-    .filter(Boolean);
+  const markdownDrive = /^([a-zA-Z]):\//.exec(normalizedMarkdownPath)?.[1];
+  const hrefDrive = /^([a-zA-Z]):\//.exec(decodedPath)?.[1];
+  const markdownIsAbsolute =
+    normalizedMarkdownPath.startsWith("/") || Boolean(markdownDrive);
+  const hrefIsWorkspaceRoot = decodedPath.startsWith("/");
+
+  let prefix = "";
+  let basePath = normalizedMarkdownPath;
+  if (hrefDrive) {
+    prefix = `${hrefDrive}:/`;
+    basePath = "";
+    decodedPath = decodedPath.slice(3);
+  } else if (!hrefIsWorkspaceRoot && markdownDrive) {
+    prefix = `${markdownDrive}:/`;
+    basePath = normalizedMarkdownPath.slice(3);
+  } else if (!hrefIsWorkspaceRoot && markdownIsAbsolute) {
+    prefix = "/";
+    basePath = normalizedMarkdownPath.replace(/^\/+/, "");
+  }
+
+  const baseParts = basePath.split("/").filter(Boolean);
   baseParts.pop();
 
-  const parts = decodedPath.startsWith("/") ? [] : baseParts;
+  const parts = hrefIsWorkspaceRoot || hrefDrive ? [] : baseParts;
   for (const part of decodedPath.split("/")) {
     if (!part || part === ".") continue;
     if (part === "..") {
@@ -48,5 +70,5 @@ export function resolveWorkspaceMarkdownTarget(
   }
 
   if (parts.length === 0) return { kind: "invalid" };
-  return { kind: "workspace", path: parts.join("/") };
+  return { kind: "workspace", path: `${prefix}${parts.join("/")}` };
 }

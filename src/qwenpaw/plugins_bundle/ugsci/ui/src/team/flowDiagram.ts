@@ -38,7 +38,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
     {
       style: {
         padding: "12px 16px",
-        background: "#fafafa",
+        background: "var(--ant-color-fill-quaternary, #fafafa)",
         borderRadius: 8,
         border: "1px dashed #d9d9d9",
       },
@@ -88,7 +88,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                     alignItems: "center",
                     gap: 6,
                     padding: "6px 10px",
-                    background: "#fff",
+                    background: "var(--ant-color-bg-container, #fff)",
                     borderRadius: 6,
                     border: `1px solid ${modeColors[team.mode]}33`,
                     fontSize: 12,
@@ -112,7 +112,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                     {
                       style: {
                         fontSize: 11,
-                        color: "#8c8c8c",
+                        color: "var(--ant-color-text-tertiary, #8c8c8c)",
                         maxWidth: 250,
                       },
                     },
@@ -155,7 +155,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                     alignItems: "center",
                     gap: 6,
                     padding: "6px 10px",
-                    background: "#fff",
+                    background: "var(--ant-color-bg-container, #fff)",
                     borderRadius: 6,
                     border: `1px solid ${modeColors[team.mode]}33`,
                     fontSize: 12,
@@ -176,7 +176,7 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                   ),
                   React.createElement(
                     "div",
-                    { style: { fontSize: 11, color: "#8c8c8c" } },
+                    { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
                     member.role,
                   ),
                 ),

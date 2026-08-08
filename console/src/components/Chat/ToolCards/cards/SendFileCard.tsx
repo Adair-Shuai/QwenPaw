@@ -46,7 +46,10 @@ const SendFileCard: React.FC<SendFileCardProps> = ({
     ? {
         source: "attachment" as const,
         path:
-          filePathFromPreviewUrl(media.url) || filePath || media.name || file,
+          filePathFromPreviewUrl(media.url, filePath) ||
+          filePath ||
+          media.name ||
+          file,
         artifactUrl: media.url,
       }
     : workspaceTarget;

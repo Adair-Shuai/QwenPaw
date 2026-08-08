@@ -63,6 +63,8 @@ _TEXT_EXTENSIONS = frozenset(
         ".log",
         ".md",
         ".mdx",
+        ".mermaid",
+        ".mmd",
         ".php",
         ".py",
         ".rb",

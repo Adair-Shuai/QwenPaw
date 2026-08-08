@@ -211,6 +211,10 @@ a = Analysis(
         *collect_submodules("qwenpaw.app.channels"),
         # ACP runner support is lazily imported by delegate_external_agent.
         *collect_submodules("qwenpaw.agents.acp"),
+        # Built-in MCP server auto-registration (NeqSim, etc.) is imported
+        # lazily inside create_driver_service; collect explicitly so the
+        # frozen backend finds it without a runtime import failure.
+        *collect_submodules("qwenpaw.agents.builtin_mcp"),
         # PawApp SDK modules are imported by installed app plugins at runtime.
         *collect_submodules("qwenpaw.pawapp"),
         # ASGI app entry points

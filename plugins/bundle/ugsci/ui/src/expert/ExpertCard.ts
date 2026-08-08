@@ -103,7 +103,7 @@ export function ExpertCard({
       style: {
         cursor: "pointer",
         transition: "all 0.2s ease",
-        borderColor: isEnabled ? undefined : "#d9d9d9",
+        borderColor: isEnabled ? undefined : "var(--ant-color-border, #d9d9d9)",
         opacity: isEnabled ? 1 : 0.7,
         height: "100%",
         width: "100%",
@@ -146,7 +146,7 @@ export function ExpertCard({
             {
               style: {
                 fontSize: 11,
-                color: "#bfbfbf",
+                color: "var(--ant-color-text-quaternary, #bfbfbf)",
                 fontFamily: "monospace",
               },
             },
@@ -181,7 +181,7 @@ export function ExpertCard({
         )
       : React.createElement(
           "div",
-          { style: { fontSize: 12, color: "#bfbfbf", marginBottom: 10, minHeight: 54, flex: "1 0 auto" } },
+          { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 10, minHeight: 54, flex: "1 0 auto" } },
           "暂无描述",
         ),
     // Model info
@@ -204,7 +204,7 @@ export function ExpertCard({
           { style: { marginBottom: 6 } },
           React.createElement(
             "div",
-            { style: { fontSize: 11, color: "#8c8c8c", marginBottom: 4 } },
+            { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginBottom: 4 } },
             `技能 (${skillNames.length})`,
           ),
           React.createElement(TagList, {
@@ -221,7 +221,7 @@ export function ExpertCard({
           { style: { marginTop: "auto" } },
           React.createElement(
             "div",
-            { style: { fontSize: 11, color: "#8c8c8c", marginBottom: 4 } },
+            { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginBottom: 4 } },
             `MCP (${mcpNames.length})`,
           ),
           React.createElement(TagList, {
@@ -255,7 +255,7 @@ export function ExpertCard({
             size: "small",
             icon: SettingOutlined
               ? React.createElement(SettingOutlined, {
-                  style: { fontSize: 16, color: "#8c8c8c" },
+                  style: { fontSize: 16, color: "var(--ant-color-text-tertiary, #8c8c8c)" },
                 })
               : undefined,
             onClick: (e: any) => {
@@ -741,7 +741,7 @@ export function ExpertDrawer({
                             style: {
                               marginTop: 4,
                               fontSize: 11,
-                              color: "#8c8c8c",
+                              color: "var(--ant-color-text-tertiary, #8c8c8c)",
                             },
                           },
                           `提供 ${mcp.tools.length} 个工具`,
@@ -780,7 +780,7 @@ export function ExpertDrawer({
             "pre",
             {
               style: {
-                background: "#fafafa",
+                background: "var(--ant-color-fill-quaternary, #fafafa)",
                 padding: 12,
                 borderRadius: 6,
                 fontSize: 12,
@@ -1059,7 +1059,7 @@ export function ExpertTemplateModal({
           React.createElement(Spin, { size: "large" }),
           React.createElement(
             "div",
-            { style: { marginTop: 12, color: "#8c8c8c" } },
+            { style: { marginTop: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
             "正在创建专家...",
           ),
         )
@@ -1081,7 +1081,7 @@ export function ExpertTemplateModal({
                       cursor: "pointer",
                       height: "100%",
                       border: "2px dashed #d9d9d9",
-                      background: "#fafafa",
+                      background: "var(--ant-color-fill-quaternary, #fafafa)",
                     },
                   },
                   React.createElement(
@@ -1096,7 +1096,7 @@ export function ExpertTemplateModal({
                     },
                     React.createElement(
                       "span",
-                      { style: { fontSize: 28, color: "#8c8c8c" } },
+                      { style: { fontSize: 28, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
                       FileAddOutlined
                         ? React.createElement(FileAddOutlined)
                         : "📝",

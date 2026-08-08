@@ -229,6 +229,20 @@ Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
     --dest (Join-Path $BINARIES_DIR "node-runtime")
 Assert-LastExit "Failed to stage bundled Node runtime"
+Write-Host ""
+
+Write-Host "== Staging bundled Java runtime (NeqSim MCP Server) ==" -ForegroundColor Yellow
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_jre.py") `
+    --dest (Join-Path $BINARIES_DIR "java-runtime")
+Assert-LastExit "Failed to stage bundled Java runtime"
+Write-Host ""
+
+Write-Host "== Staging bundled NeqSim MCP Server JAR ==" -ForegroundColor Yellow
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_neqsim.py") `
+    --dest (Join-Path $BINARIES_DIR "neqsim")
+Assert-LastExit "Failed to stage NeqSim MCP Server JAR"
+Write-Host ""
+
 Write-Host "== Building Computer Use helper ==" -ForegroundColor Yellow
 $CARGO_BIN = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $CARGO_BIN) {

@@ -692,7 +692,7 @@ export function CurrentAgentSkillsTab({
                       maxHeight: 300,
                       overflow: "auto",
                       padding: 12,
-                      background: "#f5f5f5",
+                      background: "var(--ant-color-fill-secondary, #f5f5f5)",
                       borderRadius: 6,
                       fontSize: 12,
                       whiteSpace: "pre-wrap",

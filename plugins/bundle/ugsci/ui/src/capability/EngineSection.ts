@@ -123,7 +123,7 @@ export function EngineCard({
       size: "small",
       style: {
         cursor: "pointer",
-        borderColor: isDetected ? undefined : "#d9d9d9",
+        borderColor: isDetected ? undefined : "var(--ant-color-border, #d9d9d9)",
         height: "100%",
         width: "100%",
         display: "flex",

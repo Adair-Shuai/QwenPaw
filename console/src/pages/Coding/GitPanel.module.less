@@ -97,8 +97,8 @@
   margin-top: 2px;
 
   &:hover {
-    color: var(--files-accent, #f36b21);
-    background: var(--files-accent-soft, rgba(243, 107, 33, 0.08));
+    color: var(--files-accent, #2563eb);
+    background: var(--files-accent-soft, rgba(37, 99, 235, 0.08));
   }
 }
 
@@ -123,7 +123,7 @@
 .statusBadge {
   font-size: 11px;
   font-weight: 700;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   flex-shrink: 0;
   width: 14px;
   text-align: center;
@@ -134,7 +134,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   color: var(--text-primary, rgba(0, 0, 0, 0.88));
 }
@@ -200,9 +200,9 @@
 }
 
 .logHash {
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 11px;
-  color: var(--files-accent, #f36b21);
+  color: var(--files-accent, #2563eb);
   flex-shrink: 0;
 }
 
@@ -251,7 +251,7 @@
   gap: 5px;
   padding: 5px 12px;
   cursor: pointer;
-  color: var(--files-accent, #f36b21);
+  color: var(--files-accent, #2563eb);
   border-top: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
   font-size: 12px;
 
@@ -268,7 +268,7 @@
   height: 16px;
   padding: 0 4px;
   border-radius: 8px;
-  background: var(--files-accent, #f36b21);
+  background: var(--files-accent, #2563eb);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -302,7 +302,7 @@
   height: 60vh;
   overflow: auto;
   background: var(--bg-secondary, #fafafa);
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   line-height: 1.5;
   white-space: pre;
@@ -324,7 +324,7 @@
 }
 
 .diffHunk {
-  color: var(--files-accent, #f36b21);
+  color: var(--files-accent, #2563eb);
   background: var(--item-hover-bg, rgba(0, 0, 0, 0.03));
 }
 
@@ -363,7 +363,7 @@
 
     &:hover {
       color: #4da3ff;
-      background: rgba(243, 107, 33, 0.1);
+      background: rgba(37, 99, 235, 0.1);
     }
   }
 

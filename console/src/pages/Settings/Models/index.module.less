@@ -243,7 +243,7 @@
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   transition: all 0.2s;
   cursor: pointer;
@@ -351,7 +351,7 @@
   font-weight: 500;
   background-color: rgba(255, 247, 230, 0.8);
   color: #0072f5;
-  border: 1px solid rgba(255, 127, 22, 0.2);
+  border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
 .freeTag {
@@ -450,7 +450,7 @@
 
 .infoValue {
   color: rgba(0, 0, 0, 0.65);
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -499,7 +499,7 @@
   background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border-radius: 14px;
+  border-radius: 12px;
   border: 1px solid rgba(0, 0, 0, 0.06);
   padding: 22px;
   transition: all 0.2s;
@@ -631,7 +631,7 @@
 }
 
 .groupCardMono {
-  font-family: "SF Mono", "Fira Code", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   color: #666;
   background: rgba(0, 0, 0, 0.03);
@@ -791,7 +791,7 @@
   margin: 0;
   padding: 12px 14px;
   min-height: 180px;
-  font-family: Monaco, "Courier New", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 13px;
   line-height: 1.6;
   white-space: pre-wrap;
@@ -1056,7 +1056,7 @@
 .slotCurrent {
   font-size: 13px;
   color: #52c41a;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   background: #f6ffed;
   padding: 4px 12px;
   border-radius: 20px;
@@ -1187,7 +1187,7 @@
   color: #6b7280;
   font-size: 13px;
   line-height: 1.6;
-  max-width: 420px;
+  max-width: 480px;
 }
 
 .localStatusSummary {
@@ -1259,7 +1259,7 @@
 .localSectionMeta {
   color: #7a7f8f;
   font-size: 12px;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
 .localSectionInfoRow {
@@ -1291,7 +1291,7 @@
   color: #111827;
   font-size: 12px;
   font-weight: 600;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   text-align: right;
 }
 
@@ -1302,7 +1302,7 @@
 .localSectionInfoMeta {
   color: #7a7f8f;
   font-size: 12px;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   line-height: 1.5;
 }
 
@@ -1554,7 +1554,7 @@
   align-items: stretch;
   gap: 10px;
   background: linear-gradient(180deg, #fffaf3 0%, #fffdf8 100%);
-  border-left: 3px solid rgba(255, 127, 22, 0.35);
+  border-left: 3px solid rgba(37, 99, 235, 0.35);
 }
 
 .customModelHeader {
@@ -1608,7 +1608,7 @@
 .modelListItemId {
   font-size: 12px;
   color: #999;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1726,7 +1726,7 @@
   }
 
   :global(.ant-progress-inner) {
-    background: rgba(255, 127, 22, 0.14);
+    background: rgba(37, 99, 235, 0.14);
     border-radius: 999px;
   }
 
@@ -1741,13 +1741,13 @@
   color: #7a7f8f;
   font-size: 11px;
   line-height: 1.4;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
 .localInlineProgress {
   color: #7a7f8f;
   font-size: 12px;
-  font-family: "SF Mono", "Menlo", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
 .localLockedPanel {
@@ -1896,7 +1896,7 @@
 
   .localRuntimeProgress {
     :global(.ant-progress-inner) {
-      background: rgba(255, 127, 22, 0.18);
+      background: rgba(37, 99, 235, 0.18);
     }
   }
 
@@ -1931,9 +1931,9 @@
   }
 
   .customTag {
-    background-color: rgba(255, 127, 22, 0.15);
-    color: #ff9d4d;
-    border-color: rgba(255, 127, 22, 0.25);
+    background-color: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
+    border-color: rgba(37, 99, 235, 0.25);
   }
 
   .freeTag {
@@ -2268,16 +2268,16 @@
   .customModelListItem {
     background: linear-gradient(
       180deg,
-      rgba(255, 127, 22, 0.1) 0%,
-      rgba(255, 127, 22, 0.04) 100%
+      rgba(37, 99, 235, 0.1) 0%,
+      rgba(37, 99, 235, 0.04) 100%
     );
-    border-left-color: rgba(255, 127, 22, 0.55);
+    border-left-color: rgba(37, 99, 235, 0.55);
 
     &:hover {
       background: linear-gradient(
         180deg,
-        rgba(255, 127, 22, 0.14) 0%,
-        rgba(255, 127, 22, 0.06) 100%
+        rgba(37, 99, 235, 0.14) 0%,
+        rgba(37, 99, 235, 0.06) 100%
       );
     }
   }

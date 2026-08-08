@@ -19,6 +19,13 @@ function targetForPath(
   filePath: string,
   artifactUrl?: string,
 ): FileTarget | null {
+  if (artifactUrl) {
+    return {
+      source: "attachment",
+      path: filePathFromPreviewUrl(artifactUrl, filePath) || filePath || "file",
+      artifactUrl,
+    };
+  }
   const workspacePath = filePath
     .trim()
     .replace(/\\/g, "/")
@@ -27,14 +34,10 @@ function targetForPath(
   if (relativeTarget) {
     return { ...relativeTarget, root: "project" };
   }
-  if (!filePath && !artifactUrl) return null;
+  if (!filePath) return null;
   return {
     source: "attachment",
-    path:
-      (artifactUrl && filePathFromPreviewUrl(artifactUrl)) ||
-      filePath ||
-      "file",
-    artifactUrl,
+    path: filePath,
   };
 }
 

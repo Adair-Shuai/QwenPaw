@@ -89,7 +89,7 @@ export function PageHeader({
       subtitle
         ? React.createElement(
             "div",
-            { style: { marginTop: 4, fontSize: 13, color: "#8c8c8c" } },
+            { style: { marginTop: 4, fontSize: 13, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
             subtitle,
           )
         : null,

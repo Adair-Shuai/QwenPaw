@@ -8,7 +8,7 @@ import React, {
 import { invoke } from "@tauri-apps/api/core";
 import { message } from "antd";
 import { useTranslation } from "react-i18next";
-import { buildAuthHeaders } from "../../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
 import { useTheme } from "../../contexts/ThemeContext";
 import {
   openArtifactPreview,
@@ -47,13 +47,11 @@ function artifactRequestHeaders(
   ) {
     return undefined;
   }
-  return {
-    ...buildAuthHeaders(artifact.agentId),
-    ...(artifact.chatId ? { "X-Chat-Id": artifact.chatId } : {}),
-    ...(!artifact.chatId && artifact.projectDirOverride
-      ? { "X-Session-Project-Dir": artifact.projectDirOverride }
-      : {}),
-  };
+  return buildWorkspaceScopeHeaders({
+    agentId: artifact.agentId,
+    chatId: artifact.chatId,
+    projectDirOverride: artifact.projectDirOverride,
+  });
 }
 
 const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({

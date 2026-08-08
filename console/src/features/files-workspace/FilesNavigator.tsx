@@ -75,7 +75,11 @@ type NavigatorSource = "workspace" | "profile" | "daily" | "digest";
 
 function FileGlyph({ name }: { name: string }) {
   const extension = name.split(".").pop()?.toLowerCase();
-  if (["md", "mdx", "txt", "log", "csv"].includes(extension ?? "")) {
+  if (
+    ["md", "mdx", "markdown", "mmd", "mermaid", "txt", "log", "csv"].includes(
+      extension ?? "",
+    )
+  ) {
     return <FileText size={15} />;
   }
   if (

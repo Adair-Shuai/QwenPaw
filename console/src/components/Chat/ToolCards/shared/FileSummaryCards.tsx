@@ -451,10 +451,9 @@ export function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       binaryUrl = extractedBinaryUrl
         ? toDisplayUrl(extractedBinaryUrl)
         : undefined;
-      // Fall back to workspace binary file API for workspace files
-      if (!binaryUrl) {
-        binaryUrl = workspaceApi.getBinaryFileUrl(filePath);
-      }
+      // Fall back to the authenticated preview API. It preserves absolute
+      // local paths through the Vite proxy and also resolves relative paths.
+      if (!binaryUrl) binaryUrl = toDisplayUrl(filePath);
     }
 
     // For send_file_to_user with text files, extract the file URL from
@@ -551,7 +550,7 @@ export function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
       const isBinary = BINARY_EXTENSIONS.has(ext);
       let binaryUrl: string | undefined;
       if (isBinary) {
-        binaryUrl = workspaceApi.getBinaryFileUrl(filePath);
+        binaryUrl = toDisplayUrl(filePath);
       }
 
       infos.push({
@@ -846,7 +845,8 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
     // Content supplied directly by a write/append tool is an inline artifact.
     if (
       (info.operation === "write" || info.operation === "append") &&
-      info.content
+      info.content &&
+      !info.isBinary
     ) {
       openFilePreview({
         source: "artifact",

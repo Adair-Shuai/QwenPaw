@@ -471,7 +471,7 @@ export function TeamWorkflowCard() {
               fontSize: 12,
               marginTop: 8,
               marginBottom: 0,
-              color: "#666",
+              color: "var(--ant-color-text-secondary, #666)",
             },
             ellipsis: { rows: 2 },
           },

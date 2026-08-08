@@ -16,6 +16,20 @@ vi.mock("../authHeaders", () => ({
   buildAuthHeaders: vi.fn((agentId?: string) =>
     agentId ? { "X-Agent-Id": agentId } : {},
   ),
+  buildWorkspaceScopeHeaders: vi.fn(
+    ({
+      chatId,
+      projectDirOverride,
+    }: {
+      chatId?: string;
+      projectDirOverride?: string;
+    } = {}) => ({
+      ...(chatId ? { "X-Chat-Id": chatId } : {}),
+      ...(!chatId && projectDirOverride
+        ? { "X-Session-Project-Dir": projectDirOverride }
+        : {}),
+    }),
+  ),
 }));
 vi.mock("../../stores/codeFileCacheStore", () => ({
   useCodeFileCacheStore: {

@@ -1,5 +1,6 @@
 import type { WorkspaceArtifact } from "../../components/Workspace/types";
 import { chatApi } from "../../api/modules/chat";
+import { isAbsoluteLocalFilePath } from "./internalFileLinks";
 import type { FileTarget } from "./types";
 
 export const OPEN_FILE_PREVIEW_EVENT = "qwenpaw:open-file-preview";
@@ -13,11 +14,7 @@ export interface OpenFilePreviewDetail {
 /** Convert local file URLs/paths into an authenticated backend preview URL. */
 export function normalizeArtifactUrl(url?: string): string | undefined {
   if (!url) return undefined;
-  if (
-    url.startsWith("file://") ||
-    (url.startsWith("/") && !url.startsWith("/api/")) ||
-    /^[A-Za-z]:[\\/]/.test(url)
-  ) {
+  if (isAbsoluteLocalFilePath(url) && !url.startsWith("/api/")) {
     return chatApi.filePreviewUrl(url);
   }
   return url;

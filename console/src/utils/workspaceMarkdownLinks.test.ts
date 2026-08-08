@@ -20,6 +20,36 @@ describe("resolveWorkspaceMarkdownTarget", () => {
     ).toEqual({ kind: "workspace", path: "data/result.csv" });
   });
 
+  it("preserves the base directory of absolute Markdown files", () => {
+    expect(
+      resolveWorkspaceMarkdownTarget(
+        "images/result.png",
+        "/Users/demo/reports/report.md",
+      ),
+    ).toEqual({
+      kind: "workspace",
+      path: "/Users/demo/reports/images/result.png",
+    });
+    expect(
+      resolveWorkspaceMarkdownTarget(
+        "..\\data\\result.csv",
+        "C:\\Work\\reports\\report.md",
+      ),
+    ).toEqual({
+      kind: "workspace",
+      path: "C:/Work/data/result.csv",
+    });
+  });
+
+  it("keeps leading-slash links workspace-root relative", () => {
+    expect(
+      resolveWorkspaceMarkdownTarget(
+        "/images/result.png",
+        "/Users/demo/reports/report.md",
+      ),
+    ).toEqual({ kind: "workspace", path: "images/result.png" });
+  });
+
   it("rejects traversal above the workspace root, including encoded traversal", () => {
     expect(
       resolveWorkspaceMarkdownTarget("../../../etc/passwd", "reports/a.md"),

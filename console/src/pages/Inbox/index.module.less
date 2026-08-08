@@ -41,7 +41,7 @@
 }
 
 .wobbleToggleActive {
-  color: #ff7f16 !important;
+  color: #2563eb !important;
 }
 
 .tabContent {
@@ -290,7 +290,7 @@
   max-width: min(82%, 680px);
   background: var(--color-fill-tertiary, rgba(43, 18, 0, 0.06));
   color: var(--colorText, rgba(26, 23, 22, 0.88));
-  border-radius: 14px;
+  border-radius: 12px;
   padding: 10px 12px;
   font-size: 14px;
   line-height: 1.6;
@@ -380,8 +380,7 @@
   overflow-x: auto;
   overflow-y: auto;
   max-height: 220px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    "Liberation Mono", "Courier New", monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
 }
 
 .traceMarkdownBlock {
@@ -407,12 +406,11 @@
   }
 
   :global(code) {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-      "Liberation Mono", "Courier New", monospace;
+    font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   }
 }
 
-@media (max-width: 960px) {
+@media (max-width: 1024px) {
   .pageContent {
     padding: 14px;
   }

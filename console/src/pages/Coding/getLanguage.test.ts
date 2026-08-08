@@ -18,4 +18,14 @@ describe("getLanguage", () => {
     expect(getLanguage("app.tsx")).toBe("typescript");
     expect(getLanguage("unknown.xyz")).toBe("plaintext");
   });
+
+  it("covers workspace configuration and structured text files", () => {
+    expect(getLanguage("data.json")).toBe("json");
+    expect(getLanguage("data.jsonc")).toBe("json");
+    expect(getLanguage("config.yaml")).toBe("yaml");
+    expect(getLanguage("settings.toml")).toBe("ini");
+    expect(getLanguage("diagram.mmd")).toBe("markdown");
+    expect(getLanguage("Dockerfile")).toBe("dockerfile");
+    expect(getLanguage("Makefile")).toBe("makefile");
+  });
 });

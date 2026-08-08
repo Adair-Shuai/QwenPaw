@@ -23,7 +23,7 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
-import { buildAuthHeaders } from "@/api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "@/api/authHeaders";
 import OfficeOoxmlPreview from "./OfficeOoxmlPreview";
 import { isOfficeOoxmlMime } from "../../../utils/mimeForPreview";
 
@@ -130,11 +130,11 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          ...buildAuthHeaders(artifact.agentId),
-          ...(artifact.chatId ? { "X-Chat-Id": artifact.chatId } : {}),
-          ...(!artifact.chatId && artifact.projectDirOverride
-            ? { "X-Session-Project-Dir": artifact.projectDirOverride }
-            : {}),
+          ...buildWorkspaceScopeHeaders({
+            agentId: artifact.agentId,
+            chatId: artifact.chatId,
+            projectDirOverride: artifact.projectDirOverride,
+          }),
         },
         body: JSON.stringify({
           url: fileUrl,

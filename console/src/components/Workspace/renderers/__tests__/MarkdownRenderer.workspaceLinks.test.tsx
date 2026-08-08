@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { Components } from "react-markdown";
 import type { RendererContext, WorkspaceArtifact } from "../../types";
 
 const { loadCodeFile, useAuthenticatedWorkspaceBlob } = vi.hoisted(() => ({
@@ -24,18 +23,11 @@ vi.mock("@/api/modules/workspace", () => ({
 vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
   useAuthenticatedWorkspaceBlob,
 }));
-vi.mock("@agentscope-ai/chat", async () => {
-  const { default: ReactMarkdown } = await import("react-markdown");
-  return {
-    Markdown: ({
-      content,
-      components,
-    }: {
-      content: string;
-      components: Components;
-    }) => <ReactMarkdown components={components}>{content}</ReactMarkdown>,
-  };
-});
+vi.mock("@/components/MermaidCodeBlock", () => ({
+  MermaidCodeBlock: ({ chart }: { chart: string }) => (
+    <div data-testid="mermaid-diagram">{chart}</div>
+  ),
+}));
 
 import MarkdownRenderer from "../MarkdownRenderer";
 
@@ -96,6 +88,22 @@ describe("MarkdownRenderer workspace resources", () => {
     expect(context.workspace.updateArtifact).toHaveBeenCalledWith(
       "report:workspace-file:data/result.csv",
       { textContent: "x,y\n1,2", isStreaming: false },
+    );
+  });
+
+  it("renders Mermaid fenced blocks with the upstream diagram component", () => {
+    const context = makeContext();
+    context.artifact.textContent = [
+      "```mermaid",
+      "graph TD",
+      "  A --> B",
+      "```",
+    ].join("\n");
+
+    render(<MarkdownRenderer {...context} />);
+
+    expect(screen.getByTestId("mermaid-diagram")).toHaveTextContent(
+      "graph TD A --> B",
     );
   });
 });

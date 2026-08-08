@@ -11,6 +11,8 @@ fn main() {
     if std::env::var("PROFILE").as_deref() != Ok("release") {
         let _ = std::fs::create_dir_all("binaries/qwenpaw-backend");
         let _ = std::fs::create_dir_all("binaries/officecli");
+        let _ = std::fs::create_dir_all("binaries/java-runtime");
+        let _ = std::fs::create_dir_all("binaries/neqsim");
     }
 
     tauri_build::build()

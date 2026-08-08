@@ -3,7 +3,7 @@ import React, { useCallback, useMemo } from "react";
 import { Button, Space, Tooltip } from "antd";
 import { DownloadOutlined, FolderOpenOutlined } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
-import { buildAuthHeaders } from "../../../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../../../api/authHeaders";
 import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
 import type { RendererContext } from "../types";
 import LightweightPdfViewer from "./LightweightPdfViewer";
@@ -24,13 +24,11 @@ const PdfRenderer: React.FC<RendererContext> = ({ artifact, workspace }) => {
   const requestHeaders = useMemo(
     () =>
       isWorkspaceUrl
-        ? {
-            ...buildAuthHeaders(artifact.agentId),
-            ...(artifact.chatId ? { "X-Chat-Id": artifact.chatId } : {}),
-            ...(!artifact.chatId && artifact.projectDirOverride
-              ? { "X-Session-Project-Dir": artifact.projectDirOverride }
-              : {}),
-          }
+        ? buildWorkspaceScopeHeaders({
+            agentId: artifact.agentId,
+            chatId: artifact.chatId,
+            projectDirOverride: artifact.projectDirOverride,
+          })
         : undefined,
     [
       artifact.agentId,

@@ -192,6 +192,16 @@ fi
     "${OFFICECLI_DOC_PLUGIN_ARGS[@]}"
 echo ""
 
+echo "== Staging bundled Java runtime (NeqSim MCP Server) =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_jre.py" \
+    --dest "${BINARIES_DIR}/java-runtime"
+echo ""
+
+echo "== Staging bundled NeqSim MCP Server JAR =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_neqsim.py" \
+    --dest "${BINARIES_DIR}/neqsim"
+echo ""
+
 echo "========================================="
 echo "PyInstaller Build Complete!"
 echo "========================================="

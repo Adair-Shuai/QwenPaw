@@ -26,6 +26,27 @@ export function buildAuthHeaders(agentId?: string): Record<string, string> {
   return headers;
 }
 
+export interface WorkspaceScopeHeaderOptions {
+  agentId?: string;
+  chatId?: string;
+  projectDirOverride?: string;
+}
+
+/** Authentication plus the project-directory scope used by workspace files. */
+export function buildWorkspaceScopeHeaders({
+  agentId,
+  chatId,
+  projectDirOverride,
+}: WorkspaceScopeHeaderOptions = {}): Record<string, string> {
+  return {
+    ...buildAuthHeaders(agentId),
+    ...(chatId ? { "X-Chat-Id": chatId } : {}),
+    ...(!chatId && projectDirOverride
+      ? { "X-Session-Project-Dir": projectDirOverride }
+      : {}),
+  };
+}
+
 /** Add credentials usable by native media elements that cannot set headers. */
 export function buildAuthenticatedMediaUrl(
   url: string,

@@ -1,11 +1,11 @@
 .drawer {
-  --files-bg: #fffdfb;
-  --files-panel: #faf7f3;
-  --files-line: #e8e0d8;
-  --files-muted: #7b746d;
-  --files-ink: #292522;
-  --files-accent: #f36b21;
-  --files-accent-soft: #fff0e7;
+  --files-bg: #ffffff;
+  --files-panel: #fafafa;
+  --files-line: #eeeeee;
+  --files-muted: #999999;
+  --files-ink: #080808;
+  --files-accent: #2563eb;
+  --files-accent-soft: #eff5ff;
   position: relative;
   flex: 0 0 auto;
   min-width: 420px;
@@ -15,9 +15,9 @@
   overflow: hidden;
   color: var(--files-ink);
   background: var(--files-bg);
-  border-right: 1px solid var(--files-line);
-  box-shadow: 18px 0 52px rgba(75, 49, 30, 0.11);
-  transform-origin: left center;
+  border-left: 1px solid var(--files-line);
+  box-shadow: -18px 0 52px rgba(75, 49, 30, 0.11);
+  transform-origin: right center;
   will-change: transform, opacity;
   z-index: 20;
 }
@@ -98,7 +98,7 @@
   justify-content: center;
   gap: 7px;
   border: 1px solid var(--files-line);
-  border-radius: 9px;
+  border-radius: 8px;
   color: inherit;
   background: var(--files-bg);
   cursor: pointer;
@@ -148,7 +148,7 @@
 .resizeHandle {
   position: absolute;
   top: 0;
-  right: -4px;
+  left: -4px;
   bottom: 0;
   width: 8px;
   cursor: col-resize;
@@ -158,7 +158,7 @@
     content: "";
     position: absolute;
     top: 42%;
-    right: 3px;
+    left: 3px;
     width: 2px;
     height: 48px;
     border-radius: 2px;
@@ -180,7 +180,7 @@
 }
 
 .textPreview {
-  max-width: 920px;
+  max-width: 1024px;
   margin: 0 auto;
   color: inherit;
   font:
@@ -318,7 +318,7 @@
   align-items: center;
   justify-content: center;
   color: var(--files-accent);
-  border-radius: 9px;
+  border-radius: 8px;
   background: color-mix(in srgb, var(--files-accent) 11%, transparent);
 
   .directoryContext[data-root="workspace"] & {
@@ -386,7 +386,7 @@
   justify-content: center;
   color: var(--files-muted);
   border: 0;
-  border-radius: 9px;
+  border-radius: 8px;
   background: transparent;
   cursor: pointer;
   transition:
@@ -428,7 +428,7 @@
   display: flex;
   align-items: center;
   gap: 6px;
-  border-radius: 7px;
+  border-radius: 8px;
   transition:
     background 150ms ease,
     box-shadow 150ms ease;
@@ -494,12 +494,12 @@
 }
 
 .conflictModal {
-  --files-bg: #fffdfb;
-  --files-panel: #faf7f3;
-  --files-line: #e8e0d8;
-  --files-muted: #7b746d;
-  --files-ink: #292522;
-  --files-accent: #f36b21;
+  --files-bg: #ffffff;
+  --files-panel: #fafafa;
+  --files-line: #eeeeee;
+  --files-muted: #999999;
+  --files-ink: #080808;
+  --files-accent: #2563eb;
 }
 
 .conflictChoices {
@@ -561,7 +561,7 @@
     height: 28px;
     padding: 0 9px;
     border: 0;
-    border-radius: 7px;
+    border-radius: 8px;
     color: var(--files-muted);
     background: transparent;
     font-size: 11px;
@@ -598,7 +598,7 @@
   gap: 7px;
   overflow: hidden;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   color: inherit;
   background: transparent;
   font-size: 12px;
@@ -623,7 +623,7 @@
 
 .memoryDirectoryRow {
   position: relative;
-  border-radius: 7px;
+  border-radius: 8px;
   transition:
     background 150ms ease,
     box-shadow 180ms ease;
@@ -655,7 +655,7 @@
   gap: 5px;
   color: #557766;
   border: 0;
-  border-radius: 7px;
+  border-radius: 8px;
   background: transparent;
   font-size: 11px;
   font-weight: 600;
@@ -685,7 +685,7 @@
   height: 30px;
   margin: 6px;
   border: 1px dashed var(--files-line);
-  border-radius: 7px;
+  border-radius: 8px;
   color: var(--files-muted);
   background: transparent;
   font-size: 11px;
@@ -841,7 +841,7 @@
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .drawer,
   .drawerPreview,
   .drawerWorkspace,
@@ -850,7 +850,7 @@
     inset: 0;
     width: 100% !important;
     min-width: 0;
-    border-right: 0;
+    border-left: 0;
   }
 
   .drawerHeader {

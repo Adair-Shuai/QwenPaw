@@ -6,7 +6,10 @@ const { getApiToken } = vi.hoisted(() => ({
 
 vi.mock("./config", () => ({ getApiToken }));
 
-import { buildAuthenticatedMediaUrl } from "./authHeaders";
+import {
+  buildAuthenticatedMediaUrl,
+  buildWorkspaceScopeHeaders,
+} from "./authHeaders";
 
 describe("buildAuthenticatedMediaUrl", () => {
   beforeEach(() => getApiToken.mockReturnValue("token with spaces"));
@@ -31,5 +34,41 @@ describe("buildAuthenticatedMediaUrl", () => {
   it("returns the original URL when no credential or Agent is available", () => {
     getApiToken.mockReturnValue("");
     expect(buildAuthenticatedMediaUrl("/media")).toBe("/media");
+  });
+});
+
+describe("buildWorkspaceScopeHeaders", () => {
+  beforeEach(() => getApiToken.mockReturnValue("token with spaces"));
+
+  it("uses the chat scope as the authoritative project directory", () => {
+    expect(
+      buildWorkspaceScopeHeaders({
+        agentId: "agent-a",
+        chatId: "chat-a",
+        projectDirOverride: "/pending/project",
+      }),
+    ).toMatchObject({
+      Authorization: "Bearer token with spaces",
+      "X-Agent-Id": "agent-a",
+      "X-Chat-Id": "chat-a",
+    });
+    expect(
+      buildWorkspaceScopeHeaders({
+        chatId: "chat-a",
+        projectDirOverride: "/pending/project",
+      }),
+    ).not.toHaveProperty("X-Session-Project-Dir");
+  });
+
+  it("uses the pending project directory before a chat exists", () => {
+    expect(
+      buildWorkspaceScopeHeaders({
+        agentId: "agent-a",
+        projectDirOverride: "/pending/project",
+      }),
+    ).toMatchObject({
+      "X-Agent-Id": "agent-a",
+      "X-Session-Project-Dir": "/pending/project",
+    });
   });
 });

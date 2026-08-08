@@ -11,9 +11,34 @@ const { buildAuthHeaders } = vi.hoisted(() => ({
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
     getBinaryFileUrl: (path: string) => `/binary/${path}`,
+    getFileDownloadUrl: (path: string, root: string) =>
+      `/download?path=${encodeURIComponent(path)}&root=${root}`,
   },
 }));
-vi.mock("@/api/authHeaders", () => ({ buildAuthHeaders }));
+vi.mock("@/api/modules/chat", () => ({
+  chatApi: {
+    filePreviewUrl: (path: string) =>
+      `/preview/${encodeURIComponent(path.replace(/^file:\/\//, ""))}`,
+  },
+}));
+vi.mock("@/api/authHeaders", () => ({
+  buildAuthHeaders,
+  buildWorkspaceScopeHeaders: ({
+    agentId,
+    chatId,
+    projectDirOverride,
+  }: {
+    agentId?: string;
+    chatId?: string;
+    projectDirOverride?: string;
+  } = {}) => ({
+    ...buildAuthHeaders(agentId),
+    ...(chatId ? { "X-Chat-Id": chatId } : {}),
+    ...(!chatId && projectDirOverride
+      ? { "X-Session-Project-Dir": projectDirOverride }
+      : {}),
+  }),
+}));
 vi.mock("@/utils/openExternalLink", () => ({
   isDesktopTauriRuntime: () => false,
 }));
@@ -102,5 +127,42 @@ describe("useAuthenticatedWorkspaceBlob", () => {
     expect(signal.aborted).toBe(false);
     unmount();
     expect(signal.aborted).toBe(true);
+  });
+
+  it("routes absolute local paths through the authenticated file preview API", async () => {
+    const absolutePath = "/Users/lzw/Documents/文件预览测试/测试图片.jpg";
+    const { result } = renderHook(() =>
+      useAuthenticatedWorkspaceBlob(absolutePath, {
+        agentId: "agent-b",
+        chatId: "chat-1",
+        root: "project",
+      }),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/preview/${encodeURIComponent(absolutePath)}`,
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          "X-Agent-Id": "agent-b",
+          "X-Chat-Id": "chat-1",
+        }),
+      }),
+    );
+  });
+
+  it("keeps relative workspace paths on the scoped download endpoint", async () => {
+    const { result } = renderHook(() =>
+      useAuthenticatedWorkspaceBlob("images/result.png", {
+        agentId: "agent-b",
+        root: "workspace",
+      }),
+    );
+
+    await waitFor(() => expect(result.current.status).toBe("ready"));
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/download?path=images%2Fresult.png&root=workspace",
+      expect.any(Object),
+    );
   });
 });

@@ -158,6 +158,22 @@ def test_metadata_and_utf8_chunk_use_file_versions(tmp_path: Path) -> None:
     assert chunk["truncated"] is True
 
 
+@pytest.mark.parametrize("filename", ["diagram.mmd", "diagram.mermaid"])
+def test_mermaid_files_are_workspace_text(
+    filename: str,
+    tmp_path: Path,
+) -> None:
+    """Standalone Mermaid sources remain readable by the Files workspace."""
+    target = tmp_path / filename
+    target.write_text("graph TD\n  A --> B", encoding="utf-8")
+
+    metadata = get_file_metadata(tmp_path, filename)
+    chunk = read_file_chunk(tmp_path, filename, 0, 1024)
+
+    assert metadata["preview_kind"] == "text"
+    assert chunk["content"] == "graph TD\n  A --> B"
+
+
 def test_chunk_skips_utf8_continuation_byte(tmp_path: Path) -> None:
     """A range beginning inside a character advances to a valid boundary."""
     (tmp_path / "message.txt").write_text("A你B", encoding="utf-8")

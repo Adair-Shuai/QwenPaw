@@ -1,5 +1,6 @@
 /** Unified read-only preview adapter for the files workspace renderer registry. */
 import { useMemo } from "react";
+import { chatApi } from "../../api/modules/chat";
 import { workspaceApi } from "../../api/modules/workspace";
 import ArtifactPreview from "../../components/Workspace/ArtifactPreview";
 import { registerBuiltinRenderers } from "../../components/Workspace/store/builtinRenderers";
@@ -71,12 +72,20 @@ export default function FilePreview({
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const artifact = useMemo<WorkspaceArtifact>(() => {
     if (artifactProp) {
+      const isInlineTextArtifact = artifactProp.textContent !== undefined;
+      const inheritsWorkspaceRoot = workspaceBacked || isInlineTextArtifact;
+      const generatedBinaryUrl =
+        !workspaceBacked && !isInlineTextArtifact && artifactProp.workspacePath
+          ? chatApi.filePreviewUrl(artifactProp.workspacePath)
+          : undefined;
       return {
         ...artifactProp,
         textContent: artifactProp.textContent ?? content,
-        binaryUrl: artifactProp.binaryUrl ?? binaryUrl,
+        binaryUrl: artifactProp.binaryUrl ?? binaryUrl ?? generatedBinaryUrl,
         chatId: artifactProp.chatId ?? chatId,
-        workspaceRoot: artifactProp.workspaceRoot ?? root,
+        workspaceRoot:
+          artifactProp.workspaceRoot ??
+          (inheritsWorkspaceRoot ? root : undefined),
         projectDirOverride:
           artifactProp.projectDirOverride ?? projectDirOverride,
       };

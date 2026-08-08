@@ -743,7 +743,7 @@ export function MarketplacePage() {
                       },
                       GithubOutlined
                         ? React.createElement(GithubOutlined, {
-                            style: { fontSize: 18, color: "#57606a" },
+                            style: { fontSize: 18, color: "var(--ant-color-text-secondary, #57606a)" },
                           })
                         : React.createElement(
                             "span",
@@ -798,7 +798,7 @@ export function MarketplacePage() {
                                 {
                                   style: {
                                     fontSize: 10,
-                                    color: "#999",
+                                    color: "var(--ant-color-text-tertiary, #999)",
                                     display: "inline-flex",
                                     alignItems: "center",
                                     gap: 2,
@@ -1569,12 +1569,12 @@ template.iconUrl
           textAlign: "center",
           border: "1px dashed #d9d9d9",
           borderRadius: 8,
-          background: "#fafafa",
+          background: "var(--ant-color-fill-quaternary, #fafafa)",
         },
       },
       ShopOutlined
         ? React.createElement(ShopOutlined, {
-            style: { fontSize: 24, color: "#bfbfbf", marginBottom: 8 },
+            style: { fontSize: 24, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 8 },
           })
         : null,
       React.createElement(
@@ -1638,7 +1638,7 @@ template.iconUrl
             hint
               ? React.createElement(
                   "div",
-                  { style: { marginBottom: 6, fontSize: 12, color: "#8c8c8c" } },
+                  { style: { marginBottom: 6, fontSize: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
                   hint.help,
                   hint.link
                     ? React.createElement(
@@ -1884,12 +1884,12 @@ template.iconUrl
           textAlign: "center",
           border: "1px dashed #d9d9d9",
           borderRadius: 8,
-          background: "#fafafa",
+          background: "var(--ant-color-fill-quaternary, #fafafa)",
         },
       },
       ShopOutlined
         ? React.createElement(ShopOutlined, {
-            style: { fontSize: 24, color: "#bfbfbf", marginBottom: 8 },
+            style: { fontSize: 24, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 8 },
           })
         : null,
       React.createElement(

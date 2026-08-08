@@ -2205,7 +2205,7 @@ export default function ChatPage() {
       const target: FileTarget = {
         source: "attachment",
         path:
-          filePathFromPreviewUrl(fileInfo.url) ||
+          filePathFromPreviewUrl(fileInfo.url, fileInfo.name) ||
           fileInfo.name ||
           fileInfo.url.split("?")[0].split("/").pop() ||
           t("files.title"),
@@ -3621,16 +3621,6 @@ export default function ChatPage() {
       className={`${styles.chatPageRoot} ${filesDrawerClass}`}
       onClickCapture={handleInternalFileLink}
     >
-      <AnimatePresence initial={false} mode="popLayout">
-        {filesDrawerState.kind !== "closed" ? (
-          <FilesDrawer
-            key="session-files-drawer"
-            state={filesDrawerState}
-            dispatch={dispatchFilesDrawer}
-            scope={sessionScope}
-          />
-        ) : null}
-      </AnimatePresence>
       {/* Main chat area */}
       <motion.div
         className={styles.chatMainArea}
@@ -3856,6 +3846,18 @@ export default function ChatPage() {
         </Modal>
       </motion.div>
       {/* End of main chat area */}
+
+      {/* Chat previews live on the right; /files keeps its full workspace layout. */}
+      <AnimatePresence initial={false} mode="popLayout">
+        {filesDrawerState.kind !== "closed" ? (
+          <FilesDrawer
+            key="session-files-drawer"
+            state={filesDrawerState}
+            dispatch={dispatchFilesDrawer}
+            scope={sessionScope}
+          />
+        ) : null}
+      </AnimatePresence>
 
       {/* Right-side history panel (full mode only) */}
       {effectiveIsFullMode && historyPanelOpen && (

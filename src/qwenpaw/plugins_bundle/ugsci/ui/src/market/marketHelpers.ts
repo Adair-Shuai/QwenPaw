@@ -1458,7 +1458,7 @@ export function GenericSourceConfigModal({
             style: {
               marginBottom: 16,
               padding: 12,
-              background: "#fafafa",
+              background: "var(--ant-color-fill-quaternary, #fafafa)",
               borderRadius: 8,
               border: "1px solid #f0f0f0",
             },

@@ -10,7 +10,7 @@
 
   // Local design tokens: prefer theme variables, warm-neutral fallbacks.
   --app-surface: var(--color-bg-container, #ffffff);
-  --app-surface-subtle: var(--color-bg-layout, #faf9f7);
+  --app-surface-subtle: var(--color-bg-layout, #f8f8f8);
   --app-border: var(--color-border-secondary, #eae8e7);
   --app-border-strong: var(--color-border, #d8d4cf);
   --app-text: var(--color-text, rgba(20, 20, 19, 0.88));
@@ -24,11 +24,11 @@
   overflow-y: auto;
   padding: 28px 32px 40px;
 
-  @media (max-width: 1023px) {
+  @media (max-width: 1024px) {
     padding: 24px;
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 640px) {
     padding: 16px;
   }
 }
@@ -64,7 +64,7 @@
   :global(.qwenpaw-tabs-tab) {
     padding: 8px 4px;
 
-    @media (max-width: 639px) {
+    @media (max-width: 640px) {
       padding: 10px 4px;
     }
   }
@@ -105,7 +105,7 @@
 .searchInput {
   max-width: 320px;
 
-  @media (max-width: 639px) {
+  @media (max-width: 640px) {
     max-width: none;
     flex-basis: 100%;
   }
@@ -148,7 +148,7 @@
   grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 16px;
 
-  @media (max-width: 639px) {
+  @media (max-width: 640px) {
     grid-template-columns: 1fr;
   }
 }
@@ -160,7 +160,7 @@
   grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
   gap: 20px;
 
-  @media (max-width: 767px) {
+  @media (max-width: 768px) {
     grid-template-columns: 1fr;
   }
 }
@@ -248,7 +248,7 @@
     padding-top: 12px;
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 640px) {
     :global(.ant-card-body),
     :global(.qwenpaw-card-body) {
       flex-direction: column;
@@ -258,11 +258,11 @@
     .cardIcon {
       width: 56px;
       height: 56px;
-      border-radius: 14px;
+      border-radius: 12px;
     }
 
     .marketLogo {
-      border-radius: 14px;
+      border-radius: 12px;
     }
   }
 }
@@ -318,7 +318,7 @@
     right: 16px;
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 640px) {
     .cardOpenButton {
       flex-direction: column;
       gap: 14px;
@@ -327,11 +327,11 @@
     .cardIcon {
       width: 56px;
       height: 56px;
-      border-radius: 14px;
+      border-radius: 12px;
     }
 
     .cardIconImage {
-      border-radius: 14px;
+      border-radius: 12px;
     }
   }
 }
@@ -482,7 +482,7 @@
     border-radius: 8px;
   }
 
-  @media (max-width: 639px) {
+  @media (max-width: 640px) {
     :global(.ant-btn),
     :global(.qwenpaw-btn) {
       min-height: 40px;

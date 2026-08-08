@@ -50,6 +50,21 @@ async def create_driver_service(ws: "Workspace", _service):
     # runtime surface to MCP while leaving DriverManager protocol-neutral.
     await migrate_legacy_mcp_if_needed(ws, driver_manager)
     await driver_manager.start()
+
+    # Register built-in MCP servers (e.g. the bundled NeqSim MCP Server).
+    # This is a no-op when the desktop app does not bundle a JRE / JAR.
+    try:
+        from ...agents.builtin_mcp.neqsim import (
+            ensure_neqsim_driver_registered,
+        )
+
+        await ensure_neqsim_driver_registered(ws, driver_manager)
+    except Exception:
+        logger.debug(
+            "Built-in NeqSim MCP registration skipped",
+            exc_info=True,
+        )
+
     ws._service_manager.services["driver_manager"] = driver_manager
     logger.debug(
         "DriverManager external capability runtime initialized for agent: %s",

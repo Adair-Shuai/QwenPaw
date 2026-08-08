@@ -88,8 +88,8 @@
   cursor: pointer;
 
   &:hover {
-    color: var(--files-accent, #f36b21);
-    border-color: var(--files-accent, #f36b21);
+    color: var(--files-accent, #2563eb);
+    border-color: var(--files-accent, #2563eb);
   }
 }
 
@@ -141,7 +141,7 @@
   }
 
   a {
-    color: var(--files-accent, #f36b21);
+    color: var(--files-accent, #2563eb);
     text-decoration: none;
     &:hover {
       text-decoration: underline;
@@ -160,13 +160,13 @@
   blockquote {
     margin: 0.75em 0;
     padding: 0.4em 1em;
-    border-left: 3px solid var(--files-accent, #f36b21);
-    background: var(--files-accent-soft, rgba(243, 107, 33, 0.08));
+    border-left: 3px solid var(--files-accent, #2563eb);
+    background: var(--files-accent-soft, rgba(37, 99, 235, 0.08));
     color: var(--text-secondary, rgba(0, 0, 0, 0.65));
   }
 
   code {
-    font-family: "SFMono-Regular", Consolas, monospace;
+    font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
     font-size: 0.875em;
     background: var(--code-bg, rgba(0, 0, 0, 0.05));
     padding: 0.15em 0.35em;
@@ -242,7 +242,7 @@
 
 .frontmatterKey {
   color: var(--text-secondary, rgba(0, 0, 0, 0.52));
-  font-family: "SFMono-Regular", Consolas, monospace;
+  font-family: var(--ant-font-family-code, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
   font-size: 12px;
   font-weight: 600;
 }
@@ -349,7 +349,7 @@
 
     blockquote {
       border-left-color: #4da3ff;
-      background: rgba(243, 107, 33, 0.08);
+      background: rgba(37, 99, 235, 0.08);
       color: rgba(255, 255, 255, 0.65);
     }
 

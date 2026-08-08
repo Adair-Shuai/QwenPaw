@@ -1,7 +1,7 @@
 import { renderWithProviders } from "@/test/common_setup";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
 
 vi.mock("../../api/modules/workspace", () => ({
@@ -25,6 +25,8 @@ vi.mock("./FilesWorkspace", () => ({
 }));
 
 describe("FilesDrawer", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   it("does not repeat the Workspace label in the expanded header", async () => {
     renderWithProviders(
       <FilesDrawer
@@ -124,6 +126,43 @@ describe("FilesDrawer", () => {
     fireEvent.pointerUp(window);
     await waitFor(() => {
       expect(drawer.className).not.toContain("drawerResizing");
+    });
+  });
+
+  it("loads attachment URLs with the owning Session scope", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("# Report", {
+        status: 200,
+        headers: { "Content-Type": "text/markdown" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "preview",
+          target: {
+            source: "attachment",
+            path: "reports/report.md",
+            artifactUrl: "/api/files/preview/reports/report.md",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={{
+          kind: "session",
+          agentId: "agent-a",
+          sessionId: "session-a",
+          chatId: "chat-a",
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      "X-Agent-Id": "agent-a",
+      "X-Chat-Id": "chat-a",
     });
   });
 });

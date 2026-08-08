@@ -2,6 +2,15 @@ import type { FileTarget } from "./types";
 
 const EXTERNAL_SCHEMES = new Set(["http:", "https:", "mailto:"]);
 
+export function isAbsoluteLocalFilePath(rawPath: string): boolean {
+  const path = rawPath.trim();
+  return (
+    path.startsWith("file://") ||
+    path.startsWith("/") ||
+    /^[a-z]:[\\/]/i.test(path)
+  );
+}
+
 function hasUnsafeSegment(path: string): boolean {
   return path
     .split("/")
@@ -87,7 +96,10 @@ export function rootForFileReference(
     : "project";
 }
 
-export function filePathFromPreviewUrl(rawUrl: string): string | null {
+export function filePathFromPreviewUrl(
+  rawUrl: string,
+  fallbackPath?: string,
+): string | null {
   const marker = "/files/preview/";
   const markerIndex = rawUrl.indexOf(marker);
   if (markerIndex < 0) return null;
@@ -98,7 +110,13 @@ export function filePathFromPreviewUrl(rawUrl: string): string | null {
   try {
     const decoded = decodeURIComponent(encodedPath).replace(/\\/g, "/");
     if (/^[a-z]:\//i.test(decoded)) return decoded;
-    return `/${decoded.replace(/^\/+/, "")}`;
+    if (/^%2f/i.test(encodedPath) || decoded.startsWith("/")) {
+      return `/${decoded.replace(/^\/+/, "")}`;
+    }
+    if (fallbackPath && isAbsoluteLocalFilePath(fallbackPath)) {
+      return fallbackPath.replace(/^file:\/\//, "").replace(/\\/g, "/");
+    }
+    return decoded;
   } catch {
     return null;
   }

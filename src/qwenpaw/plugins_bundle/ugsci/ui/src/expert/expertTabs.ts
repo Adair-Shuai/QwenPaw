@@ -282,7 +282,7 @@ export function KnowledgeBaseTab({
                 avatar: React.createElement(FileTextOutlined, {
                   style: {
                     fontSize: 20,
-                    color: isEnabled ? "#1677ff" : "#bfbfbf",
+                    color: isEnabled ? "#1677ff" : "var(--ant-color-text-quaternary, #bfbfbf)",
                   },
                 }),
                 title: React.createElement(

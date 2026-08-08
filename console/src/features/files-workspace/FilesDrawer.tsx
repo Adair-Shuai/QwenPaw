@@ -17,7 +17,7 @@ import {
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { workspaceApi } from "../../api/modules/workspace";
-import { buildAuthHeaders } from "../../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
 import FilePreview, { isPreviewable } from "../../pages/Coding/FilePreview";
 import { setTextareaValue } from "../../pages/Chat/utils";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
@@ -144,14 +144,18 @@ export default function FilesDrawer({
           })
         : artifactUrl
         ? fetch(artifactUrl, {
-            headers: buildAuthHeaders(),
+            headers: buildWorkspaceScopeHeaders({
+              agentId: scope.agentId,
+              chatId,
+              projectDirOverride,
+            }),
             signal: controller.signal,
           }).then(async (response) => {
             if (!response.ok) throw new Error(`${response.status}`);
             const contentType = response.headers.get("Content-Type") ?? "";
             const isText =
               contentType.startsWith("text/") ||
-              /\.(?:md|mdx|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
+              /\.(?:md|mdx|markdown|mmd|mermaid|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
                 target.path,
               );
             const previewKind = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(
@@ -248,7 +252,7 @@ export default function FilesDrawer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [artifactUrl, chatId, projectDirOverride, target]);
+  }, [artifactUrl, chatId, projectDirOverride, scope.agentId, target]);
 
   const resizeFromPointer = (event: React.PointerEvent) => {
     event.preventDefault();
@@ -261,7 +265,7 @@ export default function FilesDrawer({
     const maximum = Math.max(MIN_DRAWER_WIDTH, containerWidth - MIN_CHAT_WIDTH);
     const move = (nextEvent: PointerEvent) => {
       const next = Math.min(
-        Math.max(MIN_DRAWER_WIDTH, initial + nextEvent.clientX - startX),
+        Math.max(MIN_DRAWER_WIDTH, initial + startX - nextEvent.clientX),
         maximum,
       );
       setWidth(next);
@@ -291,13 +295,13 @@ export default function FilesDrawer({
       style={drawerStyle}
       layout={isResizing || prefersReducedMotion ? false : "size"}
       initial={
-        prefersReducedMotion ? false : { opacity: 0, x: -18, scale: 0.995 }
+        prefersReducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }
       }
       animate={{ opacity: 1, x: 0, scale: 1 }}
       exit={
         prefersReducedMotion
           ? { opacity: 0 }
-          : { opacity: 0, x: -14, scale: 0.995 }
+          : { opacity: 0, x: 14, scale: 0.995 }
       }
       transition={
         prefersReducedMotion
@@ -343,7 +347,7 @@ export default function FilesDrawer({
             const next = Math.min(
               Math.max(
                 MIN_DRAWER_WIDTH,
-                base + (event.key === "ArrowRight" ? 24 : -24),
+                base + (event.key === "ArrowLeft" ? 24 : -24),
               ),
               maximum,
             );
@@ -387,15 +391,11 @@ export default function FilesDrawer({
                   workspaceApi.getFileDownloadUrl(target.path, target.root),
                 filename,
                 {
-                  headers: {
-                    ...buildAuthHeaders(),
-                    ...(chatId ? { "X-Chat-Id": chatId } : {}),
-                    ...(!chatId && projectDirOverride
-                      ? {
-                          "X-Session-Project-Dir": projectDirOverride,
-                        }
-                      : {}),
-                  },
+                  headers: buildWorkspaceScopeHeaders({
+                    agentId: scope.agentId,
+                    chatId,
+                    projectDirOverride,
+                  }),
                   errorMessage: t("files.downloadFailed"),
                 },
               )
@@ -421,13 +421,13 @@ export default function FilesDrawer({
           initial={
             prefersReducedMotion
               ? false
-              : { opacity: 0, x: isWorkspace ? 10 : -10 }
+              : { opacity: 0, x: isWorkspace ? -10 : 10 }
           }
           animate={{ opacity: 1, x: 0 }}
           exit={
             prefersReducedMotion
               ? { opacity: 0 }
-              : { opacity: 0, x: isWorkspace ? -8 : 8 }
+              : { opacity: 0, x: isWorkspace ? 8 : -8 }
           }
           transition={
             prefersReducedMotion

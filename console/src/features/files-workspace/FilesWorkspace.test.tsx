@@ -1,6 +1,6 @@
 import { act, render, screen, waitFor } from "@testing-library/react";
 import { useEffect } from "react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FilesWorkspace from "./FilesWorkspace";
 import { notifyProjectDirectoryChanged } from "../project-directory/projectDirectoryChangeEvent";
 
@@ -18,6 +18,7 @@ const lifecycle = vi.hoisted(() => ({
   memoryGraphProps: null as {
     onOpenFile: (section: "daily" | "digest", path: string) => void;
   } | null,
+  openTab: vi.fn(),
   saveFileContent: vi.fn(),
   setTabEtag: vi.fn(),
   setActiveTab: vi.fn(),
@@ -46,7 +47,7 @@ vi.mock("../../stores/codingTabsStore", () => ({
   useCodingTabsStore: () => ({
     clearProjectTabs: lifecycle.clearProjectTabs,
     closeTab: lifecycle.closeTab,
-    openTab: vi.fn(),
+    openTab: lifecycle.openTab,
     setActiveTab: lifecycle.setActiveTab,
     setTabContent: vi.fn(),
     setTabDirty: vi.fn(),
@@ -57,6 +58,12 @@ vi.mock("../../stores/codingTabsStore", () => ({
 vi.mock("../../api/modules/workspace", () => ({
   workspaceApi: {
     saveFileContent: lifecycle.saveFileContent,
+  },
+}));
+
+vi.mock("../../api/modules/projectDirectory", () => ({
+  projectDirectoryApi: {
+    get: vi.fn().mockRejectedValue(new Error("not mapped")),
   },
 }));
 
@@ -108,6 +115,8 @@ vi.mock("../../pages/Coding/GitPanel", () => ({
 }));
 
 describe("FilesWorkspace directory changes", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
   beforeEach(() => {
     vi.clearAllMocks();
     lifecycle.tabs = [];
@@ -224,6 +233,48 @@ describe("FilesWorkspace directory changes", () => {
       expect(lifecycle.setActiveTab).toHaveBeenCalledWith(
         "agent:agent-a",
         "daily::a.md",
+      ),
+    );
+  });
+
+  it("loads expanded attachments with the same Session scope", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response("const value = 1;", {
+        status: 200,
+        headers: { "Content-Type": "text/typescript" },
+      }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(
+      <FilesWorkspace
+        initialTarget={{
+          source: "attachment",
+          path: "src/result.ts",
+          artifactUrl: "/api/files/preview/src/result.ts",
+        }}
+        scope={{
+          kind: "session",
+          agentId: "agent-a",
+          sessionId: "session-a",
+          chatId: "chat-a",
+        }}
+      />,
+    );
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
+    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
+      "X-Agent-Id": "agent-a",
+      "X-Chat-Id": "chat-a",
+    });
+    await waitFor(() =>
+      expect(lifecycle.openTab).toHaveBeenCalledWith(
+        "session:agent-a:session-a",
+        expect.objectContaining({
+          path: "attachment::src/result.ts",
+          content: "const value = 1;",
+          readOnly: true,
+        }),
       ),
     );
   });

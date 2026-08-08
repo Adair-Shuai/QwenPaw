@@ -49,15 +49,27 @@ describe("parseInternalFileLink", () => {
     ).toBeNull();
   });
 
-  it("extracts the real absolute path from a preview URL", () => {
+  it("distinguishes encoded absolute paths from relative preview paths", () => {
     expect(
       filePathFromPreviewUrl(
-        "/api/files/preview/Users/demo/project/hello.txt?token=test",
+        "/api/files/preview/%2FUsers/demo/project/hello.txt?token=test",
       ),
     ).toBe("/Users/demo/project/hello.txt");
     expect(
       filePathFromPreviewUrl("/api/files/preview/C%3A/Work/Project/hello.txt"),
     ).toBe("C:/Work/Project/hello.txt");
+    expect(filePathFromPreviewUrl("/api/files/preview/reports/hello.txt")).toBe(
+      "reports/hello.txt",
+    );
+  });
+
+  it("uses a known absolute tool path for legacy preview URLs", () => {
+    expect(
+      filePathFromPreviewUrl(
+        "/api/files/preview/Users/demo/project/hello.txt",
+        "/Users/demo/project/hello.txt",
+      ),
+    ).toBe("/Users/demo/project/hello.txt");
   });
 
   it("resolves absolute references against project and workspace roots", () => {

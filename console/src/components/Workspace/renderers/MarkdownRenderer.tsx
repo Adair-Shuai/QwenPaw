@@ -1,42 +1,26 @@
 /**
- * MarkdownRenderer — Markdown 渲染器
+ * Adapter for the upstream Files Workspace Markdown preview.
  *
- * 使用项目中已有的 @agentscope-ai/chat Markdown 组件进行渲染，
- * 支持 GitHub Flavored Markdown（表格、代码高亮、数学公式等）。
- *
- * 视图模式：
- * - preview: 渲染后的 Markdown 预览
- * - code: 原始 Markdown 源码
- *
- * 工具栏：预览/源码切换、下载、全屏
+ * The visual renderer follows pages/Coding/FilePreview while the adapter keeps
+ * authenticated relative resources and workspace-internal file navigation.
  */
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { Button, Segmented, Space, Tooltip, Spin } from "antd";
-import {
-  CodeOutlined,
-  EyeOutlined,
-  DownloadOutlined,
-  FullscreenOutlined,
-  FolderOpenOutlined,
-} from "@ant-design/icons";
-import { useTranslation } from "react-i18next";
+import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
+import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import { buildWorkspaceScopeHeaders } from "../../../api/authHeaders";
+import { chatApi } from "../../../api/modules/chat";
 import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
-import { ExternalMarkdownLink } from "../../Markdown/externalLinkComponents";
+import { isAbsoluteLocalFilePath } from "../../../features/files-workspace/internalFileLinks";
 import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 import { mimeFromExtension } from "../../../utils/mimeForPreview";
-import { resolveWorkspaceMarkdownTarget } from "../../../utils/workspaceMarkdownLinks";
 import { parseMarkdownFrontmatter } from "../../../utils/markdown";
+import { resolveWorkspaceMarkdownTarget } from "../../../utils/workspaceMarkdownLinks";
+import { ExternalMarkdownLink } from "../../Markdown/externalLinkComponents";
+import { MermaidCodeBlock } from "@/components/MermaidCodeBlock";
+import styles from "../../../pages/Coding/FilePreview.module.less";
 import type { RendererContext } from "../types";
-
-type ViewMode = "preview" | "code";
 
 type XMarkdownElementProps<T extends "a" | "img"> =
   React.ComponentPropsWithoutRef<T> & {
@@ -51,36 +35,68 @@ function isTextMime(mimeType: string): boolean {
   );
 }
 
+const upstreamMarkdownComponents = {
+  pre({ children }: { children?: React.ReactNode }) {
+    return <>{children}</>;
+  },
+  code({
+    node,
+    inline,
+    className,
+    children,
+    ...rest
+  }: React.ComponentPropsWithoutRef<"code"> & {
+    node?: unknown;
+    inline?: boolean;
+  }) {
+    void node;
+    void inline;
+    const match = /language-([\w-]+)/.exec(className || "");
+    const language = match?.[1]?.toLowerCase();
+    const codeText = String(children).replace(/\n$/, "");
+    if (language === "mermaid") {
+      return <MermaidCodeBlock chart={codeText} />;
+    }
+    if (language) {
+      return (
+        <SyntaxHighlighter
+          language={language}
+          style={oneDark}
+          customStyle={{
+            margin: 0,
+            borderRadius: "6px",
+            fontSize: "13px",
+            lineHeight: "1.6",
+          }}
+        >
+          {codeText}
+        </SyntaxHighlighter>
+      );
+    }
+    return (
+      <code className={className} {...rest}>
+        {children}
+      </code>
+    );
+  },
+};
+
 const MarkdownRenderer: React.FC<RendererContext> = ({
   artifact,
-  theme,
   workspace,
 }) => {
-  const { t } = useTranslation();
-  const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const containerRef = useRef<HTMLDivElement>(null);
-
   const content = artifact.textContent ?? "";
   const parsedMarkdown = useMemo(
     () => parseMarkdownFrontmatter(content),
     [content],
   );
 
-  // 流式模式自动滚动到底部
   useEffect(() => {
     if (artifact.isStreaming && containerRef.current) {
-      const el = containerRef.current;
-      el.scrollTop = el.scrollHeight;
+      containerRef.current.scrollTop = containerRef.current.scrollHeight;
     }
-  }, [content, artifact.isStreaming]);
-
-  const handleDownload = useCallback(() => {
-    if (workspace.download) workspace.download(artifact);
-  }, [workspace, artifact]);
-
-  const handleFullscreen = useCallback(() => {
-    if (workspace.fullscreen) workspace.fullscreen(artifact);
-  }, [workspace, artifact]);
+  }, [artifact.isStreaming, content]);
 
   const handleOpenWorkspaceFile = useCallback(
     async (path: string) => {
@@ -88,6 +104,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       const extension = path.includes(".") ? path.split(".").pop() : undefined;
       const title = path.split("/").pop() || path;
       const id = `${artifact.id}:workspace-file:${path}`;
+      const isAbsolutePath = isAbsoluteLocalFilePath(path);
       const baseArtifact = {
         id,
         title,
@@ -106,10 +123,9 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       if (!isTextMime(mimeType)) {
         workspace.openArtifact({
           ...baseArtifact,
-          binaryUrl: workspaceFileApi.getFileDownloadUrl(
-            path,
-            artifact.workspaceRoot,
-          ),
+          binaryUrl: isAbsolutePath
+            ? chatApi.filePreviewUrl(path)
+            : workspaceFileApi.getFileDownloadUrl(path, artifact.workspaceRoot),
         });
         return;
       }
@@ -120,7 +136,18 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         isStreaming: true,
       });
       try {
-        const result = workspaceFileApi.loadFileText
+        const result = isAbsolutePath
+          ? await fetch(chatApi.filePreviewUrl(path), {
+              headers: buildWorkspaceScopeHeaders({
+                agentId: artifact.agentId,
+                chatId: artifact.chatId,
+                projectDirOverride: artifact.projectDirOverride,
+              }),
+            }).then(async (response) => {
+              if (!response.ok) throw new Error(`${response.status}`);
+              return { content: await response.text() };
+            })
+          : workspaceFileApi.loadFileText
           ? await workspaceFileApi.loadFileText(
               path,
               artifact.chatId,
@@ -142,17 +169,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         });
       }
     },
-    [
-      artifact.agentId,
-      artifact.chatId,
-      artifact.id,
-      artifact.projectRoot,
-      artifact.projectDirOverride,
-      artifact.sessionId,
-      artifact.source,
-      artifact.workspaceRoot,
-      workspace,
-    ],
+    [artifact, workspace],
   );
 
   const markdownComponents = useMemo(() => {
@@ -232,7 +249,11 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       );
     };
 
-    return { a: WorkspaceLink, img: WorkspaceImage };
+    return {
+      ...upstreamMarkdownComponents,
+      a: WorkspaceLink,
+      img: WorkspaceImage,
+    };
   }, [
     artifact.agentId,
     artifact.chatId,
@@ -243,167 +264,29 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
     handleOpenWorkspaceFile,
   ]);
 
-  // ── 渲染预览 ──
-  const previewContent = useMemo(() => {
-    if (!content) {
-      return (
-        <div style={{ padding: "24px", textAlign: "center", color: "#999" }}>
-          {artifact.isStreaming ? (
-            <Spin tip={t("workspace.streaming")}>
-              <div style={{ minHeight: 48 }} />
-            </Spin>
-          ) : (
-            t("workspace.emptyContent")
-          )}
-        </div>
-      );
-    }
-
-    return (
-      <div
-        className={`workspace-markdown-preview ${
-          theme === "dark" ? "dark" : "light"
-        }`}
-        style={{
-          padding: "12px 16px",
-          fontSize: 14,
-          lineHeight: 1.8,
-          color: theme === "dark" ? "#e0e0e0" : "#333",
-          minHeight: "100%",
-        }}
-      >
-        {parsedMarkdown.entries.length > 0 && (
-          <dl
-            aria-label="Front matter"
-            style={{
-              margin: "0 0 16px",
-              padding: "10px 12px",
-              borderRadius: 8,
-              background: theme === "dark" ? "#262626" : "#f5f5f5",
-            }}
-          >
-            {parsedMarkdown.entries.map(({ key, value }, index) => (
-              <div
-                key={`${key}:${index}`}
-                style={{ display: "grid", gridTemplateColumns: "120px 1fr" }}
-              >
-                <dt style={{ fontWeight: 600 }}>{key}</dt>
-                <dd style={{ margin: 0 }}>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        )}
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={markdownComponents}
-        >
-          {parsedMarkdown.body}
-        </ReactMarkdown>
-        {artifact.isStreaming && <span className="cursor-blink">▋</span>}
-      </div>
-    );
-  }, [
-    artifact.isStreaming,
-    content,
-    markdownComponents,
-    parsedMarkdown,
-    theme,
-    t,
-  ]);
-
-  // ── 渲染代码视图 ──
-  const codeContent = useMemo(
-    () => (
-      <pre
-        style={{
-          margin: 0,
-          padding: "12px",
-          fontSize: 13,
-          lineHeight: 1.6,
-          fontFamily:
-            "'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          color: theme === "dark" ? "#e0e0e0" : "#333",
-          background: theme === "dark" ? "#1e1e1e" : "#fafafa",
-        }}
-      >
-        {content}
-      </pre>
-    ),
-    [content, theme],
-  );
+  if (!content) {
+    return <div className={styles.previewStatus} />;
+  }
 
   return (
-    <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        height: "100%",
-        background: theme === "dark" ? "#1e1e1e" : "#fff",
-      }}
-    >
-      {/* 工具栏 */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "4px 8px",
-          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
-          flexShrink: 0,
-        }}
+    <div ref={containerRef} className={styles.markdownWrap}>
+      {parsedMarkdown.entries.length > 0 && (
+        <dl className={styles.frontmatter} aria-label="Front matter">
+          {parsedMarkdown.entries.map(({ key, value }, index) => (
+            <div className={styles.frontmatterRow} key={`${key}:${index}`}>
+              <dt className={styles.frontmatterKey}>{key}</dt>
+              <dd className={styles.frontmatterValue}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={markdownComponents}
       >
-        <Segmented
-          size="small"
-          value={viewMode}
-          onChange={(v) => setViewMode(v as ViewMode)}
-          options={[
-            { label: <EyeOutlined />, value: "preview" },
-            { label: <CodeOutlined />, value: "code" },
-          ]}
-        />
-        <Space size={2}>
-          <Tooltip title={t("workspace.download")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={handleDownload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.fullscreen")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FullscreenOutlined />}
-              onClick={handleFullscreen}
-            />
-          </Tooltip>
-        </Space>
-      </div>
-
-      {/* 内容区域 */}
-      <div
-        ref={containerRef}
-        style={{
-          flex: 1,
-          overflow: "auto",
-          position: "relative",
-        }}
-      >
-        {viewMode === "preview" && previewContent}
-        {viewMode === "code" && codeContent}
-      </div>
+        {parsedMarkdown.body}
+      </ReactMarkdown>
+      {artifact.isStreaming && <span className="cursor-blink">▋</span>}
     </div>
   );
 };

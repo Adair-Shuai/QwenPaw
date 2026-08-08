@@ -159,6 +159,28 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<Command, String> {
             dir.to_string_lossy().to_string(),
         );
     }
+    // Expose the bundled Java runtime root so the Python backend can
+    // launch the NeqSim MCP Server as a stdio subprocess.  When the JRE
+    // or JAR is absent (non-desktop or stripped build), the backend
+    // simply skips NeqSim auto-registration.
+    if let Some(java_home) = packaged_java_runtime(app) {
+        log::info!("[backend] bundled java runtime: {}", java_home.display());
+        command = command.env(
+            "QWENPAW_DESKTOP_JAVA_HOME",
+            java_home.to_string_lossy().to_string(),
+        );
+    } else {
+        log::debug!("[backend] bundled java runtime not found");
+    }
+    if let Some(jar) = packaged_neqsim_jar(app) {
+        log::info!("[backend] bundled neqsim jar: {}", jar.display());
+        command = command.env(
+            "QWENPAW_DESKTOP_NEQSIM_JAR",
+            jar.to_string_lossy().to_string(),
+        );
+    } else {
+        log::debug!("[backend] bundled neqsim jar not found");
+    }
     Ok(command)
 }
 
@@ -180,6 +202,51 @@ fn packaged_python_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
         ]
     };
     candidates.into_iter().find(|path| path.is_file())
+}
+
+#[cfg(not(debug_assertions))]
+fn packaged_java_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
+    // The JRE root is <resource_dir>/binaries/java-runtime.  The Python
+    // side (_bundled_java_exe in neqsim.py) handles both the flat layout
+    // (bin/java) and the macOS bundle layout (Contents/Home/bin/java),
+    // so we always return the root directory when a java binary can be
+    // found in either location.
+    let root = app
+        .path()
+        .resource_dir()
+        .ok()?
+        .join("binaries")
+        .join("java-runtime");
+    // Flat layout: <root>/bin/java (Windows, Linux, flattened macOS)
+    let java = if cfg!(windows) {
+        root.join("bin").join("java.exe")
+    } else {
+        root.join("bin").join("java")
+    };
+    if java.is_file() {
+        return Some(root);
+    }
+    // macOS bundle layout: <root>/Contents/Home/bin/java
+    #[cfg(target_os = "macos")]
+    {
+        let mac_candidate = root.join("Contents").join("Home").join("bin").join("java");
+        if mac_candidate.is_file() {
+            return Some(root);
+        }
+    }
+    None
+}
+
+#[cfg(not(debug_assertions))]
+fn packaged_neqsim_jar(app: &tauri::AppHandle) -> Option<PathBuf> {
+    let jar = app
+        .path()
+        .resource_dir()
+        .ok()?
+        .join("binaries")
+        .join("neqsim")
+        .join("neqsim-mcp-server.jar");
+    jar.is_file().then_some(jar)
 }
 
 /// Add the variables desktop features contribute to the backend's environment.

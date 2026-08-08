@@ -18,6 +18,22 @@ vi.mock("@/api/authHeaders", () => ({
     Authorization: "Bearer test-token",
     "X-Agent-Id": "test-agent",
   }),
+  buildWorkspaceScopeHeaders: ({
+    agentId,
+    chatId,
+    projectDirOverride,
+  }: {
+    agentId?: string;
+    chatId?: string;
+    projectDirOverride?: string;
+  } = {}) => ({
+    Authorization: "Bearer test-token",
+    "X-Agent-Id": agentId ?? "test-agent",
+    ...(chatId ? { "X-Chat-Id": chatId } : {}),
+    ...(!chatId && projectDirOverride
+      ? { "X-Session-Project-Dir": projectDirOverride }
+      : {}),
+  }),
 }));
 
 // Mock OfficeOoxmlPreview — the real component does async fetch + dynamic

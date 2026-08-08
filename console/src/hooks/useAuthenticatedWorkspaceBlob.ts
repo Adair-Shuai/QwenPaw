@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { chatApi } from "../api/modules/chat";
 import { workspaceApi } from "../api/modules/workspace";
-import { buildAuthHeaders } from "../api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "../api/authHeaders";
+import { isAbsoluteLocalFilePath } from "../features/files-workspace/internalFileLinks";
 import { isDesktopTauriRuntime } from "../utils/openExternalLink";
 import { mimeFromExtension } from "../utils/mimeForPreview";
 
@@ -104,17 +106,17 @@ export function useAuthenticatedWorkspaceBlob(
 
       const url =
         explicitUrl ??
-        (scopedRequest
+        (isAbsoluteLocalFilePath(filePath)
+          ? chatApi.filePreviewUrl(filePath)
+          : scopedRequest
           ? workspaceApi.getFileDownloadUrl(filePath, root ?? "project")
           : workspaceApi.getBinaryFileUrl(filePath));
       const response = await fetch(url, {
-        headers: {
-          ...buildAuthHeaders(agentId),
-          ...(chatId ? { "X-Chat-Id": chatId } : {}),
-          ...(!chatId && projectDirOverride
-            ? { "X-Session-Project-Dir": projectDirOverride }
-            : {}),
-        },
+        headers: buildWorkspaceScopeHeaders({
+          agentId,
+          chatId,
+          projectDirOverride,
+        }),
         signal: controller.signal,
       });
       if (!response.ok) throw await responseError(response);

@@ -438,7 +438,7 @@ export default function InboxPage() {
         <span className={styles.tabLabel}>
           <PackageOpen size={16} />
           {t("inbox.tabApprovals")}
-          {approvalCount > 0 && <Badge count={approvalCount} color="#ff7f16" />}
+          {approvalCount > 0 && <Badge count={approvalCount} color="#2563eb" />}
         </span>
       ),
       children: (

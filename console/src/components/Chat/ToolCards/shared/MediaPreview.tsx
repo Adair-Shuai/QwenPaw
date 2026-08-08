@@ -134,7 +134,9 @@ const MediaPreview: React.FC<MediaPreviewProps> = ({ media, onFileOpen }) => {
                 detail: {
                   target: {
                     source: "attachment",
-                    path: filePathFromPreviewUrl(media.url) || media.name,
+                    path:
+                      filePathFromPreviewUrl(media.url, media.name) ||
+                      media.name,
                     artifactUrl: media.url,
                   },
                   trigger: event.currentTarget,

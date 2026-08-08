@@ -23,6 +23,21 @@ vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
 vi.mock("@/api/authHeaders", () => ({
   buildAuthenticatedMediaUrl,
   buildAuthHeaders,
+  buildWorkspaceScopeHeaders: ({
+    agentId,
+    chatId,
+    projectDirOverride,
+  }: {
+    agentId?: string;
+    chatId?: string;
+    projectDirOverride?: string;
+  } = {}) => ({
+    ...buildAuthHeaders(agentId),
+    ...(chatId ? { "X-Chat-Id": chatId } : {}),
+    ...(!chatId && projectDirOverride
+      ? { "X-Session-Project-Dir": projectDirOverride }
+      : {}),
+  }),
 }));
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {

@@ -24,7 +24,7 @@ export function TagList({
   if (!items || items.length === 0) {
     return React.createElement(
       "span",
-      { style: { fontSize: 12, color: "#bfbfbf" } },
+      { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #bfbfbf)" } },
       emptyText,
     );
   }
@@ -224,7 +224,7 @@ export function SkillPickerModal({
                   style: {
                     position: "relative",
                     padding: "10px 12px",
-                    border: `1px solid ${isSelected ? "#0072f5" : "#e8e8e8"}`,
+                    border: `1px solid ${isSelected ? "#0072f5" : "var(--ant-color-border-secondary, #e8e8e8)"}`,
                     borderRadius: 6,
                     cursor: isInstalled ? "not-allowed" : "pointer",
                     transition: "all 0.15s ease",
@@ -270,7 +270,7 @@ export function SkillPickerModal({
                           top: 6,
                           right: 8,
                           fontSize: 10,
-                          color: "#bbb",
+                          color: "var(--ant-color-text-quaternary, #bbb)",
                         },
                       },
                       "已安装",
@@ -316,7 +316,7 @@ export function SkillPickerModal({
                       {
                         style: {
                           fontSize: 11,
-                          color: "#8c8c8c",
+                          color: "var(--ant-color-text-tertiary, #8c8c8c)",
                           overflow: "hidden",
                           textOverflow: "ellipsis",
                           display: "-webkit-box",
