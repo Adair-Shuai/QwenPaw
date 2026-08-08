@@ -1,77 +1,77 @@
-function _() {
+function x() {
   var t;
   const e = (t = window.QwenPaw) == null ? void 0 : t.host;
   if (!e) throw new Error("[ugsci] QwenPaw.host not available");
   return e;
 }
-function Ga() {
+function Ia() {
   try {
-    return _().getApiToken() || "";
+    return x().getApiToken() || "";
   } catch {
     return "";
   }
 }
-function It(e) {
-  return _().getApiUrl(e);
+function St(e) {
+  return x().getApiUrl(e);
 }
-function Ha(e) {
-  const t = Ga();
+function za(e) {
+  const t = Ia();
   return {
     "Content-Type": "application/json",
     ...t ? { Authorization: `Bearer ${t}` } : {},
     ...e
   };
 }
-function Wa(e) {
-  const t = new Headers(e), a = {};
-  return t.forEach((l, n) => {
-    a[n] = l;
-  }), a;
+function Aa(e) {
+  const t = new Headers(e), l = {};
+  return t.forEach((a, n) => {
+    l[n] = a;
+  }), l;
 }
-function Je(e, t) {
-  const a = _(), l = Wa(t == null ? void 0 : t.headers);
-  return a.fetch ? a.fetch(e, { ...t, headers: l }) : fetch(a.getApiUrl(e), {
+function Ge(e, t) {
+  const l = x(), a = Aa(t == null ? void 0 : t.headers);
+  return l.fetch ? l.fetch(e, { ...t, headers: a }) : fetch(l.getApiUrl(e), {
     ...t,
-    headers: { ...Ha(), ...l }
+    headers: { ...za(), ...a }
   });
 }
-const mt = /* @__PURE__ */ new Map(), Ja = 15e3;
-function qa(e) {
+const ot = /* @__PURE__ */ new Map(), Pa = 15e3;
+function $a(e) {
   return e ? e instanceof Headers ? e.get("X-Agent-Id") || e.get("x-agent-id") || "" : e["X-Agent-Id"] || e["x-agent-id"] || "" : "";
 }
-function Ka(e, t, a) {
-  return `${e}:${t}:${a}`;
+function Oa(e, t, l) {
+  return `${e}:${t}:${l}`;
 }
-function ut() {
-  mt.clear();
+function st() {
+  ot.clear();
 }
-function qt(e) {
-  for (const [t, a] of mt)
-    (e ? a.agentId === e : a.agentId) && mt.delete(t);
+function jt(e) {
+  for (const [t, l] of ot)
+    (e ? l.agentId === e : l.agentId) && ot.delete(t);
 }
-async function ie(e, t) {
-  const a = ((t == null ? void 0 : t.method) || "GET").toUpperCase(), { bypassCache: l, ...n } = t || {}, r = qa(
+async function se(e, t) {
+  const l = ((t == null ? void 0 : t.method) || "GET").toUpperCase(), { bypassCache: a, ...n } = t || {}, r = $a(
     n.headers
-  ), o = Ka(a, e, r);
-  if (a !== "GET" && (r ? qt(r) : ut()), a === "GET" && !l) {
-    const d = mt.get(o);
-    if (d && Date.now() - d.ts < Ja)
+  ), o = Oa(l, e, r);
+  if (l !== "GET" && (r ? jt(r) : st()), l === "GET" && !a) {
+    const d = ot.get(o);
+    if (d && Date.now() - d.ts < Pa)
       return d.data;
   }
-  const c = await Je(e, n);
+  const c = await Ge(e, n);
   if (!c.ok) {
     const d = await c.text().catch(() => "");
     throw new Error(d || `HTTP ${c.status}`);
   }
   if (c.status === 204) return null;
-  const s = await c.json();
-  return a === "GET" && mt.set(o, {
-    data: s,
+  const i = await c.json();
+  return l === "GET" && ot.set(o, {
+    data: i,
     ts: Date.now(),
     agentId: r || void 0
-  }), s;
+  }), i;
 }
-const je = {
+const Le = {
   background: "#0072f5",
   color: "#fff",
   fontSize: 13,
@@ -79,28 +79,28 @@ const je = {
   border: "none",
   borderRadius: 8
 };
-function st() {
+function at() {
   try {
     return localStorage.getItem("qwenpaw_sidebar_mode") === "simple";
   } catch {
     return !1;
   }
 }
-function zt(e, t) {
-  const a = _();
-  return a.ReactMarkdown && a.remarkGfm ? t.createElement(
-    a.ReactMarkdown,
-    { remarkPlugins: [a.remarkGfm] },
+function wt(e, t) {
+  const l = x();
+  return l.ReactMarkdown && l.remarkGfm ? t.createElement(
+    l.ReactMarkdown,
+    { remarkPlugins: [l.remarkGfm] },
     e
   ) : e.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").replace(/`(.+?)`/g, "$1").replace(/^#+\s*/gm, "").replace(/^[-*]\s+/gm, "• ");
 }
-function $t({
+function xt({
   title: e,
   subtitle: t,
-  extra: a
+  extra: l
 }) {
-  const l = _().React, { Space: n } = _().antd;
-  return l.createElement(
+  const a = x().React, { Space: n } = x().antd;
+  return a.createElement(
     "div",
     {
       style: {
@@ -109,90 +109,90 @@ function $t({
         alignItems: "center",
         marginBottom: 20,
         paddingBottom: 12,
-        borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)"
+        borderBottom: "1px solid #f0f0f0"
       }
     },
-    l.createElement(
+    a.createElement(
       "div",
       null,
-      l.createElement(
+      a.createElement(
         "h2",
         { style: { margin: 0, fontSize: 20, fontWeight: 600 } },
         e
       ),
-      t ? l.createElement(
+      t ? a.createElement(
         "div",
         { style: { marginTop: 4, fontSize: 13, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
         t
       ) : null
     ),
-    a ? l.createElement(n, null, a) : null
+    l ? a.createElement(n, null, l) : null
   );
 }
-async function At() {
-  const e = await ie("/agents");
+async function kt() {
+  const e = await se("/agents");
   return (e == null ? void 0 : e.agents) || [];
 }
-async function Kt(e) {
-  return ie(
+async function Ut(e) {
+  return se(
     `/agents/${encodeURIComponent(e)}`
   );
 }
-async function Pt(e) {
-  return await ie(
+async function Ct(e) {
+  return await se(
     `/agents/${encodeURIComponent(e)}/skills`
   ) || [];
 }
-async function Rt(e = !1) {
-  return await ie(`/skills/pool${e ? "?summary=true" : ""}`) || [];
+async function Tt(e = !1) {
+  return await se(`/skills/pool${e ? "?summary=true" : ""}`) || [];
 }
-async function Va(e) {
-  const t = await ie(
+async function Ra(e) {
+  const t = await se(
     `/skills/pool/${encodeURIComponent(e)}/content`
   );
   return (t == null ? void 0 : t.content) || "";
 }
-async function Xa() {
-  return await ie(
+async function Ma() {
+  return await se(
     "/skills/workspaces"
   ) || [];
 }
-function at(e, t = "") {
+function Ze(e, t = "") {
   return `/agents/${encodeURIComponent(e)}/skills${t}`;
 }
-function Xn(e) {
-  var a;
+function Un(e) {
+  var l;
   const t = [];
-  for (const l of e) {
-    if (l.enabled === !1) continue;
-    const n = (a = l.description) == null ? void 0 : a.trim();
+  for (const a of e) {
+    if (a.enabled === !1) continue;
+    const n = (l = a.description) == null ? void 0 : l.trim();
     if (!n) continue;
-    const r = (l.name || n).length > 20 ? (l.name || n).substring(0, 18) + "…" : l.name || n;
+    const r = (a.name || n).length > 20 ? (a.name || n).substring(0, 18) + "…" : a.name || n;
     let o = n;
     if (o = o.replace(/\*\*(.+?)\*\*/g, "$1").replace(/\*(.+?)\*/g, "$1").replace(/`(.+?)`/g, "$1").replace(/^#+\s*/gm, "").trim(), /^(用于|帮助|提供|支持|实现|完成|分析|计算|生成|创建|检查)/.test(o) ? o = `请${o}` : /^(a |an |the )/i.test(o) ? o = `Help me with ${o}` : /[。？！.?!]$/.test(o) || (o = `帮我${o}`), o.length > 80 && (o = o.substring(0, 77) + "..."), t.push({ label: r, value: o }), t.length >= 4) break;
   }
   return t;
 }
-async function Ya(e) {
-  return await ie("/workspace/files", {
+async function La(e) {
+  return await se("/workspace/files", {
     headers: { "X-Agent-Id": e }
   }) || [];
 }
-async function Tt(e, t, a) {
-  return ie(`/workspace/files/${encodeURIComponent(t)}`, {
+async function vt(e, t, l) {
+  return se(`/workspace/files/${encodeURIComponent(t)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Agent-Id": e },
-    body: JSON.stringify({ content: a })
+    body: JSON.stringify({ content: l })
   });
 }
-async function Qa(e, t, a, l) {
-  return ie("/workspace/prompt-files", {
+async function Ba(e, t, l, a) {
+  return se("/workspace/prompt-files", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Agent-Id": e },
-    body: JSON.stringify({ filename: t, content: a, enable: l })
+    body: JSON.stringify({ filename: t, content: l, enable: a })
   });
 }
-const Za = /* @__PURE__ */ new Set([
+const ja = /* @__PURE__ */ new Set([
   "CON",
   "PRN",
   "AUX",
@@ -200,7 +200,7 @@ const Za = /* @__PURE__ */ new Set([
   ...Array.from({ length: 9 }, (e, t) => `COM${t + 1}`),
   ...Array.from({ length: 9 }, (e, t) => `LPT${t + 1}`)
 ]);
-function el(e) {
+function Ua(e) {
   let t = e.trim();
   if (!t) throw new Error("请输入文件名");
   if (/[\\/]/.test(t)) throw new Error("文件名不能包含路径分隔符");
@@ -208,24 +208,24 @@ function el(e) {
     throw new Error("文件名包含系统不支持的字符");
   if (/[ .]$/.test(t)) throw new Error("文件名不能以空格或句点结尾");
   t.toLowerCase().endsWith(".md") ? t = `${t.slice(0, -3)}.md` : t += ".md";
-  const a = t.split(".", 1)[0].toUpperCase();
+  const l = t.split(".", 1)[0].toUpperCase();
   if (!t.slice(0, -3)) throw new Error("文件名不能为空");
-  if (Za.has(a))
+  if (ja.has(l))
     throw new Error("该文件名是系统保留名称，请更换");
   if (new TextEncoder().encode(t).length > 255)
     throw new Error("文件名过长");
   return t;
 }
-async function tl(e, t) {
-  const a = await Kt(e);
-  a.system_prompt_files = t, await ie(`/agents/${encodeURIComponent(e)}`, {
+async function Na(e, t) {
+  const l = await Ut(e);
+  l.system_prompt_files = t, await se(`/agents/${encodeURIComponent(e)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(a)
+    body: JSON.stringify(l)
   });
 }
-async function Vt(e, t) {
-  await ie("/skills/pool/download", {
+async function Nt(e, t) {
+  await se("/skills/pool/download", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -235,60 +235,60 @@ async function Vt(e, t) {
     })
   });
 }
-async function Yn(e, t) {
-  await ie(
-    at(e, `/${encodeURIComponent(t)}/enable`),
+async function Nn(e, t) {
+  await se(
+    Ze(e, `/${encodeURIComponent(t)}/enable`),
     {
       method: "POST"
     }
   );
 }
-async function Xt(e, t) {
-  await ie(at(e, `/${encodeURIComponent(t)}`), {
+async function Dt(e, t) {
+  await se(Ze(e, `/${encodeURIComponent(t)}`), {
     method: "DELETE"
   });
 }
-async function nl(e, t) {
-  return ie(at(e, "/batch-enable"), {
+async function Da(e, t) {
+  return se(Ze(e, "/batch-enable"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(t)
   });
 }
-async function al(e, t) {
-  return ie(at(e, "/batch-disable"), {
+async function Fa(e, t) {
+  return se(Ze(e, "/batch-disable"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(t)
   });
 }
-async function ll(e, t) {
-  return ie(at(e, "/batch-delete"), {
+async function Ga(e, t) {
+  return se(Ze(e, "/batch-delete"), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(t)
   });
 }
-async function Yt(e) {
-  return await ie("/mcp", {
+async function Ft(e) {
+  return await se("/mcp", {
     headers: { "X-Agent-Id": e }
   }) || [];
 }
-async function Qn(e, t) {
-  await ie(`/mcp/${encodeURIComponent(t)}`, {
+async function Dn(e, t) {
+  await se(`/mcp/${encodeURIComponent(t)}`, {
     method: "DELETE",
     headers: { "X-Agent-Id": e }
   });
 }
-async function Qt(e, t) {
-  return ie("/mcp", {
+async function Gt(e, t) {
+  return se("/mcp", {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Agent-Id": e },
     body: JSON.stringify(t)
   });
 }
-async function rl(e, t) {
-  return ie(
+async function Ha(e, t) {
+  return se(
     `/mcp/toggle/${encodeURIComponent(t)}`,
     {
       method: "PATCH",
@@ -296,106 +296,106 @@ async function rl(e, t) {
     }
   );
 }
-async function Zn(e, t) {
-  await ie(
-    at(e, `/${encodeURIComponent(t)}/disable`),
+async function Fn(e, t) {
+  await se(
+    Ze(e, `/${encodeURIComponent(t)}/disable`),
     {
       method: "POST"
     }
   );
 }
-async function ol(e) {
-  await ie(`/skills/pool/${encodeURIComponent(e)}`, {
+async function Wa(e) {
+  await se(`/skills/pool/${encodeURIComponent(e)}`, {
     method: "DELETE"
   });
 }
-function sl(e) {
+function Ja(e) {
   const t = (e || "").trim();
   if (!t) return { number: 6, unit: "h" };
-  const a = t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
-  if (!a) return { number: 6, unit: "h" };
-  const l = parseInt(a[1] || "0", 10), n = parseInt(a[2] || "0", 10), r = parseInt(a[3] || "0", 10), o = l * 60 + n + Math.round(r / 60);
+  const l = t.match(/^(?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?$/i);
+  if (!l) return { number: 6, unit: "h" };
+  const a = parseInt(l[1] || "0", 10), n = parseInt(l[2] || "0", 10), r = parseInt(l[3] || "0", 10), o = a * 60 + n + Math.round(r / 60);
   return o <= 0 ? { number: 6, unit: "h" } : o >= 60 && o % 60 === 0 ? { number: o / 60, unit: "h" } : { number: o, unit: "m" };
 }
-function il(e) {
+function Ka(e) {
   return e.unit === "h" ? `${e.number}h` : `${e.number}m`;
 }
-async function cl(e) {
-  return ie("/config/heartbeat", {
+async function qa(e) {
+  return se("/config/heartbeat", {
     headers: { "X-Agent-Id": e }
   });
 }
-async function dl(e, t) {
-  return ie("/config/heartbeat", {
+async function Xa(e, t) {
+  return se("/config/heartbeat", {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Agent-Id": e },
     body: JSON.stringify(t)
   });
 }
-async function ml(e) {
-  await ie("/config/heartbeat/run", {
+async function Va(e) {
+  await se("/config/heartbeat/run", {
     method: "POST",
     headers: { "X-Agent-Id": e }
   });
 }
-async function ul(e) {
-  return ie("/workspace/running-config", {
+async function Ya(e) {
+  return se("/workspace/running-config", {
     headers: { "X-Agent-Id": e }
   });
 }
-async function pl(e, t) {
-  return ie("/workspace/running-config", {
+async function Qa(e, t) {
+  return se("/workspace/running-config", {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Agent-Id": e },
     body: JSON.stringify(t)
   });
 }
-async function gl(e) {
-  return (await ie("/workspace/language", {
+async function Za(e) {
+  return (await se("/workspace/language", {
     headers: { "X-Agent-Id": e }
   })).language || "zh";
 }
-async function fl(e, t) {
-  await ie("/workspace/language", {
+async function el(e, t) {
+  await se("/workspace/language", {
     method: "PUT",
     headers: { "Content-Type": "application/json", "X-Agent-Id": e },
     body: JSON.stringify({ language: t })
   });
 }
-async function yl() {
-  return (await ie("/config/user-timezone")).timezone || "UTC";
+async function tl() {
+  return (await se("/config/user-timezone")).timezone || "UTC";
 }
-async function El(e) {
-  await ie("/config/user-timezone", {
+async function nl(e) {
+  await se("/config/user-timezone", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ timezone: e })
   });
 }
-async function hl(e) {
-  return await ie("/workspace/system-prompt-files", {
+async function al(e) {
+  return await se("/workspace/system-prompt-files", {
     headers: { "X-Agent-Id": e }
   }) || [];
 }
-const zn = ["AGENTS.md", "SOUL.md", "PROFILE.md"];
-function $n({
+const bn = ["AGENTS.md", "SOUL.md", "PROFILE.md"];
+function Sn({
   items: e,
   max: t = 5,
-  color: a = "blue",
-  emptyText: l = "无"
+  color: l = "blue",
+  emptyText: a = "无"
 }) {
-  const n = _().React, { Tag: r } = _().antd;
+  const n = x().React, { Tag: r } = x().antd;
   return !e || e.length === 0 ? n.createElement(
     "span",
     { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #bfbfbf)" } },
-    l
+    a
   ) : n.createElement(
     "div",
     { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
     ...e.slice(0, t).map(
       (o, c) => n.createElement(
         r,
-        { key: c, color: a, style: { fontSize: 11, marginRight: 0 } },
+        { key: c, color: l, style: { fontSize: 11, marginRight: 0 } },
         o
       )
     ),
@@ -406,38 +406,38 @@ function $n({
     ) : null
   );
 }
-function ea({
+function Gn({
   open: e,
   onClose: t,
-  poolSkills: a,
-  installedSkillNames: l,
+  poolSkills: l,
+  installedSkillNames: a,
   loading: n,
   onInstall: r
 }) {
-  const o = _().React, { useState: c, useEffect: s, useMemo: d } = o, { Modal: m, Button: f, Empty: u, Spin: h, Input: x, Tag: C, Tooltip: b, Typography: v } = _().antd, { CheckOutlined: I, SearchOutlined: z } = _().antdIcons || {}, { Text: N } = v, [D, G] = c([]), [B, M] = c("");
-  s(() => {
-    e && (G([]), M(""));
+  const o = x().React, { useState: c, useEffect: i, useMemo: d } = o, { Modal: u, Button: b, Empty: y, Spin: S, Input: C, Tag: $, Tooltip: w, Typography: z } = x().antd, { CheckOutlined: j, SearchOutlined: R } = x().antdIcons || {}, { Text: W } = z, [G, J] = c([]), [K, B] = c("");
+  i(() => {
+    e && (J([]), B(""));
   }, [e]);
-  const A = d(() => {
-    if (!B.trim()) return a;
-    const w = B.toLowerCase();
-    return a.filter(
-      (E) => {
-        var $, k;
-        return E.name.toLowerCase().includes(w) || (($ = E.description) == null ? void 0 : $.toLowerCase().includes(w)) || ((k = E.tags) == null ? void 0 : k.some((q) => q.toLowerCase().includes(w)));
+  const P = d(() => {
+    if (!K.trim()) return l;
+    const E = K.toLowerCase();
+    return l.filter(
+      (f) => {
+        var T, v;
+        return f.name.toLowerCase().includes(E) || ((T = f.description) == null ? void 0 : T.toLowerCase().includes(E)) || ((v = f.tags) == null ? void 0 : v.some((H) => H.toLowerCase().includes(E)));
       }
     );
-  }, [a, B]), H = A.filter(
-    (w) => !l.includes(w.name)
-  ), K = (w) => {
-    G(
-      (E) => E.includes(w) ? E.filter(($) => $ !== w) : [...E, w]
+  }, [l, K]), F = P.filter(
+    (E) => !a.includes(E.name)
+  ), X = (E) => {
+    J(
+      (f) => f.includes(E) ? f.filter((T) => T !== E) : [...f, E]
     );
-  }, T = async () => {
-    D.length !== 0 && (await r(D), G([]));
+  }, k = async () => {
+    G.length !== 0 && (await r(G), J([]));
   };
   return o.createElement(
-    m,
+    u,
     {
       open: e,
       onCancel: t,
@@ -453,22 +453,22 @@ function ea({
           }
         },
         o.createElement(
-          N,
+          W,
           { type: "secondary", style: { fontSize: 13 } },
-          `已选择 ${D.length} 个技能`
+          `已选择 ${G.length} 个技能`
         ),
         o.createElement(
           "div",
           { style: { display: "flex", gap: 8 } },
-          o.createElement(f, { onClick: t }, "取消"),
+          o.createElement(b, { onClick: t }, "取消"),
           o.createElement(
-            f,
+            b,
             {
               type: "primary",
-              onClick: T,
-              disabled: D.length === 0
+              onClick: k,
+              disabled: G.length === 0
             },
-            D.length > 0 ? `添加 (${D.length})` : "添加"
+            G.length > 0 ? `添加 (${G.length})` : "添加"
           )
         )
       )
@@ -484,28 +484,28 @@ function ea({
           alignItems: "center"
         }
       },
-      o.createElement(x, {
+      o.createElement(C, {
         placeholder: "搜索技能名称、描述或标签...",
-        prefix: z ? o.createElement(z) : void 0,
-        value: B,
-        onChange: (w) => M(w.target.value),
+        prefix: R ? o.createElement(R) : void 0,
+        value: K,
+        onChange: (E) => B(E.target.value),
         allowClear: !0,
         style: { flex: 1 }
       }),
       o.createElement(
-        f,
+        b,
         {
           size: "small",
           type: "primary",
-          onClick: () => G(H.map((w) => w.name))
+          onClick: () => J(F.map((E) => E.name))
         },
         "全选"
       ),
       o.createElement(
-        f,
+        b,
         {
           size: "small",
-          onClick: () => G([])
+          onClick: () => J([])
         },
         "清空"
       )
@@ -514,10 +514,10 @@ function ea({
     n ? o.createElement(
       "div",
       { style: { textAlign: "center", padding: 40 } },
-      o.createElement(h, { size: "large" })
-    ) : A.length === 0 ? o.createElement(u, {
-      description: B ? "未找到匹配的技能" : "技能池暂无可用技能",
-      image: u.PRESENTED_IMAGE_SIMPLE
+      o.createElement(S, { size: "large" })
+    ) : P.length === 0 ? o.createElement(y, {
+      description: K ? "未找到匹配的技能" : "技能池暂无可用技能",
+      image: y.PRESENTED_IMAGE_SIMPLE
     }) : o.createElement(
       "div",
       {
@@ -530,26 +530,26 @@ function ea({
           padding: 2
         }
       },
-      ...A.map((w) => {
-        const E = D.includes(w.name), $ = l.includes(w.name);
+      ...P.map((E) => {
+        const f = G.includes(E.name), T = a.includes(E.name);
         return o.createElement(
           "div",
           {
-            key: w.name,
-            onClick: () => !$ && K(w.name),
+            key: E.name,
+            onClick: () => !T && X(E.name),
             style: {
               position: "relative",
               padding: "10px 12px",
-              border: `1px solid ${E ? "var(--ant-color-primary, #0072f5)" : "var(--ant-color-border-secondary, #e8e8e8)"}`,
+              border: `1px solid ${f ? "#0072f5" : "var(--ant-color-border-secondary, #e8e8e8)"}`,
               borderRadius: 6,
-              cursor: $ ? "not-allowed" : "pointer",
+              cursor: T ? "not-allowed" : "pointer",
               transition: "all 0.15s ease",
-              background: E ? "var(--ant-color-primary-bg, rgba(0, 114, 245, 0.06))" : $ ? "var(--ant-color-fill-quaternary, #fafafa)" : "var(--ant-color-bg-container, #fff)",
-              opacity: $ ? 0.5 : 1,
+              background: f ? "rgba(0, 114, 245, 0.06)" : T ? "var(--ant-color-fill-quaternary, #fafafa)" : "var(--ant-color-bg-container, #fff)",
+              opacity: T ? 0.5 : 1,
               minHeight: 64
             }
           },
-          E ? o.createElement(
+          f ? o.createElement(
             "span",
             {
               style: {
@@ -567,9 +567,9 @@ function ea({
                 fontSize: 10
               }
             },
-            I ? o.createElement(I) : "✓"
+            j ? o.createElement(j) : "✓"
           ) : null,
-          $ ? o.createElement(
+          T ? o.createElement(
             "span",
             {
               style: {
@@ -590,19 +590,19 @@ function ea({
                 alignItems: "center",
                 gap: 6,
                 marginBottom: 4,
-                paddingRight: $ || E ? 24 : 0
+                paddingRight: T || f ? 24 : 0
               }
             },
             o.createElement(
               "span",
               { style: { fontSize: 16 } },
-              w.emoji || "⚡"
+              E.emoji || "⚡"
             ),
             o.createElement(
-              b,
-              { title: w.name },
+              w,
+              { title: E.name },
               o.createElement(
-                N,
+                W,
                 {
                   strong: !0,
                   style: {
@@ -612,11 +612,11 @@ function ea({
                     whiteSpace: "nowrap"
                   }
                 },
-                w.name
+                E.name
               )
             )
           ),
-          w.description ? o.createElement(
+          E.description ? o.createElement(
             "div",
             {
               style: {
@@ -630,9 +630,9 @@ function ea({
                 lineHeight: "1.4"
               }
             },
-            w.description
+            E.description
           ) : null,
-          w.tags && w.tags.length > 0 ? o.createElement(
+          E.tags && E.tags.length > 0 ? o.createElement(
             "div",
             {
               style: {
@@ -642,15 +642,15 @@ function ea({
                 flexWrap: "wrap"
               }
             },
-            ...w.tags.slice(0, 2).map(
-              (k, q) => o.createElement(
-                C,
+            ...E.tags.slice(0, 2).map(
+              (v, H) => o.createElement(
+                $,
                 {
-                  key: q,
+                  key: H,
                   color: "cyan",
                   style: { fontSize: 10, marginRight: 0 }
                 },
-                k
+                v
               )
             )
           ) : null
@@ -659,120 +659,120 @@ function ea({
     )
   );
 }
-function ta({
+function Hn({
   agentId: e,
   systemPromptFiles: t,
-  onRefresh: a
+  onRefresh: l
 }) {
-  const l = _().React, { useState: n, useEffect: r, useCallback: o, useRef: c } = l, {
-    List: s,
+  const a = x().React, { useState: n, useEffect: r, useCallback: o, useRef: c } = a, {
+    List: i,
     Tag: d,
-    Switch: m,
-    Button: f,
-    Modal: u,
-    Input: h,
-    Spin: x,
-    Empty: C,
-    message: b,
-    Typography: v,
-    Segmented: I,
-    Alert: z
-  } = _().antd, { FileTextOutlined: N, PlusOutlined: D, EditOutlined: G, ReloadOutlined: B } = _().antdIcons || {}, { Text: M } = v, [A, H] = n([]), [K, T] = n(!0), [w, E] = n(
+    Switch: u,
+    Button: b,
+    Modal: y,
+    Input: S,
+    Spin: C,
+    Empty: $,
+    message: w,
+    Typography: z,
+    Segmented: j,
+    Alert: R
+  } = x().antd, { FileTextOutlined: W, PlusOutlined: G, EditOutlined: J, ReloadOutlined: K } = x().antdIcons || {}, { Text: B } = z, [P, F] = n([]), [X, k] = n(!0), [E, f] = n(
     t || []
-  ), [$, k] = n(!1), [q, Z] = n(null), [U, P] = n(""), [p, te] = n(""), [W, S] = n(!1), [J, le] = n("source"), X = c(0), ee = o(async () => {
-    const oe = ++X.current;
-    T(!0);
+  ), [T, v] = n(!1), [H, Z] = n(null), [L, _] = n(""), [m, te] = n(""), [N, h] = n(!1), [D, le] = n("source"), V = c(0), ee = o(async () => {
+    const oe = ++V.current;
+    k(!0);
     try {
-      const ae = await Ya(e);
-      oe === X.current && H(ae);
+      const ae = await La(e);
+      oe === V.current && F(ae);
     } catch (ae) {
-      oe === X.current && (b.error(ae.message || "加载工作区文档失败"), H([]));
+      oe === V.current && (w.error(ae.message || "加载工作区文档失败"), F([]));
     } finally {
-      oe === X.current && T(!1);
+      oe === V.current && k(!1);
     }
   }, [e]);
   r(() => {
     ee();
   }, [ee]), r(() => {
-    E(t || []);
+    f(t || []);
   }, [t]);
-  const fe = async (oe, ae) => {
-    const Ee = new Set(w);
+  const ge = async (oe, ae) => {
+    const ye = new Set(E);
     if (ae)
-      Ee.add(oe);
+      ye.add(oe);
     else {
-      if (zn.includes(oe) && oe === "AGENTS.md") {
-        b.warning("AGENTS.md 是核心文件，不能停用");
+      if (bn.includes(oe) && oe === "AGENTS.md") {
+        w.warning("AGENTS.md 是核心文件，不能停用");
         return;
       }
-      Ee.delete(oe);
+      ye.delete(oe);
     }
-    const he = Array.from(Ee);
-    E(he);
+    const Ee = Array.from(ye);
+    f(Ee);
     try {
-      await tl(e, he), b.success(ae ? "已启用记忆文件" : "已停用记忆文件"), a();
-    } catch (ke) {
-      b.error(ke.message || "更新失败"), E(t || []);
+      await Na(e, Ee), w.success(ae ? "已启用记忆文件" : "已停用记忆文件"), l();
+    } catch (xe) {
+      w.error(xe.message || "更新失败"), f(t || []);
     }
-  }, R = async (oe) => {
+  }, I = async (oe) => {
     try {
-      const ae = await ie(
+      const ae = await se(
         `/workspace/files/${encodeURIComponent(oe)}`,
         { headers: { "X-Agent-Id": e } }
       );
-      Z(oe), P(ae.content || ""), le("source"), k(!0);
+      Z(oe), _(ae.content || ""), le("source"), v(!0);
     } catch (ae) {
-      b.error(ae.message || "读取文件失败");
+      w.error(ae.message || "读取文件失败");
     }
   }, re = () => {
-    Z(null), P(""), te(""), le("source"), k(!0);
-  }, pe = async () => {
+    Z(null), _(""), te(""), le("source"), v(!0);
+  }, ue = async () => {
     let oe;
     try {
-      oe = el(q || p);
+      oe = Ua(H || m);
     } catch (ae) {
-      b.warning(ae.message || "文件名无效");
+      w.warning(ae.message || "文件名无效");
       return;
     }
-    if (!U.trim()) {
-      b.warning("Markdown 文档不能为空");
+    if (!L.trim()) {
+      w.warning("Markdown 文档不能为空");
       return;
     }
-    if (new TextEncoder().encode(U).length > 1024 * 1024) {
-      b.warning("Markdown 文档不能超过 1 MB");
+    if (new TextEncoder().encode(L).length > 1024 * 1024) {
+      w.warning("Markdown 文档不能超过 1 MB");
       return;
     }
-    S(!0);
+    h(!0);
     try {
-      if (q)
-        await Tt(e, oe, U);
+      if (H)
+        await vt(e, oe, L);
       else {
-        const ae = await Qa(
+        const ae = await Ba(
           e,
           oe,
-          U,
+          L,
           !0
         );
-        E(ae.system_prompt_files);
+        f(ae.system_prompt_files);
       }
-      b.success("保存成功"), k(!1), ee(), a();
+      w.success("保存成功"), v(!1), ee(), l();
     } catch (ae) {
-      const Ee = ae != null && ae.message ? `：${ae.message}` : "";
-      b.error(
-        q ? (ae == null ? void 0 : ae.message) || "保存失败" : `创建并挂载失败，服务端已回滚文件${Ee}`
+      const ye = ae != null && ae.message ? `：${ae.message}` : "";
+      w.error(
+        H ? (ae == null ? void 0 : ae.message) || "保存失败" : `创建并挂载失败，服务端已回滚文件${ye}`
       );
     } finally {
-      S(!1);
+      h(!1);
     }
   };
-  return K ? l.createElement(
+  return X ? a.createElement(
     "div",
     { style: { textAlign: "center", padding: 40 } },
-    l.createElement(x, { size: "large" })
-  ) : l.createElement(
+    a.createElement(C, { size: "large" })
+  ) : a.createElement(
     "div",
     null,
-    l.createElement(
+    a.createElement(
       "div",
       {
         style: {
@@ -782,78 +782,78 @@ function ta({
           marginBottom: 12
         }
       },
-      l.createElement(
+      a.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        N ? l.createElement(N, {
-          style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" }
+        W ? a.createElement(W, {
+          style: { fontSize: 14, color: "#1677ff" }
         }) : null,
-        l.createElement(
-          M,
+        a.createElement(
+          B,
           { strong: !0 },
-          `工作区文档 (${A.length})`
+          `工作区文档 (${P.length})`
         ),
-        l.createElement(
-          M,
+        a.createElement(
+          B,
           { type: "secondary", style: { fontSize: 12 } },
-          `· ${w.length} 个已挂载到系统提示`
+          `· ${E.length} 个已挂载到系统提示`
         )
       ),
-      l.createElement(
+      a.createElement(
         "div",
         { style: { display: "flex", gap: 8 } },
-        l.createElement(
-          f,
+        a.createElement(
+          b,
           {
             size: "small",
-            icon: B ? l.createElement(B) : void 0,
+            icon: K ? a.createElement(K) : void 0,
             onClick: ee
           },
           "刷新"
         ),
-        l.createElement(
-          f,
+        a.createElement(
+          b,
           {
             type: "primary",
             size: "small",
-            icon: D ? l.createElement(D) : void 0,
+            icon: G ? a.createElement(G) : void 0,
             onClick: re
           },
           "新建 Markdown 文档"
         )
       )
     ),
-    A.length === 0 ? l.createElement(C, {
+    P.length === 0 ? a.createElement($, {
       description: "暂无 Markdown 文档，点击「新建 Markdown 文档」添加",
-      image: C.PRESENTED_IMAGE_SIMPLE
-    }) : l.createElement(s, {
-      dataSource: A,
+      image: $.PRESENTED_IMAGE_SIMPLE
+    }) : a.createElement(i, {
+      dataSource: P,
       renderItem: (oe) => {
-        const ae = w.includes(oe.filename), Ee = zn.includes(oe.filename);
-        return l.createElement(
-          s.Item,
+        const ae = E.includes(oe.filename), ye = bn.includes(oe.filename);
+        return a.createElement(
+          i.Item,
           {
             actions: [
-              l.createElement(
-                f,
+              a.createElement(
+                b,
                 {
                   type: "link",
                   size: "small",
-                  icon: G ? l.createElement(G) : void 0,
-                  onClick: () => R(oe.filename)
+                  icon: J ? a.createElement(J) : void 0,
+                  onClick: () => I(oe.filename)
                 },
                 "编辑"
               )
             ]
           },
-          l.createElement(s.Item.Meta, {
-            avatar: l.createElement(N, {
+          a.createElement(i.Item.Meta, {
+            avatar: a.createElement(W, {
               style: {
                 fontSize: 20,
-                color: ae ? "var(--ant-color-primary, #1677ff)" : "var(--ant-color-text-quaternary, #bfbfbf)"
+                color: ae ? "#1677ff" : "var(--ant-color-text-quaternary, #bfbfbf)"
               }
             }),
-            title: l.createElement(
+            title: a.createElement(
               "div",
               {
                 style: {
@@ -862,54 +862,54 @@ function ta({
                   gap: 6
                 }
               },
-              l.createElement(M, null, oe.filename),
-              Ee ? l.createElement(
+              a.createElement(B, null, oe.filename),
+              ye ? a.createElement(
                 d,
                 { color: "default", style: { fontSize: 10 } },
                 "内置"
-              ) : l.createElement(
+              ) : a.createElement(
                 d,
                 { color: "cyan", style: { fontSize: 10 } },
                 "工作文档"
               )
             ),
-            description: l.createElement(
+            description: a.createElement(
               "div",
               { style: { fontSize: 12 } },
               `${(oe.size / 1024).toFixed(1)} KB · 修改于 ${new Date(oe.modified_time).toLocaleString()}`
             )
           }),
-          l.createElement(m, {
+          a.createElement(u, {
             checked: ae,
             size: "small",
-            onChange: (he) => fe(oe.filename, he)
+            onChange: (Ee) => ge(oe.filename, Ee)
           })
         );
       }
     }),
     // Edit/New file modal
-    l.createElement(
-      u,
+    a.createElement(
+      y,
       {
-        open: $,
-        onCancel: () => k(!1),
-        title: q ? `编辑 ${q}` : "新建 Markdown 文档",
+        open: T,
+        onCancel: () => v(!1),
+        title: H ? `编辑 ${H}` : "新建 Markdown 文档",
         width: 700,
-        onOk: pe,
-        confirmLoading: W,
+        onOk: ue,
+        confirmLoading: N,
         okText: "保存"
       },
-      q ? null : l.createElement(
+      H ? null : a.createElement(
         "div",
         { style: { marginBottom: 12 } },
-        l.createElement(h, {
+        a.createElement(S, {
           placeholder: "文件名（如：油藏工程记忆库.md）",
-          value: p,
+          value: m,
           onChange: (oe) => te(oe.target.value),
-          addonAfter: p.endsWith(".md") ? "" : ".md"
+          addonAfter: m.endsWith(".md") ? "" : ".md"
         })
       ),
-      l.createElement(
+      a.createElement(
         "div",
         {
           style: {
@@ -920,30 +920,30 @@ function ta({
             marginBottom: 10
           }
         },
-        l.createElement(I, {
+        a.createElement(j, {
           size: "small",
-          value: J,
+          value: D,
           options: [
             { label: "源码", value: "source" },
             { label: "预览", value: "preview" }
           ],
           onChange: (oe) => le(oe)
         }),
-        l.createElement(
-          M,
+        a.createElement(
+          B,
           { type: "secondary", style: { fontSize: 12 } },
-          `${U.length} 字符 · 约 ${Math.ceil(U.length / 4)} tokens · ${q && w.includes(q) ? "已挂载" : q ? "未挂载" : "保存后自动挂载"}`
+          `${L.length} 字符 · 约 ${Math.ceil(L.length / 4)} tokens · ${H && E.includes(H) ? "已挂载" : H ? "未挂载" : "保存后自动挂载"}`
         )
       ),
-      U.trim() ? null : l.createElement(z, {
+      L.trim() ? null : a.createElement(R, {
         type: "warning",
         showIcon: !0,
         message: "文档内容为空，保存前需要填写 Markdown 内容",
         style: { marginBottom: 10 }
       }),
-      J === "source" ? l.createElement(h.TextArea, {
-        value: U,
-        onChange: (oe) => P(oe.target.value),
+      D === "source" ? a.createElement(S.TextArea, {
+        value: L,
+        onChange: (oe) => _(oe.target.value),
         rows: 14,
         placeholder: `输入 Markdown 内容...
 
@@ -954,7 +954,7 @@ function ta({
 - 地层温度: 85°C
 - 原油密度: 0.85 g/cm³`,
         style: { fontFamily: "monospace", fontSize: 13 }
-      }) : l.createElement(
+      }) : a.createElement(
         "div",
         {
           style: {
@@ -967,46 +967,46 @@ function ta({
             background: "var(--ant-color-bg-container, #fff)"
           }
         },
-        zt(U, l)
+        wt(L, a)
       )
     )
   );
 }
-function vl({
+function ll({
   skills: e,
   agentId: t
 }) {
-  const a = _().React, { useMemo: l } = a, {
+  const l = x().React, { useMemo: a } = l, {
     List: n,
     Tag: r,
     Typography: o,
     Empty: c,
-    Button: s,
+    Button: i,
     message: d
-  } = _().antd, { ThunderboltOutlined: m, CopyOutlined: f } = _().antdIcons || {}, { Text: u } = o, h = l(() => Xn(e), [e]), x = (b) => {
+  } = x().antd, { ThunderboltOutlined: u, CopyOutlined: b } = x().antdIcons || {}, { Text: y } = o, S = a(() => Un(e), [e]), C = (w) => {
     try {
-      const v = _();
-      v.setSelectedAgent && v.setSelectedAgent(t);
+      const z = x();
+      z.setSelectedAgent && z.setSelectedAgent(t);
     } catch {
     }
     try {
-      sessionStorage.setItem("ugsci_pending_prompt", b.value);
+      sessionStorage.setItem("ugsci_pending_prompt", w.value);
     } catch {
     }
     window.history.pushState({}, "", "/chat"), window.dispatchEvent(new PopStateEvent("popstate"));
-  }, C = (b) => {
-    var v;
-    (v = navigator.clipboard) == null || v.writeText(b.value).then(() => {
+  }, $ = (w) => {
+    var z;
+    (z = navigator.clipboard) == null || z.writeText(w.value).then(() => {
       d.success("已复制到剪贴板");
     });
   };
-  return h.length === 0 ? a.createElement(c, {
+  return S.length === 0 ? l.createElement(c, {
     description: "暂无推荐提问，请先为专家添加技能",
     image: c.PRESENTED_IMAGE_SIMPLE
-  }) : a.createElement(
+  }) : l.createElement(
     "div",
     null,
-    a.createElement(
+    l.createElement(
       "div",
       {
         style: {
@@ -1016,199 +1016,199 @@ function vl({
           marginBottom: 12
         }
       },
-      m ? a.createElement(m, {
-        style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" }
+      u ? l.createElement(u, {
+        style: { fontSize: 14, color: "#1677ff" }
       }) : null,
-      a.createElement(
-        u,
+      l.createElement(
+        y,
         { strong: !0 },
-        `推荐提问 (${h.length})`
+        `推荐提问 (${S.length})`
       ),
-      a.createElement(
-        u,
+      l.createElement(
+        y,
         { type: "secondary", style: { fontSize: 12 } },
         "· 从技能描述中自动提取"
       )
     ),
-    a.createElement(n, {
-      dataSource: h,
-      renderItem: (b, v) => a.createElement(
+    l.createElement(n, {
+      dataSource: S,
+      renderItem: (w, z) => l.createElement(
         n.Item,
         {
           actions: [
-            a.createElement(
-              s,
+            l.createElement(
+              i,
               {
                 type: "link",
                 size: "small",
-                icon: f ? a.createElement(f) : void 0,
-                onClick: () => C(b)
+                icon: b ? l.createElement(b) : void 0,
+                onClick: () => $(w)
               },
               "复制"
             )
           ]
         },
-        a.createElement(n.Item.Meta, {
-          avatar: a.createElement(
+        l.createElement(n.Item.Meta, {
+          avatar: l.createElement(
             r,
             { color: "blue", style: { borderRadius: "50%" } },
-            `${v + 1}`
+            `${z + 1}`
           ),
-          title: a.createElement(
+          title: l.createElement(
             "div",
             {
               style: {
                 cursor: "pointer",
-                color: "var(--ant-color-primary, #1677ff)"
+                color: "#1677ff"
               },
-              onClick: () => x(b)
+              onClick: () => C(w)
             },
-            b.value
+            w.value
           ),
-          description: a.createElement(
-            u,
+          description: l.createElement(
+            y,
             { type: "secondary", style: { fontSize: 12 } },
-            b.label
+            w.label
           )
         })
       )
     })
   );
 }
-const tt = {
+const Ye = {
   marginBottom: 4,
   fontSize: 13,
   fontWeight: 500,
-  color: "var(--ant-color-text, rgba(0,0,0,0.85))",
+  color: "rgba(0,0,0,0.85)",
   display: "flex",
   alignItems: "center",
   gap: 4
-}, na = { marginBottom: 16 }, aa = {
+}, Wn = { marginBottom: 16 }, Jn = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",
   gap: "0 16px",
   marginBottom: 16
-}, Ve = {
+}, Je = {
   fontSize: 13,
   fontWeight: 600,
-  color: "var(--ant-color-text, rgba(0,0,0,0.85))",
+  color: "rgba(0,0,0,0.85)",
   marginBottom: 12,
   paddingBottom: 8,
-  borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)"
-}, la = {
+  borderBottom: "1px solid #f0f0f0"
+}, Kn = {
   fontSize: 12,
-  color: "var(--ant-color-text-tertiary, rgba(0,0,0,0.45))",
+  color: "rgba(0,0,0,0.45)",
   marginLeft: 8
 };
-function bl({ agentId: e }) {
-  const t = _().React, { useState: a, useEffect: l, useCallback: n } = t, {
+function rl({ agentId: e }) {
+  const t = x().React, { useState: l, useEffect: a, useCallback: n } = t, {
     Switch: r,
     InputNumber: o,
     Select: c,
-    Button: s,
+    Button: i,
     Spin: d,
-    Space: m,
-    Typography: f,
-    message: u
-  } = _().antd, { PlayCircleOutlined: h, SaveOutlined: x } = _().antdIcons || {}, { Text: C } = f, [b, v] = a(!0), [I, z] = a(!1), [N, D] = a(!1), [G, B] = a(!1), [M, A] = a(6), [H, K] = a("h"), [T, w] = a("main"), [E, $] = a(300), [k, q] = a(!1), [Z, U] = a("08:00"), [P, p] = a("22:00"), te = n(async () => {
-    var ee, fe;
-    v(!0);
-    try {
-      const R = await cl(e), re = sl(R.every ?? "6h");
-      B(R.enabled ?? !1), A(re.number), K(re.unit), w(R.target ?? "main"), $(R.timeoutSeconds ?? 300), q(!!R.activeHours), U(((ee = R.activeHours) == null ? void 0 : ee.start) ?? "08:00"), p(((fe = R.activeHours) == null ? void 0 : fe.end) ?? "22:00");
-    } catch (R) {
-      u.error(R.message || "加载心跳配置失败");
-    } finally {
-      v(!1);
-    }
-  }, [e]);
-  l(() => {
-    te();
-  }, [te]);
-  const W = async () => {
+    Space: u,
+    Typography: b,
+    message: y
+  } = x().antd, { PlayCircleOutlined: S, SaveOutlined: C } = x().antdIcons || {}, { Text: $ } = b, [w, z] = l(!0), [j, R] = l(!1), [W, G] = l(!1), [J, K] = l(!1), [B, P] = l(6), [F, X] = l("h"), [k, E] = l("main"), [f, T] = l(300), [v, H] = l(!1), [Z, L] = l("08:00"), [_, m] = l("22:00"), te = n(async () => {
+    var ee, ge;
     z(!0);
     try {
-      await dl(e, {
-        enabled: G,
-        every: il({ number: M, unit: H }),
-        target: T,
-        timeoutSeconds: E,
-        activeHours: k && Z && P ? { start: Z, end: P } : void 0
-      }), u.success("心跳配置已保存");
-    } catch (ee) {
-      u.error(ee.message || "保存心跳配置失败");
+      const I = await qa(e), re = Ja(I.every ?? "6h");
+      K(I.enabled ?? !1), P(re.number), X(re.unit), E(I.target ?? "main"), T(I.timeoutSeconds ?? 300), H(!!I.activeHours), L(((ee = I.activeHours) == null ? void 0 : ee.start) ?? "08:00"), m(((ge = I.activeHours) == null ? void 0 : ge.end) ?? "22:00");
+    } catch (I) {
+      y.error(I.message || "加载心跳配置失败");
     } finally {
       z(!1);
     }
-  }, S = async () => {
-    D(!0);
+  }, [e]);
+  a(() => {
+    te();
+  }, [te]);
+  const N = async () => {
+    R(!0);
     try {
-      await ml(e), u.success("已触发心跳检查");
+      await Xa(e, {
+        enabled: J,
+        every: Ka({ number: B, unit: F }),
+        target: k,
+        timeoutSeconds: f,
+        activeHours: v && Z && _ ? { start: Z, end: _ } : void 0
+      }), y.success("心跳配置已保存");
     } catch (ee) {
-      u.error(ee.message || "触发心跳失败");
+      y.error(ee.message || "保存心跳配置失败");
     } finally {
-      D(!1);
+      R(!1);
+    }
+  }, h = async () => {
+    G(!0);
+    try {
+      await Va(e), y.success("已触发心跳检查");
+    } catch (ee) {
+      y.error(ee.message || "触发心跳失败");
+    } finally {
+      G(!1);
     }
   };
-  if (b)
+  if (w)
     return t.createElement(
       "div",
       { style: { textAlign: "center", padding: 40 } },
       t.createElement(d, { size: "large" })
     );
-  const J = (ee, fe, R) => t.createElement(
+  const D = (ee, ge, I) => t.createElement(
     "div",
-    { style: na },
-    t.createElement("div", { style: tt }, ee),
-    fe,
-    R ? t.createElement(
-      C,
-      { type: "secondary", style: la },
-      R
+    { style: Wn },
+    t.createElement("div", { style: Ye }, ee),
+    ge,
+    I ? t.createElement(
+      $,
+      { type: "secondary", style: Kn },
+      I
     ) : null
-  ), le = (ee, fe, R, re) => t.createElement(
+  ), le = (ee, ge, I, re) => t.createElement(
     "div",
-    { style: aa },
+    { style: Jn },
     t.createElement(
       "div",
       null,
-      t.createElement("div", { style: tt }, ee),
-      fe
+      t.createElement("div", { style: Ye }, ee),
+      ge
     ),
     t.createElement(
       "div",
       null,
-      t.createElement("div", { style: tt }, R),
+      t.createElement("div", { style: Ye }, I),
       re
     )
-  ), { Divider: X } = _().antd;
+  ), { Divider: V } = x().antd;
   return t.createElement(
     "div",
     { style: { paddingBottom: 8 } },
     // ── Section: 基本设置 ──
-    t.createElement("div", { style: Ve }, "基本设置"),
-    J(
+    t.createElement("div", { style: Je }, "基本设置"),
+    D(
       "启用心跳",
       t.createElement(r, {
-        checked: G,
-        onChange: (ee) => B(ee)
+        checked: J,
+        onChange: (ee) => K(ee)
       }),
-      G ? "已启用，专家将定期自检" : "已停用"
+      J ? "已启用，专家将定期自检" : "已停用"
     ),
     le(
       "检查频率",
       t.createElement(
-        m,
+        u,
         null,
         t.createElement(o, {
           min: 1,
-          value: M,
-          onChange: (ee) => A(ee ?? 1),
+          value: B,
+          onChange: (ee) => P(ee ?? 1),
           style: { width: "100%" }
         }),
         t.createElement(c, {
-          value: H,
-          onChange: (ee) => K(ee),
+          value: F,
+          onChange: (ee) => X(ee),
           style: { width: 90 },
           options: [
             { value: "m", label: "分钟" },
@@ -1218,8 +1218,8 @@ function bl({ agentId: e }) {
       ),
       "心跳目标",
       t.createElement(c, {
-        value: T,
-        onChange: (ee) => w(ee),
+        value: k,
+        onChange: (ee) => E(ee),
         style: { width: "100%" },
         options: [
           { value: "main", label: "主会话 (main)" },
@@ -1228,33 +1228,33 @@ function bl({ agentId: e }) {
         ]
       })
     ),
-    J(
+    D(
       "超时时间 (秒)",
       t.createElement(o, {
         min: 1,
         max: 3600,
-        value: E,
-        onChange: (ee) => $(ee ?? 300),
+        value: f,
+        onChange: (ee) => T(ee ?? 300),
         style: { width: 200 }
       })
     ),
     // ── Section: 活跃时段 ──
-    t.createElement(X, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: Ve }, "活跃时段"),
-    J(
+    t.createElement(V, { style: { margin: "8px 0 16px" } }),
+    t.createElement("div", { style: Je }, "活跃时段"),
+    D(
       "启用活跃时段限制",
       t.createElement(r, {
-        checked: k,
-        onChange: (ee) => q(ee)
+        checked: v,
+        onChange: (ee) => H(ee)
       }),
       "仅在指定时段内触发心跳"
     ),
-    k ? le(
+    v ? le(
       "开始时间",
       t.createElement("input", {
         type: "time",
         value: Z,
-        onChange: (ee) => U(ee.target.value),
+        onChange: (ee) => L(ee.target.value),
         style: {
           width: "100%",
           padding: "4px 11px",
@@ -1266,8 +1266,8 @@ function bl({ agentId: e }) {
       "结束时间",
       t.createElement("input", {
         type: "time",
-        value: P,
-        onChange: (ee) => p(ee.target.value),
+        value: _,
+        onChange: (ee) => m(ee.target.value),
         style: {
           width: "100%",
           padding: "4px 11px",
@@ -1289,306 +1289,97 @@ function bl({ agentId: e }) {
         }
       },
       t.createElement(
-        s,
+        i,
         {
           type: "primary",
-          icon: x ? t.createElement(x) : void 0,
-          loading: I,
-          onClick: W,
-          style: je
+          icon: C ? t.createElement(C) : void 0,
+          loading: j,
+          onClick: N,
+          style: Le
         },
         "保存配置"
       ),
       t.createElement(
-        s,
+        i,
         {
-          icon: h ? t.createElement(h) : void 0,
-          loading: N,
-          onClick: S
+          icon: S ? t.createElement(S) : void 0,
+          loading: W,
+          onClick: h
         },
         "立即执行"
       )
     )
   );
 }
-function wl({
+function ol({
   agentId: e,
   onRefresh: t
 }) {
-  const a = _().React, { useState: l, useEffect: n, useCallback: r } = a, {
+  const l = x().React, { useState: a, useEffect: n, useCallback: r } = l, {
     List: o,
     Tag: c,
-    Switch: s,
+    Switch: i,
     Button: d,
-    Empty: m,
-    Spin: f,
-    Typography: u,
-    message: h
-  } = _().antd, { PlusOutlined: x, ReloadOutlined: C, DeleteOutlined: b } = _().antdIcons || {}, { Text: v, Paragraph: I } = u, [z, N] = l([]), [D, G] = l(!0), [B, M] = l(!1), [A, H] = l([]), [K, T] = l(!1), w = r(async () => {
-    G(!0);
+    Empty: u,
+    Spin: b,
+    Typography: y,
+    message: S
+  } = x().antd, { PlusOutlined: C, ReloadOutlined: $, DeleteOutlined: w } = x().antdIcons || {}, { Text: z, Paragraph: j } = y, [R, W] = a([]), [G, J] = a(!0), [K, B] = a(!1), [P, F] = a([]), [X, k] = a(!1), E = r(async () => {
+    J(!0);
     try {
-      const U = await Pt(e);
-      N(U);
-    } catch (U) {
-      h.error(U.message || "加载技能失败"), N([]);
+      const L = await Ct(e);
+      W(L);
+    } catch (L) {
+      S.error(L.message || "加载技能失败"), W([]);
     } finally {
-      G(!1);
+      J(!1);
     }
   }, [e]);
   n(() => {
-    w();
-  }, [w]);
-  const E = async () => {
-    M(!0), T(!0);
+    E();
+  }, [E]);
+  const f = async () => {
+    B(!0), k(!0);
     try {
-      const U = await Rt(!0);
-      H(U);
-    } catch (U) {
-      h.error(U.message || "加载技能池失败");
+      const L = await Tt(!0);
+      F(L);
+    } catch (L) {
+      S.error(L.message || "加载技能池失败");
     } finally {
-      T(!1);
+      k(!1);
     }
-  }, $ = async (U) => {
-    let P = 0, p = 0;
-    for (const te of U)
+  }, T = async (L) => {
+    let _ = 0, m = 0;
+    for (const te of L)
       try {
-        await Vt(e, te), P++;
+        await Nt(e, te), _++;
       } catch {
-        p++;
+        m++;
       }
-    P > 0 ? (h.success(
-      `成功添加 ${P} 个技能${p > 0 ? `，${p} 个失败` : ""}`
-    ), w(), t()) : p > 0 && h.error("添加技能失败"), M(!1);
-  }, k = async (U, P) => {
+    _ > 0 ? (S.success(
+      `成功添加 ${_} 个技能${m > 0 ? `，${m} 个失败` : ""}`
+    ), E(), t()) : m > 0 && S.error("添加技能失败"), B(!1);
+  }, v = async (L, _) => {
     try {
-      P ? await Yn(e, U.name) : await Zn(e, U.name), h.success(P ? "已启用" : "已停用"), w(), t();
-    } catch (p) {
-      h.error(p.message || "操作失败");
+      _ ? await Nn(e, L.name) : await Fn(e, L.name), S.success(_ ? "已启用" : "已停用"), E(), t();
+    } catch (m) {
+      S.error(m.message || "操作失败");
     }
-  }, q = async (U) => {
+  }, H = async (L) => {
     try {
-      await Xt(e, U), h.success(`技能「${U}」已移除`), w(), t();
-    } catch (P) {
-      h.error(P.message || "移除技能失败");
+      await Dt(e, L), S.success(`技能「${L}」已移除`), E(), t();
+    } catch (_) {
+      S.error(_.message || "移除技能失败");
     }
   };
-  if (D)
-    return a.createElement(
+  if (G)
+    return l.createElement(
       "div",
       { style: { textAlign: "center", padding: 40 } },
-      a.createElement(f, { size: "large" })
+      l.createElement(b, { size: "large" })
     );
-  const Z = z.filter((U) => U.enabled !== !1);
-  return a.createElement(
-    "div",
-    null,
-    a.createElement(
-      "div",
-      {
-        style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: 12
-        }
-      },
-      a.createElement(
-        v,
-        { strong: !0 },
-        `技能列表 (${z.length}，已启用 ${Z.length})`
-      ),
-      a.createElement(
-        "div",
-        { style: { display: "flex", gap: 8 } },
-        a.createElement(
-          d,
-          {
-            size: "small",
-            icon: C ? a.createElement(C) : void 0,
-            onClick: () => {
-              ut(), w();
-            }
-          },
-          "刷新"
-        ),
-        a.createElement(
-          d,
-          {
-            type: "primary",
-            size: "small",
-            icon: x ? a.createElement(x) : void 0,
-            onClick: E,
-            style: je
-          },
-          "从技能池添加"
-        )
-      )
-    ),
-    z.length === 0 ? a.createElement(m, {
-      description: "该专家暂无技能",
-      image: m.PRESENTED_IMAGE_SIMPLE
-    }) : a.createElement(o, {
-      dataSource: z,
-      renderItem: (U) => a.createElement(
-        o.Item,
-        {
-          actions: [
-            a.createElement(s, {
-              key: "toggle",
-              size: "small",
-              checked: U.enabled !== !1,
-              onChange: (P) => k(U, P)
-            }),
-            a.createElement(
-              d,
-              {
-                key: "del",
-                type: "link",
-                size: "small",
-                danger: !0,
-                icon: b ? a.createElement(b) : void 0,
-                onClick: () => q(U.name)
-              },
-              "移除"
-            )
-          ]
-        },
-        a.createElement(
-          "div",
-          { style: { width: "100%" } },
-          a.createElement(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                marginBottom: 4
-              }
-            },
-            U.emoji ? a.createElement(
-              "span",
-              { style: { fontSize: 16 } },
-              U.emoji
-            ) : null,
-            a.createElement(v, { strong: !0 }, U.name),
-            U.version_text ? a.createElement(
-              c,
-              { style: { fontSize: 10 } },
-              `v${U.version_text}`
-            ) : null
-          ),
-          U.description ? a.createElement(
-            I,
-            {
-              type: "secondary",
-              style: { fontSize: 12, margin: 0 },
-              ellipsis: { rows: 2 }
-            },
-            U.description
-          ) : null
-        )
-      )
-    }),
-    a.createElement(ea, {
-      open: B,
-      onClose: () => M(!1),
-      poolSkills: A,
-      installedSkillNames: z.map((U) => U.name),
-      loading: K,
-      onInstall: $
-    })
-  );
-}
-function Sl({
-  agentId: e,
-  onRefresh: t,
-  isActive: a
-}) {
-  const l = _().React, { useState: n, useEffect: r, useCallback: o } = l, {
-    List: c,
-    Tag: s,
-    Button: d,
-    Empty: m,
-    Spin: f,
-    Modal: u,
-    Input: h,
-    Typography: x,
-    message: C
-  } = _().antd, { PlusOutlined: b, ReloadOutlined: v, DeleteOutlined: I } = _().antdIcons || {}, { Text: z, Paragraph: N } = x, { TextArea: D } = h, [G, B] = n([]), [M, A] = n(!0), [H, K] = n(!1), [T, w] = n(`{
-  "mcpServers": {
-    "example-client": {
-      "command": "npx",
-      "args": ["-y", "@example/mcp-server"],
-      "env": {}
-    }
-  }
-}`), [E, $] = n(!1), k = o(async () => {
-    A(!0);
-    try {
-      const P = await Yt(e);
-      B(P);
-    } catch (P) {
-      C.error(P.message || "加载 MCP 失败"), B([]);
-    } finally {
-      A(!1);
-    }
-  }, [e]);
-  r(() => {
-    k();
-  }, [k]), r(() => {
-    a && k();
-  }, [a, k]);
-  const q = async (P) => {
-    try {
-      await rl(e, P), C.success("已切换 MCP 状态"), k(), t();
-    } catch (p) {
-      C.error(p.message || "切换失败");
-    }
-  }, Z = async (P) => {
-    try {
-      await Qn(e, P), C.success(`MCP「${P}」已移除`), k(), t();
-    } catch (p) {
-      C.error(p.message || "移除 MCP 失败");
-    }
-  }, U = async () => {
-    $(!0);
-    try {
-      const P = JSON.parse(T), p = P.mcpServers || P, te = Object.entries(p);
-      if (te.length === 0) {
-        C.warning("未找到 MCP 客户端配置");
-        return;
-      }
-      for (const [W, S] of te) {
-        const J = S, le = J.url ? "streamable_http" : "stdio";
-        await Qt(e, {
-          client_key: W,
-          client: {
-            name: J.name || W,
-            description: J.description || "",
-            enabled: !0,
-            transport: le,
-            url: J.url || "",
-            command: J.command || "",
-            args: J.args || [],
-            env: J.env || {},
-            cwd: J.cwd || "",
-            headers: J.headers || {}
-          }
-        });
-      }
-      C.success("MCP 客户端已创建"), K(!1), k(), t();
-    } catch (P) {
-      P instanceof SyntaxError ? C.error("JSON 格式错误：" + P.message) : C.error(P.message || "创建 MCP 失败");
-    } finally {
-      $(!1);
-    }
-  };
-  return M ? l.createElement(
-    "div",
-    { style: { textAlign: "center", padding: 40 } },
-    l.createElement(f, { size: "large" })
-  ) : l.createElement(
+  const Z = R.filter((L) => L.enabled !== !1);
+  return l.createElement(
     "div",
     null,
     l.createElement(
@@ -1601,7 +1392,11 @@ function Sl({
           marginBottom: 12
         }
       },
-      l.createElement(z, { strong: !0 }, `MCP 客户端 (${G.length})`),
+      l.createElement(
+        z,
+        { strong: !0 },
+        `技能列表 (${R.length}，已启用 ${Z.length})`
+      ),
       l.createElement(
         "div",
         { style: { display: "flex", gap: 8 } },
@@ -1609,9 +1404,9 @@ function Sl({
           d,
           {
             size: "small",
-            icon: v ? l.createElement(v) : void 0,
+            icon: $ ? l.createElement($) : void 0,
             onClick: () => {
-              ut(), k();
+              st(), E();
             }
           },
           "刷新"
@@ -1621,32 +1416,29 @@ function Sl({
           {
             type: "primary",
             size: "small",
-            icon: b ? l.createElement(b) : void 0,
-            onClick: () => K(!0),
-            style: je
+            icon: C ? l.createElement(C) : void 0,
+            onClick: f,
+            style: Le
           },
-          "添加 MCP"
+          "从技能池添加"
         )
       )
     ),
-    G.length === 0 ? l.createElement(m, {
-      description: "该专家暂无 MCP 客户端",
-      image: m.PRESENTED_IMAGE_SIMPLE
-    }) : l.createElement(c, {
-      dataSource: G,
-      renderItem: (P) => l.createElement(
-        c.Item,
+    R.length === 0 ? l.createElement(u, {
+      description: "该专家暂无技能",
+      image: u.PRESENTED_IMAGE_SIMPLE
+    }) : l.createElement(o, {
+      dataSource: R,
+      renderItem: (L) => l.createElement(
+        o.Item,
         {
           actions: [
-            l.createElement(
-              d,
-              {
-                key: "toggle",
-                size: "small",
-                onClick: () => q(P.key)
-              },
-              P.enabled ? "停用" : "启用"
-            ),
+            l.createElement(i, {
+              key: "toggle",
+              size: "small",
+              checked: L.enabled !== !1,
+              onChange: (_) => v(L, _)
+            }),
             l.createElement(
               d,
               {
@@ -1654,8 +1446,8 @@ function Sl({
                 type: "link",
                 size: "small",
                 danger: !0,
-                icon: I ? l.createElement(I) : void 0,
-                onClick: () => Z(P.key)
+                icon: w ? l.createElement(w) : void 0,
+                onClick: () => H(L.name)
               },
               "移除"
             )
@@ -1674,183 +1466,391 @@ function Sl({
                 marginBottom: 4
               }
             },
-            l.createElement("span", { style: { fontSize: 14 } }, "🔌"),
-            l.createElement(z, { strong: !0 }, P.name || P.key),
-            l.createElement(
-              s,
-              {
-                color: P.enabled ? "green" : "default",
-                style: { fontSize: 10 }
-              },
-              P.enabled ? "启用" : "停用"
-            ),
-            l.createElement(
-              s,
-              { color: "purple", style: { fontSize: 10 } },
-              P.transport
-            )
+            L.emoji ? l.createElement(
+              "span",
+              { style: { fontSize: 16 } },
+              L.emoji
+            ) : null,
+            l.createElement(z, { strong: !0 }, L.name),
+            L.version_text ? l.createElement(
+              c,
+              { style: { fontSize: 10 } },
+              `v${L.version_text}`
+            ) : null
           ),
-          P.description ? l.createElement(
-            N,
+          L.description ? l.createElement(
+            j,
             {
               type: "secondary",
               style: { fontSize: 12, margin: 0 },
               ellipsis: { rows: 2 }
             },
-            P.description
+            L.description
+          ) : null
+        )
+      )
+    }),
+    l.createElement(Gn, {
+      open: K,
+      onClose: () => B(!1),
+      poolSkills: P,
+      installedSkillNames: R.map((L) => L.name),
+      loading: X,
+      onInstall: T
+    })
+  );
+}
+function sl({
+  agentId: e,
+  onRefresh: t,
+  isActive: l
+}) {
+  const a = x().React, { useState: n, useEffect: r, useCallback: o } = a, {
+    List: c,
+    Tag: i,
+    Button: d,
+    Empty: u,
+    Spin: b,
+    Modal: y,
+    Input: S,
+    Typography: C,
+    message: $
+  } = x().antd, { PlusOutlined: w, ReloadOutlined: z, DeleteOutlined: j } = x().antdIcons || {}, { Text: R, Paragraph: W } = C, { TextArea: G } = S, [J, K] = n([]), [B, P] = n(!0), [F, X] = n(!1), [k, E] = n(`{
+  "mcpServers": {
+    "example-client": {
+      "command": "npx",
+      "args": ["-y", "@example/mcp-server"],
+      "env": {}
+    }
+  }
+}`), [f, T] = n(!1), v = o(async () => {
+    P(!0);
+    try {
+      const _ = await Ft(e);
+      K(_);
+    } catch (_) {
+      $.error(_.message || "加载 MCP 失败"), K([]);
+    } finally {
+      P(!1);
+    }
+  }, [e]);
+  r(() => {
+    v();
+  }, [v]), r(() => {
+    l && v();
+  }, [l, v]);
+  const H = async (_) => {
+    try {
+      await Ha(e, _), $.success("已切换 MCP 状态"), v(), t();
+    } catch (m) {
+      $.error(m.message || "切换失败");
+    }
+  }, Z = async (_) => {
+    try {
+      await Dn(e, _), $.success(`MCP「${_}」已移除`), v(), t();
+    } catch (m) {
+      $.error(m.message || "移除 MCP 失败");
+    }
+  }, L = async () => {
+    T(!0);
+    try {
+      const _ = JSON.parse(k), m = _.mcpServers || _, te = Object.entries(m);
+      if (te.length === 0) {
+        $.warning("未找到 MCP 客户端配置");
+        return;
+      }
+      for (const [N, h] of te) {
+        const D = h, le = D.url ? "streamable_http" : "stdio";
+        await Gt(e, {
+          client_key: N,
+          client: {
+            name: D.name || N,
+            description: D.description || "",
+            enabled: !0,
+            transport: le,
+            url: D.url || "",
+            command: D.command || "",
+            args: D.args || [],
+            env: D.env || {},
+            cwd: D.cwd || "",
+            headers: D.headers || {}
+          }
+        });
+      }
+      $.success("MCP 客户端已创建"), X(!1), v(), t();
+    } catch (_) {
+      _ instanceof SyntaxError ? $.error("JSON 格式错误：" + _.message) : $.error(_.message || "创建 MCP 失败");
+    } finally {
+      T(!1);
+    }
+  };
+  return B ? a.createElement(
+    "div",
+    { style: { textAlign: "center", padding: 40 } },
+    a.createElement(b, { size: "large" })
+  ) : a.createElement(
+    "div",
+    null,
+    a.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 12
+        }
+      },
+      a.createElement(R, { strong: !0 }, `MCP 客户端 (${J.length})`),
+      a.createElement(
+        "div",
+        { style: { display: "flex", gap: 8 } },
+        a.createElement(
+          d,
+          {
+            size: "small",
+            icon: z ? a.createElement(z) : void 0,
+            onClick: () => {
+              st(), v();
+            }
+          },
+          "刷新"
+        ),
+        a.createElement(
+          d,
+          {
+            type: "primary",
+            size: "small",
+            icon: w ? a.createElement(w) : void 0,
+            onClick: () => X(!0),
+            style: Le
+          },
+          "添加 MCP"
+        )
+      )
+    ),
+    J.length === 0 ? a.createElement(u, {
+      description: "该专家暂无 MCP 客户端",
+      image: u.PRESENTED_IMAGE_SIMPLE
+    }) : a.createElement(c, {
+      dataSource: J,
+      renderItem: (_) => a.createElement(
+        c.Item,
+        {
+          actions: [
+            a.createElement(
+              d,
+              {
+                key: "toggle",
+                size: "small",
+                onClick: () => H(_.key)
+              },
+              _.enabled ? "停用" : "启用"
+            ),
+            a.createElement(
+              d,
+              {
+                key: "del",
+                type: "link",
+                size: "small",
+                danger: !0,
+                icon: j ? a.createElement(j) : void 0,
+                onClick: () => Z(_.key)
+              },
+              "移除"
+            )
+          ]
+        },
+        a.createElement(
+          "div",
+          { style: { width: "100%" } },
+          a.createElement(
+            "div",
+            {
+              style: {
+                display: "flex",
+                alignItems: "center",
+                gap: 8,
+                marginBottom: 4
+              }
+            },
+            a.createElement("span", { style: { fontSize: 14 } }, "🔌"),
+            a.createElement(R, { strong: !0 }, _.name || _.key),
+            a.createElement(
+              i,
+              {
+                color: _.enabled ? "green" : "default",
+                style: { fontSize: 10 }
+              },
+              _.enabled ? "启用" : "停用"
+            ),
+            a.createElement(
+              i,
+              { color: "purple", style: { fontSize: 10 } },
+              _.transport
+            )
+          ),
+          _.description ? a.createElement(
+            W,
+            {
+              type: "secondary",
+              style: { fontSize: 12, margin: 0 },
+              ellipsis: { rows: 2 }
+            },
+            _.description
           ) : null,
-          P.tools && P.tools.length > 0 ? l.createElement(
+          _.tools && _.tools.length > 0 ? a.createElement(
             "div",
             { style: { marginTop: 4, fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-            `提供 ${P.tools.length} 个工具`
+            `提供 ${_.tools.length} 个工具`
           ) : null
         )
       )
     }),
     // Create MCP modal
-    l.createElement(
-      u,
+    a.createElement(
+      y,
       {
-        open: H,
+        open: F,
         title: "添加 MCP 客户端 (JSON)",
-        onCancel: () => K(!1),
-        onOk: U,
-        confirmLoading: E,
+        onCancel: () => X(!1),
+        onOk: L,
+        confirmLoading: f,
         okText: "创建",
         width: 560
       },
-      l.createElement(
+      a.createElement(
         "div",
         { style: { marginBottom: 8, fontSize: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
         "粘贴 MCP 配置 JSON（支持 mcpServers 格式），将创建到当前专家工作区："
       ),
-      l.createElement(D, {
-        value: T,
-        onChange: (P) => w(P.target.value),
+      a.createElement(G, {
+        value: k,
+        onChange: (_) => E(_.target.value),
         rows: 12,
         style: { fontFamily: "monospace", fontSize: 12 }
       })
     )
   );
 }
-function xl({ agentId: e }) {
-  const t = _().React, { useState: a, useEffect: l, useCallback: n, useRef: r } = t, {
+function il({ agentId: e }) {
+  const t = x().React, { useState: l, useEffect: a, useCallback: n, useRef: r } = t, {
     Card: o,
     InputNumber: c,
-    Input: s,
+    Input: i,
     Select: d,
-    Switch: m,
-    Button: f,
-    Spin: u,
-    Space: h,
-    Typography: x,
-    Divider: C,
-    message: b
-  } = _().antd, { SaveOutlined: v } = _().antdIcons || {}, { Text: I } = x, [z, N] = a(!0), [D, G] = a(!1), B = r(null), [M, A] = a(60), [H, K] = a(""), [T, w] = a(!0), [E, $] = a(30), [k, q] = a("zh"), [Z, U] = a("UTC"), [P, p] = a(!0), [te, W] = a(100), [S, J] = a(!0), [le, X] = a(3), [ee, fe] = a(1), [R, re] = a(!0), [pe, oe] = a(3), [ae, Ee] = a(2), [he, ke] = a(60), [Ae, be] = a(1), [Q, we] = a(0), [ye, V] = a(1), [de, ge] = a(0), [F, y] = a(30), [me, j] = a(50), [g, ne] = a("light"), [ce, _e] = a("scroll"), [Ce, Oe] = a("remelight"), [Me, De] = a("AUTO"), Fe = n(async () => {
-    var Y, Ie, ze, Pe, He, We;
-    N(!0);
+    Switch: u,
+    Button: b,
+    Spin: y,
+    Space: S,
+    Typography: C,
+    Divider: $,
+    message: w
+  } = x().antd, { SaveOutlined: z } = x().antdIcons || {}, { Text: j } = C, [R, W] = l(!0), [G, J] = l(!1), K = r(null), [B, P] = l(60), [F, X] = l(""), [k, E] = l(!0), [f, T] = l(30), [v, H] = l("zh"), [Z, L] = l("UTC"), [_, m] = l(!0), [te, N] = l(100), [h, D] = l(!0), [le, V] = l(3), [ee, ge] = l(1), [I, re] = l(!0), [ue, oe] = l(3), [ae, ye] = l(2), [Ee, xe] = l(60), [Ae, ve] = l(1), [Q, be] = l(0), [fe, q] = l(1), [ce, pe] = l(0), [U, g] = l(30), [de, M] = l(50), [p, ne] = l("light"), [ie, Te] = l("scroll"), [ke, Oe] = l("remelight"), [Re, je] = l("AUTO"), Ue = n(async () => {
+    var Y, _e, Ie, Pe, De, Fe;
+    W(!0);
     try {
-      const [Te, pt, Ot] = await Promise.all([
-        ul(e),
-        gl(e).catch(() => "zh"),
-        yl().catch(() => "UTC")
+      const [Ce, it, _t] = await Promise.all([
+        Ya(e),
+        Za(e).catch(() => "zh"),
+        tl().catch(() => "UTC")
       ]);
-      B.current = Te, A(Te.shell_command_timeout ?? 60), K(Te.shell_command_executable ?? "");
-      const lt = Te.auto_title_config ?? { enabled: !0, timeout_seconds: 30 };
-      w(lt.enabled ?? !0), $(lt.timeout_seconds ?? 30), q(pt), U(Ot);
-      const qe = Te.loop ?? {};
-      p(((Y = qe.iteration) == null ? void 0 : Y.enabled) ?? !0), W(((Ie = qe.iteration) == null ? void 0 : Ie.max_iterations) ?? Te.max_iters ?? 100), J(((ze = qe.doom_loop) == null ? void 0 : ze.enabled) ?? !0), X(((Pe = qe.doom_loop) == null ? void 0 : Pe.window_size) ?? 3), fe(((He = qe.doom_loop) == null ? void 0 : He.similarity_threshold) ?? 1), re(Te.llm_retry_enabled ?? !0), oe(Te.llm_max_retries ?? 3), Ee(Te.llm_backoff_base ?? 2), ke(Te.llm_backoff_cap ?? 60), be(Te.llm_max_concurrent ?? 1), we(Te.llm_max_qpm ?? 0), V(Te.llm_rate_limit_pause ?? 1), ge(Te.llm_rate_limit_jitter ?? 0), y(Te.llm_acquire_timeout ?? 30), j(Te.history_max_length ?? 50), ne(Te.context_manager_backend ?? "light"), _e(((We = Te.light_context_config) == null ? void 0 : We.strategy) ?? "scroll"), Oe(Te.memory_manager_backend ?? "remelight"), De(Te.approval_level ?? "AUTO");
-    } catch (Te) {
-      b.error(Te.message || "加载运行配置失败");
+      K.current = Ce, P(Ce.shell_command_timeout ?? 60), X(Ce.shell_command_executable ?? "");
+      const et = Ce.auto_title_config ?? { enabled: !0, timeout_seconds: 30 };
+      E(et.enabled ?? !0), T(et.timeout_seconds ?? 30), H(it), L(_t);
+      const He = Ce.loop ?? {};
+      m(((Y = He.iteration) == null ? void 0 : Y.enabled) ?? !0), N(((_e = He.iteration) == null ? void 0 : _e.max_iterations) ?? Ce.max_iters ?? 100), D(((Ie = He.doom_loop) == null ? void 0 : Ie.enabled) ?? !0), V(((Pe = He.doom_loop) == null ? void 0 : Pe.window_size) ?? 3), ge(((De = He.doom_loop) == null ? void 0 : De.similarity_threshold) ?? 1), re(Ce.llm_retry_enabled ?? !0), oe(Ce.llm_max_retries ?? 3), ye(Ce.llm_backoff_base ?? 2), xe(Ce.llm_backoff_cap ?? 60), ve(Ce.llm_max_concurrent ?? 1), be(Ce.llm_max_qpm ?? 0), q(Ce.llm_rate_limit_pause ?? 1), pe(Ce.llm_rate_limit_jitter ?? 0), g(Ce.llm_acquire_timeout ?? 30), M(Ce.history_max_length ?? 50), ne(Ce.context_manager_backend ?? "light"), Te(((Fe = Ce.light_context_config) == null ? void 0 : Fe.strategy) ?? "scroll"), Oe(Ce.memory_manager_backend ?? "remelight"), je(Ce.approval_level ?? "AUTO");
+    } catch (Ce) {
+      w.error(Ce.message || "加载运行配置失败");
     } finally {
-      N(!1);
+      W(!1);
     }
   }, [e]);
-  l(() => {
-    Fe();
-  }, [Fe]);
-  const Le = async () => {
-    var Ie, ze;
-    const Y = B.current;
+  a(() => {
+    Ue();
+  }, [Ue]);
+  const Me = async () => {
+    var _e, Ie;
+    const Y = K.current;
     if (Y) {
-      G(!0);
+      J(!0);
       try {
         const Pe = {
           ...Y,
           max_iters: te,
           loop: {
             ...Y.loop ?? {},
-            iteration: { enabled: P, max_iterations: te },
+            iteration: { enabled: _, max_iterations: te },
             doom_loop: {
-              enabled: S,
+              enabled: h,
               window_size: le,
               similarity_threshold: ee,
-              stages: ((ze = (Ie = Y.loop) == null ? void 0 : Ie.doom_loop) == null ? void 0 : ze.stages) ?? []
+              stages: ((Ie = (_e = Y.loop) == null ? void 0 : _e.doom_loop) == null ? void 0 : Ie.stages) ?? []
             }
           },
-          shell_command_timeout: M,
-          shell_command_executable: H,
+          shell_command_timeout: B,
+          shell_command_executable: F,
           auto_title_config: {
-            enabled: T,
-            timeout_seconds: E
+            enabled: k,
+            timeout_seconds: f
           },
-          llm_retry_enabled: R,
-          llm_max_retries: pe,
+          llm_retry_enabled: I,
+          llm_max_retries: ue,
           llm_backoff_base: ae,
-          llm_backoff_cap: he,
+          llm_backoff_cap: Ee,
           llm_max_concurrent: Ae,
           llm_max_qpm: Q,
-          llm_rate_limit_pause: ye,
-          llm_rate_limit_jitter: de,
-          llm_acquire_timeout: F,
-          history_max_length: me,
-          context_manager_backend: g,
+          llm_rate_limit_pause: fe,
+          llm_rate_limit_jitter: ce,
+          llm_acquire_timeout: U,
+          history_max_length: de,
+          context_manager_backend: p,
           light_context_config: {
             ...Y.light_context_config ?? {},
-            strategy: ce
+            strategy: ie
           },
-          memory_manager_backend: Ce,
-          approval_level: Me
+          memory_manager_backend: ke,
+          approval_level: Re
         };
-        await pl(e, Pe), B.current = Pe, k && await fl(e, k).catch(() => {
-        }), Z && await El(Z).catch(() => {
-        }), b.success("运行配置已保存");
+        await Qa(e, Pe), K.current = Pe, v && await el(e, v).catch(() => {
+        }), Z && await nl(Z).catch(() => {
+        }), w.success("运行配置已保存");
       } catch (Pe) {
-        b.error(Pe.message || "保存运行配置失败");
+        w.error(Pe.message || "保存运行配置失败");
       } finally {
-        G(!1);
+        J(!1);
       }
     }
   };
-  if (z)
+  if (R)
     return t.createElement(
       "div",
       { style: { textAlign: "center", padding: 40 } },
-      t.createElement(u, { size: "large" })
+      t.createElement(y, { size: "large" })
     );
-  const Se = (Y, Ie, ze) => t.createElement(
+  const Se = (Y, _e, Ie) => t.createElement(
     "div",
-    { style: na },
-    t.createElement("div", { style: tt }, Y),
-    Ie,
-    ze ? t.createElement(
-      I,
-      { type: "secondary", style: la },
-      ze
+    { style: Wn },
+    t.createElement("div", { style: Ye }, Y),
+    _e,
+    Ie ? t.createElement(
+      j,
+      { type: "secondary", style: Kn },
+      Ie
     ) : null
-  ), Re = (Y, Ie, ze, Pe) => t.createElement(
+  ), $e = (Y, _e, Ie, Pe) => t.createElement(
     "div",
-    { style: aa },
+    { style: Jn },
     t.createElement(
       "div",
       null,
-      t.createElement("div", { style: tt }, Y),
-      Ie
+      t.createElement("div", { style: Ye }, Y),
+      _e
     ),
     t.createElement(
       "div",
       null,
-      t.createElement("div", { style: tt }, ze),
+      t.createElement("div", { style: Ye }, Ie),
       Pe
     )
   );
@@ -1860,30 +1860,30 @@ function xl({ agentId: e }) {
     // ── Section: 基础设置 ──
     t.createElement(
       "div",
-      { style: Ve },
+      { style: Je },
       "基础设置"
     ),
-    Re(
+    $e(
       "Shell 命令超时 (秒)",
       t.createElement(c, {
         min: 1,
-        value: M,
-        onChange: (Y) => A(Y ?? 60),
+        value: B,
+        onChange: (Y) => P(Y ?? 60),
         style: { width: "100%" }
       }),
       "Shell 可执行文件",
-      t.createElement(s, {
-        value: H,
-        onChange: (Y) => K(Y.target.value),
+      t.createElement(i, {
+        value: F,
+        onChange: (Y) => X(Y.target.value),
         placeholder: "留空使用系统默认",
         style: { width: "100%" }
       })
     ),
-    Re(
+    $e(
       "语言",
       t.createElement(d, {
-        value: k,
-        onChange: (Y) => q(Y),
+        value: v,
+        onChange: (Y) => H(Y),
         style: { width: "100%" },
         options: [
           { value: "zh", label: "中文" },
@@ -1895,12 +1895,12 @@ function xl({ agentId: e }) {
       "时区",
       t.createElement(d, {
         value: Z,
-        onChange: (Y) => U(Y),
+        onChange: (Y) => L(Y),
         style: { width: "100%" },
         showSearch: !0,
-        filterOption: (Y, Ie) => {
-          var ze;
-          return (((ze = Ie == null ? void 0 : Ie.label) == null ? void 0 : ze.toString()) || "").toLowerCase().includes(Y.toLowerCase());
+        filterOption: (Y, _e) => {
+          var Ie;
+          return (((Ie = _e == null ? void 0 : _e.label) == null ? void 0 : Ie.toString()) || "").toLowerCase().includes(Y.toLowerCase());
         },
         options: [
           "UTC",
@@ -1917,29 +1917,29 @@ function xl({ agentId: e }) {
         ].map((Y) => ({ value: Y, label: Y }))
       })
     ),
-    Re(
+    $e(
       "自动生成会话标题",
-      t.createElement(h, null, t.createElement(m, {
-        checked: T,
-        onChange: (Y) => w(Y)
+      t.createElement(S, null, t.createElement(u, {
+        checked: k,
+        onChange: (Y) => E(Y)
       })),
       "标题生成超时 (秒)",
       t.createElement(c, {
         min: 5,
-        value: E,
-        onChange: (Y) => $(Y ?? 30),
+        value: f,
+        onChange: (Y) => T(Y ?? 30),
         style: { width: "100%" },
-        disabled: !T
+        disabled: !k
       })
     ),
     // ── Section: 审批级别 ──
-    t.createElement(C, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: Ve }, "审批级别"),
+    t.createElement($, { style: { margin: "8px 0 16px" } }),
+    t.createElement("div", { style: Je }, "审批级别"),
     Se(
       "工具执行审批",
       t.createElement(d, {
-        value: Me,
-        onChange: (Y) => De(Y),
+        value: Re,
+        onChange: (Y) => je(Y),
         style: { width: "100%" },
         options: [
           { value: "STRICT", label: "严格 (STRICT) — 每次工具调用需审批" },
@@ -1950,41 +1950,41 @@ function xl({ agentId: e }) {
       })
     ),
     // ── Section: 迭代与循环 ──
-    t.createElement(C, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: Ve }, "迭代与循环"),
+    t.createElement($, { style: { margin: "8px 0 16px" } }),
+    t.createElement("div", { style: Je }, "迭代与循环"),
     Se(
       "启用迭代限制",
-      t.createElement(m, {
-        checked: P,
-        onChange: (Y) => p(Y)
+      t.createElement(u, {
+        checked: _,
+        onChange: (Y) => m(Y)
       }),
       "停止 Agent 前的最大循环轮次"
     ),
-    P ? Se(
+    _ ? Se(
       "最大迭代次数",
       t.createElement(c, {
         min: 1,
         max: 500,
         value: te,
-        onChange: (Y) => W(Y ?? 100),
+        onChange: (Y) => N(Y ?? 100),
         style: { width: "100%" }
       })
     ) : null,
     Se(
       "启用重复循环保护",
-      t.createElement(m, {
-        checked: S,
-        onChange: (Y) => J(Y)
+      t.createElement(u, {
+        checked: h,
+        onChange: (Y) => D(Y)
       }),
       "检测并阻止重复操作循环"
     ),
-    S ? Re(
+    h ? $e(
       "检测窗口大小",
       t.createElement(c, {
         min: 2,
         max: 20,
         value: le,
-        onChange: (Y) => X(Y ?? 3),
+        onChange: (Y) => V(Y ?? 3),
         style: { width: "100%" }
       }),
       "相似度阈值",
@@ -1993,37 +1993,37 @@ function xl({ agentId: e }) {
         max: 1,
         step: 0.05,
         value: ee,
-        onChange: (Y) => fe(Y ?? 1),
+        onChange: (Y) => ge(Y ?? 1),
         style: { width: "100%" }
       })
     ) : null,
     // ── Section: LLM 重试 ──
-    t.createElement(C, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: Ve }, "LLM 重试"),
+    t.createElement($, { style: { margin: "8px 0 16px" } }),
+    t.createElement("div", { style: Je }, "LLM 重试"),
     Se(
       "启用 LLM 重试",
-      t.createElement(m, {
-        checked: R,
+      t.createElement(u, {
+        checked: I,
         onChange: (Y) => re(Y)
       })
     ),
-    Re(
+    $e(
       "最大重试次数",
       t.createElement(c, {
         min: 1,
-        value: pe,
+        value: ue,
         onChange: (Y) => oe(Y ?? 3),
         style: { width: "100%" },
-        disabled: !R
+        disabled: !I
       }),
       "退避基数 (秒)",
       t.createElement(c, {
         min: 0.1,
         step: 0.1,
         value: ae,
-        onChange: (Y) => Ee(Y ?? 2),
+        onChange: (Y) => ye(Y ?? 2),
         style: { width: "100%" },
-        disabled: !R
+        disabled: !I
       })
     ),
     Se(
@@ -2031,21 +2031,21 @@ function xl({ agentId: e }) {
       t.createElement(c, {
         min: 0.5,
         step: 0.5,
-        value: he,
-        onChange: (Y) => ke(Y ?? 60),
+        value: Ee,
+        onChange: (Y) => xe(Y ?? 60),
         style: { width: 200 },
-        disabled: !R
+        disabled: !I
       })
     ),
     // ── Section: LLM 限流 ──
-    t.createElement(C, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: Ve }, "LLM 限流"),
-    Re(
+    t.createElement($, { style: { margin: "8px 0 16px" } }),
+    t.createElement("div", { style: Je }, "LLM 限流"),
+    $e(
       "最大并发数",
       t.createElement(c, {
         min: 1,
         value: Ae,
-        onChange: (Y) => be(Y ?? 1),
+        onChange: (Y) => ve(Y ?? 1),
         style: { width: "100%" }
       }),
       "最大 QPM (0=不限)",
@@ -2053,25 +2053,25 @@ function xl({ agentId: e }) {
         min: 0,
         step: 10,
         value: Q,
-        onChange: (Y) => we(Y ?? 0),
+        onChange: (Y) => be(Y ?? 0),
         style: { width: "100%" }
       })
     ),
-    Re(
+    $e(
       "限流暂停时间 (秒)",
       t.createElement(c, {
         min: 1,
         step: 0.5,
-        value: ye,
-        onChange: (Y) => V(Y ?? 1),
+        value: fe,
+        onChange: (Y) => q(Y ?? 1),
         style: { width: "100%" }
       }),
       "限流抖动 (秒)",
       t.createElement(c, {
         min: 0,
         step: 0.5,
-        value: de,
-        onChange: (Y) => ge(Y ?? 0),
+        value: ce,
+        onChange: (Y) => pe(Y ?? 0),
         style: { width: "100%" }
       })
     ),
@@ -2080,27 +2080,27 @@ function xl({ agentId: e }) {
       t.createElement(c, {
         min: 10,
         step: 10,
-        value: F,
-        onChange: (Y) => y(Y ?? 30),
+        value: U,
+        onChange: (Y) => g(Y ?? 30),
         style: { width: 200 }
       }),
       "应大于 限流暂停 + 抖动"
     ),
     // ── Section: 上下文与记忆 ──
-    t.createElement(C, { style: { margin: "8px 0 16px" } }),
-    t.createElement("div", { style: Ve }, "上下文与记忆"),
-    Re(
+    t.createElement($, { style: { margin: "8px 0 16px" } }),
+    t.createElement("div", { style: Je }, "上下文与记忆"),
+    $e(
       "上下文管理后端",
       t.createElement(d, {
-        value: g,
+        value: p,
         onChange: (Y) => ne(Y),
         style: { width: "100%" },
         options: [{ value: "light", label: "light" }]
       }),
       "上下文策略",
       t.createElement(d, {
-        value: ce,
-        onChange: (Y) => _e(Y),
+        value: ie,
+        onChange: (Y) => Te(Y),
         style: { width: "100%" },
         options: [
           { value: "scroll", label: "scroll (滚动窗口)" },
@@ -2108,10 +2108,10 @@ function xl({ agentId: e }) {
         ]
       })
     ),
-    Re(
+    $e(
       "记忆管理后端",
       t.createElement(d, {
-        value: Ce,
+        value: ke,
         onChange: (Y) => Oe(Y),
         style: { width: "100%" },
         options: [
@@ -2123,8 +2123,8 @@ function xl({ agentId: e }) {
       "历史消息最大长度",
       t.createElement(c, {
         min: 1,
-        value: me,
-        onChange: (Y) => j(Y ?? 50),
+        value: de,
+        onChange: (Y) => M(Y ?? 50),
         style: { width: "100%" }
       })
     ),
@@ -2133,105 +2133,105 @@ function xl({ agentId: e }) {
       "div",
       { style: { display: "flex", justifyContent: "flex-end", marginTop: 16 } },
       t.createElement(
-        f,
+        b,
         {
           type: "primary",
-          icon: v ? t.createElement(v) : void 0,
-          loading: D,
-          onClick: Le,
-          style: je
+          icon: z ? t.createElement(z) : void 0,
+          loading: G,
+          onClick: Me,
+          style: Le
         },
         "保存运行配置"
       )
     )
   );
 }
-function kl({
+function cl({
   expert: e,
   open: t,
-  onClose: a,
-  onRefresh: l
+  onClose: l,
+  onRefresh: a
 }) {
-  const n = _().React, { useState: r, useEffect: o, useCallback: c } = n, { Modal: s, Tabs: d, Spin: m, Typography: f } = _().antd, { SettingOutlined: u } = _().antdIcons || {}, { Text: h } = f, [x, C] = r([]), [b, v] = r(!1), [I, z] = r("heartbeat"), N = c(async () => {
+  const n = x().React, { useState: r, useEffect: o, useCallback: c } = n, { Modal: i, Tabs: d, Spin: u, Typography: b } = x().antd, { SettingOutlined: y } = x().antdIcons || {}, { Text: S } = b, [C, $] = r([]), [w, z] = r(!1), [j, R] = r("heartbeat"), W = c(async () => {
     if (e) {
-      v(!0);
+      z(!0);
       try {
-        const M = await hl(e.agent.id);
-        C(M);
+        const B = await al(e.agent.id);
+        $(B);
       } catch {
-        C([]);
+        $([]);
       } finally {
-        v(!1);
+        z(!1);
       }
     }
   }, [e]);
   if (o(() => {
-    t && e && N();
-  }, [t, e, N]), !e) return null;
-  const { agent: D } = e, G = () => {
-    N(), l();
-  }, B = [
+    t && e && W();
+  }, [t, e, W]), !e) return null;
+  const { agent: G } = e, J = () => {
+    W(), a();
+  }, K = [
     {
       key: "heartbeat",
       label: "心跳",
-      children: n.createElement(bl, {
-        agentId: D.id
+      children: n.createElement(rl, {
+        agentId: G.id
       })
     },
     {
       key: "files",
       label: "文件",
-      children: b ? n.createElement(
+      children: w ? n.createElement(
         "div",
         { style: { textAlign: "center", padding: 40 } },
-        n.createElement(m, { size: "large" })
-      ) : n.createElement(ta, {
-        agentId: D.id,
-        systemPromptFiles: x,
-        onRefresh: G
+        n.createElement(u, { size: "large" })
+      ) : n.createElement(Hn, {
+        agentId: G.id,
+        systemPromptFiles: C,
+        onRefresh: J
       })
     },
     {
       key: "skills",
-      label: `技能 (${e.skills.filter((M) => M.enabled !== !1).length})`,
-      children: n.createElement(wl, {
-        agentId: D.id,
-        onRefresh: l
+      label: `技能 (${e.skills.filter((B) => B.enabled !== !1).length})`,
+      children: n.createElement(ol, {
+        agentId: G.id,
+        onRefresh: a
       })
     },
     {
       key: "mcp",
       label: `MCP (${e.mcps.length})`,
-      children: n.createElement(Sl, {
-        agentId: D.id,
-        onRefresh: l,
-        isActive: I === "mcp"
+      children: n.createElement(sl, {
+        agentId: G.id,
+        onRefresh: a,
+        isActive: j === "mcp"
       })
     },
     {
       key: "running",
       label: "运行配置",
-      children: n.createElement(xl, {
-        agentId: D.id
+      children: n.createElement(il, {
+        agentId: G.id
       })
     }
   ];
   return n.createElement(
-    s,
+    i,
     {
       open: t,
       title: n.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        u ? n.createElement(u, { style: { fontSize: 18 } }) : null,
-        n.createElement("span", null, `配置 - ${D.name}`),
+        y ? n.createElement(y, { style: { fontSize: 18 } }) : null,
+        n.createElement("span", null, `配置 - ${G.name}`),
         n.createElement(
-          h,
+          S,
           { type: "secondary", style: { fontSize: 12, fontWeight: 400 } },
-          D.id
+          G.id
         )
       ),
-      onCancel: a,
+      onCancel: l,
       footer: null,
       width: 800,
       centered: !0,
@@ -2244,15 +2244,15 @@ function kl({
       }
     },
     n.createElement(d, {
-      items: B,
-      activeKey: I,
-      onChange: (M) => z(M),
+      items: K,
+      activeKey: j,
+      onChange: (B) => R(B),
       size: "small",
       tabBarStyle: { marginBottom: 16 }
     })
   );
 }
-const Cl = [
+const dl = [
   {
     id: "reservoir-engineer",
     name: "油藏工程师",
@@ -2493,21 +2493,21 @@ const Cl = [
     memory_seeds: [],
     approval_level: "AUTO"
   }
-], Tl = Cl;
-function An(e) {
-  return It(`/ugsci/avatar/${encodeURIComponent(e)}`);
+], ml = dl;
+function wn(e) {
+  return St(`/ugsci/avatar/${encodeURIComponent(e)}`);
 }
-function Pn(e) {
+function xn(e) {
   const t = e.map(encodeURIComponent).join(",");
-  return It(`/ugsci/avatar/team/${t}`);
+  return St(`/ugsci/avatar/team/${t}`);
 }
-function Ge({
+function Ne({
   name: e,
   size: t = 32,
-  borderRadius: a = "50%"
+  borderRadius: l = "50%"
 }) {
-  const l = _().React, [n, r] = l.useState(0), o = n === 0 ? An(e) : `${An(e)}?_r=${n}`;
-  return l.createElement("img", {
+  const a = x().React, [n, r] = a.useState(0), o = n === 0 ? wn(e) : `${wn(e)}?_r=${n}`;
+  return a.createElement("img", {
     src: o,
     alt: e,
     onError: () => {
@@ -2516,28 +2516,28 @@ function Ge({
     style: {
       width: t,
       height: t,
-      borderRadius: a,
+      borderRadius: l,
       objectFit: "cover",
       flexShrink: 0
     }
   });
 }
-function Zt({
+function Ht({
   members: e,
   size: t = 32,
-  borderRadius: a = "50%"
+  borderRadius: l = "50%"
 }) {
-  const l = _().React, [n, r] = l.useState(0);
+  const a = x().React, [n, r] = a.useState(0);
   if (!e || e.length === 0)
-    return l.createElement("span", {
+    return a.createElement("span", {
       style: {
         width: t,
         height: t,
         display: "inline-block"
       }
     });
-  const o = e.slice(0, 5), c = n === 0 ? Pn(o) : `${Pn(o)}?_r=${n}`;
-  return l.createElement("img", {
+  const o = e.slice(0, 5), c = n === 0 ? xn(o) : `${xn(o)}?_r=${n}`;
+  return a.createElement("img", {
     src: c,
     alt: "team",
     onError: () => {
@@ -2546,31 +2546,31 @@ function Zt({
     style: {
       width: t,
       height: t,
-      borderRadius: a,
+      borderRadius: l,
       objectFit: "cover",
       flexShrink: 0
     }
   });
 }
-async function Rn(e) {
-  var a;
-  const t = _();
+async function kn(e) {
+  var l;
+  const t = x();
   if (t.refreshAgents)
     try {
       await t.refreshAgents({ force: !0 });
-    } catch (l) {
-      console.warn("[ugsci] Failed to refresh newly created agent:", l);
+    } catch (a) {
+      console.warn("[ugsci] Failed to refresh newly created agent:", a);
       return;
     }
-  (a = t.setSelectedAgent) == null || a.call(t, e);
+  (l = t.setSelectedAgent) == null || l.call(t, e);
 }
-function _l({
+function ul({
   expert: e,
   onClick: t,
-  onSummon: a,
-  onConfigure: l
+  onSummon: l,
+  onConfigure: a
 }) {
-  const n = _().React, { Card: r, Tag: o, Badge: c, Typography: s, Spin: d, Button: m, Tooltip: f } = _().antd, { Text: u } = s, { ThunderboltOutlined: h, SettingOutlined: x } = _().antdIcons || {}, { agent: C, skills: b, mcps: v, loading: I } = e, z = C.enabled, N = b.filter((B) => B.enabled !== !1).map((B) => B.name), D = v.map((B) => B.name || B.key), G = C.active_model ? `${C.active_model.provider_id}/${C.active_model.model}` : null;
+  const n = x().React, { Card: r, Tag: o, Badge: c, Typography: i, Spin: d, Button: u, Tooltip: b } = x().antd, { Text: y } = i, { ThunderboltOutlined: S, SettingOutlined: C } = x().antdIcons || {}, { agent: $, skills: w, mcps: z, loading: j } = e, R = $.enabled, W = w.filter((K) => K.enabled !== !1).map((K) => K.name), G = z.map((K) => K.name || K.key), J = $.active_model ? `${$.active_model.provider_id}/${$.active_model.model}` : null;
   return n.createElement(
     r,
     {
@@ -2580,8 +2580,8 @@ function _l({
       style: {
         cursor: "pointer",
         transition: "all 0.2s ease",
-        borderColor: z ? void 0 : "var(--ant-color-border, #d9d9d9)",
-        opacity: z ? 1 : 0.7,
+        borderColor: R ? void 0 : "var(--ant-color-border, #d9d9d9)",
+        opacity: R ? 1 : 0.7,
         height: "100%",
         width: "100%",
         display: "flex",
@@ -2609,14 +2609,14 @@ function _l({
       n.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        n.createElement(Ge, { name: C.name, size: 36 }),
+        n.createElement(Ne, { name: $.name, size: 36 }),
         n.createElement(
           "div",
           null,
           n.createElement(
-            u,
+            y,
             { strong: !0, style: { fontSize: 15 } },
-            C.name
+            $.name
           ),
           n.createElement(
             "div",
@@ -2627,22 +2627,22 @@ function _l({
                 fontFamily: "monospace"
               }
             },
-            C.id
+            $.id
           )
         )
       ),
       n.createElement(c, {
-        status: z ? "success" : "default",
-        text: z ? "启用" : "停用"
+        status: R ? "success" : "default",
+        text: R ? "启用" : "停用"
       })
     ),
     // Description (rendered as markdown)
-    C.description ? n.createElement(
+    $.description ? n.createElement(
       "div",
       {
         style: {
           fontSize: 12,
-          color: "var(--ant-color-text-secondary, #595959)",
+          color: "#595959",
           marginBottom: 10,
           lineHeight: 1.5,
           display: "-webkit-box",
@@ -2653,49 +2653,49 @@ function _l({
           flex: "1 0 auto"
         }
       },
-      zt(C.description, n)
+      wt($.description, n)
     ) : n.createElement(
       "div",
       { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 10, minHeight: 54, flex: "1 0 auto" } },
       "暂无描述"
     ),
     // Model info
-    G ? n.createElement(
+    J ? n.createElement(
       "div",
       { style: { marginBottom: 8 } },
       n.createElement(
         o,
         { color: "geekblue", style: { fontSize: 11 } },
-        `🤖 ${G}`
+        `🤖 ${J}`
       )
     ) : null,
     // Skills
-    I ? n.createElement(d, { size: "small" }) : n.createElement(
+    j ? n.createElement(d, { size: "small" }) : n.createElement(
       "div",
       { style: { marginBottom: 6 } },
       n.createElement(
         "div",
         { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginBottom: 4 } },
-        `技能 (${N.length})`
+        `技能 (${W.length})`
       ),
-      n.createElement($n, {
-        items: N,
+      n.createElement(Sn, {
+        items: W,
         max: 4,
         color: "cyan",
         emptyText: "未配置技能"
       })
     ),
     // MCP
-    !I && D.length > 0 ? n.createElement(
+    !j && G.length > 0 ? n.createElement(
       "div",
       { style: { marginTop: "auto" } },
       n.createElement(
         "div",
         { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginBottom: 4 } },
-        `MCP (${D.length})`
+        `MCP (${G.length})`
       ),
-      n.createElement($n, {
-        items: D,
+      n.createElement(Sn, {
+        items: G,
         max: 3,
         color: "purple"
       })
@@ -2710,124 +2710,124 @@ function _l({
           alignItems: "center",
           marginTop: 10,
           paddingTop: 8,
-          borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)"
+          borderTop: "1px solid #f0f0f0"
         }
       },
       // Gear icon (bottom-left) — opens configuration modal
       n.createElement(
-        f,
+        b,
         { title: "配置专家", placement: "top" },
         n.createElement(
-          m,
+          u,
           {
             type: "text",
             size: "small",
-            icon: x ? n.createElement(x, {
+            icon: C ? n.createElement(C, {
               style: { fontSize: 16, color: "var(--ant-color-text-tertiary, #8c8c8c)" }
             }) : void 0,
-            onClick: (B) => {
-              B.stopPropagation(), l && l();
+            onClick: (K) => {
+              K.stopPropagation(), a && a();
             }
           }
         )
       ),
       // Summon button (bottom-right)
       n.createElement(
-        m,
+        u,
         {
           type: "primary",
           size: "small",
-          icon: h ? n.createElement(h) : void 0,
-          disabled: !z,
-          onClick: (B) => {
-            B.stopPropagation(), a && a();
+          icon: S ? n.createElement(S) : void 0,
+          disabled: !R,
+          onClick: (K) => {
+            K.stopPropagation(), l && l();
           },
-          style: je
+          style: Le
         },
         "召唤专家"
       )
     )
   );
 }
-function Il({
+function pl({
   expert: e,
   open: t,
-  onClose: a,
-  onRefresh: l
+  onClose: l,
+  onRefresh: a
 }) {
-  const n = _().React, {
+  const n = x().React, {
     Drawer: r,
     Descriptions: o,
     Tag: c,
-    Typography: s,
+    Typography: i,
     Space: d,
-    Button: m,
-    Empty: f,
-    Tabs: u,
-    List: h,
-    Spin: x,
-    Modal: C,
-    message: b
-  } = _().antd, { Text: v, Paragraph: I } = s, {
-    EditOutlined: z,
-    ThunderboltOutlined: N,
-    FileTextOutlined: D,
-    ToolOutlined: G,
-    PlusOutlined: B
-  } = _().antdIcons || {}, [M, A] = n.useState(!1), [H, K] = n.useState(
+    Button: u,
+    Empty: b,
+    Tabs: y,
+    List: S,
+    Spin: C,
+    Modal: $,
+    message: w
+  } = x().antd, { Text: z, Paragraph: j } = i, {
+    EditOutlined: R,
+    ThunderboltOutlined: W,
+    FileTextOutlined: G,
+    ToolOutlined: J,
+    PlusOutlined: K
+  } = x().antdIcons || {}, [B, P] = n.useState(!1), [F, X] = n.useState(
     []
-  ), [T, w] = n.useState(!1);
+  ), [k, E] = n.useState(!1);
   if (!e) return null;
-  const { agent: E, config: $, skills: k, mcps: q, loading: Z } = e, U = k.filter((R) => R.enabled !== !1), P = (R) => {
-    window.history.pushState({}, "", R), window.dispatchEvent(new PopStateEvent("popstate"));
-  }, p = n.createElement(
+  const { agent: f, config: T, skills: v, mcps: H, loading: Z } = e, L = v.filter((I) => I.enabled !== !1), _ = (I) => {
+    window.history.pushState({}, "", I), window.dispatchEvent(new PopStateEvent("popstate"));
+  }, m = n.createElement(
     "div",
     null,
     n.createElement(
       o,
       { column: 1, bordered: !0, size: "small" },
-      n.createElement(o.Item, { label: "专家名称" }, E.name),
+      n.createElement(o.Item, { label: "专家名称" }, f.name),
       n.createElement(
         o.Item,
         { label: "专家 ID" },
-        n.createElement("code", { style: { fontSize: 12 } }, E.id)
+        n.createElement("code", { style: { fontSize: 12 } }, f.id)
       ),
       n.createElement(
         o.Item,
         { label: "状态" },
         n.createElement(
           c,
-          { color: E.enabled ? "green" : "default" },
-          E.enabled ? "启用" : "停用"
+          { color: f.enabled ? "green" : "default" },
+          f.enabled ? "启用" : "停用"
         )
       ),
       n.createElement(
         o.Item,
         { label: "功能简介" },
-        E.description ? zt(E.description, n) : "暂无描述"
+        f.description ? wt(f.description, n) : "暂无描述"
       ),
       n.createElement(
         o.Item,
         { label: "使用模型" },
-        E.active_model ? `${E.active_model.provider_id} / ${E.active_model.model}` : "使用全局默认模型"
+        f.active_model ? `${f.active_model.provider_id} / ${f.active_model.model}` : "使用全局默认模型"
       ),
-      $ != null && $.workspace_dir ? n.createElement(
+      T != null && T.workspace_dir ? n.createElement(
         o.Item,
         { label: "工作区路径" },
         n.createElement(
           "code",
           { style: { fontSize: 11 } },
-          $.workspace_dir
+          T.workspace_dir
         )
       ) : null,
-      $ != null && $.approval_level ? n.createElement(
+      T != null && T.approval_level ? n.createElement(
         o.Item,
         { label: "审批级别" },
-        $.approval_level
+        T.approval_level
       ) : null
     ),
     // System prompt files
-    $ != null && $.system_prompt_files && $.system_prompt_files.length > 0 ? n.createElement(
+    T != null && T.system_prompt_files && T.system_prompt_files.length > 0 ? n.createElement(
       "div",
       { style: { marginTop: 16 } },
       n.createElement(
@@ -2840,64 +2840,64 @@ function Il({
             marginBottom: 8
           }
         },
-        D ? n.createElement(D, {
-          style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" }
+        G ? n.createElement(G, {
+          style: { fontSize: 14, color: "#1677ff" }
         }) : null,
-        n.createElement(v, { strong: !0 }, "系统提示词文件")
+        n.createElement(z, { strong: !0 }, "系统提示词文件")
       ),
       n.createElement(
         d,
         { wrap: !0 },
-        ...$.system_prompt_files.map(
-          (R, re) => n.createElement(
+        ...T.system_prompt_files.map(
+          (I, re) => n.createElement(
             c,
             {
               key: re,
-              icon: D ? n.createElement(D) : void 0,
+              icon: G ? n.createElement(G) : void 0,
               style: { fontSize: 12 }
             },
-            R
+            I
           )
         )
       )
     ) : null
   ), te = async () => {
-    A(!0), w(!0);
+    P(!0), E(!0);
     try {
-      const R = await Rt(!0);
-      K(R);
-    } catch (R) {
-      b.error(R.message || "加载技能池失败");
+      const I = await Tt(!0);
+      X(I);
+    } catch (I) {
+      w.error(I.message || "加载技能池失败");
     } finally {
-      w(!1);
+      E(!1);
     }
-  }, W = async (R) => {
-    let re = 0, pe = 0;
-    for (const oe of R)
+  }, N = async (I) => {
+    let re = 0, ue = 0;
+    for (const oe of I)
       try {
-        await Vt(E.id, oe), re++;
+        await Nt(f.id, oe), re++;
       } catch {
-        pe++;
+        ue++;
       }
-    re > 0 ? (b.success(
-      `成功添加 ${re} 个技能${pe > 0 ? `，${pe} 个失败` : ""}`
-    ), l()) : pe > 0 && b.error("添加技能失败"), A(!1);
-  }, S = async (R) => {
+    re > 0 ? (w.success(
+      `成功添加 ${re} 个技能${ue > 0 ? `，${ue} 个失败` : ""}`
+    ), a()) : ue > 0 && w.error("添加技能失败"), P(!1);
+  }, h = async (I) => {
     try {
-      await Xt(E.id, R), b.success(`技能「${R}」已移除`), l();
+      await Dt(f.id, I), w.success(`技能「${I}」已移除`), a();
     } catch (re) {
-      b.error(re.message || "移除技能失败");
+      w.error(re.message || "移除技能失败");
     }
-  }, J = async (R) => {
+  }, D = async (I) => {
     try {
-      await Qn(E.id, R), b.success(`MCP「${R}」已移除`), l();
+      await Dn(f.id, I), w.success(`MCP「${I}」已移除`), a();
     } catch (re) {
-      b.error(re.message || "移除 MCP 失败");
+      w.error(re.message || "移除 MCP 失败");
     }
   }, le = Z ? n.createElement(
     "div",
     { style: { textAlign: "center", padding: 40 } },
-    n.createElement(x, { size: "large" })
+    n.createElement(C, { size: "large" })
   ) : n.createElement(
     "div",
     null,
@@ -2912,37 +2912,37 @@ function Il({
         }
       },
       n.createElement(
-        v,
+        z,
         { strong: !0 },
-        `已启用技能 (${U.length})`
+        `已启用技能 (${L.length})`
       ),
       n.createElement(
-        m,
+        u,
         {
           type: "primary",
           size: "small",
-          icon: B ? n.createElement(B) : void 0,
+          icon: K ? n.createElement(K) : void 0,
           onClick: te
         },
         "从技能池添加"
       )
     ),
-    U.length === 0 ? n.createElement(f, {
+    L.length === 0 ? n.createElement(b, {
       description: "该专家暂无已启用的技能",
-      image: f.PRESENTED_IMAGE_SIMPLE
-    }) : n.createElement(h, {
-      dataSource: U,
-      renderItem: (R) => n.createElement(
-        h.Item,
+      image: b.PRESENTED_IMAGE_SIMPLE
+    }) : n.createElement(S, {
+      dataSource: L,
+      renderItem: (I) => n.createElement(
+        S.Item,
         {
           actions: [
             n.createElement(
-              m,
+              u,
               {
                 type: "link",
                 size: "small",
                 danger: !0,
-                onClick: () => S(R.name)
+                onClick: () => h(I.name)
               },
               "移除"
             )
@@ -2961,35 +2961,35 @@ function Il({
                 marginBottom: 4
               }
             },
-            R.emoji ? n.createElement(
+            I.emoji ? n.createElement(
               "span",
               { style: { fontSize: 16 } },
-              R.emoji
+              I.emoji
             ) : null,
-            n.createElement(v, { strong: !0 }, R.name),
-            R.version_text ? n.createElement(
+            n.createElement(z, { strong: !0 }, I.name),
+            I.version_text ? n.createElement(
               c,
               { style: { fontSize: 10 } },
-              `v${R.version_text}`
+              `v${I.version_text}`
             ) : null
           ),
-          R.description ? n.createElement(
-            I,
+          I.description ? n.createElement(
+            j,
             {
               type: "secondary",
               style: { fontSize: 12, margin: 0 },
               ellipsis: { rows: 2 }
             },
-            R.description
+            I.description
           ) : null,
-          R.tags && R.tags.length > 0 ? n.createElement(
+          I.tags && I.tags.length > 0 ? n.createElement(
             "div",
             { style: { marginTop: 4 } },
-            ...R.tags.map(
-              (re, pe) => n.createElement(
+            ...I.tags.map(
+              (re, ue) => n.createElement(
                 c,
                 {
-                  key: pe,
+                  key: ue,
                   color: "cyan",
                   style: { fontSize: 10 }
                 },
@@ -3001,18 +3001,18 @@ function Il({
       )
     }),
     // Skill Picker Modal (card-grid style, consistent with Skill Center)
-    n.createElement(ea, {
-      open: M,
-      onClose: () => A(!1),
-      poolSkills: H,
-      installedSkillNames: U.map((R) => R.name),
-      loading: T,
-      onInstall: W
+    n.createElement(Gn, {
+      open: B,
+      onClose: () => P(!1),
+      poolSkills: F,
+      installedSkillNames: L.map((I) => I.name),
+      loading: k,
+      onInstall: N
     })
-  ), X = Z ? n.createElement(
+  ), V = Z ? n.createElement(
     "div",
     { style: { textAlign: "center", padding: 40 } },
-    n.createElement(x, { size: "large" })
+    n.createElement(C, { size: "large" })
   ) : n.createElement(
     "div",
     null,
@@ -3027,39 +3027,39 @@ function Il({
         }
       },
       n.createElement(
-        v,
+        z,
         { strong: !0 },
-        `MCP 客户端 (${q.length})`
+        `MCP 客户端 (${H.length})`
       ),
       n.createElement(
-        m,
+        u,
         {
           type: "primary",
           size: "small",
-          icon: B ? n.createElement(B) : void 0,
+          icon: K ? n.createElement(K) : void 0,
           onClick: () => {
-            window.history.pushState({}, "", `/agents/${E.id}/mcp`), window.dispatchEvent(new PopStateEvent("popstate"));
+            window.history.pushState({}, "", `/agents/${f.id}/mcp`), window.dispatchEvent(new PopStateEvent("popstate"));
           }
         },
         "配置 MCP"
       )
     ),
-    q.length === 0 ? n.createElement(f, {
+    H.length === 0 ? n.createElement(b, {
       description: "该专家暂无关联的 MCP 客户端，点击「配置 MCP」添加",
-      image: f.PRESENTED_IMAGE_SIMPLE
-    }) : n.createElement(h, {
-      dataSource: q,
-      renderItem: (R) => n.createElement(
-        h.Item,
+      image: b.PRESENTED_IMAGE_SIMPLE
+    }) : n.createElement(S, {
+      dataSource: H,
+      renderItem: (I) => n.createElement(
+        S.Item,
         {
           actions: [
             n.createElement(
-              m,
+              u,
               {
                 type: "link",
                 size: "small",
                 danger: !0,
-                onClick: () => J(R.key)
+                onClick: () => D(I.key)
               },
               "移除"
             )
@@ -3084,34 +3084,34 @@ function Il({
               "🔌"
             ),
             n.createElement(
-              v,
+              z,
               { strong: !0 },
-              R.name || R.key
+              I.name || I.key
             ),
             n.createElement(
               c,
               {
-                color: R.enabled ? "green" : "default",
+                color: I.enabled ? "green" : "default",
                 style: { fontSize: 10 }
               },
-              R.enabled ? "启用" : "停用"
+              I.enabled ? "启用" : "停用"
             ),
             n.createElement(
               c,
               { color: "purple", style: { fontSize: 10 } },
-              R.transport
+              I.transport
             )
           ),
-          R.description ? n.createElement(
-            I,
+          I.description ? n.createElement(
+            j,
             {
               type: "secondary",
               style: { fontSize: 12, margin: 0 },
               ellipsis: { rows: 2 }
             },
-            R.description
+            I.description
           ) : null,
-          R.tools && R.tools.length > 0 ? n.createElement(
+          I.tools && I.tools.length > 0 ? n.createElement(
             "div",
             {
               style: {
@@ -3120,12 +3120,12 @@ function Il({
                 color: "var(--ant-color-text-tertiary, #8c8c8c)"
               }
             },
-            `提供 ${R.tools.length} 个工具`
+            `提供 ${I.tools.length} 个工具`
           ) : null
         )
       )
     })
-  ), ee = $ != null && $.tools ? n.createElement(
+  ), ee = T != null && T.tools ? n.createElement(
     "div",
     { style: { padding: 16 } },
     n.createElement(
@@ -3141,10 +3141,10 @@ function Il({
             marginBottom: 8
           }
         },
-        G ? n.createElement(G, {
-          style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" }
+        J ? n.createElement(J, {
+          style: { fontSize: 14, color: "#1677ff" }
         }) : null,
-        n.createElement(v, { strong: !0 }, "工具配置")
+        n.createElement(z, { strong: !0 }, "工具配置")
       ),
       n.createElement(
         "pre",
@@ -3158,37 +3158,37 @@ function Il({
             maxHeight: 300
           }
         },
-        JSON.stringify($.tools, null, 2)
+        JSON.stringify(T.tools, null, 2)
       )
     )
-  ) : n.createElement(f, {
+  ) : n.createElement(b, {
     description: "暂无工具配置",
-    image: f.PRESENTED_IMAGE_SIMPLE
-  }), fe = [
-    { key: "basic", label: "基本信息", children: p },
+    image: b.PRESENTED_IMAGE_SIMPLE
+  }), ge = [
+    { key: "basic", label: "基本信息", children: m },
     {
       key: "skills",
-      label: `技能 (${U.length})`,
+      label: `技能 (${L.length})`,
       children: le
     },
     {
       key: "prompts",
       label: "推荐提问",
-      children: n.createElement(vl, {
-        skills: U,
-        agentId: E.id
+      children: n.createElement(ll, {
+        skills: L,
+        agentId: f.id
       })
     },
     {
       key: "knowledge",
       label: "专家记忆",
-      children: n.createElement(ta, {
-        agentId: E.id,
-        systemPromptFiles: ($ == null ? void 0 : $.system_prompt_files) || [],
-        onRefresh: () => l()
+      children: n.createElement(Hn, {
+        agentId: f.id,
+        systemPromptFiles: (T == null ? void 0 : T.system_prompt_files) || [],
+        onRefresh: () => a()
       })
     },
-    { key: "mcp", label: `MCP (${q.length})`, children: X },
+    { key: "mcp", label: `MCP (${H.length})`, children: V },
     { key: "tools", label: "工具配置", children: ee }
   ];
   return n.createElement(
@@ -3197,146 +3197,146 @@ function Il({
       title: n.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        n.createElement(Ge, { name: E.name, size: 28 }),
-        n.createElement("span", null, E.name)
+        n.createElement(Ne, { name: f.name, size: 28 }),
+        n.createElement("span", null, f.name)
       ),
       open: t,
-      onClose: a,
+      onClose: l,
       width: 560,
       extra: n.createElement(
         d,
         null,
         n.createElement(
-          m,
+          u,
           {
             size: "small",
-            icon: z ? n.createElement(z) : void 0,
+            icon: R ? n.createElement(R) : void 0,
             onClick: () => {
-              a();
+              l();
               try {
-                const R = _();
-                R.setSelectedAgent && R.setSelectedAgent(E.id);
-              } catch (R) {
-                console.warn("[ugsci] Failed to set selected agent:", R);
+                const I = x();
+                I.setSelectedAgent && I.setSelectedAgent(f.id);
+              } catch (I) {
+                console.warn("[ugsci] Failed to set selected agent:", I);
               }
-              setTimeout(() => P("/agents"), 0);
+              setTimeout(() => _("/agents"), 0);
             }
           },
           "编辑专家"
         ),
         n.createElement(
-          m,
+          u,
           {
             type: "primary",
             size: "small",
-            icon: N ? n.createElement(N) : void 0,
+            icon: W ? n.createElement(W) : void 0,
             onClick: () => {
-              a();
+              l();
               try {
-                const R = _();
-                R.setSelectedAgent && R.setSelectedAgent(E.id);
-              } catch (R) {
-                console.warn("[ugsci] Failed to set selected agent:", R);
+                const I = x();
+                I.setSelectedAgent && I.setSelectedAgent(f.id);
+              } catch (I) {
+                console.warn("[ugsci] Failed to set selected agent:", I);
               }
-              setTimeout(() => P("/chat"), 0);
+              setTimeout(() => _("/chat"), 0);
             }
           },
           "开始对话"
         )
       )
     },
-    n.createElement(u, {
-      items: fe,
+    n.createElement(y, {
+      items: ge,
       defaultActiveKey: "basic"
     })
   );
 }
-function zl({
+function gl({
   open: e,
   onClose: t,
-  onCreated: a
+  onCreated: l
 }) {
-  const l = _().React, { useState: n } = l, {
+  const a = x().React, { useState: n } = a, {
     Modal: r,
     Card: o,
     Tag: c,
-    Input: s,
+    Input: i,
     Row: d,
-    Col: m,
-    Spin: f,
-    message: u,
-    Typography: h
-  } = _().antd, { Text: x } = h, { FileAddOutlined: C } = _().antdIcons || {}, [b, v] = n(!1), [I, z] = n(""), [N, D] = n(!1), G = async (A) => {
-    v(!0);
+    Col: u,
+    Spin: b,
+    message: y,
+    Typography: S
+  } = x().antd, { Text: C } = S, { FileAddOutlined: $ } = x().antdIcons || {}, [w, z] = n(!1), [j, R] = n(""), [W, G] = n(!1), J = async (P) => {
+    z(!0);
     try {
-      const H = await ie("/agents", {
+      const F = await se("/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          id: A.id || void 0,
-          name: A.name,
-          description: A.description,
-          skill_names: A.skillNames
+          id: P.id || void 0,
+          name: P.name,
+          description: P.description,
+          skill_names: P.skillNames
         })
-      }), K = A.systemPrompt.trim() || `# ${A.name}
+      }), X = P.systemPrompt.trim() || `# ${P.name}
 
-你是${A.name}。${A.description ? `
+你是${P.name}。${P.description ? `
 
-职责：${A.description}` : ""}
-`, w = (await Promise.allSettled([
-        Tt(H.id, "AGENTS.md", K),
-        ...A.mcpClients.map(
-          ({ clientKey: E, client: $ }) => Qt(H.id, {
-            client_key: E,
-            client: $
+职责：${P.description}` : ""}
+`, E = (await Promise.allSettled([
+        vt(F.id, "AGENTS.md", X),
+        ...P.mcpClients.map(
+          ({ clientKey: f, client: T }) => Gt(F.id, {
+            client_key: f,
+            client: T
           })
         )
       ])).filter(
-        (E) => E.status === "rejected"
+        (f) => f.status === "rejected"
       ).length;
-      w > 0 ? u.warning(
-        `专家「${A.name}」已创建，${w} 项初始配置失败，可在专家配置中重试`
-      ) : u.success(`专家「${A.name}」创建成功`), await Rn(H.id), D(!1), setTimeout(() => {
-        t(), a();
+      E > 0 ? y.warning(
+        `专家「${P.name}」已创建，${E} 项初始配置失败，可在专家配置中重试`
+      ) : y.success(`专家「${P.name}」创建成功`), await kn(F.id), G(!1), setTimeout(() => {
+        t(), l();
       }, 0);
-    } catch (H) {
-      u.error(H.message || "创建专家失败");
+    } catch (F) {
+      y.error(F.message || "创建专家失败");
     } finally {
-      v(!1);
+      z(!1);
     }
-  }, B = Tl.filter((A) => {
-    if (!I.trim()) return !0;
-    const H = I.toLowerCase();
-    return A.name.toLowerCase().includes(H) || A.description.toLowerCase().includes(H) || A.category.toLowerCase().includes(H);
-  }), M = async (A) => {
-    v(!0);
+  }, K = ml.filter((P) => {
+    if (!j.trim()) return !0;
+    const F = j.toLowerCase();
+    return P.name.toLowerCase().includes(F) || P.description.toLowerCase().includes(F) || P.category.toLowerCase().includes(F);
+  }), B = async (P) => {
+    z(!0);
     try {
-      const H = await ie("/agents", {
+      const F = await se("/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: A.name,
-          description: A.description,
-          skill_names: A.recommended_skills
+          name: P.name,
+          description: P.description,
+          skill_names: P.recommended_skills
         })
       });
-      await Tt(H.id, "AGENTS.md", A.system_prompt);
-      const K = await Kt(H.id);
-      K.approval_level = A.approval_level, await ie(`/agents/${encodeURIComponent(H.id)}`, {
+      await vt(F.id, "AGENTS.md", P.system_prompt);
+      const X = await Ut(F.id);
+      X.approval_level = P.approval_level, await se(`/agents/${encodeURIComponent(F.id)}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(K)
-      }), await Rn(H.id), u.success(`专家「${A.name}」创建成功`), t(), a();
-    } catch (H) {
-      u.error(H.message || "创建专家失败");
+        body: JSON.stringify(X)
+      }), await kn(F.id), y.success(`专家「${P.name}」创建成功`), t(), l();
+    } catch (F) {
+      y.error(F.message || "创建专家失败");
     } finally {
-      v(!1);
+      z(!1);
     }
   };
-  return l.createElement(
-    l.Fragment,
+  return a.createElement(
+    a.Fragment,
     null,
-    l.createElement(
+    a.createElement(
       r,
       {
         open: e,
@@ -3347,38 +3347,38 @@ function zl({
         maskClosable: !0,
         keyboard: !0
       },
-      l.createElement(
+      a.createElement(
         "div",
         { style: { marginBottom: 16 } },
-        l.createElement(s, {
+        a.createElement(i, {
           placeholder: "搜索模板名称或类别...",
-          value: I,
-          onChange: (A) => z(A.target.value),
+          value: j,
+          onChange: (P) => R(P.target.value),
           allowClear: !0
         })
       ),
-      b ? l.createElement(
+      w ? a.createElement(
         "div",
         { style: { textAlign: "center", padding: 60 } },
-        l.createElement(f, { size: "large" }),
-        l.createElement(
+        a.createElement(b, { size: "large" }),
+        a.createElement(
           "div",
           { style: { marginTop: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
           "正在创建专家..."
         )
-      ) : l.createElement(
+      ) : a.createElement(
         d,
         { gutter: [12, 12] },
         // ── Blank template card (always first) ──
-        I.trim() ? null : l.createElement(
-          m,
+        j.trim() ? null : a.createElement(
+          u,
           { xs: 24, sm: 12 },
-          l.createElement(
+          a.createElement(
             o,
             {
               hoverable: !0,
               size: "small",
-              onClick: () => D(!0),
+              onClick: () => G(!0),
               style: {
                 cursor: "pointer",
                 height: "100%",
@@ -3386,7 +3386,7 @@ function zl({
                 background: "var(--ant-color-fill-quaternary, #fafafa)"
               }
             },
-            l.createElement(
+            a.createElement(
               "div",
               {
                 style: {
@@ -3396,23 +3396,23 @@ function zl({
                   marginBottom: 8
                 }
               },
-              l.createElement(
+              a.createElement(
                 "span",
                 { style: { fontSize: 28, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-                C ? l.createElement(C) : "📝"
+                $ ? a.createElement($) : "📝"
               ),
-              l.createElement(
+              a.createElement(
                 "div",
                 { style: { flex: 1 } },
-                l.createElement(
-                  x,
+                a.createElement(
+                  C,
                   { strong: !0, style: { fontSize: 15 } },
                   "从空白模版开始创建"
                 ),
-                l.createElement(
+                a.createElement(
                   "div",
                   null,
-                  l.createElement(
+                  a.createElement(
                     c,
                     { color: "default", style: { fontSize: 10 } },
                     "空白"
@@ -3420,12 +3420,12 @@ function zl({
                 )
               )
             ),
-            l.createElement(
+            a.createElement(
               "div",
               {
                 style: {
                   fontSize: 12,
-                  color: "var(--ant-color-text-secondary, #595959)",
+                  color: "#595959",
                   lineHeight: 1.5
                 }
               },
@@ -3433,19 +3433,19 @@ function zl({
             )
           )
         ),
-        ...B.map(
-          (A) => l.createElement(
-            m,
-            { key: A.id, xs: 24, sm: 12 },
-            l.createElement(
+        ...K.map(
+          (P) => a.createElement(
+            u,
+            { key: P.id, xs: 24, sm: 12 },
+            a.createElement(
               o,
               {
                 hoverable: !0,
                 size: "small",
-                onClick: () => M(A),
+                onClick: () => B(P),
                 style: { cursor: "pointer", height: "100%" }
               },
-              l.createElement(
+              a.createElement(
                 "div",
                 {
                   style: {
@@ -3455,27 +3455,27 @@ function zl({
                     marginBottom: 8
                   }
                 },
-                l.createElement(Ge, {
-                  name: A.name,
+                a.createElement(Ne, {
+                  name: P.name,
                   size: 40
                 }),
-                l.createElement(
+                a.createElement(
                   "div",
                   { style: { flex: 1 } },
-                  l.createElement(
-                    x,
+                  a.createElement(
+                    C,
                     { strong: !0, style: { fontSize: 15 } },
-                    A.name
+                    P.name
                   ),
-                  l.createElement(
+                  a.createElement(
                     "div",
                     null,
-                    l.createElement(
+                    a.createElement(
                       c,
                       { color: "blue", style: { fontSize: 10 } },
-                      A.category
+                      P.category
                     ),
-                    A.approval_level === "MANUAL" ? l.createElement(
+                    P.approval_level === "MANUAL" ? a.createElement(
                       c,
                       { color: "orange", style: { fontSize: 10 } },
                       "需审批"
@@ -3483,16 +3483,16 @@ function zl({
                   )
                 )
               ),
-              l.createElement(
+              a.createElement(
                 "div",
                 {
                   style: {
                     fontSize: 12,
-                    color: "var(--ant-color-text-secondary, #595959)",
+                    color: "#595959",
                     lineHeight: 1.5
                   }
                 },
-                zt(A.description, l)
+                wt(P.description, a)
               )
             )
           )
@@ -3500,107 +3500,107 @@ function zl({
       )
     ),
     // ── Blank template creation modal (sibling, not nested inside Modal) ──
-    l.createElement(Al, {
-      open: N,
-      onCancel: () => D(!1),
-      onCreate: G
+    a.createElement(yl, {
+      open: W,
+      onCancel: () => G(!1),
+      onCreate: J
     })
   );
 }
-function it(e) {
+function lt(e) {
   return typeof e == "object" && e !== null && !Array.isArray(e);
 }
-function $l(e) {
+function fl(e) {
   const t = e.trim();
   if (!t) return [];
-  const a = JSON.parse(t);
-  if (!it(a))
+  const l = JSON.parse(t);
+  if (!lt(l))
     throw new Error("MCP 配置必须是 JSON 对象");
-  const l = a.mcpServers ?? a;
-  if (!it(l))
+  const a = l.mcpServers ?? l;
+  if (!lt(a))
     throw new Error("mcpServers 必须是 JSON 对象");
-  return Object.entries(l).map(([n, r]) => {
+  return Object.entries(a).map(([n, r]) => {
     const o = n.trim();
-    if (!o || !it(r))
+    if (!o || !lt(r))
       throw new Error(`MCP「${n || "未命名"}」配置无效`);
-    const c = typeof r.url == "string" ? r.url : "", s = typeof r.command == "string" ? r.command : "";
-    if (!c && !s)
+    const c = typeof r.url == "string" ? r.url : "", i = typeof r.command == "string" ? r.command : "";
+    if (!c && !i)
       throw new Error(`MCP「${o}」需要配置 url 或 command`);
-    const m = (typeof r.transport == "string" ? r.transport : typeof r.type == "string" ? r.type : "") === "sse" ? "sse" : c ? "streamable_http" : "stdio";
+    const u = (typeof r.transport == "string" ? r.transport : typeof r.type == "string" ? r.type : "") === "sse" ? "sse" : c ? "streamable_http" : "stdio";
     return {
       clientKey: o,
       client: {
         name: typeof r.name == "string" ? r.name : o,
         description: typeof r.description == "string" ? r.description : "",
         enabled: typeof r.enabled == "boolean" ? r.enabled : !0,
-        transport: m,
+        transport: u,
         url: c,
-        command: s,
+        command: i,
         args: Array.isArray(r.args) ? r.args : [],
-        env: it(r.env) ? r.env : {},
+        env: lt(r.env) ? r.env : {},
         cwd: typeof r.cwd == "string" ? r.cwd : "",
-        headers: it(r.headers) ? r.headers : {}
+        headers: lt(r.headers) ? r.headers : {}
       }
     };
   });
 }
-function Al({
+function yl({
   open: e,
   onCancel: t,
-  onCreate: a
+  onCreate: l
 }) {
-  const l = _().React, { useState: n, useEffect: r, useMemo: o } = l, {
+  const a = x().React, { useState: n, useEffect: r, useMemo: o } = a, {
     Modal: c,
-    Input: s,
+    Input: i,
     Select: d,
-    Button: m,
-    Row: f,
-    Col: u,
-    Spin: h,
-    Tag: x,
-    Typography: C,
-    message: b
-  } = _().antd, { CheckCircleOutlined: v } = _().antdIcons || {}, { Text: I } = C, [z, N] = n(""), [D, G] = n(""), [B, M] = n(""), [A, H] = n(""), [K, T] = n([]), [w, E] = n([]), [$, k] = n(!1), [q, Z] = n(""), [U, P] = n(!1);
+    Button: u,
+    Row: b,
+    Col: y,
+    Spin: S,
+    Tag: C,
+    Typography: $,
+    message: w
+  } = x().antd, { CheckCircleOutlined: z } = x().antdIcons || {}, { Text: j } = $, [R, W] = n(""), [G, J] = n(""), [K, B] = n(""), [P, F] = n(""), [X, k] = n([]), [E, f] = n([]), [T, v] = n(!1), [H, Z] = n(""), [L, _] = n(!1);
   r(() => {
-    e && (N(""), G(""), M(""), H(""), E([]), Z(""), P(!1), k(!0), Rt(!0).then(T).catch((X) => {
-      T([]), b.error(X.message || "加载技能池失败");
-    }).finally(() => k(!1)));
+    e && (W(""), J(""), B(""), F(""), f([]), Z(""), _(!1), v(!0), Tt(!0).then(k).catch((V) => {
+      k([]), w.error(V.message || "加载技能池失败");
+    }).finally(() => v(!1)));
   }, [e]);
-  const p = D.trim(), te = o(() => p ? p.length < 2 || p.length > 64 ? "ID 长度需为 2-64 个字符" : /^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$/.test(p) ? p === "default" ? "default 是系统保留 ID" : "" : "仅允许字母、数字、连字符和下划线，且不能以符号开头或结尾" : "", [p]), W = o(() => {
+  const m = G.trim(), te = o(() => m ? m.length < 2 || m.length > 64 ? "ID 长度需为 2-64 个字符" : /^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$/.test(m) ? m === "default" ? "default 是系统保留 ID" : "" : "仅允许字母、数字、连字符和下划线，且不能以符号开头或结尾" : "", [m]), N = o(() => {
     try {
-      return { clients: $l(q), error: "" };
-    } catch (X) {
-      return { clients: [], error: X.message || "MCP 配置无效" };
+      return { clients: fl(H), error: "" };
+    } catch (V) {
+      return { clients: [], error: V.message || "MCP 配置无效" };
     }
-  }, [q]), S = () => {
-    const X = z.trim();
-    if (!X) {
-      b.warning("请输入专家名称");
+  }, [H]), h = () => {
+    const V = R.trim();
+    if (!V) {
+      w.warning("请输入专家名称");
       return;
     }
     if (te) {
-      b.warning(te);
+      w.warning(te);
       return;
     }
-    if (W.error) {
-      b.warning(W.error);
+    if (N.error) {
+      w.warning(N.error);
       return;
     }
-    P(!0), Promise.resolve(
-      a({
-        id: p,
-        name: X,
-        description: B.trim(),
-        systemPrompt: A,
-        skillNames: w,
-        mcpClients: W.clients
+    _(!0), Promise.resolve(
+      l({
+        id: m,
+        name: V,
+        description: K.trim(),
+        systemPrompt: P,
+        skillNames: E,
+        mcpClients: N.clients
       })
-    ).finally(() => P(!1));
-  }, J = () => {
-    E(
-      K.filter((X) => X.source === "builtin").map((X) => X.name)
+    ).finally(() => _(!1));
+  }, D = () => {
+    f(
+      X.filter((V) => V.source === "builtin").map((V) => V.name)
     );
-  }, le = (X, ee) => l.createElement(
+  }, le = (V, ee) => a.createElement(
     "div",
     {
       style: {
@@ -3611,76 +3611,76 @@ function Al({
         marginBottom: 12
       }
     },
-    l.createElement(I, { strong: !0, style: { fontSize: 15 } }, X),
-    ee ? l.createElement(I, { type: "secondary", style: { fontSize: 12 } }, ee) : null
+    a.createElement(j, { strong: !0, style: { fontSize: 15 } }, V),
+    ee ? a.createElement(j, { type: "secondary", style: { fontSize: 12 } }, ee) : null
   );
-  return l.createElement(
+  return a.createElement(
     c,
     {
       open: e,
       title: "创建专家",
       onCancel: t,
-      onOk: S,
+      onOk: h,
       okText: "创建专家",
       cancelText: "取消",
-      okButtonProps: { loading: U },
+      okButtonProps: { loading: L },
       maskClosable: !0,
       keyboard: !0,
       width: 880,
       styles: { body: { maxHeight: "72vh", overflowY: "auto", paddingTop: 8 } }
     },
-    l.createElement(
+    a.createElement(
       "div",
       { style: { paddingBottom: 20 } },
       le("基本信息", "ID 留空时自动生成"),
-      l.createElement(
-        f,
+      a.createElement(
+        b,
         { gutter: [16, 12] },
-        l.createElement(
-          u,
+        a.createElement(
+          y,
           { xs: 24, md: 12 },
-          l.createElement(
+          a.createElement(
             "label",
             { style: { display: "block", fontSize: 13, marginBottom: 6 } },
             "专家名称",
-            l.createElement("span", { style: { color: "var(--ant-color-error, #ff4d4f)", marginLeft: 4 } }, "*")
+            a.createElement("span", { style: { color: "#ff4d4f", marginLeft: 4 } }, "*")
           ),
-          l.createElement(s, {
+          a.createElement(i, {
             placeholder: "例如：合同审查专家",
-            value: z,
-            onChange: (X) => N(X.target.value),
+            value: R,
+            onChange: (V) => W(V.target.value),
             maxLength: 50
           })
         ),
-        l.createElement(
-          u,
+        a.createElement(
+          y,
           { xs: 24, md: 12 },
-          l.createElement(
+          a.createElement(
             "label",
             { style: { display: "block", fontSize: 13, marginBottom: 6 } },
             "智能体 ID（可选）"
           ),
-          l.createElement(s, {
+          a.createElement(i, {
             placeholder: "例如：contract-reviewer",
-            value: D,
-            onChange: (X) => G(X.target.value),
+            value: G,
+            onChange: (V) => J(V.target.value),
             maxLength: 64,
             status: te ? "error" : void 0
           }),
-          te ? l.createElement("div", { style: { color: "var(--ant-color-error, #ff4d4f)", fontSize: 12, marginTop: 4 } }, te) : null
+          te ? a.createElement("div", { style: { color: "#ff4d4f", fontSize: 12, marginTop: 4 } }, te) : null
         ),
-        l.createElement(
-          u,
+        a.createElement(
+          y,
           { span: 24 },
-          l.createElement(
+          a.createElement(
             "label",
             { style: { display: "block", fontSize: 13, marginBottom: 6 } },
             "专家描述（可选）"
           ),
-          l.createElement(s.TextArea, {
+          a.createElement(i.TextArea, {
             placeholder: "简要描述该专家的职责和能力",
-            value: B,
-            onChange: (X) => M(X.target.value),
+            value: K,
+            onChange: (V) => B(V.target.value),
             rows: 2,
             maxLength: 200,
             showCount: !0
@@ -3688,66 +3688,66 @@ function Al({
         )
       )
     ),
-    l.createElement(
+    a.createElement(
       "div",
-      { style: { borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)", padding: "20px 0" } },
+      { style: { borderTop: "1px solid #f0f0f0", padding: "20px 0" } },
       le("角色指令", "保存为 AGENTS.md"),
-      l.createElement(s.TextArea, {
+      a.createElement(i.TextArea, {
         placeholder: "定义专家的角色、目标、工作方式和输出要求；留空时将根据名称与描述生成基础指令",
-        value: A,
-        onChange: (X) => H(X.target.value),
+        value: P,
+        onChange: (V) => F(V.target.value),
         rows: 6,
         style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }
       })
     ),
-    l.createElement(
+    a.createElement(
       "div",
-      { style: { borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)", paddingTop: 20 } },
+      { style: { borderTop: "1px solid #f0f0f0", paddingTop: 20 } },
       le("初始能力"),
-      l.createElement(
-        f,
+      a.createElement(
+        b,
         { gutter: [20, 16], align: "top" },
-        l.createElement(
-          u,
+        a.createElement(
+          y,
           { xs: 24, md: 12 },
-          l.createElement(
+          a.createElement(
             "div",
             { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
-            l.createElement(I, { strong: !0 }, "初始技能"),
-            l.createElement(
+            a.createElement(j, { strong: !0 }, "初始技能"),
+            a.createElement(
               "div",
               { style: { display: "flex", gap: 4 } },
-              l.createElement(m, { size: "small", onClick: J, disabled: $ }, "内置"),
-              l.createElement(m, { size: "small", onClick: () => E([]), disabled: w.length === 0 }, "清空")
+              a.createElement(u, { size: "small", onClick: D, disabled: T }, "内置"),
+              a.createElement(u, { size: "small", onClick: () => f([]), disabled: E.length === 0 }, "清空")
             )
           ),
-          $ ? l.createElement("div", { style: { textAlign: "center", padding: 32 } }, l.createElement(h, { size: "small" })) : l.createElement(d, {
+          T ? a.createElement("div", { style: { textAlign: "center", padding: 32 } }, a.createElement(S, { size: "small" })) : a.createElement(d, {
             mode: "multiple",
-            value: w,
-            onChange: E,
+            value: E,
+            onChange: f,
             placeholder: "搜索并选择技能",
             showSearch: !0,
             allowClear: !0,
             optionFilterProp: "label",
             maxTagCount: "responsive",
             style: { width: "100%" },
-            options: K.map((X) => ({
-              value: X.name,
-              label: X.name
+            options: X.map((V) => ({
+              value: V.name,
+              label: V.name
             })),
             notFoundContent: "暂无可用技能"
           }),
-          l.createElement(
+          a.createElement(
             "div",
             { style: { marginTop: 8, minHeight: 22 } },
-            w.length > 0 ? l.createElement(x, { color: "blue" }, `已选择 ${w.length} 个技能`) : l.createElement(I, { type: "secondary", style: { fontSize: 12 } }, "暂不添加技能")
+            E.length > 0 ? a.createElement(C, { color: "blue" }, `已选择 ${E.length} 个技能`) : a.createElement(j, { type: "secondary", style: { fontSize: 12 } }, "暂不添加技能")
           )
         ),
-        l.createElement(
-          u,
+        a.createElement(
+          y,
           { xs: 24, md: 12 },
-          l.createElement(I, { strong: !0, style: { display: "block", marginBottom: 8 } }, "初始 MCP"),
-          l.createElement(s.TextArea, {
+          a.createElement(j, { strong: !0, style: { display: "block", marginBottom: 8 } }, "初始 MCP"),
+          a.createElement(i.TextArea, {
             placeholder: `{
   "mcpServers": {
     "filesystem": {
@@ -3756,52 +3756,52 @@ function Al({
     }
   }
 }`,
-            value: q,
-            onChange: (X) => Z(X.target.value),
+            value: H,
+            onChange: (V) => Z(V.target.value),
             rows: 8,
-            status: W.error ? "error" : void 0,
+            status: N.error ? "error" : void 0,
             style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 }
           }),
-          l.createElement(
+          a.createElement(
             "div",
             { style: { marginTop: 8, minHeight: 22 } },
-            W.error ? l.createElement(I, { type: "danger", style: { fontSize: 12 } }, W.error) : W.clients.length > 0 ? l.createElement(
-              x,
+            N.error ? a.createElement(j, { type: "danger", style: { fontSize: 12 } }, N.error) : N.clients.length > 0 ? a.createElement(
+              C,
               {
                 color: "green",
-                icon: v ? l.createElement(v) : void 0
+                icon: z ? a.createElement(z) : void 0
               },
-              `已识别 ${W.clients.length} 个 MCP`
-            ) : l.createElement(I, { type: "secondary", style: { fontSize: 12 } }, "暂不添加 MCP")
+              `已识别 ${N.clients.length} 个 MCP`
+            ) : a.createElement(j, { type: "secondary", style: { fontSize: 12 } }, "暂不添加 MCP")
           )
         )
       )
     )
   );
 }
-const ra = "ugsci_custom_teams";
-function Pl(e) {
+const qn = "ugsci_custom_teams";
+function El(e) {
   if (!e || typeof e != "object") return !1;
   const t = e;
   return typeof t.id == "string" && typeof t.name == "string" && typeof t.taskTemplate == "string" && typeof t.orchestrationPrompt == "string" && Array.isArray(t.members);
 }
-function ct() {
+function rt() {
   try {
     const e = JSON.parse(
-      localStorage.getItem(ra) || "[]"
+      localStorage.getItem(qn) || "[]"
     );
-    return Array.isArray(e) ? e.filter(Pl) : [];
+    return Array.isArray(e) ? e.filter(El) : [];
   } catch {
     return [];
   }
 }
-function en(e) {
+function Wt(e) {
   try {
-    localStorage.setItem(ra, JSON.stringify(e));
+    localStorage.setItem(qn, JSON.stringify(e));
   } catch {
   }
 }
-function Rl(e) {
+function hl(e) {
   return {
     id: e.id,
     name: e.name,
@@ -3819,7 +3819,7 @@ function Rl(e) {
     successCriteria: e.successCriteria || ""
   };
 }
-function Ol(e) {
+function vl(e) {
   return {
     id: e.team_id,
     name: e.name,
@@ -3840,86 +3840,86 @@ function Ol(e) {
     custom: !0
   };
 }
-async function Gt(e = !0) {
-  const t = await Je("/ugsci/team/custom");
+async function Rt(e = !0) {
+  const t = await Ge("/ugsci/team/custom");
   if (!t.ok) {
     const n = await t.text().catch(() => "");
     throw new Error(n || `HTTP ${t.status}`);
   }
-  const l = (await t.json()).map(Ol);
-  return e && en(l), l;
+  const a = (await t.json()).map(vl);
+  return e && Wt(a), a;
 }
-async function oa(e) {
-  const t = await Je("/ugsci/team/custom", {
+async function Xn(e) {
+  const t = await Ge("/ugsci/team/custom", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(Rl(e))
+    body: JSON.stringify(hl(e))
   });
   if (!t.ok) {
-    const l = await t.text().catch(() => "");
-    throw new Error(l || `HTTP ${t.status}`);
+    const a = await t.text().catch(() => "");
+    throw new Error(a || `HTTP ${t.status}`);
   }
-  const a = await t.json();
-  return { ...e, id: a.team_id };
+  const l = await t.json();
+  return { ...e, id: l.team_id };
 }
-async function Ml(e) {
-  const t = await Je(
+async function bl(e) {
+  const t = await Ge(
     `/ugsci/team/custom/${encodeURIComponent(e)}`,
     { method: "DELETE" }
   );
   if (!t.ok && t.status !== 404) {
-    const a = await t.text().catch(() => "");
-    throw new Error(a || `HTTP ${t.status}`);
+    const l = await t.text().catch(() => "");
+    throw new Error(l || `HTTP ${t.status}`);
   }
 }
-async function Ll() {
-  const e = ct();
+async function Sl() {
+  const e = rt();
   if (e.length === 0) return;
-  const t = await Gt(!1), a = new Set(t.map((l) => l.id));
+  const t = await Rt(!1), l = new Set(t.map((a) => a.id));
   await Promise.all(
-    e.filter((l) => !a.has(l.id)).map((l) => oa(l))
+    e.filter((a) => !l.has(a.id)).map((a) => Xn(a))
   );
 }
-async function Bl(e) {
+async function wl(e) {
   var n, r;
   const t = (n = e.body) == null ? void 0 : n.getReader();
   if (!t) return;
-  const a = new TextDecoder();
-  let l = "";
+  const l = new TextDecoder();
+  let a = "";
   try {
     for (; ; ) {
       const { done: o, value: c } = await t.read();
       if (o) break;
-      l += a.decode(c, { stream: !0 });
-      let s;
-      for (; (s = l.indexOf(`
+      a += l.decode(c, { stream: !0 });
+      let i;
+      for (; (i = a.indexOf(`
 
 `)) >= 0; ) {
-        const d = l.slice(0, s);
-        l = l.slice(s + 2);
-        for (const m of d.split(`
+        const d = a.slice(0, i);
+        a = a.slice(i + 2);
+        for (const u of d.split(`
 `)) {
-          if (!m.startsWith("data: ")) continue;
-          const f = m.slice(6);
-          let u;
+          if (!u.startsWith("data: ")) continue;
+          const b = u.slice(6);
+          let y;
           try {
-            u = JSON.parse(f);
+            y = JSON.parse(b);
           } catch {
             continue;
           }
-          if (u.error) {
-            const h = u.error, x = typeof h == "string" ? h : (h == null ? void 0 : h.message) || "工作流启动失败";
-            throw new Error(x);
+          if (y.error) {
+            const S = y.error, C = typeof S == "string" ? S : (S == null ? void 0 : S.message) || "工作流启动失败";
+            throw new Error(C);
           }
-          if (u.object === "response" || u.type === "response") {
-            const h = u.status;
-            if (h === "failed" || h === "error") {
-              const x = ((r = u.error) == null ? void 0 : r.message) || "工作流启动失败";
-              throw new Error(x);
+          if (y.object === "response" || y.type === "response") {
+            const S = y.status;
+            if (S === "failed" || S === "error") {
+              const C = ((r = y.error) == null ? void 0 : r.message) || "工作流启动失败";
+              throw new Error(C);
             }
             return;
           }
-          if (u.object === "content" || u.type === "message")
+          if (y.object === "content" || y.type === "message")
             return;
         }
       }
@@ -3928,27 +3928,27 @@ async function Bl(e) {
     t.releaseLock();
   }
 }
-async function jl(e, t, a) {
-  const l = `console:default:team-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n = await Je("/chats", {
+async function xl(e, t, l) {
+  const a = `console:default:team-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, n = await Ge("/chats", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "X-Agent-Id": e
     },
     body: JSON.stringify({
-      session_id: l,
+      session_id: a,
       user_id: "default",
       channel: "console",
-      name: a ? `团队：${a}` : "团队任务"
+      name: l ? `团队：${l}` : "团队任务"
     })
   });
   if (!n.ok) {
-    const s = await n.text().catch(() => "");
+    const i = await n.text().catch(() => "");
     throw new Error(
-      s || `创建会话失败 (HTTP ${n.status})`
+      i || `创建会话失败 (HTTP ${n.status})`
     );
   }
-  const o = (await n.json()).id, c = await Je("/console/chat", {
+  const o = (await n.json()).id, c = await Ge("/console/chat", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -3957,7 +3957,7 @@ async function jl(e, t, a) {
     body: JSON.stringify({
       channel: "console",
       user_id: "default",
-      session_id: l,
+      session_id: a,
       stream: !0,
       input: [
         {
@@ -3968,183 +3968,183 @@ async function jl(e, t, a) {
     })
   });
   if (!c.ok) {
-    const s = await c.text().catch(() => "");
-    throw new Error(s || `HTTP ${c.status}`);
+    const i = await c.text().catch(() => "");
+    throw new Error(i || `HTTP ${c.status}`);
   }
-  return await Bl(c), o;
+  return await wl(c), o;
 }
-function sa(e, t) {
+function Vn(e, t) {
   var n;
-  const a = t.replace(/\s+/g, ""), l = e.find(
-    (r) => r.name === t || r.name.replace(/\s+/g, "") === a
+  const l = t.replace(/\s+/g, ""), a = e.find(
+    (r) => r.name === t || r.name.replace(/\s+/g, "") === l
   );
-  return l ? l.id : ((n = e.find(
-    (r) => r.name.includes(t) || t.includes(r.name) || r.name.replace(/\s+/g, "").includes(a)
+  return a ? a.id : ((n = e.find(
+    (r) => r.name.includes(t) || t.includes(r.name) || r.name.replace(/\s+/g, "").includes(l)
   )) == null ? void 0 : n.id) || null;
 }
-function ia() {
+function Yn() {
   var t;
   const e = (t = window.QwenPaw) == null ? void 0 : t.host;
   if (!e) throw new Error("[ugsci] QwenPaw.host not available");
   return e;
 }
-async function tn(e, t, a) {
+async function Jt(e, t, l) {
   try {
-    const l = await Je(e, {
+    const a = await Ge(e, {
       headers: t ? { "X-Agent-Id": t } : void 0,
-      signal: a
+      signal: l
     });
-    return l.ok ? await l.json() : null;
+    return a.ok ? await a.json() : null;
   } catch {
     return null;
   }
 }
-function Ul(e, t) {
-  return tn("/ugsci/team/state", e, t);
+function kl(e, t) {
+  return Jt("/ugsci/team/state", e, t);
 }
-async function Nl(e, t) {
-  const a = await Je("/ugsci/team/runs", {
+async function Cl(e, t) {
+  const l = await Ge("/ugsci/team/runs", {
     headers: { "X-Agent-Id": e },
     signal: t
   });
-  if (!a.ok)
-    throw new Error(`Failed to load team runs: ${a.status}`);
-  return await a.json();
+  if (!l.ok)
+    throw new Error(`Failed to load team runs: ${l.status}`);
+  return await l.json();
 }
-function On({ activeOnly: e = !1 }) {
-  const t = ia(), a = t.React, { useCallback: l, useEffect: n, useRef: r, useState: o } = a, { Alert: c, Button: s, Card: d, Empty: m, Spin: f, Tag: u, Typography: h } = t.antd, { Text: x, Paragraph: C } = h, b = t.useSelectedAgent ? t.useSelectedAgent() : { id: "default" }, v = (b == null ? void 0 : b.id) || "default", [I, z] = o([]), [N, D] = o(!0), [G, B] = o(!1), M = r(null), A = r(0), H = l(async () => {
-    var E;
-    (E = M.current) == null || E.abort();
-    const T = new AbortController();
-    M.current = T;
-    const w = ++A.current;
-    D(!0);
+function Cn({ activeOnly: e = !1 }) {
+  const t = Yn(), l = t.React, { useCallback: a, useEffect: n, useRef: r, useState: o } = l, { Alert: c, Button: i, Card: d, Empty: u, Spin: b, Tag: y, Typography: S } = t.antd, { Text: C, Paragraph: $ } = S, w = t.useSelectedAgent ? t.useSelectedAgent() : { id: "default" }, z = (w == null ? void 0 : w.id) || "default", [j, R] = o([]), [W, G] = o(!0), [J, K] = o(!1), B = r(null), P = r(0), F = a(async () => {
+    var f;
+    (f = B.current) == null || f.abort();
+    const k = new AbortController();
+    B.current = k;
+    const E = ++P.current;
+    G(!0);
     try {
-      const $ = await Nl(v, T.signal);
-      if (T.signal.aborted || w !== A.current) return;
-      z($), B(!1);
+      const T = await Cl(z, k.signal);
+      if (k.signal.aborted || E !== P.current) return;
+      R(T), K(!1);
     } catch {
-      if (T.signal.aborted || w !== A.current) return;
-      B(!0);
+      if (k.signal.aborted || E !== P.current) return;
+      K(!0);
     } finally {
-      !T.signal.aborted && w === A.current && D(!1);
+      !k.signal.aborted && E === P.current && G(!1);
     }
-  }, [v]);
-  if (n(() => (H(), () => {
-    var T;
-    (T = M.current) == null || T.abort(), A.current += 1;
-  }), [H]), N) return a.createElement(f);
-  if (G)
-    return a.createElement(c, {
+  }, [z]);
+  if (n(() => (F(), () => {
+    var k;
+    (k = B.current) == null || k.abort(), P.current += 1;
+  }), [F]), W) return l.createElement(b);
+  if (J)
+    return l.createElement(c, {
       type: "warning",
       message: "讨论运行记录加载失败",
-      action: a.createElement(s, { size: "small", onClick: () => void H() }, "重试")
+      action: l.createElement(i, { size: "small", onClick: () => void F() }, "重试")
     });
-  const K = I.filter(
-    (T) => e ? T.status === "active" : T.status !== "active"
+  const X = j.filter(
+    (k) => e ? k.status === "active" : k.status !== "active"
   );
-  return K.length === 0 ? a.createElement(m, {
+  return X.length === 0 ? l.createElement(u, {
     description: e ? "暂无进行中的专家团讨论" : "暂无历史讨论"
-  }) : a.createElement(
+  }) : l.createElement(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: 8 } },
-    ...K.map(
-      (T) => a.createElement(
+    ...X.map(
+      (k) => l.createElement(
         d,
-        { key: T.instance_id, size: "small" },
-        a.createElement(
+        { key: k.instance_id, size: "small" },
+        l.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8 } },
-          a.createElement(x, { strong: !0 }, T.team_name || T.team_id),
-          a.createElement(u, { color: T.status === "completed" ? "green" : T.status === "terminated" ? "orange" : "blue" }, T.status),
-          a.createElement(u, null, T.current_phase),
-          a.createElement(x, { type: "secondary" }, `迭代 ${T.iteration}`)
+          l.createElement(C, { strong: !0 }, k.team_name || k.team_id),
+          l.createElement(y, { color: k.status === "completed" ? "green" : k.status === "terminated" ? "orange" : "blue" }, k.status),
+          l.createElement(y, null, k.current_phase),
+          l.createElement(C, { type: "secondary" }, `迭代 ${k.iteration}`)
         ),
-        a.createElement(C, { ellipsis: { rows: 2 }, style: { margin: "8px 0 0" } }, T.task || "暂无任务描述")
+        l.createElement($, { ellipsis: { rows: 2 }, style: { margin: "8px 0 0" } }, k.task || "暂无任务描述")
       )
     )
   );
 }
-async function Dl() {
-  const e = await tn(
+async function Tl() {
+  const e = await Jt(
     "/ugsci/team/preset-teams"
   );
   return (e == null ? void 0 : e.teams) ?? null;
 }
-async function Fl() {
-  const e = await tn(
+async function _l() {
+  const e = await Jt(
     "/ugsci/team/roles"
   );
   return (e == null ? void 0 : e.roles) ?? null;
 }
-const Gl = {
+const Il = {
   plan: { label: "规划", color: "#1677ff", icon: "📋" },
   dispatch: { label: "分派", color: "#13c2c2", icon: "🚀" },
   verify: { label: "验证", color: "#fa8c16", icon: "🔍" },
   synthesize: { label: "综合", color: "#722ed1", icon: "📊" },
   completed: { label: "完成", color: "#52c41a", icon: "✅" }
-}, Mn = [
+}, Tn = [
   "plan",
   "dispatch",
   "verify",
   "synthesize",
   "completed"
-], Hl = 3;
-function Wl() {
-  const e = ia(), t = e.React, { useState: a, useEffect: l, useCallback: n, useRef: r } = t, { Card: o, Tag: c, Typography: s, Button: d, Steps: m, Empty: f, Alert: u } = e.antd, { ReloadOutlined: h } = e.antdIcons || {}, { Text: x, Paragraph: C } = s, b = e.useSelectedAgent ? e.useSelectedAgent() : { id: "default" }, v = (b == null ? void 0 : b.id) || "default", [I, z] = a(null), [N, D] = a(!1), G = r(null), B = r(0), M = r(0), A = r(null), H = n(
-    async (p) => {
-      var J;
-      (J = A.current) == null || J.abort();
+], zl = 3;
+function Al() {
+  const e = Yn(), t = e.React, { useState: l, useEffect: a, useCallback: n, useRef: r } = t, { Card: o, Tag: c, Typography: i, Button: d, Steps: u, Empty: b, Alert: y } = e.antd, { ReloadOutlined: S } = e.antdIcons || {}, { Text: C, Paragraph: $ } = i, w = e.useSelectedAgent ? e.useSelectedAgent() : { id: "default" }, z = (w == null ? void 0 : w.id) || "default", [j, R] = l(null), [W, G] = l(!1), J = r(null), K = r(0), B = r(0), P = r(null), F = n(
+    async (m) => {
+      var D;
+      (D = P.current) == null || D.abort();
       const te = new AbortController();
-      A.current = te;
-      const W = ++M.current;
-      p && D(!0);
-      const S = await Ul(v, te.signal);
-      te.signal.aborted || W !== M.current || (S ? (B.current = 0, G.current = S, z(S)) : B.current += 1, D(!1));
+      P.current = te;
+      const N = ++B.current;
+      m && G(!0);
+      const h = await kl(z, te.signal);
+      te.signal.aborted || N !== B.current || (h ? (K.current = 0, J.current = h, R(h)) : K.current += 1, G(!1));
     },
-    [v]
-  ), K = n(() => H(!0), [H]);
-  if (l(() => {
+    [z]
+  ), X = n(() => F(!0), [F]);
+  if (a(() => {
     var te;
-    (te = A.current) == null || te.abort(), M.current += 1, B.current = 0, G.current = null, z(null), K();
-    const p = window.setInterval(() => {
-      var W, S;
-      B.current >= Hl || ((W = G.current) == null ? void 0 : W.status) === "completed" || ((S = G.current) == null ? void 0 : S.status) === "terminated" || H(!1);
+    (te = P.current) == null || te.abort(), B.current += 1, K.current = 0, J.current = null, R(null), X();
+    const m = window.setInterval(() => {
+      var N, h;
+      K.current >= zl || ((N = J.current) == null ? void 0 : N.status) === "completed" || ((h = J.current) == null ? void 0 : h.status) === "terminated" || F(!1);
     }, 5e3);
     return () => {
-      var W;
-      window.clearInterval(p), (W = A.current) == null || W.abort(), M.current += 1;
+      var N;
+      window.clearInterval(m), (N = P.current) == null || N.abort(), B.current += 1;
     };
-  }, [v, H, K]), (I == null ? void 0 : I.status) === "unreadable")
-    return t.createElement(u, {
+  }, [z, F, X]), (j == null ? void 0 : j.status) === "unreadable")
+    return t.createElement(y, {
       type: "warning",
       showIcon: !0,
       message: "专家团状态暂时无法读取",
-      description: `实例 ${I.instance_id || "未知"} 的状态文件需要检查。`,
+      description: `实例 ${j.instance_id || "未知"} 的状态文件需要检查。`,
       style: { marginBottom: 16 },
       action: t.createElement(
         d,
-        { size: "small", onClick: K, loading: N },
+        { size: "small", onClick: X, loading: W },
         "重试"
       )
     });
-  if (!I || !I.active) {
-    if ((I == null ? void 0 : I.status) === "completed" || (I == null ? void 0 : I.status) === "terminated") {
-      const p = I.status === "completed";
-      return t.createElement(u, {
-        type: p ? "success" : "info",
+  if (!j || !j.active) {
+    if ((j == null ? void 0 : j.status) === "completed" || (j == null ? void 0 : j.status) === "terminated") {
+      const m = j.status === "completed";
+      return t.createElement(y, {
+        type: m ? "success" : "info",
         showIcon: !0,
-        message: p ? "专家团工作流已完成" : "专家团工作流已终止",
-        description: p ? `实例 ${I.instance_id || "未知"} 已完成，结果文件保留在工作区。` : `原因：${I.state.termination_reason || "未知"}`,
+        message: m ? "专家团工作流已完成" : "专家团工作流已终止",
+        description: m ? `实例 ${j.instance_id || "未知"} 已完成，结果文件保留在工作区。` : `原因：${j.state.termination_reason || "未知"}`,
         style: { marginBottom: 16 }
       });
     }
-    return t.createElement(f, {
+    return t.createElement(b, {
       description: "暂无活跃的专家团工作流",
       style: { padding: 24 }
     });
   }
-  const T = I.state, w = T.current_phase || "plan", E = Mn.indexOf(w), $ = T.team_name || "未知团队", k = T.team_mode || "pipeline", q = T.iteration || 0, Z = T.members || [], U = T.verify_retries || 0, P = {
+  const k = j.state, E = k.current_phase || "plan", f = Tn.indexOf(E), T = k.team_name || "未知团队", v = k.team_mode || "pipeline", H = k.iteration || 0, Z = k.members || [], L = k.verify_retries || 0, _ = {
     pipeline: "顺序交接",
     coordinator: "主管协作",
     roundtable: "并行汇聚",
@@ -4161,21 +4161,21 @@ function Wl() {
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
         t.createElement("span", { style: { fontSize: 16 } }, "🔄"),
-        t.createElement(x, { strong: !0 }, `${$} — 工作流状态`),
+        t.createElement(C, { strong: !0 }, `${T} — 工作流状态`),
         t.createElement(
           c,
           { color: "blue", style: { fontSize: 10 } },
-          P[k] || k
+          _[v] || v
         ),
         t.createElement(
           c,
           { style: { fontSize: 10 } },
-          `迭代 ${q}`
+          `迭代 ${H}`
         ),
-        U > 0 ? t.createElement(
+        L > 0 ? t.createElement(
           c,
           { color: "orange", style: { fontSize: 10 } },
-          `验证重试 ${U}`
+          `验证重试 ${L}`
         ) : null
       ),
       extra: t.createElement(
@@ -4183,21 +4183,21 @@ function Wl() {
         {
           size: "small",
           type: "text",
-          icon: h ? t.createElement(h) : void 0,
-          onClick: K,
-          loading: N
+          icon: S ? t.createElement(S) : void 0,
+          onClick: X,
+          loading: W
         },
         "刷新"
       )
     },
-    t.createElement(m, {
-      current: E,
+    t.createElement(u, {
+      current: f,
       size: "small",
-      items: Mn.map((p) => {
-        const te = Gl[p];
+      items: Tn.map((m) => {
+        const te = Il[m];
         return {
           title: `${te.icon} ${te.label}`,
-          description: p === "plan" ? "分析任务，创建任务分解" : p === "dispatch" ? "分派专家执行任务" : p === "verify" ? "交叉验证专家结果" : p === "synthesize" ? "综合形成最终报告" : "工作流完成"
+          description: m === "plan" ? "分析任务，创建任务分解" : m === "dispatch" ? "分派专家执行任务" : m === "verify" ? "交叉验证专家结果" : m === "synthesize" ? "综合形成最终报告" : "工作流完成"
         };
       })
     }),
@@ -4212,15 +4212,15 @@ function Wl() {
         }
       },
       ...Z.map(
-        (p, te) => t.createElement(
+        (m, te) => t.createElement(
           c,
-          { key: `${p.name}-${te}`, style: { fontSize: 11 } },
-          `${p.emoji || ""} ${p.name}（${p.role}）`
+          { key: `${m.name}-${te}`, style: { fontSize: 11 } },
+          `${m.emoji || ""} ${m.name}（${m.role}）`
         )
       )
     ),
-    T.task ? t.createElement(
-      C,
+    k.task ? t.createElement(
+      $,
       {
         style: {
           fontSize: 12,
@@ -4230,12 +4230,12 @@ function Wl() {
         },
         ellipsis: { rows: 2 }
       },
-      `任务: ${T.task}`
+      `任务: ${k.task}`
     ) : null
   );
 }
-function Jl({ team: e }) {
-  const t = _().React, { Typography: a, Tag: l } = _().antd, { Text: n } = a, r = {
+function Pl({ team: e }) {
+  const t = x().React, { Typography: l, Tag: a } = x().antd, { Text: n } = l, r = {
     pipeline: "→",
     roundtable: "⇄",
     coordinator: "⊙",
@@ -4249,7 +4249,7 @@ function Jl({ team: e }) {
     router: "#d46b08",
     review_loop: "#389e0d",
     debate: "#c41d7f"
-  }, c = e.steps || [], s = e.mode === "roundtable" || e.mode === "router", d = {
+  }, c = e.steps || [], i = e.mode === "roundtable" || e.mode === "router", d = {
     pipeline: "顺序交接",
     roundtable: "并行汇聚",
     coordinator: "主管协作",
@@ -4280,17 +4280,17 @@ function Jl({ team: e }) {
       {
         style: {
           display: "flex",
-          flexDirection: s ? "row" : "column",
+          flexDirection: i ? "row" : "column",
           gap: 8,
-          alignItems: s ? "flex-start" : "stretch",
+          alignItems: i ? "flex-start" : "stretch",
           flexWrap: "wrap"
         }
       },
-      ...c.length > 0 ? c.map((m, f) => [
-        f > 0 && !s ? t.createElement(
+      ...c.length > 0 ? c.map((u, b) => [
+        b > 0 && !i ? t.createElement(
           "div",
           {
-            key: `arrow-${f}`,
+            key: `arrow-${b}`,
             style: {
               textAlign: "center",
               color: o[e.mode],
@@ -4302,7 +4302,7 @@ function Jl({ team: e }) {
         t.createElement(
           "div",
           {
-            key: `step-${f}`,
+            key: `step-${b}`,
             style: {
               display: "flex",
               alignItems: "center",
@@ -4312,11 +4312,11 @@ function Jl({ team: e }) {
               borderRadius: 6,
               border: `1px solid ${o[e.mode]}33`,
               fontSize: 12,
-              flex: s ? "1 1 200px" : "initial"
+              flex: i ? "1 1 200px" : "initial"
             }
           },
-          t.createElement(Ge, {
-            name: m.agentName,
+          t.createElement(Ne, {
+            name: u.agentName,
             size: 24
           }),
           t.createElement(
@@ -4325,7 +4325,7 @@ function Jl({ team: e }) {
             t.createElement(
               n,
               { strong: !0, style: { fontSize: 12 } },
-              m.agentName
+              u.agentName
             ),
             t.createElement(
               "div",
@@ -4336,23 +4336,23 @@ function Jl({ team: e }) {
                   maxWidth: 250
                 }
               },
-              m.instruction
+              u.instruction
             ),
             t.createElement(
-              l,
+              a,
               {
-                ...m.passContext ? { color: "blue" } : {},
+                ...u.passContext ? { color: "blue" } : {},
                 style: { fontSize: 9, marginTop: 2 }
               },
-              m.passContext ? "传递上下文" : "独立"
+              u.passContext ? "传递上下文" : "独立"
             )
           )
         )
-      ]).flat() : e.members.map((m, f) => [
-        f > 0 && !s ? t.createElement(
+      ]).flat() : e.members.map((u, b) => [
+        b > 0 && !i ? t.createElement(
           "div",
           {
-            key: `arrow-${f}`,
+            key: `arrow-${b}`,
             style: {
               textAlign: "center",
               color: o[e.mode],
@@ -4364,7 +4364,7 @@ function Jl({ team: e }) {
         t.createElement(
           "div",
           {
-            key: `member-${f}`,
+            key: `member-${b}`,
             style: {
               display: "flex",
               alignItems: "center",
@@ -4374,11 +4374,11 @@ function Jl({ team: e }) {
               borderRadius: 6,
               border: `1px solid ${o[e.mode]}33`,
               fontSize: 12,
-              flex: s ? "1 1 150px" : "initial"
+              flex: i ? "1 1 150px" : "initial"
             }
           },
-          t.createElement(Ge, {
-            name: m.name,
+          t.createElement(Ne, {
+            name: u.name,
             size: 24
           }),
           t.createElement(
@@ -4387,12 +4387,12 @@ function Jl({ team: e }) {
             t.createElement(
               n,
               { strong: !0, style: { fontSize: 12 } },
-              m.name
+              u.name
             ),
             t.createElement(
               "div",
               { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-              m.role
+              u.role
             )
           )
         )
@@ -4400,11 +4400,11 @@ function Jl({ team: e }) {
     )
   );
 }
-function ht(e) {
+function pt(e) {
   const t = e.replace(/\s+/g, "").toLowerCase();
   return t.includes("测井") ? "log-analyst" : t.includes("地球物理") ? "geophysicist" : t.includes("油藏") ? "reservoir-engineer" : t.includes("钻井") ? "drilling-engineer" : t.includes("采油") || t.includes("生产") ? "production-engineer" : t.includes("pvt") || t.includes("物性") ? "pvt-analyst" : t.includes("审核") || t.includes("verifier") ? "domain-reviewer" : t.includes("master") || t.includes("planner") ? "planner" : "analyst";
 }
-const ql = [
+const $l = [
   { key: "analyst", display_name: "需求分析师", allowed_tools: [], skills: [], prompt: "" },
   { key: "reservoir-engineer", display_name: "油藏工程师", allowed_tools: [], skills: [], prompt: "" },
   { key: "log-analyst", display_name: "测井分析师", allowed_tools: [], skills: [], prompt: "" },
@@ -4416,27 +4416,27 @@ const ql = [
   { key: "planner", display_name: "规划者", allowed_tools: [], skills: [], prompt: "" },
   { key: "verifier", display_name: "验证者", allowed_tools: [], skills: [], prompt: "" }
 ];
-function Kl({
+function Ol({
   open: e,
   onClose: t,
-  agents: a,
-  editingTeam: l,
+  agents: l,
+  editingTeam: a,
   onSaved: n
 }) {
-  const r = _().React, { useState: o, useEffect: c, useCallback: s } = r, {
+  const r = x().React, { useState: o, useEffect: c, useCallback: i } = r, {
     Modal: d,
-    Input: m,
-    Button: f,
-    Select: u,
-    Tag: h,
-    Typography: x,
-    Switch: C,
-    Empty: b,
-    message: v,
-    Divider: I,
-    Steps: z
-  } = _().antd, { PlusOutlined: N, DeleteOutlined: D, SaveOutlined: G, ArrowRightOutlined: B } = _().antdIcons || {}, { Text: M, Paragraph: A } = x, [H, K] = o(""), [T, w] = o("🤝"), [E, $] = o(""), [k, q] = o("pipeline"), [Z, U] = o(""), [P, p] = o(""), [te, W] = o([]), [S, J] = o([]), [le, X] = o(!1), [ee, fe] = o(2), [R, re] = o(""), [pe, oe] = o(""), [ae, Ee] = o({}), [he, ke] = o({}), [Ae, be] = o(
-    ql
+    Input: u,
+    Button: b,
+    Select: y,
+    Tag: S,
+    Typography: C,
+    Switch: $,
+    Empty: w,
+    message: z,
+    Divider: j,
+    Steps: R
+  } = x().antd, { PlusOutlined: W, DeleteOutlined: G, SaveOutlined: J, ArrowRightOutlined: K } = x().antdIcons || {}, { Text: B, Paragraph: P } = C, [F, X] = o(""), [k, E] = o("🤝"), [f, T] = o(""), [v, H] = o("pipeline"), [Z, L] = o(""), [_, m] = o(""), [te, N] = o([]), [h, D] = o([]), [le, V] = o(!1), [ee, ge] = o(2), [I, re] = o(""), [ue, oe] = o(""), [ae, ye] = o({}), [Ee, xe] = o({}), [Ae, ve] = o(
+    $l
   ), Q = [
     { value: "pipeline", icon: "→", title: "顺序交接", description: "上一步产物成为下一位专家的上下文", topology: "A → B → C", accent: "#08979c" },
     { value: "roundtable", icon: "⇉", title: "并行汇聚", description: "独立并行分析，避免观点相互污染", topology: "A ∥ B ∥ C → 汇总", accent: "#531dab" },
@@ -4446,126 +4446,126 @@ function Kl({
     { value: "debate", icon: "⚖", title: "多方论证", description: "独立立场、交叉质询，再由裁决者综合", topology: "观点 ⇄ 反驳 → 裁决", accent: "#c41d7f" }
   ];
   c(() => {
-    e && (l ? (K(l.name), w(l.emoji), $(l.description), q(l.mode), U(l.coordinatorName || ""), p(l.taskTemplate), W(l.steps || []), J(l.members.map((y) => y.name)), fe(l.maxReviewRounds || 2), re(l.successCriteria || ""), oe(l.routingInstruction || ""), Ee(
+    e && (a ? (X(a.name), E(a.emoji), T(a.description), H(a.mode), L(a.coordinatorName || ""), m(a.taskTemplate), N(a.steps || []), D(a.members.map((g) => g.name)), ge(a.maxReviewRounds || 2), re(a.successCriteria || ""), oe(a.routingInstruction || ""), ye(
       Object.fromEntries(
-        l.members.map((y) => [
-          y.name,
-          y.bindingMode || (y.agentId ? "fixed" : "preferred")
+        a.members.map((g) => [
+          g.name,
+          g.bindingMode || (g.agentId ? "fixed" : "preferred")
         ])
       )
-    ), ke(
+    ), xe(
       Object.fromEntries(
-        l.members.map((y) => [
-          y.name,
-          y.roleKey || ht(y.name)
+        a.members.map((g) => [
+          g.name,
+          g.roleKey || pt(g.name)
         ])
       )
-    )) : (K(""), w("🤝"), $(""), q("pipeline"), U(""), p(`请执行以下任务：
-任务描述：{任务描述}`), W([]), J([]), fe(2), re(""), oe(""), Ee({}), ke({})));
-  }, [e, l]), c(() => {
-    e && Fl().then((y) => {
-      y != null && y.length && be(y);
+    )) : (X(""), E("🤝"), T(""), H("pipeline"), L(""), m(`请执行以下任务：
+任务描述：{任务描述}`), N([]), D([]), ge(2), re(""), oe(""), ye({}), xe({})));
+  }, [e, a]), c(() => {
+    e && _l().then((g) => {
+      g != null && g.length && ve(g);
     });
   }, [e]);
-  const we = s(() => {
-    if (k === "roundtable" || k === "debate" || k === "router") {
-      const y = S.map((me) => ({
-        agentName: me,
+  const be = i(() => {
+    if (v === "roundtable" || v === "debate" || v === "router") {
+      const g = h.map((de) => ({
+        agentName: de,
         instruction: "请给出你的专业评估意见",
         passContext: !1
       }));
-      W(y);
-    } else if (k === "pipeline") {
-      const y = new Map(te.map((j) => [j.agentName, j])), me = S.map((j) => y.get(j) || {
-        agentName: j,
+      N(g);
+    } else if (v === "pipeline") {
+      const g = new Map(te.map((M) => [M.agentName, M])), de = h.map((M) => g.get(M) || {
+        agentName: M,
         instruction: "请完成你的专业部分",
         passContext: !0
       });
-      W(me);
+      N(de);
     }
-  }, [k, S, te]), ye = (y) => {
-    S.includes(y) || (J([...S, y]), Ee({ ...ae, [y]: "fixed" }), ke({
-      ...he,
-      [y]: ht(y)
-    }), (k === "coordinator" || k === "debate") && !Z && U(y));
-  }, V = (y) => {
-    const me = S.filter((ne) => ne !== y);
-    J(me), W(te.filter((ne) => ne.agentName !== y));
-    const j = { ...ae };
-    delete j[y], Ee(j);
-    const g = { ...he };
-    delete g[y], ke(g), Z === y && U(me[0] || "");
-  }, de = (y, me, j) => {
-    const g = [...te];
-    g[y] = { ...g[y], [me]: j }, W(g);
-  }, ge = async () => {
-    if (!H.trim()) {
-      v.warning("请输入团队名称");
+  }, [v, h, te]), fe = (g) => {
+    h.includes(g) || (D([...h, g]), ye({ ...ae, [g]: "fixed" }), xe({
+      ...Ee,
+      [g]: pt(g)
+    }), (v === "coordinator" || v === "debate") && !Z && L(g));
+  }, q = (g) => {
+    const de = h.filter((ne) => ne !== g);
+    D(de), N(te.filter((ne) => ne.agentName !== g));
+    const M = { ...ae };
+    delete M[g], ye(M);
+    const p = { ...Ee };
+    delete p[g], xe(p), Z === g && L(de[0] || "");
+  }, ce = (g, de, M) => {
+    const p = [...te];
+    p[g] = { ...p[g], [de]: M }, N(p);
+  }, pe = async () => {
+    if (!F.trim()) {
+      z.warning("请输入团队名称");
       return;
     }
-    if (S.length < 2) {
-      v.warning("至少需要选择 2 个成员");
+    if (h.length < 2) {
+      z.warning("至少需要选择 2 个成员");
       return;
     }
-    if (!P.trim()) {
-      v.warning("请输入任务模板");
+    if (!_.trim()) {
+      z.warning("请输入任务模板");
       return;
     }
-    if ((k === "coordinator" || k === "debate") && !Z) {
-      v.warning(k === "debate" ? "请选择裁决者" : "请选择主控专家");
+    if ((v === "coordinator" || v === "debate") && !Z) {
+      z.warning(v === "debate" ? "请选择裁决者" : "请选择主控专家");
       return;
     }
-    X(!0);
+    V(!0);
     try {
-      let y = [...S];
-      k === "coordinator" && Z ? y = [Z, ...y.filter((Ce) => Ce !== Z)] : k === "debate" && Z && (y = [...y.filter((Ce) => Ce !== Z), Z]);
-      const me = y.map(
-        (Ce) => {
-          var Le;
-          const Oe = a.find((Se) => Se.name === Ce), Me = ae[Ce] || "fixed", De = he[Ce] || ht(Ce), Fe = Ae.find((Se) => Se.key === De);
+      let g = [...h];
+      v === "coordinator" && Z ? g = [Z, ...g.filter((ke) => ke !== Z)] : v === "debate" && Z && (g = [...g.filter((ke) => ke !== Z), Z]);
+      const de = g.map(
+        (ke) => {
+          var Me;
+          const Oe = l.find((Se) => Se.name === ke), Re = ae[ke] || "fixed", je = Ee[ke] || pt(ke), Ue = Ae.find((Se) => Se.key === je);
           return {
-            name: Ce,
-            role: (Fe == null ? void 0 : Fe.display_name) || ((Le = Oe == null ? void 0 : Oe.description) == null ? void 0 : Le.slice(0, 30)) || "需求分析师",
+            name: ke,
+            role: (Ue == null ? void 0 : Ue.display_name) || ((Me = Oe == null ? void 0 : Oe.description) == null ? void 0 : Me.slice(0, 30)) || "需求分析师",
             emoji: "",
-            agentId: Me === "temporary" || Oe == null ? void 0 : Oe.id,
-            roleKey: De,
-            bindingMode: Me
+            agentId: Re === "temporary" || Oe == null ? void 0 : Oe.id,
+            roleKey: je,
+            bindingMode: Re
           };
         }
       );
-      let j = te;
-      (te.length === 0 || te.length !== S.length) && (j = S.map((Ce) => ({
-        agentName: Ce,
+      let M = te;
+      (te.length === 0 || te.length !== h.length) && (M = h.map((ke) => ({
+        agentName: ke,
         instruction: "请完成你的专业部分",
-        passContext: k === "pipeline"
+        passContext: v === "pipeline"
       })));
-      const g = {
-        id: (l == null ? void 0 : l.id) || `custom-${Date.now()}`,
-        name: H.trim(),
-        emoji: T,
+      const p = {
+        id: (a == null ? void 0 : a.id) || `custom-${Date.now()}`,
+        name: F.trim(),
+        emoji: k,
         category: "自定义",
-        description: E.trim() || `${H.trim()}（${S.length}人团队）`,
-        mode: k,
-        members: me,
-        coordinatorName: k === "coordinator" || k === "debate" ? Z : void 0,
-        taskTemplate: P.trim(),
+        description: f.trim() || `${F.trim()}（${h.length}人团队）`,
+        mode: v,
+        members: de,
+        coordinatorName: v === "coordinator" || v === "debate" ? Z : void 0,
+        taskTemplate: _.trim(),
         orchestrationPrompt: "",
         // Custom teams use steps-based instructions
-        steps: j,
+        steps: M,
         custom: !0,
-        createdAt: (l == null ? void 0 : l.createdAt) || Date.now(),
+        createdAt: (a == null ? void 0 : a.createdAt) || Date.now(),
         maxReviewRounds: ee,
-        successCriteria: R.trim(),
-        routingInstruction: pe.trim()
-      }, ne = await oa(g), ce = ct(), _e = ce.findIndex((Ce) => Ce.id === ne.id);
-      _e >= 0 ? ce[_e] = ne : ce.push(ne), en(ce), v.success(l ? "团队已更新" : "团队已创建"), n(), t();
-    } catch (y) {
-      v.error(y.message || "保存失败");
+        successCriteria: I.trim(),
+        routingInstruction: ue.trim()
+      }, ne = await Xn(p), ie = rt(), Te = ie.findIndex((ke) => ke.id === ne.id);
+      Te >= 0 ? ie[Te] = ne : ie.push(ne), Wt(ie), z.success(a ? "团队已更新" : "团队已创建"), n(), t();
+    } catch (g) {
+      z.error(g.message || "保存失败");
     } finally {
-      X(!1);
+      V(!1);
     }
-  }, F = a.filter(
-    (y) => !S.includes(y.name)
+  }, U = l.filter(
+    (g) => !h.includes(g.name)
   );
   return r.createElement(
     d,
@@ -4578,20 +4578,20 @@ function Kl({
         r.createElement(
           "span",
           { style: { fontSize: 20 } },
-          l ? "✏️" : "➕"
+          a ? "✏️" : "➕"
         ),
         r.createElement(
           "span",
           null,
-          l ? "编辑专家团" : "创建专家团"
+          a ? "编辑专家团" : "创建专家团"
         )
       ),
       width: 860,
-      onOk: ge,
+      onOk: pe,
       okText: "保存专家团",
       confirmLoading: le,
       okButtonProps: {
-        icon: G ? r.createElement(G) : void 0
+        icon: J ? r.createElement(J) : void 0
       }
     },
     // Step 1: Basic info
@@ -4599,7 +4599,7 @@ function Kl({
       "div",
       { style: { marginBottom: 16 } },
       r.createElement(
-        M,
+        B,
         {
           strong: !0,
           style: { display: "block", marginBottom: 8, fontSize: 13 }
@@ -4609,26 +4609,26 @@ function Kl({
       r.createElement(
         "div",
         { style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center" } },
-        S.length > 0 ? r.createElement(Zt, {
-          members: S,
+        h.length > 0 ? r.createElement(Ht, {
+          members: h,
           size: 36
         }) : null,
-        r.createElement(m, {
+        r.createElement(u, {
           placeholder: "专家团名称（如：储层评价与质量复核专家团）",
-          value: H,
-          onChange: (y) => K(y.target.value),
+          value: F,
+          onChange: (g) => X(g.target.value),
           style: { flex: 1 }
         })
       ),
-      r.createElement(m.TextArea, {
+      r.createElement(u.TextArea, {
         placeholder: "说明这个工作流解决什么问题、适用于什么场景",
-        value: E,
-        onChange: (y) => $(y.target.value),
+        value: f,
+        onChange: (g) => T(g.target.value),
         rows: 2,
         style: { marginBottom: 8 }
       }),
       r.createElement(
-        M,
+        B,
         { strong: !0, style: { display: "block", margin: "12px 0 8px", fontSize: 13 } },
         "选择协同模式"
       ),
@@ -4641,45 +4641,45 @@ function Kl({
             gap: 8
           }
         },
-        ...Q.map((y) => {
-          const me = k === y.value;
+        ...Q.map((g) => {
+          const de = v === g.value;
           return r.createElement(
             "button",
             {
-              key: y.value,
+              key: g.value,
               type: "button",
               onClick: () => {
-                q(y.value), y.value !== "coordinator" && y.value !== "debate" && U("");
+                H(g.value), g.value !== "coordinator" && g.value !== "debate" && L("");
               },
               style: {
                 textAlign: "left",
                 padding: 10,
                 borderRadius: 8,
                 cursor: "pointer",
-                background: me ? `${y.accent}0d` : "var(--ant-color-bg-container, #fff)",
-                border: `1px solid ${me ? y.accent : "var(--ant-color-border, #d9d9d9)"}`,
-                boxShadow: me ? `0 0 0 2px ${y.accent}1a` : "none"
+                background: de ? `${g.accent}0d` : "var(--ant-color-bg-container, #fff)",
+                border: `1px solid ${de ? g.accent : "var(--ant-color-border, #d9d9d9)"}`,
+                boxShadow: de ? `0 0 0 2px ${g.accent}1a` : "none"
               }
             },
             r.createElement(
               "div",
-              { style: { display: "flex", alignItems: "center", gap: 7, color: y.accent, fontWeight: 600 } },
-              r.createElement("span", { style: { fontSize: 18 } }, y.icon),
-              y.title
+              { style: { display: "flex", alignItems: "center", gap: 7, color: g.accent, fontWeight: 600 } },
+              r.createElement("span", { style: { fontSize: 18 } }, g.icon),
+              g.title
             ),
-            r.createElement("div", { style: { fontSize: 11, color: "var(--ant-color-text-secondary, #595959)", marginTop: 5, lineHeight: 1.45 } }, y.description),
-            r.createElement("div", { style: { fontSize: 10, color: y.accent, marginTop: 5, fontFamily: "monospace" } }, y.topology)
+            r.createElement("div", { style: { fontSize: 11, color: "#595959", marginTop: 5, lineHeight: 1.45 } }, g.description),
+            r.createElement("div", { style: { fontSize: 10, color: g.accent, marginTop: 5, fontFamily: "monospace" } }, g.topology)
           );
         })
       )
     ),
-    r.createElement(I, { style: { margin: "12px 0" } }),
+    r.createElement(j, { style: { margin: "12px 0" } }),
     // Step 2: Select members
     r.createElement(
       "div",
       { style: { marginBottom: 16 } },
       r.createElement(
-        M,
+        B,
         {
           strong: !0,
           style: { display: "block", marginBottom: 8, fontSize: 13 }
@@ -4687,7 +4687,7 @@ function Kl({
         "2. 配置专家角色"
       ),
       // Available agents
-      F.length > 0 ? r.createElement(
+      U.length > 0 ? r.createElement(
         "div",
         {
           style: {
@@ -4700,97 +4700,97 @@ function Kl({
             borderRadius: 6
           }
         },
-        ...F.map(
-          (y) => r.createElement(
-            f,
+        ...U.map(
+          (g) => r.createElement(
+            b,
             {
-              key: y.id,
+              key: g.id,
               size: "small",
-              icon: N ? r.createElement(N) : void 0,
-              onClick: () => ye(y.name)
+              icon: W ? r.createElement(W) : void 0,
+              onClick: () => fe(g.name)
             },
-            y.name
+            g.name
           )
         )
       ) : null,
       // Selected members
-      S.length === 0 ? r.createElement(b, {
+      h.length === 0 ? r.createElement(w, {
         description: "请从上方添加团队成员",
-        image: b.PRESENTED_IMAGE_SIMPLE
+        image: w.PRESENTED_IMAGE_SIMPLE
       }) : r.createElement(
         "div",
         { style: { display: "flex", flexDirection: "column", gap: 4 } },
-        ...S.map(
-          (y) => r.createElement(
+        ...h.map(
+          (g) => r.createElement(
             "div",
             {
-              key: y,
+              key: g,
               style: {
                 display: "flex",
                 alignItems: "center",
                 justifyContent: "space-between",
                 padding: "6px 10px",
-                background: "var(--ant-color-primary-bg, #f0f5ff)",
+                background: "#f0f5ff",
                 borderRadius: 6,
-                border: "1px solid var(--ant-color-primary-border, #d6e4ff)"
+                border: "1px solid #d6e4ff"
               }
             },
             r.createElement(
               "div",
               { style: { display: "flex", alignItems: "center", gap: 6 } },
-              r.createElement(Ge, { name: y, size: 24 }),
+              r.createElement(Ne, { name: g, size: 24 }),
               r.createElement(
-                M,
+                B,
                 { strong: !0, style: { fontSize: 13 } },
-                y
+                g
               ),
-              (k === "coordinator" || k === "debate") && Z === y ? r.createElement(
-                h,
+              (v === "coordinator" || v === "debate") && Z === g ? r.createElement(
+                S,
                 { color: "blue", style: { fontSize: 10 } },
-                k === "debate" ? "裁决者" : "主控"
+                v === "debate" ? "裁决者" : "主控"
               ) : null
             ),
             r.createElement(
               "div",
               { style: { display: "flex", gap: 4 } },
-              r.createElement(u, {
+              r.createElement(y, {
                 size: "small",
-                value: he[y] || ht(y),
+                value: Ee[g] || pt(g),
                 style: { width: 132 },
-                onChange: (me) => ke({ ...he, [y]: me }),
-                options: Ae.map((me) => ({
-                  value: me.key,
-                  label: me.display_name
+                onChange: (de) => xe({ ...Ee, [g]: de }),
+                options: Ae.map((de) => ({
+                  value: de.key,
+                  label: de.display_name
                 }))
               }),
-              r.createElement(u, {
+              r.createElement(y, {
                 size: "small",
-                value: ae[y] || "fixed",
+                value: ae[g] || "fixed",
                 style: { width: 118 },
-                onChange: (me) => Ee({ ...ae, [y]: me }),
+                onChange: (de) => ye({ ...ae, [g]: de }),
                 options: [
                   { value: "fixed", label: "固定实例" },
                   { value: "preferred", label: "优先实例" },
                   { value: "temporary", label: "临时派生" }
                 ]
               }),
-              k === "coordinator" || k === "debate" ? r.createElement(
-                f,
+              v === "coordinator" || v === "debate" ? r.createElement(
+                b,
                 {
                   size: "small",
                   type: "link",
-                  onClick: () => U(y)
+                  onClick: () => L(g)
                 },
-                k === "debate" ? "设为裁决者" : "设为主控"
+                v === "debate" ? "设为裁决者" : "设为主控"
               ) : null,
               r.createElement(
-                f,
+                b,
                 {
                   size: "small",
                   type: "link",
                   danger: !0,
-                  icon: D ? r.createElement(D) : void 0,
-                  onClick: () => V(y)
+                  icon: G ? r.createElement(G) : void 0,
+                  onClick: () => q(g)
                 },
                 "移除"
               )
@@ -4799,7 +4799,7 @@ function Kl({
         )
       )
     ),
-    k === "review_loop" || k === "router" ? r.createElement(
+    v === "review_loop" || v === "router" ? r.createElement(
       "div",
       {
         style: {
@@ -4807,70 +4807,70 @@ function Kl({
           padding: 12,
           borderRadius: 8,
           background: "var(--ant-color-fill-quaternary, #fafafa)",
-          border: "1px solid var(--ant-color-border-secondary, #f0f0f0)"
+          border: "1px solid #f0f0f0"
         }
       },
-      k === "review_loop" ? r.createElement(
+      v === "review_loop" ? r.createElement(
         "div",
         { style: { display: "grid", gridTemplateColumns: "150px 1fr", gap: 10 } },
-        r.createElement(u, {
+        r.createElement(y, {
           value: ee,
-          onChange: (y) => fe(y),
-          options: [1, 2, 3, 4, 5].map((y) => ({ value: y, label: `最多 ${y} 轮` }))
+          onChange: (g) => ge(g),
+          options: [1, 2, 3, 4, 5].map((g) => ({ value: g, label: `最多 ${g} 轮` }))
         }),
-        r.createElement(m, {
-          value: R,
-          onChange: (y) => re(y.target.value),
+        r.createElement(u, {
+          value: I,
+          onChange: (g) => re(g.target.value),
           placeholder: "验收标准，例如：关键结论均有数据依据，且无高风险缺陷"
         })
-      ) : r.createElement(m, {
-        value: pe,
-        onChange: (y) => oe(y.target.value),
+      ) : r.createElement(u, {
+        value: ue,
+        onChange: (g) => oe(g.target.value),
         placeholder: "路由偏好，例如：仅调用任务必需的专家；涉及模拟时优先油藏工程师"
       })
     ) : null,
-    r.createElement(I, { style: { margin: "12px 0" } }),
+    r.createElement(j, { style: { margin: "12px 0" } }),
     // Step 3: Define execution steps (for pipeline/roundtable)
-    S.length > 0 ? r.createElement(
+    h.length > 0 ? r.createElement(
       "div",
       { style: { marginBottom: 16 } },
       r.createElement(
-        M,
+        B,
         {
           strong: !0,
           style: { display: "block", marginBottom: 8, fontSize: 13 }
         },
-        `3. 配置专家任务${k === "roundtable" ? "（并行独立）" : k === "pipeline" ? "（顺序交接）" : k === "router" ? "（作为候选能力）" : k === "review_loop" ? "（首位执行、末位评审）" : k === "debate" ? "（末位为裁决者）" : "（由主控动态编排）"}`
+        `3. 配置专家任务${v === "roundtable" ? "（并行独立）" : v === "pipeline" ? "（顺序交接）" : v === "router" ? "（作为候选能力）" : v === "review_loop" ? "（首位执行、末位评审）" : v === "debate" ? "（末位为裁决者）" : "（由主控动态编排）"}`
       ),
       // Auto-sync button
       r.createElement(
-        f,
+        b,
         {
           size: "small",
           type: "dashed",
-          onClick: we,
+          onClick: be,
           style: { marginBottom: 8 }
         },
         "自动生成步骤"
       ),
       // Steps list
       te.length === 0 ? r.createElement(
-        M,
+        B,
         { type: "secondary", style: { fontSize: 12 } },
         "点击「自动生成步骤」或手动配置每步的指令"
       ) : r.createElement(
         "div",
         { style: { display: "flex", flexDirection: "column", gap: 6 } },
         ...te.map(
-          (y, me) => r.createElement(
+          (g, de) => r.createElement(
             "div",
             {
-              key: me,
+              key: de,
               style: {
                 padding: 8,
                 background: "var(--ant-color-bg-container, #fff)",
                 borderRadius: 6,
-                border: "1px solid var(--ant-color-border-secondary, #e8e8e8)"
+                border: "1px solid #e8e8e8"
               }
             },
             r.createElement(
@@ -4883,7 +4883,7 @@ function Kl({
                   marginBottom: 6
                 }
               },
-              k === "pipeline" ? r.createElement(
+              v === "pipeline" ? r.createElement(
                 "div",
                 {
                   style: {
@@ -4899,24 +4899,24 @@ function Kl({
                     fontWeight: 600
                   }
                 },
-                `${me + 1}`
+                `${de + 1}`
               ) : r.createElement(
                 "span",
                 { style: { fontSize: 14 } },
                 "🔀"
               ),
               r.createElement(
-                h,
+                S,
                 { color: "blue", style: { fontSize: 11 } },
-                y.agentName
+                g.agentName
               ),
               r.createElement(
                 "div",
                 { style: { flex: 1 } },
-                r.createElement(m, {
+                r.createElement(u, {
                   placeholder: "请输入该步骤的指令...",
-                  value: y.instruction,
-                  onChange: (j) => de(me, "instruction", j.target.value),
+                  value: g.instruction,
+                  onChange: (M) => ce(de, "instruction", M.target.value),
                   size: "small"
                 })
               )
@@ -4931,46 +4931,46 @@ function Kl({
                   paddingLeft: 28
                 }
               },
-              r.createElement(C, {
+              r.createElement($, {
                 size: "small",
-                checked: y.passContext,
-                onChange: (j) => de(me, "passContext", j)
+                checked: g.passContext,
+                onChange: (M) => ce(de, "passContext", M)
               }),
               r.createElement(
-                M,
+                B,
                 { type: "secondary", style: { fontSize: 11 } },
-                y.passContext ? "传递上一步结果作为上下文" : "独立执行"
+                g.passContext ? "传递上一步结果作为上下文" : "独立执行"
               )
             )
           )
         )
       )
     ) : null,
-    r.createElement(I, { style: { margin: "12px 0" } }),
+    r.createElement(j, { style: { margin: "12px 0" } }),
     // Step 4: Task template
     r.createElement(
       "div",
       null,
       r.createElement(
-        M,
+        B,
         {
           strong: !0,
           style: { display: "block", marginBottom: 8, fontSize: 13 }
         },
-        `${S.length > 0 ? "4" : "3"}. 任务模板`
+        `${h.length > 0 ? "4" : "3"}. 任务模板`
       ),
-      r.createElement(m.TextArea, {
+      r.createElement(u.TextArea, {
         placeholder: `输入任务模板，可用 {参数名} 作为占位符...
 
 例如：
 请对区块 {区块名} 的井 {井号} 进行储层评价`,
-        value: P,
-        onChange: (y) => p(y.target.value),
+        value: _,
+        onChange: (g) => m(g.target.value),
         rows: 4,
         style: { fontFamily: "monospace", fontSize: 13 }
       }),
       r.createElement(
-        M,
+        B,
         {
           type: "secondary",
           style: { fontSize: 11, display: "block", marginTop: 4 }
@@ -4980,33 +4980,33 @@ function Kl({
     )
   );
 }
-function Ln({
+function _n({
   team: e,
   agents: t,
-  onLaunch: a,
-  onEdit: l,
+  onLaunch: l,
+  onEdit: a,
   onDelete: n
 }) {
-  var w;
-  const r = _().React, { useState: o } = r, { Card: c, Tag: s, Typography: d, Button: m, Tooltip: f, Popconfirm: u } = _().antd, {
-    TeamOutlined: h,
-    RocketOutlined: x,
-    UserOutlined: C,
-    EditOutlined: b,
-    DeleteOutlined: v,
-    DownOutlined: I,
-    UpOutlined: z
-  } = _().antdIcons || {}, { Text: N, Paragraph: D } = d, [G, B] = o(!1), M = {
+  var E;
+  const r = x().React, { useState: o } = r, { Card: c, Tag: i, Typography: d, Button: u, Tooltip: b, Popconfirm: y } = x().antd, {
+    TeamOutlined: S,
+    RocketOutlined: C,
+    UserOutlined: $,
+    EditOutlined: w,
+    DeleteOutlined: z,
+    DownOutlined: j,
+    UpOutlined: R
+  } = x().antdIcons || {}, { Text: W, Paragraph: G } = d, [J, K] = o(!1), B = {
     coordinator: { label: "主管协作", color: "blue" },
     pipeline: { label: "顺序交接", color: "cyan" },
     roundtable: { label: "并行汇聚", color: "purple" },
     router: { label: "智能路由", color: "orange" },
     review_loop: { label: "评审迭代", color: "green" },
     debate: { label: "多方论证", color: "magenta" }
-  }, A = M[e.mode] || M.coordinator, H = e.members.map((E) => {
-    const $ = E.bindingMode === "temporary", k = $ ? null : (E.agentId && t.some((q) => q.id === E.agentId) ? E.agentId : null) || sa(t, E.name);
-    return { ...E, found: !!k, agentId: k, temporary: $ };
-  }), K = H.filter((E) => E.found).length, T = e.coordinatorName || ((w = e.members[0]) == null ? void 0 : w.name);
+  }, P = B[e.mode] || B.coordinator, F = e.members.map((f) => {
+    const T = f.bindingMode === "temporary", v = T ? null : (f.agentId && t.some((H) => H.id === f.agentId) ? f.agentId : null) || Vn(t, f.name);
+    return { ...f, found: !!v, agentId: v, temporary: T };
+  }), X = F.filter((f) => f.found).length, k = e.coordinatorName || ((E = e.members[0]) == null ? void 0 : E.name);
   return r.createElement(
     c,
     {
@@ -5025,8 +5025,8 @@ function Ln({
           marginBottom: 10
         }
       },
-      r.createElement(Zt, {
-        members: e.members.map((E) => E.name),
+      r.createElement(Ht, {
+        members: e.members.map((f) => f.name),
         size: 36
       }),
       r.createElement(
@@ -5036,12 +5036,12 @@ function Ln({
           "div",
           { style: { display: "flex", alignItems: "center", gap: 6 } },
           r.createElement(
-            N,
+            W,
             { strong: !0, style: { fontSize: 14 } },
             e.name
           ),
           e.custom ? r.createElement(
-            s,
+            i,
             { color: "gold", style: { fontSize: 9 } },
             "自定义"
           ) : null
@@ -5050,28 +5050,28 @@ function Ln({
           "div",
           { style: { display: "flex", gap: 4, marginTop: 4 } },
           r.createElement(
-            s,
-            { color: A.color, style: { fontSize: 10 } },
-            A.label
+            i,
+            { color: P.color, style: { fontSize: 10 } },
+            P.label
           ),
           r.createElement(
-            s,
+            i,
             { color: "green", style: { fontSize: 10 } },
             `${e.members.length} 位专家`
           ),
-          K < e.members.length ? r.createElement(
-            f,
+          X < e.members.length ? r.createElement(
+            b,
             {
               title: `OMP 架构下，未创建的专家将通过 spawn_subagent 自动派发，
 控制器会根据角色 prompt 创建子 agent 执行任务。`
             },
             r.createElement(
-              s,
+              i,
               { color: "blue", style: { fontSize: 10 } },
               "OMP 自动派发"
             )
           ) : r.createElement(
-            s,
+            i,
             { color: "green", style: { fontSize: 10 } },
             "全部就绪"
           )
@@ -5081,23 +5081,23 @@ function Ln({
       e.custom ? r.createElement(
         "div",
         { style: { display: "flex", gap: 2 } },
-        l ? r.createElement(
-          f,
+        a ? r.createElement(
+          b,
           { title: "编辑" },
-          r.createElement(m, {
+          r.createElement(u, {
             type: "text",
             size: "small",
-            icon: b ? r.createElement(b) : void 0,
-            onClick: (E) => {
-              E.stopPropagation(), l(e);
+            icon: w ? r.createElement(w) : void 0,
+            onClick: (f) => {
+              f.stopPropagation(), a(e);
             }
           })
         ) : null,
         n ? r.createElement(
-          f,
+          b,
           { title: "删除" },
           r.createElement(
-            u,
+            y,
             {
               title: `删除专家团「${e.name}」？`,
               description: "此操作会删除后端定义，但不会删除既有讨论记录。",
@@ -5106,12 +5106,12 @@ function Ln({
               okButtonProps: { danger: !0 },
               onConfirm: () => n(e)
             },
-            r.createElement(m, {
+            r.createElement(u, {
               type: "text",
               size: "small",
               danger: !0,
-              icon: v ? r.createElement(v) : void 0,
-              onClick: (E) => E.stopPropagation()
+              icon: z ? r.createElement(z) : void 0,
+              onClick: (f) => f.stopPropagation()
             })
           )
         ) : null
@@ -5119,7 +5119,7 @@ function Ln({
     ),
     // Description
     r.createElement(
-      D,
+      G,
       {
         type: "secondary",
         style: { fontSize: 12, margin: 0, marginBottom: 10, lineHeight: 1.5 },
@@ -5138,12 +5138,12 @@ function Ln({
           flexWrap: "wrap"
         }
       },
-      ...H.map(
-        (E) => r.createElement(
-          f,
+      ...F.map(
+        (f) => r.createElement(
+          b,
           {
-            key: E.name,
-            title: `${E.name}（${E.role}）${E.temporary ? " - OMP 临时派生" : E.found ? " - 已绑定实例" : " - OMP 按角色派发"}`
+            key: f.name,
+            title: `${f.name}（${f.role}）${f.temporary ? " - OMP 临时派生" : f.found ? " - 已绑定实例" : " - OMP 按角色派发"}`
           },
           r.createElement(
             "div",
@@ -5154,21 +5154,21 @@ function Ln({
                 gap: 4,
                 padding: "2px 8px",
                 borderRadius: 12,
-                background: E.found ? "var(--ant-color-primary-bg, #f0f5ff)" : "var(--ant-color-fill-tertiary, #f0f0ff)",
-                border: `1px solid ${E.found ? "var(--ant-color-primary-border, #d6e4ff)" : "var(--ant-color-purple, #d3adf7)"}`,
+                background: f.found ? "#f0f5ff" : "#f0f0ff",
+                border: `1px solid ${f.found ? "#d6e4ff" : "#d3adf7"}`,
                 fontSize: 11
               }
             },
-            r.createElement(Ge, { name: E.name, size: 18 }),
+            r.createElement(Ne, { name: f.name, size: 18 }),
             r.createElement(
-              N,
+              W,
               {
-                style: { fontSize: 11, color: E.found ? "var(--ant-color-primary-text, #1f4e8c)" : "var(--ant-color-purple, #531dab)" }
+                style: { fontSize: 11, color: f.found ? "#1f4e8c" : "#531dab" }
               },
-              E.name
+              f.name
             ),
-            E.temporary ? r.createElement(
-              s,
+            f.temporary ? r.createElement(
+              i,
               { color: "purple", style: { fontSize: 9, marginInlineEnd: 0 } },
               "派生"
             ) : null
@@ -5178,19 +5178,19 @@ function Ln({
     ),
     // Toggle flow diagram
     r.createElement(
-      m,
+      u,
       {
         type: "link",
         size: "small",
         style: { padding: "0 0 4px 0", fontSize: 11, height: "auto" },
-        onClick: (E) => {
-          E.stopPropagation(), B(!G);
+        onClick: (f) => {
+          f.stopPropagation(), K(!J);
         },
-        icon: G ? z ? r.createElement(z) : "▲" : I ? r.createElement(I) : "▼"
+        icon: J ? R ? r.createElement(R) : "▲" : j ? r.createElement(j) : "▼"
       },
-      G ? "收起流程" : "查看执行流程"
+      J ? "收起流程" : "查看执行流程"
     ),
-    G ? r.createElement(Jl, { team: e }) : null,
+    J ? r.createElement(Pl, { team: e }) : null,
     // Footer: launch button
     r.createElement(
       "div",
@@ -5198,93 +5198,93 @@ function Ln({
         style: {
           marginTop: "auto",
           paddingTop: 8,
-          borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+          borderTop: "1px solid #f0f0f0",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center"
         }
       },
       r.createElement(
-        N,
+        W,
         { type: "secondary", style: { fontSize: 11 } },
-        T ? `${e.mode === "debate" ? "裁决者" : "主控"}: ${T}` : "OMP 动态编排"
+        k ? `${e.mode === "debate" ? "裁决者" : "主控"}: ${k}` : "OMP 动态编排"
       ),
       r.createElement(
-        m,
+        u,
         {
           type: "primary",
           size: "small",
-          icon: x ? r.createElement(x) : void 0,
+          icon: C ? r.createElement(C) : void 0,
           disabled: t.length === 0,
-          onClick: () => a(e),
-          style: je
+          onClick: () => l(e),
+          style: Le
         },
         "运行工作流"
       )
     )
   );
 }
-function Vl({
+function Rl({
   agents: e,
   onLaunch: t
 }) {
-  const a = _().React, { useMemo: l, useState: n, useCallback: r, useEffect: o } = a, {
+  const l = x().React, { useMemo: a, useState: n, useCallback: r, useEffect: o } = l, {
     Row: c,
-    Col: s,
+    Col: i,
     Input: d,
-    Empty: m,
-    Typography: f,
-    Tag: u,
-    Button: h,
-    Divider: x,
-    Tabs: C,
-    message: b
-  } = _().antd, { SearchOutlined: v, PlusOutlined: I, RocketOutlined: z } = _().antdIcons || {}, { Text: N } = f, [D, G] = n(""), [B, M] = n([]), [A, H] = n([]), [K, T] = n(!1), [w, E] = n(null);
+    Empty: u,
+    Typography: b,
+    Tag: y,
+    Button: S,
+    Divider: C,
+    Tabs: $,
+    message: w
+  } = x().antd, { SearchOutlined: z, PlusOutlined: j, RocketOutlined: R } = x().antdIcons || {}, { Text: W } = b, [G, J] = n(""), [K, B] = n([]), [P, F] = n([]), [X, k] = n(!1), [E, f] = n(null);
   o(() => {
-    M(ct());
-    let W = !0;
+    B(rt());
+    let N = !0;
     return (async () => {
       try {
-        await Ll();
-        const S = await Gt();
-        W && M(S);
-      } catch (S) {
-        console.warn("[ugsci] Failed to load backend expert teams:", S), W && b.warning("专家团后端同步失败，当前显示本地缓存");
+        await Sl();
+        const h = await Rt();
+        N && B(h);
+      } catch (h) {
+        console.warn("[ugsci] Failed to load backend expert teams:", h), N && w.warning("专家团后端同步失败，当前显示本地缓存");
       }
-    })(), Dl().then((S) => {
-      W && S && H(S);
+    })(), Tl().then((h) => {
+      N && h && F(h);
     }), () => {
-      W = !1;
+      N = !1;
     };
   }, []);
-  const $ = r(() => {
-    Gt().then(M).catch((W) => {
-      console.warn("[ugsci] Failed to refresh expert teams:", W), M(ct());
+  const T = r(() => {
+    Rt().then(B).catch((N) => {
+      console.warn("[ugsci] Failed to refresh expert teams:", N), B(rt());
     });
-  }, []), k = r(
-    (W) => {
-      Ml(W.id).then(() => {
-        const J = ct().filter((le) => le.id !== W.id);
-        en(J), M(J), b.success(`团队「${W.name}」已删除`);
-      }).catch((S) => b.error(S.message || "删除专家团失败"));
+  }, []), v = r(
+    (N) => {
+      bl(N.id).then(() => {
+        const D = rt().filter((le) => le.id !== N.id);
+        Wt(D), B(D), w.success(`团队「${N.name}」已删除`);
+      }).catch((h) => w.error(h.message || "删除专家团失败"));
     },
-    [b]
-  ), q = r((W) => {
-    E(W), T(!0);
+    [w]
+  ), H = r((N) => {
+    f(N), k(!0);
   }, []), Z = r(() => {
-    E(null), T(!0);
-  }, []), U = l(() => [...B, ...A], [B, A]), P = l(() => {
-    if (!D.trim()) return U;
-    const W = D.toLowerCase();
-    return U.filter(
-      (S) => S.name.toLowerCase().includes(W) || S.description.toLowerCase().includes(W) || S.category.toLowerCase().includes(W)
+    f(null), k(!0);
+  }, []), L = a(() => [...K, ...P], [K, P]), _ = a(() => {
+    if (!G.trim()) return L;
+    const N = G.toLowerCase();
+    return L.filter(
+      (h) => h.name.toLowerCase().includes(N) || h.description.toLowerCase().includes(N) || h.category.toLowerCase().includes(N)
     );
-  }, [U, D]), p = P.filter((W) => W.custom), te = P.filter((W) => !W.custom);
-  return a.createElement(
+  }, [L, G]), m = _.filter((N) => N.custom), te = _.filter((N) => !N.custom);
+  return l.createElement(
     "div",
     null,
     // Toolbar
-    a.createElement(
+    l.createElement(
       "div",
       {
         style: {
@@ -5296,117 +5296,117 @@ function Vl({
           marginBottom: 16
         }
       },
-      a.createElement(d, {
+      l.createElement(d, {
         placeholder: "搜索团队名称、描述或类别...",
-        prefix: v ? a.createElement(v) : void 0,
-        value: D,
-        onChange: (W) => G(W.target.value),
+        prefix: z ? l.createElement(z) : void 0,
+        value: G,
+        onChange: (N) => J(N.target.value),
         allowClear: !0,
         style: { flex: "1 1 280px", maxWidth: 400 }
       }),
-      a.createElement(
-        h,
+      l.createElement(
+        S,
         {
           type: "primary",
           size: "small",
-          icon: I ? a.createElement(I) : void 0,
+          icon: j ? l.createElement(j) : void 0,
           onClick: Z,
-          style: je
+          style: Le
         },
         "创建专家团"
       )
     ),
     // Tabs: preset teams vs custom teams
-    a.createElement(
-      C,
+    l.createElement(
+      $,
       {
         defaultActiveKey: "preset",
         items: [
           {
             key: "preset",
             label: `预设团队${te.length ? ` (${te.length})` : ""}`,
-            children: a.createElement(
+            children: l.createElement(
               "div",
               null,
-              te.length > 0 ? a.createElement(
+              te.length > 0 ? l.createElement(
                 c,
                 { gutter: [12, 12] },
                 ...te.map(
-                  (W) => a.createElement(
-                    s,
-                    { key: W.id, xs: 24, sm: 12, md: 8 },
-                    a.createElement(Ln, {
-                      team: W,
+                  (N) => l.createElement(
+                    i,
+                    { key: N.id, xs: 24, sm: 12, md: 8 },
+                    l.createElement(_n, {
+                      team: N,
                       agents: e,
                       onLaunch: t
                     })
                   )
                 )
-              ) : a.createElement(m, {
+              ) : l.createElement(u, {
                 description: "未找到匹配的预设团队",
-                image: m.PRESENTED_IMAGE_SIMPLE
+                image: u.PRESENTED_IMAGE_SIMPLE
               })
             )
           },
           {
             key: "custom",
-            label: `自定义团队${p.length ? ` (${p.length})` : ""}`,
-            children: a.createElement(
+            label: `自定义团队${m.length ? ` (${m.length})` : ""}`,
+            children: l.createElement(
               "div",
               null,
-              p.length > 0 ? a.createElement(
+              m.length > 0 ? l.createElement(
                 c,
                 { gutter: [12, 12] },
-                ...p.map(
-                  (W) => a.createElement(
-                    s,
-                    { key: W.id, xs: 24, sm: 12, md: 8 },
-                    a.createElement(Ln, {
-                      team: W,
+                ...m.map(
+                  (N) => l.createElement(
+                    i,
+                    { key: N.id, xs: 24, sm: 12, md: 8 },
+                    l.createElement(_n, {
+                      team: N,
                       agents: e,
                       onLaunch: t,
-                      onEdit: q,
-                      onDelete: k
+                      onEdit: H,
+                      onDelete: v
                     })
                   )
                 )
-              ) : a.createElement(m, {
+              ) : l.createElement(u, {
                 description: "暂无自定义团队，点击「创建专家团」自定义",
-                image: m.PRESENTED_IMAGE_SIMPLE
+                image: u.PRESENTED_IMAGE_SIMPLE
               })
             )
           },
           {
             key: "active",
             label: "进行中的讨论",
-            children: a.createElement(
-              a.Fragment,
+            children: l.createElement(
+              l.Fragment,
               null,
-              a.createElement(Wl),
-              a.createElement(On, { activeOnly: !0 })
+              l.createElement(Al),
+              l.createElement(Cn, { activeOnly: !0 })
             )
           },
           {
             key: "history",
             label: "讨论历史",
-            children: a.createElement(On)
+            children: l.createElement(Cn)
           }
         ]
       }
     ),
     // Team Builder Modal
-    a.createElement(Kl, {
-      open: K,
+    l.createElement(Ol, {
+      open: X,
       onClose: () => {
-        T(!1), E(null);
+        k(!1), f(null);
       },
       agents: e,
-      editingTeam: w,
-      onSaved: $
+      editingTeam: E,
+      onSaved: T
     })
   );
 }
-const Xl = [
+const Ml = [
   {
     key: "ugs-cycle-review",
     icon: "🏭",
@@ -5437,7 +5437,7 @@ const Xl = [
     roleHints: ["QA Agent", "Default", "QA Agent", "Verifier", "QA Agent", "QA Agent"],
     roleKeys: ["analyst", "analyst", "analyst", "domain-reviewer", "analyst", "analyst"]
   }
-], Yl = 5e3, Ql = {
+], Ll = 5e3, Bl = {
   completed: "green",
   success: "green",
   failed: "red",
@@ -5449,14 +5449,14 @@ const Xl = [
   waiting_human: "gold",
   timeout: "volcano"
 };
-function Zl(e) {
+function jl(e) {
   window.history.pushState({}, "", e), window.dispatchEvent(new PopStateEvent("popstate"));
 }
-function Nt(e, t) {
-  const a = new URLSearchParams();
-  e && a.set("flow", e), t && a.set("run", t), Zl(`/flowforge${a.size ? `?${a.toString()}` : ""}`);
+function Ot(e, t) {
+  const l = new URLSearchParams();
+  e && l.set("flow", e), t && l.set("run", t), jl(`/flowforge${l.size ? `?${l.toString()}` : ""}`);
 }
-function er(e) {
+function Ul(e) {
   return e ? new Date(e * 1e3).toLocaleString("zh-CN", {
     month: "2-digit",
     day: "2-digit",
@@ -5465,242 +5465,242 @@ function er(e) {
     second: "2-digit"
   }) : "—";
 }
-function tr(e) {
+function Nl(e) {
   if (!e || e <= 0) return "—";
   if (e < 1e3) return `${e}ms`;
   const t = Math.floor(e / 1e3);
   if (t < 60) return `${t}s`;
-  const a = Math.floor(t / 60), l = t % 60;
-  return `${a}m${l}s`;
+  const l = Math.floor(t / 60), a = t % 60;
+  return `${l}m${a}s`;
 }
-function nr(e) {
+function Dl(e) {
   if (!e) return "";
   const t = Object.keys(e).length;
   if (t === 0) return "";
-  const a = Object.values(e).filter(
+  const l = Object.values(e).filter(
     (n) => n === "success" || n === "completed" || n === "skipped" || n === "cached"
-  ).length, l = Object.values(e).filter(
+  ).length, a = Object.values(e).filter(
     (n) => n === "error" || n === "failed"
   ).length;
-  return l > 0 ? `${a}/${t} 节点完成 (${l} 失败)` : `${a}/${t} 节点完成`;
+  return a > 0 ? `${l}/${t} 节点完成 (${a} 失败)` : `${l}/${t} 节点完成`;
 }
-const vt = /* @__PURE__ */ new Set(["running", "queued", "paused", "waiting_human"]);
-function ar() {
-  const e = _().React, { useCallback: t, useEffect: a, useRef: l, useState: n } = e, {
+const gt = /* @__PURE__ */ new Set(["running", "queued", "paused", "waiting_human"]);
+function Fl() {
+  const e = x().React, { useCallback: t, useEffect: l, useRef: a, useState: n } = e, {
     Alert: r,
     Button: o,
     Card: c,
-    Col: s,
+    Col: i,
     Empty: d,
-    Input: m,
-    Popconfirm: f,
-    Row: u,
-    Space: h,
-    Spin: x,
-    Tabs: C,
-    Tag: b,
-    Tooltip: v,
-    Typography: I,
-    message: z
-  } = _().antd, {
-    ApartmentOutlined: N,
-    DeleteOutlined: D,
-    ReloadOutlined: G,
-    RocketOutlined: B,
-    PlayCircleOutlined: M,
-    StopOutlined: A
-  } = _().antdIcons || {}, { Text: H, Paragraph: K, Title: T } = I, w = _().useSelectedAgent, E = w ? w() : { id: "default" }, $ = (E == null ? void 0 : E.id) || "default", [k, q] = n([]), [Z, U] = n([]), [P, p] = n([]), [te, W] = n(!0), [S, J] = n(!0), [le, X] = n(null), [ee, fe] = n(""), [R, re] = n(""), [pe, oe] = n("templates"), [ae, Ee] = n(/* @__PURE__ */ new Set()), he = l(null), ke = Z.some((g) => vt.has(g.status)), Ae = e.useMemo(() => {
-    const g = {};
-    return k.forEach((ne) => {
-      g[ne.id] = ne.name;
-    }), g;
-  }, [k]), be = e.useMemo(() => {
-    const g = {};
+    Input: u,
+    Popconfirm: b,
+    Row: y,
+    Space: S,
+    Spin: C,
+    Tabs: $,
+    Tag: w,
+    Tooltip: z,
+    Typography: j,
+    message: R
+  } = x().antd, {
+    ApartmentOutlined: W,
+    DeleteOutlined: G,
+    ReloadOutlined: J,
+    RocketOutlined: K,
+    PlayCircleOutlined: B,
+    StopOutlined: P
+  } = x().antdIcons || {}, { Text: F, Paragraph: X, Title: k } = j, E = x().useSelectedAgent, f = E ? E() : { id: "default" }, T = (f == null ? void 0 : f.id) || "default", [v, H] = n([]), [Z, L] = n([]), [_, m] = n([]), [te, N] = n(!0), [h, D] = n(!0), [le, V] = n(null), [ee, ge] = n(""), [I, re] = n(""), [ue, oe] = n("templates"), [ae, ye] = n(/* @__PURE__ */ new Set()), Ee = a(null), xe = Z.some((p) => gt.has(p.status)), Ae = e.useMemo(() => {
+    const p = {};
+    return v.forEach((ne) => {
+      p[ne.id] = ne.name;
+    }), p;
+  }, [v]), ve = e.useMemo(() => {
+    const p = {};
     return Z.forEach((ne) => {
-      vt.has(ne.status) && (g[ne.flow_id] = (g[ne.flow_id] || 0) + 1);
-    }), g;
-  }, [Z]), Q = t(async (g = !1) => {
-    g || W(!0);
+      gt.has(ne.status) && (p[ne.flow_id] = (p[ne.flow_id] || 0) + 1);
+    }), p;
+  }, [Z]), Q = t(async (p = !1) => {
+    p || N(!0);
     try {
-      const [ne, ce, _e] = await Promise.all([
-        ie("/flowforge/flows", { bypassCache: !0 }),
-        ie("/flowforge/runs", { bypassCache: !0 }),
-        At().catch(() => [])
+      const [ne, ie, Te] = await Promise.all([
+        se("/flowforge/flows", { bypassCache: !0 }),
+        se("/flowforge/runs", { bypassCache: !0 }),
+        kt().catch(() => [])
       ]);
-      q(ne), U(ce), p(_e), J(!0);
+      H(ne), L(ie), m(Te), D(!0);
     } catch (ne) {
-      console.warn("[ugsci] FlowForge is unavailable:", ne), J(!1);
+      console.warn("[ugsci] FlowForge is unavailable:", ne), D(!1);
     } finally {
-      g || W(!1);
+      p || N(!1);
     }
   }, []);
-  a(() => {
+  l(() => {
     Q();
-  }, [Q]), a(() => {
-    if (!S || !ke) {
-      he.current && (clearTimeout(he.current), he.current = null);
+  }, [Q]), l(() => {
+    if (!h || !xe) {
+      Ee.current && (clearTimeout(Ee.current), Ee.current = null);
       return;
     }
-    return he.current = setTimeout(() => {
+    return Ee.current = setTimeout(() => {
       Q(!0);
-    }, Yl), () => {
-      he.current && (clearTimeout(he.current), he.current = null);
+    }, Ll), () => {
+      Ee.current && (clearTimeout(Ee.current), Ee.current = null);
     };
-  }, [ke, S, Q]);
-  const we = t(
-    async (g) => {
+  }, [xe, h, Q]);
+  const be = t(
+    async (p) => {
       if (!le) {
-        X(g.key);
+        V(p.key);
         try {
-          const ne = await ie(
+          const ne = await se(
             "/flowforge/generate",
             {
               method: "POST",
               body: JSON.stringify({
-                prompt: g.sop,
-                name: g.name,
-                agent_id: $
+                prompt: p.sop,
+                name: p.name,
+                agent_id: T
               })
             }
-          ), ce = {
+          ), ie = {
             ...ne.nodes || {}
-          }, _e = Object.entries(ce).filter(([Le]) => /^step_\d+$/.test(Le)).sort(([Le], [Se]) => Number(Le.slice(5)) - Number(Se.slice(5))), Ce = {};
-          let Oe = 0, Me = 0;
-          _e.forEach(([Le, Se], Re) => {
-            const Y = g.roleHints[Re] || "", Ie = g.roleKeys[Re] || "analyst", ze = P.find(
-              (We) => `${We.name} ${We.id}`.toLowerCase().includes(Y.toLowerCase())
+          }, Te = Object.entries(ie).filter(([Me]) => /^step_\d+$/.test(Me)).sort(([Me], [Se]) => Number(Me.slice(5)) - Number(Se.slice(5))), ke = {};
+          let Oe = 0, Re = 0;
+          Te.forEach(([Me, Se], $e) => {
+            const Y = p.roleHints[$e] || "", _e = p.roleKeys[$e] || "analyst", Ie = _.find(
+              (Fe) => `${Fe.name} ${Fe.id}`.toLowerCase().includes(Y.toLowerCase())
             );
-            ze ? Oe++ : Me++;
-            const Pe = (ze == null ? void 0 : ze.id) || $, He = { ...Se.inputs || {} };
-            He.agent_id = Pe, ce[Le] = {
+            Ie ? Oe++ : Re++;
+            const Pe = (Ie == null ? void 0 : Ie.id) || T, De = { ...Se.inputs || {} };
+            De.agent_id = Pe, ie[Me] = {
               ...Se,
-              inputs: He,
+              inputs: De,
               metadata: {
                 ...Se.metadata || {},
                 binding_policy: "fixed_instance",
                 role_hint: Y,
-                role_key: Ie,
+                role_key: _e,
                 agent_id: Pe
               }
-            }, Ce[Le] = {
+            }, ke[Me] = {
               binding_policy: "fixed_instance",
               role_hint: Y,
-              role_key: Ie,
+              role_key: _e,
               agent_id: Pe
             };
           });
-          const De = {
+          const je = {
             ...ne,
-            nodes: ce,
-            id: `${g.key}-${Date.now()}`,
-            name: g.name,
-            description: g.description,
+            nodes: ie,
+            id: `${p.key}-${Date.now()}`,
+            name: p.name,
+            description: p.description,
             metadata: {
               ...ne.metadata || {},
               domain: "oil-gas",
-              template_key: g.key,
+              template_key: p.key,
               expert_binding_policy: "fixed_instance",
-              controller_agent_id: $,
-              node_bindings: Ce
+              controller_agent_id: T,
+              node_bindings: ke
             }
           };
-          await ie("/flowforge/flows", {
+          await se("/flowforge/flows", {
             method: "POST",
-            body: JSON.stringify(De)
+            body: JSON.stringify(je)
           });
-          const Fe = _e.length > 0 ? `（${Oe} 个专家已匹配，${Me} 个回退到控制器）` : "";
-          z.success(`已创建工作流草稿「${g.name}」${Fe}`), await Q();
+          const Ue = Te.length > 0 ? `（${Oe} 个专家已匹配，${Re} 个回退到控制器）` : "";
+          R.success(`已创建工作流草稿「${p.name}」${Ue}`), await Q();
         } catch (ne) {
-          z.error(ne.message || "创建工作流失败");
+          R.error(ne.message || "创建工作流失败");
         } finally {
-          X(null);
+          V(null);
         }
       }
     },
-    [P, $, le, Q, z]
-  ), ye = t(async () => {
+    [_, T, le, Q, R]
+  ), fe = t(async () => {
     if (!le) {
-      if (!R.trim()) {
-        z.warning("请先描述工作流步骤和控制要求");
+      if (!I.trim()) {
+        R.warning("请先描述工作流步骤和控制要求");
         return;
       }
-      X("natural-language");
+      V("natural-language");
       try {
-        const g = await ie(
+        const p = await se(
           "/flowforge/generate",
           {
             method: "POST",
             body: JSON.stringify({
-              prompt: R.trim(),
+              prompt: I.trim(),
               name: ee.trim(),
-              agent_id: $
+              agent_id: T
             })
           }
         ), ne = {
-          ...g,
+          ...p,
           id: `natural-${Date.now()}`,
           metadata: {
-            ...g.metadata || {},
+            ...p.metadata || {},
             domain: "oil-gas",
             source: "natural-language",
             expert_binding_policy: "fixed_instance",
-            controller_agent_id: $
+            controller_agent_id: T
           }
         };
-        await ie("/flowforge/flows", {
+        await se("/flowforge/flows", {
           method: "POST",
           body: JSON.stringify(ne)
-        }), z.success("已从自然语言生成可编辑工作流草稿"), fe(""), re(""), await Q();
-      } catch (g) {
-        z.error(g.message || "自然语言生成失败");
+        }), R.success("已从自然语言生成可编辑工作流草稿"), ge(""), re(""), await Q();
+      } catch (p) {
+        R.error(p.message || "自然语言生成失败");
       } finally {
-        X(null);
+        V(null);
       }
     }
-  }, [$, le, Q, z, ee, R]), V = t(
-    async (g, ne) => {
+  }, [T, le, Q, R, ee, I]), q = t(
+    async (p, ne) => {
       try {
-        await ie(`/flowforge/flows/${encodeURIComponent(g)}/run`, {
+        await se(`/flowforge/flows/${encodeURIComponent(p)}/run`, {
           method: "POST",
           body: JSON.stringify({ inputs: {} })
-        }), z.success(`已启动工作流「${ne}」`), await Q(!0);
-      } catch (ce) {
-        z.error(ce.message || "启动工作流失败");
+        }), R.success(`已启动工作流「${ne}」`), await Q(!0);
+      } catch (ie) {
+        R.error(ie.message || "启动工作流失败");
       }
     },
-    [Q, z]
-  ), de = t(
-    async (g, ne) => {
+    [Q, R]
+  ), ce = t(
+    async (p, ne) => {
       try {
-        await ie(`/flowforge/flows/${encodeURIComponent(g)}`, {
+        await se(`/flowforge/flows/${encodeURIComponent(p)}`, {
           method: "DELETE"
-        }), z.success(`已删除工作流「${ne}」`), await Q();
-      } catch (ce) {
-        z.error(ce.message || "删除工作流失败");
+        }), R.success(`已删除工作流「${ne}」`), await Q();
+      } catch (ie) {
+        R.error(ie.message || "删除工作流失败");
       }
     },
-    [Q, z]
-  ), ge = t(
-    async (g) => {
-      Ee((ne) => {
-        const ce = new Set(ne);
-        return ce.add(g), ce;
+    [Q, R]
+  ), pe = t(
+    async (p) => {
+      ye((ne) => {
+        const ie = new Set(ne);
+        return ie.add(p), ie;
       });
       try {
-        await ie(`/flowforge/runs/${encodeURIComponent(g)}/cancel`, {
+        await se(`/flowforge/runs/${encodeURIComponent(p)}/cancel`, {
           method: "POST"
-        }), z.success("已请求取消运行"), await Q(!0);
+        }), R.success("已请求取消运行"), await Q(!0);
       } catch (ne) {
-        z.error(ne.message || "取消运行失败");
+        R.error(ne.message || "取消运行失败");
       } finally {
-        Ee((ne) => {
-          const ce = new Set(ne);
-          return ce.delete(g), ce;
+        ye((ne) => {
+          const ie = new Set(ne);
+          return ie.delete(p), ie;
         });
       }
     },
-    [Q, z]
-  ), F = e.createElement(
+    [Q, R]
+  ), U = e.createElement(
     "div",
     null,
     e.createElement(
@@ -5711,17 +5711,17 @@ function ar() {
         style: { marginBottom: 16 }
       },
       e.createElement(
-        h,
+        S,
         { direction: "vertical", style: { width: "100%" }, size: 10 },
-        e.createElement(m, {
+        e.createElement(u, {
           value: ee,
-          onChange: (g) => fe(g.target.value),
+          onChange: (p) => ge(p.target.value),
           placeholder: "工作流名称（可选）",
           maxLength: 80
         }),
-        e.createElement(m.TextArea, {
-          value: R,
-          onChange: (g) => re(g.target.value),
+        e.createElement(u.TextArea, {
+          value: I,
+          onChange: (p) => re(p.target.value),
           placeholder: "例如：先检查某储气库本周期压力和注采量数据，再由油藏工程师预测下周期能力，由独立完整性专家复核风险，最后形成带证据和不确定性的建议。",
           autoSize: { minRows: 3, maxRows: 8 }
         }),
@@ -5729,47 +5729,47 @@ function ar() {
           o,
           {
             type: "primary",
-            onClick: () => void ye(),
+            onClick: () => void fe(),
             loading: le === "natural-language",
-            disabled: !S || !!le,
-            style: je
+            disabled: !h || !!le,
+            style: Le
           },
           "生成可编辑草稿"
         )
       )
     ),
     e.createElement(
-      u,
+      y,
       { gutter: [12, 12] },
-      ...Xl.map(
-        (g) => e.createElement(
-          s,
-          { key: g.key, xs: 24, md: 8 },
+      ...Ml.map(
+        (p) => e.createElement(
+          i,
+          { key: p.key, xs: 24, md: 8 },
           e.createElement(
             c,
             { style: { height: "100%" } },
             e.createElement(
-              h,
+              S,
               { align: "start", style: { width: "100%" } },
-              e.createElement("span", { style: { fontSize: 28 } }, g.icon),
+              e.createElement("span", { style: { fontSize: 28 } }, p.icon),
               e.createElement(
                 "div",
                 { style: { flex: 1 } },
-                e.createElement(T, { level: 5, style: { margin: 0 } }, g.name),
-                e.createElement(b, { color: "blue", style: { marginTop: 6 } }, g.category),
+                e.createElement(k, { level: 5, style: { margin: 0 } }, p.name),
+                e.createElement(w, { color: "blue", style: { marginTop: 6 } }, p.category),
                 e.createElement(
-                  K,
+                  X,
                   { type: "secondary", style: { margin: "10px 0 14px" } },
-                  g.description
+                  p.description
                 ),
                 e.createElement(
                   o,
                   {
                     type: "primary",
-                    loading: le === g.key,
-                    disabled: !S || !!le,
-                    onClick: () => void we(g),
-                    style: je
+                    loading: le === p.key,
+                    disabled: !h || !!le,
+                    onClick: () => void be(p),
+                    style: Le
                   },
                   "创建草稿"
                 )
@@ -5783,7 +5783,7 @@ function ar() {
       c,
       { size: "small", title: "专家节点绑定策略", style: { marginTop: 16 } },
       e.createElement(
-        u,
+        y,
         { gutter: [12, 12] },
         ...[
           ["固定实例", "生产关键节点使用指定且已验证的专家实例", "当前可执行"],
@@ -5791,69 +5791,69 @@ function ar() {
           ["模板派生", "由 OMP 控制节点按角色模板临时创建隔离角色", "规划中"],
           ["动态路由", "按能力、健康、权限和成本选择实例", "规划中"]
         ].map(
-          ([g, ne, ce]) => e.createElement(
-            s,
-            { key: g, xs: 24, sm: 12, lg: 6 },
-            e.createElement(H, { strong: !0 }, g),
+          ([p, ne, ie]) => e.createElement(
+            i,
+            { key: p, xs: 24, sm: 12, lg: 6 },
+            e.createElement(F, { strong: !0 }, p),
             e.createElement(
-              b,
+              w,
               {
-                color: ce === "当前可执行" ? "green" : "default",
+                color: ie === "当前可执行" ? "green" : "default",
                 style: { marginLeft: 6, fontSize: 10 }
               },
-              ce
+              ie
             ),
             e.createElement("div", { style: { color: "var(--ant-color-text-tertiary, #8c8c8c)", fontSize: 12, marginTop: 4 } }, ne)
           )
         )
       )
     )
-  ), y = te ? e.createElement(x) : k.length === 0 ? e.createElement(d, { description: "暂无工作流，可从模板创建" }) : e.createElement(
-    u,
+  ), g = te ? e.createElement(C) : v.length === 0 ? e.createElement(d, { description: "暂无工作流，可从模板创建" }) : e.createElement(
+    y,
     { gutter: [12, 12] },
-    ...k.map((g) => {
-      const ne = be[g.id] || 0;
+    ...v.map((p) => {
+      const ne = ve[p.id] || 0;
       return e.createElement(
-        s,
-        { key: g.id, xs: 24, md: 12, xl: 8 },
+        i,
+        { key: p.id, xs: 24, md: 12, xl: 8 },
         e.createElement(
           c,
           {
             size: "small",
             title: e.createElement(
-              h,
+              S,
               { size: 6 },
-              e.createElement("span", null, g.name),
+              e.createElement("span", null, p.name),
               ne > 0 ? e.createElement(
-                b,
+                w,
                 { color: "blue" },
                 `${ne} 个运行中`
               ) : null
             ),
-            extra: e.createElement(b, null, `v${g.version}`)
+            extra: e.createElement(w, null, `v${p.version}`)
           },
-          e.createElement(K, { ellipsis: { rows: 2 } }, g.description || "暂无描述"),
+          e.createElement(X, { ellipsis: { rows: 2 } }, p.description || "暂无描述"),
           e.createElement(
-            h,
+            S,
             { size: 8, wrap: !0 },
-            e.createElement(b, { color: "geekblue" }, `${g.node_count} 个节点`),
+            e.createElement(w, { color: "geekblue" }, `${p.node_count} 个节点`),
             e.createElement(o, {
               size: "small",
               type: "primary",
-              icon: M ? e.createElement(M) : void 0,
-              disabled: !S,
-              onClick: () => void V(g.id, g.name)
+              icon: B ? e.createElement(B) : void 0,
+              disabled: !h,
+              onClick: () => void q(p.id, p.name)
             }, "运行"),
             e.createElement(o, {
               size: "small",
-              onClick: () => Nt(g.id)
+              onClick: () => Ot(p.id)
             }, "编辑"),
             e.createElement(
-              f,
+              b,
               {
                 title: "确认删除",
-                description: `确定要删除工作流「${g.name}」吗？此操作不可撤销。`,
-                onConfirm: () => void de(g.id, g.name),
+                description: `确定要删除工作流「${p.name}」吗？此操作不可撤销。`,
+                onConfirm: () => void ce(p.id, p.name),
                 okText: "删除",
                 cancelText: "取消",
                 okButtonProps: { danger: !0 }
@@ -5861,63 +5861,63 @@ function ar() {
               e.createElement(o, {
                 size: "small",
                 danger: !0,
-                icon: D ? e.createElement(D) : void 0
+                icon: G ? e.createElement(G) : void 0
               }, "删除")
             )
           )
         )
       );
     })
-  ), me = te ? e.createElement(x) : Z.length === 0 ? e.createElement(d, { description: "暂无工作流运行记录" }) : e.createElement(
+  ), de = te ? e.createElement(C) : Z.length === 0 ? e.createElement(d, { description: "暂无工作流运行记录" }) : e.createElement(
     "div",
     { style: { display: "flex", flexDirection: "column", gap: 8 } },
-    ...Z.map((g) => {
-      const ne = Ae[g.flow_id] || g.flow_id, ce = vt.has(g.status), _e = nr(g.node_statuses), Ce = g.duration_ms && g.duration_ms > 0 ? g.duration_ms : g.finished_at && g.started_at ? (g.finished_at - g.started_at) * 1e3 : ce && g.started_at ? (Date.now() / 1e3 - g.started_at) * 1e3 : 0;
+    ...Z.map((p) => {
+      const ne = Ae[p.flow_id] || p.flow_id, ie = gt.has(p.status), Te = Dl(p.node_statuses), ke = p.duration_ms && p.duration_ms > 0 ? p.duration_ms : p.finished_at && p.started_at ? (p.finished_at - p.started_at) * 1e3 : ie && p.started_at ? (Date.now() / 1e3 - p.started_at) * 1e3 : 0;
       return e.createElement(
         c,
-        { key: g.run_id, size: "small" },
+        { key: p.run_id, size: "small" },
         e.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
           e.createElement(
-            b,
-            { color: Ql[g.status] || "default" },
-            g.status
+            w,
+            { color: Bl[p.status] || "default" },
+            p.status
           ),
-          e.createElement(H, { strong: !0 }, ne),
+          e.createElement(F, { strong: !0 }, ne),
           e.createElement(
-            v,
-            { title: g.run_id },
+            z,
+            { title: p.run_id },
             e.createElement(
-              H,
+              F,
               { type: "secondary", style: { fontFamily: "monospace", fontSize: 11 } },
-              g.run_id.slice(0, 8) + "…"
+              p.run_id.slice(0, 8) + "…"
             )
           ),
           e.createElement(
-            H,
+            F,
             { type: "secondary", style: { fontSize: 12 } },
-            er(g.started_at)
+            Ul(p.started_at)
           ),
-          Ce > 0 ? e.createElement(
-            H,
+          ke > 0 ? e.createElement(
+            F,
             { type: "secondary", style: { fontSize: 12 } },
-            `耗时 ${tr(Ce)}`
+            `耗时 ${Nl(ke)}`
           ) : null,
-          _e ? e.createElement(b, { color: "geekblue", style: { fontSize: 11 } }, _e) : null,
-          g.error ? e.createElement(
-            v,
-            { title: g.error },
-            e.createElement(H, { type: "danger", style: { fontSize: 12 } }, "（有错误）")
+          Te ? e.createElement(w, { color: "geekblue", style: { fontSize: 11 } }, Te) : null,
+          p.error ? e.createElement(
+            z,
+            { title: p.error },
+            e.createElement(F, { type: "danger", style: { fontSize: 12 } }, "（有错误）")
           ) : null,
           e.createElement(
             "div",
             { style: { marginLeft: "auto", display: "flex", gap: 6 } },
-            ce ? e.createElement(
-              f,
+            ie ? e.createElement(
+              b,
               {
                 title: "确认取消运行？",
-                onConfirm: () => void ge(g.run_id),
+                onConfirm: () => void pe(p.run_id),
                 okText: "取消运行",
                 cancelText: "保留",
                 okButtonProps: { danger: !0 }
@@ -5925,49 +5925,49 @@ function ar() {
               e.createElement(o, {
                 size: "small",
                 danger: !0,
-                loading: ae.has(g.run_id),
-                icon: A ? e.createElement(A) : void 0
+                loading: ae.has(p.run_id),
+                icon: P ? e.createElement(P) : void 0
               }, "取消运行")
             ) : null,
             e.createElement(
               o,
-              { size: "small", type: "link", onClick: () => Nt(void 0, g.run_id) },
+              { size: "small", type: "link", onClick: () => Ot(void 0, p.run_id) },
               "查看详情"
             )
           )
         )
       );
     })
-  ), j = e.createElement(
-    h,
+  ), M = e.createElement(
+    S,
     null,
     e.createElement(o, {
-      icon: G ? e.createElement(G) : void 0,
+      icon: J ? e.createElement(J) : void 0,
       onClick: () => void Q(),
       loading: te
     }, "刷新"),
-    pe !== "templates" ? e.createElement(o, {
+    ue !== "templates" ? e.createElement(o, {
       type: "primary",
-      icon: N ? e.createElement(N) : B ? e.createElement(B) : void 0,
-      onClick: () => Nt(),
-      disabled: !S,
-      style: je
+      icon: W ? e.createElement(W) : K ? e.createElement(K) : void 0,
+      onClick: () => Ot(),
+      disabled: !h,
+      style: Le
     }, "打开流程编辑器") : null
   );
   return e.createElement(
     "div",
     null,
-    S ? null : e.createElement(r, {
+    h ? null : e.createElement(r, {
       type: "warning",
       message: "FlowForge 引擎未启动",
       description: "协作工作流功能需要 FlowForge 后端引擎支持。请检查后端是否正常运行，或联系管理员。",
       showIcon: !0,
       style: { marginBottom: 16 }
     }),
-    e.createElement(C, {
+    e.createElement($, {
       items: [
-        { key: "templates", label: "工作流模板", children: F },
-        { key: "mine", label: `我的工作流 (${k.length})`, children: y },
+        { key: "templates", label: "工作流模板", children: U },
+        { key: "mine", label: `我的工作流 (${v.length})`, children: g },
         {
           key: "runs",
           label: e.createElement(
@@ -5975,79 +5975,79 @@ function ar() {
             null,
             "运行中心 (",
             Z.length,
-            ke ? e.createElement(
+            xe ? e.createElement(
               "span",
-              { style: { color: "var(--ant-color-primary, #1677ff)", marginLeft: 2 } },
-              `·${Z.filter((g) => vt.has(g.status)).length} 活跃`
+              { style: { color: "#1677ff", marginLeft: 2 } },
+              `·${Z.filter((p) => gt.has(p.status)).length} 活跃`
             ) : null,
             ")"
           ),
-          children: me
+          children: de
         }
       ],
-      activeKey: pe,
-      onChange: (g) => oe(g),
-      tabBarExtraContent: j
+      activeKey: ue,
+      onChange: (p) => oe(p),
+      tabBarExtraContent: M
     })
   );
 }
-function Bn(e, t) {
+function In(e, t) {
   var n, r;
-  const a = e.coordinatorName || ((n = e.members[0]) == null ? void 0 : n.name), l = e.members.find((o) => o.name === a) || e.members[0];
-  if ((l == null ? void 0 : l.bindingMode) !== "temporary" && (l != null && l.agentId) && t.some((o) => o.id === l.agentId))
-    return l.agentId;
-  if (a && (l == null ? void 0 : l.bindingMode) !== "temporary") {
-    const o = sa(t, a);
+  const l = e.coordinatorName || ((n = e.members[0]) == null ? void 0 : n.name), a = e.members.find((o) => o.name === l) || e.members[0];
+  if ((a == null ? void 0 : a.bindingMode) !== "temporary" && (a != null && a.agentId) && t.some((o) => o.id === a.agentId))
+    return a.agentId;
+  if (l && (a == null ? void 0 : a.bindingMode) !== "temporary") {
+    const o = Vn(t, l);
     if (o) return o;
   }
-  return (l == null ? void 0 : l.bindingMode) === "fixed" ? null : ((r = t[0]) == null ? void 0 : r.id) || null;
+  return (a == null ? void 0 : a.bindingMode) === "fixed" ? null : ((r = t[0]) == null ? void 0 : r.id) || null;
 }
-function jn() {
+function zn() {
   const e = new URLSearchParams(window.location.search).get("section");
   return e === "teams" || e === "workflows" ? e : "experts";
 }
-function lr() {
-  var de, ge;
-  const e = _().React, { useState: t, useEffect: a, useCallback: l, useMemo: n } = e, {
+function Gl() {
+  var ce, pe;
+  const e = x().React, { useState: t, useEffect: l, useCallback: a, useMemo: n } = e, {
     Spin: r,
     Empty: o,
     Input: c,
-    Button: s,
+    Button: i,
     message: d,
-    Row: m,
-    Col: f,
-    Tabs: u,
-    Modal: h,
-    Typography: x
-  } = _().antd, {
-    ReloadOutlined: C,
-    PlusOutlined: b,
-    SearchOutlined: v,
-    TeamOutlined: I,
-    UserOutlined: z
-  } = _().antdIcons || {}, { Text: N, Paragraph: D } = x, [G, B] = t([]), [M, A] = t(!0), [H, K] = t(!1), [T, w] = t(null), [E, $] = t(""), [k, q] = t(!1), [Z, U] = t(jn), [P, p] = t(
+    Row: u,
+    Col: b,
+    Tabs: y,
+    Modal: S,
+    Typography: C
+  } = x().antd, {
+    ReloadOutlined: $,
+    PlusOutlined: w,
+    SearchOutlined: z,
+    TeamOutlined: j,
+    UserOutlined: R
+  } = x().antdIcons || {}, { Text: W, Paragraph: G } = C, [J, K] = t([]), [B, P] = t(!0), [F, X] = t(!1), [k, E] = t(null), [f, T] = t(""), [v, H] = t(!1), [Z, L] = t(zn), [_, m] = t(
     null
-  ), [te, W] = t(""), [S, J] = t(!1), [le, X] = t(!1), [ee, fe] = t(null), [R, re] = t([]), pe = l(async () => {
-    A(!0);
+  ), [te, N] = t(""), [h, D] = t(!1), [le, V] = t(!1), [ee, ge] = t(null), [I, re] = t([]), ue = a(async () => {
+    P(!0);
     try {
-      const F = await At(), y = await Promise.all(
-        F.map(async (me) => {
+      const U = await kt(), g = await Promise.all(
+        U.map(async (de) => {
           try {
-            const [j, g, ne] = await Promise.all([
-              Kt(me.id).catch(() => null),
-              Pt(me.id).catch(() => []),
-              Yt(me.id).catch(() => [])
+            const [M, p, ne] = await Promise.all([
+              Ut(de.id).catch(() => null),
+              Ct(de.id).catch(() => []),
+              Ft(de.id).catch(() => [])
             ]);
             return {
-              agent: me,
-              config: j,
-              skills: g,
+              agent: de,
+              config: M,
+              skills: p,
               mcps: ne,
               loading: !1
             };
           } catch {
             return {
-              agent: me,
+              agent: de,
               config: null,
               skills: [],
               mcps: [],
@@ -6056,107 +6056,107 @@ function lr() {
           }
         })
       );
-      B(y), re(F);
-    } catch (F) {
-      d.error(F.message || "加载专家列表失败"), B([]);
+      K(g), re(U);
+    } catch (U) {
+      d.error(U.message || "加载专家列表失败"), K([]);
     } finally {
-      A(!1);
+      P(!1);
     }
   }, []);
-  a(() => {
-    pe();
-  }, [pe]), a(() => {
-    const F = () => U(jn());
-    return window.addEventListener("popstate", F), () => window.removeEventListener("popstate", F);
-  }, []), a(() => {
+  l(() => {
+    ue();
+  }, [ue]), l(() => {
+    const U = () => L(zn());
+    return window.addEventListener("popstate", U), () => window.removeEventListener("popstate", U);
+  }, []), l(() => {
     if (ee && le) {
-      const F = G.find(
-        (y) => y.agent.id === ee.agent.id
+      const U = J.find(
+        (g) => g.agent.id === ee.agent.id
       );
-      F && F !== ee && fe(F);
+      U && U !== ee && ge(U);
     }
-  }, [G, ee, le]);
-  const oe = l(
-    async (F) => {
-      var g;
-      const y = F.coordinatorName || ((g = F.members[0]) == null ? void 0 : g.name), me = Bn(F, R);
-      if (!me) {
-        const ne = F.members.find(
-          (ce) => ce.name === y
+  }, [J, ee, le]);
+  const oe = a(
+    async (U) => {
+      var p;
+      const g = U.coordinatorName || ((p = U.members[0]) == null ? void 0 : p.name), de = In(U, I);
+      if (!de) {
+        const ne = U.members.find(
+          (ie) => ie.name === g
         );
         d.error(
-          (ne == null ? void 0 : ne.bindingMode) === "fixed" ? `固定协调者「${y || "协调者"}」当前不可用，请修复绑定后再运行` : "没有可用的 Agent 作为工作流控制器"
+          (ne == null ? void 0 : ne.bindingMode) === "fixed" ? `固定协调者「${g || "协调者"}」当前不可用，请修复绑定后再运行` : "没有可用的 Agent 作为工作流控制器"
         );
         return;
       }
-      if (/\{.+?\}/.test(F.taskTemplate)) {
-        W(F.taskTemplate), p(F);
+      if (/\{.+?\}/.test(U.taskTemplate)) {
+        N(U.taskTemplate), m(U);
         return;
       }
-      await ae(F, me, F.taskTemplate);
+      await ae(U, de, U.taskTemplate);
     },
-    [R, d]
-  ), ae = l(
-    async (F, y, me) => {
-      J(!0);
+    [I, d]
+  ), ae = a(
+    async (U, g, de) => {
+      D(!0);
       try {
-        const j = me || F.taskTemplate, g = F.custom ? `@${F.id}` : F.name, ne = `/ugsci-team ${F.mode} ${g} ${j}`, ce = _();
-        ce.setSelectedAgent && ce.setSelectedAgent(y);
-        const _e = await jl(
-          y,
+        const M = de || U.taskTemplate, p = U.custom ? `@${U.id}` : U.name, ne = `/ugsci-team ${U.mode} ${p} ${M}`, ie = x();
+        ie.setSelectedAgent && ie.setSelectedAgent(g);
+        const Te = await xl(
+          g,
           ne,
-          F.name
+          U.name
         );
         d.success(
-          `OMP 工作流已启动：${F.name}（${F.mode}模式）`
-        ), p(null), Ee(`/chat/${_e}`);
-      } catch (j) {
-        d.error(j.message || "发起团队任务失败");
+          `OMP 工作流已启动：${U.name}（${U.mode}模式）`
+        ), m(null), ye(`/chat/${Te}`);
+      } catch (M) {
+        d.error(M.message || "发起团队任务失败");
       } finally {
-        J(!1);
+        D(!1);
       }
     },
     [d]
-  ), Ee = (F) => {
-    window.history.pushState({}, "", F), window.dispatchEvent(new PopStateEvent("popstate"));
-  }, he = l((F) => {
-    w(F), K(!0);
-  }, []), ke = l((F) => {
-    fe(F), X(!0);
-  }, []), Ae = l(
-    (F) => {
-      if (!F.agent.enabled) {
-        d.warning(`专家「${F.agent.name}」未启用，请先启用`);
+  ), ye = (U) => {
+    window.history.pushState({}, "", U), window.dispatchEvent(new PopStateEvent("popstate"));
+  }, Ee = a((U) => {
+    E(U), X(!0);
+  }, []), xe = a((U) => {
+    ge(U), V(!0);
+  }, []), Ae = a(
+    (U) => {
+      if (!U.agent.enabled) {
+        d.warning(`专家「${U.agent.name}」未启用，请先启用`);
         return;
       }
       try {
-        const y = _();
-        y.setSelectedAgent && y.setSelectedAgent(F.agent.id);
-      } catch (y) {
-        console.warn("[ugsci] Failed to set selected agent:", y);
+        const g = x();
+        g.setSelectedAgent && g.setSelectedAgent(U.agent.id);
+      } catch (g) {
+        console.warn("[ugsci] Failed to set selected agent:", g);
       }
-      d.success(`已召唤专家「${F.agent.name}」，正在跳转至对话...`), Ee("/chat");
+      d.success(`已召唤专家「${U.agent.name}」，正在跳转至对话...`), ye("/chat");
     },
     [d]
-  ), be = n(() => {
-    if (!E.trim()) return G;
-    const F = E.toLowerCase();
-    return G.filter(
-      (y) => {
-        var me;
-        return y.agent.name.toLowerCase().includes(F) || ((me = y.agent.description) == null ? void 0 : me.toLowerCase().includes(F)) || y.agent.id.toLowerCase().includes(F) || y.skills.some((j) => j.name.toLowerCase().includes(F));
+  ), ve = n(() => {
+    if (!f.trim()) return J;
+    const U = f.toLowerCase();
+    return J.filter(
+      (g) => {
+        var de;
+        return g.agent.name.toLowerCase().includes(U) || ((de = g.agent.description) == null ? void 0 : de.toLowerCase().includes(U)) || g.agent.id.toLowerCase().includes(U) || g.skills.some((M) => M.name.toLowerCase().includes(U));
       }
     );
-  }, [G, E]), Q = G.filter((F) => F.agent.enabled).length, we = G.reduce(
-    (F, y) => F + y.skills.filter((me) => me.enabled !== !1).length,
+  }, [J, f]), Q = J.filter((U) => U.agent.enabled).length, be = J.reduce(
+    (U, g) => U + g.skills.filter((de) => de.enabled !== !1).length,
     0
-  ), ye = G.reduce((F, y) => F + y.mcps.length, 0), V = [
+  ), fe = J.reduce((U, g) => U + g.mcps.length, 0), q = [
     {
       key: "experts",
       label: e.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        z ? e.createElement(z, { style: { fontSize: 14 } }) : null,
+        R ? e.createElement(R, { style: { fontSize: 14 } }) : null,
         "专家"
       ),
       children: e.createElement(
@@ -6177,49 +6177,49 @@ function lr() {
           },
           e.createElement(c, {
             placeholder: "搜索专家名称、描述或技能...",
-            prefix: v ? e.createElement(v) : void 0,
-            value: E,
-            onChange: (F) => $(F.target.value),
+            prefix: z ? e.createElement(z) : void 0,
+            value: f,
+            onChange: (U) => T(U.target.value),
             allowClear: !0,
             style: { flex: "1 1 280px", maxWidth: 400 }
           }),
           e.createElement(
-            s,
+            i,
             {
               type: "primary",
-              icon: b ? e.createElement(b) : void 0,
-              onClick: () => q(!0),
-              style: je
+              icon: w ? e.createElement(w) : void 0,
+              onClick: () => H(!0),
+              style: Le
             },
             "创建专家"
           )
         ),
         // Content
-        M ? e.createElement(
+        B ? e.createElement(
           "div",
           { style: { textAlign: "center", padding: 60 } },
           e.createElement(r, { size: "large" })
-        ) : be.length === 0 ? e.createElement(o, {
-          description: E ? "未找到匹配的专家" : "暂无专家，点击「创建专家」添加"
+        ) : ve.length === 0 ? e.createElement(o, {
+          description: f ? "未找到匹配的专家" : "暂无专家，点击「创建专家」添加"
         }) : e.createElement(
-          m,
+          u,
           { gutter: [12, 12], align: "stretch" },
-          ...be.map(
-            (F) => e.createElement(
-              f,
+          ...ve.map(
+            (U) => e.createElement(
+              b,
               {
-                key: F.agent.id,
+                key: U.agent.id,
                 xs: 24,
                 sm: 12,
                 md: 8,
                 lg: 6,
                 style: { display: "flex" }
               },
-              e.createElement(_l, {
-                expert: F,
-                onClick: () => he(F),
-                onSummon: () => Ae(F),
-                onConfigure: () => ke(F)
+              e.createElement(ul, {
+                expert: U,
+                onClick: () => Ee(U),
+                onSummon: () => Ae(U),
+                onConfigure: () => xe(U)
               })
             )
           )
@@ -6231,11 +6231,11 @@ function lr() {
       label: e.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        I ? e.createElement(I, { style: { fontSize: 14 } }) : null,
+        j ? e.createElement(j, { style: { fontSize: 14 } }) : null,
         "专家团"
       ),
-      children: e.createElement(Vl, {
-        agents: R,
+      children: e.createElement(Rl, {
+        agents: I,
         onLaunch: oe
       })
     },
@@ -6244,97 +6244,97 @@ function lr() {
       label: e.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        (de = _().antdIcons) != null && de.ApartmentOutlined ? e.createElement(_().antdIcons.ApartmentOutlined, {
+        (ce = x().antdIcons) != null && ce.ApartmentOutlined ? e.createElement(x().antdIcons.ApartmentOutlined, {
           style: { fontSize: 14 }
         }) : null,
         "协作工作流"
       ),
-      children: e.createElement(ar)
+      children: e.createElement(Fl)
     }
   ];
   return e.createElement(
     "div",
     { style: { padding: 24 } },
-    e.createElement($t, {
+    e.createElement(xt, {
       title: "专家·协作",
-      subtitle: Z === "experts" ? `共 ${G.length} 位专家（${Q} 位启用）· ${we} 个技能 · ${ye} 个 MCP 客户端` : Z === "teams" ? "开放式多专家讨论、联合研判与 OMP 动态协作" : "流程化、可观测、可验证的油气与储气库协作流程",
+      subtitle: Z === "experts" ? `共 ${J.length} 位专家（${Q} 位启用）· ${be} 个技能 · ${fe} 个 MCP 客户端` : Z === "teams" ? "开放式多专家讨论、联合研判与 OMP 动态协作" : "流程化、可观测、可验证的油气与储气库协作流程",
       extra: e.createElement(
         e.Fragment,
         null,
         Z === "experts" ? e.createElement(
-          s,
+          i,
           {
-            icon: C ? e.createElement(C) : void 0,
+            icon: $ ? e.createElement($) : void 0,
             onClick: () => {
-              ut(), pe();
+              st(), ue();
             },
-            loading: M
+            loading: B
           },
           "刷新"
         ) : null
       )
     }),
-    e.createElement(u, {
-      items: V,
+    e.createElement(y, {
+      items: q,
       activeKey: Z,
-      onChange: (F) => {
-        U(F);
-        const y = new URL(window.location.href);
-        F === "experts" ? y.searchParams.delete("section") : y.searchParams.set("section", F), window.history.pushState({}, "", `${y.pathname}${y.search}`);
+      onChange: (U) => {
+        L(U);
+        const g = new URL(window.location.href);
+        U === "experts" ? g.searchParams.delete("section") : g.searchParams.set("section", U), window.history.pushState({}, "", `${g.pathname}${g.search}`);
       }
     }),
     // Drawer
-    e.createElement(Il, {
-      expert: T,
-      open: H,
-      onClose: () => K(!1),
-      onRefresh: () => pe()
+    e.createElement(pl, {
+      expert: k,
+      open: F,
+      onClose: () => X(!1),
+      onRefresh: () => ue()
     }),
     // Template Modal
-    e.createElement(zl, {
-      open: k,
-      onClose: () => q(!1),
-      onCreated: () => pe()
+    e.createElement(gl, {
+      open: v,
+      onClose: () => H(!1),
+      onCreated: () => ue()
     }),
     // Config Modal (gear icon)
-    e.createElement(kl, {
+    e.createElement(cl, {
       expert: ee,
       open: le,
-      onClose: () => X(!1),
-      onRefresh: () => pe()
+      onClose: () => V(!1),
+      onRefresh: () => ue()
     }),
     // Team Launch Modal (for filling placeholders)
-    P ? e.createElement(
-      h,
+    _ ? e.createElement(
+      S,
       {
         open: !0,
         title: e.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8 } },
-          e.createElement(Zt, {
-            members: P.members.map((F) => F.name),
+          e.createElement(Ht, {
+            members: _.members.map((U) => U.name),
             size: 28
           }),
           e.createElement(
             "span",
             null,
-            `发起团队任务 - ${P.name}`
+            `发起团队任务 - ${_.name}`
           )
         ),
-        onCancel: () => p(null),
+        onCancel: () => m(null),
         onOk: () => {
-          const F = Bn(
-            P,
-            R
+          const U = In(
+            _,
+            I
           );
-          if (!F) {
+          if (!U) {
             d.error("固定协调者不可用或没有可用的控制器 Agent");
             return;
           }
-          const y = te.trim() || P.taskTemplate;
-          ae(P, F, y);
+          const g = te.trim() || _.taskTemplate;
+          ae(_, U, g);
         },
-        confirmLoading: S,
+        confirmLoading: h,
         okText: "发起任务",
         width: 600
       },
@@ -6342,7 +6342,7 @@ function lr() {
         "div",
         null,
         e.createElement(
-          N,
+          W,
           {
             type: "secondary",
             style: { fontSize: 12, display: "block", marginBottom: 8 }
@@ -6351,7 +6351,7 @@ function lr() {
         ),
         e.createElement(c.TextArea, {
           value: te,
-          onChange: (F) => W(F.target.value),
+          onChange: (U) => N(U.target.value),
           rows: 8,
           style: { fontSize: 13, fontFamily: "monospace" }
         })
@@ -6362,58 +6362,58 @@ function lr() {
           style: {
             marginTop: 12,
             padding: "8px 12px",
-            background: "var(--ant-color-primary-bg, #e6f4ff)",
+            background: "#e6f4ff",
             borderRadius: 6
           }
         },
         e.createElement(
-          N,
-          { style: { fontSize: 12, color: "var(--ant-color-primary-text, #0958d9)" } },
-          `协调者: ${P.coordinatorName || ((ge = P.members[0]) == null ? void 0 : ge.name) || "—"} · 成员: ${P.members.map((F) => F.name).join("、")}`
+          W,
+          { style: { fontSize: 12, color: "#0958d9" } },
+          `协调者: ${_.coordinatorName || ((pe = _.members[0]) == null ? void 0 : pe.name) || "—"} · 成员: ${_.members.map((U) => U.name).join("、")}`
         )
       )
     ) : null
   );
 }
-function rr({
+function Hl({
   agentId: e,
   agentName: t,
-  refreshKey: a = 0,
-  onNavigate: l
+  refreshKey: l = 0,
+  onNavigate: a
 }) {
-  const n = _().React, { useState: r, useEffect: o, useCallback: c } = n, {
-    Spin: s,
+  const n = x().React, { useState: r, useEffect: o, useCallback: c } = n, {
+    Spin: i,
     Empty: d,
-    Button: m,
-    Row: f,
-    Col: u,
-    Card: h,
-    Tag: x,
-    Checkbox: C,
-    Modal: b,
-    Typography: v,
-    Drawer: I,
-    Descriptions: z,
-    message: N
-  } = _().antd, {
-    ReloadOutlined: D,
-    ThunderboltOutlined: G,
-    SettingOutlined: B,
-    CheckSquareOutlined: M,
-    EyeOutlined: A,
-    EyeInvisibleOutlined: H,
-    DeleteOutlined: K,
-    CloseOutlined: T
-  } = _().antdIcons || {}, { Text: w, Paragraph: E } = v, [$, k] = r([]), [q, Z] = r(!0), [U, P] = r(!1), [p, te] = r(null), [W, S] = r(!1), [J, le] = r(
+    Button: u,
+    Row: b,
+    Col: y,
+    Card: S,
+    Tag: C,
+    Checkbox: $,
+    Modal: w,
+    Typography: z,
+    Drawer: j,
+    Descriptions: R,
+    message: W
+  } = x().antd, {
+    ReloadOutlined: G,
+    ThunderboltOutlined: J,
+    SettingOutlined: K,
+    CheckSquareOutlined: B,
+    EyeOutlined: P,
+    EyeInvisibleOutlined: F,
+    DeleteOutlined: X,
+    CloseOutlined: k
+  } = x().antdIcons || {}, { Text: E, Paragraph: f } = z, [T, v] = r([]), [H, Z] = r(!0), [L, _] = r(!1), [m, te] = r(null), [N, h] = r(!1), [D, le] = r(
     /* @__PURE__ */ new Set()
-  ), [X, ee] = r(!1), [fe, R] = r(null), [re, pe] = r(!1), oe = c(async () => {
+  ), [V, ee] = r(!1), [ge, I] = r(null), [re, ue] = r(!1), oe = c(async () => {
     if (e) {
       Z(!0);
       try {
-        const V = await Pt(e);
-        k(V);
-      } catch (V) {
-        N.error(V.message || "加载技能失败"), k([]);
+        const q = await Ct(e);
+        v(q);
+      } catch (q) {
+        W.error(q.message || "加载技能失败"), v([]);
       } finally {
         Z(!1);
       }
@@ -6421,52 +6421,52 @@ function rr({
   }, [e]);
   o(() => {
     oe();
-  }, [oe, a]);
-  const ae = (V) => {
-    le((de) => {
-      const ge = new Set(de);
-      return ge.has(V) ? ge.delete(V) : ge.add(V), ge;
+  }, [oe, l]);
+  const ae = (q) => {
+    le((ce) => {
+      const pe = new Set(ce);
+      return pe.has(q) ? pe.delete(q) : pe.add(q), pe;
     });
-  }, Ee = () => le(/* @__PURE__ */ new Set()), he = () => le(new Set($.map((V) => V.name))), ke = () => {
-    W ? (Ee(), S(!1)) : S(!0);
+  }, ye = () => le(/* @__PURE__ */ new Set()), Ee = () => le(new Set(T.map((q) => q.name))), xe = () => {
+    N ? (ye(), h(!1)) : h(!0);
   }, Ae = async () => {
-    const V = Array.from(J);
-    if (V.length !== 0) {
+    const q = Array.from(D);
+    if (q.length !== 0) {
       ee(!0);
       try {
-        const { results: de } = await nl(e, V), ge = Object.entries(de).filter(
-          ([, y]) => y.success === !1
-        ), F = V.length - ge.length;
-        ge.length > 0 ? N.warning(
-          `批量启用完成：成功 ${F} 个，失败 ${ge.length} 个`
-        ) : N.success(`成功启用 ${V.length} 个技能`), Ee(), await oe();
-      } catch (de) {
-        N.error(de.message || "批量启用失败");
+        const { results: ce } = await Da(e, q), pe = Object.entries(ce).filter(
+          ([, g]) => g.success === !1
+        ), U = q.length - pe.length;
+        pe.length > 0 ? W.warning(
+          `批量启用完成：成功 ${U} 个，失败 ${pe.length} 个`
+        ) : W.success(`成功启用 ${q.length} 个技能`), ye(), await oe();
+      } catch (ce) {
+        W.error(ce.message || "批量启用失败");
       } finally {
         ee(!1);
       }
     }
-  }, be = async () => {
-    const V = Array.from(J);
-    if (V.length !== 0) {
+  }, ve = async () => {
+    const q = Array.from(D);
+    if (q.length !== 0) {
       ee(!0);
       try {
-        const { results: de } = await al(e, V), ge = Object.entries(de).filter(
-          ([, y]) => y.success === !1
-        ), F = V.length - ge.length;
-        ge.length > 0 ? N.warning(
-          `批量停用完成：成功 ${F} 个，失败 ${ge.length} 个`
-        ) : N.success(`成功停用 ${V.length} 个技能`), Ee(), await oe();
-      } catch (de) {
-        N.error(de.message || "批量停用失败");
+        const { results: ce } = await Fa(e, q), pe = Object.entries(ce).filter(
+          ([, g]) => g.success === !1
+        ), U = q.length - pe.length;
+        pe.length > 0 ? W.warning(
+          `批量停用完成：成功 ${U} 个，失败 ${pe.length} 个`
+        ) : W.success(`成功停用 ${q.length} 个技能`), ye(), await oe();
+      } catch (ce) {
+        W.error(ce.message || "批量停用失败");
       } finally {
         ee(!1);
       }
     }
   }, Q = () => {
-    const V = Array.from(J);
-    V.length !== 0 && b.confirm({
-      title: `确认删除 ${V.length} 个技能？`,
+    const q = Array.from(D);
+    q.length !== 0 && w.confirm({
+      title: `确认删除 ${q.length} 个技能？`,
       content: "删除后技能将从当前专家工作区移除，此操作不可撤销。技能池中的原始技能不受影响。",
       okText: "确认删除",
       cancelText: "取消",
@@ -6474,43 +6474,43 @@ function rr({
       onOk: async () => {
         ee(!0);
         try {
-          const { results: de } = await ll(e, V), ge = Object.entries(de).filter(
-            ([, y]) => y.success === !1
-          ), F = V.length - ge.length;
-          ge.length > 0 ? N.warning(
-            `批量删除完成：成功 ${F} 个，失败 ${ge.length} 个`
-          ) : N.success(`成功删除 ${V.length} 个技能`), Ee(), await oe();
-        } catch (de) {
-          N.error(de.message || "批量删除失败");
+          const { results: ce } = await Ga(e, q), pe = Object.entries(ce).filter(
+            ([, g]) => g.success === !1
+          ), U = q.length - pe.length;
+          pe.length > 0 ? W.warning(
+            `批量删除完成：成功 ${U} 个，失败 ${pe.length} 个`
+          ) : W.success(`成功删除 ${q.length} 个技能`), ye(), await oe();
+        } catch (ce) {
+          W.error(ce.message || "批量删除失败");
         } finally {
           ee(!1);
         }
       }
     });
-  }, we = async (V) => {
-    pe(!0);
+  }, be = async (q) => {
+    ue(!0);
     try {
-      V.enabled === !1 ? (await Yn(e, V.name), N.success(`已启用技能「${V.name}」`)) : (await Zn(e, V.name), N.success(`已禁用技能「${V.name}」`)), await oe();
-    } catch (de) {
-      N.error(de.message || "操作失败");
+      q.enabled === !1 ? (await Nn(e, q.name), W.success(`已启用技能「${q.name}」`)) : (await Fn(e, q.name), W.success(`已禁用技能「${q.name}」`)), await oe();
+    } catch (ce) {
+      W.error(ce.message || "操作失败");
     } finally {
-      pe(!1);
+      ue(!1);
     }
-  }, ye = (V) => {
-    b.confirm({
-      title: `确认删除技能「${V.name}」？`,
+  }, fe = (q) => {
+    w.confirm({
+      title: `确认删除技能「${q.name}」？`,
       content: "删除后技能将从当前专家工作区移除，此操作不可撤销。技能池中的原始技能不受影响。",
       okText: "确认删除",
       cancelText: "取消",
       okButtonProps: { danger: !0 },
       onOk: async () => {
-        pe(!0);
+        ue(!0);
         try {
-          await Xt(e, V.name), N.success(`已删除技能「${V.name}」`), await oe();
-        } catch (de) {
-          N.error(de.message || "删除失败");
+          await Dt(e, q.name), W.success(`已删除技能「${q.name}」`), await oe();
+        } catch (ce) {
+          W.error(ce.message || "删除失败");
         } finally {
-          pe(!1);
+          ue(!1);
         }
       }
     });
@@ -6531,72 +6531,72 @@ function rr({
         }
       },
       n.createElement(
-        w,
+        E,
         { type: "secondary", style: { fontSize: 13 } },
-        W ? `已选择 ${J.size} / ${$.length} 个技能` : `共 ${$.length} 个技能`
+        N ? `已选择 ${D.size} / ${T.length} 个技能` : `共 ${T.length} 个技能`
       ),
       n.createElement(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
-        W ? n.createElement(
+        N ? n.createElement(
           n.Fragment,
           null,
           n.createElement(
-            m,
-            { size: "small", onClick: he },
+            u,
+            { size: "small", onClick: Ee },
             "全选"
           ),
           n.createElement(
-            m,
+            u,
             {
               size: "small",
-              icon: T ? n.createElement(T) : void 0,
-              onClick: Ee
+              icon: k ? n.createElement(k) : void 0,
+              onClick: ye
             },
             "取消选择"
           ),
           n.createElement(
-            m,
+            u,
             {
               size: "small",
               type: "default",
-              icon: A ? n.createElement(A) : void 0,
-              disabled: J.size === 0 || X,
-              loading: X,
+              icon: P ? n.createElement(P) : void 0,
+              disabled: D.size === 0 || V,
+              loading: V,
               onClick: Ae
             },
             "批量启用"
           ),
           n.createElement(
-            m,
+            u,
             {
               size: "small",
               danger: !0,
-              icon: H ? n.createElement(H) : void 0,
-              disabled: J.size === 0 || X,
-              loading: X,
-              onClick: be
+              icon: F ? n.createElement(F) : void 0,
+              disabled: D.size === 0 || V,
+              loading: V,
+              onClick: ve
             },
             "批量停用"
           ),
           n.createElement(
-            m,
+            u,
             {
               size: "small",
               danger: !0,
-              icon: K ? n.createElement(K) : void 0,
-              disabled: J.size === 0 || X,
-              loading: X,
+              icon: X ? n.createElement(X) : void 0,
+              disabled: D.size === 0 || V,
+              loading: V,
               onClick: Q
             },
-            `删除 (${J.size})`
+            `删除 (${D.size})`
           ),
           n.createElement(
-            m,
+            u,
             {
               size: "small",
               type: "primary",
-              onClick: ke
+              onClick: xe
             },
             "退出批量"
           )
@@ -6604,21 +6604,21 @@ function rr({
           n.Fragment,
           null,
           n.createElement(
-            m,
+            u,
             {
               size: "small",
-              icon: M ? n.createElement(M) : void 0,
-              onClick: ke,
-              disabled: $.length === 0
+              icon: B ? n.createElement(B) : void 0,
+              onClick: xe,
+              disabled: T.length === 0
             },
             "批量管理"
           ),
           n.createElement(
-            m,
+            u,
             {
-              icon: D ? n.createElement(D) : void 0,
+              icon: G ? n.createElement(G) : void 0,
               onClick: () => {
-                ut(), oe();
+                st(), oe();
               }
             },
             "刷新"
@@ -6626,40 +6626,40 @@ function rr({
         )
       )
     ),
-    q ? n.createElement(
+    H ? n.createElement(
       "div",
       { style: { textAlign: "center", padding: 60 } },
-      n.createElement(s, { size: "large" })
-    ) : $.length === 0 ? n.createElement(d, {
+      n.createElement(i, { size: "large" })
+    ) : T.length === 0 ? n.createElement(d, {
       description: "当前智能体未加载任何技能"
     }) : n.createElement(
-      f,
+      b,
       { gutter: [12, 12] },
-      ...$.map(
-        (V) => n.createElement(
-          u,
-          { key: V.name, xs: 24, sm: 12, md: 8, lg: 6 },
+      ...T.map(
+        (q) => n.createElement(
+          y,
+          { key: q.name, xs: 24, sm: 12, md: 8, lg: 6 },
           n.createElement(
-            h,
+            S,
             {
               hoverable: !0,
               size: "small",
               style: {
-                cursor: W ? "default" : "pointer",
+                cursor: N ? "default" : "pointer",
                 height: "100%",
                 position: "relative",
-                borderColor: W && J.has(V.name) ? "var(--ant-color-primary, #0072f5)" : void 0,
-                borderWidth: W && J.has(V.name) ? 2 : 1
+                borderColor: N && D.has(q.name) ? "#0072f5" : void 0,
+                borderWidth: N && D.has(q.name) ? 2 : 1
               },
               onClick: () => {
-                W ? ae(V.name) : (te(V), P(!0));
+                N ? ae(q.name) : (te(q), _(!0));
               },
               onMouseEnter: () => {
-                W || R(V.name);
+                N || I(q.name);
               },
-              onMouseLeave: () => R(null)
+              onMouseLeave: () => I(null)
             },
-            W ? n.createElement(
+            N ? n.createElement(
               "div",
               {
                 style: {
@@ -6668,12 +6668,12 @@ function rr({
                   right: 8,
                   zIndex: 1
                 },
-                onClick: (de) => {
-                  de.stopPropagation(), ae(V.name);
+                onClick: (ce) => {
+                  ce.stopPropagation(), ae(q.name);
                 }
               },
-              n.createElement(C, {
-                checked: J.has(V.name)
+              n.createElement($, {
+                checked: D.has(q.name)
               })
             ) : null,
             n.createElement(
@@ -6686,17 +6686,17 @@ function rr({
                   marginBottom: 8
                 }
               },
-              V.emoji ? n.createElement(
+              q.emoji ? n.createElement(
                 "span",
                 { style: { fontSize: 18 } },
-                V.emoji
+                q.emoji
               ) : n.createElement(
                 "span",
                 { style: { fontSize: 18 } },
                 "⚡"
               ),
               n.createElement(
-                w,
+                E,
                 {
                   strong: !0,
                   style: {
@@ -6707,26 +6707,26 @@ function rr({
                     whiteSpace: "nowrap"
                   }
                 },
-                V.name
+                q.name
               ),
-              V.enabled === !1 ? n.createElement(
-                x,
+              q.enabled === !1 ? n.createElement(
+                C,
                 { color: "default", style: { fontSize: 10 } },
                 "已禁用"
               ) : n.createElement(
-                x,
+                C,
                 { color: "green", style: { fontSize: 10 } },
                 "已启用"
               )
             ),
-            V.description ? n.createElement(
-              E,
+            q.description ? n.createElement(
+              f,
               {
                 type: "secondary",
                 style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
                 ellipsis: { rows: 2 }
               },
-              V.description
+              q.description
             ) : null,
             n.createElement(
               "div",
@@ -6738,54 +6738,54 @@ function rr({
                   flexWrap: "wrap"
                 }
               },
-              V.version_text ? n.createElement(
-                x,
+              q.version_text ? n.createElement(
+                C,
                 { style: { fontSize: 10 } },
-                `v${V.version_text}`
+                `v${q.version_text}`
               ) : null,
-              ...(V.tags || []).slice(0, 3).map(
-                (de, ge) => n.createElement(
-                  x,
-                  { key: ge, color: "blue", style: { fontSize: 10 } },
-                  de
+              ...(q.tags || []).slice(0, 3).map(
+                (ce, pe) => n.createElement(
+                  C,
+                  { key: pe, color: "blue", style: { fontSize: 10 } },
+                  ce
                 )
               )
             ),
             // Hover action footer (not in batch mode)
-            !W && fe === V.name ? n.createElement(
+            !N && ge === q.name ? n.createElement(
               "div",
               {
                 style: {
                   marginTop: 8,
                   paddingTop: 8,
-                  borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                  borderTop: "1px solid #f0f0f0",
                   display: "flex",
                   gap: 8,
                   justifyContent: "flex-end"
                 }
               },
               n.createElement(
-                m,
+                u,
                 {
                   size: "small",
                   type: "default",
-                  icon: V.enabled === !1 ? A ? n.createElement(A) : void 0 : H ? n.createElement(H) : void 0,
+                  icon: q.enabled === !1 ? P ? n.createElement(P) : void 0 : F ? n.createElement(F) : void 0,
                   disabled: re,
-                  onClick: (de) => {
-                    de.stopPropagation(), we(V);
+                  onClick: (ce) => {
+                    ce.stopPropagation(), be(q);
                   }
                 },
-                V.enabled === !1 ? "启用" : "禁用"
+                q.enabled === !1 ? "启用" : "禁用"
               ),
               n.createElement(
-                m,
+                u,
                 {
                   size: "small",
                   danger: !0,
-                  icon: K ? n.createElement(K) : void 0,
+                  icon: X ? n.createElement(X) : void 0,
                   disabled: re,
-                  onClick: (de) => {
-                    de.stopPropagation(), ye(V);
+                  onClick: (ce) => {
+                    ce.stopPropagation(), fe(q);
                   }
                 },
                 "删除"
@@ -6796,8 +6796,8 @@ function rr({
       )
     ),
     // Skill detail drawer
-    p ? n.createElement(
-      I,
+    m ? n.createElement(
+      j,
       {
         title: n.createElement(
           "div",
@@ -6805,64 +6805,64 @@ function rr({
           n.createElement(
             "span",
             { style: { fontSize: 18 } },
-            p.emoji || "⚡"
+            m.emoji || "⚡"
           ),
-          n.createElement("span", null, p.name)
+          n.createElement("span", null, m.name)
         ),
-        open: U,
-        onClose: () => P(!1),
+        open: L,
+        onClose: () => _(!1),
         width: 520,
         extra: n.createElement(
-          m,
+          u,
           {
             type: "primary",
             size: "small",
-            icon: B ? n.createElement(B) : void 0,
-            onClick: () => l("/skills")
+            icon: K ? n.createElement(K) : void 0,
+            onClick: () => a("/skills")
           },
           "管理技能"
         )
       },
       n.createElement(
-        z,
+        R,
         { column: 1, bordered: !0, size: "small" },
         n.createElement(
-          z.Item,
+          R.Item,
           { label: "技能名称" },
-          p.name
+          m.name
         ),
         n.createElement(
-          z.Item,
+          R.Item,
           { label: "描述" },
-          p.description || "-"
+          m.description || "-"
         ),
-        p.version_text ? n.createElement(
-          z.Item,
+        m.version_text ? n.createElement(
+          R.Item,
           { label: "版本" },
-          p.version_text
+          m.version_text
         ) : null,
         n.createElement(
-          z.Item,
+          R.Item,
           { label: "来源" },
-          p.source || "-"
+          m.source || "-"
         ),
         n.createElement(
-          z.Item,
+          R.Item,
           { label: "状态" },
-          p.enabled === !1 ? "已禁用" : "已启用"
+          m.enabled === !1 ? "已禁用" : "已启用"
         ),
-        p.installed_from ? n.createElement(
-          z.Item,
+        m.installed_from ? n.createElement(
+          R.Item,
           { label: "安装来源" },
-          p.installed_from
+          m.installed_from
         ) : null
       ),
       // Tags
-      p.tags && p.tags.length > 0 ? n.createElement(
+      m.tags && m.tags.length > 0 ? n.createElement(
         "div",
         { style: { marginTop: 16 } },
         n.createElement(
-          w,
+          E,
           {
             strong: !0,
             style: { display: "block", marginBottom: 8 }
@@ -6872,17 +6872,17 @@ function rr({
         n.createElement(
           "div",
           { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
-          ...p.tags.map(
-            (V, de) => n.createElement(x, { key: de, color: "blue" }, V)
+          ...m.tags.map(
+            (q, ce) => n.createElement(C, { key: ce, color: "blue" }, q)
           )
         )
       ) : null,
       // Skill content preview
-      p.content ? n.createElement(
+      m.content ? n.createElement(
         "div",
         { style: { marginTop: 16 } },
         n.createElement(
-          w,
+          E,
           {
             strong: !0,
             style: { display: "block", marginBottom: 8 }
@@ -6902,7 +6902,7 @@ function rr({
               whiteSpace: "pre-wrap"
             }
           },
-          p.content.slice(0, 2e3) + (p.content.length > 2e3 ? `
+          m.content.slice(0, 2e3) + (m.content.length > 2e3 ? `
 
 ... (内容已截断)` : "")
         )
@@ -6910,166 +6910,166 @@ function rr({
     ) : null
   );
 }
-function or({
+function Wl({
   poolSkills: e,
   workspaceSkills: t,
-  agents: a,
-  loading: l,
+  agents: l,
+  loading: a,
   onReload: n,
   onSkillInstalled: r,
   agentId: o,
   agentName: c
 }) {
-  const s = _().React, { useState: d, useMemo: m, useCallback: f, useEffect: u, useRef: h } = s, {
-    Spin: x,
-    Empty: C,
-    Input: b,
-    Button: v,
-    Row: I,
-    Col: z,
-    Card: N,
-    Tag: D,
-    Typography: G,
-    Drawer: B,
-    Descriptions: M,
-    List: A,
-    Modal: H,
-    message: K
-  } = _().antd, {
-    ReloadOutlined: T,
-    SearchOutlined: w,
-    DownloadOutlined: E,
-    ThunderboltOutlined: $,
-    DeleteOutlined: k,
-    PlusOutlined: q
-  } = _().antdIcons || {}, { Text: Z, Paragraph: U } = G, [P, p] = d(""), [te, W] = d(!1), [S, J] = d(null), [le, X] = d([]), [ee, fe] = d(!1), [R, re] = d(24), [pe, oe] = d(null), [ae, Ee] = d(!1), he = h(0), ke = h(null), Ae = m(
+  const i = x().React, { useState: d, useMemo: u, useCallback: b, useEffect: y, useRef: S } = i, {
+    Spin: C,
+    Empty: $,
+    Input: w,
+    Button: z,
+    Row: j,
+    Col: R,
+    Card: W,
+    Tag: G,
+    Typography: J,
+    Drawer: K,
+    Descriptions: B,
+    List: P,
+    Modal: F,
+    message: X
+  } = x().antd, {
+    ReloadOutlined: k,
+    SearchOutlined: E,
+    DownloadOutlined: f,
+    ThunderboltOutlined: T,
+    DeleteOutlined: v,
+    PlusOutlined: H
+  } = x().antdIcons || {}, { Text: Z, Paragraph: L } = J, [_, m] = d(""), [te, N] = d(!1), [h, D] = d(null), [le, V] = d([]), [ee, ge] = d(!1), [I, re] = d(24), [ue, oe] = d(null), [ae, ye] = d(!1), Ee = S(0), xe = S(null), Ae = u(
     () => {
-      var j;
+      var M;
       return new Set(
-        ((j = t.find((g) => g.agent_id === o)) == null ? void 0 : j.skills.map((g) => g.name)) || []
+        ((M = t.find((p) => p.agent_id === o)) == null ? void 0 : M.skills.map((p) => p.name)) || []
       );
     },
     [t, o]
-  ), be = m(() => {
-    if (!P.trim()) return e;
-    const j = P.toLowerCase();
+  ), ve = u(() => {
+    if (!_.trim()) return e;
+    const M = _.toLowerCase();
     return e.filter(
-      (g) => {
-        var ne, ce;
-        return g.name.toLowerCase().includes(j) || ((ne = g.description) == null ? void 0 : ne.toLowerCase().includes(j)) || ((ce = g.tags) == null ? void 0 : ce.some((_e) => _e.toLowerCase().includes(j)));
+      (p) => {
+        var ne, ie;
+        return p.name.toLowerCase().includes(M) || ((ne = p.description) == null ? void 0 : ne.toLowerCase().includes(M)) || ((ie = p.tags) == null ? void 0 : ie.some((Te) => Te.toLowerCase().includes(M)));
       }
     );
-  }, [e, P]), Q = m(
-    () => be.slice(0, R),
-    [be, R]
+  }, [e, _]), Q = u(
+    () => ve.slice(0, I),
+    [ve, I]
   );
-  u(() => {
-    if (Q.length >= be.length) return;
-    const j = ke.current;
-    if (!j) return;
-    const g = () => {
+  y(() => {
+    if (Q.length >= ve.length) return;
+    const M = xe.current;
+    if (!M) return;
+    const p = () => {
       re(
-        (ce) => Math.min(ce + 24, be.length)
+        (ie) => Math.min(ie + 24, ve.length)
       );
     };
     if (typeof IntersectionObserver < "u") {
-      const ce = new IntersectionObserver(
-        (_e) => {
-          _e.some((Ce) => Ce.isIntersecting) && g();
+      const ie = new IntersectionObserver(
+        (Te) => {
+          Te.some((ke) => ke.isIntersecting) && p();
         },
         { rootMargin: "240px 0px" }
       );
-      return ce.observe(j), () => ce.disconnect();
+      return ie.observe(M), () => ie.disconnect();
     }
     const ne = () => {
-      j.getBoundingClientRect().top <= window.innerHeight + 240 && g();
+      M.getBoundingClientRect().top <= window.innerHeight + 240 && p();
     };
     return window.addEventListener("scroll", ne, { passive: !0 }), ne(), () => window.removeEventListener("scroll", ne);
-  }, [be.length, Q.length]);
-  const we = f((j) => {
-    p(j), re(24);
-  }, []), ye = f(() => {
-    const j = he.current;
+  }, [ve.length, Q.length]);
+  const be = b((M) => {
+    m(M), re(24);
+  }, []), fe = b(() => {
+    const M = Ee.current;
     requestAnimationFrame(() => {
-      window.scrollTo({ top: j, behavior: "auto" }), document.scrollingElement && (document.scrollingElement.scrollTop = j);
+      window.scrollTo({ top: M, behavior: "auto" }), document.scrollingElement && (document.scrollingElement.scrollTop = M);
     });
-  }, []), V = f(async () => {
-    var j;
-    he.current = ((j = document.scrollingElement) == null ? void 0 : j.scrollTop) ?? window.scrollY ?? 0;
+  }, []), q = b(async () => {
+    var M;
+    Ee.current = ((M = document.scrollingElement) == null ? void 0 : M.scrollTop) ?? window.scrollY ?? 0;
     try {
       await n();
     } finally {
-      ye();
+      fe();
     }
-  }, [n, ye]), de = f(
-    (j) => {
-      const g = [];
+  }, [n, fe]), ce = b(
+    (M) => {
+      const p = [];
       for (const ne of t)
-        if (ne.skills.some((ce) => ce.name === j)) {
-          const ce = a.find((_e) => _e.id === ne.agent_id);
-          g.push((ce == null ? void 0 : ce.name) || ne.agent_name || ne.agent_id);
+        if (ne.skills.some((ie) => ie.name === M)) {
+          const ie = l.find((Te) => Te.id === ne.agent_id);
+          p.push((ie == null ? void 0 : ie.name) || ne.agent_name || ne.agent_id);
         }
-      return g;
+      return p;
     },
-    [t, a]
-  ), ge = f(
-    async (j) => {
-      if (J(j), X(de(j.name)), W(!0), !j.content) {
-        fe(!0);
+    [t, l]
+  ), pe = b(
+    async (M) => {
+      if (D(M), V(ce(M.name)), N(!0), !M.content) {
+        ge(!0);
         try {
-          const g = await Va(j.name);
-          J({ ...j, content: g });
+          const p = await Ra(M.name);
+          D({ ...M, content: p });
         } catch {
         } finally {
-          fe(!1);
+          ge(!1);
         }
       }
     },
-    [de]
+    [ce]
   );
-  u(() => {
-    S && X(de(S.name));
-  }, [S, de, t]);
-  const F = async (j) => {
-    Ee(!0);
+  y(() => {
+    h && V(ce(h.name));
+  }, [h, ce, t]);
+  const U = async (M) => {
+    ye(!0);
     try {
-      await Vt(o, j.name), K.success(
-        `已将技能「${j.name}」加载到当前专家「${c}」`
-      ), r(j);
-    } catch (g) {
-      K.error(g.message || "加载技能失败");
+      await Nt(o, M.name), X.success(
+        `已将技能「${M.name}」加载到当前专家「${c}」`
+      ), r(M);
+    } catch (p) {
+      X.error(p.message || "加载技能失败");
     } finally {
-      Ee(!1);
+      ye(!1);
     }
-  }, y = (j) => {
-    if (j.protected) {
-      K.warning("内置技能不可删除");
+  }, g = (M) => {
+    if (M.protected) {
+      X.warning("内置技能不可删除");
       return;
     }
-    H.confirm({
-      title: `确认从技能池删除「${j.name}」？`,
+    F.confirm({
+      title: `确认从技能池删除「${M.name}」？`,
       content: "删除后所有已安装此技能的专家将不受影响，但技能池中将不再包含此技能。此操作不可撤销。",
       okText: "确认删除",
       cancelText: "取消",
       okButtonProps: { danger: !0 },
       onOk: async () => {
-        Ee(!0);
+        ye(!0);
         try {
-          await ol(j.name), K.success(`已从技能池删除「${j.name}」`), await V();
-        } catch (g) {
-          K.error(g.message || "删除失败");
+          await Wa(M.name), X.success(`已从技能池删除「${M.name}」`), await q();
+        } catch (p) {
+          X.error(p.message || "删除失败");
         } finally {
-          Ee(!1);
+          ye(!1);
         }
       }
     });
-  }, me = (j) => {
-    window.history.pushState({}, "", j), window.dispatchEvent(new PopStateEvent("popstate"));
+  }, de = (M) => {
+    window.history.pushState({}, "", M), window.dispatchEvent(new PopStateEvent("popstate"));
   };
-  return s.createElement(
+  return i.createElement(
     "div",
     null,
-    s.createElement(
+    i.createElement(
       "div",
       {
         style: {
@@ -7079,67 +7079,67 @@ function or({
           marginBottom: 16
         }
       },
-      s.createElement(b, {
+      i.createElement(w, {
         placeholder: "搜索技能名称、描述或标签...",
-        prefix: w ? s.createElement(w) : void 0,
-        value: P,
-        onChange: (j) => we(j.target.value),
+        prefix: E ? i.createElement(E) : void 0,
+        value: _,
+        onChange: (M) => be(M.target.value),
         allowClear: !0,
         style: { maxWidth: 400 }
       }),
-      s.createElement(
+      i.createElement(
         "div",
         { style: { display: "flex", gap: 8 } },
-        s.createElement(
-          v,
+        i.createElement(
+          z,
           {
-            icon: T ? s.createElement(T) : void 0,
-            onClick: V,
-            loading: l,
+            icon: k ? i.createElement(k) : void 0,
+            onClick: q,
+            loading: a,
             size: "small"
           },
           "刷新"
         ),
-        s.createElement(
-          v,
+        i.createElement(
+          z,
           {
             type: "primary",
-            icon: E ? s.createElement(E) : void 0,
-            onClick: () => me("/skill-pool"),
+            icon: f ? i.createElement(f) : void 0,
+            onClick: () => de("/skill-pool"),
             size: "small",
-            style: je
+            style: Le
           },
           "管理技能池"
         )
       )
     ),
-    l ? s.createElement(
+    a ? i.createElement(
       "div",
       { style: { textAlign: "center", padding: 60 } },
-      s.createElement(x, { size: "large" })
-    ) : be.length === 0 ? s.createElement(C, {
-      description: P ? "未找到匹配的技能" : "技能池为空"
-    }) : s.createElement(
-      s.Fragment,
+      i.createElement(C, { size: "large" })
+    ) : ve.length === 0 ? i.createElement($, {
+      description: _ ? "未找到匹配的技能" : "技能池为空"
+    }) : i.createElement(
+      i.Fragment,
       null,
-      s.createElement(
-        I,
+      i.createElement(
+        j,
         { gutter: [12, 12] },
         ...Q.map(
-          (j) => s.createElement(
-            z,
-            { key: j.name, xs: 24, sm: 12, md: 8, lg: 6 },
-            s.createElement(
-              N,
+          (M) => i.createElement(
+            R,
+            { key: M.name, xs: 24, sm: 12, md: 8, lg: 6 },
+            i.createElement(
+              W,
               {
                 hoverable: !0,
                 size: "small",
                 style: { cursor: "pointer", height: "100%" },
-                onClick: () => ge(j),
-                onMouseEnter: () => oe(j.name),
+                onClick: () => pe(M),
+                onMouseEnter: () => oe(M.name),
                 onMouseLeave: () => oe(null)
               },
-              s.createElement(
+              i.createElement(
                 "div",
                 {
                   style: {
@@ -7149,16 +7149,16 @@ function or({
                     marginBottom: 8
                   }
                 },
-                j.emoji ? s.createElement(
+                M.emoji ? i.createElement(
                   "span",
                   { style: { fontSize: 18 } },
-                  j.emoji
-                ) : s.createElement(
+                  M.emoji
+                ) : i.createElement(
                   "span",
                   { style: { fontSize: 18 } },
                   "⚡"
                 ),
-                s.createElement(
+                i.createElement(
                   Z,
                   {
                     strong: !0,
@@ -7170,24 +7170,24 @@ function or({
                       whiteSpace: "nowrap"
                     }
                   },
-                  j.name
+                  M.name
                 ),
-                j.protected ? s.createElement(
-                  D,
+                M.protected ? i.createElement(
+                  G,
                   { color: "gold", style: { fontSize: 10 } },
                   "内置"
                 ) : null
               ),
-              j.description ? s.createElement(
-                U,
+              M.description ? i.createElement(
+                L,
                 {
                   type: "secondary",
                   style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
                   ellipsis: { rows: 2 }
                 },
-                j.description
+                M.description
               ) : null,
-              s.createElement(
+              i.createElement(
                 "div",
                 {
                   style: {
@@ -7197,54 +7197,54 @@ function or({
                     flexWrap: "wrap"
                   }
                 },
-                j.version_text ? s.createElement(
-                  D,
+                M.version_text ? i.createElement(
+                  G,
                   { style: { fontSize: 10 } },
-                  `v${j.version_text}`
+                  `v${M.version_text}`
                 ) : null,
-                ...(j.tags || []).slice(0, 3).map(
-                  (g, ne) => s.createElement(
-                    D,
+                ...(M.tags || []).slice(0, 3).map(
+                  (p, ne) => i.createElement(
+                    G,
                     { key: ne, color: "cyan", style: { fontSize: 10 } },
-                    g
+                    p
                   )
                 )
               ),
               // Hover action footer
-              pe === j.name ? s.createElement(
+              ue === M.name ? i.createElement(
                 "div",
                 {
                   style: {
                     marginTop: 8,
                     paddingTop: 8,
-                    borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                    borderTop: "1px solid #f0f0f0",
                     display: "flex",
                     gap: 8,
                     justifyContent: "flex-end"
                   }
                 },
-                s.createElement(
-                  v,
+                i.createElement(
+                  z,
                   {
                     size: "small",
                     type: "primary",
-                    icon: q ? s.createElement(q) : void 0,
-                    disabled: ae || Ae.has(j.name),
-                    onClick: (g) => {
-                      g.stopPropagation(), F(j);
+                    icon: H ? i.createElement(H) : void 0,
+                    disabled: ae || Ae.has(M.name),
+                    onClick: (p) => {
+                      p.stopPropagation(), U(M);
                     }
                   },
-                  Ae.has(j.name) ? "已加载" : "加载到当前Agent"
+                  Ae.has(M.name) ? "已加载" : "加载到当前Agent"
                 ),
-                s.createElement(
-                  v,
+                i.createElement(
+                  z,
                   {
                     size: "small",
                     danger: !0,
-                    icon: k ? s.createElement(k) : void 0,
-                    disabled: ae || j.protected,
-                    onClick: (g) => {
-                      g.stopPropagation(), y(j);
+                    icon: v ? i.createElement(v) : void 0,
+                    disabled: ae || M.protected,
+                    onClick: (p) => {
+                      p.stopPropagation(), g(M);
                     }
                   },
                   "删除"
@@ -7254,10 +7254,10 @@ function or({
           )
         ),
         // Infinite-scroll sentinel
-        Q.length < be.length ? s.createElement(
+        Q.length < ve.length ? i.createElement(
           "div",
           {
-            ref: ke,
+            ref: xe,
             style: {
               minHeight: 40,
               display: "flex",
@@ -7266,86 +7266,86 @@ function or({
               marginTop: 16
             }
           },
-          s.createElement(
+          i.createElement(
             Z,
             { type: "secondary", style: { fontSize: 12 } },
-            `继续下滑自动加载 · 还剩 ${be.length - Q.length} 个`
+            `继续下滑自动加载 · 还剩 ${ve.length - Q.length} 个`
           )
         ) : null
       )
     ),
     // Skill detail drawer
-    S ? s.createElement(
-      B,
+    h ? i.createElement(
+      K,
       {
-        title: s.createElement(
+        title: i.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8 } },
-          s.createElement(
+          i.createElement(
             "span",
             { style: { fontSize: 18 } },
-            S.emoji || "⚡"
+            h.emoji || "⚡"
           ),
-          s.createElement("span", null, S.name)
+          i.createElement("span", null, h.name)
         ),
         open: te,
-        onClose: () => W(!1),
+        onClose: () => N(!1),
         width: 520,
-        extra: s.createElement(
-          v,
+        extra: i.createElement(
+          z,
           {
             type: "primary",
             size: "small",
-            icon: $ ? s.createElement($) : void 0,
-            onClick: () => me("/skills")
+            icon: T ? i.createElement(T) : void 0,
+            onClick: () => de("/skills")
           },
           "管理技能"
         )
       },
-      s.createElement(
-        M,
+      i.createElement(
+        B,
         { column: 1, bordered: !0, size: "small" },
-        s.createElement(
-          M.Item,
+        i.createElement(
+          B.Item,
           { label: "技能名称" },
-          S.name
+          h.name
         ),
-        s.createElement(
-          M.Item,
+        i.createElement(
+          B.Item,
           { label: "描述" },
-          S.description || "-"
+          h.description || "-"
         ),
-        S.version_text ? s.createElement(
-          M.Item,
+        h.version_text ? i.createElement(
+          B.Item,
           { label: "版本" },
-          S.version_text
+          h.version_text
         ) : null,
-        s.createElement(
-          M.Item,
+        i.createElement(
+          B.Item,
           { label: "来源" },
-          S.source || "-"
+          h.source || "-"
         ),
-        s.createElement(
-          M.Item,
+        i.createElement(
+          B.Item,
           { label: "受保护" },
-          S.protected ? "是（内置）" : "否"
+          h.protected ? "是（内置）" : "否"
         ),
-        S.sync_status ? s.createElement(
-          M.Item,
+        h.sync_status ? i.createElement(
+          B.Item,
           { label: "同步状态" },
-          S.sync_status
+          h.sync_status
         ) : null,
-        S.installed_from ? s.createElement(
-          M.Item,
+        h.installed_from ? i.createElement(
+          B.Item,
           { label: "安装来源" },
-          S.installed_from
+          h.installed_from
         ) : null
       ),
       // Tags
-      S.tags && S.tags.length > 0 ? s.createElement(
+      h.tags && h.tags.length > 0 ? i.createElement(
         "div",
         { style: { marginTop: 16 } },
-        s.createElement(
+        i.createElement(
           Z,
           {
             strong: !0,
@@ -7353,30 +7353,30 @@ function or({
           },
           "标签"
         ),
-        s.createElement(
+        i.createElement(
           "div",
           { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
-          ...S.tags.map(
-            (j, g) => s.createElement(D, { key: g, color: "cyan" }, j)
+          ...h.tags.map(
+            (M, p) => i.createElement(G, { key: p, color: "cyan" }, M)
           )
         )
       ) : null,
       // Installed agents
-      s.createElement(
+      i.createElement(
         "div",
         { style: { marginTop: 16 } },
-        s.createElement(
+        i.createElement(
           Z,
           { strong: !0, style: { display: "block", marginBottom: 8 } },
           `已安装此技能的专家 (${le.length})`
         ),
-        le.length > 0 ? s.createElement(A, {
+        le.length > 0 ? i.createElement(P, {
           size: "small",
           dataSource: le,
-          renderItem: (j) => s.createElement(
-            A.Item,
+          renderItem: (M) => i.createElement(
+            P.Item,
             null,
-            s.createElement(
+            i.createElement(
               "div",
               {
                 style: {
@@ -7385,29 +7385,29 @@ function or({
                   gap: 6
                 }
               },
-              s.createElement(Ge, { name: j, size: 20 }),
-              s.createElement(
+              i.createElement(Ne, { name: M, size: 20 }),
+              i.createElement(
                 Z,
                 { style: { fontSize: 13 } },
-                j
+                M
               )
             )
           )
-        }) : s.createElement(
+        }) : i.createElement(
           Z,
           { type: "secondary", style: { fontSize: 12 } },
           "暂无专家安装此技能"
         )
       ),
       // Skill content preview (lazy-loaded)
-      ee ? s.createElement(
+      ee ? i.createElement(
         "div",
         { style: { marginTop: 16, textAlign: "center" } },
-        s.createElement(x, { size: "small" })
-      ) : S.content ? s.createElement(
+        i.createElement(C, { size: "small" })
+      ) : h.content ? i.createElement(
         "div",
         { style: { marginTop: 16 } },
-        s.createElement(
+        i.createElement(
           Z,
           {
             strong: !0,
@@ -7415,7 +7415,7 @@ function or({
           },
           "技能内容"
         ),
-        s.createElement(
+        i.createElement(
           "div",
           {
             style: {
@@ -7428,7 +7428,7 @@ function or({
               whiteSpace: "pre-wrap"
             }
           },
-          S.content.slice(0, 2e3) + (S.content.length > 2e3 ? `
+          h.content.slice(0, 2e3) + (h.content.length > 2e3 ? `
 
 ... (内容已截断)` : "")
         )
@@ -7436,73 +7436,73 @@ function or({
     ) : null
   );
 }
-function sr({
+function Jl({
   embedded: e = !1
 } = {}) {
-  const t = _().React, { useState: a, useEffect: l, useCallback: n, useMemo: r } = t, { Tabs: o, message: c } = _().antd, { ThunderboltOutlined: s, AppstoreOutlined: d } = _().antdIcons || {}, f = _().useSelectedAgent, u = f ? f() : null, h = (u == null ? void 0 : u.id) || "default";
-  l(() => {
-    qt();
-  }, [h]);
-  const [x, C] = a([]), [b, v] = a([]), [I, z] = a([]), [N, D] = a(!0), [G, B] = a("agent-skills"), [M, A] = a(0), H = n(async () => {
-    D(!0);
+  const t = x().React, { useState: l, useEffect: a, useCallback: n, useMemo: r } = t, { Tabs: o, message: c } = x().antd, { ThunderboltOutlined: i, AppstoreOutlined: d } = x().antdIcons || {}, b = x().useSelectedAgent, y = b ? b() : null, S = (y == null ? void 0 : y.id) || "default";
+  a(() => {
+    jt();
+  }, [S]);
+  const [C, $] = l([]), [w, z] = l([]), [j, R] = l([]), [W, G] = l(!0), [J, K] = l("agent-skills"), [B, P] = l(0), F = n(async () => {
+    G(!0);
     try {
-      const [k, q, Z] = await Promise.all([
-        Rt(!0),
-        At(),
-        Xa()
+      const [v, H, Z] = await Promise.all([
+        Tt(!0),
+        kt(),
+        Ma()
       ]);
-      v(k), C(q), z(Z);
-    } catch (k) {
-      c.error(k.message || "加载技能列表失败"), v([]);
+      z(v), $(H), R(Z);
+    } catch (v) {
+      c.error(v.message || "加载技能列表失败"), z([]);
     } finally {
-      D(!1);
+      G(!1);
     }
   }, []);
-  l(() => {
-    H();
-  }, [H]);
-  const K = r(() => {
-    const k = x.find((q) => q.id === h);
-    return (k == null ? void 0 : k.name) || h;
-  }, [x, h]), T = n(
-    (k) => {
-      z(
-        (q) => q.map((Z) => Z.agent_id !== h || Z.skills.some((U) => U.name === k.name) ? Z : {
+  a(() => {
+    F();
+  }, [F]);
+  const X = r(() => {
+    const v = C.find((H) => H.id === S);
+    return (v == null ? void 0 : v.name) || S;
+  }, [C, S]), k = n(
+    (v) => {
+      R(
+        (H) => H.map((Z) => Z.agent_id !== S || Z.skills.some((L) => L.name === v.name) ? Z : {
           ...Z,
           skills: [
             ...Z.skills,
             {
-              name: k.name,
-              description: k.description,
-              version_text: k.version_text,
-              content: k.content || "",
-              source: k.source || "pool",
+              name: v.name,
+              description: v.description,
+              version_text: v.version_text,
+              content: v.content || "",
+              source: v.source || "pool",
               enabled: !0,
-              tags: k.tags,
-              emoji: k.emoji,
-              installed_from: k.installed_from
+              tags: v.tags,
+              emoji: v.emoji,
+              installed_from: v.installed_from
             }
           ]
         })
-      ), A((q) => q + 1);
+      ), P((H) => H + 1);
     },
-    [h]
-  ), w = (k) => {
-    window.history.pushState({}, "", k), window.dispatchEvent(new PopStateEvent("popstate"));
-  }, E = [
+    [S]
+  ), E = (v) => {
+    window.history.pushState({}, "", v), window.dispatchEvent(new PopStateEvent("popstate"));
+  }, f = [
     {
       key: "agent-skills",
       label: t.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        s ? t.createElement(s, { style: { fontSize: 14 } }) : null,
+        i ? t.createElement(i, { style: { fontSize: 14 } }) : null,
         "当前专家"
       ),
-      children: t.createElement(rr, {
-        agentId: h,
-        agentName: K,
-        refreshKey: M,
-        onNavigate: w
+      children: t.createElement(Hl, {
+        agentId: S,
+        agentName: X,
+        refreshKey: B,
+        onNavigate: E
       })
     },
     {
@@ -7513,87 +7513,87 @@ function sr({
         d ? t.createElement(d, { style: { fontSize: 14 } }) : null,
         "技能库"
       ),
-      children: t.createElement(or, {
-        poolSkills: b,
-        workspaceSkills: I,
-        agents: x,
-        loading: N,
-        onReload: H,
-        onSkillInstalled: T,
-        agentId: h,
-        agentName: K
+      children: t.createElement(Wl, {
+        poolSkills: w,
+        workspaceSkills: j,
+        agents: C,
+        loading: W,
+        onReload: F,
+        onSkillInstalled: k,
+        agentId: S,
+        agentName: X
       })
     }
-  ], $ = t.createElement(o, {
-    items: E,
-    activeKey: G,
-    onChange: (k) => B(k)
+  ], T = t.createElement(o, {
+    items: f,
+    activeKey: J,
+    onChange: (v) => K(v)
   });
-  return e ? $ : t.createElement(
+  return e ? T : t.createElement(
     "div",
     { style: { padding: 24 } },
-    t.createElement($t, {
+    t.createElement(xt, {
       title: "技能",
-      subtitle: `技能池共 ${b.length} 个技能 · 当前智能体：${K}`
+      subtitle: `技能池共 ${w.length} 个技能 · 当前智能体：${X}`
     }),
-    $
+    T
   );
 }
-const Ht = {
+const Mt = {
   reservoir_simulation: "油藏数值模拟",
   geological_modeling: "地质建模",
   well_log_analysis: "测井分析",
   production_engineering: "采油工程",
   post_processing: "后处理与可视化",
   multiphysics: "多物理场仿真"
-}, ca = {
+}, Qn = {
   reservoir_simulation: "🛢️",
   geological_modeling: "🏔️",
   well_log_analysis: "📡",
   production_engineering: "⚙️",
   post_processing: "📊",
   multiphysics: "🔬"
-}, da = /* @__PURE__ */ new Set(["cmg", "comsol", "tnavigator", "eclipse", "intersect", "visage"]);
-function ma(e) {
-  return It(`/ugsci/engines/icon/${encodeURIComponent(e)}`);
+}, Zn = /* @__PURE__ */ new Set(["cmg", "comsol", "tnavigator", "eclipse", "intersect", "visage"]);
+function ea(e) {
+  return St(`/ugsci/engines/icon/${encodeURIComponent(e)}`);
 }
-async function ir() {
-  return ie("/ugsci/engines/list");
+async function Kl() {
+  return se("/ugsci/engines/list");
 }
-async function cr(e) {
-  return ie("/ugsci/engines/", {
+async function ql(e) {
+  return se("/ugsci/engines/", {
     method: "POST",
     body: JSON.stringify(e)
   });
 }
-async function dr(e, t) {
-  return ie(`/ugsci/engines/${encodeURIComponent(e)}`, {
+async function Xl(e, t) {
+  return se(`/ugsci/engines/${encodeURIComponent(e)}`, {
     method: "PUT",
     body: JSON.stringify(t)
   });
 }
-async function mr(e) {
-  return ie(
+async function Vl(e) {
+  return se(
     `/ugsci/engines/${encodeURIComponent(e)}`,
     { method: "DELETE" }
   );
 }
-async function ur() {
-  return ie("/ugsci/engines/detect/refresh", {
+async function Yl() {
+  return se("/ugsci/engines/detect/refresh", {
     method: "POST"
   });
 }
-function pr({
+function Ql({
   engine: e,
   onClick: t
 }) {
-  const a = _().React, { Card: l, Tag: n, Typography: r } = _().antd, { Text: o } = r, c = e.status === "detected", s = ca[e.category] || "📦", m = da.has(e.id) ? a.createElement("img", {
-    src: ma(e.id),
+  const l = x().React, { Card: a, Tag: n, Typography: r } = x().antd, { Text: o } = r, c = e.status === "detected", i = Qn[e.category] || "📦", u = Zn.has(e.id) ? l.createElement("img", {
+    src: ea(e.id),
     alt: e.name,
     style: { width: 24, height: 24, objectFit: "contain" }
-  }) : a.createElement("span", { style: { fontSize: 20 } }, s);
-  return a.createElement(
-    l,
+  }) : l.createElement("span", { style: { fontSize: 20 } }, i);
+  return l.createElement(
+    a,
     {
       hoverable: !0,
       onClick: t,
@@ -7615,7 +7615,7 @@ function pr({
         }
       }
     },
-    a.createElement(
+    l.createElement(
       "div",
       {
         style: {
@@ -7625,63 +7625,63 @@ function pr({
           marginBottom: 8
         }
       },
-      a.createElement(
+      l.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        m,
-        a.createElement(
+        u,
+        l.createElement(
           "div",
           null,
-          a.createElement(
+          l.createElement(
             o,
             { strong: !0, style: { fontSize: 14 } },
             e.name
           ),
-          a.createElement("br"),
-          a.createElement(
+          l.createElement("br"),
+          l.createElement(
             o,
             { type: "secondary", style: { fontSize: 11 } },
             e.vendor || "—"
           )
         )
       ),
-      a.createElement(
+      l.createElement(
         "div",
         { style: { display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" } },
-        c ? a.createElement(
+        c ? l.createElement(
           n,
           { color: "success", style: { fontSize: 11 } },
           "✅ 已检测"
-        ) : e.executable_path ? a.createElement(
+        ) : e.executable_path ? l.createElement(
           n,
           { color: "warning", style: { fontSize: 11 } },
           "⚠ 路径无效"
-        ) : a.createElement(
+        ) : l.createElement(
           n,
           { style: { fontSize: 11 } },
           "🔧 待配置"
         ),
-        e.is_default ? a.createElement(
+        e.is_default ? l.createElement(
           n,
           { color: "blue", style: { fontSize: 10 } },
           "默认"
-        ) : e.is_custom ? a.createElement(
+        ) : e.is_custom ? l.createElement(
           n,
           { color: "purple", style: { fontSize: 10 } },
           "自定义"
         ) : null
       )
     ),
-    a.createElement(
+    l.createElement(
       "div",
       { style: { flex: 1, minHeight: 32 } },
-      a.createElement(
+      l.createElement(
         o,
         { type: "secondary", style: { fontSize: 12 } },
         e.description || "暂无描述"
       )
     ),
-    a.createElement(
+    l.createElement(
       "div",
       {
         style: {
@@ -7691,79 +7691,79 @@ function pr({
           flexWrap: "wrap"
         }
       },
-      e.category ? a.createElement(
+      e.category ? l.createElement(
         n,
         { style: { fontSize: 11 } },
-        Ht[e.category] || e.category
+        Mt[e.category] || e.category
       ) : null,
-      e.version ? a.createElement(
+      e.version ? l.createElement(
         n,
         { color: "blue", style: { fontSize: 11 } },
         `v${e.version}`
       ) : null,
       ...(e.modules || []).map(
-        (f) => a.createElement(
+        (b) => l.createElement(
           n,
-          { key: f, color: "cyan", style: { fontSize: 10 } },
-          f
+          { key: b, color: "cyan", style: { fontSize: 10 } },
+          b
         )
       )
     )
   );
 }
-function gr() {
-  const e = _().React, { useState: t, useEffect: a, useCallback: l, useMemo: n } = e, {
+function Zl() {
+  const e = x().React, { useState: t, useEffect: l, useCallback: a, useMemo: n } = e, {
     Spin: r,
     Empty: o,
     Button: c,
-    message: s,
+    message: i,
     Row: d,
-    Col: m,
-    Drawer: f,
-    Descriptions: u,
-    Tag: h,
-    Typography: x,
-    Modal: C,
-    Input: b,
-    Select: v,
-    Popconfirm: I,
-    Space: z
-  } = _().antd, {
-    ReloadOutlined: N,
-    SearchOutlined: D,
-    PlusOutlined: G,
-    EditOutlined: B,
-    DeleteOutlined: M,
-    CopyOutlined: A,
-    ExperimentOutlined: H
-  } = _().antdIcons || {}, { Text: K, Paragraph: T } = x, [w, E] = t([]), [$, k] = t(!0), [q, Z] = t(""), [U, P] = t(!1), [p, te] = t(null), [W, S] = t(!1), [J, le] = t(null), [X, ee] = t({}), [fe, R] = t(!1), re = l(async () => {
-    k(!0);
+    Col: u,
+    Drawer: b,
+    Descriptions: y,
+    Tag: S,
+    Typography: C,
+    Modal: $,
+    Input: w,
+    Select: z,
+    Popconfirm: j,
+    Space: R
+  } = x().antd, {
+    ReloadOutlined: W,
+    SearchOutlined: G,
+    PlusOutlined: J,
+    EditOutlined: K,
+    DeleteOutlined: B,
+    CopyOutlined: P,
+    ExperimentOutlined: F
+  } = x().antdIcons || {}, { Text: X, Paragraph: k } = C, [E, f] = t([]), [T, v] = t(!0), [H, Z] = t(""), [L, _] = t(!1), [m, te] = t(null), [N, h] = t(!1), [D, le] = t(null), [V, ee] = t({}), [ge, I] = t(!1), re = a(async () => {
+    v(!0);
     try {
-      const Q = await ir();
-      E(Q.engines || []);
+      const Q = await Kl();
+      f(Q.engines || []);
     } catch (Q) {
-      s.error(Q.message || "加载引擎列表失败"), E([]);
+      i.error(Q.message || "加载引擎列表失败"), f([]);
     } finally {
-      k(!1);
+      v(!1);
     }
   }, []);
-  a(() => {
+  l(() => {
     re();
   }, [re]);
-  const pe = n(() => {
-    if (!q.trim()) return w;
-    const Q = q.toLowerCase();
-    return w.filter(
-      (we) => {
-        var ye;
-        return we.name.toLowerCase().includes(Q) || we.vendor.toLowerCase().includes(Q) || we.category.toLowerCase().includes(Q) || ((ye = we.description) == null ? void 0 : ye.toLowerCase().includes(Q));
+  const ue = n(() => {
+    if (!H.trim()) return E;
+    const Q = H.toLowerCase();
+    return E.filter(
+      (be) => {
+        var fe;
+        return be.name.toLowerCase().includes(Q) || be.vendor.toLowerCase().includes(Q) || be.category.toLowerCase().includes(Q) || ((fe = be.description) == null ? void 0 : fe.toLowerCase().includes(Q));
       }
     );
-  }, [w, q]);
-  w.filter((Q) => Q.status === "detected").length;
-  const oe = l((Q) => {
-    navigator.clipboard.writeText(Q).then(() => s.success("路径已复制")).catch(() => s.error("复制失败"));
-  }, []), ae = l(() => {
+  }, [E, H]);
+  E.filter((Q) => Q.status === "detected").length;
+  const oe = a((Q) => {
+    navigator.clipboard.writeText(Q).then(() => i.success("路径已复制")).catch(() => i.error("复制失败"));
+  }, []), ae = a(() => {
     le(null), ee({
       name: "",
       vendor: "",
@@ -7772,73 +7772,73 @@ function gr() {
       category: "",
       description: "",
       invocation_hint: ""
-    }), S(!0);
-  }, []), Ee = l((Q) => {
-    le(Q), ee({ ...Q }), S(!0), P(!1);
-  }, []), he = l(async () => {
+    }), h(!0);
+  }, []), ye = a((Q) => {
+    le(Q), ee({ ...Q }), h(!0), _(!1);
+  }, []), Ee = a(async () => {
     var Q;
-    if (!((Q = X.name) != null && Q.trim())) {
-      s.warning("请输入引擎名称");
+    if (!((Q = V.name) != null && Q.trim())) {
+      i.warning("请输入引擎名称");
       return;
     }
-    R(!0);
+    I(!0);
     try {
-      J ? (await dr(J.id, X), s.success("引擎已更新")) : (await cr(X), s.success("引擎已添加")), S(!1), re();
-    } catch (we) {
-      s.error(we.message || "保存失败");
+      D ? (await Xl(D.id, V), i.success("引擎已更新")) : (await ql(V), i.success("引擎已添加")), h(!1), re();
+    } catch (be) {
+      i.error(be.message || "保存失败");
     } finally {
-      R(!1);
+      I(!1);
     }
-  }, [X, J, re]), ke = l(
+  }, [V, D, re]), xe = a(
     async (Q) => {
       try {
-        await mr(Q), s.success("引擎已删除"), P(!1), re();
-      } catch (we) {
-        s.error(we.message || "删除失败");
+        await Vl(Q), i.success("引擎已删除"), _(!1), re();
+      } catch (be) {
+        i.error(be.message || "删除失败");
       }
     },
     [re]
-  ), Ae = l(async () => {
-    k(!0);
+  ), Ae = a(async () => {
+    v(!0);
     try {
-      const Q = await ur();
-      E(Q.engines || []), s.success("自动检测完成");
+      const Q = await Yl();
+      f(Q.engines || []), i.success("自动检测完成");
     } catch (Q) {
-      s.error(Q.message || "检测失败");
+      i.error(Q.message || "检测失败");
     } finally {
-      k(!1);
+      v(!1);
     }
-  }, []), be = l(
-    (Q, we, ye) => {
-      const V = X[we] || "";
+  }, []), ve = a(
+    (Q, be, fe) => {
+      const q = V[be] || "";
       return e.createElement(
         "div",
         { style: { marginBottom: 12 } },
         e.createElement(
-          K,
+          X,
           { style: { fontSize: 13, display: "block", marginBottom: 4 } },
           Q
         ),
-        ye != null && ye.select ? e.createElement(v, {
-          value: V || void 0,
-          onChange: (de) => ee((ge) => ({ ...ge, [we]: de })),
+        fe != null && fe.select ? e.createElement(z, {
+          value: q || void 0,
+          onChange: (ce) => ee((pe) => ({ ...pe, [be]: ce })),
           style: { width: "100%" },
-          options: ye.select.options,
+          options: fe.select.options,
           allowClear: !0,
           placeholder: `选择${Q}`
-        }) : ye != null && ye.textarea ? e.createElement(b.TextArea, {
-          value: V,
-          onChange: (de) => ee((ge) => ({ ...ge, [we]: de.target.value })),
+        }) : fe != null && fe.textarea ? e.createElement(w.TextArea, {
+          value: q,
+          onChange: (ce) => ee((pe) => ({ ...pe, [be]: ce.target.value })),
           rows: 3,
           placeholder: `输入${Q}`
-        }) : e.createElement(b, {
-          value: V,
-          onChange: (de) => ee((ge) => ({ ...ge, [we]: de.target.value })),
+        }) : e.createElement(w, {
+          value: q,
+          onChange: (ce) => ee((pe) => ({ ...pe, [be]: ce.target.value })),
           placeholder: `输入${Q}`
         })
       );
     },
-    [X]
+    [V]
   );
   return e.createElement(
     "div",
@@ -7855,10 +7855,10 @@ function gr() {
           flexWrap: "wrap"
         }
       },
-      e.createElement(b, {
+      e.createElement(w, {
         placeholder: "搜索引擎名称、厂商...",
-        prefix: D ? e.createElement(D) : void 0,
-        value: q,
+        prefix: G ? e.createElement(G) : void 0,
+        value: H,
         onChange: (Q) => Z(Q.target.value),
         allowClear: !0,
         style: { maxWidth: 280 }
@@ -7866,9 +7866,9 @@ function gr() {
       e.createElement(
         c,
         {
-          icon: N ? e.createElement(N) : void 0,
+          icon: W ? e.createElement(W) : void 0,
           onClick: Ae,
-          loading: $
+          loading: T
         },
         "自动检测"
       ),
@@ -7876,29 +7876,29 @@ function gr() {
         c,
         {
           type: "primary",
-          icon: G ? e.createElement(G) : void 0,
+          icon: J ? e.createElement(J) : void 0,
           onClick: ae,
-          style: je
+          style: Le
         },
         "添加引擎"
       )
     ),
     // Content
-    $ ? e.createElement(
+    T ? e.createElement(
       "div",
       { style: { textAlign: "center", padding: 60 } },
       e.createElement(r, {
         size: "large",
         tip: "正在加载引擎..."
       })
-    ) : pe.length === 0 ? e.createElement(o, {
-      description: q ? "无匹配引擎" : "暂无引擎，点击「添加引擎」开始"
+    ) : ue.length === 0 ? e.createElement(o, {
+      description: H ? "无匹配引擎" : "暂无引擎，点击「添加引擎」开始"
     }) : e.createElement(
       d,
       { gutter: [12, 12], align: "stretch" },
-      ...pe.map(
+      ...ue.map(
         (Q) => e.createElement(
-          m,
+          u,
           {
             key: Q.id,
             xs: 24,
@@ -7907,18 +7907,18 @@ function gr() {
             lg: 6,
             style: { display: "flex" }
           },
-          e.createElement(pr, {
+          e.createElement(Ql, {
             engine: Q,
             onClick: () => {
-              te(Q), P(!0);
+              te(Q), _(!0);
             }
           })
         )
       )
     ),
     // Detail drawer
-    p ? e.createElement(
-      f,
+    m ? e.createElement(
+      b,
       {
         title: e.createElement(
           "div",
@@ -7926,39 +7926,39 @@ function gr() {
           e.createElement(
             "span",
             { style: { display: "flex", alignItems: "center" } },
-            da.has(p.id) ? e.createElement("img", {
-              src: ma(p.id),
-              alt: p.name,
+            Zn.has(m.id) ? e.createElement("img", {
+              src: ea(m.id),
+              alt: m.name,
               style: { width: 20, height: 20, objectFit: "contain" }
             }) : e.createElement(
               "span",
               { style: { fontSize: 18 } },
-              ca[p.category] || "📦"
+              Qn[m.category] || "📦"
             )
           ),
-          e.createElement("span", null, p.name)
+          e.createElement("span", null, m.name)
         ),
-        open: U,
-        onClose: () => P(!1),
+        open: L,
+        onClose: () => _(!1),
         width: 520,
         extra: e.createElement(
-          z,
+          R,
           null,
           e.createElement(
             c,
             {
               size: "small",
-              icon: B ? e.createElement(B) : void 0,
-              onClick: () => Ee(p)
+              icon: K ? e.createElement(K) : void 0,
+              onClick: () => ye(m)
             },
             "编辑"
           ),
-          p.is_default ? null : e.createElement(
-            I,
+          m.is_default ? null : e.createElement(
+            j,
             {
               title: "确认删除此引擎？",
-              description: p.name,
-              onConfirm: () => ke(p.id),
+              description: m.name,
+              onConfirm: () => xe(m.id),
               okText: "删除",
               cancelText: "取消",
               okButtonProps: { danger: !0 }
@@ -7968,7 +7968,7 @@ function gr() {
               {
                 size: "small",
                 danger: !0,
-                icon: M ? e.createElement(M) : void 0
+                icon: B ? e.createElement(B) : void 0
               },
               "删除"
             )
@@ -7976,41 +7976,41 @@ function gr() {
         )
       },
       e.createElement(
-        u,
+        y,
         { column: 1, bordered: !0, size: "small" },
         e.createElement(
-          u.Item,
+          y.Item,
           { label: "引擎名称" },
-          p.name
+          m.name
         ),
         e.createElement(
-          u.Item,
+          y.Item,
           { label: "厂商" },
-          p.vendor || "—"
+          m.vendor || "—"
         ),
         e.createElement(
-          u.Item,
+          y.Item,
           { label: "分类" },
-          p.category ? Ht[p.category] || p.category : "—"
+          m.category ? Mt[m.category] || m.category : "—"
         ),
         e.createElement(
-          u.Item,
+          y.Item,
           { label: "状态" },
           e.createElement(
-            h,
+            S,
             {
-              color: p.status === "detected" ? "success" : p.status === "not_found" ? "error" : "default"
+              color: m.status === "detected" ? "success" : m.status === "not_found" ? "error" : "default"
             },
-            p.status === "detected" ? "✅ 已检测" : p.status === "not_found" ? "❌ 路径无效" : "🔧 待配置"
+            m.status === "detected" ? "✅ 已检测" : m.status === "not_found" ? "❌ 路径无效" : "🔧 待配置"
           )
         ),
         e.createElement(
-          u.Item,
+          y.Item,
           { label: "版本" },
-          p.version || "—"
+          m.version || "—"
         ),
-        p.executable_path ? e.createElement(
-          u.Item,
+        m.executable_path ? e.createElement(
+          y.Item,
           { label: "可执行文件" },
           e.createElement(
             "div",
@@ -8029,36 +8029,36 @@ function gr() {
                   wordBreak: "break-all"
                 }
               },
-              p.executable_path
+              m.executable_path
             ),
             e.createElement(
               c,
               {
                 size: "small",
                 type: "text",
-                icon: A ? e.createElement(A) : void 0,
-                onClick: () => oe(p.executable_path)
+                icon: P ? e.createElement(P) : void 0,
+                onClick: () => oe(m.executable_path)
               }
             )
           )
         ) : null,
-        p.install_dir ? e.createElement(
-          u.Item,
+        m.install_dir ? e.createElement(
+          y.Item,
           { label: "安装目录" },
           e.createElement(
             "code",
             { style: { fontSize: 12, wordBreak: "break-all" } },
-            p.install_dir
+            m.install_dir
           )
         ) : null,
         // Display detected modules with paths
-        p.modules && p.modules.length > 0 ? e.createElement(
-          u.Item,
+        m.modules && m.modules.length > 0 ? e.createElement(
+          y.Item,
           { label: "已检测模块" },
           e.createElement(
             "div",
             { style: { display: "flex", flexDirection: "column", gap: 4 } },
-            ...p.modules.map(
+            ...m.modules.map(
               (Q) => e.createElement(
                 "div",
                 {
@@ -8066,62 +8066,62 @@ function gr() {
                   style: { display: "flex", alignItems: "center", gap: 8 }
                 },
                 e.createElement(
-                  h,
+                  S,
                   { color: "cyan", style: { fontSize: 11 } },
                   Q
                 ),
-                p.module_paths && p.module_paths[Q] ? e.createElement(
+                m.module_paths && m.module_paths[Q] ? e.createElement(
                   "code",
                   { style: { fontSize: 11, wordBreak: "break-all" } },
-                  p.module_paths[Q]
+                  m.module_paths[Q]
                 ) : null
               )
             )
           )
         ) : null,
-        p.license_server ? e.createElement(
-          u.Item,
+        m.license_server ? e.createElement(
+          y.Item,
           { label: "许可证服务器" },
-          p.license_server
+          m.license_server
         ) : null,
         e.createElement(
-          u.Item,
+          y.Item,
           { label: "描述" },
-          p.description || "—"
+          m.description || "—"
         )
       ),
       // Invocation hint
-      p.invocation_hint ? e.createElement(
+      m.invocation_hint ? e.createElement(
         "div",
         {
           style: {
             marginTop: 16,
             padding: 12,
-            background: "var(--ant-color-primary-bg, #e6f4ff)",
+            background: "#e6f4ff",
             borderRadius: 8
           }
         },
         e.createElement(
-          K,
+          X,
           { strong: !0, style: { fontSize: 13 } },
           "💡 调用方式"
         ),
         e.createElement(
           "div",
           { style: { marginTop: 8, fontSize: 13, lineHeight: 1.6 } },
-          p.invocation_hint
+          m.invocation_hint
         )
       ) : null,
       // Type badge
       e.createElement(
         "div",
         { style: { marginTop: 12 } },
-        p.is_default ? e.createElement(
-          h,
+        m.is_default ? e.createElement(
+          S,
           { color: "blue" },
           "默认引擎"
-        ) : p.is_custom ? e.createElement(
-          h,
+        ) : m.is_custom ? e.createElement(
+          S,
           { color: "purple" },
           "自定义引擎"
         ) : null
@@ -8129,50 +8129,50 @@ function gr() {
     ) : null,
     // Add/Edit modal
     e.createElement(
-      C,
+      $,
       {
-        title: J ? "编辑引擎" : "添加引擎",
-        open: W,
-        onOk: he,
-        onCancel: () => S(!1),
-        okText: J ? "保存" : "添加",
+        title: D ? "编辑引擎" : "添加引擎",
+        open: N,
+        onOk: Ee,
+        onCancel: () => h(!1),
+        okText: D ? "保存" : "添加",
         cancelText: "取消",
-        confirmLoading: fe,
+        confirmLoading: ge,
         width: 560
       },
       e.createElement(
         "div",
         { style: { maxHeight: 480, overflow: "auto", paddingRight: 8 } },
-        be("引擎名称 *", "name"),
-        be("厂商", "vendor"),
-        be("版本", "version"),
-        be("可执行文件路径", "executable_path"),
-        be("安装目录", "install_dir"),
-        be("分类", "category", {
+        ve("引擎名称 *", "name"),
+        ve("厂商", "vendor"),
+        ve("版本", "version"),
+        ve("可执行文件路径", "executable_path"),
+        ve("安装目录", "install_dir"),
+        ve("分类", "category", {
           select: {
-            options: Object.entries(Ht).map(([Q, we]) => ({
-              label: we,
+            options: Object.entries(Mt).map(([Q, be]) => ({
+              label: be,
               value: Q
             }))
           }
         }),
-        be("描述", "description", { textarea: !0 }),
-        be("调用方式提示", "invocation_hint", { textarea: !0 }),
-        be("许可证服务器", "license_server")
+        ve("描述", "description", { textarea: !0 }),
+        ve("调用方式提示", "invocation_hint", { textarea: !0 }),
+        ve("许可证服务器", "license_server")
       )
     )
   );
 }
-const fr = sr, ua = /* @__PURE__ */ new Set(["tools", "engines", "skills"]);
-function yr(e) {
+const er = Jl, ta = /* @__PURE__ */ new Set(["tools", "engines", "skills"]);
+function tr(e) {
   try {
     const t = new URLSearchParams(window.location.search).get("tab");
-    return t && ua.has(t) ? t : e;
+    return t && ta.has(t) ? t : e;
   } catch {
     return e;
   }
 }
-function Un(e) {
+function An(e) {
   try {
     const t = new URL(window.location.href);
     t.searchParams.set("tab", e), window.history.replaceState(
@@ -8183,28 +8183,28 @@ function Un(e) {
   } catch {
   }
 }
-function Wt({ page: e }) {
-  const t = _().React, { useEffect: a, useState: l } = t, { Alert: n, Spin: r } = _().antd, [o, c] = l(null), [s, d] = l("");
-  if (a(() => {
-    let f = !0;
-    const u = _().loadBuiltinPage;
-    return c(null), u ? (d(""), u(e).then((h) => {
-      f && c(() => h);
-    }).catch((h) => {
-      f && d(
-        h instanceof Error ? h.message : "加载原生管理页面失败"
+function Lt({ page: e }) {
+  const t = x().React, { useEffect: l, useState: a } = t, { Alert: n, Spin: r } = x().antd, [o, c] = a(null), [i, d] = a("");
+  if (l(() => {
+    let b = !0;
+    const y = x().loadBuiltinPage;
+    return c(null), y ? (d(""), y(e).then((S) => {
+      b && c(() => S);
+    }).catch((S) => {
+      b && d(
+        S instanceof Error ? S.message : "加载原生管理页面失败"
       );
     }), () => {
-      f = !1;
+      b = !1;
     }) : (d("当前 QwenPaw 版本不支持原生页面嵌入"), () => {
-      f = !1;
+      b = !1;
     });
-  }, [e]), s)
+  }, [e]), i)
     return t.createElement(n, {
       type: "error",
       showIcon: !0,
       message: "原生管理功能加载失败",
-      description: s
+      description: i
     });
   if (!o)
     return t.createElement(
@@ -8216,35 +8216,35 @@ function Wt({ page: e }) {
         t.createElement("div", { style: { minHeight: 24 } })
       )
     );
-  const m = e === "mcp" ? {
+  const u = e === "mcp" ? {
     title: "UGSci MCP",
     description: "连接外部工具、数据服务与计算能力，扩展当前专家的可调用范围",
     managedTitle: "已接入服务",
     managedDescription: "启用后可由当前专家调用，并可按工具配置访问权限",
     create: "接入 MCP 服务"
   } : void 0;
-  return t.createElement(o, { embedded: !0, embeddedLabels: m });
+  return t.createElement(o, { embedded: !0, embeddedLabels: u });
 }
-function Er() {
-  const e = _().React, { Tabs: t } = _().antd;
+function nr() {
+  const e = x().React, { Tabs: t } = x().antd;
   return e.createElement(t, {
     defaultActiveKey: "mcp",
     items: [
       {
         key: "mcp",
         label: "MCP 接入",
-        children: e.createElement(Wt, { page: "mcp" })
+        children: e.createElement(Lt, { page: "mcp" })
       },
       {
         key: "builtin",
         label: "平台内置",
-        children: e.createElement(Wt, { page: "tools" })
+        children: e.createElement(Lt, { page: "tools" })
       }
     ]
   });
 }
-function hr() {
-  const e = _().React, { Empty: t, Typography: a } = _().antd, { Paragraph: l } = a;
+function ar() {
+  const e = x().React, { Empty: t, Typography: l } = x().antd, { Paragraph: a } = l;
   return e.createElement(
     "div",
     { style: { padding: "36px 12px" } },
@@ -8254,7 +8254,7 @@ function hr() {
         null,
         e.createElement("div", null, "暂无已注册的领域计算引擎"),
         e.createElement(
-          l,
+          a,
           {
             type: "secondary",
             style: { maxWidth: 560, margin: "8px auto 0" }
@@ -8265,81 +8265,81 @@ function hr() {
     })
   );
 }
-function vr() {
-  const e = _().React, { Tabs: t } = _().antd;
+function lr() {
+  const e = x().React, { Tabs: t } = x().antd;
   return e.createElement(t, {
     defaultActiveKey: "simulation",
     items: [
       {
         key: "simulation",
         label: "仿真软件",
-        children: e.createElement(gr)
+        children: e.createElement(Zl)
       },
       {
         key: "domain",
         label: "领域计算",
-        children: e.createElement(hr)
+        children: e.createElement(ar)
       },
       {
         key: "runtime",
         label: "运行服务",
-        children: e.createElement(Wt, { page: "acp" })
+        children: e.createElement(Lt, { page: "acp" })
       }
     ]
   });
 }
-function pa({
+function na({
   initialTab: e = "engines"
 } = {}) {
-  var C, b;
-  const t = _().React, { useEffect: a, useState: l } = t, { Tabs: n, Tag: r } = _().antd, { RocketOutlined: o, ToolOutlined: c, ThunderboltOutlined: s } = _().antdIcons || {}, d = (b = (C = _()).useSelectedAgent) == null ? void 0 : b.call(C), m = (d == null ? void 0 : d.id) || "default", [f, u] = l(
-    () => yr(e)
+  var $, w;
+  const t = x().React, { useEffect: l, useState: a } = t, { Tabs: n, Tag: r } = x().antd, { RocketOutlined: o, ToolOutlined: c, ThunderboltOutlined: i } = x().antdIcons || {}, d = (w = ($ = x()).useSelectedAgent) == null ? void 0 : w.call($), u = (d == null ? void 0 : d.id) || "default", [b, y] = a(
+    () => tr(e)
   );
-  a(() => {
+  l(() => {
     try {
-      const v = new URLSearchParams(window.location.search).get("tab");
-      v && !ua.has(v) && Un(f);
+      const z = new URLSearchParams(window.location.search).get("tab");
+      z && !ta.has(z) && An(b);
     } catch {
     }
-  }, [f]);
-  const h = (v) => {
-    u(v), Un(v);
-  }, x = (v, I) => t.createElement(
+  }, [b]);
+  const S = (z) => {
+    y(z), An(z);
+  }, C = (z, j) => t.createElement(
     "span",
     { style: { display: "inline-flex", alignItems: "center", gap: 6 } },
-    I ? t.createElement(I, { style: { fontSize: 14 } }) : null,
-    v
+    j ? t.createElement(j, { style: { fontSize: 14 } }) : null,
+    z
   );
   return t.createElement(
     "div",
     { style: { padding: 24 } },
-    t.createElement($t, {
+    t.createElement(xt, {
       title: "工具·技能",
       subtitle: "管理当前专家可调用的引擎、工具、运行服务与专业技能",
       extra: t.createElement(
         r,
         { color: "blue" },
-        `当前专家：${m}`
+        `当前专家：${u}`
       )
     }),
     t.createElement(n, {
-      activeKey: f,
-      onChange: (v) => h(v),
+      activeKey: b,
+      onChange: (z) => S(z),
       items: [
         {
           key: "engines",
-          label: x("引擎", o),
-          children: t.createElement(vr)
+          label: C("引擎", o),
+          children: t.createElement(lr)
         },
         {
           key: "tools",
-          label: x("工具", c),
-          children: t.createElement(Er)
+          label: C("工具", c),
+          children: t.createElement(nr)
         },
         {
           key: "skills",
-          label: x("技能", s),
-          children: t.createElement(fr, {
+          label: C("技能", i),
+          children: t.createElement(er, {
             embedded: !0
           })
         }
@@ -8347,18 +8347,18 @@ function pa({
     })
   );
 }
-const ga = pa;
-function br() {
-  return _().React.createElement(ga, {
+const aa = na;
+function rr() {
+  return x().React.createElement(aa, {
     initialTab: "tools"
   });
 }
-function wr() {
-  return _().React.createElement(ga, {
+function or() {
+  return x().React.createElement(aa, {
     initialTab: "skills"
   });
 }
-const Nn = {
+const Pn = {
   BRAVE_API_KEY: {
     label: "Brave API Key",
     help: "在 Brave Search API 官网注册获取",
@@ -8405,27 +8405,27 @@ const Nn = {
     isSecret: !0
   }
 };
-function Sr(e) {
+function sr(e) {
   if (!e.env) return !1;
   const t = Object.entries(e.env);
-  return t.length === 0 ? !1 : t.some(([, a]) => typeof a == "string" && a.length > 0);
+  return t.length === 0 ? !1 : t.some(([, l]) => typeof l == "string" && l.length > 0);
 }
-const kt = "ugsci.market.githubSources", Dn = "https://github.com/anthropics/skills/tree/main/skills", fa = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com", xr = `${fa}/skills`;
-function kr(e) {
+const ht = "ugsci.market.githubSources", $n = "https://github.com/anthropics/skills/tree/main/skills", la = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com", ir = `${la}/skills`;
+function cr(e) {
   const t = e.replace(/^\/+/, "");
-  return It(`/plugins/oss-proxy?path=${encodeURIComponent(t)}`);
+  return St(`/plugins/oss-proxy?path=${encodeURIComponent(t)}`);
 }
-function _t(e) {
+function bt(e) {
   const t = e.replace(/^\/+/, "");
-  return Je(`/plugins/oss-proxy?path=${encodeURIComponent(t)}`);
+  return Ge(`/plugins/oss-proxy?path=${encodeURIComponent(t)}`);
 }
-async function nn(e) {
-  const t = e.replace(/^\/+/, ""), a = await _t(t);
-  if (!a.ok)
-    throw new Error(`OSS fetch failed (${a.status}): ${t}`);
-  return await a.json();
+async function Kt(e) {
+  const t = e.replace(/^\/+/, ""), l = await bt(t);
+  if (!l.ok)
+    throw new Error(`OSS fetch failed (${l.status}): ${t}`);
+  return await l.json();
 }
-function nt(e) {
+function Qe(e) {
   return {
     domain: "领域",
     workflow: "工作流",
@@ -8436,20 +8436,20 @@ function nt(e) {
     tooling: "工具链"
   }[e] || e;
 }
-function Cr(e) {
+function dr(e) {
   var n, r;
   const t = {};
   if (e.env && e.env.length > 0)
     for (const o of e.env)
       t[o] = `your-${o.toLowerCase().replace(/_/g, "-")}`;
-  let a = "🔌";
-  const l = (e.icon || "").toLowerCase();
-  return l.includes("folder") ? a = "📁" : l.includes("git") ? a = "🌿" : l.includes("github") ? a = "🐙" : l.includes("database") || l.includes("postgres") || l.includes("sqlite") ? a = "🗄️" : l.includes("search") || l.includes("brave") ? a = "🔍" : l.includes("browser") || l.includes("puppeteer") ? a = "🎭" : l.includes("memory") || l.includes("brain") ? a = "🧠" : l.includes("file") || l.includes("fetch") ? a = "🌐" : l.includes("slack") ? a = "💬" : l.includes("google") ? a = "📁" : l.includes("notion") ? a = "📝" : l.includes("jupyter") ? a = "📊" : l.includes("science") || l.includes("flask") ? a = "🔬" : l.includes("book") || l.includes("arxiv") ? a = "📚" : l.includes("patent") && (a = "📜"), {
+  let l = "🔌";
+  const a = (e.icon || "").toLowerCase();
+  return a.includes("folder") ? l = "📁" : a.includes("git") ? l = "🌿" : a.includes("github") ? l = "🐙" : a.includes("database") || a.includes("postgres") || a.includes("sqlite") ? l = "🗄️" : a.includes("search") || a.includes("brave") ? l = "🔍" : a.includes("browser") || a.includes("puppeteer") ? l = "🎭" : a.includes("memory") || a.includes("brain") ? l = "🧠" : a.includes("file") || a.includes("fetch") ? l = "🌐" : a.includes("slack") ? l = "💬" : a.includes("google") ? l = "📁" : a.includes("notion") ? l = "📝" : a.includes("jupyter") ? l = "📊" : a.includes("science") || a.includes("flask") ? l = "🔬" : a.includes("book") || a.includes("arxiv") ? l = "📚" : a.includes("patent") && (l = "📜"), {
     id: e.id,
     name: e.name,
-    emoji: a,
-    iconUrl: e.icon_url ? kr(e.icon_url) : void 0,
-    category: e.category ? nt(e.category) : "",
+    emoji: l,
+    iconUrl: e.icon_url ? cr(e.icon_url) : void 0,
+    category: e.category ? Qe(e.category) : "",
     description: e.description,
     transport: e.transport || "stdio",
     command: ((n = e.config) == null ? void 0 : n.command) || "",
@@ -8457,13 +8457,13 @@ function Cr(e) {
     env: Object.keys(t).length > 0 ? t : void 0
   };
 }
-const ya = "ugsci.market.mcpSources", Ea = "ugsci.market.expertSources";
-function ha(e, t) {
+const ra = "ugsci.market.mcpSources", oa = "ugsci.market.expertSources";
+function sa(e, t) {
   try {
-    const a = localStorage.getItem(e);
-    if (!a) return [];
-    const l = JSON.parse(a);
-    return Array.isArray(l) ? l.filter(
+    const l = localStorage.getItem(e);
+    if (!l) return [];
+    const a = JSON.parse(l);
+    return Array.isArray(a) ? a.filter(
       (n) => n && typeof n.id == "string" && typeof n.label == "string" && typeof n.url == "string"
     ).map((n) => ({
       id: n.id,
@@ -8476,60 +8476,60 @@ function ha(e, t) {
     return [];
   }
 }
-function va(e, t) {
+function ia(e, t) {
   try {
     localStorage.setItem(e, JSON.stringify(t));
   } catch {
   }
 }
-function Tr() {
-  return ha(ya, "mcp");
+function mr() {
+  return sa(ra, "mcp");
 }
-function bt(e) {
-  va(ya, e);
+function ft(e) {
+  ia(ra, e);
 }
-function _r() {
-  return ha(Ea, "expert");
+function ur() {
+  return sa(oa, "expert");
 }
-function wt(e) {
-  va(Ea, e);
+function yt(e) {
+  ia(oa, e);
 }
-function ba(e) {
+function ca(e) {
   try {
-    const t = new URL(e.trim()), a = t.hostname.toLowerCase();
-    let l;
-    if (a === "github.com" || a === "www.github.com")
-      l = "github";
-    else if (a === "gitee.com" || a === "www.gitee.com")
-      l = "gitee";
+    const t = new URL(e.trim()), l = t.hostname.toLowerCase();
+    let a;
+    if (l === "github.com" || l === "www.github.com")
+      a = "github";
+    else if (l === "gitee.com" || l === "www.gitee.com")
+      a = "gitee";
     else
       return null;
     const n = t.pathname.split("/").filter((d) => d.length > 0);
     if (n.length < 2) return null;
     const r = decodeURIComponent(n[0]), o = decodeURIComponent(n[1]);
-    let c = "main", s = "";
-    return n.length >= 4 && (n[2] === "tree" || n[2] === "blob") ? (c = decodeURIComponent(n[3]), n.length > 4 && (s = n.slice(4).map(decodeURIComponent).join("/"))) : n.length > 2 && (s = n.slice(2).map(decodeURIComponent).join("/")), s = s.replace(/\/+$/, "").replace(/^\/+/, ""), {
+    let c = "main", i = "";
+    return n.length >= 4 && (n[2] === "tree" || n[2] === "blob") ? (c = decodeURIComponent(n[3]), n.length > 4 && (i = n.slice(4).map(decodeURIComponent).join("/"))) : n.length > 2 && (i = n.slice(2).map(decodeURIComponent).join("/")), i = i.replace(/\/+$/, "").replace(/^\/+/, ""), {
       owner: r,
       repo: o,
       ref: c || "main",
-      skillsPath: s,
+      skillsPath: i,
       label: `${r}/${o}`,
-      platform: l
+      platform: a
     };
   } catch {
     return null;
   }
 }
-function wa(e, t, a, l = "github") {
-  return l === "oss" ? `oss:${e}/${a || "/"}` : `${l}:${e}/${t}:${a || "/"}`;
+function da(e, t, l, a = "github") {
+  return a === "oss" ? `oss:${e}/${l || "/"}` : `${a}:${e}/${t}:${l || "/"}`;
 }
-function Ir(e) {
+function pr(e) {
   try {
-    const t = new URL(e.trim()), a = t.hostname.toLowerCase(), l = a.match(
+    const t = new URL(e.trim()), l = t.hostname.toLowerCase(), a = l.match(
       /^([a-z0-9][a-z0-9-]{1,61}[a-z0-9])\.oss-([a-z0-9-]+)\.aliyuncs\.com$/
     );
-    if (!l) return null;
-    const n = l[1], r = `${t.protocol}//${a}`, o = decodeURIComponent(t.pathname).replace(/^\/+/, "").replace(/\/+$/, "");
+    if (!a) return null;
+    const n = a[1], r = `${t.protocol}//${l}`, o = decodeURIComponent(t.pathname).replace(/^\/+/, "").replace(/\/+$/, "");
     return o ? {
       endpoint: r,
       prefix: o,
@@ -8540,19 +8540,19 @@ function Ir(e) {
     return null;
   }
 }
-function zr() {
+function gr() {
   try {
-    const e = localStorage.getItem(kt);
+    const e = localStorage.getItem(ht);
     if (!e) {
-      const l = [], n = ba(Dn);
-      return n && l.push({
-        id: wa(
+      const a = [], n = ca($n);
+      return n && a.push({
+        id: da(
           n.owner,
           n.repo,
           n.skillsPath,
           n.platform
         ),
-        url: Dn,
+        url: $n,
         label: n.label,
         owner: n.owner,
         repo: n.repo,
@@ -8560,59 +8560,59 @@ function zr() {
         skillsPath: n.skillsPath,
         enabled: !1,
         platform: n.platform
-      }), localStorage.setItem(kt, JSON.stringify(l)), l;
+      }), localStorage.setItem(ht, JSON.stringify(a)), a;
     }
     const t = JSON.parse(e);
     if (!Array.isArray(t)) return [];
-    const a = t.filter(
-      (l) => l && typeof l.id == "string" && (typeof l.owner == "string" || l.platform === "oss") && !(l.platform === "oss" && l.url === xr)
-    ).map((l) => ({
-      ...l,
-      platform: l.platform || "github",
-      owner: l.owner || "",
-      repo: l.repo || "",
-      ref: l.ref || "",
-      skillsPath: l.skillsPath || ""
+    const l = t.filter(
+      (a) => a && typeof a.id == "string" && (typeof a.owner == "string" || a.platform === "oss") && !(a.platform === "oss" && a.url === ir)
+    ).map((a) => ({
+      ...a,
+      platform: a.platform || "github",
+      owner: a.owner || "",
+      repo: a.repo || "",
+      ref: a.ref || "",
+      skillsPath: a.skillsPath || ""
     }));
-    return a.length !== t.length && localStorage.setItem(
-      kt,
-      JSON.stringify(a)
-    ), a;
+    return l.length !== t.length && localStorage.setItem(
+      ht,
+      JSON.stringify(l)
+    ), l;
   } catch {
     return [];
   }
 }
-function St(e) {
+function Et(e) {
   try {
     localStorage.setItem(
-      kt,
+      ht,
       JSON.stringify(e)
     );
   } catch {
   }
 }
-function $r(e) {
+function fr(e) {
   const t = e.match(/^---\s*\n([\s\S]*?)\n---/);
   if (!t) return {};
-  const a = t[1], l = {}, n = a.split(`
+  const l = t[1], a = {}, n = l.split(`
 `);
   let r = "";
   for (const o of n) {
     const c = o.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
     if (c) {
       r = c[1];
-      let s = c[2].trim();
-      (s.startsWith('"') && s.endsWith('"') || s.startsWith("'") && s.endsWith("'")) && (s = s.slice(1, -1)), r === "name" ? l.name = s : r === "description" ? l.description = s : r === "version" ? l.version = s : r === "author" && (l.author = s);
+      let i = c[2].trim();
+      (i.startsWith('"') && i.endsWith('"') || i.startsWith("'") && i.endsWith("'")) && (i = i.slice(1, -1)), r === "name" ? a.name = i : r === "description" ? a.description = i : r === "version" ? a.version = i : r === "author" && (a.author = i);
     }
   }
-  return l;
+  return a;
 }
-async function Ar(e) {
-  const t = e.platform === "gitee", a = e.skillsPath ? encodeURIComponent(e.skillsPath).replace(/%2F/g, "/") : "", l = t ? `https://gitee.com/api/v5/repos/${e.owner}/${e.repo}/contents/${a}?ref=${encodeURIComponent(e.ref)}` : `https://api.github.com/repos/${e.owner}/${e.repo}/contents/${a}?ref=${encodeURIComponent(e.ref)}`, n = {
+async function yr(e) {
+  const t = e.platform === "gitee", l = e.skillsPath ? encodeURIComponent(e.skillsPath).replace(/%2F/g, "/") : "", a = t ? `https://gitee.com/api/v5/repos/${e.owner}/${e.repo}/contents/${l}?ref=${encodeURIComponent(e.ref)}` : `https://api.github.com/repos/${e.owner}/${e.repo}/contents/${l}?ref=${encodeURIComponent(e.ref)}`, n = {
     Accept: t ? "application/json" : "application/vnd.github+json"
   };
   t && e.accessToken && (n.Authorization = `token ${e.accessToken}`);
-  const r = await fetch(l, {
+  const r = await fetch(a, {
     headers: n
   });
   if (!r.ok)
@@ -8626,42 +8626,42 @@ async function Ar(e) {
   );
   return await Promise.all(
     c.map(async (d) => {
-      const m = e.skillsPath ? e.skillsPath + "/" : "", f = t ? `https://gitee.com/${e.owner}/${e.repo}/raw/${e.ref}/${m}${d.name}/SKILL.md` : `https://raw.githubusercontent.com/${e.owner}/${e.repo}/${e.ref}/${m}${d.name}/SKILL.md`, u = t ? `https://gitee.com/${e.owner}/${e.repo}/tree/${e.ref}/${m}${d.name}` : `https://github.com/${e.owner}/${e.repo}/tree/${e.ref}/${m}${d.name}`, h = {
+      const u = e.skillsPath ? e.skillsPath + "/" : "", b = t ? `https://gitee.com/${e.owner}/${e.repo}/raw/${e.ref}/${u}${d.name}/SKILL.md` : `https://raw.githubusercontent.com/${e.owner}/${e.repo}/${e.ref}/${u}${d.name}/SKILL.md`, y = t ? `https://gitee.com/${e.owner}/${e.repo}/tree/${e.ref}/${u}${d.name}` : `https://github.com/${e.owner}/${e.repo}/tree/${e.ref}/${u}${d.name}`, S = {
         sourceId: e.id,
         sourceLabel: e.label,
         name: d.name,
         description: "",
-        source_url: u,
-        html_url: u,
+        source_url: y,
+        html_url: y,
         version: null,
         author: null
       };
       try {
-        const x = {};
-        t && e.accessToken && (x.Authorization = `token ${e.accessToken}`);
-        const C = await fetch(f, {
-          headers: x
+        const C = {};
+        t && e.accessToken && (C.Authorization = `token ${e.accessToken}`);
+        const $ = await fetch(b, {
+          headers: C
         });
-        if (!C.ok) return h;
-        const b = await C.text(), v = $r(b);
+        if (!$.ok) return S;
+        const w = await $.text(), z = fr(w);
         return {
-          ...h,
-          name: v.name || d.name,
-          description: v.description || "",
-          version: v.version || null,
-          author: v.author || null
+          ...S,
+          name: z.name || d.name,
+          description: z.description || "",
+          version: z.version || null,
+          author: z.author || null
         };
       } catch {
-        return h;
+        return S;
       }
     })
   );
 }
-async function Pr(e) {
-  const t = Ir(e.url);
+async function Er(e) {
+  const t = pr(e.url);
   if (!t)
     throw new Error(`Invalid OSS URL: ${e.url}`);
-  const { endpoint: a, prefix: l } = t, n = l.split("/").map(encodeURIComponent).join("/"), r = await _t(
+  const { endpoint: l, prefix: a } = t, n = a.split("/").map(encodeURIComponent).join("/"), r = await bt(
     `${n}/manifest.json`
   );
   if (!r.ok)
@@ -8670,67 +8670,67 @@ async function Pr(e) {
     );
   const o = await r.json(), c = [];
   if (o && o.tag_groups && typeof o.tag_groups == "object")
-    for (const [m, f] of Object.entries(o.tag_groups))
-      Array.isArray(f) && c.push({
-        id: m,
-        label: nt(m),
-        tags: f
+    for (const [u, b] of Object.entries(o.tag_groups))
+      Array.isArray(b) && c.push({
+        id: u,
+        label: Qe(u),
+        tags: b
       });
-  const s = [];
-  function d(m, f) {
-    for (const u of m) {
-      if (u.type === "collection" && Array.isArray(u.children)) {
-        d(u.children, u.name);
+  const i = [];
+  function d(u, b) {
+    for (const y of u) {
+      if (y.type === "collection" && Array.isArray(y.children)) {
+        d(y.children, y.name);
         continue;
       }
-      const h = u.path || u.name || "";
-      if (!h) continue;
-      const x = h.split("/").map(encodeURIComponent).join("/"), C = `${a}/${n}/${x}`;
-      let b = null;
-      if (u.metadata) {
-        const I = u.metadata.match(/version:\s*"?([\d.]+)"?/);
-        I && (b = I[1]);
+      const S = y.path || y.name || "";
+      if (!S) continue;
+      const C = S.split("/").map(encodeURIComponent).join("/"), $ = `${l}/${n}/${C}`;
+      let w = null;
+      if (y.metadata) {
+        const j = y.metadata.match(/version:\s*"?([\d.]+)"?/);
+        j && (w = j[1]);
       }
-      const v = f ? `${e.label}/${f}` : e.label;
-      s.push({
+      const z = b ? `${e.label}/${b}` : e.label;
+      i.push({
         sourceId: e.id,
         sourceLabel: e.label,
-        sourcePath: v,
-        name: u.name || h.split("/").pop() || h,
-        description: u.description || "",
-        source_url: C,
-        html_url: C,
-        version: b,
+        sourcePath: z,
+        name: y.name || S.split("/").pop() || S,
+        description: y.description || "",
+        source_url: $,
+        html_url: $,
+        version: w,
         author: null,
-        tag: u.tag || void 0,
+        tag: y.tag || void 0,
         isOfficial: !0
       });
     }
   }
   if (Array.isArray(o) ? d(
     o.map(
-      (m) => typeof m == "string" ? { name: m, path: m } : m
+      (u) => typeof u == "string" ? { name: u, path: u } : u
     )
-  ) : o && Array.isArray(o.skills) && d(o.skills), s.length === 0)
+  ) : o && Array.isArray(o.skills) && d(o.skills), i.length === 0)
     throw new Error(
       `manifest.json 中未找到技能。请检查 ${e.url}/manifest.json`
     );
-  return { skills: s, categories: c };
+  return { skills: i, categories: c };
 }
-async function Rr() {
-  const e = await nn("mcp/manifest.json"), t = [], a = {};
+async function hr() {
+  const e = await Kt("mcp/manifest.json"), t = [], l = {};
   if (e.tag_groups && typeof e.tag_groups == "object")
     for (const [n, r] of Object.entries(e.tag_groups))
-      Array.isArray(r) && (a[n] = r, t.push({
+      Array.isArray(r) && (l[n] = r, t.push({
         id: n,
-        label: nt(n),
+        label: Qe(n),
         tags: r
       }));
   return { servers: (e.servers || []).map((n) => {
     let r = "";
     const o = n.tags || [];
-    for (const [c, s] of Object.entries(a))
-      if (s.some((d) => o.includes(d))) {
+    for (const [c, i] of Object.entries(l))
+      if (i.some((d) => o.includes(d))) {
         r = c;
         break;
       }
@@ -8749,22 +8749,22 @@ async function Rr() {
     };
   }), categories: t };
 }
-async function Or() {
-  const e = await nn("skills/manifest.json"), t = [], a = /* @__PURE__ */ new Set();
-  function l(n, r) {
+async function vr() {
+  const e = await Kt("skills/manifest.json"), t = [], l = /* @__PURE__ */ new Set();
+  function a(n, r) {
     for (const o of n) {
       if ((o == null ? void 0 : o.type) === "collection" && Array.isArray(o.children)) {
-        l(o.children, o.name || r);
+        a(o.children, o.name || r);
         continue;
       }
       const c = String((o == null ? void 0 : o.path) || (o == null ? void 0 : o.name) || "").trim();
       if (!c) continue;
-      const s = c.split("/").map(encodeURIComponent).join("/"), d = `${fa}/skills/${s}`, m = typeof o.tag == "string" && o.tag.trim() ? o.tag.trim() : void 0;
-      m && a.add(m);
-      let f = null;
+      const i = c.split("/").map(encodeURIComponent).join("/"), d = `${la}/skills/${i}`, u = typeof o.tag == "string" && o.tag.trim() ? o.tag.trim() : void 0;
+      u && l.add(u);
+      let b = null;
       if (typeof o.metadata == "string") {
-        const u = o.metadata.match(/version:\s*"?([\d.]+)"?/);
-        u && (f = u[1]);
+        const y = o.metadata.match(/version:\s*"?([\d.]+)"?/);
+        y && (b = y[1]);
       }
       t.push({
         sourceId: "oss:ugsci-official",
@@ -8774,41 +8774,41 @@ async function Or() {
         description: o.description || "",
         source_url: d,
         html_url: d,
-        version: f,
+        version: b,
         author: null,
-        tag: m,
+        tag: u,
         isOfficial: !0
       });
     }
   }
-  if (Array.isArray(e) ? l(
+  if (Array.isArray(e) ? a(
     e.map(
       (n) => typeof n == "string" ? { name: n, path: n } : n
     )
-  ) : e && Array.isArray(e.skills) && l(e.skills), t.length === 0)
+  ) : e && Array.isArray(e.skills) && a(e.skills), t.length === 0)
     throw new Error("OSS 技能清单中没有可用技能");
   return {
     skills: t,
-    categories: Array.from(a).map((n) => ({
+    categories: Array.from(l).map((n) => ({
       id: n,
       label: n
     }))
   };
 }
-async function Mr() {
-  const e = await nn("agents/manifest.json"), t = [], a = {};
+async function br() {
+  const e = await Kt("agents/manifest.json"), t = [], l = {};
   if (e.tag_groups && typeof e.tag_groups == "object")
     for (const [n, r] of Object.entries(e.tag_groups))
-      Array.isArray(r) && (a[n] = r, t.push({
+      Array.isArray(r) && (l[n] = r, t.push({
         id: n,
-        label: nt(n),
+        label: Qe(n),
         tags: r
       }));
   return { agents: (e.agents || []).map((n) => {
     let r = "";
     const o = n.tags || [];
-    for (const [c, s] of Object.entries(a))
-      if (s.some((d) => o.includes(d))) {
+    for (const [c, i] of Object.entries(l))
+      if (i.some((d) => o.includes(d))) {
         r = c;
         break;
       }
@@ -8826,15 +8826,15 @@ async function Mr() {
     };
   }), categories: t };
 }
-async function Lr(e) {
-  const t = e.filter((o) => o.enabled), a = await Promise.all(
+async function Sr(e) {
+  const t = e.filter((o) => o.enabled), l = await Promise.all(
     t.map(async (o) => {
       try {
         if (o.platform === "oss") {
-          const { skills: c, categories: s } = await Pr(o);
-          return { skills: c, categories: s, error: null, label: o.label };
+          const { skills: c, categories: i } = await Er(o);
+          return { skills: c, categories: i, error: null, label: o.label };
         } else
-          return { skills: await Ar(o), categories: [], error: null, label: o.label };
+          return { skills: await yr(o), categories: [], error: null, label: o.label };
       } catch (c) {
         return {
           skills: [],
@@ -8844,71 +8844,71 @@ async function Lr(e) {
         };
       }
     })
-  ), l = [], n = [], r = [];
-  for (const o of a)
-    l.push(...o.skills), n.push(...o.categories), o.error && r.push({ label: o.label, message: o.error });
-  return { skills: l, errors: r, categories: n };
+  ), a = [], n = [], r = [];
+  for (const o of l)
+    a.push(...o.skills), n.push(...o.categories), o.error && r.push({ label: o.label, message: o.error });
+  return { skills: a, errors: r, categories: n };
 }
-function Br({
+function wr({
   open: e,
   onClose: t,
-  sources: a,
-  onChange: l
+  sources: l,
+  onChange: a
 }) {
-  const n = _().React, { useState: r } = n, {
+  const n = x().React, { useState: r } = n, {
     Modal: o,
     Input: c,
-    Button: s,
+    Button: i,
     List: d,
-    Tag: m,
-    Switch: f,
-    Typography: u,
-    Tooltip: h,
-    message: x
-  } = _().antd, {
-    PlusOutlined: C,
-    DeleteOutlined: b,
-    LinkOutlined: v,
-    GithubOutlined: I
-  } = _().antdIcons || {}, { Text: z } = u, [N, D] = r(""), [G, B] = r(""), M = () => {
-    const T = N.trim();
-    if (!T) return;
-    const w = ba(T);
-    if (!w) {
-      x.error("无效的仓库 URL，请输入类似 https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills 的链接");
+    Tag: u,
+    Switch: b,
+    Typography: y,
+    Tooltip: S,
+    message: C
+  } = x().antd, {
+    PlusOutlined: $,
+    DeleteOutlined: w,
+    LinkOutlined: z,
+    GithubOutlined: j
+  } = x().antdIcons || {}, { Text: R } = y, [W, G] = r(""), [J, K] = r(""), B = () => {
+    const k = W.trim();
+    if (!k) return;
+    const E = ca(k);
+    if (!E) {
+      C.error("无效的仓库 URL，请输入类似 https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills 的链接");
       return;
     }
-    const E = wa(w.owner, w.repo, w.skillsPath, w.platform);
-    if (a.some((q) => q.id === E)) {
-      x.warning("该源已存在");
+    const f = da(E.owner, E.repo, E.skillsPath, E.platform);
+    if (l.some((H) => H.id === f)) {
+      C.warning("该源已存在");
       return;
     }
-    const $ = {
-      id: E,
-      url: T,
-      label: w.label,
-      owner: w.owner,
-      repo: w.repo,
-      ref: w.ref,
-      skillsPath: w.skillsPath,
+    const T = {
+      id: f,
+      url: k,
+      label: E.label,
+      owner: E.owner,
+      repo: E.repo,
+      ref: E.ref,
+      skillsPath: E.skillsPath,
       enabled: !0,
-      platform: w.platform,
-      accessToken: G.trim() || void 0
-    }, k = [...a, $];
-    St(k), l(k), D(""), B(""), x.success(`已添加源: ${w.label}`);
-  }, A = (T, w) => {
-    const E = a.map(
-      ($) => $.id === T ? { ...$, enabled: w } : $
+      platform: E.platform,
+      accessToken: J.trim() || void 0
+    }, v = [...l, T];
+    Et(v), a(v), G(""), K(""), C.success(`已添加源: ${E.label}`);
+  }, P = (k, E) => {
+    const f = l.map(
+      (T) => T.id === k ? { ...T, enabled: E } : T
     );
-    St(E), l(E);
-  }, H = (T, w) => {
-    const E = a.map(
-      ($) => $.id === T ? { ...$, accessToken: w.trim() || void 0 } : $
+    Et(f), a(f);
+  }, F = (k, E) => {
+    const f = l.map(
+      (T) => T.id === k ? { ...T, accessToken: E.trim() || void 0 } : T
     );
-    St(E), l(E);
-  }, K = (T) => {
-    const w = a.filter((E) => E.id !== T);
-    St(w), l(w), x.success("已移除源");
+    Et(f), a(f);
+  }, X = (k) => {
+    const E = l.filter((f) => f.id !== k);
+    Et(E), a(E), C.success("已移除源");
   };
   return n.createElement(
     o,
@@ -8918,11 +8918,11 @@ function Br({
       title: n.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        I ? n.createElement(I, { style: { fontSize: 18 } }) : null,
+        j ? n.createElement(j, { style: { fontSize: 18 } }) : null,
         n.createElement("span", null, "配置技能源")
       ),
       footer: n.createElement(
-        s,
+        i,
         { onClick: t },
         "关闭"
       ),
@@ -8932,7 +8932,7 @@ function Br({
       "div",
       { style: { marginBottom: 16 } },
       n.createElement(
-        z,
+        R,
         { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
         "添加 GitHub 或 Gitee 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式："
       ),
@@ -8941,35 +8941,35 @@ function Br({
         { style: { display: "flex", gap: 8, alignItems: "center" } },
         n.createElement(c, {
           placeholder: "https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills",
-          value: N,
-          onChange: (T) => D(T.target.value),
-          onPressEnter: M,
-          prefix: v ? n.createElement(v) : void 0,
+          value: W,
+          onChange: (k) => G(k.target.value),
+          onPressEnter: B,
+          prefix: z ? n.createElement(z) : void 0,
           style: { flex: 1 }
         }),
         n.createElement(
-          s,
+          i,
           {
             type: "primary",
-            icon: C ? n.createElement(C) : void 0,
-            onClick: M
+            icon: $ ? n.createElement($) : void 0,
+            onClick: B
           },
           "添加"
         )
       ),
       // Gitee token input (shown when URL looks like a Gitee link)
-      N.trim() && N.trim().toLowerCase().includes("gitee.com") ? n.createElement(
+      W.trim() && W.trim().toLowerCase().includes("gitee.com") ? n.createElement(
         "div",
         { style: { marginTop: 8, display: "flex", gap: 8, alignItems: "center" } },
         n.createElement(
-          z,
+          R,
           { type: "secondary", style: { fontSize: 12, whiteSpace: "nowrap" } },
           "Gitee Token:"
         ),
         n.createElement(c.Password, {
           placeholder: "私有仓库请填写 Gitee 私人令牌（可选）",
-          value: G,
-          onChange: (T) => B(T.target.value),
+          value: J,
+          onChange: (k) => K(k.target.value),
           style: { flex: 1 }
         })
       ) : null
@@ -8977,36 +8977,36 @@ function Br({
     n.createElement(
       "div",
       { style: { marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      n.createElement(z, { strong: !0 }, `已配置源 (${a.length})`)
+      n.createElement(R, { strong: !0 }, `已配置源 (${l.length})`)
     ),
     n.createElement(d, {
       size: "small",
       bordered: !0,
-      dataSource: a,
-      renderItem: (T) => n.createElement(
+      dataSource: l,
+      renderItem: (k) => n.createElement(
         d.Item,
         {
           actions: [
             n.createElement(
-              h,
-              { title: T.enabled ? "点击禁用" : "点击启用" },
-              n.createElement(f, {
+              S,
+              { title: k.enabled ? "点击禁用" : "点击启用" },
+              n.createElement(b, {
                 size: "small",
-                checked: T.enabled,
-                onChange: (w) => A(T.id, w)
+                checked: k.enabled,
+                onChange: (E) => P(k.id, E)
               })
             ),
             n.createElement(
-              h,
+              S,
               { title: "移除此源" },
               n.createElement(
-                s,
+                i,
                 {
                   size: "small",
                   type: "text",
                   danger: !0,
-                  icon: b ? n.createElement(b) : void 0,
-                  onClick: () => K(T.id)
+                  icon: w ? n.createElement(w) : void 0,
+                  onClick: () => X(k.id)
                 }
               )
             )
@@ -9019,48 +9019,48 @@ function Br({
             "div",
             { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
             n.createElement(
-              m,
-              { color: T.platform === "gitee" ? "orange" : T.platform === "oss" ? "green" : "blue", style: { fontSize: 11 } },
-              T.platform === "gitee" ? "Gitee" : T.platform === "oss" ? "OSS" : "GitHub"
+              u,
+              { color: k.platform === "gitee" ? "orange" : k.platform === "oss" ? "green" : "blue", style: { fontSize: 11 } },
+              k.platform === "gitee" ? "Gitee" : k.platform === "oss" ? "OSS" : "GitHub"
             ),
             n.createElement(
-              m,
+              u,
               { style: { fontSize: 11 } },
-              T.label
+              k.label
             ),
-            T.skillsPath ? n.createElement(
-              z,
+            k.skillsPath ? n.createElement(
+              R,
               { type: "secondary", style: { fontSize: 11 } },
-              `/${T.skillsPath}`
+              `/${k.skillsPath}`
             ) : null,
-            T.platform !== "oss" ? n.createElement(
-              z,
+            k.platform !== "oss" ? n.createElement(
+              R,
               { type: "secondary", style: { fontSize: 11 } },
-              `@${T.ref}`
+              `@${k.ref}`
             ) : null
           ),
           n.createElement(
-            z,
+            R,
             {
               type: "secondary",
               style: { fontSize: 11, wordBreak: "break-all" }
             },
-            T.url
+            k.url
           ),
           // Gitee token input for existing Gitee sources
-          T.platform === "gitee" ? n.createElement(
+          k.platform === "gitee" ? n.createElement(
             "div",
             { style: { marginTop: 6, display: "flex", gap: 6, alignItems: "center" } },
             n.createElement(
-              z,
+              R,
               { type: "secondary", style: { fontSize: 11, whiteSpace: "nowrap" } },
               "Token:"
             ),
             n.createElement(c.Password, {
               size: "small",
               placeholder: "Gitee 私人令牌（可选，用于私有仓库）",
-              value: T.accessToken || "",
-              onChange: (w) => H(T.id, w.target.value),
+              value: k.accessToken || "",
+              onChange: (E) => F(k.id, E.target.value),
               style: { flex: 1 }
             })
           ) : null
@@ -9069,111 +9069,111 @@ function Br({
     })
   );
 }
-function Fn({
+function On({
   open: e,
   onClose: t,
-  sources: a,
-  onChange: l,
+  sources: l,
+  onChange: a,
   type: n
 }) {
-  const r = _().React, { useState: o } = r, {
+  const r = x().React, { useState: o } = r, {
     Modal: c,
-    Input: s,
+    Input: i,
     Button: d,
-    List: m,
-    Tag: f,
-    Switch: u,
-    Typography: h,
-    Tooltip: x,
-    message: C
-  } = _().antd, {
-    PlusOutlined: b,
-    DeleteOutlined: v,
-    LinkOutlined: I,
-    ApiOutlined: z,
-    UserOutlined: N,
-    ImportOutlined: D,
-    ExportOutlined: G,
-    CopyOutlined: B
-  } = _().antdIcons || {}, { Text: M } = h, [A, H] = o(""), [K, T] = o(""), [w, E] = o(""), [$, k] = o(!1), q = n === "mcp" ? "MCP" : "专家模板", Z = n === "mcp" ? z ? r.createElement(z, { style: { fontSize: 18 } }) : null : N ? r.createElement(N, { style: { fontSize: 18 } }) : null, U = () => {
-    const S = A.trim(), J = K.trim();
-    if (!S) return;
-    const le = J || S.slice(0, 40), X = `${n}:${S}`;
-    if (a.some((R) => R.id === X)) {
-      C.warning("该源已存在");
+    List: u,
+    Tag: b,
+    Switch: y,
+    Typography: S,
+    Tooltip: C,
+    message: $
+  } = x().antd, {
+    PlusOutlined: w,
+    DeleteOutlined: z,
+    LinkOutlined: j,
+    ApiOutlined: R,
+    UserOutlined: W,
+    ImportOutlined: G,
+    ExportOutlined: J,
+    CopyOutlined: K
+  } = x().antdIcons || {}, { Text: B } = S, [P, F] = o(""), [X, k] = o(""), [E, f] = o(""), [T, v] = o(!1), H = n === "mcp" ? "MCP" : "专家模板", Z = n === "mcp" ? R ? r.createElement(R, { style: { fontSize: 18 } }) : null : W ? r.createElement(W, { style: { fontSize: 18 } }) : null, L = () => {
+    const h = P.trim(), D = X.trim();
+    if (!h) return;
+    const le = D || h.slice(0, 40), V = `${n}:${h}`;
+    if (l.some((I) => I.id === V)) {
+      $.warning("该源已存在");
       return;
     }
     const ee = {
-      id: X,
+      id: V,
       label: le,
-      url: S,
+      url: h,
       enabled: !0,
       type: n
-    }, fe = [...a, ee];
-    n === "mcp" ? bt(fe) : wt(fe), l(fe), H(""), T(""), C.success(`已添加${q}源: ${le}`);
-  }, P = (S, J) => {
-    const le = a.map(
-      (X) => X.id === S ? { ...X, enabled: J } : X
+    }, ge = [...l, ee];
+    n === "mcp" ? ft(ge) : yt(ge), a(ge), F(""), k(""), $.success(`已添加${H}源: ${le}`);
+  }, _ = (h, D) => {
+    const le = l.map(
+      (V) => V.id === h ? { ...V, enabled: D } : V
     );
-    n === "mcp" ? bt(le) : wt(le), l(le);
-  }, p = (S) => {
-    const J = a.filter((le) => le.id !== S);
-    n === "mcp" ? bt(J) : wt(J), l(J), C.success("已移除源");
+    n === "mcp" ? ft(le) : yt(le), a(le);
+  }, m = (h) => {
+    const D = l.filter((le) => le.id !== h);
+    n === "mcp" ? ft(D) : yt(D), a(D), $.success("已移除源");
   }, te = () => {
-    const S = JSON.stringify(
-      { type: n, sources: a },
+    const h = JSON.stringify(
+      { type: n, sources: l },
       null,
       2
     );
     try {
-      navigator.clipboard.writeText(S), C.success(`${q}源已复制到剪贴板（${a.length} 个源）`);
+      navigator.clipboard.writeText(h), $.success(`${H}源已复制到剪贴板（${l.length} 个源）`);
     } catch {
-      const J = document.createElement("textarea");
-      J.value = S, document.body.appendChild(J), J.select(), document.execCommand("copy"), document.body.removeChild(J), C.success(`${q}源已复制到剪贴板（${a.length} 个源）`);
+      const D = document.createElement("textarea");
+      D.value = h, document.body.appendChild(D), D.select(), document.execCommand("copy"), document.body.removeChild(D), $.success(`${H}源已复制到剪贴板（${l.length} 个源）`);
     }
-  }, W = () => {
-    const S = w.trim();
-    if (!S) {
-      C.warning("请粘贴 JSON 内容");
+  }, N = () => {
+    const h = E.trim();
+    if (!h) {
+      $.warning("请粘贴 JSON 内容");
       return;
     }
     try {
-      const J = JSON.parse(S);
+      const D = JSON.parse(h);
       let le = [];
-      if (Array.isArray(J))
-        le = J;
-      else if (J && Array.isArray(J.sources))
-        le = J.sources;
-      else if (J && typeof J == "object")
-        le = [J];
+      if (Array.isArray(D))
+        le = D;
+      else if (D && Array.isArray(D.sources))
+        le = D.sources;
+      else if (D && typeof D == "object")
+        le = [D];
       else
         throw new Error("Invalid format");
-      const X = le.filter(
+      const V = le.filter(
         (re) => re && typeof re.url == "string" && typeof re.label == "string"
       );
-      if (X.length === 0) {
-        C.error("未找到有效的源数据");
+      if (V.length === 0) {
+        $.error("未找到有效的源数据");
         return;
       }
-      const ee = new Set(a.map((re) => re.id)), fe = [];
-      for (const re of X) {
-        const pe = re.id || `${n}:${re.url}`;
-        ee.has(pe) || fe.push({
-          id: pe,
+      const ee = new Set(l.map((re) => re.id)), ge = [];
+      for (const re of V) {
+        const ue = re.id || `${n}:${re.url}`;
+        ee.has(ue) || ge.push({
+          id: ue,
           label: re.label,
           url: re.url,
           enabled: re.enabled !== !1,
           type: n
         });
       }
-      if (fe.length === 0) {
-        C.info("所有源均已存在，无新增");
+      if (ge.length === 0) {
+        $.info("所有源均已存在，无新增");
         return;
       }
-      const R = [...a, ...fe];
-      n === "mcp" ? bt(R) : wt(R), l(R), E(""), k(!1), C.success(`成功导入 ${fe.length} 个${q}源`);
-    } catch (J) {
-      C.error(`JSON 解析失败: ${J.message || "格式错误"}`);
+      const I = [...l, ...ge];
+      n === "mcp" ? ft(I) : yt(I), a(I), f(""), v(!1), $.success(`成功导入 ${ge.length} 个${H}源`);
+    } catch (D) {
+      $.error(`JSON 解析失败: ${D.message || "格式错误"}`);
     }
   };
   return r.createElement(
@@ -9185,7 +9185,7 @@ function Fn({
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
         Z,
-        r.createElement("span", null, `配置${q}源`)
+        r.createElement("span", null, `配置${H}源`)
       ),
       footer: r.createElement(
         "div",
@@ -9196,9 +9196,9 @@ function Fn({
           r.createElement(
             d,
             {
-              icon: G ? r.createElement(G) : void 0,
+              icon: J ? r.createElement(J) : void 0,
               onClick: te,
-              disabled: a.length === 0,
+              disabled: l.length === 0,
               size: "small"
             },
             "导出到剪贴板"
@@ -9206,11 +9206,11 @@ function Fn({
           r.createElement(
             d,
             {
-              icon: D ? r.createElement(D) : void 0,
-              onClick: () => k(!$),
+              icon: G ? r.createElement(G) : void 0,
+              onClick: () => v(!T),
               size: "small"
             },
-            $ ? "隐藏导入" : "导入JSON"
+            T ? "隐藏导入" : "导入JSON"
           )
         ),
         r.createElement(
@@ -9223,12 +9223,12 @@ function Fn({
     },
     // Description
     r.createElement(
-      M,
+      B,
       { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 12 } },
-      `配置${q}源地址，支持从远程仓库或团队共享的 JSON 导入${q}配置。`
+      `配置${H}源地址，支持从远程仓库或团队共享的 JSON 导入${H}配置。`
     ),
     // Import section (collapsible)
-    $ ? r.createElement(
+    T ? r.createElement(
       "div",
       {
         style: {
@@ -9236,15 +9236,15 @@ function Fn({
           padding: 12,
           background: "var(--ant-color-fill-quaternary, #fafafa)",
           borderRadius: 8,
-          border: "1px solid var(--ant-color-border-secondary, #f0f0f0)"
+          border: "1px solid #f0f0f0"
         }
       },
       r.createElement(
-        M,
+        B,
         { strong: !0, style: { fontSize: 12, display: "block", marginBottom: 8 } },
-        `粘贴${q}源 JSON（支持从导出的剪贴板内容粘贴）`
+        `粘贴${H}源 JSON（支持从导出的剪贴板内容粘贴）`
       ),
-      r.createElement(s.TextArea, {
+      r.createElement(i.TextArea, {
         placeholder: n === "mcp" ? `{
   "type": "mcp",
   "sources": [
@@ -9256,8 +9256,8 @@ function Fn({
     { "label": "团队专家库", "url": "https://raw.githubusercontent.com/team/expert-registry/main/experts.json" }
   ]
 }`,
-        value: w,
-        onChange: (S) => E(S.target.value),
+        value: E,
+        onChange: (h) => f(h.target.value),
         autoSize: { minRows: 4, maxRows: 10 },
         style: { fontFamily: "monospace", fontSize: 12 }
       }),
@@ -9269,7 +9269,7 @@ function Fn({
           {
             type: "primary",
             size: "small",
-            onClick: W
+            onClick: N
           },
           "导入"
         ),
@@ -9277,7 +9277,7 @@ function Fn({
           d,
           {
             size: "small",
-            onClick: () => E("")
+            onClick: () => f("")
           },
           "清空"
         )
@@ -9287,26 +9287,26 @@ function Fn({
     r.createElement(
       "div",
       { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
-      r.createElement(s, {
+      r.createElement(i, {
         placeholder: "源名称（可选，如：团队MCP仓库）",
-        value: K,
-        onChange: (S) => T(S.target.value),
+        value: X,
+        onChange: (h) => k(h.target.value),
         style: { width: 200 }
       }),
-      r.createElement(s, {
+      r.createElement(i, {
         placeholder: n === "mcp" ? "https://raw.githubusercontent.com/team/mcp-registry/main/mcp.json" : "https://raw.githubusercontent.com/team/expert-registry/main/experts.json",
-        value: A,
-        onChange: (S) => H(S.target.value),
-        onPressEnter: U,
-        prefix: I ? r.createElement(I) : void 0,
+        value: P,
+        onChange: (h) => F(h.target.value),
+        onPressEnter: L,
+        prefix: j ? r.createElement(j) : void 0,
         style: { flex: 1 }
       }),
       r.createElement(
         d,
         {
           type: "primary",
-          icon: b ? r.createElement(b) : void 0,
-          onClick: U
+          icon: w ? r.createElement(w) : void 0,
+          onClick: L
         },
         "添加"
       )
@@ -9323,30 +9323,30 @@ function Fn({
         }
       },
       r.createElement(
-        M,
+        B,
         { strong: !0 },
-        `已配置源 (${a.length})`
+        `已配置源 (${l.length})`
       )
     ),
-    r.createElement(m, {
+    r.createElement(u, {
       size: "small",
       bordered: !0,
-      dataSource: a,
-      renderItem: (S) => r.createElement(
-        m.Item,
+      dataSource: l,
+      renderItem: (h) => r.createElement(
+        u.Item,
         {
           actions: [
             r.createElement(
-              x,
-              { title: S.enabled ? "点击禁用" : "点击启用" },
-              r.createElement(u, {
+              C,
+              { title: h.enabled ? "点击禁用" : "点击启用" },
+              r.createElement(y, {
                 size: "small",
-                checked: S.enabled,
-                onChange: (J) => P(S.id, J)
+                checked: h.enabled,
+                onChange: (D) => _(h.id, D)
               })
             ),
             r.createElement(
-              x,
+              C,
               { title: "移除此源" },
               r.createElement(
                 d,
@@ -9354,8 +9354,8 @@ function Fn({
                   size: "small",
                   type: "text",
                   danger: !0,
-                  icon: v ? r.createElement(v) : void 0,
-                  onClick: () => p(S.id)
+                  icon: z ? r.createElement(z) : void 0,
+                  onClick: () => m(h.id)
                 }
               )
             )
@@ -9375,26 +9375,26 @@ function Fn({
               }
             },
             r.createElement(
-              f,
+              b,
               {
                 color: n === "mcp" ? "purple" : "blue",
                 style: { fontSize: 11 }
               },
-              S.label
+              h.label
             ),
-            S.enabled ? null : r.createElement(
-              f,
+            h.enabled ? null : r.createElement(
+              b,
               { style: { fontSize: 10 } },
               "已禁用"
             )
           ),
           r.createElement(
-            M,
+            B,
             {
               type: "secondary",
               style: { fontSize: 11, wordBreak: "break-all" }
             },
-            S.url
+            h.url
           )
         )
       )
@@ -9406,10 +9406,10 @@ function Fn({
         style: {
           marginTop: 12,
           padding: "8px 12px",
-          background: "var(--ant-color-primary-bg, #e6f4ff)",
+          background: "#e6f4ff",
           borderRadius: 6,
           fontSize: 12,
-          color: "var(--ant-color-primary, #1677ff)"
+          color: "#1677ff"
         }
       },
       r.createElement(
@@ -9421,250 +9421,250 @@ function Fn({
     )
   );
 }
-async function jr() {
-  return ie("/market/providers");
+async function xr() {
+  return se("/market/providers");
 }
-async function Ur(e) {
-  return ie(
+async function kr(e) {
+  return se(
     `/market/categories?lang=${encodeURIComponent(e)}`
   );
 }
-async function Nr(e, t, a, l, n) {
-  return ie("/market/search", {
+async function Cr(e, t, l, a, n) {
+  return se("/market/search", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       query: e,
       provider_pages: t,
-      limit: a,
-      lang: l,
+      limit: l,
+      lang: a,
       category: n || void 0
     })
   });
 }
-function Gn(e) {
+function Rn(e) {
   if (!e) return "";
   const t = e.message || String(e);
   try {
-    const a = JSON.parse(t);
-    if (a.detail) {
-      if (typeof a.detail == "string") return a.detail;
-      if (a.detail.message) return a.detail.message;
+    const l = JSON.parse(t);
+    if (l.detail) {
+      if (typeof l.detail == "string") return l.detail;
+      if (l.detail.message) return l.detail.message;
     }
   } catch {
   }
   return t;
 }
-async function Hn(e, t) {
-  const a = { bundle_url: e };
-  return t && (a.access_token = t), ie("/skills/pool/import", {
+async function Mn(e, t) {
+  const l = { bundle_url: e };
+  return t && (l.access_token = t), se("/skills/pool/import", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(a)
+    body: JSON.stringify(l)
   });
 }
-function Dr() {
-  const e = _().React, { useState: t, useEffect: a, useCallback: l, useMemo: n, useRef: r } = e, {
+function Tr() {
+  const e = x().React, { useState: t, useEffect: l, useCallback: a, useMemo: n, useRef: r } = e, {
     Spin: o,
     Empty: c,
-    Input: s,
+    Input: i,
     Button: d,
-    message: m,
-    Row: f,
-    Col: u,
-    Card: h,
-    Tag: x,
-    Tooltip: C,
-    Typography: b,
-    Select: v,
-    Drawer: I,
-    Descriptions: z,
-    Tabs: N,
-    Badge: D,
-    Progress: G,
-    Modal: B,
-    Alert: M
-  } = _().antd, {
-    ReloadOutlined: A,
-    SearchOutlined: H,
-    DownloadOutlined: K,
-    AppstoreOutlined: T,
-    ShopOutlined: w,
-    CheckCircleOutlined: E,
-    LoadingOutlined: $,
-    UserOutlined: k,
-    UserAddOutlined: q,
+    message: u,
+    Row: b,
+    Col: y,
+    Card: S,
+    Tag: C,
+    Tooltip: $,
+    Typography: w,
+    Select: z,
+    Drawer: j,
+    Descriptions: R,
+    Tabs: W,
+    Badge: G,
+    Progress: J,
+    Modal: K,
+    Alert: B
+  } = x().antd, {
+    ReloadOutlined: P,
+    SearchOutlined: F,
+    DownloadOutlined: X,
+    AppstoreOutlined: k,
+    ShopOutlined: E,
+    CheckCircleOutlined: f,
+    LoadingOutlined: T,
+    UserOutlined: v,
+    UserAddOutlined: H,
     SettingOutlined: Z,
-    GithubOutlined: U,
-    ApiOutlined: P
-  } = _().antdIcons || {}, { Text: p, Paragraph: te, Title: W } = b, [S, J] = t("skills"), [le, X] = t([]), [ee, fe] = t([]), [R, re] = t([]), [pe, oe] = t(""), [ae, Ee] = t(""), [he, ke] = t(!1), [Ae, be] = t(!1), [Q, we] = t(
+    GithubOutlined: L,
+    ApiOutlined: _
+  } = x().antdIcons || {}, { Text: m, Paragraph: te, Title: N } = w, [h, D] = t("skills"), [le, V] = t([]), [ee, ge] = t([]), [I, re] = t([]), [ue, oe] = t(""), [ae, ye] = t(""), [Ee, xe] = t(!1), [Ae, ve] = t(!1), [Q, be] = t(
     {}
-  ), [ye, V] = t(null), [de, ge] = t({}), [F, y] = t([]), [me, j] = t(""), [g, ne] = t(""), [ce, _e] = t(""), [Ce, Oe] = t({}), [Me, De] = t(""), [Fe, Le] = t(/* @__PURE__ */ new Set()), [Se, Re] = t(null), [Y, Ie] = t({}), [ze, Pe] = t([]), [He, We] = t([]), [Te, pt] = t([]), [Ot, lt] = t(""), [qe, gt] = t(!1), [Ta, an] = t(!1), [_a, ln] = t([]), [Ia, rn] = t(!1), [za, on] = t([]), [$a, sn] = t(!1), [cn, dn] = t([]), [mn, un] = t([]), [pn, gn] = t(!1), [Ye, fn] = t(""), [yn, En] = t([]), [hn, vn] = t([]), [bn, wn] = t(!1), [Qe, Sn] = t(""), [Mt, xn] = t(!1), [Ue, ft] = t(null), [rt, Aa] = t([]), ot = r(null);
-  a(() => {
+  ), [fe, q] = t(null), [ce, pe] = t({}), [U, g] = t([]), [de, M] = t(""), [p, ne] = t(""), [ie, Te] = t(""), [ke, Oe] = t({}), [Re, je] = t(""), [Ue, Me] = t(/* @__PURE__ */ new Set()), [Se, $e] = t(null), [Y, _e] = t({}), [Ie, Pe] = t([]), [De, Fe] = t([]), [Ce, it] = t([]), [_t, et] = t(""), [He, ct] = t(!1), [ma, qt] = t(!1), [ua, Xt] = t([]), [pa, Vt] = t(!1), [ga, Yt] = t([]), [fa, Qt] = t(!1), [Zt, en] = t([]), [tn, nn] = t([]), [an, ln] = t(!1), [qe, rn] = t(""), [on, sn] = t([]), [cn, dn] = t([]), [mn, un] = t(!1), [Xe, pn] = t(""), [It, gn] = t(!1), [Be, dt] = t(null), [tt, ya] = t([]), nt = r(null);
+  l(() => {
     Promise.all([
-      jr().catch(() => []),
-      Ur("zh").catch(() => []),
-      At().catch(() => [])
-    ]).then(([i, O, L]) => {
-      X(i), fe(O), y(L), L.length > 0 && (j(L[0].id), De(L[0].id));
+      xr().catch(() => []),
+      kr("zh").catch(() => []),
+      kt().catch(() => [])
+    ]).then(([s, A, O]) => {
+      V(s), ge(A), g(O), O.length > 0 && (M(O[0].id), je(O[0].id));
     });
   }, []);
-  const yt = l(async (i) => {
-    const O = i ?? zr();
-    if (Pe(i || O), O.filter((ue) => ue.enabled).length === 0) {
-      We([]);
+  const mt = a(async (s) => {
+    const A = s ?? gr();
+    if (Pe(s || A), A.filter((me) => me.enabled).length === 0) {
+      Fe([]);
       return;
     }
-    gt(!0);
+    ct(!0);
     try {
-      const { skills: ue, errors: ve, categories: $e } = await Lr(O);
-      if (We(ue), Aa($e), ve.length > 0) {
-        for (const xe of ve)
-          console.warn(`[ugsci] GitHub source '${xe.label}' error: ${xe.message}`);
-        m.warning(
-          `部分源加载失败: ${ve.map((xe) => xe.label).join(", ")}`
+      const { skills: me, errors: he, categories: ze } = await Sr(A);
+      if (Fe(me), ya(ze), he.length > 0) {
+        for (const we of he)
+          console.warn(`[ugsci] GitHub source '${we.label}' error: ${we.message}`);
+        u.warning(
+          `部分源加载失败: ${he.map((we) => we.label).join(", ")}`
         );
       }
-    } catch (ue) {
-      m.error(ue.message || "加载技能源失败"), We([]);
+    } catch (me) {
+      u.error(me.message || "加载技能源失败"), Fe([]);
     } finally {
-      gt(!1);
+      ct(!1);
     }
-  }, []), Lt = l(async () => {
-    var ue, ve, $e;
-    gn(!0), wn(!0), gt(!0);
-    const [i, O, L] = await Promise.allSettled([
-      Rr(),
-      Mr(),
-      Or()
+  }, []), zt = a(async () => {
+    var me, he, ze;
+    ln(!0), un(!0), ct(!0);
+    const [s, A, O] = await Promise.allSettled([
+      hr(),
+      br(),
+      vr()
     ]);
-    if (i.status === "fulfilled" ? (dn(i.value.servers), un(i.value.categories)) : (console.warn(`[ugsci] MCP manifest error: ${((ue = i.reason) == null ? void 0 : ue.message) || i.reason}`), dn([]), un([])), gn(!1), O.status === "fulfilled" ? (En(O.value.agents), vn(O.value.categories)) : (console.warn(`[ugsci] Agents manifest error: ${((ve = O.reason) == null ? void 0 : ve.message) || O.reason}`), En([]), vn([])), wn(!1), L.status === "fulfilled")
-      pt(L.value.skills), lt("");
+    if (s.status === "fulfilled" ? (en(s.value.servers), nn(s.value.categories)) : (console.warn(`[ugsci] MCP manifest error: ${((me = s.reason) == null ? void 0 : me.message) || s.reason}`), en([]), nn([])), ln(!1), A.status === "fulfilled" ? (sn(A.value.agents), dn(A.value.categories)) : (console.warn(`[ugsci] Agents manifest error: ${((he = A.reason) == null ? void 0 : he.message) || A.reason}`), sn([]), dn([])), un(!1), O.status === "fulfilled")
+      it(O.value.skills), et("");
     else {
-      const xe = (($e = L.reason) == null ? void 0 : $e.message) || String(L.reason);
-      console.warn(`[ugsci] Skills manifest error: ${xe}`), pt([]), lt(xe);
+      const we = ((ze = O.reason) == null ? void 0 : ze.message) || String(O.reason);
+      console.warn(`[ugsci] Skills manifest error: ${we}`), it([]), et(we);
     }
-    gt(!1);
+    ct(!1);
   }, []);
-  a(() => {
-    yt(), Lt(), ln(Tr()), on(_r());
-  }, [yt, Lt]);
-  const Et = l(
-    async (i, O, L) => {
-      ke(!0);
+  l(() => {
+    mt(), zt(), Xt(mr()), Yt(ur());
+  }, [mt, zt]);
+  const ut = a(
+    async (s, A, O) => {
+      xe(!0);
       try {
-        const ue = await Nr(
-          i,
-          L,
+        const me = await Cr(
+          s,
+          O,
           20,
           "zh",
-          O || void 0
+          A || void 0
         );
-        L === void 0 || Object.keys(L).length === 0 ? re(ue.results) : re((xe) => [...xe, ...ue.results]);
-        const ve = Object.values(ue.by_provider || {}).some(
-          (xe) => xe.has_more
+        O === void 0 || Object.keys(O).length === 0 ? re(me.results) : re((we) => [...we, ...me.results]);
+        const he = Object.values(me.by_provider || {}).some(
+          (we) => we.has_more
         );
-        be(ve);
-        const $e = {};
-        for (const [xe, Ke] of Object.entries(ue.by_provider || {}))
-          $e[xe] = (L[xe] || 1) + 1;
-        if (we($e), ue.errors.length > 0)
-          for (const xe of ue.errors)
+        ve(he);
+        const ze = {};
+        for (const [we, We] of Object.entries(me.by_provider || {}))
+          ze[we] = (O[we] || 1) + 1;
+        if (be(ze), me.errors.length > 0)
+          for (const we of me.errors)
             console.warn(
-              `[ugsci] Market provider '${xe.provider}' error: ${xe.message}`
+              `[ugsci] Market provider '${we.provider}' error: ${we.message}`
             );
-      } catch (ue) {
-        m.error(ue.message || "搜索市场失败"), re([]);
+      } catch (me) {
+        u.error(me.message || "搜索市场失败"), re([]);
       } finally {
-        ke(!1);
+        xe(!1);
       }
     },
     []
   );
-  a(() => (ot.current && clearTimeout(ot.current), ot.current = setTimeout(() => {
-    Et(pe, ae, {});
+  l(() => (nt.current && clearTimeout(nt.current), nt.current = setTimeout(() => {
+    ut(ue, ae, {});
   }, 400), () => {
-    ot.current && clearTimeout(ot.current);
-  }), [pe, ae, Et]);
-  const Pa = () => {
-    Et(pe, ae, Q);
-  }, kn = async (i) => {
-    const O = `${i.source}:${i.slug}`;
+    nt.current && clearTimeout(nt.current);
+  }), [ue, ae, ut]);
+  const Ea = () => {
+    ut(ue, ae, Q);
+  }, fn = async (s) => {
+    const A = `${s.source}:${s.slug}`;
     try {
-      ge((ue) => ({ ...ue, [O]: "installing" }));
-      const L = await Hn(i.source_url);
-      L.installed && m.success(
-        `技能「${L.name || i.name}」已安装到技能池，可在技能中心查看`
-      ), ge((ue) => {
-        const ve = { ...ue };
-        return delete ve[O], ve;
+      pe((me) => ({ ...me, [A]: "installing" }));
+      const O = await Mn(s.source_url);
+      O.installed && u.success(
+        `技能「${O.name || s.name}」已安装到技能池，可在技能中心查看`
+      ), pe((me) => {
+        const he = { ...me };
+        return delete he[A], he;
       });
-    } catch (L) {
-      m.error(Gn(L) || "安装技能失败"), ge((ue) => {
-        const ve = { ...ue };
-        return delete ve[O], ve;
+    } catch (O) {
+      u.error(Rn(O) || "安装技能失败"), pe((me) => {
+        const he = { ...me };
+        return delete he[A], he;
       });
     }
-  }, Ra = (i) => {
-    window.history.pushState({}, "", i), window.dispatchEvent(new PopStateEvent("popstate"));
-  }, Oa = async (i) => {
-    const O = `github:${i.sourceId}:${i.name}`, L = ze.find((ve) => ve.id === i.sourceId), ue = (L == null ? void 0 : L.accessToken) || void 0;
+  }, ha = (s) => {
+    window.history.pushState({}, "", s), window.dispatchEvent(new PopStateEvent("popstate"));
+  }, va = async (s) => {
+    const A = `github:${s.sourceId}:${s.name}`, O = Ie.find((he) => he.id === s.sourceId), me = (O == null ? void 0 : O.accessToken) || void 0;
     try {
-      ge(($e) => ({ ...$e, [O]: "installing" }));
-      const ve = await Hn(i.source_url, ue);
-      ve.installed && m.success(
-        `技能「${ve.name || i.name}」已安装到技能池，可在技能中心查看`
-      ), ge(($e) => {
-        const xe = { ...$e };
-        return delete xe[O], xe;
+      pe((ze) => ({ ...ze, [A]: "installing" }));
+      const he = await Mn(s.source_url, me);
+      he.installed && u.success(
+        `技能「${he.name || s.name}」已安装到技能池，可在技能中心查看`
+      ), pe((ze) => {
+        const we = { ...ze };
+        return delete we[A], we;
       });
-    } catch (ve) {
-      m.error(Gn(ve) || "安装技能失败"), ge(($e) => {
-        const xe = { ...$e };
-        return delete xe[O], xe;
+    } catch (he) {
+      u.error(Rn(he) || "安装技能失败"), pe((ze) => {
+        const we = { ...ze };
+        return delete we[A], we;
       });
     }
-  }, Xe = n(() => {
-    const i = [], O = /* @__PURE__ */ new Set();
-    for (const L of [...Te, ...He]) {
-      const ue = L.source_url || `${L.sourceLabel}:${L.name}`;
-      O.has(ue) || (O.add(ue), i.push(L));
+  }, Ke = n(() => {
+    const s = [], A = /* @__PURE__ */ new Set();
+    for (const O of [...Ce, ...De]) {
+      const me = O.source_url || `${O.sourceLabel}:${O.name}`;
+      A.has(me) || (A.add(me), s.push(O));
     }
-    return i;
-  }, [Te, He]), Cn = n(() => {
-    const i = [], O = /* @__PURE__ */ new Set();
-    if (rt.length > 0)
-      for (const L of rt)
-        O.has(L.id) || (O.add(L.id), i.push(L));
-    for (const L of Xe)
-      L.tag && !O.has(L.tag) && (O.add(L.tag), i.push({ id: L.tag, label: L.tag }));
-    for (const L of Xe)
-      !L.isOfficial && L.sourceLabel && !O.has(L.sourceLabel) && (O.add(L.sourceLabel), i.push({ id: L.sourceLabel, label: L.sourceLabel }));
-    return i;
-  }, [Xe, rt]), Bt = n(() => {
-    let i = Xe;
+    return s;
+  }, [Ce, De]), yn = n(() => {
+    const s = [], A = /* @__PURE__ */ new Set();
+    if (tt.length > 0)
+      for (const O of tt)
+        A.has(O.id) || (A.add(O.id), s.push(O));
+    for (const O of Ke)
+      O.tag && !A.has(O.tag) && (A.add(O.tag), s.push({ id: O.tag, label: O.tag }));
+    for (const O of Ke)
+      !O.isOfficial && O.sourceLabel && !A.has(O.sourceLabel) && (A.add(O.sourceLabel), s.push({ id: O.sourceLabel, label: O.sourceLabel }));
+    return s;
+  }, [Ke, tt]), At = n(() => {
+    let s = Ke;
     if (ae) {
-      const O = rt.find((L) => L.id === ae);
-      O && O.tags ? i = i.filter(
-        (L) => L.tag && O.tags.includes(L.tag) || L.sourceLabel === ae
-      ) : i = i.filter(
-        (L) => L.tag === ae || L.sourceLabel === ae
+      const A = tt.find((O) => O.id === ae);
+      A && A.tags ? s = s.filter(
+        (O) => O.tag && A.tags.includes(O.tag) || O.sourceLabel === ae
+      ) : s = s.filter(
+        (O) => O.tag === ae || O.sourceLabel === ae
       );
     }
-    if (pe.trim()) {
-      const O = pe.toLowerCase();
-      i = i.filter(
-        (L) => {
-          var ue;
-          return L.name.toLowerCase().includes(O) || ((ue = L.description) == null ? void 0 : ue.toLowerCase().includes(O));
+    if (ue.trim()) {
+      const A = ue.toLowerCase();
+      s = s.filter(
+        (O) => {
+          var me;
+          return O.name.toLowerCase().includes(A) || ((me = O.description) == null ? void 0 : me.toLowerCase().includes(A));
         }
       );
     }
-    return i;
-  }, [Xe, pe, ae, rt]), Tn = le.filter((i) => i.available), Ze = n(() => ae ? R.filter((i) => {
-    const O = Tn.find((L) => L.key === i.source);
-    return (O == null ? void 0 : O.label) === ae;
-  }) : R, [R, ae, Tn]), Ma = e.createElement(
+    return s;
+  }, [Ke, ue, ae, tt]), En = le.filter((s) => s.available), Ve = n(() => ae ? I.filter((s) => {
+    const A = En.find((O) => O.key === s.source);
+    return (A == null ? void 0 : A.label) === ae;
+  }) : I, [I, ae, En]), ba = e.createElement(
     "div",
     null,
     // Top bar: search + filters + install target
@@ -9679,17 +9679,17 @@ function Dr() {
           flexWrap: "wrap"
         }
       },
-      e.createElement(s, {
+      e.createElement(i, {
         placeholder: "搜索技能市场...",
-        prefix: H ? e.createElement(H) : void 0,
-        value: pe,
-        onChange: (i) => oe(i.target.value),
+        prefix: F ? e.createElement(F) : void 0,
+        value: ue,
+        onChange: (s) => oe(s.target.value),
         allowClear: !0,
         style: { flex: 1, minWidth: 200, maxWidth: 400 }
       }),
       // Pool install info
       e.createElement(
-        p,
+        m,
         { type: "secondary", style: { fontSize: 12 } },
         "安装后进入技能池"
       ),
@@ -9697,22 +9697,22 @@ function Dr() {
       e.createElement(
         d,
         {
-          icon: U ? e.createElement(U) : void 0,
-          onClick: () => an(!0),
+          icon: L ? e.createElement(L) : void 0,
+          onClick: () => qt(!0),
           size: "small"
         },
         "配置技能源"
       )
     ),
     // Dynamic category filter tags (from OSS manifest tags + imported sources)
-    Ot && Xe.length === 0 ? e.createElement(M, {
+    _t && Ke.length === 0 ? e.createElement(B, {
       type: "warning",
       showIcon: !0,
       message: "UGSci 官方 OSS 技能库加载失败",
       description: "请检查网络或后端 OSS 代理服务，然后点击右上角“刷新”重试。",
       style: { marginBottom: 12 }
     }) : null,
-    Cn.length > 0 ? e.createElement(
+    yn.length > 0 ? e.createElement(
       "div",
       {
         style: {
@@ -9724,12 +9724,12 @@ function Dr() {
         }
       },
       e.createElement(
-        p,
+        m,
         { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
         "分类:"
       ),
       e.createElement(
-        x,
+        C,
         {
           style: {
             fontSize: 11,
@@ -9737,39 +9737,39 @@ function Dr() {
             borderRadius: 12
           },
           color: ae === "" ? "blue" : void 0,
-          onClick: () => Ee("")
+          onClick: () => ye("")
         },
         "全部"
       ),
-      ...Cn.map((i) => {
-        const O = He.some(
-          (L) => !L.isOfficial && L.sourceLabel === i.id
+      ...yn.map((s) => {
+        const A = De.some(
+          (O) => !O.isOfficial && O.sourceLabel === s.id
         );
         return e.createElement(
-          x,
+          C,
           {
-            key: i.id,
+            key: s.id,
             style: {
               fontSize: 11,
               cursor: "pointer",
               borderRadius: 12
             },
-            color: ae === i.id ? O ? "blue" : "geekblue" : void 0,
-            icon: O && U ? e.createElement(U) : void 0,
-            onClick: () => Ee(
-              ae === i.id ? "" : i.id
+            color: ae === s.id ? A ? "blue" : "geekblue" : void 0,
+            icon: A && L ? e.createElement(L) : void 0,
+            onClick: () => ye(
+              ae === s.id ? "" : s.id
             )
           },
-          i.label
+          s.label
         );
       })
     ) : null,
     // GitHub skills section
-    qe && Xe.length === 0 ? e.createElement(
+    He && Ke.length === 0 ? e.createElement(
       "div",
       { style: { textAlign: "center", padding: 40, marginBottom: 16 } },
       e.createElement(o, { size: "large" }, e.createElement("div", { style: { minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" } }, "正在加载技能..."))
-    ) : Bt.length > 0 ? e.createElement(
+    ) : At.length > 0 ? e.createElement(
       "div",
       { style: { marginBottom: 20 } },
       e.createElement(
@@ -9782,25 +9782,25 @@ function Dr() {
             gap: 6
           }
         },
-        U ? e.createElement(U, {
-          style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" }
+        L ? e.createElement(L, {
+          style: { fontSize: 14, color: "#1677ff" }
         }) : null,
         e.createElement(
-          p,
+          m,
           { strong: !0, style: { fontSize: 13 } },
-          `技能市场 (${Bt.length})`
+          `技能市场 (${At.length})`
         )
       ),
       e.createElement(
-        f,
+        b,
         { gutter: [12, 12] },
-        ...Bt.map((i) => {
-          const O = `github:${i.sourceId}:${i.name}`, L = de[O];
+        ...At.map((s) => {
+          const A = `github:${s.sourceId}:${s.name}`, O = ce[A];
           return e.createElement(
-            u,
-            { key: O, xs: 24, sm: 12, md: 8, lg: 6 },
+            y,
+            { key: A, xs: 24, sm: 12, md: 8, lg: 6 },
             e.createElement(
-              h,
+              S,
               {
                 hoverable: !0,
                 size: "small",
@@ -9816,7 +9816,7 @@ function Dr() {
                     marginBottom: 8
                   }
                 },
-                U ? e.createElement(U, {
+                L ? e.createElement(L, {
                   style: { fontSize: 18, color: "var(--ant-color-text-secondary, #57606a)" }
                 }) : e.createElement(
                   "span",
@@ -9824,10 +9824,10 @@ function Dr() {
                   "📦"
                 ),
                 e.createElement(
-                  C,
-                  { title: i.name },
+                  $,
+                  { title: s.name },
                   e.createElement(
-                    p,
+                    m,
                     {
                       strong: !0,
                       style: {
@@ -9838,7 +9838,7 @@ function Dr() {
                         whiteSpace: "nowrap"
                       }
                     },
-                    i.name
+                    s.name
                   )
                 )
               ),
@@ -9849,7 +9849,7 @@ function Dr() {
                   style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
                   ellipsis: { rows: 2 }
                 },
-                i.description || "暂无描述"
+                s.description || "暂无描述"
               ),
               e.createElement(
                 "div",
@@ -9865,7 +9865,7 @@ function Dr() {
                   "div",
                   { style: { display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center" } },
                   // Show source path (e.g. "UGSci/anthropics") in bottom-left
-                  i.sourcePath || i.sourceLabel ? e.createElement(
+                  s.sourcePath || s.sourceLabel ? e.createElement(
                     "span",
                     {
                       style: {
@@ -9876,27 +9876,27 @@ function Dr() {
                         gap: 2
                       }
                     },
-                    P ? e.createElement(P, { style: { fontSize: 10 } }) : null,
-                    i.sourcePath || i.sourceLabel
+                    _ ? e.createElement(_, { style: { fontSize: 10 } }) : null,
+                    s.sourcePath || s.sourceLabel
                   ) : null,
                   // Show tag as category badge
-                  i.tag ? e.createElement(
-                    x,
+                  s.tag ? e.createElement(
+                    C,
                     { color: "geekblue", style: { fontSize: 10 } },
-                    i.tag
+                    s.tag
                   ) : null,
-                  i.version ? e.createElement(
-                    x,
+                  s.version ? e.createElement(
+                    C,
                     { style: { fontSize: 10 } },
-                    `v${i.version}`
+                    `v${s.version}`
                   ) : null
                 ),
-                L ? e.createElement(
+                O ? e.createElement(
                   d,
                   {
                     size: "small",
                     disabled: !0,
-                    icon: $ ? e.createElement($) : void 0
+                    icon: T ? e.createElement(T) : void 0
                   },
                   "安装中"
                 ) : e.createElement(
@@ -9904,8 +9904,8 @@ function Dr() {
                   {
                     type: "primary",
                     size: "small",
-                    icon: K ? e.createElement(K) : void 0,
-                    onClick: () => Oa(i)
+                    icon: X ? e.createElement(X) : void 0,
+                    onClick: () => va(s)
                   },
                   "安装"
                 )
@@ -9916,7 +9916,7 @@ function Dr() {
       )
     ) : null,
     // Market results section title
-    Ze.length > 0 || he ? e.createElement(
+    Ve.length > 0 || Ee ? e.createElement(
       "div",
       {
         style: {
@@ -9926,38 +9926,38 @@ function Dr() {
           gap: 6
         }
       },
-      w ? e.createElement(w, {
-        style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" }
+      E ? e.createElement(E, {
+        style: { fontSize: 14, color: "#1677ff" }
       }) : null,
       e.createElement(
-        p,
+        m,
         { strong: !0, style: { fontSize: 13 } },
-        `技能市场${Ze.length > 0 ? ` (${Ze.length})` : ""}`
+        `技能市场${Ve.length > 0 ? ` (${Ve.length})` : ""}`
       )
     ) : null,
     // Results grid
-    he && Ze.length === 0 ? e.createElement(
+    Ee && Ve.length === 0 ? e.createElement(
       "div",
       { style: { textAlign: "center", padding: 60 } },
       e.createElement(o, { size: "large" })
-    ) : Ze.length === 0 ? e.createElement(c, {
-      description: pe ? `未找到匹配「${pe}」的技能` : "输入关键词搜索技能市场",
+    ) : Ve.length === 0 ? e.createElement(c, {
+      description: ue ? `未找到匹配「${ue}」的技能` : "输入关键词搜索技能市场",
       image: c.PRESENTED_IMAGE_SIMPLE
     }) : e.createElement(
-      f,
+      b,
       { gutter: [12, 12] },
-      ...Ze.map((i) => {
-        const O = `${i.source}:${i.slug}`, L = de[O];
+      ...Ve.map((s) => {
+        const A = `${s.source}:${s.slug}`, O = ce[A];
         return e.createElement(
-          u,
-          { key: O, xs: 24, sm: 12, md: 8, lg: 6 },
+          y,
+          { key: A, xs: 24, sm: 12, md: 8, lg: 6 },
           e.createElement(
-            h,
+            S,
             {
               hoverable: !0,
               size: "small",
               style: { height: "100%", cursor: "pointer" },
-              onClick: () => V(i)
+              onClick: () => q(s)
             },
             e.createElement(
               "div",
@@ -9969,9 +9969,9 @@ function Dr() {
                   marginBottom: 8
                 }
               },
-              i.icon_url ? e.createElement("img", {
-                src: i.icon_url,
-                alt: i.name,
+              s.icon_url ? e.createElement("img", {
+                src: s.icon_url,
+                alt: s.name,
                 style: { width: 24, height: 24, borderRadius: 4 }
               }) : e.createElement(
                 "span",
@@ -9979,10 +9979,10 @@ function Dr() {
                 "📦"
               ),
               e.createElement(
-                C,
-                { title: i.name },
+                $,
+                { title: s.name },
                 e.createElement(
-                  p,
+                  m,
                   {
                     strong: !0,
                     style: {
@@ -9993,7 +9993,7 @@ function Dr() {
                       whiteSpace: "nowrap"
                     }
                   },
-                  i.name
+                  s.name
                 )
               )
             ),
@@ -10004,7 +10004,7 @@ function Dr() {
                 style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
                 ellipsis: { rows: 2 }
               },
-              i.description || "暂无描述"
+              s.description || "暂无描述"
             ),
             e.createElement(
               "div",
@@ -10020,22 +10020,22 @@ function Dr() {
                 "div",
                 { style: { display: "flex", gap: 4 } },
                 e.createElement(
-                  x,
+                  C,
                   { color: "geekblue", style: { fontSize: 10 } },
-                  i.source
+                  s.source
                 ),
-                i.version ? e.createElement(
-                  x,
+                s.version ? e.createElement(
+                  C,
                   { style: { fontSize: 10 } },
-                  `v${i.version}`
+                  `v${s.version}`
                 ) : null
               ),
-              L ? e.createElement(
+              O ? e.createElement(
                 d,
                 {
                   size: "small",
                   disabled: !0,
-                  icon: $ ? e.createElement($) : void 0
+                  icon: T ? e.createElement(T) : void 0
                 },
                 "安装中"
               ) : e.createElement(
@@ -10043,9 +10043,9 @@ function Dr() {
                 {
                   type: "primary",
                   size: "small",
-                  icon: K ? e.createElement(K) : void 0,
-                  onClick: (ue) => {
-                    ue.stopPropagation(), kn(i);
+                  icon: X ? e.createElement(X) : void 0,
+                  onClick: (me) => {
+                    me.stopPropagation(), fn(s);
                   }
                 },
                 "安装"
@@ -10056,86 +10056,86 @@ function Dr() {
       })
     ),
     // Load more button
-    Ae && !he ? e.createElement(
+    Ae && !Ee ? e.createElement(
       "div",
       { style: { textAlign: "center", marginTop: 16 } },
       e.createElement(
         d,
-        { onClick: Pa, loading: he },
+        { onClick: Ea, loading: Ee },
         "加载更多"
       )
     ) : null,
     // Detail Drawer
-    ye ? e.createElement(
-      I,
+    fe ? e.createElement(
+      j,
       {
         title: e.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 8 } },
-          ye.icon_url ? e.createElement("img", {
-            src: ye.icon_url,
-            alt: ye.name,
+          fe.icon_url ? e.createElement("img", {
+            src: fe.icon_url,
+            alt: fe.name,
             style: { width: 28, height: 28, borderRadius: 4 }
           }) : e.createElement(
             "span",
             { style: { fontSize: 20 } },
             "📦"
           ),
-          e.createElement("span", null, ye.name)
+          e.createElement("span", null, fe.name)
         ),
         open: !0,
-        onClose: () => V(null),
+        onClose: () => q(null),
         width: 480,
         extra: e.createElement(
           d,
           {
             type: "primary",
-            icon: K ? e.createElement(K) : void 0,
+            icon: X ? e.createElement(X) : void 0,
             onClick: () => {
-              kn(ye);
+              fn(fe);
             }
           },
           "安装到技能池"
         )
       },
       e.createElement(
-        z,
+        R,
         { column: 1, bordered: !0, size: "small" },
         e.createElement(
-          z.Item,
+          R.Item,
           { label: "来源" },
-          ye.source
+          fe.source
         ),
         e.createElement(
-          z.Item,
+          R.Item,
           { label: "描述" },
-          ye.description || "-"
+          fe.description || "-"
         ),
-        ye.version ? e.createElement(
-          z.Item,
+        fe.version ? e.createElement(
+          R.Item,
           { label: "版本" },
-          ye.version
+          fe.version
         ) : null,
-        ye.author ? e.createElement(
-          z.Item,
+        fe.author ? e.createElement(
+          R.Item,
           { label: "作者" },
-          ye.author
+          fe.author
         ) : null,
         e.createElement(
-          z.Item,
+          R.Item,
           { label: "来源链接" },
           e.createElement(
             "a",
-            { href: ye.source_url, target: "_blank" },
-            ye.source_url
+            { href: fe.source_url, target: "_blank" },
+            fe.source_url
           )
         )
       ),
-      ye.stats ? e.createElement(
+      fe.stats ? e.createElement(
         "div",
         { style: { marginTop: 16 } },
         e.createElement(
-          p,
+          m,
           {
             strong: !0,
             style: { display: "block", marginBottom: 8 }
@@ -10145,150 +10145,150 @@ function Dr() {
         e.createElement(
           "div",
           { style: { display: "flex", gap: 12, flexWrap: "wrap" } },
-          ...Object.entries(ye.stats).map(
-            ([i, O]) => e.createElement(
+          ...Object.entries(fe.stats).map(
+            ([s, A]) => e.createElement(
               "div",
-              { key: i, style: { textAlign: "center" } },
+              { key: s, style: { textAlign: "center" } },
               e.createElement(
                 "div",
                 {
                   style: {
                     fontSize: 18,
                     fontWeight: 600,
-                    color: "var(--ant-color-primary, #1677ff)"
+                    color: "#1677ff"
                   }
                 },
-                String(O)
+                String(A)
               ),
               e.createElement(
-                p,
+                m,
                 { type: "secondary", style: { fontSize: 11 } },
-                i
+                s
               )
             )
           )
         )
       ) : null
     ) : null
-  ), jt = n(() => {
-    let i = yn;
-    if (Qe && (i = i.filter((O) => O.category === Qe)), g.trim()) {
-      const O = g.toLowerCase();
-      i = i.filter(
-        (L) => L.name.toLowerCase().includes(O) || L.description.toLowerCase().includes(O) || L.tags.some((ue) => ue.toLowerCase().includes(O))
+  ), Pt = n(() => {
+    let s = on;
+    if (Xe && (s = s.filter((A) => A.category === Xe)), p.trim()) {
+      const A = p.toLowerCase();
+      s = s.filter(
+        (O) => O.name.toLowerCase().includes(A) || O.description.toLowerCase().includes(A) || O.tags.some((me) => me.toLowerCase().includes(A))
       );
     }
-    return i;
-  }, [yn, g, Qe]), La = async (i) => {
-    if (!Mt) {
-      xn(!0);
+    return s;
+  }, [on, p, Xe]), Sa = async (s) => {
+    if (!It) {
+      gn(!0);
       try {
-        let O = i.description;
-        if (i.instructions)
+        let A = s.description;
+        if (s.instructions)
           try {
-            const ve = i.instructions.replace(/^\/+/, ""), $e = await _t(ve);
-            $e.ok && (O = await $e.text());
+            const he = s.instructions.replace(/^\/+/, ""), ze = await bt(he);
+            ze.ok && (A = await ze.text());
           } catch {
           }
-        let L = [];
-        if (i.skills_manifest)
+        let O = [];
+        if (s.skills_manifest)
           try {
-            const ve = i.skills_manifest.replace(/^\/+/, ""), $e = await _t(ve);
-            if ($e.ok) {
-              const xe = await $e.json();
-              Array.isArray(xe) ? L = xe.map((Ke) => typeof Ke == "string" ? Ke : Ke.name).filter(Boolean) : xe.skills && (L = xe.skills.map((Ke) => typeof Ke == "string" ? Ke : Ke.name).filter(Boolean));
+            const he = s.skills_manifest.replace(/^\/+/, ""), ze = await bt(he);
+            if (ze.ok) {
+              const we = await ze.json();
+              Array.isArray(we) ? O = we.map((We) => typeof We == "string" ? We : We.name).filter(Boolean) : we.skills && (O = we.skills.map((We) => typeof We == "string" ? We : We.name).filter(Boolean));
             }
           } catch {
           }
-        const ue = await ie("/agents", {
+        const me = await se("/agents", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            name: i.name,
-            description: i.description,
-            skill_names: L
+            name: s.name,
+            description: s.description,
+            skill_names: O
           })
         });
-        await Tt(ue.id, "AGENTS.md", O), m.success(`专家「${i.name}」创建成功，已跳转至专家`), Ra("/ugsci-experts");
-      } catch (O) {
-        m.error(O.message || "创建专家失败");
+        await vt(me.id, "AGENTS.md", A), u.success(`专家「${s.name}」创建成功，已跳转至专家`), ha("/ugsci-experts");
+      } catch (A) {
+        u.error(A.message || "创建专家失败");
       } finally {
-        xn(!1);
+        gn(!1);
       }
     }
-  }, _n = l(async (i) => {
-    if (i)
+  }, hn = a(async (s) => {
+    if (s)
       try {
-        const O = await Yt(i);
-        Le(new Set(O.map((L) => L.key)));
+        const A = await Ft(s);
+        Me(new Set(A.map((O) => O.key)));
       } catch {
-        Le(/* @__PURE__ */ new Set());
+        Me(/* @__PURE__ */ new Set());
       }
   }, []);
-  a(() => {
-    Me && _n(Me);
-  }, [Me, _n]);
-  const Ba = async (i) => {
-    if (!Me) {
-      m.warning("请先选择目标专家");
+  l(() => {
+    Re && hn(Re);
+  }, [Re, hn]);
+  const wa = async (s) => {
+    if (!Re) {
+      u.warning("请先选择目标专家");
       return;
     }
-    if (Sr(i)) {
-      const O = Object.entries(i.env), L = {};
-      for (const [ue] of O)
-        L[ue] = "";
-      Ie(L), Re(i);
+    if (sr(s)) {
+      const A = Object.entries(s.env), O = {};
+      for (const [me] of A)
+        O[me] = "";
+      _e(O), $e(s);
       return;
     }
-    await In(i, i.env || {});
-  }, In = async (i, O) => {
-    Oe((L) => ({ ...L, [i.id]: !0 }));
+    await vn(s, s.env || {});
+  }, vn = async (s, A) => {
+    Oe((O) => ({ ...O, [s.id]: !0 }));
     try {
-      const L = i.id;
-      await Qt(Me, {
-        client_key: L,
+      const O = s.id;
+      await Gt(Re, {
+        client_key: O,
         client: {
-          name: i.name,
-          description: i.description,
+          name: s.name,
+          description: s.description,
           enabled: !0,
-          transport: i.transport,
-          url: i.url || "",
-          command: i.command || "",
-          args: i.args || [],
-          env: O,
-          cwd: i.cwd || "",
-          headers: i.headers || {}
+          transport: s.transport,
+          url: s.url || "",
+          command: s.command || "",
+          args: s.args || [],
+          env: A,
+          cwd: s.cwd || "",
+          headers: s.headers || {}
         }
-      }), m.success(`MCP「${i.name}」已添加到当前专家`), Le((ue) => new Set(ue).add(L));
-    } catch (L) {
-      m.error(L.message || `添加 MCP「${i.name}」失败`);
+      }), u.success(`MCP「${s.name}」已添加到当前专家`), Me((me) => new Set(me).add(O));
+    } catch (O) {
+      u.error(O.message || `添加 MCP「${s.name}」失败`);
     } finally {
-      Oe((L) => ({ ...L, [i.id]: !1 }));
+      Oe((O) => ({ ...O, [s.id]: !1 }));
     }
-  }, ja = async () => {
+  }, xa = async () => {
     if (!Se) return;
-    const i = [];
-    for (const [L, ue] of Object.entries(Y))
-      if (!ue || !ue.trim()) {
-        const ve = Nn[L];
-        i.push((ve == null ? void 0 : ve.label) || L);
+    const s = [];
+    for (const [O, me] of Object.entries(Y))
+      if (!me || !me.trim()) {
+        const he = Pn[O];
+        s.push((he == null ? void 0 : he.label) || O);
       }
-    if (i.length > 0) {
-      m.warning(`请填写以下配置项: ${i.join(", ")}`);
+    if (s.length > 0) {
+      u.warning(`请填写以下配置项: ${s.join(", ")}`);
       return;
     }
-    const O = Se;
-    Re(null), Ie({}), await In(O, { ...Y });
-  }, Ut = n(() => {
-    let i = cn;
-    if (Ye && (i = i.filter((O) => O.category === Ye)), ce.trim()) {
-      const O = ce.toLowerCase();
-      i = i.filter(
-        (L) => L.name.toLowerCase().includes(O) || L.description.toLowerCase().includes(O) || L.tags.some((ue) => ue.toLowerCase().includes(O))
+    const A = Se;
+    $e(null), _e({}), await vn(A, { ...Y });
+  }, $t = n(() => {
+    let s = Zt;
+    if (qe && (s = s.filter((A) => A.category === qe)), ie.trim()) {
+      const A = ie.toLowerCase();
+      s = s.filter(
+        (O) => O.name.toLowerCase().includes(A) || O.description.toLowerCase().includes(A) || O.tags.some((me) => me.toLowerCase().includes(A))
       );
     }
-    return i.map(Cr);
-  }, [cn, ce, Ye]), Ua = e.createElement(
+    return s.map(dr);
+  }, [Zt, ie, qe]), ka = e.createElement(
     "div",
     null,
     // Search + agent selector
@@ -10303,11 +10303,11 @@ function Dr() {
           alignItems: "center"
         }
       },
-      e.createElement(s, {
+      e.createElement(i, {
         placeholder: "搜索 MCP 服务器...",
-        prefix: H ? e.createElement(H) : void 0,
-        value: ce,
-        onChange: (i) => _e(i.target.value),
+        prefix: F ? e.createElement(F) : void 0,
+        value: ie,
+        onChange: (s) => Te(s.target.value),
         allowClear: !0,
         style: { maxWidth: 300 }
       }),
@@ -10315,31 +10315,31 @@ function Dr() {
         "div",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
         e.createElement(
-          p,
+          m,
           { type: "secondary", style: { fontSize: 12, whiteSpace: "nowrap" } },
           "安装到："
         ),
-        e.createElement(v, {
-          value: Me,
-          onChange: (i) => De(i),
+        e.createElement(z, {
+          value: Re,
+          onChange: (s) => je(s),
           style: { minWidth: 180 },
           size: "small",
-          options: F.map((i) => ({ value: i.id, label: i.name }))
+          options: U.map((s) => ({ value: s.id, label: s.name }))
         })
       ),
       // Configure MCP source button
       e.createElement(
         d,
         {
-          icon: P ? e.createElement(P) : void 0,
-          onClick: () => rn(!0),
+          icon: _ ? e.createElement(_) : void 0,
+          onClick: () => Vt(!0),
           size: "small"
         },
         "配置 MCP 源"
       )
     ),
     // Dynamic category tag row (from OSS manifest tag_groups)
-    mn.length > 0 ? e.createElement(
+    tn.length > 0 ? e.createElement(
       "div",
       {
         style: {
@@ -10351,51 +10351,51 @@ function Dr() {
         }
       },
       e.createElement(
-        p,
+        m,
         { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
         "分类:"
       ),
       e.createElement(
-        x,
+        C,
         {
           style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
-          color: Ye === "" ? "blue" : void 0,
-          onClick: () => fn("")
+          color: qe === "" ? "blue" : void 0,
+          onClick: () => rn("")
         },
         "全部"
       ),
-      ...mn.map(
-        (i) => e.createElement(
-          x,
+      ...tn.map(
+        (s) => e.createElement(
+          C,
           {
-            key: i.id,
+            key: s.id,
             style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
-            color: Ye === i.id ? "geekblue" : void 0,
-            onClick: () => fn(
-              Ye === i.id ? "" : i.id
+            color: qe === s.id ? "geekblue" : void 0,
+            onClick: () => rn(
+              qe === s.id ? "" : s.id
             )
           },
-          i.label
+          s.label
         )
       )
     ) : null,
     // MCP server cards (dynamic from OSS)
-    pn && Ut.length === 0 ? e.createElement(
+    an && $t.length === 0 ? e.createElement(
       "div",
       { style: { textAlign: "center", padding: 40 } },
       e.createElement(o, { size: "large" }, e.createElement("div", { style: { minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" } }, "正在加载 MCP 服务器..."))
-    ) : Ut.length === 0 ? e.createElement(c, {
+    ) : $t.length === 0 ? e.createElement(c, {
       description: "未找到匹配的 MCP 服务器",
       image: c.PRESENTED_IMAGE_SIMPLE
     }) : e.createElement(
-      f,
+      b,
       { gutter: [12, 12] },
-      ...Ut.map(
-        (i) => e.createElement(
-          u,
-          { key: i.id, xs: 24, sm: 12, md: 8 },
+      ...$t.map(
+        (s) => e.createElement(
+          y,
+          { key: s.id, xs: 24, sm: 12, md: 8 },
           e.createElement(
-            h,
+            S,
             {
               hoverable: !0,
               size: "small",
@@ -10415,41 +10415,41 @@ function Dr() {
               e.createElement(
                 "span",
                 { style: { fontSize: 28, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 32, height: 32 } },
-                i.iconUrl ? e.createElement("img", {
-                  src: i.iconUrl,
-                  alt: i.name,
+                s.iconUrl ? e.createElement("img", {
+                  src: s.iconUrl,
+                  alt: s.name,
                   style: { width: 28, height: 28, objectFit: "contain" },
-                  onError: (O) => {
-                    O.target.style.display = "none";
+                  onError: (A) => {
+                    A.target.style.display = "none";
                   }
-                }) : i.emoji
+                }) : s.emoji
               ),
               e.createElement(
                 "div",
                 { style: { flex: 1 } },
                 e.createElement(
-                  p,
+                  m,
                   { strong: !0, style: { fontSize: 14 } },
-                  i.name
+                  s.name
                 ),
                 e.createElement(
                   "div",
                   { style: { display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" } },
                   e.createElement(
-                    x,
+                    C,
                     { color: "blue", style: { fontSize: 10 } },
-                    i.category
+                    s.category
                   ),
                   e.createElement(
-                    x,
+                    C,
                     {
-                      color: i.transport === "stdio" ? "purple" : "cyan",
+                      color: s.transport === "stdio" ? "purple" : "cyan",
                       style: { fontSize: 10 }
                     },
-                    i.transport
+                    s.transport
                   ),
-                  i.env && Object.keys(i.env).length > 0 ? e.createElement(
-                    x,
+                  s.env && Object.keys(s.env).length > 0 ? e.createElement(
+                    C,
                     { color: "orange", style: { fontSize: 10 } },
                     "需配置密钥"
                   ) : null
@@ -10464,7 +10464,7 @@ function Dr() {
                 style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
                 ellipsis: { rows: 3 }
               },
-              i.description
+              s.description
             ),
             // Footer: config preview + install button
             e.createElement(
@@ -10473,18 +10473,18 @@ function Dr() {
                 style: {
                   marginTop: 10,
                   paddingTop: 8,
-                  borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                  borderTop: "1px solid #f0f0f0",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center"
                 }
               },
               e.createElement(
-                p,
+                m,
                 { type: "secondary", style: { fontSize: 11 } },
-                i.transport === "stdio" ? `${i.command} ${(i.args || []).join(" ")}` : i.url || ""
+                s.transport === "stdio" ? `${s.command} ${(s.args || []).join(" ")}` : s.url || ""
               ),
-              Fe.has(i.id) ? e.createElement(
+              Ue.has(s.id) ? e.createElement(
                 d,
                 { size: "small", disabled: !0 },
                 "已安装"
@@ -10493,9 +10493,9 @@ function Dr() {
                 {
                   type: "primary",
                   size: "small",
-                  loading: !!Ce[i.id],
-                  icon: P ? e.createElement(P) : void 0,
-                  onClick: () => Ba(i)
+                  loading: !!ke[s.id],
+                  icon: _ ? e.createElement(_) : void 0,
+                  onClick: () => wa(s)
                 },
                 "安装"
               )
@@ -10517,31 +10517,31 @@ function Dr() {
           background: "var(--ant-color-fill-quaternary, #fafafa)"
         }
       },
-      w ? e.createElement(w, {
+      E ? e.createElement(E, {
         style: { fontSize: 24, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 8 }
       }) : null,
       e.createElement(
-        p,
+        m,
         { type: "secondary", style: { fontSize: 12 } },
         "MCP 服务器列表来自 UGSci 官方源，自动同步更新"
       )
     )
-  ), Na = Se ? e.createElement(
-    B,
+  ), Ca = Se ? e.createElement(
+    K,
     {
       title: e.createElement(
         "div",
         { style: { display: "flex", alignItems: "center", gap: 8 } },
-        e.createElement("span", { style: { fontSize: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24 } }, Se.iconUrl ? e.createElement("img", { src: Se.iconUrl, alt: Se.name, style: { width: 22, height: 22, objectFit: "contain" }, onError: (i) => {
-          i.target.style.display = "none";
+        e.createElement("span", { style: { fontSize: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24 } }, Se.iconUrl ? e.createElement("img", { src: Se.iconUrl, alt: Se.name, style: { width: 22, height: 22, objectFit: "contain" }, onError: (s) => {
+          s.target.style.display = "none";
         } }) : Se.emoji),
         e.createElement("span", null, `配置 ${Se.name} 密钥`)
       ),
       open: !!Se,
       onCancel: () => {
-        Re(null), Ie({});
+        $e(null), _e({});
       },
-      onOk: ja,
+      onOk: xa,
       okText: "安装",
       cancelText: "取消",
       width: 520,
@@ -10549,38 +10549,38 @@ function Dr() {
     },
     // Description
     e.createElement(
-      p,
+      m,
       { type: "secondary", style: { display: "block", marginBottom: 16, fontSize: 12 } },
       Se.description
     ),
-    ...Object.entries(Se.env || {}).map(([i]) => {
-      const O = Nn[i], L = (O == null ? void 0 : O.isSecret) !== !1;
+    ...Object.entries(Se.env || {}).map(([s]) => {
+      const A = Pn[s], O = (A == null ? void 0 : A.isSecret) !== !1;
       return e.createElement(
         "div",
-        { key: i, style: { marginBottom: 16 } },
+        { key: s, style: { marginBottom: 16 } },
         e.createElement(
           "div",
           { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
           e.createElement(
-            p,
+            m,
             { strong: !0, style: { fontSize: 13 } },
-            (O == null ? void 0 : O.label) || i
+            (A == null ? void 0 : A.label) || s
           ),
           e.createElement(
-            x,
+            C,
             { color: "orange", style: { fontSize: 10 } },
             "必填"
           )
         ),
         // Help text with optional link
-        O ? e.createElement(
+        A ? e.createElement(
           "div",
           { style: { marginBottom: 6, fontSize: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-          O.help,
-          O.link ? e.createElement(
+          A.help,
+          A.link ? e.createElement(
             "a",
             {
-              href: O.link,
+              href: A.link,
               target: "_blank",
               rel: "noopener noreferrer",
               style: { marginLeft: 4, fontSize: 12 }
@@ -10589,32 +10589,32 @@ function Dr() {
           ) : null
         ) : null,
         // Input field
-        L ? e.createElement(s.Password, {
-          placeholder: `请输入 ${(O == null ? void 0 : O.label) || i}`,
-          value: Y[i] || "",
-          onChange: (ue) => Ie((ve) => ({
-            ...ve,
-            [i]: ue.target.value
+        O ? e.createElement(i.Password, {
+          placeholder: `请输入 ${(A == null ? void 0 : A.label) || s}`,
+          value: Y[s] || "",
+          onChange: (me) => _e((he) => ({
+            ...he,
+            [s]: me.target.value
           })),
           style: { width: "100%" }
-        }) : e.createElement(s, {
-          placeholder: `请输入 ${(O == null ? void 0 : O.label) || i}`,
-          value: Y[i] || "",
-          onChange: (ue) => Ie((ve) => ({
-            ...ve,
-            [i]: ue.target.value
+        }) : e.createElement(i, {
+          placeholder: `请输入 ${(A == null ? void 0 : A.label) || s}`,
+          value: Y[s] || "",
+          onChange: (me) => _e((he) => ({
+            ...he,
+            [s]: me.target.value
           })),
           style: { width: "100%" }
         }),
         // Show env key name for reference
         e.createElement(
-          p,
+          m,
           { type: "secondary", style: { fontSize: 11, display: "block", marginTop: 2 } },
-          `环境变量名: ${i}`
+          `环境变量名: ${s}`
         )
       );
     })
-  ) : null, Da = e.createElement(
+  ) : null, Ta = e.createElement(
     "div",
     null,
     e.createElement(
@@ -10628,26 +10628,26 @@ function Dr() {
           flexWrap: "wrap"
         }
       },
-      e.createElement(s, {
+      e.createElement(i, {
         placeholder: "搜索人才...",
-        prefix: H ? e.createElement(H) : void 0,
-        value: g,
-        onChange: (i) => ne(i.target.value),
+        prefix: F ? e.createElement(F) : void 0,
+        value: p,
+        onChange: (s) => ne(s.target.value),
         allowClear: !0,
         style: { maxWidth: 400, flex: 1, minWidth: 200 }
       }),
       e.createElement(
         d,
         {
-          icon: k ? e.createElement(k) : void 0,
-          onClick: () => sn(!0),
+          icon: v ? e.createElement(v) : void 0,
+          onClick: () => Qt(!0),
           size: "small"
         },
         "配置专家源"
       )
     ),
     // Dynamic category tag row (from OSS manifest tag_groups)
-    hn.length > 0 ? e.createElement(
+    cn.length > 0 ? e.createElement(
       "div",
       {
         style: {
@@ -10659,56 +10659,56 @@ function Dr() {
         }
       },
       e.createElement(
-        p,
+        m,
         { type: "secondary", style: { fontSize: 12, marginRight: 4 } },
         "分类:"
       ),
       e.createElement(
-        x,
+        C,
         {
           style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
-          color: Qe === "" ? "blue" : void 0,
-          onClick: () => Sn("")
+          color: Xe === "" ? "blue" : void 0,
+          onClick: () => pn("")
         },
         "全部"
       ),
-      ...hn.map(
-        (i) => e.createElement(
-          x,
+      ...cn.map(
+        (s) => e.createElement(
+          C,
           {
-            key: i.id,
+            key: s.id,
             style: { fontSize: 11, cursor: "pointer", borderRadius: 12 },
-            color: Qe === i.id ? "geekblue" : void 0,
-            onClick: () => Sn(
-              Qe === i.id ? "" : i.id
+            color: Xe === s.id ? "geekblue" : void 0,
+            onClick: () => pn(
+              Xe === s.id ? "" : s.id
             )
           },
-          i.label
+          s.label
         )
       )
     ) : null,
     // Agent cards (dynamic from OSS)
-    bn && jt.length === 0 ? e.createElement(
+    mn && Pt.length === 0 ? e.createElement(
       "div",
       { style: { textAlign: "center", padding: 40 } },
       e.createElement(o, { size: "large" }, e.createElement("div", { style: { minHeight: 60, display: "flex", alignItems: "center", justifyContent: "center" } }, "正在加载人才市场..."))
-    ) : jt.length === 0 ? e.createElement(c, {
+    ) : Pt.length === 0 ? e.createElement(c, {
       description: "未找到匹配的人才",
       image: c.PRESENTED_IMAGE_SIMPLE
     }) : e.createElement(
-      f,
+      b,
       { gutter: [12, 12] },
-      ...jt.map(
-        (i) => e.createElement(
-          u,
-          { key: i.id, xs: 24, sm: 12, md: 8 },
+      ...Pt.map(
+        (s) => e.createElement(
+          y,
+          { key: s.id, xs: 24, sm: 12, md: 8 },
           e.createElement(
-            h,
+            S,
             {
               hoverable: !0,
               size: "small",
               style: { height: "100%", cursor: "pointer" },
-              onClick: () => ft(i)
+              onClick: () => dt(s)
             },
             e.createElement(
               "div",
@@ -10720,28 +10720,28 @@ function Dr() {
                   marginBottom: 8
                 }
               },
-              e.createElement(Ge, {
-                name: i.name,
+              e.createElement(Ne, {
+                name: s.name,
                 size: 40
               }),
               e.createElement(
                 "div",
                 { style: { flex: 1 } },
                 e.createElement(
-                  p,
+                  m,
                   { strong: !0, style: { fontSize: 14 } },
-                  i.name
+                  s.name
                 ),
                 e.createElement(
                   "div",
                   { style: { display: "flex", gap: 4, marginTop: 4, flexWrap: "wrap" } },
-                  i.category ? e.createElement(
-                    x,
+                  s.category ? e.createElement(
+                    C,
                     { color: "blue", style: { fontSize: 10 } },
-                    nt(i.category)
+                    Qe(s.category)
                   ) : null,
-                  i.tags.includes("mcp") ? e.createElement(
-                    x,
+                  s.tags.includes("mcp") ? e.createElement(
+                    C,
                     { color: "purple", style: { fontSize: 10 } },
                     "MCP"
                   ) : null
@@ -10755,7 +10755,7 @@ function Dr() {
                 style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
                 ellipsis: { rows: 3 }
               },
-              i.description
+              s.description
             ),
             e.createElement(
               "div",
@@ -10763,23 +10763,23 @@ function Dr() {
                 style: {
                   marginTop: 10,
                   paddingTop: 8,
-                  borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                  borderTop: "1px solid #f0f0f0",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center"
                 }
               },
               e.createElement(
-                p,
+                m,
                 { type: "secondary", style: { fontSize: 11 } },
-                i.tags.filter((O) => O !== "agent" && O !== "template" && O !== "workspace").slice(0, 3).join(" · ") || "人才模板"
+                s.tags.filter((A) => A !== "agent" && A !== "template" && A !== "workspace").slice(0, 3).join(" · ") || "人才模板"
               ),
               e.createElement(
                 d,
                 {
                   type: "primary",
                   size: "small",
-                  icon: q ? e.createElement(q) : void 0
+                  icon: H ? e.createElement(H) : void 0
                 },
                 "查看详情"
               )
@@ -10801,51 +10801,51 @@ function Dr() {
           background: "var(--ant-color-fill-quaternary, #fafafa)"
         }
       },
-      w ? e.createElement(w, {
+      E ? e.createElement(E, {
         style: { fontSize: 24, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 8 }
       }) : null,
       e.createElement(
-        p,
+        m,
         { type: "secondary", style: { fontSize: 12 } },
         "人才市场来自 UGSci 官方源，自动同步更新"
       )
     )
-  ), Fa = [
+  ), _a = [
     {
       key: "skills",
       label: e.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        T ? e.createElement(T, { style: { fontSize: 14 } }) : null,
+        k ? e.createElement(k, { style: { fontSize: 14 } }) : null,
         "技能市场"
       ),
-      children: Ma
+      children: ba
     },
     {
       key: "mcp",
       label: e.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        P ? e.createElement(P, { style: { fontSize: 14 } }) : null,
+        _ ? e.createElement(_, { style: { fontSize: 14 } }) : null,
         "MCP 市场"
       ),
-      children: Ua
+      children: ka
     },
     {
       key: "experts",
       label: e.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        q ? e.createElement(q, { style: { fontSize: 14 } }) : null,
+        H ? e.createElement(H, { style: { fontSize: 14 } }) : null,
         "人才市场"
       ),
-      children: Da
+      children: Ta
     }
   ];
   return e.createElement(
     "div",
     { style: { padding: 24 } },
-    e.createElement($t, {
+    e.createElement(xt, {
       title: "市场",
       subtitle: "浏览技能市场 · 选择 MCP 服务器 · 人才市场 · 随时更新能力和专家",
       extra: e.createElement(
@@ -10855,51 +10855,51 @@ function Dr() {
           d,
           {
             type: "primary",
-            icon: A ? e.createElement(A) : void 0,
+            icon: P ? e.createElement(P) : void 0,
             onClick: () => {
-              Et(pe, ae, {}), yt(), Lt();
+              ut(ue, ae, {}), mt(), zt();
             },
-            loading: he || qe || pn || bn
+            loading: Ee || He || an || mn
           },
           "刷新"
         )
       )
     }),
-    e.createElement(N, {
-      items: Fa,
-      activeKey: S,
-      onChange: (i) => J(i)
+    e.createElement(W, {
+      items: _a,
+      activeKey: h,
+      onChange: (s) => D(s)
     }),
     // Skill source config modal
-    e.createElement(Br, {
-      open: Ta,
-      onClose: () => an(!1),
-      sources: ze,
-      onChange: (i) => {
-        Pe(i), yt(i);
+    e.createElement(wr, {
+      open: ma,
+      onClose: () => qt(!1),
+      sources: Ie,
+      onChange: (s) => {
+        Pe(s), mt(s);
       }
     }),
     // MCP source config modal
-    e.createElement(Fn, {
-      open: Ia,
-      onClose: () => rn(!1),
-      sources: _a,
-      onChange: (i) => ln(i),
+    e.createElement(On, {
+      open: pa,
+      onClose: () => Vt(!1),
+      sources: ua,
+      onChange: (s) => Xt(s),
       type: "mcp"
     }),
     // MCP token config modal (for templates requiring secrets)
-    Na,
+    Ca,
     // Expert source config modal
-    e.createElement(Fn, {
-      open: $a,
-      onClose: () => sn(!1),
-      sources: za,
-      onChange: (i) => on(i),
+    e.createElement(On, {
+      open: fa,
+      onClose: () => Qt(!1),
+      sources: ga,
+      onChange: (s) => Yt(s),
       type: "expert"
     }),
     // ── Agent Detail Modal (click card to view details, then create) ──
-    Ue ? e.createElement(
-      B,
+    Be ? e.createElement(
+      K,
       {
         title: e.createElement(
           "div",
@@ -10910,17 +10910,17 @@ function Dr() {
               gap: 12
             }
           },
-          e.createElement(Ge, {
-            name: Ue.name,
+          e.createElement(Ne, {
+            name: Be.name,
             size: 40
           }),
           e.createElement(
             "div",
             null,
             e.createElement(
-              p,
+              m,
               { strong: !0, style: { fontSize: 16 } },
-              Ue.name
+              Be.name
             ),
             e.createElement(
               "div",
@@ -10932,25 +10932,25 @@ function Dr() {
                   flexWrap: "wrap"
                 }
               },
-              Ue.category ? e.createElement(
-                x,
+              Be.category ? e.createElement(
+                C,
                 { color: "blue", style: { fontSize: 10 } },
-                nt(Ue.category)
+                Qe(Be.category)
               ) : null,
-              ...Ue.tags.filter(
-                (i) => i !== "agent" && i !== "template" && i !== "workspace"
+              ...Be.tags.filter(
+                (s) => s !== "agent" && s !== "template" && s !== "workspace"
               ).slice(0, 5).map(
-                (i) => e.createElement(
-                  x,
-                  { key: i, style: { fontSize: 10 } },
-                  i
+                (s) => e.createElement(
+                  C,
+                  { key: s, style: { fontSize: 10 } },
+                  s
                 )
               )
             )
           )
         ),
         open: !0,
-        onCancel: () => ft(null),
+        onCancel: () => dt(null),
         width: 640,
         footer: e.createElement(
           "div",
@@ -10958,7 +10958,7 @@ function Dr() {
           e.createElement(
             d,
             {
-              onClick: () => ft(null),
+              onClick: () => dt(null),
               style: { marginRight: 8 }
             },
             "取消"
@@ -10967,12 +10967,12 @@ function Dr() {
             d,
             {
               type: "primary",
-              loading: Mt,
-              disabled: Mt,
-              icon: q ? e.createElement(q) : void 0,
-              style: je,
+              loading: It,
+              disabled: It,
+              icon: H ? e.createElement(H) : void 0,
+              style: Le,
               onClick: async () => {
-                await La(Ue), ft(null);
+                await Sa(Be), dt(null);
               }
             },
             "创建专家"
@@ -10984,7 +10984,7 @@ function Dr() {
         "div",
         { style: { marginBottom: 16 } },
         e.createElement(
-          p,
+          m,
           { strong: !0, style: { display: "block", marginBottom: 6 } },
           "简介"
         ),
@@ -10994,51 +10994,51 @@ function Dr() {
             type: "secondary",
             style: { fontSize: 13, lineHeight: 1.7, margin: 0 }
           },
-          Ue.description
+          Be.description
         )
       ),
       // Skills manifest hint
-      Ue.skills_manifest ? e.createElement(
+      Be.skills_manifest ? e.createElement(
         "div",
         {
           style: {
             marginBottom: 16,
             padding: 12,
-            background: "var(--ant-color-success-bg, #f6ffed)",
+            background: "#f6ffed",
             borderRadius: 8,
-            border: "1px solid var(--ant-color-success-border, #b7eb8f)"
+            border: "1px solid #b7eb8f"
           }
         },
         e.createElement(
-          p,
-          { style: { fontSize: 12, color: "var(--ant-color-success, #52c41a)" } },
+          m,
+          { style: { fontSize: 12, color: "#52c41a" } },
           "✓ 包含技能清单，创建后将自动安装推荐技能"
         )
       ) : null,
       // Instructions hint
-      Ue.instructions ? e.createElement(
+      Be.instructions ? e.createElement(
         "div",
         {
           style: {
             marginBottom: 16,
             padding: 12,
-            background: "var(--ant-color-primary-bg, #e6f4ff)",
+            background: "#e6f4ff",
             borderRadius: 8,
-            border: "1px solid var(--ant-color-primary-border, #91caff)"
+            border: "1px solid #91caff"
           }
         },
         e.createElement(
-          p,
-          { style: { fontSize: 12, color: "var(--ant-color-primary, #1677ff)" } },
+          m,
+          { style: { fontSize: 12, color: "#1677ff" } },
           "✓ 包含系统提示词，创建后将自动写入 AGENTS.md"
         )
       ) : null,
       // Drivers
-      Ue.drivers && Object.keys(Ue.drivers).length > 0 ? e.createElement(
+      Be.drivers && Object.keys(Be.drivers).length > 0 ? e.createElement(
         "div",
         null,
         e.createElement(
-          p,
+          m,
           {
             strong: !0,
             style: { display: "block", marginBottom: 6 }
@@ -11054,11 +11054,11 @@ function Dr() {
               flexWrap: "wrap"
             }
           },
-          ...Object.entries(Ue.drivers).map(
-            ([i, O]) => e.createElement(
-              x,
-              { key: i, color: "cyan", style: { fontSize: 11 } },
-              `${i}${O && O.length > 0 ? ` (${O.join(", ")})` : ""}`
+          ...Object.entries(Be.drivers).map(
+            ([s, A]) => e.createElement(
+              C,
+              { key: s, color: "cyan", style: { fontSize: 11 } },
+              `${s}${A && A.length > 0 ? ` (${A.join(", ")})` : ""}`
             )
           )
         )
@@ -11066,7 +11066,7 @@ function Dr() {
     ) : null
   );
 }
-function Fr() {
+function _r() {
   try {
     const t = localStorage.getItem("language") || "";
     if (t) return t.split("-")[0];
@@ -11074,14 +11074,14 @@ function Fr() {
   }
   return ((typeof navigator < "u" ? navigator.language : "") || "").split("-")[0] || "en";
 }
-const Wn = {
+const Ln = {
   zh: "您好，UGSci 智能助手在线。无论是油气藏分析、数值模拟还是工程决策，描述您的场景，我来交付结果。",
   en: "UGSci AI assistant is online. From reservoir analysis to numerical simulation and engineering decisions — describe your scenario and I'll deliver results.",
   ja: "UGSci AIアシスタントがオンラインです。油層解析、数値シミュレーション、エンジニアリングの意思決定など、シナリオを描写してください。結果をお届けします。",
   ru: "UGSci AI-ассистент онлайн. От анализа пласта до численного моделирования и инженерных решений — опишите свой сценарий, и я предоставлю результат.",
   vi: "Trợ lý AI UGSci đang trực tuyến. Từ phân tích mỏ, mô phỏng số đến ra quyết định kỹ thuật — mô tả kịch bản của bạn, tôi sẽ giao kết quả.",
   id: "Asisten AI UGSci sedang online. Dari analisis reservoir, simulasi numerik hingga keputusan engineering — jelaskan skenario Anda, saya akan memberikan hasilnya."
-}, Jn = {
+}, Bn = {
   zh: { label: "能告诉我你都能做点什么吗？", value: "能告诉我你都能做点什么吗" },
   en: { label: "Can you tell me what you can do?", value: "Can you tell me what you can do?" },
   ja: { label: "あなたができることを教えてください", value: "あなたができることを教えてください" },
@@ -11089,19 +11089,19 @@ const Wn = {
   vi: { label: "Bạn có thể cho tôi biết bạn làm được gì không?", value: "Bạn có thể cho tôi biết bạn làm được gì không?" },
   id: { label: "Bisa cerita apa saja yang bisa Anda lakukan?", value: "Bisa cerita apa saja yang bisa Anda lakukan?" }
 };
-function Gr() {
-  const e = _(), t = e.React, { useEffect: a, useRef: l } = t, n = e.useSelectedAgent ? e.useSelectedAgent() : { id: "default" }, r = (n == null ? void 0 : n.id) || "default", o = l(null), c = l(null);
-  return a(() => {
+function Ir() {
+  const e = x(), t = e.React, { useEffect: l, useRef: a } = t, n = e.useSelectedAgent ? e.useSelectedAgent() : { id: "default" }, r = (n == null ? void 0 : n.id) || "default", o = a(null), c = a(null);
+  return l(() => {
     if (o.current === r) return;
-    o.current = r, qt();
-    const s = Fr(), d = Wn[s] || Wn.en, m = Jn[s] || Jn.en;
-    let f = !1;
+    o.current = r, jt();
+    const i = _r(), d = Ln[i] || Ln.en, u = Bn[i] || Bn.en;
+    let b = !1;
     return (async () => {
-      var u, h;
+      var y, S;
       try {
-        const x = await Pt(r);
-        if (f) return;
-        const C = Xn(x);
+        const C = await Ct(r);
+        if (b) return;
+        const $ = Un(C);
         if (c.current) {
           try {
             c.current();
@@ -11109,25 +11109,25 @@ function Gr() {
           }
           c.current = null;
         }
-        const b = window.QwenPaw;
-        (u = b == null ? void 0 : b.chat) != null && u.welcome && (C.length > 0 ? (c.current = b.chat.welcome.set("ugsci", {
+        const w = window.QwenPaw;
+        (y = w == null ? void 0 : w.chat) != null && y.welcome && ($.length > 0 ? (c.current = w.chat.welcome.set("ugsci", {
           description: d,
-          prompts: C
+          prompts: $
         }), console.info(
-          `[ugsci] Injected ${C.length} welcome prompts for agent "${r}"`
-        )) : (c.current = b.chat.welcome.set("ugsci", {
+          `[ugsci] Injected ${$.length} welcome prompts for agent "${r}"`
+        )) : (c.current = w.chat.welcome.set("ugsci", {
           description: d,
-          prompts: [m]
+          prompts: [u]
         }), console.info(
           `[ugsci] No skills for agent "${r}" — using default prompt`
         )));
-      } catch (x) {
+      } catch (C) {
         console.warn(
           `[ugsci] Failed to inject welcome prompts for agent "${r}":`,
-          x
+          C
         );
-        const C = window.QwenPaw;
-        if ((h = C == null ? void 0 : C.chat) != null && h.welcome && !f) {
+        const $ = window.QwenPaw;
+        if ((S = $ == null ? void 0 : $.chat) != null && S.welcome && !b) {
           if (c.current) {
             try {
               c.current();
@@ -11135,398 +11135,19 @@ function Gr() {
             }
             c.current = null;
           }
-          c.current = C.chat.welcome.set("ugsci", {
+          c.current = $.chat.welcome.set("ugsci", {
             description: d,
-            prompts: [m]
+            prompts: [u]
           });
         }
       }
     })(), () => {
-      f = !0;
+      b = !0;
     };
   }, [r]), null;
 }
-function Hr(e) {
-  const t = e.data;
-  if (!t) return { resultText: "", status: "calling" };
-  const a = t.status || "calling", l = t.content;
-  if (!Array.isArray(l) || l.length === 0)
-    return { resultText: "", status: a };
-  if (l.length > 1) {
-    const o = l[1], c = o == null ? void 0 : o.data, s = c == null ? void 0 : c.output;
-    if (typeof s == "string") return { resultText: s, status: a };
-    if (s != null) return { resultText: JSON.stringify(s, null, 2), status: a };
-  }
-  const n = l[0], r = n == null ? void 0 : n.data;
-  if (r != null && r.output) {
-    const o = r.output;
-    return { resultText: typeof o == "string" ? o : JSON.stringify(o, null, 2), status: a };
-  }
-  return { resultText: "", status: a };
-}
-function Dt(e) {
-  var d, m, f;
-  const t = (d = window.QwenPaw) == null ? void 0 : d.host, a = t == null ? void 0 : t.React;
-  if (!a) return null;
-  const { resultText: l, status: n } = Hr(e), r = n === "in_progress" || n === "calling", o = n === "failed" || n === "error";
-  let c = {};
-  if (l)
-    try {
-      const u = JSON.parse(l);
-      u && typeof u == "object" && (c = u, (m = u.tree) != null && m.root && (c.nodeCount = Sa(u.tree.root)));
-    } catch {
-    }
-  const s = r ? "🎨 Generating UI Tree..." : o ? "🎨 UI Tree Error" : c.ok ? `🎨 UI Tree (${c.nodeCount ?? 0} nodes)` : "🎨 UI Tree";
-  return a.createElement(
-    "details",
-    { open: r || o, style: { margin: "4px 0", border: "1px solid var(--ant-color-border, #d9d9d9)", borderRadius: 8, padding: "4px 8px", fontSize: 13 } },
-    a.createElement(
-      "summary",
-      { style: { cursor: "pointer", display: "flex", alignItems: "center", gap: 6 } },
-      a.createElement("span", null, "🎨"),
-      a.createElement("span", null, s),
-      c.ok ? a.createElement("span", { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginLeft: "auto" } }, `ui_id: ${((f = c.ui_id) == null ? void 0 : f.slice(0, 16)) ?? ""}…`) : null
-    ),
-    o || c.ok === !1 ? a.createElement(
-      "div",
-      { style: { padding: "8px 12px", fontSize: 12 } },
-      a.createElement("div", { style: { color: "var(--ant-color-error, #ff4d4f)", marginBottom: 4 } }, c.message || "Unknown error"),
-      c.hint ? a.createElement("div", { style: { color: "var(--ant-color-text-quaternary, #999)" } }, `💡 ${c.hint}`) : null
-    ) : c.ok ? a.createElement("div", { style: { padding: "8px 12px", fontSize: 12, color: "var(--ant-color-text-quaternary, #999)" } }, `UI tree rendered below (${c.nodeCount ?? 0} nodes, revision ${c.revision ?? 1})`) : a.createElement("pre", { style: { fontSize: 12, padding: "8px 12px", background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.03))", borderRadius: 8, overflow: "auto", maxHeight: 200 } }, l || "(waiting for result...)")
-  );
-}
-function Sa(e) {
-  if (!e || typeof e != "object") return 0;
-  let t = 1;
-  if (Array.isArray(e.children)) for (const a of e.children) t += Sa(a);
-  return t;
-}
-const Wr = /* @__PURE__ */ new Set(["send_message"]);
-function qn(e) {
-  var a, l, n;
-  let t;
-  if (typeof e == "string") t = { type: e };
-  else if (e && typeof e == "object") t = e;
-  else return;
-  if (!Wr.has(t.type)) {
-    console.warn(`[ugsci.genui] Action '${t.type}' not allowed in phase-1`);
-    return;
-  }
-  if (t.type === "send_message") {
-    const r = ((a = t.payload) == null ? void 0 : a.content) || ((l = t.payload) == null ? void 0 : l.message) || "";
-    if (!r) return;
-    const o = window.QwenPaw;
-    (n = o == null ? void 0 : o.chat) != null && n.sendMessage ? o.chat.sendMessage(r) : console.info("[ugsci.genui] sendMessage fallback:", r);
-  }
-}
-const se = (e) => typeof e == "string" ? e : e != null ? String(e) : "", Ne = (e) => typeof e == "number" ? e : typeof e == "string" && Number(e) || 0, Ft = (e) => !!e, dt = (e) => Array.isArray(e) ? e : [], Kn = { xs: "12px", sm: "13px", base: "14px", lg: "16px" }, Be = {
-  muted: "var(--ant-color-text-secondary, #8c8c8c)",
-  default: "var(--ant-color-text, #000000d9)",
-  primary: "var(--ant-color-primary, #1677ff)",
-  success: "var(--ant-color-success, #52c41a)",
-  warning: "var(--ant-color-warning, #faad14)",
-  error: "var(--ant-color-error, #ff4d4f)"
-};
-function xa({ node: e }) {
-  var c;
-  const t = (c = window.QwenPaw) == null ? void 0 : c.host;
-  if (!(t != null && t.React)) return null;
-  const a = t.React, l = t.antd || {}, n = e.props || {}, r = e.children || [], o = () => r.map((s, d) => a.createElement(xa, { key: s.nodeId || d, node: s }));
-  switch (e.kind) {
-    case "Stack":
-      return a.createElement("div", { style: { display: "flex", flexDirection: "column", gap: `${Ne(n.gap) || 12}px`, padding: n.padding ? `${Ne(n.padding)}px` : void 0 } }, o());
-    case "Row":
-      return a.createElement("div", { style: { display: "flex", flexDirection: "row", gap: `${Ne(n.gap) || 12}px` } }, o());
-    case "Grid":
-      return a.createElement("div", { style: { display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(Ne(n.columns) || 2, 1), 6)}, 1fr)`, gap: `${Ne(n.gap) || 12}px` } }, o());
-    case "Spacer":
-      return a.createElement("div", { style: { height: `${Ne(n.size) || 16}px` } });
-    case "Text":
-      return a.createElement("div", { style: { fontSize: Kn[se(n.size)] || Kn.base, color: Be[se(n.color)] || Be.default, fontWeight: Ft(n.bold) ? "bold" : "normal", lineHeight: 1.6 } }, se(n.value));
-    case "Heading": {
-      const s = Math.min(Math.max(Ne(n.level) || 2, 1), 4), d = { 1: "24px", 2: "20px", 3: "18px", 4: "16px" };
-      return a.createElement("div", { style: { fontSize: d[s], fontWeight: "bold", margin: "4px 0" } }, se(n.value));
-    }
-    case "Divider":
-      return a.createElement(l.Divider || "hr", n.label ? { children: se(n.label) } : {});
-    case "Badge":
-      return a.createElement(l.Badge || "span", { count: se(n.value), status: "default" });
-    case "Tag":
-      return a.createElement(l.Tag || "span", { color: se(n.color) || "default", children: se(n.label) });
-    case "Stat":
-      return a.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 2 } }, a.createElement("span", { style: { fontSize: 12, color: Be.muted } }, se(n.label)), a.createElement("span", { style: { fontSize: 20, fontWeight: "bold" } }, se(n.value)), n.delta ? a.createElement("span", { style: { fontSize: 12, color: se(n.trend) === "up" ? Be.success : se(n.trend) === "down" ? Be.error : Be.muted } }, se(n.delta)) : null);
-    case "Progress":
-      return a.createElement(l.Progress || "div", { percent: Ne(n.value), size: "small" });
-    case "Image":
-      return a.createElement("div", null, a.createElement("img", { src: se(n.src), alt: se(n.alt), style: { maxWidth: "100%", borderRadius: Ft(n.rounded) ? "8px" : void 0, maxHeight: n.maxHeight ? `${Ne(n.maxHeight)}px` : void 0 } }), n.caption ? a.createElement("div", { style: { fontSize: 12, color: Be.muted } }, se(n.caption)) : null);
-    case "Table": {
-      const s = dt(n.headers).map((u) => se(u)), m = r.filter((u) => u.kind === "TableRow").map((u, h) => {
-        const x = (u.children || []).filter((b) => b.kind === "TableCell"), C = { key: h };
-        return s.forEach((b, v) => {
-          var I, z;
-          C[b] = (z = (I = x[v]) == null ? void 0 : I.props) != null && z.value ? se(x[v].props.value) : "";
-        }), C;
-      }), f = s.map((u) => ({ title: u, dataIndex: u, key: u }));
-      return a.createElement(l.Table || "table", { dataSource: m, columns: f, size: Ft(n.compact) ? "small" : "middle", pagination: !1, style: { margin: "4px 0" } });
-    }
-    case "List": {
-      const s = r.filter((d) => d.kind === "ListItem");
-      return a.createElement(l.List || "ul", { size: "small", style: { margin: "4px 0" } }, s.map((d, m) => {
-        var f, u;
-        return a.createElement(((f = l.List) == null ? void 0 : f.Item) || "li", { key: m }, se((u = d.props) == null ? void 0 : u.value));
-      }));
-    }
-    case "CodeBlock":
-      return a.createElement("pre", { style: { padding: 12, background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))", borderRadius: 8, overflow: "auto", fontSize: 13, fontFamily: "monospace" } }, se(n.code));
-    case "Markdown":
-      return a.createElement(l.Typography || "div", { children: se(n.content || n.value) });
-    case "Chart":
-      return a.createElement(Jr, { props: n });
-    case "Card":
-      return a.createElement(l.Card || "div", { title: n.title ? se(n.title) : void 0, size: "small", style: { margin: "4px 0" } }, o());
-    case "DataCard":
-      return a.createElement(l.Card || "div", { size: "small", style: { margin: "4px 0" } }, a.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, a.createElement("div", null, a.createElement("div", { style: { fontSize: 12, color: Be.muted } }, se(n.title)), a.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, se(n.value))), n.icon ? a.createElement("span", { style: { fontSize: 32 } }, se(n.icon)) : null));
-    case "MetricCard":
-      return a.createElement(l.Card || "div", { size: "small", style: { margin: "4px 0" } }, a.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, a.createElement("div", null, a.createElement("div", { style: { fontSize: 12, color: Be.muted } }, se(n.title)), a.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, se(n.value)), n.delta ? a.createElement("span", { style: { fontSize: 12, color: se(n.trend) === "up" ? Be.success : se(n.trend) === "down" ? Be.error : Be.muted } }, `${se(n.delta)} ${n.period ? se(n.period) : ""}`.trim()) : null), n.icon ? a.createElement("span", { style: { fontSize: 32 } }, se(n.icon)) : null));
-    case "AlertCard":
-    case "Alert":
-      return a.createElement(l.Alert || "div", { type: se(n.severity) === "success" ? "success" : se(n.severity) === "warning" ? "warning" : se(n.severity) === "error" ? "error" : "info", message: n.title ? se(n.title) : void 0, description: se(n.message), showIcon: !0, style: { margin: "4px 0" } });
-    case "Callout":
-      return a.createElement(l.Alert || "div", { type: se(n.variant) === "tip" ? "success" : se(n.variant) === "warning" ? "warning" : se(n.variant) === "important" ? "error" : "info", message: n.title ? se(n.title) : void 0, description: se(n.message), showIcon: !0 });
-    case "Button":
-      return a.createElement(l.Button || "button", { type: se(n.variant) === "primary" ? "primary" : "default", size: "small", children: se(n.label) || "Action", onClick: () => {
-        n.action && typeof n.action == "object" ? qn(n.action) : n.actionId && qn(n.actionId);
-      } });
-    case "Input":
-      return a.createElement(l.Input || "input", { placeholder: se(n.placeholder), value: se(n.value), disabled: !0, size: "small" });
-    case "Select":
-      return a.createElement(l.Select || "select", { placeholder: se(n.placeholder), value: se(n.value) || void 0, disabled: !0, size: "small", style: { width: "100%" } }, dt(n.options).map((s, d) => {
-        var m;
-        return a.createElement(((m = l.Select) == null ? void 0 : m.Option) || "option", { key: d, value: se(s) }, se(s));
-      }));
-    case "JsonDebug":
-      return a.createElement("details", { style: { margin: "4px 0", fontSize: 12 } }, a.createElement("summary", null, se(n.label) || "Debug JSON"), a.createElement("pre", { style: { fontSize: 12, padding: 8, background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))", borderRadius: 4, overflow: "auto" } }, JSON.stringify(n.data ?? n, null, 2)));
-    default:
-      return a.createElement("div", { style: { padding: 8, border: "1px dashed var(--ant-color-border, #d9d9d9)", borderRadius: 8, fontSize: 12, color: Be.muted, fontFamily: "monospace" } }, `Unknown component: ${e.kind}`);
-  }
-}
-const et = ["#1677ff", "#52c41a", "#faad14", "#ff4d4f", "#722ed1", "#13c2c2", "#eb2f96"];
-function Jr({ props: e }) {
-  var C, b;
-  const t = (b = (C = window.QwenPaw) == null ? void 0 : C.host) == null ? void 0 : b.React;
-  if (!t) return null;
-  const a = se(e.chart) || "line", l = se(e.title), n = dt(e.categories).map((v) => se(v)), r = dt(e.series), o = Ne(e.height) || 200, c = e.showLegend !== !1, s = 400, d = r.map((v, I) => {
-    const z = v, N = dt(z.values).map((D) => Ne(D));
-    return { name: se(z.name) || `Series ${I + 1}`, values: N };
-  });
-  if (n.length === 0 || d.length === 0)
-    return t.createElement("div", { style: { padding: 12, color: Be.muted, fontSize: 12 } }, "Chart: no data");
-  if (a === "pie") {
-    const v = d[0].values.reduce((B, M) => B + M, 0) || 1, I = s / 2, z = o / 2, N = Math.min(s, o) / 2 - 20;
-    let D = -Math.PI / 2;
-    const G = d[0].values.map((B, M) => {
-      const A = B / v * 2 * Math.PI, H = I + N * Math.cos(D), K = z + N * Math.sin(D), T = I + N * Math.cos(D + A), w = z + N * Math.sin(D + A), E = A > Math.PI ? 1 : 0, $ = `M ${I} ${z} L ${H} ${K} A ${N} ${N} 0 ${E} 1 ${T} ${w} Z`;
-      return D += A, { path: $, color: et[M % et.length], label: n[M] || `#${M + 1}`, val: B };
-    });
-    return t.createElement(
-      "div",
-      { style: { margin: "4px 0" } },
-      l ? t.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, l) : null,
-      t.createElement(
-        "svg",
-        { width: s, height: o, style: { maxWidth: "100%" } },
-        ...G.map((B, M) => t.createElement("path", { key: M, d: B.path, fill: B.color, stroke: "#fff", strokeWidth: 1 }))
-      ),
-      c ? t.createElement(
-        "div",
-        { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4, fontSize: 11 } },
-        ...G.map((B, M) => t.createElement(
-          "span",
-          { key: M, style: { display: "flex", alignItems: "center", gap: 4 } },
-          t.createElement("span", { style: { display: "inline-block", width: 10, height: 10, borderRadius: 2, background: B.color } }),
-          `${B.label}: ${B.val}`
-        ))
-      ) : null
-    );
-  }
-  const m = Math.max(...d.flatMap((v) => v.values), 1), f = n.length > 0 ? (s - 40) / (n.length * d.length) - 2 : 0, u = n.length > 1 ? (s - 40) / (n.length - 1) : 0, h = (v) => o - 20 - v / m * (o - 40), x = (v) => 30 + v * u;
-  return t.createElement(
-    "div",
-    { style: { margin: "4px 0" } },
-    l ? t.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, l) : null,
-    t.createElement(
-      "svg",
-      { width: s, height: o, style: { maxWidth: "100%" } },
-      ...[0, 0.25, 0.5, 0.75, 1].map((v, I) => {
-        const z = o - 20 - v * (o - 40);
-        return t.createElement("line", { key: `g${I}`, x1: 30, y1: z, x2: s - 10, y2: z, stroke: "var(--ant-color-border-secondary, #f0f0f0)", strokeWidth: 1 });
-      }),
-      ...n.map((v, I) => t.createElement("text", { key: `x${I}`, x: x(I), y: o - 6, fontSize: 10, fill: Be.muted, textAnchor: "middle" }, v.length > 6 ? v.slice(0, 6) + "…" : v)),
-      ...d.map((v, I) => {
-        const z = et[I % et.length];
-        if (a === "bar")
-          return v.values.map((G, B) => t.createElement("rect", {
-            key: `b${I}-${B}`,
-            x: x(B) + I * (f + 2) - f / 2,
-            y: h(G),
-            width: f,
-            height: o - 20 - h(G),
-            fill: z,
-            rx: 2
-          }));
-        const N = v.values.map((G, B) => `${x(B)},${h(G)}`).join(" "), D = [t.createElement("polyline", { key: `l${I}`, points: N, fill: "none", stroke: z, strokeWidth: 2 })];
-        if (a === "area") {
-          const G = `${x(0)},${o - 20} ${N} ${x(v.values.length - 1)},${o - 20}`;
-          D.unshift(t.createElement("polygon", { key: `a${I}`, points: G, fill: z, opacity: 0.15 }));
-        }
-        return D;
-      })
-    ),
-    c ? t.createElement(
-      "div",
-      { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4, fontSize: 11 } },
-      ...d.map((v, I) => t.createElement(
-        "span",
-        { key: I, style: { display: "flex", alignItems: "center", gap: 4 } },
-        t.createElement("span", { style: { display: "inline-block", width: 10, height: 10, borderRadius: 2, background: et[I % et.length] } }),
-        v.name
-      ))
-    ) : null
-  );
-}
-let xt = null;
-function ka() {
-  var t, a;
-  if (xt) return xt;
-  const e = (a = (t = window.QwenPaw) == null ? void 0 : t.host) == null ? void 0 : a.React;
-  return e ? (xt = e.createContext(null), xt) : null;
-}
-function Ct(e, t) {
-  return `${e}::${t}`;
-}
-function qr(e) {
-  try {
-    const t = JSON.parse(e);
-    return t && typeof t == "object" && t.ok === !0 && t.kind === "genui" ? t : null;
-  } catch {
-    return null;
-  }
-}
-const Kr = /* @__PURE__ */ new Set([
-  "plugin_call_output",
-  "function_call_output",
-  "tool_call_output",
-  "mcp_call_output",
-  "component_call_output"
-]);
-function Ca(e) {
-  if (!Array.isArray(e)) return [];
-  const t = [];
-  for (const a of e) {
-    if (!a || typeof a != "object") continue;
-    const l = a, n = l.type;
-    if (!n || !Kr.has(n)) continue;
-    const r = l.content;
-    if (!Array.isArray(r) || r.length === 0) continue;
-    const o = r[0];
-    if (!o || typeof o != "object") continue;
-    const c = o.data;
-    if (!(!c || (c.name || "") !== "emit_ui_tree") && r.length > 1) {
-      const d = r[1], m = d == null ? void 0 : d.data, f = m == null ? void 0 : m.output;
-      if (typeof f == "string") {
-        const u = qr(f);
-        u && t.push(u);
-      }
-    }
-  }
-  return t;
-}
-function Vr({ children: e }) {
-  var m, f;
-  const t = (f = (m = window.QwenPaw) == null ? void 0 : m.host) == null ? void 0 : f.React;
-  if (!t) return null;
-  const [a, l] = t.useState({}), n = t.useCallback((u) => {
-    const h = Ct(u.sessionId, u.uiId);
-    l((x) => ({ ...x, [h]: u }));
-  }, []), r = t.useCallback(
-    (u, h) => a[Ct(u, h)],
-    [a]
-  ), o = t.useCallback((u) => {
-    l((h) => {
-      const x = {};
-      for (const [C, b] of Object.entries(h))
-        b.sessionId !== u && (x[C] = b);
-      return x;
-    });
-  }, []), c = t.useCallback(
-    (u, h) => {
-      const x = Ca(h);
-      for (const C of x)
-        C.ui_id && C.tree && l((b) => ({
-          ...b,
-          [Ct(u, C.ui_id)]: {
-            schemaVersion: "1",
-            uiId: C.ui_id,
-            revision: C.revision || 1,
-            tree: C.tree,
-            sessionId: u,
-            updatedAt: Date.now()
-          }
-        }));
-    },
-    []
-  ), s = t.useMemo(
-    () => ({ snapshots: a, setSnapshot: n, getSnapshot: r, clearSession: o, hydrateFromMessages: c }),
-    [a, n, r, o, c]
-  ), d = ka();
-  return d ? t.createElement(d.Provider, { value: s }, e) : null;
-}
-function Xr() {
-  var l, n;
-  const e = (n = (l = window.QwenPaw) == null ? void 0 : l.host) == null ? void 0 : n.React, t = ka();
-  if (!e || !t) throw new Error("useGenUiStore: host React not available");
-  const a = e.useContext(t);
-  if (!a) throw new Error("useGenUiStore must be used within GenUiStoreProvider");
-  return a;
-}
-function Yr({ data: e }) {
-  var s, d;
-  const t = (s = window.QwenPaw) == null ? void 0 : s.host, a = t == null ? void 0 : t.React;
-  if (!a) return null;
-  const l = Xr(), n = ((d = t.getCurrentSessionId) == null ? void 0 : d.call(t)) || "", r = e.output, o = Ca(r);
-  a.useEffect(() => {
-    o.length > 0 && n && l.hydrateFromMessages(n, r);
-  }, [o, n]);
-  const c = Object.values(l.snapshots).filter(
-    (m) => m.sessionId === n
-  );
-  return c.length === 0 ? null : a.createElement(
-    "div",
-    { className: "qwenpaw-genui-inline", style: { marginTop: 8, marginBottom: 8 } },
-    ...c.map(
-      (m) => a.createElement(
-        "div",
-        {
-          key: Ct(m.sessionId, m.uiId),
-          className: "qwenpaw-genui-tree",
-          style: { border: "1px solid var(--ant-color-border-secondary, #f0f0f0)", borderRadius: 12, padding: 16, marginBottom: 8, background: "var(--ant-color-bg-container, #fff)" }
-        },
-        a.createElement(xa, { node: m.tree.root })
-      )
-    )
-  );
-}
-function Qr(e, t) {
-  var l, n, r;
-  const a = "ugsci";
-  (l = e.chat) != null && l.toolRender && (e.chat.toolRender(a, "emit_ui_tree", Dt), e.chat.toolRender(a, "list_ui_components", Dt), e.chat.toolRender(a, "get_genui_guide", Dt), console.info("[ugsci.genui] Registered 3 tool card renderers")), (r = (n = e.chat) == null ? void 0 : n.response) != null && r.append && (e.chat.response.append(
-    a,
-    (o) => t.createElement(Vr, null, t.createElement(Yr, { data: o.data })),
-    { id: "ugsci.genui.response-append", order: 50 }
-  ), console.info("[ugsci.genui] Registered response.append slot"));
-}
-function Zr() {
-  var s, d, m;
+function zr() {
+  var i, d, u;
   const e = window.QwenPaw;
   if (!(e != null && e.menu) || !(e != null && e.route)) {
     console.warn(
@@ -11534,60 +11155,60 @@ function Zr() {
     );
     return;
   }
-  const t = _().React, a = "ugsci";
-  (d = (s = e.chat) == null ? void 0 : s.rightHeader) != null && d.add ? (e.chat.rightHeader.add(a, t.createElement(Gr), {
+  const t = x().React, l = "ugsci";
+  (d = (i = e.chat) == null ? void 0 : i.rightHeader) != null && d.add ? (e.chat.rightHeader.add(l, t.createElement(Ir), {
     id: "ugsci.welcome-injector",
     order: -1
     // render before other right-header items (invisible anyway)
   }), console.info("[ugsci] WelcomePromptsInjector registered via rightHeader")) : console.warn(
     "[ugsci] QP.chat.rightHeader.add not available — agent-specific welcome prompts disabled"
   );
-  const l = _().antdIcons || {}, n = l.UserSwitchOutlined, r = l.ToolOutlined, o = l.ShopOutlined;
-  e.route.add(a, {
+  const a = x().antdIcons || {}, n = a.UserSwitchOutlined, r = a.ToolOutlined, o = a.ShopOutlined;
+  e.route.add(l, {
     id: "ugsci.experts",
     path: "/ugsci-experts",
-    component: lr
-  }), e.menu.add(a, {
+    component: Gl
+  }), e.menu.add(l, {
     id: "ugsci.experts",
     location: "primary.agentScoped",
     label: () => "专家·协作",
     icon: n ? t.createElement(n, { style: { fontSize: 16 } }) : void 0,
     route: "ugsci.experts",
     order: 5,
-    visible: () => st()
-  }), e.route.add(a, {
+    visible: () => at()
+  }), e.route.add(l, {
     id: "ugsci.tools-skills",
     path: "/ugsci-tools-skills",
-    component: pa
-  }), e.menu.add(a, {
+    component: na
+  }), e.menu.add(l, {
     id: "ugsci.tools-skills",
     location: "primary.agentScoped",
     label: () => "工具·技能",
     icon: r ? t.createElement(r, { style: { fontSize: 16 } }) : void 0,
     route: "ugsci.tools-skills",
     order: 6,
-    visible: () => st()
-  }), e.route.add(a, {
+    visible: () => at()
+  }), e.route.add(l, {
     id: "ugsci.capabilities",
     path: "/ugsci-capabilities",
-    component: br
-  }), e.route.add(a, {
+    component: rr
+  }), e.route.add(l, {
     id: "ugsci.skills-center",
     path: "/ugsci-skills",
-    component: wr
-  }), e.route.add(a, {
+    component: or
+  }), e.route.add(l, {
     id: "ugsci.market",
     path: "/ugsci-market",
-    component: Dr
-  }), e.menu.add(a, {
+    component: Tr
+  }), e.menu.add(l, {
     id: "ugsci.market",
     location: "primary.agentScoped",
     label: () => "市场",
     icon: o ? t.createElement(o, { style: { fontSize: 16 } }) : void 0,
     route: "ugsci.market",
     order: 7,
-    visible: () => st()
-  }), (m = e.sidebar) != null && m.registerSimpleModeItems ? (e.sidebar.registerSimpleModeItems([
+    visible: () => at()
+  }), (u = e.sidebar) != null && u.registerSimpleModeItems ? (e.sidebar.registerSimpleModeItems([
     "ugsci.experts",
     "ugsci.tools-skills",
     "ugsci.market"
@@ -11602,47 +11223,42 @@ function Zr() {
     "core.agent-stats",
     "core.skill-pool"
   ];
-  for (const f of c) {
+  for (const b of c) {
     try {
-      const h = e.menu.snapshot("primary.agentScoped").find((x) => x.id === f);
-      h && e.menu.replace(a, f, {
-        ...h,
-        visible: () => !st()
+      const S = e.menu.snapshot("primary.agentScoped").find((C) => C.id === b);
+      S && e.menu.replace(l, b, {
+        ...S,
+        visible: () => !at()
       });
     } catch {
     }
     try {
-      const h = e.menu.snapshot("primary.settings").find((x) => x.id === f);
-      h && e.menu.replace(a, f, {
-        ...h,
-        visible: () => !st()
+      const S = e.menu.snapshot("primary.settings").find((C) => C.id === b);
+      S && e.menu.replace(l, b, {
+        ...S,
+        visible: () => !at()
       });
     } catch {
     }
-  }
-  try {
-    Qr(e, t);
-  } catch (f) {
-    console.error("[ugsci] Failed to register GenUI frontend:", f);
   }
   console.info(
     "[ugsci] Plugin registered: unified Tools & Skills center + compatibility routes, simple-mode navigation active"
   );
 }
-function Jt() {
+function Bt() {
   try {
-    Zr();
+    zr();
   } catch (e) {
-    console.error("[ugsci] Failed to build plugin:", e), setTimeout(Jt, 500);
+    console.error("[ugsci] Failed to build plugin:", e), setTimeout(Bt, 500);
   }
 }
-var Vn;
-if ((Vn = window.QwenPaw) != null && Vn.host)
-  Jt();
+var jn;
+if ((jn = window.QwenPaw) != null && jn.host)
+  Bt();
 else {
   const e = setInterval(() => {
     var t;
-    (t = window.QwenPaw) != null && t.host && (clearInterval(e), Jt());
+    (t = window.QwenPaw) != null && t.host && (clearInterval(e), Bt());
   }, 200);
   setTimeout(() => clearInterval(e), 1e4);
 }
