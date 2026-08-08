@@ -22,7 +22,6 @@ import {
 } from "./capability/ToolsSkillsCenterPage";
 import { MarketplacePage } from "./market/MarketplacePage";
 import { WelcomePromptsInjector } from "./WelcomePromptsInjector";
-import { registerGenuiFrontend } from "./genui";
 
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
@@ -190,13 +189,6 @@ function buildPlugin() {
         });
       }
     } catch {}
-  }
-
-  // ── Register GenUI (Generative UI) module ────────────────────────────
-  try {
-    registerGenuiFrontend(QP, React);
-  } catch (err) {
-    console.error("[ugsci] Failed to register GenUI frontend:", err);
   }
 
   console.info(
