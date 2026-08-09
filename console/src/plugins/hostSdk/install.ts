@@ -177,7 +177,9 @@ export interface QwenPawChatNamespace {
 let chatSubmitter: ((content: string) => void) | null = null;
 
 /** Bind the mounted chat runtime to the plugin SDK without exposing its ref. */
-export function registerChatSubmitter(submitter: ((content: string) => void) | null): void {
+export function registerChatSubmitter(
+  submitter: ((content: string) => void) | null,
+): void {
   chatSubmitter = submitter;
 }
 

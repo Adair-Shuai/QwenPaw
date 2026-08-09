@@ -25,7 +25,8 @@ describe("genUiMedia", () => {
             getBinaryFileUrl: (path: string) => `/binary/${path}`,
           },
           chatApi: {
-            filePreviewUrl: (path: string) => `/preview/${encodeURIComponent(path)}`,
+            filePreviewUrl: (path: string) =>
+              `/preview/${encodeURIComponent(path)}`,
           },
           buildAuthHeaders: () => ({ Authorization: "Bearer test" }),
         },
@@ -118,7 +119,9 @@ describe("genUiMedia", () => {
 
   describe("stripWorkspaceScheme", () => {
     it("strips workspace:// prefix", () => {
-      expect(stripWorkspaceScheme("workspace://images/chart.png")).toBe("images/chart.png");
+      expect(stripWorkspaceScheme("workspace://images/chart.png")).toBe(
+        "images/chart.png",
+      );
     });
 
     it("returns path unchanged when no scheme", () => {

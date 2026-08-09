@@ -239,10 +239,7 @@ const fixCodeHighlighterPlugin: Plugin = {
   name: "fix-code-highlighter-dynamic-import",
   enforce: "pre",
   transform(code: string, id: string) {
-    if (
-      !id.includes("@ant-design/x") ||
-      !id.includes("CodeHighlighter")
-    ) {
+    if (!id.includes("@ant-design/x") || !id.includes("CodeHighlighter")) {
       return null;
     }
     const oldPattern =

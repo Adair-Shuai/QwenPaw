@@ -48,7 +48,9 @@ describe("dispatchGenUiAction", () => {
       { type: "submit_form", payload: { content: "提交验收" } },
       { formId: "acceptance", formValues: { name: "张三", phase: "二期" } },
     );
-    expect(sendMessage).toHaveBeenCalledWith("提交验收\nname: 张三\nphase: 二期");
+    expect(sendMessage).toHaveBeenCalledWith(
+      "提交验收\nname: 张三\nphase: 二期",
+    );
   });
 
   it("dispatches send_message action with message key", () => {
@@ -87,7 +89,10 @@ describe("dispatchGenUiAction", () => {
   });
 
   it("blocks open_url action", () => {
-    dispatchGenUiAction({ type: "open_url", payload: { url: "javascript:alert(1)" } });
+    dispatchGenUiAction({
+      type: "open_url",
+      payload: { url: "javascript:alert(1)" },
+    });
     expect(warnSpy).toHaveBeenCalled();
     expect(sendMessage).not.toHaveBeenCalled();
   });

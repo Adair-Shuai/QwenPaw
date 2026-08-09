@@ -364,23 +364,51 @@ describe("FileSummaryCards data parsing", () => {
     const { container } = render(
       createElement(FileSummaryCards, {
         data: {
-          output: [{
-            id: "msg-view-image",
-            type: "plugin_call",
-            content: [
-              { data: { name: "view_image", arguments: JSON.stringify({ path }), call_id: "call-view" } },
-              { data: { output: [{ type: "image", source: { type: "url", url: path } }] } },
-            ],
-          }],
+          output: [
+            {
+              id: "msg-view-image",
+              type: "plugin_call",
+              content: [
+                {
+                  data: {
+                    name: "view_image",
+                    arguments: JSON.stringify({ path }),
+                    call_id: "call-view",
+                  },
+                },
+                {
+                  data: {
+                    output: [
+                      { type: "image", source: { type: "url", url: path } },
+                    ],
+                  },
+                },
+              ],
+            },
+          ],
         },
       }),
     );
 
-    expect(extractFileInfos({ output: [{
-      id: "msg-view-image",
-      type: "plugin_call",
-      content: [{ data: { name: "view_image", arguments: JSON.stringify({ path }), call_id: "call-view" } }],
-    }] })).toMatchObject([{ toolName: "view_image", isDeliverable: true }]);
+    expect(
+      extractFileInfos({
+        output: [
+          {
+            id: "msg-view-image",
+            type: "plugin_call",
+            content: [
+              {
+                data: {
+                  name: "view_image",
+                  arguments: JSON.stringify({ path }),
+                  call_id: "call-view",
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    ).toMatchObject([{ toolName: "view_image", isDeliverable: true }]);
     expect(container.querySelector("img")).not.toBeNull();
     expect(container.querySelector("details")).toBeNull();
   });

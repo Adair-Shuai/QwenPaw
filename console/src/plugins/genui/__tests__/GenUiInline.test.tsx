@@ -30,7 +30,11 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function makeResult(uiId: string, revision: number = 1, value: string = "hello"): string {
+function makeResult(
+  uiId: string,
+  revision: number = 1,
+  value: string = "hello",
+): string {
   return JSON.stringify({
     ok: true,
     kind: "genui",
@@ -49,7 +53,11 @@ function makeResult(uiId: string, revision: number = 1, value: string = "hello")
   });
 }
 
-function makeOutput(uiId: string, revision: number = 1, value: string = "hello"): unknown[] {
+function makeOutput(
+  uiId: string,
+  revision: number = 1,
+  value: string = "hello",
+): unknown[] {
   return [
     {
       type: "plugin_call_output",
@@ -185,18 +193,27 @@ describe("GenUiInline — History Recovery (PLAN §9.3: 刷新页面恢复)", ()
       revision: 2,
       tree: {
         schemaVersion: "1",
-        root: { nodeId: "n1", kind: "Text", props: { value: "patch fallback" }, children: [] },
+        root: {
+          nodeId: "n1",
+          kind: "Text",
+          props: { value: "patch fallback" },
+          children: [],
+        },
       },
     };
-    const output = [{
-      type: "plugin_call_output",
-      content: [
-        { data: { name: "emit_ui_patch", call_id: "c2" } },
-        { data: { output: JSON.stringify(patchResult), call_id: "c2" } },
-      ],
-    }];
+    const output = [
+      {
+        type: "plugin_call_output",
+        content: [
+          { data: { name: "emit_ui_patch", call_id: "c2" } },
+          { data: { output: JSON.stringify(patchResult), call_id: "c2" } },
+        ],
+      },
+    ];
     const { container } = renderInline({ output });
-    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    });
     expect(container.textContent).toContain("patch fallback");
     expect(container.querySelector(".qwenpaw-genui-tree")).not.toBeNull();
   });

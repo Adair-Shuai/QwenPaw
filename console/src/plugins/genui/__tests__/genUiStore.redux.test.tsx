@@ -20,7 +20,11 @@ import {
   useGenUiStore,
   resetGenUiStore,
 } from "@genui-src/stores/genUi";
-import type { GenUiSnapshot, GenUiPatchPayload, GenUiTreeV1 } from "@genui-src/types/genUi";
+import type {
+  GenUiSnapshot,
+  GenUiPatchPayload,
+  GenUiTreeV1,
+} from "@genui-src/types/genUi";
 
 // ─── Test harness ───────────────────────────────────────────────────────────
 
@@ -67,7 +71,11 @@ function makeSnapshot(
   };
 }
 
-function makeOutput(uiId: string, revision: number = 1, value: string = "from-history"): unknown[] {
+function makeOutput(
+  uiId: string,
+  revision: number = 1,
+  value: string = "from-history",
+): unknown[] {
   const result = {
     ok: true,
     kind: "genui" as const,
@@ -260,7 +268,14 @@ describe("applyPatch", () => {
     };
 
     act(() => {
-      storeState!.applyPatch(payload, { schemaVersion: "1", root: { nodeId: "n1", kind: "Text", props: {}, children: [] } }, 2);
+      storeState!.applyPatch(
+        payload,
+        {
+          schemaVersion: "1",
+          root: { nodeId: "n1", kind: "Text", props: {}, children: [] },
+        },
+        2,
+      );
     });
 
     // Should not crash, and nothing should be stored
@@ -337,8 +352,12 @@ describe("hydrateFromMessages", () => {
 
     expect(storeState!.getSnapshot("s1", "ui_first")).toBeDefined();
     expect(storeState!.getSnapshot("s1", "ui_second")).toBeDefined();
-    expect(storeState!.getSnapshot("s1", "ui_first")!.tree.root.props!.value).toBe("first");
-    expect(storeState!.getSnapshot("s1", "ui_second")!.tree.root.props!.value).toBe("second");
+    expect(
+      storeState!.getSnapshot("s1", "ui_first")!.tree.root.props!.value,
+    ).toBe("first");
+    expect(
+      storeState!.getSnapshot("s1", "ui_second")!.tree.root.props!.value,
+    ).toBe("second");
   });
 
   it("respects revision monotonicity (does not downgrade)", () => {
@@ -346,12 +365,18 @@ describe("hydrateFromMessages", () => {
 
     // First hydrate with revision 3
     act(() => {
-      storeState!.hydrateFromMessages("s1", makeOutput("ui_rev", 3, "v3") as unknown[]);
+      storeState!.hydrateFromMessages(
+        "s1",
+        makeOutput("ui_rev", 3, "v3") as unknown[],
+      );
     });
 
     // Then try to hydrate with revision 1 (stale)
     act(() => {
-      storeState!.hydrateFromMessages("s1", makeOutput("ui_rev", 1, "v1-stale") as unknown[]);
+      storeState!.hydrateFromMessages(
+        "s1",
+        makeOutput("ui_rev", 1, "v1-stale") as unknown[],
+      );
     });
 
     const retrieved = storeState!.getSnapshot("s1", "ui_rev");
@@ -376,7 +401,10 @@ describe("hydrateFromMessages", () => {
     const output = [
       { type: "text_message", content: [{ data: { text: "hello" } }] },
       ...makeOutput("ui_real", 1, "real"),
-      { type: "plugin_call_output", content: [{ data: { name: "other_tool" } }] },
+      {
+        type: "plugin_call_output",
+        content: [{ data: { name: "other_tool" } }],
+      },
     ];
 
     act(() => {
@@ -392,7 +420,10 @@ describe("hydrateFromMessages", () => {
 
     // First emit a tree
     act(() => {
-      storeState!.hydrateFromMessages("s1", makeOutput("ui_patch_test", 1, "original") as unknown[]);
+      storeState!.hydrateFromMessages(
+        "s1",
+        makeOutput("ui_patch_test", 1, "original") as unknown[],
+      );
     });
 
     // Then hydrate with a patch result (revision 2)
@@ -457,10 +488,16 @@ describe("multiple trees isolation", () => {
   it("re-keys fallback snapshots when the real session becomes available", () => {
     renderProvider();
     act(() => {
-      storeState!.setSnapshot(makeSnapshot("__current_chat__", "ui_rekey", 1, "fallback"));
-      storeState!.setSnapshot(makeSnapshot("real-session", "ui_rekey", 1, "fallback"));
+      storeState!.setSnapshot(
+        makeSnapshot("__current_chat__", "ui_rekey", 1, "fallback"),
+      );
+      storeState!.setSnapshot(
+        makeSnapshot("real-session", "ui_rekey", 1, "fallback"),
+      );
     });
-    expect(storeState!.getSnapshot("__current_chat__", "ui_rekey")).toBeUndefined();
+    expect(
+      storeState!.getSnapshot("__current_chat__", "ui_rekey"),
+    ).toBeUndefined();
     expect(storeState!.getSnapshot("real-session", "ui_rekey")).toBeDefined();
   });
 
@@ -468,7 +505,9 @@ describe("multiple trees isolation", () => {
     renderProvider();
     act(() => {
       for (let index = 0; index < 300; index += 1) {
-        storeState!.setSnapshot(makeSnapshot("s1", `ui_${index}`, 1, String(index)));
+        storeState!.setSnapshot(
+          makeSnapshot("s1", `ui_${index}`, 1, String(index)),
+        );
       }
     });
     expect(Object.keys(storeState!.snapshots)).toHaveLength(256);

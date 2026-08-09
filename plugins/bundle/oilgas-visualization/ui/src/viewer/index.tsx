@@ -53,6 +53,7 @@ interface ViewerHandle { update(options: Partial<ViewerMountOptions>): void; dis
 
 class WorkerManager {
   private worker: Worker | null = null;
+  private workerUrl: string | null = null;
   private pending: Map<string, (data: any) => void> = new Map();
   private pendingColors: Map<string, (data: any) => void> = new Map();
   private msgId = 0;
@@ -100,7 +101,8 @@ class WorkerManager {
         };
       `;
       const blob = new Blob([workerCode], { type: "application/javascript" });
-      this.worker = new Worker(URL.createObjectURL(blob));
+      this.workerUrl = URL.createObjectURL(blob);
+      this.worker = new Worker(this.workerUrl);
       this.worker.onmessage = (e: MessageEvent) => {
         const msg = e.data;
         if (msg.type === "decoded") {
@@ -150,6 +152,10 @@ class WorkerManager {
       this.worker.terminate();
       this.worker = null;
     }
+    if (this.workerUrl) {
+      URL.revokeObjectURL(this.workerUrl);
+      this.workerUrl = null;
+    }
     this.pending.clear();
     this.pendingColors.clear();
   }
@@ -164,6 +170,7 @@ class ThreeViewerEngine {
   private controls: OrbitControls;
   private mesh: THREE.Mesh | null = null;
   private geometry: THREE.BufferGeometry | null = null;
+  private cellIds: Uint32Array | null = null;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
   private container: HTMLElement;
@@ -172,6 +179,7 @@ class ThreeViewerEngine {
   private lastFrameTime = 0;
   private fpsInterval = 0;
   private abortController: AbortController | null = null;
+  private loadGeneration = 0;
 
   private manifest: DatasetManifest | null = null;
   private currentDataset: DatasetInfo | null = null;
@@ -580,6 +588,38 @@ class ThreeViewerEngine {
     if (!ds) return;
     this.currentDataset = ds;
 
+    // Only expose properties that actually exist for this dataset.  Keeping
+    // unavailable properties selected made Three.js enable vertex colors
+    // without a color buffer, rendering otherwise valid grids nearly black.
+    const propSelect = this.sidebar.querySelector("#vis-property") as HTMLSelectElement;
+    const propertyNames = new Set(Object.keys(ds.files.scalars || {}));
+    for (const step of ds.time_steps || []) {
+      Object.keys(step.scalars || {}).forEach((name) => propertyNames.add(name));
+    }
+    if (propSelect) {
+      propSelect.innerHTML = "";
+      if (propertyNames.size === 0) {
+        const opt = document.createElement("option");
+        opt.value = "";
+        opt.textContent = "无属性（统一颜色）";
+        propSelect.appendChild(opt);
+        propSelect.disabled = true;
+        this.currentProperty = "";
+      } else {
+        propSelect.disabled = false;
+        for (const name of propertyNames) {
+          const opt = document.createElement("option");
+          opt.value = name;
+          opt.textContent = name;
+          propSelect.appendChild(opt);
+        }
+        if (!propertyNames.has(this.currentProperty)) {
+          this.currentProperty = propertyNames.values().next().value || "";
+        }
+        propSelect.value = this.currentProperty;
+      }
+    }
+
     // Update time step selector
     const tsSelect = this.sidebar.querySelector("#vis-timestep") as HTMLSelectElement;
     if (tsSelect) {
@@ -600,14 +640,18 @@ class ThreeViewerEngine {
     // Abort any in-flight fetches
     if (this.abortController) this.abortController.abort();
     this.abortController = new AbortController();
+    const generation = ++this.loadGeneration;
 
-    const [posBuf, idxBuf] = await Promise.all([
+    const [posBuf, idxBuf, cellIdBuf] = await Promise.all([
       this.fetchBinary(ds.files.positions),
       this.fetchBinary(ds.files.indices),
+      this.fetchBinary(ds.files.cell_ids),
     ]);
+    if (generation !== this.loadGeneration) return;
 
     const positions = new Float32Array(posBuf);
     const indices = new Uint32Array(idxBuf);
+    this.cellIds = new Uint32Array(cellIdBuf);
 
     // Coordinate origin rebase
     let cx = 0, cy = 0, cz = 0;
@@ -637,13 +681,18 @@ class ThreeViewerEngine {
     this.geometry.computeBoundingSphere();
     this.geometry.computeVertexNormals();
 
-    await this.applyPropertyColors(indices);
+    const hasVertexColors = await this.applyPropertyColors(indices);
+    if (generation !== this.loadGeneration) return;
 
     const material = new THREE.MeshPhongMaterial({
-      vertexColors: this.geometry.getAttribute("color") !== null,
+      vertexColors: hasVertexColors,
       side: THREE.DoubleSide, transparent: true,
       opacity: this.opacity, wireframe: this.wireframe,
     });
+    // Three.js renders transparent DoubleSide materials in two passes by
+    // default.  Reservoir cells are closed surfaces, so a single pass avoids
+    // doubling draw cost and triangle statistics without changing geometry.
+    material.forceSinglePass = true;
     if (this.geometry.getAttribute("color") === null) {
       material.color = new THREE.Color(0x4488ff);
     }
@@ -652,19 +701,27 @@ class ThreeViewerEngine {
     this.scene.add(this.mesh);
 
     const bbox = this.geometry.boundingSphere!;
+    const radius = Math.max(bbox.radius, 1);
+    this.camera.near = Math.max(radius / 10_000, 0.1);
+    this.camera.far = Math.max(radius * 20, 20_000);
+    this.camera.updateProjectionMatrix();
+    this.scene.fog = new THREE.Fog(0x0d1117, radius * 4, radius * 10);
     this.controls.target.copy(bbox.center);
     this.camera.position.set(
-      bbox.center.x + bbox.radius * 1.5,
-      bbox.center.y + bbox.radius * 1.5,
-      bbox.center.z + bbox.radius * 1.5,
+      bbox.center.x + radius * 1.5,
+      bbox.center.y + radius * 1.5,
+      bbox.center.z + radius * 1.5,
     );
+    this.controls.minDistance = radius * 0.01;
+    this.controls.maxDistance = radius * 20;
     this.controls.update();
 
     this.infoEl.textContent = `${ds.name} — ${ds.n_cells.toLocaleString()} cells | 原点: (${cx.toFixed(0)}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
   }
 
-  private async applyPropertyColors(indices: Uint32Array) {
-    if (!this.geometry || !this.currentDataset) return;
+  private async applyPropertyColors(indices: Uint32Array): Promise<boolean> {
+    if (!this.geometry || !this.currentDataset) return false;
+    this.geometry.deleteAttribute("color");
 
     // Determine property file: static or time-step
     let propFile: string | undefined;
@@ -678,7 +735,7 @@ class ThreeViewerEngine {
     if (!propFile) {
       propFile = this.currentDataset.files.scalars[this.currentProperty];
     }
-    if (!propFile) return;
+    if (!propFile) return false;
 
     const propBuf = await this.fetchBinary(propFile);
     const isFloat = propFile.endsWith(".f32");
@@ -686,12 +743,12 @@ class ThreeViewerEngine {
     // Try Worker for color computation
     if (this.workerManager.isAvailable()) {
       const result = await this.workerManager.computeColors(
-        propBuf, indices.buffer, this.currentColormap,
+        propBuf, indices.slice().buffer, this.currentColormap,
         this.geometry.getAttribute("position").count, isFloat,
       );
       if (result) {
         this.geometry.setAttribute("color", new THREE.BufferAttribute(result.colors, 3));
-        return;
+        return true;
       }
     }
 
@@ -728,14 +785,16 @@ class ThreeViewerEngine {
       colors[i * 3] /= cnt; colors[i * 3 + 1] /= cnt; colors[i * 3 + 2] /= cnt;
     }
     this.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    return true;
   }
 
   private async reloadPropertyColors() {
     if (!this.mesh || !this.currentDataset || !this.geometry) return;
     const indices = this.geometry.getIndex() as THREE.BufferAttribute;
-    await this.applyPropertyColors(indices.array as Uint32Array);
+    const hasVertexColors = await this.applyPropertyColors(indices.array as Uint32Array);
     const mat = this.mesh.material as THREE.MeshPhongMaterial;
-    mat.vertexColors = true;
+    mat.vertexColors = hasVertexColors;
+    if (!hasVertexColors) mat.color.set(0x4488ff);
     mat.needsUpdate = true;
   }
 
@@ -778,19 +837,21 @@ class ThreeViewerEngine {
     this.infoEl.textContent = "运行基准测试中... (5秒)";
     const times: number[] = [];
     const start = performance.now();
-    let count = 0;
+    let previous = 0;
     const measure = () => {
       const now = performance.now();
-      if (this.lastFrameTime > 0) times.push(now - this.lastFrameTime);
-      this.lastFrameTime = now;
-      count++;
+      if (previous > 0) times.push(now - previous);
+      previous = now;
       if (now - start < 5000) {
         requestAnimationFrame(measure);
       } else {
         times.sort((a, b) => a - b);
         const p50 = times[Math.floor(times.length * 0.5)] || 0;
         const p95 = times[Math.floor(times.length * 0.95)] || 0;
-        const fps = 1000 / (times.reduce((a, b) => a + b, 0) / times.length);
+        const average = times.length
+          ? times.reduce((a, b) => a + b, 0) / times.length
+          : Infinity;
+        const fps = Number.isFinite(average) ? 1000 / average : 0;
         const heap = (performance as any).memory?.usedJSHeapSize;
         const heapMB = heap ? `${(heap / 1024 / 1024).toFixed(0)} MB` : "N/A";
         this.infoEl.textContent = `基准: P50=${p50.toFixed(1)}ms P95=${p95.toFixed(1)}ms FPS=${fps.toFixed(0)} Heap=${heapMB}`;
@@ -810,7 +871,6 @@ class ThreeViewerEngine {
         }).catch(() => {});
       }
     };
-    this.lastFrameTime = 0;
     requestAnimationFrame(measure);
   }
 
@@ -890,18 +950,19 @@ class ThreeViewerEngine {
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const intersects = this.raycaster.intersectObject(this.mesh);
     if (intersects.length > 0) {
-      const face = intersects[0].face!;
-      const triIdx = Math.floor(face.a / 12);
+      const triangleIndex = intersects[0].faceIndex ?? 0;
+      const cellOffset = Math.floor(triangleIndex / 12);
+      const cellId = this.cellIds?.[cellOffset] ?? cellOffset;
       const pt = intersects[0].point;
       const realX = pt.x + this.origin[0];
       const realY = pt.y + this.origin[1];
       const realZ = pt.z + this.origin[2];
-      this.infoEl.textContent = `Cell ID: ${triIdx} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
+      this.infoEl.textContent = `Cell ID: ${cellId} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
 
       // Cross-view selection sync
       if (this.onSelectionCallback) {
         this.onSelectionCallback({
-          type: "cell", id: String(triIdx),
+          type: "cell", id: String(cellId),
           coords: [realX, realY, realZ],
         });
       }
@@ -955,6 +1016,7 @@ class ThreeViewerEngine {
   // ─── Dispose ──────────────────────────────────────────────────────
 
   dispose() {
+    this.loadGeneration++;
     if (this.animationId) cancelAnimationFrame(this.animationId);
     if (this.abortController) this.abortController.abort();
     this.renderer.domElement.removeEventListener("click", this.onCanvasClick);

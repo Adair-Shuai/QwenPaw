@@ -967,194 +967,211 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
     );
 
     const isInlineImage = Boolean(
-      info.binaryUrl && ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff", "tif"].includes(info.extension || ""),
+      info.binaryUrl &&
+        [
+          "png",
+          "jpg",
+          "jpeg",
+          "gif",
+          "webp",
+          "bmp",
+          "svg",
+          "tiff",
+          "tif",
+        ].includes(info.extension || ""),
     );
 
     return (
       <div key={info.toolCallId} style={{ minWidth: 0 }}>
-      {isInlineImage && (
-        <div style={{ marginBottom: 8 }}>
-          <MediaPreview media={{ type: "image", url: info.binaryUrl!, name: info.fileName }} />
-        </div>
-      )}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 2,
-          minHeight: 58,
-          padding: "8px 10px",
-          borderRadius: 8,
-          border: `1px solid ${c.borderSecondary}`,
-          background: c.fillQuaternary,
-          transition: "all 0.15s ease",
-          overflow: "hidden",
-          width: "100%",
-          minWidth: 0,
-          boxSizing: "border-box",
-        }}
-      >
+        {isInlineImage && (
+          <div style={{ marginBottom: 8 }}>
+            <MediaPreview
+              media={{
+                type: "image",
+                url: info.binaryUrl!,
+                name: info.fileName,
+              }}
+            />
+          </div>
+        )}
         <div
-          onClick={() => handleOpenInWorkspace(info)}
           style={{
             display: "flex",
             alignItems: "center",
-            gap: 8,
-            flex: 1,
+            gap: 2,
+            minHeight: 58,
+            padding: "8px 10px",
+            borderRadius: 8,
+            border: `1px solid ${c.borderSecondary}`,
+            background: c.fillQuaternary,
+            transition: "all 0.15s ease",
+            overflow: "hidden",
+            width: "100%",
             minWidth: 0,
-            cursor: "pointer",
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.parentElement!.style.borderColor = opColor;
-            e.currentTarget.parentElement!.style.background = isDark
-              ? `rgba(255,255,255,0.06)`
-              : `${opColor}0a`;
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.parentElement!.style.borderColor = c.borderSecondary;
-            e.currentTarget.parentElement!.style.background = c.fillQuaternary;
+            boxSizing: "border-box",
           }}
         >
-          <span
+          <div
+            onClick={() => handleOpenInWorkspace(info)}
             style={{
-              fontSize: 18,
-              color: opColor,
-              flexShrink: 0,
               display: "flex",
               alignItems: "center",
+              gap: 8,
+              flex: 1,
+              minWidth: 0,
+              cursor: "pointer",
+            }}
+            onMouseEnter={(e) => {
+              e.currentTarget.parentElement!.style.borderColor = opColor;
+              e.currentTarget.parentElement!.style.background = isDark
+                ? `rgba(255,255,255,0.06)`
+                : `${opColor}0a`;
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.parentElement!.style.borderColor =
+                c.borderSecondary;
+              e.currentTarget.parentElement!.style.background =
+                c.fillQuaternary;
             }}
           >
-            {extIcon}
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              title={info.fileName}
+            <span
               style={{
-                fontSize: 13,
-                fontWeight: 500,
-                overflow: "hidden",
-                textOverflow: "ellipsis",
-                whiteSpace: "nowrap",
-                color: c.text,
-              }}
-            >
-              {info.fileName}
-            </div>
-            <div
-              style={{
-                fontSize: 11,
-                color: c.textTertiary,
+                fontSize: 18,
+                color: opColor,
+                flexShrink: 0,
                 display: "flex",
                 alignItems: "center",
-                gap: 4,
-                minWidth: 0,
-                overflow: "hidden",
-                whiteSpace: "nowrap",
               }}
             >
-              <span
+              {extIcon}
+            </span>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div
+                title={info.fileName}
                 style={{
-                  minWidth: 0,
+                  fontSize: 13,
+                  fontWeight: 500,
                   overflow: "hidden",
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
+                  color: c.text,
                 }}
               >
-                {(info.extension || "file").toUpperCase()} ·{" "}
-                {formatFileSize(info.fileSize)}
-              </span>
-              <span style={{ flexShrink: 0 }}>·</span>
-              <span style={{ color: opColor, flexShrink: 0 }}>
-                已生成
-              </span>
+                {info.fileName}
+              </div>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: c.textTertiary,
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 4,
+                  minWidth: 0,
+                  overflow: "hidden",
+                  whiteSpace: "nowrap",
+                }}
+              >
+                <span
+                  style={{
+                    minWidth: 0,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
+                  {(info.extension || "file").toUpperCase()} ·{" "}
+                  {formatFileSize(info.fileSize)}
+                </span>
+                <span style={{ flexShrink: 0 }}>·</span>
+                <span style={{ color: opColor, flexShrink: 0 }}>已生成</span>
+              </div>
             </div>
           </div>
+          <Tooltip title="预览">
+            <button
+              aria-label={`预览 ${info.fileName}`}
+              onClick={() => handleOpenInWorkspace(info)}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                width: 26,
+                height: 26,
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                borderRadius: 4,
+                color: c.textQuaternary,
+              }}
+            >
+              <EyeOutlined style={{ fontSize: 14 }} />
+            </button>
+          </Tooltip>
+          <Tooltip title="下载">
+            <button
+              aria-label={`下载 ${info.fileName}`}
+              disabled={downloading}
+              onClick={(e) => {
+                e.stopPropagation();
+                void handleDownload(info);
+              }}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: downloading ? "wait" : "pointer",
+                width: 26,
+                height: 26,
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                borderRadius: 4,
+                color: c.textQuaternary,
+              }}
+            >
+              {downloading ? (
+                <LoadingOutlined style={{ fontSize: 14 }} />
+              ) : (
+                <DownloadOutlined style={{ fontSize: 14 }} />
+              )}
+            </button>
+          </Tooltip>
+          <Tooltip title="在文件管理器中显示">
+            <button
+              aria-label={`定位 ${info.fileName}`}
+              onClick={(e) => {
+                e.stopPropagation();
+                handleRevealInFileManager(info);
+              }}
+              style={{
+                border: "none",
+                background: "transparent",
+                cursor: "pointer",
+                width: 26,
+                height: 26,
+                padding: 0,
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                flexShrink: 0,
+                borderRadius: 4,
+                color: c.textQuaternary,
+                transition: "color 0.15s ease",
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.color = opColor;
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.color = c.textQuaternary;
+              }}
+            >
+              <FolderOpenOutlined style={{ fontSize: 14 }} />
+            </button>
+          </Tooltip>
         </div>
-        <Tooltip title="预览">
-          <button
-            aria-label={`预览 ${info.fileName}`}
-            onClick={() => handleOpenInWorkspace(info)}
-            style={{
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              width: 26,
-              height: 26,
-              padding: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              borderRadius: 4,
-              color: c.textQuaternary,
-            }}
-          >
-            <EyeOutlined style={{ fontSize: 14 }} />
-          </button>
-        </Tooltip>
-        <Tooltip title="下载">
-          <button
-            aria-label={`下载 ${info.fileName}`}
-            disabled={downloading}
-            onClick={(e) => {
-              e.stopPropagation();
-              void handleDownload(info);
-            }}
-            style={{
-              border: "none",
-              background: "transparent",
-              cursor: downloading ? "wait" : "pointer",
-              width: 26,
-              height: 26,
-              padding: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              borderRadius: 4,
-              color: c.textQuaternary,
-            }}
-          >
-            {downloading ? (
-              <LoadingOutlined style={{ fontSize: 14 }} />
-            ) : (
-              <DownloadOutlined style={{ fontSize: 14 }} />
-            )}
-          </button>
-        </Tooltip>
-        <Tooltip title="在文件管理器中显示">
-          <button
-            aria-label={`定位 ${info.fileName}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              handleRevealInFileManager(info);
-            }}
-            style={{
-              border: "none",
-              background: "transparent",
-              cursor: "pointer",
-              width: 26,
-              height: 26,
-              padding: 0,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "center",
-              flexShrink: 0,
-              borderRadius: 4,
-              color: c.textQuaternary,
-              transition: "color 0.15s ease",
-            }}
-            onMouseEnter={(e) => {
-              e.currentTarget.style.color = opColor;
-            }}
-            onMouseLeave={(e) => {
-              e.currentTarget.style.color = c.textQuaternary;
-            }}
-          >
-            <FolderOpenOutlined style={{ fontSize: 14 }} />
-          </button>
-        </Tooltip>
-      </div>
       </div>
     );
   };

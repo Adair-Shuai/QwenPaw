@@ -39,8 +39,18 @@ function makeValidResult(): string {
         kind: "Stack",
         props: { gap: 12 },
         children: [
-          { nodeId: "n2", kind: "Text", props: { value: "Hello" }, children: [] },
-          { nodeId: "n3", kind: "Text", props: { value: "World" }, children: [] },
+          {
+            nodeId: "n2",
+            kind: "Text",
+            props: { value: "Hello" },
+            children: [],
+          },
+          {
+            nodeId: "n3",
+            kind: "Text",
+            props: { value: "World" },
+            children: [],
+          },
         ],
       },
     },
@@ -62,9 +72,7 @@ describe("GenUiToolCall", () => {
     const props = {
       data: {
         status: "in_progress",
-        content: [
-          { data: { name: "emit_ui_tree", call_id: "c1" } },
-        ],
+        content: [{ data: { name: "emit_ui_tree", call_id: "c1" } }],
       },
     };
     const { container } = render(React.createElement(GenUiToolCall, props));

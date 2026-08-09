@@ -24,22 +24,90 @@ beforeEach(() => {
       React,
       antd: {
         Card: ({ children, title }: any) =>
-          React.createElement("div", { className: "antd-card" }, title ? React.createElement("div", null, title) : null, children),
-        Divider: ({ children }: any) => React.createElement("hr", null, children),
-        Badge: ({ count }: any) => React.createElement("span", { className: "antd-badge" }, count),
-        Tag: ({ children, color }: any) => React.createElement("span", { className: `antd-tag ${color}` }, children),
-        Progress: ({ percent }: any) => React.createElement("div", { className: "antd-progress" }, `${percent}%`),
-        Table: ({ dataSource, columns }: any) =>
-          React.createElement("table", { className: "antd-table" },
-            React.createElement("thead", null, React.createElement("tr", null, columns?.map((c: any) => React.createElement("th", { key: c.key }, c.title)))),
-            React.createElement("tbody", null, dataSource?.map((row: any) => React.createElement("tr", { key: row.key }, columns?.map((c: any) => React.createElement("td", { key: c.key }, row[c.dataIndex]))))),
+          React.createElement(
+            "div",
+            { className: "antd-card" },
+            title ? React.createElement("div", null, title) : null,
+            children,
           ),
-        List: ({ children }: any) => React.createElement("ul", { className: "antd-list" }, children),
-        Typography: ({ children }: any) => React.createElement("div", { className: "antd-typography" }, children),
-        Alert: ({ message, description }: any) => React.createElement("div", { className: "antd-alert" }, message, description),
-        Button: ({ children, onClick }: any) => React.createElement("button", { onClick, className: "antd-button" }, children),
-        Input: (props: any) => React.createElement("input", { ...props, className: "antd-input" }),
-        Select: ({ children, onChange, value }: any) => React.createElement("select", { className: "antd-select", value, onChange: (event: any) => onChange?.(event.target.value) }, children),
+        Divider: ({ children }: any) =>
+          React.createElement("hr", null, children),
+        Badge: ({ count }: any) =>
+          React.createElement("span", { className: "antd-badge" }, count),
+        Tag: ({ children, color }: any) =>
+          React.createElement(
+            "span",
+            { className: `antd-tag ${color}` },
+            children,
+          ),
+        Progress: ({ percent }: any) =>
+          React.createElement(
+            "div",
+            { className: "antd-progress" },
+            `${percent}%`,
+          ),
+        Table: ({ dataSource, columns }: any) =>
+          React.createElement(
+            "table",
+            { className: "antd-table" },
+            React.createElement(
+              "thead",
+              null,
+              React.createElement(
+                "tr",
+                null,
+                columns?.map((c: any) =>
+                  React.createElement("th", { key: c.key }, c.title),
+                ),
+              ),
+            ),
+            React.createElement(
+              "tbody",
+              null,
+              dataSource?.map((row: any) =>
+                React.createElement(
+                  "tr",
+                  { key: row.key },
+                  columns?.map((c: any) =>
+                    React.createElement("td", { key: c.key }, row[c.dataIndex]),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        List: ({ children }: any) =>
+          React.createElement("ul", { className: "antd-list" }, children),
+        Typography: ({ children }: any) =>
+          React.createElement(
+            "div",
+            { className: "antd-typography" },
+            children,
+          ),
+        Alert: ({ message, description }: any) =>
+          React.createElement(
+            "div",
+            { className: "antd-alert" },
+            message,
+            description,
+          ),
+        Button: ({ children, onClick }: any) =>
+          React.createElement(
+            "button",
+            { onClick, className: "antd-button" },
+            children,
+          ),
+        Input: (props: any) =>
+          React.createElement("input", { ...props, className: "antd-input" }),
+        Select: ({ children, onChange, value }: any) =>
+          React.createElement(
+            "select",
+            {
+              className: "antd-select",
+              value,
+              onChange: (event: any) => onChange?.(event.target.value),
+            },
+            children,
+          ),
       },
     },
   };
@@ -47,8 +115,15 @@ beforeEach(() => {
 
 describe("GenUiTreeView — Interaction", () => {
   it("keeps a standalone input editable", () => {
-    const node: GenUiNode = { nodeId: "name", kind: "Input", props: { label: "姓名", value: "" }, children: [] };
-    const { getByLabelText } = render(React.createElement(GenUiTreeView, { node }));
+    const node: GenUiNode = {
+      nodeId: "name",
+      kind: "Input",
+      props: { label: "姓名", value: "" },
+      children: [],
+    };
+    const { getByLabelText } = render(
+      React.createElement(GenUiTreeView, { node }),
+    );
     const input = getByLabelText("姓名") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "张三" } });
     expect(input.value).toBe("张三");
@@ -58,14 +133,39 @@ describe("GenUiTreeView — Interaction", () => {
     const sendMessage = vi.fn(() => true);
     (window as any).QwenPaw.chat = { sendMessage };
     const node: GenUiNode = {
-      nodeId: "form1", kind: "Form",
-      props: { title: "登记", submitLabel: "提交", action: { type: "send_message", payload: { content: "姓名={{name}}，阶段={{phase}}" } } },
+      nodeId: "form1",
+      kind: "Form",
+      props: {
+        title: "登记",
+        submitLabel: "提交",
+        action: {
+          type: "send_message",
+          payload: { content: "姓名={{name}}，阶段={{phase}}" },
+        },
+      },
       children: [
-        { nodeId: "name", kind: "Input", props: { name: "name", label: "姓名", required: true }, children: [] },
-        { nodeId: "phase", kind: "Select", props: { name: "phase", label: "阶段", value: "一期", options: ["一期", "二期"] }, children: [] },
+        {
+          nodeId: "name",
+          kind: "Input",
+          props: { name: "name", label: "姓名", required: true },
+          children: [],
+        },
+        {
+          nodeId: "phase",
+          kind: "Select",
+          props: {
+            name: "phase",
+            label: "阶段",
+            value: "一期",
+            options: ["一期", "二期"],
+          },
+          children: [],
+        },
       ],
     };
-    const { getByLabelText, getByText } = render(React.createElement(GenUiTreeView, { node }));
+    const { getByLabelText, getByText } = render(
+      React.createElement(GenUiTreeView, { node }),
+    );
     fireEvent.change(getByLabelText("姓名"), { target: { value: "张三" } });
     fireEvent.click(getByText("提交"));
     expect(sendMessage).toHaveBeenCalledWith("姓名=张三，阶段=一期");
@@ -75,9 +175,19 @@ describe("GenUiTreeView — Interaction", () => {
   it("blocks a required form submission and shows feedback", () => {
     const sendMessage = vi.fn(() => true);
     (window as any).QwenPaw.chat = { sendMessage };
-    const node: GenUiNode = { nodeId: "form1", kind: "Form", props: {}, children: [
-      { nodeId: "name", kind: "Input", props: { name: "name", label: "姓名", required: true }, children: [] },
-    ] };
+    const node: GenUiNode = {
+      nodeId: "form1",
+      kind: "Form",
+      props: {},
+      children: [
+        {
+          nodeId: "name",
+          kind: "Input",
+          props: { name: "name", label: "姓名", required: true },
+          children: [],
+        },
+      ],
+    };
     const { getByText } = render(React.createElement(GenUiTreeView, { node }));
     fireEvent.click(getByText("提交"));
     expect(sendMessage).not.toHaveBeenCalled();
@@ -87,21 +197,52 @@ describe("GenUiTreeView — Interaction", () => {
   it("uses a field label as a readable legacy form key", () => {
     const sendMessage = vi.fn(() => true);
     (window as any).QwenPaw.chat = { sendMessage };
-    const node: GenUiNode = { nodeId: "form1", kind: "Form", props: { action: { type: "submit_form" } }, children: [
-      { nodeId: "generated-id", kind: "Input", props: { label: "姓名", value: "默认用户" }, children: [] },
-    ] };
+    const node: GenUiNode = {
+      nodeId: "form1",
+      kind: "Form",
+      props: { action: { type: "submit_form" } },
+      children: [
+        {
+          nodeId: "generated-id",
+          kind: "Input",
+          props: { label: "姓名", value: "默认用户" },
+          children: [],
+        },
+      ],
+    };
     const { getByText } = render(React.createElement(GenUiTreeView, { node }));
     fireEvent.click(getByText("提交"));
-    expect(sendMessage).toHaveBeenCalledWith(expect.stringContaining("姓名: 默认用户"));
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.stringContaining("姓名: 默认用户"),
+    );
   });
 
   it("updates standalone switch and slider controls", () => {
-    const tree: GenUiNode = { nodeId: "stack", kind: "Stack", props: {}, children: [
-      { nodeId: "switch", kind: "Switch", props: { label: "启用", checked: false }, children: [] },
-      { nodeId: "slider", kind: "Slider", props: { label: "阈值", value: 20, min: 0, max: 100 }, children: [] },
-    ] };
-    const { container, getByRole } = render(React.createElement(GenUiTreeView, { node: tree }));
-    const checkbox = container.querySelector('input[type="checkbox"]') as HTMLInputElement;
+    const tree: GenUiNode = {
+      nodeId: "stack",
+      kind: "Stack",
+      props: {},
+      children: [
+        {
+          nodeId: "switch",
+          kind: "Switch",
+          props: { label: "启用", checked: false },
+          children: [],
+        },
+        {
+          nodeId: "slider",
+          kind: "Slider",
+          props: { label: "阈值", value: 20, min: 0, max: 100 },
+          children: [],
+        },
+      ],
+    };
+    const { container, getByRole } = render(
+      React.createElement(GenUiTreeView, { node: tree }),
+    );
+    const checkbox = container.querySelector(
+      'input[type="checkbox"]',
+    ) as HTMLInputElement;
     fireEvent.click(checkbox);
     expect(checkbox.checked).toBe(true);
     const slider = getByRole("slider") as HTMLInputElement;
@@ -110,16 +251,71 @@ describe("GenUiTreeView — Interaction", () => {
   });
 
   it("recomputes a polynomial chart when a coefficient slider changes", () => {
-    const tree: GenUiNode = { nodeId: "root", kind: "Stack", props: {}, children: [
-      { nodeId: "a", kind: "Slider", props: { name: "a", label: "a", value: 1, min: -2, max: 2, step: 0.1 }, children: [] },
-      { nodeId: "b", kind: "Slider", props: { name: "b", label: "b", value: 0 }, children: [] },
-      { nodeId: "c", kind: "Slider", props: { name: "c", label: "c", value: -4 }, children: [] },
-      { nodeId: "d", kind: "Slider", props: { name: "d", label: "d", value: 0 }, children: [] },
-      { nodeId: "e", kind: "Slider", props: { name: "e", label: "e", value: 2 }, children: [] },
-      { nodeId: "chart", kind: "Chart", props: { chart: "line", generator: { type: "polynomial", coefficients: ["a", "b", "c", "d", "e"], xMin: -2, xMax: 2, samples: 21 } }, children: [] },
-    ] };
+    const tree: GenUiNode = {
+      nodeId: "root",
+      kind: "Stack",
+      props: {},
+      children: [
+        {
+          nodeId: "a",
+          kind: "Slider",
+          props: {
+            name: "a",
+            label: "a",
+            value: 1,
+            min: -2,
+            max: 2,
+            step: 0.1,
+          },
+          children: [],
+        },
+        {
+          nodeId: "b",
+          kind: "Slider",
+          props: { name: "b", label: "b", value: 0 },
+          children: [],
+        },
+        {
+          nodeId: "c",
+          kind: "Slider",
+          props: { name: "c", label: "c", value: -4 },
+          children: [],
+        },
+        {
+          nodeId: "d",
+          kind: "Slider",
+          props: { name: "d", label: "d", value: 0 },
+          children: [],
+        },
+        {
+          nodeId: "e",
+          kind: "Slider",
+          props: { name: "e", label: "e", value: 2 },
+          children: [],
+        },
+        {
+          nodeId: "chart",
+          kind: "Chart",
+          props: {
+            chart: "line",
+            generator: {
+              type: "polynomial",
+              coefficients: ["a", "b", "c", "d", "e"],
+              xMin: -2,
+              xMax: 2,
+              samples: 21,
+            },
+          },
+          children: [],
+        },
+      ],
+    };
     const { container, getAllByRole } = render(
-      React.createElement(GenUiInteractionProvider, { node: tree }, React.createElement(GenUiTreeView, { node: tree })),
+      React.createElement(
+        GenUiInteractionProvider,
+        { node: tree },
+        React.createElement(GenUiTreeView, { node: tree }),
+      ),
     );
     const before = container.querySelector("polyline")?.getAttribute("points");
     fireEvent.change(getAllByRole("slider")[0], { target: { value: "-1" } });
@@ -141,7 +337,9 @@ describe("GenUiTreeView — Unknown Nodes", () => {
       children: [],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
-    expect(container.textContent).toContain("Unknown component: NonExistentKind");
+    expect(container.textContent).toContain(
+      "Unknown component: NonExistentKind",
+    );
   });
 
   it("renders unknown kind with dashed border style", () => {
@@ -167,7 +365,9 @@ describe("GenUiTreeView — Unknown Nodes", () => {
     const { container } = render(React.createElement(GenUiTreeView, { node }));
     // React escapes HTML by default
     expect(container.querySelector("script")).toBeNull();
-    expect(container.textContent).toContain("Unknown component: <script>alert(1)</script>");
+    expect(container.textContent).toContain(
+      "Unknown component: <script>alert(1)</script>",
+    );
   });
 });
 
@@ -226,7 +426,12 @@ describe("GenUiTreeView — Known Nodes", () => {
       kind: "Card",
       props: { title: "My Card" },
       children: [
-        { nodeId: "n2", kind: "Text", props: { value: "Content" }, children: [] },
+        {
+          nodeId: "n2",
+          kind: "Text",
+          props: { value: "Content" },
+          children: [],
+        },
       ],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
@@ -310,8 +515,14 @@ describe("GenUiTreeView — Chart Rendering", () => {
 
   it("anchors positive and negative bars at the zero baseline", () => {
     const node: GenUiNode = {
-      nodeId: "n1", kind: "Chart",
-      props: { chart: "bar", categories: ["A", "B"], series: [{ name: "Values", values: [-10, 10] }], height: 200 },
+      nodeId: "n1",
+      kind: "Chart",
+      props: {
+        chart: "bar",
+        categories: ["A", "B"],
+        series: [{ name: "Values", values: [-10, 10] }],
+        height: 200,
+      },
       children: [],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
@@ -509,7 +720,11 @@ describe("GenUiTreeView — Edge Cases", () => {
     const node: GenUiNode = {
       nodeId: "n1",
       kind: "Alert",
-      props: { title: "Warning", message: "Something went wrong", severity: "warning" },
+      props: {
+        title: "Warning",
+        message: "Something went wrong",
+        severity: "warning",
+      },
       children: [],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
@@ -578,8 +793,18 @@ describe("GenUiTreeView — Edge Cases", () => {
           kind: "TableRow",
           props: {},
           children: [
-            { nodeId: "n3", kind: "TableCell", props: { value: "Foo" }, children: [] },
-            { nodeId: "n4", kind: "TableCell", props: { value: "42" }, children: [] },
+            {
+              nodeId: "n3",
+              kind: "TableCell",
+              props: { value: "Foo" },
+              children: [],
+            },
+            {
+              nodeId: "n4",
+              kind: "TableCell",
+              props: { value: "42" },
+              children: [],
+            },
           ],
         },
       ],
@@ -593,13 +818,30 @@ describe("GenUiTreeView — Edge Cases", () => {
 
   it("preserves zero and false table cell values", () => {
     const node: GenUiNode = {
-      nodeId: "n1", kind: "Table", props: { headers: ["Zero", "False"] },
-      children: [{
-        nodeId: "row", kind: "TableRow", props: {}, children: [
-          { nodeId: "zero", kind: "TableCell", props: { value: 0 }, children: [] },
-          { nodeId: "false", kind: "TableCell", props: { value: false }, children: [] },
-        ],
-      }],
+      nodeId: "n1",
+      kind: "Table",
+      props: { headers: ["Zero", "False"] },
+      children: [
+        {
+          nodeId: "row",
+          kind: "TableRow",
+          props: {},
+          children: [
+            {
+              nodeId: "zero",
+              kind: "TableCell",
+              props: { value: 0 },
+              children: [],
+            },
+            {
+              nodeId: "false",
+              kind: "TableCell",
+              props: { value: false },
+              children: [],
+            },
+          ],
+        },
+      ],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
     expect(container.textContent).toContain("0");

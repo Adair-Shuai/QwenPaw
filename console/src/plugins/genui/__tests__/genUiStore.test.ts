@@ -67,7 +67,12 @@ describe("parseGenUiResult", () => {
   });
 
   it("returns null when ok is false", () => {
-    const errorResult = { ok: false, kind: "genui_error", error_code: "test", message: "err" };
+    const errorResult = {
+      ok: false,
+      kind: "genui_error",
+      error_code: "test",
+      message: "err",
+    };
     expect(parseGenUiResult(JSON.stringify(errorResult))).toBeNull();
   });
 
@@ -115,31 +120,41 @@ describe("extractGenUiResults", () => {
   });
 
   it("extracts from a nested V1 envelope with TextBlock-wrapped output", () => {
-    const output = [{
-      wrapper: {
-        type: "plugin_call_output",
-        content: [
-          { data: { name: "emit_ui_tree", call_id: "c1" } },
-          { data: { output: JSON.stringify([{ type: "text", text: validOutput }]) } },
-        ],
+    const output = [
+      {
+        wrapper: {
+          type: "plugin_call_output",
+          content: [
+            { data: { name: "emit_ui_tree", call_id: "c1" } },
+            {
+              data: {
+                output: JSON.stringify([{ type: "text", text: validOutput }]),
+              },
+            },
+          ],
+        },
       },
-    }];
+    ];
     const results = extractGenUiResults(output);
     expect(results).toHaveLength(1);
     expect(results[0].ui_id).toBe("ui_test123");
   });
 
   it("extracts AgentScope tool_result blocks from replayed responses", () => {
-    const output = [{
-      role: "assistant",
-      content: [{
-        type: "tool_result",
-        id: "c1",
-        name: "emit_ui_tree",
-        output: [{ type: "text", text: validOutput }],
-        state: "success",
-      }],
-    }];
+    const output = [
+      {
+        role: "assistant",
+        content: [
+          {
+            type: "tool_result",
+            id: "c1",
+            name: "emit_ui_tree",
+            output: [{ type: "text", text: validOutput }],
+            state: "success",
+          },
+        ],
+      },
+    ];
     const results = extractGenUiResults(output);
     expect(results).toHaveLength(1);
     expect(results[0].ui_id).toBe("ui_test123");
@@ -192,7 +207,15 @@ describe("extractGenUiResults", () => {
                 kind: "genui",
                 ui_id: "ui_second",
                 revision: 1,
-                tree: { schemaVersion: "1", root: { nodeId: "n1", kind: "Text", props: { value: "hi" }, children: [] } },
+                tree: {
+                  schemaVersion: "1",
+                  root: {
+                    nodeId: "n1",
+                    kind: "Text",
+                    props: { value: "hi" },
+                    children: [],
+                  },
+                },
               }),
               call_id: "c2",
             },
@@ -341,10 +364,7 @@ describe("extractGenUiResults", () => {
     const output = [
       {
         type: "plugin_call_output",
-        content: [
-          { other: "no data key" },
-          { data: { output: validOutput } },
-        ],
+        content: [{ other: "no data key" }, { data: { output: validOutput } }],
       },
     ];
     const results = extractGenUiResults(output);

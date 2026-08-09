@@ -185,7 +185,7 @@ describe("OfficeDocRenderer", () => {
         status: 200,
         json: () =>
           Promise.resolve({
-            html: "<html><head></head><body><div class=\"file-title\">test.xlsx</div></body></html>",
+            html: '<html><head></head><body><div class="file-title">test.xlsx</div></body></html>',
             engine: "officecli",
           }),
       }),
