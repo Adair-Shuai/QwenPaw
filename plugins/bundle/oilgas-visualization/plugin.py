@@ -47,7 +47,12 @@ class OilGasVisualizationPlugin:
                         tool_func=func,
                         description=description,
                         icon="🛢️",
-                        enabled=False,
+                        # The visualization command bridge is the plugin's
+                        # primary Agent integration.  Enable it by default so
+                        # natural-language scene operations work immediately;
+                        # users can still disable individual tools in the
+                        # host's tool policy/configuration.
+                        enabled=True,
                         tool_type=tool_type,
                         target_param=target_param,
                         startup_priority=95,

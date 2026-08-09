@@ -24,6 +24,12 @@
       "reservoir-grid",
       "property-coloring",
       "cell-picking",
+      "cell-details",
+      "property-statistics",
+      "csv-export",
+      "well-trajectory",
+      "surface-and-section",
+      "network-visualization",
       "benchmark",
       "roff-support",
       "egrid-support"

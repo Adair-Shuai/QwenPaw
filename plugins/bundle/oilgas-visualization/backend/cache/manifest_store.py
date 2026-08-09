@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -27,42 +28,45 @@ class ManifestStore:
         self.bin_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_path = bin_dir / "manifest.json"
         self.cache = cache
+        self._lock = threading.RLock()
 
     def read(self) -> dict[str, Any]:
         """Read manifest with error recovery."""
-        try:
-            if self.manifest_path.exists():
-                return json.loads(self.manifest_path.read_text())
-        except json.JSONDecodeError:
-            logger.warning("Manifest corrupted, starting fresh")
-        return {"version": 1, "datasets": []}
+        with self._lock:
+            try:
+                if self.manifest_path.exists():
+                    return json.loads(self.manifest_path.read_text())
+            except (json.JSONDecodeError, OSError):
+                logger.warning("Manifest unreadable or corrupted, starting fresh")
+            return {"version": 1, "datasets": []}
 
     def upsert(self, dataset_info: dict[str, Any]) -> None:
         """Insert or replace a dataset in the manifest (atomic)."""
-        manifest = self.read()
+        with self._lock:
+            manifest = self.read()
 
-        existing_ids = {d["id"] for d in manifest["datasets"]}
-        if dataset_info["id"] in existing_ids:
-            manifest["datasets"] = [
-                dataset_info if d["id"] == dataset_info["id"] else d
-                for d in manifest["datasets"]
-            ]
-        else:
-            manifest["datasets"].insert(0, dataset_info)
-
-        self._atomic_write(manifest)
+            existing_ids = {d["id"] for d in manifest["datasets"]}
+            if dataset_info["id"] in existing_ids:
+                manifest["datasets"] = [
+                    dataset_info if d["id"] == dataset_info["id"] else d
+                    for d in manifest["datasets"]
+                ]
+            else:
+                manifest["datasets"].insert(0, dataset_info)
+            self._atomic_write(manifest)
 
     def remove(self, dataset_id: str) -> bool:
         """Remove a dataset from the manifest."""
-        manifest = self.read()
-        before = len(manifest["datasets"])
-        manifest["datasets"] = [
-            d for d in manifest["datasets"] if d["id"] != dataset_id
-        ]
-        if len(manifest["datasets"]) < before:
-            self._atomic_write(manifest)
-            return True
-        return False
+        with self._lock:
+            manifest = self.read()
+            before = len(manifest["datasets"])
+            manifest["datasets"] = [
+                d for d in manifest["datasets"] if d["id"] != dataset_id
+            ]
+            if len(manifest["datasets"]) < before:
+                self._atomic_write(manifest)
+                return True
+            return False
 
     def get_dataset(self, dataset_id: str) -> dict[str, Any] | None:
         """Get a single dataset by ID."""

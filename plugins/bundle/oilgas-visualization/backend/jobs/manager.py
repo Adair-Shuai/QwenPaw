@@ -14,6 +14,7 @@ import os
 import threading
 import time
 import uuid
+import json
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -175,17 +176,46 @@ class JobManager:
                 elif extension in {".dlis"}:
                     from ..readers.dlis import DlisReader
                     ds_info = DlisReader().read(str(upload_path), name, bin_dir)
+                elif extension in {".vtk", ".vtu", ".pvtu", ".vti", ".xdmf"}:
+                    from ..readers.vtk import VtkReader
+                    ds_info = VtkReader().read(str(upload_path), name, bin_dir)
                 elif extension in {".csv", ".arrow", ".parquet"}:
                     from ..readers.tabular_network import TabularNetworkReader
                     ds_info = TabularNetworkReader().read(
                         str(upload_path), name, bin_dir,
                     )
+                elif extension == ".json":
+                    # Lightweight, dependency-free interchange for workspace
+                    # previews.  The explicit type keeps ambiguous JSON from
+                    # being silently interpreted as the wrong oilfield object.
+                    payload = json.loads(upload_path.read_text())
+                    object_type = str(payload.get("type", "")).lower()
+                    if object_type in {"surface", "horizon", "fault"}:
+                        from ..converters.surface import convert_regular_surface
+                        ds_info = convert_regular_surface(
+                            payload["x"], payload["y"], payload["z"], name, bin_dir,
+                        )
+                    elif object_type in {"well", "wellbore", "trajectory"}:
+                        from ..converters.wellbore import convert_well_trajectory
+                        points = payload.get("points", payload)
+                        ds_info = convert_well_trajectory(
+                            points["md"], points["tvd"], points["x"], points["y"], name, bin_dir,
+                        )
+                    elif object_type in {"network", "pipeline", "pipe"}:
+                        from ..converters.network import convert_network_to_lines
+                        ds_info = convert_network_to_lines(payload["segments"], name, bin_dir)
+                    else:
+                        raise ValueError(
+                            "Unsupported JSON oilfield object; expected type surface, well, or network",
+                        )
                 else:
                     raise ValueError(f"Unsupported import format: {extension or 'none'}")
 
                 if job.status == "cancelled":
                     job.finished_at = time.time()
                     return
+
+                ds_info.setdefault("metadata", {})["managed"] = True
 
                 job.stages[1].finished_at = time.time()
                 job.stages[1].status = "completed"

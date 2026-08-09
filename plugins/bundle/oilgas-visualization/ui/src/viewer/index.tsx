@@ -194,6 +194,7 @@ class ThreeViewerEngine {
   private currentTimeStep = 0;
   private apiBase: string;
   private authToken: string | undefined;
+  private readonly viewerId = `viewer-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
   private origin: [number, number, number] = [0, 0, 0];
 
   // Filters
@@ -201,6 +202,7 @@ class ThreeViewerEngine {
   private filterJ: [number, number] = [0, Infinity];
   private filterK: [number, number] = [0, Infinity];
   private filterPropertyRange: [number, number] = [-Infinity, Infinity];
+  private filterBounds: [number, number, number, number, number, number] | null = null;
 
   // Worker
   private workerManager = new WorkerManager();
@@ -210,6 +212,13 @@ class ThreeViewerEngine {
   private hudEl: HTMLElement;
   private infoEl: HTMLElement;
   private objectTree: HTMLElement;
+  private detailsEl: HTMLElement;
+  private legendEl: HTMLElement;
+  private toolbarEl: HTMLElement;
+  private sidebarCollapsed = false;
+  private objectTreeCollapsed = false;
+  private scalarMin = 0;
+  private scalarMax = 1;
 
   // Selection sync callback (for cross-view sync)
   private onSelectionCallback: ((sel: { type: string; id: string; coords?: [number, number, number] }) => void) | null = null;
@@ -256,6 +265,9 @@ class ThreeViewerEngine {
     this.objectTree = this.buildObjectTree();
     this.hudEl = this.buildHud();
     this.infoEl = this.buildInfoBar();
+    this.detailsEl = this.buildDetailsPanel();
+    this.legendEl = this.buildLegend();
+    this.toolbarEl = this.buildToolbar();
 
     this.startLoop();
     this.init();
@@ -291,11 +303,24 @@ class ThreeViewerEngine {
     const sidebar = document.createElement("div");
     Object.assign(sidebar.style, {
       position: "absolute", top: "0", left: "0", bottom: "0",
-      width: "280px", background: "rgba(13,17,23,0.92)",
+      width: "252px", background: "rgba(13,17,23,0.96)",
       borderRight: "1px solid #30363d", overflowY: "auto",
       padding: "12px", boxSizing: "border-box", zIndex: "100",
       fontFamily: "-apple-system, sans-serif", color: "#c9d1d9", fontSize: "13px",
     } as CSSStyleDeclaration);
+    sidebar.className = "oilgas-panel oilgas-control-panel";
+
+    const collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.textContent = "‹";
+    collapseBtn.title = "收起控制面板";
+    collapseBtn.setAttribute("aria-label", "收起控制面板");
+    Object.assign(collapseBtn.style, this.iconButtonStyle);
+    collapseBtn.style.position = "absolute";
+    collapseBtn.style.top = "8px";
+    collapseBtn.style.right = "6px";
+    collapseBtn.addEventListener("click", () => this.toggleSidebar(collapseBtn));
+    sidebar.appendChild(collapseBtn);
 
     const title = document.createElement("div");
     Object.assign(title.style, {
@@ -310,6 +335,7 @@ class ThreeViewerEngine {
     const dsSelect = document.createElement("select");
     Object.assign(dsSelect.style, this.selectStyle);
     dsSelect.id = "vis-dataset";
+    dsSelect.setAttribute("aria-label", "数据集");
     dsSelect.addEventListener("change", () => this.loadDataset(dsSelect.value));
     sidebar.appendChild(dsSelect);
 
@@ -318,6 +344,7 @@ class ThreeViewerEngine {
     const propSelect = document.createElement("select");
     Object.assign(propSelect.style, this.selectStyle);
     propSelect.id = "vis-property";
+    propSelect.setAttribute("aria-label", "属性");
     for (const p of ["porosity", "permeability", "facies"]) {
       const opt = document.createElement("option");
       opt.value = p; opt.textContent = p;
@@ -334,6 +361,7 @@ class ThreeViewerEngine {
     const tsSelect = document.createElement("select");
     Object.assign(tsSelect.style, this.selectStyle);
     tsSelect.id = "vis-timestep";
+    tsSelect.setAttribute("aria-label", "时间步");
     tsSelect.innerHTML = '<option value="0">静态</option>';
     tsSelect.addEventListener("change", () => {
       this.currentTimeStep = parseInt(tsSelect.value);
@@ -346,6 +374,7 @@ class ThreeViewerEngine {
     const cmSelect = document.createElement("select");
     Object.assign(cmSelect.style, this.selectStyle);
     cmSelect.id = "vis-colormap";
+    cmSelect.setAttribute("aria-label", "色图");
     for (const cm of ["viridis", "plasma", "turbo", "gray"]) {
       const opt = document.createElement("option");
       opt.value = cm; opt.textContent = cm;
@@ -364,7 +393,10 @@ class ThreeViewerEngine {
     Object.assign(opacitySlider.style, { width: "100%", marginBottom: "12px" });
     opacitySlider.addEventListener("input", () => {
       this.opacity = parseInt(opacitySlider.value) / 100;
-      if (this.mesh) (this.mesh.material as any).opacity = this.opacity;
+      if (this.mesh) {
+        (this.mesh.material as any).opacity = this.opacity;
+        (this.mesh.material as any).needsUpdate = true;
+      }
     });
     sidebar.appendChild(opacitySlider);
 
@@ -392,6 +424,7 @@ class ThreeViewerEngine {
       input.type = "text"; input.placeholder = axis;
       input.id = `vis-filter-${axis.toLowerCase()}`;
       input.style.cssText = "width:100%; padding:4px; background:#161b22; border:1px solid #30363d; border-radius:4px; color:#c9d1d9; font-size:11px; text-align:center;";
+      input.addEventListener("input", () => this.applyFilters());
       input.addEventListener("change", () => this.applyFilters());
       filterDiv.appendChild(input);
     }
@@ -405,14 +438,45 @@ class ThreeViewerEngine {
     minInput.type = "number"; minInput.placeholder = "min"; minInput.step = "0.01";
     minInput.id = "vis-filter-prop-min";
     Object.assign(minInput.style, this.selectStyle);
+    minInput.addEventListener("input", () => this.applyFilters());
     minInput.addEventListener("change", () => this.applyFilters());
     const maxInput = document.createElement("input");
     maxInput.type = "number"; maxInput.placeholder = "max"; maxInput.step = "0.01";
     maxInput.id = "vis-filter-prop-max";
     Object.assign(maxInput.style, this.selectStyle);
+    maxInput.addEventListener("input", () => this.applyFilters());
     maxInput.addEventListener("change", () => this.applyFilters());
     propRangeDiv.appendChild(minInput); propRangeDiv.appendChild(maxInput);
     sidebar.appendChild(propRangeDiv);
+
+    // Section / slice creation
+    sidebar.appendChild(this.createLabel("剖面/切片"));
+    const polylineInput = document.createElement("input");
+    polylineInput.type = "text";
+    polylineInput.placeholder = "x,y; x,y; ...";
+    polylineInput.id = "vis-polyline";
+    Object.assign(polylineInput.style, this.selectStyle);
+    sidebar.appendChild(polylineInput);
+    const zRangeDiv = document.createElement("div");
+    zRangeDiv.style.cssText = "display:flex;gap:4px;margin-bottom:6px;";
+    const zMinInput = document.createElement("input");
+    zMinInput.type = "number"; zMinInput.placeholder = "z min"; zMinInput.value = "0";
+    zMinInput.id = "vis-section-z-min";
+    Object.assign(zMinInput.style, this.selectStyle);
+    const zMaxInput = document.createElement("input");
+    zMaxInput.type = "number"; zMaxInput.placeholder = "z max"; zMaxInput.value = "5000";
+    zMaxInput.id = "vis-section-z-max";
+    Object.assign(zMaxInput.style, this.selectStyle);
+    zRangeDiv.appendChild(zMinInput); zRangeDiv.appendChild(zMaxInput);
+    sidebar.appendChild(zRangeDiv);
+    const sectionBtn = document.createElement("button");
+    sectionBtn.textContent = "生成垂直剖面";
+    Object.assign(sectionBtn.style, {
+      width: "100%", padding: "7px", background: "#30363d", color: "#c9d1d9",
+      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
+    });
+    sectionBtn.addEventListener("click", () => this.createIntersectionFromUI());
+    sidebar.appendChild(sectionBtn);
 
     // Benchmark buttons
     sidebar.appendChild(this.createLabel("性能测试"));
@@ -445,6 +509,24 @@ class ThreeViewerEngine {
     ssBtn.addEventListener("click", () => this.captureScreenshot());
     sidebar.appendChild(ssBtn);
 
+    const statsBtn = document.createElement("button");
+    statsBtn.textContent = "属性统计";
+    Object.assign(statsBtn.style, {
+      width: "100%", padding: "8px", background: "#30363d", color: "#c9d1d9",
+      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "13px", marginBottom: "8px",
+    });
+    statsBtn.addEventListener("click", () => this.showDatasetStats());
+    sidebar.appendChild(statsBtn);
+
+    const exportBtn = document.createElement("button");
+    exportBtn.textContent = "导出属性 CSV";
+    Object.assign(exportBtn.style, {
+      width: "100%", padding: "8px", background: "#30363d", color: "#c9d1d9",
+      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "13px",
+    });
+    exportBtn.addEventListener("click", () => this.exportDataset());
+    sidebar.appendChild(exportBtn);
+
     this.container.appendChild(sidebar);
     return sidebar;
   }
@@ -453,11 +535,24 @@ class ThreeViewerEngine {
     const tree = document.createElement("div");
     Object.assign(tree.style, {
       position: "absolute", top: "0", left: "280px", bottom: "0",
-      width: "200px", background: "rgba(13,17,23,0.88)",
+      width: "176px", background: "rgba(13,17,23,0.92)",
       borderRight: "1px solid #30363d", overflowY: "auto",
-      padding: "8px", zIndex: "90",
+      padding: "8px", zIndex: "90", boxSizing: "border-box",
       fontFamily: "-apple-system, sans-serif", color: "#8b949e", fontSize: "12px",
     } as CSSStyleDeclaration);
+    tree.className = "oilgas-panel oilgas-object-panel";
+
+    const collapseBtn = document.createElement("button");
+    collapseBtn.type = "button";
+    collapseBtn.textContent = "‹";
+    collapseBtn.title = "收起对象树";
+    collapseBtn.setAttribute("aria-label", "收起对象树");
+    Object.assign(collapseBtn.style, this.iconButtonStyle);
+    collapseBtn.style.position = "absolute";
+    collapseBtn.style.top = "8px";
+    collapseBtn.style.right = "6px";
+    collapseBtn.addEventListener("click", () => this.toggleObjectTree(collapseBtn));
+    tree.appendChild(collapseBtn);
 
     const title = document.createElement("div");
     title.style.cssText = "font-weight:600; color:#58a6ff; margin-bottom:8px; font-size:13px;";
@@ -476,8 +571,101 @@ class ThreeViewerEngine {
   private createLabel(text: string): HTMLElement {
     const el = document.createElement("div");
     el.textContent = text;
-    el.style.cssText = "margin: 12px 0 4px; font-size: 12px; color: #8b949e; text-transform: uppercase;";
+    el.style.cssText = "margin: 14px 0 5px; padding-top: 8px; border-top: 1px solid rgba(48,54,61,.55); font-size: 11px; letter-spacing: .04em; color: #8b949e;";
     return el;
+  }
+
+  private iconButtonStyle: Partial<CSSStyleDeclaration> = {
+    width: "24px", height: "24px", padding: "0", background: "#21262d",
+    color: "#c9d1d9", border: "1px solid #484f58", borderRadius: "5px",
+    cursor: "pointer", fontSize: "16px", lineHeight: "20px",
+  };
+
+  private toggleSidebar(button: HTMLButtonElement) {
+    this.sidebarCollapsed = !this.sidebarCollapsed;
+    const width = this.sidebarCollapsed ? "42px" : "252px";
+    this.sidebar.style.width = width;
+    for (const child of Array.from(this.sidebar.children)) {
+      if (child !== button) (child as HTMLElement).style.display = this.sidebarCollapsed ? "none" : "";
+    }
+    button.style.display = "block";
+    button.textContent = this.sidebarCollapsed ? "›" : "‹";
+    button.title = this.sidebarCollapsed ? "展开控制面板" : "收起控制面板";
+    button.setAttribute("aria-label", button.title);
+    this.updatePanelOffsets();
+  }
+
+  private toggleObjectTree(button: HTMLButtonElement) {
+    this.objectTreeCollapsed = !this.objectTreeCollapsed;
+    const width = this.objectTreeCollapsed ? "34px" : "176px";
+    this.objectTree.style.width = width;
+    this.objectTree.style.padding = this.objectTreeCollapsed ? "0" : "8px";
+    for (const child of Array.from(this.objectTree.children)) {
+      if (child !== button) (child as HTMLElement).style.display = this.objectTreeCollapsed ? "none" : "";
+    }
+    button.style.display = this.objectTreeCollapsed ? "block" : "block";
+    button.style.right = this.objectTreeCollapsed ? "5px" : "6px";
+    button.textContent = this.objectTreeCollapsed ? "›" : "‹";
+    button.title = this.objectTreeCollapsed ? "展开对象树" : "收起对象树";
+    button.setAttribute("aria-label", button.title);
+    this.updatePanelOffsets();
+  }
+
+  private updatePanelOffsets() {
+    const sidebarWidth = this.sidebarCollapsed ? 42 : 252;
+    const treeWidth = this.objectTreeCollapsed ? 34 : 176;
+    this.objectTree.style.left = `${sidebarWidth}px`;
+    this.toolbarEl?.style.setProperty("left", `${sidebarWidth + treeWidth + 12}px`);
+    this.infoEl.style.left = `${sidebarWidth + 8}px`;
+  }
+
+  private buildToolbar(): HTMLElement {
+    const toolbar = document.createElement("div");
+    Object.assign(toolbar.style, {
+      position: "absolute", top: "8px", left: "440px", right: "8px", height: "34px",
+      display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px",
+      background: "rgba(13,17,23,.78)", border: "1px solid #30363d", borderRadius: "7px",
+      zIndex: "20", pointerEvents: "none", boxSizing: "border-box",
+    } as CSSStyleDeclaration);
+    toolbar.className = "oilgas-toolbar";
+    const label = document.createElement("span");
+    label.textContent = "场景";
+    label.style.cssText = "font-size:11px;color:#8b949e;margin-right:4px;";
+    toolbar.appendChild(label);
+    const addButton = (text: string, title: string, action: () => void) => {
+      const btn = document.createElement("button");
+      btn.type = "button"; btn.textContent = text; btn.title = title; btn.setAttribute("aria-label", title);
+      Object.assign(btn.style, { ...this.iconButtonStyle, width: "auto", padding: "0 8px", fontSize: "11px", pointerEvents: "auto" });
+      btn.addEventListener("click", action); toolbar.appendChild(btn);
+    };
+    addButton("适配", "适配当前数据", () => this.fitView());
+    addButton("重置", "重置视图", () => this.resetView());
+    addButton("对象", "切换对象树", () => {
+      const btn = this.objectTree.querySelector("button") as HTMLButtonElement | null;
+      if (btn) this.toggleObjectTree(btn);
+    });
+    const spacer = document.createElement("span"); spacer.style.flex = "1"; toolbar.appendChild(spacer);
+    const hint = document.createElement("span"); hint.textContent = "拖拽旋转 · 滚轮缩放 · 点击拾取";
+    hint.style.cssText = "font-size:11px;color:#8b949e;white-space:nowrap;"; toolbar.appendChild(hint);
+    this.container.appendChild(toolbar);
+    return toolbar;
+  }
+
+  private fitView() {
+    if (!this.geometry?.boundingSphere) return;
+    const bbox = this.geometry.boundingSphere;
+    const radius = Math.max(bbox.radius, 1);
+    this.controls.target.copy(bbox.center);
+    this.camera.position.set(bbox.center.x + radius * 1.5, bbox.center.y + radius * 1.5, bbox.center.z + radius * 1.5);
+    this.controls.update();
+  }
+
+  private resetView() {
+    this.fitView();
+    this.currentColormap = "viridis";
+    const select = this.sidebar.querySelector("#vis-colormap") as HTMLSelectElement | null;
+    if (select) select.value = this.currentColormap;
+    void this.reloadPropertyColors();
   }
 
   private selectStyle: Partial<CSSStyleDeclaration> = {
@@ -523,6 +711,133 @@ class ThreeViewerEngine {
     return el;
   }
 
+  private buildDetailsPanel(): HTMLElement {
+    const el = document.createElement("div");
+    Object.assign(el.style, {
+      position: "absolute", right: "8px", bottom: "8px", width: "270px",
+      maxHeight: "260px", overflowY: "auto", display: "none",
+      background: "rgba(13,17,23,0.94)", border: "1px solid #30363d",
+      borderRadius: "8px", padding: "10px", fontSize: "12px", lineHeight: "1.5",
+      color: "#c9d1d9", zIndex: "12", whiteSpace: "pre-wrap",
+    } as CSSStyleDeclaration);
+    this.container.appendChild(el);
+    return el;
+  }
+
+  private buildLegend(): HTMLElement {
+    const el = document.createElement("div");
+    Object.assign(el.style, {
+      position: "absolute", right: "8px", bottom: "278px", width: "178px",
+      padding: "9px 10px", background: "rgba(13,17,23,.88)", border: "1px solid #30363d",
+      borderRadius: "7px", zIndex: "11", color: "#c9d1d9", fontSize: "11px",
+      pointerEvents: "none", boxSizing: "border-box",
+    } as CSSStyleDeclaration);
+    const title = document.createElement("div");
+    title.dataset.legendTitle = "true";
+    title.style.cssText = "display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;color:#c9d1d9;font-weight:600;";
+    el.appendChild(title);
+    const gradient = document.createElement("div");
+    gradient.style.cssText = "height:8px;border-radius:4px;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);";
+    el.appendChild(gradient);
+    const range = document.createElement("div");
+    range.dataset.legendRange = "true";
+    range.style.cssText = "display:flex;justify-content:space-between;margin-top:4px;color:#8b949e;font-family:monospace;";
+    el.appendChild(range);
+    this.container.appendChild(el);
+    this.updateLegend();
+    return el;
+  }
+
+  private updateLegend() {
+    if (!this.legendEl) return;
+    const title = this.legendEl.querySelector("[data-legend-title]");
+    const range = this.legendEl.querySelector("[data-legend-range]");
+    if (title) title.textContent = `${this.currentProperty || "统一颜色"} · ${this.currentColormap}`;
+    if (range) range.textContent = `${this.scalarMin.toPrecision(4)}  —  ${this.scalarMax.toPrecision(4)}`;
+    this.legendEl.style.display = this.currentProperty ? "block" : "none";
+  }
+
+  private showDetails(text: string) {
+    this.detailsEl.textContent = text;
+    this.detailsEl.style.display = "block";
+  }
+
+  private async showDatasetStats() {
+    if (!this.currentDataset || !this.currentProperty) {
+      this.showDetails("当前数据集没有可统计属性");
+      return;
+    }
+    try {
+      const stats = await this.fetchJson(
+        `/datasets/${encodeURIComponent(this.currentDataset.id)}/stats?property=${encodeURIComponent(this.currentProperty)}`,
+      );
+      this.showDetails([
+        `属性统计 · ${stats.property}`,
+        `样本数: ${Number(stats.count).toLocaleString()}`,
+        `最小值: ${Number(stats.min).toPrecision(6)}`,
+        `P10: ${Number(stats.p10).toPrecision(6)}`,
+        `中位数: ${Number(stats.p50).toPrecision(6)}`,
+        `平均值: ${Number(stats.mean).toPrecision(6)}`,
+        `P90: ${Number(stats.p90).toPrecision(6)}`,
+        `最大值: ${Number(stats.max).toPrecision(6)}`,
+      ].join("\n"));
+    } catch (err) {
+      this.showDetails(`统计失败: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async exportDataset() {
+    if (!this.currentDataset) return;
+    const url = `${this.apiBase}/datasets/${encodeURIComponent(this.currentDataset.id)}/export?format=csv`;
+    const response = await fetch(url, { headers: this.authHeaders() });
+    if (!response.ok) {
+      this.showDetails(`导出失败: HTTP ${response.status}`);
+      return;
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = objectUrl;
+    link.download = `${this.currentDataset.id}.csv`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+    this.showDetails("属性 CSV 已导出");
+  }
+
+  private async createIntersectionFromUI() {
+    if (!this.currentDataset) return;
+    const input = this.sidebar.querySelector("#vis-polyline") as HTMLInputElement;
+    const zMin = Number((this.sidebar.querySelector("#vis-section-z-min") as HTMLInputElement)?.value || 0);
+    const zMax = Number((this.sidebar.querySelector("#vis-section-z-max") as HTMLInputElement)?.value || 5000);
+    const points = (input?.value || "").split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
+      const [x, y] = part.split(",").map(Number);
+      return [x, y] as [number, number];
+    });
+    if (points.length < 2 || points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y)) || !Number.isFinite(zMin) || !Number.isFinite(zMax) || zMax <= zMin) {
+      this.showDetails("剖面参数无效：至少需要两个 x,y 点，且 z max > z min");
+      return;
+    }
+    const response = await fetch(
+      `${this.apiBase}/datasets/${encodeURIComponent(this.currentDataset.id)}/intersections`,
+      {
+        method: "POST", headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          polyline_x: points.map(([x]) => x), polyline_y: points.map(([, y]) => y),
+          z_min: zMin, z_max: zMax, name: `section_${Date.now()}`,
+        }),
+      },
+    );
+    if (!response.ok) {
+      this.showDetails(`剖面生成失败: HTTP ${response.status}`);
+      return;
+    }
+    const result = await response.json();
+    this.manifest = await this.fetchJson("/manifest");
+    this.updateObjectTree();
+    this.showDetails(`剖面已生成：${result.name}`);
+    await this.loadDataset(result.id);
+  }
+
   // ─── Data loading ──────────────────────────────────────────────────
 
   private async init() {
@@ -539,7 +854,13 @@ class ThreeViewerEngine {
         }
         this.updateObjectTree();
         if (this.manifest.datasets.length > 0) {
-          await this.loadDataset(this.manifest.datasets[0].id);
+          const preferred = this.manifest.datasets.find((item) =>
+            !["intersection", "well-intersection"].includes(item.source || "") &&
+            Object.keys(item.files.scalars || {}).length > 0,
+          ) || this.manifest.datasets.find((item) =>
+            !["intersection", "well-intersection"].includes(item.source || ""),
+          ) || this.manifest.datasets[0];
+          await this.loadDataset(preferred.id);
         }
       }
     } catch (err) {
@@ -568,19 +889,21 @@ class ThreeViewerEngine {
       for (const dataset of datasets) {
         const item = document.createElement("div");
         item.textContent = dataset.name;
-        item.style.cssText = "padding:2px 0 2px 16px;cursor:pointer;color:#8b949e;";
+        item.dataset.datasetId = dataset.id;
+        item.title = `${dataset.name} · ${dataset.n_cells.toLocaleString()} cells`;
+        item.style.cssText = "padding:4px 6px 4px 14px;margin:1px 0;border-radius:4px;cursor:pointer;color:#8b949e;line-height:1.35;";
         item.addEventListener("click", () => this.loadDataset(dataset.id));
-        item.addEventListener("mouseenter", () => { item.style.color = "#58a6ff"; });
-        item.addEventListener("mouseleave", () => { item.style.color = "#8b949e"; });
+        item.addEventListener("mouseenter", () => { if (item.dataset.selected !== "true") item.style.color = "#58a6ff"; });
+        item.addEventListener("mouseleave", () => { if (item.dataset.selected !== "true") item.style.color = "#8b949e"; });
         group.appendChild(item);
       }
       list.appendChild(group);
     };
     const datasets = this.manifest.datasets;
-    appendGroup("📋 网格", datasets.filter((item) => !["las", "dlis", "network", "surface", "intersection", "well-intersection"].includes(item.source || "")));
-    appendGroup("🛢 井", datasets.filter((item) => ["las", "dlis"].includes(item.source || "")));
+    appendGroup("📋 网格", datasets.filter((item) => !["las", "dlis", "network", "network-tube", "wellbore", "surface", "intersection", "well-intersection"].includes(item.source || "")));
+    appendGroup("🛢 井", datasets.filter((item) => ["las", "dlis", "wellbore"].includes(item.source || "")));
     appendGroup("📐 层面/剖面", datasets.filter((item) => ["surface", "intersection", "well-intersection"].includes(item.source || "")));
-    appendGroup("🔗 管网", datasets.filter((item) => item.source === "network"));
+    appendGroup("🔗 管网", datasets.filter((item) => ["network", "network-tube"].includes(item.source || "")));
   }
 
   private async loadDataset(datasetId: string) {
@@ -588,8 +911,20 @@ class ThreeViewerEngine {
     const ds = this.manifest.datasets.find((d) => d.id === datasetId);
     if (!ds) return;
     this.currentDataset = ds;
+    // Filters are dataset-specific.  Clear them on a manual or Agent-driven
+    // dataset switch so stale I/J/K/property values cannot appear active
+    // while the newly loaded mesh is actually unfiltered.
+    this.resetFilters();
+    this.detailsEl.style.display = "none";
     const datasetSelect = this.sidebar.querySelector("#vis-dataset") as HTMLSelectElement;
     if (datasetSelect) datasetSelect.value = datasetId;
+    for (const item of Array.from(this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"))) {
+      const selected = item.dataset.datasetId === datasetId;
+      item.dataset.selected = String(selected);
+      item.style.color = selected ? "#e6edf3" : "#8b949e";
+      item.style.background = selected ? "rgba(31,111,235,.24)" : "transparent";
+      item.style.boxShadow = selected ? "inset 2px 0 #58a6ff" : "none";
+    }
 
     // Only expose properties that actually exist for this dataset.  Keeping
     // unavailable properties selected made Three.js enable vertex colors
@@ -684,7 +1019,7 @@ class ThreeViewerEngine {
     this.geometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
     this.geometry.setIndex(new THREE.BufferAttribute(indices, 1));
     this.geometry.computeBoundingSphere();
-    const isLineDataset = ["las", "dlis", "network"].includes(ds.source || "");
+    const isLineDataset = ["las", "dlis", "network", "wellbore"].includes(ds.source || "");
     if (!isLineDataset) this.geometry.computeVertexNormals();
 
     const hasVertexColors = await this.applyPropertyColors(indices);
@@ -697,7 +1032,7 @@ class ThreeViewerEngine {
         transparent: true,
         opacity: this.opacity,
       });
-      this.mesh = ds.source === "network"
+      this.mesh = ["network", "wellbore"].includes(ds.source || "")
         ? new THREE.LineSegments(this.geometry, material)
         : new THREE.Line(this.geometry, material);
     } else {
@@ -733,10 +1068,27 @@ class ThreeViewerEngine {
     this.infoEl.textContent = `${ds.name} — ${ds.n_cells.toLocaleString()} cells | 原点: (${cx.toFixed(0)}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
   }
 
+  private resetFilters() {
+    for (const id of [
+      "#vis-filter-i", "#vis-filter-j", "#vis-filter-k",
+      "#vis-filter-prop-min", "#vis-filter-prop-max",
+    ]) {
+      const input = this.sidebar.querySelector(id) as HTMLInputElement | null;
+      if (input) input.value = "";
+    }
+    this.filterI = [0, Infinity];
+    this.filterJ = [0, Infinity];
+    this.filterK = [0, Infinity];
+    this.filterPropertyRange = [-Infinity, Infinity];
+    this.filterBounds = null;
+  }
+
   private async applyPropertyColors(indices: Uint32Array): Promise<boolean> {
     if (!this.geometry || !this.currentDataset) return false;
     this.geometry.deleteAttribute("color");
     this.currentScalarValues = null;
+    this.scalarMin = 0;
+    this.scalarMax = 1;
 
     // Determine property file: static or time-step
     let propFile: string | undefined;
@@ -750,7 +1102,10 @@ class ThreeViewerEngine {
     if (!propFile) {
       propFile = this.currentDataset.files.scalars[this.currentProperty];
     }
-    if (!propFile) return false;
+    if (!propFile) {
+      this.updateLegend();
+      return false;
+    }
 
     const propBuf = await this.fetchBinary(propFile);
     const isFloat = propFile.endsWith(".f32");
@@ -760,7 +1115,7 @@ class ThreeViewerEngine {
       : new Uint32Array(retainedScalars);
 
     const vertexCount = this.geometry.getAttribute("position").count;
-    if (["las", "dlis", "network"].includes(this.currentDataset.source || "") &&
+    if (["las", "dlis", "network", "wellbore"].includes(this.currentDataset.source || "") &&
         this.currentScalarValues.length === vertexCount) {
       let minimum = Infinity;
       let maximum = -Infinity;
@@ -768,6 +1123,8 @@ class ThreeViewerEngine {
         minimum = Math.min(minimum, value);
         maximum = Math.max(maximum, value);
       }
+      this.scalarMin = minimum;
+      this.scalarMax = maximum;
       const range = maximum - minimum || 1;
       const colors = new Float32Array(vertexCount * 3);
       for (let index = 0; index < vertexCount; index++) {
@@ -780,6 +1137,7 @@ class ThreeViewerEngine {
         colors[index * 3 + 2] = b;
       }
       this.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+      this.updateLegend();
       return true;
     }
 
@@ -790,7 +1148,10 @@ class ThreeViewerEngine {
         this.geometry.getAttribute("position").count, isFloat,
       );
       if (result) {
+        this.scalarMin = result.smin;
+        this.scalarMax = result.smax;
         this.geometry.setAttribute("color", new THREE.BufferAttribute(result.colors, 3));
+        this.updateLegend();
         return true;
       }
     }
@@ -804,6 +1165,8 @@ class ThreeViewerEngine {
       if (v > smax) smax = v;
     }
     const srange = smax - smin || 1;
+    this.scalarMin = smin;
+    this.scalarMax = smax;
 
     const positions = this.geometry.getAttribute("position") as THREE.BufferAttribute;
     const nVerts = positions.count;
@@ -828,6 +1191,7 @@ class ThreeViewerEngine {
       colors[i * 3] /= cnt; colors[i * 3 + 1] /= cnt; colors[i * 3 + 2] /= cnt;
     }
     this.geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
+    this.updateLegend();
     return true;
   }
 
@@ -860,6 +1224,10 @@ class ThreeViewerEngine {
       minVal ? parseFloat(minVal) : -Infinity,
       maxVal ? parseFloat(maxVal) : Infinity,
     ];
+    if (this.filterPropertyRange[0] > this.filterPropertyRange[1]) {
+      this.infoEl.textContent = "属性范围无效：最小值不能大于最大值";
+      return;
+    }
 
     const dimensions = this.currentDataset.grid_dims;
     const indicesPerCell = this.cellIds.length
@@ -890,7 +1258,27 @@ class ThreeViewerEngine {
         scalar >= this.filterPropertyRange[0] &&
         scalar <= this.filterPropertyRange[1]
       );
-      if (!passesIJK || !passesProperty) continue;
+      let passesBounds = true;
+      if (this.filterBounds && this.geometry) {
+        const position = this.geometry.getAttribute("position") as THREE.BufferAttribute;
+        const start = offset * indicesPerCell;
+        const vertexSet = new Set<number>();
+        for (let index = start; index < start + indicesPerCell; index++) vertexSet.add(this.baseIndices[index]);
+        let count = 0; let cx = 0; let cy = 0; let cz = 0;
+        for (const vertex of vertexSet) {
+          if (vertex >= position.count) continue;
+          cx += position.getX(vertex) + this.origin[0];
+          cy += position.getY(vertex) + this.origin[1];
+          cz += position.getZ(vertex) + this.origin[2];
+          count++;
+        }
+        if (count) {
+          cx /= count; cy /= count; cz /= count;
+          const [xmin, xmax, ymin, ymax, zmin, zmax] = this.filterBounds;
+          passesBounds = cx >= xmin && cx <= xmax && cy >= ymin && cy <= ymax && cz >= zmin && cz <= zmax;
+        }
+      }
+      if (!passesIJK || !passesProperty || !passesBounds) continue;
       visible.push(offset);
       const start = offset * indicesPerCell;
       for (let index = start; index < start + indicesPerCell; index++) {
@@ -907,7 +1295,12 @@ class ThreeViewerEngine {
     if (!val || val.trim() === "") return [0, Infinity];
     const parts = val.split(":");
     if (parts.length === 2) {
-      return [parseInt(parts[0]) || 0, parseInt(parts[1]) || Infinity];
+      const parsedStart = Number.parseInt(parts[0], 10);
+      const parsedEnd = Number.parseInt(parts[1], 10);
+      return [
+        Math.min(Number.isFinite(parsedStart) ? parsedStart : 0, Number.isFinite(parsedEnd) ? parsedEnd : Infinity),
+        Math.max(Number.isFinite(parsedStart) ? parsedStart : 0, Number.isFinite(parsedEnd) ? parsedEnd : Infinity),
+      ];
     }
     const n = parseInt(parts[0]);
     return isNaN(n) ? [0, Infinity] : [n, n];
@@ -981,8 +1374,15 @@ class ThreeViewerEngine {
     const dataURL = this.renderer.domElement.toDataURL("image/png");
     const link = document.createElement("a");
     link.download = `oilgas-screenshot-${Date.now()}.png`;
-    link.href = dataURL;
+    // Blob URLs are handled consistently by Chromium download surfaces,
+    // unlike large data: URLs which may be opened instead of downloaded.
+    const binary = atob(dataURL.split(",", 2)[1]);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+    link.href = objectUrl;
     link.click();
+    window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
     this.infoEl.textContent = "截图已保存";
   }
 
@@ -1024,7 +1424,7 @@ class ThreeViewerEngine {
 
   // ─── Picking with cross-view selection sync ─────────────────────────
 
-  private onCanvasClick = (event: MouseEvent) => {
+  private onCanvasClick = async (event: MouseEvent) => {
     if (!this.mesh) return;
     const rect = this.renderer.domElement.getBoundingClientRect();
     this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
@@ -1032,8 +1432,13 @@ class ThreeViewerEngine {
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const intersects = this.raycaster.intersectObject(this.mesh);
     if (intersects.length > 0) {
-      const triangleIndex = intersects[0].faceIndex ?? 0;
-      const visibleOffset = Math.floor(triangleIndex / 12);
+      const primitiveIndex = intersects[0].faceIndex ?? intersects[0].index ?? 0;
+      const primitivesPerCell = Math.max(
+        1,
+        (this.geometry.getIndex()?.count || 0) / Math.max(this.visibleCellOffsets.length, 1) /
+          (this.mesh instanceof THREE.Mesh ? 3 : 1),
+      );
+      const visibleOffset = Math.floor(primitiveIndex / primitivesPerCell);
       const cellOffset = this.visibleCellOffsets[visibleOffset] ?? visibleOffset;
       const cellId = this.cellIds?.[cellOffset] ?? cellOffset;
       const pt = intersects[0].point;
@@ -1041,6 +1446,21 @@ class ThreeViewerEngine {
       const realY = pt.y + this.origin[1];
       const realZ = pt.z + this.origin[2];
       this.infoEl.textContent = `Cell ID: ${cellId} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
+      if (this.currentDataset) {
+        try {
+          const details = await this.fetchJson(
+            `/datasets/${encodeURIComponent(this.currentDataset.id)}/cells/${cellId}`,
+          );
+          this.showDetails([
+            `Cell ${details.cell_id}`,
+            details.ijk ? `I/J/K: ${details.ijk.join(" / ")}` : "I/J/K: —",
+            details.center ? `中心: ${details.center.map((v: number) => Number(v).toFixed(2)).join(", ")}` : "中心: —",
+            ...Object.entries(details.properties || {}).map(([name, value]) => `${name}: ${Number(value).toPrecision(6)}`),
+          ].join("\n"));
+        } catch {
+          // Picking remains useful even if the detail request is unavailable.
+        }
+      }
 
       // Cross-view selection sync
       if (this.onSelectionCallback) {
@@ -1061,7 +1481,7 @@ class ThreeViewerEngine {
   private startCommandPolling() {
     const poll = async () => {
       try {
-        const payload = await this.fetchJson("/commands");
+        const payload = await this.fetchJson(`/commands?viewerId=${encodeURIComponent(this.viewerId)}`);
         for (const item of payload.commands || []) {
           await this.executeCommand(item.command, item.args || {});
         }
@@ -1134,6 +1554,37 @@ class ThreeViewerEngine {
           await this.reloadPropertyColors();
         }
         break;
+      case "set-filter": {
+        if (args.datasetId && args.datasetId !== this.currentDataset?.id) {
+          await this.loadDataset(args.datasetId);
+        }
+        const propSelect = this.sidebar.querySelector("#vis-property") as HTMLSelectElement;
+        if (args.property && propSelect && Array.from(propSelect.options).some((option) => option.value === args.property)) {
+          this.currentProperty = args.property;
+          propSelect.value = args.property;
+          await this.reloadPropertyColors();
+        }
+        const values: Record<string, string | undefined> = {
+          "#vis-filter-i": args.i, "#vis-filter-j": args.j, "#vis-filter-k": args.k,
+          "#vis-filter-prop-min": args.propertyMin == null ? "" : String(args.propertyMin),
+          "#vis-filter-prop-max": args.propertyMax == null ? "" : String(args.propertyMax),
+        };
+        for (const [selector, value] of Object.entries(values)) {
+          const input = this.sidebar.querySelector(selector) as HTMLInputElement;
+          if (input && value !== undefined) input.value = value;
+        }
+        this.filterBounds = Array.isArray(args.bounds) && args.bounds.length === 6 ? args.bounds as [number, number, number, number, number, number] : null;
+        this.applyFilters();
+        break;
+      }
+      case "show-report":
+        this.showDetails([
+          args.title || "油气可视化分析报告",
+          `数据集: ${args.dataset || args.dataset_id || "—"}`,
+          `属性: ${args.property || "—"}`,
+          ...Object.entries(args.stats || {}).map(([name, value]) => `${name}: ${value == null ? "—" : Number(value).toPrecision(6)}`),
+        ].join("\n"));
+        break;
       case "focus":
         if (args.objectType !== "cell" || !this.focusCell(String(args.objectId))) {
           this.infoEl.textContent = `无法聚焦 ${args.objectType || "object"}: ${args.objectId || ""}`;
@@ -1179,6 +1630,7 @@ class ThreeViewerEngine {
     this.renderer.setSize(w, h);
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
+    this.updatePanelOffsets();
   };
 
   // ─── Dispose ──────────────────────────────────────────────────────
@@ -1220,6 +1672,7 @@ const OilGasViewerRuntime = {
     const engine = new ThreeViewerEngine(element, options);
     return {
       update: (opts) => engine.update(opts),
+      executeCommand: (command, args) => engine.executeCommand(command, args),
       dispose: () => engine.dispose(),
     };
   },

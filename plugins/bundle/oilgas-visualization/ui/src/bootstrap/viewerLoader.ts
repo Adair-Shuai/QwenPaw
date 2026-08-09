@@ -23,6 +23,7 @@ export interface ViewerMountOptions {
 
 export interface ViewerHandle {
   update(options: Partial<ViewerMountOptions>): void;
+  executeCommand?(command: string, args: Record<string, unknown>): Promise<unknown>;
   dispose(): Promise<void> | void;
 }
 

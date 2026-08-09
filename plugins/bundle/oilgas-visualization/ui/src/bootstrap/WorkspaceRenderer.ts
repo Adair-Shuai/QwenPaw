@@ -26,6 +26,22 @@ function InlineViewer({ jobId }: { jobId: string }) {
           apiBase: host.getApiUrl("oilgas-vis"),
           authToken: host.getApiToken() || undefined,
         });
+
+        const apiBase = host.getApiUrl("oilgas-vis");
+        const token = host.getApiToken() || "";
+        for (let attempt = 0; attempt < 120 && !cancelled; attempt++) {
+          await new Promise((resolve) => setTimeout(resolve, 500));
+          const statusResponse = await fetch(`${apiBase}/imports/${jobId}`, {
+            headers: token ? { Authorization: `Bearer ${token}` } : {},
+          });
+          if (!statusResponse.ok) continue;
+          const status = await statusResponse.json();
+          if (status.status === "completed" && status.result?.id) {
+            await handleRef.current?.executeCommand?.("open", { datasetId: status.result.id });
+            break;
+          }
+          if (status.status === "failed" || status.status === "cancelled") break;
+        }
       } catch {
         // Inline load failed — user can click the button
       }
@@ -51,7 +67,10 @@ function InlineViewer({ jobId }: { jobId: string }) {
 }
 
 export function OilGasWorkspaceRenderer(props: {
-  artifact?: { workspacePath?: string; filename?: string; id?: string };
+  artifact?: { workspacePath?: string; filename?: string; id?: string; path?: string };
+  file?: { workspacePath?: string; filename?: string; path?: string };
+  workspacePath?: string;
+  filename?: string;
 }) {
   const React = getHost().React;
   const { useEffect, useState } = React;
@@ -62,8 +81,9 @@ export function OilGasWorkspaceRenderer(props: {
   const [jobId, setJobId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const fileName = props.artifact?.filename || "unknown";
-  const workspacePath = props.artifact?.workspacePath;
+  const file = props.artifact || props.file || props;
+  const fileName = file.filename || "unknown";
+  const workspacePath = file.workspacePath || file.path || props.workspacePath;
 
   useEffect(() => {
     if (!workspacePath) return;
@@ -77,10 +97,16 @@ export function OilGasWorkspaceRenderer(props: {
         const apiBase = host.getApiUrl("oilgas-vis");
         const token = host.getApiToken() || "";
 
-        const fileResp = await fetch(
-          `${apiBase}/resource/${encodeURIComponent(workspacePath)}`,
-          token ? { headers: { Authorization: `Bearer ${token}` } } : {},
-        );
+        const workspaceApi = (host as any).workspaceApi;
+        const chatApi = (host as any).chatApi;
+        const sourceUrl = workspaceApi?.getBinaryFileUrl?.(workspacePath)
+          || chatApi?.filePreviewUrl?.(workspacePath);
+        if (!sourceUrl) throw new Error("工作区文件读取接口不可用");
+        const fileResp = await fetch(sourceUrl, {
+          headers: typeof (host as any).buildAuthHeaders === "function"
+            ? (host as any).buildAuthHeaders()
+            : (token ? { Authorization: `Bearer ${token}` } : {}),
+        });
 
         if (!fileResp.ok) {
           setImporting(false);

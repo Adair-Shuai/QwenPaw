@@ -14,8 +14,9 @@
  *                    └─ Three.js + OrbitControls + rendering
  */
 
-import { getHost, isSimpleMode } from "../core/runtime";
+import { getHost } from "../core/runtime";
 import { OilGasPluginPage } from "./PluginPage";
+import { OilGasWorkspaceRenderer } from "./WorkspaceRenderer";
 
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
@@ -40,7 +41,7 @@ function buildPlugin() {
     component: OilGasPluginPage,
   });
 
-  // ── Register Menu (simple mode only) ──────────────────────────────
+  // ── Register Menu in every host mode ─────────────────────────────
   QP.menu.add(PLUGIN_ID, {
     id: "oilgas-vis.page",
     location: "primary.agentScoped",
@@ -50,11 +51,11 @@ function buildPlugin() {
       : undefined,
     route: "oilgas-vis.page",
     order: 7,
-    visible: () => isSimpleMode(),
+    visible: () => true,
   });
 
   console.info(
-    "[oilgas-vis] Plugin registered — route /oilgas-visualization, menu visible in simple mode",
+    "[oilgas-vis] Plugin registered — route /oilgas-visualization",
   );
 
   // ── Register Workspace Renderer (deferred) ────────────────────────
@@ -82,47 +83,16 @@ function buildPlugin() {
 
 function registerWorkspaceRenderer(QP: any) {
   const supported = [
-    "egrid", "grid", "init", "unrst", "roff",
-    "las", "dlis", "vtk", "vtu", "vti",
+    "egrid", "grid", "grdecl", "init", "unrst", "roff", "roffbin",
+    "las", "las3", "dlis", "vtk", "vtu", "vti", "csv", "arrow", "parquet",
+    "well.json", "surface.json", "network.json",
   ];
-
-  // We use a lightweight placeholder component that redirects
-  // to the full visualization page.
-  const React = getHost().React;
-  const PlaceholderRenderer = (props: any) => {
-    return React.createElement(
-      "div",
-      { style: { padding: 24, textAlign: "center" } },
-      React.createElement(
-        "p",
-        null,
-        "此文件类型需要打开可视化页面查看。",
-      ),
-      React.createElement(
-        "button",
-        {
-          onClick: () => {
-            window.location.href = "/oilgas-visualization";
-          },
-          style: {
-            padding: "6px 16px",
-            background: "#58a6ff",
-            color: "#fff",
-            border: "none",
-            borderRadius: 6,
-            cursor: "pointer",
-          },
-        },
-        "打开油气可视化",
-      ),
-    );
-  };
 
   try {
     QP.workspace.registerRenderer({
       id: "oilgas-visualization",
       name: "Oil & Gas Visualization",
-      component: PlaceholderRenderer,
+      component: OilGasWorkspaceRenderer,
       extensions: supported,
       mimeTypes: [
         "application/x-eclipse-grid",
@@ -130,6 +100,8 @@ function registerWorkspaceRenderer(QP: any) {
         "application/x-las",
         "application/x-dlis",
         "application/vnd.vtk",
+        "text/csv",
+        "application/vnd.apache.arrow.file",
       ],
       priority: 200,
       description: "油气三维网格、井、剖面和测井可视化",

@@ -7,9 +7,11 @@
 - **储层 3D 视图**：Three.js WebGL 渲染，支持 ROFF/EGRID 网格、属性着色、单元拾取
 - **时间步动画**：UNRST 动态属性（压力、饱和度）按时间步切换
 - **剖面生成**：沿折线生成垂直 curtain 剖面
+- **井/层面基础对象**：统一 manifest 契约支持井轨迹和规则层面 JSON 导入
 - **管网可视化**：CSV/Arrow 管网数据 3D 线/管渲染
 - **测井曲线**：LAS/DLIS 格式多曲线读取和渲染
 - **性能基准**：P50/P95/P99 帧时间测量 + 内存泄漏检测
+- **工程分析基础**：单元 I/J/K 与坐标详情、属性统计、属性 CSV 导出
 - **Agent 工具**：7 个结构化工具 + Viewer Command Bridge
 - **Web Worker**：二进制解码和颜色计算在 Worker 线程
 - **安全**：路径遍历防护、符号链接检查、原子 manifest 写入
@@ -78,6 +80,9 @@ plugins/bundle/oilgas-visualization/
 | POST | /imports/{id}/cancel | 取消任务 |
 | GET | /datasets | 数据集列表 |
 | GET | /datasets/{id}/manifest | 单数据集 manifest |
+| GET | /datasets/{id}/stats | 属性统计 |
+| GET | /datasets/{id}/cells/{cell} | 单元详情 |
+| GET | /datasets/{id}/export | JSON/CSV 导出 |
 | GET | /datasets/{id}/resources/{rid} | 单数据集资源 |
 | DELETE | /datasets/{id}/cache | 清除缓存 |
 | POST | /datasets/{id}/intersections | 生成剖面 |

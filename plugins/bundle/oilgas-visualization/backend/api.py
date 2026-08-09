@@ -25,15 +25,18 @@ Security: safe_resolve, sanitize_filename, atomic manifest write
 from __future__ import annotations
 
 import json
+import math
+import struct
+import io
+import csv
 import logging
-import os
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from fastapi import (
     APIRouter, HTTPException, UploadFile, File,
-    Request, Response, Depends,
+    Request, Response, Query,
 )
 from fastapi.responses import (
     FileResponse, JSONResponse, PlainTextResponse, StreamingResponse,
@@ -309,8 +312,10 @@ def build_router(plugin_dir: Path) -> APIRouter:
         })
 
     @router.get("/commands")
-    async def drain_viewer_commands():
-        """Return and atomically consume pending Agent viewer commands."""
+    async def drain_viewer_commands(
+        viewer_id: str = Query("default", alias="viewerId", max_length=128),
+    ):
+        """Return pending Agent commands once for this viewer instance."""
         return {
             "commands": [
                 {
@@ -318,7 +323,7 @@ def build_router(plugin_dir: Path) -> APIRouter:
                     "command": item.command,
                     "args": item.args,
                 }
-                for item in command_bus.drain()
+                for item in command_bus.drain(viewer_id)
             ],
         }
 
@@ -329,6 +334,121 @@ def build_router(plugin_dir: Path) -> APIRouter:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
         ds["resources"] = _build_resource_descriptors(ds, resource_store)
         return JSONResponse(ds)
+
+    @router.get("/datasets/{dataset_id}/stats")
+    async def dataset_property_stats(dataset_id: str, property: str = ""):
+        """Return descriptive statistics for one cached scalar property."""
+        ds = manifest_store.get_dataset(dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        filename = (ds.get("files", {}).get("scalars", {}) or {}).get(property)
+        if not filename:
+            raise HTTPException(404, f"Property not found: {property}")
+        try:
+            path = resource_store.get_path(filename)
+        except ValueError:
+            raise HTTPException(400, "Invalid property resource")
+        if not path.exists():
+            raise HTTPException(404, "Property resource is missing")
+        raw = path.read_bytes()
+        type_code = "f" if filename.endswith(".f32") else "I"
+        width = 4
+        values = struct.unpack(f"<{len(raw) // width}{type_code}", raw)
+        finite = [float(v) for v in values if math.isfinite(float(v))]
+        if not finite:
+            raise HTTPException(422, "Property contains no finite values")
+        ordered = sorted(finite)
+        percentile = lambda p: ordered[min(len(ordered) - 1, int((len(ordered) - 1) * p))]
+        return {
+            "dataset_id": dataset_id,
+            "property": property,
+            "count": len(finite),
+            "min": min(finite),
+            "max": max(finite),
+            "mean": sum(finite) / len(finite),
+            "p10": percentile(0.10),
+            "p50": percentile(0.50),
+            "p90": percentile(0.90),
+        }
+
+    @router.get("/datasets/{dataset_id}/cells/{cell_id}")
+    async def dataset_cell_details(dataset_id: str, cell_id: int):
+        """Return I/J/K, center coordinate and all scalar values for a cell."""
+        ds = manifest_store.get_dataset(dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        cell_offset = cell_id
+        cell_ids_file = ds.get("files", {}).get("cell_ids")
+        if cell_ids_file:
+            try:
+                raw_ids = resource_store.get_path(cell_ids_file).read_bytes()
+                cell_ids = struct.unpack(f"<{len(raw_ids) // 4}I", raw_ids)
+                cell_offset = cell_ids.index(cell_id)
+            except (ValueError, OSError, struct.error):
+                raise HTTPException(404, f"Cell not found: {cell_id}")
+        elif cell_id < 0 or cell_id >= int(ds.get("n_cells", 0)):
+            raise HTTPException(404, f"Cell not found: {cell_id}")
+        dims = ds.get("grid_dims") or []
+        ijk = None
+        if len(dims) == 3 and all(int(v) > 0 for v in dims):
+            ni, nj, _nk = (int(v) for v in dims)
+            ijk = [cell_id % ni + 1, (cell_id // ni) % nj + 1, cell_id // (ni * nj) + 1]
+        positions_file = ds.get("files", {}).get("positions")
+        center = None
+        if positions_file:
+            try:
+                raw = resource_store.get_path(positions_file).read_bytes()
+                positions = struct.unpack(f"<{len(raw) // 4}f", raw)
+                if len(positions) >= (cell_offset + 1) * 24:
+                    points = [positions[(cell_offset * 8 + i) * 3:(cell_offset * 8 + i + 1) * 3] for i in range(8)]
+                    center = [sum(point[axis] for point in points) / 8 for axis in range(3)]
+            except (ValueError, OSError, struct.error):
+                center = None
+        properties = {}
+        for name, filename in (ds.get("files", {}).get("scalars", {}) or {}).items():
+            try:
+                raw = resource_store.get_path(filename).read_bytes()
+                values = struct.unpack(f"<{len(raw) // 4}{'f' if filename.endswith('.f32') else 'I'}", raw)
+                if cell_offset < len(values):
+                    properties[name] = values[cell_offset]
+            except (ValueError, OSError, struct.error):
+                continue
+        return {"dataset_id": dataset_id, "cell_id": cell_id, "ijk": ijk, "center": center, "properties": properties}
+
+    @router.get("/datasets/{dataset_id}/export")
+    async def export_dataset(dataset_id: str, format: str = "json"):
+        """Export a portable manifest or a scalar-cell CSV."""
+        ds = manifest_store.get_dataset(dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        if format == "json":
+            return JSONResponse(ds)
+        if format != "csv":
+            raise HTTPException(400, "format must be json or csv")
+        output = io.StringIO()
+        fields = ["cell_id"] + list((ds.get("files", {}).get("scalars", {}) or {}).keys())
+        writer = csv.DictWriter(output, fieldnames=fields)
+        writer.writeheader()
+        columns: dict[str, tuple] = {}
+        for name, filename in (ds.get("files", {}).get("scalars", {}) or {}).items():
+            raw = resource_store.get_path(filename).read_bytes()
+            columns[name] = struct.unpack(f"<{len(raw) // 4}{'f' if filename.endswith('.f32') else 'I'}", raw)
+        export_cell_ids: tuple[int, ...] | range
+        cell_ids_file = ds.get("files", {}).get("cell_ids")
+        if cell_ids_file:
+            raw_ids = resource_store.get_path(cell_ids_file).read_bytes()
+            export_cell_ids = struct.unpack(f"<{len(raw_ids) // 4}I", raw_ids)
+        else:
+            export_cell_ids = range(int(ds.get("n_cells", 0)))
+        for cell_offset, original_cell_id in enumerate(export_cell_ids):
+            row = {"cell_id": original_cell_id}
+            for name, values in columns.items():
+                if cell_offset < len(values): row[name] = values[cell_offset]
+            writer.writerow(row)
+        return Response(
+            output.getvalue(), media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={dataset_id}.csv"},
+        )
 
     @router.get("/datasets/{dataset_id}/resources/{resource_id}")
     async def get_dataset_resource(
@@ -366,9 +486,15 @@ def build_router(plugin_dir: Path) -> APIRouter:
         if not ds:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
 
-        # Delete resource files by prefix
-        prefix = dataset_id
-        deleted = resource_store.delete_by_prefix(prefix)
+        if not ds.get("metadata", {}).get("managed", False):
+            raise HTTPException(409, "Built-in datasets cannot be deleted through cache cleanup")
+
+        deleted = 0
+        for filename in set(_get_all_files(ds).values()):
+            try:
+                deleted += int(resource_store.delete(filename))
+            except ValueError:
+                logger.warning("Skipped unsafe resource during cleanup: %s", filename)
         # Remove from manifest
         manifest_store.remove(dataset_id)
         return JSONResponse({
@@ -504,6 +630,7 @@ def _get_capabilities() -> dict[str, bool]:
         "synthetic": True, "las": has_module("lasio"),
         "dlis": has_module("dlisio"), "roff": has_module("xtgeo"),
         "eclipse": has_module("xtgeo") or has_module("resdata"),
+        "vtk": has_module("meshio"),
         "segy": has_module("segyio"), "arrow": has_module("pyarrow"),
     }
 

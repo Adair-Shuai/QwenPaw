@@ -24,7 +24,11 @@ class ResourceStore:
 
     def get_path(self, filename: str) -> Path:
         """Get the full path for a resource filename."""
-        return self.bin_dir / filename
+        candidate = (self.bin_dir / filename).resolve()
+        root = self.bin_dir.resolve()
+        if not candidate.is_relative_to(root) or candidate.parent != root:
+            raise ValueError(f"Invalid resource filename: {filename!r}")
+        return candidate
 
     def exists(self, filename: str) -> bool:
         """Check if a resource file exists."""
@@ -86,14 +90,3 @@ class ResourceStore:
             path.unlink()
             return True
         return False
-
-    def delete_by_prefix(self, prefix: str) -> int:
-        """Delete all files starting with a prefix."""
-        count = 0
-        if not self.bin_dir.exists():
-            return count
-        for f in self.bin_dir.iterdir():
-            if f.is_file() and f.name.startswith(prefix):
-                f.unlink()
-                count += 1
-        return count
