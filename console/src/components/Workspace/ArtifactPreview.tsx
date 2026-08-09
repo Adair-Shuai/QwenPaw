@@ -35,6 +35,7 @@ export interface ArtifactPreviewProps {
   onClose?: () => void;
   onOpenArtifact?: (artifact: WorkspaceArtifact) => void;
   onFullscreen?: (artifact: WorkspaceArtifact) => void;
+  hostControls?: boolean;
 }
 
 function artifactRequestHeaders(
@@ -61,6 +62,7 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
   onClose,
   onOpenArtifact,
   onFullscreen,
+  hostControls = false,
 }) => {
   const { t, i18n } = useTranslation();
   const { isDark } = useTheme();
@@ -175,8 +177,9 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
       theme: isDark ? "dark" : "light",
       locale: i18n.language,
       workspace,
+      hostControls,
     }),
-    [artifact, i18n.language, isDark, readOnly, workspace],
+    [artifact, hostControls, i18n.language, isDark, readOnly, workspace],
   );
   const RendererComponent = rendererMatch?.renderer.component;
 

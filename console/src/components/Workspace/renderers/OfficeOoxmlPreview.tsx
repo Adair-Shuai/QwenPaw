@@ -248,7 +248,8 @@ const OfficeOoxmlPreview: React.FC<{
   artifact: RendererContext["artifact"];
   theme: RendererContext["theme"];
   workspace: RendererContext["workspace"];
-}> = ({ artifact, theme, workspace }) => {
+  hostControls?: boolean;
+}> = ({ artifact, theme, workspace, hostControls }) => {
   const { t } = useTranslation();
   const isDark = theme === "dark";
   const [state, setState] = useState<PreviewState>(EMPTY_STATE);
@@ -474,27 +475,29 @@ const OfficeOoxmlPreview: React.FC<{
               {sheet.rows.length} 行
             </span>
           </Space>
-          <Space size={2}>
-            <Tooltip title={t("workspace.download", "下载")}>
-              <Button
-                size="small"
-                type="text"
-                icon={<DownloadOutlined />}
-                onClick={() => workspace.download?.(artifact)}
-              />
-            </Tooltip>
-            <Tooltip
-              title={t("workspace.revealInFileManager", "在文件夹中打开")}
-            >
-              <Button
-                size="small"
-                type="text"
-                icon={<FolderOpenOutlined />}
-                onClick={() => workspace.revealInFileManager?.(artifact)}
-                disabled={!artifact.workspacePath}
-              />
-            </Tooltip>
-          </Space>
+          {!hostControls && (
+            <Space size={2}>
+              <Tooltip title={t("workspace.download", "下载")}>
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<DownloadOutlined />}
+                  onClick={() => workspace.download?.(artifact)}
+                />
+              </Tooltip>
+              <Tooltip
+                title={t("workspace.revealInFileManager", "在文件夹中打开")}
+              >
+                <Button
+                  size="small"
+                  type="text"
+                  icon={<FolderOpenOutlined />}
+                  onClick={() => workspace.revealInFileManager?.(artifact)}
+                  disabled={!artifact.workspacePath}
+                />
+              </Tooltip>
+            </Space>
+          )}
         </div>
         {/* 表格 */}
         <div style={{ flex: 1, overflow: "auto" }}>
@@ -630,57 +633,61 @@ const OfficeOoxmlPreview: React.FC<{
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* 工具栏 */}
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "4px 8px",
-          borderBottom: `1px solid ${borderColor}`,
-          flexShrink: 0,
-          background: bgColor,
-        }}
-      >
-        <Space size={4}>
-          {icon}
-          <span style={{ fontSize: 11, color: "#999" }}>{label}</span>
-          <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
-            {t("workspace.clientSidePreview", "前端解析")}
-          </Tag>
-          {isPptx && state.slideCount > 0 && (
-            <span style={{ fontSize: 11, color: "#999" }}>
-              {state.slideCount} slides · continuous scroll
-            </span>
-          )}
-        </Space>
-        <Space size={2}>
-          <Tooltip title={t("workspace.retry", "重试")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={convert}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.download", "下载")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => workspace.download?.(artifact)}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+      {!hostControls && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "4px 8px",
+            borderBottom: `1px solid ${borderColor}`,
+            flexShrink: 0,
+            background: bgColor,
+          }}
+        >
+          <Space size={4}>
+            {icon}
+            <span style={{ fontSize: 11, color: "#999" }}>{label}</span>
+            <Tag color="blue" style={{ fontSize: 10, margin: 0 }}>
+              {t("workspace.clientSidePreview", "前端解析")}
+            </Tag>
+            {isPptx && state.slideCount > 0 && (
+              <span style={{ fontSize: 11, color: "#999" }}>
+                {state.slideCount} slides · continuous scroll
+              </span>
+            )}
+          </Space>
+          <Space size={2}>
+            <Tooltip title={t("workspace.retry", "重试")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={convert}
+              />
+            </Tooltip>
+            <Tooltip title={t("workspace.download", "下载")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={() => workspace.download?.(artifact)}
+              />
+            </Tooltip>
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          </Space>
+        </div>
+      )}
       {/* 内容 */}
       <iframe
         srcDoc={styledHtml}

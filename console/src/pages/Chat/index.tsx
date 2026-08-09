@@ -7,7 +7,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { ExclamationCircleOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  ExclamationCircleOutlined,
+  FileMarkdownOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
 import { SparkCopyLine, SparkAttachmentLine } from "@agentscope-ai/icons";
 import { usePlugins } from "../../plugins/PluginContext";
 import { useTranslation } from "react-i18next";
@@ -65,6 +69,12 @@ import {
   useChatListSnapshot,
 } from "../../plugins/registry/useChatExtensions";
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
+import { registerChatSubmitter } from "../../plugins/hostSdk/install";
+import { WorkspacePanel } from "../../components/Workspace";
+import {
+  buildWorkspaceSessionKey,
+  useWorkspaceStore,
+} from "../../components/Workspace/store/workspaceStore";
 import {
   resolveLocalized,
   type ChatApprovalRendererItem,
@@ -171,6 +181,7 @@ import {
   toStoredName,
   copyText,
   extractCopyableText,
+  buildWorkspaceMarkdown,
   buildModelError,
   normalizeContentUrls,
   extractUserMessageText,
@@ -1213,30 +1224,15 @@ export default function ChatPage() {
   const filesDrawerState = useSessionFilesDrawer(currentSessionFilesScopeKey);
   const dispatchFilesDrawer = useCallback(
     (event: FilesDrawerEvent) => {
+      if (event.type !== "CLOSE") {
+        useWorkspaceStore.getState().setPanelOpen(false);
+      }
       useFilesSurfaceStore
         .getState()
         .dispatchSession(currentSessionFilesScopeKey, event);
     },
     [currentSessionFilesScopeKey],
   );
-  const filesWorkspaceOpen = filesDrawerState.kind === "workspace";
-  const toggleFilesWorkspace = useCallback(() => {
-    const current = useFilesSurfaceStore.getState().sessionDrawers[
-      currentSessionFilesScopeKey
-    ] ?? { kind: "closed" as const };
-    if (current.kind === "workspace") {
-      dispatchFilesDrawer({ type: "CLOSE" });
-      return;
-    }
-    if (current.kind === "preview") {
-      dispatchFilesDrawer({ type: "EXPAND_WORKSPACE" });
-      return;
-    }
-    dispatchFilesDrawer({
-      type: "OPEN_WORKSPACE",
-      trigger: null,
-    });
-  }, [currentSessionFilesScopeKey, dispatchFilesDrawer]);
   const loopAvailableModes = useLoopStore((state) => state.availableModes);
 
   useEffect(() => {
@@ -1592,6 +1588,14 @@ export default function ChatPage() {
       return false;
     }
   });
+  const workspacePanelOpen = useWorkspaceStore((state) => state.panelOpen);
+  const toggleWorkspacePanel = useCallback(() => {
+    const workspace = useWorkspaceStore.getState();
+    if (!workspace.panelOpen && filesDrawerState.kind !== "closed") {
+      dispatchFilesDrawer({ type: "CLOSE" });
+    }
+    workspace.togglePanel();
+  }, [dispatchFilesDrawer, filesDrawerState.kind]);
   const toggleHistoryPanel = useCallback(() => {
     setHistoryPanelOpen((prev) => {
       const next = !prev;
@@ -1869,6 +1873,12 @@ export default function ChatPage() {
   const chatIdRef = useRef(chatId);
   const navigateRef = useRef(navigate);
   const chatRef = useRef<IAgentScopeRuntimeWebUIRef>(null);
+  useEffect(() => {
+    registerChatSubmitter((content) => {
+      chatRef.current?.input.submit({ query: content });
+    });
+    return () => registerChatSubmitter(null);
+  }, []);
   const pendingSenderClearRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -2315,6 +2325,13 @@ export default function ChatPage() {
     ? null
     : getLastChatId(selectedAgent);
   const effectiveChatId = chatId || safeLastActive || safeLastStored;
+  const workspaceSessionKey = buildWorkspaceSessionKey(
+    selectedAgent,
+    effectiveChatId,
+  );
+  useEffect(() => {
+    useWorkspaceStore.getState().setSession(workspaceSessionKey);
+  }, [workspaceSessionKey]);
   if (effectiveChatId && sessionApi.preferredChatId !== effectiveChatId) {
     sessionApi.preferredChatId = effectiveChatId;
   }
@@ -2330,6 +2347,22 @@ export default function ChatPage() {
     sessionApi.onSessionIdResolved = (tempId, realId) => {
       if (!isChatActiveRef.current) return;
       const agentId = selectedAgentRef.current;
+      const resolvedWorkspaceSession = buildWorkspaceSessionKey(
+        agentId,
+        realId,
+      );
+      useWorkspaceStore
+        .getState()
+        .moveSession(
+          buildWorkspaceSessionKey(agentId, tempId),
+          resolvedWorkspaceSession,
+        );
+      useWorkspaceStore
+        .getState()
+        .moveSession(
+          buildWorkspaceSessionKey(agentId, null),
+          resolvedWorkspaceSession,
+        );
       migratePendingProjectDirectory(agentId, tempId, realId);
       const fromScopeKey = sessionFilesScopeKey(agentId, tempId);
       const toScopeKey = sessionFilesScopeKey(agentId, realId);
@@ -2354,6 +2387,9 @@ export default function ChatPage() {
       // at the removed session, so agent-switch restore doesn't resurrect a
       // deleted conversation.
       const agentId = selectedAgentRef.current;
+      useWorkspaceStore
+        .getState()
+        .clearSession(buildWorkspaceSessionKey(agentId, removedId));
       if (getLastChatIdRef.current(agentId) === removedId) {
         removeLastChatIdRef.current(agentId);
       }
@@ -2566,6 +2602,38 @@ export default function ChatPage() {
       }
     },
     [t],
+  );
+
+  const openResponseInWorkspace = useCallback(
+    (response: CopyableResponse) => {
+      const text = buildWorkspaceMarkdown(response);
+      if (!text) return;
+      if (filesDrawerState.kind !== "closed") {
+        dispatchFilesDrawer({ type: "CLOSE" });
+      }
+      useWorkspaceStore.getState().openArtifact({
+        id: `response-${workspaceSessionKey}-${Date.now()}`,
+        title: t("workspace.assistantResponse", "AI 回复"),
+        mimeType: "text/markdown",
+        extension: "md",
+        textContent: text,
+        source: "generated",
+        sessionId: workspaceSessionKey,
+        agentId: selectedAgent,
+        projectRoot: pendingProjectDir ?? null,
+        chatId: backendChatId,
+        projectDirOverride: pendingProjectDir,
+      });
+    },
+    [
+      backendChatId,
+      dispatchFilesDrawer,
+      filesDrawerState.kind,
+      pendingProjectDir,
+      selectedAgent,
+      t,
+      workspaceSessionKey,
+    ],
   );
 
   const customFetch = useCallback(
@@ -3205,8 +3273,8 @@ export default function ChatPage() {
               <HarnessModelSelector providerId={selectedAgentBackend} />
             ) : null}
             <ChatActionGroup
-              onToggleWorkspace={toggleFilesWorkspace}
-              workspaceOpen={filesWorkspaceOpen}
+              onToggleWorkspace={toggleWorkspacePanel}
+              workspaceOpen={workspacePanelOpen}
               onToggleHistory={
                 effectiveIsFullMode ? toggleHistoryPanel : undefined
               }
@@ -3386,7 +3454,15 @@ export default function ChatPage() {
         ...defaultConfig.api,
         fetch: customFetch,
         responseParser: (chunk: string) => {
-          const payload = JSON.parse(chunk) as Record<string, unknown>;
+          const parsed = JSON.parse(chunk);
+          // JSON.parse can return null (chunk === "null") or primitives.
+          // The SDK's response builder accesses payload.object, so a null
+          // return would crash with "Cannot read properties of null
+          // (reading 'object')".  Guard early and return a heartbeat no-op.
+          if (!parsed || typeof parsed !== "object") {
+            return { object: "message", type: "heartbeat" } as any;
+          }
+          const payload = parsed as Record<string, unknown>;
           markLoopModeRunning();
           sanitizeHeadlinePayload(payload, headlineStreamFilterRef.current);
 
@@ -3414,7 +3490,10 @@ export default function ChatPage() {
           }
 
           if (payload.type === "turn_usage") {
-            return null;
+            // Returning null crashes the SDK's response builder which
+            // accesses .object on the result.  Use a heartbeat no-op
+            // instead (same pattern as replay_end below).
+            return { object: "message", type: "heartbeat" } as any;
           }
 
           // Replay boundary marker from the reconnect stream. The
@@ -3431,7 +3510,9 @@ export default function ChatPage() {
               (payload.alternatives as typeof rateLimitAlternatives) || [];
             setRateLimitAlternatives(alts);
             message.warning(t("chat.rateLimitHit"));
-            return null;
+            // Returning null crashes the SDK's response builder which
+            // accesses .object on the result.  Use a heartbeat no-op.
+            return { object: "message", type: "heartbeat" } as any;
           }
 
           if (payloadRequestsHistoryClear(payload)) {
@@ -3503,6 +3584,16 @@ export default function ChatPage() {
             ),
             onClick: ({ data }: { data: CopyableResponse }) => {
               void copyResponse(data);
+            },
+          },
+          {
+            icon: (
+              <span title={t("workspace.openInWorkspace", "在工作区打开")}>
+                <FileMarkdownOutlined />
+              </span>
+            ),
+            onClick: ({ data }: { data: CopyableResponse }) => {
+              openResponseInWorkspace(data);
             },
           },
           {
@@ -3601,8 +3692,9 @@ export default function ChatPage() {
     handleNewCommand,
     compactSender,
     sessionScope,
-    filesWorkspaceOpen,
-    toggleFilesWorkspace,
+    workspacePanelOpen,
+    toggleWorkspacePanel,
+    openResponseInWorkspace,
     isOwner,
     bgTaskCount,
     bgBackendSessionId,
@@ -3848,7 +3940,7 @@ export default function ChatPage() {
       {/* End of main chat area */}
 
       {/* Chat previews live on the right; /files keeps its full workspace layout. */}
-      <AnimatePresence initial={false} mode="popLayout">
+      <AnimatePresence initial={false} mode="sync">
         {filesDrawerState.kind !== "closed" ? (
           <FilesDrawer
             key="session-files-drawer"
@@ -3858,6 +3950,9 @@ export default function ChatPage() {
           />
         ) : null}
       </AnimatePresence>
+
+      {/* Response workspace — generated Markdown and other in-memory artifacts. */}
+      <WorkspacePanel />
 
       {/* Right-side history panel (full mode only) */}
       {effectiveIsFullMode && historyPanelOpen && (

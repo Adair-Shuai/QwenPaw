@@ -79,6 +79,7 @@ const HtmlRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
@@ -210,53 +211,57 @@ const HtmlRenderer: React.FC<RendererContext> = ({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "4px 8px",
-          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
-          flexShrink: 0,
-        }}
-      >
-        <Segmented
-          size="small"
-          value={viewMode}
-          onChange={(v) => setViewMode(v as "preview" | "code")}
-          options={[
-            { label: <EyeOutlined />, value: "preview" },
-            { label: <CodeOutlined />, value: "code" },
-          ]}
-        />
-        <Space size={2}>
-          <Tooltip title={t("workspace.reload")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={handleReload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.download")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={handleDownload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+      {!hostControls && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "4px 8px",
+            borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
+            flexShrink: 0,
+          }}
+        >
+          <Segmented
+            size="small"
+            value={viewMode}
+            onChange={(v) => setViewMode(v as "preview" | "code")}
+            options={[
+              { label: <EyeOutlined />, value: "preview" },
+              { label: <CodeOutlined />, value: "code" },
+            ]}
+          />
+          <Space size={2}>
+            <Tooltip title={t("workspace.reload")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={handleReload}
+              />
+            </Tooltip>
+            <Tooltip title={t("workspace.download")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+              />
+            </Tooltip>
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          </Space>
+        </div>
+      )}
       <div
         style={{
           flex: 1,

@@ -14,6 +14,31 @@
 
 import { parseGenUiResult, parseGenUiError } from "../stores/genUi";
 
+// React is obtained from window.QwenPaw.host.React at runtime.
+// This alias avoids `import from "react"` which fails to resolve in
+// the packaging mirror directory (no node_modules).
+type ReactElement = any;
+
+function resultTextFrom(value: unknown): string {
+  if (typeof value === "string") {
+    if (value.trimStart().startsWith("[")) {
+      try { return resultTextFrom(JSON.parse(value)); } catch { /* keep raw */ }
+    }
+    return value;
+  }
+  if (Array.isArray(value)) {
+    const text = value.find((item: any) => item?.type === "text")?.text;
+    return typeof text === "string" ? text : JSON.stringify(value);
+  }
+  if (value && typeof value === "object") {
+    const record = value as Record<string, any>;
+    if (typeof record.text === "string") return record.text;
+    if (record.output !== undefined) return resultTextFrom(record.output);
+    if (record.content !== undefined) return resultTextFrom(record.content);
+  }
+  return value == null ? "" : JSON.stringify(value);
+}
+
 /** Parse V1 tool render props to extract status and result text. */
 function parseV1Props(props: Record<string, unknown>): {
   resultText: string;
@@ -38,15 +63,19 @@ function parseV1Props(props: Record<string, unknown>): {
   if (content.length > 1) {
     const resultItem = content[1] as Record<string, unknown> | undefined;
     const resultData = resultItem?.data as Record<string, unknown> | undefined;
-    const output = resultData?.output;
-    if (typeof output === "string") return { resultText: output, status, toolName };
-    if (output != null) return { resultText: JSON.stringify(output, null, 2), status, toolName };
+    const output = resultData?.output
+      ?? resultData?.content
+      ?? resultItem?.output
+      ?? resultItem?.content
+      ?? resultData?.result
+      ?? resultItem?.result;
+    if (output != null) return { resultText: resultTextFrom(output), status, toolName };
   }
 
   // content[0] might have inline result (some SDK versions)
   if (callData?.output) {
     const out = callData.output;
-    return { resultText: typeof out === "string" ? out : JSON.stringify(out, null, 2), status, toolName };
+    return { resultText: resultTextFrom(out), status, toolName };
   }
 
   return { resultText: "", status, toolName };
@@ -55,7 +84,7 @@ function parseV1Props(props: Record<string, unknown>): {
 export function GenUiToolCall(props: {
   data?: Record<string, unknown>;
   [key: string]: unknown;
-}): React.ReactElement | null {
+}): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
   const React = host?.React;
   if (!React) return null;
@@ -96,11 +125,11 @@ export function GenUiToolCall(props: {
           errorResult?.hint ? React.createElement("div", { style: { color: "#999" } }, `💡 ${errorResult.hint}`) : null,
         )
       : result?.ok
-        ? React.createElement("div", { style: { padding: "8px 12px", fontSize: 12, color: "#999" } },
-            isPatch
-              ? `UI tree patched to revision ${result.revision ?? 1} (${nodeCount} nodes)`
-              : `UI tree rendered below (${nodeCount} nodes, revision ${result.revision ?? 1})`,
-          )
+          ? React.createElement("div", { style: { padding: "8px 12px", fontSize: 12, color: "#999" } },
+              result.tree?.root
+                ? `GenUI 已在回复正文中展示（${nodeCount} 个节点，revision ${result.revision ?? 1}）。`
+                : "GenUI 工具已完成，但没有可展示的树。",
+            )
         : React.createElement("pre", { style: { fontSize: 12, padding: "8px 12px", background: "rgba(0,0,0,0.03)", borderRadius: 8, overflow: "auto", maxHeight: 200 } }, resultText || "(waiting for result...)"),
   );
 }

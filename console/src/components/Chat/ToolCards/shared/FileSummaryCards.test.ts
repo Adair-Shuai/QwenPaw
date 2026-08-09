@@ -359,6 +359,32 @@ describe("FileSummaryCards data parsing", () => {
     window.removeEventListener("qwenpaw:open-file-preview", listener);
   });
 
+  it("renders view_image output inline outside the execution record", () => {
+    const path = "/workspace/result.png";
+    const { container } = render(
+      createElement(FileSummaryCards, {
+        data: {
+          output: [{
+            id: "msg-view-image",
+            type: "plugin_call",
+            content: [
+              { data: { name: "view_image", arguments: JSON.stringify({ path }), call_id: "call-view" } },
+              { data: { output: [{ type: "image", source: { type: "url", url: path } }] } },
+            ],
+          }],
+        },
+      }),
+    );
+
+    expect(extractFileInfos({ output: [{
+      id: "msg-view-image",
+      type: "plugin_call",
+      content: [{ data: { name: "view_image", arguments: JSON.stringify({ path }), call_id: "call-view" } }],
+    }] })).toMatchObject([{ toolName: "view_image", isDeliverable: true }]);
+    expect(container.querySelector("img")).not.toBeNull();
+    expect(container.querySelector("details")).toBeNull();
+  });
+
   it("non-file tools are not included", () => {
     const data = {
       output: [

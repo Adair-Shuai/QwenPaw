@@ -19,8 +19,10 @@ from .avatar import (
     CANVAS_SIZE as _CANVAS_SIZE,
     AvatarService,
 )
+from .domain_engine.api import build_domain_engine_router
 from .engine.api import EngineRequest, build_engine_router
 from .sim_api import build_sim_router
+from .genui.api import build_genui_router
 from .skill_pool import (
     remove_plugin_pool_skills,
     sync_plugin_skills_to_pool,
@@ -62,6 +64,11 @@ def _build_avatar_router():
     return _avatar_service.build_router()
 
 
+def _build_domain_engine_router():
+    """Build the domain engine catalog router."""
+    return build_domain_engine_router()
+
+
 def _build_sim_router():
     """Compatibility wrapper for the extracted simulation API."""
     return build_sim_router(PLUGIN_ID)
@@ -100,7 +107,22 @@ class UGSciPlugin:
             "ugsci-sim",
             "simulation monitoring",
         )
+        self._register_router(
+            api,
+            _build_domain_engine_router,
+            "/ugsci/domain-engines",
+            "ugsci-domain-engines",
+            "domain engine catalog",
+        )
+        self._register_router(
+            api,
+            lambda: build_genui_router(api),
+            "/ugsci/genui",
+            "ugsci-genui",
+            "GenUI settings",
+        )
         self._register_simulation_tools(api)
+        self._register_domain_tools(api)
         self._register_genui(api)
 
     def _register_lifecycle_hooks(self, api) -> None:
@@ -114,6 +136,19 @@ class UGSciPlugin:
         except Exception as exc:
             logger.debug(
                 "[%s] Startup skill sync hook unavailable: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+        try:
+            api.register_startup_hook(
+                hook_name="ugsci_sync_domain_tools",
+                callback=self._on_startup_sync_domain_tools,
+                priority=95,
+            )
+        except Exception as exc:
+            logger.debug(
+                "[%s] Domain tool sync hook unavailable: %s",
                 PLUGIN_ID,
                 exc,
                 exc_info=True,
@@ -134,7 +169,12 @@ class UGSciPlugin:
             api.register_startup_hook(
                 hook_name="ugsci_init",
                 callback=self._on_startup,
-                priority=50,
+                # UGSci registers runtime tools from this hook.  Run after
+                # plugins such as CloudPaw that persist their built-in agent
+                # definitions during startup; otherwise their stale
+                # load/modify/save cycle can overwrite the tool entries that
+                # PluginApi just added to agent.json.
+                priority=90,
             )
         except Exception as exc:
             logger.debug(
@@ -330,6 +370,125 @@ class UGSciPlugin:
             )
 
     @staticmethod
+    def _register_domain_tools(api) -> None:
+        """Register domain computing tools (well log + decline analysis).
+
+        These tools are disabled by default — users enable them per-agent
+        via the Tools page.  Each tool is registered independently so that
+        a failure in one does not block others.
+        """
+        try:
+            from .domain.well_log.tools import (
+                ugsci_welllog_read,
+                ugsci_welllog_validate,
+                ugsci_welllog_export,
+            )
+            from .domain.decline.tools import (
+                ugsci_decline_fit,
+                ugsci_decline_forecast,
+                ugsci_decline_eur,
+            )
+            from .domain.computation.tools import (
+                ugsci_bayesian_normal_estimate,
+                ugsci_geospatial_points_analyze,
+                ugsci_graph_analyze,
+                ugsci_ml_regression,
+                ugsci_multiobjective_quadratic,
+                ugsci_queue_simulate,
+                ugsci_statistical_regression,
+                ugsci_symbolic_polynomial_roots,
+            )
+
+            tools = [
+                (
+                    "ugsci_welllog_read",
+                    ugsci_welllog_read,
+                    "读取 LAS 测井文件并返回井信息、曲线摘要和采样数据",
+                    "📡",
+                    "file",
+                    "path",
+                ),
+                (
+                    "ugsci_welllog_validate",
+                    ugsci_welllog_validate,
+                    "校验 LAS 测井文件的数据质量（深度单调性、NULL、单位等）",
+                    "✅",
+                    "file",
+                    "path",
+                ),
+                (
+                    "ugsci_welllog_export",
+                    ugsci_welllog_export,
+                    "将 LAS 测井文件规范化导出为新文件",
+                    "📤",
+                    "file",
+                    "output_path",
+                ),
+                (
+                    "ugsci_decline_fit",
+                    ugsci_decline_fit,
+                    "拟合 Arps 递减曲线（exponential/harmonic/hyperbolic/auto）",
+                    "📉",
+                    "internal",
+                    "",
+                ),
+                (
+                    "ugsci_decline_forecast",
+                    ugsci_decline_forecast,
+                    "基于递减参数预测未来产量",
+                    "🔮",
+                    "internal",
+                    "",
+                ),
+                (
+                    "ugsci_decline_eur",
+                    ugsci_decline_eur,
+                    "计算预计最终采收率（EUR）",
+                    "🛢️",
+                    "internal",
+                    "",
+                ),
+                ("ugsci_symbolic_polynomial_roots", ugsci_symbolic_polynomial_roots, "计算多项式的全部实根与复根", "🧮", "internal", ""),
+                ("ugsci_bayesian_normal_estimate", ugsci_bayesian_normal_estimate, "使用 PyMC 估计正态总体均值的后验分布", "🎲", "internal", ""),
+                ("ugsci_multiobjective_quadratic", ugsci_multiobjective_quadratic, "使用 pymoo 求解结构化双目标或多目标二次优化", "🎯", "internal", ""),
+                ("ugsci_queue_simulate", ugsci_queue_simulate, "使用 SimPy 执行确定性 FIFO 队列仿真", "⏱️", "internal", ""),
+                ("ugsci_graph_analyze", ugsci_graph_analyze, "使用 NetworkX 分析网络连通性、中心性和最短路径", "🕸️", "internal", ""),
+                ("ugsci_geospatial_points_analyze", ugsci_geospatial_points_analyze, "使用 GeoPandas 分析结构化空间点集", "🗺️", "internal", ""),
+                ("ugsci_ml_regression", ugsci_ml_regression, "使用 scikit-learn 进行确定性线性回归和预测", "🤖", "internal", ""),
+                ("ugsci_statistical_regression", ugsci_statistical_regression, "使用 statsmodels 执行带推断统计的 OLS 回归", "📊", "internal", ""),
+            ]
+            for tool_name, tool_func, description, icon, tool_type, target_param in tools:
+                try:
+                    api.register_tool(
+                        tool_name=tool_name,
+                        tool_func=tool_func,
+                        description=description,
+                        icon=icon,
+                        enabled=False,
+                        tool_type=tool_type,
+                        target_param=target_param,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "[%s] Failed to register domain tool '%s': %s",
+                        PLUGIN_ID,
+                        tool_name,
+                        exc,
+                    )
+            logger.info(
+                "[%s] Domain computing tools registered (%d tools)",
+                PLUGIN_ID,
+                len(tools),
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register domain tools: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+    @staticmethod
     def _register_genui(api) -> None:
         """Register GenUI tools and prompt section as an isolated UGSci module."""
         try:
@@ -373,6 +532,75 @@ class UGSciPlugin:
                 exc_info=True,
             )
 
+    async def _on_startup_sync_domain_tools(self) -> None:
+        """Persist missing UGSci tool entries for every configured Agent.
+
+        Plugin tool registration runs before a current-Agent context exists,
+        so ``PluginApi.register_tool`` cannot persist per-Agent preferences at
+        that point.  Synchronising from the plugin manifest closes that gap
+        without changing any existing enabled/disabled choice.
+        """
+        await asyncio.to_thread(self._sync_domain_tools_to_all_agents)
+
+    @staticmethod
+    def _sync_domain_tools_to_all_agents() -> None:
+        from qwenpaw.config.config import (
+            BuiltinToolConfig,
+            ToolsConfig,
+            load_agent_config,
+            save_agent_config,
+        )
+        from qwenpaw.config.utils import load_config
+
+        manifest_path = PLUGIN_DIR / "plugin.json"
+        try:
+            import json
+
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            raw_tools = manifest.get("meta", {}).get("tools", [])
+        except (OSError, ValueError, TypeError) as exc:
+            logger.error("[%s] Cannot read domain tool manifest: %s", PLUGIN_ID, exc)
+            return
+
+        specs = {
+            item["name"]: item
+            for item in raw_tools
+            if isinstance(item, dict)
+            and isinstance(item.get("name"), str)
+            and item["name"].startswith("ugsci_")
+        }
+        if not specs:
+            return
+
+        profiles = load_config().agents.profiles
+        for agent_id in profiles:
+            try:
+                agent_config = load_agent_config(agent_id)
+                if not agent_config.tools:
+                    agent_config.tools = ToolsConfig()
+                changed = False
+                for name, spec in specs.items():
+                    if name in agent_config.tools.builtin_tools:
+                        continue
+                    agent_config.tools.builtin_tools[name] = BuiltinToolConfig(
+                        name=name,
+                        enabled=bool(spec.get("enabled_by_default", False)),
+                        description=str(spec.get("description", "")),
+                        display_to_user=True,
+                        async_execution=False,
+                        icon=str(spec.get("icon", "🔧")),
+                    )
+                    changed = True
+                if changed:
+                    save_agent_config(agent_id, agent_config)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "[%s] Failed to sync domain tools for Agent '%s': %s",
+                    PLUGIN_ID,
+                    agent_id,
+                    exc,
+                )
+
     @staticmethod
     def _on_uninstall_remove_skills(
         plugin_id: str,
@@ -399,4 +627,4 @@ class UGSciPlugin:
 
 plugin = UGSciPlugin()
 
-__all__ = ["EngineRequest", "UGSciPlugin", "plugin"]
+__all__ = ["EngineRequest", "UGSciPlugin", "plugin", "build_domain_engine_router"]

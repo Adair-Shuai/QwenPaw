@@ -144,6 +144,7 @@ def _bridge_to_runtime(
     enabled: bool,
     description: str,
     registry,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Attach ToolDescriptor and inject into runtime ToolRegistries.
 
@@ -167,6 +168,7 @@ def _bridge_to_runtime(
             enabled_by_default=enabled,
             async_execution=is_async,
             description=description,
+            metadata=dict(metadata or {}),
         )
         # pylint: disable-next=protected-access
         tool_func._tool_descriptor = desc  # type: ignore[attr-defined]
@@ -800,6 +802,9 @@ class PluginApi:  # pylint: disable=too-many-public-methods
         enabled: bool = False,
         tool_type: str = "network",
         target_param: str = "",
+        allowed_channels: tuple[str, ...] = (),
+        availability_check: Optional[Callable[[dict[str, Any]], bool]] = None,
+        startup_priority: int = 50,
     ) -> None:
         """Register a tool function into the Agent's toolkit.
 
@@ -833,6 +838,15 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                 semantics for plugin tools while still running Phase 1
                 deep scans.
             target_param: Optional governance target parameter name.
+            allowed_channels: Optional request channels on which the tool is
+                exposed. Empty means all channels. A gated tool fails closed
+                when request context has no explicit channel.
+            availability_check: Optional request-time predicate. Returning
+                ``False`` (or raising) hides the tool for that request without
+                mutating the Agent's persisted tool preference.
+            startup_priority: Startup ordering for registration. Plugins that
+                must run after another plugin persists agent definitions can
+                choose a larger value. Default: 50.
 
         Example:
             >>> from .tool import my_tool_func
@@ -856,6 +870,20 @@ class PluginApi:  # pylint: disable=too-many-public-methods
             tools_module = None
             appended_to_all = False
             try:
+                # Never shadow a native/upstream callable. Hot reload by the
+                # same plugin remains allowed through the ownership record.
+                from ..agents import tools as current_tools
+
+                existing = getattr(current_tools, tool_name, None)
+                with _TOOL_PLUGIN_OWNERS_LOCK:
+                    current_owner = _TOOL_PLUGIN_OWNERS.get(tool_name)
+                if existing is not None and current_owner != self.plugin_id:
+                    logger.info(
+                        "Skipping plugin tool '%s': upstream/native "
+                        "callable already exists",
+                        tool_name,
+                    )
+                    return
                 _claim_tool_ownership(tool_name, self.plugin_id)
                 claimed = True
                 _register_to_governance(
@@ -892,6 +920,19 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                     enabled,
                     description,
                     self._registry,
+                    {
+                        **(
+                            {"allowed_channels": tuple(allowed_channels)}
+                            if allowed_channels
+                            else {}
+                        ),
+                        **(
+                            {"availability_check": availability_check}
+                            if availability_check is not None
+                            else {}
+                        ),
+                    }
+                    or None,
                 )
                 _write_tool_config(
                     tool_name,
@@ -928,7 +969,7 @@ class PluginApi:  # pylint: disable=too-many-public-methods
         self.register_startup_hook(
             hook_name=(f"register_tool_{self.plugin_id}_{tool_name}"),
             callback=_startup_register,
-            priority=50,
+            priority=startup_priority,
         )
         logger.info(
             f"Plugin '{self.plugin_id}' scheduled tool "

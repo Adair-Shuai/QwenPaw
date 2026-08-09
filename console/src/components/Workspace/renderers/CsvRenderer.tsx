@@ -43,6 +43,7 @@ const CsvRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
@@ -263,23 +264,29 @@ const CsvRenderer: React.FC<RendererContext> = ({
               onClick={handleCopy}
             />
           </Tooltip>
-          <Tooltip title={t("workspace.download", "下载")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={handleDownload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
+          {!hostControls && (
+            <Tooltip title={t("workspace.download", "下载")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+              />
+            </Tooltip>
+          )}
+          {!hostControls && (
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          )}
         </Space>
       </div>
 

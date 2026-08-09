@@ -82,6 +82,38 @@ def _write_plugin(plugin_dir: Path, plugin_py_code: str) -> Dict:
     return manifest
 
 
+@pytest.mark.asyncio
+async def test_load_from_exact_development_symlink(tmp_path: Path) -> None:
+    """A runtime symlink to the requested source is a valid dev install."""
+    from qwenpaw.plugins.loader import PluginLoader
+    from qwenpaw.plugins.registry import PluginRegistry
+
+    source = tmp_path / "source" / "demo"
+    install_root = tmp_path / "installed"
+    install_root.mkdir()
+    _write_plugin(
+        source,
+        "class Demo:\n"
+        "    def register(self, api):\n"
+        "        pass\n"
+        "plugin = Demo()\n",
+    )
+    try:
+        (install_root / "demo").symlink_to(source, target_is_directory=True)
+    except OSError:
+        pytest.skip("directory symlinks are not available")
+
+    old_instance = PluginRegistry._instance
+    PluginRegistry._instance = None
+    try:
+        loader = PluginLoader(plugin_dirs=[install_root])
+        record = await loader.load_plugin_from_path(source)
+        assert record.manifest.id == "demo"
+        assert record.source_path == source.resolve()
+    finally:
+        PluginRegistry._instance = old_instance
+
+
 # ---------------------------------------------------------------------------
 # Tests: sys.modules cleanup
 # ---------------------------------------------------------------------------

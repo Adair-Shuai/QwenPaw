@@ -59,8 +59,22 @@ export async function fetchPoolSkillContent(
 export async function fetchWorkspaceSkills(): Promise<
   WorkspaceSkillSummary[]
 > {
-  const data = await apiFetch<WorkspaceSkillSummary[]>(
+  type WorkspaceSkillWire = Partial<WorkspaceSkillSummary> & {
+    agent_id: string;
+    skills?: SkillSpec[];
+  };
+  const data = await apiFetch<WorkspaceSkillWire[]>(
     "/skills/workspaces",
   );
-  return data || [];
+  return (data || []).map((workspace) => ({
+    agent_id: workspace.agent_id,
+    agent_name: workspace.agent_name || "",
+    // Current hosts return skill_names. Keep the legacy fallback so the
+    // plugin remains compatible with older QwenPaw releases.
+    skill_names: Array.isArray(workspace.skill_names)
+      ? workspace.skill_names
+      : Array.isArray(workspace.skills)
+        ? workspace.skills.map((skill) => skill.name)
+        : [],
+  }));
 }

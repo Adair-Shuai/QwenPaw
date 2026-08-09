@@ -157,6 +157,61 @@ describe("OfficeDocRenderer", () => {
     expect(iframe.getAttribute("srcDoc")).toContain("font-family");
   });
 
+  it("omits the duplicate Office toolbar when hosted by Files", async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({ html: "<p>Hosted</p>", engine: "officecli" }),
+      }),
+    ) as unknown as typeof global.fetch;
+
+    const { container } = render(
+      <OfficeDocRenderer {...makeContext({ hostControls: true })} />,
+    );
+    await waitFor(() =>
+      expect(container.querySelector("iframe")).toBeInTheDocument(),
+    );
+
+    expect(container.querySelector("button")).not.toBeInTheDocument();
+    expect(screen.queryByText("OfficeCLI")).not.toBeInTheDocument();
+  });
+
+  it("hides the OfficeCLI spreadsheet filename bar when hosted by Files", async () => {
+    global.fetch = vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () =>
+          Promise.resolve({
+            html: "<html><head></head><body><div class=\"file-title\">test.xlsx</div></body></html>",
+            engine: "officecli",
+          }),
+      }),
+    ) as unknown as typeof global.fetch;
+
+    const { container } = render(
+      <OfficeDocRenderer
+        {...makeContext({
+          hostControls: true,
+          artifact: {
+            ...makeContext().artifact,
+            title: "test.xlsx",
+            extension: "xlsx",
+          },
+        })}
+      />,
+    );
+    await waitFor(() =>
+      expect(container.querySelector("iframe")).toBeInTheDocument(),
+    );
+
+    expect(container.querySelector("iframe")?.getAttribute("srcDoc")).toContain(
+      ".file-title{display:none!important}",
+    );
+  });
+
   it("includes page-break CSS in the styled HTML", async () => {
     global.fetch = vi.fn(() =>
       Promise.resolve({

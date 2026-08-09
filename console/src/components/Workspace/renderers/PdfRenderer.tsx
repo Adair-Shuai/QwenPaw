@@ -8,7 +8,11 @@ import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace
 import type { RendererContext } from "../types";
 import LightweightPdfViewer from "./LightweightPdfViewer";
 
-const PdfRenderer: React.FC<RendererContext> = ({ artifact, workspace }) => {
+const PdfRenderer: React.FC<RendererContext> = ({
+  artifact,
+  workspace,
+  hostControls,
+}) => {
   const { t } = useTranslation();
   const usesUnifiedWorkspaceScope = Boolean(
     artifact.workspaceRoot || artifact.chatId || artifact.projectDirOverride,
@@ -51,52 +55,56 @@ const PdfRenderer: React.FC<RendererContext> = ({ artifact, workspace }) => {
         background: "#fff",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          minHeight: 36,
-          padding: "4px 8px",
-          borderBottom: "1px solid #f0f0f0",
-          background: "#fff",
-          color: "#666",
-          flexShrink: 0,
-        }}
-      >
-        <span
-          title={artifact.title}
+      {!hostControls && (
+        <div
           style={{
-            minWidth: 0,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-            fontSize: 12,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            minHeight: 36,
+            padding: "4px 8px",
+            borderBottom: "1px solid #f0f0f0",
+            background: "#fff",
             color: "#666",
+            flexShrink: 0,
           }}
         >
-          PDF · {artifact.title}
-        </span>
-        <Space size={2} style={{ flexShrink: 0 }}>
-          <Tooltip title={t("workspace.download", "下载")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={handleDownload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+          <span
+            title={artifact.title}
+            style={{
+              minWidth: 0,
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+              whiteSpace: "nowrap",
+              fontSize: 12,
+              color: "#666",
+            }}
+          >
+            PDF · {artifact.title}
+          </span>
+          <Space size={2} style={{ flexShrink: 0 }}>
+            <Tooltip title={t("workspace.download", "下载")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+              />
+            </Tooltip>
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          </Space>
+        </div>
+      )}
 
       {baseUrl ? (
         <LightweightPdfViewer

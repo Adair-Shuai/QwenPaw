@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 """Unit tests for the GenUI patch module (emit_ui_patch, validate_ui_patch,
 apply_ui_patches, GenUiStateStore.apply_patch).
 

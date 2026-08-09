@@ -18,6 +18,7 @@ const ImageRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [zoom, setZoom] = useState(1);
@@ -93,23 +94,29 @@ const ImageRenderer: React.FC<RendererContext> = ({
               onClick={() => setRotation((r) => r + 90)}
             />
           </Tooltip>
-          <Tooltip title={t("workspace.download")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={handleDownload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
+          {!hostControls && (
+            <Tooltip title={t("workspace.download")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+              />
+            </Tooltip>
+          )}
+          {!hostControls && (
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          )}
         </Space>
       </div>
       <div

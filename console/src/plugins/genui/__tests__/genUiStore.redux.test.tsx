@@ -18,7 +18,7 @@ import * as React from "react";
 import {
   GenUiStoreProvider,
   useGenUiStore,
-  genUiSnapshotKey,
+  resetGenUiStore,
 } from "@genui-src/stores/genUi";
 import type { GenUiSnapshot, GenUiPatchPayload, GenUiTreeV1 } from "@genui-src/types/genUi";
 
@@ -98,6 +98,7 @@ function makeOutput(uiId: string, revision: number = 1, value: string = "from-hi
 // ─── Setup / Teardown ──────────────────────────────────────────────────────
 
 beforeEach(() => {
+  resetGenUiStore();
   (window as any).QwenPaw = {
     host: { React },
   };
@@ -451,5 +452,25 @@ describe("multiple trees isolation", () => {
     expect(second).toBeDefined();
     expect(first!.tree.root.props!.value).toBe("first");
     expect(second!.tree.root.props!.value).toBe("second");
+  });
+
+  it("re-keys fallback snapshots when the real session becomes available", () => {
+    renderProvider();
+    act(() => {
+      storeState!.setSnapshot(makeSnapshot("__current_chat__", "ui_rekey", 1, "fallback"));
+      storeState!.setSnapshot(makeSnapshot("real-session", "ui_rekey", 1, "fallback"));
+    });
+    expect(storeState!.getSnapshot("__current_chat__", "ui_rekey")).toBeUndefined();
+    expect(storeState!.getSnapshot("real-session", "ui_rekey")).toBeDefined();
+  });
+
+  it("bounds the session-wide snapshot cache", () => {
+    renderProvider();
+    act(() => {
+      for (let index = 0; index < 300; index += 1) {
+        storeState!.setSnapshot(makeSnapshot("s1", `ui_${index}`, 1, String(index)));
+      }
+    });
+    expect(Object.keys(storeState!.snapshots)).toHaveLength(256);
   });
 });

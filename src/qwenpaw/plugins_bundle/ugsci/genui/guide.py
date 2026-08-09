@@ -31,7 +31,10 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
         "Use ImageGallery with Image children for multi-image displays.",
     ],
     "typography": ["Heading for titles, Text for body. One H1 per tree. Use List+ListItem for lists."],
-    "actions": ['Phase-1: only send_message: {type:"send_message", payload:{content:"..."}}'],
+    "actions": [
+        'Button: {type:"send_message", payload:{content:"..."}}',
+        'Form: {type:"submit_form"} or send_message content with {{fieldName}} placeholders; give each field a name',
+    ],
     "anti_patterns": ["Invalid kind strings. Random keys on nodes. Emoji on every line. Flat 10+ peer nodes."],
 }
 

@@ -7,12 +7,13 @@
  * architecture.
  */
 
-import type { ComponentType } from "react";
 import { getHost } from "../core/runtime";
 import type { BuiltinPageId } from "../core/runtime";
 import { PageHeader } from "../core/shared";
 import { SkillCenterPage } from "../skill/SkillCenterPage";
 import { EngineSection } from "./EngineSection";
+import { DomainEngineSection } from "../domain-engine/DomainEngineSection";
+import type { ComponentType } from "react";
 
 type CenterTab = "tools" | "engines" | "skills";
 
@@ -125,12 +126,19 @@ function HostBuiltinPage({ page }: { page: BuiltinPageId }) {
   return React.createElement(Page, { embedded: true, embeddedLabels });
 }
 
-function ToolsWorkspaceSection() {
+function ToolsWorkspaceSection({
+  activeSubTab,
+  onSubTabChange,
+}: {
+  activeSubTab: string;
+  onSubTabChange: (key: string) => void;
+}) {
   const React = getHost().React;
   const { Tabs } = getHost().antd;
 
   return React.createElement(Tabs, {
-    defaultActiveKey: "mcp",
+    activeKey: activeSubTab,
+    onChange: onSubTabChange,
     items: [
       {
         key: "mcp",
@@ -146,33 +154,18 @@ function ToolsWorkspaceSection() {
   });
 }
 
-function DomainComputeSection() {
-  const React = getHost().React;
-  const { Empty, Typography } = getHost().antd;
-  const { Paragraph } = Typography;
+// DomainComputeSection is now imported from ../domain-engine/DomainEngineSection
+// The static empty state has been replaced with the real domain engine catalog.
 
-  return React.createElement(
-    "div",
-    { style: { padding: "36px 12px" } },
-    React.createElement(Empty, {
-      description: React.createElement(
-        "div",
-        null,
-        React.createElement("div", null, "暂无已注册的领域计算引擎"),
-        React.createElement(
-          Paragraph,
-          {
-            type: "secondary",
-            style: { maxWidth: 560, margin: "8px auto 0" },
-          },
-          "后续 PVT、气藏工程、井筒计算等内核可按引擎注册，并向工具层暴露标准调用接口。",
-        ),
-      ),
-    }),
-  );
-}
-
-function EngineWorkspaceSection() {
+function EngineWorkspaceSection({
+  onNavigateToMcp,
+  onNavigateToTools,
+  onNavigateToSkills,
+}: {
+  onNavigateToMcp?: () => void;
+  onNavigateToTools?: (subTab?: string) => void;
+  onNavigateToSkills?: () => void;
+} = {}) {
   const React = getHost().React;
   const { Tabs } = getHost().antd;
 
@@ -187,7 +180,16 @@ function EngineWorkspaceSection() {
       {
         key: "domain",
         label: "领域计算",
-        children: React.createElement(DomainComputeSection),
+        children: React.createElement(
+          DomainEngineSection as ComponentType<{
+            onNavigateToMcp?: () => void;
+            onNavigateToTools?: (subTab?: string) => void;
+            onNavigateToSkills?: () => void;
+          }>, {
+          onNavigateToMcp,
+          onNavigateToTools,
+          onNavigateToSkills,
+          }),
       },
       {
         key: "runtime",
@@ -213,6 +215,7 @@ export function ToolsSkillsCenterPage({
   const [activeTab, setActiveTab] = useState<CenterTab>(() =>
     tabFromLocation(initialTab),
   );
+  const [toolsSubTab, setToolsSubTab] = useState("mcp");
 
   useEffect(() => {
     try {
@@ -260,12 +263,30 @@ export function ToolsSkillsCenterPage({
         {
           key: "engines",
           label: tabLabel("引擎", RocketOutlined),
-          children: React.createElement(EngineWorkspaceSection),
+          children: React.createElement(
+            EngineWorkspaceSection as ComponentType<{
+              onNavigateToMcp?: () => void;
+              onNavigateToTools?: (subTab?: string) => void;
+              onNavigateToSkills?: () => void;
+            }>, {
+            onNavigateToMcp: () => {
+              setToolsSubTab("mcp");
+              changeTab("tools");
+            },
+            onNavigateToTools: (subTab?: string) => {
+              setToolsSubTab(subTab || "mcp");
+              changeTab("tools");
+            },
+            onNavigateToSkills: () => changeTab("skills"),
+            }),
         },
         {
           key: "tools",
           label: tabLabel("工具", ToolOutlined),
-          children: React.createElement(ToolsWorkspaceSection),
+          children: React.createElement(ToolsWorkspaceSection, {
+            activeSubTab: toolsSubTab,
+            onSubTabChange: setToolsSubTab,
+          }),
         },
         {
           key: "skills",

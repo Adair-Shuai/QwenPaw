@@ -35,6 +35,7 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
   workspace,
   readOnly,
   locale,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [screenshotUrl, setScreenshotUrl] = useState<string>("");
@@ -150,6 +151,7 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
         workspace={workspace}
         readOnly={readOnly}
         locale={locale}
+        hostControls={hostControls}
       />
     );
   }
@@ -287,34 +289,42 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           </Tooltip>
 
           {/* Reload */}
-          <Tooltip title={t("workspace.reload")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={() => fetchScreenshot(currentPage)}
-            />
-          </Tooltip>
+          {!hostControls && (
+            <Tooltip title={t("workspace.reload")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={() => fetchScreenshot(currentPage)}
+              />
+            </Tooltip>
+          )}
 
           {/* Download */}
-          <Tooltip title={t("workspace.download")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => workspace.download?.(artifact)}
-            />
-          </Tooltip>
+          {!hostControls && (
+            <Tooltip title={t("workspace.download")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={() => workspace.download?.(artifact)}
+              />
+            </Tooltip>
+          )}
           {/* Reveal in file manager */}
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
+          {!hostControls && (
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          )}
         </Space>
       </div>
 

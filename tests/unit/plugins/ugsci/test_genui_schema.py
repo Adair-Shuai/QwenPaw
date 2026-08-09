@@ -489,3 +489,19 @@ class TestChartPointsLimit:
         }
         with pytest.raises(ValidationError, match="chart series"):
             validate_ui_tree(tree)
+
+
+def test_nested_url_and_string_limits_are_enforced() -> None:
+    tree = {
+        "kind": "Button",
+        "props": {
+            "label": "Open",
+            "action": {
+                "type": "send_message",
+                "payload": {"url": "javascript:alert(1)"},
+            },
+        },
+        "children": [],
+    }
+    with pytest.raises(ValidationError, match="javascript"):
+        validate_ui_tree(tree)

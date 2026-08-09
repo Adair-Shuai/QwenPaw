@@ -1,9 +1,9 @@
-import type React from "react";
+import type * as ReactTypes from "react";
 
 export type BuiltinPageId = "tools" | "mcp" | "acp";
 
 export interface QwenPawHost {
-  React: typeof React;
+  React: typeof ReactTypes;
   // Host-owned namespaces are intentionally dynamic across console versions.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   antd: any;
@@ -16,16 +16,11 @@ export interface QwenPawHost {
   setSelectedAgent?: (agentId: string) => void;
   refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   useSelectedAgent?: () => { id: string };
-  ReactMarkdown?: React.ElementType;
+  ReactMarkdown?: ReactTypes.ComponentType<any>;
   remarkGfm?: unknown;
   loadBuiltinPage?: (
     page: BuiltinPageId,
-  ) => Promise<
-    React.ComponentType<{
-      embedded?: boolean;
-      embeddedLabels?: Record<string, string>;
-    }>
-  >;
+  ) => Promise<any>;
 }
 
 export function getHost(): QwenPawHost {

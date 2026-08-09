@@ -72,98 +72,78 @@ function isThrottled(actionType: string): boolean {
   return false;
 }
 
-export function dispatchGenUiAction(action: unknown): void {
+export interface GenUiActionContext {
+  formValues?: Record<string, unknown>;
+  formId?: string;
+}
+
+export interface GenUiActionResult {
+  ok: boolean;
+  message: string;
+}
+
+function interpolate(template: string, values: Record<string, unknown>): string {
+  return template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key: string) => {
+    const value = values[key];
+    return value == null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+  });
+}
+
+export function dispatchGenUiAction(action: unknown, context: GenUiActionContext = {}): GenUiActionResult {
   let act: GenUiAction;
   if (typeof action === "string") act = { type: action };
   else if (action && typeof action === "object") act = action as GenUiAction;
-  else return;
+  else return { ok: false, message: "无效操作" };
+
+  // submit_form is a safe semantic alias of send_message. It lets the model
+  // express intent while keeping the host security boundary unchanged.
+  const effectiveType = act.type === "submit_form" ? "send_message" : act.type;
 
   const allowed = getAllowedActions();
-  if (!allowed.has(act.type)) {
+  if (!allowed.has(effectiveType)) {
     console.warn(
       "[ugsci.genui] Action '" + act.type + "' not allowed " +
         "(allowed: " + Array.from(allowed).join(", ") + ")",
     );
-    return;
+    return { ok: false, message: "此操作未获允许" };
   }
 
-  if (isThrottled(act.type)) return;
+  if (isThrottled(effectiveType)) return { ok: false, message: "操作过于频繁，请稍后重试" };
 
-  if (act.type === "send_message") {
-    const content = (act.payload?.content as string) || (act.payload?.message as string) || "";
+  if (effectiveType === "send_message") {
+    const values = context.formValues || {};
+    let content = (act.payload?.content as string) || (act.payload?.message as string) || "";
+    const hasTemplate = /\{\{\s*[\w.-]+\s*\}\}/.test(content);
+    content = interpolate(content, values).trim();
+    if (content && !hasTemplate && Object.keys(values).length > 0) {
+      content += `\n${Object.entries(values).map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`).join("\n")}`;
+    }
+    if (!content && Object.keys(values).length > 0) {
+      const heading = context.formId ? `提交表单 ${context.formId}` : "提交表单";
+      content = `${heading}\n${Object.entries(values).map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`).join("\n")}`;
+    }
     if (!content || !content.trim()) {
       console.warn("[ugsci.genui] send_message: content is empty");
-      return;
+      return { ok: false, message: "消息内容为空" };
     }
     if (content.length > MAX_CONTENT_LENGTH) {
       console.warn("[ugsci.genui] send_message: content length " + content.length + " exceeds max " + MAX_CONTENT_LENGTH);
-      return;
+      return { ok: false, message: "消息内容过长" };
     }
-    // The host chat uses a textarea-based sender. We find the textarea,
-    // set its value, and trigger a submit event.
-    const sent = _sendViaTextarea(content);
+    const sent = Boolean((window as any).QwenPaw?.chat?.sendMessage?.(content));
     if (!sent) {
       console.info("[ugsci.genui] send_message: could not find chat sender, content:", content);
+      return { ok: false, message: "当前无法发送消息" };
     }
+    return { ok: true, message: "已提交" };
   }
+  return { ok: false, message: "尚未实现此操作" };
 }
 
 export function isActionBusy(actionType: string): boolean {
   const now = Date.now();
   const last = _lastDispatchTime[actionType] || 0;
   return now - last < THROTTLE_MS;
-}
-
-/**
- * Attempt to send a message by finding the chat sender textarea,
- * setting its value, and triggering a submit event.
- *
- * The host chat (AgentScope ChatV1 SDK) uses a textarea inside a
- * `.asr-sender` container. Setting the value via the React-controlled
- * input API (nativeInputValueSetter) and dispatching an input event
- * ensures React sees the change, then pressing Enter submits.
- *
- * Returns true if the textarea was found and the submit was triggered.
- */
-function _sendViaTextarea(text: string): boolean {
-  try {
-    // Find the sender textarea — the AgentScope SDK wraps it in a
-    // container with class containing "sender".
-    const senderContainer = document.querySelector('[class*="sender"]');
-    const textarea = senderContainer?.querySelector("textarea") as HTMLTextAreaElement | null;
-    if (!textarea) return false;
-
-    // Use React's internal setter to properly update the controlled input
-    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-      window.HTMLTextAreaElement.prototype,
-      "value",
-    )?.set;
-    if (nativeInputValueSetter) {
-      nativeInputValueSetter.call(textarea, text);
-    } else {
-      textarea.value = text;
-    }
-
-    // Dispatch input event so React's onChange fires
-    textarea.dispatchEvent(new Event("input", { bubbles: true }));
-
-    // Press Enter to submit (the SDK listens for Enter key on the textarea)
-    textarea.dispatchEvent(
-      new KeyboardEvent("keydown", {
-        key: "Enter",
-        code: "Enter",
-        keyCode: 13,
-        which: 13,
-        bubbles: true,
-        cancelable: true,
-      }),
-    );
-
-    return true;
-  } catch (err) {
-    console.warn("[ugsci.genui] _sendViaTextarea failed:", err);
-    return false;
-  }
 }
 
 /**

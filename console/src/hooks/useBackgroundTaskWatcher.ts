@@ -135,6 +135,11 @@ function startPolling(sessionId: string, toolCallId: string): AbortFn {
     };
     try {
       const info = await toolCallsApi.getInfo(sessionId, toolCallId);
+      if (!info) {
+        // Entry was cleaned up (completed and GC'd) — treat as completed.
+        await finishPoll(false);
+        return;
+      }
       if (info.status === "running" || info.status === "offloaded") {
         return;
       }

@@ -1,8 +1,19 @@
 import { renderWithProviders } from "@/test/common_setup";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
+
+interface CapturedWorkspaceProps {
+  compact?: boolean;
+  initialTarget?: { path: string; source?: string };
+  scope?: { agentId: string; chatId?: string; sessionId: string };
+  onExpand?: () => void;
+  onClose?: () => void;
+}
+
+const workspaceProps = vi.hoisted(() => ({
+  current: null as CapturedWorkspaceProps | null,
+}));
 
 vi.mock("../../api/modules/workspace", () => ({
   workspaceApi: {
@@ -21,7 +32,10 @@ vi.mock("../../api/modules/workspace", () => ({
 }));
 
 vi.mock("./FilesWorkspace", () => ({
-  default: () => <div data-testid="files-workspace" />,
+  default: (props: CapturedWorkspaceProps) => {
+    workspaceProps.current = props;
+    return <div data-testid="files-workspace" />;
+  },
 }));
 
 describe("FilesDrawer", () => {
@@ -56,9 +70,8 @@ describe("FilesDrawer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("keeps Preview open after inserting a file reference", async () => {
+  it("renders Preview as the compact shared workspace", async () => {
     const dispatch = vi.fn();
-    const user = userEvent.setup();
     renderWithProviders(
       <>
         <div className="sender">
@@ -84,21 +97,15 @@ describe("FilesDrawer", () => {
       </>,
     );
 
-    await user.click(
-      await screen.findByRole("button", {
-        name: /mentionInChat|在聊天中引用/i,
-      }),
-    );
-
-    await waitFor(() => {
-      expect(screen.getByRole("textbox")).toHaveValue("@ hello.txt ");
+    await screen.findByTestId("files-workspace");
+    expect(workspaceProps.current).toMatchObject({
+      compact: true,
+      initialTarget: { path: "hello.txt" },
     });
+    expect(typeof workspaceProps.current?.onExpand).toBe("function");
+    expect(typeof workspaceProps.current?.onClose).toBe("function");
     expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
-    expect(
-      screen.getByRole("button", {
-        name: /mentionInChat|在聊天中引用/i,
-      }),
-    ).toBeInTheDocument();
+    expect(screen.getByRole("textbox")).toBeInTheDocument();
   });
 
   it("keeps pointer resizing direct until the gesture ends", async () => {
@@ -129,15 +136,7 @@ describe("FilesDrawer", () => {
     });
   });
 
-  it("loads attachment URLs with the owning Session scope", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response("# Report", {
-        status: 200,
-        headers: { "Content-Type": "text/markdown" },
-      }),
-    );
-    vi.stubGlobal("fetch", fetchMock);
-
+  it("delegates attachment loading to the shared Session workspace", async () => {
     renderWithProviders(
       <FilesDrawer
         state={{
@@ -159,10 +158,18 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalled());
-    expect(fetchMock.mock.calls[0][1]?.headers).toMatchObject({
-      "X-Agent-Id": "agent-a",
-      "X-Chat-Id": "chat-a",
+    await screen.findByTestId("files-workspace");
+    expect(workspaceProps.current).toMatchObject({
+      compact: true,
+      scope: {
+        agentId: "agent-a",
+        chatId: "chat-a",
+        sessionId: "session-a",
+      },
+      initialTarget: {
+        source: "attachment",
+        path: "reports/report.md",
+      },
     });
   });
 });

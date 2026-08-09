@@ -1,6 +1,8 @@
-import type * as ReactNamespace from "react";
 import { hostFetch } from "../core/runtime";
 import type { TeamMode } from "./model";
+import type * as ReactTypes from "react";
+
+type ReactElementType = ReactTypes.ElementType;
 
 export type TeamPhase =
   | "plan"
@@ -73,24 +75,24 @@ export interface RoleDefinition {
 }
 
 interface AntdHost {
-  Card: ReactNamespace.ElementType;
-  Tag: ReactNamespace.ElementType;
+  Card: ReactElementType;
+  Tag: ReactElementType;
   Typography: {
-    Text: ReactNamespace.ElementType;
-    Paragraph: ReactNamespace.ElementType;
+    Text: ReactElementType;
+    Paragraph: ReactElementType;
   };
-  Button: ReactNamespace.ElementType;
-  Steps: ReactNamespace.ElementType;
-  Empty: ReactNamespace.ElementType;
-  Alert: ReactNamespace.ElementType;
-  Spin: ReactNamespace.ElementType;
+  Button: ReactElementType;
+  Steps: ReactElementType;
+  Empty: ReactElementType;
+  Alert: ReactElementType;
+  Spin: ReactElementType;
 }
 
 interface QwenPawHost {
-  React: typeof ReactNamespace;
+  React: typeof ReactTypes;
   antd: AntdHost;
   antdIcons?: {
-    ReloadOutlined?: ReactNamespace.ElementType;
+    ReloadOutlined?: ReactElementType;
   };
   useSelectedAgent?: () => { id: string };
 }

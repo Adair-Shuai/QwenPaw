@@ -13,6 +13,7 @@ const FallbackRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   return (
@@ -37,7 +38,7 @@ const FallbackRenderer: React.FC<RendererContext> = ({
       <Typography.Text style={{ fontSize: 12, color: "#999" }}>
         {artifact.title}
       </Typography.Text>
-      {artifact.binaryUrl && (
+      {!hostControls && artifact.binaryUrl && (
         <Button
           type="primary"
           icon={<DownloadOutlined />}
@@ -46,7 +47,7 @@ const FallbackRenderer: React.FC<RendererContext> = ({
           {t("workspace.download")}
         </Button>
       )}
-      {artifact.workspacePath && (
+      {!hostControls && artifact.workspacePath && (
         <Button
           icon={<FolderOpenOutlined />}
           onClick={() => workspace.revealInFileManager?.(artifact)}

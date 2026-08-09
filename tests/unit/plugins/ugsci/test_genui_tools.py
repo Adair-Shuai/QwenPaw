@@ -217,6 +217,23 @@ class TestEmitUiTreeErrors:
         assert data["ok"] is False
         assert data["error_code"] == "payload_too_large"
 
+    def test_oversized_object_payload(self) -> None:
+        """Object-first calls must obey the same limit as JSON strings."""
+        from qwenpaw.plugins_bundle.ugsci.genui.schema import (
+            GENUI_MAX_JSON_CHARS,
+        )
+
+        chunk = emit_ui_tree(
+            {
+                "kind": "JsonDebug",
+                "props": {"data": {"value": "x" * (GENUI_MAX_JSON_CHARS + 1)}},
+                "children": [],
+            },
+        )
+        data = _extract_json(chunk)
+        assert data["ok"] is False
+        assert data["error_code"] == "payload_too_large"
+
     def test_invalid_type_input(self) -> None:
         """Non-str, non-dict input should return invalid_type error."""
         chunk = emit_ui_tree(42)  # type: ignore[arg-type]

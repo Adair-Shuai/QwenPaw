@@ -9,7 +9,7 @@
  * - Missing data / empty content
  */
 
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 import * as React from "react";
 import { GenUiToolCall } from "@genui-src/components/GenUiToolCall";
@@ -85,6 +85,9 @@ describe("GenUiToolCall", () => {
     expect(container.textContent).toContain("UI Tree");
     expect(container.textContent).toContain("3 nodes"); // Stack + 2 Text
     expect(container.textContent).toContain("ui_test123");
+    expect(container.textContent).toContain("已在回复正文中展示");
+    expect(container.querySelector(".qwenpaw-genui-tree")).toBeNull();
+    expect(container.querySelector("details")?.open).toBe(false);
   });
 
   it("renders error state for failed status", () => {

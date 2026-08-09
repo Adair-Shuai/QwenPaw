@@ -292,7 +292,7 @@ export function useToolCallControl(
       if (!sid) return;
       try {
         const info = await toolCallsApi.getInfo(sid, toolCallId);
-        if (cancelled) return;
+        if (cancelled || !info) return;
         if (info.status === "offloaded") {
           tryRegisterBackground("poll-offloaded");
           return;
@@ -355,6 +355,7 @@ export function useToolCallControl(
       void toolCallsApi
         .getInfo(sid, toolCallId)
         .then((info) => {
+          if (!info) return;
           // Only background-queue registrations belong here. Foreground
           // success/cancel must not appear in the bg task panel.
           if (info.status === "offloaded") {

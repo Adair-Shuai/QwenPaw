@@ -77,33 +77,29 @@ export function SkillCenterPage({
   const handleSkillInstalled = useCallback(
     (skill: PoolSkillSpec) => {
       setWorkspaceSkills((previous) =>
-        previous.map((workspace) => {
-          if (workspace.agent_id !== currentAgentId) return workspace;
-          if (workspace.skills.some((item) => item.name === skill.name)) {
-            return workspace;
-          }
-          return {
-            ...workspace,
-            skills: [
-              ...workspace.skills,
+        previous.some((workspace) => workspace.agent_id === currentAgentId)
+          ? previous.map((workspace) => {
+              if (workspace.agent_id !== currentAgentId) return workspace;
+              if (workspace.skill_names.includes(skill.name)) {
+                return workspace;
+              }
+              return {
+                ...workspace,
+                skill_names: [...workspace.skill_names, skill.name],
+              };
+            })
+          : [
+              ...previous,
               {
-                name: skill.name,
-                description: skill.description,
-                version_text: skill.version_text,
-                content: skill.content || "",
-                source: skill.source || "pool",
-                enabled: true,
-                tags: skill.tags,
-                emoji: skill.emoji,
-                installed_from: skill.installed_from,
+                agent_id: currentAgentId,
+                agent_name: currentAgentName,
+                skill_names: [skill.name],
               },
             ],
-          };
-        }),
       );
       setAgentSkillsRevision((revision) => revision + 1);
     },
-    [currentAgentId],
+    [currentAgentId, currentAgentName],
   );
 
   const navigateTo = (path: string) => {

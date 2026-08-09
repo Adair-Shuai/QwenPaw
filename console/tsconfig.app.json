@@ -23,7 +23,8 @@
     "noUncheckedSideEffectImports": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["src/*"]
+      "@/*": ["src/*"],
+      "@genui-src/*": ["../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui/*"]
     }
   },
   "include": ["src"]

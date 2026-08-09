@@ -142,6 +142,7 @@ class ToolRegistry:
         enabled_features: set[str] | frozenset[str] | None = None,
         allowed: set[str] | frozenset[str] | None = None,
         denied: set[str] | frozenset[str] | None = None,
+        request_context: dict[str, Any] | None = None,
     ) -> list[ToolDescriptor]:
         """Return the descriptors selected for the current request.
 
@@ -159,6 +160,7 @@ class ToolRegistry:
         features = set(enabled_features or ())
         allow = set(allowed or ())
         deny = set(denied or ())
+        channel = (request_context or {}).get("channel")
 
         out: list[ToolDescriptor] = []
         for d in self._descs.values():
@@ -176,6 +178,21 @@ class ToolRegistry:
                 features,
             ):
                 continue
+            allowed_channels = d.metadata.get("allowed_channels")
+            if allowed_channels:
+                # Channel-gated tools fail closed when the request does not
+                # carry an explicit channel.  Registration happens at startup,
+                # but this decision must remain request scoped.
+                if not channel or channel not in set(allowed_channels):
+                    continue
+            availability_check = d.metadata.get("availability_check")
+            if availability_check is not None:
+                try:
+                    if not availability_check(dict(request_context or {})):
+                        continue
+                except Exception:
+                    # Request-scoped feature predicates fail closed.
+                    continue
             out.append(d)
         return out
 

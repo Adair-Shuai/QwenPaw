@@ -41,6 +41,7 @@ import {
 } from "@/utils/downloadFileFromUrl";
 import { stringifyResult, toDisplayUrl } from "./utils";
 import { useTheme } from "@/contexts/ThemeContext";
+import MediaPreview from "./MediaPreview";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 类型
@@ -474,6 +475,7 @@ export function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     // - read 操作既不是交付物也不是中间文件（不显示）
     const isDeliverable =
       operation === "send" ||
+      name.toLowerCase() === "view_image" ||
       (operation !== "read" && !SCRIPT_EXTENSIONS.has(ext));
 
     infos.push({
@@ -586,8 +588,12 @@ export function extractFileInfos(data: Record<string, unknown>): FileInfo[] {
     seen.set(info.filePath, info);
   }
 
-  // 过滤掉 read 操作（不是文件生成/交付）
-  return Array.from(seen.values()).filter((info) => info.operation !== "read");
+  // Ordinary reads are implementation details. `view_image` is different:
+  // its media is a user-facing response result and must remain inline even
+  // though the underlying operation is classified as a read.
+  return Array.from(seen.values()).filter(
+    (info) => info.operation !== "read" || info.isDeliverable,
+  );
 }
 
 /** Try to extract a URL from MCP result blocks */
@@ -960,9 +966,18 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
       <FileTextOutlined />
     );
 
+    const isInlineImage = Boolean(
+      info.binaryUrl && ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "tiff", "tif"].includes(info.extension || ""),
+    );
+
     return (
+      <div key={info.toolCallId} style={{ minWidth: 0 }}>
+      {isInlineImage && (
+        <div style={{ marginBottom: 8 }}>
+          <MediaPreview media={{ type: "image", url: info.binaryUrl!, name: info.fileName }} />
+        </div>
+      )}
       <div
-        key={info.toolCallId}
         style={{
           display: "flex",
           alignItems: "center",
@@ -1139,6 +1154,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             <FolderOpenOutlined style={{ fontSize: 14 }} />
           </button>
         </Tooltip>
+      </div>
       </div>
     );
   };

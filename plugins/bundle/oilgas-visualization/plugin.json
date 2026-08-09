@@ -1,0 +1,32 @@
+{
+  "id": "oilgas-visualization",
+  "name": "Oil & Gas Visualization",
+  "version": "0.1.0",
+  "type": "general",
+  "description": "油气三维网格、井、剖面和测井可视化工作区",
+  "description_i18n": {
+    "zh-CN": "油气三维网格、井、剖面和测井可视化工作区",
+    "en-US": "Oil & Gas 3D grid, well, intersection and well log visualization workspace"
+  },
+  "author": "UGSci Team",
+  "entry": {
+    "frontend": "ui/dist/index.js",
+    "backend": "plugin.py"
+  },
+  "dependencies": [],
+  "qwenpaw_version": {
+    "min": "2.0.0",
+    "max": "2.1.0"
+  },
+  "meta": {
+    "category": "domain-visualization",
+    "features": [
+      "reservoir-grid",
+      "property-coloring",
+      "cell-picking",
+      "benchmark",
+      "roff-support",
+      "egrid-support"
+    ]
+  }
+}

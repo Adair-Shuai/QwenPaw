@@ -9,6 +9,10 @@ metadata:
 
 # SymPy - Symbolic Mathematics in Python
 
+## UGSci Built-in Route
+
+For numeric polynomial-root requests, call `ugsci_symbolic_polynomial_roots` first. It is the stable UGSci contract and returns a structured result envelope. Use SymPy directly only for symbolic operations outside that contract.
+
 ## Overview
 
 SymPy is a Python library for symbolic mathematics that enables exact computation using mathematical symbols rather than numerical approximations. This skill provides comprehensive guidance for performing symbolic algebra, calculus, linear algebra, equation solving, physics calculations, and code generation using SymPy.
@@ -496,4 +500,3 @@ f(np.array([1, 2, 3]))
 - Tutorial: https://docs.sympy.org/latest/tutorials/intro-tutorial/index.html
 - API Reference: https://docs.sympy.org/latest/reference/index.html
 - Examples: https://github.com/sympy/sympy/tree/master/examples
-

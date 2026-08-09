@@ -48,8 +48,10 @@ standard tool result mechanism.
 
 ## Configuration
 
-Tools are registered as `enabled=False` by default. Users must opt-in
-through agent configuration to activate GenUI.
+GenUI is enabled by default. Tools are auto-enabled and the GenUI prompt
+is injected into the system prompt on startup. Set the environment variable
+`GENUI_ENABLED=false` to disable GenUI entirely (tools stay registered but
+disabled, no prompt injected).
 
 ## License
 

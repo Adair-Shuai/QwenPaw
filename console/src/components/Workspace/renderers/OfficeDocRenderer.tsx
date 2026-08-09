@@ -74,6 +74,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [htmlContent, setHtmlContent] = useState<string>("");
@@ -273,6 +274,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
         artifact={artifact}
         theme={theme}
         workspace={workspace}
+        hostControls={hostControls}
       />
     );
   }
@@ -357,64 +359,83 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
     );
   }
 
+  // OfficeCLI's spreadsheet document includes a colored `.file-title` bar.
+  // FilesWorkspace already presents the filename in its tab strip, so keeping
+  // that bar would recreate the duplicate header that hostControls removes
+  // from the React renderer chrome.
+  const previewHtml =
+    hostControls && rendererEngine === "officecli"
+      ? htmlContent.replace(
+          /<\/head>/i,
+          "<style>.file-title{display:none!important}</style></head>",
+        )
+      : htmlContent;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "4px 8px",
-          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
-          flexShrink: 0,
-        }}
-      >
-        <Space size={4}>
-          <FileTextOutlined />
-          <span style={{ fontSize: 12, color: "#999" }}>
-            {artifact.extension?.toUpperCase()}
-          </span>
-          {rendererEngine === "officecli" && (
-            <Tag color="green" style={{ fontSize: 10, marginInlineStart: 4 }}>
-              OfficeCLI
-            </Tag>
-          )}
-          {rendererEngine === "legacy" && fallbackStage === "none" && (
-            <Tag color="orange" style={{ fontSize: 10, marginInlineStart: 4 }}>
-              {t("workspace.basicRender")}
-            </Tag>
-          )}
-        </Space>
-        <Space size={2}>
-          <Tooltip title={t("workspace.reload")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<ReloadOutlined />}
-              onClick={convertDocument}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.download")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => workspace.download?.(artifact)}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+      {!hostControls && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "4px 8px",
+            borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
+            flexShrink: 0,
+          }}
+        >
+          <Space size={4}>
+            <FileTextOutlined />
+            <span style={{ fontSize: 12, color: "#999" }}>
+              {artifact.extension?.toUpperCase()}
+            </span>
+            {rendererEngine === "officecli" && (
+              <Tag color="green" style={{ fontSize: 10, marginInlineStart: 4 }}>
+                OfficeCLI
+              </Tag>
+            )}
+            {rendererEngine === "legacy" && fallbackStage === "none" && (
+              <Tag
+                color="orange"
+                style={{ fontSize: 10, marginInlineStart: 4 }}
+              >
+                {t("workspace.basicRender")}
+              </Tag>
+            )}
+          </Space>
+          <Space size={2}>
+            <Tooltip title={t("workspace.reload")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<ReloadOutlined />}
+                onClick={convertDocument}
+              />
+            </Tooltip>
+            <Tooltip title={t("workspace.download")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={() => workspace.download?.(artifact)}
+              />
+            </Tooltip>
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          </Space>
+        </div>
+      )}
       <iframe
-        srcDoc={htmlContent}
+        srcDoc={previewHtml}
         title={artifact.title}
         sandbox={
           rendererEngine === "officecli" ? "allow-scripts" : "allow-same-origin"

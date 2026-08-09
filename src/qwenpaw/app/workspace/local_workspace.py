@@ -95,6 +95,7 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             enabled_features=set(enabled_features),
             allowed=allowed,
             denied=denied,
+            request_context=request_context,
         )
 
         return [

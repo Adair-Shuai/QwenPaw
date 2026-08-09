@@ -62,6 +62,55 @@ def _tc(tool_name: str, target: str = "") -> ToolCallSpec:
     )
 
 
+def test_discovery_keeps_runtime_injected_plugin_tools() -> None:
+    from qwenpaw.agents import tools as tools_module
+
+    name = "__ut_dynamic_plugin_tool__"
+
+    def dynamic_tool() -> str:
+        return "ok"
+
+    dynamic_tool._tool_descriptor = (  # type: ignore[attr-defined]
+        ToolDescriptor(
+            name=name,
+            func=dynamic_tool,
+        )
+    )
+    setattr(tools_module, name, dynamic_tool)
+    tools_module.__all__.append(name)
+    try:
+        discovered = tools_module.discover_builtin_tool_funcs()
+        assert dynamic_tool in discovered
+    finally:
+        tools_module.__all__.remove(name)
+        delattr(tools_module, name)
+
+
+def test_runtime_tool_request_availability_predicate() -> None:
+    enabled = {"value": False}
+
+    def _tool() -> str:
+        return "ok"
+
+    registry = RuntimeToolRegistry()
+    registry.register(
+        ToolDescriptor(
+            name="dynamic_tool",
+            func=_tool,
+            enabled_by_default=True,
+            metadata={"availability_check": lambda _ctx: enabled["value"]},
+        ),
+    )
+    assert not registry.filter(
+        request_context={"channel": "console"},
+    )
+    enabled["value"] = True
+    assert [
+        item.name
+        for item in registry.filter(request_context={"channel": "console"})
+    ] == ["dynamic_tool"]
+
+
 class TestRegisterToolGovernance:
     def test_idempotent_register_identical_metadata(self):
         registry = ToolRegistry()

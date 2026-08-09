@@ -18,6 +18,7 @@ const MediaRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [loadAttempt, setLoadAttempt] = useState(0);
@@ -76,41 +77,45 @@ const MediaRenderer: React.FC<RendererContext> = ({
         background: bgColor,
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          padding: "4px 8px",
-          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
-          flexShrink: 0,
-        }}
-      >
-        <span
-          style={{ fontSize: 11, color: "#999", textTransform: "uppercase" }}
+      {!hostControls && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "space-between",
+            padding: "4px 8px",
+            borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
+            flexShrink: 0,
+          }}
         >
-          {isVideo ? "Video" : "Audio"} · {artifact.extension}
-        </span>
-        <Space size={2}>
-          <Tooltip title={t("workspace.download")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={handleDownload}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
-        </Space>
-      </div>
+          <span
+            style={{ fontSize: 11, color: "#999", textTransform: "uppercase" }}
+          >
+            {isVideo ? "Video" : "Audio"} · {artifact.extension}
+          </span>
+          <Space size={2}>
+            <Tooltip title={t("workspace.download")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={handleDownload}
+              />
+            </Tooltip>
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          </Space>
+        </div>
+      )}
       <div
         style={{
           flex: 1,

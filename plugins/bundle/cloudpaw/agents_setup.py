@@ -185,6 +185,7 @@ def ensure_builtin_agents() -> None:
             ChannelConfig,
             HeartbeatConfig,
             MCPConfig,
+            load_agent_config,
             save_agent_config,
         )
         from qwenpaw.config.utils import load_config, save_config
@@ -234,19 +235,32 @@ def ensure_builtin_agents() -> None:
 
         acp_config = _build_acp_config(spec) if "acp_agent" in spec else None
 
-        agent_cfg = AgentProfileConfig(
-            id=agent_id,
-            name=spec["name"],
-            description=spec["description"],
-            workspace_dir=str(expected_ws),
-            language=config.agents.language or "zh",
-            channels=ChannelConfig(),
-            mcp=MCPConfig(),
-            heartbeat=HeartbeatConfig(),
-            running=running_cfg,
-            acp=acp_config,
-            approval_level=spec.get("approval_level", "AUTO"),
-        )
+        agent_json = expected_ws / "agent.json"
+        if agent_json.exists():
+            # Built-in agents are templates, not immutable resources. Preserve
+            # user-owned runtime choices (model, tools, channels, backend
+            # settings, etc.) across application restarts.
+            agent_cfg = load_agent_config(agent_id)
+            agent_cfg.name = spec["name"]
+            agent_cfg.description = spec["description"]
+            agent_cfg.workspace_dir = str(expected_ws)
+            agent_cfg.running = running_cfg
+            if acp_config is not None:
+                agent_cfg.acp = acp_config
+        else:
+            agent_cfg = AgentProfileConfig(
+                id=agent_id,
+                name=spec["name"],
+                description=spec["description"],
+                workspace_dir=str(expected_ws),
+                language=config.agents.language or "zh",
+                channels=ChannelConfig(),
+                mcp=MCPConfig(),
+                heartbeat=HeartbeatConfig(),
+                running=running_cfg,
+                acp=acp_config,
+                approval_level=spec.get("approval_level", "AUTO"),
+            )
 
         _initialize_agent_workspace(
             expected_ws,

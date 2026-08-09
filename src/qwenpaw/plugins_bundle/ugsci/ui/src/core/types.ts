@@ -69,8 +69,7 @@ export interface PoolSkillSpec {
 export interface WorkspaceSkillSummary {
   agent_id: string;
   agent_name?: string;
-  workspace_dir: string;
-  skills: SkillSpec[];
+  skill_names: string[];
 }
 
 // ─── MCP Types ────────────────────────────────────────────────────────────────

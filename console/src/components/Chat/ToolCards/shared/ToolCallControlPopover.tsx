@@ -122,6 +122,7 @@ export const OffloadBanner: React.FC<OffloadBannerProps> = ({
         void toolCallsApi
           .getInfo(sessionId, toolCallId)
           .then((info) => {
+            if (!info) return;
             // Fast bg finish may already be "completed" — only register when
             // the call was actually backgrounded (offload_reason set).
             if (info.status === "offloaded") {

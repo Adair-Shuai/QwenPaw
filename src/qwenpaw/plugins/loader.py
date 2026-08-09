@@ -1168,19 +1168,31 @@ class PluginLoader:
 
         def _resolve_install_paths() -> Tuple[Path, Path]:
             resolved_install = install_base.resolve()
-            resolved_target = (resolved_install / plugin_id).resolve()
+            if (
+                not plugin_id
+                or plugin_id in {".", ".."}
+                or "/" in plugin_id
+                or "\\" in plugin_id
+                or "\x00" in plugin_id
+            ):
+                raise ValueError(f"Invalid plugin id: {plugin_id!r}")
+            lexical_target = resolved_install / plugin_id
+            resolved_target = lexical_target.resolve()
+            # Development installs may intentionally keep the runtime entry
+            # as a symlink to the exact source directory.  Permit that one
+            # case while still rejecting arbitrary symlink escapes.
+            if not resolved_target.is_relative_to(resolved_install) and not (
+                lexical_target.is_symlink() and resolved_target == source_path
+            ):
+                raise ValueError(
+                    f"Plugin id '{plugin_id}' resolves outside the plugin "
+                    f"directory ({resolved_install}). Refusing to install.",
+                )
             return resolved_install, resolved_target
 
-        resolved_install_dir, target_dir = await asyncio.to_thread(
+        _resolved_install_dir, target_dir = await asyncio.to_thread(
             _resolve_install_paths,
         )
-
-        # Guard against path-traversal in plugin_id (e.g. "../../etc")
-        if not target_dir.is_relative_to(resolved_install_dir):
-            raise ValueError(
-                f"Plugin id '{plugin_id}' resolves outside the plugin "
-                f"directory ({resolved_install_dir}). Refusing to install.",
-            )
 
         # Copy files when source is not already the target (off the loop).
         if source_path != target_dir:

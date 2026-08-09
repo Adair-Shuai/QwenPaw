@@ -13,6 +13,7 @@ const MermaidRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -56,42 +57,44 @@ const MermaidRenderer: React.FC<RendererContext> = ({
         background: theme === "dark" ? "#1e1e1e" : "#fff",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "flex-end",
-          padding: "4px 8px",
-          borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
-          flexShrink: 0,
-        }}
-      >
-        <Tooltip title={t("workspace.reload")}>
-          <Button
-            size="small"
-            type="text"
-            icon={<ReloadOutlined />}
-            onClick={renderMermaid}
-          />
-        </Tooltip>
-        <Tooltip title={t("workspace.download")}>
-          <Button
-            size="small"
-            type="text"
-            icon={<DownloadOutlined />}
-            onClick={() => workspace.download?.(artifact)}
-          />
-        </Tooltip>
-        <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-          <Button
-            size="small"
-            type="text"
-            icon={<FolderOpenOutlined />}
-            onClick={() => workspace.revealInFileManager?.(artifact)}
-            disabled={!artifact.workspacePath}
-          />
-        </Tooltip>
-      </div>
+      {!hostControls && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "flex-end",
+            padding: "4px 8px",
+            borderBottom: `1px solid ${theme === "dark" ? "#333" : "#f0f0f0"}`,
+            flexShrink: 0,
+          }}
+        >
+          <Tooltip title={t("workspace.reload")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<ReloadOutlined />}
+              onClick={renderMermaid}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.download")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<DownloadOutlined />}
+              onClick={() => workspace.download?.(artifact)}
+            />
+          </Tooltip>
+          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
+            <Button
+              size="small"
+              type="text"
+              icon={<FolderOpenOutlined />}
+              onClick={() => workspace.revealInFileManager?.(artifact)}
+              disabled={!artifact.workspacePath}
+            />
+          </Tooltip>
+        </div>
+      )}
       <div
         ref={containerRef}
         style={{

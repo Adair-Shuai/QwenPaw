@@ -10,9 +10,8 @@ Four tools exposed to the model:
 IMPORTANT: This module must NOT use ``from __future__ import annotations``
 because AgentScope's FunctionTool resolves type annotations at runtime.
 
-The ``tree`` and ``patches`` parameters use ``str`` type so AgentScope
-generates a clean ``{"type": "string"}`` schema. The function body accepts
-both a JSON string and (defensively) a pre-parsed dict/list.
+The ``tree`` and ``patches`` parameters are object-first while retaining
+string compatibility for older models and saved conversations.
 
 Tools return a single ``ToolChunk`` (not a list), matching the existing
 UGSci tool convention (see engine/tools/launcher.py etc.).
@@ -29,6 +28,7 @@ from .guide import get_genui_guide
 from .json_repair import try_parse_json_object
 from .schema import GENUI_MAX_JSON_CHARS, list_component_catalog, validate_ui_tree, validate_ui_patch, apply_ui_patches
 from .state import get_state_store
+from .settings import load_settings
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.genui")
 
@@ -53,7 +53,7 @@ def _err(error_code: str, message: str, hint: str = "") -> ToolChunk:
 
 
 def _get_session_id() -> str:
-    session_id = "unknown"
+    session_id = ""
     try:
         from qwenpaw.app.agent_context import get_current_session_id
         sid = get_current_session_id()
@@ -90,7 +90,17 @@ def _parse_tree_param(tree: Any) -> dict[str, Any] | None:
     return None
 
 
-def emit_ui_tree(tree: str) -> ToolChunk:
+def _payload_size(value: Any) -> int:
+    """Return the canonical JSON character size for object/string inputs."""
+    if isinstance(value, str):
+        return len(value)
+    try:
+        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+    except (TypeError, ValueError):
+        return GENUI_MAX_JSON_CHARS + 1
+
+
+def emit_ui_tree(tree: dict[str, Any] | str) -> ToolChunk:
     """Emit a validated generative UI tree that renders inline in the chat.
 
     Use this tool for cards, dashboards, tables, KPIs, charts, and other
@@ -120,7 +130,9 @@ def emit_ui_tree(tree: str) -> ToolChunk:
         on success, or ``{ok:false, kind:"genui_error", error_code, message}``
         on failure.
     """
-    if isinstance(tree, str) and len(tree) > GENUI_MAX_JSON_CHARS:
+    if not load_settings().get("enabled", True):
+        return _err("feature_disabled", "GenUI is disabled in UGSci settings.")
+    if _payload_size(tree) > GENUI_MAX_JSON_CHARS:
         return _err("payload_too_large", f"tree JSON exceeds {GENUI_MAX_JSON_CHARS} chars")
 
     if not isinstance(tree, (str, dict)):
@@ -144,6 +156,8 @@ def emit_ui_tree(tree: str) -> ToolChunk:
         return _err("invalid_tree", str(exc), "Call list_ui_components to verify kind/prop names.")
 
     session_id = _get_session_id()
+    if not session_id:
+        return _err("missing_session_context", "GenUI requires an active session context.")
     tool_call_id = _get_tool_call_id()
     store = get_state_store()
     snapshot = store.create(session_id=session_id, tree=normalized, tool_call_id=tool_call_id)
@@ -161,7 +175,7 @@ def emit_ui_tree(tree: str) -> ToolChunk:
     return _ok(result)
 
 
-def emit_ui_patch(patches: str) -> ToolChunk:
+def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
     """Apply JSON Patch operations to an existing GenUI tree.
 
     Use this to update a previously emitted UI tree without re-sending the
@@ -186,7 +200,9 @@ def emit_ui_patch(patches: str) -> ToolChunk:
         base_revision, revision, patches, tree}`` on success,
         or ``{ok:false, kind:"genui_error", ...}`` on failure.
     """
-    if isinstance(patches, str) and len(patches) > GENUI_MAX_JSON_CHARS:
+    if not load_settings().get("enabled", True):
+        return _err("feature_disabled", "GenUI is disabled in UGSci settings.")
+    if _payload_size(patches) > GENUI_MAX_JSON_CHARS:
         return _err("payload_too_large", f"patches JSON exceeds {GENUI_MAX_JSON_CHARS} chars")
 
     # Parse patches parameter
@@ -218,6 +234,8 @@ def emit_ui_patch(patches: str) -> ToolChunk:
     patch_list = validated_patch["patches"]
 
     session_id = _get_session_id()
+    if not session_id:
+        return _err("missing_session_context", "GenUI patching requires an active session context.")
     store = get_state_store()
 
     try:

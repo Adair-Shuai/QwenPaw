@@ -176,6 +176,31 @@ describe("GenUiInline — History Recovery (PLAN §9.3: 刷新页面恢复)", ()
     expect(container.textContent).not.toContain("original");
   });
 
+  it("renders a patch result when the original response bubble is not mounted", async () => {
+    const patchResult = {
+      ok: true,
+      kind: "genui_patch",
+      ui_id: "ui_patch_only",
+      base_revision: 1,
+      revision: 2,
+      tree: {
+        schemaVersion: "1",
+        root: { nodeId: "n1", kind: "Text", props: { value: "patch fallback" }, children: [] },
+      },
+    };
+    const output = [{
+      type: "plugin_call_output",
+      content: [
+        { data: { name: "emit_ui_patch", call_id: "c2" } },
+        { data: { output: JSON.stringify(patchResult), call_id: "c2" } },
+      ],
+    }];
+    const { container } = renderInline({ output });
+    await act(async () => { await new Promise((resolve) => setTimeout(resolve, 10)); });
+    expect(container.textContent).toContain("patch fallback");
+    expect(container.querySelector(".qwenpaw-genui-tree")).not.toBeNull();
+  });
+
   it("renders nothing when session has no matching snapshots", async () => {
     (window as any).QwenPaw.host.getCurrentSessionId = () => "other-session";
 

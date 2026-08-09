@@ -23,6 +23,7 @@ import {
 import { MarketplacePage } from "./market/MarketplacePage";
 import { WelcomePromptsInjector } from "./WelcomePromptsInjector";
 import { registerGenuiFrontend } from "./genui/index";
+import { GenUiSettingsPage } from "./genui/GenUiSettingsPage";
 
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
@@ -61,6 +62,7 @@ function buildPlugin() {
   const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
   const ToolOutlined = antdIcons.ToolOutlined;
   const ShopOutlined = antdIcons.ShopOutlined;
+  const AppstoreOutlined = antdIcons.AppstoreOutlined;
 
   // Expert Center
   QP.route.add(PLUGIN_ID, {
@@ -79,6 +81,23 @@ function buildPlugin() {
     route: "ugsci.experts",
     order: 5,
     visible: () => isSimpleMode(),
+  });
+
+  QP.route.add(PLUGIN_ID, {
+    id: "ugsci.genui-settings",
+    path: "/ugsci-genui-settings",
+    component: GenUiSettingsPage,
+  });
+  QP.menu.add(PLUGIN_ID, {
+    id: "ugsci.genui-settings",
+    location: "primary.settings",
+    parentId: "plugins-group",
+    label: () => "GenUI 设置",
+    icon: AppstoreOutlined
+      ? React.createElement(AppstoreOutlined, { style: { fontSize: 16 } })
+      : undefined,
+    route: "ugsci.genui-settings",
+    order: 30,
   });
 
   // Unified Tools & Skills Center

@@ -159,16 +159,27 @@ _invalidate_builtin_tools_cache()
 
 
 def discover_builtin_tool_funcs() -> list[Callable]:
-    """Return all built-in tool functions auto-collected by
-    ``@tool_descriptor``.
+    """Return native and runtime-injected plugin tool functions.
 
-    The decorator registers each function at import time.  This function
-    simply returns the collected built-in tools — no ``pkgutil`` /
-    ``importlib`` scanning, no manual list.
+    Native functions are collected by ``@tool_descriptor``. ``PluginApi``
+    adds plugin functions to this module and ``__all__`` at runtime; include
+    those descriptor-bearing callables as well so an Agent hot reload does
+    not lose plugin tools when its Workspace registry is rebuilt.
     """
     from ...runtime.tool_registry import get_builtin_tool_funcs
 
-    return get_builtin_tool_funcs()
+    functions = list(get_builtin_tool_funcs())
+    seen = {id(func) for func in functions}
+    for name in tuple(globals().get("__all__", ())):
+        func = globals().get(name)
+        if (
+            callable(func)
+            and getattr(func, "_tool_descriptor", None) is not None
+            and id(func) not in seen
+        ):
+            functions.append(func)
+            seen.add(id(func))
+    return functions
 
 
 def _build_all() -> list[str]:

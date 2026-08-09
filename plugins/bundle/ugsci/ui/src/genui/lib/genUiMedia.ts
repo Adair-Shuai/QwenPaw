@@ -17,6 +17,7 @@
 
 /** Cache: filePath → blobURL (or null if resolution failed) */
 const _urlCache = new Map<string, string | null>();
+const MAX_MEDIA_CACHE_ENTRIES = 128;
 
 /** Set of active fetch promises to deduplicate concurrent requests */
 const _pending = new Map<string, Promise<string | null>>();
@@ -101,6 +102,14 @@ export async function resolveMediaUrl(src: string): Promise<string | null> {
 
   try {
     const url = await promise;
+    if (!_urlCache.has(src) && _urlCache.size >= MAX_MEDIA_CACHE_ENTRIES) {
+      const oldestKey = _urlCache.keys().next().value as string | undefined;
+      if (oldestKey !== undefined) {
+        const oldestUrl = _urlCache.get(oldestKey);
+        if (oldestUrl?.startsWith("blob:")) URL.revokeObjectURL(oldestUrl);
+        _urlCache.delete(oldestKey);
+      }
+    }
     _urlCache.set(src, url);
     return url;
   } finally {

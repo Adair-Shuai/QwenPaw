@@ -9,6 +9,10 @@ metadata:
 
 # Pymoo - Multi-Objective Optimization in Python
 
+## UGSci Built-in Route
+
+For bounded quadratic multi-objective problems, call `ugsci_multiobjective_quadratic` first. It exposes a stable seeded NSGA-II contract. Use pymoo directly only for objectives or constraints outside that contract.
+
 ## Overview
 
 Pymoo is a comprehensive Python framework for optimization with emphasis on multi-objective problems. Solve single and multi-objective optimization using state-of-the-art algorithms (NSGA-II/III, MOEA/D), benchmark problems (ZDT, DTLZ), customizable genetic operators, and multi-criteria decision making methods. Excels at finding trade-off solutions (Pareto fronts) for problems with conflicting objectives.
@@ -567,4 +571,3 @@ uv pip install pymoo
 - Reference directions required for NSGA-III
 - Normalize objectives before MCDM
 - Use appropriate termination: `('n_gen', N)` or `get_termination("f_tol", tol=0.001)`
-

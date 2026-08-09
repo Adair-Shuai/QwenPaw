@@ -3,6 +3,16 @@ import { describe, expect, it } from "vitest";
 import FilePreview from "./FilePreview";
 
 describe("FilePreview", () => {
+  it("leaves shared preview controls to the files workspace host", () => {
+    const { container } = render(
+      <FilePreview filePath="index.html" content="<h1>Preview</h1>" />,
+    );
+
+    expect(container.querySelector("iframe")).toBeInTheDocument();
+    expect(container.querySelector(".ant-segmented")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+  });
+
   it("shows YAML frontmatter as metadata while preserving the body", () => {
     render(
       <FilePreview

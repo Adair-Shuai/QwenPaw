@@ -23,6 +23,7 @@ const SandpackRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
   workspace,
+  hostControls,
 }) => {
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
@@ -51,13 +52,15 @@ const SandpackRenderer: React.FC<RendererContext> = ({
   if (viewMode === "code") {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <Toolbar
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          artifact={artifact}
-          workspace={workspace}
-          t={t}
-        />
+        {!hostControls && (
+          <Toolbar
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            artifact={artifact}
+            workspace={workspace}
+            t={t}
+          />
+        )}
         <pre
           style={{
             margin: 0,
@@ -77,13 +80,15 @@ const SandpackRenderer: React.FC<RendererContext> = ({
   if (!sandpackLoaded || !sandpackMod) {
     return (
       <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-        <Toolbar
-          viewMode={viewMode}
-          setViewMode={setViewMode}
-          artifact={artifact}
-          workspace={workspace}
-          t={t}
-        />
+        {!hostControls && (
+          <Toolbar
+            viewMode={viewMode}
+            setViewMode={setViewMode}
+            artifact={artifact}
+            workspace={workspace}
+            t={t}
+          />
+        )}
         <div
           style={{
             flex: 1,
@@ -104,13 +109,15 @@ const SandpackRenderer: React.FC<RendererContext> = ({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <Toolbar
-        viewMode={viewMode}
-        setViewMode={setViewMode}
-        artifact={artifact}
-        workspace={workspace}
-        t={t}
-      />
+      {!hostControls && (
+        <Toolbar
+          viewMode={viewMode}
+          setViewMode={setViewMode}
+          artifact={artifact}
+          workspace={workspace}
+          t={t}
+        />
+      )}
       <div style={{ flex: 1, position: "relative" }}>
         <SandpackProvider
           template="react"

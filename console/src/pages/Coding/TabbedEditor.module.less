@@ -10,17 +10,35 @@
 // ---- Tab bar ---------------------------------------------------------------
 .tabBar {
   display: flex;
-  align-items: flex-end;
-  overflow-x: auto;
-  overflow-y: hidden;
+  align-items: stretch;
   flex-shrink: 0;
   background: var(--header-background, #fafafa);
   border-bottom: 1px solid var(--border-color, rgba(0, 0, 0, 0.08));
+}
+
+.tabScroller {
+  min-width: 0;
+  display: flex;
+  align-items: flex-end;
+  flex: 1;
+  overflow-x: auto;
+  overflow-y: hidden;
   scrollbar-width: none;
 
   &::-webkit-scrollbar {
     display: none;
   }
+}
+
+.tabBarActions {
+  min-height: 32px;
+  padding: 0 6px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex: 0 0 auto;
+  border-left: 1px solid var(--border-color, rgba(0, 0, 0, 0.06));
+  background: var(--header-background, #fafafa);
 }
 
 .tab {
@@ -129,27 +147,10 @@
   min-height: 30px;
 }
 
-.fileName {
-  font-size: 11px;
-  color: var(--text-tertiary, rgba(0, 0, 0, 0.35));
-  font-family: var(
-    --ant-font-family-code,
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace
-  );
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .toolbarRight {
   min-width: 0;
   display: flex;
+  flex: 1;
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
@@ -254,10 +255,6 @@
 }
 
 @container (max-width: 760px) {
-  .fileName {
-    max-width: 120px;
-  }
-
   .diffLabel span {
     display: none;
   }
@@ -275,10 +272,6 @@
 }
 
 @container (max-width: 480px) {
-  .fileName {
-    display: none;
-  }
-
   .toolbar {
     justify-content: flex-end;
   }
@@ -308,6 +301,16 @@
   &:disabled {
     opacity: 0.35;
     cursor: not-allowed;
+  }
+}
+
+.actionSpinning {
+  animation: editor-action-spin 800ms linear infinite;
+}
+
+@keyframes editor-action-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -463,10 +466,6 @@
 
   .toolbar {
     border-bottom-color: rgba(255, 255, 255, 0.08);
-  }
-
-  .fileName {
-    color: rgba(255, 255, 255, 0.45);
   }
 
   .iconBtn {

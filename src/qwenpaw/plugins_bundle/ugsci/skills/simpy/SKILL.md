@@ -9,6 +9,10 @@ metadata:
 
 # SimPy - Discrete-Event Simulation
 
+## UGSci Built-in Route
+
+For deterministic FIFO queues with fixed arrival and service intervals, call `ugsci_queue_simulate` first. It returns standard queue metrics through the UGSci result envelope. Use SimPy directly for richer event models.
+
 ## Overview
 
 SimPy is a process-based discrete-event simulation framework based on standard Python. Use SimPy to model systems where entities (customers, vehicles, packets, etc.) interact with each other and compete for shared resources (servers, machines, bandwidth, etc.) over time.
@@ -425,4 +429,3 @@ Detailed guides for specific topics:
 - **Transportation**: Traffic flow, logistics, vehicle routing
 - **Service operations**: Call centers, retail checkout, appointment scheduling
 - **Computer systems**: CPU scheduling, memory management, I/O operations
-

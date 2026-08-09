@@ -72,7 +72,7 @@ export function SkillPoolTab({
       new Set(
         workspaceSkills
           .find((workspace) => workspace.agent_id === agentId)
-          ?.skills.map((skill) => skill.name) || [],
+          ?.skill_names || [],
       ),
     [workspaceSkills, agentId],
   );
@@ -157,7 +157,7 @@ export function SkillPoolTab({
     (skillName: string): string[] => {
       const result: string[] = [];
       for (const ws of workspaceSkills) {
-        if (ws.skills.some((s) => s.name === skillName)) {
+        if (ws.skill_names.includes(skillName)) {
           const agent = agents.find((a) => a.id === ws.agent_id);
           result.push(agent?.name || ws.agent_name || ws.agent_id);
         }

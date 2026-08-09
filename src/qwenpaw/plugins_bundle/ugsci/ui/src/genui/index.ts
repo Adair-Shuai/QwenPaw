@@ -2,26 +2,45 @@
 
 import { GenUiToolCall } from "./components/GenUiToolCall";
 import { GenUiInline } from "./components/GenUiInline";
-import { GenUiStoreProvider } from "./stores/genUi";
+import { GenUiStoreProvider, resetGenUiStore } from "./stores/genUi";
+import { clearMediaCache } from "./lib/genUiMedia";
+import { apiFetch } from "../core/runtime";
 
-export function registerGenuiFrontend(QP: any, React: any): void {
+let disposeRegistrations: (() => void) | null = null;
+
+export function registerGenuiFrontend(QP: any, React: any): () => void {
   const PLUGIN_ID = "ugsci";
+  disposeRegistrations?.();
+  const disposables: Array<{ dispose: () => void }> = [];
+
+  void apiFetch<Record<string, unknown>>("/ugsci/genui/config", { bypassCache: true })
+    .then((config) => {
+      QP.genui = { ...(QP.genui || {}), config };
+    })
+    .catch((error) => console.warn("[ugsci.genui] Failed to load runtime config", error));
 
   if (QP.chat?.toolRender) {
-    QP.chat.toolRender(PLUGIN_ID, "emit_ui_tree", GenUiToolCall);
-    QP.chat.toolRender(PLUGIN_ID, "emit_ui_patch", GenUiToolCall);
-    QP.chat.toolRender(PLUGIN_ID, "list_ui_components", GenUiToolCall);
-    QP.chat.toolRender(PLUGIN_ID, "get_genui_guide", GenUiToolCall);
+    disposables.push(QP.chat.toolRender(PLUGIN_ID, "emit_ui_tree", GenUiToolCall));
+    disposables.push(QP.chat.toolRender(PLUGIN_ID, "emit_ui_patch", GenUiToolCall));
+    disposables.push(QP.chat.toolRender(PLUGIN_ID, "list_ui_components", GenUiToolCall));
+    disposables.push(QP.chat.toolRender(PLUGIN_ID, "get_genui_guide", GenUiToolCall));
     console.info("[ugsci.genui] Registered 4 tool card renderers");
   }
 
   if (QP.chat?.response?.append) {
-    QP.chat.response.append(
+    disposables.push(QP.chat.response.append(
       PLUGIN_ID,
       (ctx: { data: Record<string, unknown> }) =>
         React.createElement(GenUiStoreProvider, null, React.createElement(GenUiInline, { data: ctx.data })),
       { id: "ugsci.genui.response-append", order: 50 },
-    );
+    ));
     console.info("[ugsci.genui] Registered response.append slot");
   }
+  disposeRegistrations = () => {
+    for (const disposable of disposables.reverse()) disposable?.dispose?.();
+    resetGenUiStore();
+    clearMediaCache();
+    disposeRegistrations = null;
+  };
+  return disposeRegistrations;
 }

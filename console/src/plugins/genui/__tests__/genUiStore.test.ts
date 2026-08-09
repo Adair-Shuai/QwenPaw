@@ -114,6 +114,37 @@ describe("extractGenUiResults", () => {
     expect(results[0].ui_id).toBe("ui_test123");
   });
 
+  it("extracts from a nested V1 envelope with TextBlock-wrapped output", () => {
+    const output = [{
+      wrapper: {
+        type: "plugin_call_output",
+        content: [
+          { data: { name: "emit_ui_tree", call_id: "c1" } },
+          { data: { output: JSON.stringify([{ type: "text", text: validOutput }]) } },
+        ],
+      },
+    }];
+    const results = extractGenUiResults(output);
+    expect(results).toHaveLength(1);
+    expect(results[0].ui_id).toBe("ui_test123");
+  });
+
+  it("extracts AgentScope tool_result blocks from replayed responses", () => {
+    const output = [{
+      role: "assistant",
+      content: [{
+        type: "tool_result",
+        id: "c1",
+        name: "emit_ui_tree",
+        output: [{ type: "text", text: validOutput }],
+        state: "success",
+      }],
+    }];
+    const results = extractGenUiResults(output);
+    expect(results).toHaveLength(1);
+    expect(results[0].ui_id).toBe("ui_test123");
+  });
+
   it("returns empty for streaming (no content[1])", () => {
     const output = [
       {

@@ -19,6 +19,8 @@ GENUI_MAX_JSON_CHARS = 32_000
 GENUI_MAX_STRING_CHARS = 8_000
 GENUI_MAX_TABLE_ROWS = 200
 GENUI_MAX_CHART_POINTS = 2_000
+GENUI_MAX_NESTED_DEPTH = 32
+GENUI_MAX_OBJECT_KEYS = 500
 
 # ─── Component kind whitelists ──────────────────────────────────────────────
 
@@ -193,19 +195,19 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
     # Media
     {"kind": "Image", "description": "Image with URL or file path", "props": {"src": "string", "alt": "string", "caption": "string", "rounded": "boolean", "maxHeight": "number", "fit": "string", "aspect": "string", "lightbox": "boolean"}},
     {"kind": "ImageGallery", "description": "Gallery of images; children are Image", "props": {"columns": "number", "gap": "number"}},
-    {"kind": "Chart", "description": "Data chart (line, bar, area, pie)", "props": {"chart": "string", "title": "string", "categories": "array of string", "series": "array of {name, values}", "height": "number", "stacked": "boolean", "showLegend": "boolean"}},
+    {"kind": "Chart", "description": "Data chart; can react to named controls through generator", "props": {"chart": "string", "title": "string", "categories": "array of string", "series": "array of {name, values}", "generator": "{type:'polynomial', coefficients:['a','b',...], xMin, xMax, samples, label}", "height": "number", "stacked": "boolean", "showLegend": "boolean"}},
     # Interactive
-    {"kind": "Button", "description": "Action button", "props": {"label": "string", "action": "object {type, payload}", "variant": "string"}},
-    {"kind": "InteractiveButton", "description": "Button with loading state", "props": {"label": "string", "action": "object", "variant": "string", "loading": "boolean"}},
+    {"kind": "Button", "description": "Action button; inside Form it can submit current field values", "props": {"label": "string", "action": "object {type, payload}", "variant": "string", "disabled": "boolean"}},
+    {"kind": "InteractiveButton", "description": "Action button with loading/disabled state and result feedback", "props": {"label": "string", "action": "object", "variant": "string", "loading": "boolean", "disabled": "boolean"}},
     {"kind": "ToggleButton", "description": "Toggle button", "props": {"label": "string", "checked": "boolean", "action": "object"}},
     {"kind": "LinkButton", "description": "Link-style button", "props": {"label": "string", "href": "string", "action": "object"}},
-    {"kind": "Input", "description": "Text input (display-only outside Form)", "props": {"label": "string", "placeholder": "string", "value": "string"}},
-    {"kind": "NumberInput", "description": "Numeric input", "props": {"label": "string", "value": "number", "min": "number", "max": "number"}},
-    {"kind": "Select", "description": "Dropdown select", "props": {"label": "string", "options": "array of string", "value": "string"}},
-    {"kind": "Textarea", "description": "Multi-line text input", "props": {"label": "string", "placeholder": "string", "value": "string", "rows": "number"}},
-    {"kind": "Form", "description": "Form container; children are inputs", "props": {"title": "string", "submitLabel": "string", "action": "object"}},
-    {"kind": "Switch", "description": "Toggle switch", "props": {"label": "string", "checked": "boolean"}},
-    {"kind": "Slider", "description": "Range slider", "props": {"label": "string", "value": "number", "min": "number", "max": "number", "step": "number"}},
+    {"kind": "Input", "description": "Interactive text input; use name inside Form", "props": {"name": "string", "label": "string", "description": "string", "placeholder": "string", "value": "string", "required": "boolean"}},
+    {"kind": "NumberInput", "description": "Interactive numeric input", "props": {"name": "string", "label": "string", "value": "number", "min": "number", "max": "number", "step": "number", "required": "boolean"}},
+    {"kind": "Select", "description": "Interactive dropdown select", "props": {"name": "string", "label": "string", "options": "array of string or {label,value}", "value": "string", "required": "boolean"}},
+    {"kind": "Textarea", "description": "Interactive multi-line text input", "props": {"name": "string", "label": "string", "placeholder": "string", "value": "string", "rows": "number", "required": "boolean"}},
+    {"kind": "Form", "description": "Interactive form; submit collects named child fields and sends them to chat", "props": {"formId": "string", "title": "string", "submitLabel": "string", "action": "object; send_message supports {{fieldName}} templates or submit_form"}},
+    {"kind": "Switch", "description": "Interactive toggle switch", "props": {"name": "string", "label": "string", "checked": "boolean"}},
+    {"kind": "Slider", "description": "Interactive range slider", "props": {"name": "string", "label": "string", "value": "number", "min": "number", "max": "number", "step": "number"}},
     {"kind": "FileInput", "description": "File upload input", "props": {"label": "string", "accept": "string", "multiple": "boolean"}},
     {"kind": "Chip", "description": "Removable chip", "props": {"label": "string", "color": "string"}},
     {"kind": "ChipGroup", "description": "Group of chips", "props": {"items": "array of string"}},
@@ -333,17 +335,34 @@ def _count_nodes_depth(node: dict[str, Any], depth: int) -> tuple[int, int]:
 
 _URL_PROP_KEYS: frozenset[str] = frozenset({"src", "url", "href", "avatar", "imageUrl"})
 
+def _validate_nested_value(value: Any, *, depth: int = 0, key: str = "") -> None:
+    """Recursively bound arbitrary props, including action/debug payloads."""
+    if depth > GENUI_MAX_NESTED_DEPTH:
+        raise ValidationError(f"nested props depth exceeds {GENUI_MAX_NESTED_DEPTH}")
+    if isinstance(value, str):
+        if len(value) > GENUI_MAX_STRING_CHARS:
+            raise ValidationError(f"string value exceeds {GENUI_MAX_STRING_CHARS} chars")
+        if key in _URL_PROP_KEYS:
+            _validate_url(value)
+    elif isinstance(value, list):
+        if len(value) > GENUI_MAX_CHART_POINTS:
+            label = "chart series" if key == "values" else "nested array"
+            raise ValidationError(f"{label} exceeds {GENUI_MAX_CHART_POINTS} items")
+        for item in value:
+            _validate_nested_value(item, depth=depth + 1)
+    elif isinstance(value, dict):
+        if len(value) > GENUI_MAX_OBJECT_KEYS:
+            raise ValidationError(f"object exceeds {GENUI_MAX_OBJECT_KEYS} keys")
+        for child_key, child in value.items():
+            _validate_nested_value(child, depth=depth + 1, key=str(child_key))
+
+
 def _validate_string_and_url_limits(node: dict[str, Any]) -> None:
     props = node.get("props")
     kind = node.get("kind", "")
     if isinstance(props, dict):
         for key, val in props.items():
-            if isinstance(val, str):
-                if len(val) > GENUI_MAX_STRING_CHARS:
-                    raise ValidationError(f"string value exceeds {GENUI_MAX_STRING_CHARS} chars")
-                # URL scheme validation
-                if key in _URL_PROP_KEYS:
-                    _validate_url(val)
+            _validate_nested_value(val, key=key)
             if isinstance(val, list) and len(val) > GENUI_MAX_TABLE_ROWS:
                 raise ValidationError(f"array exceeds {GENUI_MAX_TABLE_ROWS} items")
         # Chart series point limit
@@ -377,7 +396,10 @@ def validate_ui_tree(tree: dict[str, Any], *, max_depth: int = GENUI_MAX_TREE_DE
 
 # ─── Patch validation and application ───────────────────────────────────────
 
-# Paths that must not be modified by patches
+# Paths that must not be modified by patches.
+# Note: "/root" itself is NOT in this set — we only protect specific root
+# fields (nodeId, kind). Patches to /root/props/... and /root/children/...
+# are allowed. Replacing /root entirely is caught by post-patch re-validation.
 _PATCH_PROTECTED_PATHS: frozenset[str] = frozenset({
     "/schemaVersion", "/root/nodeId", "/root/kind",
 })
@@ -473,6 +495,9 @@ def validate_ui_patch(patch: dict[str, Any]) -> dict[str, Any]:
         # Ensure path starts with /root (limit patches to root subtree)
         if not path_str.startswith("/root"):
             raise ValidationError(f"patch path must start with /root: {path_str}")
+        # Reject replacing the entire root object
+        if path_str == "/root":
+            raise ValidationError("patch path '/root' targets protected field")
         # Parse to verify it's well-formed
         _parse_patch_path(path_str)
     return raw

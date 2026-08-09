@@ -1,0 +1,88 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OilGas Visualization Dataset Manifest",
+  "description": "Catalog of available 3D grid datasets for visualization",
+  "type": "object",
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Manifest schema version"
+    },
+    "datasets": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Unique dataset identifier"
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name"
+          },
+          "n_vertices": {
+            "type": "integer",
+            "description": "Total vertex count (3 floats each)"
+          },
+          "n_cells": {
+            "type": "integer",
+            "description": "Active cell count"
+          },
+          "n_indices": {
+            "type": "integer",
+            "description": "Triangle index count"
+          },
+          "grid_dims": {
+            "type": "array",
+            "items": {"type": "integer"},
+            "description": "[nx, ny, nz] grid dimensions"
+          },
+          "source": {
+            "type": "string",
+            "enum": ["roff", "egrid", "grdecl", "synthetic"],
+            "description": "Original data format"
+          },
+          "files": {
+            "type": "object",
+            "properties": {
+              "positions": {"type": "string"},
+              "indices": {"type": "string"},
+              "cell_ids": {"type": "string"},
+              "scalars": {
+                "type": "object",
+                "additionalProperties": {"type": "string"}
+              }
+            }
+          }
+        },
+        "required": ["id", "name", "n_vertices", "n_cells", "n_indices", "files"]
+      }
+    },
+    "well_logs": {
+      "type": "object",
+      "properties": {
+        "wells": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {"type": "string"},
+              "n_points": {"type": "integer"},
+              "curves": {
+                "type": "object",
+                "additionalProperties": {"type": "string"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "properties": {
+      "type": "object",
+      "description": "Property metadata (colormaps, ranges, units)"
+    }
+  },
+  "required": ["version", "datasets"]
+}

@@ -146,6 +146,7 @@ export default function FilePreview({
   return (
     <ArtifactPreview
       artifact={artifact}
+      hostControls
       onOpenArtifact={
         onOpenWorkspaceFile
           ? (target) => {

@@ -9,6 +9,10 @@ metadata:
 
 # GeoPandas
 
+## UGSci Built-in Route
+
+For structured point-set bounds and centroid analysis, call `ugsci_geospatial_points_analyze` first. Use GeoPandas directly for file I/O, joins, overlays, or other operations outside that contract.
+
 GeoPandas extends pandas to enable spatial operations on geometric types. It combines the capabilities of pandas and shapely for geospatial data analysis.
 
 ## Installation
@@ -247,4 +251,3 @@ buildings_near_roads = buildings[buildings.geometry.distance(roads.union_all()) 
 6. **Preserve topology** when simplifying for analysis
 7. **Use GeoPackage** format for modern workflows (better than Shapefile)
 8. **Set max_distance** in sjoin_nearest for better performance
-

@@ -1,5 +1,14 @@
-import { FileWarning, Files, GitBranch } from "lucide-react";
+import {
+  ArrowLeft,
+  Expand,
+  FileWarning,
+  Files,
+  GitBranch,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { message } from "antd";
 import { useTranslation } from "react-i18next";
 import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
 import { chatProjectDirectoryApi } from "../../api/modules/chatProjectDirectory";
@@ -35,6 +44,10 @@ import styles from "./FilesWorkspace.module.less";
 interface FilesWorkspaceProps {
   initialTarget?: FileTarget;
   scope: FilesWorkspaceScope;
+  compact?: boolean;
+  onExpand?: () => void;
+  onCollapse?: () => void;
+  onClose?: () => void;
 }
 
 function inferPreviewKind(
@@ -59,6 +72,10 @@ function inferPreviewKind(
 export default function FilesWorkspace({
   initialTarget,
   scope,
+  compact = false,
+  onExpand,
+  onCollapse,
+  onClose,
 }: FilesWorkspaceProps) {
   const { t } = useTranslation();
   const { codingMode } = useCodingMode();
@@ -392,7 +409,7 @@ export default function FilesWorkspace({
         tabs.length === 0 && !memoryGraphRoot ? styles.workspaceEmpty : ""
       }`}
     >
-      {codingMode && (
+      {!compact && codingMode && (
         <nav className={styles.activityRail} aria-label={t("files.workspace")}>
           <button
             type="button"
@@ -414,7 +431,7 @@ export default function FilesWorkspace({
           ) : null}
         </nav>
       )}
-      {activity === "files" || !codingMode ? (
+      {!compact && (activity === "files" || !codingMode) ? (
         <FilesNavigator
           key={`${scopeKey}:${projectDirOverride ?? ""}:${directoryRevision}`}
           scope={effectiveScope}
@@ -430,7 +447,7 @@ export default function FilesWorkspace({
           onShowMemoryGraph={(root) => setMemoryGraphRoot(root)}
           onShowFiles={() => setMemoryGraphRoot(null)}
         />
-      ) : (
+      ) : !compact ? (
         <aside className={styles.sourcePanel}>
           <header>
             <GitBranch size={15} />
@@ -438,7 +455,7 @@ export default function FilesWorkspace({
           </header>
           <GitPanel chatId={chatId} />
         </aside>
-      )}
+      ) : null}
       <main className={styles.documentSurface}>
         {loadError && (
           <div className={styles.loadError} role="alert">
@@ -469,6 +486,42 @@ export default function FilesWorkspace({
             }
             onTabContentChange={(path, content) =>
               setTabContent(scopeKey, path, content)
+            }
+            headerActions={
+              <>
+                {compact && onExpand ? (
+                  <button
+                    type="button"
+                    className={styles.workspaceChromeButton}
+                    aria-label={t("files.expandWorkspace")}
+                    title={t("files.expandWorkspace")}
+                    onClick={onExpand}
+                  >
+                    <Expand size={14} />
+                  </button>
+                ) : onCollapse ? (
+                  <button
+                    type="button"
+                    className={styles.workspaceChromeButton}
+                    aria-label={t("files.backToPreview")}
+                    title={t("files.backToPreview")}
+                    onClick={onCollapse}
+                  >
+                    <ArrowLeft size={14} />
+                  </button>
+                ) : null}
+                {onClose && (
+                  <button
+                    type="button"
+                    className={styles.workspaceChromeButton}
+                    aria-label={t("common.close")}
+                    title={t("common.close")}
+                    onClick={onClose}
+                  >
+                    <X size={15} />
+                  </button>
+                )}
+              </>
             }
             onLoadFile={loadTabContent}
             chatId={chatId}
@@ -519,6 +572,23 @@ export default function FilesWorkspace({
               anchor.download = filename;
               anchor.click();
               URL.revokeObjectURL(url);
+            }}
+            onRevealFile={async (path) => {
+              const tab = tabsRef.current.find((item) => item.path === path);
+              const sourcePath = tab?.displayPath ?? path;
+              if (!("__TAURI_INTERNALS__" in window)) {
+                message.warning(
+                  t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"),
+                );
+                return;
+              }
+              try {
+                await invoke("reveal_in_file_manager", { path: sourcePath });
+              } catch {
+                message.error(
+                  t("workspace.revealFailed", "无法在文件管理器中打开"),
+                );
+              }
             }}
             onSaveFile={async (path, content) => {
               const tab = tabsRef.current.find((item) => item.path === path);

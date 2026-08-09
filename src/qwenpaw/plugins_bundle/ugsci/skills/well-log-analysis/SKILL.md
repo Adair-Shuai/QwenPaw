@@ -1,15 +1,15 @@
 ---
 name: well-log-analysis
-description: Read, analyze, and manipulate well log data in LAS format using lasio library.
+description: Read, validate, and export well log data in LAS format using UGSci domain tools.
 ---
 
 # Skill: Well Log Analysis
 
-Read, analyze, and manipulate well log data in LAS format using lasio library.
+Read, validate, and export well log data in LAS format using UGSci domain tools.
 
 ## Purpose
 
-Handle well log operations across all oil & gas pipeline skills. Provides code patterns for reading LAS files, extracting metadata, performing petrophysical calculations, and exporting data.
+Handle well log operations across all oil & gas pipeline skills. Provides guidance for reading LAS files, extracting metadata, performing quality checks, and exporting data — using stable UGSci tools rather than direct library calls.
 
 ## Reference Materials
 
@@ -27,14 +27,32 @@ Related packages:
 pip install lasio pandas matplotlib numpy
 ```
 
-## Capabilities
+## Default Workflow
+
+**Always prefer UGSci stable tools over writing custom Python code.**
 
 ### 1. Read LAS Files
+
+**Primary method — use `ugsci_welllog_read` tool:**
+
+```
+ugsci_welllog_read(path="well_log.las", sample_rows=20)
+```
+
+This returns:
+- Well metadata (name, UWI, field, company, depth range)
+- Curve summaries (mnemonic, unit, count, null_count, min, max, mean)
+- Sample rows from head and tail
+- QC warnings (null values, missing units, depth issues)
+
+**When the tool is not enabled**, instruct the user to enable it in **工具·技能 → 工具 → 平台内置**.
+
+**Advanced reference** (only when stable tools are insufficient):
 
 ```python
 import lasio
 
-# Read LAS file
+# Read LAS file — for advanced analysis not covered by UGSci tools
 log = lasio.read('well_log.las')
 
 # Access well metadata
@@ -47,27 +65,31 @@ print(f"Curves: {[curve.mnemonic for curve in log.curves]}")
 print(f"Depth range: {log.index_min} to {log.index_max} {log.index_unit}")
 ```
 
-### 2. Export to DataFrame
+### 2. Validate LAS Files
 
-```python
-import lasio
-import pandas as pd
+**Primary method — use `ugsci_welllog_validate` tool:**
 
-log = lasio.read('well_log.las')
-
-# Convert to pandas DataFrame
-df = log.df()
-
-# Access specific curves
-depth = df.index
-gamma_ray = df['GR']
-density = df['RHOB']
-neutron = df['NPHI']
-
-print(df.head())
+```
+ugsci_welllog_validate(path="well_log.las")
 ```
 
-### 3. Access Header Metadata
+This returns a structured QC report with:
+- Pass/fail status
+- Errors (depth non-monotonic, etc.)
+- Warnings (null values, missing units, empty curves)
+- Individual check results
+
+### 3. Export LAS Files
+
+**Primary method — use `ugsci_welllog_export` tool:**
+
+```
+ugsci_welllog_export(input_path="well_log.las", output_path="normalized.las")
+```
+
+This creates a normalized copy of the LAS file. Input and output paths must differ.
+
+### 4. Access Header Metadata (Advanced Reference)
 
 ```python
 import lasio
@@ -93,7 +115,7 @@ for curve in log.curves:
     print(f"{curve.mnemonic}: {curve.unit} - {curve.descr}")
 ```
 
-### 4. Petrophysical Calculations
+### 5. Petrophysical Calculations (Advanced Reference)
 
 ```python
 import lasio
@@ -139,7 +161,7 @@ Vsh = np.clip(Vsh, 0, 1)
 print(f"Average shale volume: {Vsh.mean():.2%}")
 ```
 
-### 5. Visualize Well Logs
+### 6. Visualize Well Logs (Advanced Reference)
 
 ```python
 import lasio
@@ -176,7 +198,7 @@ plt.tight_layout()
 plt.savefig('well_logs.png', dpi=150)
 ```
 
-### 6. Export Data
+### 7. Export Data (Advanced Reference)
 
 ```python
 import lasio
@@ -193,7 +215,7 @@ log.to_excel('output.xlsx')
 log.write('modified.las')
 ```
 
-### 7. Handle Non-Standard Files
+### 8. Handle Non-Standard Files (Advanced Reference)
 
 ```python
 import lasio
@@ -211,7 +233,7 @@ log = lasio.read('large.las', read_policy=[])
 log = lasio.read('file.las', null_policy='common')
 ```
 
-### 8. Create LAS File from Scratch
+### 9. Create LAS File from Scratch (Advanced Reference)
 
 ```python
 import lasio

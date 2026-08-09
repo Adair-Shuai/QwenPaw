@@ -132,8 +132,19 @@ export function subscribeToolCallStream(
 export const toolCallsApi = {
   list: (sid: string) => request<ToolCallListResponse>(`${BASE}/${sid}`),
 
-  getInfo: (sid: string, tcid: string) =>
-    request<ToolCallInfo>(`${BASE}/${sid}/${tcid}`),
+  /**
+   * Fetch tool call info. Returns null on 404 — the entry may have been
+   * cleaned up after the call completed, which is a normal race condition
+   * between the frontend poll and backend GC.
+   */
+  getInfo: async (sid: string, tcid: string): Promise<ToolCallInfo | null> => {
+    try {
+      return await request<ToolCallInfo>(`${BASE}/${sid}/${tcid}`);
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("404")) return null;
+      throw err;
+    }
+  },
 
   getOutput: (sid: string, tcid: string) =>
     request<ToolCallOutput>(`${BASE}/${sid}/${tcid}/output`),

@@ -13,6 +13,10 @@ dependencies: ["pymc>=5.10.0", "arviz>=0.17.0", "numpy>=1.25.0"]
 
 # PyMC Bayesian Modeling
 
+## UGSci Built-in Route
+
+For estimating a normal population mean with known observation standard deviation, call `ugsci_bayesian_normal_estimate` first. It fixes the seed and returns a stable UGSci result envelope. Use PyMC directly for models outside that contract.
+
 ## Overview
 
 PyMC is a Python library for Bayesian modeling and probabilistic programming. Build, fit, validate, and compare Bayesian models using PyMC's modern API (version 5.x+), including hierarchical models, MCMC sampling (NUTS), variational inference, and model comparison (LOO, WAIC).
@@ -572,4 +576,3 @@ with model:
 - Save results with `idata.to_netcdf('results.nc')`
 - Load with `az.from_netcdf('results.nc')`
 - For very large models, consider minibatch ADVI or data subsampling
-

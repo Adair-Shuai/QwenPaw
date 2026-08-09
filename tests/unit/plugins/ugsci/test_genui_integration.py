@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 """Integration tests for the GenUI full chain.
 
 Covers plan section 9.3:
@@ -352,21 +353,21 @@ class TestReadOnlyTools:  # pylint: disable=protected-access
     def test_list_ui_components_no_state_change(self) -> None:
         """list_ui_components should not create any state store entries."""
         store_before = get_state_store()
-        count_before = len(store_before._store)  # type: ignore[attr-defined]
+        count_before = store_before.count()
 
         list_ui_components()
 
-        count_after = len(store_before._store)  # type: ignore[attr-defined]
+        count_after = store_before.count()
         assert count_before == count_after
 
     def test_get_genui_guide_no_state_change(self) -> None:
         """get_genui_guide should not create any state store entries."""
         store_before = get_state_store()
-        count_before = len(store_before._store)  # type: ignore[attr-defined]
+        count_before = store_before.count()
 
         get_genui_guide_tool()
 
-        count_after = len(store_before._store)  # type: ignore[attr-defined]
+        count_after = store_before.count()
         assert count_before == count_after
 
 
@@ -380,7 +381,7 @@ class TestErrorPropagation:  # pylint: disable=protected-access
         entry.
         """
         store = get_state_store()
-        count_before = len(store._store)  # type: ignore[attr-defined]
+        count_before = store.count()
 
         chunk = emit_ui_tree(
             json.dumps({"kind": "FakeKind", "props": {}, "children": []}),
@@ -388,7 +389,7 @@ class TestErrorPropagation:  # pylint: disable=protected-access
         data = _extract_json(chunk)
         assert data["ok"] is False
 
-        count_after = len(store._store)  # type: ignore[attr-defined]
+        count_after = store.count()
         assert count_before == count_after
 
     def test_parse_failure_does_not_create_state(self) -> None:
@@ -397,13 +398,13 @@ class TestErrorPropagation:  # pylint: disable=protected-access
         entry.
         """
         store = get_state_store()
-        count_before = len(store._store)  # type: ignore[attr-defined]
+        count_before = store.count()
 
         chunk = emit_ui_tree("not json at all!!!")
         data = _extract_json(chunk)
         assert data["ok"] is False
 
-        count_after = len(store._store)  # type: ignore[attr-defined]
+        count_after = store.count()
         assert count_before == count_after
 
     def test_oversized_payload_does_not_create_state(self) -> None:
@@ -416,7 +417,7 @@ class TestErrorPropagation:  # pylint: disable=protected-access
         )
 
         store = get_state_store()
-        count_before = len(store._store)  # type: ignore[attr-defined]
+        count_before = store.count()
 
         huge = (
             '{"kind": "Text", "props": {"value": "'
@@ -428,7 +429,7 @@ class TestErrorPropagation:  # pylint: disable=protected-access
         assert data["ok"] is False
         assert data["error_code"] == "payload_too_large"
 
-        count_after = len(store._store)  # type: ignore[attr-defined]
+        count_after = store.count()
         assert count_before == count_after
 
 
@@ -683,7 +684,7 @@ class TestPatchFullChain:  # pylint: disable=protected-access
         ui_id = emit_data["ui_id"]
 
         store = get_state_store()
-        count_before = len(store._store)  # type: ignore[attr-defined]
+        count_before = store.count()
 
         patch_payload = json.dumps(
             {
@@ -700,7 +701,7 @@ class TestPatchFullChain:  # pylint: disable=protected-access
         )
         emit_ui_patch(patch_payload)
 
-        count_after = len(store._store)  # type: ignore[attr-defined]
+        count_after = store.count()
         assert count_before == count_after  # No new entry created
 
 
@@ -718,8 +719,8 @@ class TestGenUiDisabledMarkdown:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """
-        When GenUI is explicitly disabled, tools are registered but disabled,
-        and no prompt is injected.
+        When GenUI is explicitly disabled, stable tool and prompt registrations
+        remain present but their request-time gates reject use.
         """
         monkeypatch.setenv("GENUI_ENABLED", "false")
         from qwenpaw.plugins_bundle.ugsci.genui.registration import (
@@ -747,10 +748,10 @@ class TestGenUiDisabledMarkdown:
         api = DisabledApi()
         register_genui(api, plugin_id="ugsci")
 
-        # Tools should be registered (so they appear in Tools page) but no
-        # prompt
+        # Stable registrations are required for an off -> on transition to
+        # take effect without restarting the backend.
         assert len(api.tools) == 4
-        assert len(api.prompt_sections) == 0
+        assert api.prompt_sections == ["ugsci.genui_guide"]
 
     def test_disabled_genui_emit_ui_tree_not_called(self) -> None:
         """When GenUI is disabled, emit_ui_tree should not be in the
@@ -862,8 +863,8 @@ class TestNonConsoleChannelIsolation:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """
-        When channel is wechat (not in genui_channels), tools are registered
-        but disabled, no prompt.
+        When channel is wechat (not in genui_channels), stable registrations
+        remain present and request-time channel gates suppress them.
         """
         monkeypatch.setenv("GENUI_ENABLED", "false")
         from qwenpaw.plugins_bundle.ugsci.genui.registration import (
@@ -907,9 +908,9 @@ class TestNonConsoleChannelIsolation:
         api = WechatApi()
         register_genui(api, plugin_id="ugsci")
 
-        # Tools should be registered (disabled) but no prompt
+        # Descriptors and prompt remain registered for later eligible requests.
         assert len(api.tools) == 4
-        assert len(api.prompt_sections) == 0
+        assert api.prompt_sections == ["ugsci.genui_guide"]
 
     def test_console_channel_exposed(self) -> None:
         """

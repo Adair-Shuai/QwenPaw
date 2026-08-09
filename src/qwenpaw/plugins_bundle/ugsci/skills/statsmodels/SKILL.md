@@ -13,6 +13,10 @@ dependencies: ["statsmodels>=0.14.0", "numpy>=1.25.0", "scipy>=1.12.0"]
 
 # Statsmodels: Statistical Modeling and Econometrics
 
+## UGSci Built-in Route
+
+For OLS coefficients, uncertainty statistics, and fit metrics, call `ugsci_statistical_regression` first. Use statsmodels directly for other estimators, diagnostics, and time-series models.
+
 ## Overview
 
 Statsmodels is Python's premier library for statistical modeling, providing tools for estimation, inference, and diagnostics across a wide range of statistical methods. Apply this skill for rigorous statistical analysis, from simple linear regression to complex time series models and econometric analyses.
@@ -614,4 +618,3 @@ For detailed documentation and examples:
 - User guide: https://www.statsmodels.org/stable/user-guide.html
 - Examples: https://www.statsmodels.org/stable/examples/index.html
 - API reference: https://www.statsmodels.org/stable/api.html
-

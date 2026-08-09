@@ -563,6 +563,28 @@ function EditorPastePlugin({
   return null;
 }
 
+/**
+ * Wrap a ContentEditable composition event so that the event target has a
+ * `value` property (like a textarea).  The SDK's onCompositionStart /
+ * onCompositionEnd handlers access `event.target.value.length`, but
+ * ContentEditable's target is a div that has no `value` — this adapter
+ * derives `value` from `textContent` to prevent
+ * "Cannot read properties of undefined (reading 'length')" errors.
+ */
+function adaptContentEditableEvent(
+  event: React.CompositionEvent<HTMLDivElement>,
+): React.CompositionEvent<HTMLTextAreaElement> {
+  const textContent = event.currentTarget?.textContent ?? "";
+  const compatTarget = {
+    value: textContent,
+  } as HTMLTextAreaElement;
+  return {
+    ...event,
+    target: compatTarget,
+    currentTarget: compatTarget,
+  } as unknown as React.CompositionEvent<HTMLTextAreaElement>;
+}
+
 function EditableSurface({
   onKeyDown,
   onFocus,
@@ -595,12 +617,16 @@ function EditableSurface({
       }
       onCompositionStart={(event) =>
         onCompositionStart?.(
-          event as unknown as CompositionEvent<HTMLTextAreaElement>,
+          adaptContentEditableEvent(
+            event,
+          ) as unknown as CompositionEvent<HTMLTextAreaElement>,
         )
       }
       onCompositionEnd={(event) =>
         onCompositionEnd?.(
-          event as unknown as CompositionEvent<HTMLTextAreaElement>,
+          adaptContentEditableEvent(
+            event,
+          ) as unknown as CompositionEvent<HTMLTextAreaElement>,
         )
       }
     />

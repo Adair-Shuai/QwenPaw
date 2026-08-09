@@ -1,29 +1,15 @@
 import {
-  ArrowLeft,
-  Download,
-  Expand,
-  FileText,
-  MessageSquarePlus,
-  X,
-} from "lucide-react";
-import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
-  lazy,
   useRef,
   useState,
-  Suspense,
 } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { workspaceApi } from "../../api/modules/workspace";
-import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
-import FilePreview, { isPreviewable } from "../../pages/Coding/FilePreview";
-import { setTextareaValue } from "../../pages/Chat/utils";
-import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
-import type { FileMetadata, FilesDrawerEvent, FilesDrawerState } from "./types";
+import type { FilesDrawerEvent, FilesDrawerState } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
-import { normalizeArtifactUrl } from "./openFilePreview";
 import styles from "./FilesWorkspace.module.less";
 
 const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
@@ -38,26 +24,6 @@ interface FilesDrawerProps {
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
 }
 
-function insertFileReference(path: string): void {
-  const textarea = document.querySelector<HTMLTextAreaElement>(
-    '[class*="sender"] textarea',
-  );
-  if (!textarea) return;
-  const start = textarea.selectionStart ?? textarea.value.length;
-  const end = textarea.selectionEnd ?? start;
-  const reference = `@ ${path}`;
-  const prefix = textarea.value.slice(0, start);
-  const suffix = textarea.value.slice(end);
-  const spacing = prefix && !/\s$/.test(prefix) ? " " : "";
-  const next = `${prefix}${spacing}${reference} ${suffix}`;
-  setTextareaValue(textarea, next);
-  const caret = prefix.length + spacing.length + reference.length + 1;
-  requestAnimationFrame(() => {
-    textarea.focus();
-    textarea.setSelectionRange(caret, caret);
-  });
-}
-
 export default function FilesDrawer({
   state,
   dispatch,
@@ -65,17 +31,9 @@ export default function FilesDrawer({
 }: FilesDrawerProps) {
   const { t } = useTranslation();
   const drawerRef = useRef<HTMLElement>(null);
-  const [metadata, setMetadata] = useState<FileMetadata | null>(null);
-  const [content, setContent] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [loadFailed, setLoadFailed] = useState(false);
   const [isResizing, setIsResizing] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const isWorkspace = state.kind === "workspace";
-  const chatId = scope.chatId;
-  const projectDirOverride = scope.projectDirOverride;
-  const target = state.target;
-  const artifactUrl = normalizeArtifactUrl(target?.artifactUrl);
   const widthStorageKey = isWorkspace
     ? WORKSPACE_WIDTH_STORAGE_KEY
     : PREVIEW_WIDTH_STORAGE_KEY;
@@ -94,165 +52,14 @@ export default function FilesDrawer({
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        close();
-      }
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      close();
     };
     document.addEventListener("keydown", handleKeyDown);
     drawerRef.current?.focus();
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [close]);
-
-  useEffect(() => {
-    if (!target) {
-      setMetadata(null);
-      setContent("");
-      setLoadFailed(false);
-      return;
-    }
-    const controller = new AbortController();
-    setLoading(true);
-    setLoadFailed(false);
-    const loadMetadata =
-      target.source === "artifact" && target.artifact
-        ? Promise.resolve({
-            metadata: {
-              path: target.path,
-              size:
-                target.artifact.size ??
-                new Blob([target.artifact.textContent ?? ""]).size,
-              modified_at: target.artifact.updatedAt
-                ? new Date(target.artifact.updatedAt).toISOString()
-                : "",
-              preview_kind: target.artifact.mimeType.startsWith("image/")
-                ? ("image" as const)
-                : target.artifact.mimeType === "application/pdf"
-                ? ("pdf" as const)
-                : target.artifact.mimeType === "text/csv"
-                ? ("csv" as const)
-                : target.artifact.textContent !== undefined
-                ? ("text" as const)
-                : ("binary" as const),
-              etag: "",
-            } as FileMetadata,
-            content:
-              target.artifact.textContent ??
-              (target.artifact.jsonContent === undefined
-                ? ""
-                : JSON.stringify(target.artifact.jsonContent, null, 2)),
-          })
-        : artifactUrl
-        ? fetch(artifactUrl, {
-            headers: buildWorkspaceScopeHeaders({
-              agentId: scope.agentId,
-              chatId,
-              projectDirOverride,
-            }),
-            signal: controller.signal,
-          }).then(async (response) => {
-            if (!response.ok) throw new Error(`${response.status}`);
-            const contentType = response.headers.get("Content-Type") ?? "";
-            const isText =
-              contentType.startsWith("text/") ||
-              /\.(?:md|mdx|markdown|mmd|mermaid|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
-                target.path,
-              );
-            const previewKind = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(
-              target.path,
-            )
-              ? "image"
-              : /\.pdf$/i.test(target.path)
-              ? "pdf"
-              : /\.csv$/i.test(target.path)
-              ? "csv"
-              : isText
-              ? "text"
-              : "binary";
-            const nextContent = isText ? await response.text() : "";
-            return {
-              metadata: {
-                path: target.path,
-                size: Number(response.headers.get("Content-Length")) || 0,
-                modified_at: response.headers.get("Last-Modified") ?? "",
-                preview_kind: previewKind,
-                etag: response.headers.get("ETag") ?? "",
-              } as FileMetadata,
-              content: nextContent,
-            };
-          })
-        : target.source === "workspace"
-        ? workspaceApi
-            .getFileMetadata(
-              target.path,
-              chatId,
-              target.root,
-              projectDirOverride,
-            )
-            .then(async (nextMetadata) => {
-              const loaded =
-                nextMetadata.preview_kind === "text" ||
-                nextMetadata.preview_kind === "csv"
-                  ? await workspaceApi.loadFileText(
-                      target.path,
-                      chatId,
-                      target.root,
-                      projectDirOverride,
-                    )
-                  : null;
-              return {
-                metadata: loaded
-                  ? { ...nextMetadata, etag: loaded.etag }
-                  : nextMetadata,
-                content: loaded?.content ?? "",
-              };
-            })
-        : target.source === "profile"
-        ? workspaceApi.loadFile(target.path).then((file) => ({
-            metadata: {
-              path: target.path,
-              size: new Blob([file.content]).size,
-              modified_at: "",
-              preview_kind: "text" as const,
-              etag: "",
-            },
-            content: file.content,
-          }))
-        : target.source === "memory" ||
-          target.source === "daily" ||
-          target.source === "digest"
-        ? (target.source === "daily" || target.source === "digest"
-            ? workspaceApi.loadMemoryFile(target.path, target.source)
-            : workspaceApi.loadDailyMemory(target.path)
-          ).then((file) => ({
-            metadata: {
-              path: target.path,
-              size: new Blob([file.content]).size,
-              modified_at: "",
-              preview_kind: "text" as const,
-              etag: "",
-            },
-            content: file.content,
-          }))
-        : Promise.reject(new Error("Unsupported preview source"));
-    void loadMetadata
-      .then(({ metadata: nextMetadata, content: nextContent }) => {
-        if (controller.signal.aborted) return;
-        setMetadata(nextMetadata);
-        setContent(nextContent);
-      })
-      .catch(() => {
-        if (!controller.signal.aborted) {
-          setMetadata(null);
-          setContent("");
-          setLoadFailed(true);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) setLoading(false);
-      });
-    return () => controller.abort();
-  }, [artifactUrl, chatId, projectDirOverride, scope.agentId, target]);
 
   const resizeFromPointer = (event: React.PointerEvent) => {
     event.preventDefault();
@@ -264,11 +71,12 @@ export default function FilesDrawer({
       window.innerWidth;
     const maximum = Math.max(MIN_DRAWER_WIDTH, containerWidth - MIN_CHAT_WIDTH);
     const move = (nextEvent: PointerEvent) => {
-      const next = Math.min(
-        Math.max(MIN_DRAWER_WIDTH, initial + startX - nextEvent.clientX),
-        maximum,
+      setWidth(
+        Math.min(
+          Math.max(MIN_DRAWER_WIDTH, initial + startX - nextEvent.clientX),
+          maximum,
+        ),
       );
-      setWidth(next);
     };
     const up = () => {
       window.removeEventListener("pointermove", move);
@@ -283,39 +91,24 @@ export default function FilesDrawer({
     window.addEventListener("pointercancel", up);
   };
 
-  const drawerStyle = width > 0 ? { width: `${width}px` } : undefined;
-  const filename = target?.path.split("/").pop() ?? t("files.title");
-
   return (
     <motion.aside
       ref={drawerRef}
       className={`${styles.drawer} ${
         isWorkspace ? styles.drawerWorkspace : styles.drawerPreview
       } ${isResizing ? styles.drawerResizing : ""}`}
-      style={drawerStyle}
+      style={width > 0 ? { width: `${width}px` } : undefined}
       layout={isResizing || prefersReducedMotion ? false : "size"}
-      initial={
-        prefersReducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }
-      }
-      animate={{ opacity: 1, x: 0, scale: 1 }}
-      exit={
-        prefersReducedMotion
-          ? { opacity: 0 }
-          : { opacity: 0, x: 14, scale: 0.995 }
-      }
+      initial={prefersReducedMotion ? false : { opacity: 0, x: 18 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: prefersReducedMotion ? 0 : 14 }}
       transition={
         prefersReducedMotion
           ? { duration: 0 }
           : {
-              layout: {
-                type: "spring",
-                stiffness: 360,
-                damping: 38,
-                mass: 0.82,
-              },
-              opacity: { duration: 0.2, ease: "easeOut" },
-              x: { duration: 0.28, ease: [0.22, 0.78, 0.24, 1] },
-              scale: { duration: 0.28, ease: [0.22, 0.78, 0.24, 1] },
+              layout: { type: "spring", stiffness: 360, damping: 38 },
+              opacity: { duration: 0.18 },
+              x: { duration: 0.24, ease: [0.22, 0.78, 0.24, 1] },
             }
       }
       role="region"
@@ -331,12 +124,9 @@ export default function FilesDrawer({
         tabIndex={0}
         onPointerDown={resizeFromPointer}
         onKeyDown={(event) => {
-          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") {
-            return;
-          }
+          if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
           event.preventDefault();
           setWidth((current) => {
-            const base = current || 640;
             const containerWidth =
               drawerRef.current?.parentElement?.getBoundingClientRect().width ??
               window.innerWidth;
@@ -347,7 +137,7 @@ export default function FilesDrawer({
             const next = Math.min(
               Math.max(
                 MIN_DRAWER_WIDTH,
-                base + (event.key === "ArrowLeft" ? 24 : -24),
+                (current || 640) + (event.key === "ArrowLeft" ? 24 : -24),
               ),
               maximum,
             );
@@ -356,151 +146,23 @@ export default function FilesDrawer({
           });
         }}
       />
-      <header className={styles.drawerHeader}>
-        <div className={styles.fileMark}>
-          <FileText size={17} />
-        </div>
-        <div className={styles.drawerTitle}>
-          <strong>{filename}</strong>
-          {!isWorkspace && (
-            <span>
-              {metadata
-                ? t("files.previewSize", { size: metadata.size })
-                : t("files.preview")}
-            </span>
-          )}
-        </div>
-        {isWorkspace && target && (
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            onClick={() => dispatch({ type: "COLLAPSE_TO_PREVIEW" })}
-          >
-            <ArrowLeft size={15} />
-            {t("files.backToPreview")}
-          </button>
-        )}
-        {target && (target.source === "workspace" || artifactUrl) && (
-          <button
-            type="button"
-            className={styles.iconButton}
-            aria-label={t("files.download")}
-            onClick={() =>
-              void downloadFileFromUrl(
-                artifactUrl ??
-                  workspaceApi.getFileDownloadUrl(target.path, target.root),
-                filename,
-                {
-                  headers: buildWorkspaceScopeHeaders({
-                    agentId: scope.agentId,
-                    chatId,
-                    projectDirOverride,
-                  }),
-                  errorMessage: t("files.downloadFailed"),
-                },
-              )
-            }
-          >
-            <Download size={16} />
-          </button>
-        )}
-        <button
-          type="button"
-          className={styles.iconButton}
-          aria-label={t("common.close")}
-          onClick={close}
-        >
-          <X size={17} />
-        </button>
-      </header>
 
-      <AnimatePresence initial={false} mode="popLayout">
-        <motion.div
-          key={isWorkspace ? "workspace" : "preview"}
-          className={styles.drawerContent}
-          initial={
-            prefersReducedMotion
-              ? false
-              : { opacity: 0, x: isWorkspace ? -10 : 10 }
+      <Suspense
+        fallback={<div className={styles.empty}>{t("common.loading")}</div>}
+      >
+        <FilesWorkspace
+          initialTarget={state.target}
+          scope={scope}
+          compact={!isWorkspace}
+          onExpand={() => dispatch({ type: "EXPAND_WORKSPACE" })}
+          onCollapse={
+            isWorkspace && state.target
+              ? () => dispatch({ type: "COLLAPSE_TO_PREVIEW" })
+              : undefined
           }
-          animate={{ opacity: 1, x: 0 }}
-          exit={
-            prefersReducedMotion
-              ? { opacity: 0 }
-              : { opacity: 0, x: isWorkspace ? 8 : -8 }
-          }
-          transition={
-            prefersReducedMotion
-              ? { duration: 0 }
-              : { duration: 0.2, ease: [0.22, 0.78, 0.24, 1] }
-          }
-        >
-          {isWorkspace ? (
-            <Suspense
-              fallback={
-                <div className={styles.empty}>{t("common.loading")}</div>
-              }
-            >
-              <FilesWorkspace initialTarget={target} scope={scope} />
-            </Suspense>
-          ) : (
-            <>
-              <div className={styles.previewSurface} aria-busy={loading}>
-                {loading ? (
-                  <div className={styles.empty}>{t("common.loading")}</div>
-                ) : loadFailed ? (
-                  <div className={styles.empty}>{t("files.loadFailed")}</div>
-                ) : target &&
-                  metadata &&
-                  (target.artifact || isPreviewable(target.path)) ? (
-                  <FilePreview
-                    filePath={target.path}
-                    content={content}
-                    chatId={chatId}
-                    binaryUrl={artifactUrl}
-                    root={target.root}
-                    projectDirOverride={projectDirOverride}
-                    workspaceBacked={target.source === "workspace"}
-                    mimeType={target.artifact?.mimeType}
-                    size={metadata.size}
-                    artifact={target.artifact}
-                  />
-                ) : metadata?.preview_kind === "text" ? (
-                  <pre className={styles.textPreview}>{content}</pre>
-                ) : (
-                  <div className={styles.empty}>
-                    {t("files.previewUnavailable")}
-                  </div>
-                )}
-              </div>
-              <footer className={styles.drawerFooter}>
-                {target && target.source !== "artifact" && (
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => {
-                      insertFileReference(target.path);
-                    }}
-                  >
-                    <MessageSquarePlus size={15} />
-                    {t("files.mentionInChat")}
-                  </button>
-                )}
-                {target && target.source !== "artifact" && (
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
-                  >
-                    <Expand size={15} />
-                    {t("files.expandWorkspace")}
-                  </button>
-                )}
-              </footer>
-            </>
-          )}
-        </motion.div>
-      </AnimatePresence>
+          onClose={close}
+        />
+      </Suspense>
     </motion.aside>
   );
 }

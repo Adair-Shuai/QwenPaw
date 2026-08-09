@@ -57,4 +57,21 @@ describe("builtin renderer integration boundaries", () => {
       ),
     ).toBe("office-doc");
   });
+
+  it.each([
+    ["html", "text/html", "html"],
+    ["csv", "text/csv", "csv"],
+    ["tsv", "text/tab-separated-values", "csv"],
+    ["png", "image/png", "image"],
+    ["jpg", "image/jpeg", "image"],
+    ["svg", "image/svg+xml", "image"],
+    ["webp", "image/webp", "image"],
+    ["mp4", "video/mp4", "media"],
+    ["webm", "video/webm", "media"],
+    ["mp3", "audio/mpeg", "media"],
+    ["wav", "audio/wav", "media"],
+    ["bin", "application/octet-stream", "fallback"],
+  ])("routes .%s (%s) to the %s renderer", (extension, mimeType, renderer) => {
+    expect(match(extension, mimeType)).toBe(renderer);
+  });
 });

@@ -1,15 +1,15 @@
 ---
 name: reservoir-production
-description: Guide AI agents through reservoir management and production optimization.
+description: Guide AI agents through reservoir management and production optimization using UGSci domain tools.
 ---
 
 # Skill: Reservoir & Production Pipeline
 
-Guide AI agents through reservoir management and production optimization.
+Guide AI agents through reservoir management and production optimization using UGSci domain tools.
 
 ## Purpose
 
-Support reservoir and production engineers in managing hydrocarbon extraction and optimizing well performance.
+Support reservoir and production engineers in managing hydrocarbon extraction and optimizing well performance. Uses stable UGSci tools for decline curve analysis instead of direct scipy calls.
 
 ## Roles
 
@@ -84,9 +84,60 @@ These tasks invoke `petropowers:oil-gas-delegation`:
 
 ### Decline Curve Analysis
 
+**Default workflow — use UGSci tools:**
+
+1. **Check data quality**: Verify time, rate, and units are correct before fitting.
+
+2. **Fit decline curve** — use `ugsci_decline_fit` tool:
+
+```
+ugsci_decline_fit(
+    time=[0, 3, 6, 9, 12, ...],
+    rate=[1000, 834, 708, 609, 530, ...],
+    time_unit="month",
+    rate_unit="bbl/d",
+    model="auto"
+)
+```
+
+3. **Compare all candidates**: For `model="auto"`, review all successful fits (exponential, harmonic, hyperbolic), not just the recommended model. Each candidate includes RMSE, MAE, R², and AIC.
+
+4. **Forecast production** — use `ugsci_decline_forecast` tool:
+
+```
+ugsci_decline_forecast(
+    model="hyperbolic",
+    qi=1000.0,
+    di=0.12,
+    b=0.6,
+    forecast_time=[0, 1, 2, ..., 60],
+    time_unit="month",
+    rate_unit="bbl/d"
+)
+```
+
+5. **Estimate EUR** — use `ugsci_decline_eur` tool:
+
+```
+ugsci_decline_eur(
+    model="hyperbolic",
+    qi=1000.0,
+    di=0.12,
+    b=0.6,
+    time_unit="month",
+    rate_unit="bbl/d",
+    economic_limit=10.0
+)
+```
+
+6. **Report results**: Include fit metrics, assumptions, uncertainty, and warnings from the UGSci output.
+
+**When tools are not enabled**, instruct the user to enable them in **工具·技能 → 工具 → 平台内置**.
+
+**Advanced reference** (direct scipy — only when stable tools are insufficient):
+
 ```python
 import numpy as np
-import pandas as pd
 from scipy.optimize import curve_fit
 
 def arps_decline(t, qi, di, b):
@@ -95,7 +146,7 @@ def arps_decline(t, qi, di, b):
 
 # Example production data
 months = np.arange(1, 61)
-actual_rate = 1000 / (1 + 0.1 * months)**(1/0.5)  # D = 0.1, b = 0.5
+actual_rate = 1000 / (1 + 0.1 * months)**(1/0.5)
 
 # Fit decline curve
 popt, _ = curve_fit(arps_decline, months, actual_rate, p0=[1000, 0.1, 0.5])
@@ -104,12 +155,6 @@ qi, di, b = popt
 print(f"Initial rate (qi): {qi:.0f} bpd")
 print(f"Initial decline (di): {di:.2f}")
 print(f"Arps exponent (b): {b:.2f}")
-
-# Forecast
-forecast_months = np.arange(1, 121)
-forecast_rate = arps_decline(forecast_months, *popt)
-
-print(f"Forecast at 10 years: {forecast_rate[-1]:.0f} bpd")
 ```
 
 ### Inflow Performance (IPR)

@@ -13,6 +13,10 @@ dependencies: ["scikit-learn>=1.5.0"]
 
 # Scikit-learn
 
+## UGSci Built-in Route
+
+For deterministic tabular linear regression and prediction, call `ugsci_ml_regression` first. Use scikit-learn directly for classification, preprocessing, model selection, or algorithms outside that contract.
+
 ## Overview
 
 This skill provides comprehensive guidance for machine learning tasks using scikit-learn, the industry-standard Python library for classical machine learning. Use this skill for classification, regression, clustering, dimensionality reduction, preprocessing, model evaluation, and building production-ready ML pipelines.
@@ -521,4 +525,3 @@ model = MiniBatchKMeans(n_clusters=8, batch_size=100)
 - User Guide: https://scikit-learn.org/stable/user_guide.html
 - API Reference: https://scikit-learn.org/stable/api/index.html
 - Examples Gallery: https://scikit-learn.org/stable/auto_examples/index.html
-

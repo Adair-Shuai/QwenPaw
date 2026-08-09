@@ -2,7 +2,7 @@
  * Tests for GenUI action bus: dispatchGenUiAction.
  *
  * Covers plan section 9.2:
- * - send_message action is allowed and dispatches via the sender textarea
+ * - send_message action is allowed and dispatches via the host chat SDK
  * - Other action types are blocked (console.warn)
  * - String action shorthand
  * - Invalid action types are ignored
@@ -16,41 +16,22 @@ import {
   resetActionBus,
 } from "@genui-src/lib/genUiActionBus";
 
-/** Mock textarea element for _sendViaTextarea. */
-function setupMockTextarea() {
-  const textarea = document.createElement("textarea");
-  const sender = document.createElement("div");
-  sender.className = "asr-sender";
-  sender.appendChild(textarea);
-  document.body.appendChild(sender);
-  return textarea;
-}
-
-function cleanupMockTextarea() {
-  const sender = document.querySelector('[class*="sender"]');
-  if (sender) sender.remove();
-}
-
 describe("dispatchGenUiAction", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let infoSpy: ReturnType<typeof vi.spyOn>;
-  let textarea: HTMLTextAreaElement;
+  let sendMessage: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     resetActionBus();
-    (window as any).QwenPaw = {};
-    textarea = setupMockTextarea();
-    // Stub dispatchEvent to prevent jsdom from firing Enter events that
-    // could trigger side effects in jsdom's fake event system.
-    vi.spyOn(textarea, "dispatchEvent");
+    sendMessage = vi.fn(() => true);
+    (window as any).QwenPaw = { chat: { sendMessage } };
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    cleanupMockTextarea();
     delete (window as any).QwenPaw;
   });
 
@@ -59,8 +40,15 @@ describe("dispatchGenUiAction", () => {
       type: "send_message",
       payload: { content: "Hello world" },
     });
-    expect(textarea.value).toBe("Hello world");
-    expect(textarea.dispatchEvent).toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith("Hello world");
+  });
+
+  it("appends current form values when content has no placeholders", () => {
+    dispatchGenUiAction(
+      { type: "submit_form", payload: { content: "提交验收" } },
+      { formId: "acceptance", formValues: { name: "张三", phase: "二期" } },
+    );
+    expect(sendMessage).toHaveBeenCalledWith("提交验收\nname: 张三\nphase: 二期");
   });
 
   it("dispatches send_message action with message key", () => {
@@ -68,8 +56,7 @@ describe("dispatchGenUiAction", () => {
       type: "send_message",
       payload: { message: "Alternative key" },
     });
-    expect(textarea.value).toBe("Alternative key");
-    expect(textarea.dispatchEvent).toHaveBeenCalled();
+    expect(sendMessage).toHaveBeenCalledWith("Alternative key");
   });
 
   it("does nothing for send_message with empty content", () => {
@@ -77,12 +64,12 @@ describe("dispatchGenUiAction", () => {
       type: "send_message",
       payload: { content: "" },
     });
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("does nothing for send_message with no payload", () => {
     dispatchGenUiAction({ type: "send_message" });
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("blocks unknown action types", () => {
@@ -90,54 +77,54 @@ describe("dispatchGenUiAction", () => {
     expect(warnSpy).toHaveBeenCalledWith(
       expect.stringContaining("not allowed"),
     );
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("blocks malicious action types", () => {
     dispatchGenUiAction({ type: "eval", payload: { code: "alert(1)" } });
     expect(warnSpy).toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("blocks open_url action", () => {
     dispatchGenUiAction({ type: "open_url", payload: { url: "javascript:alert(1)" } });
     expect(warnSpy).toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("handles string action shorthand", () => {
     dispatchGenUiAction("send_message");
     // String shorthand creates { type: "send_message" } but has no payload
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("ignores null action", () => {
     dispatchGenUiAction(null);
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("ignores undefined action", () => {
     dispatchGenUiAction(undefined);
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("ignores number action", () => {
     dispatchGenUiAction(42);
     expect(warnSpy).not.toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("ignores string that is not an action type", () => {
     dispatchGenUiAction("random_string");
     // "random_string" becomes { type: "random_string" } which is not in ALLOWED
     expect(warnSpy).toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
-  it("logs info when sender textarea is not found", () => {
-    cleanupMockTextarea();
+  it("logs info when the host sender API is unavailable", () => {
+    (window as any).QwenPaw.chat = {};
     dispatchGenUiAction({
       type: "send_message",
       payload: { content: "fallback test" },
@@ -153,20 +140,18 @@ describe("dispatchGenUiAction", () => {
 
 describe("config-based allowed actions", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
-  let textarea: HTMLTextAreaElement;
+  let sendMessage: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     resetActionBus();
-    (window as any).QwenPaw = {};
-    textarea = setupMockTextarea();
-    vi.spyOn(textarea, "dispatchEvent");
+    sendMessage = vi.fn(() => true);
+    (window as any).QwenPaw = { chat: { sendMessage } };
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    cleanupMockTextarea();
     delete (window as any).QwenPaw;
   });
 
@@ -231,7 +216,7 @@ describe("config-based allowed actions", () => {
     dispatchGenUiAction({ type: "open_url", payload: { url: "/test" } });
     expect(warnSpy).not.toHaveBeenCalled();
     // But send_message is not called for open_url
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 
   it("blocks actions not in config allow list", () => {
@@ -243,6 +228,6 @@ describe("config-based allowed actions", () => {
       payload: { content: "test" },
     });
     expect(warnSpy).toHaveBeenCalled();
-    expect(textarea.value).toBe("");
+    expect(sendMessage).not.toHaveBeenCalled();
   });
 });

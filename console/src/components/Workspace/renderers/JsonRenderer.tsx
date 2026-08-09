@@ -339,7 +339,7 @@ const TreeNode: React.FC<TreeNodeProps> = ({
 // ─────────────────────────────────────────────────────────────────────────────
 
 const JsonRenderer: React.FC<RendererContext> = (props) => {
-  const { artifact, theme, workspace } = props;
+  const { artifact, theme, workspace, hostControls } = props;
   const { t } = useTranslation();
   const isDark = theme === "dark";
 
@@ -434,7 +434,7 @@ const JsonRenderer: React.FC<RendererContext> = (props) => {
         </Space>
 
         <Space size={4}>
-          {!forceRaw && (
+          {!forceRaw && !hostControls && (
             <Input
               size="small"
               allowClear
@@ -493,23 +493,29 @@ const JsonRenderer: React.FC<RendererContext> = (props) => {
               onClick={handleCopy}
             />
           </Tooltip>
-          <Tooltip title={t("workspace.download", "下载")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<DownloadOutlined />}
-              onClick={() => workspace.download?.(artifact)}
-            />
-          </Tooltip>
-          <Tooltip title={t("workspace.revealInFileManager", "在文件夹中打开")}>
-            <Button
-              size="small"
-              type="text"
-              icon={<FolderOpenOutlined />}
-              onClick={() => workspace.revealInFileManager?.(artifact)}
-              disabled={!artifact.workspacePath}
-            />
-          </Tooltip>
+          {!hostControls && (
+            <Tooltip title={t("workspace.download", "下载")}>
+              <Button
+                size="small"
+                type="text"
+                icon={<DownloadOutlined />}
+                onClick={() => workspace.download?.(artifact)}
+              />
+            </Tooltip>
+          )}
+          {!hostControls && (
+            <Tooltip
+              title={t("workspace.revealInFileManager", "在文件夹中打开")}
+            >
+              <Button
+                size="small"
+                type="text"
+                icon={<FolderOpenOutlined />}
+                onClick={() => workspace.revealInFileManager?.(artifact)}
+                disabled={!artifact.workspacePath}
+              />
+            </Tooltip>
+          )}
         </Space>
       </div>
 

@@ -161,3 +161,55 @@ describe("TabbedEditor tab context menu", () => {
     });
   });
 });
+
+describe("TabbedEditor hosted preview controls", () => {
+  it("refreshes content and exposes common file actions in one toolbar", async () => {
+    const onLoadFile = vi.fn(async () => "<h1>Updated</h1>");
+    const onContentChange = vi.fn();
+    const onDownloadFile = vi.fn(async () => undefined);
+    const onRevealFile = vi.fn(async () => undefined);
+
+    render(
+      <TabbedEditor
+        tabs={[
+          {
+            path: "index.html",
+            displayPath: "index.html",
+            content: "<h1>Before</h1>",
+            dirty: false,
+            source: "workspace",
+            previewKind: "text",
+          },
+        ]}
+        activeTabPath="index.html"
+        scopeKey={SCOPE_KEY}
+        onTabSelect={vi.fn()}
+        onTabClose={vi.fn()}
+        onCloseOtherTabs={vi.fn()}
+        onTabDirtyChange={vi.fn()}
+        onTabContentChange={onContentChange}
+        onLoadFile={onLoadFile}
+        onDownloadFile={onDownloadFile}
+        onRevealFile={onRevealFile}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /reload|重新加载|刷新/i }),
+    );
+    await waitFor(() => {
+      expect(onLoadFile).toHaveBeenCalledWith("index.html");
+      expect(onContentChange).toHaveBeenCalledWith(
+        "index.html",
+        "<h1>Updated</h1>",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /download|下载/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /file manager|文件夹/i }),
+    );
+    expect(onDownloadFile).toHaveBeenCalledWith("index.html");
+    expect(onRevealFile).toHaveBeenCalledWith("index.html");
+  });
+});

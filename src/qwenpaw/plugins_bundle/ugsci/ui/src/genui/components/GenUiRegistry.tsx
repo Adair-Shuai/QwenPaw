@@ -4,8 +4,15 @@
  */
 
 import type { GenUiNode } from "../types/genUi";
-import { dispatchGenUiAction, isActionBusy } from "../lib/genUiActionBus";
+import { dispatchGenUiAction } from "../lib/genUiActionBus";
 import { resolveMediaUrl, getCachedMediaUrl, isDirectUrl } from "../lib/genUiMedia";
+import { fieldName, getInteractionContext } from "./GenUiInteraction";
+
+// React is obtained from window.QwenPaw.host.React at runtime.
+// These aliases avoid `import from "react"` which fails to resolve in
+// the packaging mirror directory (no node_modules).
+type ReactNode = any;
+type ReactElement = any;
 
 const s = (v: unknown): string => (typeof v === "string" ? v : v != null ? String(v) : "");
 const n = (v: unknown): number => (typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0);
@@ -19,15 +26,116 @@ const TEXT_COLORS: Record<string, string> = {
   warning: "var(--ant-color-warning, #faad14)", error: "var(--ant-color-error, #ff4d4f)",
 };
 
+let formContext: any = null;
+function getFormContext(React: any): any {
+  if (!formContext) formContext = React.createContext(null as any);
+  return formContext;
+}
+
+function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
+  const host = (window as any).QwenPaw?.host;
+  const React = host?.React; const antd = host?.antd || {};
+  if (!React) return null;
+  const p = node.props || {};
+  const [values, setValues] = React.useState({} as Record<string, unknown>);
+  const [status, setStatus] = React.useState(null as null | { ok: boolean; message: string });
+  const initialValues = React.useMemo(() => {
+    const result: Record<string, unknown> = {};
+    for (const child of node.children || []) {
+      const cp = child.props || {}; const name = fieldName(child);
+      if (cp.value !== undefined) result[name] = cp.value;
+      else if (cp.checked !== undefined) result[name] = cp.checked;
+    }
+    return result;
+  }, [node]);
+  React.useEffect(() => setValues((old: Record<string, unknown>) => ({ ...initialValues, ...old })), [initialValues]);
+  const api = React.useMemo(() => ({ values, setValue: (name: string, value: unknown) => {
+    setStatus(null);
+    setValues((old: Record<string, unknown>) => ({ ...old, [name]: value }));
+  } }), [values]);
+  const submit = () => {
+    const missing = (node.children || []).filter((child) => child.props?.required).find((child) => {
+      const name = fieldName(child); const value = values[name];
+      return value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
+    });
+    if (missing) {
+      setStatus({ ok: false, message: `${s(missing.props?.label) || s(missing.props?.name) || "必填项"}不能为空` });
+      return;
+    }
+    const action = p.action && typeof p.action === "object" ? p.action as any : { type: "submit_form", payload: {} };
+    setStatus(dispatchGenUiAction(action, { formValues: values, formId: s(p.formId) || node.nodeId }));
+  };
+  return React.createElement(getFormContext(React).Provider, { value: api },
+    React.createElement("div", { style: { margin: "4px 0" } },
+      p.title ? React.createElement("div", { style: { fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null,
+      ...(node.children || []).map((child, index) => React.createElement(GenUiTreeView, { key: child.nodeId || index, node: child })),
+      React.createElement(antd.Button || "button", { type: "primary", size: "small", style: { marginTop: 8 }, onClick: submit }, s(p.submitLabel) || "提交"),
+      status ? React.createElement("div", { role: "status", style: { marginTop: 6, fontSize: 12, color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error } }, status.message) : null,
+    ),
+  );
+}
+
+function GenUiField({ node, fieldType }: { node: GenUiNode; fieldType: string }): ReactElement | null {
+  const host = (window as any).QwenPaw?.host; const React = host?.React; const antd = host?.antd || {};
+  if (!React) return null;
+  const p = node.props || {}; const form = React.useContext(getFormContext(React));
+  const interaction = React.useContext(getInteractionContext(React));
+  const ctx = form || interaction;
+  const [standaloneValue, setStandaloneValue] = React.useState(p.value ?? p.checked ?? "");
+  const name = fieldName(node); const initial = p.value ?? p.checked ?? "";
+  const value = ctx ? (ctx.values?.[name] ?? initial) : standaloneValue;
+  const change = (next: any) => {
+    const normalized = next?.target ? (fieldType === "Switch" ? next.target.checked : next.target.value) : next;
+    if (ctx) ctx.setValue(name, normalized); else setStandaloneValue(normalized);
+  };
+  const shell = (control: any) => React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, margin: "4px 0" } },
+    p.label && fieldType !== "Switch" ? React.createElement("label", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.label), p.required ? React.createElement("span", { style: { color: TEXT_COLORS.error } }, " *") : null) : null,
+    control,
+    p.description ? React.createElement("span", { style: { fontSize: 11, color: TEXT_COLORS.muted } }, s(p.description)) : null,
+  );
+  const ariaLabel = s(p.label) || s(p.placeholder) || name;
+  if (fieldType === "Input") return shell(React.createElement(antd.Input || "input", { "aria-label": ariaLabel, placeholder: s(p.placeholder), value, onChange: change, size: "small" }));
+  if (fieldType === "NumberInput") return shell(React.createElement(antd.InputNumber || "input", { "aria-label": ariaLabel, value, min: p.min, max: p.max, step: p.step, onChange: change, size: "small", style: { width: "100%" } }));
+  if (fieldType === "Textarea") return shell(React.createElement(antd.Input?.TextArea || "textarea", { "aria-label": ariaLabel, placeholder: s(p.placeholder), value, rows: n(p.rows) || 3, onChange: change, style: { width: "100%" } }));
+  if (fieldType === "Select") return shell(React.createElement(antd.Select || "select", { "aria-label": ariaLabel, placeholder: s(p.placeholder), value: value || undefined, onChange: change, size: "small", style: { width: "100%" } }, arr(p.options).map((option, index) => React.createElement(antd.Select?.Option || "option", { key: index, value: typeof option === "object" ? s((option as any).value) : s(option) }, typeof option === "object" ? s((option as any).label) : s(option)))));
+  if (fieldType === "Switch") return React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, React.createElement(antd.Switch || "input", { type: "checkbox", checked: Boolean(value), onChange: change, size: "small" }), React.createElement("span", null, s(p.label)));
+  if (fieldType === "Slider") return shell(React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, React.createElement(antd.Slider || "input", { type: "range", value: n(value), min: p.min ?? 0, max: p.max ?? 100, step: p.step ?? 1, onChange: change, style: { flex: 1 } }), React.createElement("span", { style: { minWidth: 32, fontSize: 12 } }, s(value))));
+  if (fieldType === "FileInput") return React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" } },
+    React.createElement("span", null, s(p.label) || "选择文件"),
+    React.createElement("input", { type: "file", multiple: b(p.multiple), accept: s(p.accept) || undefined, onChange: (event: any) => ctx?.setValue(name, Array.from(event.target.files || []).map((file: any) => ({ name: file.name, size: file.size, type: file.type }))) }),
+  );
+  return null;
+}
+
+function GenUiActionButton({ node, link = false, toggle = false }: { node: GenUiNode; link?: boolean; toggle?: boolean }): ReactElement | null {
+  const host = (window as any).QwenPaw?.host; const React = host?.React; const antd = host?.antd || {};
+  if (!React) return null;
+  const p = node.props || {}; const form = React.useContext(getFormContext(React));
+  const [checked, setChecked] = React.useState(b(p.checked));
+  const [status, setStatus] = React.useState(null as null | { ok: boolean; message: string });
+  const click = () => {
+    if (toggle) setChecked((value: boolean) => !value);
+    if (p.action && typeof p.action === "object") {
+      setStatus(dispatchGenUiAction(p.action, { formValues: form?.values, formId: form ? "form" : undefined }));
+    } else if (link && typeof p.href === "string" && /^(https?:\/\/|\/)/.test(p.href)) {
+      window.open(p.href, "_blank", "noopener,noreferrer");
+    }
+  };
+  return React.createElement("span", { style: { display: "inline-flex", flexDirection: "column", gap: 3 } },
+    React.createElement(antd.Button || "button", { type: link ? "link" : (toggle ? checked : s(p.variant) === "primary") ? "primary" : "default", size: "small", disabled: b(p.disabled), loading: b(p.loading), onClick: click }, s(p.label) || "Action"),
+    status ? React.createElement("span", { role: "status", style: { fontSize: 11, color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error } }, status.message) : null,
+  );
+}
+
 // ── ErrorBoundary ──────────────────────────────────────────────────────────
 
-function GenUiErrorBoundary({ node, children }: { node: GenUiNode; children: React.ReactNode }): React.ReactNode {
+function GenUiErrorBoundary({ node, children }: { node: GenUiNode; children: ReactNode }): ReactNode {
   const host = (window as any).QwenPaw?.host;
   const React = host?.React;
   if (!React) return null;
 
-  class ErrorBoundary extends React.Component<{ node: GenUiNode; children: React.ReactNode }, { hasError: boolean }, { kind: string }> {
-    constructor(props: { node: GenUiNode; children: React.ReactNode }) {
+  class ErrorBoundary extends React.Component<{ node: GenUiNode; children: ReactNode }, { hasError: boolean }, { kind: string }> {
+    constructor(props: { node: GenUiNode; children: ReactNode }) {
       super(props);
       this.state = { hasError: false };
     }
@@ -49,7 +157,7 @@ function GenUiErrorBoundary({ node, children }: { node: GenUiNode; children: Rea
 
 // ── Main tree renderer ─────────────────────────────────────────────────────
 
-export function GenUiTreeView({ node }: { node: GenUiNode }): React.ReactElement | null {
+export function GenUiTreeView({ node }: { node: GenUiNode }): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
   if (!host?.React) return null;
   const React = host.React;
@@ -64,10 +172,10 @@ export function GenUiTreeView({ node }: { node: GenUiNode }): React.ReactElement
   // Wrap each component in an ErrorBoundary for isolation
   return React.createElement(GenUiErrorBoundary, { node },
     renderNode(React, antd, node, p, children, renderChildren)
-  ) as React.ReactElement;
+  ) as ReactElement;
 }
 
-function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, unknown>, children: GenUiNode[], renderChildren: () => any[]): React.ReactElement | null {
+function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, unknown>, children: GenUiNode[], renderChildren: () => any[]): ReactElement | null {
   switch (node.kind) {
     // ── Layout ───────────────────────────────────────────────────────────
     case "Stack": return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: `${n(p.gap) || 12}px`, padding: p.padding ? `${n(p.padding)}px` : undefined } }, renderChildren());
@@ -152,7 +260,10 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
       const dataSource = rows.map((row, ri) => {
         const cells = (row.children || []).filter((c) => c.kind === "TableCell");
         const rd: Record<string, unknown> = { key: ri };
-        headers.forEach((h, ci) => { rd[h] = cells[ci]?.props?.value ? s(cells[ci].props.value) : ""; });
+        headers.forEach((h, ci) => {
+          const value = cells[ci]?.props?.value;
+          rd[h] = value === undefined || value === null ? "" : s(value);
+        });
         return rd;
       });
       const columns = headers.map((h) => ({ title: h, dataIndex: h, key: h }));
@@ -178,28 +289,11 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
     case "Chart": return React.createElement(GenUiChart, { props: p });
 
     // ── Interactive ─────────────────────────────────────────────────────
-    case "Button":
-    case "InteractiveButton": {
-      const busy = isActionBusy("send_message");
-      return React.createElement(antd.Button || "button", {
-        type: s(p.variant) === "primary" ? "primary" : "default",
-        size: "small",
-        children: s(p.label) || "Action",
-        disabled: busy,
-        loading: busy,
-        onClick: () => { if (!busy && p.action && typeof p.action === "object") dispatchGenUiAction(p.action); },
-      });
-    }
-    case "ToggleButton": return React.createElement(antd.Button || "button", { type: b(p.checked) ? "primary" : "default", size: "small", children: s(p.label), onClick: () => { if (p.action && typeof p.action === "object") dispatchGenUiAction(p.action); } });
-    case "LinkButton": return React.createElement(antd.Button || "button", { type: "link", size: "small", children: s(p.label), onClick: () => { if (p.action && typeof p.action === "object") dispatchGenUiAction(p.action); } });
-    case "Input": return React.createElement(antd.Input || "input", { placeholder: s(p.placeholder), value: s(p.value), disabled: true, size: "small" });
-    case "NumberInput": return React.createElement(antd.InputNumber || "input", { value: n(p.value), min: p.min !== undefined ? n(p.min) : undefined, max: p.max !== undefined ? n(p.max) : undefined, disabled: true, size: "small" });
-    case "Select": return React.createElement(antd.Select || "select", { placeholder: s(p.placeholder), value: s(p.value) || undefined, disabled: true, size: "small", style: { width: "100%" } }, arr(p.options).map((o, i) => React.createElement(antd.Select?.Option || "option", { key: i, value: s(o) }, s(o))));
-    case "Textarea": return React.createElement(antd.Input?.TextArea || "textarea", { placeholder: s(p.placeholder), value: s(p.value), rows: n(p.rows) || 3, disabled: true, size: "small", style: { width: "100%" } });
-    case "Form": return React.createElement("div", { style: { margin: "4px 0" } }, p.title ? React.createElement("div", { style: { fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null, renderChildren());
-    case "Switch": return React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, React.createElement(antd.Switch || "input", { checked: b(p.checked), disabled: true, size: "small" }), React.createElement("span", { style: { fontSize: 13 } }, s(p.label)));
-    case "Slider": return React.createElement("div", { style: { margin: "4px 0" } }, React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted, marginBottom: 4 } }, s(p.label)), React.createElement(antd.Slider || "input", { value: n(p.value), min: p.min !== undefined ? n(p.min) : 0, max: p.max !== undefined ? n(p.max) : 100, step: p.step !== undefined ? n(p.step) : 1, disabled: true }));
-    case "FileInput": return React.createElement(antd.Upload || "div", { disabled: true }, React.createElement(antd.Button || "button", { disabled: true, size: "small" }, s(p.label) || "Upload"));
+    case "Button": case "InteractiveButton": return React.createElement(GenUiActionButton, { node });
+    case "ToggleButton": return React.createElement(GenUiActionButton, { node, toggle: true });
+    case "LinkButton": return React.createElement(GenUiActionButton, { node, link: true });
+    case "Input": case "NumberInput": case "Select": case "Textarea": case "Switch": case "Slider": case "FileInput": return React.createElement(GenUiField, { node, fieldType: node.kind });
+    case "Form": return React.createElement(GenUiForm, { node });
     case "Chip": return React.createElement(antd.Tag || "span", { color: s(p.color) || "default", closable: true, onClose: () => {}, children: s(p.label) });
     case "ChipGroup": {
       const items = arr(p.items);
@@ -243,17 +337,34 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
 // ── Chart renderer (SVG-based, no external deps) ─────────────────────────
 const CHART_COLORS = ["#1677ff", "#52c41a", "#faad14", "#ff4d4f", "#722ed1", "#13c2c2", "#eb2f96"];
 
-function GenUiChart({ props: p }: { props: Record<string, unknown> }): React.ReactElement | null {
+function GenUiChart({ props: p }: { props: Record<string, unknown> }): ReactElement | null {
   const React = (window as any).QwenPaw?.host?.React;
   if (!React) return null;
 
+  const interaction = React.useContext(getInteractionContext(React));
+
   const chartType = s(p.chart) || "line";
   const title = s(p.title);
-  const categories = arr(p.categories).map((c) => s(c));
-  const seriesRaw = arr(p.series);
+  let categories = arr(p.categories).map((c) => s(c));
+  let seriesRaw = arr(p.series);
   const height = n(p.height) || 200;
   const showLegend = p.showLegend !== false;
   const width = 400;
+
+  const generator = p.generator && typeof p.generator === "object" ? p.generator as Record<string, unknown> : {};
+  const coefficientNames = arr(generator.coefficients).map(s);
+  const inferredNames = ["a", "b", "c", "d", "e"];
+  const names = coefficientNames.length > 0 ? coefficientNames : inferredNames;
+  const canGeneratePolynomial = (s(generator.type) === "polynomial" || coefficientNames.length > 0 || inferredNames.every((name) => interaction?.values?.[name] !== undefined));
+  if (canGeneratePolynomial && interaction) {
+    const xMin = typeof generator.xMin === "number" ? generator.xMin : -3;
+    const xMax = typeof generator.xMax === "number" ? generator.xMax : 3;
+    const samples = Math.min(Math.max(n(generator.samples) || 61, 10), 400);
+    const xs = Array.from({ length: samples }, (_, index) => xMin + (xMax - xMin) * index / (samples - 1));
+    const coefficients = names.map((name) => n(interaction.values?.[name]));
+    categories = xs.map((x) => Number(x.toFixed(2)).toString());
+    seriesRaw = [{ name: s(generator.label) || "f(x)", values: xs.map((x) => coefficients.reduce((sum, coefficient, index) => sum + coefficient * Math.pow(x, coefficients.length - index - 1), 0)) }];
+  }
 
   const series: { name: string; values: number[] }[] = seriesRaw.map((sr, i) => {
     const r = sr as Record<string, unknown>;
@@ -301,9 +412,12 @@ function GenUiChart({ props: p }: { props: Record<string, unknown> }): React.Rea
   const maxVal = Math.max(...allValues, 0);
   const minVal = Math.min(...allValues, 0);
   const range = maxVal - minVal || 1;
-  const barW = categories.length > 0 ? (width - 40) / (categories.length * series.length) - 2 : 0;
+  const groupW = categories.length > 0 ? (width - 40) / categories.length : 0;
+  const barW = series.length > 0 ? Math.max(1, groupW / series.length - 2) : 0;
   const xStep = categories.length > 1 ? (width - 40) / (categories.length - 1) : 0;
+  const labelEvery = Math.max(1, Math.ceil(categories.length / 8));
   const yScale = (v: number) => height - 20 - ((v - minVal) / range) * (height - 40);
+  const zeroY = yScale(0);
   const xPos = (i: number) => 30 + i * xStep;
 
   return React.createElement("div", { style: { margin: "4px 0" } },
@@ -313,13 +427,18 @@ function GenUiChart({ props: p }: { props: Record<string, unknown> }): React.Rea
         const y = height - 20 - t * (height - 40);
         return React.createElement("line", { key: `g${i}`, x1: 30, y1: y, x2: width - 10, y2: y, stroke: "var(--ant-color-border-secondary, #f0f0f0)", strokeWidth: 1 });
       }),
-      ...categories.map((cat, i) => React.createElement("text", { key: `x${i}`, x: xPos(i), y: height - 6, fontSize: 10, fill: TEXT_COLORS.muted, textAnchor: "middle" }, cat.length > 6 ? cat.slice(0, 6) + "…" : cat)),
+      ...categories.map((cat, i) => (i % labelEvery === 0 || i === categories.length - 1) ? React.createElement("text", { key: `x${i}`, x: xPos(i), y: height - 6, fontSize: 10, fill: TEXT_COLORS.muted, textAnchor: "middle" }, cat.length > 6 ? cat.slice(0, 6) + "…" : cat) : null),
       ...series.map((sr, si) => {
         const color = CHART_COLORS[si % CHART_COLORS.length];
         if (chartType === "bar") {
           return sr.values.map((val, vi) => React.createElement("rect", {
-            key: `b${si}-${vi}`, x: xPos(vi) + si * (barW + 2) - barW / 2,
-            y: yScale(val), width: barW, height: height - 20 - yScale(val), fill: color, rx: 2,
+            key: `b${si}-${vi}`,
+            x: 30 + vi * groupW + si * (barW + 2) + 1,
+            y: Math.min(yScale(val), zeroY),
+            width: barW,
+            height: Math.abs(zeroY - yScale(val)),
+            fill: color,
+            rx: 2,
           }));
         }
         const points = sr.values.map((val, vi) => `${xPos(vi)},${yScale(val)}`).join(" ");
@@ -353,14 +472,14 @@ function GenUiMediaImage(props: {
   src: string;
   alt?: string;
   style?: Record<string, unknown>;
-}): React.ReactElement | null {
+}): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
   const React = host?.React;
   if (!React) return null;
 
   const { useState, useEffect } = React;
-  const [resolvedUrl, setResolvedUrl] = useState<string | null>(
-    getCachedMediaUrl(props.src) || (isDirectUrl(props.src) ? props.src : null),
+  const [resolvedUrl, setResolvedUrl] = useState(
+    (getCachedMediaUrl(props.src) || (isDirectUrl(props.src) ? props.src : null)) as string | null,
   );
 
   useEffect(() => {

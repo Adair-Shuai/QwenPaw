@@ -79,6 +79,8 @@ interface ResponsePartial {
 }
 
 export interface QwenPawChatNamespace {
+  /** Submit a user message through the host chat runtime. */
+  sendMessage(content: string): boolean;
   welcome: {
     set(pluginId: string, partial: WelcomePartial): Disposable;
     render(pluginId: string, value: WelcomeRenderValue): Disposable;
@@ -172,6 +174,13 @@ export interface QwenPawChatNamespace {
   disposeAll(pluginId: string): void;
 }
 
+let chatSubmitter: ((content: string) => void) | null = null;
+
+/** Bind the mounted chat runtime to the plugin SDK without exposing its ref. */
+export function registerChatSubmitter(submitter: ((content: string) => void) | null): void {
+  chatSubmitter = submitter;
+}
+
 export interface QwenPawAuditNamespace {
   overrides(): OverrideRecord[];
 }
@@ -259,6 +268,11 @@ function makeChatNamespace(): QwenPawChatNamespace {
   };
 
   return {
+    sendMessage: (content) => {
+      if (!chatSubmitter || !content.trim()) return false;
+      chatSubmitter(content);
+      return true;
+    },
     welcome: {
       set: (pid, partial) => applyPartial(pid, partial, welcomeFieldMap),
       render: (pid, value) =>

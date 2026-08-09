@@ -116,6 +116,16 @@ describe("authenticated Workspace binary renderers", () => {
     );
   });
 
+  it("keeps image-specific controls while the host owns common actions", () => {
+    const { container } = render(
+      <ImageRenderer {...makeContext({})} hostControls />,
+    );
+
+    expect(container.querySelectorAll("button")).toHaveLength(4);
+    expect(screen.queryByText("下载")).not.toBeInTheDocument();
+    expect(screen.queryByText("在文件夹中打开")).not.toBeInTheDocument();
+  });
+
   it("passes a stable authenticated Range request to the PDF.js viewer", () => {
     render(
       <PdfRenderer
@@ -137,6 +147,24 @@ describe("authenticated Workspace binary renderers", () => {
       "data-agent",
       "agent-b",
     );
+  });
+
+  it("removes the duplicate PDF header under hosted file controls", () => {
+    const { container } = render(
+      <PdfRenderer
+        {...makeContext({
+          title: "report.pdf",
+          mimeType: "application/pdf",
+          extension: "pdf",
+          workspacePath: "reports/report.pdf",
+        })}
+        hostControls
+      />,
+    );
+
+    expect(screen.getByTestId("pdf-viewer")).toBeInTheDocument();
+    expect(container.querySelector("button")).not.toBeInTheDocument();
+    expect(screen.queryByText(/PDF ·/)).not.toBeInTheDocument();
   });
 
   it("shows HTTP errors with retry and download actions", () => {

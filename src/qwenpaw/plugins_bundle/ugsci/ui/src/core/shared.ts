@@ -2,8 +2,12 @@
  * Shared utilities and UI components used across multiple UGSci domain modules.
  */
 
-import type React from "react";
 import { getHost } from "./runtime";
+
+// React is obtained from window.QwenPaw.host.React at runtime.
+// This alias avoids `import from "react"` which fails to resolve in
+// the packaging mirror directory (no node_modules).
+type ReactNode = any;
 
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
@@ -35,7 +39,7 @@ export function isSimpleMode(): boolean {
  * Render markdown text using the host's ReactMarkdown component.
  * Falls back to plain text if ReactMarkdown is not available.
  */
-export function renderMarkdown(text: string, React: typeof import("react")) {
+export function renderMarkdown(text: string, React: any) {
   const host = getHost();
   if (host.ReactMarkdown && host.remarkGfm) {
     return React.createElement(
@@ -62,7 +66,7 @@ export function PageHeader({
 }: {
   title: string;
   subtitle?: string;
-  extra?: React.ReactNode;
+  extra?: ReactNode;
 }) {
   const React = getHost().React;
   const { Space } = getHost().antd;

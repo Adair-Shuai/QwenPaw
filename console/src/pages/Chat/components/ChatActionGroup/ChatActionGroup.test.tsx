@@ -68,12 +68,7 @@ describe("ChatActionGroup", () => {
       height: "32px",
       padding: "0px",
     });
-    expect(button?.querySelector("svg")).toHaveAttribute("width", "16");
-    expect(button?.querySelector("svg")).toHaveAttribute("height", "16");
-    expect(button?.querySelector("svg")).toHaveStyle({
-      width: "16px",
-      height: "16px",
-    });
+    expect(button?.querySelector(".anticon-appstore")).toBeInTheDocument();
     button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onToggleWorkspace).toHaveBeenCalledOnce();
   });

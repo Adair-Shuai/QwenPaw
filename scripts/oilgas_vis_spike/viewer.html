@@ -1,0 +1,706 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Oil & Gas Visualization Spike</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0d1117; color: #e6edf3; }
+  #app { display: flex; width: 100%; height: 100%; }
+  #sidebar { width: 320px; min-width: 320px; background: #161b22; border-right: 1px solid #30363d;
+    display: flex; flex-direction: column; overflow-y: auto; }
+  #sidebar .section { padding: 16px; border-bottom: 1px solid #30363d; }
+  #sidebar h3 { font-size: 12px; text-transform: uppercase; color: #8b949e; margin-bottom: 8px; }
+  #sidebar select, #sidebar button { width: 100%; padding: 6px 8px; background: #0d1117;
+    border: 1px solid #30363d; border-radius: 6px; color: #e6edf3; font-size: 13px; margin-bottom: 6px; }
+  #sidebar button:hover { background: #1f2630; cursor: pointer; }
+  #sidebar label { display: block; font-size: 12px; color: #8b949e; margin: 4px 0 2px; }
+  #viewer { flex: 1; position: relative; }
+  #canvas-container { width: 100%; height: 100%; }
+  #hud { position: absolute; top: 8px; right: 8px; background: rgba(22,27,34,0.85);
+    border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; font-size: 12px;
+    font-family: 'SF Mono', monospace; pointer-events: none; min-width: 180px; }
+  #hud .row { display: flex; justify-content: space-between; margin: 2px 0; }
+  #hud .label { color: #8b949e; }
+  #hud .value { color: #58a6ff; font-weight: 600; }
+  #info { position: absolute; bottom: 8px; left: 8px; background: rgba(22,27,34,0.85);
+    border: 1px solid #30363d; border-radius: 8px; padding: 8px 12px; font-size: 12px;
+    font-family: 'SF Mono', monospace; pointer-events: none; max-width: 400px; }
+  #welllog-panel { position: absolute; top: 8px; left: 8px; width: 280px; height: 600px;
+    background: rgba(22,27,34,0.92); border: 1px solid #30363d; border-radius: 8px;
+    display: none; flex-direction: column; }
+  #welllog-panel canvas { flex: 1; }
+  #welllog-panel .header { padding: 6px 10px; border-bottom: 1px solid #30363d;
+    display: flex; justify-content: space-between; align-items: center; font-size: 12px; }
+  #welllog-panel .header button { background: none; border: none; color: #8b949e; cursor: pointer; font-size: 16px; }
+  .spinner { display: inline-block; width: 16px; height: 16px; border: 2px solid #30363d;
+    border-top-color: #58a6ff; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #loading-overlay { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    text-align: center; color: #8b949e; }
+  #loading-overlay .spinner { width: 32px; height: 32px; border-width: 3px; }
+  #loading-overlay .text { margin-top: 12px; font-size: 14px; }
+  .colorbar { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .colorbar-gradient { height: 12px; flex: 1; border-radius: 3px;
+    background: linear-gradient(to right, #440154, #3b528b, #21918c, #5ec962, #fde725); }
+  .colorbar-labels { display: flex; justify-content: space-between; font-size: 10px; color: #8b949e; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="sidebar">
+    <div class="section">
+      <h3>Dataset</h3>
+      <select id="dataset-select"></select>
+      <div id="dataset-info" style="font-size:11px;color:#8b949e;margin-top:4px;"></div>
+    </div>
+    <div class="section">
+      <h3>Property</h3>
+      <select id="property-select">
+        <option value="porosity">Porosity</option>
+        <option value="permeability">Permeability</option>
+        <option value="facies">Facies</option>
+      </select>
+      <label>Color Map</label>
+      <select id="colormap-select">
+        <option value="viridis">Viridis</option>
+        <option value="plasma">Plasma</option>
+        <option value="turbo">Turbo</option>
+        <option value="gray">Gray</option>
+      </select>
+      <div class="colorbar">
+        <div class="colorbar-gradient" id="colorbar"></div>
+      </div>
+      <div class="colorbar-labels">
+        <span id="cbar-min">0.0</span><span id="cbar-max">1.0</span>
+      </div>
+    </div>
+    <div class="section">
+      <h3>Display</h3>
+      <label>Opacity</label>
+      <input type="range" id="opacity-slider" min="0.3" max="1.0" step="0.05" value="0.85" style="width:100%;">
+      <label>Wireframe</label>
+      <input type="checkbox" id="wireframe-toggle">
+      <label>Show Well Logs</label>
+      <input type="checkbox" id="welllog-toggle">
+    </div>
+    <div class="section">
+      <h3>Benchmark</h3>
+      <button id="btn-benchmark">Run Benchmark</button>
+      <button id="btn-dispose-test">Dispose Test (10x)</button>
+      <div id="benchmark-results" style="font-size:11px;color:#8b949e;margin-top:4px;font-family:monospace;"></div>
+    </div>
+    <div class="section">
+      <h3>Picked Cell</h3>
+      <div id="picked-info" style="font-size:12px;font-family:monospace;color:#58a6ff;">Click a cell to pick</div>
+    </div>
+    <div class="section">
+      <h3>Memory</h3>
+      <div id="memory-info" style="font-size:12px;font-family:monospace;color:#8b949e;">—</div>
+    </div>
+  </div>
+  <div id="viewer">
+    <div id="canvas-container"></div>
+    <div id="hud">
+      <div class="row"><span class="label">FPS</span><span class="value" id="hud-fps">—</span></div>
+      <div class="row"><span class="label">Frame (ms)</span><span class="value" id="hud-frame">—</span></div>
+      <div class="row"><span class="label">Draw Calls</span><span class="value" id="hud-calls">—</span></div>
+      <div class="row"><span class="label">Triangles</span><span class="value" id="hud-tris">—</span></div>
+      <div class="row"><span class="label">JS Heap</span><span class="value" id="hud-heap">—</span></div>
+    </div>
+    <div id="info"></div>
+    <div id="welllog-panel">
+      <div class="header">
+        <span id="welllog-name">Well Log</span>
+        <button onclick="document.getElementById('welllog-panel').style.display='none'">x</button>
+      </div>
+      <canvas id="welllog-canvas"></canvas>
+    </div>
+    <div id="loading-overlay" style="display:none;">
+      <div class="spinner"></div>
+      <div class="text" id="loading-text">Loading...</div>
+    </div>
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+// ─── Global state ──────────────────────────────────────────────────────────
+let renderer, scene, camera, controls, mesh, raycaster, mouse;
+let currentDataset = null;
+let currentProperty = 'porosity';
+let currentColormap = 'viridis';
+let manifest = null;
+let animationId = null;
+let benchmarkRunning = false;
+
+// FPS tracking
+let frameTimes = [];
+let lastFrameTime = 0;
+let fpsUpdateInterval = 0;
+
+// ─── Colormaps ─────────────────────────────────────────────────────────────
+const colormaps = {
+  viridis: [
+    [0.267, 0.005, 0.329], [0.282, 0.140, 0.457], [0.254, 0.265, 0.530],
+    [0.207, 0.372, 0.553], [0.164, 0.471, 0.558], [0.138, 0.567, 0.550],
+    [0.135, 0.659, 0.518], [0.157, 0.745, 0.467], [0.215, 0.813, 0.398],
+    [0.350, 0.851, 0.333], [0.536, 0.851, 0.261], [0.737, 0.813, 0.185],
+    [0.921, 0.737, 0.089], [0.993, 0.906, 0.144],
+  ],
+  plasma: [
+    [0.051, 0.028, 0.528], [0.184, 0.039, 0.606], [0.310, 0.020, 0.653],
+    [0.431, 0.004, 0.678], [0.550, 0.020, 0.682], [0.665, 0.058, 0.662],
+    [0.773, 0.137, 0.616], [0.867, 0.249, 0.541], [0.937, 0.379, 0.448],
+    [0.980, 0.516, 0.345], [0.993, 0.651, 0.250], [0.969, 0.772, 0.169],
+    [0.921, 0.873, 0.102], [0.886, 0.961, 0.090],
+  ],
+  turbo: [
+    [0.189, 0.000, 0.381], [0.340, 0.060, 0.590], [0.470, 0.080, 0.870],
+    [0.530, 0.220, 0.930], [0.550, 0.340, 0.970], [0.560, 0.450, 0.960],
+    [0.570, 0.550, 0.940], [0.590, 0.650, 0.900], [0.620, 0.730, 0.830],
+    [0.680, 0.800, 0.740], [0.770, 0.860, 0.620], [0.870, 0.910, 0.480],
+    [0.980, 0.950, 0.330], [0.990, 0.980, 0.150],
+  ],
+  gray: [
+    [0.1, 0.1, 0.1], [0.3, 0.3, 0.3], [0.5, 0.5, 0.5],
+    [0.7, 0.7, 0.7], [0.9, 0.9, 0.9],
+  ],
+};
+
+function colormap(name, t) {
+  const cm = colormaps[name] || colormaps.viridis;
+  const idx = Math.max(0, Math.min(cm.length - 1, Math.floor(t * (cm.length - 1))));
+  const next = Math.min(cm.length - 1, idx + 1);
+  const frac = t * (cm.length - 1) - idx;
+  return [
+    cm[idx][0] + (cm[next][0] - cm[idx][0]) * frac,
+    cm[idx][1] + (cm[next][1] - cm[idx][1]) * frac,
+    cm[idx][2] + (cm[next][2] - cm[idx][2]) * frac,
+  ];
+}
+
+// ─── Init ──────────────────────────────────────────────────────────────────
+function init() {
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+
+  renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+  renderer.setSize(w, h);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  container.appendChild(renderer.domElement);
+
+  scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x0d1117);
+  scene.fog = new THREE.Fog(0x0d1117, 2000, 8000);
+
+  camera = new THREE.PerspectiveCamera(50, w / h, 1, 20000);
+  camera.position.set(3000, 3000, 3000);
+
+  controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.target.set(0, 0, -500);
+
+  // Lights
+  const ambient = new THREE.AmbientLight(0x404060, 1.5);
+  scene.add(ambient);
+  const directional = new THREE.DirectionalLight(0xffffff, 1.2);
+  directional.position.set(1000, 1000, 1000);
+  scene.add(directional);
+  const directional2 = new THREE.DirectionalLight(0x8090ff, 0.5);
+  directional2.position.set(-500, -500, -500);
+  scene.add(directional2);
+
+  // Grid helper
+  const gridHelper = new THREE.GridHelper(5000, 50, 0x30363d, 0x21262d);
+  gridHelper.position.y = 0;
+  scene.add(gridHelper);
+
+  // Axes
+  const axes = new THREE.AxesHelper(2000);
+  scene.add(axes);
+
+  raycaster = new THREE.Raycaster();
+  mouse = new THREE.Vector2();
+
+  // Event listeners
+  renderer.domElement.addEventListener('click', onCanvasClick);
+  window.addEventListener('resize', onResize);
+
+  // Load manifest
+  fetchManifest();
+  startAnimationLoop();
+}
+
+// ─── Fetch manifest ────────────────────────────────────────────────────────
+async function fetchManifest() {
+  showLoading('Loading manifest...');
+  try {
+    const resp = await fetch('/data/bin/manifest.json');
+    manifest = await resp.json();
+    populateDatasetSelect();
+    // Auto-load first dataset
+    if (manifest.datasets.length > 0) {
+      loadDataset(manifest.datasets[0].id);
+    }
+  } catch (err) {
+    document.getElementById('info').textContent = 'Failed to load manifest: ' + err.message;
+  } finally {
+    hideLoading();
+  }
+}
+
+function populateDatasetSelect() {
+  const sel = document.getElementById('dataset-select');
+  sel.innerHTML = '';
+  for (const ds of manifest.datasets) {
+    const opt = document.createElement('option');
+    opt.value = ds.id;
+    opt.textContent = `${ds.name} (${ds.n_cells.toLocaleString()} cells)`;
+    sel.appendChild(opt);
+  }
+  sel.onchange = () => loadDataset(sel.value);
+}
+
+// ─── Load dataset ──────────────────────────────────────────────────────────
+async function loadDataset(datasetId) {
+  const ds = manifest.datasets.find(d => d.id === datasetId);
+  if (!ds) return;
+  currentDataset = ds;
+
+  showLoading(`Loading ${ds.name}...`);
+
+  // Fetch binary data in parallel
+  const baseUrl = '/data/bin/';
+  const [posBuf, idxBuf, cellIdBuf] = await Promise.all([
+    fetch(baseUrl + ds.files.positions).then(r => r.arrayBuffer()),
+    fetch(baseUrl + ds.files.indices).then(r => r.arrayBuffer()),
+    fetch(baseUrl + ds.files.cell_ids).then(r => r.arrayBuffer()),
+  ]);
+
+  const positions = new Float32Array(posBuf);
+  const indices = new Uint32Array(idxBuf);
+  const cellIds = new Uint32Array(cellIdBuf);
+
+  // Remove old mesh
+  if (mesh) {
+    scene.remove(mesh);
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+
+  // Create geometry
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geometry.setIndex(new THREE.BufferAttribute(indices, 1));
+  geometry.computeBoundingSphere();
+  geometry.computeVertexNormals();
+
+  // Create material
+  const material = new THREE.MeshPhongMaterial({
+    vertexColors: true,
+    side: THREE.DoubleSide,
+    transparent: true,
+    opacity: parseFloat(document.getElementById('opacity-slider').value),
+    wireframe: document.getElementById('wireframe-toggle').checked,
+  });
+
+  // Add per-vertex colors based on cell property
+  // For per-cell properties, we assign colors to vertices based on the
+  // average property of adjacent cells
+  const propFileName = ds.files.scalars[currentProperty];
+  if (propFileName) {
+    const propBuf = await fetch(baseUrl + propFileName).then(r => r.arrayBuffer());
+    const isFloat = propFileName.endsWith('.f32');
+    const scalars = isFloat ? new Float32Array(propBuf) : new Uint32Array(propBuf);
+
+    // Compute min/max
+    let smin = Infinity, smax = -Infinity;
+    for (let i = 0; i < scalars.length; i++) {
+      const v = scalars[i];
+      if (v < smin) smin = v;
+      if (v > smax) smax = v;
+    }
+    const srange = smax - smin || 1;
+
+    // Map per-cell scalar to per-vertex color
+    // Each triangle has 3 vertices, each quad produced 6 indices (2 triangles)
+    const nVerts = positions.length / 3;
+    const colors = new Float32Array(nVerts * 3);
+    const vertColorCount = new Float32Array(nVerts);
+
+    // Walk through indices, assign cell color to each vertex
+    // Each cell has 6 indices (2 triangles for a quad)
+    const indicesPerCell = 6;
+    for (let c = 0; c < cellIds.length; c++) {
+      const sval = scalars[c];
+      const t = (sval - smin) / srange;
+      const [r, g, b] = colormap(currentColormap, t);
+      const startIdx = c * indicesPerCell;
+      for (let k = 0; k < indicesPerCell; k++) {
+        const vi = indices[startIdx + k];
+        if (vi < nVerts) {
+          colors[vi * 3] += r;
+          colors[vi * 3 + 1] += g;
+          colors[vi * 3 + 2] += b;
+          vertColorCount[vi]++;
+        }
+      }
+    }
+    // Average
+    for (let i = 0; i < nVerts; i++) {
+      const cnt = vertColorCount[i] || 1;
+      colors[i * 3] /= cnt;
+      colors[i * 3 + 1] /= cnt;
+      colors[i * 3 + 2] /= cnt;
+    }
+    geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+
+    // Update colorbar labels
+    document.getElementById('cbar-min').textContent = smin.toFixed(3);
+    document.getElementById('cbar-max').textContent = smax.toFixed(3);
+  } else {
+    material.vertexColors = false;
+    material.color = new THREE.Color(0x4488ff);
+  }
+
+  mesh = new THREE.Mesh(geometry, material);
+  scene.add(mesh);
+
+  // Center camera on the dataset
+  const bbox = geometry.boundingSphere;
+  const center = bbox.center;
+  const radius = bbox.radius;
+  controls.target.copy(center);
+  camera.position.set(
+    center.x + radius * 1.5,
+    center.y + radius * 1.5,
+    center.z + radius * 1.5,
+  );
+  controls.update();
+
+  // Update dataset info
+  document.getElementById('dataset-info').textContent =
+    `${ds.n_vertices.toLocaleString()} vertices, ${ds.n_cells.toLocaleString()} cells, ${ds.n_indices.toLocaleString()} indices`;
+
+  hideLoading();
+}
+
+// ─── Animation loop ─────────────────────────────────────────────────────────
+function startAnimationLoop() {
+  function animate(time) {
+    animationId = requestAnimationFrame(animate);
+
+    controls.update();
+    renderer.render(scene, camera);
+
+    // FPS tracking
+    if (lastFrameTime > 0) {
+      const dt = time - lastFrameTime;
+      frameTimes.push(dt);
+      if (frameTimes.length > 60) frameTimes.shift();
+    }
+    lastFrameTime = time;
+
+    // Update HUD every 500ms
+    if (++fpsUpdateInterval >= 30) {
+      fpsUpdateInterval = 0;
+      updateHUD();
+    }
+  }
+  animate(0);
+}
+
+function updateHUD() {
+  const info = renderer.info;
+  const times = frameTimes;
+  if (times.length > 0) {
+    const avg = times.reduce((a, b) => a + b, 0) / times.length;
+    const fps = 1000 / avg;
+    const p95 = times.sort((a, b) => a - b)[Math.floor(times.length * 0.95)];
+    document.getElementById('hud-fps').textContent = fps.toFixed(0);
+    document.getElementById('hud-frame').textContent = avg.toFixed(1) + 'ms';
+  }
+  document.getElementById('hud-calls').textContent = info.render.calls;
+  document.getElementById('hud-tris').textContent = info.render.triangles.toLocaleString();
+
+  // Memory
+  if (performance.memory) {
+    const used = performance.memory.usedJSHeapSize / 1024 / 1024;
+    const total = performance.memory.totalJSHeapSize / 1024 / 1024;
+    document.getElementById('hud-heap').textContent = `${used.toFixed(0)}/${total.toFixed(0)} MB`;
+    document.getElementById('memory-info').textContent =
+      `JS Heap: ${used.toFixed(1)} MB\nTotal: ${total.toFixed(1)} MB\nLimit: ${(performance.memory.jsHeapSizeLimit / 1024 / 1024).toFixed(0)} MB`;
+  } else {
+    document.getElementById('hud-heap').textContent = 'N/A';
+    document.getElementById('memory-info').textContent = 'performance.memory not available';
+  }
+}
+
+// ─── Cell picking ───────────────────────────────────────────────────────────
+function onCanvasClick(event) {
+  if (!mesh) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+  raycaster.setFromCamera(mouse, camera);
+  const intersects = raycaster.intersectObject(mesh);
+  if (intersects.length > 0) {
+    const face = intersects[0].face;
+    const triangleIndex = Math.floor(face.a / 6);
+    const cellId = currentDataset ? Math.floor(triangleIndex) : 0;
+
+    // Get cell IDs array
+    const cellIdAttr = mesh.geometry.getAttribute('cell_id');
+    let cellIdValue = cellId;
+    if (currentDataset && currentDataset.n_cells) {
+      // Approximate cell ID from triangle index
+      cellIdValue = Math.min(cellId, currentDataset.n_cells - 1);
+    }
+
+    document.getElementById('picked-info').innerHTML =
+      `Cell ID: <strong>${cellIdValue}</strong><br>` +
+      `Triangle: ${triangleIndex}<br>` +
+      `Vertex: ${face.a}, ${face.b}, ${face.c}<br>` +
+      `Point: (${intersects[0].point.x.toFixed(1)}, ${intersects[0].point.y.toFixed(1)}, ${intersects[0].point.z.toFixed(1)})`;
+  }
+}
+
+// ─── Benchmark ──────────────────────────────────────────────────────────────
+async function runBenchmark() {
+  if (benchmarkRunning) return;
+  benchmarkRunning = true;
+  document.getElementById('btn-benchmark').disabled = true;
+  const resultsEl = document.getElementById('benchmark-results');
+  resultsEl.innerHTML = '<div class="spinner"></div> Running...';
+
+  const results = [];
+
+  // 1. Measure frame times for 5 seconds
+  results.push('=== Frame Timing (5s) ===');
+  const benchFrames = [];
+  const startT = performance.now();
+  const measureEndT = startT + 5000;
+
+  await new Promise(resolve => {
+    function benchFrame(t) {
+      if (t < measureEndT) {
+        if (benchFrames.length > 0) {
+          benchFrames.push(t);
+        } else {
+          benchFrames.push(t);
+        }
+        requestAnimationFrame(benchFrame);
+      } else {
+        resolve();
+      }
+    }
+    requestAnimationFrame(benchFrame);
+  });
+
+  // Calculate frame times
+  const dts = [];
+  for (let i = 1; i < benchFrames.length; i++) {
+    dts.push(benchFrames[i] - benchFrames[i - 1]);
+  }
+  dts.sort((a, b) => a - b);
+  const median = dts[Math.floor(dts.length / 2)] || 0;
+  const p95 = dts[Math.floor(dts.length * 0.95)] || 0;
+  const avg = dts.reduce((a, b) => a + b, 0) / dts.length;
+  const fps = 1000 / median;
+
+  results.push(`Frames: ${dts.length}`);
+  results.push(`P50: ${median.toFixed(1)}ms (${fps.toFixed(0)} FPS)`);
+  results.push(`P95: ${p95.toFixed(1)}ms`);
+  results.push(`Avg: ${avg.toFixed(1)}ms`);
+  results.push('');
+
+  // 2. Memory
+  if (performance.memory) {
+    results.push('=== Memory ===');
+    results.push(`JS Heap: ${(performance.memory.usedJSHeapSize / 1024 / 1024).toFixed(1)} MB`);
+    results.push('');
+  }
+
+  // 3. Draw calls
+  results.push('=== Render ===');
+  results.push(`Draw calls: ${renderer.info.render.calls}`);
+  results.push(`Triangles: ${renderer.info.render.triangles.toLocaleString()}`);
+  results.push(`Geometries: ${renderer.info.memory.geometries}`);
+  results.push(`Textures: ${renderer.info.memory.textures}`);
+
+  resultsEl.innerHTML = results.join('<br>');
+  benchmarkRunning = false;
+  document.getElementById('btn-benchmark').disabled = false;
+}
+
+// ─── Dispose test (memory leak detection) ──────────────────────────────────
+async function runDisposeTest() {
+  if (!currentDataset) return;
+  document.getElementById('btn-dispose-test').disabled = true;
+  const resultsEl = document.getElementById('benchmark-results');
+  resultsEl.innerHTML = '<div class="spinner"></div> Dispose test (10x)...';
+
+  const heapBefore = performance.memory ? performance.memory.usedJSHeapSize : 0;
+  const startT = performance.now();
+
+  for (let i = 0; i < 10; i++) {
+    // Remove
+    if (mesh) {
+      scene.remove(mesh);
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      mesh = null;
+    }
+    // Re-create
+    await loadDataset(currentDataset.id);
+    // Force GC hint
+    if (window.gc) window.gc();
+  }
+
+  const elapsed = performance.now() - startT;
+  const heapAfter = performance.memory ? performance.memory.usedJSHeapSize : 0;
+  const retained = (heapAfter - heapBefore) / 1024 / 1024;
+
+  resultsEl.innerHTML =
+    `=== Dispose Test (10x) ===<br>` +
+    `Time: ${elapsed.toFixed(0)}ms<br>` +
+    `Heap before: ${(heapBefore / 1024 / 1024).toFixed(1)} MB<br>` +
+    `Heap after: ${(heapAfter / 1024 / 1024).toFixed(1)} MB<br>` +
+    `Retained: <strong style="color:${retained < 100 ? '#5ec962' : '#f85149'}">${retained.toFixed(1)} MB</strong><br>` +
+    `Verdict: ${retained < 100 ? '✅ PASS (<100MB)' : '⚠️ CHECK (>100MB)'}`;
+
+  document.getElementById('btn-dispose-test').disabled = false;
+}
+
+// ─── Well log canvas ────────────────────────────────────────────────────────
+function drawWellLog() {
+  const panel = document.getElementById('welllog-panel');
+  if (panel.style.display === 'flex') {
+    panel.style.display = 'none';
+    return;
+  }
+  panel.style.display = 'flex';
+
+  const canvas = document.getElementById('welllog-canvas');
+  const ctx = canvas.getContext('2d');
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  canvas.width = w;
+  canvas.height = h;
+
+  // Draw a synthetic well log
+  ctx.fillStyle = '#0d1117';
+  ctx.fillRect(0, 0, w, h);
+
+  // GR curve (green)
+  ctx.strokeStyle = '#5ec962';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < 200; i++) {
+    const y = (i / 200) * h;
+    const gr = 50 + 80 * Math.sin(i * 0.1) + 30 * Math.random();
+    const x = (gr / 200) * w;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // RT curve (blue, log scale)
+  ctx.strokeStyle = '#58a6ff';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  for (let i = 0; i < 200; i++) {
+    const y = (i / 200) * h;
+    const rt = 0.1 + 100 * Math.exp(-i * 0.02) * (0.5 + Math.random());
+    const x = Math.log10(Math.max(rt, 0.1)) * (w / 4) + w * 0.5;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Depth labels
+  ctx.fillStyle = '#8b949e';
+  ctx.font = '10px monospace';
+  for (let i = 0; i <= 10; i++) {
+    const y = (i / 10) * h;
+    const depth = 1000 + i * 100;
+    ctx.fillText(`${depth}m`, 4, y + 10);
+  }
+
+  document.getElementById('welllog-name').textContent = 'Synthetic Well Log';
+}
+
+// ─── Helpers ────────────────────────────────────────────────────────────────
+function showLoading(text) {
+  const overlay = document.getElementById('loading-overlay');
+  overlay.style.display = 'block';
+  document.getElementById('loading-text').textContent = text || 'Loading...';
+}
+function hideLoading() {
+  document.getElementById('loading-overlay').style.display = 'none';
+}
+function onResize() {
+  const container = document.getElementById('canvas-container');
+  const w = container.clientWidth;
+  const h = container.clientHeight;
+  renderer.setSize(w, h);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+
+// ─── Event listeners ────────────────────────────────────────────────────────
+document.getElementById('property-select').onchange = (e) => {
+  currentProperty = e.target.value;
+  if (currentDataset) loadDataset(currentDataset.id);
+};
+document.getElementById('colormap-select').onchange = (e) => {
+  currentColormap = e.target.value;
+  if (currentDataset) loadDataset(currentDataset.id);
+  // Update colorbar gradient
+  updateColorbarGradient();
+};
+document.getElementById('opacity-slider').oninput = (e) => {
+  if (mesh) mesh.material.opacity = parseFloat(e.target.value);
+};
+document.getElementById('wireframe-toggle').onchange = (e) => {
+  if (mesh) mesh.material.wireframe = e.target.checked;
+};
+document.getElementById('welllog-toggle').onchange = (e) => {
+  if (e.target.checked) drawWellLog();
+  else document.getElementById('welllog-panel').style.display = 'none';
+};
+document.getElementById('btn-benchmark').onclick = runBenchmark;
+document.getElementById('btn-dispose-test').onclick = runDisposeTest;
+
+function updateColorbarGradient() {
+  const cm = colormaps[currentColormap] || colormaps.viridis;
+  const stops = cm.map((c, i) => {
+    const pct = (i / (cm.length - 1)) * 100;
+    return `rgb(${Math.round(c[0] * 255)},${Math.round(c[1] * 255)},${Math.round(c[2] * 255)}) ${pct}%`;
+  }).join(', ');
+  document.getElementById('colorbar').style.background = `linear-gradient(to right, ${stops})`;
+}
+
+// Init
+updateColorbarGradient();
+init();
+</script>
+</body>
+</html>

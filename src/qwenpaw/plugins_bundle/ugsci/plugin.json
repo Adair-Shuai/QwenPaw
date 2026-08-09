@@ -31,7 +31,28 @@
       "multi-agent-orchestration",
       "omp-team-workflow",
       "marketplace",
-      "simulation-control"
+      "simulation-control",
+      "genui"
+    ],
+    "tools": [
+      {"name": "emit_ui_tree", "description": "生成并显示交互式界面", "icon": "🎨", "enabled_by_default": true},
+      {"name": "emit_ui_patch", "description": "增量更新已有 GenUI 界面", "icon": "📝", "enabled_by_default": true},
+      {"name": "list_ui_components", "description": "查询 GenUI 组件目录", "icon": "📋", "enabled_by_default": true},
+      {"name": "get_genui_guide", "description": "查询 GenUI 生成指南", "icon": "📖", "enabled_by_default": true},
+      {"name": "ugsci_welllog_read", "description": "读取 LAS 测井文件", "icon": "📡", "enabled_by_default": false},
+      {"name": "ugsci_welllog_validate", "description": "校验 LAS 测井数据质量", "icon": "✅", "enabled_by_default": false},
+      {"name": "ugsci_welllog_export", "description": "规范化导出 LAS 测井文件", "icon": "📤", "enabled_by_default": false},
+      {"name": "ugsci_decline_fit", "description": "拟合 Arps 递减曲线", "icon": "📉", "enabled_by_default": false},
+      {"name": "ugsci_decline_forecast", "description": "基于递减参数预测产量", "icon": "🔮", "enabled_by_default": false},
+      {"name": "ugsci_decline_eur", "description": "计算预计最终采收量 EUR", "icon": "🛢️", "enabled_by_default": false},
+      {"name": "ugsci_symbolic_polynomial_roots", "description": "多项式符号求根", "icon": "🧮", "enabled_by_default": false},
+      {"name": "ugsci_bayesian_normal_estimate", "description": "贝叶斯正态均值估计", "icon": "🎲", "enabled_by_default": false},
+      {"name": "ugsci_multiobjective_quadratic", "description": "多目标二次优化", "icon": "🎯", "enabled_by_default": false},
+      {"name": "ugsci_queue_simulate", "description": "确定性队列仿真", "icon": "⏱️", "enabled_by_default": false},
+      {"name": "ugsci_graph_analyze", "description": "图网络分析", "icon": "🕸️", "enabled_by_default": false},
+      {"name": "ugsci_geospatial_points_analyze", "description": "空间点集分析", "icon": "🗺️", "enabled_by_default": false},
+      {"name": "ugsci_ml_regression", "description": "机器学习线性回归", "icon": "🤖", "enabled_by_default": false},
+      {"name": "ugsci_statistical_regression", "description": "统计 OLS 回归", "icon": "📊", "enabled_by_default": false}
     ]
   }
 }

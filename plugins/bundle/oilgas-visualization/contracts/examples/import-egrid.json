@@ -1,0 +1,17 @@
+{
+  "source": {
+    "workspacePath": "models/FIELD.EGRID",
+    "companionFiles": [
+      "models/FIELD.INIT",
+      "models/FIELD.UNRST"
+    ]
+  },
+  "options": {
+    "representation": "boundary-surface",
+    "properties": ["PORO", "PERMX", "PRESSURE", "SWAT"],
+    "timeSteps": "manifest-only",
+    "chunkTargetTriangles": 500000,
+    "coordinateOrigin": "auto"
+  },
+  "name": "FieldA Reservoir"
+}

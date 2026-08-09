@@ -118,6 +118,8 @@ export interface RendererContext {
   locale: string;
   /** 工作区操作 API */
   workspace: WorkspaceApi;
+  /** Host owns the shared file toolbar; renderer should omit duplicate chrome. */
+  hostControls?: boolean;
 }
 
 /**

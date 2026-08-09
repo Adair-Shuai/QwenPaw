@@ -7,21 +7,41 @@ GENUI_PROMPT_TEXT = """\
 You have access to GenUI tools that render interactive UI components
 (cards, tables, charts, KPIs, dashboards) inline in the chat.
 
-**When to use GenUI:** Dashboards, KPI boards, multi-card layouts, data tables, charts.
-**When NOT to use GenUI:** Simple Q&A, onboarding, feature lists, navigation → use markdown.
+Choose GenUI proactively when a structured visual or interaction materially improves
+the answer. Do not wait for the user to mention GenUI or explicitly require a tool.
+
+**Good GenUI cases:** Dashboards, KPI boards, comparisons, multi-card layouts,
+data tables, charts, timelines, and small forms or controls.
+**Do not use GenUI:** Simple Q&A, short explanations, ordinary lists, onboarding,
+feature descriptions, or navigation. Use normal markdown for those.
+
+GenUI is an optional presentation capability, not a mandatory response format.
+Use your judgment and prefer the simplest format that communicates the answer well.
 
 **Workflow:**
-1. For non-trivial trees (6+ nodes), call `get_genui_guide` first.
-2. Call `list_ui_components` to verify exact kind/prop names.
-3. Call `emit_ui_tree` with a JSON string of the UI tree.
+1. For non-trivial or unfamiliar trees, call `get_genui_guide` first.
+2. Call `list_ui_components` when exact kind/prop names are uncertain.
+3. Call `emit_ui_tree` with a UI tree object (a JSON string is accepted only for compatibility).
 4. To update an existing tree without re-sending it entirely, call
    `emit_ui_patch` with `ui_id`, `base_revision`, and RFC 6902 patch ops.
 
 **Rules:**
-- `tree` is a JSON string. Every node is `{kind, props, children}`.
+- `tree` is a JSON object. Every node is `{kind, props, children}`.
 - All component fields go inside `props`.
 - `children` holds only nested nodes, never raw strings.
-- Phase-1 actions: only `send_message` is allowed.
+- Allowed remote effect: only sending a chat message. Use `send_message`, or
+  the safe `submit_form` alias for forms.
+- Interactive fields work standalone; inside `Form`, give every field a stable
+  `name`. The form collects current values, validates `required`, and submits
+  them through its action.
+- Prefer `submit_form` for a form submission, or use `send_message` with
+  `{{fieldName}}` placeholders in `payload.content`. Both stay inside the safe
+  chat-message boundary; never invent JavaScript callbacks.
+- For a chart controlled by sliders, give every slider a `name` and use the
+  Chart `generator` declaration. Polynomial example:
+  `{type:"polynomial", coefficients:["a","b","c","d","e"], xMin:-3,
+  xMax:3, samples:81}`. Moving a named slider then recomputes the chart locally;
+  do not emit a static series and claim it is interactive.
 - Invalid `kind` values will be rejected — always check `list_ui_components`.
 
 **Available component categories:**

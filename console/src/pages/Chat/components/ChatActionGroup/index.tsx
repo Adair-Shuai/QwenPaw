@@ -10,11 +10,9 @@ import {
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import { Dropdown, Flex, Tooltip } from "antd";
-import { Files } from "lucide-react";
 import type { MenuProps } from "antd";
 import { useCreateNewSession } from "../../hooks/useCreateNewSession";
 import { useIsMobile } from "../../../../hooks/useIsMobile";
-import styles from "./ChatActionGroup.module.less";
 
 interface ChatActionGroupProps {
   /** Callback to toggle the right-side history panel */
@@ -104,19 +102,12 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
           mouseEnterDelay={0.5}
         >
           <IconButton
-            className={styles.workspaceButton}
             bordered={false}
             aria-label={t(
               workspaceOpen ? "files.closeWorkspace" : "files.openWorkspace",
             )}
             aria-pressed={workspaceOpen}
-            icon={
-              <Files
-                size={16}
-                strokeWidth={2}
-                style={{ width: 16, height: 16 }}
-              />
-            }
+            icon={<AppstoreOutlined />}
             style={{
               width: 32,
               height: 32,

@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "datasets": [
+    {
+      "id": "egrid_test",
+      "name": "ROFF Grid: egrid_test (10×15×8, 1,200 active)",
+      "n_vertices": 9600,
+      "n_cells": 1200,
+      "n_indices": 43200,
+      "grid_dims": [
+        10,
+        15,
+        8
+      ],
+      "source": "egrid",
+      "files": {
+        "positions": "egrid_test_positions.f32",
+        "indices": "egrid_test_indices.u32",
+        "cell_ids": "egrid_test_cell_ids.u32",
+        "scalars": {}
+      }
+    },
+    {
+      "id": "roff_eclgrid",
+      "name": "ROFF Grid: roff_eclgrid (46×73×30, 70,615 active)",
+      "n_vertices": 564920,
+      "n_cells": 70615,
+      "n_indices": 2542140,
+      "grid_dims": [
+        46,
+        73,
+        30
+      ],
+      "source": "roff",
+      "files": {
+        "positions": "roff_eclgrid_positions.f32",
+        "indices": "roff_eclgrid_indices.u32",
+        "cell_ids": "roff_eclgrid_cell_ids.u32",
+        "scalars": {
+          "porosity": "roff_eclgrid_scalars_porosity.f32",
+          "permeability": "roff_eclgrid_scalars_permeability.f32",
+          "facies": "roff_eclgrid_scalars_facies.u32"
+        }
+      }
+    },
+    {
+      "id": "simgrid",
+      "name": "Simgrid (webviz example)",
+      "n_vertices": 24818,
+      "n_cells": 30228,
+      "n_indices": 181368,
+      "files": {
+        "positions": "simgrid_positions.f32",
+        "indices": "simgrid_indices.u32",
+        "cell_ids": "simgrid_cell_ids.u32",
+        "scalars": {
+          "porosity": "simgrid_scalars_porosity.f32",
+          "permeability": "simgrid_scalars_permeability.f32",
+          "facies": "simgrid_scalars_facies.u32"
+        }
+      }
+    },
+    {
+      "id": "synthetic_100k",
+      "name": "Synthetic 100k (47x47x46)",
+      "n_vertices": 108288,
+      "n_cells": 101614,
+      "n_indices": 609684,
+      "files": {
+        "positions": "synthetic_100k_positions.f32",
+        "indices": "synthetic_100k_indices.u32",
+        "cell_ids": "synthetic_100k_cell_ids.u32",
+        "scalars": {
+          "porosity": "synthetic_100k_scalars_porosity.f32",
+          "permeability": "synthetic_100k_scalars_permeability.f32",
+          "facies": "synthetic_100k_scalars_facies.u32"
+        }
+      }
+    },
+    {
+      "id": "synthetic_500k",
+      "name": "Synthetic 500k (80x80x80)",
+      "n_vertices": 531441,
+      "n_cells": 512000,
+      "n_indices": 3072000,
+      "files": {
+        "positions": "synthetic_500k_positions.f32",
+        "indices": "synthetic_500k_indices.u32",
+        "cell_ids": "synthetic_500k_cell_ids.u32",
+        "scalars": {
+          "porosity": "synthetic_500k_scalars_porosity.f32",
+          "permeability": "synthetic_500k_scalars_permeability.f32",
+          "facies": "synthetic_500k_scalars_facies.u32"
+        }
+      }
+    },
+    {
+      "id": "synthetic_1m",
+      "name": "Synthetic 1m (101x101x100)",
+      "n_vertices": 1050804,
+      "n_cells": 1020100,
+      "n_indices": 6120600,
+      "files": {
+        "positions": "synthetic_1m_positions.f32",
+        "indices": "synthetic_1m_indices.u32",
+        "cell_ids": "synthetic_1m_cell_ids.u32",
+        "scalars": {
+          "porosity": "synthetic_1m_scalars_porosity.f32",
+          "permeability": "synthetic_1m_scalars_permeability.f32",
+          "facies": "synthetic_1m_scalars_facies.u32"
+        }
+      }
+    }
+  ],
+  "well_logs": {
+    "wells": [
+      {
+        "name": "505",
+        "n_points": 25552,
+        "curves": {
+          "depth": "welllog_505_depth.f32",
+          "ALL_MODIFIED.GK": "welllog_505_ALL_MODIFIED_GK.f32",
+          "ALL_MODIFIED.NGK": "welllog_505_ALL_MODIFIED_NGK.f32"
+        }
+      }
+    ]
+  },
+  "properties": {
+    "porosity": {
+      "name": "Porosity",
+      "unit": "fraction",
+      "range": [
+        0.0,
+        0.4
+      ],
+      "colormap": "viridis"
+    },
+    "permeability": {
+      "name": "Permeability",
+      "unit": "mD",
+      "range": [
+        0.0,
+        100.0
+      ],
+      "colormap": "plasma"
+    },
+    "facies": {
+      "name": "Facies",
+      "unit": "class",
+      "range": [
+        0,
+        2
+      ],
+      "colormap": "category"
+    }
+  }
+}

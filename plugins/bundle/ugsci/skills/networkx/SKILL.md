@@ -13,6 +13,10 @@ dependencies: ["networkx>=3.3"]
 
 # NetworkX
 
+## UGSci Built-in Route
+
+For structured node/edge analysis, connectivity, centrality, and shortest paths, call `ugsci_graph_analyze` first. Use NetworkX directly for algorithms outside that stable UGSci contract.
+
 ## Overview
 
 NetworkX is a Python package for creating, manipulating, and analyzing complex networks and graphs. Use this skill when working with network or graph data structures, including social networks, biological networks, transportation systems, citation networks, knowledge graphs, or any system involving relationships between entities.
@@ -437,4 +441,3 @@ Extensive documentation on visualization techniques including layout algorithms,
 - **Tutorial**: https://networkx.org/documentation/latest/tutorial.html
 - **Gallery**: https://networkx.org/documentation/latest/auto_examples/index.html
 - **GitHub**: https://github.com/networkx/networkx
-

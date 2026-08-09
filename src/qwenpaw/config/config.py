@@ -2035,13 +2035,14 @@ def _add_plugin_tool_default(
     *,
     description: str,
     icon: str,
+    enabled: bool = False,
 ) -> None:
-    """Insert a disabled-by-default plugin tool if *tool_name* is absent."""
+    """Insert a manifest-declared plugin tool if *tool_name* is absent."""
     if tool_name in tools:
         return
     tools[tool_name] = BuiltinToolConfig(
         name=tool_name,
-        enabled=False,
+        enabled=enabled,
         description=description,
         display_to_user=True,
         async_execution=False,
@@ -2092,6 +2093,7 @@ def _merge_plugin_manifest_tools(
                     f"Tool from plugin {plugin_id}",
                 ),
                 icon=tool_info.get("icon", "🔧"),
+                enabled=bool(tool_info.get("enabled_by_default", False)),
             )
 
 

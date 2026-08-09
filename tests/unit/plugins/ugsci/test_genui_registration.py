@@ -12,6 +12,7 @@ Covers plan section 9.1:
 from __future__ import annotations
 
 from typing import Any
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
@@ -22,6 +23,7 @@ from qwenpaw.plugins_bundle.ugsci.genui.registration import (
     get_genui_config,
     get_allowed_actions,
     is_genui_enabled_for_context,
+    _sync_all_agent_tool_configs,
 )
 
 
@@ -36,6 +38,7 @@ class RecordingPluginApi:
     ) -> None:
         self.tools: list[str] = []
         self.prompt_sections: list[str] = []
+        self.prompt_kwargs: dict[str, dict[str, Any]] = {}
         self._has_existing = has_existing_emit_ui
         # Default config: GenUI enabled for console channel
         self.config = (
@@ -59,8 +62,9 @@ class RecordingPluginApi:
     def register_tool(self, *, tool_name: str, **_kwargs: Any) -> None:
         self.tools.append(tool_name)
 
-    def register_prompt_section(self, *, name: str, **_kwargs: Any) -> None:
+    def register_prompt_section(self, *, name: str, **kwargs: Any) -> None:
         self.prompt_sections.append(name)
+        self.prompt_kwargs[name] = kwargs
 
 
 # ─── register_genui ─────────────────────────────────────────────────────────
@@ -116,13 +120,13 @@ class TestRegisterGenui:
             # When GENUI_ENABLED=true, tools should be auto-enabled
             assert captured_kwargs[name].get("enabled") is True
 
-    def test_tools_disabled_when_genui_disabled(
+    def test_tools_request_gated_when_genui_disabled(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """
-        When GenUI is explicitly disabled, tools are registered but with
-        enabled=False and no prompt.
+        Disabled GenUI keeps stable descriptors and prompt registration but
+        request-gates both.
         """
         monkeypatch.setenv("GENUI_ENABLED", "false")
         api = RecordingPluginApi(config={"genui_enabled": False})
@@ -135,13 +139,29 @@ class TestRegisterGenui:
         api.register_tool = capture_register  # type: ignore[assignment]
         register_genui(api, plugin_id="ugsci")
 
-        # Tools should be registered (visible in Tools page) but disabled
+        # Descriptors remain enabled so off -> on works without restart.
         assert len(api.tools) == 4
         for name in ("emit_ui_tree", "list_ui_components", "get_genui_guide"):
             assert name in captured_kwargs
-            assert captured_kwargs[name].get("enabled") is False
-        # Prompt should NOT be registered when disabled
-        assert len(api.prompt_sections) == 0
+            assert captured_kwargs[name].get("enabled") is True
+            predicate = captured_kwargs[name].get("availability_check")
+            assert callable(predicate)
+            assert predicate({"channel": "console"}) is False
+        assert api.prompt_sections == ["ugsci.genui_guide"]
+        prompt_condition = api.prompt_kwargs["ugsci.genui_guide"]["condition"]
+        assert prompt_condition(None) is False
+
+        # Both tool and prompt availability change without re-registration.
+        monkeypatch.setattr(
+            "qwenpaw.plugins_bundle.ugsci.genui.registration"
+            "._get_current_channel",
+            lambda: "console",
+        )
+        monkeypatch.setenv("GENUI_ENABLED", "true")
+        assert (
+            captured_kwargs["emit_ui_tree"]["availability_check"]({}) is True
+        )
+        assert prompt_condition(None) is True
 
     def test_exception_does_not_crash(self) -> None:
         """If register_tool raises, register_genui should not crash."""
@@ -176,6 +196,42 @@ class TestRegisterGenui:
 
 class TestConfigGating:
     """Tests for configuration-based feature/channel gating."""
+
+    def test_sync_adds_missing_defaults_without_overwriting_explicit_disable(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        existing = SimpleNamespace(
+            tools=SimpleNamespace(
+                builtin_tools={
+                    "emit_ui_tree": SimpleNamespace(enabled=False),
+                    "emit_ui_patch": SimpleNamespace(enabled=False),
+                    "list_ui_components": SimpleNamespace(enabled=False),
+                    "get_genui_guide": SimpleNamespace(enabled=False),
+                },
+            ),
+        )
+        fresh = SimpleNamespace(tools=SimpleNamespace(builtin_tools={}))
+        configs = {"existing": existing, "fresh": fresh}
+        saved: list[str] = []
+        monkeypatch.setattr(
+            "qwenpaw.config.utils.load_config",
+            lambda: SimpleNamespace(agents=SimpleNamespace(profiles=configs)),
+        )
+        monkeypatch.setattr(
+            "qwenpaw.config.config.load_agent_config",
+            lambda agent_id: configs[agent_id],
+        )
+        monkeypatch.setattr(
+            "qwenpaw.config.config.save_agent_config",
+            lambda agent_id, _config: saved.append(agent_id),
+        )
+
+        _sync_all_agent_tool_configs()
+
+        assert existing.tools.builtin_tools["emit_ui_tree"].enabled is False
+        assert fresh.tools.builtin_tools["emit_ui_tree"].enabled is True
+        assert saved == ["fresh"]
 
     def test_enabled_by_default(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """GenUI should be enabled by default."""
@@ -226,16 +282,14 @@ class TestConfigGating:
         assert len(api.tools) == 4
         assert len(api.prompt_sections) == 1
 
-    def test_channel_not_in_list_disables_auto_enable(
+    def test_channel_gate_is_registered_for_request_time(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """
-        When current channel is not in genui_channels, tools are registered
-        but not auto-enabled.
+        Channel gating is evaluated for each request, not plugin startup.
         """
         monkeypatch.delenv("GENUI_ENABLED", raising=False)
-        # Channel detection returns "console" by default in tests
         api = RecordingPluginApi(
             config={
                 "genui_enabled": True,
@@ -243,11 +297,10 @@ class TestConfigGating:
             },
         )
         register_genui(api, plugin_id="ugsci")
-        # Tools should still be registered (disabled) so they appear in Tools
-        # page
+        # Discovery remains stable; the runtime descriptor and prompt
+        # condition enforce the per-request channel gate.
         assert len(api.tools) == 4
-        # But prompt should NOT be registered
-        assert len(api.prompt_sections) == 0
+        assert len(api.prompt_sections) == 1
 
     def test_allow_actions_default(
         self,
@@ -311,14 +364,14 @@ class TestConfigGating:
         monkeypatch.setenv("GENUI_ENABLED", "false")
         assert is_genui_enabled_for_context({"enabled": False}) is False
 
-    def test_is_genui_enabled_for_context_enabled(self) -> None:
+    def test_is_genui_enabled_for_context_fails_closed_without_channel(
+        self,
+    ) -> None:
         """
-        is_genui_enabled_for_context should return True when enabled for
-        console.
+        Request-gated GenUI must not assume console outside request context.
         """
         config = {"enabled": True, "channels": ["console"]}
-        # Channel defaults to "console" in test environment
-        assert is_genui_enabled_for_context(config) is True
+        assert is_genui_enabled_for_context(config) is False
 
     def test_channels_coercion_from_string(self) -> None:
         """Channels should be coerced from comma-separated string."""
@@ -408,8 +461,8 @@ class TestDisposeGenui:
         """dispose_genui should work with different plugin IDs."""
         dispose_genui(plugin_id="custom_plugin")
 
-    def test_state_store_survives_dispose(self) -> None:
-        """The state store should remain functional after dispose_genui."""
+    def test_state_store_reopens_after_dispose(self) -> None:
+        """Disposal closes resources; a later load creates a fresh handle."""
         from qwenpaw.plugins_bundle.ugsci.genui.state import get_state_store
 
         store = get_state_store()
@@ -417,6 +470,6 @@ class TestDisposeGenui:
 
         dispose_genui(plugin_id="ugsci")
 
-        # State store should still work
+        # Persistent data survives, while the process-local handle is renewed.
         store2 = get_state_store()
-        assert store2 is store  # Singleton preserved
+        assert store2 is not store

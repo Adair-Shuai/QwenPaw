@@ -18,6 +18,7 @@ from typing import Any
 
 from .tools import emit_ui_tree, emit_ui_patch, list_ui_components, get_genui_guide_tool
 from .prompt import get_prompt_text
+from .settings import load_settings
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.genui")
 
@@ -99,6 +100,10 @@ def get_genui_config(api: Any = None) -> dict[str, Any]:
         "allow_actions": list(_DEFAULT_CONFIG["allow_actions"]),
     }
 
+    # The plugin-owned switch is global and defaults to enabled.  Environment
+    # variables remain the highest-precedence operational override.
+    cfg["enabled"] = _coerce_bool(load_settings().get("enabled"), cfg["enabled"])
+
     # Layer 1: plugin config (api.config)
     if api is not None:
         api_cfg = getattr(api, "config", None) or {}
@@ -135,8 +140,8 @@ def _get_current_channel() -> str:
             return ch
     except Exception:
         pass
-    # Default to console when channel detection is unavailable
-    return "console"
+    # Channel-gated capabilities must fail closed outside a request.
+    return ""
 
 
 def is_genui_enabled_for_context(config: dict[str, Any] | None = None, api: Any = None) -> bool:
@@ -208,25 +213,23 @@ def _has_existing_emit_ui_tool(registry: Any) -> bool:
 def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
     """Register GenUI tools and prompt section.
 
-    Tools are ALWAYS registered so they appear in the Console Tools page
-    for the user to discover and enable. The ``genui_enabled`` feature flag
-    controls:
-    - Whether tools are auto-enabled (True → enabled=True)
-    - Whether the GenUI prompt section is injected (True → prompt registered)
+    Tools are always registered and default-enabled so they remain discoverable
+    and an off -> on transition works without restarting. ``genui_enabled`` is
+    enforced by a request-time availability predicate and independently controls
+    prompt injection. Per-Agent tool preferences remain explicit overrides.
 
-    When ``genui_enabled=False`` (default), tools are registered but disabled.
-    The user can manually enable them in the Tools page. However, without
-    the prompt, the model won't know to proactively use GenUI — set
-    ``GENUI_ENABLED=true`` for the full experience.
+    Set ``GENUI_ENABLED=false`` to hide GenUI tools from model requests and
+    exclude the prompt contents while keeping stable registrations visible in
+    the Console.
     """
     try:
         config = get_genui_config(api)
-        genui_enabled = is_genui_enabled_for_context(config)
+        genui_enabled = bool(config.get("enabled", False))
 
         if not genui_enabled:
             logger.info(
                 "[%s.genui] GenUI feature disabled (enabled=%s, channel=%s) "
-                "— tools registered but not auto-enabled",
+                "— tools registered but request-gated",
                 plugin_id,
                 config.get("enabled"),
                 _get_current_channel(),
@@ -236,13 +239,14 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
         registry = getattr(api, "_registry", None)
         if _has_existing_emit_ui_tool(registry):
             logger.info("[%s.genui] emit_ui_tree already registered by upstream", plugin_id)
-            if genui_enabled:
-                _register_prompt(api, plugin_id)
+            _register_prompt(api, plugin_id, config)
             return
 
-        # Always register tools so they appear in the Tools page.
-        # When genui_enabled=True, auto-enable them; otherwise leave disabled.
-        tool_enabled = genui_enabled
+        # Tool descriptors stay enabled by default so a global off -> on
+        # transition works immediately. The global switch is enforced by the
+        # request-time availability predicate below; Agent tool preferences
+        # remain an independent explicit override.
+        tool_enabled = True
         registered = 0
         for name, func, desc, icon, tt, tp in _GENUI_TOOLS:
             try:
@@ -254,6 +258,11 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
                     enabled=tool_enabled,
                     tool_type=tt,
                     target_param=tp,
+                    allowed_channels=tuple(config.get("channels", ())),
+                    availability_check=lambda _ctx, _api=api: bool(
+                        get_genui_config(_api).get("enabled", False)
+                    ),
+                    startup_priority=90,
                 )
                 registered += 1
             except Exception as exc:
@@ -266,19 +275,21 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
                 )
 
         if registered > 0:
+            _sync_all_agent_tool_configs()
             logger.info(
-                "[%s.genui] Registered %d tool(s) (auto_enabled=%s, channel='%s', "
+                "[%s.genui] Registered %d tool(s) (descriptor_enabled=%s, global_enabled=%s, channel='%s', "
                 "allow_actions=%s, allow_html=%s)",
                 plugin_id,
                 registered,
                 tool_enabled,
+                genui_enabled,
                 _get_current_channel(),
                 config.get("allow_actions"),
                 config.get("allow_html"),
             )
-            # Only inject the prompt when GenUI is fully enabled
-            if genui_enabled:
-                _register_prompt(api, plugin_id)
+            # The prompt registration is stable; its request-time condition
+            # makes off -> on and on -> off transitions immediate.
+            _register_prompt(api, plugin_id, config)
         else:
             logger.error("[%s.genui] No tools registered", plugin_id)
     except Exception as exc:
@@ -290,7 +301,7 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
         )
 
 
-def _register_prompt(api: Any, plugin_id: str) -> None:
+def _register_prompt(api: Any, plugin_id: str, config: dict[str, Any]) -> None:
     """Register the GenUI prompt section."""
     try:
         api.register_prompt_section(
@@ -298,6 +309,9 @@ def _register_prompt(api: Any, plugin_id: str) -> None:
             after="workspace",
             provider=lambda agent: get_prompt_text(),
             priority=90,
+            # Resolve the persisted switch at request time so toggling does
+            # not require a backend restart.
+            condition=lambda agent: is_genui_enabled_for_context(api=api),
         )
         logger.info("[%s.genui] Prompt section registered", plugin_id)
     except Exception as exc:
@@ -309,6 +323,42 @@ def _register_prompt(api: Any, plugin_id: str) -> None:
         )
 
 
+def _sync_all_agent_tool_configs() -> None:
+    """Add missing GenUI defaults without overwriting Agent preferences."""
+    try:
+        from qwenpaw.config.config import (
+            BuiltinToolConfig,
+            ToolsConfig,
+            load_agent_config,
+            save_agent_config,
+        )
+        from qwenpaw.config.utils import load_config
+
+        profiles = load_config().agents.profiles
+        for agent_id in profiles:
+            agent_config = load_agent_config(agent_id)
+            if not agent_config.tools:
+                agent_config.tools = ToolsConfig()
+            changed = False
+            for name, _func, desc, icon, _tt, _tp in _GENUI_TOOLS:
+                current = agent_config.tools.builtin_tools.get(name)
+                if current is None:
+                    agent_config.tools.builtin_tools[name] = BuiltinToolConfig(
+                        name=name,
+                        enabled=True,
+                        description=desc,
+                        display_to_user=True,
+                        async_execution=False,
+                        icon=icon,
+                    )
+                    changed = True
+            if changed:
+                save_agent_config(agent_id, agent_config)
+        logger.info("[ugsci.genui] Synced GenUI defaults to %d agent(s)", len(profiles))
+    except Exception:
+        logger.exception("[ugsci.genui] Failed to sync GenUI defaults to agents")
+
+
 def dispose_genui(plugin_id: str = "ugsci") -> None:
     """Clean up GenUI registrations when UGSci plugin is unloaded.
 
@@ -316,8 +366,8 @@ def dispose_genui(plugin_id: str = "ugsci") -> None:
     tools and prompt sections are properly disposed.
     """
     logger.info("[%s.genui] Disposing GenUI registrations", plugin_id)
-    # The actual disposal is handled by the plugin API's disposable mechanism;
-    # this function serves as a hook for any additional cleanup.
+    from .state import dispose_state_store
+    dispose_state_store()
 
 
 __all__ = [
