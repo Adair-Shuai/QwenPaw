@@ -38,10 +38,39 @@ from fastapi import (
 from fastapi.responses import (
     FileResponse, JSONResponse, PlainTextResponse, StreamingResponse,
 )
+from pydantic import BaseModel, Field
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.api")
 
 MAX_UPLOAD_SIZE = 500 * 1024 * 1024
+
+
+class IntersectionRequest(BaseModel):
+    """Validated JSON body for a curtain-section request."""
+
+    polyline_x: list[float] = Field(min_length=2)
+    polyline_y: list[float] = Field(min_length=2)
+    z_min: float = 0.0
+    z_max: float = 5000.0
+    name: str = "section"
+
+
+async def _save_upload(upload: UploadFile, destination: Path) -> int:
+    """Stream an upload to disk while enforcing the size limit."""
+    total = 0
+    try:
+        with destination.open("xb") as output:
+            while chunk := await upload.read(1024 * 1024):
+                total += len(chunk)
+                if total > MAX_UPLOAD_SIZE:
+                    raise HTTPException(413, "File too large (max 500 MB)")
+                output.write(chunk)
+        return total
+    except Exception:
+        destination.unlink(missing_ok=True)
+        raise
+    finally:
+        await upload.close()
 
 
 def build_router(plugin_dir: Path) -> APIRouter:
@@ -59,6 +88,7 @@ def build_router(plugin_dir: Path) -> APIRouter:
     from .cache.layout import CacheLayout
     from .cache.manifest_store import ManifestStore
     from .cache.resource_store import ResourceStore
+    from .tools import command_bus
 
     cache_layout = CacheLayout(data_dir)
     manifest_store = ManifestStore(bin_dir, cache_layout)
@@ -124,11 +154,24 @@ def build_router(plugin_dir: Path) -> APIRouter:
         if range_header:
             # Parse Range: bytes=start-end
             try:
-                range_spec = range_header.strip().split("=")[1]
+                unit, range_spec = range_header.strip().split("=", 1)
+                if unit.lower() != "bytes" or "," in range_spec:
+                    raise ValueError("unsupported range")
                 start_str, end_str = range_spec.strip().split("-")
-                start = int(start_str) if start_str else 0
-                end = int(end_str) if end_str else file_size - 1
+                if not start_str and not end_str:
+                    raise ValueError("empty range")
+                if not start_str:
+                    suffix_length = int(end_str)
+                    if suffix_length <= 0:
+                        raise ValueError("invalid suffix")
+                    start = max(file_size - suffix_length, 0)
+                    end = file_size - 1
+                else:
+                    start = int(start_str)
+                    end = int(end_str) if end_str else file_size - 1
                 end = min(end, file_size - 1)
+                if start < 0 or start >= file_size or end < start:
+                    raise ValueError("unsatisfiable range")
                 content_length = end - start + 1
 
                 def range_generator():
@@ -154,7 +197,10 @@ def build_router(plugin_dir: Path) -> APIRouter:
                     status_code=206,
                 )
             except (ValueError, IndexError):
-                pass  # Fall through to full response
+                return Response(
+                    status_code=416,
+                    headers={"Content-Range": f"bytes */{file_size}"},
+                )
 
         return FileResponse(
             file_path, media_type=media_type,
@@ -180,23 +226,35 @@ def build_router(plugin_dir: Path) -> APIRouter:
         if safe_grid_name is None:
             raise HTTPException(400, "Invalid grid filename")
 
-        content = await file.read()
-        if len(content) > MAX_UPLOAD_SIZE:
-            raise HTTPException(413, "File too large (max 500 MB)")
-
-        upload_path = data_dir / safe_grid_name
-        upload_path.write_bytes(content)
+        from .security import sanitize_identifier
+        safe_dataset_name = sanitize_identifier(name, Path(safe_grid_name).stem)
+        suffix = Path(safe_grid_name).suffix
+        with tempfile.NamedTemporaryFile(
+            dir=data_dir, prefix=".upload_", suffix=suffix, delete=True,
+        ) as marker:
+            upload_path = Path(marker.name)
+        await _save_upload(file, upload_path)
 
         prop_path = None
         if property_file:
             safe_prop_name = sanitize_filename(property_file.filename or "prop")
             if safe_prop_name is None:
                 raise HTTPException(400, "Invalid property filename")
-            prop_content = await property_file.read()
-            prop_path = data_dir / safe_prop_name
-            prop_path.write_bytes(prop_content)
+            prop_suffix = Path(safe_prop_name).suffix
+            with tempfile.NamedTemporaryFile(
+                dir=data_dir, prefix=".upload_property_", suffix=prop_suffix,
+                delete=True,
+            ) as marker:
+                prop_path = Path(marker.name)
+            try:
+                await _save_upload(property_file, prop_path)
+            except Exception:
+                upload_path.unlink(missing_ok=True)
+                raise
 
-        job = job_manager.submit_import(name, upload_path, prop_path, bin_dir)
+        job = job_manager.submit_import(
+            safe_dataset_name, upload_path, prop_path, bin_dir,
+        )
         return JSONResponse({
             "job_id": job.job_id, "name": name, "status": job.status,
             "message": "Import submitted. Poll /imports/{job_id}/events for progress.",
@@ -249,6 +307,20 @@ def build_router(plugin_dir: Path) -> APIRouter:
                 for d in manifest.get("datasets", [])
             ]
         })
+
+    @router.get("/commands")
+    async def drain_viewer_commands():
+        """Return and atomically consume pending Agent viewer commands."""
+        return {
+            "commands": [
+                {
+                    "commandId": item.command_id,
+                    "command": item.command,
+                    "args": item.args,
+                }
+                for item in command_bus.drain()
+            ],
+        }
 
     @router.get("/datasets/{dataset_id}/manifest")
     async def get_dataset_manifest(dataset_id: str):
@@ -308,18 +380,19 @@ def build_router(plugin_dir: Path) -> APIRouter:
     @router.post("/datasets/{dataset_id}/intersections")
     async def create_intersection(
         dataset_id: str,
-        polyline_x: list[float],
-        polyline_y: list[float],
-        z_min: float = 0.0,
-        z_max: float = 5000.0,
-        name: str = "section",
+        payload: IntersectionRequest,
     ):
         ds = manifest_store.get_dataset(dataset_id)
         if not ds:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        if len(payload.polyline_x) != len(payload.polyline_y):
+            raise HTTPException(422, "polyline_x and polyline_y lengths must match")
+        if payload.z_max <= payload.z_min:
+            raise HTTPException(422, "z_max must be greater than z_min")
 
         try:
             from .converters.intersection import create_intersection_along_polyline
+            from .security import sanitize_identifier
             # Read grid data (not used directly but available)
             pos_file = ds["files"]["positions"]
             idx_file = ds["files"]["indices"]
@@ -350,8 +423,11 @@ def build_router(plugin_dir: Path) -> APIRouter:
 
             result = create_intersection_along_polyline(
                 positions, indices, cell_ids,
-                polyline_x, polyline_y, z_min, z_max, name, bin_dir,
+                payload.polyline_x, payload.polyline_y,
+                payload.z_min, payload.z_max,
+                sanitize_identifier(payload.name, "section"), bin_dir,
             )
+            manifest_store.upsert(result)
             return JSONResponse(result)
         except Exception as exc:
             logger.error("Intersection failed: %s", exc, exc_info=True)

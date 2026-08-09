@@ -47,14 +47,13 @@ class LasReader(BaseReader):
 
         # Extract depth (MD) as positions
         depth_mnemonic = options.get("depth_mnemonic", "DEPT") if options else "DEPT"
-        if depth_mnemonic in las.curves:
-            depths = las.curves[depth_mnemonic]
-        elif "DEPT" in las.curves:
-            depths = las.curves.DEPT
-        elif "MD" in las.curves:
-            depths = las.curves.MD
-        else:
-            depths = las.index
+        curves_by_name = {curve.mnemonic.upper(): curve for curve in las.curves}
+        depth_curve = curves_by_name.get(depth_mnemonic.upper())
+        if depth_curve is None:
+            depth_curve = curves_by_name.get("DEPT") or curves_by_name.get("MD")
+        depths = depth_curve.data if depth_curve is not None else las.index
+        if len(depths) == 0:
+            raise ValueError("LAS file contains no depth samples")
 
         n_samples = len(depths)
 
@@ -69,22 +68,23 @@ class LasReader(BaseReader):
         # Build simple indices (line segments: pairs of adjacent points)
         indices: list[int] = []
         for i in range(n_samples - 1):
-            indices.extend([i, i + 1, i])  # degenerate triangle as line
+            indices.extend([i, i + 1])
 
         from .base import write_u32
         write_u32(bin_dir / f"{prefix}_indices.u32", indices)
 
-        # Cell IDs (one per sample)
-        cell_ids = list(range(n_samples))
+        # Cell IDs (one per line segment)
+        cell_ids = list(range(max(n_samples - 1, 0)))
         write_u32(bin_dir / f"{prefix}_cell_ids.u32", cell_ids)
 
         # Extract all curves as scalars
         scalars_files: dict[str, str] = {}
         for curve in las.curves:
-            if curve.mnemonic in (depth_mnemonic, "DEPT", "MD"):
+            if curve is depth_curve:
                 continue
             values = curve.data
-            safe_name = curve.mnemonic.lower().replace(" ", "_")
+            from ..security import sanitize_identifier
+            safe_name = sanitize_identifier(curve.mnemonic.lower(), "curve")
             float_values = [float(v) if v == v else 0.0 for v in values]  # NaN check
             write_f32(bin_dir / f"{prefix}_scalars_{safe_name}.f32", float_values)
             scalars_files[safe_name] = f"{prefix}_scalars_{safe_name}.f32"
@@ -97,7 +97,7 @@ class LasReader(BaseReader):
             "id": f"las_{name}",
             "name": f"LAS: {well_name} ({n_samples} samples)",
             "n_vertices": n_samples,
-            "n_cells": n_samples,
+            "n_cells": max(n_samples - 1, 0),
             "n_indices": len(indices),
             "source": "las",
             "files": {

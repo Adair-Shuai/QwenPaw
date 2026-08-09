@@ -69,7 +69,7 @@ class TabularNetworkReader(BaseReader):
             positions.extend([x1, y1, -z1, x2, y2, -z2])
 
             base = i * 2
-            indices.extend([base, base + 1, base])  # degenerate line triangle
+            indices.extend([base, base + 1])
             cell_ids.append(i)
 
             scalars_pressure.append(float(row.get("pressure", 0)))

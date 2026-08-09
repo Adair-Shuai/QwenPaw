@@ -156,18 +156,36 @@ class JobManager:
                 job.stages[1].started_at = time.time()
                 job.current_stage = stages[1]
 
-                from ..readers.roff import convert_grid_to_binary
-
-                prop_files = {"porosity": str(prop_path)} if prop_path else {}
                 job.progress = 0.25
                 job.add_event("stage", {"stage": "extracting-geometry"})
 
-                ds_info = convert_grid_to_binary(
-                    str(upload_path),
-                    prop_files,
-                    name,
-                    bin_dir,
-                )
+                extension = upload_path.suffix.lower()
+                if extension in {".roff", ".roffbin"}:
+                    from ..readers.roff import convert_grid_to_binary
+                    prop_files = {"porosity": str(prop_path)} if prop_path else {}
+                    ds_info = convert_grid_to_binary(
+                        str(upload_path), prop_files, name, bin_dir,
+                    )
+                elif extension in {".egrid", ".grdecl"}:
+                    from ..readers.eclipse import EclipseReader
+                    ds_info = EclipseReader().read(str(upload_path), name, bin_dir)
+                elif extension in {".las", ".las3"}:
+                    from ..readers.las import LasReader
+                    ds_info = LasReader().read(str(upload_path), name, bin_dir)
+                elif extension in {".dlis"}:
+                    from ..readers.dlis import DlisReader
+                    ds_info = DlisReader().read(str(upload_path), name, bin_dir)
+                elif extension in {".csv", ".arrow", ".parquet"}:
+                    from ..readers.tabular_network import TabularNetworkReader
+                    ds_info = TabularNetworkReader().read(
+                        str(upload_path), name, bin_dir,
+                    )
+                else:
+                    raise ValueError(f"Unsupported import format: {extension or 'none'}")
+
+                if job.status == "cancelled":
+                    job.finished_at = time.time()
+                    return
 
                 job.stages[1].finished_at = time.time()
                 job.stages[1].status = "completed"
@@ -205,6 +223,13 @@ class JobManager:
                 job.finished_at = time.time()
                 job.add_event("failed", {"error": str(exc)})
                 logger.error("Import job %s failed: %s", job.job_id, exc, exc_info=True)
+            finally:
+                for candidate in (upload_path, prop_path):
+                    if candidate and candidate.name.startswith(".upload_"):
+                        try:
+                            candidate.unlink(missing_ok=True)
+                        except OSError:
+                            logger.warning("Failed to remove upload temp file %s", candidate)
 
         _executor.submit(_run)
         return job

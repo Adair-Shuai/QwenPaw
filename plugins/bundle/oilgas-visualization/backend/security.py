@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
+import re
 from pathlib import Path
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.security")
@@ -35,15 +36,9 @@ def safe_resolve(path: Path, base_dir: Path) -> Path | None:
         base_resolved = base_dir.resolve()
         full = (base_dir / path).resolve()
         # Check the resolved path is within base
-        if not str(full).startswith(str(base_resolved)):
+        if not full.is_relative_to(base_resolved):
             logger.warning("Path escape blocked: %s (resolved to %s)", path, full)
             return None
-        # Check for symlinks
-        if full.is_symlink():
-            link_target = Path(os.readlink(full)).resolve()
-            if not str(link_target).startswith(str(base_resolved)):
-                logger.warning("Symlink escape blocked: %s -> %s", full, link_target)
-                return None
         return full
     except Exception as exc:
         logger.warning("Path resolution failed for %s: %s", path, exc)
@@ -71,6 +66,12 @@ def sanitize_filename(filename: str) -> str | None:
     if len(safe) > 255:
         safe = safe[-255:]
     return safe
+
+
+def sanitize_identifier(value: str, default: str = "dataset") -> str:
+    """Return a filesystem-safe, stable identifier for generated resources."""
+    cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip()).strip("_-")
+    return (cleaned[:80] or default)
 
 
 def compute_file_fingerprint(file_path: Path) -> str:

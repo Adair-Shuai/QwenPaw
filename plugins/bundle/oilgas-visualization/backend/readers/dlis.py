@@ -62,6 +62,8 @@ class DlisReader(BaseReader):
 
             depths = list(depth_channel.curves())
             n_samples = len(depths)
+            if n_samples == 0:
+                raise ValueError("DLIS file contains no depth samples")
 
             # Write positions
             positions: list[float] = []
@@ -73,10 +75,10 @@ class DlisReader(BaseReader):
 
             indices: list[int] = []
             for i in range(n_samples - 1):
-                indices.extend([i, i + 1, i])
+                indices.extend([i, i + 1])
             write_u32(bin_dir / f"{prefix}_indices.u32", indices)
 
-            cell_ids = list(range(n_samples))
+            cell_ids = list(range(max(n_samples - 1, 0)))
             write_u32(bin_dir / f"{prefix}_cell_ids.u32", cell_ids)
 
             # Extract curves
@@ -86,7 +88,8 @@ class DlisReader(BaseReader):
                     continue
                 try:
                     values = list(channel.curves())
-                    safe_name = channel.name.lower().replace(" ", "_")
+                    from ..security import sanitize_identifier
+                    safe_name = sanitize_identifier(channel.name.lower(), "curve")
                     float_values = [
                         float(v) if isinstance(v, (int, float)) else 0.0
                         for v in values
@@ -100,7 +103,7 @@ class DlisReader(BaseReader):
                 "id": f"dlis_{name}",
                 "name": f"DLIS: {name} ({n_samples} samples)",
                 "n_vertices": n_samples,
-                "n_cells": n_samples,
+                "n_cells": max(n_samples - 1, 0),
                 "n_indices": len(indices),
                 "source": "dlis",
                 "files": {

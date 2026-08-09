@@ -37,18 +37,26 @@ class OilGasVisualizationPlugin:
     def _register_tools(self, api) -> None:
         """Register agent tools and command bridge."""
         try:
-            from .backend.tools import get_tool_definitions
+            from .backend.tools import configure_tools, get_tool_bindings
 
-            tools = get_tool_definitions()
-            for tool_def in tools:
+            configure_tools(PLUGIN_DIR)
+            for name, func, description, tool_type, target_param in get_tool_bindings():
                 try:
-                    if hasattr(api, "register_tool"):
-                        api.register_tool(tool_def)
-                        logger.info("[%s] Tool '%s' registered", PLUGIN_ID, tool_def["name"])
+                    api.register_tool(
+                        tool_name=name,
+                        tool_func=func,
+                        description=description,
+                        icon="🛢️",
+                        enabled=False,
+                        tool_type=tool_type,
+                        target_param=target_param,
+                        startup_priority=95,
+                    )
+                    logger.info("[%s] Tool '%s' scheduled", PLUGIN_ID, name)
                 except Exception:
-                    logger.debug("[%s] Tool '%s' registration skipped", PLUGIN_ID, tool_def["name"])
+                    logger.exception("[%s] Tool '%s' registration failed", PLUGIN_ID, name)
         except Exception as exc:
-            logger.error("[%s] Tool registration failed: %s", PLUGIN_ID, exc, exc_info=True)
+            logger.exception("[%s] Tool registration failed: %s", PLUGIN_ID, exc)
 
     def _register_router(self, api, router_factory, prefix, tag, label):
         """Register a FastAPI router with error handling.

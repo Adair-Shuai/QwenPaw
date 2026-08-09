@@ -10,9 +10,11 @@ currently mounted (pending queue with deduplication).
 from __future__ import annotations
 
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
+from pathlib import Path
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.tools")
 
@@ -40,41 +42,182 @@ class ViewerCommandBus:
         self._queue: list[PendingCommand] = []
         self._max_queue = max_queue
         self._seen_ids: set[str] = set()
+        self._lock = threading.Lock()
 
     def enqueue(self, command: str, args: dict[str, Any] | None = None) -> str:
         """Submit a command. Returns the command_id."""
         command_id = str(uuid.uuid4())[:8]
 
-        # Deduplicate: if same command+args already pending, reuse id
-        for existing in self._queue:
-            if existing.command == command and existing.args == (args or {}):
-                return existing.command_id
+        with self._lock:
+            # Deduplicate: if same command+args already pending, reuse id
+            for existing in self._queue:
+                if existing.command == command and existing.args == (args or {}):
+                    return existing.command_id
 
-        if len(self._queue) >= self._max_queue:
-            self._queue.pop(0)  # Drop oldest
+            if len(self._queue) >= self._max_queue:
+                self._queue.pop(0)  # Drop oldest
 
-        cmd = PendingCommand(
-            command_id=command_id,
-            command=command,
-            args=args or {},
-        )
-        self._queue.append(cmd)
-        self._seen_ids.add(command_id)
+            cmd = PendingCommand(
+                command_id=command_id,
+                command=command,
+                args=args or {},
+            )
+            self._queue.append(cmd)
+            self._seen_ids.add(command_id)
         logger.info("[oilgas-vis] Command queued: %s (%s)", command, command_id)
         return command_id
 
     def drain(self) -> list[PendingCommand]:
         """Consume all pending commands."""
-        cmds = list(self._queue)
-        self._queue.clear()
+        with self._lock:
+            cmds = list(self._queue)
+            self._queue.clear()
         return cmds
 
     def pending_count(self) -> int:
-        return len(self._queue)
+        with self._lock:
+            return len(self._queue)
 
 
 # Singleton bus
 command_bus = ViewerCommandBus()
+_plugin_dir: Path | None = None
+
+
+def configure_tools(plugin_dir: Path) -> None:
+    """Configure runtime paths after the plugin is loaded."""
+    global _plugin_dir
+    _plugin_dir = plugin_dir.resolve()
+
+
+def _viewer_result(command: str, args: dict[str, Any]) -> dict[str, Any]:
+    command_id = command_bus.enqueue(command, args)
+    return {
+        "kind": "oilgas.viewer-command",
+        "commandId": command_id,
+        "command": command,
+        "args": args,
+        "route": "/oilgas-visualization",
+    }
+
+
+async def import_subsurface_dataset(
+    file_path: str,
+    name: str = "",
+    property_files: list[str] | None = None,
+) -> dict[str, Any]:
+    """Import a local EGRID/ROFF/LAS/DLIS/network file asynchronously."""
+    if _plugin_dir is None:
+        return {"kind": "error", "error": "Plugin tools are not configured"}
+    source = Path(file_path).expanduser().resolve()
+    if not source.is_file():
+        return {"kind": "error", "error": f"File not found: {file_path}"}
+    companion = None
+    if property_files:
+        companion = Path(property_files[0]).expanduser().resolve()
+        if not companion.is_file():
+            return {"kind": "error", "error": f"Property file not found: {property_files[0]}"}
+    from .jobs.manager import job_manager
+    from .security import sanitize_identifier
+    dataset_name = sanitize_identifier(name or source.stem)
+    job = job_manager.submit_import(
+        dataset_name,
+        source,
+        companion,
+        _plugin_dir / "data" / "bin",
+    )
+    return {
+        "kind": "oilgas.import-result",
+        "job_id": job.job_id,
+        "status": job.status,
+        "dataset": dataset_name,
+    }
+
+
+async def open_oilgas_visualization(dataset_id: str = "") -> dict[str, Any]:
+    """Queue opening the visualization page with an optional dataset."""
+    return _viewer_result("open", {"datasetId": dataset_id})
+
+
+async def set_visualization_property(
+    property: str, dataset_id: str = "",  # pylint: disable=redefined-builtin
+) -> dict[str, Any]:
+    """Queue a property-coloring change in the viewer."""
+    return _viewer_result(
+        "set-property", {"property": property, "datasetId": dataset_id},
+    )
+
+
+async def set_visualization_timestep(time_step: int) -> dict[str, Any]:
+    """Queue a simulation time-step change in the viewer."""
+    return _viewer_result("set-timestep", {"timeStep": time_step})
+
+
+async def focus_visualization_object(
+    object_type: str, object_id: str,
+) -> dict[str, Any]:
+    """Queue focus on a cell, well, or network segment."""
+    if object_type not in {"cell", "well", "segment"}:
+        return {"kind": "error", "error": f"Unsupported object_type: {object_type}"}
+    return _viewer_result(
+        "focus", {"objectType": object_type, "objectId": object_id},
+    )
+
+
+async def create_intersection(
+    dataset_id: str,
+    polyline_x: list[float],
+    polyline_y: list[float],
+    z_min: float = 0.0,
+    z_max: float = 5000.0,
+    name: str = "section",
+) -> dict[str, Any]:
+    """Queue creation of a curtain section in the active viewer."""
+    return _viewer_result("create-intersection", {
+        "datasetId": dataset_id,
+        "polyline_x": polyline_x,
+        "polyline_y": polyline_y,
+        "z_min": z_min,
+        "z_max": z_max,
+        "name": name,
+    })
+
+
+async def capture_visualization() -> dict[str, Any]:
+    """Queue a PNG capture of the active viewer."""
+    return _viewer_result("capture", {})
+
+
+async def run_visualization_benchmark() -> dict[str, Any]:
+    """Queue the five-second rendering benchmark."""
+    return _viewer_result("benchmark", {})
+
+
+def get_tool_bindings() -> list[tuple[str, Any, str, str, str]]:
+    """Return host registration tuples: name, callable, description, type, target."""
+    functions = {
+        "import_subsurface_dataset": import_subsurface_dataset,
+        "open_oilgas_visualization": open_oilgas_visualization,
+        "set_visualization_property": set_visualization_property,
+        "set_visualization_timestep": set_visualization_timestep,
+        "focus_visualization_object": focus_visualization_object,
+        "create_intersection": create_intersection,
+        "capture_visualization": capture_visualization,
+        "run_visualization_benchmark": run_visualization_benchmark,
+    }
+    descriptions = {
+        item["name"]: item["description"] for item in get_tool_definitions()
+    }
+    return [
+        (
+            name,
+            func,
+            descriptions[name],
+            "file" if name == "import_subsurface_dataset" else "internal",
+            "file_path" if name == "import_subsurface_dataset" else "",
+        )
+        for name, func in functions.items()
+    ]
 
 
 # ─── Tool Definitions ───────────────────────────────────────────────────────

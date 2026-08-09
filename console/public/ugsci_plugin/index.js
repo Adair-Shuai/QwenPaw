@@ -12228,7 +12228,6 @@ function st({ node: e }) {
 function ns(e, t, a, n, l, r) {
   var o, i, s, d, g, f;
   switch (a.kind) {
-    // ── Layout ───────────────────────────────────────────────────────────
     case "Stack":
       return e.createElement("div", { style: { display: "flex", flexDirection: "column", gap: `${_e(n.gap) || 12}px`, padding: n.padding ? `${_e(n.padding)}px` : void 0 } }, r());
     case "Row":
@@ -12243,7 +12242,6 @@ function ns(e, t, a, n, l, r) {
       const c = A(n.ratio) || "16:9", [m, u] = c.split(":").map(Number), y = m && u ? `${u}/${m}` : "9/16";
       return e.createElement("div", { style: { aspectRatio: y, overflow: "hidden", borderRadius: 8, display: "flex", justifyContent: "center", alignItems: "center" } }, r());
     }
-    // ── Text ─────────────────────────────────────────────────────────────
     case "Text":
       return e.createElement("div", { style: { fontSize: wa[A(n.size)] || wa.base, color: ve[A(n.color)] || ve.default, fontWeight: Ze(n.bold) ? "bold" : "normal", lineHeight: 1.6 } }, A(n.value));
     case "Heading": {
@@ -12281,7 +12279,6 @@ function ns(e, t, a, n, l, r) {
         ))
       );
     }
-    // ── Status / Display ────────────────────────────────────────────────
     case "Badge":
       return e.createElement(t.Tag || "span", { color: A(n.variant) || "default", children: A(n.value) });
     case "Tag":
@@ -12304,7 +12301,6 @@ function ns(e, t, a, n, l, r) {
       return e.createElement(t.Avatar || "div", { src: Nt(A(n.src)) || A(n.src), size: _e(n.size) || 32 }, ((s = (i = A(n.name)) == null ? void 0 : i.charAt(0)) == null ? void 0 : s.toUpperCase()) || "");
     case "Icon":
       return e.createElement("span", { style: { fontSize: _e(n.size) || 16, color: ve[A(n.color)] || ve.default } }, A(n.name));
-    // ── Cards ───────────────────────────────────────────────────────────
     case "Card":
       return e.createElement(t.Card || "div", { title: n.title ? A(n.title) : void 0, size: "small", style: { margin: "4px 0" } }, r());
     case "DataCard":
@@ -12341,7 +12337,6 @@ function ns(e, t, a, n, l, r) {
         })
       );
     }
-    // ── Table / List ────────────────────────────────────────────────────
     case "Table": {
       const c = Ke(n.headers).map((h) => A(h)), u = l.filter((h) => h.kind === "TableRow").map((h, x) => {
         const T = (h.children || []).filter((M) => M.kind === "TableCell"), k = { key: x };
@@ -12375,12 +12370,10 @@ function ns(e, t, a, n, l, r) {
         })
       );
     }
-    // ── Media ───────────────────────────────────────────────────────────
     case "Image":
       return e.createElement("div", null, e.createElement(rn, { src: A(n.src), alt: A(n.alt), style: { maxWidth: "100%", borderRadius: Ze(n.rounded) ? "8px" : void 0, maxHeight: n.maxHeight ? `${_e(n.maxHeight)}px` : void 0 } }), n.caption ? e.createElement("div", { style: { fontSize: 12, color: ve.muted } }, A(n.caption)) : null);
     case "Chart":
       return e.createElement(as, { props: n });
-    // ── Interactive ─────────────────────────────────────────────────────
     case "Button":
     case "InteractiveButton":
       return e.createElement(ln, { node: a });
@@ -12405,7 +12398,6 @@ function ns(e, t, a, n, l, r) {
       const c = Ke(n.items);
       return e.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 } }, ...c.map((m, u) => e.createElement(t.Tag || "span", { key: u }, A(m))));
     }
-    // ── Tabs / Accordion ────────────────────────────────────────────────
     case "Tabs": {
       const m = l.filter((u) => u.kind === "TabItem").map((u) => {
         var y, h, x;
@@ -12439,10 +12431,8 @@ function ns(e, t, a, n, l, r) {
     }
     case "AccordionItem":
       return e.createElement("div", null, r());
-    // ── Debug ───────────────────────────────────────────────────────────
     case "JsonDebug":
       return e.createElement("details", { style: { margin: "4px 0", fontSize: 12 } }, e.createElement("summary", null, A(n.label) || "Debug JSON"), e.createElement("pre", { style: { fontSize: 12, padding: 8, background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))", borderRadius: 4, overflow: "auto" } }, JSON.stringify(n.data ?? n, null, 2)));
-    // ── Unknown (safe placeholder) ──────────────────────────────────────
     default:
       return e.createElement("div", { style: { padding: 8, border: "1px dashed var(--ant-color-border, #d9d9d9)", borderRadius: 8, fontSize: 12, color: ve.muted, fontFamily: "monospace" } }, `Unknown component: ${a.kind}`);
   }

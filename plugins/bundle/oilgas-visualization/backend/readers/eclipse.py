@@ -152,7 +152,7 @@ class EclipseReader(BaseReader):
     ) -> dict[str, str]:
         """Read static properties from an INIT file."""
         import xtgeo
-        result: dict[str, str] = []
+        result: dict[str, str] = {}
 
         for prop_name in ["PORO", "PERMX", "PERMY", "PERMZ", "NTG"]:
             try:
