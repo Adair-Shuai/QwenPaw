@@ -189,6 +189,7 @@ def test_manifest_concurrent_upserts_are_not_lost(tmp_path):
 
 
 def test_las_reader_converts_fixture(tmp_path):
+    pytest.importorskip("lasio")
     from oilgas_visualization_test_plugin.backend.readers.las import LasReader
 
     fixture = (
@@ -416,6 +417,7 @@ def test_foundational_oilfield_converters_emit_shared_manifest_contract(
 
 
 def test_vtk_reader_supports_vtu_surface_and_cell_data(tmp_path):
+    pytest.importorskip("meshio")
     import numpy as np
     import meshio
 
