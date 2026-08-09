@@ -215,6 +215,16 @@ a = Analysis(
         # lazily inside create_driver_service; collect explicitly so the
         # frozen backend finds it without a runtime import failure.
         *collect_submodules("qwenpaw.agents.builtin_mcp"),
+        # Petroleum domain libraries pre-installed into the bundled Python
+        # runtime. Collect their subpackages so the agent's scripts can
+        # import them without runtime discovery failures.
+        *collect_submodules("lasio"),
+        *collect_submodules("welly"),
+        *collect_submodules("bruges"),
+        *collect_submodules("simpeg"),
+        *collect_submodules("dlisio"),
+        *collect_submodules("xtgeo"),
+        *collect_submodules("pvtlib"),
         # PawApp SDK modules are imported by installed app plugins at runtime.
         *collect_submodules("qwenpaw.pawapp"),
         # ASGI app entry points

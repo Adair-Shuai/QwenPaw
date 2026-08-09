@@ -225,6 +225,20 @@ Assert-LastExit "Failed to install Chrome Native Messaging host dependencies"
 Assert-LastExit "Bundled Python runtime cannot run the Native Messaging host"
 Write-Host ""
 
+# Pre-install common + petroleum domain Python libraries into the bundled
+# runtime so users without Python can handle files and domain calculations
+# without waiting for a pip download on first use.
+Write-Host "== Installing common + petroleum domain packages into bundled runtime ==" -ForegroundColor Yellow
+$PY_RUNTIME_BIN = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
+& $PY_RUNTIME_BIN -m pip install `
+    --disable-pip-version-check `
+    --no-input `
+    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow `
+    lasio welly bruges simpeg dlisio xtgeo pvtlib
+Assert-LastExit "Failed to install common + petroleum domain packages"
+Write-Host "Common + petroleum domain packages installed" -ForegroundColor Green
+Write-Host ""
+
 Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
     --dest (Join-Path $BINARIES_DIR "node-runtime")

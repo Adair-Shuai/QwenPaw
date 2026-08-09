@@ -598,13 +598,13 @@ export function ExpertCenterPage() {
               style: {
                 marginTop: 12,
                 padding: "8px 12px",
-                background: "var(--ant-color-primary-bg, #e6f4ff)",
+                background: "#e6f4ff",
                 borderRadius: 6,
               },
             },
             React.createElement(
               Text,
-              { style: { fontSize: 12, color: "var(--ant-color-primary-text, #0958d9)" } },
+              { style: { fontSize: 12, color: "#0958d9" } },
               `协调者: ${teamLaunchModal.coordinatorName || teamLaunchModal.members[0]?.name || "—"} · 成员: ${teamLaunchModal.members.map((m) => m.name).join("、")}`,
             ),
           ),

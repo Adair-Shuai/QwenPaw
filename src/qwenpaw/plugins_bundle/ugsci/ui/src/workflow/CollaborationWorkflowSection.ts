@@ -755,7 +755,7 @@ export function CollaborationWorkflowSection() {
             hasActiveRuns
               ? React.createElement(
                   "span",
-                  { style: { color: "var(--ant-color-primary, #1677ff)", marginLeft: 2 } },
+                  { style: { color: "#1677ff", marginLeft: 2 } },
                   `·${runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status)).length} 活跃`,
                 )
               : null,

@@ -101,6 +101,7 @@ class UGSciPlugin:
             "simulation monitoring",
         )
         self._register_simulation_tools(api)
+        self._register_genui(api)
 
     def _register_lifecycle_hooks(self, api) -> None:
         """Register startup and uninstall hooks independently."""
@@ -323,6 +324,20 @@ class UGSciPlugin:
         except Exception as exc:
             logger.error(
                 "[%s] Failed to register simulation tools: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _register_genui(api) -> None:
+        """Register GenUI tools and prompt section as an isolated UGSci module."""
+        try:
+            from .genui.registration import register_genui
+            register_genui(api, plugin_id=PLUGIN_ID)
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register GenUI module: %s",
                 PLUGIN_ID,
                 exc,
                 exc_info=True,

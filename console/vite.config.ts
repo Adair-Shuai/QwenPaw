@@ -221,6 +221,40 @@ const optionalDepsPlugin = {
   },
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Fix @ant-design/x CodeHighlighter dynamic import
+//
+// @ant-design/x's CodeHighlighter uses a template-literal dynamic import:
+//   import(`react-syntax-highlighter/dist/esm/languages/prism/${lang}`)
+//
+// Vite's import-analysis rewrites static bare imports to pre-bundled URLs,
+// but NOT dynamic imports with template literals (variables). The browser
+// receives the bare specifier and fails with:
+//   "Failed to resolve module specifier 'react-syntax-highlighter/...'"
+//
+// This plugin rewrites the bare specifier to use Vite's /@id/ prefix, which
+// Vite resolves at runtime to the pre-bundled dependency.
+// ─────────────────────────────────────────────────────────────────────────────
+const fixCodeHighlighterPlugin: Plugin = {
+  name: "fix-code-highlighter-dynamic-import",
+  enforce: "pre",
+  transform(code: string, id: string) {
+    if (
+      !id.includes("@ant-design/x") ||
+      !id.includes("CodeHighlighter")
+    ) {
+      return null;
+    }
+    const oldPattern =
+      "import(`react-syntax-highlighter/dist/esm/languages/prism/${lang}`)";
+    if (!code.includes(oldPattern)) return null;
+    return code.replace(
+      oldPattern,
+      "import(/* @vite-ignore */ `/@id/react-syntax-highlighter/dist/esm/languages/prism/${lang}`)",
+    );
+  },
+};
+
 export default defineConfig(({ command, mode }) => {
   // Vitest resolves the config as a dev server (`serve`) with mode "test",
   // while `vite build --mode test` is a real build that needs real CSS.
@@ -239,6 +273,7 @@ export default defineConfig(({ command, mode }) => {
     plugins: [
       react(),
       optionalDepsPlugin,
+      fixCodeHighlighterPlugin,
       ...(isVitest ? [cssStubPlugin] : []),
       pluginBundleWatcher(),
     ],
@@ -279,6 +314,11 @@ export default defineConfig(({ command, mode }) => {
         inline: [/@agentscope-ai\/(?!icons|chat|design)/],
       },
       alias: {
+        // GenUI plugin source (for testing pure logic functions)
+        "@genui-src": path.resolve(
+          __dirname,
+          "../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui",
+        ),
         // chat is aliased to a tiny stub to avoid OOM from the 2.3MB real package
         // Tests that need specific behavior override with vi.mock('@agentscope-ai/chat', factory)
         "@agentscope-ai/chat": path.resolve(__dirname, "src/test/chat-mock.ts"),

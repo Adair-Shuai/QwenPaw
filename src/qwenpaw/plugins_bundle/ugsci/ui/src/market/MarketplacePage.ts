@@ -706,7 +706,7 @@ export function MarketplacePage() {
               },
               GithubOutlined
                 ? React.createElement(GithubOutlined, {
-                    style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" },
+                    style: { fontSize: 14, color: "#1677ff" },
                   })
                 : null,
               React.createElement(
@@ -871,7 +871,7 @@ export function MarketplacePage() {
           },
           ShopOutlined
             ? React.createElement(ShopOutlined, {
-                style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" },
+                style: { fontSize: 14, color: "#1677ff" },
               })
             : null,
           React.createElement(
@@ -1131,7 +1131,7 @@ export function MarketplacePage() {
                           style: {
                             fontSize: 18,
                             fontWeight: 600,
-                            color: "var(--ant-color-primary, #1677ff)",
+                            color: "#1677ff",
                           },
                         },
                         String(value),
@@ -1522,7 +1522,7 @@ template.iconUrl
                 style: {
                   marginTop: 10,
                   paddingTop: 8,
-                  borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                  borderTop: "1px solid #f0f0f0",
                   display: "flex",
                   justifyContent: "space-between",
                   alignItems: "center",
@@ -1847,7 +1847,7 @@ template.iconUrl
                       style: {
                         marginTop: 10,
                         paddingTop: 8,
-                        borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                        borderTop: "1px solid #f0f0f0",
                         display: "flex",
                         justifyContent: "space-between",
                         alignItems: "center",
@@ -2119,14 +2119,14 @@ template.iconUrl
                   style: {
                     marginBottom: 16,
                     padding: 12,
-                    background: "var(--ant-color-success-bg, #f6ffed)",
+                    background: "#f6ffed",
                     borderRadius: 8,
-                    border: "1px solid var(--ant-color-success-border, #b7eb8f)",
+                    border: "1px solid #b7eb8f",
                   },
                 },
                 React.createElement(
                   Text,
-                  { style: { fontSize: 12, color: "var(--ant-color-success, #52c41a)" } },
+                  { style: { fontSize: 12, color: "#52c41a" } },
                   "✓ 包含技能清单，创建后将自动安装推荐技能",
                 ),
               )
@@ -2139,14 +2139,14 @@ template.iconUrl
                   style: {
                     marginBottom: 16,
                     padding: 12,
-                    background: "var(--ant-color-primary-bg, #e6f4ff)",
+                    background: "#e6f4ff",
                     borderRadius: 8,
-                    border: "1px solid var(--ant-color-primary-border, #91caff)",
+                    border: "1px solid #91caff",
                   },
                 },
                 React.createElement(
                   Text,
-                  { style: { fontSize: 12, color: "var(--ant-color-primary, #1677ff)" } },
+                  { style: { fontSize: 12, color: "#1677ff" } },
                   "✓ 包含系统提示词，创建后将自动写入 AGENTS.md",
                 ),
               )

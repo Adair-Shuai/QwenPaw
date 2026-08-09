@@ -743,7 +743,7 @@ export function EngineSection() {
                   style: {
                     marginTop: 16,
                     padding: 12,
-                    background: "var(--ant-color-primary-bg, #e6f4ff)",
+                    background: "#e6f4ff",
                     borderRadius: 8,
                   },
                 },

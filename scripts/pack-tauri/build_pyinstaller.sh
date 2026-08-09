@@ -173,8 +173,9 @@ echo "Using PyPI mirror: ${PIP_INDEX_URL} (extra: ${PIP_EXTRA_INDEX_URL})"
     --no-input \
     --index-url "$PIP_INDEX_URL" \
     --extra-index-url "$PIP_EXTRA_INDEX_URL" \
-    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow
-echo "Common Python packages installed"
+    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow \
+    lasio welly bruges simpeg dlisio xtgeo pvtlib
+echo "Common + petroleum domain packages installed"
 echo ""
 
 echo "== Staging bundled Node runtime =="

@@ -166,7 +166,7 @@ export function ExpertCard({
           {
             style: {
               fontSize: 12,
-              color: "var(--ant-color-text-secondary, #595959)",
+              color: "#595959",
               marginBottom: 10,
               lineHeight: 1.5,
               display: "-webkit-box",
@@ -241,7 +241,7 @@ export function ExpertCard({
           alignItems: "center",
           marginTop: 10,
           paddingTop: 8,
-          borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+          borderTop: "1px solid #f0f0f0",
         },
       },
       // Gear icon (bottom-left) — opens configuration modal
@@ -409,7 +409,7 @@ export function ExpertDrawer({
             },
             FileTextOutlined
               ? React.createElement(FileTextOutlined, {
-                  style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" },
+                  style: { fontSize: 14, color: "#1677ff" },
                 })
               : null,
             React.createElement(Text, { strong: true }, "系统提示词文件"),
@@ -771,7 +771,7 @@ export function ExpertDrawer({
             },
             ToolOutlined
               ? React.createElement(ToolOutlined, {
-                  style: { fontSize: 14, color: "var(--ant-color-primary, #1677ff)" },
+                  style: { fontSize: 14, color: "#1677ff" },
                 })
               : null,
             React.createElement(Text, { strong: true }, "工具配置"),
@@ -1125,7 +1125,7 @@ export function ExpertTemplateModal({
                     {
                       style: {
                         fontSize: 12,
-                        color: "var(--ant-color-text-secondary, #595959)",
+                        color: "#595959",
                         lineHeight: 1.5,
                       },
                     },
@@ -1191,7 +1191,7 @@ export function ExpertTemplateModal({
                   {
                     style: {
                       fontSize: 12,
-                      color: "var(--ant-color-text-secondary, #595959)",
+                      color: "#595959",
                       lineHeight: 1.5,
                     },
                   },
@@ -1453,7 +1453,7 @@ export function BlankExpertModal({
             "label",
             { style: { display: "block", fontSize: 13, marginBottom: 6 } },
             "专家名称",
-            React.createElement("span", { style: { color: "var(--ant-color-error, #ff4d4f)", marginLeft: 4 } }, "*"),
+            React.createElement("span", { style: { color: "#ff4d4f", marginLeft: 4 } }, "*"),
           ),
           React.createElement(Input, {
             placeholder: "例如：合同审查专家",
@@ -1478,7 +1478,7 @@ export function BlankExpertModal({
             status: agentIdError ? "error" : undefined,
           }),
           agentIdError
-            ? React.createElement("div", { style: { color: "var(--ant-color-error, #ff4d4f)", fontSize: 12, marginTop: 4 } }, agentIdError)
+            ? React.createElement("div", { style: { color: "#ff4d4f", fontSize: 12, marginTop: 4 } }, agentIdError)
             : null,
         ),
         React.createElement(
@@ -1502,7 +1502,7 @@ export function BlankExpertModal({
     ),
     React.createElement(
       "div",
-      { style: { borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)", padding: "20px 0" } },
+      { style: { borderTop: "1px solid #f0f0f0", padding: "20px 0" } },
       sectionTitle("角色指令", "保存为 AGENTS.md"),
       React.createElement(Input.TextArea, {
         placeholder: "定义专家的角色、目标、工作方式和输出要求；留空时将根据名称与描述生成基础指令",
@@ -1514,7 +1514,7 @@ export function BlankExpertModal({
     ),
     React.createElement(
       "div",
-      { style: { borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)", paddingTop: 20 } },
+      { style: { borderTop: "1px solid #f0f0f0", paddingTop: 20 } },
       sectionTitle("初始能力"),
       React.createElement(
         Row,

@@ -40,6 +40,7 @@ import {
   downloadFileFromUrl,
 } from "@/utils/downloadFileFromUrl";
 import { stringifyResult, toDisplayUrl } from "./utils";
+import { useTheme } from "@/contexts/ThemeContext";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 类型
@@ -677,38 +678,47 @@ function downloadTextContent(
 // 图标和颜色
 // ─────────────────────────────────────────────────────────────────────────────
 
+/**
+ * Operation type → icon, colour, label.
+ *
+ * Colours are theme-aware: the `color` function receives `isDark` and
+ * returns an appropriate hex value for the current mode.  Most accent
+ * colours (blue, green, orange …) are bright enough for both modes, but
+ * the neutral grey used by the "other" operation must be lifted in dark
+ * mode to remain visible.
+ */
 const OPERATION_CONFIG: Record<
   FileInfo["operation"],
-  { icon: React.ReactNode; color: string; label: string }
+  { icon: React.ReactNode; color: (isDark: boolean) => string; label: string }
 > = {
   read: {
     icon: <FileTextOutlined />,
-    color: "#1677ff",
+    color: () => "#1677ff",
     label: "读取",
   },
   write: {
     icon: <FileAddOutlined />,
-    color: "#52c41a",
+    color: () => "#52c41a",
     label: "写入",
   },
   edit: {
     icon: <EditOutlined />,
-    color: "#faad14",
+    color: () => "#faad14",
     label: "编辑",
   },
   append: {
     icon: <FileAddOutlined />,
-    color: "#722ed1",
+    color: () => "#722ed1",
     label: "追加",
   },
   send: {
     icon: <SendOutlined />,
-    color: "#13c2c2",
+    color: () => "#13c2c2",
     label: "发送",
   },
   other: {
     icon: <CodeOutlined />,
-    color: "#8c8c8c",
+    color: (isDark) => (isDark ? "#999999" : "#8c8c8c"),
     label: "操作",
   },
 };
@@ -814,11 +824,26 @@ function getMimeType(ext: string): string {
 const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   data,
 }) => {
+  const { isDark } = useTheme();
   const fileInfos = useMemo(() => extractFileInfos(data), [data]);
   const [expandedFiles, setExpandedFiles] = useState(false);
   const [downloadingIds, setDownloadingIds] = useState<Set<string>>(
     () => new Set(),
   );
+
+  // ── Theme-aware palette ───────────────────────────────────────────────
+  // Ant Design CSS variables (--ant-color-*) may not be available because
+  // the app uses prefixCls="qwenpaw".  We therefore derive colours from
+  // the same token values configured in App.tsx ConfigProvider.
+  const c = {
+    text: isDark ? "#ffffff" : "rgba(0,0,0,0.88)",
+    textSecondary: isDark ? "#aaaaaa" : "rgba(0,0,0,0.65)",
+    textTertiary: isDark ? "#6f6f6f" : "rgba(0,0,0,0.45)",
+    textQuaternary: isDark ? "#555555" : "#bbb",
+    borderSecondary: isDark ? "#1a1a1a" : "rgba(0,0,0,0.08)",
+    fillQuaternary: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.02)",
+    fillHover: isDark ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.04)",
+  } as const;
 
   // 分离交付物和中间文件
   const { deliverables, generatedFiles } = useMemo(() => {
@@ -929,6 +954,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
   /** 渲染单个文件卡片（交付物用） */
   const renderCard = (info: FileInfo) => {
     const opConfig = OPERATION_CONFIG[info.operation];
+    const opColor = opConfig.color(isDark);
     const downloading = downloadingIds.has(info.toolCallId);
     const extIcon = EXTENSION_ICON[info.extension || ""] || (
       <FileTextOutlined />
@@ -944,9 +970,8 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
           minHeight: 58,
           padding: "8px 10px",
           borderRadius: 8,
-          border:
-            "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.08))",
-          background: "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))",
+          border: `1px solid ${c.borderSecondary}`,
+          background: c.fillQuaternary,
           transition: "all 0.15s ease",
           overflow: "hidden",
           width: "100%",
@@ -965,18 +990,20 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             cursor: "pointer",
           }}
           onMouseEnter={(e) => {
-            e.currentTarget.parentElement!.style.borderColor = opConfig.color;
-            e.currentTarget.parentElement!.style.background = `${opConfig.color}08`;
+            e.currentTarget.parentElement!.style.borderColor = opColor;
+            e.currentTarget.parentElement!.style.background = isDark
+              ? `rgba(255,255,255,0.06)`
+              : `${opColor}0a`;
           }}
           onMouseLeave={(e) => {
-            e.currentTarget.parentElement!.style.borderColor = "";
-            e.currentTarget.parentElement!.style.background = "";
+            e.currentTarget.parentElement!.style.borderColor = c.borderSecondary;
+            e.currentTarget.parentElement!.style.background = c.fillQuaternary;
           }}
         >
           <span
             style={{
               fontSize: 18,
-              color: opConfig.color,
+              color: opColor,
               flexShrink: 0,
               display: "flex",
               alignItems: "center",
@@ -993,7 +1020,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
                 overflow: "hidden",
                 textOverflow: "ellipsis",
                 whiteSpace: "nowrap",
-                color: "var(--ant-color-text, rgba(0,0,0,0.88))",
+                color: c.text,
               }}
             >
               {info.fileName}
@@ -1001,7 +1028,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             <div
               style={{
                 fontSize: 11,
-                color: "var(--ant-color-text-tertiary, rgba(0,0,0,0.45))",
+                color: c.textTertiary,
                 display: "flex",
                 alignItems: "center",
                 gap: 4,
@@ -1022,7 +1049,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
                 {formatFileSize(info.fileSize)}
               </span>
               <span style={{ flexShrink: 0 }}>·</span>
-              <span style={{ color: opConfig.color, flexShrink: 0 }}>
+              <span style={{ color: opColor, flexShrink: 0 }}>
                 已生成
               </span>
             </div>
@@ -1044,7 +1071,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               justifyContent: "center",
               flexShrink: 0,
               borderRadius: 4,
-              color: "var(--ant-color-text-quaternary, #bbb)",
+              color: c.textQuaternary,
             }}
           >
             <EyeOutlined style={{ fontSize: 14 }} />
@@ -1070,7 +1097,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               justifyContent: "center",
               flexShrink: 0,
               borderRadius: 4,
-              color: "var(--ant-color-text-quaternary, #bbb)",
+              color: c.textQuaternary,
             }}
           >
             {downloading ? (
@@ -1099,14 +1126,14 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               justifyContent: "center",
               flexShrink: 0,
               borderRadius: 4,
-              color: "var(--ant-color-text-quaternary, #bbb)",
+              color: c.textQuaternary,
               transition: "color 0.15s ease",
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.color = opConfig.color;
+              e.currentTarget.style.color = opColor;
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.color = "";
+              e.currentTarget.style.color = c.textQuaternary;
             }}
           >
             <FolderOpenOutlined style={{ fontSize: 14 }} />
@@ -1134,17 +1161,16 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
         }}
         onClick={() => handleOpenInWorkspace(info)}
         onMouseEnter={(e) => {
-          e.currentTarget.style.background =
-            "var(--ant-color-fill-quaternary, rgba(0,0,0,0.04))";
+          e.currentTarget.style.background = c.fillHover;
         }}
         onMouseLeave={(e) => {
-          e.currentTarget.style.background = "";
+          e.currentTarget.style.background = "transparent";
         }}
       >
         <span
           style={{
             fontSize: 14,
-            color: "var(--ant-color-text-tertiary, #999)",
+            color: c.textTertiary,
             flexShrink: 0,
             display: "flex",
             alignItems: "center",
@@ -1160,7 +1186,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
             overflow: "hidden",
             textOverflow: "ellipsis",
             whiteSpace: "nowrap",
-            color: "var(--ant-color-text-secondary, rgba(0,0,0,0.65))",
+            color: c.textSecondary,
             flex: 1,
           }}
         >
@@ -1180,14 +1206,13 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               display: "flex",
               alignItems: "center",
               flexShrink: 0,
-              color: "var(--ant-color-text-quaternary, #bbb)",
+              color: c.textQuaternary,
             }}
             onMouseEnter={(e) => {
-              e.currentTarget.style.color =
-                "var(--ant-color-text-secondary, #888)";
+              e.currentTarget.style.color = c.textSecondary;
             }}
             onMouseLeave={(e) => {
-              e.currentTarget.style.color = "";
+              e.currentTarget.style.color = c.textQuaternary;
             }}
           >
             <FolderOpenOutlined style={{ fontSize: 12 }} />
@@ -1226,7 +1251,7 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
               cursor: "pointer",
               padding: "4px 0",
               fontSize: 12,
-              color: "var(--ant-color-text-secondary, rgba(0,0,0,0.45))",
+              color: c.textTertiary,
               userSelect: "none",
             }}
           >
@@ -1243,10 +1268,8 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
                 marginTop: 4,
                 padding: "4px 8px",
                 borderRadius: 8,
-                border:
-                  "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
-                background:
-                  "var(--ant-color-fill-quaternary, rgba(0,0,0,0.01))",
+                border: `1px solid ${c.borderSecondary}`,
+                background: c.fillQuaternary,
               }}
             >
               {generatedFiles.map(renderListItem)}
