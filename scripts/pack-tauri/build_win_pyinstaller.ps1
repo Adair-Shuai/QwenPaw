@@ -217,8 +217,12 @@ Set-Location console
 # that happens the Rust binary is still compiled successfully; we create
 # a portable zip so the CI can upload a distributable artifact.
 Write-Host "Building Tauri app for Windows..."
+# Use Continue so stderr from tauri build (e.g. NSIS failure) doesn't throw.
+$prevEAP = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 pnpm exec tauri build --config src-tauri/tauri.version.conf.json
 $tauriExit = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP
 
 Set-Location $REPO_ROOT
 
@@ -237,6 +241,7 @@ if ($NsisExe) {
         New-Item -ItemType Directory -Force -Path $BUNDLE_DIR | Out-Null
         Compress-Archive -Path $AppExe.FullName -DestinationPath $ZipPath -Force
         Write-Host "Portable zip created: $ZipPath" -ForegroundColor Green
+        $LASTEXITCODE = 0
     } else {
         throw "Tauri build failed (exit $tauriExit) and no compiled binary was found"
     }
@@ -256,3 +261,5 @@ if (Test-Path $BUNDLE_DIR) {
     Write-Host "  Bundle directory: ${BUNDLE_DIR}\"
 }
 Write-Host ""
+
+exit 0
