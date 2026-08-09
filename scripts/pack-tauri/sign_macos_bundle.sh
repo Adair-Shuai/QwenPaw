@@ -79,6 +79,13 @@ codesign_bundle() {
 echo "Signing macOS native files in ${TARGET}"
 echo "Signing identity: ${IDENTITY}"
 
+# Remove staging marker files that sit at the root of bundle directories
+# (e.g. java-runtime/.java-runtime-version).  These files are outside the
+# Contents/ subdirectory and cause "unsealed contents present in the bundle
+# root" errors when codesign treats the parent as a macOS bundle.
+find "${TARGET}" -name ".java-runtime-version" -delete 2>/dev/null || true
+find "${TARGET}" -name ".officecli-version" -delete 2>/dev/null || true
+
 signed_files=0
 while IFS= read -r -d '' path; do
     if is_inside_bundle "${path}"; then
