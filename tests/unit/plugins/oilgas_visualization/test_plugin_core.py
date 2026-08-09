@@ -339,7 +339,9 @@ def test_agent_report_can_be_saved_to_explicit_json_path(tmp_path):
             property="porosity",
         ),
     )
-    assert saved["kind"] == "oilgas.report-file"
+    assert (
+        saved["kind"] == "oilgas.report-file"
+    ), f"Expected oilgas.report-file but got: {saved}"
     payload = json.loads(target.read_text())
     assert payload["dataset_id"] == "roff_eclgrid"
     assert payload["stats"]["count"] > 0
