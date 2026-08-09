@@ -245,6 +245,17 @@ Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
 Assert-LastExit "Failed to stage bundled Node runtime"
 Write-Host ""
 
+Write-Host "== Staging bundled OfficeCLI ==" -ForegroundColor Yellow
+$OFFICECLI_DOC_PLUGIN_ARG = @()
+if ($env:QWENPAW_OFFICECLI_DOC_PLUGIN) {
+    $OFFICECLI_DOC_PLUGIN_ARG = @("--doc-plugin", $env:QWENPAW_OFFICECLI_DOC_PLUGIN)
+}
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_officecli.py") `
+    --dest (Join-Path $BINARIES_DIR "officecli") `
+    @OFFICECLI_DOC_PLUGIN_ARG
+Assert-LastExit "Failed to stage bundled OfficeCLI"
+Write-Host ""
+
 Write-Host "== Staging bundled Java runtime (NeqSim MCP Server) ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_jre.py") `
     --dest (Join-Path $BINARIES_DIR "java-runtime")

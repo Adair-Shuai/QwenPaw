@@ -46,6 +46,12 @@ is_inside_framework() {
     [[ "$1" == *".framework/"* ]]
 }
 
+is_inside_bundle() {
+    # A macOS bundle is any directory with a Contents/ subdirectory.
+    # This covers .app, .framework, and JRE bundles (e.g. java-runtime).
+    [[ "$1" == *".framework/"* ]] || [[ "$1" == *"/Contents/"* ]]
+}
+
 codesign_file() {
     local path="$1"
     local args=()
@@ -75,7 +81,7 @@ echo "Signing identity: ${IDENTITY}"
 
 signed_files=0
 while IFS= read -r -d '' path; do
-    if is_inside_framework "${path}"; then
+    if is_inside_bundle "${path}"; then
         continue
     fi
     if is_macho "${path}"; then
@@ -94,17 +100,29 @@ while IFS= read -r framework; do
     fi
 done < <(find "${TARGET}" -type d -name "*.framework" | sort -r)
 
+# Sign other macOS bundle directories (e.g., JRE bundles with Contents/)
+# that are not .app or .framework.  These must be signed as a whole to
+# avoid "unsealed contents present in the bundle root" errors.
+signed_bundles=0
+while IFS= read -r contents_dir; do
+    bundle_dir=$(dirname "${contents_dir}")
+    if [[ "${bundle_dir}" != *.app && "${bundle_dir}" != *.framework ]]; then
+        codesign_bundle "${bundle_dir}"
+        signed_bundles=$((signed_bundles + 1))
+    fi
+done < <(find "${TARGET}" -type d -name "Contents" | sort -r)
+
 if [[ "${TARGET}" == *.app ]]; then
     codesign_bundle "${TARGET}"
 fi
 
-echo "Signed ${signed_files} Mach-O files and ${signed_frameworks} frameworks"
+echo "Signed ${signed_files} Mach-O files, ${signed_frameworks} frameworks, and ${signed_bundles} bundles"
 
 if [[ "${TARGET}" == *.app ]]; then
     codesign --verify --deep --strict --verbose=2 "${TARGET}"
 else
     while IFS= read -r -d '' path; do
-        if is_inside_framework "${path}"; then
+        if is_inside_bundle "${path}"; then
             continue
         fi
         if is_macho "${path}"; then
