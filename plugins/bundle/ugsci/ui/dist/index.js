@@ -13183,7 +13183,10 @@ function xs(e) {
   );
 }
 function ks(e, t) {
-  const a = _().antdIcons || {}, n = a.GlobalOutlined || a.AppstoreOutlined;
+  const a = "__ugsciVisualizationFrontendRegistered", n = window;
+  if (n[a]) return;
+  n[a] = !0;
+  const r = _().antdIcons || {}, l = r.GlobalOutlined || r.AppstoreOutlined;
   e.route.add("ugsci", {
     id: "ugsci.visualization",
     path: "/oilgas-visualization",
@@ -13192,15 +13195,15 @@ function ks(e, t) {
     id: "ugsci.visualization",
     location: "primary.agentScoped",
     label: () => "油气可视化",
-    icon: n ? t.createElement(n, { style: { fontSize: 16 } }) : void 0,
+    icon: l ? t.createElement(l, { style: { fontSize: 16 } }) : void 0,
     route: "ugsci.visualization",
     order: 7,
     visible: () => !0
   });
-  const r = e.workspace;
-  if (r != null && r.registerRenderer)
+  const o = e.workspace;
+  if (o != null && o.registerRenderer)
     try {
-      r.registerRenderer({
+      o.registerRenderer({
         id: "ugsci.visualization",
         name: "UGSci 油气可视化",
         component: xs,
@@ -13251,8 +13254,8 @@ function ks(e, t) {
         priority: 200,
         description: "UGSci 油气三维网格、井、剖面和测井可视化"
       });
-    } catch (l) {
-      console.warn("[ugsci] Visualization workspace renderer registration failed:", l);
+    } catch (i) {
+      console.warn("[ugsci] Visualization workspace renderer registration failed:", i);
     }
 }
 function Cs() {

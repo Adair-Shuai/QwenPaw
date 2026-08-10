@@ -11,6 +11,14 @@ import { OilGasPluginPage } from "./PluginPage";
 import { OilGasWorkspaceRenderer } from "./WorkspaceRenderer";
 
 export function registerVisualizationFrontend(QP: any, React: any): void {
+  // The host can re-evaluate a plugin bundle during dev/HMR or after a
+  // capability refresh. Keep the marker on window so a fresh module instance
+  // cannot append a second identical sidebar entry.
+  const registrationKey = "__ugsciVisualizationFrontendRegistered";
+  const globalWindow = window as any;
+  if (globalWindow[registrationKey]) return;
+  globalWindow[registrationKey] = true;
+
   const antdIcons = getHost().antdIcons || {};
   const GlobalOutlined = antdIcons.GlobalOutlined || antdIcons.AppstoreOutlined;
 
