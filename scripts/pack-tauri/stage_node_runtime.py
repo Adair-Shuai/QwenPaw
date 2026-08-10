@@ -15,6 +15,8 @@ from pathlib import Path
 
 DEFAULT_NODE_VERSION = "v22.20.0"
 NODE_DIST_URL = "https://nodejs.org/dist"
+_DEVELOPMENT_DIRS = ("include", "share")
+_DEVELOPMENT_FILES = ("CHANGELOG.md", "README.md")
 
 
 def _target() -> tuple[str, str, str]:
@@ -90,6 +92,26 @@ def _validate_tar_members(tar: tarfile.TarFile, workdir: Path) -> None:
             ) from None
 
 
+def prune_runtime(dest: Path) -> int:
+    """Remove Node development files that are not needed to run npm/npx."""
+    removed = 0
+    for name in _DEVELOPMENT_DIRS:
+        path = dest / name
+        if path.is_dir():
+            removed += sum(
+                item.stat().st_size
+                for item in path.rglob("*")
+                if item.is_file()
+            )
+            shutil.rmtree(path)
+    for name in _DEVELOPMENT_FILES:
+        path = dest / name
+        if path.is_file():
+            removed += path.stat().st_size
+            path.unlink()
+    return removed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dest", required=True)
@@ -111,6 +133,11 @@ def main() -> None:
         and marker.is_file()
         and marker.read_text(encoding="utf-8").strip() == f"{version}-{target}"
     ):
+        removed = prune_runtime(dest)
+        if removed:
+            print(
+                f"Pruned {removed / (1024 * 1024):.1f} MiB from node-runtime",
+            )
         print(f"node-runtime already staged ({version}-{target}); skipping")
         return
 
@@ -133,6 +160,8 @@ def main() -> None:
 
     if not _node_exe(dest).is_file() or not _npx_exe(dest).is_file():
         raise SystemExit("staging failed: node or npx missing")
+    removed = prune_runtime(dest)
+    print(f"Pruned {removed / (1024 * 1024):.1f} MiB from node-runtime")
     marker.write_text(f"{version}-{target}", encoding="utf-8")
     print(f"Staged node-runtime at {dest}")
 

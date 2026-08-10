@@ -11,10 +11,10 @@
 <aside id="sidebar">
   <div class="logo">
     UGSci 文档
-    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+    <small>v0.6.0 · 石油领域 QwenPaw 插件</small>
   </div>
   <nav>
-    <a href="index.html" class=""><span class="icon">🏠</span> UGSci 文档</a><a href="user-guide.html" class=""><span class="icon">📖</span> 使用指南</a><a href="architecture.html" class=""><span class="icon">🏗️</span> 架构设计</a><a href="frontend.html" class=""><span class="icon">🎨</span> 前端开发指南</a><a href="backend.html" class=""><span class="icon">⚙️</span> 后端开发指南</a><a href="skills.html" class=""><span class="icon">⚡</span> 技能列表</a><a href="software-detection.html" class=""><span class="icon">🖥️</span> 本地软件检测</a><a href="expert-teams.html" class="active"><span class="icon">🤝</span> 专家团</a>
+    <a href="index.html" class="">UGSci 文档</a><a href="user-manual.html" class="">零基础使用手册（推荐）</a><a href="user-guide.html" class="">使用指南</a><a href="architecture.html" class="">架构设计</a><a href="frontend.html" class="">前端开发指南</a><a href="backend.html" class="">后端开发指南</a><a href="skills.html" class="">技能列表</a><a href="software-detection.html" class="">本地软件检测</a><a href="expert-teams.html" class="active">专家团</a>
   </nav>
 </aside>
 <div id="main">
@@ -64,7 +64,7 @@
 </ul>
 <p><strong>示例</strong>：开发方案评审团队 — 油藏/钻井/采油各自独立评估</p>
 <h2 id="_4">预设专家团</h2>
-<h3 id="1">1. 储层评价团队 🛢️</h3>
+<h3 id="1">1. 储层评价团队</h3>
 <table>
 <thead>
 <tr>
@@ -93,24 +93,20 @@
 <tr>
 <th>成员</th>
 <th>角色</th>
-<th>Emoji</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>测井分析师</td>
 <td>岩性识别与孔隙度计算</td>
-<td>📡</td>
 </tr>
 <tr>
 <td>地球物理专家</td>
 <td>储层预测与含油气检测</td>
-<td>🌍</td>
 </tr>
 <tr>
 <td>油藏工程师</td>
 <td>储量评估与开发建议</td>
-<td>🛢️</td>
 </tr>
 </tbody>
 </table>
@@ -123,7 +119,7 @@
 （储量计算和开发建议），综合形成储层评价报告。
 </code></pre></div>
 
-<h3 id="2">2. 钻井设计团队 ⛏️</h3>
+<h3 id="2">2. 钻井设计团队</h3>
 <table>
 <thead>
 <tr>
@@ -152,28 +148,24 @@
 <tr>
 <th>成员</th>
 <th>角色</th>
-<th>Emoji</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>钻井工程师</td>
 <td>井身结构与套管设计</td>
-<td>⛏️</td>
 </tr>
 <tr>
 <td>地球物理专家</td>
 <td>地层压力预测</td>
-<td>🌍</td>
 </tr>
 <tr>
 <td>采油工程师</td>
 <td>完井方案建议</td>
-<td>⚙️</td>
 </tr>
 </tbody>
 </table>
-<h3 id="3">3. 开发方案评审团队 📋</h3>
+<h3 id="3">3. 开发方案评审团队</h3>
 <table>
 <thead>
 <tr>
@@ -202,28 +194,24 @@
 <tr>
 <th>成员</th>
 <th>角色</th>
-<th>Emoji</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>油藏工程师</td>
 <td>储量与开发方式评估</td>
-<td>🛢️</td>
 </tr>
 <tr>
 <td>钻井工程师</td>
 <td>工程可行性评估</td>
-<td>⛏️</td>
 </tr>
 <tr>
 <td>采油工程师</td>
 <td>生产工艺评估</td>
-<td>⚙️</td>
 </tr>
 </tbody>
 </table>
-<h3 id="4">4. 流体性质分析团队 🧪</h3>
+<h3 id="4">4. 流体性质分析团队</h3>
 <table>
 <thead>
 <tr>
@@ -252,24 +240,20 @@
 <tr>
 <th>成员</th>
 <th>角色</th>
-<th>Emoji</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>PVT 分析师</td>
 <td>PVT实验拟合与物性计算</td>
-<td>🧪</td>
 </tr>
 <tr>
 <td>地球物理专家</td>
 <td>相态行为验证</td>
-<td>🌍</td>
 </tr>
 <tr>
 <td>油藏工程师</td>
 <td>开发方式适配</td>
-<td>🛢️</td>
 </tr>
 </tbody>
 </table>
@@ -312,20 +296,11 @@
 <li>最终综合所有结果输出报告</li>
 </ol>
 <h2 id="_7">自定义专家团</h2>
-<p>用户可通过专家团页面创建自定义团队，保存于浏览器 <code>localStorage</code>。</p>
+<p>用户可通过专家团页面创建自定义团队。团队定义保存于 QwenPaw 工作区后端，后端是唯一真源；浏览器 <code>localStorage</code> 只保留旧版本迁移数据和离线缓存。</p>
 <h3 id="_8">数据存储</h3>
-<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">CUSTOM_TEAMS_STORAGE_KEY</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;ugsci_custom_teams&quot;</span><span style="color: #ABB2BF">;</span>
-
-<span style="color: #7F848E">// 保存</span>
-<span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">setItem</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">CUSTOM_TEAMS_STORAGE_KEY</span><span style="color: #ABB2BF">, </span><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">stringify</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">teams</span><span style="color: #ABB2BF">));</span>
-
-<span style="color: #7F848E">// 加载</span>
-<span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">teams</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">parse</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">getItem</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">CUSTOM_TEAMS_STORAGE_KEY</span><span style="color: #ABB2BF">));</span>
-</code></pre></div>
-
-<blockquote>
-<p><strong>注意</strong>：自定义团队存储在浏览器本地，不同浏览器/设备间不同步，清除浏览器数据会丢失。</p>
-</blockquote>
+<p>前端通过 <code>/api/ugsci/team/custom</code> 的 CRUD 接口读写团队定义。刷新页面时，列表从后端重新加载；浏览器缓存不会作为正常读取来源，因此删除或更新不会被旧缓存覆盖。</p>
+<p>旧版本保存在 <code>localStorage</code> 的团队会在后端可用时自动迁移。迁移完成后，<code>localStorage</code> 仅作为离线缓存，不同浏览器或设备之间不承担同步职责。</p>
+<p>每次后端保存都会递增团队 <code>version</code>。编辑时前端提交读取到的版本号；如果另一窗口已先完成更新，后端返回 HTTP 409，要求重新加载后再编辑，防止静默覆盖。</p>
 <h3 id="_9">团队构建器</h3>
 <p><code>TeamBuilderModal</code> 组件提供表单：</p>
 <ul>
@@ -385,13 +360,13 @@
 <div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF">{</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;well-test-team&quot;</span><span style="color: #ABB2BF">,</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井分析团队&quot;</span><span style="color: #ABB2BF">,</span>
-<span style="color: #ABB2BF">  </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;📊&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">icon</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;chart&quot;</span><span style="color: #ABB2BF">,</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">category</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井试油&quot;</span><span style="color: #ABB2BF">,</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">mode</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;pipeline&quot;</span><span style="color: #ABB2BF">,</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">description</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;从压力恢复测试到储层参数解释的完整流程&quot;</span><span style="color: #ABB2BF">,</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">members</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> [</span>
-<span style="color: #ABB2BF">    { </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;测井分析师&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">role</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;数据预处理与质量控制&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;📡&quot;</span><span style="color: #ABB2BF"> },</span>
-<span style="color: #ABB2BF">    { </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;油藏工程师&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">role</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井解释与储层参数计算&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;🛢️&quot;</span><span style="color: #ABB2BF"> },</span>
+<span style="color: #ABB2BF">    { </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;测井分析师&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">role</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;数据预处理与质量控制&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">icon</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;well-log&quot;</span><span style="color: #ABB2BF"> },</span>
+<span style="color: #ABB2BF">    { </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;油藏工程师&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">role</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;试井解释与储层参数计算&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">icon</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;reservoir&quot;</span><span style="color: #ABB2BF"> },</span>
 <span style="color: #ABB2BF">  ],</span>
 <span style="color: #ABB2BF">  </span><span style="color: #E06C75">taskTemplate</span><span style="color: #56B6C2">:</span>
 <span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;请对以下井进行试井分析：\n井名：{井名}\n测试类型：{测试类型}\n要求：依次咨询测井分析师和油藏工程师。&quot;</span><span style="color: #ABB2BF">,</span>

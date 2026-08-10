@@ -230,16 +230,31 @@ Set-Location $REPO_ROOT
 $NsisExe = Get-ChildItem -Path $NSIS_DIR -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
 if ($NsisExe) {
     Write-Host "NSIS installer built: $($NsisExe.FullName)" -ForegroundColor Green
+    $InstallerSignature = Get-AuthenticodeSignature -FilePath $NsisExe.FullName
+    if ($InstallerSignature.Status -eq [System.Management.Automation.SignatureStatus]::Valid) {
+        Write-Host "Windows installer Authenticode signature is valid" -ForegroundColor Green
+    } else {
+        $message = "Windows installer is not Authenticode-signed (status: $($InstallerSignature.Status))"
+        if ($env:QWENPAW_REQUIRE_PLATFORM_SIGNING -match "^(1|true|yes)$") {
+            throw $message
+        }
+        Write-Host "warning: $message" -ForegroundColor Yellow
+    }
 } elseif ($tauriExit -ne 0) {
     # Tauri build failed — check if the Rust binary was still compiled.
     Write-Host "Tauri build reported failure (exit $tauriExit); checking for compiled binary" -ForegroundColor Yellow
-    $AppExe = Get-ChildItem -Path (Join-Path $REPO_ROOT "console\src-tauri\target\release") -Filter '*.exe' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Name -ne 'qwenpaw-backend.exe' } | Select-Object -First 1
+    $AppExe = Get-Item (Join-Path $REPO_ROOT "console\src-tauri\target\release\qwenpaw-desktop.exe") -ErrorAction SilentlyContinue
     if ($AppExe) {
-        Write-Host "Compiled binary found; creating portable zip" -ForegroundColor Yellow
+        Write-Host "Compiled binary found; creating complete portable zip" -ForegroundColor Yellow
+        $PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci Desktop"
         $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
-        New-Item -ItemType Directory -Force -Path $BUNDLE_DIR | Out-Null
-        Compress-Archive -Path $AppExe.FullName -DestinationPath $ZipPath -Force
+        if (Test-Path $PortableRoot) { Remove-Item -Recurse -Force $PortableRoot }
+        New-Item -ItemType Directory -Force -Path $PortableRoot | Out-Null
+        Copy-Item -Force $AppExe.FullName (Join-Path $PortableRoot "qwenpaw-desktop.exe")
+        $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
+        if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
+        Copy-Item -Recurse -Force $Resources (Join-Path $PortableRoot "binaries")
+        Compress-Archive -Path (Join-Path $PortableRoot "*") -DestinationPath $ZipPath -Force
         Write-Host "Portable zip created: $ZipPath" -ForegroundColor Green
         $LASTEXITCODE = 0
     } else {

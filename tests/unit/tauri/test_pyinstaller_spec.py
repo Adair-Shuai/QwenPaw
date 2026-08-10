@@ -39,3 +39,18 @@ def test_desktop_packagers_use_denylist_plugin_discovery():
 
     assert "discover_bundled_plugins(REPO_ROOT)" in spec
     assert "stage_bundled_plugins" in spec
+
+
+def test_whisper_is_opt_in_for_desktop_pyinstaller_builds():
+    spec = SPEC_PATH.read_text(encoding="utf-8")
+    unix_build = (
+        REPO_ROOT / "scripts/pack-tauri/build_pyinstaller.sh"
+    ).read_text(
+        encoding="utf-8",
+    )
+    windows_build = WINDOWS_BUILD_PATH.read_text(encoding="utf-8")
+
+    assert "QWENPAW_INCLUDE_WHISPER" in spec
+    assert 'excludes=[] if INCLUDE_WHISPER else ["whisper", "torch"' in spec
+    assert ".[local,codex,qoder]" in unix_build
+    assert ".[local,codex,qoder]" in windows_build

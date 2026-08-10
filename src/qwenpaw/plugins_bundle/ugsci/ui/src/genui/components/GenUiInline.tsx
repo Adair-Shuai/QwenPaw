@@ -16,6 +16,8 @@ import { exportGenUiPng, printGenUiPdf } from "../lib/genUiExport";
 // the packaging mirror directory (no node_modules).
 type ReactElement = any;
 
+const EMPTY_OUTPUT: unknown[] = [];
+
 // Response bubbles share this module instance, so a module-local reference
 // count is sufficient to suppress a patch-only duplicate while its base tree
 // is mounted. Keeping this rendering concern out of the store also avoids
@@ -52,7 +54,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
   // Normalize once instead of repeatedly asserting `unknown` to `unknown[]`.
   // This also keeps malformed/streaming response envelopes from reaching the
   // store with an undefined value.
-  const output: unknown[] = Array.isArray(data.output) ? data.output : [];
+  const output: unknown[] = Array.isArray(data.output) ? data.output : EMPTY_OUTPUT;
 
   // Memoize results to prevent useEffect from firing on every render
   // (extractGenUiResults returns a new array reference each call).
@@ -66,6 +68,8 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
   React.useEffect(() => {
     for (const result of results as GenUiTreeResult[]) {
       if (!result.ui_id || !result.tree) continue;
+      const existing = store.getSnapshot(sessionId, result.ui_id);
+      if (existing && existing.revision >= (result.revision || 1)) continue;
       store.setSnapshot({
         schemaVersion: "1",
         uiId: result.ui_id,

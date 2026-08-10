@@ -97,6 +97,8 @@ class TestDomainEngineAPI:
             assert "name" in dep
             assert "status" in dep
             assert dep["status"] in ("available", "unavailable", "unknown")
+            assert "install_hint" in dep
+            assert "enable_hint" in dep
 
     def test_checked_at_is_iso_format(self, client: TestClient) -> None:
         resp = client.get("/api/ugsci/domain-engines/list")

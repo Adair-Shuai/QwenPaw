@@ -9,10 +9,8 @@ import {
   deleteCustomTeamFromBackend,
   fetchCustomTeams,
   findAgentIdByName,
-  loadCustomTeams,
   migrateCachedCustomTeams,
   saveCustomTeamToBackend,
-  saveCustomTeams,
   sendTeamMessage,
   type ExpertTeam,
   type ExpertTeamMember,
@@ -330,21 +328,17 @@ export function TeamBuilderModal({
         steps: finalSteps,
         custom: true,
         createdAt: editingTeam?.createdAt || Date.now(),
+        updatedAt: editingTeam?.updatedAt,
+        version: editingTeam?.version,
         maxReviewRounds,
         successCriteria: successCriteria.trim(),
         routingInstruction: routingInstruction.trim(),
       };
 
-      // Persist to the backend source of truth, then refresh the offline cache.
-      const savedTeam = await saveCustomTeamToBackend(team);
-      const existing = loadCustomTeams();
-      const idx = existing.findIndex((t) => t.id === savedTeam.id);
-      if (idx >= 0) {
-        existing[idx] = savedTeam;
-      } else {
-        existing.push(savedTeam);
-      }
-      saveCustomTeams(existing);
+      // Persist to the backend source of truth.  The parent refreshes from
+      // the backend after this callback; localStorage is only a migration /
+      // offline cache and must not participate in normal UI state updates.
+      await saveCustomTeamToBackend(team);
 
       antdMsg.success(editingTeam ? "团队已更新" : "团队已创建");
       onSaved();
@@ -1163,10 +1157,10 @@ const { Text } = Typography;
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<ExpertTeam | null>(null);
 
-  // Show the offline cache immediately, then reconcile with the backend source
-  // of truth and migrate legacy browser-only definitions once.
+  // Migrate legacy browser-only definitions, then render the backend source
+  // of truth.  localStorage is deliberately not used as a normal fallback:
+  // showing it here could resurrect deleted or stale teams.
   useEffect(() => {
-    setCustomTeams(loadCustomTeams());
     let active = true;
     void (async () => {
       try {
@@ -1175,7 +1169,10 @@ const { Text } = Typography;
         if (active) setCustomTeams(teams);
       } catch (error) {
         console.warn("[ugsci] Failed to load backend expert teams:", error);
-        if (active) antdMsg.warning("专家团后端同步失败，当前显示本地缓存");
+        if (active) {
+          setCustomTeams([]);
+          antdMsg.warning("专家团后端加载失败，请检查服务后重试");
+        }
       }
     })();
     void fetchPresetTeamsFromBackend().then((teams: PresetTeam[] | null) => {
@@ -1194,23 +1191,21 @@ const { Text } = Typography;
       .then(setCustomTeams)
       .catch((error) => {
         console.warn("[ugsci] Failed to refresh expert teams:", error);
-        setCustomTeams(loadCustomTeams());
+        setCustomTeams([]);
+        antdMsg.warning("专家团后端加载失败，请检查服务后重试");
       });
-  }, []);
+  }, [antdMsg]);
 
   const handleDeleteTeam = useCallback(
     (team: ExpertTeam) => {
       void deleteCustomTeamFromBackend(team.id)
         .then(() => {
-          const existing = loadCustomTeams();
-          const filtered = existing.filter((t) => t.id !== team.id);
-          saveCustomTeams(filtered);
-          setCustomTeams(filtered);
+          refreshCustomTeams();
           antdMsg.success(`团队「${team.name}」已删除`);
         })
         .catch((error) => antdMsg.error(error.message || "删除专家团失败"));
     },
-    [antdMsg],
+    [antdMsg, refreshCustomTeams],
   );
 
   const handleEditTeam = useCallback((team: ExpertTeam) => {

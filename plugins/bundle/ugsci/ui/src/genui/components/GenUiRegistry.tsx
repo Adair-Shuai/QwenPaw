@@ -5,7 +5,12 @@
 
 import type { GenUiNode } from "../types/genUi";
 import { dispatchGenUiAction } from "../lib/genUiActionBus";
-import { resolveMediaUrl, getCachedMediaUrl, isDirectUrl } from "../lib/genUiMedia";
+import {
+  resolveMediaUrl,
+  getCachedMediaUrl,
+  getMediaResolutionError,
+  isDirectUrl,
+} from "../lib/genUiMedia";
 import { fieldName, getInteractionContext } from "./GenUiInteraction";
 
 // React is obtained from window.QwenPaw.host.React at runtime.
@@ -229,7 +234,11 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
         ),
       );
     }
-    case "Avatar": return React.createElement(antd.Avatar || "div", { src: getCachedMediaUrl(s(p.src)) || s(p.src), size: n(p.size) || 32 }, s(p.name)?.charAt(0)?.toUpperCase() || "");
+    case "Avatar": return React.createElement(GenUiMediaAvatar, {
+      src: s(p.src),
+      name: s(p.name),
+      size: n(p.size) || 32,
+    });
     case "Icon": return React.createElement("span", { style: { fontSize: n(p.size) || 16, color: TEXT_COLORS[s(p.color)] || TEXT_COLORS.default } }, s(p.name));
 
     // ── Cards ───────────────────────────────────────────────────────────
@@ -239,7 +248,7 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
     case "AlertCard": case "Alert": return React.createElement(antd.Alert || "div", { type: s(p.severity) === "success" ? "success" : s(p.severity) === "warning" ? "warning" : s(p.severity) === "error" ? "error" : "info", message: p.title ? s(p.title) : undefined, description: s(p.message), showIcon: true, style: { margin: "4px 0" } });
     case "Callout": return React.createElement(antd.Alert || "div", { type: s(p.variant) === "tip" ? "success" : s(p.variant) === "warning" ? "warning" : s(p.variant) === "important" ? "error" : "info", message: p.title ? s(p.title) : undefined, description: s(p.message), showIcon: true });
     case "WeatherCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0", display: "flex", alignItems: "center", gap: 16 } }, p.icon ? React.createElement("span", { style: { fontSize: 40 } }, s(p.icon)) : null, React.createElement("div", null, React.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, s(p.temperature)), React.createElement("div", { style: { color: TEXT_COLORS.muted } }, s(p.condition)), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.location))));
-    case "ProfileCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center" } }, React.createElement(antd.Avatar || "div", { src: getCachedMediaUrl(s(p.avatar)) || s(p.avatar), size: 48 }, s(p.name)?.charAt(0)?.toUpperCase()), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 600 } }, s(p.name)), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.role)), p.bio ? React.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, s(p.bio)) : null)));
+    case "ProfileCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center" } }, React.createElement(GenUiMediaAvatar, { src: s(p.avatar), name: s(p.name), size: 48 }), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 600 } }, s(p.name)), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.role)), p.bio ? React.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, s(p.bio)) : null)));
     case "MediaCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0", overflow: "hidden" } }, React.createElement(GenUiMediaImage, { src: s(p.src), alt: s(p.title), style: { width: "100%", maxHeight: 200, objectFit: "cover" } }), React.createElement("div", { style: { padding: "8px 12px" } }, React.createElement("div", { style: { fontWeight: 600 } }, s(p.title)), p.caption ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.caption)) : null));
     case "QuoteCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0", fontStyle: "italic" } }, React.createElement("div", { style: { fontSize: 14, lineHeight: 1.6 } }, `"${s(p.quote)}"`), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted, marginTop: 8 } }, `— ${s(p.author)}${p.role ? `, ${s(p.role)}` : ""}`));
     case "TimelineCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start" } }, React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: s(p.status) === "done" ? TEXT_COLORS.success : s(p.status) === "pending" ? TEXT_COLORS.warning : TEXT_COLORS.primary, marginTop: 4, flexShrink: 0 } }), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 600 } }, s(p.title)), p.date ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.date)) : null, p.description ? React.createElement("div", { style: { fontSize: 13, marginTop: 4 } }, s(p.description)) : null)));
@@ -481,42 +490,58 @@ function GenUiMediaImage(props: {
   const [resolvedUrl, setResolvedUrl] = useState(
     (getCachedMediaUrl(props.src) || (isDirectUrl(props.src) ? props.src : null)) as string | null,
   );
+  const [resolutionError, setResolutionError] = useState(
+    getMediaResolutionError(props.src),
+  );
 
   useEffect(() => {
     if (!props.src) return;
     if (isDirectUrl(props.src)) {
       setResolvedUrl(props.src);
+      setResolutionError(null);
       return;
     }
     // Check cache first
     const cached = getCachedMediaUrl(props.src);
     if (cached) {
       setResolvedUrl(cached);
+      setResolutionError(null);
       return;
     }
+    setResolvedUrl(null);
+    setResolutionError(null);
     // Async resolve
     let cancelled = false;
     resolveMediaUrl(props.src).then((url) => {
-      if (!cancelled) setResolvedUrl(url);
+      if (!cancelled) {
+        setResolvedUrl(url);
+        setResolutionError(url ? null : getMediaResolutionError(props.src));
+      }
     });
     return () => { cancelled = true; };
   }, [props.src]);
 
   if (!resolvedUrl) {
-    // Loading placeholder
-    return React.createElement("div", {
-      style: {
-        ...(props.style || {}),
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        minHeight: 80,
-        color: TEXT_COLORS.muted,
-        fontSize: 12,
-        background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
-        borderRadius: 8,
+    return React.createElement(
+      "div",
+      {
+        role: resolutionError ? "alert" : "status",
+        style: {
+          ...(props.style || {}),
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          minHeight: 80,
+          padding: 12,
+          textAlign: "center",
+          color: resolutionError ? TEXT_COLORS.error : TEXT_COLORS.muted,
+          fontSize: 12,
+          background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
+          borderRadius: 8,
+        },
       },
-    }, "Loading image…");
+      resolutionError ? `媒体加载失败：${resolutionError}` : "正在解析图片…",
+    );
   }
 
   return React.createElement("img", {
@@ -525,6 +550,35 @@ function GenUiMediaImage(props: {
     style: props.style || {},
     onError: () => {
       console.warn("[ugsci.genui] Image failed to load:", props.src);
+    },
+  });
+}
+
+/** Render an avatar through the media adapter without exposing local paths. */
+function GenUiMediaAvatar(props: {
+  src: string;
+  name?: string;
+  size: number;
+}): ReactElement | null {
+  const host = (window as any).QwenPaw?.host;
+  const React = host?.React;
+  const antd = host?.antd || {};
+  if (!React) return null;
+  if (!props.src) {
+    return React.createElement(
+      antd.Avatar || "div",
+      { size: props.size },
+      props.name?.charAt(0)?.toUpperCase() || "",
+    );
+  }
+  return React.createElement(GenUiMediaImage, {
+    src: props.src,
+    alt: props.name,
+    style: {
+      width: props.size,
+      height: props.size,
+      borderRadius: "50%",
+      objectFit: "cover",
     },
   });
 }

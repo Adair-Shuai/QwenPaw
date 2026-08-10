@@ -285,6 +285,86 @@ def test_custom_team_crud_uses_stable_id_and_complete_definition(
     assert client.get("/api/ugsci/team/custom/stable-team").status_code == 404
 
 
+@pytest.mark.parametrize(
+    "invalid_fields",
+    [
+        {"mode": "not-a-team-mode"},
+        {"members": {}},
+        {"steps": "not-a-list"},
+        {"version": "not-an-integer"},
+        {"updated_at": -1},
+    ],
+)
+def test_custom_team_list_isolates_invalid_record_in_valid_json_store(
+    tmp_path: Path,
+    monkeypatch,
+    invalid_fields: dict[str, object],
+) -> None:
+    """One malformed record must not take the healthy team list down."""
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    (tmp_path / "custom_teams.json").write_text(
+        json.dumps(
+            {
+                "healthy-team": {
+                    "team_id": "healthy-team",
+                    "name": "正常团队",
+                    "mode": "pipeline",
+                    "members": [],
+                    "version": 1,
+                },
+                "broken-team": {
+                    "team_id": "broken-team",
+                    "name": "损坏团队",
+                    "mode": "pipeline",
+                    "members": [],
+                    "version": 1,
+                    **invalid_fields,
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    client = _client(lambda _agent_id: tmp_path)
+
+    listed = client.get("/api/ugsci/team/custom")
+    assert listed.status_code == 200
+    assert [team["team_id"] for team in listed.json()] == ["healthy-team"]
+    assert client.get("/api/ugsci/team/custom/broken-team").status_code == 404
+
+
+def test_custom_team_write_refuses_store_with_invalid_record(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    """Writes must not silently drop an isolated malformed record."""
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    (tmp_path / "custom_teams.json").write_text(
+        json.dumps(
+            {
+                "broken-team": {
+                    "team_id": "broken-team",
+                    "name": "损坏团队",
+                    "members": {},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    client = _client(lambda _agent_id: tmp_path)
+
+    response = client.post(
+        "/api/ugsci/team/custom",
+        json={"name": "新团队"},
+    )
+    assert response.status_code == 503
+    assert "unreadable" in response.json()["detail"]
+
+    delete_response = client.delete("/api/ugsci/team/custom/broken-team")
+    assert delete_response.status_code == 503
+    assert "unreadable" in delete_response.json()["detail"]
+
+
 def test_custom_team_generated_ids_do_not_collide(
     tmp_path: Path,
     monkeypatch,
@@ -304,6 +384,44 @@ def test_custom_team_generated_ids_do_not_collide(
 
     assert first.status_code == second.status_code == 200
     assert first.json()["team_id"] != second.json()["team_id"]
+
+
+def test_custom_team_rejects_stale_concurrent_update(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    client = _client(lambda _agent_id: tmp_path)
+    payload = {
+        "id": "versioned-team",
+        "name": "版本保护团队",
+        "members": [
+            {"name": "专家甲", "role": "分析"},
+            {"name": "专家乙", "role": "复核"},
+        ],
+    }
+
+    assert (
+        client.post("/api/ugsci/team/custom", json=payload).status_code == 200
+    )
+    version = client.get("/api/ugsci/team/custom/versioned-team").json()[
+        "version"
+    ]
+    first_update = {**payload, "name": "先到的更新", "expectedVersion": version}
+    assert (
+        client.put(
+            "/api/ugsci/team/custom/versioned-team",
+            json=first_update,
+        ).status_code
+        == 200
+    )
+
+    stale_update = {**payload, "name": "过期窗口的更新", "expectedVersion": version}
+    response = client.put(
+        "/api/ugsci/team/custom/versioned-team",
+        json=stale_update,
+    )
+    assert response.status_code == 409
 
 
 def test_custom_team_rejects_unknown_role_key(tmp_path: Path) -> None:
@@ -338,6 +456,57 @@ def test_corrupt_custom_team_store_is_not_silently_overwritten(
     assert store_file.read_text(encoding="utf-8") == "{broken"
 
 
+def test_custom_team_list_recovers_from_last_good_backup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    client = _client(lambda _agent_id: tmp_path)
+    payload = {
+        "id": "backup-team",
+        "name": "备份版本",
+        "members": [{"name": "专家甲", "role": "分析"}],
+    }
+    assert (
+        client.post("/api/ugsci/team/custom", json=payload).status_code == 200
+    )
+    payload["name"] = "当前版本"
+    assert (
+        client.post("/api/ugsci/team/custom", json=payload).status_code == 200
+    )
+
+    store_file = tmp_path / "custom_teams.json"
+    store_file.write_text("{broken", encoding="utf-8")
+    response = client.get("/api/ugsci/team/custom")
+
+    assert response.status_code == 200
+    assert response.json()[0]["name"] == "备份版本"
+    assert (
+        json.loads(store_file.read_text(encoding="utf-8"))["backup-team"][
+            "name"
+        ]
+        == "备份版本"
+    )
+
+
+def test_custom_team_write_reports_corrupt_store_as_503(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(custom_store, "_store_dir", lambda: tmp_path)
+    store_file = tmp_path / "custom_teams.json"
+    store_file.write_text("{broken", encoding="utf-8")
+
+    response = _client(lambda _agent_id: tmp_path).post(
+        "/api/ugsci/team/custom",
+        json={"name": "不能覆盖"},
+    )
+
+    assert response.status_code == 503
+    assert "unreadable" in response.json()["detail"]
+    assert store_file.read_text(encoding="utf-8") == "{broken"
+
+
 def test_list_team_runs_returns_newest_first(tmp_path: Path) -> None:
     base = tmp_path / ".qwenpaw" / "ugsci_teams"
     for index, status in enumerate(("completed", "active"), start=1):
@@ -367,3 +536,71 @@ def test_list_team_runs_returns_newest_first(tmp_path: Path) -> None:
 
     assert response.status_code == 200
     assert [run["team_id"] for run in response.json()] == ["team-2", "team-1"]
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("iteration", "oops"),
+        ("members", {}),
+        ("task", []),
+    ],
+)
+def test_list_team_runs_isolates_invalid_typed_state(
+    tmp_path: Path,
+    field: str,
+    value,
+) -> None:
+    """One malformed run is reported without breaking the whole endpoint."""
+    base = tmp_path / ".qwenpaw" / "ugsci_teams"
+    invalid = base / "invalid-run"
+    valid = base / "valid-run"
+    invalid.mkdir(parents=True)
+    valid.mkdir(parents=True)
+
+    invalid_state = {
+        "current_phase": "dispatch",
+        "workflow_status": "active",
+        "team_id": "invalid",
+        "created_at_ns": 2,
+        field: value,
+    }
+    valid_state = {
+        "current_phase": "completed",
+        "workflow_status": "completed",
+        "team_id": "valid",
+        "created_at_ns": 1,
+    }
+    (invalid / "state.json").write_text(
+        json.dumps(invalid_state),
+        encoding="utf-8",
+    )
+    (valid / "state.json").write_text(
+        json.dumps(valid_state),
+        encoding="utf-8",
+    )
+
+    response = _client(lambda _agent_id: tmp_path).get(
+        "/api/ugsci/team/runs",
+        headers={"X-Agent-Id": "agent-a"},
+    )
+
+    assert response.status_code == 200
+    runs = response.json()
+    invalid_run = next(
+        run for run in runs if run["instance_id"] == "invalid-run"
+    )
+    assert invalid_run == {
+        "instance_id": "invalid-run",
+        "team_id": "",
+        "team_name": "",
+        "team_mode": "pipeline",
+        "status": "unreadable",
+        "current_phase": "plan",
+        "iteration": 0,
+        "task": "",
+        "created_at_ns": 0,
+        "finished_at_ns": 0,
+    }
+    valid_run = next(run for run in runs if run["instance_id"] == "valid-run")
+    assert valid_run["team_id"] == "valid"

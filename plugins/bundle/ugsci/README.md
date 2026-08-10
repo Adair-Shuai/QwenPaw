@@ -3,7 +3,7 @@
 > 面向石油领域的 QwenPaw 增强插件
 
 [![Version](https://img.shields.io/badge/version-0.3.0-blue)](./plugin.json)
-[![QwenPaw](https://img.shields.io/badge/QwenPaw-%E2%89%A51.1.7-green)](./plugin.json)
+[![QwenPaw](https://img.shields.io/badge/QwenPaw-%E2%89%A52.1.0-green)](./plugin.json)
 [![License](https://img.shields.io/badge/license-MIT-lightgrey)](#license)
 
 UGSci 将 QwenPaw 的通用 Agent 界面重新组织为石油领域友好的 **专家 — 工具/引擎 — 技能** 分层架构，降低行业用户的使用门槛。所有展示层数据与 Agent 真实配置实时挂钩，所见即所得。
@@ -54,7 +54,9 @@ UGSci 将 QwenPaw 的通用 Agent 界面重新组织为石油领域友好的 **�
 | 开发方案评审团队 | 圆桌讨论 (roundtable) | 三位专家独立评估，对比综合 |
 | 流体性质分析团队 | 流水线 (pipeline) | PVT→地球物理→油藏工程 依次传递 |
 
-用户也可创建自定义专家团，保存于浏览器 `localStorage`。
+用户也可创建自定义专家团。团队定义以 QwenPaw 工作区后端存储为唯一来源；浏览器 `localStorage` 只用于旧版本迁移和离线缓存。编辑请求携带后端版本号，版本过期时返回冲突，避免多窗口相互覆盖。
+
+插件工具采用 `plugin.json` 的 `meta.tools` 作为唯一目录（当前包含 GenUI、仿真和领域工具）；运行时代码只提供同名实现绑定。启动同步、工具中心展示和运行时注册都读取这份目录，声明与实现不一致时会显式报错。
 
 ### 本地软件检测
 
@@ -156,7 +158,7 @@ cp -r plugins/bundle/ugsci ~/.qwenpaw/plugins/
 重启 QwenPaw 后端后，插件将自动加载。启动时：
 
 1. 技能池同步钩子（`ugsci_sync_skills_to_pool`）将 `skills/` 目录同步到共享技能池
-2. 软件检测 HTTP 路由注册到 `/api/ugsci/software/*`
+2. 引擎管理与软件检测 HTTP 路由注册到 `/api/ugsci/engines/*`
 3. 前端通过 `window.QwenPaw` API 注册 4 条路由和菜单项
 
 ## 配置参考
@@ -170,20 +172,24 @@ cp -r plugins/bundle/ugsci ~/.qwenpaw/plugins/
 | `type` | `general` | 插件类型 |
 | `entry.frontend` | `ui/dist/index.js` | 前端入口 |
 | `entry.backend` | `plugin.py` | 后端入口 |
-| `qwenpaw_version.min` | `1.1.7` | 最低兼容版本 |
-| `qwenpaw_version.max` | `2.1.0` | 最高兼容版本 |
+| `qwenpaw_version.min` | `2.1.0` | 最低兼容版本 |
+| `qwenpaw_version.max` | `2.2.0` | 最高兼容版本（右开区间） |
 
 ### HTTP API
 
-插件在后端注册了以下路由（前缀 `/api/ugsci/software`）：
+插件在后端注册了以下路由（前缀 `/api/ugsci/engines`）：
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| `GET` | `/detect` | 触发扫描并返回结果（含重新扫描） |
-| `GET` | `/list` | 返回缓存的检测结果（无则自动触发首次扫描） |
-| `POST` | `/scan-path` | 添加自定义扫描目录并重新扫描 |
+| `POST` | `/detect` | 触发扫描并返回结果（带 5 分钟缓存） |
+| `POST` | `/detect/refresh` | 忽略缓存并立即重新扫描 |
+| `GET` | `/list` | 返回已配置的引擎列表 |
 | `GET` | `/summary` | 返回简洁文本摘要（用于 Agent 系统提示词注入） |
-| `GET` | `/known` | 返回已知软件目录（供 UI 展示） |
+| `GET` | `/icon/{engine_id}` | 返回引擎图标 |
+
+另有统一能力健康接口 `GET /api/ugsci/health`，一次返回插件版本、已配置路由、24 个工具、领域依赖探测、领域引擎状态和仿真引擎状态。依赖缺失时响应会附带安装和启用提示。
+
+自定义专家团存储发生 JSON 损坏时，插件会先将损坏文件隔离为带时间戳的 `.corrupt-*` 文件，再从 `.bak` 备份恢复；没有可用备份时也会保持 API 可用，等待用户重新保存团队。
 
 ## 卸载
 
@@ -195,16 +201,20 @@ cp -r plugins/bundle/ugsci ~/.qwenpaw/plugins/
 
 ### HTML 文档（推荐）
 
-在浏览器中打开 [`docs/index.html`](./docs/index.html) 即可浏览带侧边栏导航的完整文档站：
+安装运行后，右上角 **文档资料 → 使用教程** 会打开离线地址
+`/api/ugsci/docs/`。发布包中的 HTML、CSS 和截图位于 `static/docs/`，无需联网。
+
+源码开发时也可以直接打开 [`docs/user-manual.html`](./docs/user-manual.html)：
 
 ```bash
-open docs/index.html
+open docs/user-manual.html
 ```
 
 ### Markdown 源文件
 
 | 文档 | 说明 |
 |------|------|
+| [零基础使用手册](./docs/user-manual.md) | 基于 QwenPaw 官方文档站并配有真实界面截图、可复制示例和故障排查 |
 | [使用指南](./docs/user-guide.md) | 面向最终用户的安装、配置和日常使用指南 |
 | [架构设计](./docs/architecture.md) | 插件整体架构、数据流、前端注册机制 |
 | [前端开发指南](./docs/frontend.md) | 页面组件、API 调用、构建流程 |
@@ -216,8 +226,7 @@ open docs/index.html
 ### 重新生成 HTML
 
 ```bash
-cd docs
-python3 build_html.py
+python3 plugins/bundle/ugsci/docs/build_html.py
 ```
 
 ## License

@@ -23,6 +23,11 @@ from PyInstaller.utils.hooks import (
 REPO_ROOT = Path(SPECPATH).parent.parent
 
 SRC = REPO_ROOT / "src" / "qwenpaw"
+INCLUDE_WHISPER = os.environ.get("QWENPAW_INCLUDE_WHISPER", "").strip().lower() in {
+    "1",
+    "true",
+    "yes",
+}
 if sys.platform == "darwin":
     codesign_identity = os.environ.get(
         "PYINSTALLER_CODESIGN_IDENTITY"
@@ -96,7 +101,8 @@ datas.append(
 
 # Include reme package data files (configs, tool yamls, etc.)
 datas += collect_data_files("reme")
-datas += collect_data_files("whisper")
+if INCLUDE_WHISPER:
+    datas += collect_data_files("whisper")
 datas += collect_data_files("agentscope")
 datas += collect_data_files(
     "agentscope.tool._builtin._scripts",
@@ -173,7 +179,7 @@ _metadata_pkgs = [
     "agentscope-runtime",
     "huggingface_hub",
     "modelscope",
-    "openai-whisper",
+    *(["openai-whisper"] if INCLUDE_WHISPER else []),
     "openai-codex",
     "openai-codex-cli-bin",
     "qoder-agent-sdk",
@@ -252,13 +258,20 @@ a = Analysis(
         "modelscope.hub.snapshot_download",
         *collect_submodules("agentscope.tool._builtin._scripts"),
         *collect_submodules("agentscope.workspace._mcp_gateway"),
-        *collect_submodules("whisper"),
+        *(
+            collect_submodules("whisper")
+            if INCLUDE_WHISPER
+            else []
+        ),
         *collect_submodules("chromadb"),
     ],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # Whisper is installed into the user-writable optional component site.
+    # Excluding it here prevents a dirty build environment from silently
+    # reintroducing the multi-hundred-megabyte Torch dependency.
+    excludes=[] if INCLUDE_WHISPER else ["whisper", "torch", "imageio_ffmpeg"],
     noarchive=False,
 )
 

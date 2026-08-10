@@ -6,17 +6,23 @@ from __future__ import annotations
 import json
 import logging
 from pathlib import Path
-from typing import Any, Callable, Literal, TypeAlias
+from typing import Any, Callable, Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .constants import (
+    TeamMode,
     UGSCI_ROLE_ALLOWED_TOOLS,
     UGSCI_ROLE_DISPLAY_NAMES,
     UGSCI_ROLE_SKILLS,
 )
-from .custom_store import save_custom_team, list_custom_teams
+from .custom_store import (
+    CustomTeamConflictError,
+    CustomTeamStoreError,
+    list_custom_teams,
+    save_custom_team,
+)
 from .presets import PRESET_UGSCI_TEAMS
 from .roles import UGSCI_ROLE_PROMPTS
 from .state import (
@@ -24,20 +30,13 @@ from .state import (
     WORKFLOW_ACTIVE,
     WORKFLOW_COMPLETED,
     WORKFLOW_TERMINATED,
+    parse_state_document,
     validate_state_document,
 )
 
 logger = logging.getLogger(__name__)
 
 WorkspaceResolver = Callable[[str], Path | None]
-TeamMode: TypeAlias = Literal[
-    "pipeline",
-    "coordinator",
-    "roundtable",
-    "router",
-    "review_loop",
-    "debate",
-]
 
 
 class TeamMemberDefinition(BaseModel):
@@ -143,6 +142,16 @@ class CustomTeamRequest(BaseModel):
     )
     routing_instruction: str = Field(default="", alias="routingInstruction")
     success_criteria: str = Field(default="", alias="successCriteria")
+    expected_updated_at: float | None = Field(
+        default=None,
+        alias="expectedUpdatedAt",
+        ge=0,
+    )
+    expected_version: int | None = Field(
+        default=None,
+        alias="expectedVersion",
+        ge=1,
+    )
 
 
 class CustomTeamResponse(BaseModel):
@@ -176,6 +185,7 @@ class StoredCustomTeamResponse(BaseModel):
     success_criteria: str = Field(default="", alias="successCriteria")
     created_at: float = Field(default=0, alias="createdAt")
     updated_at: float = Field(default=0, alias="updatedAt")
+    version: int = Field(default=1, ge=1)
 
 
 class TeamStateResponse(BaseModel):
@@ -382,8 +392,20 @@ def build_team_router(
         is available to the backend without encoding complex JSON in
         the slash command text.
         """
-        team_def = req.model_dump(by_alias=True)
-        team_id = save_custom_team(team_def)
+        team_def = req.model_dump(
+            by_alias=True,
+            exclude={"expected_updated_at", "expected_version"},
+        )
+        try:
+            team_id = save_custom_team(
+                team_def,
+                expected_updated_at=req.expected_updated_at,
+                expected_version=req.expected_version,
+            )
+        except CustomTeamConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except CustomTeamStoreError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return CustomTeamResponse(team_id=team_id, name=req.name)
 
     @router.get("/custom", response_model=list[StoredCustomTeamResponse])
@@ -409,16 +431,32 @@ def build_team_router(
 
         if load_custom_team(team_id) is None:
             raise HTTPException(status_code=404, detail="Expert team not found")
-        team_def = req.model_dump(by_alias=True)
+        team_def = req.model_dump(
+            by_alias=True,
+            exclude={"expected_updated_at", "expected_version"},
+        )
         team_def["id"] = team_id
-        saved_id = save_custom_team(team_def)
+        try:
+            saved_id = save_custom_team(
+                team_def,
+                expected_updated_at=req.expected_updated_at,
+                expected_version=req.expected_version,
+            )
+        except CustomTeamConflictError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except CustomTeamStoreError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
         return CustomTeamResponse(team_id=saved_id, name=req.name)
 
     @router.delete("/custom/{team_id}", status_code=204)
     def delete_custom_team_def(team_id: str) -> None:
         from .custom_store import delete_custom_team
 
-        if not delete_custom_team(team_id):
+        try:
+            deleted = delete_custom_team(team_id)
+        except CustomTeamStoreError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
+        if not deleted:
             raise HTTPException(status_code=404, detail="Expert team not found")
 
     @router.get("/state", response_model=TeamStateResponse)
@@ -472,6 +510,7 @@ def _stored_team_response(team: dict[str, Any]) -> StoredCustomTeamResponse:
             "successCriteria": team.get("success_criteria", ""),
             "createdAt": team.get("created_at", 0),
             "updatedAt": team.get("updated_at", 0),
+            "version": max(1, int(team.get("version", 1))),
         },
     )
 
@@ -495,15 +534,15 @@ def _list_team_runs(workspace_dir: Path) -> list[TeamRunSummary]:
         if not state_file.is_file() or state_file.is_symlink():
             continue
         try:
-            data = validate_state_document(
+            state = parse_state_document(
                 json.loads(state_file.read_text(encoding="utf-8")),
             )
-            workflow_status = data.get("workflow_status", WORKFLOW_ACTIVE)
+            workflow_status = state.workflow_status
             if workflow_status == WORKFLOW_TERMINATED:
                 status = "terminated"
             elif (
                 workflow_status == WORKFLOW_COMPLETED
-                or data.get("current_phase") == "completed"
+                or state.current_phase == "completed"
             ):
                 status = "completed"
             else:
@@ -515,15 +554,15 @@ def _list_team_runs(workspace_dir: Path) -> list[TeamRunSummary]:
             runs.append(
                 TeamRunSummary(
                     instance_id=instance.name,
-                    team_id=data.get("team_id", ""),
-                    team_name=data.get("team_name", ""),
-                    team_mode=data.get("team_mode", "pipeline"),
+                    team_id=state.team_id,
+                    team_name=state.team_name,
+                    team_mode=state.team_mode,
                     status=status,
-                    current_phase=data.get("current_phase", "plan"),
-                    iteration=int(data.get("iteration", 0)),
-                    task=data.get("task", ""),
-                    created_at_ns=int(data.get("created_at_ns", 0)),
-                    finished_at_ns=int(data.get("finished_at_ns", 0)),
+                    current_phase=state.current_phase,
+                    iteration=state.iteration,
+                    task=state.task,
+                    created_at_ns=state.created_at_ns,
+                    finished_at_ns=state.finished_at_ns,
                 ),
             )
         except (

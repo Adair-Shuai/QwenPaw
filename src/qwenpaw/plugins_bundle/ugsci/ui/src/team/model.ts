@@ -37,6 +37,8 @@ export interface ExpertTeam {
   steps?: ExpertTeamStep[];
   custom?: boolean;
   createdAt?: number;
+  updatedAt?: number;
+  version?: number;
   maxReviewRounds?: number;
   routingInstruction?: string;
   successCriteria?: string;
@@ -61,7 +63,8 @@ function isExpertTeam(value: unknown): value is ExpertTeam {
   );
 }
 
-export function loadCustomTeams(): ExpertTeam[] {
+/** Read the legacy/offline team cache for migration or explicit recovery. */
+export function loadCachedCustomTeams(): ExpertTeam[] {
   try {
     const parsed = JSON.parse(
       localStorage.getItem(CUSTOM_TEAMS_STORAGE_KEY) || "[]",
@@ -72,7 +75,8 @@ export function loadCustomTeams(): ExpertTeam[] {
   }
 }
 
-export function saveCustomTeams(teams: ExpertTeam[]): void {
+/** Write the legacy/offline team cache; it is never the normal read source. */
+export function saveCachedCustomTeams(teams: ExpertTeam[]): void {
   try {
     localStorage.setItem(CUSTOM_TEAMS_STORAGE_KEY, JSON.stringify(teams));
   } catch {
@@ -80,8 +84,18 @@ export function saveCustomTeams(teams: ExpertTeam[]): void {
   }
 }
 
+/** @deprecated Use loadCachedCustomTeams; backend data is the source of truth. */
+export function loadCustomTeams(): ExpertTeam[] {
+  return loadCachedCustomTeams();
+}
+
+/** @deprecated Use saveCachedCustomTeams; backend data is the source of truth. */
+export function saveCustomTeams(teams: ExpertTeam[]): void {
+  saveCachedCustomTeams(teams);
+}
+
 function teamPayload(team: ExpertTeam): Record<string, unknown> {
-  return {
+  const payload: Record<string, unknown> = {
     id: team.id,
     name: team.name,
     description: team.description,
@@ -97,6 +111,14 @@ function teamPayload(team: ExpertTeam): Record<string, unknown> {
     routingInstruction: team.routingInstruction || "",
     successCriteria: team.successCriteria || "",
   };
+  if (team.updatedAt) {
+    // The API stores timestamps in seconds while the UI uses milliseconds.
+    payload.expectedUpdatedAt = team.updatedAt / 1000;
+  }
+  if (team.version) {
+    payload.expectedVersion = team.version;
+  }
+  return payload;
 }
 
 interface StoredExpertTeam {
@@ -116,6 +138,7 @@ interface StoredExpertTeam {
   successCriteria: string;
   createdAt: number;
   updatedAt: number;
+  version: number;
 }
 
 function fromStoredTeam(team: StoredExpertTeam): ExpertTeam {
@@ -135,6 +158,8 @@ function fromStoredTeam(team: StoredExpertTeam): ExpertTeam {
     routingInstruction: team.routingInstruction || "",
     successCriteria: team.successCriteria || "",
     createdAt: team.createdAt ? team.createdAt * 1000 : Date.now(),
+    updatedAt: team.updatedAt ? team.updatedAt * 1000 : Date.now(),
+    version: team.version || 1,
     custom: true,
   };
 }
@@ -150,7 +175,7 @@ export async function fetchCustomTeams(
   const records = (await response.json()) as StoredExpertTeam[];
   const teams = records.map(fromStoredTeam);
   if (updateOfflineCache) {
-    saveCustomTeams(teams); // Offline cache only; backend remains source of truth.
+    saveCachedCustomTeams(teams); // Cache only; backend remains source of truth.
   }
   return teams;
 }
@@ -183,7 +208,7 @@ export async function deleteCustomTeamFromBackend(teamId: string): Promise<void>
 }
 
 export async function migrateCachedCustomTeams(): Promise<void> {
-  const cached = loadCustomTeams();
+  const cached = loadCachedCustomTeams();
   if (cached.length === 0) return;
   // Read without mutating the offline cache. If any upload fails, every
   // not-yet-migrated legacy definition remains recoverable locally.

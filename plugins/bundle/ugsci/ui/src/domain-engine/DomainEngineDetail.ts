@@ -3,7 +3,7 @@
  */
 
 import { getHost } from "../core/runtime";
-import type { DomainEngineView } from "./types";
+import type { DependencyStatusItem, DomainEngineView } from "./types";
 import { STATUS_COLORS, STATUS_LABELS } from "./runtimeStatus";
 
 export function DomainEngineDetail({
@@ -141,27 +141,56 @@ export function DomainEngineDetail({
           "div",
           { style: { marginTop: 8 } },
           ...depStatus.dependencies.map(
-            (dep: { name: string; status: string; reason: string }) =>
+            (dep: DependencyStatusItem) =>
               React.createElement(
                 "div",
                 {
                   key: dep.name,
                   style: {
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "4px 0",
+                    padding: "8px 0",
+                    borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
                   },
                 },
-                React.createElement(Text, { style: { fontSize: 13 } }, dep.name),
                 React.createElement(
-                  Tag,
+                  "div",
                   {
-                    color: STATUS_COLORS[dep.status] || "default",
-                    style: { fontSize: 11 },
+                    style: {
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                    },
                   },
-                  STATUS_LABELS[dep.status] || dep.status,
+                  React.createElement(Text, { style: { fontSize: 13 } }, dep.name),
+                  React.createElement(
+                    Tag,
+                    {
+                      color: STATUS_COLORS[dep.status] || "default",
+                      style: { fontSize: 11 },
+                    },
+                    STATUS_LABELS[dep.status] || dep.status,
+                  ),
                 ),
+                dep.status !== "available" && dep.reason
+                  ? React.createElement(
+                      Text,
+                      { type: "secondary", style: { display: "block", fontSize: 12, marginTop: 4 } },
+                      dep.reason,
+                    )
+                  : null,
+                dep.status !== "available" && dep.install_hint
+                  ? React.createElement(
+                      Text,
+                      { style: { display: "block", fontSize: 12, marginTop: 4 } },
+                      `安装：${dep.install_hint}`,
+                    )
+                  : null,
+                dep.status !== "available" && dep.enable_hint
+                  ? React.createElement(
+                      Text,
+                      { style: { display: "block", fontSize: 12, marginTop: 2 } },
+                      `启用：${dep.enable_hint}`,
+                    )
+                  : null,
               ),
           ),
         )

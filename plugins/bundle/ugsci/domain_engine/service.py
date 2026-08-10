@@ -7,7 +7,11 @@ import datetime
 from typing import Any
 
 from .catalog import get_engine, list_engines
-from .dependency_probe import EngineProbeResult, probe_engine
+from .dependency_probe import (
+    EngineProbeResult,
+    probe_engine,
+    serialize_dependency,
+)
 from .models import DomainEngineDefinition
 
 
@@ -30,12 +34,7 @@ def serialize_engine_with_probe(
         "dependency_status": {
             "overall": probe_result.overall,
             "dependencies": [
-                {
-                    "name": d.name,
-                    "status": d.status,
-                    "reason": d.reason,
-                }
-                for d in probe_result.dependencies
+                serialize_dependency(d) for d in probe_result.dependencies
             ],
         },
         "checked_at": _utc_now_iso(),

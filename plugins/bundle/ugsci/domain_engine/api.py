@@ -16,7 +16,11 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from .catalog import get_engine, get_engine_ids, list_engines
-from .dependency_probe import probe_engine, probe_engine_by_id
+from .dependency_probe import (
+    probe_engine,
+    probe_engine_by_id,
+    serialize_dependency,
+)
 from .service import (
     get_engine_with_probe,
     list_engines_with_probes,
@@ -52,8 +56,7 @@ def build_domain_engine_router() -> APIRouter:
                     "engine_id": engine.id,
                     "overall": probe.overall,
                     "dependencies": [
-                        {"name": d.name, "status": d.status, "reason": d.reason}
-                        for d in probe.dependencies
+                        serialize_dependency(d) for d in probe.dependencies
                     ],
                 })
             except Exception:
@@ -76,8 +79,7 @@ def build_domain_engine_router() -> APIRouter:
             "engine_id": probe.engine_id,
             "overall": probe.overall,
             "dependencies": [
-                {"name": d.name, "status": d.status, "reason": d.reason}
-                for d in probe.dependencies
+                serialize_dependency(d) for d in probe.dependencies
             ],
         }
 

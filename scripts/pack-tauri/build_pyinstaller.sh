@@ -66,10 +66,17 @@ if ! "$PYTHON_BIN" -c "import PyInstaller" 2> /dev/null; then
 fi
 echo "PyInstaller installed"
 
-# Install project dependencies (ensures ALL runtime deps are importable)
+# Install the default desktop dependency set. Whisper/Torch is an optional
+# component and is installed into the user-writable runtime on demand. Set
+# QWENPAW_INCLUDE_WHISPER=1 for an offline/full build.
 echo "== Installing project dependencies =="
-install_python_packages -e ".[full]"
-echo "Project dependencies installed with full extras"
+if [[ "${QWENPAW_INCLUDE_WHISPER:-}" =~ ^(1|true|yes)$ ]]; then
+    install_python_packages -e ".[full]"
+    echo "Project dependencies installed with Whisper/Torch"
+else
+    install_python_packages -e ".[local,codex,qoder]"
+    echo "Project dependencies installed without optional Whisper/Torch"
+fi
 
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package
@@ -115,6 +122,11 @@ if [ ! -f "${CLI_EXE}" ]; then
     echo "ERROR: CLI executable not found at ${CLI_EXE}"
     exit 1
 fi
+
+echo "== Pruning build-only files from backend bundle =="
+python3 "${REPO_ROOT}/scripts/pack-tauri/prune_desktop_bundle.py" \
+    "${BACKEND_DIR}" \
+    --max-size-mb "${QWENPAW_MAX_BACKEND_MB:-1800}"
 
 echo "Backend bundle created: ${BACKEND_DIR}"
 

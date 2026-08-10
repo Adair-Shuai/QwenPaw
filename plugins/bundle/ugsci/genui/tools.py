@@ -52,6 +52,14 @@ def _err(error_code: str, message: str, hint: str = "") -> ToolChunk:
     return _result(json.dumps(payload, ensure_ascii=False), ok=False)
 
 
+def genui_unavailable() -> ToolChunk:
+    """Return the stable response used by request-time GenUI gating."""
+    return _err(
+        "feature_unavailable",
+        "GenUI is disabled or unavailable for the current channel.",
+    )
+
+
 def _get_session_id() -> str:
     session_id = ""
     try:
@@ -305,4 +313,10 @@ emit_ui_patch.__name__ = "emit_ui_patch"
 list_ui_components.__name__ = "list_ui_components"
 get_genui_guide_tool.__name__ = "get_genui_guide"
 
-__all__ = ["emit_ui_tree", "emit_ui_patch", "list_ui_components", "get_genui_guide_tool"]
+__all__ = [
+    "emit_ui_tree",
+    "emit_ui_patch",
+    "list_ui_components",
+    "get_genui_guide_tool",
+    "genui_unavailable",
+]

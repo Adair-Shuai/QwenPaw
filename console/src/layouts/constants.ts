@@ -14,7 +14,7 @@ export const getWebsiteLang = (lang: string): string =>
   lang.startsWith("zh") ? "zh" : "en";
 
 export const getDocsUrl = (lang: string): string =>
-  `https://qwenpaw.agentscope.io/docs/intro?lang=${getWebsiteLang(lang)}`; // 可改为自己的文档站
+  `/api/ugsci/docs/?lang=${getWebsiteLang(lang)}`;
 
 export const getFaqUrl = (lang: string): string =>
   `https://qwenpaw.agentscope.io/docs/faq?lang=${getWebsiteLang(lang)}`;

@@ -12,11 +12,24 @@ Configuration precedence (highest to lowest):
 3. Built-in defaults
 """
 
+import functools
+import inspect
 import logging
 import os
+from pathlib import Path
 from typing import Any
 
-from .tools import emit_ui_tree, emit_ui_patch, list_ui_components, get_genui_guide_tool
+from ..tool_manifest import (
+    sync_manifest_tools_to_all_agents,
+    validate_tool_bindings,
+)
+from .tools import (
+    emit_ui_tree,
+    emit_ui_patch,
+    list_ui_components,
+    get_genui_guide_tool,
+    genui_unavailable,
+)
 from .prompt import get_prompt_text
 from .settings import load_settings
 
@@ -185,12 +198,42 @@ _is_genui_enabled_for_context = is_genui_enabled_for_context
 
 # ─── Tool definitions ───────────────────────────────────────────────────────
 
-_GENUI_TOOLS: list[tuple[str, Any, str, str, str, str]] = [
-    ("emit_ui_tree", emit_ui_tree, "Emit a validated generative UI tree (cards, tables, charts) that renders inline in chat.", "🎨", "internal", ""),
-    ("emit_ui_patch", emit_ui_patch, "Apply JSON Patch operations to an existing GenUI tree (update without re-sending full tree).", "📝", "internal", ""),
-    ("list_ui_components", list_ui_components, "Return the GenUI component catalog (kinds + prop hints). Read-only.", "📋", "internal", ""),
-    ("get_genui_guide", get_genui_guide_tool, "Return the GenUI guide: wire format, syntax, layout guidance. Read-only.", "📖", "internal", ""),
-]
+_PLUGIN_DIR = Path(__file__).resolve().parents[1]
+_GENUI_TOOL_BINDINGS: dict[str, Any] = {
+    "emit_ui_tree": emit_ui_tree,
+    "emit_ui_patch": emit_ui_patch,
+    "list_ui_components": list_ui_components,
+    "get_genui_guide": get_genui_guide_tool,
+}
+
+
+def _request_gated_tool(func: Any, api: Any) -> Any:
+    """Wrap a GenUI tool with a request-time feature/channel gate.
+
+    ``PluginApi.register_tool`` intentionally has a small, stable signature
+    upstream.  Keep dynamic gating in the callable instead of relying on
+    local-only registration kwargs such as ``availability_check``.
+    ``__signature__`` preserves AgentScope's argument discovery.
+    """
+    if inspect.iscoroutinefunction(func):
+
+        @functools.wraps(func)
+        async def _async_gated(*args: Any, **kwargs: Any) -> Any:
+            if not is_genui_enabled_for_context(api=api):
+                return genui_unavailable()
+            return await func(*args, **kwargs)
+
+        _async_gated.__signature__ = inspect.signature(func)
+        return _async_gated
+
+    @functools.wraps(func)
+    def _gated(*args: Any, **kwargs: Any) -> Any:
+        if not is_genui_enabled_for_context(api=api):
+            return genui_unavailable()
+        return func(*args, **kwargs)
+
+    _gated.__signature__ = inspect.signature(func)
+    return _gated
 
 
 def _has_existing_emit_ui_tool(registry: Any) -> bool:
@@ -215,8 +258,8 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
 
     Tools are always registered and default-enabled so they remain discoverable
     and an off -> on transition works without restarting. ``genui_enabled`` is
-    enforced by a request-time availability predicate and independently controls
-    prompt injection. Per-Agent tool preferences remain explicit overrides.
+    enforced by a request-time wrapper and independently controls prompt
+    injection. Per-Agent tool preferences remain explicit overrides.
 
     Set ``GENUI_ENABLED=false`` to hide GenUI tools from model requests and
     exclude the prompt contents while keeping stable registrations visible in
@@ -242,46 +285,44 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
             _register_prompt(api, plugin_id, config)
             return
 
-        # Tool descriptors stay enabled by default so a global off -> on
-        # transition works immediately. The global switch is enforced by the
-        # request-time availability predicate below; Agent tool preferences
-        # remain an independent explicit override.
-        tool_enabled = True
+        specs = validate_tool_bindings(
+            _PLUGIN_DIR,
+            _GENUI_TOOL_BINDINGS,
+            groups={"genui"},
+        )
+
         registered = 0
-        for name, func, desc, icon, tt, tp in _GENUI_TOOLS:
+        for spec in specs:
             try:
                 api.register_tool(
-                    tool_name=name,
-                    tool_func=func,
-                    description=desc,
-                    icon=icon,
-                    enabled=tool_enabled,
-                    tool_type=tt,
-                    target_param=tp,
-                    allowed_channels=tuple(config.get("channels", ())),
-                    availability_check=lambda _ctx, _api=api: bool(
-                        get_genui_config(_api).get("enabled", False)
+                    tool_name=spec.name,
+                    tool_func=_request_gated_tool(
+                        _GENUI_TOOL_BINDINGS[spec.name],
+                        api,
                     ),
-                    startup_priority=90,
+                    description=spec.description,
+                    icon=spec.icon,
+                    enabled=spec.enabled_by_default,
+                    tool_type=spec.tool_type,
+                    target_param=spec.target_param,
                 )
                 registered += 1
             except Exception as exc:
                 logger.error(
                     "[%s.genui] Failed to register '%s': %s",
                     plugin_id,
-                    name,
+                    spec.name,
                     exc,
                     exc_info=True,
                 )
 
         if registered > 0:
-            _sync_all_agent_tool_configs()
             logger.info(
                 "[%s.genui] Registered %d tool(s) (descriptor_enabled=%s, global_enabled=%s, channel='%s', "
                 "allow_actions=%s, allow_html=%s)",
                 plugin_id,
                 registered,
-                tool_enabled,
+                all(spec.enabled_by_default for spec in specs),
                 genui_enabled,
                 _get_current_channel(),
                 config.get("allow_actions"),
@@ -324,37 +365,16 @@ def _register_prompt(api: Any, plugin_id: str, config: dict[str, Any]) -> None:
 
 
 def _sync_all_agent_tool_configs() -> None:
-    """Add missing GenUI defaults without overwriting Agent preferences."""
+    """Compatibility wrapper using the shared manifest synchronization."""
     try:
-        from qwenpaw.config.config import (
-            BuiltinToolConfig,
-            ToolsConfig,
-            load_agent_config,
-            save_agent_config,
+        changed_agents = sync_manifest_tools_to_all_agents(
+            _PLUGIN_DIR,
+            groups={"genui"},
         )
-        from qwenpaw.config.utils import load_config
-
-        profiles = load_config().agents.profiles
-        for agent_id in profiles:
-            agent_config = load_agent_config(agent_id)
-            if not agent_config.tools:
-                agent_config.tools = ToolsConfig()
-            changed = False
-            for name, _func, desc, icon, _tt, _tp in _GENUI_TOOLS:
-                current = agent_config.tools.builtin_tools.get(name)
-                if current is None:
-                    agent_config.tools.builtin_tools[name] = BuiltinToolConfig(
-                        name=name,
-                        enabled=True,
-                        description=desc,
-                        display_to_user=True,
-                        async_execution=False,
-                        icon=icon,
-                    )
-                    changed = True
-            if changed:
-                save_agent_config(agent_id, agent_config)
-        logger.info("[ugsci.genui] Synced GenUI defaults to %d agent(s)", len(profiles))
+        logger.info(
+            "[ugsci.genui] Synced GenUI defaults to %d agent(s)",
+            changed_agents,
+        )
     except Exception:
         logger.exception("[ugsci.genui] Failed to sync GenUI defaults to agents")
 

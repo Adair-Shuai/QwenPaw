@@ -37,6 +37,8 @@ export interface DependencyStatusItem {
   name: string;
   status: ProbeStatus;
   reason: string;
+  install_hint: string;
+  enable_hint: string;
 }
 
 export interface DependencyStatus {

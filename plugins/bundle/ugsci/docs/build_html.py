@@ -5,24 +5,44 @@
 Usage: python3 build_html.py
 Run from the docs/ directory.
 """
+import json
 import os
 import re
+import shutil
 import markdown
 from pathlib import Path
 
 DOCS_DIR = Path(__file__).parent
+PLUGIN_DIR = DOCS_DIR.parent
+RUNTIME_DOCS_DIR = PLUGIN_DIR / "static" / "docs"
+
+
+def _metadata() -> dict[str, object]:
+    """Read the canonical manifest so generated docs never carry old versions."""
+    manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+    skills = sorted((PLUGIN_DIR / "skills").glob("*/SKILL.md"))
+    min_qwenpaw = manifest.get("qwenpaw_version", {}).get("min", "unknown")
+    return {
+        "version": manifest.get("version", "unknown"),
+        "min_qwenpaw": min_qwenpaw,
+        "skill_count": len(skills),
+    }
+
+
+METADATA = _metadata()
 
 # ── Page metadata ──────────────────────────────────────────────────────────
 
 PAGES = [
-    ("index",        "UGSci 文档",          "🏠"),
-    ("user-guide",   "使用指南",              "📖"),
-    ("architecture", "架构设计",              "🏗️"),
-    ("frontend",     "前端开发指南",           "🎨"),
-    ("backend",      "后端开发指南",           "⚙️"),
-    ("skills",       "技能列表",              "⚡"),
-    ("software-detection", "本地软件检测",      "🖥️"),
-    ("expert-teams", "专家团",                "🤝"),
+    ("index",        "UGSci 文档",          ""),
+    ("user-manual",  "零基础使用手册（推荐）",  ""),
+    ("user-guide",   "使用指南",              ""),
+    ("architecture", "架构设计",              ""),
+    ("frontend",     "前端开发指南",           ""),
+    ("backend",      "后端开发指南",           ""),
+    ("skills",       "技能列表",              ""),
+    ("software-detection", "本地软件检测",      ""),
+    ("expert-teams", "专家团",                ""),
 ]
 
 # ── Shared CSS ────────────────────────────────────────────────────────────
@@ -118,7 +138,7 @@ body {
 #main {
   margin-left: var(--sidebar-w);
   padding: 40px 48px 80px;
-  max-width: var(--max-content);
+  max-width: 1220px;
 }
 
 #main > *:first-child { margin-top: 0; }
@@ -273,7 +293,16 @@ tbody tr:nth-child(even) {
   transform: translateY(-2px);
 }
 .doc-card .card-icon {
-  font-size: 32px;
+  display: inline-flex;
+  width: 28px;
+  height: 28px;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--primary);
+  background: var(--primary-soft);
+  border-radius: 6px;
   margin-bottom: 12px;
 }
 .doc-card .card-title {
@@ -303,6 +332,42 @@ tbody tr:nth-child(even) {
 .badge-orange { background: #fff7e6; color: var(--orange); }
 .badge-purple { background: #f9f0ff; color: var(--purple); }
 
+/* ── Manual table of contents ────────────────────────────────────────── */
+
+.manual-shell {
+  display: grid;
+  grid-template-columns: minmax(0, 860px) 220px;
+  gap: 40px;
+  align-items: start;
+}
+.manual-content { min-width: 0; }
+.manual-toc {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+}
+.manual-toc-title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.manual-toc a {
+  display: block;
+  padding: 4px 0;
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--text-soft);
+}
+.manual-toc a:hover { color: var(--primary); }
+.manual-toc a.level-3 {
+  padding-left: 12px;
+  font-size: 12px;
+}
+
 /* ── Mobile ────────────────────────────────────────────────────────────── */
 
 @media (max-width: 768px) {
@@ -316,6 +381,11 @@ tbody tr:nth-child(even) {
   #sidebar nav a { padding: 10px 24px; }
   #main { margin-left: 0; padding: 24px 20px 60px; }
 }
+
+@media (max-width: 1100px) {
+  .manual-shell { display: block; }
+  .manual-toc { display: none; }
+}
 """
 
 # ── Sidebar HTML ────────────────────────────────────────────────────────
@@ -325,15 +395,13 @@ def sidebar_html(active_id: str = "") -> str:
     for pid, label, icon in PAGES:
         href = f"{pid}.html" if pid != "index" else "index.html"
         cls = "active" if pid == active_id else ""
-        items.append(
-            f'<a href="{href}" class="{cls}">'
-            f'<span class="icon">{icon}</span> {label}</a>',
-        )
+        icon_html = f'<span class="icon">{icon}</span>' if icon else ''
+        items.append(f'<a href="{href}" class="{cls}">{icon_html}{label}</a>')
     return f"""
 <aside id="sidebar">
   <div class="logo">
     UGSci 文档
-    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+    <small>v{METADATA['version']} · 石油领域 QwenPaw 插件</small>
   </div>
   <nav>
     {''.join(items)}
@@ -342,6 +410,23 @@ def sidebar_html(active_id: str = "") -> str:
 
 
 def page_html(title: str, active_id: str, body_html: str) -> str:
+    if active_id == "user-manual":
+        headings = re.findall(r'<h([23])(?:\s+id="([^"]+)")?>(.*?)</h\1>', body_html, flags=re.S)
+        toc_items = []
+        for level, heading_id, raw_title in headings:
+            if not heading_id:
+                continue
+            label = re.sub(r"<[^>]+>", "", raw_title)
+            toc_items.append(
+                f'<a class="level-{level}" href="#{heading_id}">{label}</a>',
+            )
+        toc_html = "".join(toc_items) or '<p class="manual-toc-empty">本页暂无章节目录</p>'
+        body_html = (
+            '<div class="manual-shell">'
+            f'<article class="manual-content">{body_html}</article>'
+            f'<aside class="manual-toc"><div class="manual-toc-title">本页内容</div>{toc_html}</aside>'
+            '</div>'
+        )
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -399,55 +484,61 @@ INDEX_BODY = """
 <p>面向石油领域的 QwenPaw 增强插件。将 Agent 转化为领域专家，以 <strong>能力</strong>、<strong>技能</strong>、<strong>专家</strong> 三大模块重新组织界面，降低使用门槛。</p>
 </blockquote>
 
-<h2>📚 文档导航</h2>
+<h2>文档导航</h2>
 
 <div class="doc-grid">
 
+<a class="doc-card" href="user-manual.html">
+  <div class="card-icon">01</div>
+  <div class="card-title">零基础使用手册（推荐）</div>
+  <div class="card-desc">结合官方文档与真实界面截图，从第一次启动到专家团、技能、市场和专业示例一步一步学习。</div>
+</a>
+
 <a class="doc-card" href="user-guide.html">
-  <div class="card-icon">📖</div>
+  <div class="card-icon">02</div>
   <div class="card-title">使用指南</div>
   <div class="card-desc">从安装到日常使用的完整指南，适合初次使用的用户快速上手。</div>
 </a>
 
 <a class="doc-card" href="architecture.html">
-  <div class="card-icon">🏗️</div>
+  <div class="card-icon">03</div>
   <div class="card-title">架构设计</div>
   <div class="card-desc">插件整体架构、数据流、前端注册机制和构建系统。</div>
 </a>
 
 <a class="doc-card" href="frontend.html">
-  <div class="card-icon">🎨</div>
+  <div class="card-icon">04</div>
   <div class="card-title">前端开发指南</div>
   <div class="card-desc">页面组件、API 调用、构建流程和调试技巧。</div>
 </a>
 
 <a class="doc-card" href="backend.html">
-  <div class="card-icon">⚙️</div>
+  <div class="card-icon">05</div>
   <div class="card-title">后端开发指南</div>
   <div class="card-desc">技能池同步、HTTP API、扩展指南和日志配置。</div>
 </a>
 
 <a class="doc-card" href="skills.html">
-  <div class="card-icon">⚡</div>
+  <div class="card-icon">06</div>
   <div class="card-title">技能列表</div>
-  <div class="card-desc">44 个内置技能的完整说明和分类索引。</div>
+<div class="card-desc">从源码自动统计并展示当前内置技能，避免文档与实际目录漂移。</div>
 </a>
 
 <a class="doc-card" href="software-detection.html">
-  <div class="card-icon">🖥️</div>
+  <div class="card-icon">07</div>
   <div class="card-title">本地软件检测</div>
   <div class="card-desc">检测引擎工作原理、已知软件清单和扩展方法。</div>
 </a>
 
 <a class="doc-card" href="expert-teams.html">
-  <div class="card-icon">🤝</div>
+  <div class="card-icon">08</div>
   <div class="card-title">专家团</div>
   <div class="card-desc">多智能体协同模式、预设团队和自定义团队。</div>
 </a>
 
 </div>
 
-<h2>🚀 快速开始</h2>
+<h2>快速开始</h2>
 
 <ol>
 <li><p>安装插件：</p>
@@ -458,17 +549,17 @@ INDEX_BODY = """
 <li><p>刷新页面，开始使用专家中心、能力中心、技能中心和市场</p></li>
 </ol>
 
-<h2>📋 核心模块</h2>
+<h2>核心模块</h2>
 
 <table>
 <thead>
 <tr><th>模块</th><th>路由</th><th>说明</th></tr>
 </thead>
 <tbody>
-<tr><td>🧑‍🔬 专家中心</td><td><code>/ugsci-experts</code></td><td>Agent 转化为专家卡片，支持创建专家和专家团协同</td></tr>
-<tr><td>🔌 能力中心</td><td><code>/ugsci-capabilities</code></td><td>MCP 客户端展示 + 本地油气软件检测</td></tr>
-<tr><td>⚡ 技能中心</td><td><code>/ugsci-skills</code></td><td>技能池浏览、详情查看和安装状态</td></tr>
-<tr><td>🏪 市场</td><td><code>/ugsci-market</code></td><td>远程技能搜索安装 + 专家模板创建</td></tr>
+<tr><td>专家中心</td><td>左侧“专家·协作”</td><td>Agent 转化为专家卡片，支持创建专家和专家团协同</td></tr>
+<tr><td>能力中心</td><td>“工具·技能 → 引擎”</td><td>MCP 客户端展示 + 本地油气软件检测</td></tr>
+<tr><td>技能中心</td><td>“工具·技能 → 技能”</td><td>技能池浏览、详情查看和安装状态</td></tr>
+<tr><td>市场</td><td>左侧“市场”</td><td>远程技能搜索安装 + 专家模板创建</td></tr>
 </tbody>
 </table>
 """
@@ -477,6 +568,15 @@ INDEX_BODY = """
 def main():
     css_dir = DOCS_DIR / "css"
     css_dir.mkdir(exist_ok=True)
+
+    # Markdown files are the only editable documentation source. Remove
+    # generated HTML pages that are not part of the declared page catalogue so
+    # retired documents cannot remain as a second, stale source of truth.
+    expected_html = {f"{page_id}.html" for page_id, _title, _icon in PAGES}
+    for stale_page in sorted(DOCS_DIR.glob("*.html")):
+        if stale_page.name not in expected_html:
+            stale_page.unlink()
+            print(f"[cleanup] removed retired page → {stale_page.name}")
 
     # Write CSS
     (css_dir / "style.css").write_text(CSS, encoding="utf-8")
@@ -489,16 +589,44 @@ def main():
         else:
             md_file = DOCS_DIR / f"{pid}.md"
             if not md_file.exists():
-                print(f"  ⚠ skip {pid}.md (not found)")
-                continue
+                raise FileNotFoundError(
+                    f"Canonical documentation source is missing: {md_file}",
+                )
             md_text = md_file.read_text(encoding="utf-8")
             body = convert_md(md_text)
+            body = body.replace("{{UGSCI_VERSION}}", str(METADATA["version"]))
+            body = body.replace("{{QWENPAW_MIN_VERSION}}", str(METADATA["min_qwenpaw"]))
+            body = body.replace("{{SKILL_COUNT}}", str(METADATA["skill_count"]))
 
         out_file = DOCS_DIR / f"{pid}.html"
         out_file.write_text(page_html(title, pid, body), encoding="utf-8")
         print(f"[2/3] {pid}.html written")
 
-    print("[3/3] Done! Open index.html in a browser.")
+    # Runtime documentation is a self-contained static site served by the
+    # UGSci backend. Keep Markdown as the source of truth, but publish only
+    # generated HTML/CSS and screenshots in the package data path.
+    RUNTIME_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    # ``static/docs`` is generated output. Remove prior generated files so a
+    # deleted Markdown source can never leave a stale HTML page in the wheel.
+    for stale_file in sorted(
+        (path for path in RUNTIME_DOCS_DIR.rglob("*") if path.is_file()),
+        reverse=True,
+    ):
+        stale_file.unlink()
+    for generated_page in sorted(DOCS_DIR.glob("*.html")):
+        shutil.copy2(generated_page, RUNTIME_DOCS_DIR / generated_page.name)
+    # The app entry point opens the approachable manual directly; the other
+    # generated pages remain available from its sidebar for developers.
+    shutil.copy2(DOCS_DIR / "user-manual.html", RUNTIME_DOCS_DIR / "index.html")
+    runtime_css = RUNTIME_DOCS_DIR / "css"
+    runtime_css.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(css_dir / "style.css", runtime_css / "style.css")
+    runtime_assets = RUNTIME_DOCS_DIR / "assets" / "screenshots"
+    runtime_assets.mkdir(parents=True, exist_ok=True)
+    for image_file in sorted((DOCS_DIR / "assets" / "screenshots").glob("*.png")):
+        shutil.copy2(image_file, runtime_assets / image_file.name)
+    print(f"[3/3] runtime docs written → {RUNTIME_DOCS_DIR}")
+    print("Done! Open index.html in a browser.")
 
 
 if __name__ == "__main__":

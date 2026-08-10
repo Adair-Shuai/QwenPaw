@@ -10,6 +10,8 @@ Defines:
 
 from __future__ import annotations
 
+from typing import Literal, TypeAlias
+
 # ── Workflow phases ──────────────────────────────────────────────────
 PHASE_PLAN = "plan"
 PHASE_DISPATCH = "dispatch"
@@ -53,6 +55,15 @@ ALL_TEAM_MODES = (
     MODE_REVIEW_LOOP,
     MODE_DEBATE,
 )
+
+TeamMode: TypeAlias = Literal[
+    "pipeline",
+    "coordinator",
+    "roundtable",
+    "router",
+    "review_loop",
+    "debate",
+]
 
 # ── Registered QwenPaw tool names ────────────────────────────────────
 # Keep in sync with the ToolRegistry names used by the host.

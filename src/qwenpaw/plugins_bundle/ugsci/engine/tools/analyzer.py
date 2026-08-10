@@ -251,8 +251,17 @@ async def analyze_simulation(
                                 f"diff={diff:+.4g} ({rel_diff:+.1f}%)",
                             )
     else:
-        lines.append(f"Unknown analysis type: '{analysis_type}'")
-        lines.append("Supported: convergence, balance, performance, comparison")
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[TextBlock(
+                type="text",
+                text=(
+                    f"Error: Unknown analysis type: '{analysis_type}'. "
+                    "Supported: convergence, balance, performance, comparison"
+                ),
+            )],
+        )
 
     return ToolChunk(
         is_last=True,

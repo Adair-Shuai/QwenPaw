@@ -22,22 +22,67 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from .constants import ALL_PHASES, PHASE_COMPLETED, PHASE_PLAN
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
+
+from .constants import PHASE_COMPLETED, PHASE_PLAN
 
 logger = logging.getLogger(__name__)
 
 WORKFLOW_ACTIVE = "active"
 WORKFLOW_COMPLETED = "completed"
 WORKFLOW_TERMINATED = "terminated"
-WORKFLOW_STATUSES = frozenset(
-    {WORKFLOW_ACTIVE, WORKFLOW_COMPLETED, WORKFLOW_TERMINATED},
-)
 
 
 class TeamStateInvalidError(ValueError):
     """Raised when a workflow state document is malformed."""
+
+
+class TeamStateDocument(BaseModel):
+    """Typed shape of the persisted workflow state document.
+
+    The workflow writes a few phase-specific fields over time, so unknown
+    fields remain allowed for forward compatibility. Known fields are still
+    validated at every read boundary; malformed values must not reach API
+    serialization or the workflow gate.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    current_phase: Literal[
+        "plan",
+        "dispatch",
+        "verify",
+        "synthesize",
+        "completed",
+    ]
+    workflow_status: Literal["active", "completed", "terminated"] = "active"
+    agent_id: str = ""
+    team_id: str = "ugsci-team"
+    team_name: str = ""
+    team_mode: str = "pipeline"
+    members: list[dict[str, str]] = Field(default_factory=list)
+    task: str = ""
+    active: bool = True
+    iteration: int = Field(default=0, ge=0)
+    verify_retries: int = Field(default=0, ge=0)
+    dispatch_retries: int = Field(default=0, ge=0)
+    max_dispatch_retries: int = Field(default=0, ge=0)
+    merge_waits: int = Field(default=0, ge=0)
+    created_at_ns: int = Field(default=0, ge=0)
+    finished_at_ns: int = Field(default=0, ge=0)
+    termination_reason: str = ""
+
+
+def parse_state_document(data: Any) -> TeamStateDocument:
+    """Validate and return a typed workflow state document."""
+    if not isinstance(data, dict):
+        raise TeamStateInvalidError("state document must be a JSON object")
+    try:
+        return TeamStateDocument.model_validate(data)
+    except ValidationError as exc:
+        raise TeamStateInvalidError("state document fields are invalid") from exc
 
 
 def validate_state_document(data: Any) -> dict[str, Any]:
@@ -46,18 +91,7 @@ def validate_state_document(data: Any) -> dict[str, Any]:
     State is controller-editable, so validation must happen at every read
     boundary rather than relying only on the initial writer.
     """
-    if not isinstance(data, dict):
-        raise TeamStateInvalidError("state document must be a JSON object")
-    phase = data.get("current_phase")
-    if phase not in ALL_PHASES:
-        raise TeamStateInvalidError(
-            f"current_phase must be one of {', '.join(ALL_PHASES)}",
-        )
-    workflow_status = data.get("workflow_status", WORKFLOW_ACTIVE)
-    if workflow_status not in WORKFLOW_STATUSES:
-        raise TeamStateInvalidError(
-            "workflow_status must be active, completed, or terminated",
-        )
+    parse_state_document(data)
     return data
 
 
@@ -253,9 +287,11 @@ class TeamWorkflowState:
 
 __all__ = [
     "TeamStateInvalidError",
+    "TeamStateDocument",
     "TeamWorkflowState",
     "WORKFLOW_ACTIVE",
     "WORKFLOW_COMPLETED",
     "WORKFLOW_TERMINATED",
+    "parse_state_document",
     "validate_state_document",
 ]

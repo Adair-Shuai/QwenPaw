@@ -128,10 +128,17 @@ if (Test-PythonImport "import dotenv") {
 
 Write-Host ""
 
-# Install project dependencies (ensures ALL runtime deps are importable)
+# Install the default desktop dependency set. Whisper/Torch is an optional
+# component and is installed into the user-writable runtime on demand. Set
+# QWENPAW_INCLUDE_WHISPER=1 for an offline/full build.
 Write-Host "== Installing project dependencies ==" -ForegroundColor Yellow
-Install-PythonPackages -Packages @("-e", ".[full]")
-Write-Host "Project dependencies installed with full extras" -ForegroundColor Green
+if ($env:QWENPAW_INCLUDE_WHISPER -match "^(1|true|yes)$") {
+    Install-PythonPackages -Packages @("-e", ".[full]")
+    Write-Host "Project dependencies installed with Whisper/Torch" -ForegroundColor Green
+} else {
+    Install-PythonPackages -Packages @("-e", ".[local,codex,qoder]")
+    Write-Host "Project dependencies installed without optional Whisper/Torch" -ForegroundColor Green
+}
 
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package
@@ -181,6 +188,13 @@ if (-not (Test-Path $CLI_EXE)) {
     Write-Host "ERROR: CLI executable not found at $CLI_EXE" -ForegroundColor Red
     exit 1
 }
+
+Write-Host "== Pruning build-only files from backend bundle ==" -ForegroundColor Yellow
+$MAX_BACKEND_MB = if ($env:QWENPAW_MAX_BACKEND_MB) { $env:QWENPAW_MAX_BACKEND_MB } else { "1800" }
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\prune_desktop_bundle.py") `
+    $BACKEND_DIR `
+    --max-size-mb $MAX_BACKEND_MB
+Assert-LastExit "Failed to prune or validate backend bundle"
 
 Write-Host "Backend bundle created: $BACKEND_DIR" -ForegroundColor Green
 

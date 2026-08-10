@@ -11,6 +11,7 @@ Covers plan section 9.1:
 
 from __future__ import annotations
 
+import json
 from typing import Any
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -37,6 +38,8 @@ class RecordingPluginApi:
         config: dict[str, Any] | None = None,
     ) -> None:
         self.tools: list[str] = []
+        self.tool_funcs: dict[str, Any] = {}
+        self.tool_options: dict[str, dict[str, Any]] = {}
         self.prompt_sections: list[str] = []
         self.prompt_kwargs: dict[str, dict[str, Any]] = {}
         self._has_existing = has_existing_emit_ui
@@ -59,8 +62,26 @@ class RecordingPluginApi:
             wm.agents = {"agent1": ws}
             self._registry.get_workspace_manager.return_value = wm
 
-    def register_tool(self, *, tool_name: str, **_kwargs: Any) -> None:
+    def register_tool(
+        self,
+        *,
+        tool_name: str,
+        tool_func: Any,
+        description: str,
+        icon: str,
+        enabled: bool,
+        tool_type: str,
+        target_param: str,
+    ) -> None:
         self.tools.append(tool_name)
+        self.tool_funcs[tool_name] = tool_func
+        self.tool_options[tool_name] = {
+            "description": description,
+            "icon": icon,
+            "enabled": enabled,
+            "tool_type": tool_type,
+            "target_param": target_param,
+        }
 
     def register_prompt_section(self, *, name: str, **kwargs: Any) -> None:
         self.prompt_sections.append(name)
@@ -144,23 +165,25 @@ class TestRegisterGenui:
         for name in ("emit_ui_tree", "list_ui_components", "get_genui_guide"):
             assert name in captured_kwargs
             assert captured_kwargs[name].get("enabled") is True
-            predicate = captured_kwargs[name].get("availability_check")
-            assert callable(predicate)
-            assert predicate({"channel": "console"}) is False
+            assert "availability_check" not in captured_kwargs[name]
         assert api.prompt_sections == ["ugsci.genui_guide"]
         prompt_condition = api.prompt_kwargs["ugsci.genui_guide"]["condition"]
         assert prompt_condition(None) is False
 
-        # Both tool and prompt availability change without re-registration.
         monkeypatch.setattr(
             "qwenpaw.plugins_bundle.ugsci.genui.registration"
             "._get_current_channel",
             lambda: "console",
         )
+        disabled = captured_kwargs["list_ui_components"]["tool_func"]()
+        disabled_payload = json.loads(disabled.content[0].text)
+        assert disabled_payload["error_code"] == "feature_unavailable"
+
+        # Both tool and prompt availability change without re-registration.
         monkeypatch.setenv("GENUI_ENABLED", "true")
-        assert (
-            captured_kwargs["emit_ui_tree"]["availability_check"]({}) is True
-        )
+        assert "availability_check" not in captured_kwargs["emit_ui_tree"]
+        enabled = captured_kwargs["list_ui_components"]["tool_func"]()
+        assert json.loads(enabled.content[0].text)["components"]
         assert prompt_condition(None) is True
 
     def test_exception_does_not_crash(self) -> None:

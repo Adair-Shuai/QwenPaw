@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 import os
 import subprocess
 import time
@@ -132,6 +133,14 @@ async def launch_simulation(
     """
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
+
+    if not isinstance(timeout, (int, float)) or not math.isfinite(float(timeout)) or float(timeout) <= 0:
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[TextBlock(type="text", text="Error: timeout must be a positive finite number of seconds.")],
+        )
+    timeout = float(timeout)
 
     # ── Resolve working directory ────────────────────────────────────
     if not working_dir:

@@ -16,6 +16,7 @@ import {
   useEffect,
   useRef,
   useState,
+  useSyncExternalStore,
   type ReactNode,
 } from "react";
 import Editor, {
@@ -41,6 +42,7 @@ import {
 import { Dropdown, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 import FilePreview, { isPreviewable } from "./FilePreview";
+import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { workspaceApi } from "../../api/modules/workspace";
 import { useWorkspaceWatch } from "../../hooks/useWorkspaceWatch";
 import { useTheme } from "../../contexts/ThemeContext";
@@ -58,6 +60,10 @@ import {
   visibleEditorPath,
 } from "./editorCopyFormatting";
 import styles from "./TabbedEditor.module.less";
+
+const subscribeRendererRegistry = (listener: () => void) =>
+  rendererRegistry.subscribe(listener);
+const getRendererRegistrySnapshot = () => rendererRegistry.getSnapshot();
 
 // ---------------------------------------------------------------------------
 // Types
@@ -201,6 +207,14 @@ export default function TabbedEditor({
 }: TabbedEditorProps) {
   const { t } = useTranslation();
   const { isDark } = useTheme();
+  // Plugin renderers are registered asynchronously after the files workspace
+  // can already be visible. Re-render when the registry changes so a DAT,
+  // EGRID, DLIS, etc. tab cannot remain stuck in the generic text preview.
+  useSyncExternalStore(
+    subscribeRendererRegistry,
+    getRendererRegistrySnapshot,
+    getRendererRegistrySnapshot,
+  );
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
   const activeTabPathRef = useRef(activeTabPath);
@@ -1170,7 +1184,8 @@ export default function TabbedEditor({
       <div className={styles.editor}>
         {activeTab && activeInPreview ? (
           /* ── Preview mode (image / markdown / pdf / csv) ─────────────── */
-          isPreviewable(activeDisplayPath) ? (
+          isPreviewable(activeDisplayPath) ||
+          activeTab.previewKind === "binary" ? (
             <FilePreview
               key={`${activeTab.path}:${previewRevision}`}
               filePath={activeDisplayPath}

@@ -56,10 +56,10 @@ describe("getWebsiteLang", () => {
 });
 
 describe("getDocsUrl", () => {
-  it("includes lang param", () => {
+  it("opens the bundled offline UGSci manual and includes lang param", () => {
     const url = getDocsUrl("zh");
     expect(url).toContain("lang=zh");
-    expect(url).toContain("/docs/intro");
+    expect(url).toContain("/api/ugsci/docs/");
   });
 });
 

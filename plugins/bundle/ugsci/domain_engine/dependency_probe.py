@@ -28,6 +28,8 @@ class DependencyProbeResult:
     name: str
     status: ProbeStatus
     reason: str = ""
+    install_hint: str = ""
+    enable_hint: str = ""
 
 
 @dataclass
@@ -37,6 +39,55 @@ class EngineProbeResult:
     engine_id: str
     overall: ProbeStatus
     dependencies: list[DependencyProbeResult]
+
+
+_PYTHON_PACKAGE_IMPORTS = {
+    "numpy": "numpy",
+    "scipy": "scipy",
+    "lasio": "lasio",
+    "welly": "welly",
+    "pandas": "pandas",
+    "matplotlib": "matplotlib",
+    "sympy": "sympy",
+    "pymc": "pymc",
+    "pymoo": "pymoo",
+    "simpy": "simpy",
+    "networkx": "networkx",
+    "geopandas": "geopandas",
+    "scikit-learn": "sklearn",
+    "statsmodels": "statsmodels",
+}
+
+
+def _guidance(name: str) -> tuple[str, str]:
+    if name in _PYTHON_PACKAGE_IMPORTS:
+        return (
+            f"在 QwenPaw 使用的 Python 环境中运行：python -m pip install {name}",
+            "安装后重启 QwenPaw，或点击刷新重新检测依赖。",
+        )
+    if name == "java-runtime":
+        return (
+            "安装 JDK 17 或更高版本，并确保 java 命令可用。",
+            "重启 QwenPaw 后重新检测 Java 运行时。",
+        )
+    if name == "neqsim-mcp-server":
+        return (
+            "安装或使用 QwenPaw 随附的 NeqSim MCP Server。",
+            "在 MCP 管理中配置并启用 NeqSim Driver，然后刷新检测。",
+        )
+    return ("", "检查对应 Provider 的安装和启用状态。")
+
+
+def serialize_dependency(result: DependencyProbeResult) -> dict[str, str]:
+    """Return a stable public dependency result including recovery guidance."""
+    install_hint, enable_hint = _guidance(result.name)
+    return {
+        "name": result.name,
+        "status": result.status,
+        "reason": result.reason,
+        "install_hint": result.install_hint or install_hint,
+        "enable_hint": result.enable_hint or enable_hint,
+    }
 
 
 def probe_python_package(name: str) -> DependencyProbeResult:
@@ -137,24 +188,8 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
 
 def probe_dependency(name: str) -> DependencyProbeResult:
     """Probe a single dependency by name."""
-    python_packages = {
-        "numpy": "numpy",
-        "scipy": "scipy",
-        "lasio": "lasio",
-        "welly": "welly",
-        "pandas": "pandas",
-        "matplotlib": "matplotlib",
-        "sympy": "sympy",
-        "pymc": "pymc",
-        "pymoo": "pymoo",
-        "simpy": "simpy",
-        "networkx": "networkx",
-        "geopandas": "geopandas",
-        "scikit-learn": "sklearn",
-        "statsmodels": "statsmodels",
-    }
-    if name in python_packages:
-        result = probe_python_package(python_packages[name])
+    if name in _PYTHON_PACKAGE_IMPORTS:
+        result = probe_python_package(_PYTHON_PACKAGE_IMPORTS[name])
         result.name = name
         return result
     if name == "java-runtime":

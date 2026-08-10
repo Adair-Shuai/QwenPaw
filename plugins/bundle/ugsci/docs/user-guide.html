@@ -11,10 +11,10 @@
 <aside id="sidebar">
   <div class="logo">
     UGSci 文档
-    <small>v0.3.0 · 石油领域 QwenPaw 插件</small>
+    <small>v0.6.0 · 石油领域 QwenPaw 插件</small>
   </div>
   <nav>
-    <a href="index.html" class=""><span class="icon">🏠</span> UGSci 文档</a><a href="user-guide.html" class="active"><span class="icon">📖</span> 使用指南</a><a href="architecture.html" class=""><span class="icon">🏗️</span> 架构设计</a><a href="frontend.html" class=""><span class="icon">🎨</span> 前端开发指南</a><a href="backend.html" class=""><span class="icon">⚙️</span> 后端开发指南</a><a href="skills.html" class=""><span class="icon">⚡</span> 技能列表</a><a href="software-detection.html" class=""><span class="icon">🖥️</span> 本地软件检测</a><a href="expert-teams.html" class=""><span class="icon">🤝</span> 专家团</a>
+    <a href="index.html" class="">UGSci 文档</a><a href="user-manual.html" class="">零基础使用手册（推荐）</a><a href="user-guide.html" class="active">使用指南</a><a href="architecture.html" class="">架构设计</a><a href="frontend.html" class="">前端开发指南</a><a href="backend.html" class="">后端开发指南</a><a href="skills.html" class="">技能列表</a><a href="software-detection.html" class="">本地软件检测</a><a href="expert-teams.html" class="">专家团</a>
   </nav>
 </aside>
 <div id="main">
@@ -37,24 +37,24 @@
 <thead>
 <tr>
 <th>菜单</th>
-<th>图标</th>
+<th>入口</th>
 <th>路由</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td>专家·协作</td>
-<td>🧑‍🔬</td>
+<td>左侧导航</td>
 <td><code>/ugsci-experts</code></td>
 </tr>
 <tr>
 <td>工具·技能</td>
-<td>🛠️</td>
+<td>左侧导航</td>
 <td><code>/ugsci-tools-skills</code></td>
 </tr>
 <tr>
 <td>市场</td>
-<td>🏪</td>
+<td>左侧导航</td>
 <td><code>/ugsci-market</code></td>
 </tr>
 </tbody>
@@ -103,32 +103,32 @@
 </thead>
 <tbody>
 <tr>
-<td>🛢️ 油藏工程师</td>
+<td>油藏工程师</td>
 <td>储量评估、物质平衡、数值模拟</td>
 <td>自动</td>
 </tr>
 <tr>
-<td>⛏️ 钻井工程师</td>
+<td>钻井工程师</td>
 <td>井身结构、钻井液、套管设计</td>
 <td>需审批</td>
 </tr>
 <tr>
-<td>📡 测井分析师</td>
+<td>测井分析师</td>
 <td>曲线解释、岩性识别、参数计算</td>
 <td>自动</td>
 </tr>
 <tr>
-<td>⚙️ 采油工程师</td>
+<td>采油工程师</td>
 <td>举升工艺、注水管理、增产措施</td>
 <td>自动</td>
 </tr>
 <tr>
-<td>🌍 地球物理专家</td>
+<td>地球物理专家</td>
 <td>地震解释、反演、储层预测</td>
 <td>自动</td>
 </tr>
 <tr>
-<td>🧪 PVT 分析师</td>
+<td>PVT 分析师</td>
 <td>流体物性、相态分析、PVT 拟合</td>
 <td>自动</td>
 </tr>
@@ -140,10 +140,10 @@
 <h4 id="_9">使用预设团队</h4>
 <p>内置 4 个预设专家团：</p>
 <ol>
-<li><strong>储层评价团队</strong> 🛢️ — 流水线模式，测井→地球物理→油藏工程</li>
+<li><strong>储层评价团队</strong> — 流水线模式，测井→地球物理→油藏工程</li>
 <li><strong>钻井设计团队</strong> ⛏️ — 协调者模式，钻井工程师主导</li>
-<li><strong>开发方案评审团队</strong> 📋 — 圆桌讨论，三位专家独立评估</li>
-<li><strong>流体性质分析团队</strong> 🧪 — 流水线模式，PVT→地球物理→油藏</li>
+<li><strong>开发方案评审团队</strong> — 圆桌讨论，三位专家独立评估</li>
+<li><strong>流体性质分析团队</strong> — 流水线模式，PVT→地球物理→油藏</li>
 </ol>
 <p>点击团队卡片的 <strong>「发起任务」</strong> 按钮：</p>
 <ul>
@@ -158,7 +158,7 @@
 <h4 id="_10">创建自定义团队</h4>
 <p>点击 <strong>「创建专家团」</strong> 按钮，在弹出的构建器中填写：</p>
 <ol>
-<li><strong>基本信息</strong>：团队名称、emoji 图标、类别、描述</li>
+<li><strong>基本信息</strong>：团队名称、可选图标、类别、描述</li>
 <li><strong>编排模式</strong>：选择流水线、协调者或圆桌讨论</li>
 <li><strong>选择成员</strong>：从已有 Agent 列表中选择团队成员</li>
 <li><strong>任务模板</strong>：编写任务模板，可使用 <code>{参数名}</code> 占位符</li>
@@ -166,7 +166,8 @@
 </ol>
 <p>保存后，自定义团队会显示在列表顶部（带「自定义」标签），支持编辑和删除。</p>
 <blockquote>
-<p><strong>注意</strong>：自定义团队保存在浏览器 <code>localStorage</code> 中，清除浏览器数据会丢失。不同浏览器/设备间不共享。</p>
+<p><strong>说明</strong>：自定义团队保存在 QwenPaw 工作区后端，后端是唯一真源。浏览器 <code>localStorage</code> 只用于旧版本迁移和离线缓存。<br />
+多窗口同时编辑同一团队时，后端会校验版本；过期窗口不会覆盖较新的修改。</p>
 </blockquote>
 <h2 id="_11">工具·技能</h2>
 <p>统一页面包含 <strong>工具、引擎、技能</strong> 三个主视图，并始终跟随当前选中的专家。</p>
@@ -202,7 +203,7 @@
 <h3 id="_18">技能</h3>
 <p>打开 <strong>「技能」</strong> 视图，可在“当前专家”和“技能库”之间切换。</p>
 <h3 id="_19">浏览技能</h3>
-<p>技能卡片展示：emoji、名称、描述、版本号、标签。使用搜索框可按名称、描述或标签过滤。</p>
+<p>技能卡片展示图标、名称、描述、版本号和标签。使用搜索框可按名称、描述或标签过滤。</p>
 <h3 id="_20">查看技能详情</h3>
 <p>点击任意技能卡片，右侧弹出抽屉面板，展示：</p>
 <ul>
@@ -266,13 +267,9 @@
 1. 在“工具·技能 → 引擎 → 仿真软件”中点击「添加引擎」<br />
 2. 输入软件名称和可执行文件路径<br />
 3. 保存后点击「自动检测」复核</p>
-<h3 id="_29">自定义专家团丢失</h3>
-<p><strong>原因</strong>：自定义团队保存在浏览器 <code>localStorage</code>，清除浏览器数据后丢失。</p>
-<p><strong>预防</strong>：定期手动备份。在控制台执行：</p>
-<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">parse</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">getItem</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;ugsci_custom_teams&quot;</span><span style="color: #ABB2BF">));</span>
-</code></pre></div>
-
-<p>将结果保存到文件，后续可通过 <code>localStorage.setItem()</code> 恢复。</p>
+<h3 id="_29">自定义专家团加载失败</h3>
+<p><strong>原因</strong>：后端团队存储暂时不可用，或工作区中的团队存储文件损坏。</p>
+<p><strong>处理</strong>：检查 QwenPaw 后端日志并点击「重试」。浏览器缓存不会覆盖后端数据；如果需要恢复旧版本的浏览器团队，重新打开专家中心会自动尝试迁移。</p>
 <h2 id="_30">最佳实践</h2>
 <h3 id="_31">专家命名</h3>
 <ul>

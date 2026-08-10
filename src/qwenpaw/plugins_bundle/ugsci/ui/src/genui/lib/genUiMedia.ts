@@ -17,6 +17,7 @@
 
 /** Cache: filePath → blobURL (or null if resolution failed) */
 const _urlCache = new Map<string, string | null>();
+const _errorCache = new Map<string, string>();
 const MAX_MEDIA_CACHE_ENTRIES = 128;
 
 /** Set of active fetch promises to deduplicate concurrent requests */
@@ -111,6 +112,7 @@ export async function resolveMediaUrl(src: string): Promise<string | null> {
       }
     }
     _urlCache.set(src, url);
+    if (url) _errorCache.delete(src);
     return url;
   } finally {
     _pending.delete(src);
@@ -125,7 +127,10 @@ async function _fetchBlobUrl(filePath: string): Promise<string | null> {
   const host = QP?.host;
 
   if (!host) {
-    console.warn("[ugsci.genui] Host runtime not available for media resolution");
+    const message =
+      "宿主媒体 API 不可用。请在 QwenPaw 工作区中打开此内容，或改用 http(s)、data、blob URL。";
+    _errorCache.set(filePath, message);
+    console.warn("[ugsci.genui]", message);
     return null;
   }
 
@@ -148,6 +153,11 @@ async function _fetchBlobUrl(filePath: string): Promise<string | null> {
   try {
     return await _fetchBlobViaHttp(cleanPath, host);
   } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err);
+    _errorCache.set(
+      filePath,
+      `无法读取本地媒体：${detail}。请确认文件位于当前工作区且文件预览 API 已启用。`,
+    );
     console.warn(
       `[ugsci.genui] Failed to resolve media URL for '${filePath}':`,
       err,
@@ -181,8 +191,7 @@ async function _fetchBlobViaHttp(
   }
 
   if (!url) {
-    // Last resort: use the path directly (may work for public URLs)
-    return filePath;
+    throw new Error("宿主未提供 workspaceApi.getBinaryFileUrl 或 chatApi.filePreviewUrl");
   }
 
   // Build auth headers
@@ -221,6 +230,11 @@ export function getCachedMediaUrl(src: string): string | null {
   return _urlCache.get(src) ?? null;
 }
 
+/** Return the latest actionable resolution error for a local media path. */
+export function getMediaResolutionError(src: string): string | null {
+  return _errorCache.get(src) ?? null;
+}
+
 /**
  * Preload a media URL (fire-and-forget).
  * Useful for pre-fetching images before they're rendered.
@@ -246,4 +260,5 @@ export function clearMediaCache(): void {
     }
   }
   _urlCache.clear();
+  _errorCache.clear();
 }

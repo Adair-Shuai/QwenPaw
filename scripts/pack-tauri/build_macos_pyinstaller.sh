@@ -5,7 +5,7 @@
 # Usage:
 #   ./scripts/pack-tauri/build_macos_pyinstaller.sh
 
-set -e
+set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
@@ -61,13 +61,22 @@ if [ ! -f "${SIGN_MACOS_BUNDLE}" ]; then
     exit 1
 fi
 
-if [ -z "${APPLE_SIGNING_IDENTITY:-}" ] && [ -z "${APPLE_CERTIFICATE:-}" ]; then
+if [ -z "${APPLE_SIGNING_IDENTITY:-}" ]; then
     # The Tauri app and PyInstaller sidecar are native Mach-O executables.
     # Keep their signature state consistent with ad-hoc signatures when no
     # Developer ID certificate is configured. This matches the legacy desktop
     # package behavior: signed enough for local loading, not notarized.
     export APPLE_SIGNING_IDENTITY="-"
     echo "Using ad-hoc macOS code signing"
+    if [ -n "${APPLE_CERTIFICATE:-}" ]; then
+        echo "warning: APPLE_CERTIFICATE is set without APPLE_SIGNING_IDENTITY; nested runtimes will use ad-hoc signing"
+    fi
+fi
+if { [[ "${QWENPAW_REQUIRE_PLATFORM_SIGNING:-}" =~ ^(1|true|yes)$ ]] || \
+     [[ "${QWENPAW_REQUIRE_NOTARIZATION:-}" =~ ^(1|true|yes)$ ]]; } && \
+   [ "${APPLE_SIGNING_IDENTITY}" = "-" ]; then
+    echo "ERROR: release signing is required, but APPLE_SIGNING_IDENTITY is not configured"
+    exit 1
 fi
 if [ -z "${PYINSTALLER_CODESIGN_IDENTITY:-}" ]; then
     # PyInstaller uses the same identity as the final app for bundled Mach-O
@@ -156,11 +165,24 @@ if [ ! -x "${HELPER_PATH}" ]; then
     exit 1
 fi
 
-echo "== Step 3b: Signing Final macOS App =="
-bash "${SIGN_MACOS_BUNDLE}" \
-    "${APP_PATH}" \
-    "${APPLE_SIGNING_IDENTITY}"
-echo "Final macOS app signed and verified"
+echo "== Step 3b: Verifying Final macOS App Signature =="
+# Tauri signs the outer .app after embedding the pre-signed native resources.
+# Re-signing here would make the first-install ZIP differ from the updater
+# archive that Tauri generated during the build and can invalidate notarization.
+codesign --verify --deep --strict --verbose=2 "${APP_PATH}"
+if [ "${APPLE_SIGNING_IDENTITY}" != "-" ]; then
+    if ! spctl --assess --type execute --verbose=2 "${APP_PATH}"; then
+        if [[ "${QWENPAW_REQUIRE_PLATFORM_SIGNING:-}" =~ ^(1|true|yes)$ ]]; then
+            echo "ERROR: Gatekeeper rejected the signed macOS app"
+            exit 1
+        fi
+        echo "warning: Gatekeeper assessment did not pass; configure notarization before release"
+    fi
+fi
+if [[ "${QWENPAW_REQUIRE_NOTARIZATION:-}" =~ ^(1|true|yes)$ ]]; then
+    xcrun stapler validate "${APP_PATH}"
+fi
+echo "Final macOS app signature verified"
 echo ""
 
 # Step 4: Collect distribution artifacts
