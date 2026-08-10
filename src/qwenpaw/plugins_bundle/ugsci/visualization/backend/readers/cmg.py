@@ -2,8 +2,9 @@
 """Reader for CMG GEM ASCII ``.dat`` grid decks.
 
 CMG's corner-point grid syntax is not Eclipse GRDECL.  In particular,
-``CORNERS`` is written as 24 component-major arrays and values may use the
-``count*value`` run-length notation.  This reader intentionally implements
+``CORNERS`` contains three coordinate blocks over a refined
+``(2*NI, 2*NJ, 2*NK)`` corner lattice and values may use the ``count*value``
+run-length notation.  This reader intentionally implements
 the portable, static part of a GEM deck (geometry, NULL/NETGROSS/POR/PERMI
 and the derived PERMJ/PERMK arrays) and leaves the simulator schedule and
 PVT sections untouched.
@@ -116,6 +117,63 @@ def _write_array(path: Path, typecode: str, values: array) -> None:
         values.tofile(handle)
 
 
+_CELL_CORNERS = (
+    (0, 0, 0),
+    (1, 0, 0),
+    (1, 1, 0),
+    (0, 1, 0),
+    (0, 0, 1),
+    (1, 0, 1),
+    (1, 1, 1),
+    (0, 1, 1),
+)
+
+
+def _corner_lattice_index(
+    cell_id: int,
+    ncol: int,
+    nrow: int,
+    delta: tuple[int, int, int],
+) -> int:
+    """Return the I-fast index into one CMG ``CORNERS`` coordinate block."""
+    i = cell_id % ncol
+    j = (cell_id // ncol) % nrow
+    k = cell_id // (ncol * nrow)
+    di, dj, dk = delta
+    corner_i = 2 * i + di
+    corner_j = 2 * j + dj
+    corner_k = 2 * k + dk
+    return corner_i + 2 * ncol * (corner_j + 2 * nrow * corner_k)
+
+
+def _cell_corner_points(
+    corner_values: array,
+    cell_id: int,
+    ncol: int,
+    nrow: int,
+    nlay: int,
+) -> tuple[tuple[float, float, float], ...]:
+    """Decode the eight vertices of one CMG corner-point cell.
+
+    CMG serializes the X, Y and Z coordinates as three blocks, each covering
+    the complete refined corner lattice.  Treating those blocks as eight
+    per-corner cell arrays connects unrelated grid locations and can collapse
+    cells into large diagonal sheets.
+    """
+    n_total = ncol * nrow * nlay
+    points = []
+    for delta in _CELL_CORNERS:
+        lattice_index = _corner_lattice_index(cell_id, ncol, nrow, delta)
+        points.append(
+            (
+                corner_values[lattice_index],
+                corner_values[8 * n_total + lattice_index],
+                corner_values[16 * n_total + lattice_index],
+            ),
+        )
+    return tuple(points)
+
+
 def _scan_deck_metadata(path: Path) -> dict[str, Any]:
     """Collect schedule/well metadata without pretending deck dates are results."""
     simulator = "GEM"
@@ -194,8 +252,8 @@ class CmgReader(BaseReader):
         ncol, nrow, nlay = _find_grid_dimensions(source_path)
         n_total = ncol * nrow * nlay
 
-        # CMG CORNERS is component-major: eight X arrays, eight Y arrays,
-        # then eight Z arrays, each with n_total entries.
+        # CMG CORNERS is three component blocks over an I-fast refined corner
+        # lattice with dimensions (2*ncol, 2*nrow, 2*nlay).
         corner_values = _read_keyword_values(source_path, "CORNERS", 24 * n_total)
         null_values = _read_keyword_values(source_path, "NULL", n_total)
         active_mask = [value != 0.0 for value in null_values]
@@ -204,10 +262,13 @@ class CmgReader(BaseReader):
         positions = array("f")
         # Corner order matches the existing viewer/Eclipse reader faces.
         for cell_id in active_ids:
-            for corner in range(8):
-                x = corner_values[corner * n_total + cell_id]
-                y = corner_values[(8 + corner) * n_total + cell_id]
-                z = corner_values[(16 + corner) * n_total + cell_id]
+            for x, y, z in _cell_corner_points(
+                corner_values,
+                cell_id,
+                ncol,
+                nrow,
+                nlay,
+            ):
                 positions.extend((float(x), float(y), float(-z)))
 
         n_active = len(active_ids)

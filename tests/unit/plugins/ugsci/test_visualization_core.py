@@ -6,6 +6,7 @@ import json
 import sys
 import asyncio
 import struct
+from array import array
 from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -288,36 +289,13 @@ def test_las_reader_converts_fixture(tmp_path):
 def test_cmg_reader_parses_component_major_grid_and_repeat_values(tmp_path):
     from ugsci_visualization_test_plugin.backend.readers.cmg import CmgReader
 
-    # 2x1x1 fixture: eight X, eight Y and eight Z component arrays.  The
-    # second cell is NULL and must not be emitted into the active mesh.
-    components = [
-        [0.0, 10.0],
-        [1.0, 11.0],
-        [1.0, 11.0],
-        [0.0, 10.0],
-        [0.0, 10.0],
-        [1.0, 11.0],
-        [1.0, 11.0],
-        [0.0, 10.0],
-        [0.0, 10.0],
-        [0.0, 10.0],
-        [0.0, 10.0],
-        [0.0, 10.0],
-        [1.0, 11.0],
-        [1.0, 11.0],
-        [1.0, 11.0],
-        [1.0, 11.0],
-        [100.0, 200.0],
-        [100.0, 200.0],
-        [100.0, 200.0],
-        [100.0, 200.0],
-        [110.0, 210.0],
-        [110.0, 210.0],
-        [110.0, 210.0],
-        [110.0, 210.0],
-    ]
+    # 2x1x1 fixture: X, Y and Z blocks over the refined (4x2x2) corner
+    # lattice. The second cell is NULL and must not be emitted.
+    x_values = [0.0, 1.0, 1.0, 2.0] * 4
+    y_values = [0.0] * 8 + [1.0] * 8
+    z_values = [100.0] * 8 + [110.0] * 8
     lines = ["RESULTS SIMULATOR GEM 2024", "GRID CORNER 2 1 1", "CORNERS"]
-    for values in components:
+    for values in (x_values, y_values, z_values):
         lines.append(" ".join(str(value) for value in values))
     lines += [
         "NULL ALL",
@@ -353,6 +331,81 @@ def test_cmg_reader_parses_component_major_grid_and_repeat_values(tmp_path):
         tmp_path / result["files"]["positions"]
     ).stat().st_size == 8 * 3 * 4
     assert (tmp_path / result["files"]["indices"]).stat().st_size == 36 * 4
+
+    positions = array("f")
+    with (tmp_path / result["files"]["positions"]).open("rb") as handle:
+        positions.fromfile(handle, 8 * 3)
+    xs = positions[0::3]
+    ys = positions[1::3]
+    zs = positions[2::3]
+    assert max(xs) - min(xs) == pytest.approx(1.0)
+    assert max(ys) - min(ys) == pytest.approx(1.0)
+    assert max(zs) - min(zs) == pytest.approx(10.0)
+
+
+def test_cmg_reader_maps_refined_corner_lattice_to_hexahedral_cells(tmp_path):
+    from ugsci_visualization_test_plugin.backend.readers.cmg import CmgReader
+
+    # CMG stores CORNERS as three coordinate blocks over a refined
+    # (2 * NI, 2 * NJ, 2 * NK) lattice, with I varying fastest.  Adjacent
+    # cells have separate lattice points at their common face so faults can
+    # split them; this continuous fixture gives those points equal values.
+    ni, nj, nk = 2, 1, 1
+    x_nodes = (0.0, 10.0, 10.0, 20.0)
+    coordinates = [
+        coordinate
+        for axis in ("x", "y", "z")
+        for k in range(2 * nk)
+        for j in range(2 * nj)
+        for i in range(2 * ni)
+        for coordinate in (
+            x_nodes[i]
+            if axis == "x"
+            else (20.0 * j if axis == "y" else 100.0 + 5.0 * k),
+        )
+    ]
+    fixture = tmp_path / "refined-lattice.dat"
+    fixture.write_text(
+        "\n".join(
+            [
+                f"GRID CORNER {ni} {nj} {nk}",
+                "CORNERS",
+                " ".join(str(value) for value in coordinates),
+                "NULL ALL",
+                "2*1",
+                "END-GRID",
+            ],
+        ),
+        encoding="utf-8",
+    )
+
+    result = CmgReader().read(str(fixture), "refined", tmp_path)
+    positions_path = tmp_path / result["files"]["positions"]
+    positions = struct.unpack(
+        f"<{positions_path.stat().st_size // 4}f",
+        positions_path.read_bytes(),
+    )
+    cells = [
+        [
+            tuple(positions[offset : offset + 3])
+            for offset in range(start, start + 24, 3)
+        ]
+        for start in range(0, len(positions), 24)
+    ]
+
+    assert len(cells) == 2
+    for vertices in cells:
+        spans = [
+            max(vertex[axis] for vertex in vertices)
+            - min(vertex[axis] for vertex in vertices)
+            for axis in range(3)
+        ]
+        assert spans == pytest.approx([10.0, 20.0, 5.0])
+        assert len(set(vertices)) == 8
+
+    shared_face = set(cells[0]).intersection(cells[1])
+    assert len(shared_face) == 4
+    assert {vertex[0] for vertex in shared_face} == {10.0}
 
 
 def test_eclipse_and_tnavigator_format_routes(tmp_path):
