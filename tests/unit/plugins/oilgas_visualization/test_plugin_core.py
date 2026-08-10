@@ -342,7 +342,7 @@ def test_agent_report_can_be_saved_to_explicit_json_path(tmp_path):
     assert (
         saved["kind"] == "oilgas.report-file"
     ), f"Expected oilgas.report-file but got: {saved}"
-    payload = json.loads(target.read_text())
+    payload = json.loads(target.read_text(encoding="utf-8"))
     assert payload["dataset_id"] == "roff_eclgrid"
     assert payload["stats"]["count"] > 0
 
@@ -439,3 +439,55 @@ def test_vtk_reader_supports_vtu_surface_and_cell_data(tmp_path):
     assert result["n_vertices"] == 3
     assert result["n_cells"] == 1
     assert "pressure" in result["files"]["scalars"]
+
+
+def test_agent_tools_reject_invalid_scene_arguments():
+    from oilgas_visualization_test_plugin.backend.tools import (
+        create_intersection,
+        filter_visualization,
+        set_visualization_timestep,
+    )
+
+    assert asyncio.run(set_visualization_timestep(-1))["kind"] == "error"
+    assert (
+        asyncio.run(
+            create_intersection("grid", [0, 1], [0], 0, 10),
+        )["kind"]
+        == "error"
+    )
+    assert (
+        asyncio.run(
+            filter_visualization(property_min=0.9, property_max=0.1),
+        )["kind"]
+        == "error"
+    )
+
+
+def test_cancelled_import_does_not_start_after_queue_race(
+    monkeypatch,
+    tmp_path,
+):
+    from oilgas_visualization_test_plugin.backend.jobs import (
+        manager as jobs_manager_module,
+    )
+
+    class DeferredExecutor:
+        def __init__(self):
+            self.callback = None
+
+        def submit(self, callback):
+            self.callback = callback
+
+    deferred = DeferredExecutor()
+    monkeypatch.setattr(jobs_manager_module, "_executor", deferred)
+    manager = jobs_manager_module.JobManager()
+    job = manager.submit_import(
+        "cancel-me",
+        tmp_path / "missing.roff",
+        None,
+        tmp_path,
+    )
+    assert manager.cancel_job(job.job_id) is True
+    assert deferred.callback is not None
+    deferred.callback()
+    assert job.status == "cancelled"
