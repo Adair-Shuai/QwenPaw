@@ -612,11 +612,25 @@ class ThreeViewerEngine {
   }
 
   private fitView() {
-    if (!this.geometry?.boundingSphere) return;
-    const bbox = this.geometry.boundingSphere;
-    const radius = Math.max(bbox.radius, 1);
-    this.controls.target.copy(bbox.center);
-    this.camera.position.set(bbox.center.x + radius * 1.5, bbox.center.y + radius * 1.5, bbox.center.z + radius * 1.5);
+    if (!this.geometry) return;
+    this.geometry.computeBoundingBox();
+    const box = this.geometry.boundingBox;
+    if (!box) return;
+    this.frameBox(box);
+  }
+
+  private frameBox(box: THREE.Box3) {
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const direction = new THREE.Vector3(1, 1, 0.8).normalize();
+    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
+    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * this.camera.aspect);
+    const distanceForWidth = (size.x + size.y) * 0.5 / Math.tan(horizontalFov / 2);
+    const distanceForHeight = (size.z + 0.45 * (size.x + size.y)) * 0.5
+      / Math.tan(verticalFov / 2);
+    const distance = Math.max(distanceForWidth, distanceForHeight, 1) * 1.15;
+    this.controls.target.copy(center);
+    this.camera.position.copy(center).addScaledVector(direction, distance);
     this.controls.update();
   }
 
@@ -1247,6 +1261,7 @@ class ThreeViewerEngine {
       ? this.lineRenderIndices(ds, indices, localPositions.length / 3)
       : indices;
     nextGeometry.setIndex(new THREE.BufferAttribute(renderIndices, 1));
+    nextGeometry.computeBoundingBox();
     nextGeometry.computeBoundingSphere();
     if (!isLineDataset) nextGeometry.computeVertexNormals();
 
@@ -1321,12 +1336,7 @@ class ThreeViewerEngine {
     this.camera.far = Math.max(radius * 20, 20_000);
     this.camera.updateProjectionMatrix();
     this.scene.fog = new THREE.Fog(0x0d1117, radius * 4, radius * 10);
-    this.controls.target.copy(bbox.center);
-    this.camera.position.set(
-      bbox.center.x + radius * 1.5,
-      bbox.center.y + radius * 1.5,
-      bbox.center.z + radius * 1.5,
-    );
+    if (this.geometry.boundingBox) this.frameBox(this.geometry.boundingBox);
     this.controls.minDistance = radius * 0.01;
     this.controls.maxDistance = radius * 20;
     this.controls.update();
