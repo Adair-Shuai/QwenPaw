@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>架构设计 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.6.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class="">UGSci 文档</a><a href="user-manual.html" class="">零基础使用手册（推荐）</a><a href="user-guide.html" class="">使用指南</a><a href="architecture.html" class="active">架构设计</a><a href="frontend.html" class="">前端开发指南</a><a href="backend.html" class="">后端开发指南</a><a href="skills.html" class="">技能列表</a><a href="software-detection.html" class="">本地软件检测</a><a href="expert-teams.html" class="">专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">架构设计</h1>
+<h2 id="_2">总体架构</h2>
+<p>UGSci 是一个 QwenPaw 插件，由前端（TypeScript/React）和后端（Python/FastAPI）两部分组成，通过 QwenPaw 插件 API 进行注册和通信。</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>┌─────────────────────────────────────────────────────────┐
+│                    QwenPaw 主应用                         │
+│                                                          │
+│  ┌──────────────┐     ┌───────────────────────────────┐ │
+│  │  前端 Console  │     │      后端 FastAPI              │ │
+│  │  (React)      │     │                                │ │
+│  │               │     │  ┌──────────────────────────┐  │ │
+│  │  ┌─────────┐  │     │  │  UGSci Backend           │  │ │
+│  │  │ UGSci   │  │     │  │  (plugin.py)             │  │ │
+│  │  │ Frontend│  │     │  │                          │  │ │
+│  │  │ (index  │  │     │  │  · 技能池同步钩子          │  │ │
+│  │  │  .js)   │  │     │  │  · 软件检测 HTTP 路由      │  │ │
+│  │  └────┬────┘  │     │  │  · 卸载清理钩子            │  │ │
+│  │       │       │     │  └──────────────────────────┘  │ │
+│  │       │       │     │                                │ │
+│  │  ┌────▼────┐  │     │  ┌──────────────────────────┐  │ │
+│  │  │ QwenPaw│  │     │  │  QwenPaw Core API         │  │ │
+│  │  │ Plugin │  │     │  │  · /agents                │  │ │
+│  │  │ API    │  │     │  │  · /skills                │  │ │
+│  │  │(window.│◄─┼─────┼──│  · /mcp                   │  │ │
+│  │  │ QwenPaw│  │ HTTP│  │  · /market/*               │  │ │
+│  │  │ )      │  │ 请求 │  │  · /console/chat          │  │ │
+│  │  └─────────┘  │     │  └──────────────────────────┘  │ │
+│  └──────────────┘     └───────────────────────────────┘ │
+└─────────────────────────────────────────────────────────┘
+</code></pre></div>
+
+<h2 id="_3">前端架构</h2>
+<h3 id="_4">注册机制</h3>
+<p>前端通过 <code>window.QwenPaw</code> 全局对象与宿主通信，核心 API：</p>
+<table>
+<thead>
+<tr>
+<th>API</th>
+<th>用途</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>QP.route.add(pluginId, config)</code></td>
+<td>注册前端路由</td>
+</tr>
+<tr>
+<td><code>QP.menu.add(pluginId, config)</code></td>
+<td>注册侧边栏菜单项</td>
+</tr>
+<tr>
+<td><code>QP.menu.replace(pluginId, itemId, config)</code></td>
+<td>替换（隐藏）已有菜单项</td>
+</tr>
+<tr>
+<td><code>QP.menu.snapshot(location)</code></td>
+<td>获取某个 location 下的菜单快照</td>
+</tr>
+<tr>
+<td><code>QP.sidebar.registerSimpleModeItems(ids)</code></td>
+<td>注册 Simple Mode 可见项</td>
+</tr>
+<tr>
+<td><code>host.React</code> / <code>host.antd</code> / <code>host.antdIcons</code></td>
+<td>宿主提供的 React 和 Ant Design</td>
+</tr>
+<tr>
+<td><code>host.getApiUrl(path)</code> / <code>host.getApiToken()</code></td>
+<td>API 地址和认证令牌</td>
+</tr>
+<tr>
+<td><code>host.setSelectedAgent(agentId)</code></td>
+<td>设置当前选中的 Agent</td>
+</tr>
+<tr>
+<td><code>host.ReactMarkdown</code> / <code>host.remarkGfm</code></td>
+<td>Markdown 渲染</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_5">启动流程</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>浏览器加载 index.js (ES module)
+        │
+        ▼
+检测 window.QwenPaw.host 是否可用
+        │
+   ┌────┴────┐
+   │ 可用     │ 不可用 → 每 200ms 轮询，10s 后超时
+   └────┬────┘
+        │
+        ▼
+  tryBuildPlugin()
+        │
+        ▼
+  buildPlugin() ─── 注册 4 条路由 + 4 个菜单项
+        │            注册 Simple Mode 白名单
+        │            隐藏 7 个内置菜单项（仅 Simple Mode）
+        │
+        ▼
+  注册完成，页面可用
+</code></pre></div>
+
+<h3 id="_6">路由与菜单注册</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #7F848E">// 路由注册示例</span>
+<span style="color: #E06C75">QP</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">route</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">add</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">PLUGIN_ID</span><span style="color: #ABB2BF">, {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;ugsci.experts&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">path</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;/ugsci-experts&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">component</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">ExpertCenterPage</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">});</span>
+
+<span style="color: #7F848E">// 菜单注册示例</span>
+<span style="color: #E06C75">QP</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">menu</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">add</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">PLUGIN_ID</span><span style="color: #ABB2BF">, {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;ugsci.experts&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">location</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;primary.agentScoped&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">label</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> () =&gt; </span><span style="color: #98C379">&quot;专家中心&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">icon</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">React.createElement</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;span&quot;</span><span style="color: #ABB2BF">, { </span><span style="color: #E06C75">style</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> { </span><span style="color: #E06C75">fontSize</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">16</span><span style="color: #ABB2BF"> } }, </span><span style="color: #98C379">&quot;🧑‍🔬&quot;</span><span style="color: #ABB2BF">),</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">route</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;ugsci.experts&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">order</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">5</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">visible</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> () =&gt; </span><span style="color: #E06C75">isSimpleMode</span><span style="color: #ABB2BF">(),</span>
+<span style="color: #ABB2BF">});</span>
+</code></pre></div>
+
+<h3 id="simple-mode-vs-full-mode">Simple Mode vs Full Mode</h3>
+<p>插件通过 <code>localStorage.getItem("qwenpaw_sidebar_mode")</code> 判断当前模式：</p>
+<ul>
+<li><strong>Simple Mode</strong> (<code>simple</code>)：显示 UGSci 的“专家·协作 / 工具·技能 / 市场”入口，隐藏已被统一入口覆盖的内置菜单项</li>
+<li><strong>Full Mode</strong>（其他值）：所有内置菜单项保持可见，UGSci 模块菜单隐藏</li>
+</ul>
+<h3 id="_7">数据流</h3>
+<h4 id="_8">专家中心数据流</h4>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>ExpertCenterPage
+  │
+  ├── fetchAgents()             → GET /api/agents
+  │
+  └── for each agent (并行):
+        ├── fetchAgentConfig()     → GET /api/agents/{id}
+        ├── fetchAgentSkills()     → GET /api/skills (X-Agent-Id)
+        └── fetchAgentMCPClients() → GET /api/mcp (X-Agent-Id)
+</code></pre></div>
+
+<h4 id="_9">技能中心数据流</h4>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>SkillCenterPage
+  │
+  ├── fetchPoolSkills()       → GET /api/skills/pool
+  ├── fetchAgents()           → GET /api/agents
+  └── fetchWorkspaceSkills()  → GET /api/skills/workspaces
+        │
+        └── computeInstalledAgents(skillName)
+              └── 遍历 workspaceSkills，找出安装了该技能的 Agent
+</code></pre></div>
+
+<h4 id="_10">仿真引擎数据流</h4>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>ToolsSkillsCenterPage → EngineSection
+  │
+  ├── fetchEngines()            → GET  /api/ugsci/engines/list
+  ├── detectEngines()           → POST /api/ugsci/engines/detect/refresh
+  ├── addEngine(data)           → POST /api/ugsci/engines/
+  ├── updateEngine(id, data)    → PUT  /api/ugsci/engines/{id}
+  └── deleteEngine(id)          → DELETE /api/ugsci/engines/{id}
+</code></pre></div>
+
+<h2 id="_11">后端架构</h2>
+<h3 id="_12">插件生命周期</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>QwenPaw 启动
+    │
+    ├── 加载插件 → UGSciPlugin.register(api)
+    │
+    ├── register_startup_hook(&quot;ugsci_sync_skills_to_pool&quot;, priority=80)
+    │       │
+    │       └── _on_startup_sync_skills()
+    │             └── skill_pool.sync_plugin_skills_to_pool()
+    │                   ├── 扫描 skills/ 目录
+    │                   ├── 复制到共享技能池
+    │                   ├── 注册 manifest 条目 (installed_from: &quot;plugin:ugsci&quot;)
+    │                   └── reconcile_pool_manifest()
+    │
+    ├── register_startup_hook(&quot;ugsci_init&quot;, priority=50)
+    │       └── _on_startup()  # 日志记录
+    │
+    ├── register_uninstall_hook(&quot;ugsci_remove_pool_skills&quot;)
+    │       └── _on_uninstall_remove_skills()
+    │             └── skill_pool.remove_plugin_pool_skills()
+    │                   ├── 查找 installed_from == &quot;plugin:ugsci&quot; 的技能
+    │                   ├── 从 manifest 移除
+    │                   ├── 删除技能目录
+    │                   └── reconcile_pool_manifest()
+    │
+    ├── register_http_router(engine.api, prefix=&quot;/ugsci/engines&quot;)
+    ├── register_http_router(avatar, prefix=&quot;/ugsci/avatar&quot;)
+    ├── register_http_router(sim_api, prefix=&quot;/ugsci/sim&quot;)
+    └── register_http_router(team.api, prefix=&quot;/ugsci/team&quot;)
+</code></pre></div>
+
+<h3 id="_13">技能池同步设计</h3>
+<p>插件将技能同步到 <strong>共享技能池</strong>（skill pool），而非各 Agent 的 workspace，原因：</p>
+<ol>
+<li><strong>不自动注入</strong> — 技能进入池后不会自动安装到任何 Agent，用户按需下载</li>
+<li><strong>全局可见</strong> — 所有 Agent 都能看到这些技能并选择安装</li>
+<li><strong>可追溯</strong> — 通过 <code>installed_from: "plugin:ugsci"</code> 标记来源，卸载时可精确清理</li>
+</ol>
+<h3 id="http">HTTP 路由设计</h3>
+<p>软件检测路由使用 <strong>进程内缓存</strong>（<code>_cached_result</code> dict），避免重复扫描文件系统。缓存策略：</p>
+<table>
+<thead>
+<tr>
+<th>端点</th>
+<th>缓存行为</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>GET /detect</code></td>
+<td>强制重新扫描，更新缓存</td>
+</tr>
+<tr>
+<td><code>GET /list</code></td>
+<td>返回缓存；无缓存则自动触发首次扫描</td>
+</tr>
+<tr>
+<td><code>POST /scan-path</code></td>
+<td>添加路径后重新扫描，更新缓存</td>
+</tr>
+<tr>
+<td><code>GET /summary</code></td>
+<td>基于缓存数据生成摘要</td>
+</tr>
+<tr>
+<td><code>GET /known</code></td>
+<td>无缓存，直接返回静态目录</td>
+</tr>
+</tbody>
+</table>
+<h2 id="_14">构建系统</h2>
+<h3 id="vite">Vite 配置</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #7F848E">// vite.config.ts</span>
+<span style="color: #C678DD">export</span><span style="color: #ABB2BF"> </span><span style="color: #C678DD">default</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">defineConfig</span><span style="color: #ABB2BF">({</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">define</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;process.env.NODE_ENV&quot;</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">JSON</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">stringify</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;production&quot;</span><span style="color: #ABB2BF">),</span>
+<span style="color: #ABB2BF">  },</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">build</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">lib</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">entry</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;src/index.ts&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">formats</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> [</span><span style="color: #98C379">&quot;es&quot;</span><span style="color: #ABB2BF">],        </span><span style="color: #7F848E">// ES module</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">fileName</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> () =&gt; </span><span style="color: #98C379">&quot;index.js&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">    },</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">rollupOptions</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">external</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> [</span><span style="color: #98C379">&quot;react&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;react-dom&quot;</span><span style="color: #ABB2BF">],  </span><span style="color: #7F848E">// 运行时由宿主提供</span>
+<span style="color: #ABB2BF">    },</span>
+<span style="color: #ABB2BF">  },</span>
+<span style="color: #ABB2BF">});</span>
+</code></pre></div>
+
+<ul>
+<li><strong>输出格式</strong>：ES module（<code>ui/dist/index.js</code>）</li>
+<li><strong>React 外部化</strong>：<code>react</code> 和 <code>react-dom</code> 不打包，运行时由 QwenPaw 宿主通过 <code>window.QwenPaw.host.React</code> 提供</li>
+<li><strong>无 CSS 提取</strong>：样式内联在 JS 中，使用宿主的 Ant Design 组件库</li>
+</ul>
+</div>
+</body>
+</html>

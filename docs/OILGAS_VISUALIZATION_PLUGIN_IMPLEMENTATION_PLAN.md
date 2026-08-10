@@ -1,5 +1,10 @@
 # QwenPaw 油气三维可视化插件：完整实施方案
 
+> 历史文档：可视化能力已在 2026-08-10 完整迁入 UGSci，独立
+> `oilgas-visualization` 插件不再作为当前架构或发布单元。当前实现位于
+> `plugins/bundle/ugsci/visualization`、`ugsci/file_artifacts` 和
+> `ugsci/ui/src/visualization`。
+
 > 文档状态：可执行设计稿
 > 编写日期：2026-08-09
 > 目标读者：负责实现、测试、集成和性能验证的开发 Agent

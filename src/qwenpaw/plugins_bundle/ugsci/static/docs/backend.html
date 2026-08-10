@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>后端开发指南 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.6.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class="">UGSci 文档</a><a href="user-manual.html" class="">零基础使用手册（推荐）</a><a href="user-guide.html" class="">使用指南</a><a href="architecture.html" class="">架构设计</a><a href="frontend.html" class="">前端开发指南</a><a href="backend.html" class="active">后端开发指南</a><a href="skills.html" class="">技能列表</a><a href="software-detection.html" class="">本地软件检测</a><a href="expert-teams.html" class="">专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">后端开发指南</h1>
+<h2 id="_2">概述</h2>
+<p>UGSci 后端按入口、领域服务、引擎和专家团边界组织：</p>
+<table>
+<thead>
+<tr>
+<th>文件</th>
+<th>职责</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>plugin.py</code></td>
+<td>轻量插件入口：只编排生命周期、路由、模式和工具注册</td>
+</tr>
+<tr>
+<td><code>skill_pool.py</code></td>
+<td>技能池同步与卸载清理</td>
+</tr>
+<tr>
+<td><code>avatar.py</code></td>
+<td>头像获取、缓存、团队合成与 HTTP 路由</td>
+</tr>
+<tr>
+<td><code>sim_api.py</code></td>
+<td>仿真任务列表与 SSE 状态流</td>
+</tr>
+<tr>
+<td><code>engine/api.py</code></td>
+<td>引擎管理 HTTP API 与检测缓存</td>
+</tr>
+<tr>
+<td><code>engine/</code></td>
+<td>本地仿真软件检测、配置管理和运行工具</td>
+</tr>
+<tr>
+<td><code>team/</code></td>
+<td>OMP 专家团状态机、状态 API、角色和预设团队</td>
+</tr>
+</tbody>
+</table>
+<p>后端通过 QwenPaw 的 PluginApi 注册自身能力。入口不再保存各领域<br />
+实现细节，路由可以被单独导入和测试，同时保留旧私有工厂名作为兼容层。</p>
+<h2 id="_3">插件入口</h2>
+<h3 id="ugsciplugin">UGSciPlugin 类</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">class</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">UGSciPlugin</span><span style="color: #ABB2BF">:</span>
+<span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;&quot;&quot;UGSci plugin backend entry point.&quot;&quot;&quot;</span>
+
+    <span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">register</span><span style="color: #ABB2BF">(</span><span style="color: #E5C07B">self</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">api</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">:</span>
+        <span style="color: #7F848E"># 编排生命周期钩子、Team、领域路由和模拟工具</span>
+        <span style="color: #56B6C2">...</span>
+</code></pre></div>
+
+<p>模块底部需要暴露 <code>plugin</code> 对象：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #7F848E"># Module-level plugin object — required by the QwenPaw plugin loader.</span>
+<span style="color: #E06C75">plugin</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">UGSciPlugin</span><span style="color: #ABB2BF">()</span>
+</code></pre></div>
+
+<h3 id="register">register() 方法</h3>
+<p><code>register()</code> 在插件加载时被调用，通过 PluginApi 注册以下内容：</p>
+<table>
+<thead>
+<tr>
+<th>注册项</th>
+<th>钩子名</th>
+<th>优先级</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>register_startup_hook</code></td>
+<td><code>ugsci_sync_skills_to_pool</code></td>
+<td>80</td>
+<td>同步技能到技能池</td>
+</tr>
+<tr>
+<td><code>register_startup_hook</code></td>
+<td><code>ugsci_init</code></td>
+<td>50</td>
+<td>初始化日志</td>
+</tr>
+<tr>
+<td><code>register_uninstall_hook</code></td>
+<td><code>ugsci_remove_pool_skills</code></td>
+<td>—</td>
+<td>卸载时清理技能</td>
+</tr>
+<tr>
+<td><code>register_http_router</code></td>
+<td>—</td>
+<td>—</td>
+<td>注册软件检测路由</td>
+</tr>
+</tbody>
+</table>
+<p>所有注册都包裹在 <code>try/except</code> 中，即使某个注册失败也不影响其他功能。</p>
+<h2 id="_4">技能池同步</h2>
+<h3 id="_5">同步流程</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>_on_startup_sync_skills()
+    │
+    ├── 检查 skills/ 目录是否存在
+    │
+    └── _sync_plugin_skills_to_pool(plugin_id, skills_dir)
+          │
+          ├── ensure_skill_pool_initialized()
+          │   └── 确保技能池已初始化
+          │
+          ├── 扫描 skills/ 目录下所有含 SKILL.md 的子目录
+          │
+          └── for each skill:
+                ├── safe_skill_dir(pool_dir, skill_name)  # 防路径穿越
+                ├── 如果已存在则先删除 (rmtree)
+                ├── copy_skill_dir(src, dst)               # 复制技能文件
+                │
+                └── mutate_json(manifest_path, default, update_fn)
+                      └── _register_pool_skill_entry(
+                            payload, name, dir,
+                            source=&quot;customized&quot;,
+                            installed_from=&quot;plugin:ugsci&quot;
+                          )
+                │
+          └── reconcile_pool_manifest()  # 最终一致性检查
+</code></pre></div>
+
+<h3 id="_6">关键设计</h3>
+<p><strong><code>installed_from</code> 标记</strong>：每个同步的技能在 manifest 中标记 <code>installed_from: "plugin:ugsci"</code>，用于卸载时精确识别和清理。</p>
+<p><strong>源码为 <code>customized</code></strong>：技能的 <code>source</code> 设为 <code>"customized"</code>，表示是用户可编辑的自定义技能，而非只读的系统技能。</p>
+<p><strong>绝对导入</strong>：插件被加载为顶层模块（<code>plugin_ugsci</code>），因此所有 import 使用绝对路径：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">from</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">qwenpaw.agents.skill_system.store</span><span style="color: #ABB2BF"> </span><span style="color: #C678DD">import</span> <span style="color: #E06C75">copy_skill_dir</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">get_skill_pool_dir</span>
+</code></pre></div>
+
+<h3 id="_7">卸载清理</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">_remove_plugin_pool_skills</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">plugin_id</span><span style="color: #ABB2BF">:</span> <span style="color: #E5C07B">str</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">int</span><span style="color: #ABB2BF">:</span>
+    <span style="color: #E06C75">source_tag</span> <span style="color: #56B6C2">=</span> <span style="color: #98C379">f&quot;plugin:{</span><span style="color: #E06C75">plugin_id</span><span style="color: #98C379">}&quot;</span>
+    <span style="color: #E06C75">manifest</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">read_skill_pool_manifest</span><span style="color: #ABB2BF">()</span>
+    <span style="color: #E06C75">to_remove</span> <span style="color: #56B6C2">=</span> <span style="color: #ABB2BF">[</span>
+        <span style="color: #E06C75">name</span> <span style="color: #C678DD">for</span> <span style="color: #E06C75">name</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">entry</span> <span style="color: #56B6C2">in</span> <span style="color: #E06C75">manifest</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">get</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;skills&quot;</span><span style="color: #ABB2BF">,</span> <span style="color: #ABB2BF">{})</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">items</span><span style="color: #ABB2BF">()</span>
+        <span style="color: #C678DD">if</span> <span style="color: #E06C75">entry</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">get</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;installed_from&quot;</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">==</span> <span style="color: #E06C75">source_tag</span>
+    <span style="color: #ABB2BF">]</span>
+    <span style="color: #7F848E"># 从 manifest 移除 + 删除技能目录 + reconcile</span>
+</code></pre></div>
+
+<p>卸载时只移除 <code>installed_from</code> 匹配的技能，不影响用户手动安装的其他技能。</p>
+<h2 id="http-api">HTTP API 详解</h2>
+<h3 id="_8">路由注册</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E06C75">api</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">register_http_router</span><span style="color: #ABB2BF">(</span>
+    <span style="color: #E06C75">_build_software_router</span><span style="color: #ABB2BF">(),</span>
+    <span style="color: #E06C75">prefix</span><span style="color: #56B6C2">=</span><span style="color: #98C379">&quot;/ugsci/software&quot;</span><span style="color: #ABB2BF">,</span>
+    <span style="color: #E06C75">tags</span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF">[</span><span style="color: #98C379">&quot;ugsci-software&quot;</span><span style="color: #ABB2BF">],</span>
+<span style="color: #ABB2BF">)</span>
+</code></pre></div>
+
+<p>注册后所有端点路径为 <code>/api/ugsci/software/*</code>。</p>
+<h3 id="_9">端点详情</h3>
+<h4 id="get-detect">GET /detect</h4>
+<p>触发一次完整的软件检测扫描并返回结果。</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #61AFEF">@router</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">get</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;/detect&quot;</span><span style="color: #ABB2BF">)</span>
+<span style="color: #C678DD">async</span> <span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">detect_software_endpoint</span><span style="color: #ABB2BF">()</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E06C75">Dict</span><span style="color: #ABB2BF">[</span><span style="color: #E5C07B">str</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">Any</span><span style="color: #ABB2BF">]:</span>
+    <span style="color: #E06C75">custom_paths</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">_cached_result</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">get</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;custom_paths&quot;</span><span style="color: #ABB2BF">,</span> <span style="color: #ABB2BF">[])</span>
+    <span style="color: #E06C75">result</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">detect_software</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">custom_paths</span><span style="color: #56B6C2">=</span><span style="color: #E06C75">custom_paths</span><span style="color: #ABB2BF">)</span>
+    <span style="color: #E06C75">data</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">to_dict</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">result</span><span style="color: #ABB2BF">)</span>
+    <span style="color: #E06C75">_cached_result</span><span style="color: #ABB2BF">[</span><span style="color: #98C379">&quot;data&quot;</span><span style="color: #ABB2BF">]</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">data</span>  <span style="color: #7F848E"># 更新缓存</span>
+    <span style="color: #C678DD">return</span> <span style="color: #E06C75">data</span>
+</code></pre></div>
+
+<p><strong>响应示例</strong>：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF">{</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">&quot;platform&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;Windows&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">&quot;software_list&quot;</span><span style="color: #ABB2BF">: [</span>
+<span style="color: #ABB2BF">    {</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;id&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;cmg_imex&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;name&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;CMG IMEX&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;category&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;reservoir_simulation&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;vendor&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;CMG&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;version&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;2024.1&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;executable_path&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;C:\\Program Files\\CMG\\bin\\imex.exe&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;install_dir&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;C:\\Program Files\\CMG&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;status&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;found&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;description&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;CMG IMEX — black oil reservoir simulator&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;invocation_hint&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;IMEX is a black-oil simulator. Run: &lt;imex_path&gt; -f &lt;model.dat&gt; -o &lt;output.out&gt;&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">      </span><span style="color: #E06C75">&quot;extra_paths&quot;</span><span style="color: #ABB2BF">: []</span>
+<span style="color: #ABB2BF">    }</span>
+<span style="color: #ABB2BF">  ],</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">&quot;custom_scan_paths&quot;</span><span style="color: #ABB2BF">: [],</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">&quot;summary&quot;</span><span style="color: #ABB2BF">: </span><span style="color: #98C379">&quot;Found 1/12 software | reservoir_simulation: CMG IMEX&quot;</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<h4 id="get-list">GET /list</h4>
+<p>返回缓存的检测结果。如果从未扫描过，自动触发首次扫描。</p>
+<h4 id="post-scan-path">POST /scan-path</h4>
+<p>添加自定义扫描目录并重新扫描。</p>
+<p><strong>请求体</strong>：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF">{</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">&quot;paths&quot;</span><span style="color: #ABB2BF">: [</span><span style="color: #98C379">&quot;D:\\Software\\CMG&quot;</span><span style="color: #ABB2BF">, </span><span style="color: #98C379">&quot;E:\\Tools\\Schlumberger&quot;</span><span style="color: #ABB2BF">]</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<p>自定义路径会追加到 <code>_cached_result["custom_paths"]</code>，后续所有扫描都会包含这些路径。</p>
+<h4 id="get-summary">GET /summary</h4>
+<p>返回简洁的 Markdown 文本摘要，用于 Agent 系统提示词注入：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF; font-weight: bold">## Local Software Detected (Windows)</span>
+
+The following oil &amp; gas simulation software is installed on this host:
+
+<span style="color: #ABB2BF; font-weight: bold">### CMG IMEX (CMG)</span>
+<span style="color: #C678DD">-</span><span style="color: #ABB2BF"> </span><span style="color: #ABB2BF; font-weight: bold">**Version**</span>: 2024.1
+<span style="color: #C678DD">-</span><span style="color: #ABB2BF"> </span><span style="color: #ABB2BF; font-weight: bold">**Path**</span>: <span style="color: #98C379">`C:\Program Files\CMG\bin\imex.exe`</span>
+<span style="color: #C678DD">-</span><span style="color: #ABB2BF"> </span><span style="color: #ABB2BF; font-weight: bold">**Category**</span>: reservoir_simulation
+<span style="color: #C678DD">-</span><span style="color: #ABB2BF"> </span><span style="color: #ABB2BF; font-weight: bold">**Usage**</span>: IMEX is a black-oil simulator. Run: &lt;imex_path&gt; -f &lt;model.dat&gt; -o &lt;output.out&gt;
+
+Use the paths above to invoke the software from scripts or commands.
+Always verify the executable path before running.
+</code></pre></div>
+
+<h4 id="get-known">GET /known</h4>
+<p>返回已知软件目录（静态数据），供 UI 展示软件卡片网格。</p>
+<h3 id="_10">进程内缓存</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E06C75">_cached_result</span><span style="color: #ABB2BF">:</span> <span style="color: #E06C75">Dict</span><span style="color: #ABB2BF">[</span><span style="color: #E5C07B">str</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">Any</span><span style="color: #ABB2BF">]</span> <span style="color: #56B6C2">=</span> <span style="color: #ABB2BF">{</span><span style="color: #98C379">&quot;data&quot;</span><span style="color: #ABB2BF">:</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<p>缓存策略：</p>
+<ul>
+<li><code>detect</code> — 强制重新扫描，更新缓存</li>
+<li><code>list</code> — 返回缓存，无缓存则自动扫描</li>
+<li><code>scan-path</code> — 添加路径后重新扫描，更新缓存</li>
+<li><code>summary</code> — 基于缓存数据生成摘要</li>
+</ul>
+<blockquote>
+<p><strong>注意</strong>：缓存是进程级的，QwenPaw 重启后缓存失效。不支持多进程/多 worker 场景下的缓存共享。</p>
+</blockquote>
+<h2 id="_11">软件检测引擎</h2>
+<p>详细文档请参阅 <a href="./software-detection.md">软件检测</a>。</p>
+<h2 id="_12">扩展指南</h2>
+<h3 id="http">添加新的 HTTP 端点</h3>
+<ol>
+<li>在 <code>_build_software_router()</code> 内部添加新的路由函数</li>
+<li>使用 <code>from .software_detector import xxx</code> 导入需要的函数</li>
+<li>路由会自动挂载到 <code>/api/ugsci/software/*</code> 前缀下</li>
+</ol>
+<h3 id="_13">添加新的启动钩子</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">register</span><span style="color: #ABB2BF">(</span><span style="color: #E5C07B">self</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">api</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">:</span>
+    <span style="color: #C678DD">try</span><span style="color: #ABB2BF">:</span>
+        <span style="color: #E06C75">api</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">register_startup_hook</span><span style="color: #ABB2BF">(</span>
+            <span style="color: #E06C75">hook_name</span><span style="color: #56B6C2">=</span><span style="color: #98C379">&quot;ugsci_my_hook&quot;</span><span style="color: #ABB2BF">,</span>
+            <span style="color: #E06C75">callback</span><span style="color: #56B6C2">=</span><span style="color: #E5C07B">self</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">_my_startup_hook</span><span style="color: #ABB2BF">,</span>
+            <span style="color: #E06C75">priority</span><span style="color: #56B6C2">=</span><span style="color: #D19A66">60</span><span style="color: #ABB2BF">,</span>
+        <span style="color: #ABB2BF">)</span>
+    <span style="color: #C678DD">except</span> <span style="color: #E06C75">Exception</span><span style="color: #ABB2BF">:</span>
+        <span style="color: #C678DD">pass</span>
+
+<span style="color: #C678DD">async</span> <span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">_my_startup_hook</span><span style="color: #ABB2BF">(</span><span style="color: #E5C07B">self</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">:</span>
+<span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;&quot;&quot;启动时执行的逻辑。&quot;&quot;&quot;</span>
+    <span style="color: #7F848E"># 例如：初始化数据、连接外部服务等</span>
+    <span style="color: #C678DD">pass</span>
+</code></pre></div>
+
+<h3 id="_14">添加新的卸载钩子</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">register</span><span style="color: #ABB2BF">(</span><span style="color: #E5C07B">self</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">api</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">:</span>
+    <span style="color: #C678DD">try</span><span style="color: #ABB2BF">:</span>
+        <span style="color: #E06C75">api</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">register_uninstall_hook</span><span style="color: #ABB2BF">(</span>
+            <span style="color: #E06C75">hook_name</span><span style="color: #56B6C2">=</span><span style="color: #98C379">&quot;ugsci_my_cleanup&quot;</span><span style="color: #ABB2BF">,</span>
+            <span style="color: #E06C75">callback</span><span style="color: #56B6C2">=</span><span style="color: #E5C07B">self</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">_my_cleanup</span><span style="color: #ABB2BF">,</span>
+        <span style="color: #ABB2BF">)</span>
+    <span style="color: #C678DD">except</span> <span style="color: #E06C75">Exception</span><span style="color: #ABB2BF">:</span>
+        <span style="color: #C678DD">pass</span>
+
+<span style="color: #61AFEF">@staticmethod</span>
+<span style="color: #C678DD">def</span><span style="color: #ABB2BF"> </span><span style="color: #61AFEF; font-weight: bold">_my_cleanup</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">plugin_id</span><span style="color: #ABB2BF">:</span> <span style="color: #E5C07B">str</span><span style="color: #ABB2BF">,</span> <span style="color: #E06C75">delete_files</span><span style="color: #ABB2BF">:</span> <span style="color: #E5C07B">bool</span> <span style="color: #56B6C2">=</span> <span style="color: #E5C07B">False</span><span style="color: #ABB2BF">)</span> <span style="color: #56B6C2">-&gt;</span> <span style="color: #E5C07B">None</span><span style="color: #ABB2BF">:</span>
+<span style="color: #ABB2BF">    </span><span style="color: #98C379">&quot;&quot;&quot;卸载时执行的清理逻辑。&quot;&quot;&quot;</span>
+    <span style="color: #C678DD">pass</span>
+</code></pre></div>
+
+<h2 id="_15">日志</h2>
+<p>所有日志使用统一的 logger：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E06C75">logger</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">logging</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">getLogger</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;qwenpaw&quot;</span><span style="color: #ABB2BF">)</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">getChild</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;plugin.ugsci&quot;</span><span style="color: #ABB2BF">)</span>
+<span style="color: #7F848E"># 子模块：</span>
+<span style="color: #E06C75">logger</span> <span style="color: #56B6C2">=</span> <span style="color: #E06C75">logging</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">getLogger</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;qwenpaw&quot;</span><span style="color: #ABB2BF">)</span><span style="color: #56B6C2">.</span><span style="color: #E06C75">getChild</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;plugin.ugsci.detector&quot;</span><span style="color: #ABB2BF">)</span>
+</code></pre></div>
+
+<p>日志级别：</p>
+<ul>
+<li><code>INFO</code> — 正常操作（注册成功、同步完成）</li>
+<li><code>WARNING</code> — 检测中的错误（单个软件检测失败）</li>
+<li><code>ERROR</code> — 注册失败、同步失败等严重问题</li>
+</ul>
+</div>
+</body>
+</html>

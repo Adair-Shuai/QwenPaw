@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>前端开发指南 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.6.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class="">UGSci 文档</a><a href="user-manual.html" class="">零基础使用手册（推荐）</a><a href="user-guide.html" class="">使用指南</a><a href="architecture.html" class="">架构设计</a><a href="frontend.html" class="active">前端开发指南</a><a href="backend.html" class="">后端开发指南</a><a href="skills.html" class="">技能列表</a><a href="software-detection.html" class="">本地软件检测</a><a href="expert-teams.html" class="">专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">前端开发指南</h1>
+<h2 id="_2">开发环境</h2>
+<h3 id="_3">前置条件</h3>
+<ul>
+<li>Node.js ≥ 18</li>
+<li>npm 或其他包管理器</li>
+<li>QwenPaw 运行环境（用于调试）</li>
+</ul>
+<h3 id="_4">初始化</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #E5C07B">cd</span><span style="color: #ABB2BF"> </span>ui
+npm<span style="color: #ABB2BF"> </span>install
+</code></pre></div>
+
+<h3 id="_5">开发模式</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>npm<span style="color: #ABB2BF"> </span>run<span style="color: #ABB2BF"> </span>dev
+</code></pre></div>
+
+<p>Vite 以 <code>--watch</code> 模式运行，文件变更后自动重新构建到 <code>ui/dist/index.js</code>。在 QwenPaw 运行时刷新浏览器即可看到最新改动。</p>
+<h3 id="_6">生产构建</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>npm<span style="color: #ABB2BF"> </span>run<span style="color: #ABB2BF"> </span>build
+</code></pre></div>
+
+<p>产物为 <code>ui/dist/index.js</code>（ES module），体积约 6800+ 行（未压缩）。</p>
+<h2 id="_7">源码结构</h2>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>ui/
+├── src/
+│   └── index.ts          # 单文件入口，包含全部代码
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+└── dist/
+    └── index.js           # 构建产物
+</code></pre></div>
+
+<h3 id="_8">为什么是单文件？</h3>
+<p>UGSci 前端采用 <strong>单文件架构</strong>（<code>src/index.ts</code>），所有类型定义、API 调用、页面组件、注册逻辑都在一个文件中。原因：</p>
+<ol>
+<li><strong>插件沙箱</strong> — QwenPaw 插件前端作为 ES module 加载，单文件减少了模块解析开销</li>
+<li><strong>自包含</strong> — 不依赖额外的 chunk 或资源文件，部署简单</li>
+<li><strong>宿主共享</strong> — React/AntD 由宿主提供，无需打包</li>
+</ol>
+<h2 id="_9">核心概念</h2>
+<h3 id="api">宿主 API 获取</h3>
+<p>所有与 QwenPaw 宿主的交互都通过 <code>getHost()</code> 函数：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">function</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">getHost</span><span style="color: #ABB2BF">() {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">host</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> (</span><span style="color: #E5C07B">window</span><span style="color: #ABB2BF"> </span><span style="color: #C678DD">as</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">any</span><span style="color: #ABB2BF">).</span><span style="color: #E06C75">QwenPaw</span><span style="color: #56B6C2">?</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">host</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">if</span><span style="color: #ABB2BF"> (</span><span style="color: #56B6C2">!</span><span style="color: #E06C75">host</span><span style="color: #ABB2BF">) </span><span style="color: #C678DD">throw</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">new</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">Error</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;[ugsci] QwenPaw.host not available&quot;</span><span style="color: #ABB2BF">);</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">return</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">host</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<p>宿主提供的能力：</p>
+<table>
+<thead>
+<tr>
+<th>属性</th>
+<th>类型</th>
+<th>说明</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>React</code></td>
+<td><code>typeof React</code></td>
+<td>React 运行时</td>
+</tr>
+<tr>
+<td><code>antd</code></td>
+<td><code>any</code></td>
+<td>Ant Design 组件库</td>
+</tr>
+<tr>
+<td><code>antdIcons</code></td>
+<td><code>any</code></td>
+<td>Ant Design 图标库</td>
+</tr>
+<tr>
+<td><code>getApiUrl(path)</code></td>
+<td><code>function</code></td>
+<td>拼接完整 API URL</td>
+</tr>
+<tr>
+<td><code>getApiToken()</code></td>
+<td><code>function</code></td>
+<td>获取认证 token</td>
+</tr>
+<tr>
+<td><code>setSelectedAgent(id)</code></td>
+<td><code>function</code></td>
+<td>设置当前选中 Agent</td>
+</tr>
+<tr>
+<td><code>ReactMarkdown</code></td>
+<td><code>any</code></td>
+<td>Markdown 渲染器</td>
+</tr>
+<tr>
+<td><code>remarkGfm</code></td>
+<td><code>any</code></td>
+<td>GFM 插件</td>
+</tr>
+</tbody>
+</table>
+<h3 id="api_1">API 调用封装</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #7F848E">// 统一的 fetch 封装，自动注入认证头</span>
+<span style="color: #C678DD">async</span><span style="color: #ABB2BF"> </span><span style="color: #C678DD">function</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">apiFetch</span><span style="color: #56B6C2">&lt;</span><span style="color: #E06C75">T</span><span style="color: #56B6C2">&gt;</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">path</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">, </span><span style="color: #E06C75">opts?</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">RequestInit</span><span style="color: #ABB2BF">)</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">Promise</span><span style="color: #56B6C2">&lt;</span><span style="color: #E06C75">T</span><span style="color: #56B6C2">&gt;</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">const</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">resp</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">=</span><span style="color: #ABB2BF"> </span><span style="color: #C678DD">await</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">fetch</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">apiUrl</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">path</span><span style="color: #ABB2BF">), {</span>
+<span style="color: #ABB2BF">    ...</span><span style="color: #E06C75">opts</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">    </span><span style="color: #E06C75">headers</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> { ...</span><span style="color: #E06C75">authHeaders</span><span style="color: #ABB2BF">(), ...(</span><span style="color: #E06C75">opts</span><span style="color: #56B6C2">?</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">headers</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">||</span><span style="color: #ABB2BF"> {}) },</span>
+<span style="color: #ABB2BF">  });</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">if</span><span style="color: #ABB2BF"> (</span><span style="color: #56B6C2">!</span><span style="color: #E06C75">resp</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">ok</span><span style="color: #ABB2BF">) </span><span style="color: #C678DD">throw</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">new</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">Error</span><span style="color: #ABB2BF">(</span><span style="color: #E06C75">text</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">||</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">`HTTP ${</span><span style="color: #E06C75">resp</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">status</span><span style="color: #98C379">}`</span><span style="color: #ABB2BF">);</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">return</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">resp</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">json</span><span style="color: #ABB2BF">();</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<h3 id="simple-mode">Simple Mode 检测</h3>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">function</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">isSimpleMode</span><span style="color: #ABB2BF">()</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">boolean</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #C678DD">return</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">localStorage</span><span style="color: #ABB2BF">.</span><span style="color: #E06C75">getItem</span><span style="color: #ABB2BF">(</span><span style="color: #98C379">&quot;qwenpaw_sidebar_mode&quot;</span><span style="color: #ABB2BF">) </span><span style="color: #56B6C2">===</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;simple&quot;</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<p>菜单项的 <code>visible</code> 回调使用此函数控制可见性。</p>
+<h2 id="_10">页面组件</h2>
+<h3 id="expertcenterpage">ExpertCenterPage（专家中心）</h3>
+<p><strong>文件位置</strong>：<code>index.ts</code> ~L3911</p>
+<p><strong>Tab 结构</strong>：<br />
+1. <code>experts</code> — 专家列表<br />
+2. <code>teams</code> — 专家团</p>
+<p><strong>专家列表功能</strong>：<br />
+- 加载所有 Agent 及其配置、技能、MCP（并行请求）<br />
+- 卡片展示：emoji、名称、描述、技能数、MCP 数<br />
+- 点击卡片打开 Drawer，展示完整配置<br />
+- 「召唤专家」按钮：设置选中 Agent 并跳转至聊天页<br />
+- 「创建专家」按钮：打开模板选择弹窗</p>
+<p><strong>专家团功能</strong>：<br />
+- 展示预设团队和自定义团队<br />
+- 团队卡片：emoji、名称、模式标签、成员状态（已找到/缺少）<br />
+- 点击「发起任务」：如有占位符 <code>{参数名}</code> 则弹窗让用户输入，否则直接发送<br />
+- 通过 <code>POST /api/console/chat</code> 发送编排消息给协调者 Agent</p>
+<h3 id="toolsskillscenterpage">ToolsSkillsCenterPage（工具·技能）</h3>
+<p><strong>文件位置</strong>：<code>ui/src/capability/ToolsSkillsCenterPage.ts</code></p>
+<p><strong>一级 Tab 结构</strong>：<br />
+1. <code>tools</code> — MCP 接入、平台内置工具<br />
+2. <code>engines</code> — 仿真软件、领域计算、运行服务<br />
+3. <code>skills</code> — 当前专家技能、技能池</p>
+<p><strong>原生功能嵌入</strong>：<br />
+- MCP 直接异步加载 QwenPaw 原生 <code>MCPPage</code>，保留 Provider 托管服务、JSON/表单创建、OAuth、访问策略和 CRUD<br />
+- 平台内置工具直接异步加载原生 <code>ToolsPage</code><br />
+- 运行服务直接异步加载原生 <code>ACPPage</code><br />
+- 宿主只开放固定页面白名单；UGSci 不复制这些页面的 API、状态或业务规则</p>
+<p><strong>引擎与技能</strong>：<br />
+- 仿真软件复用 <code>EngineSection</code>，支持检测、搜索、查看、添加、编辑和删除<br />
+- 领域计算保留注册位，用于后续接入 PVT、气藏工程等计算内核<br />
+- 技能复用 <code>SkillCenterPage</code>，嵌入模式下继续维护当前专家技能和技能池</p>
+<h3 id="skillcenterpage">SkillCenterPage（技能中心）</h3>
+<p><strong>文件位置</strong>：<code>index.ts</code> ~L5407</p>
+<p><strong>功能</strong>：<br />
+- 加载技能池（<code>GET /api/skills/pool</code>）、Agent 列表、workspace 技能<br />
+- 技能卡片：emoji、名称、描述、版本、标签<br />
+- 点击卡片打开 Drawer，展示详情和已安装专家列表<br />
+- 「管理技能池」跳转至 <code>/skill-pool</code></p>
+<h3 id="marketplacepage">MarketplacePage（市场）</h3>
+<p><strong>文件位置</strong>：<code>index.ts</code> ~L5892</p>
+<p><strong>Tab 结构</strong>：<br />
+1. <code>skills</code> — 技能市场<br />
+2. <code>experts</code> — 专家模板</p>
+<p><strong>技能市场功能</strong>：<br />
+- 搜索栏 + 分类筛选<br />
+- 调用 <code>POST /api/market/search</code> 搜索远程技能<br />
+- 卡片展示：名称、描述、来源、版本、作者<br />
+- 点击卡片打开 Drawer，选择目标 Agent 一键安装<br />
+- 安装进度通过轮询 <code>GET /api/skills/hub/install/status/{taskId}</code> 跟踪</p>
+<p><strong>专家模板功能</strong>：<br />
+- 展示内置 6 个石油领域专家模板<br />
+- 点击卡片一键创建 Agent（调用 <code>POST /api/agents</code>）</p>
+<h2 id="_11">组件层级</h2>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code>buildPlugin()
+├── ExpertCenterPage
+│   ├── PageHeader
+│   ├── Tabs
+│   │   ├── 专家列表 Tab
+│   │   │   ├── Input.Search
+│   │   │   └── Row &gt; Col &gt; ExpertCard
+│   │   │       └── (点击) → ExpertDrawer
+│   │   └── 专家团 Tab
+│   │       └── ExpertTeamSection
+│   │           ├── Input.Search
+│   │           ├── Row &gt; Col &gt; ExpertTeamCard (custom)
+│   │           └── Row &gt; Col &gt; ExpertTeamCard (preset)
+│   ├── ExpertTemplateModal (创建专家)
+│   └── TeamLaunchModal (发起团队任务)
+│
+├── ToolsSkillsCenterPage
+│   ├── PageHeader
+│   └── Tabs
+│       ├── 工具 Tab
+│       │   ├── HostBuiltinPage(MCPPage)
+│       │   └── HostBuiltinPage(ToolsPage)
+│       ├── 引擎 Tab
+│       │   ├── EngineSection
+│       │   ├── DomainComputeSection
+│       │   └── HostBuiltinPage(ACPPage)
+│       └── 技能 Tab
+│           └── SkillCenterPage(embedded)
+│
+├── SkillCenterPage
+│   ├── PageHeader
+│   ├── Input.Search
+│   └── Row &gt; Col &gt; SkillCard
+│       └── (点击) → Drawer (含已安装专家列表)
+│
+└── MarketplacePage
+    ├── PageHeader
+    └── Tabs
+        ├── Skills Market Tab
+        │   ├── Input.Search + Select (分类)
+        │   └── Row &gt; Col &gt; MarketSkillCard
+        │       └── (点击) → Drawer (安装到 Agent)
+        └── Experts Template Tab
+            ├── Input.Search
+            └── Row &gt; Col &gt; ExpertTemplateCard
+</code></pre></div>
+
+<h2 id="_12">专家模板定义</h2>
+<p>专家模板是纯数据结构，定义在 <code>index.ts</code> 的 <code>EXPERT_TEMPLATES</code> 数组中：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">interface</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">ExpertTemplate</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;              </span><span style="color: #7F848E">// 模板 ID</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;            </span><span style="color: #7F848E">// 显示名称</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;           </span><span style="color: #7F848E">// Emoji 图标</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">category</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;        </span><span style="color: #7F848E">// 分类</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">description</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;     </span><span style="color: #7F848E">// **Markdown** 格式的描述</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">systemPrompt</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;   </span><span style="color: #7F848E">// 系统提示词（完整 Markdown 文档）</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">recommendedSkills</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">[];  </span><span style="color: #7F848E">// 推荐技能（当前为空，预留）</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">approvalLevel</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;AUTO&quot;</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">|</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;MANUAL&quot;</span><span style="color: #ABB2BF">;  </span><span style="color: #7F848E">// 审批级别</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<h3 id="_13">添加新专家模板</h3>
+<p>在 <code>EXPERT_TEMPLATES</code> 数组中添加新对象即可：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #ABB2BF">{</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;facility-engineer&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;地面工程师&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;🏭&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">category</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;地面工程&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">description</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;**地面工程师** —— 擅长油气集输、处理厂工艺设计。&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">systemPrompt</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">`# 地面工程师\n\n你是一位资深地面工程师...`</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">recommendedSkills</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> [],</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">approvalLevel</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;AUTO&quot;</span><span style="color: #ABB2BF">,</span>
+<span style="color: #ABB2BF">},</span>
+</code></pre></div>
+
+<h2 id="_14">专家团定义</h2>
+<p>预设专家团由后端 <code>team/presets.py</code> 统一定义，前端通过<br />
+<code>GET /api/ugsci/team/preset-teams</code> 获取：</p>
+<div class="codehilite" style="background: #282C34"><pre style="line-height: 125%;"><span></span><code><span style="color: #C678DD">interface</span><span style="color: #ABB2BF"> </span><span style="color: #E06C75">ExpertTeam</span><span style="color: #ABB2BF"> {</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">id</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">name</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">emoji</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">category</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">description</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">mode</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;coordinator&quot;</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">|</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;pipeline&quot;</span><span style="color: #ABB2BF"> </span><span style="color: #56B6C2">|</span><span style="color: #ABB2BF"> </span><span style="color: #98C379">&quot;roundtable&quot;</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">members</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">ExpertTeamMember</span><span style="color: #ABB2BF">[];</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">coordinatorName?</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;      </span><span style="color: #7F848E">// 协调者模式专用</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">taskTemplate</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;          </span><span style="color: #7F848E">// 任务模板（支持 {占位符}）</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">orchestrationPrompt</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">string</span><span style="color: #ABB2BF">;   </span><span style="color: #7F848E">// 编排指令</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">steps?</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">ExpertTeamStep</span><span style="color: #ABB2BF">[];      </span><span style="color: #7F848E">// 流水线步骤</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">custom?</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">boolean</span><span style="color: #ABB2BF">;              </span><span style="color: #7F848E">// 是否用户自定义</span>
+<span style="color: #ABB2BF">  </span><span style="color: #E06C75">createdAt?</span><span style="color: #56B6C2">:</span><span style="color: #ABB2BF"> </span><span style="color: #E5C07B">number</span><span style="color: #ABB2BF">;</span>
+<span style="color: #ABB2BF">}</span>
+</code></pre></div>
+
+<h3 id="_15">三种编排模式</h3>
+<table>
+<thead>
+<tr>
+<th>模式</th>
+<th>说明</th>
+<th>适用场景</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>pipeline</code></td>
+<td>流水线 — 步骤依次执行，上一步结果传递给下一步</td>
+<td>有明确先后顺序的工作流</td>
+</tr>
+<tr>
+<td><code>coordinator</code></td>
+<td>协调者 — 由协调者 Agent 主导，按需咨询其他专家</td>
+<td>需要综合判断的复杂任务</td>
+</tr>
+<tr>
+<td><code>roundtable</code></td>
+<td>圆桌讨论 — 各专家独立评估，不传递他人意见，最后综合</td>
+<td>需要多视角对比的评审</td>
+</tr>
+</tbody>
+</table>
+<h3 id="_16">添加新专家团</h3>
+<p>在 <code>team/presets.py</code> 的 <code>PRESET_UGSCI_TEAMS</code> 中添加新对象。成员的<br />
+<code>name</code> 字段会通过 <code>findAgentIdByName()</code> 与实际 Agent 进行模糊匹配。</p>
+<h2 id="_17">调试技巧</h2>
+<ol>
+<li><strong>查看注册日志</strong>：浏览器控制台搜索 <code>[ugsci]</code></li>
+<li><strong>检查 Simple Mode</strong>：<code>localStorage.getItem("qwenpaw_sidebar_mode")</code></li>
+<li><strong>手动切换模式</strong>：<code>localStorage.setItem("qwenpaw_sidebar_mode", "simple")</code> 然后刷新</li>
+<li><strong>检查技能池同步</strong>：后端日志搜索 <code>[ugsci]</code> 或 <code>plugin.ugsci</code></li>
+<li><strong>测试软件检测 API</strong>：<code>curl http://localhost:8000/api/ugsci/software/detect</code></li>
+</ol>
+</div>
+</body>
+</html>

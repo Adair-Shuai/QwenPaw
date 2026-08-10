@@ -14,10 +14,10 @@ import hashlib
 import shutil
 from pathlib import Path
 
-# Documentation is maintained in the canonical plugin tree but is not runtime
-# package data. Keeping it out of the mirror avoids shipping generated HTML
-# twice in wheels and desktop bundles.
-EXCLUDED_PARTS = {"node_modules", "__pycache__", "docs"}
+# Markdown sources and developer documentation stay only in the canonical
+# plugin tree. Generated offline documentation under ``static/docs`` is
+# runtime package data and must be mirrored into wheels and desktop bundles.
+EXCLUDED_PARTS = {"node_modules", "__pycache__"}
 EXCLUDED_NAMES = {".DS_Store"}
 EXCLUDED_SUFFIXES = {".pyc", ".pyo"}
 
@@ -28,7 +28,8 @@ def _repo_root() -> Path:
 
 def _is_included(relative_path: Path) -> bool:
     return (
-        not EXCLUDED_PARTS.intersection(relative_path.parts)
+        (not relative_path.parts or relative_path.parts[0] != "docs")
+        and not EXCLUDED_PARTS.intersection(relative_path.parts)
         and relative_path.name not in EXCLUDED_NAMES
         and relative_path.suffix not in EXCLUDED_SUFFIXES
     )
@@ -141,6 +142,20 @@ def _generated_bundle_targets(root: Path) -> list[Path]:
     ]
 
 
+def _generated_viewer_targets(root: Path) -> list[Path]:
+    """Return package/runtime copies of the lazy UGSci Viewer bundle."""
+    return [
+        root
+        / "src"
+        / "qwenpaw"
+        / "plugins_bundle"
+        / "ugsci"
+        / "ui"
+        / "dist"
+        / "viewer-runtime.js",
+    ]
+
+
 def sync_generated_bundle(root: Path, source: Path) -> int:
     """Copy the compiled UI bundle to repository-managed serving paths."""
     compiled = source / "ui" / "dist" / "index.js"
@@ -149,12 +164,24 @@ def sync_generated_bundle(root: Path, source: Path) -> int:
             "UGSci UI bundle is missing; run npm run build in "
             "plugins/bundle/ugsci/ui",
         )
+    viewer = source / "ui" / "dist" / "viewer-runtime.js"
+    if not viewer.is_file():
+        raise FileNotFoundError(
+            "UGSci Viewer bundle is missing; run npm run build in "
+            "plugins/bundle/ugsci/ui",
+        )
     copied = 0
     for target in _generated_bundle_targets(root):
         target.parent.mkdir(parents=True, exist_ok=True)
         if target.is_file() and _digest(compiled) == _digest(target):
             continue
         shutil.copy2(compiled, target)
+        copied += 1
+    for target in _generated_viewer_targets(root):
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if target.is_file() and _digest(viewer) == _digest(target):
+            continue
+        shutil.copy2(viewer, target)
         copied += 1
     return copied
 
@@ -173,6 +200,19 @@ def find_generated_bundle_drift(root: Path, source: Path) -> list[str]:
         elif _digest(compiled) != _digest(target):
             drift.append(
                 f"different generated bundle: {target.relative_to(root)}",
+            )
+    viewer = source / "ui" / "dist" / "viewer-runtime.js"
+    if not viewer.is_file():
+        drift.append("missing: plugins/bundle/ugsci/ui/dist/viewer-runtime.js")
+        return drift
+    for target in _generated_viewer_targets(root):
+        if not target.is_file():
+            drift.append(
+                f"missing generated viewer bundle: {target.relative_to(root)}",
+            )
+        elif _digest(viewer) != _digest(target):
+            drift.append(
+                f"different generated viewer bundle: {target.relative_to(root)}",
             )
     return drift
 

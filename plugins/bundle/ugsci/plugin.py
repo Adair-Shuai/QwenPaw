@@ -20,12 +20,23 @@ from .avatar import (
     AvatarService,
 )
 from .domain_engine.api import build_domain_engine_router
+from .docs_api import build_docs_router
 from .engine.api import EngineRequest, build_engine_router
 from .sim_api import build_sim_router
 from .genui.api import build_genui_router
+from .health_api import build_health_router
 from .skill_pool import (
     remove_plugin_pool_skills,
     sync_plugin_skills_to_pool,
+)
+from .tool_manifest import (
+    ToolManifestError,
+    sync_manifest_tools_to_all_agents,
+    validate_tool_bindings,
+)
+from .visualization import (
+    build_visualization_router as _build_provider_visualization_router,
+    get_visualization_tool_bindings,
 )
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci")
@@ -72,6 +83,11 @@ def _build_domain_engine_router():
 def _build_sim_router():
     """Compatibility wrapper for the extracted simulation API."""
     return build_sim_router(PLUGIN_ID)
+
+
+def _build_visualization_router():
+    """Build the UGSci-owned visualization router via its provider."""
+    return _build_provider_visualization_router()
 
 
 class UGSciPlugin:
@@ -121,8 +137,33 @@ class UGSciPlugin:
             "ugsci-genui",
             "GenUI settings",
         )
+        self._register_router(
+            api,
+            lambda: build_docs_router(PLUGIN_DIR),
+            "/ugsci/docs",
+            "ugsci-docs",
+            "offline documentation",
+        )
+        self._register_router(
+            api,
+            lambda: build_health_router(PLUGIN_DIR),
+            "/ugsci",
+            "ugsci-health",
+            "capability health",
+        )
+        # Visualization is now a UGSci-owned capability.  The user-facing
+        # page keeps its historical URL, while its API is namespaced under
+        # UGSci.
+        self._register_router(
+            api,
+            _build_visualization_router,
+            "/ugsci/visualization",
+            "ugsci-visualization",
+            "visualization",
+        )
         self._register_simulation_tools(api)
         self._register_domain_tools(api)
+        self._register_visualization_tools(api)
         self._register_genui(api)
 
     def _register_lifecycle_hooks(self, api) -> None:
@@ -142,13 +183,13 @@ class UGSciPlugin:
             )
         try:
             api.register_startup_hook(
-                hook_name="ugsci_sync_domain_tools",
-                callback=self._on_startup_sync_domain_tools,
+                hook_name="ugsci_sync_manifest_tools",
+                callback=self._on_startup_sync_manifest_tools,
                 priority=95,
             )
         except Exception as exc:
             logger.debug(
-                "[%s] Domain tool sync hook unavailable: %s",
+                "[%s] Manifest tool sync hook unavailable: %s",
                 PLUGIN_ID,
                 exc,
                 exc_info=True,
@@ -273,8 +314,49 @@ class UGSciPlugin:
             )
 
     @staticmethod
-    def _register_simulation_tools(api) -> None:
-        """Register simulation tools without coupling them to HTTP routers."""
+    def _register_tool_group(
+        api,
+        group: str,
+        bindings: dict[str, Callable[..., Any]],
+    ) -> int:
+        """Bind implementations to one manifest-declared tool group.
+
+        Names and all display/governance metadata come from ``plugin.json``.
+        A declaration/implementation mismatch fails the whole group so drift
+        cannot produce tools that exist only in the runtime or only in the UI.
+        """
+        specs = validate_tool_bindings(
+            PLUGIN_DIR,
+            bindings,
+            groups={group},
+        )
+
+        registered = 0
+        for spec in specs:
+            try:
+                api.register_tool(
+                    tool_name=spec.name,
+                    tool_func=bindings[spec.name],
+                    description=spec.description,
+                    icon=spec.icon,
+                    enabled=spec.enabled_by_default,
+                    tool_type=spec.tool_type,
+                    target_param=spec.target_param,
+                )
+                registered += 1
+            except Exception as exc:
+                logger.error(
+                    "[%s] Failed to register %s tool '%s': %s",
+                    PLUGIN_ID,
+                    group,
+                    spec.name,
+                    exc,
+                )
+        return registered
+
+    @classmethod
+    def _register_simulation_tools(cls, api) -> None:
+        """Register manifest-declared simulation tool implementations."""
         try:
             from .engine.tools import (
                 analyze_simulation,
@@ -285,81 +367,19 @@ class UGSciPlugin:
                 wait_for_simulation,
             )
 
-            # Each tool declares its governance type and target parameter
-            # so the Tool Guard policy engine can perform proper Phase 0 / 1
-            # checks on the actual file or process targets (BUG-001).
-            tools = [
-                (
-                    "launch_simulation",
-                    launch_simulation,
-                    "启动数值模拟 (Eclipse/CMG/COMSOL)",
-                    "🚀",
-                    "shell",
-                    "working_dir",
-                ),
-                (
-                    "check_simulation_status",
-                    check_simulation_status,
-                    "查询模拟运行状态与收敛性",
-                    "📊",
-                    "internal",
-                    "",
-                ),
-                (
-                    "wait_for_simulation",
-                    wait_for_simulation,
-                    "等待模拟完成 (内部轮询，零token消耗)",
-                    "⏳",
-                    "internal",
-                    "",
-                ),
-                (
-                    "read_simulation_results",
-                    read_simulation_results,
-                    "读取模拟结果数据",
-                    "📖",
-                    "file",
-                    "result_file",
-                ),
-                (
-                    "edit_simulation_deck",
-                    edit_simulation_deck,
-                    "修改模拟器输入文件",
-                    "✏️",
-                    "file",
-                    "deck_file",
-                ),
-                (
-                    "analyze_simulation",
-                    analyze_simulation,
-                    "分析模拟结果 (收敛/平衡/性能/对比)",
-                    "🔬",
-                    "file",
-                    "result_file",
-                ),
-            ]
-            for tool_name, tool_func, description, icon, tool_type, target_param in tools:
-                try:
-                    api.register_tool(
-                        tool_name=tool_name,
-                        tool_func=tool_func,
-                        description=description,
-                        icon=icon,
-                        enabled=True,
-                        tool_type=tool_type,
-                        target_param=target_param,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "[%s] Failed to register tool '%s': %s",
-                        PLUGIN_ID,
-                        tool_name,
-                        exc,
-                    )
+            bindings = {
+                "launch_simulation": launch_simulation,
+                "check_simulation_status": check_simulation_status,
+                "wait_for_simulation": wait_for_simulation,
+                "read_simulation_results": read_simulation_results,
+                "edit_simulation_deck": edit_simulation_deck,
+                "analyze_simulation": analyze_simulation,
+            }
+            registered = cls._register_tool_group(api, "simulation", bindings)
             logger.info(
                 "[%s] Simulation control tools registered (%d tools)",
                 PLUGIN_ID,
-                len(tools),
+                registered,
             )
         except Exception as exc:
             logger.error(
@@ -369,14 +389,9 @@ class UGSciPlugin:
                 exc_info=True,
             )
 
-    @staticmethod
-    def _register_domain_tools(api) -> None:
-        """Register domain computing tools (well log + decline analysis).
-
-        These tools are disabled by default — users enable them per-agent
-        via the Tools page.  Each tool is registered independently so that
-        a failure in one does not block others.
-        """
+    @classmethod
+    def _register_domain_tools(cls, api) -> None:
+        """Register manifest-declared domain computing implementations."""
         try:
             from .domain.well_log.tools import (
                 ugsci_welllog_read,
@@ -399,90 +414,58 @@ class UGSciPlugin:
                 ugsci_symbolic_polynomial_roots,
             )
 
-            tools = [
-                (
-                    "ugsci_welllog_read",
-                    ugsci_welllog_read,
-                    "读取 LAS 测井文件并返回井信息、曲线摘要和采样数据",
-                    "📡",
-                    "file",
-                    "path",
+            bindings = {
+                "ugsci_welllog_read": ugsci_welllog_read,
+                "ugsci_welllog_validate": ugsci_welllog_validate,
+                "ugsci_welllog_export": ugsci_welllog_export,
+                "ugsci_decline_fit": ugsci_decline_fit,
+                "ugsci_decline_forecast": ugsci_decline_forecast,
+                "ugsci_decline_eur": ugsci_decline_eur,
+                "ugsci_symbolic_polynomial_roots": (
+                    ugsci_symbolic_polynomial_roots
                 ),
-                (
-                    "ugsci_welllog_validate",
-                    ugsci_welllog_validate,
-                    "校验 LAS 测井文件的数据质量（深度单调性、NULL、单位等）",
-                    "✅",
-                    "file",
-                    "path",
+                "ugsci_bayesian_normal_estimate": (
+                    ugsci_bayesian_normal_estimate
                 ),
-                (
-                    "ugsci_welllog_export",
-                    ugsci_welllog_export,
-                    "将 LAS 测井文件规范化导出为新文件",
-                    "📤",
-                    "file",
-                    "output_path",
+                "ugsci_multiobjective_quadratic": (
+                    ugsci_multiobjective_quadratic
                 ),
-                (
-                    "ugsci_decline_fit",
-                    ugsci_decline_fit,
-                    "拟合 Arps 递减曲线（exponential/harmonic/hyperbolic/auto）",
-                    "📉",
-                    "internal",
-                    "",
+                "ugsci_queue_simulate": ugsci_queue_simulate,
+                "ugsci_graph_analyze": ugsci_graph_analyze,
+                "ugsci_geospatial_points_analyze": (
+                    ugsci_geospatial_points_analyze
                 ),
-                (
-                    "ugsci_decline_forecast",
-                    ugsci_decline_forecast,
-                    "基于递减参数预测未来产量",
-                    "🔮",
-                    "internal",
-                    "",
-                ),
-                (
-                    "ugsci_decline_eur",
-                    ugsci_decline_eur,
-                    "计算预计最终采收率（EUR）",
-                    "🛢️",
-                    "internal",
-                    "",
-                ),
-                ("ugsci_symbolic_polynomial_roots", ugsci_symbolic_polynomial_roots, "计算多项式的全部实根与复根", "🧮", "internal", ""),
-                ("ugsci_bayesian_normal_estimate", ugsci_bayesian_normal_estimate, "使用 PyMC 估计正态总体均值的后验分布", "🎲", "internal", ""),
-                ("ugsci_multiobjective_quadratic", ugsci_multiobjective_quadratic, "使用 pymoo 求解结构化双目标或多目标二次优化", "🎯", "internal", ""),
-                ("ugsci_queue_simulate", ugsci_queue_simulate, "使用 SimPy 执行确定性 FIFO 队列仿真", "⏱️", "internal", ""),
-                ("ugsci_graph_analyze", ugsci_graph_analyze, "使用 NetworkX 分析网络连通性、中心性和最短路径", "🕸️", "internal", ""),
-                ("ugsci_geospatial_points_analyze", ugsci_geospatial_points_analyze, "使用 GeoPandas 分析结构化空间点集", "🗺️", "internal", ""),
-                ("ugsci_ml_regression", ugsci_ml_regression, "使用 scikit-learn 进行确定性线性回归和预测", "🤖", "internal", ""),
-                ("ugsci_statistical_regression", ugsci_statistical_regression, "使用 statsmodels 执行带推断统计的 OLS 回归", "📊", "internal", ""),
-            ]
-            for tool_name, tool_func, description, icon, tool_type, target_param in tools:
-                try:
-                    api.register_tool(
-                        tool_name=tool_name,
-                        tool_func=tool_func,
-                        description=description,
-                        icon=icon,
-                        enabled=False,
-                        tool_type=tool_type,
-                        target_param=target_param,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "[%s] Failed to register domain tool '%s': %s",
-                        PLUGIN_ID,
-                        tool_name,
-                        exc,
-                    )
+                "ugsci_ml_regression": ugsci_ml_regression,
+                "ugsci_statistical_regression": ugsci_statistical_regression,
+            }
+            registered = cls._register_tool_group(api, "domain", bindings)
             logger.info(
                 "[%s] Domain computing tools registered (%d tools)",
                 PLUGIN_ID,
-                len(tools),
+                registered,
             )
         except Exception as exc:
             logger.error(
                 "[%s] Failed to register domain tools: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+    @classmethod
+    def _register_visualization_tools(cls, api) -> None:
+        """Register visualization tools under the UGSci manifest."""
+        try:
+            bindings = get_visualization_tool_bindings()
+            registered = cls._register_tool_group(api, "visualization", bindings)
+            logger.info(
+                "[%s] Visualization tools registered (%d tools)",
+                PLUGIN_ID,
+                registered,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register visualization tools: %s",
                 PLUGIN_ID,
                 exc,
                 exc_info=True,
@@ -532,74 +515,44 @@ class UGSciPlugin:
                 exc_info=True,
             )
 
-    async def _on_startup_sync_domain_tools(self) -> None:
-        """Persist missing UGSci tool entries for every configured Agent.
+    async def _on_startup_sync_manifest_tools(self) -> None:
+        """Persist every missing manifest tool for each configured Agent.
 
         Plugin tool registration runs before a current-Agent context exists,
         so ``PluginApi.register_tool`` cannot persist per-Agent preferences at
         that point.  Synchronising from the plugin manifest closes that gap
         without changing any existing enabled/disabled choice.
         """
-        await asyncio.to_thread(self._sync_domain_tools_to_all_agents)
+        await asyncio.to_thread(self._sync_manifest_tools_to_all_agents)
+
+    @staticmethod
+    def _sync_manifest_tools_to_all_agents() -> None:
+        """Synchronize the complete declarative catalog to Agent configs."""
+        try:
+            changed_agents = sync_manifest_tools_to_all_agents(PLUGIN_DIR)
+            logger.info(
+                "[%s] Synced manifest tools to %d Agent config(s)",
+                PLUGIN_ID,
+                changed_agents,
+            )
+        except ToolManifestError as exc:
+            logger.error("[%s] Cannot sync tool manifest: %s", PLUGIN_ID, exc)
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[%s] Failed to sync manifest tools: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+    async def _on_startup_sync_domain_tools(self) -> None:
+        """Backward-compatible alias for the old startup callback name."""
+        await self._on_startup_sync_manifest_tools()
 
     @staticmethod
     def _sync_domain_tools_to_all_agents() -> None:
-        from qwenpaw.config.config import (
-            BuiltinToolConfig,
-            ToolsConfig,
-            load_agent_config,
-            save_agent_config,
-        )
-        from qwenpaw.config.utils import load_config
-
-        manifest_path = PLUGIN_DIR / "plugin.json"
-        try:
-            import json
-
-            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-            raw_tools = manifest.get("meta", {}).get("tools", [])
-        except (OSError, ValueError, TypeError) as exc:
-            logger.error("[%s] Cannot read domain tool manifest: %s", PLUGIN_ID, exc)
-            return
-
-        specs = {
-            item["name"]: item
-            for item in raw_tools
-            if isinstance(item, dict)
-            and isinstance(item.get("name"), str)
-            and item["name"].startswith("ugsci_")
-        }
-        if not specs:
-            return
-
-        profiles = load_config().agents.profiles
-        for agent_id in profiles:
-            try:
-                agent_config = load_agent_config(agent_id)
-                if not agent_config.tools:
-                    agent_config.tools = ToolsConfig()
-                changed = False
-                for name, spec in specs.items():
-                    if name in agent_config.tools.builtin_tools:
-                        continue
-                    agent_config.tools.builtin_tools[name] = BuiltinToolConfig(
-                        name=name,
-                        enabled=bool(spec.get("enabled_by_default", False)),
-                        description=str(spec.get("description", "")),
-                        display_to_user=True,
-                        async_execution=False,
-                        icon=str(spec.get("icon", "🔧")),
-                    )
-                    changed = True
-                if changed:
-                    save_agent_config(agent_id, agent_config)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "[%s] Failed to sync domain tools for Agent '%s': %s",
-                    PLUGIN_ID,
-                    agent_id,
-                    exc,
-                )
+        """Backward-compatible alias for integrations using the old name."""
+        UGSciPlugin._sync_manifest_tools_to_all_agents()
 
     @staticmethod
     def _on_uninstall_remove_skills(

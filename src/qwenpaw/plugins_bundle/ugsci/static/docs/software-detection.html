@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>本地软件检测 — UGSci 文档</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<aside id="sidebar">
+  <div class="logo">
+    UGSci 文档
+    <small>v0.6.0 · 石油领域 QwenPaw 插件</small>
+  </div>
+  <nav>
+    <a href="index.html" class="">UGSci 文档</a><a href="user-manual.html" class="">零基础使用手册（推荐）</a><a href="user-guide.html" class="">使用指南</a><a href="architecture.html" class="">架构设计</a><a href="frontend.html" class="">前端开发指南</a><a href="backend.html" class="">后端开发指南</a><a href="skills.html" class="">技能列表</a><a href="software-detection.html" class="active">本地软件检测</a><a href="expert-teams.html" class="">专家团</a>
+  </nav>
+</aside>
+<div id="main">
+<h1 id="_1">本地软件检测</h1>
+<p>UGSci 的“引擎”页面用于登记和检查本机已经安装的专业计算软件。它不会凭空安装软件，也不会因为检测到软件就自动启动正式计算。</p>
+<h2 id="_2">你能做什么</h2>
+<ol>
+<li>查看已经登记的引擎：<code>GET /api/ugsci/engines/list</code>。</li>
+<li>查看能力摘要：<code>GET /api/ugsci/engines/summary</code>。</li>
+<li>自动检测本机软件：<code>POST /api/ugsci/engines/detect</code>。</li>
+<li>忽略缓存重新检测：<code>POST /api/ugsci/engines/detect/refresh</code>。</li>
+<li>手动新增、修改或删除引擎：分别使用 <code>POST /api/ugsci/engines/</code>、<code>PUT /api/ugsci/engines/{engine_id}</code> 和 <code>DELETE /api/ugsci/engines/{engine_id}</code>。</li>
+</ol>
+<h2 id="_3">页面操作</h2>
+<p>进入“工具·技能 → 引擎 → 仿真软件”，先点击“自动检测”。对结果逐项检查软件名称、版本、可执行文件路径、安装目录、许可证和模块路径。状态为“待配置”或“路径无效”时，点击配置按钮修正，不要直接开始仿真。</p>
+<h2 id="_4">安全建议</h2>
+<ul>
+<li>首次运行只做检测，不提交计算任务。</li>
+<li>将仿真输入复制到独立的 <code>working</code> 目录，原始 deck 和结果目录只读备份。</li>
+<li>许可证、服务器地址和账号信息不要写进截图、报告或公共技能说明。</li>
+<li>在 Windows 上优先选择实际的 <code>.exe</code> 文件；不要手工拼接路径分隔符。</li>
+</ul>
+<h2 id="_5">常见问题</h2>
+<h3 id="_6">自动检测不到软件</h3>
+<p>请确认软件确实安装在当前电脑、当前用户有访问权限，且可执行文件没有被安全软件隔离。点击“配置”手动选择可执行文件后，再使用“检测”验证。</p>
+<h3 id="_7">路径无效</h3>
+<p>这通常表示软件升级或移动过目录。重新选择路径并保存；如果团队共享配置，请让每台电脑分别验证，不要复制另一台电脑的绝对路径。</p>
+</div>
+</body>
+</html>

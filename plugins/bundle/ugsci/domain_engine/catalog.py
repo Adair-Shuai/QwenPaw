@@ -263,7 +263,7 @@ _SCIENTIFIC_LIBRARY_ENGINES = (
     ),
 )
 
-# ─── Reservoir Visualization (oilgas-visualization plugin bridge) ─────────────
+# ─── Reservoir Visualization (UGSci built-in capability) ─────────────────────
 
 _VISUALIZATION_ENGINE = DomainEngineDefinition(
     schema_version=1,
@@ -271,26 +271,26 @@ _VISUALIZATION_ENGINE = DomainEngineDefinition(
     name="储层三维可视化",
     description="EGRID/ROFF 网格三维渲染、属性着色、cell 拾取和性能基准",
     domain="reservoir_engineering",
-    source="plugin",
-    provider=ProviderRef(kind="plugin", id="oilgas-visualization"),
+    source="builtin",
+    provider=ProviderRef(kind="builtin", id="ugsci-visualization"),
     operations=(
         DomainOperation(
             id="visualization.open",
             name="打开可视化页面",
             description="加载三维查看器并显示指定数据集",
-            tool_names=(),  # 工具由独立插件注册
+            tool_names=("open_oilgas_visualization",),
         ),
         DomainOperation(
             id="visualization.property",
             name="切换属性",
             description="切换网格属性着色（孔隙度/渗透率/岩相）",
-            tool_names=(),
+            tool_names=("set_visualization_property",),
         ),
         DomainOperation(
             id="visualization.benchmark",
             name="性能基准",
             description="运行 FPS、帧时间和内存泄漏测试",
-            tool_names=(),
+            tool_names=("run_visualization_benchmark",),
         ),
     ),
     dependencies=("three.js",),

@@ -24,6 +24,7 @@ import { MarketplacePage } from "./market/MarketplacePage";
 import { WelcomePromptsInjector } from "./WelcomePromptsInjector";
 import { registerGenuiFrontend } from "./genui/index";
 import { GenUiSettingsPage } from "./genui/GenUiSettingsPage";
+import { registerVisualizationFrontend } from "./visualization";
 
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
@@ -215,6 +216,7 @@ function buildPlugin() {
   // Registers tool card renderers (emit_ui_tree, emit_ui_patch, etc.)
   // and the response.append slot for inline GenUI rendering.
   registerGenuiFrontend(QP, React);
+  registerVisualizationFrontend(QP, React);
 
   console.info(
     "[ugsci] Plugin registered: unified Tools & Skills center + compatibility routes, simple-mode navigation active",

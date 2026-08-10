@@ -1,0 +1,6 @@
+# Optional scientific file providers used by UGSci file/artifact conversion.
+xtgeo>=4.0
+lasio>=0.31
+dlisio>=1.0.4
+pyarrow>=14
+meshio>=5.3

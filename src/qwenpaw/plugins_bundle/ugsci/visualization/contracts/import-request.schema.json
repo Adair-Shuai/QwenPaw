@@ -1,0 +1,63 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OilGas Visualization Import Request",
+  "description": "Request to create an async import and preprocessing job",
+  "type": "object",
+  "properties": {
+    "source": {
+      "type": "object",
+      "properties": {
+        "workspacePath": {
+          "type": "string",
+          "description": "Relative path within the agent's workspace"
+        },
+        "companionFiles": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Companion files (e.g. INIT, UNRST)"
+        }
+      },
+      "required": ["workspacePath"]
+    },
+    "options": {
+      "type": "object",
+      "properties": {
+        "representation": {
+          "type": "string",
+          "enum": ["boundary-surface", "cell-faces-chunked", "full-hexahedron"],
+          "default": "full-hexahedron"
+        },
+        "properties": {
+          "type": "array",
+          "items": {"type": "string"},
+          "description": "Property names to extract (e.g. PORO, PERMX, PRESSURE)"
+        },
+        "timeSteps": {
+          "type": "string",
+          "enum": ["manifest-only", "all", "range"],
+          "default": "manifest-only"
+        },
+        "timeStepRange": {
+          "type": "array",
+          "items": {"type": "integer"},
+          "description": "Time step indices when timeSteps is 'range'"
+        },
+        "chunkTargetTriangles": {
+          "type": "integer",
+          "default": 500000,
+          "minimum": 10000
+        },
+        "coordinateOrigin": {
+          "type": "string",
+          "enum": ["auto", "origin", "centroid"],
+          "default": "auto"
+        }
+      }
+    },
+    "name": {
+      "type": "string",
+      "description": "Display name for the dataset"
+    }
+  },
+  "required": ["source"]
+}

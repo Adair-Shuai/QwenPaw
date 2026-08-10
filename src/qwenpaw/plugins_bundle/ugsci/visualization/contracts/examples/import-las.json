@@ -1,0 +1,11 @@
+{
+  "source": {
+    "workspacePath": "wells/WELL_A.las"
+  },
+  "options": {
+    "representation": "full-hexahedron",
+    "properties": ["GR", "SP", "RT", "NPHI", "RHOB"],
+    "coordinateOrigin": "origin"
+  },
+  "name": "Well A Log"
+}
