@@ -15,7 +15,7 @@ function oe(e, t) {
   };
   return a && !r.Authorization && (r.Authorization = `Bearer ${a}`), window.fetch(e, { ...t, headers: r });
 }
-async function J(e) {
+async function F(e) {
   try {
     const t = re(`/ugsci-research/research-mode/${encodeURIComponent(e)}`), n = await oe(t);
     if (!n.ok) return { enabled: !1, domain: "general" };
@@ -28,9 +28,9 @@ async function J(e) {
     return { enabled: !1, domain: "general" };
   }
 }
-async function G(e, t, n) {
+async function q(e, t, n) {
   try {
-    const l = await J(e), a = {
+    const l = await F(e), a = {
       enabled: t,
       domain: n || l.domain || "general"
     }, r = re(`/ugsci-research/research-mode/${encodeURIComponent(e)}`);
@@ -44,23 +44,23 @@ async function G(e, t, n) {
   }
 }
 function ee() {
-  var T, D, U, q;
-  const e = f(), t = e.React, { useState: n, useEffect: l, useCallback: a } = t, { Tooltip: r, Select: o, message: i, Popover: p, Button: y, Space: m } = e.antd, { ExperimentOutlined: w, SettingOutlined: c } = e.antdIcons, E = window.QwenPaw, v = ((D = (T = E == null ? void 0 : E.host) == null ? void 0 : T.getSelectedAgentId) == null ? void 0 : D.call(T)) || "default", [u, C] = n(!1), [S, O] = n("general"), [L, I] = n(!1), R = a(async () => {
-    const b = await J(v);
+  var T, D, U, N;
+  const e = f(), t = e.React, { useState: n, useEffect: l, useCallback: a } = t, { Tooltip: r, Select: o, message: i, Popover: p, Button: E, Space: m } = e.antd, { ExperimentOutlined: w, SettingOutlined: s } = e.antdIcons, h = window.QwenPaw, S = ((D = (T = h == null ? void 0 : h.host) == null ? void 0 : T.getSelectedAgentId) == null ? void 0 : D.call(T)) || "default", [u, C] = n(!1), [v, O] = n("general"), [L, I] = n(!1), R = a(async () => {
+    const b = await F(S);
     C(b.enabled), O(b.domain);
-  }, [v]);
+  }, [S]);
   l(() => {
     R();
   }, [R]);
-  const h = async () => {
+  const y = async () => {
     I(!0);
     const b = !u;
-    await G(v, b) ? (C(b), i.success(b ? "🔬 研究模式已启用" : "研究模式已关闭")) : i.error("切换研究模式失败"), I(!1);
+    await q(S, b) ? (C(b), i.success(b ? "🔬 研究模式已启用" : "研究模式已关闭")) : i.error("切换研究模式失败"), I(!1);
   }, B = async (b) => {
-    I(!0), await G(v, u, b) && O(b), I(!1);
+    I(!0), await q(S, u, b) && O(b), I(!1);
   }, z = () => {
     window.location.href = "/ugsci-research-dashboard";
-  }, s = {
+  }, c = {
     display: "inline-flex",
     alignItems: "center",
     gap: "5px",
@@ -73,8 +73,8 @@ function ee() {
     fontWeight: 500,
     cursor: "pointer",
     transition: "all 0.18s ease"
-  }, P = typeof document < "u" && ((q = (U = document.documentElement) == null ? void 0 : U.classList) == null ? void 0 : q.contains("dark-mode"));
-  P && (s.border = u ? "1.5px solid #22d3ee" : "1.5px solid rgba(255,255,255,0.15)", s.color = u ? "#22d3ee" : "rgba(255,255,255,0.85)", s.background = u ? "rgba(6,182,212,0.18)" : "transparent");
+  }, P = typeof document < "u" && ((N = (U = document.documentElement) == null ? void 0 : U.classList) == null ? void 0 : N.contains("dark-mode"));
+  P && (c.border = u ? "1.5px solid #22d3ee" : "1.5px solid rgba(255,255,255,0.15)", c.color = u ? "#22d3ee" : "rgba(255,255,255,0.85)", c.background = u ? "rgba(6,182,212,0.18)" : "transparent");
   const A = {
     display: "inline-flex",
     alignItems: "center",
@@ -94,12 +94,12 @@ function ee() {
       null,
       t.createElement(
         "div",
-        { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #999)", marginBottom: 4 } },
+        { style: { fontSize: 12, color: "#999", marginBottom: 4 } },
         "研究领域"
       ),
       t.createElement(o, {
         size: "small",
-        value: S,
+        value: v,
         onChange: B,
         loading: L,
         style: { width: "100%" },
@@ -112,7 +112,7 @@ function ee() {
       })
     ),
     t.createElement(
-      y,
+      E,
       {
         size: "small",
         type: "link",
@@ -128,20 +128,20 @@ function ee() {
     t.createElement(
       r,
       {
-        title: u ? `研究模式已开启 (${S}) — 点击关闭` : "研究模式 — 点击启用",
+        title: u ? `研究模式已开启 (${v}) — 点击关闭` : "研究模式 — 点击启用",
         placement: "bottom"
       },
       t.createElement(
         "button",
         {
           type: "button",
-          style: s,
-          onClick: () => void h(),
+          style: c,
+          onClick: () => void y(),
           disabled: L,
           "aria-label": "Toggle Research Mode"
         },
         t.createElement("span", { style: { display: "flex", alignItems: "center" } }, "🔬"),
-        t.createElement("span", { style: { lineHeight: 1 } }, u ? `研究 ${S}` : "研究")
+        t.createElement("span", { style: { lineHeight: 1 } }, u ? `研究 ${v}` : "研究")
       )
     ),
     t.createElement(
@@ -150,56 +150,56 @@ function ee() {
       t.createElement(
         "button",
         { type: "button", style: A, "aria-label": "Research settings" },
-        t.createElement(c, { style: { fontSize: 12 } })
+        t.createElement(s, { style: { fontSize: 12 } })
       )
     )
   );
 }
 function de() {
-  var b, N;
+  var b, M;
   const e = f().React, { useState: t, useEffect: n, useCallback: l } = e, {
     Card: a,
     Tabs: r,
     Empty: o,
     Image: i,
     Table: p,
-    Typography: y,
+    Typography: E,
     Button: m,
     Space: w,
-    Tag: c,
-    Tooltip: E
+    Tag: s,
+    Tooltip: h
   } = f().antd, {
-    PictureOutlined: v,
+    PictureOutlined: S,
     TableOutlined: u,
     CodeOutlined: C,
-    FileTextOutlined: S,
+    FileTextOutlined: v,
     ReloadOutlined: O,
     DownloadOutlined: L
-  } = f().antdIcons, I = f().ReactMarkdown, R = f().remarkGfm, h = window.QwenPaw;
-  (N = (b = h == null ? void 0 : h.host) == null ? void 0 : b.getCurrentSessionId) == null || N.call(b);
-  const [B, z] = t([]), [s, P] = t(!1), [A, _] = t("all"), T = l(async () => {
+  } = f().antdIcons, I = f().ReactMarkdown, R = f().remarkGfm, y = window.QwenPaw;
+  (M = (b = y == null ? void 0 : y.host) == null ? void 0 : b.getCurrentSessionId) == null || M.call(b);
+  const [B, z] = t([]), [c, P] = t(!1), [A, _] = t("all"), T = l(async () => {
     var g, x, k, $, d;
     P(!0);
     try {
-      const Y = ((g = h == null ? void 0 : h.host) == null ? void 0 : g.fetch) || window.fetch.bind(window), ce = ((x = h == null ? void 0 : h.host) == null ? void 0 : x.apiBaseUrl) || "", se = (($ = (k = h == null ? void 0 : h.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : $.call(k)) || "default", Z = await Y(
-        `${ce}/api/files/list?path=.&agent_id=${se}`
+      const Y = ((g = y == null ? void 0 : y.host) == null ? void 0 : g.fetch) || window.fetch.bind(window), se = ((x = y == null ? void 0 : y.host) == null ? void 0 : x.apiBaseUrl) || "", ce = (($ = (k = y == null ? void 0 : y.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : $.call(k)) || "default", Z = await Y(
+        `${se}/api/files/list?path=.&agent_id=${ce}`
       );
       if (!Z.ok) {
         z([]);
         return;
       }
       const K = await Z.json(), ie = K.files || K.entries || [], Q = [];
-      for (const M of ie) {
-        const j = M.name || M.filename || "", H = ((d = j.split(".").pop()) == null ? void 0 : d.toLowerCase()) || "";
-        if (!(/^(fig|figure|plot|chart|table|artifact)/i.test(j) || ["png", "jpg", "jpeg", "svg", "csv", "json"].includes(H))) continue;
-        let W = "text";
-        ["png", "jpg", "jpeg", "svg", "gif"].includes(H) ? W = "figure" : ["csv", "tsv"].includes(H) ? W = "table" : ["py", "js", "ts", "sh"].includes(H) ? W = "code" : H === "las" && (W = "las"), Q.push({
-          id: j,
-          type: W,
-          title: j,
-          content: M.url || M.path || j,
-          filePath: M.path || j,
-          createdAt: M.modified || Date.now()
+      for (const j of ie) {
+        const H = j.name || j.filename || "", W = ((d = H.split(".").pop()) == null ? void 0 : d.toLowerCase()) || "";
+        if (!(/^(fig|figure|plot|chart|table|artifact)/i.test(H) || ["png", "jpg", "jpeg", "svg", "csv", "json"].includes(W))) continue;
+        let J = "text";
+        ["png", "jpg", "jpeg", "svg", "gif"].includes(W) ? J = "figure" : ["csv", "tsv"].includes(W) ? J = "table" : ["py", "js", "ts", "sh"].includes(W) ? J = "code" : W === "las" && (J = "las"), Q.push({
+          id: H,
+          type: J,
+          title: H,
+          content: j.url || j.path || H,
+          filePath: j.path || H,
+          createdAt: j.modified || Date.now()
         });
       }
       z(Q);
@@ -208,7 +208,7 @@ function de() {
     } finally {
       P(!1);
     }
-  }, [h]);
+  }, [y]);
   n(() => {
     T();
   }, [T]);
@@ -228,13 +228,13 @@ function de() {
         return e.createElement(
           "div",
           { style: { overflowX: "auto" } },
-          e.createElement(y.Text, {
+          e.createElement(E.Text, {
             code: !0,
             children: g.filePath
           }),
           e.createElement(
             "p",
-            { style: { color: "var(--ant-color-text-quaternary, #999)", fontSize: 12 } },
+            { style: { color: "#999", fontSize: 12 } },
             "CSV file — use data_analysis tool for detailed analysis"
           )
         );
@@ -243,7 +243,7 @@ function de() {
           "pre",
           {
             style: {
-              background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
+              background: "rgba(0,0,0,0.04)",
               padding: 12,
               borderRadius: 8,
               overflow: "auto",
@@ -256,17 +256,17 @@ function de() {
         return e.createElement(
           "div",
           null,
-          e.createElement(c, { color: "orange" }, "LAS Well Log"),
+          e.createElement(s, { color: "orange" }, "LAS Well Log"),
           e.createElement(
             "p",
-            { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #999)" } },
+            { style: { fontSize: 12, color: "#999" } },
             "Use data_analysis tool with operation='las_curves' for details"
           ),
           e.createElement(
             "pre",
             {
               style: {
-                background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
+                background: "rgba(0,0,0,0.04)",
                 padding: 12,
                 borderRadius: 8,
                 overflow: "auto",
@@ -287,12 +287,12 @@ function de() {
           }) : g.content
         );
     }
-  }, q = [
-    { key: "all", label: "All", icon: e.createElement(S) },
+  }, N = [
+    { key: "all", label: "All", icon: e.createElement(v) },
     {
       key: "figure",
       label: "Figures",
-      icon: e.createElement(v)
+      icon: e.createElement(S)
     },
     { key: "table", label: "Tables", icon: e.createElement(u) },
     { key: "code", label: "Code", icon: e.createElement(C) },
@@ -309,10 +309,10 @@ function de() {
       title: e.createElement(
         w,
         null,
-        e.createElement(v),
+        e.createElement(S),
         "Artifacts",
         e.createElement(
-          c,
+          s,
           { color: "blue", style: { fontSize: 10 } },
           String(B.length)
         )
@@ -321,14 +321,14 @@ function de() {
         w,
         null,
         e.createElement(
-          E,
+          h,
           { title: "Refresh" },
           e.createElement(m, {
             size: "small",
             type: "text",
             icon: e.createElement(O),
             onClick: T,
-            loading: s
+            loading: c
           })
         )
       ),
@@ -341,7 +341,7 @@ function de() {
       activeKey: A,
       onChange: _,
       size: "small",
-      items: q.map((g) => ({
+      items: N.map((g) => ({
         key: g.key,
         label: e.createElement(w, { size: 4 }, g.icon, g.label),
         children: e.createElement(
@@ -355,7 +355,7 @@ function de() {
                 size: "small",
                 title: x.title,
                 extra: e.createElement(
-                  c,
+                  s,
                   { color: x.type === "figure" ? "green" : "blue" },
                   x.type
                 )
@@ -369,35 +369,35 @@ function de() {
   );
 }
 function me() {
-  var u, C, S, O;
-  const e = f(), t = e.React, { useState: n, useEffect: l } = t, { Button: a, Tooltip: r } = e.antd, { PictureOutlined: o } = e.antdIcons, [i, p] = n(!1), y = window.QwenPaw, m = ((C = (u = y == null ? void 0 : y.host) == null ? void 0 : u.getSelectedAgentId) == null ? void 0 : C.call(u)) || "default", [w, c] = n(!1);
+  var u, C, v, O;
+  const e = f(), t = e.React, { useState: n, useEffect: l } = t, { Button: a, Tooltip: r } = e.antd, { PictureOutlined: o } = e.antdIcons, [i, p] = n(!1), E = window.QwenPaw, m = ((C = (u = E == null ? void 0 : E.host) == null ? void 0 : u.getSelectedAgentId) == null ? void 0 : C.call(u)) || "default", [w, s] = n(!1);
   if (l(() => {
     let L = !0;
-    J(m).then((R) => {
-      L && c(R.enabled);
+    F(m).then((R) => {
+      L && s(R.enabled);
     });
     const I = setInterval(() => {
-      J(m).then((R) => {
-        L && c(R.enabled);
+      F(m).then((R) => {
+        L && s(R.enabled);
       });
     }, 3e3);
     return () => {
       L = !1, clearInterval(I);
     };
   }, [m]), !w) return null;
-  const E = {
+  const h = {
     width: i ? 44 : 320,
     flexShrink: 0,
     height: "100%",
     overflow: "hidden",
-    borderLeft: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
+    borderLeft: "1px solid rgba(0,0,0,0.06)",
     transition: "width 0.2s ease",
     display: "flex",
     flexDirection: "column"
-  }, v = typeof document < "u" && ((O = (S = document.documentElement) == null ? void 0 : S.classList) == null ? void 0 : O.contains("dark-mode"));
-  return v && (E.borderLeft = "1px solid rgba(255,255,255,0.08)", E.background = "#1e1e1e"), i ? t.createElement(
+  }, S = typeof document < "u" && ((O = (v = document.documentElement) == null ? void 0 : v.classList) == null ? void 0 : O.contains("dark-mode"));
+  return S && (h.borderLeft = "1px solid rgba(255,255,255,0.08)", h.background = "#1e1e1e"), i ? t.createElement(
     "div",
-    { style: { ...E, alignItems: "center", paddingTop: 8 } },
+    { style: { ...h, alignItems: "center", paddingTop: 8 } },
     t.createElement(
       r,
       { title: "Expand Artifacts", placement: "left" },
@@ -410,7 +410,7 @@ function me() {
     )
   ) : t.createElement(
     "div",
-    { style: E },
+    { style: h },
     t.createElement(
       "div",
       {
@@ -419,10 +419,10 @@ function me() {
           alignItems: "center",
           justifyContent: "space-between",
           padding: "8px 12px",
-          borderBottom: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
+          borderBottom: "1px solid rgba(0,0,0,0.06)",
           fontSize: 13,
           fontWeight: 600,
-          color: v ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.85)"
+          color: S ? "rgba(255,255,255,0.85)" : "rgba(0,0,0,0.85)"
         }
       },
       t.createElement("span", null, "📗 Artifacts"),
@@ -451,42 +451,42 @@ function ue() {
     Col: o,
     Statistic: i,
     Typography: p,
-    Divider: y,
+    Divider: E,
     List: m,
     Tag: w,
-    Space: c,
-    Button: E,
-    Select: v,
+    Space: s,
+    Button: h,
+    Select: S,
     Tooltip: u,
     message: C
   } = f().antd, {
-    ExperimentOutlined: S,
+    ExperimentOutlined: v,
     BookOutlined: O,
     BarChartOutlined: L,
     BulbOutlined: I,
     ArrowRightOutlined: R,
-    ThunderboltOutlined: h
-  } = f().antdIcons, B = window.QwenPaw, z = (($ = (k = B == null ? void 0 : B.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : $.call(k)) || "default", [s, P] = t({
+    ThunderboltOutlined: y
+  } = f().antdIcons, B = window.QwenPaw, z = (($ = (k = B == null ? void 0 : B.host) == null ? void 0 : k.getSelectedAgentId) == null ? void 0 : $.call(k)) || "default", [c, P] = t({
     enabled: !1,
     domain: "general"
   }), [A, _] = t(!1), T = l(async () => {
-    const d = await J(z);
+    const d = await F(z);
     P(d);
   }, [z]);
   n(() => {
     T();
   }, [T]);
   const D = async () => {
-    _(!0), await G(z, !s.enabled) ? (P({ ...s, enabled: !s.enabled }), C.success(
-      s.enabled ? "研究模式已关闭" : "🔬 研究模式已启用"
+    _(!0), await q(z, !c.enabled) ? (P({ ...c, enabled: !c.enabled }), C.success(
+      c.enabled ? "研究模式已关闭" : "🔬 研究模式已启用"
     )) : C.error("切换研究模式失败"), _(!1);
   }, U = async (d) => {
-    _(!0), await G(z, s.enabled, d) && P({ ...s, domain: d }), _(!1);
-  }, q = () => {
+    _(!0), await q(z, c.enabled, d) && P({ ...c, domain: d }), _(!1);
+  }, N = () => {
     window.location.href = "/chat";
   }, b = () => {
     window.location.href = "/skill-pool";
-  }, N = [
+  }, M = [
     { name: "SCOPE", desc: "定义研究问题", icon: "🎯" },
     { name: "LITERATURE", desc: "检索与综述文献", icon: "📚" },
     { name: "REASON", desc: "推理与思考", icon: "💡" },
@@ -530,10 +530,10 @@ function ue() {
         "div",
         { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 } },
         e.createElement(
-          c,
+          s,
           { align: "center", size: 12 },
-          e.createElement(S, {
-            style: { fontSize: 28, color: s.enabled ? "#06b6d4" : "var(--ant-color-text-quaternary, #999)" }
+          e.createElement(v, {
+            style: { fontSize: 28, color: c.enabled ? "#06b6d4" : "#999" }
           }),
           e.createElement(
             "div",
@@ -549,14 +549,14 @@ function ue() {
               `Agent: ${z}`
             )
           ),
-          s.enabled ? e.createElement(w, { color: "green" }, "已启用") : e.createElement(w, { color: "default" }, "未启用")
+          c.enabled ? e.createElement(w, { color: "green" }, "已启用") : e.createElement(w, { color: "default" }, "未启用")
         ),
         e.createElement(
-          c,
+          s,
           { size: 8 },
-          e.createElement(v, {
+          e.createElement(S, {
             size: "small",
-            value: s.domain,
+            value: c.domain,
             onChange: U,
             loading: A,
             style: { width: 120 },
@@ -568,20 +568,20 @@ function ue() {
             ]
           }),
           e.createElement(
-            E,
+            h,
             {
-              type: s.enabled ? "default" : "primary",
-              danger: s.enabled,
+              type: c.enabled ? "default" : "primary",
+              danger: c.enabled,
               loading: A,
               onClick: D,
-              icon: e.createElement(S)
+              icon: e.createElement(v)
             },
-            s.enabled ? "关闭研究模式" : "启用研究模式"
+            c.enabled ? "关闭研究模式" : "启用研究模式"
           )
         )
       )
     ),
-    e.createElement(y, null),
+    e.createElement(E, null),
     // ── Stats Row ──
     e.createElement(
       r,
@@ -593,9 +593,9 @@ function ue() {
           size: "small",
           children: e.createElement(i, {
             title: "研究模式",
-            value: s.enabled ? "已启用" : "未启用",
-            prefix: e.createElement(S),
-            valueStyle: s.enabled ? { color: "#06b6d4" } : { color: "var(--ant-color-text-quaternary, #999)" }
+            value: c.enabled ? "已启用" : "未启用",
+            prefix: e.createElement(v),
+            valueStyle: c.enabled ? { color: "#06b6d4" } : { color: "#999" }
           })
         })
       ),
@@ -606,7 +606,7 @@ function ue() {
           size: "small",
           children: e.createElement(i, {
             title: "研究领域",
-            value: s.domain,
+            value: c.domain,
             prefix: e.createElement(O)
           })
         })
@@ -624,26 +624,26 @@ function ue() {
         })
       )
     ),
-    e.createElement(y, null),
+    e.createElement(E, null),
     // ── Start Research Button ──
     e.createElement(
       "div",
       { style: { textAlign: "center", marginBottom: 24 } },
       e.createElement(
-        E,
+        h,
         {
           type: "primary",
           size: "large",
-          icon: e.createElement(h),
-          disabled: !s.enabled,
-          onClick: q,
-          style: s.enabled ? { background: "#06b6d4", borderColor: "#06b6d4" } : {}
+          icon: e.createElement(y),
+          disabled: !c.enabled,
+          onClick: N,
+          style: c.enabled ? { background: "#06b6d4", borderColor: "#06b6d4" } : {}
         },
         "开始研究对话"
       ),
-      !s.enabled && e.createElement(
+      !c.enabled && e.createElement(
         "div",
-        { style: { marginTop: 8, fontSize: 12, color: "var(--ant-color-text-quaternary, #999)" } },
+        { style: { marginTop: 8, fontSize: 12, color: "#999" } },
         "请先启用研究模式"
       )
     ),
@@ -652,12 +652,12 @@ function ue() {
       a,
       {
         size: "small",
-        title: e.createElement(c, null, "🔬 研究工作流阶段"),
+        title: e.createElement(s, null, "🔬 研究工作流阶段"),
         style: { marginBottom: 16 }
       },
       e.createElement(m, {
         grid: { gutter: 16, column: 4 },
-        dataSource: N,
+        dataSource: M,
         renderItem: (d, Y) => e.createElement(
           m.Item,
           null,
@@ -673,8 +673,8 @@ function ue() {
                   textAlign: "center",
                   height: "100%",
                   cursor: "pointer",
-                  borderLeft: s.enabled ? "3px solid #06b6d4" : "3px solid #e8e8e8",
-                  opacity: s.enabled ? 1 : 0.6
+                  borderLeft: c.enabled ? "3px solid #06b6d4" : "3px solid #e8e8e8",
+                  opacity: c.enabled ? 1 : 0.6
                 }
               },
               e.createElement(
@@ -695,7 +695,7 @@ function ue() {
               ),
               e.createElement(
                 "div",
-                { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)" } },
+                { style: { fontSize: 11, color: "#999" } },
                 d.desc
               )
             )
@@ -714,7 +714,7 @@ function ue() {
           a,
           {
             size: "small",
-            title: e.createElement(c, null, "🛠️ 研究工具")
+            title: e.createElement(s, null, "🛠️ 研究工具")
           },
           e.createElement(m, {
             size: "small",
@@ -728,8 +728,8 @@ function ue() {
                     { title: d.action },
                     e.createElement(
                       w,
-                      { color: s.enabled ? "cyan" : "default" },
-                      s.enabled ? "可用" : "未启用"
+                      { color: c.enabled ? "cyan" : "default" },
+                      c.enabled ? "可用" : "未启用"
                     )
                   )
                 ]
@@ -738,7 +738,7 @@ function ue() {
                 "div",
                 { style: { cursor: "default" } },
                 e.createElement(
-                  c,
+                  s,
                   null,
                   e.createElement("span", { style: { fontSize: 18 } }, d.icon),
                   e.createElement(
@@ -769,9 +769,9 @@ function ue() {
           a,
           {
             size: "small",
-            title: e.createElement(c, null, "⚡ 研究技能"),
+            title: e.createElement(s, null, "⚡ 研究技能"),
             extra: e.createElement(
-              E,
+              h,
               {
                 size: "small",
                 type: "link",
@@ -794,7 +794,7 @@ function ue() {
                   onClick: b
                 },
                 e.createElement(
-                  c,
+                  s,
                   null,
                   e.createElement("span", { style: { fontSize: 18 } }, d.icon),
                   e.createElement(
@@ -822,7 +822,7 @@ function ue() {
   );
 }
 function te(e) {
-  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { BookOutlined: a, Tag: r } = { ...f().antdIcons, ...f().antd }, o = e.data || e.content || {}, i = o.params || {}, p = i.query || "", y = i.source || "all", m = typeof o.result == "string" ? o.result : JSON.stringify(o.result, null, 2);
+  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { BookOutlined: a, Tag: r } = { ...f().antdIcons, ...f().antd }, o = e.data || e.content || {}, i = o.params || {}, p = i.query || "", E = i.source || "all", m = typeof o.result == "string" ? o.result : JSON.stringify(o.result, null, 2);
   let w = [];
   try {
     w = JSON.parse(m).results || [];
@@ -832,7 +832,7 @@ function te(e) {
     content: o,
     isStreaming: e.isStreaming,
     icon: t.createElement(a),
-    title: `📚 Literature Search: "${p}" (${y})`,
+    title: `📚 Literature Search: "${p}" (${E})`,
     inlineResult: w.length ? `${w.length} results` : void 0,
     children: t.createElement(
       t.Fragment,
@@ -841,44 +841,44 @@ function te(e) {
         "div",
         { style: { maxHeight: 400, overflow: "auto" } },
         w.slice(0, 10).map(
-          (c, E) => t.createElement(
+          (s, h) => t.createElement(
             "div",
             {
-              key: E,
+              key: h,
               style: {
                 padding: "8px 0",
-                borderBottom: E < 9 ? "1px solid #f0f0f0" : "none"
+                borderBottom: h < 9 ? "1px solid #f0f0f0" : "none"
               }
             },
             t.createElement(
               "strong",
               { style: { fontSize: 13 } },
-              c.title || "Untitled"
+              s.title || "Untitled"
             ),
-            c.year && t.createElement(
+            s.year && t.createElement(
               "span",
-              { style: { color: "var(--ant-color-text-quaternary, #999)", marginLeft: 8 } },
-              `(${c.year})`
+              { style: { color: "#999", marginLeft: 8 } },
+              `(${s.year})`
             ),
-            c.authors && t.createElement(
+            s.authors && t.createElement(
               "div",
-              { style: { fontSize: 11, color: "var(--ant-color-text-secondary, #666)" } },
-              Array.isArray(c.authors) ? c.authors.join(", ") : c.authors
+              { style: { fontSize: 11, color: "#666" } },
+              Array.isArray(s.authors) ? s.authors.join(", ") : s.authors
             ),
-            c.doi && t.createElement(
+            s.doi && t.createElement(
               "code",
               { style: { fontSize: 10 } },
-              c.doi
+              s.doi
             ),
-            c.abstract && t.createElement(
+            s.abstract && t.createElement(
               "div",
-              { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginTop: 4 } },
-              c.abstract.substring(0, 200) + "..."
+              { style: { fontSize: 11, color: "#999", marginTop: 4 } },
+              s.abstract.substring(0, 200) + "..."
             ),
             t.createElement(
               r,
               { style: { fontSize: 10, marginTop: 4 } },
-              c.source || "unknown"
+              s.source || "unknown"
             )
           )
         )
@@ -903,7 +903,7 @@ function ne(e) {
   });
 }
 function ae(e) {
-  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { BarChartOutlined: a } = f().antdIcons, r = e.data || e.content || {}, o = r.params || {}, i = o.data_path || "", p = o.operation || "summary", y = typeof r.result == "string" ? r.result : JSON.stringify(r.result, null, 2), m = i.split("/").pop() || i;
+  const t = f().React, { ToolCardShell: n, DefaultBlock: l } = X(), { BarChartOutlined: a } = f().antdIcons, r = e.data || e.content || {}, o = r.params || {}, i = o.data_path || "", p = o.operation || "summary", E = typeof r.result == "string" ? r.result : JSON.stringify(r.result, null, 2), m = i.split("/").pop() || i;
   return t.createElement(n, {
     content: r,
     isStreaming: e.isStreaming,
@@ -911,13 +911,13 @@ function ae(e) {
     title: `📊 Data Analysis: ${m} (${p})`,
     children: t.createElement(l, {
       title: "Output",
-      content: y
+      content: E
     })
   });
 }
-let F = null;
+let G = null;
 function X() {
-  if (F) return F;
+  if (G) return G;
   const e = f().React, t = ({
     title: l,
     content: a
@@ -926,7 +926,7 @@ function X() {
     { style: { margin: "4px 0 2px 18px" } },
     e.createElement(
       "div",
-      { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginBottom: 2 } },
+      { style: { fontSize: 11, color: "#999", marginBottom: 2 } },
       l
     ),
     e.createElement(
@@ -936,7 +936,7 @@ function X() {
           fontSize: 12,
           lineHeight: 1.5,
           padding: "8px 12px",
-          background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.03))",
+          background: "rgba(0,0,0,0.03)",
           borderRadius: 8,
           overflow: "auto",
           maxHeight: 360
@@ -945,7 +945,7 @@ function X() {
       a
     )
   );
-  return F = { ToolCardShell: ({
+  return G = { ToolCardShell: ({
     content: l,
     isStreaming: a,
     icon: r,
@@ -953,14 +953,14 @@ function X() {
     inlineResult: i,
     children: p
   }) => {
-    const y = l.status === "calling" && a, m = l.status === "error";
+    const E = l.status === "calling" && a, m = l.status === "error";
     return e.createElement(
       "details",
       {
-        open: y || m,
+        open: E || m,
         style: {
           margin: "4px 0",
-          border: "1px solid var(--ant-color-border-secondary, rgba(0,0,0,0.06))",
+          border: "1px solid rgba(0,0,0,0.06)",
           borderRadius: 8,
           padding: "4px 8px"
         }
@@ -976,13 +976,13 @@ function X() {
             fontSize: 13
           }
         },
-        y ? e.createElement("span", {
+        E ? e.createElement("span", {
           className: "ant-spin-dot ant-spin-dot-spin"
         }) : e.createElement("span", null, r),
         e.createElement("span", null, o),
-        !y && i && e.createElement(
+        !E && i && e.createElement(
           "span",
-          { style: { fontSize: 11, color: "var(--ant-color-text-quaternary, #999)", marginLeft: "auto" } },
+          { style: { fontSize: 11, color: "#999", marginLeft: "auto" } },
           i
         )
       ),
@@ -991,7 +991,7 @@ function X() {
         content: JSON.stringify(l.result, null, 2)
       }) : p
     );
-  }, DefaultBlock: t }, F;
+  }, DefaultBlock: t }, G;
 }
 function ge() {
   var l, a, r, o, i;
@@ -1009,9 +1009,10 @@ function ge() {
     component: ue
   }), (l = e.slot) != null && l.fill ? (e.slot.fill(
     n,
-    "header.toggle",
-    () => t.createElement(ee)
-  ), console.info("[ugsci-research] Registered header.toggle slot")) : (r = (a = e.chat) == null ? void 0 : a.rightHeader) != null && r.add && (e.chat.rightHeader.add(
+    "header.right",
+    () => t.createElement(ee),
+    { id: "research-mode-toggle", order: 5 }
+  ), console.info("[ugsci-research] Registered header.right toggle")) : (r = (a = e.chat) == null ? void 0 : a.rightHeader) != null && r.add && (e.chat.rightHeader.add(
     n,
     t.createElement(ee),
     { id: "research-mode-toggle", order: 5 }

@@ -1438,13 +1438,17 @@ function buildPlugin() {
   });
 
   // ── 2. Register Research Mode Toggle in Header (parallel to Coding Mode) ──
-  // Use the header.toggle slot so the toggle appears right next to the
-  // CodingModeToggle button in the top header bar.
+  // The host header renders `header.right`; older builds exposed a separate
+  // `header.toggle` slot, which is no longer mounted and made this control
+  // invisible. Keep the toggle in the live right-side header slot.
   if (QP.slot?.fill) {
-    QP.slot.fill(PLUGIN_ID, "header.toggle", () =>
-      React.createElement(ResearchModeHeaderToggle),
+    QP.slot.fill(
+      PLUGIN_ID,
+      "header.right",
+      () => React.createElement(ResearchModeHeaderToggle),
+      { id: "research-mode-toggle", order: 5 },
     );
-    console.info("[ugsci-research] Registered header.toggle slot");
+    console.info("[ugsci-research] Registered header.right toggle");
   } else {
     // Fallback: use chat.rightHeader to place the toggle in the chat header
     if (QP.chat?.rightHeader?.add) {

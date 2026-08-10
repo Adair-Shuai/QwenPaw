@@ -117,6 +117,7 @@ from .office_tools import (  # noqa: E402
     office_batch_operations,
     office_raw_get,
     office_raw_set,
+    office_replace_text,
 )
 
 

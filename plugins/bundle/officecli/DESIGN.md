@@ -740,7 +740,32 @@ OfficeOoxmlPreview (前端解析, 不改动)
 
 ## 10. 测试计划
 
-### 10.1 后端测试
+### 10.1 OfficeCLI 输入、输出与成功校验契约（官方语义对齐）
+
+封装层遵循 OfficeCLI 1.0.x 的命令语义：
+
+* `set <file> <path> --prop text=...` 是 Word 文本修改的首选路径。普通文本不得通过 `raw-set --action replace --xml` 传入。
+* `raw-set` 的 `append/prepend/insertbefore/insertafter/replace` 要求 `--xml` 为完整 XML fragment；`setattr` 要求 `attr=value`；`remove` 不得带 `--xml`。
+* `--json` 输出以 `success` 为主状态字段，封装层归一化为同时包含 `ok` 与 `success`。非零退出、`success:false` 或缺少结构化输出均视为失败。
+* OfficeCLI resident 模式可能把修改暂存在内存。任何写操作完成后，封装层显式调用 `save`，再用 `view text` 读取探针确认文档可读；只有保存和探针都成功才报告 `saved:true` 与 `verification.readable:true`。
+* `office_replace_text` 使用 `query --find` 获取实际匹配路径，再以结构化 `set` 修改，并报告 `matched_count`、`replaced_count`、路径、保存状态和新文本读回数量。
+* `send_file_to_user` 至少验证 OOXML 文件是完整 ZIP；调用方可用 `required_text` / `forbidden_text` 进行发送前内容门禁。路径不存在、类型错误、损坏 Office 容器或断言失败均返回错误状态。
+
+示例：
+
+```json
+{
+  "file_path": "/workspace/invite.docx",
+  "old_text": "成都理工大学",
+  "new_text": "北京惠萌启航石油科技有限公司",
+  "selector": "run",
+  "all_matches": true
+}
+```
+
+成功响应必须至少能证明：结构化命令成功、resident 已保存、文档可读、目标文本读回匹配；仅有 `success:true` 而没有修改摘要或验证信息，不再视为业务成功。
+
+### 10.2 后端测试
 
 | 用例 | 预期 |
 |------|------|
@@ -751,7 +776,7 @@ OfficeOoxmlPreview (前端解析, 不改动)
 | 截图端点，officecli 已安装 | 返回 PNG |
 | 截图端点，officecli 未安装 | 返回 404 |
 
-### 10.2 工具函数测试
+### 10.3 工具函数测试
 
 | 用例 | 预期 |
 |------|------|
@@ -761,7 +786,7 @@ OfficeOoxmlPreview (前端解析, 不改动)
 | `office_validate_document("test.pptx")` | 返回验证结果 |
 | officecli 未安装时调用任意工具 | 返回友好错误提示 |
 
-### 10.3 前端测试
+### 10.4 前端测试
 
 | 用例 | 预期 |
 |------|------|
@@ -770,7 +795,7 @@ OfficeOoxmlPreview (前端解析, 不改动)
 | 截图预览翻页 | 正确显示对应页 |
 | 渲染引擎标签 | "OfficeCLI 高保真渲染" / "基础渲染" |
 
-### 10.4 端到端测试
+### 10.5 端到端测试
 
 ```
 用户: "帮我做一个关于石油勘探的 5 页 PPT"

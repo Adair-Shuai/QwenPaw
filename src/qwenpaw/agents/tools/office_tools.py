@@ -9,7 +9,7 @@ OfficeCLI supports Word (.docx), Excel (.xlsx), and PowerPoint (.pptx)
 with high-fidelity rendering. When ``officecli`` is not installed, all
 tools return a friendly error message guiding the user to install it.
 
-Tool list (19 tools):
+Tool list (20 tools):
     - office_create_document
     - office_add_element
     - office_set_properties
@@ -29,6 +29,7 @@ Tool list (19 tools):
     - office_batch_operations
     - office_raw_get
     - office_raw_set
+    - office_replace_text
 """
 
 from __future__ import annotations
@@ -37,9 +38,11 @@ import asyncio
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -55,6 +58,17 @@ from .file_io import _path_to_file_url, _resolve_file_path
 logger = logging.getLogger(__name__)
 
 _OFFICECLI_TIMEOUT = 60  # seconds
+
+_RAW_ACTIONS = {
+    "append",
+    "prepend",
+    "insertbefore",
+    "insertafter",
+    "replace",
+    "remove",
+    "setattr",
+}
+_RAW_XML_ROOT_RE = re.compile(r"^\s*<([A-Za-z_][\w:.-]*)(?:\s|/?>)")
 
 # Hide the console window on Windows when spawning officecli subprocesses.
 # On POSIX this is 0 (a no-op for subprocess.Popen).  Without this flag,
@@ -119,7 +133,7 @@ def _not_installed_error() -> ToolChunk:
     """Return a standard error ToolChunk when officecli is missing."""
     return ToolChunk(
         is_last=True,
-        state=ToolResultState.SUCCESS,
+        state=ToolResultState.ERROR,
         content=[
             TextBlock(
                 type="text",
@@ -196,9 +210,10 @@ def _props_to_args(props: dict[str, Any] | None) -> list[str]:
 
 def _json_toolchunk(data: Any) -> ToolChunk:
     """Wrap a dict/list as a ToolChunk with pretty-printed JSON text."""
+    ok = not (isinstance(data, dict) and data.get("ok") is False)
     return ToolChunk(
         is_last=True,
-        state=ToolResultState.SUCCESS,
+        state=ToolResultState.SUCCESS if ok else ToolResultState.ERROR,
         content=[
             TextBlock(
                 type="text",
@@ -295,7 +310,120 @@ async def _run_officecli(  # pylint: disable=too-many-return-statements
     # Normalise: ensure "ok" key exists for success cases
     if isinstance(parsed, dict) and "ok" not in parsed:
         parsed["ok"] = parsed.get("success", True)
+    if isinstance(parsed, dict) and parsed.get("ok") is False:
+        parsed.setdefault("success", False)
     return parsed
+
+
+# pylint: disable=too-many-return-statements
+def _raw_set_input_error(action: str, xml: str) -> str | None:
+    """Validate the wrapper-side contract before invoking OfficeCLI.
+
+    OfficeCLI's raw-set command expects an XML fragment for structural
+    actions.  Passing plain text to ``replace`` is accepted by some CLI
+    versions but removes the target element, which is unsafe for documents.
+    """
+    if action not in _RAW_ACTIONS:
+        return (
+            f"Invalid raw-set action {action!r}; expected one of "
+            f"{', '.join(sorted(_RAW_ACTIONS))}."
+        )
+    if action == "remove":
+        if xml:
+            return "raw-set action 'remove' must not receive xml."
+        return None
+    if action == "setattr":
+        if not xml or "=" not in xml or xml.lstrip().startswith("<"):
+            return "raw-set action 'setattr' requires attr=value, not XML."
+        return None
+    if not xml:
+        return f"raw-set action '{action}' requires an XML fragment."
+    if _RAW_XML_ROOT_RE.match(xml) is None:
+        return (
+            f"raw-set action '{action}' requires a complete XML fragment "
+            "such as <w:t>text</w:t>; use office_set_properties with "
+            "props={text: ...} for plain Word text."
+        )
+    return None
+
+
+def _officecli_ok(result: Any) -> bool:
+    """Return whether an OfficeCLI envelope represents success."""
+    return bool(
+        isinstance(result, dict)
+        and result.get("ok", result.get("success", False))
+        and result.get("success", True),
+    )
+
+
+def _officecli_results(result: Any) -> list[dict[str, Any]]:
+    """Extract the common ``data.results`` list from OfficeCLI output."""
+    if not isinstance(result, dict):
+        return []
+    data = result.get("data")
+    if not isinstance(data, dict):
+        return []
+    results = data.get("results")
+    if not isinstance(results, list):
+        return []
+    return [item for item in results if isinstance(item, dict)]
+
+
+async def _flush_and_probe(
+    file_path: str,
+    result: dict[str, Any],
+) -> dict[str, Any]:
+    """Flush resident edits and prove the document can be read back.
+
+    OfficeCLI documents that a resident may defer disk writes until
+    ``save``/``close`` or idle autosave.  Every QwenPaw mutation therefore
+    crosses an explicit save boundary, then performs a semantic read probe.
+    """
+    # Unit callers and legacy OfficeCLI-compatible adapters may return only
+    # ``success/ok`` without the command envelope. There is no reliable file
+    # mutation claim to verify in that shape, so preserve the legacy result.
+    if not _officecli_ok(result) or "data" not in result:
+        return result
+    save_result = await _run_officecli("save", file_path)
+    if not _officecli_ok(save_result):
+        return {
+            "ok": False,
+            "success": False,
+            "error": "OfficeCLI mutation succeeded in memory but save failed.",
+            "mutation": result,
+            "save": save_result,
+        }
+    # ``view text`` is a semantic read that works for docx/xlsx/pptx and is
+    # less brittle than a root ``get`` when a legacy Office file contains
+    # non-standard metadata parts.
+    probe = await _run_officecli("view", file_path, "text", "--max-lines", "1")
+    if not _officecli_ok(probe):
+        return {
+            "ok": False,
+            "success": False,
+            "error": "OfficeCLI mutation was saved but read-back failed.",
+            "mutation": result,
+            "save": save_result,
+            "verification": probe,
+        }
+    enriched = dict(result)
+    enriched["ok"] = True
+    enriched["success"] = True
+    enriched["saved"] = True
+    enriched["verification"] = {
+        "readable": True,
+        "method": "officecli view text --max-lines 1 after save",
+    }
+    return enriched
+
+
+async def _run_officecli_mutation(
+    file_path: str,
+    *args: str,
+) -> dict[str, Any]:
+    """Run a mutating command, flush resident state, and read it back."""
+    result = await _run_officecli(*args)
+    return await _flush_and_probe(file_path, result)
 
 
 def _resolve_workspace_path(file_path: str) -> str:
@@ -332,7 +460,7 @@ async def office_create_document(file_path: str) -> ToolChunk:
             JSON with creation result.
     """
     resolved = _resolve_workspace_path(file_path)
-    result = await _run_officecli("create", resolved)
+    result = await _run_officecli_mutation(resolved, "create", resolved)
     return _json_toolchunk(result)
 
 
@@ -415,7 +543,7 @@ async def office_add_element(
     resolved = _resolve_workspace_path(file_path)
     args = ["add", resolved, parent_path, "--type", element_type]
     args.extend(_props_to_args(props))
-    result = await _run_officecli(*args)
+    result = await _run_officecli_mutation(resolved, *args)
     return _json_toolchunk(result)
 
 
@@ -477,7 +605,7 @@ async def office_set_properties(
     resolved = _resolve_workspace_path(file_path)
     args = ["set", resolved, path]
     args.extend(_props_to_args(props))
-    result = await _run_officecli(*args)
+    result = await _run_officecli_mutation(resolved, *args)
     return _json_toolchunk(result)
 
 
@@ -592,7 +720,7 @@ async def office_remove_element(
             JSON with removal result.
     """
     resolved = _resolve_workspace_path(file_path)
-    result = await _run_officecli("remove", resolved, path)
+    result = await _run_officecli_mutation(resolved, "remove", resolved, path)
     return _json_toolchunk(result)
 
 
@@ -889,7 +1017,8 @@ async def office_merge_template(
         json.dump(data, f, ensure_ascii=False)
 
     try:
-        result = await _run_officecli(
+        result = await _run_officecli_mutation(
+            resolved_output,
             "merge",
             resolved_template,
             resolved_output,
@@ -979,7 +1108,8 @@ async def office_batch_operations(
         json.dump(normalised, f, ensure_ascii=False)
 
     try:
-        result = await _run_officecli(
+        result = await _run_officecli_mutation(
+            resolved,
             "batch",
             resolved,
             "--input",
@@ -1045,7 +1175,7 @@ async def office_move_element(
         args.extend(["--after", after])
     if before is not None:
         args.extend(["--before", before])
-    result = await _run_officecli(*args)
+    result = await _run_officecli_mutation(resolved, *args)
     return _json_toolchunk(result)
 
 
@@ -1086,7 +1216,13 @@ async def office_swap_elements(
             JSON with the swap result.
     """
     resolved = _resolve_workspace_path(file_path)
-    result = await _run_officecli("swap", resolved, path1, path2)
+    result = await _run_officecli_mutation(
+        resolved,
+        "swap",
+        resolved,
+        path1,
+        path2,
+    )
     return _json_toolchunk(result)
 
 
@@ -1139,7 +1275,7 @@ async def office_get_text(
         args.extend(["--start", str(start)])
     if end > 0:
         args.extend(["--end", str(end)])
-    result = await _run_officecli(*args)
+    result = await _run_officecli_mutation(resolved, *args)
     return _json_toolchunk(result)
 
 
@@ -1183,7 +1319,7 @@ async def office_get_stats(
     args: list[str] = ["view", resolved, "stats"]
     if page_count:
         args.append("--page-count")
-    result = await _run_officecli(*args)
+    result = await _run_officecli_mutation(resolved, *args)
     return _json_toolchunk(result)
 
 
@@ -1280,7 +1416,7 @@ async def office_refresh_fields(file_path: str) -> ToolChunk:
             JSON with the refresh result.
     """
     resolved = _resolve_workspace_path(file_path)
-    result = await _run_officecli("refresh", resolved)
+    result = await _run_officecli_mutation(resolved, "refresh", resolved)
     return _json_toolchunk(result)
 
 
@@ -1380,6 +1516,24 @@ async def office_raw_set(
         `ToolChunk`:
             JSON with the modification result.
     """
+    validation_error = _raw_set_input_error(action, xml)
+    if validation_error:
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "success": False,
+                "error": validation_error,
+                "input_contract": {
+                    "replace": (
+                        "xml must be a complete XML fragment; use "
+                        "office_replace_text or office_set_properties "
+                        "for plain text"
+                    ),
+                    "remove": "xml must be empty",
+                    "setattr": "xml must be attr=value",
+                },
+            },
+        )
     resolved = _resolve_workspace_path(file_path)
     args: list[str] = [
         "raw-set",
@@ -1392,5 +1546,181 @@ async def office_raw_set(
     ]
     if xml:
         args.extend(["--xml", xml])
-    result = await _run_officecli(*args)
+    result = await _run_officecli_mutation(resolved, *args)
+    if _officecli_ok(result):
+        result.setdefault(
+            "change",
+            {
+                "action": action,
+                "xpath": xpath,
+                "message": (
+                    "OfficeCLI reported the raw XML operation as applied; "
+                    "verify semantic text with "
+                    "office_get_text or office_query_elements."
+                ),
+            },
+        )
+    return _json_toolchunk(result)
+
+
+# ---------------------------------------------------------------------------
+# Tool 20: office_replace_text
+# ---------------------------------------------------------------------------
+
+
+@tool_descriptor(
+    requires_sandbox=("file_write",),
+    async_execution=True,
+    enabled_by_default=True,
+    tool_type="file",
+    target_param="file_path",
+    policy_name="OfficeReplaceText",
+    ui_description="Safely replace text in Word/Office documents",
+    ui_icon="🔤",
+)
+async def office_replace_text(
+    file_path: str,
+    old_text: str,
+    new_text: str,
+    selector: str = "run",
+    all_matches: bool = True,
+) -> ToolChunk:
+    """Safely replace visible text while preserving the target formatting.
+
+    This is the preferred Word text-editing tool. It uses OfficeCLI's
+    structured ``query --find`` followed by ``set ... --prop text=...``;
+    it never treats plain text as an OpenXML fragment. The output includes
+    matched paths, replacement count, save status, and a read-back probe.
+
+    Args:
+        file_path: Office document path.
+        old_text: Exact text (or substring) to find.
+        new_text: Replacement text.
+        selector: OfficeCLI selector, normally ``run`` for Word text.
+        all_matches: Replace every match; false requires exactly one match.
+    """
+    if not old_text:
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "success": False,
+                "error": "old_text must not be empty.",
+            },
+        )
+    resolved = _resolve_workspace_path(file_path)
+    found = await _run_officecli(
+        "query",
+        resolved,
+        selector,
+        "--find",
+        old_text,
+    )
+    if not _officecli_ok(found):
+        return _json_toolchunk(found)
+    matches = _officecli_results(found)
+    if not matches:
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "success": False,
+                "error": "No matching text found; document was not modified.",
+                "matched_count": 0,
+                "old_text": old_text,
+            },
+        )
+    if not all_matches and len(matches) != 1:
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "success": False,
+                "error": (
+                    f"Expected exactly one match, found {len(matches)}; "
+                    "document was not modified."
+                ),
+                "matched_count": len(matches),
+            },
+        )
+    commands = []
+    for item in matches if all_matches else matches[:1]:
+        path = item.get("path")
+        current_text = item.get("text")
+        if (
+            not path
+            or not isinstance(current_text, str)
+            or old_text not in current_text
+        ):
+            continue
+        commands.append(
+            {
+                "command": "set",
+                "path": path,
+                "props": {"text": current_text.replace(old_text, new_text)},
+            },
+        )
+    if not commands:
+        return _json_toolchunk(
+            {
+                "ok": False,
+                "success": False,
+                "error": (
+                    "Matches were reported but none contained replaceable "
+                    "text; document was not modified."
+                ),
+                "matched_count": len(matches),
+            },
+        )
+    cmd_handle = tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix="_office_replace.json",
+        delete=False,
+    )
+    cmd_file = cmd_handle.name
+    with cmd_handle as handle:
+        json.dump(commands, handle, ensure_ascii=False)
+    try:
+        result = await _run_officecli_mutation(
+            resolved,
+            "batch",
+            resolved,
+            "--input",
+            cmd_file,
+        )
+    finally:
+        Path(cmd_file).unlink(missing_ok=True)
+    if _officecli_ok(result):
+        readback = await _run_officecli(
+            "query",
+            resolved,
+            selector,
+            "--find",
+            new_text,
+        )
+        readback_count = len(_officecli_results(readback))
+        if not _officecli_ok(readback) or readback_count < len(commands):
+            result = {
+                "ok": False,
+                "success": False,
+                "error": (
+                    "Text replacement command completed but semantic "
+                    "read-back did not confirm every replacement."
+                ),
+                "mutation": result,
+                "verification": readback,
+            }
+        else:
+            result["verification"] = {
+                "readable": True,
+                "new_text_matches": readback_count,
+                "expected_minimum": len(commands),
+                "method": "officecli query --find after explicit save",
+            }
+    result["change"] = {
+        "old_text": old_text,
+        "new_text": new_text,
+        "selector": selector,
+        "matched_count": len(matches),
+        "replaced_count": len(commands),
+        "paths": [cmd["path"] for cmd in commands],
+    }
     return _json_toolchunk(result)

@@ -1009,9 +1009,10 @@ function ge() {
     component: ue
   }), (l = e.slot) != null && l.fill ? (e.slot.fill(
     n,
-    "header.toggle",
-    () => t.createElement(ee)
-  ), console.info("[ugsci-research] Registered header.toggle slot")) : (r = (a = e.chat) == null ? void 0 : a.rightHeader) != null && r.add && (e.chat.rightHeader.add(
+    "header.right",
+    () => t.createElement(ee),
+    { id: "research-mode-toggle", order: 5 }
+  ), console.info("[ugsci-research] Registered header.right toggle")) : (r = (a = e.chat) == null ? void 0 : a.rightHeader) != null && r.add && (e.chat.rightHeader.add(
     n,
     t.createElement(ee),
     { id: "research-mode-toggle", order: 5 }

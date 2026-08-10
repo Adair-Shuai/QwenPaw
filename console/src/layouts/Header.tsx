@@ -20,10 +20,7 @@ import api from "../api";
 import { openExternalLink } from "../utils/openExternalLink";
 import { ExternalMarkdownLink } from "../components/Markdown/externalLinkComponents";
 import {
-  GITHUB_URL,
   getDocsUrl,
-  getFeatureDemosUrl,
-  getFaqUrl,
   getReleaseNotesUrl,
   PYPI_URL,
   ONE_HOUR_MS,
@@ -193,25 +190,25 @@ export default function Header() {
       key: "featureDemos",
       icon: <PlayCircleOutlined />,
       label: t("header.featureDemos"),
-      onClick: () => handleNavClick(getFeatureDemosUrl(i18n.language)),
+      disabled: true,
     },
     {
       key: "changelog",
       icon: <FileTextOutlined />,
       label: t("header.changelog"),
-      onClick: () => handleNavClick(getReleaseNotesUrl(i18n.language)),
+      disabled: true,
     },
     {
       key: "faq",
       icon: <InfoCircleOutlined />,
       label: t("header.faq"),
-      onClick: () => handleNavClick(getFaqUrl(i18n.language)),
+      disabled: true,
     },
     {
       key: "github",
       icon: <GithubOutlined />,
       label: t("header.github"),
-      onClick: () => handleNavClick(GITHUB_URL),
+      disabled: true,
     },
   ];
 

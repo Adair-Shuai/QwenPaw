@@ -303,6 +303,87 @@ class TestRunOfficecli:
         assert actual_cmd[-1] == "--json"
 
 
+class TestOfficeSafetyContracts:
+    """Regression tests for destructive Office edit safeguards."""
+
+    def test_json_toolchunk_marks_error_state(self):
+        from agentscope.message import ToolResultState
+        from qwenpaw.agents.tools.office_tools import _json_toolchunk
+
+        chunk = _json_toolchunk({"ok": False, "error": "bad input"})
+        assert chunk.state == ToolResultState.ERROR
+
+    @pytest.mark.asyncio
+    async def test_raw_replace_rejects_plain_text(self):
+        from agentscope.message import ToolResultState
+        from qwenpaw.agents.tools.office_tools import office_raw_set
+
+        chunk = await office_raw_set(
+            "test.docx",
+            "/document",
+            "/w:document/w:body/w:p[2]/w:r[1]/w:t",
+            "replace",
+            "plain text is not XML",
+        )
+        payload = json.loads(chunk.content[0].text)
+        assert chunk.state == ToolResultState.ERROR
+        assert payload["ok"] is False
+        assert "complete XML fragment" in payload["error"]
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli_mutation")
+    @patch("qwenpaw.agents.tools.office_tools._run_officecli")
+    async def test_replace_text_returns_counts_and_readback(
+        self,
+        mock_run,
+        mock_mutation,
+    ):
+        from qwenpaw.agents.tools.office_tools import office_replace_text
+
+        mock_run.side_effect = [
+            {
+                "success": True,
+                "ok": True,
+                "data": {
+                    "results": [
+                        {
+                            "path": "/body/p[2]/r[1]",
+                            "text": " 成都理工大学 ",
+                        },
+                    ],
+                },
+            },
+            {
+                "success": True,
+                "ok": True,
+                "data": {
+                    "results": [
+                        {
+                            "path": "/body/p[2]/r[1]",
+                            "text": " 北京某公司 ",
+                        },
+                    ],
+                },
+            },
+        ]
+        mock_mutation.return_value = {
+            "success": True,
+            "ok": True,
+            "data": {"summary": {"succeeded": 1}},
+            "saved": True,
+        }
+
+        chunk = await office_replace_text(
+            "test.docx",
+            "成都理工大学",
+            "北京某公司",
+        )
+        payload = json.loads(chunk.content[0].text)
+        assert payload["change"]["matched_count"] == 1
+        assert payload["change"]["replaced_count"] == 1
+        assert payload["verification"]["new_text_matches"] == 1
+
+
 # ---------------------------------------------------------------------------
 # office_create_document
 # ---------------------------------------------------------------------------

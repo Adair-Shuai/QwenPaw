@@ -3,7 +3,9 @@
 # pylint: disable=line-too-long,too-many-return-statements
 import os
 import mimetypes
+import re
 import unicodedata
+import zipfile
 from urllib.parse import unquote
 
 from agentscope.tool import ToolChunk
@@ -27,12 +29,19 @@ from .file_io import _resolve_file_path, _path_to_file_url
 )
 async def send_file_to_user(
     file_path: str,
+    required_text: list[str] | None = None,
+    forbidden_text: list[str] | None = None,
 ) -> ToolChunk:
-    """Send a file to the user.
+    """Send a file to the user after optional artifact assertions.
 
     Args:
         file_path (`str`):
             Path to the file to send.
+        required_text (`list[str] | None`):
+            Text strings that must be present before sending. For DOCX,
+            visible Word text is extracted from ``word/*.xml``.
+        forbidden_text (`list[str] | None`):
+            Text strings that must not be present before sending.
 
     Returns:
         `ToolChunk`:
@@ -50,7 +59,7 @@ async def send_file_to_user(
     if not os.path.exists(file_path):
         return ToolChunk(
             is_last=True,
-            state=ToolResultState.SUCCESS,
+            state=ToolResultState.ERROR,
             content=[
                 TextBlock(
                     text=f"Error: The file {file_path} does not exist.",
@@ -61,10 +70,69 @@ async def send_file_to_user(
     if not os.path.isfile(file_path):
         return ToolChunk(
             is_last=True,
-            state=ToolResultState.SUCCESS,
+            state=ToolResultState.ERROR,
             content=[
                 TextBlock(
                     text=f"Error: The path {file_path} is not a file.",
+                ),
+            ],
+        )
+
+    office_ext = os.path.splitext(file_path)[1].lower()
+    extracted_text = ""
+    if office_ext in {".docx", ".xlsx", ".pptx"}:
+        try:
+            with zipfile.ZipFile(file_path) as archive:
+                bad_member = archive.testzip()
+                if bad_member is not None:
+                    raise ValueError(f"corrupt ZIP member: {bad_member}")
+                if "[Content_Types].xml" not in archive.namelist():
+                    raise ValueError("missing [Content_Types].xml")
+                xml_parts = [
+                    name
+                    for name in archive.namelist()
+                    if name.endswith(".xml")
+                    and (
+                        name.startswith("word/")
+                        or name.startswith("xl/")
+                        or name.startswith("ppt/")
+                    )
+                ]
+                extracted_text = "\n".join(
+                    re.sub(
+                        r"<[^>]+>",
+                        "",
+                        archive.read(name).decode("utf-8", "ignore"),
+                    )
+                    for name in xml_parts
+                )
+        except (OSError, zipfile.BadZipFile, ValueError) as exc:
+            return ToolChunk(
+                is_last=True,
+                state=ToolResultState.ERROR,
+                content=[
+                    TextBlock(
+                        text=f"Error: invalid Office artifact {file_path}: {exc}",
+                    ),
+                ],
+            )
+
+    missing = [
+        text for text in (required_text or []) if text not in extracted_text
+    ]
+    unexpected = [
+        text for text in (forbidden_text or []) if text in extracted_text
+    ]
+    if missing or unexpected:
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    text=(
+                        "Error: artifact content assertions failed: "
+                        f"missing={missing}, forbidden_present={unexpected}"
+                    ),
                 ),
             ],
         )
@@ -96,7 +164,7 @@ async def send_file_to_user(
     except Exception as e:
         return ToolChunk(
             is_last=True,
-            state=ToolResultState.SUCCESS,
+            state=ToolResultState.ERROR,
             content=[
                 TextBlock(
                     text=f"Error: Send file failed due to \n{e}",
