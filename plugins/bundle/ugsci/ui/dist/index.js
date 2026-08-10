@@ -13365,6 +13365,14 @@ function Cs() {
     } catch {
     }
   }
+  try {
+    const p = e.menu.snapshot("primary.agentScoped").find((f) => f.id === "oilgas-vis.page");
+    p && e.menu.replace(a, "oilgas-vis.page", {
+      ...p,
+      visible: () => !1
+    });
+  } catch {
+  }
   vs(e, t), ks(e, t), console.info(
     "[ugsci] Plugin registered: unified Tools & Skills center + compatibility routes, simple-mode navigation active"
   );

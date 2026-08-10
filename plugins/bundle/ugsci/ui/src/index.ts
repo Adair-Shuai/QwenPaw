@@ -212,6 +212,20 @@ function buildPlugin() {
     } catch {}
   }
 
+  // The standalone oilgas-visualization plugin was removed, but an already
+  // running host/HMR session can still retain its old menu registration.
+  // Hide that stale item so UGSci remains the single visible entry point.
+  try {
+    const snapshot = QP.menu.snapshot("primary.agentScoped");
+    const stale = snapshot.find((item: any) => item.id === "oilgas-vis.page");
+    if (stale) {
+      QP.menu.replace(PLUGIN_ID, "oilgas-vis.page", {
+        ...stale,
+        visible: () => false,
+      });
+    }
+  } catch {}
+
   // ── Register GenUI Frontend ─────────────────────────────────────────
   // Registers tool card renderers (emit_ui_tree, emit_ui_patch, etc.)
   // and the response.append slot for inline GenUI rendering.
