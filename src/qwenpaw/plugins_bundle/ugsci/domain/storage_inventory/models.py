@@ -38,13 +38,6 @@ class EffectiveInventoryRequest:
     maximum_inverse_withdrawal_fraction: float = 100.0
 
 
-ReviewStatus = Literal[
-    "calculated_recommendation_pending_review",
-    "reviewed_not_approved",
-    "approved",
-]
-
-
 @dataclass(frozen=True)
 class StorageInventoryEvaluationRequest:
     effective_inventory: EffectiveInventoryRequest
@@ -57,6 +50,4 @@ class StorageInventoryEvaluationRequest:
     design_working_gas: float | None = None
     peak_daily_rate: float | None = None
     design_peak_daily_rate: float | None = None
-    review_status: ReviewStatus = "calculated_recommendation_pending_review"
-    review_reference: str | None = None
     daily_rate_unit: str = "1e4_sm3/d"

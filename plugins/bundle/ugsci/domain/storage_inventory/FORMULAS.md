@@ -39,12 +39,13 @@ Z 因子超出宽泛工程筛选区间 `[0.2, 2.0]` 时给出复核告警。
 
 - `calculated_recommendation_pending_review`：计算建议值，待复核。
 
-底层契约预留以下业务状态，但不能由智能体计算调用自行声明：
+独立业务审批系统可以在计算结果之外维护以下状态，但计算请求和确定性适配器均不接受调用方自行声明：
 
 - `reviewed_not_approved`：已复核，尚未批准；
 - `approved`：已按业务程序批准。
 
-后两种状态必须由独立业务流程写入正式评审依据 `review_reference`；计算工具不负责审批。
+后两种状态必须由独立业务流程写入正式评审依据并绑定计算输入指纹；计算工具固定返回
+`calculated_recommendation_pending_review` 和空的 `review_reference`，不负责审批。
 
 ## 4. 综合评价输入与输出
 

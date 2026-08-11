@@ -52,8 +52,8 @@ def _optional_positive(value: float | None, name: str) -> float | None:
 
 class _StorageInventoryAdapter:
     provider_id = "ugsci-storage-inventory-core"
-    provider_version = "1.1.0"
-    engine_version = "1.1.0"
+    provider_version = "1.2.0"
+    engine_version = "1.2.0"
     deterministic = True
     support_dependencies: tuple[str, ...] = ()
 
@@ -79,11 +79,6 @@ class _StorageInventoryAdapter:
                 request,
                 effective_inventory=_StorageInventoryAdapter.canonicalize_request(
                     request.effective_inventory
-                ),
-                review_reference=(
-                    None
-                    if request.review_reference is None
-                    else request.review_reference.strip()
                 ),
                 daily_rate_unit=require_unit(request.daily_rate_unit, "gas_rate"),
             )
@@ -369,23 +364,6 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
                 DomainErrorCode.INVALID_INPUT,
                 "peak_daily_rate and design_peak_daily_rate must be provided together",
             )
-        valid_statuses = {
-            "calculated_recommendation_pending_review",
-            "reviewed_not_approved",
-            "approved",
-        }
-        if request.review_status not in valid_statuses:
-            raise DomainError(DomainErrorCode.INVALID_INPUT, "invalid review_status")
-        review_reference = (
-            None
-            if request.review_reference is None
-            else _required_text(request.review_reference, "review_reference")
-        )
-        if request.review_status != "calculated_recommendation_pending_review" and not review_reference:
-            raise DomainError(
-                DomainErrorCode.INVALID_INPUT,
-                "review_reference is required for reviewed or approved status",
-            )
         if design_working is not None and design_working > design:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
@@ -401,10 +379,9 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
             warnings.append(
                 "Working gas exceeds effective controlled inventory; verify quantity definitions and time boundaries."
             )
-        if request.review_status != "approved":
-            warnings.append(
-                "The effective-inventory value is a calculation/review candidate, not an approved capacity."
-            )
+        warnings.append(
+            "The effective-inventory value is a calculation/review candidate, not an approved capacity."
+        )
         result: dict[str, Any] = {
             "effective_inventory": effective,
             "book_inventory": book,
@@ -415,8 +392,8 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
             "book_inventory_fill_percent": book / design * 100.0,
             "effective_to_book_percent": effective / book * 100.0,
             "book_inventory_source": book_source,
-            "review_status": request.review_status,
-            "review_reference": review_reference,
+            "review_status": "calculated_recommendation_pending_review",
+            "review_reference": None,
             "layers": rows,
             "quantity_separation": {
                 "effective_inventory": "well-pattern controlled total inventory",
@@ -503,7 +480,7 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
             },
             assumptions=[
                 "Effective inventory is calculated independently from book inventory and working gas",
-                "Review status is carried explicitly and never inferred from a numerical match",
+                "Calculation output is always pending review; approval is an external workflow",
             ],
             warnings=warnings,
             applicability=["Deterministic inventory-evaluation summary after input-data gating"],

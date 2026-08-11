@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import inspect
 from typing import get_args, get_type_hints
 
@@ -437,31 +438,26 @@ def test_composite_evaluation_rejects_zero_accounting_inventory() -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "review_status",
-    ["reviewed_not_approved", "approved"],
-)
-def test_reviewed_status_requires_a_formal_reference(review_status) -> None:
-    with pytest.raises(DomainError, match="review_reference is required"):
-        StorageInventoryEvaluationAdapter().compute(
-            StorageInventoryEvaluationRequest(
-                effective_inventory=_request(*_hutubi_reconstructed_layers()),
-                book_inventory=104.88,
-                design_capacity=107.0,
-                review_status=review_status,
-            ),
-        )
+def test_evaluation_contract_cannot_self_declare_review_or_approval() -> None:
+    field_names = {
+        field.name
+        for field in dataclasses.fields(StorageInventoryEvaluationRequest)
+    }
+    assert "review_status" not in field_names
+    assert "review_reference" not in field_names
 
     result = StorageInventoryEvaluationAdapter().compute(
         StorageInventoryEvaluationRequest(
             effective_inventory=_request(*_hutubi_reconstructed_layers()),
             book_inventory=104.88,
             design_capacity=107.0,
-            review_status=review_status,
-            review_reference="正式评审纪要 2025-03-06",
         ),
     )
-    assert result.result["review_reference"] == "正式评审纪要 2025-03-06"
+    assert (
+        result.result["review_status"]
+        == "calculated_recommendation_pending_review"
+    )
+    assert result.result["review_reference"] is None
 
 
 def test_evaluation_rejects_design_working_gas_above_design_capacity() -> None:
@@ -587,7 +583,7 @@ def test_catalog_exposes_storage_inventory_engine() -> None:
     engine = get_engine("storage-inventory-evaluation")
     assert engine is not None
     assert engine.execution_class == "deterministic"
-    assert engine.engine_version == "1.1.0"
+    assert engine.engine_version == "1.2.0"
     assert {operation.id for operation in engine.operations} == {
         "storage.inventory.accounting",
         "storage.inventory.effective_controlled",

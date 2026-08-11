@@ -331,7 +331,7 @@ _STORAGE_INVENTORY_ENGINE = DomainEngineDefinition(
     dependencies=(),
     tags=("gas-storage", "inventory", "p-over-z", "deterministic", "audit"),
     execution_class="deterministic",
-    engine_version="1.1.0",
+    engine_version="1.2.0",
 )
 
 
