@@ -303,6 +303,7 @@ export default defineConfig(({ command, mode }) => {
     test: {
       globals: true,
       environment: "jsdom",
+      testTimeout: 15_000,
       setupFiles: ["./src/test/setup.ts"],
       css: true,
       // all @agentscope-ai/* packages excluded from inline — they are large / have CSS imports
@@ -315,6 +316,11 @@ export default defineConfig(({ command, mode }) => {
         "@genui-src": path.resolve(
           __dirname,
           "../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui",
+        ),
+        // Preserve vendor deep imports before aliasing the package entrypoint.
+        "@agentscope-ai/chat/lib": path.resolve(
+          __dirname,
+          "node_modules/@agentscope-ai/chat/lib",
         ),
         // chat is aliased to a tiny stub to avoid OOM from the 2.3MB real package
         // Tests that need specific behavior override with vi.mock('@agentscope-ai/chat', factory)

@@ -22,21 +22,26 @@ import {
   LoadingOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
-import { Bubble } from "@agentscope-ai/chat";
+import { Bubble, Markdown } from "@agentscope-ai/chat";
 import { useTranslation } from "react-i18next";
 import VendorRequestCardOriginal from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
 import AgentScopeRuntimeResponseBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Builder";
-import VendorMessage from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Message";
 import VendorTool from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Tool";
 import VendorReasoning from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Reasoning";
 import VendorError from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Error";
 import VendorActions from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Actions";
 import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
 import {
+  AgentScopeRuntimeContentType,
   AgentScopeRuntimeMessageType,
   AgentScopeRuntimeRunStatus,
   type IAgentScopeRuntimeMessage,
 } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/types";
+import Images from "@agentscope-ai/chat/lib/DefaultCards/Images";
+import Videos from "@agentscope-ai/chat/lib/DefaultCards/Videos";
+import Files from "@agentscope-ai/chat/lib/DefaultCards/Files";
+import Audios from "@agentscope-ai/chat/lib/DefaultCards/Audios";
+import { renderableCodeComponents } from "../../components/RenderableCodeBlock";
 // Vendor `.d.ts` doesn't yet describe the contentPrepend/contentAppend
 // slots we added in the patched .js (Response/Card.js + Request/Card.js).
 // Loosen the prop type so TS doesn't reject the passthrough; runtime
@@ -64,6 +69,83 @@ function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCardProps = any;
+
+function HostMessage({ data }: { data: IAgentScopeRuntimeMessage }) {
+  const replaceMediaURL = useChatAnywhereOptions(
+    (options) => options.api?.replaceMediaURL,
+  );
+  const onFileCardClick = useChatAnywhereOptions(
+    (options) => options.api?.onFileCardClick,
+  );
+  const formatMediaURL = (url?: string) =>
+    url ? replaceMediaURL?.(url) || url : url;
+
+  if (!data.content?.length) return null;
+
+  return (
+    <>
+      {data.content.map((item, index) => {
+        switch (item.type) {
+          case AgentScopeRuntimeContentType.TEXT:
+            return (
+              <Markdown
+                key={index}
+                components={renderableCodeComponents}
+                content={item.text}
+                cursor={item.status === AgentScopeRuntimeRunStatus.InProgress}
+              />
+            );
+          case AgentScopeRuntimeContentType.REFUSAL:
+            return <Markdown key={index} content={item.refusal} raw />;
+          case AgentScopeRuntimeContentType.IMAGE:
+            return (
+              <Images
+                key={index}
+                data={[{ url: formatMediaURL(item.image_url) }]}
+              />
+            );
+          case AgentScopeRuntimeContentType.VIDEO:
+            return (
+              <Videos
+                key={index}
+                data={[
+                  {
+                    poster: formatMediaURL(item.video_poster),
+                    src: formatMediaURL(item.video_url) || "",
+                  },
+                ]}
+              />
+            );
+          case AgentScopeRuntimeContentType.FILE:
+            return (
+              <Files
+                key={index}
+                data={[
+                  {
+                    name: item.file_name || item.fileName || item.file_id,
+                    size: item.file_size,
+                    url: formatMediaURL(item.file_url),
+                  },
+                ]}
+                onClick={onFileCardClick}
+              />
+            );
+          case AgentScopeRuntimeContentType.AUDIO:
+            return (
+              <Audios
+                key={index}
+                data={[
+                  { src: formatMediaURL(item.audio_url || item.data) || "" },
+                ]}
+              />
+            );
+          default:
+            return <div key={index}>{JSON.stringify(item)}</div>;
+        }
+      })}
+    </>
+  );
+}
 
 function ToolExecutionGroup({ items }: { items: IAgentScopeRuntimeMessage[] }) {
   const { t } = useTranslation();
@@ -174,7 +256,7 @@ function HostDefaultResponseCard(props: {
         const item = group.item;
         switch (item.type) {
           case AgentScopeRuntimeMessageType.MESSAGE:
-            return <VendorMessage key={item.id} data={item} />;
+            return <HostMessage key={item.id} data={item} />;
           case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
             return <VendorTool key={item.id} data={item} isApproval />;
           case AgentScopeRuntimeMessageType.REASONING:

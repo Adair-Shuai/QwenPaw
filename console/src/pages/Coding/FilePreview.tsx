@@ -106,8 +106,8 @@ export default function FilePreview({
         ? typeof workspaceApi.getFileDownloadUrl === "function"
           ? workspaceApi.getFileDownloadUrl(filePath, root)
           : typeof workspaceApi.getBinaryFileUrl === "function"
-          ? workspaceApi.getBinaryFileUrl(filePath)
-          : undefined
+            ? workspaceApi.getBinaryFileUrl(filePath)
+            : undefined
         : undefined;
     return {
       id: `file-preview:${chatId ?? "local"}:${root}:${filePath}`,
@@ -115,8 +115,8 @@ export default function FilePreview({
       source: workspaceBacked
         ? "link"
         : binaryUrl
-        ? "file_upload"
-        : "generated",
+          ? "file_upload"
+          : "generated",
       mimeType: resolvedMime,
       extension,
       textContent: content,
