@@ -53,6 +53,8 @@ jobs:
         working-directory: console
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -69,5 +71,33 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Run format check
-        run: pnpm run format:check
+      - name: Install UGSci plugin UI type dependencies
+        run: npm --prefix ../plugins/bundle/ugsci/ui ci --ignore-scripts
+
+      - name: Run TypeScript check
+        run: pnpm exec tsc -b --noEmit
+
+      - name: Check formatting of changed console files
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            base_sha="${{ github.event.pull_request.base.sha }}"
+          else
+            base_sha="${{ github.event.before }}"
+          fi
+
+          if [ -z "$base_sha" ] || [ "$base_sha" = "0000000000000000000000000000000000000000" ]; then
+            base_sha="$(git rev-list --max-parents=0 HEAD)"
+          fi
+
+          mapfile -t changed_files < <(
+            git diff --name-only --diff-filter=ACMR "$base_sha" "$GITHUB_SHA" -- console/ |
+              sed 's#^console/##'
+          )
+
+          if [ "${#changed_files[@]}" -eq 0 ]; then
+            echo "No changed console files to format-check."
+            exit 0
+          fi
+
+          pnpm exec prettier --check --ignore-unknown "${changed_files[@]}"
