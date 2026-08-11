@@ -46,6 +46,12 @@ class ComputationService:
                     provider_version = "unknown"
         engine_version = getattr(adapter, "engine_version", "1.0.0")
         deterministic = bool(getattr(adapter, "deterministic", True))
+        canonicalize_request = getattr(adapter, "canonicalize_request", None)
+        fingerprint_request = (
+            canonicalize_request(request)
+            if callable(canonicalize_request)
+            else request
+        )
         provenance = {
             "engine_id": engine_id,
             "engine_version": engine_version,
@@ -54,7 +60,7 @@ class ComputationService:
             "operation": adapter.operation,
             "method": method,
             "deterministic": deterministic,
-            "input_fingerprint": self._fingerprint(request),
+            "input_fingerprint": self._fingerprint(fingerprint_request),
             "support_libraries": self._support_library_versions(adapter),
         }
         return DomainResult(

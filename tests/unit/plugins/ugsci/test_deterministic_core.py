@@ -210,10 +210,14 @@ def test_volume_units_are_domain_specific() -> None:
     assert require_unit("m3", "liquid_volume") == "m3"
     assert require_unit("sm3", "gas_volume") == "sm3"
     assert require_unit("stb", "liquid_volume") == "stb"
+    assert require_unit("1e4_sm3/d", "gas_rate") == "1e4_sm3/d"
+    assert require_unit("stb/d", "liquid_rate") == "stb/d"
     with pytest.raises(DomainError, match="Expected a gas_volume unit"):
         require_unit("stb", "gas_volume")
     with pytest.raises(DomainError, match="Expected a liquid_volume unit"):
         require_unit("scf", "liquid_volume")
+    with pytest.raises(DomainError, match="Expected a gas_rate unit"):
+        require_unit("stb/d", "gas_rate")
 
 
 def test_standing_black_oil_kelvin_matches_fahrenheit_and_celsius() -> None:

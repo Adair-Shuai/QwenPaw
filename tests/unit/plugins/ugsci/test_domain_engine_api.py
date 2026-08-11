@@ -31,7 +31,7 @@ class TestDomainEngineAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert "engines" in data
-        assert len(data["engines"]) == 13
+        assert len(data["engines"]) == 14
 
     def test_list_engines_have_schema_version(
         self,
@@ -61,7 +61,7 @@ class TestDomainEngineAPI:
         assert resp.status_code == 200
         data = resp.json()
         assert "results" in data
-        assert len(data["results"]) == 13
+        assert len(data["results"]) == 14
         for result in data["results"]:
             assert "engine_id" in result
             assert "overall" in result

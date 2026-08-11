@@ -9,6 +9,25 @@ import sys
 from pathlib import Path
 
 
+_EXCLUDED_DIRECTORIES = {
+    "__pycache__",
+    "node_modules",
+    "skills",
+    "static",
+    "ui",
+}
+
+
+def default_source_files() -> list[Path]:
+    """Discover canonical hand-written UGSci Python sources."""
+    root = Path(__file__).resolve().parents[1] / "plugins" / "bundle" / "ugsci"
+    return sorted(
+        path
+        for path in root.rglob("*.py")
+        if not any(part in _EXCLUDED_DIRECTORIES for part in path.parts)
+    )
+
+
 def check_file(path: Path) -> list[str]:
     """Return human-readable syntax and whitespace violations."""
     errors: list[str] = []
@@ -32,6 +51,8 @@ def check_file(path: Path) -> list[str]:
 
 
 def main(arguments: list[str]) -> int:
+    if not arguments:
+        arguments = [str(path) for path in default_source_files()]
     errors = [
         error for argument in arguments for error in check_file(Path(argument))
     ]

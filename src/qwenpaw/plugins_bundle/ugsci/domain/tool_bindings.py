@@ -18,6 +18,11 @@ def get_domain_tool_bindings() -> dict[str, Callable[..., Any]]:
         ugsci_volumetric_oil_in_place, ugsci_vogel_ipr,
     )
     from .stochastic.tools import ugsci_bayesian_normal_estimate, ugsci_multiobjective_quadratic
+    from .storage_inventory.tools import (
+        ugsci_storage_effective_inventory,
+        ugsci_storage_inventory_accounting,
+        ugsci_storage_inventory_evaluate,
+    )
     from .well_log.tools import ugsci_welllog_export, ugsci_welllog_read, ugsci_welllog_validate
     from .neqsim.tools import (
         ugsci_neqsim_flash, ugsci_neqsim_phase_envelope, ugsci_neqsim_pipeline_flow,
@@ -39,6 +44,9 @@ def get_domain_tool_bindings() -> dict[str, Callable[..., Any]]:
         "ugsci_vogel_ipr": ugsci_vogel_ipr,
         "ugsci_nodal_analysis": ugsci_nodal_analysis,
         "ugsci_conservation_check": ugsci_conservation_check,
+        "ugsci_storage_inventory_accounting": ugsci_storage_inventory_accounting,
+        "ugsci_storage_effective_inventory": ugsci_storage_effective_inventory,
+        "ugsci_storage_inventory_evaluate": ugsci_storage_inventory_evaluate,
         "ugsci_symbolic_polynomial_roots": ugsci_symbolic_polynomial_roots,
         "ugsci_bayesian_normal_estimate": ugsci_bayesian_normal_estimate,
         "ugsci_multiobjective_quadratic": ugsci_multiobjective_quadratic,

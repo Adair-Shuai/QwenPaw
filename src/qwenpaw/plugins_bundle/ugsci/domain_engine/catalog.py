@@ -300,6 +300,41 @@ _PETROLEUM_CORE_ENGINE = DomainEngineDefinition(
 )
 
 
+_STORAGE_INVENTORY_ENGINE = DomainEngineDefinition(
+    schema_version=1,
+    id="storage-inventory-evaluation",
+    name="储气库库存评价",
+    description="账面库存、分层有效控制库存及评价指标的可审计确定性计算",
+    domain="underground_gas_storage",
+    source="builtin",
+    provider=ProviderRef(kind="builtin", id="ugsci-storage-inventory-core"),
+    operations=(
+        DomainOperation(
+            id="storage.inventory.accounting",
+            name="账面库存量",
+            description="按统一标准状态和计量边界执行注采计量平衡",
+            tool_names=("ugsci_storage_inventory_accounting",),
+        ),
+        DomainOperation(
+            id="storage.inventory.effective_controlled",
+            name="有效控制库存量",
+            description="按层应用p/Z采气段公式并汇总有效控制库存规模",
+            tool_names=("ugsci_storage_effective_inventory",),
+        ),
+        DomainOperation(
+            id="storage.inventory.evaluate",
+            name="库存综合评价",
+            description="分离账面库存、有效库存、工作气量和冲峰能力并计算符合率",
+            tool_names=("ugsci_storage_inventory_evaluate",),
+        ),
+    ),
+    dependencies=(),
+    tags=("gas-storage", "inventory", "p-over-z", "deterministic", "audit"),
+    execution_class="deterministic",
+    engine_version="1.1.0",
+)
+
+
 _VISUALIZATION_ENGINE = DomainEngineDefinition(
     schema_version=1,
     id="reservoir-visualization",
@@ -340,6 +375,7 @@ _ENGINES: tuple[DomainEngineDefinition, ...] = (
     _WELL_LOG_ENGINE,
     _DECLINE_ENGINE,
     _PETROLEUM_CORE_ENGINE,
+    _STORAGE_INVENTORY_ENGINE,
     _NEQSIM_ENGINE,
     _VISUALIZATION_ENGINE,
     *_SCIENTIFIC_LIBRARY_ENGINES,
