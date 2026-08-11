@@ -13,6 +13,8 @@ export function DomainEngineDetail({
   onNavigateToMcp,
   onNavigateToTools,
   onNavigateToSkills,
+  onInstallNeqsim,
+  neqsimInstallState,
 }: {
   view: DomainEngineView | null;
   open: boolean;
@@ -20,6 +22,14 @@ export function DomainEngineDetail({
   onNavigateToMcp: () => void;
   onNavigateToTools: (subTab?: string) => void;
   onNavigateToSkills: () => void;
+  onInstallNeqsim: () => void;
+  neqsimInstallState?: {
+    status: string;
+    progress: number;
+    message: string;
+    error: string;
+    warning?: string;
+  } | null;
 }) {
   const React = getHost().React;
   const { Drawer, Descriptions, Tag, Typography, Button, Space, Divider } =
@@ -50,6 +60,7 @@ export function DomainEngineDetail({
       open,
       onClose,
       width: 560,
+      rootClassName: "ugsci-domain-engine-detail-drawer",
     },
     // Overview
     React.createElement(
@@ -63,7 +74,9 @@ export function DomainEngineDetail({
       React.createElement(
         Descriptions.Item,
         { label: "来源" },
-        def.source === "builtin"
+        def.provider.kind === "driver"
+          ? "内置能力 · MCP Driver"
+          : def.source === "builtin"
           ? "内置工具"
           : def.source === "mcp"
             ? "MCP 服务"
@@ -73,6 +86,22 @@ export function DomainEngineDetail({
         Descriptions.Item,
         { label: "实现" },
         `${def.provider.kind}:${def.provider.id}`,
+      ),
+      React.createElement(
+        Descriptions.Item,
+        { label: "计算类别" },
+        def.execution_class === "deterministic"
+          ? "确定性计算"
+          : def.execution_class === "stochastic"
+            ? "随机/概率计算"
+            : def.execution_class === "external"
+              ? "外部 Provider"
+              : "可视化",
+      ),
+      React.createElement(
+        Descriptions.Item,
+        { label: "内核版本" },
+        def.engine_version,
       ),
       React.createElement(
         Descriptions.Item,
@@ -205,11 +234,25 @@ export function DomainEngineDetail({
     React.createElement(
       "div",
       { style: { marginTop: 8, display: "flex", gap: 8, flexWrap: "wrap" } },
-      def.source === "mcp"
+      def.id === "neqsim" && view.effectiveStatus === "needs_install"
+        ? React.createElement(
+            Button,
+            {
+              size: "small",
+              type: "primary",
+              loading: neqsimInstallState?.status === "queued" || neqsimInstallState?.status === "running",
+              onClick: onInstallNeqsim,
+            },
+            neqsimInstallState?.status === "running"
+              ? `${neqsimInstallState.message} (${neqsimInstallState.progress}%)`
+              : "安装 NeqSim 运行环境",
+          )
+        : null,
+      def.provider.kind === "driver"
         ? React.createElement(
             Button,
             { size: "small", onClick: onNavigateToMcp },
-            "配置 MCP 服务",
+            "查看内置 MCP Driver",
           )
         : def.source === "library"
           ? React.createElement(
@@ -223,5 +266,19 @@ export function DomainEngineDetail({
             "查看内置工具",
           ),
     ),
+    def.id === "neqsim" && neqsimInstallState?.status === "failed"
+      ? React.createElement(
+          Paragraph,
+          { type: "danger", style: { marginTop: 8, fontSize: 12 } },
+          neqsimInstallState.error || "安装失败",
+        )
+      : null,
+    def.id === "neqsim" && neqsimInstallState?.warning
+      ? React.createElement(
+          Paragraph,
+          { type: "warning", style: { marginTop: 8, fontSize: 12 } },
+          neqsimInstallState.warning,
+        )
+      : null,
   );
 }

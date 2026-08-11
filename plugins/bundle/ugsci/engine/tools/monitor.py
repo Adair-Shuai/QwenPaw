@@ -31,7 +31,18 @@ async def check_simulation_status(
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
-    from .launcher import _get_job
+    if detail_level not in {"summary", "convergence", "full"}:
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[TextBlock(type="text", text="Error: detail_level must be summary, convergence, or full.")],
+        )
+
+    from .launcher import (
+        _apply_dead_process_terminal_status,
+        _ensure_terminal_task,
+        _get_job,
+    )
     from ..adapters import get_adapter
 
     job = _get_job(job_id)
@@ -46,6 +57,43 @@ async def check_simulation_status(
                 ),
             ],
         )
+
+    if job.status == "running" and job.process is None:
+        from . import job_store
+        if not job_store.is_pid_alive(job.pid):
+            _apply_dead_process_terminal_status(
+                job,
+                "recovered process is no longer alive and credible terminal "
+                "artifacts are unavailable",
+            )
+            job.end_ts = time.time()
+            job_store.update_job_status(
+                job.job_id,
+                job.status,
+                returncode=job.returncode,
+                error=job.error,
+                end_ts=job.end_ts,
+            )
+            _ensure_terminal_task(job.job_id)
+        elif not job_store.is_pid_ours(job.pid, job.start_ts, job.deck_file):
+            if not job_store.is_pid_alive(job.pid):
+                _apply_dead_process_terminal_status(
+                    job,
+                    "recovered process exited during identity verification and "
+                    "credible terminal artifacts are unavailable",
+                )
+            else:
+                job.status = "interrupted"
+                job.error = "recovered process no longer matches the recorded simulation"
+            job.end_ts = time.time()
+            job_store.update_job_status(
+                job.job_id,
+                job.status,
+                returncode=job.returncode,
+                error=job.error,
+                end_ts=job.end_ts,
+            )
+            _ensure_terminal_task(job.job_id)
 
     # ── Build status text ────────────────────────────────────────────
     lines = [
@@ -66,10 +114,11 @@ async def check_simulation_status(
         lines.append(
             f"Elapsed:     {elapsed:.0f}s ({elapsed/3600:.1f}h)",
         )
-        remaining = job.timeout - elapsed
-        lines.append(
-            f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)",
-        )
+        if job.unlimited:
+            lines.append("Remaining:   unlimited")
+        else:
+            remaining = max(0.0, job.timeout - elapsed)
+            lines.append(f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)")
     elif job.end_ts and job.start_ts:
         duration = job.end_ts - job.start_ts
         lines.append(

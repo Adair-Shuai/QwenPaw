@@ -774,8 +774,6 @@ class ToolCoordinator:
 
         await self._await_background_task(entry)
 
-        await self._finalize_completed(entry)
-
         if background_result_processor is not None:
             try:
                 entry.final_response = await background_result_processor(
@@ -783,6 +781,11 @@ class ToolCoordinator:
                 )
             except Exception:
                 logger.exception("background result processor failed")
+
+        # Publish the terminal entry only after the optional processor has
+        # finished.  Consumers that receive the done event and immediately
+        # fetch /output must never observe the pre-processed response.
+        await self._finalize_completed(entry)
 
         hint = make_offload_hint_msg(entry)
         async with self._hints_lock:

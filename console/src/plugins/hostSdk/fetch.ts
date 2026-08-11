@@ -12,9 +12,15 @@ export async function hostFetch(
   path: string,
   init?: RequestInit,
 ): Promise<Response> {
-  const headers: Record<string, string> = {
-    ...buildAuthHeaders(),
-    ...((init?.headers as Record<string, string>) ?? {}),
-  };
+  // Header names are case-insensitive, but plain-object spreading is not.
+  // Plugin callers commonly pass `x-agent-id` after their Headers object has
+  // been normalized, while buildAuthHeaders() returns `X-Agent-Id`. Passing
+  // both keys to fetch combines them into `agent-a, agent-a`, which the
+  // backend correctly rejects as an unknown Agent. Merge through Headers.set
+  // so caller-provided scope overrides the host default exactly once.
+  const headers = new Headers(buildAuthHeaders());
+  new Headers(init?.headers).forEach((value, key) => {
+    headers.set(key, value);
+  });
   return fetch(getApiUrl(path), { ...init, headers });
 }

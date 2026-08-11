@@ -10,13 +10,13 @@ from ..common.errors import DomainError, DomainErrorCode, wrap_unknown_error
 from .adapters import (
     GeoPandasAdapter,
     NetworkXAdapter,
-    PyMCAdapter,
-    PymooAdapter,
     ScikitLearnAdapter,
     SimPyAdapter,
     StatsmodelsAdapter,
     SymPyAdapter,
 )
+from ..stochastic.adapters import PyMCAdapter, PymooAdapter
+from ..deterministic.providers import default_registry
 from .models import (
     BayesianNormalRequest,
     GeospatialPointsRequest,
@@ -45,8 +45,22 @@ def _chunk(payload: dict[str, Any], *, error: bool = False) -> Any:
     )
 
 
-def _run(engine_id: str, adapter: Any, request: Any, method: str, assumptions: list[str] | None = None) -> Any:
+def _run(
+    engine_id: str,
+    adapter: Any,
+    request: Any,
+    method: str,
+    assumptions: list[str] | None = None,
+    *,
+    capability_id: str | None = None,
+    execution_class: str = "deterministic",
+) -> Any:
     try:
+        if capability_id:
+            adapter = default_registry.resolve(
+                capability_id,
+                execution_class=execution_class,
+            )
         return _chunk(
             _service.execute(
                 engine_id,
@@ -84,7 +98,7 @@ async def ugsci_symbolic_polynomial_roots(coefficients: list[float]) -> Any:
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("sympy", SymPyAdapter(), request, "symbolic_nroots")
+    return _run("sympy", None, request, "symbolic_nroots", capability_id="math.symbolic")
 
 
 async def ugsci_bayesian_normal_estimate(
@@ -155,7 +169,7 @@ async def ugsci_queue_simulate(
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("simpy", SimPyAdapter(), request, "deterministic_fifo")
+    return _run("simpy", None, request, "deterministic_fifo", capability_id="simulation.queue.deterministic")
 
 
 async def ugsci_graph_analyze(
@@ -177,7 +191,7 @@ async def ugsci_graph_analyze(
         request = GraphAnalysisRequest(nodes, edges, directed, source, target)
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
-    return _run("networkx", NetworkXAdapter(), request, "networkx_graph_algorithms")
+    return _run("networkx", None, request, "networkx_graph_algorithms", capability_id="graph.network.analyze")
 
 
 async def ugsci_geospatial_points_analyze(points: list[list[float]], crs: str = "EPSG:4326") -> Any:
@@ -193,7 +207,7 @@ async def ugsci_geospatial_points_analyze(points: list[list[float]], crs: str = 
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("geopandas", GeoPandasAdapter(), request, "geopandas_geometry")
+    return _run("geopandas", None, request, "geopandas_geometry", capability_id="geospatial.points.analyze")
 
 
 async def ugsci_ml_regression(
@@ -215,7 +229,7 @@ async def ugsci_ml_regression(
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("scikit-learn", ScikitLearnAdapter(), request, "ordinary_least_squares")
+    return _run("scikit-learn", None, request, "ordinary_least_squares", capability_id="machine_learning.linear_regression")
 
 
 async def ugsci_statistical_regression(
@@ -238,4 +252,4 @@ async def ugsci_statistical_regression(
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("statsmodels", StatsmodelsAdapter(), request, "ordinary_least_squares")
+    return _run("statsmodels", None, request, "ordinary_least_squares", capability_id="statistics.ols_regression")

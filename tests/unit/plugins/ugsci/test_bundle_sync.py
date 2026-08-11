@@ -1,9 +1,29 @@
 # -*- coding: utf-8 -*-
 """Regression tests for the canonical UGSci packaging mirror."""
 
+# pylint: disable=no-name-in-module
+
 from pathlib import Path
 
-from scripts.sync_ugsci_bundle import find_drift, sync
+from scripts.sync_ugsci_bundle import (
+    _generated_bundle_targets,
+    find_drift,
+    sync,
+)
+
+
+def test_generated_bundle_targets_exclude_repository_runtime_dirs(
+    tmp_path: Path,
+) -> None:
+    relative_targets = [
+        target.relative_to(tmp_path)
+        for target in _generated_bundle_targets(tmp_path)
+    ]
+
+    assert all(
+        not any(part.startswith(".qwenpaw") for part in target.parts)
+        for target in relative_targets
+    )
 
 
 def test_mirror_reports_and_removes_obsolete_files(tmp_path: Path) -> None:

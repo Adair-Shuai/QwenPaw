@@ -73,7 +73,20 @@
       {"name": "ugsci_graph_analyze", "group": "domain", "description": "图网络分析", "icon": "🕸️", "enabled_by_default": false, "tool_type": "internal", "target_param": ""},
       {"name": "ugsci_geospatial_points_analyze", "group": "domain", "description": "空间点集分析", "icon": "🗺️", "enabled_by_default": false, "tool_type": "internal", "target_param": ""},
       {"name": "ugsci_ml_regression", "group": "domain", "description": "机器学习线性回归", "icon": "🤖", "enabled_by_default": false, "tool_type": "internal", "target_param": ""},
-      {"name": "ugsci_statistical_regression", "group": "domain", "description": "统计 OLS 回归", "icon": "📊", "enabled_by_default": false, "tool_type": "internal", "target_param": ""}
+      {"name": "ugsci_statistical_regression", "group": "domain", "description": "统计 OLS 回归", "icon": "📊", "enabled_by_default": false, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_convert_units", "group": "domain", "description": "确定性工程单位换算", "icon": "📐", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_volumetric_oil_in_place", "group": "domain", "description": "容积法计算原始地质储量", "icon": "🛢️", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_oil_material_balance", "group": "domain", "description": "油藏物质平衡与 OOIP 估算", "icon": "⚖️", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_gas_material_balance", "group": "domain", "description": "气藏 p/z 物质平衡与 OGIP 估算", "icon": "⚖️", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_black_oil_pvt", "group": "domain", "description": "本地 Standing 黑油 PVT 筛选计算", "icon": "🧪", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_vogel_ipr", "group": "domain", "description": "Vogel 井流入动态计算", "icon": "📈", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_nodal_analysis", "group": "domain", "description": "IPR/VLP 节点分析", "icon": "🔗", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_conservation_check", "group": "domain", "description": "质量守恒与物质平衡误差检查", "icon": "✅", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_neqsim_flash", "group": "domain", "description": "NeqSim 闪蒸与相平衡计算", "icon": "🧪", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_neqsim_pvt", "group": "domain", "description": "NeqSim PVT 实验模拟", "icon": "🛢️", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_neqsim_phase_envelope", "group": "domain", "description": "NeqSim 相包络计算", "icon": "📈", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_neqsim_process_simulate", "group": "domain", "description": "NeqSim 工艺流程模拟", "icon": "🏭", "enabled_by_default": true, "tool_type": "internal", "target_param": ""},
+      {"name": "ugsci_neqsim_pipeline_flow", "group": "domain", "description": "NeqSim 多相管流计算", "icon": "🔧", "enabled_by_default": true, "tool_type": "internal", "target_param": ""}
     ]
   }
 }

@@ -58,6 +58,8 @@ class DomainEngineDefinition:
     operations: tuple[DomainOperation, ...]
     dependencies: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
+    execution_class: Literal["deterministic", "stochastic", "external", "visualization"] = "deterministic"
+    engine_version: str = "1.0.0"
 
     def to_dict(self) -> dict:
         """Serialize to JSON-safe dict."""
@@ -84,4 +86,6 @@ class DomainEngineDefinition:
             ],
             "dependencies": list(self.dependencies),
             "tags": list(self.tags),
+            "execution_class": self.execution_class,
+            "engine_version": self.engine_version,
         }

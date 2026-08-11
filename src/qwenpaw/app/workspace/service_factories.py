@@ -51,8 +51,9 @@ async def create_driver_service(ws: "Workspace", _service):
     await migrate_legacy_mcp_if_needed(ws, driver_manager)
     await driver_manager.start()
 
-    # Register built-in MCP servers (e.g. the bundled NeqSim MCP Server).
-    # This is a no-op when the desktop app does not bundle a JRE / JAR.
+    # Persist built-in MCP providers even when their optional runtime package
+    # has not been installed yet. This keeps the capability visible and lets
+    # the Console present a deterministic install/enable flow.
     try:
         from ...agents.builtin_mcp.neqsim import (
             ensure_neqsim_driver_registered,

@@ -17,7 +17,24 @@ export function registerGenuiFrontend(QP: any, React: any): () => void {
     .then((config) => {
       QP.genui = { ...(QP.genui || {}), config };
     })
-    .catch((error) => console.warn("[ugsci.genui] Failed to load runtime config", error));
+    .catch((error) => {
+      // Compatibility fallback for an older host that has not mounted the
+      // backend route yet. Keep the degraded marker visible to the UI/logs;
+      // this must never be mistaken for a healthy backend registration.
+      QP.genui = {
+        ...(QP.genui || {}),
+        config: {
+          enabled: true,
+          persisted_enabled: true,
+          overridden: false,
+          channels: ["response.append"],
+          allow_html: false,
+          allow_actions: [],
+          backend_unavailable: true,
+        },
+      };
+      console.warn("[ugsci.genui] Failed to load runtime config; using compatibility fallback", error);
+    });
 
   if (QP.chat?.toolRender) {
     disposables.push(QP.chat.toolRender(PLUGIN_ID, "emit_ui_tree", GenUiToolCall));

@@ -5,7 +5,25 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, List, Optional
+
+
+@dataclass(frozen=True)
+class SimCapabilities:
+    """Capabilities exposed by an adapter to the common runtime.
+
+    The process lifecycle is shared by every simulator.  These flags keep
+    simulator-specific limits in the adapter instead of scattering checks
+    throughout the launcher, monitor, and terminal orchestration code.
+    """
+
+    supports_progress: bool = True
+    supports_result_reading: bool = False
+    supports_terminal_artifacts: bool = False
+    supports_checkpoint_resume: bool = False
+    supports_auto_tune: bool = False
+    supports_input_inspection: bool = False
+    tuning_keywords: tuple[str, ...] = ()
 
 
 @dataclass
@@ -33,6 +51,24 @@ class SimSummary:
     well_vectors: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     # Simulation dates
     dates: list[str] = field(default_factory=list)
+    # Spatial/table exports are kept separate from time-series vectors.
+    fields: list["SimFieldTable"] = field(default_factory=list)
+    # Format-specific metadata (version, solved state, external dependencies).
+    metadata: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class SimFieldTable:
+    """Bounded description of a spatial/table result export."""
+
+    source_file: str
+    kind: str
+    coordinates: tuple[str, ...] = ()
+    variables: tuple[str, ...] = ()
+    row_count: int = 0
+    column_count: int = 0
+    sample_rows: list[list[Any]] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -55,6 +91,53 @@ class BaseSimAdapter:
     deck_extension: str = ""
     #: File extension for the printable log output
     log_extension: str = ""
+    capabilities = SimCapabilities()
+
+    def resolve_executable(self, engine: Any) -> str:
+        """Resolve the executable for this simulator variant.
+
+        Most engines expose one executable path.  Multi-module products such
+        as CMG override this hook to select the executable matching the
+        adapter variant (IMEX/STARS/GEM).
+        """
+        return str(getattr(engine, "executable_path", "") or "")
+
+    def tuning_rules(self) -> dict[str, tuple[int, int, Any]]:
+        """Return safe text-deck tuning rules for this simulator variant."""
+        return {}
+
+    def inspect_input(self, deck_file: str | Path) -> dict[str, Any]:
+        """Return bounded, JSON-safe preflight metadata for an input model."""
+        return {}
+
+    def infer_terminal_status(
+        self,
+        working_dir: str | Path,
+        *,
+        start_ts: float = 0.0,
+        case_stem: str = "",
+    ) -> tuple[str | None, int | None, str | None]:
+        """Infer a terminal state from current simulator artifacts.
+
+        The common runtime uses this only after the process handle is lost.
+        Adapters may override it when a simulator has a dedicated completion
+        marker (for example ``.ECLEND``) in addition to its log file.
+        """
+        log_file = self.find_log_file(working_dir)
+        if log_file is None:
+            return (None, None, None)
+        if start_ts > 0:
+            try:
+                if log_file.stat().st_mtime + 2.0 < start_ts:
+                    return (None, None, None)
+            except OSError:
+                return (None, None, None)
+        progress = self.parse_progress(working_dir)
+        if progress.status == "completed":
+            return ("completed", 0, None)
+        if progress.status == "failed":
+            return ("failed", None, "simulator log reports a failed terminal state")
+        return (None, None, None)
 
     # ------------------------------------------------------------------
     # Command building
@@ -112,7 +195,11 @@ class BaseSimAdapter:
     # Result parsing
     # ------------------------------------------------------------------
 
-    def find_summary_file(self, working_dir: str | Path) -> Optional[Path]:
+    def find_summary_file(
+        self,
+        working_dir: str | Path,
+        case_stem: str = "",
+    ) -> Optional[Path]:
         """Locate the summary / output file in *working_dir*."""
         raise NotImplementedError
 
@@ -121,6 +208,7 @@ class BaseSimAdapter:
         working_dir: str | Path,
         variables: Optional[List[str]] = None,
         wells: Optional[List[str]] = None,
+        case_stem: str = "",
     ) -> SimSummary:
         """Read summary vector data from simulation results.
 
@@ -181,9 +269,12 @@ class BaseSimAdapter:
         if not log_path or not log_path.is_file():
             return ""
         try:
-            content = log_path.read_text(
-                encoding="utf-8", errors="replace",
-            )
+            # Simulator logs can be hundreds of megabytes.  Read a bounded
+            # tail instead of loading the full file for every monitoring tick.
+            with log_path.open("rb") as handle:
+                size = handle.seek(0, 2)
+                handle.seek(max(0, size - 2 * 1024 * 1024))
+                content = handle.read().decode("utf-8", errors="replace")
             lines = content.splitlines()
             return "\n".join(lines[-n_lines:]) if len(lines) > n_lines else content
         except Exception:

@@ -8,6 +8,17 @@ type GenUiConfig = {
   channels: string[];
   allow_html: boolean;
   allow_actions: string[];
+  backend_unavailable?: boolean;
+};
+
+const DEGRADED_CONFIG: GenUiConfig = {
+  enabled: true,
+  persisted_enabled: true,
+  overridden: false,
+  channels: ["response.append"],
+  allow_html: false,
+  allow_actions: [],
+  backend_unavailable: true,
 };
 
 function publishConfig(value: GenUiConfig): void {
@@ -24,10 +35,20 @@ export function GenUiSettingsPage() {
 
   useEffect(() => {
     let active = true;
-    apiFetch<GenUiConfig>("/ugsci/genui/config")
-      .then((value) => { if (active) { setConfig(value); publishConfig(value); } })
-      .catch((error) => message.error(`读取 GenUI 设置失败：${String(error)}`));
-    return () => { active = false; };
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const load = (notify = false) => {
+      apiFetch<GenUiConfig>("/ugsci/genui/config")
+        .then((value) => { if (active) { setConfig(value); publishConfig(value); } })
+        .catch((error) => {
+          if (!active) return;
+          setConfig(DEGRADED_CONFIG);
+          publishConfig(DEGRADED_CONFIG);
+          if (notify) message.error(String(error));
+          retryTimer = setTimeout(() => load(false), 30_000);
+        });
+    };
+    load(true);
+    return () => { active = false; if (retryTimer) clearTimeout(retryTimer); };
   }, []);
 
   const update = async (enabled: boolean) => {
@@ -83,13 +104,16 @@ export function GenUiSettingsPage() {
               React.createElement(Switch, {
                 checked: config.persisted_enabled,
                 loading: saving,
+                disabled: config.backend_unavailable,
                 onChange: update,
               }),
             ),
             React.createElement(Alert, {
-              type: config.enabled ? "success" : "warning",
+              type: config.backend_unavailable ? "error" : config.enabled ? "success" : "warning",
               showIcon: true,
-              message: config.enabled
+              message: config.backend_unavailable
+                ? "UGSci 后端当前不可用，正在使用兼容降级模式；设置不会写入。"
+                : config.enabled
                 ? "GenUI 当前有效；各 Agent 仍可显式关闭自己的 GenUI 工具"
                 : config.overridden
                   ? "GenUI 当前被环境变量或插件配置关闭；本地设置已保存但暂不生效。"

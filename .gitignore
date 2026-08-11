@@ -170,3 +170,13 @@ docs-site/
 
 # Local review notes
 docs/reviews/
+
+# Local QwenPaw runtime state. Runtime data belongs under ~/.qwenpaw and
+# ~/.qwenpaw.secret; repository-local variants are disposable test profiles.
+/.qwenpaw/
+/.qwenpaw.secret/
+/.qwenpaw-dev-runtime/
+/.qwenpaw-dev-runtime.secret/
+/.tmp_*/
+/.pytest_cache/
+/.mypy_cache/

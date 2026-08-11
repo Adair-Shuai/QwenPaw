@@ -31,7 +31,6 @@ from plugins.bundle.ugsci.engine.tools.launcher import (
     _sim_jobs,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────────
 # Helpers
 # ──────────────────────────────────────────────────────────────────────────
@@ -227,6 +226,39 @@ async def test_result_reader_negative_max_points_does_not_crash() -> None:
     assert result is not None
     text = result.content[0].text if result.content else ""
     assert "not found" in text.lower()
+
+
+@pytest.mark.asyncio
+async def test_result_reader_formats_bounded_comsol_field_preview(
+    tmp_path: Path,
+) -> None:
+    from plugins.bundle.ugsci.engine.tools.result_reader import (
+        read_simulation_results,
+    )
+
+    (tmp_path / "model_field.csv").write_text(
+        "% X,Y,comp1.c(x, y) (mol/m^3)\n0,0,1\n1,0,2\n",
+        encoding="utf-8",
+    )
+    job = SimJob(
+        job_id="comsol_field",
+        simulator="comsol",
+        deck_file=str(tmp_path / "model.mph"),
+        working_dir=str(tmp_path),
+        pid=0,
+        status="completed",
+    )
+    _sim_jobs[job.job_id] = job
+    try:
+        result = await read_simulation_results(job.job_id, data_type="field")
+    finally:
+        _sim_jobs.pop(job.job_id, None)
+
+    text = result.content[0].text if result.content else ""
+    assert "Spatial/table exports" in text
+    assert "spatial_point_cloud" in text
+    assert "shape=2x3" in text
+    assert "comp1.c(x, y)" in text
 
 
 # ──────────────────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ from .docs_api import build_docs_router
 from .engine.api import EngineRequest, build_engine_router
 from .sim_api import build_sim_router
 from .genui.api import build_genui_router
-from .health_api import build_health_router
+from .health_api import build_health_router, record_route_registration
 from .skill_pool import (
     remove_plugin_pool_skills,
     sync_plugin_skills_to_pool,
@@ -255,7 +255,13 @@ class UGSciPlugin:
                 "[%s] HTTP router registered at /api/ugsci/team",
                 PLUGIN_ID,
             )
+            record_route_registration("/ugsci/team", success=True)
         except Exception as exc:
+            record_route_registration(
+                "/ugsci/team",
+                success=False,
+                error=f"{type(exc).__name__}: {exc}",
+            )
             logger.error(
                 "[%s] Failed to register team workflow HTTP router: %s",
                 PLUGIN_ID,
@@ -304,7 +310,13 @@ class UGSciPlugin:
                 PLUGIN_ID,
                 prefix,
             )
+            record_route_registration(prefix, success=True)
         except Exception as exc:
+            record_route_registration(
+                prefix,
+                success=False,
+                error=f"{type(exc).__name__}: {exc}",
+            )
             logger.error(
                 "[%s] Failed to register %s HTTP router: %s",
                 PLUGIN_ID,
@@ -393,51 +405,9 @@ class UGSciPlugin:
     def _register_domain_tools(cls, api) -> None:
         """Register manifest-declared domain computing implementations."""
         try:
-            from .domain.well_log.tools import (
-                ugsci_welllog_read,
-                ugsci_welllog_validate,
-                ugsci_welllog_export,
-            )
-            from .domain.decline.tools import (
-                ugsci_decline_fit,
-                ugsci_decline_forecast,
-                ugsci_decline_eur,
-            )
-            from .domain.computation.tools import (
-                ugsci_bayesian_normal_estimate,
-                ugsci_geospatial_points_analyze,
-                ugsci_graph_analyze,
-                ugsci_ml_regression,
-                ugsci_multiobjective_quadratic,
-                ugsci_queue_simulate,
-                ugsci_statistical_regression,
-                ugsci_symbolic_polynomial_roots,
-            )
+            from .domain.tool_bindings import get_domain_tool_bindings
 
-            bindings = {
-                "ugsci_welllog_read": ugsci_welllog_read,
-                "ugsci_welllog_validate": ugsci_welllog_validate,
-                "ugsci_welllog_export": ugsci_welllog_export,
-                "ugsci_decline_fit": ugsci_decline_fit,
-                "ugsci_decline_forecast": ugsci_decline_forecast,
-                "ugsci_decline_eur": ugsci_decline_eur,
-                "ugsci_symbolic_polynomial_roots": (
-                    ugsci_symbolic_polynomial_roots
-                ),
-                "ugsci_bayesian_normal_estimate": (
-                    ugsci_bayesian_normal_estimate
-                ),
-                "ugsci_multiobjective_quadratic": (
-                    ugsci_multiobjective_quadratic
-                ),
-                "ugsci_queue_simulate": ugsci_queue_simulate,
-                "ugsci_graph_analyze": ugsci_graph_analyze,
-                "ugsci_geospatial_points_analyze": (
-                    ugsci_geospatial_points_analyze
-                ),
-                "ugsci_ml_regression": ugsci_ml_regression,
-                "ugsci_statistical_regression": ugsci_statistical_regression,
-            }
+            bindings = get_domain_tool_bindings()
             registered = cls._register_tool_group(api, "domain", bindings)
             logger.info(
                 "[%s] Domain computing tools registered (%d tools)",
@@ -486,8 +456,16 @@ class UGSciPlugin:
             )
 
     async def _on_startup(self) -> None:
-        """Finish avatar warming before the desktop enters the workspace."""
+        """Warm assets and reattach durable simulation monitors."""
         logger.info("[%s] Startup hook executed", PLUGIN_ID)
+        try:
+            from .engine.tools.launcher import recover_persisted_jobs
+
+            recovered = recover_persisted_jobs()
+            if recovered:
+                logger.info("[%s] Recovered %d simulation job(s)", PLUGIN_ID, recovered)
+        except Exception:
+            logger.exception("[%s] Failed to recover simulation jobs", PLUGIN_ID)
         await asyncio.to_thread(_prewarm_avatar_cache)
 
     async def _on_startup_sync_skills(self) -> None:

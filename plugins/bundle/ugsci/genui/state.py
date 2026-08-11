@@ -55,15 +55,29 @@ class GenUiStateStore:
             message_id=row[5], updated_at=row[6],
         )
 
+    def _next_updated_at_locked(self) -> float:
+        """Return a strictly increasing persisted LRU timestamp.
+
+        ``time.time()`` can return the same float for rapid consecutive
+        operations.  A monotonic bump keeps SQLite eviction deterministic
+        without adding a schema migration for an internal sequence column.
+        The caller must hold ``self._lock``.
+        """
+        latest = self._db.execute(
+            "SELECT COALESCE(MAX(updated_at), 0) FROM genui_snapshots",
+        ).fetchone()[0]
+        return max(time.time(), float(latest) + 1e-6)
+
     def create(self, session_id: str, tree: dict[str, Any], tool_call_id: str = "") -> GenUiSnapshot:
         if not session_id:
             raise ValueError("session_id is required")
         snap = GenUiSnapshot(
             ui_id=f"ui_{uuid4().hex[:24]}", session_id=session_id,
             revision=1, tree=tree, tool_call_id=tool_call_id,
-            updated_at=time.time(),
+            updated_at=0.0,
         )
         with self._lock:
+            snap.updated_at = self._next_updated_at_locked()
             self._db.execute(
                 "INSERT INTO genui_snapshots VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (snap.session_id, snap.ui_id, snap.revision,
@@ -83,7 +97,7 @@ class GenUiStateStore:
             ).fetchone()
             if row is not None:
                 # Access refreshes LRU position without changing revision.
-                touched = time.time()
+                touched = self._next_updated_at_locked()
                 self._db.execute(
                     "UPDATE genui_snapshots SET updated_at=? WHERE session_id=? AND ui_id=?",
                     (touched, session_id, ui_id),
@@ -114,7 +128,7 @@ class GenUiStateStore:
                     ui_id=ui_id, session_id=session_id,
                     revision=snap.revision + 1, tree=validated,
                     tool_call_id=snap.tool_call_id, message_id=snap.message_id,
-                    updated_at=time.time(),
+                    updated_at=self._next_updated_at_locked(),
                 )
                 cursor = self._db.execute(
                     "UPDATE genui_snapshots SET revision=?, tree_json=?, updated_at=? "
@@ -150,7 +164,8 @@ class GenUiStateStore:
         if excess > 0:
             self._db.execute(
                 "DELETE FROM genui_snapshots WHERE rowid IN "
-                "(SELECT rowid FROM genui_snapshots ORDER BY updated_at ASC LIMIT ?)",
+                "(SELECT rowid FROM genui_snapshots "
+                "ORDER BY updated_at ASC, rowid ASC LIMIT ?)",
                 (excess,),
             )
 

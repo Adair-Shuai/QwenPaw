@@ -14,7 +14,10 @@ import type {
 export interface ChatUploadResponse {
   url: string;
   file_name: string;
+  size: number;
   stored_name?: string;
+  sha256?: string;
+  deduplicated?: boolean;
 }
 
 const FILES_PREVIEW = "/files/preview";

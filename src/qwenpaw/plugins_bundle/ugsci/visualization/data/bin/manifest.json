@@ -2,6 +2,36 @@
   "version": 1,
   "datasets": [
     {
+      "id": "BAI6_E300_real_run",
+      "name": "Eclipse: BAI6_E300_real_run (324x311x10, 31,925 active)",
+      "n_vertices": 255400,
+      "n_cells": 31925,
+      "n_indices": 1149300,
+      "grid_dims": [
+        324,
+        311,
+        10
+      ],
+      "source": "egrid",
+      "files": {
+        "positions": "BAI6_E300_real_run_positions.f32",
+        "indices": "BAI6_E300_real_run_indices.u32",
+        "cell_ids": "BAI6_E300_real_run_cell_ids.u32",
+        "scalars": {}
+      },
+      "time_steps": [],
+      "metadata": {
+        "simulator": "Eclipse-compatible",
+        "format": "EGRID",
+        "n_time_steps": 0,
+        "has_init": true,
+        "has_unrst": false,
+        "format_id": "eclipse",
+        "source_path": "C:\\Users\\shuai\\.qwenpaw\\workspaces\\default\\BAI6_run\\BAI6_E300.EGRID",
+        "managed": true
+      }
+    },
+    {
       "id": "egrid_test",
       "name": "ROFF Grid: egrid_test (10×15×8, 1,200 active)",
       "n_vertices": 9600,

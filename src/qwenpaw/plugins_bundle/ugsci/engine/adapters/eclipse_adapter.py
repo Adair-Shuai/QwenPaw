@@ -16,7 +16,7 @@ import re
 from pathlib import Path
 from typing import List, Optional
 
-from .base import BaseSimAdapter, SimProgress, SimSummary, SimWarning
+from .base import BaseSimAdapter, SimCapabilities, SimProgress, SimSummary, SimWarning
 
 
 class EclipseAdapter(BaseSimAdapter):
@@ -24,6 +24,22 @@ class EclipseAdapter(BaseSimAdapter):
     display_name = "Eclipse (E100/E300)"
     deck_extension = ".DATA"
     log_extension = ".PRT"
+    capabilities = SimCapabilities(
+        supports_progress=True,
+        supports_result_reading=True,
+        supports_terminal_artifacts=True,
+        # The common runtime can recover monitoring, but does not yet restart
+        # a simulator from a checkpoint automatically.
+        supports_checkpoint_resume=False,
+        supports_auto_tune=True,
+        tuning_keywords=("NSTACK", "LITMAX"),
+    )
+
+    def tuning_rules(self) -> dict[str, tuple[int, int, object]]:
+        return {
+            "NSTACK": (1, 100, lambda value: max(value + 5, int(value * 1.5 + 0.5))),
+            "LITMAX": (1, 100, lambda value: max(value + 5, int(value * 1.5 + 0.5))),
+        }
 
     # ------------------------------------------------------------------
     # Command
@@ -120,8 +136,8 @@ class EclipseAdapter(BaseSimAdapter):
         if not log_file:
             return warnings
 
-        full_log = self._read_log_full(log_file)
-        for i, line in enumerate(full_log.splitlines(), 1):
+        log_tail = self._read_log_tail(log_file, 5000)
+        for i, line in enumerate(log_tail.splitlines(), 1):
             upper = line.upper()
             if "WARNING" in upper:
                 warnings.append(SimWarning("warning", i, line.strip()))
@@ -135,11 +151,19 @@ class EclipseAdapter(BaseSimAdapter):
     # Result parsing
     # ------------------------------------------------------------------
 
-    def find_summary_file(self, working_dir: str | Path) -> Optional[Path]:
+    def find_summary_file(
+        self,
+        working_dir: str | Path,
+        case_stem: str = "",
+    ) -> Optional[Path]:
         """Find the .SMS or .RSM file."""
         working_dir = Path(working_dir)
         for ext in [".SMS", ".RSM", ".sms", ".rsm"]:
-            matches = list(working_dir.glob(f"*{ext}"))
+            matches = (
+                list(working_dir.glob(f"{case_stem}{ext}"))
+                if case_stem
+                else list(working_dir.glob(f"*{ext}"))
+            )
             if matches:
                 return matches[0]
         return None
@@ -149,6 +173,7 @@ class EclipseAdapter(BaseSimAdapter):
         working_dir: str | Path,
         variables: Optional[List[str]] = None,
         wells: Optional[List[str]] = None,
+        case_stem: str = "",
     ) -> SimSummary:
         """Parse summary data from .SMS (text) or .RSM (report table).
 
@@ -156,7 +181,7 @@ class EclipseAdapter(BaseSimAdapter):
         ``DATE``, ``FOPR``, ``FPR``, ``WOPR:PROD1``, etc.
         """
         summary = SimSummary()
-        rsm_file = self.find_summary_file(working_dir)
+        rsm_file = self.find_summary_file(working_dir, case_stem=case_stem)
         if not rsm_file or not rsm_file.is_file():
             return summary
 

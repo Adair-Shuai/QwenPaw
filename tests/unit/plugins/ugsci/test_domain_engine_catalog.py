@@ -3,24 +3,28 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from plugins.bundle.ugsci.domain_engine.catalog import (
     get_engine,
     get_engine_ids,
     list_engines,
 )
+from plugins.bundle.ugsci.domain_engine.dependency_probe import probe_engine
 
 
 class TestCatalog:
     def test_domain_engines_and_scientific_libraries_exist(self) -> None:
         engines = list_engines()
-        assert len(engines) == 12
+        assert len(engines) == 13
 
     def test_engine_ids_unique(self) -> None:
         ids = get_engine_ids()
-        assert len(ids) == 12
+        assert len(ids) == 13
         assert "well-log-processing" in ids
         assert "decline-analysis" in ids
         assert "neqsim" in ids
+        assert "petroleum-deterministic-core" in ids
         assert {
             "sympy",
             "pymc",
@@ -62,10 +66,24 @@ class TestCatalog:
     def test_neqsim_engine(self) -> None:
         engine = get_engine("neqsim")
         assert engine is not None
-        assert engine.source == "mcp"
+        assert engine.source == "builtin"
         assert engine.provider.kind == "driver"
-        assert engine.provider.id == "neqsim"
+        assert engine.provider.id == "ugsci-neqsim"
         assert len(engine.operations) == 5
+        assert {op.tool_names[0] for op in engine.operations} == {
+            "ugsci_neqsim_flash",
+            "ugsci_neqsim_pvt",
+            "ugsci_neqsim_phase_envelope",
+            "ugsci_neqsim_process_simulate",
+            "ugsci_neqsim_pipeline_flow",
+        }
+        assert {op.driver_tool_names[0] for op in engine.operations} == {
+            "runFlash",
+            "runPVT",
+            "getPhaseEnvelope",
+            "runProcess",
+            "runPipeline",
+        }
 
     def test_scientific_capabilities_are_builtin_and_tool_backed(self) -> None:
         library_ids = {
@@ -122,7 +140,100 @@ class TestCatalog:
         engine = get_engine("neqsim")
         assert engine is not None
         assert engine.provider.kind == "driver"
-        assert engine.provider.id == "neqsim"
+        assert engine.provider.id == "ugsci-neqsim"
+
+    def test_neqsim_probe_rejects_cross_source_runtime(
+        self,
+        monkeypatch,
+    ) -> None:
+        engine = get_engine("neqsim")
+        assert engine is not None
+        runtime = SimpleNamespace(
+            ready=False,
+            validated=False,
+            java_path="C:/java/bin/java.exe",
+            java_major_version=21,
+            java_version="21",
+            jar_path="C:/neqsim/neqsim-mcp-server.jar",
+            detected_neqsim_version="3.17.0",
+            neqsim_version="3.17.0",
+            issues=(
+                "Java and NeqSim MCP Server were found in different runtime "
+                "sources; cross-source combinations are not activated",
+            ),
+        )
+        monkeypatch.setattr(
+            "qwenpaw.agents.builtin_mcp.neqsim_runtime.discover_runtime",
+            lambda: runtime,
+        )
+
+        result = probe_engine(engine)
+
+        assert result.overall == "unavailable"
+        assert [dependency.status for dependency in result.dependencies] == [
+            "unavailable",
+            "unavailable",
+        ]
+
+    def test_neqsim_probe_rejects_old_java_but_keeps_valid_jar(
+        self,
+        monkeypatch,
+    ) -> None:
+        engine = get_engine("neqsim")
+        assert engine is not None
+        runtime = SimpleNamespace(
+            ready=False,
+            validated=False,
+            java_path="C:/neqsim/java/bin/java.exe",
+            java_major_version=17,
+            java_version="21",
+            jar_path="C:/neqsim/neqsim-mcp-server.jar",
+            detected_neqsim_version="3.17.0",
+            neqsim_version="3.17.0",
+            issues=("Java 17 is unsupported; Java 21 or newer is required",),
+        )
+        monkeypatch.setattr(
+            "qwenpaw.agents.builtin_mcp.neqsim_runtime.discover_runtime",
+            lambda: runtime,
+        )
+
+        result = probe_engine(engine)
+
+        assert result.overall == "unavailable"
+        assert [dependency.status for dependency in result.dependencies] == [
+            "unavailable",
+            "available",
+        ]
+
+    def test_neqsim_probe_accepts_ready_validated_runtime(
+        self,
+        monkeypatch,
+    ) -> None:
+        engine = get_engine("neqsim")
+        assert engine is not None
+        runtime = SimpleNamespace(
+            ready=True,
+            validated=True,
+            java_path="C:/neqsim/java/bin/java.exe",
+            java_major_version=21,
+            java_version="21",
+            jar_path="C:/neqsim/neqsim-mcp-server.jar",
+            detected_neqsim_version="3.17.0",
+            neqsim_version="3.17.0",
+            issues=(),
+        )
+        monkeypatch.setattr(
+            "qwenpaw.agents.builtin_mcp.neqsim_runtime.discover_runtime",
+            lambda: runtime,
+        )
+
+        result = probe_engine(engine)
+
+        assert result.overall == "available"
+        assert all(
+            dependency.status == "available"
+            for dependency in result.dependencies
+        )
 
     def test_engine_to_dict_serializable(self) -> None:
         import json

@@ -6,7 +6,7 @@
  */
 
 export interface ProviderRef {
-  kind: "builtin" | "driver" | "skill";
+  kind: "builtin" | "driver" | "skill" | "plugin";
   id: string;
 }
 
@@ -24,11 +24,13 @@ export interface DomainEngineDefinition {
   name: string;
   description: string;
   domain: string;
-  source: "builtin" | "mcp" | "library";
+  source: "builtin" | "mcp" | "library" | "plugin";
   provider: ProviderRef;
   operations: DomainOperation[];
   dependencies: string[];
   tags: string[];
+  execution_class: "deterministic" | "stochastic" | "external" | "visualization";
+  engine_version: string;
 }
 
 export type ProbeStatus = "available" | "unavailable" | "unknown";
@@ -65,9 +67,39 @@ export interface DomainEngineView {
   dependencyStatus: DependencyStatus;
   checkedAt: string;
   /** Effective availability derived from dependency + MCP status. */
-  effectiveStatus: ProbeStatus | "unconfigured" | "error";
+  effectiveStatus: ProbeStatus | "needs_install" | "unconfigured" | "error";
   /** Number of tools discovered (for MCP engines, from tool list). */
   discoveredToolCount: number;
   /** MCP provider key (for MCP engines only). */
   mcpProviderKey: string | null;
+}
+
+export interface NeqSimRuntimeStatus {
+  state: "ready" | "partial" | "needs_install" | "incompatible" | string;
+  ready: boolean;
+  installable: boolean;
+  runtime_dir: string;
+  java_source: string;
+  jar_source: string;
+  missing: string[];
+  java_version: string;
+  neqsim_version: string;
+  runtime_source: string;
+  java_major_version: number | null;
+  detected_neqsim_version: string;
+  validated: boolean;
+  issues: string[];
+}
+
+export interface NeqSimInstallTask {
+  id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number;
+  message: string;
+  error: string;
+  warning?: string;
+  runtime: NeqSimRuntimeStatus | null;
+  created_at?: number;
+  finished_at?: number | null;
+  recovered?: boolean;
 }

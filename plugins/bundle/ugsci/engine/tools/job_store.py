@@ -1,42 +1,26 @@
 # -*- coding: utf-8 -*-
-"""Job metadata persistence for UGSci simulation tools.
-
-Stores job metadata (excluding process handles) as a JSON file so that
-simulation jobs survive QwenPaw service restarts.  After restart, tools
-can recover job metadata and check process liveness via PID.
-
-This module has minimal coupling to QwenPaw internals — it imports
-``WORKING_DIR`` lazily (at call time, not import time) so the module
-remains importable in standalone contexts.  The store file is placed
-under QwenPaw's formal working directory (``WORKING_DIR``) rather than
-a hardcoded ``~/.qwenpaw`` path (BUG-012).
-"""
+"""Durable, multi-process-safe storage for UGSci simulation jobs."""
 from __future__ import annotations
 
 import json
 import logging
 import os
-import threading
+import sqlite3
+import time
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
-# Lock for thread-safe file access
-_lock = threading.Lock()
-
-# Maximum number of jobs to keep in the store (oldest are pruned)
 _MAX_STORED_JOBS = 200
+_MAX_EVENTS_PER_JOB = 100
+DEFAULT_WAKE_LEASE_SECONDS = 20 * 60
 
 
 def _store_file() -> Path:
-    """Return the job store file path under QwenPaw's WORKING_DIR.
-
-    Uses ``qwenpaw.constant.WORKING_DIR`` which respects
-    ``QWENPAW_WORKING_DIR`` env var and the ``~/.copaw`` legacy path.
-    Falls back to ``~/.qwenpaw`` if the constant is unavailable.
-    """
+    """Return the legacy JSON path (also used to locate the SQLite DB)."""
     try:
         from qwenpaw.constant import WORKING_DIR
 
@@ -46,62 +30,158 @@ def _store_file() -> Path:
     return base / "ugsci" / "jobs.json"
 
 
-def _load_store() -> dict[str, dict[str, Any]]:
-    """Load the job store from disk. Returns empty dict on error."""
-    try:
-        store_file = _store_file()
-        if store_file.is_file():
-            data = json.loads(store_file.read_text(encoding="utf-8"))
-            if isinstance(data, dict):
-                return data
-    except Exception as exc:
-        logger.warning("Failed to load job store: %s", exc)
-    return {}
+def _database_file() -> Path:
+    return _store_file().with_name("jobs.sqlite3")
 
 
-def _save_store(store: dict[str, dict[str, Any]]) -> None:
-    """Save the job store to disk (atomic write via tmp + os.replace)."""
-    store_file = _store_file()
-    store_file.parent.mkdir(parents=True, exist_ok=True)
-    tmp = store_file.with_suffix(".tmp")
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _decode_payload(raw: str | bytes | None) -> dict[str, Any]:
+    if not raw:
+        return {}
     try:
-        tmp.write_text(
-            json.dumps(store, indent=2, ensure_ascii=False, default=str),
-            encoding="utf-8",
+        value = json.loads(raw)
+    except (TypeError, json.JSONDecodeError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+@contextmanager
+def _connection(*, write: bool = False) -> Iterator[sqlite3.Connection]:
+    db_file = _database_file()
+    db_file.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_file, timeout=30, isolation_level=None)
+    conn.row_factory = sqlite3.Row
+    try:
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA synchronous=NORMAL")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS jobs ("
+            "job_id TEXT PRIMARY KEY, payload TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL)"
         )
-        os.replace(tmp, store_file)
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS job_events ("
+            "job_id TEXT NOT NULL, sequence INTEGER NOT NULL, "
+            "payload TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "PRIMARY KEY(job_id, sequence))"
+        )
+        if write:
+            conn.execute("BEGIN IMMEDIATE")
+        yield conn
+        if write:
+            conn.execute("COMMIT")
+    except Exception:
+        if write:
+            try:
+                conn.execute("ROLLBACK")
+            except sqlite3.Error:
+                pass
+        raise
+    finally:
+        conn.close()
+
+
+def _migrate_legacy_json_if_needed(conn: sqlite3.Connection) -> None:
+    count = int(conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0])
+    legacy = _store_file()
+    if count or not legacy.is_file():
+        return
+    try:
+        raw = json.loads(legacy.read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            return
+        for job_id, payload in raw.items():
+            if not isinstance(job_id, str) or not isinstance(payload, dict):
+                continue
+            updated_at = str(payload.get("updated_at") or _utc_now_iso())
+            conn.execute(
+                "INSERT OR IGNORE INTO jobs(job_id, payload, updated_at) "
+                "VALUES (?, ?, ?)",
+                (job_id, json.dumps(payload, ensure_ascii=False, default=str), updated_at),
+            )
+        # Commit the imported rows before archiving the source.  File rename
+        # and SQLite cannot share one transaction; this ordering prevents a
+        # later caller failure from rolling back the DB after jobs.json was
+        # already moved away.
+        conn.execute("COMMIT")
+        try:
+            archive = legacy.with_name(f"{legacy.name}.migrated")
+            if archive.exists():
+                archive = legacy.with_name(
+                    f"{legacy.name}.migrated.{int(time.time())}"
+                )
+            os.replace(legacy, archive)
+        except OSError as exc:
+            logger.warning("Migrated jobs but could not archive %s: %s", legacy, exc)
+        finally:
+            conn.execute("BEGIN IMMEDIATE")
+        logger.info("Migrated %d UGSci jobs from JSON to SQLite", len(raw))
     except Exception as exc:
-        logger.warning("Failed to save job store: %s", exc)
-        if tmp.exists():
-            tmp.unlink(missing_ok=True)
+        logger.warning("Failed to migrate legacy UGSci job store: %s", exc)
+
+
+def _write_payload(
+    conn: sqlite3.Connection,
+    job_id: str,
+    payload: dict[str, Any],
+) -> None:
+    updated_at = _utc_now_iso()
+    payload["updated_at"] = updated_at
+    conn.execute(
+        "INSERT INTO jobs(job_id, payload, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(job_id) DO UPDATE SET payload=excluded.payload, "
+        "updated_at=excluded.updated_at",
+        (job_id, json.dumps(payload, ensure_ascii=False, default=str), updated_at),
+    )
+
+
+def _load_payload_for_update(
+    conn: sqlite3.Connection,
+    job_id: str,
+) -> dict[str, Any] | None:
+    row = conn.execute(
+        "SELECT payload FROM jobs WHERE job_id=?",
+        (job_id,),
+    ).fetchone()
+    return _decode_payload(row["payload"]) if row else None
+
+
+def _prune(conn: sqlite3.Connection) -> None:
+    rows = conn.execute(
+        "SELECT job_id, payload FROM jobs ORDER BY updated_at DESC"
+    ).fetchall()
+    if len(rows) <= _MAX_STORED_JOBS:
+        return
+    terminal = []
+    for row in reversed(rows):
+        payload = _decode_payload(row["payload"])
+        if payload.get("status") != "running":
+            terminal.append(row["job_id"])
+    remove_count = len(rows) - _MAX_STORED_JOBS
+    for job_id in terminal[:remove_count]:
+        conn.execute("DELETE FROM job_events WHERE job_id=?", (job_id,))
+        conn.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
 
 
 def save_job(job_id: str, meta: dict[str, Any]) -> None:
-    """Save or update a job's metadata.
-
-    Args:
-        job_id: Unique job identifier.
-        meta: Metadata dict (must be JSON-serializable).
-    """
-    with _lock:
-        store = _load_store()
-        meta["updated_at"] = datetime.now(timezone.utc).isoformat()
-        store[job_id] = meta
-        # Prune old entries if exceeding limit
-        if len(store) > _MAX_STORED_JOBS:
-            sorted_items = sorted(
-                store.items(),
-                key=lambda x: x[1].get("updated_at", ""),
-            )
-            store = dict(sorted_items[-_MAX_STORED_JOBS:])
-        _save_store(store)
+    with _connection(write=True) as conn:
+        _migrate_legacy_json_if_needed(conn)
+        _write_payload(conn, job_id, dict(meta))
+        _prune(conn)
 
 
 def load_job(job_id: str) -> dict[str, Any] | None:
-    """Load a job's metadata. Returns None if not found."""
-    with _lock:
-        store = _load_store()
-        return store.get(job_id)
+    try:
+        with _connection(write=True) as conn:
+            _migrate_legacy_json_if_needed(conn)
+            return _load_payload_for_update(conn, job_id)
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("Failed to load UGSci job %s: %s", job_id, exc)
+        return None
 
 
 def update_job_status(
@@ -112,158 +192,256 @@ def update_job_status(
     error: str | None = None,
     end_ts: float | None = None,
 ) -> None:
-    """Update specific fields of a job's metadata.
+    fields: dict[str, Any] = {"status": status}
+    if returncode is not None:
+        fields["returncode"] = returncode
+    if error is not None:
+        fields["error"] = error
+    if end_ts is not None:
+        fields["end_ts"] = end_ts
+    update_job_fields(job_id, **fields)
 
-    Non-existent job_id is silently ignored (the job may have been
-    pruned or the store may be corrupted).
-    """
-    with _lock:
-        store = _load_store()
-        job = store.get(job_id)
-        if not job:
+
+def update_job_fields(job_id: str, **fields: Any) -> None:
+    with _connection(write=True) as conn:
+        _migrate_legacy_json_if_needed(conn)
+        payload = _load_payload_for_update(conn, job_id)
+        if payload is None:
             return
-        job["status"] = status
-        if returncode is not None:
-            job["returncode"] = returncode
-        if error is not None:
-            job["error"] = error
-        if end_ts is not None:
-            job["end_ts"] = end_ts
-        job["updated_at"] = datetime.now(timezone.utc).isoformat()
-        _save_store(store)
+        payload.update(fields)
+        _write_payload(conn, job_id, payload)
+
+
+def claim_terminal_notification(job_id: str) -> bool:
+    with _connection(write=True) as conn:
+        _migrate_legacy_json_if_needed(conn)
+        payload = _load_payload_for_update(conn, job_id)
+        if payload is None or payload.get("terminal_notified"):
+            return False
+        payload["terminal_notified"] = True
+        _write_payload(conn, job_id, payload)
+        return True
+
+
+def claim_wake_attempt(
+    job_id: str,
+    *,
+    max_attempts: int = 3,
+    lease_seconds: float = DEFAULT_WAKE_LEASE_SECONDS,
+) -> tuple[bool, int, str]:
+    """Claim one idempotent agent-resume attempt with a stale lease."""
+    now = time.time()
+    with _connection(write=True) as conn:
+        _migrate_legacy_json_if_needed(conn)
+        payload = _load_payload_for_update(conn, job_id)
+        if payload is None:
+            return False, 0, ""
+        run_key = str(payload.get("wake_run_key") or f"simulation:{job_id}:terminal")
+        status = str(payload.get("wake_status") or "pending")
+        try:
+            attempts = int(payload.get("wake_attempts") or 0)
+        except (TypeError, ValueError, OverflowError):
+            attempts = 0
+        try:
+            claimed_at = float(payload.get("wake_claimed_ts") or 0)
+        except (TypeError, ValueError, OverflowError):
+            claimed_at = 0.0
+        if status == "completed" or attempts >= max_attempts:
+            return False, attempts, run_key
+        if status == "running" and now - claimed_at < lease_seconds:
+            return False, attempts, run_key
+        attempts += 1
+        payload.update(
+            wake_run_key=run_key,
+            wake_status="running",
+            wake_attempts=attempts,
+            wake_claimed_ts=now,
+            wake_error=None,
+        )
+        _write_payload(conn, job_id, payload)
+        return True, attempts, run_key
+
+
+def finish_wake_attempt(
+    job_id: str,
+    *,
+    success: bool,
+    run_id: str | None = None,
+    error: str | None = None,
+    retryable: bool = True,
+    attempt: int | None = None,
+) -> bool:
+    """Finish a wake lease, ignoring stale workers after lease expiry."""
+    with _connection(write=True) as conn:
+        _migrate_legacy_json_if_needed(conn)
+        payload = _load_payload_for_update(conn, job_id)
+        if payload is None:
+            return False
+        if attempt is not None:
+            try:
+                current_attempt = int(payload.get("wake_attempts") or 0)
+            except (TypeError, ValueError, OverflowError):
+                return False
+            if current_attempt != attempt or payload.get("wake_status") != "running":
+                return False
+        payload.update(
+            wake_status="completed" if success else ("pending" if retryable else "failed"),
+            wake_completed_ts=time.time() if success else None,
+            wake_run_id=run_id,
+            wake_error=error,
+        )
+        _write_payload(conn, job_id, payload)
+        return True
 
 
 def list_jobs() -> dict[str, dict[str, Any]]:
-    """Return all stored job metadata."""
-    with _lock:
-        return _load_store()
+    try:
+        with _connection(write=True) as conn:
+            _migrate_legacy_json_if_needed(conn)
+            rows = conn.execute("SELECT job_id, payload FROM jobs").fetchall()
+            return {row["job_id"]: _decode_payload(row["payload"]) for row in rows}
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("Failed to list UGSci jobs: %s", exc)
+        return {}
 
 
 def remove_job(job_id: str) -> None:
-    """Remove a job from the store."""
-    with _lock:
-        store = _load_store()
-        store.pop(job_id, None)
-        _save_store(store)
+    with _connection(write=True) as conn:
+        conn.execute("DELETE FROM job_events WHERE job_id=?", (job_id,))
+        conn.execute("DELETE FROM jobs WHERE job_id=?", (job_id,))
 
 
-def is_pid_ours(
-    pid: int,
-    expected_start_ts: float,
-    deck_file: str = "",
-) -> bool:
-    """Check whether *pid* still belongs to our simulation process.
+def append_job_event_if_changed(
+    job_id: str,
+    event: dict[str, Any],
+) -> tuple[int, bool]:
+    encoded = json.dumps(event, sort_keys=True, ensure_ascii=False, default=str)
+    with _connection(write=True) as conn:
+        latest = conn.execute(
+            "SELECT sequence, payload FROM job_events WHERE job_id=? "
+            "ORDER BY sequence DESC LIMIT 1",
+            (job_id,),
+        ).fetchone()
+        if latest and latest["payload"] == encoded:
+            return int(latest["sequence"]), False
+        sequence = int(latest["sequence"] if latest else 0) + 1
+        conn.execute(
+            "INSERT INTO job_events(job_id, sequence, payload, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (job_id, sequence, encoded, _utc_now_iso()),
+        )
+        conn.execute(
+            "DELETE FROM job_events WHERE job_id=? AND sequence <= ?",
+            (job_id, max(0, sequence - _MAX_EVENTS_PER_JOB)),
+        )
+        return sequence, True
 
-    Used during job recovery to detect PID reuse: after a service restart
-    the original process may have died and the OS may have recycled the
-    PID for an unrelated process.  If we cannot confirm identity we
-    return ``False`` so the caller marks the job as ``interrupted``
-    rather than trusting a stale PID (BUG-007).
 
-    Identity is established by checking that the process's command line
-    contains the deck file basename.  This is a heuristic — it may
-    return ``False`` for very short-lived processes or when ``ps`` is
-    unavailable, but it never produces false positives.
-
-    Args:
-        pid: Process ID to verify.
-        expected_start_ts: Wall-clock start time of the original job
-            (unused on some platforms but kept for future extensions).
-        deck_file: Path to the simulation deck file — its basename is
-            searched for in the process command line.
-
-    Returns:
-        ``True`` if the PID appears to be our process, ``False`` if the
-        PID has been reused or identity cannot be confirmed.
-    """
-    if pid <= 0:
-        return False
-    if not is_pid_alive(pid):
-        return False
-
-    # Build a search token from the deck file basename.
-    import os as _os
-    search_token = ""
-    if deck_file:
-        search_token = _os.path.basename(deck_file)
-    if not search_token:
-        # Without a token we cannot confirm identity.
-        return False
-
+def list_job_events(job_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
     try:
-        if _os.name == "nt":
-            # Windows: use wmic to get the command line.
-            import subprocess
+        with _connection() as conn:
+            rows = conn.execute(
+                "SELECT sequence, payload FROM job_events "
+                "WHERE job_id=? AND sequence>? ORDER BY sequence",
+                (job_id, max(0, after_sequence)),
+            ).fetchall()
+    except (sqlite3.Error, OSError) as exc:
+        logger.warning("Failed to list UGSci events for %s: %s", job_id, exc)
+        return []
+    return [
+        {"sequence": int(row["sequence"]), "data": _decode_payload(row["payload"])}
+        for row in rows
+    ]
 
-            result = subprocess.run(
-                [
-                    "wmic", "process", "where",
-                    f"ProcessId={pid}",
-                    "get", "CommandLine", "/value",
-                ],
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            cmdline = result.stdout
-        else:
-            # Unix: read /proc/{pid}/cmdline (Linux) or use ps (macOS/BSD).
-            proc_cmdline = Path(f"/proc/{pid}/cmdline")
-            if proc_cmdline.is_file():
-                raw = proc_cmdline.read_bytes()
-                cmdline = raw.replace(b"\x00", b" ").decode(
-                    "utf-8", errors="replace",
-                )
-            else:
-                import subprocess
 
-                result = subprocess.run(
-                    ["ps", "-p", str(pid), "-o", "command="],
-                    capture_output=True,
-                    text=True,
-                    timeout=5,
-                )
-                cmdline = result.stdout
-    except Exception:
-        # Cannot confirm identity — be safe.
+def is_pid_ours(pid: int, expected_start_ts: float, deck_file: str = "") -> bool:
+    """Confirm PID identity using create time and an exact deck basename token."""
+    if pid <= 0 or not is_pid_alive(pid):
         return False
+    basename = os.path.basename(deck_file).casefold() if deck_file else ""
+    if not basename:
+        return False
+    expected_tokens = {basename}
+    stem, ext = os.path.splitext(basename)
+    if ext == ".data" and stem:
+        expected_tokens.add(stem)
+    try:
+        import psutil
 
-    return search_token in cmdline
+        process = psutil.Process(pid)
+        if expected_start_ts > 0 and abs(process.create_time() - expected_start_ts) > 5:
+            return False
+        tokens = [os.path.basename(part.strip('"')).casefold() for part in process.cmdline()]
+        return bool(expected_tokens.intersection(tokens))
+    except Exception:
+        pass
+    if os.name != "nt":
+        return False
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        command = result.stdout.replace('"', '').casefold()
+        tokens = [os.path.basename(token) for token in command.split()]
+        return bool(expected_tokens.intersection(tokens))
+    except Exception:
+        return False
 
 
 def is_pid_alive(pid: int) -> bool:
-    """Check if a process with the given PID is still running.
-
-    Cross-platform: uses ctypes on Windows, os.kill(0) on Unix.
-    Returns False for invalid PIDs or on any error.
-    """
     if pid <= 0:
         return False
     try:
+        import psutil
+
+        process = psutil.Process(pid)
+        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+    except ImportError:
+        pass
+    except Exception:
+        return False
+    try:
         if os.name == "nt":
-            # Windows: use ctypes to check process existence.
-            # On 64-bit systems, HANDLE is a 64-bit pointer — we must
-            # set restype/argtypes to avoid truncation (default c_int
-            # is only 32 bits).
             import ctypes
 
-            kernel32 = ctypes.windll.kernel32
-            kernel32.OpenProcess.restype = ctypes.c_void_p
-            kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
-            SYNCHRONIZE = 0x00100000
-            handle = kernel32.OpenProcess(SYNCHRONIZE, False, pid)
+            handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
             if handle:
-                kernel32.CloseHandle(handle)
+                ctypes.windll.kernel32.CloseHandle(handle)
                 return True
             return False
-        else:
-            # Unix: signal 0 checks process existence without sending a signal
-            os.kill(pid, 0)
-            return True
+        os.kill(pid, 0)
+        return True
     except ProcessLookupError:
         return False
     except PermissionError:
-        # Process exists but we lack permission to signal it
         return True
     except Exception:
         return False
+
+
+__all__ = [
+    "append_job_event_if_changed",
+    "claim_terminal_notification",
+    "claim_wake_attempt",
+    "finish_wake_attempt",
+    "is_pid_alive",
+    "is_pid_ours",
+    "list_job_events",
+    "list_jobs",
+    "load_job",
+    "remove_job",
+    "save_job",
+    "update_job_fields",
+    "update_job_status",
+]

@@ -1,6 +1,4 @@
-# Optional scientific file providers used by UGSci file/artifact conversion.
-xtgeo>=4.0
-lasio>=0.31
-dlisio>=1.0.4
-pyarrow>=14
-meshio>=5.3
+# The deterministic UGSci core has no mandatory third-party dependency.
+# Optional Providers are listed in requirements-optional.txt and are probed
+# at runtime.  Keeping them out of this file prevents plugin startup from
+# downloading large scientific stacks or failing when the network is offline.

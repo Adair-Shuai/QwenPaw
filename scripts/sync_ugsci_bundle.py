@@ -61,6 +61,11 @@ def _digest(path: Path) -> str:
     return hasher.hexdigest()
 
 
+def _display_path(path: Path) -> str:
+    """Return a stable, platform-independent path for diagnostics."""
+    return path.as_posix()
+
+
 def find_drift(source: Path, destination: Path) -> list[str]:
     """Return files missing, different, or obsolete in the mirror."""
     drift: list[str] = []
@@ -72,14 +77,14 @@ def find_drift(source: Path, destination: Path) -> list[str]:
         relative = source_file.relative_to(source)
         destination_file = destination / relative
         if not destination_file.is_file():
-            drift.append(f"missing: {relative}")
+            drift.append(f"missing: {_display_path(relative)}")
         elif _digest(source_file) != _digest(destination_file):
-            drift.append(f"different: {relative}")
+            drift.append(f"different: {_display_path(relative)}")
     if destination.is_dir():
         for destination_file in _destination_files(destination):
             relative = destination_file.relative_to(destination)
             if relative not in source_relatives:
-                drift.append(f"obsolete: {relative}")
+                drift.append(f"obsolete: {_display_path(relative)}")
     return drift
 
 
@@ -138,7 +143,6 @@ def _generated_bundle_targets(root: Path) -> list[Path]:
         / "static"
         / "index.js",
         root / "console" / "public" / "ugsci_plugin" / "index.js",
-        root / ".qwenpaw" / "plugins" / "ugsci" / "static" / "index.js",
     ]
 
 
@@ -195,11 +199,13 @@ def find_generated_bundle_drift(root: Path, source: Path) -> list[str]:
     for target in _generated_bundle_targets(root):
         if not target.is_file():
             drift.append(
-                f"missing generated bundle: {target.relative_to(root)}",
+                "missing generated bundle: "
+                f"{_display_path(target.relative_to(root))}",
             )
         elif _digest(compiled) != _digest(target):
             drift.append(
-                f"different generated bundle: {target.relative_to(root)}",
+                "different generated bundle: "
+                f"{_display_path(target.relative_to(root))}",
             )
     viewer = source / "ui" / "dist" / "viewer-runtime.js"
     if not viewer.is_file():
@@ -208,11 +214,13 @@ def find_generated_bundle_drift(root: Path, source: Path) -> list[str]:
     for target in _generated_viewer_targets(root):
         if not target.is_file():
             drift.append(
-                f"missing generated viewer bundle: {target.relative_to(root)}",
+                "missing generated viewer bundle: "
+                f"{_display_path(target.relative_to(root))}",
             )
         elif _digest(viewer) != _digest(target):
             drift.append(
-                f"different generated viewer bundle: {target.relative_to(root)}",
+                "different generated viewer bundle: "
+                f"{_display_path(target.relative_to(root))}",
             )
     return drift
 

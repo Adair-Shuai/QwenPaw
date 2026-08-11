@@ -9,16 +9,25 @@ Each adapter knows how to:
 
 Adapters are selected by ``get_adapter(simulator)`` where *simulator*
 is one of: ``"eclipse"``, ``"cmg_imex"``, ``"cmg_stars"``,
-``"cmg_gem"``, ``"comsol"``.
+``"cmg_gem"``, ``"comsol"``, ``"intersect"``, ``"tnavigator"``.
 """
 from __future__ import annotations
 
 from typing import Dict, Type
 
-from .base import BaseSimAdapter, SimProgress, SimSummary, SimWarning
+from .base import (
+    BaseSimAdapter,
+    SimCapabilities,
+    SimFieldTable,
+    SimProgress,
+    SimSummary,
+    SimWarning,
+)
 from .eclipse_adapter import EclipseAdapter
 from .cmg_adapter import CMGAdapter
-from .comsol_adapter import COMSOLAdapter
+from .comsol_adapter import COMSOLAdapter, inspect_mph_metadata
+from .intersect_adapter import IntersectAdapter
+from .tnavigator_adapter import TNavigatorAdapter
 
 _ADAPTERS: Dict[str, BaseSimAdapter] = {}
 
@@ -31,6 +40,8 @@ def _init_adapters() -> None:
         CMGAdapter("stars"),
         CMGAdapter("gem"),
         COMSOLAdapter(),
+        IntersectAdapter(),
+        TNavigatorAdapter(),
     ]
     for inst in instances:
         _ADAPTERS[inst.simulator_id] = inst
@@ -60,9 +71,12 @@ def list_supported_simulators() -> list[str]:
 
 __all__ = [
     "BaseSimAdapter",
+    "SimCapabilities",
+    "SimFieldTable",
     "SimProgress",
     "SimSummary",
     "SimWarning",
+    "inspect_mph_metadata",
     "get_adapter",
     "list_supported_simulators",
 ]

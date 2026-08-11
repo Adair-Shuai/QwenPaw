@@ -22,7 +22,10 @@ def test_health_endpoint_returns_complete_capability_snapshot(
         lambda: [
             {
                 "schema_version": 1,
-                "engine": {"id": "well-log-processing", "name": "测井数据处理"},
+                "engine": {
+                    "id": "well-log-processing",
+                    "name": "测井数据处理",
+                },
                 "dependency_status": {
                     "overall": "unavailable",
                     "dependencies": [
@@ -65,7 +68,7 @@ def test_health_endpoint_returns_complete_capability_snapshot(
     assert data["plugin"]["id"] == "ugsci"
     assert data["plugin"]["version"]
     assert data["plugin"]["status"] == "degraded"
-    assert data["summary"]["tool_count"] == 37
+    assert data["summary"]["tool_count"] == 50
     assert data["summary"]["route_count"] >= 8
     assert data["summary"]["detected_simulation_engine_count"] == 1
     assert data["dependencies"][0]["install_hint"]

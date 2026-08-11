@@ -252,6 +252,201 @@ const fixCodeHighlighterPlugin: Plugin = {
   },
 };
 
+function replaceExactOnce(
+  code: string,
+  target: string,
+  replacement: string,
+): string | null {
+  const first = code.indexOf(target);
+  if (first < 0 || first !== code.lastIndexOf(target)) return null;
+  return `${code.slice(0, first)}${replacement}${code.slice(first + target.length)}`;
+}
+
+function applyDependencyPatch(
+  patchName: string,
+  id: string,
+  code: string,
+  patcher: (source: string) => string | null,
+): string | null {
+  const patched = patcher(code);
+  if (patched === null) {
+    console.warn(
+      `[vite:${patchName}] dependency source did not match the expected published shape: ${id}`,
+    );
+  }
+  return patched;
+}
+
+// @agentscope-ai/design 1.0.32 wraps its Anchor with a one-argument
+// forwardRef callback and drops the ref. React warns on every development
+// render. Patch the precise published module at transform time until the
+// upstream package ships the same two-argument implementation.
+function patchDesignAnchorForwardRef(code: string): string | null {
+  const signature =
+    "var SparkAnchor = /*#__PURE__*/forwardRef(function (props) {";
+  const anchorRender = "_jsx(Anchor, _objectSpread({}, props))";
+  const withRef = replaceExactOnce(
+    code,
+    signature,
+    "var SparkAnchor = /*#__PURE__*/forwardRef(function (props, ref) {",
+  );
+  if (withRef === null) return null;
+  return replaceExactOnce(
+    withRef,
+    anchorRender,
+    "_jsx(Anchor, _objectSpread(_objectSpread({}, props), {}, { ref: ref }))",
+  );
+}
+
+function patchDesignIconButtonForwardRef(code: string): string | null {
+  const importLine = "import { useMemo } from 'react';";
+  const signature = "export default (function (props) {";
+  const buttonTail = `    }, restProps), {}, {
+      icon: icon
+    }))`;
+  const withImport = replaceExactOnce(
+    code,
+    importLine,
+    "import { forwardRef, useMemo } from 'react';",
+  );
+  if (withImport === null) return null;
+  const withSignature = replaceExactOnce(
+    withImport,
+    signature,
+    "export default /*#__PURE__*/forwardRef(function (props, ref) {",
+  );
+  if (withSignature === null) return null;
+  return replaceExactOnce(
+    withSignature,
+    buttonTail,
+    `    }, restProps), {}, {
+      icon: icon,
+      ref: ref
+    }))`,
+  );
+}
+
+const fixDesignAnchorForwardRefPlugin: Plugin = {
+  name: "fix-design-anchor-forward-ref",
+  enforce: "pre",
+  transform(code: string, id: string) {
+    if (!id.includes("@agentscope-ai/design")) return null;
+    const normalizedId = id.replaceAll("\\", "/");
+    if (normalizedId.endsWith("/components/commonComponents/Anchor/index.js")) {
+      return applyDependencyPatch(
+        "design-anchor-forward-ref",
+        id,
+        code,
+        patchDesignAnchorForwardRef,
+      );
+    }
+    if (
+      normalizedId.endsWith(
+        "/components/commonComponents/IconButton/index.js",
+      )
+    ) {
+      return applyDependencyPatch(
+        "design-icon-button-forward-ref",
+        id,
+        code,
+        patchDesignIconButtonForwardRef,
+      );
+    }
+    return null;
+  },
+};
+
+// @agentscope-ai/chat synchronously flushes a pagination state update from a
+// callback that can be invoked by its message-list lifecycle. React warns and
+// refuses the nested flush. Schedule the ordinary state update in a microtask,
+// then resolve on the next frame so consumers observe the committed DOM.
+function patchChatLifecycleFlushSync(code: string): string | null {
+  const importLine = "import { flushSync } from 'react-dom';";
+  const oldBlock = `        flushSync(function () {
+          return setDisplayCount(function (prev) {
+            return prev + PAGE_SIZE;
+          });
+        });
+        resolve();`;
+  const replacement = `        queueMicrotask(function () {
+          setDisplayCount(function (prev) {
+            return prev + PAGE_SIZE;
+          });
+          requestAnimationFrame(function () {
+            resolve();
+          });
+        });`;
+  const withoutImport = replaceExactOnce(code, importLine, "");
+  if (withoutImport === null) return null;
+  return replaceExactOnce(withoutImport, oldBlock, replacement);
+}
+
+function patchChatSessionLoaderFlushSync(code: string): string | null {
+  const importLine = "import ReactDOM from 'react-dom';";
+  const oldBlock = `          ReactDOM.flushSync(function () {
+            setMessages([]);
+          });`;
+  const replacement = "          setMessages([]);";
+  const withoutImport = replaceExactOnce(code, importLine, "");
+  if (withoutImport === null) return null;
+  return replaceExactOnce(withoutImport, oldBlock, replacement);
+}
+
+function patchChatActionButtonForwardRef(code: string): string | null {
+  const signature = "export function ActionButton(props) {";
+  const restPropsLine =
+    "    restProps = _objectWithoutProperties(props, _excluded);";
+  const withRef = replaceExactOnce(
+    code,
+    signature,
+    "export function ActionButton(props, ref) {",
+  );
+  if (withRef === null) return null;
+  return replaceExactOnce(
+    withRef,
+    restPropsLine,
+    `${restPropsLine}\n  restProps.ref = ref;`,
+  );
+}
+
+const fixChatLifecycleFlushSyncPlugin: Plugin = {
+  name: "fix-chat-lifecycle-flush-sync",
+  enforce: "pre",
+  transform(code: string, id: string) {
+    if (!id.includes("@agentscope-ai/chat")) return null;
+    const normalizedId = id.replaceAll("\\", "/");
+    if (normalizedId.endsWith("/ChatAnywhere/Chat/index.js")) {
+      return applyDependencyPatch(
+        "chat-lifecycle-flush-sync",
+        id,
+        code,
+        patchChatLifecycleFlushSync,
+      );
+    }
+    if (
+      normalizedId.endsWith(
+        "/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereSessionsContext.js",
+      )
+    ) {
+      return applyDependencyPatch(
+        "chat-session-loader-flush-sync",
+        id,
+        code,
+        patchChatSessionLoaderFlushSync,
+      );
+    }
+    if (normalizedId.endsWith("/Sender/components/ActionButton.js")) {
+      return applyDependencyPatch(
+        "chat-action-button-forward-ref",
+        id,
+        code,
+        patchChatActionButtonForwardRef,
+      );
+    }
+    return null;
+  },
+};
+
 export default defineConfig(({ command, mode }) => {
   // Vitest resolves the config as a dev server (`serve`) with mode "test",
   // while `vite build --mode test` is a real build that needs real CSS.
@@ -271,8 +466,10 @@ export default defineConfig(({ command, mode }) => {
       react(),
       optionalDepsPlugin,
       fixCodeHighlighterPlugin,
+      fixDesignAnchorForwardRefPlugin,
+      fixChatLifecycleFlushSyncPlugin,
       ...(isVitest ? [cssStubPlugin] : []),
-      pluginBundleWatcher(),
+      ...(!isVitest ? [pluginBundleWatcher()] : []),
     ],
     css: {
       modules: {
@@ -373,6 +570,110 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     optimizeDeps: {
+      esbuildOptions: {
+        plugins: [
+          {
+            name: "fix-react-dependency-warnings",
+            setup(build) {
+              build.onLoad(
+                {
+                  filter:
+                    /[\\/]@agentscope-ai[\\/]design[\\/]lib[\\/]components[\\/]commonComponents[\\/]Anchor[\\/]index\.js$/,
+                },
+                async (args) => {
+                  const code = await fs.promises.readFile(args.path, "utf8");
+                  return {
+                    contents:
+                      applyDependencyPatch(
+                        "design-anchor-forward-ref",
+                        args.path,
+                        code,
+                        patchDesignAnchorForwardRef,
+                      ) ?? code,
+                    loader: "js",
+                  };
+                },
+              );
+              build.onLoad(
+                {
+                  filter:
+                    /[\\/]@agentscope-ai[\\/]design[\\/]lib[\\/]components[\\/]commonComponents[\\/]IconButton[\\/]index\.js$/,
+                },
+                async (args) => {
+                  const code = await fs.promises.readFile(args.path, "utf8");
+                  return {
+                    contents:
+                      applyDependencyPatch(
+                        "design-icon-button-forward-ref",
+                        args.path,
+                        code,
+                        patchDesignIconButtonForwardRef,
+                      ) ?? code,
+                    loader: "js",
+                  };
+                },
+              );
+              build.onLoad(
+                {
+                  filter:
+                    /[\\/]@agentscope-ai[\\/]chat[\\/]lib[\\/]ChatAnywhere[\\/]Chat[\\/]index\.js$/,
+                },
+                async (args) => {
+                  const code = await fs.promises.readFile(args.path, "utf8");
+                  return {
+                    contents:
+                      applyDependencyPatch(
+                        "chat-lifecycle-flush-sync",
+                        args.path,
+                        code,
+                        patchChatLifecycleFlushSync,
+                      ) ?? code,
+                    loader: "js",
+                  };
+                },
+              );
+              build.onLoad(
+                {
+                  filter:
+                    /[\\/]@agentscope-ai[\\/]chat[\\/]lib[\\/]AgentScopeRuntimeWebUI[\\/]core[\\/]Context[\\/]ChatAnywhereSessionsContext\.js$/,
+                },
+                async (args) => {
+                  const code = await fs.promises.readFile(args.path, "utf8");
+                  return {
+                    contents:
+                      applyDependencyPatch(
+                        "chat-session-loader-flush-sync",
+                        args.path,
+                        code,
+                        patchChatSessionLoaderFlushSync,
+                      ) ?? code,
+                    loader: "js",
+                  };
+                },
+              );
+              build.onLoad(
+                {
+                  filter:
+                    /[\\/]@agentscope-ai[\\/]chat[\\/]lib[\\/]Sender[\\/]components[\\/]ActionButton\.js$/,
+                },
+                async (args) => {
+                  const code = await fs.promises.readFile(args.path, "utf8");
+                  return {
+                    contents:
+                      applyDependencyPatch(
+                        "chat-action-button-forward-ref",
+                        args.path,
+                        code,
+                        patchChatActionButtonForwardRef,
+                      ) ?? code,
+                    loader: "js",
+                  };
+                },
+              );
+            },
+          },
+        ],
+      },
       include: [
         "diff",
         // react-syntax-highlighter language modules are dynamically imported

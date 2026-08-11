@@ -134,4 +134,55 @@ describe("RichFileReferenceInput", () => {
       expect(container.querySelector("textarea")).toHaveValue(formatted);
     });
   });
+
+  it("consumes the sender selection callback without leaking it to the DOM", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const onSelectionChange = vi.fn();
+    try {
+      const { container } = render(
+        <RichFileReferenceInputProvider onOpenReference={vi.fn()}>
+          <RichFileReferenceInput
+            value=""
+            onChange={vi.fn()}
+            onSelectionChange={onSelectionChange}
+          />
+        </RichFileReferenceInputProvider>,
+      );
+
+      expect(container.querySelector("textarea")).not.toHaveAttribute(
+        "onSelectionChange",
+      );
+      expect(
+        consoleError.mock.calls.some((args) =>
+          args.some((arg) =>
+            String(arg).includes("Unknown event handler property"),
+          ),
+        ),
+      ).toBe(false);
+      expect(onSelectionChange).not.toHaveBeenCalled();
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("reports raw selection offsets when the rich editor has a range selection", async () => {
+    const onSelectionChange = vi.fn();
+    const { container } = render(
+      <RichFileReferenceInputProvider onOpenReference={vi.fn()}>
+        <RichFileReferenceInput
+          value="abcd"
+          onChange={vi.fn()}
+          onSelectionChange={onSelectionChange}
+        />
+      </RichFileReferenceInputProvider>,
+    );
+    const textarea = container.querySelector("textarea") as HTMLTextAreaElement;
+    textarea.selectionStart = 2;
+    textarea.selectionEnd = 2;
+    fireEvent.focus(textarea);
+
+    await waitFor(() => {
+      expect(onSelectionChange).toHaveBeenLastCalledWith(2, 2);
+    });
+  });
 });

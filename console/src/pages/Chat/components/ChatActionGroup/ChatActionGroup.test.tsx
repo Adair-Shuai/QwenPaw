@@ -48,9 +48,9 @@ describe("ChatActionGroup", () => {
 
   it("renders new chat icon button", () => {
     renderWithProviders(<ChatActionGroup />);
-    expect(
-      document.querySelector('[data-icon="SparkNewChatFill"]'),
-    ).toBeInTheDocument();
+    const icon = document.querySelector('[data-icon="SparkNewChatFill"]');
+    expect(icon).toBeInTheDocument();
+    expect(icon?.closest("button")?.parentElement?.tagName).toBe("SPAN");
   });
 
   it("renders the Session workspace toggle next to essential actions", () => {
@@ -71,5 +71,29 @@ describe("ChatActionGroup", () => {
     expect(button?.querySelector(".anticon-appstore")).toBeInTheDocument();
     button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onToggleWorkspace).toHaveBeenCalledOnce();
+  });
+
+  it("uses a DOM trigger for the compact more dropdown", () => {
+    const originalWidth = window.innerWidth;
+    Object.defineProperty(window, "innerWidth", {
+      configurable: true,
+      value: 500,
+    });
+    try {
+      renderWithProviders(
+        <ChatActionGroup
+          onToggleHistory={vi.fn()}
+          onToggleWideMode={vi.fn()}
+        />,
+      );
+      const moreIcon = document.querySelector(".anticon-more");
+      expect(moreIcon).toBeInTheDocument();
+      expect(moreIcon?.closest("button")?.parentElement?.tagName).toBe("SPAN");
+    } finally {
+      Object.defineProperty(window, "innerWidth", {
+        configurable: true,
+        value: originalWidth,
+      });
+    }
   });
 });

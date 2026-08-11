@@ -64,11 +64,6 @@ if (typeof window !== "undefined") {
     if (
       msg.includes(":first-child") ||
       msg.includes("pseudo class") ||
-      // React forwardRef warning from @agentscope-ai/design SparkAnchor
-      // (the library's forwardRef render function omits the ref parameter).
-      msg.includes(
-        "forwardRef render functions accept exactly two parameters",
-      ) ||
       // antd v5 emits deprecation warnings via console.error (not
       // console.warn). These come from third-party packages
       // (@agentscope-ai/design, @agentscope-ai/chat) that we cannot

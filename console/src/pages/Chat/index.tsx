@@ -3445,11 +3445,13 @@ export default function ChatPage() {
                       : t(tooltipKey);
                   return (
                     <Tooltip title={tooltipTitle}>
-                      <IconButton
-                        disabled={props?.disabled}
-                        icon={<SparkAttachmentLine />}
-                        bordered={false}
-                      />
+                      <span style={{ display: "inline-flex" }}>
+                        <IconButton
+                          disabled={props?.disabled}
+                          icon={<SparkAttachmentLine />}
+                          bordered={false}
+                        />
+                      </span>
                     </Tooltip>
                   );
                 },

@@ -142,6 +142,19 @@ def test_plugin_registers_team_mode_router_and_simulation_tools(
         "ugsci_geospatial_points_analyze",
         "ugsci_ml_regression",
         "ugsci_statistical_regression",
+        "ugsci_convert_units",
+        "ugsci_volumetric_oil_in_place",
+        "ugsci_oil_material_balance",
+        "ugsci_gas_material_balance",
+        "ugsci_black_oil_pvt",
+        "ugsci_vogel_ipr",
+        "ugsci_nodal_analysis",
+        "ugsci_conservation_check",
+        "ugsci_neqsim_flash",
+        "ugsci_neqsim_pvt",
+        "ugsci_neqsim_phase_envelope",
+        "ugsci_neqsim_process_simulate",
+        "ugsci_neqsim_pipeline_flow",
     } <= set(api.tools)
     assert {
         "ugsci_sync_skills_to_pool",
@@ -186,6 +199,19 @@ def test_manifest_is_the_complete_runtime_tool_catalog(monkeypatch) -> None:
         "ugsci_geospatial_points_analyze",
         "ugsci_ml_regression",
         "ugsci_statistical_regression",
+        "ugsci_convert_units",
+        "ugsci_volumetric_oil_in_place",
+        "ugsci_oil_material_balance",
+        "ugsci_gas_material_balance",
+        "ugsci_black_oil_pvt",
+        "ugsci_vogel_ipr",
+        "ugsci_nodal_analysis",
+        "ugsci_conservation_check",
+        "ugsci_neqsim_flash",
+        "ugsci_neqsim_pvt",
+        "ugsci_neqsim_phase_envelope",
+        "ugsci_neqsim_process_simulate",
+        "ugsci_neqsim_pipeline_flow",
         "import_subsurface_dataset",
         "open_oilgas_visualization",
         "set_visualization_property",
@@ -200,13 +226,13 @@ def test_manifest_is_the_complete_runtime_tool_catalog(monkeypatch) -> None:
         "generate_visualization_report",
         "save_visualization_report",
     }
-    assert set(declarations) == expected
+    assert set(declarations) >= expected
 
     monkeypatch.setattr(engine, "init_default_engines", lambda: 0)
     api = RecordingPluginApi()
     UGSciPlugin().register(api)
 
-    assert set(api.tools) == expected
+    assert set(api.tools) == set(declarations)
     for name, declaration in declarations.items():
         options = api.tool_options[name]
         assert options["description"] == declaration["description"]

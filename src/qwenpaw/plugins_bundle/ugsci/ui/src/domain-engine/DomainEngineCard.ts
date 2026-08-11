@@ -20,6 +20,20 @@ const SOURCE_LABELS: Record<string, string> = {
   library: "计算库",
 };
 
+const EXECUTION_LABELS: Record<string, string> = {
+  deterministic: "确定性",
+  stochastic: "随机/概率",
+  external: "外部 Provider",
+  visualization: "可视化",
+};
+
+const EXECUTION_COLORS: Record<string, string> = {
+  deterministic: "green",
+  stochastic: "purple",
+  external: "blue",
+  visualization: "cyan",
+};
+
 export function DomainEngineCard({
   view,
   onClick,
@@ -85,7 +99,9 @@ export function DomainEngineCard({
           React.createElement(
             Text,
             { type: "secondary", style: { fontSize: 11 } },
-            SOURCE_LABELS[def.source] || def.source,
+            def.provider.kind === "driver"
+              ? "内置 · MCP"
+              : SOURCE_LABELS[def.source] || def.source,
           ),
         ),
       ),
@@ -118,6 +134,14 @@ export function DomainEngineCard({
         Tag,
         { style: { fontSize: 11 } },
         `${opCount} 操作`,
+      ),
+      React.createElement(
+        Tag,
+        {
+          color: EXECUTION_COLORS[def.execution_class] || "default",
+          style: { fontSize: 11 },
+        },
+        EXECUTION_LABELS[def.execution_class] || def.execution_class,
       ),
       toolCount > 0
         ? React.createElement(

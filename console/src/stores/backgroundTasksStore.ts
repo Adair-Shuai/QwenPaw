@@ -44,6 +44,13 @@ interface BackgroundTasksState {
   removeTask: (toolCallId: string) => void;
   removeTasks: (toolCallIds: string[]) => void;
   dismissHint: (toolCallId: string) => void;
+  updateTaskForSession: (
+    sessionId: string,
+    toolCallId: string,
+    updates: Parameters<BackgroundTasksState["updateTask"]>[1],
+  ) => void;
+  appendLiveOutputForSession: (sessionId: string, toolCallId: string, chunk: string) => void;
+  removeTasksForSession: (tasks: Array<{ sessionId: string; toolCallId: string }>) => void;
 }
 
 const LIVE_OUTPUT_MAX = 80_000;
@@ -58,7 +65,7 @@ export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
 
   addTask: (task) =>
     set((state) => {
-      if (state.tasks.some((t) => t.toolCallId === task.toolCallId)) {
+      if (state.tasks.some((t) => t.sessionId === task.sessionId && t.toolCallId === task.toolCallId)) {
         return state;
       }
       return {
@@ -121,6 +128,39 @@ export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
         t.toolCallId === toolCallId ? { ...t, hintVisible: false } : t,
       ),
     })),
+
+  updateTaskForSession: (sessionId, toolCallId, updates) =>
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.sessionId === sessionId && t.toolCallId === toolCallId
+          ? (() => {
+              const next = { ...t, ...updates };
+              if (
+                (updates.status === "done" || updates.status === "cancelled") &&
+                t.endTime == null &&
+                next.endTime == null
+              ) next.endTime = Date.now();
+              return next;
+            })()
+          : t,
+      ),
+    })),
+
+  appendLiveOutputForSession: (sessionId, toolCallId, chunk) =>
+    set((state) => ({
+      tasks: state.tasks.map((t) =>
+        t.sessionId === sessionId && t.toolCallId === toolCallId
+          ? { ...t, liveOutput: truncateLive(t.liveOutput + chunk) }
+          : t,
+      ),
+    })),
+
+  removeTasksForSession: (items) =>
+    set((state) => {
+      if (items.length === 0) return state;
+      const drop = new Set(items.map((item) => `${item.sessionId}\u0000${item.toolCallId}`));
+      return { tasks: state.tasks.filter((t) => !drop.has(`${t.sessionId}\u0000${t.toolCallId}`)) };
+    }),
 }));
 
 export function selectTasksForSession(

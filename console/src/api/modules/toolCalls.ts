@@ -98,28 +98,48 @@ export function subscribeToolCallStream(
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
       let buffer = "";
+      let receivedDone = false;
+      const consumeEvent = (event: string): boolean => {
+        const dataLines = event
+          .split(/\r?\n|\r/)
+          .filter((line) => line.startsWith("data:"))
+          .map((line) => line.slice(5).replace(/^ /, ""));
+        if (dataLines.length === 0) return false;
+        try {
+          const payload = JSON.parse(dataLines.join("\n"));
+          if (payload.type === "done") {
+            receivedDone = true;
+            handlers.onDone();
+            return true;
+          }
+          handlers.onChunk(payload);
+        } catch {
+          /* ignore malformed */
+        }
+        return false;
+      };
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         buffer += decoder.decode(value, { stream: true });
-        const parts = buffer.split("\n\n");
-        buffer = parts.pop() || "";
-        for (const part of parts) {
-          const line = part.split("\n").find((l) => l.startsWith("data: "));
-          if (!line) continue;
-          try {
-            const payload = JSON.parse(line.slice(6));
-            if (payload.type === "done") {
-              handlers.onDone();
-              return;
-            }
-            handlers.onChunk(payload);
-          } catch {
-            /* ignore malformed */
-          }
+        let separator = buffer.search(/\r?\n\r?\n|\r\r/);
+        while (separator >= 0) {
+          const separatorLength = buffer[separator] === "\r" && buffer[separator + 1] === "\r"
+            ? 2
+            : buffer.slice(separator).startsWith("\r\n")
+              ? 4
+              : 2;
+          const event = buffer.slice(0, separator);
+          buffer = buffer.slice(separator + separatorLength);
+          if (consumeEvent(event)) return;
+          separator = buffer.search(/\r?\n\r?\n|\r\r/);
         }
       }
-      handlers.onDone();
+      buffer += decoder.decode();
+      if (buffer.trim() && consumeEvent(buffer)) return;
+      if (!receivedDone) {
+        handlers.onError(new Error("tool stream ended before terminal event"));
+      }
     } catch (err) {
       if ((err as { name?: string })?.name === "AbortError") return;
       handlers.onError(err);

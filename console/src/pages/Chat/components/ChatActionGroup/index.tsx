@@ -88,11 +88,13 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
     <Flex gap={8} align="center">
       {/* Essential actions always visible */}
       <Tooltip title={t("chat.newChatTooltip")} mouseEnterDelay={0.5}>
-        <IconButton
-          bordered={false}
-          icon={<SparkNewChatFill />}
-          onClick={createNewSession}
-        />
+        <span style={{ display: "inline-flex" }}>
+          <IconButton
+            bordered={false}
+            icon={<SparkNewChatFill />}
+            onClick={createNewSession}
+          />
+        </span>
       </Tooltip>
       {onToggleWorkspace && (
         <Tooltip
@@ -101,39 +103,45 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
           )}
           mouseEnterDelay={0.5}
         >
-          <IconButton
-            bordered={false}
-            aria-label={t(
-              workspaceOpen ? "files.closeWorkspace" : "files.openWorkspace",
-            )}
-            aria-pressed={workspaceOpen}
-            icon={<AppstoreOutlined />}
-            style={{
-              width: 32,
-              height: 32,
-              padding: 0,
-              ...(workspaceOpen
-                ? { color: "var(--color-primary, #2563eb)" }
-                : {}),
-            }}
-            onClick={onToggleWorkspace}
-          />
+          <span style={{ display: "inline-flex" }}>
+            <IconButton
+              bordered={false}
+              aria-label={t(
+                workspaceOpen
+                  ? "files.closeWorkspace"
+                  : "files.openWorkspace",
+              )}
+              aria-pressed={workspaceOpen}
+              icon={<AppstoreOutlined />}
+              style={{
+                width: 32,
+                height: 32,
+                padding: 0,
+                ...(workspaceOpen
+                  ? { color: "var(--color-primary, #2563eb)" }
+                  : {}),
+              }}
+              onClick={onToggleWorkspace}
+            />
+          </span>
         </Tooltip>
       )}
 
       {/* History + WideMode: inline when NOT compact */}
       {!isCompact && onToggleHistory && (
         <Tooltip title={t("chat.chatHistoryTooltip")} mouseEnterDelay={0.5}>
-          <IconButton
-            bordered={false}
-            icon={<SparkHistoryLine />}
-            style={
-              historyOpen
-                ? { color: "var(--color-primary, #2563eb)" }
-                : undefined
-            }
-            onClick={onToggleHistory}
-          />
+          <span style={{ display: "inline-flex" }}>
+            <IconButton
+              bordered={false}
+              icon={<SparkHistoryLine />}
+              style={
+                historyOpen
+                  ? { color: "var(--color-primary, #2563eb)" }
+                  : undefined
+              }
+              onClick={onToggleHistory}
+            />
+          </span>
         </Tooltip>
       )}
       {!isCompact && onToggleWideMode && (
@@ -143,11 +151,13 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
           }
           mouseEnterDelay={0.5}
         >
-          <IconButton
-            bordered={false}
-            icon={isWideMode ? <CompressOutlined /> : <ExpandAltOutlined />}
-            onClick={onToggleWideMode}
-          />
+          <span style={{ display: "inline-flex" }}>
+            <IconButton
+              bordered={false}
+              icon={isWideMode ? <CompressOutlined /> : <ExpandAltOutlined />}
+              onClick={onToggleWideMode}
+            />
+          </span>
         </Tooltip>
       )}
 
@@ -158,7 +168,9 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
           trigger={["click"]}
           placement="bottomRight"
         >
-          <IconButton bordered={false} icon={<MoreOutlined />} />
+          <span style={{ display: "inline-flex" }}>
+            <IconButton bordered={false} icon={<MoreOutlined />} />
+          </span>
         </Dropdown>
       )}
     </Flex>

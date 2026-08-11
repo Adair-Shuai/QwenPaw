@@ -107,27 +107,42 @@ function getHost(): QwenPawHost {
   return host as QwenPawHost;
 }
 
+async function responseErrorMessage(
+  response: Response,
+  fallback: string,
+): Promise<string> {
+  const body = await response.text().catch(() => "");
+  if (!body) return fallback;
+  try {
+    const parsed = JSON.parse(body) as { detail?: unknown };
+    if (typeof parsed.detail === "string") return parsed.detail;
+  } catch {
+    // Keep the plain-text response when the body is not JSON.
+  }
+  return body;
+}
+
 async function fetchJson<T>(
   path: string,
   agentId?: string,
   signal?: AbortSignal,
-): Promise<T | null> {
-  try {
-    const response = await hostFetch(path, {
-      headers: agentId ? { "X-Agent-Id": agentId } : undefined,
-      signal,
-    });
-    if (!response.ok) return null;
-    return (await response.json()) as T;
-  } catch {
-    return null;
+): Promise<T> {
+  const response = await hostFetch(path, {
+    headers: agentId ? { "X-Agent-Id": agentId } : undefined,
+    signal,
+  });
+  if (!response.ok) {
+    throw new Error(
+      await responseErrorMessage(response, `HTTP ${response.status}`),
+    );
   }
+  return (await response.json()) as T;
 }
 
 export function fetchTeamWorkflowState(
   agentId: string,
   signal?: AbortSignal,
-): Promise<TeamWorkflowResponse | null> {
+): Promise<TeamWorkflowResponse> {
   return fetchJson<TeamWorkflowResponse>("/ugsci/team/state", agentId, signal);
 }
 
@@ -140,12 +155,25 @@ export async function fetchTeamRuns(
     signal,
   });
   if (!response.ok) {
-    throw new Error(`Failed to load team runs: ${response.status}`);
+    throw new Error(
+      await responseErrorMessage(
+        response,
+        `Failed to load team runs: ${response.status}`,
+      ),
+    );
   }
   return (await response.json()) as TeamRunSummary[];
 }
 
-export function TeamRunHistory({ activeOnly = false }: { activeOnly?: boolean }) {
+const TEAM_RUNS_POLL_INTERVAL_MS = 5000;
+
+export function TeamRunHistory({
+  activeOnly = false,
+  enabled = true,
+}: {
+  activeOnly?: boolean;
+  enabled?: boolean;
+}) {
   const host = getHost();
   const React = host.React;
   const { useCallback, useEffect, useRef, useState } = React;
@@ -157,71 +185,190 @@ export function TeamRunHistory({ activeOnly = false }: { activeOnly?: boolean })
   const agentId = selectedAgent?.id || "default";
   const [runs, setRuns] = useState<TeamRunSummary[]>([]);
   const [loading, setLoading] = useState(true);
-  const [failed, setFailed] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasSuccessfulResponse, setHasSuccessfulResponse] = useState(false);
   const requestControllerRef = useRef<AbortController | null>(null);
   const requestIdRef = useRef(0);
+  const requestInFlightRef = useRef(false);
+  const resultAgentIdRef = useRef(agentId);
 
-  const load = useCallback(async () => {
-    requestControllerRef.current?.abort();
-    const controller = new AbortController();
-    requestControllerRef.current = controller;
-    const requestId = ++requestIdRef.current;
-    setLoading(true);
-    try {
-      const result = await fetchTeamRuns(agentId, controller.signal);
-      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      setRuns(result);
-      setFailed(false);
-    } catch {
-      if (controller.signal.aborted || requestId !== requestIdRef.current) return;
-      setFailed(true);
-    } finally {
-      if (!controller.signal.aborted && requestId === requestIdRef.current) {
-        setLoading(false);
+  const load = useCallback(
+    async (showLoading = true, cancelPrevious = true) => {
+      if (!enabled) return;
+      if (!cancelPrevious && requestInFlightRef.current) return;
+      requestControllerRef.current?.abort();
+      const controller = new AbortController();
+      requestControllerRef.current = controller;
+      const requestId = ++requestIdRef.current;
+      requestInFlightRef.current = true;
+      if (showLoading) setLoading(true);
+      try {
+        const result = await fetchTeamRuns(agentId, controller.signal);
+        if (controller.signal.aborted || requestId !== requestIdRef.current)
+          return;
+        setRuns(result);
+        setHasSuccessfulResponse(true);
+        setLoadError(null);
+      } catch (error) {
+        if (controller.signal.aborted || requestId !== requestIdRef.current)
+          return;
+        setLoadError(
+          error instanceof Error ? error.message : "讨论运行记录加载失败",
+        );
+      } finally {
+        if (!controller.signal.aborted && requestId === requestIdRef.current) {
+          requestControllerRef.current = null;
+          requestInFlightRef.current = false;
+          setLoading(false);
+        }
       }
-    }
-  }, [agentId]);
+    },
+    [agentId, enabled],
+  );
 
   useEffect(() => {
-    void load();
-    return () => {
+    if (!enabled) {
       requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+      requestInFlightRef.current = false;
+      requestIdRef.current += 1;
+      return;
+    }
+
+    if (resultAgentIdRef.current !== agentId) {
+      resultAgentIdRef.current = agentId;
+      setRuns([]);
+      setLoadError(null);
+      setHasSuccessfulResponse(false);
+    }
+    void load(true, true);
+    const interval = activeOnly
+      ? window.setInterval(() => {
+          void load(false, false);
+        }, TEAM_RUNS_POLL_INTERVAL_MS)
+      : null;
+    return () => {
+      if (interval !== null) window.clearInterval(interval);
+      requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+      requestInFlightRef.current = false;
       requestIdRef.current += 1;
     };
-  }, [load]);
+  }, [activeOnly, agentId, enabled, load]);
 
-  if (loading) return React.createElement(Spin);
-  if (failed) {
+  if (loading && !hasSuccessfulResponse) return React.createElement(Spin);
+  if (loadError && !hasSuccessfulResponse) {
     return React.createElement(Alert, {
       type: "warning",
       message: "讨论运行记录加载失败",
-      action: React.createElement(Button, { size: "small", onClick: () => void load() }, "重试"),
+      description: loadError,
+      action: React.createElement(
+        Button,
+        { size: "small", onClick: () => void load(true, true), loading },
+        "重试",
+      ),
     });
   }
   const visibleRuns = runs.filter((run) =>
     activeOnly ? run.status === "active" : run.status !== "active",
   );
+  const withLoadError = (content: ReactTypes.ReactNode) =>
+    loadError
+      ? React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(Alert, {
+            type: "warning",
+            message: "讨论运行记录更新失败，当前显示上次成功读取的结果",
+            description: loadError,
+            action: React.createElement(
+              Button,
+              {
+                size: "small",
+                onClick: () => void load(true, true),
+                loading,
+              },
+              "重试",
+            ),
+          }),
+          content,
+        )
+      : content;
   if (visibleRuns.length === 0) {
-    return React.createElement(Empty, {
-      description: activeOnly ? "暂无进行中的专家团讨论" : "暂无历史讨论",
-    });
-  }
-  return React.createElement(
-    "div",
-    { style: { display: "flex", flexDirection: "column", gap: 8 } },
-    ...visibleRuns.map((run) =>
+    return withLoadError(
       React.createElement(
-        Card,
-        { key: run.instance_id, size: "small" },
+        Empty,
+        {
+          description: activeOnly ? "暂无进行中的专家团讨论" : "暂无历史讨论",
+        },
         React.createElement(
-          "div",
-          { style: { display: "flex", alignItems: "center", gap: 8 } },
-          React.createElement(Text, { strong: true }, run.team_name || run.team_id),
-          React.createElement(Tag, { color: run.status === "completed" ? "green" : run.status === "terminated" ? "orange" : "blue" }, run.status),
-          React.createElement(Tag, null, run.current_phase),
-          React.createElement(Text, { type: "secondary" }, `迭代 ${run.iteration}`),
+          Button,
+          { size: "small", onClick: () => void load(true, true), loading },
+          "刷新",
         ),
-        React.createElement(Paragraph, { ellipsis: { rows: 2 }, style: { margin: "8px 0 0" } }, run.task || "暂无任务描述"),
+      ),
+    );
+  }
+  return withLoadError(
+    React.createElement(
+      React.Fragment,
+      null,
+      React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            justifyContent: "flex-end",
+            marginBottom: 8,
+          },
+        },
+        React.createElement(
+          Button,
+          { size: "small", onClick: () => void load(true, true), loading },
+          "刷新",
+        ),
+      ),
+      React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 8 } },
+        ...visibleRuns.map((run) =>
+          React.createElement(
+            Card,
+            { key: run.instance_id, size: "small" },
+            React.createElement(
+              "div",
+              { style: { display: "flex", alignItems: "center", gap: 8 } },
+              React.createElement(
+                Text,
+                { strong: true },
+                run.team_name || run.team_id,
+              ),
+              React.createElement(
+                Tag,
+                {
+                  color:
+                    run.status === "completed"
+                      ? "green"
+                      : run.status === "terminated"
+                      ? "orange"
+                      : "blue",
+                },
+                run.status,
+              ),
+              React.createElement(Tag, null, run.current_phase),
+              React.createElement(
+                Text,
+                { type: "secondary" },
+                `迭代 ${run.iteration}`,
+              ),
+            ),
+            React.createElement(
+              Paragraph,
+              { ellipsis: { rows: 2 }, style: { margin: "8px 0 0" } },
+              run.task || "暂无任务描述",
+            ),
+          ),
+        ),
       ),
     ),
   );
@@ -230,17 +377,25 @@ export function TeamRunHistory({ activeOnly = false }: { activeOnly?: boolean })
 export async function fetchPresetTeamsFromBackend(): Promise<
   PresetTeam[] | null
 > {
-  const response = await fetchJson<{ teams: PresetTeam[] }>(
-    "/ugsci/team/preset-teams",
-  );
-  return response?.teams ?? null;
+  try {
+    const response = await fetchJson<{ teams: PresetTeam[] }>(
+      "/ugsci/team/preset-teams",
+    );
+    return response.teams;
+  } catch {
+    return null;
+  }
 }
 
 export async function fetchUgsciRoles(): Promise<RoleDefinition[] | null> {
-  const response = await fetchJson<{ roles: RoleDefinition[] }>(
-    "/ugsci/team/roles",
-  );
-  return response?.roles ?? null;
+  try {
+    const response = await fetchJson<{ roles: RoleDefinition[] }>(
+      "/ugsci/team/roles",
+    );
+    return response.roles;
+  } catch {
+    return null;
+  }
 }
 
 const PHASE_LABELS: Record<
@@ -261,13 +416,15 @@ const PHASE_ORDER: TeamPhase[] = [
   "synthesize",
   "completed",
 ];
-const TEAM_STATE_MAX_FAILURES = 3;
+const TEAM_STATE_POLL_INTERVAL_MS = 5000;
+const TEAM_STATE_MAX_BACKOFF_MS = 30000;
 
-export function TeamWorkflowCard() {
+export function TeamWorkflowCard({ enabled = true }: { enabled?: boolean }) {
   const host = getHost();
   const React = host.React;
   const { useState, useEffect, useCallback, useRef } = React;
-  const { Card, Tag, Typography, Button, Steps, Empty, Alert } = host.antd;
+  const { Card, Tag, Typography, Button, Steps, Empty, Alert, Spin } =
+    host.antd;
   const { ReloadOutlined } = host.antdIcons || {};
   const { Text, Paragraph } = Typography;
   const selectedAgent = host.useSelectedAgent
@@ -277,67 +434,103 @@ export function TeamWorkflowCard() {
 
   const [response, setResponse] = useState<TeamWorkflowResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const responseRef = useRef<TeamWorkflowResponse | null>(null);
   const failCountRef = useRef(0);
+  const nextPollAtRef = useRef(0);
   const requestIdRef = useRef(0);
   const requestControllerRef = useRef<AbortController | null>(null);
+  const requestInFlightRef = useRef(false);
 
   const loadState = useCallback(
-    async (showLoading: boolean) => {
+    async (showLoading: boolean, cancelPrevious = true) => {
+      if (!enabled) return;
+      if (!cancelPrevious && requestInFlightRef.current) return;
       requestControllerRef.current?.abort();
       const controller = new AbortController();
       requestControllerRef.current = controller;
       const requestId = ++requestIdRef.current;
+      requestInFlightRef.current = true;
       if (showLoading) setLoading(true);
-      const result = await fetchTeamWorkflowState(agentId, controller.signal);
-      if (controller.signal.aborted || requestId !== requestIdRef.current)
-        return;
-      if (result) {
+      try {
+        const result = await fetchTeamWorkflowState(agentId, controller.signal);
+        if (controller.signal.aborted || requestId !== requestIdRef.current)
+          return;
         failCountRef.current = 0;
+        nextPollAtRef.current = 0;
         responseRef.current = result;
         setResponse(result);
-      } else {
+        setLoadError(null);
+      } catch (error) {
+        if (controller.signal.aborted || requestId !== requestIdRef.current)
+          return;
         failCountRef.current += 1;
+        const backoff = Math.min(
+          TEAM_STATE_MAX_BACKOFF_MS,
+          TEAM_STATE_POLL_INTERVAL_MS * 2 ** (failCountRef.current - 1),
+        );
+        nextPollAtRef.current = Date.now() + backoff;
+        setLoadError(
+          error instanceof Error ? error.message : "专家团状态加载失败",
+        );
+      } finally {
+        if (!controller.signal.aborted && requestId === requestIdRef.current) {
+          requestControllerRef.current = null;
+          requestInFlightRef.current = false;
+          setLoading(false);
+        }
       }
-      setLoading(false);
     },
-    [agentId],
+    [agentId, enabled],
   );
 
-  const refresh = useCallback(() => loadState(true), [loadState]);
+  const refresh = useCallback(() => {
+    failCountRef.current = 0;
+    nextPollAtRef.current = 0;
+    return loadState(true);
+  }, [loadState]);
 
   useEffect(() => {
     requestControllerRef.current?.abort();
+    requestControllerRef.current = null;
+    requestInFlightRef.current = false;
     requestIdRef.current += 1;
     failCountRef.current = 0;
+    nextPollAtRef.current = 0;
     responseRef.current = null;
     setResponse(null);
+    setLoadError(null);
+    if (!enabled) return;
     void refresh();
 
     const interval = window.setInterval(() => {
-      if (failCountRef.current >= TEAM_STATE_MAX_FAILURES) return;
+      if (Date.now() < nextPollAtRef.current) return;
       if (
         responseRef.current?.status === "completed" ||
         responseRef.current?.status === "terminated"
       )
         return;
-      void loadState(false);
-    }, 5000);
+      void loadState(false, false);
+    }, TEAM_STATE_POLL_INTERVAL_MS);
     return () => {
       window.clearInterval(interval);
       requestControllerRef.current?.abort();
+      requestControllerRef.current = null;
+      requestInFlightRef.current = false;
       requestIdRef.current += 1;
     };
-  }, [agentId, loadState, refresh]);
+  }, [agentId, enabled, loadState, refresh]);
 
-  if (response?.status === "unreadable") {
+  if (loading && !response && !loadError) {
+    return React.createElement(Spin);
+  }
+
+  if (loadError && !response) {
     return React.createElement(Alert, {
       type: "warning",
       showIcon: true,
-      message: "专家团状态暂时无法读取",
-      description: `实例 ${
-        response.instance_id || "未知"
-      } 的状态文件需要检查。`,
+      message: "专家团状态加载失败",
+      description: loadError,
       style: { marginBottom: 16 },
       action: React.createElement(
         Button,
@@ -347,25 +540,69 @@ export function TeamWorkflowCard() {
     });
   }
 
+  const withLoadError = (content: ReactTypes.ReactNode) =>
+    loadError
+      ? React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(Alert, {
+            type: "warning",
+            showIcon: true,
+            message: "状态更新失败，当前显示上次成功读取的结果",
+            description: loadError,
+            style: { marginBottom: 16 },
+            action: React.createElement(
+              Button,
+              { size: "small", onClick: refresh, loading },
+              "重试",
+            ),
+          }),
+          content,
+        )
+      : content;
+
+  if (response?.status === "unreadable") {
+    return withLoadError(
+      React.createElement(Alert, {
+        type: "warning",
+        showIcon: true,
+        message: "专家团状态暂时无法读取",
+        description: `实例 ${
+          response.instance_id || "未知"
+        } 的状态文件需要检查。`,
+        style: { marginBottom: 16 },
+        action: React.createElement(
+          Button,
+          { size: "small", onClick: refresh, loading },
+          "重试",
+        ),
+      }),
+    );
+  }
+
   if (!response || !response.active) {
     if (response?.status === "completed" || response?.status === "terminated") {
       const completed = response.status === "completed";
-      return React.createElement(Alert, {
-        type: completed ? "success" : "info",
-        showIcon: true,
-        message: completed ? "专家团工作流已完成" : "专家团工作流已终止",
-        description: completed
-          ? `实例 ${
-              response.instance_id || "未知"
-            } 已完成，结果文件保留在工作区。`
-          : `原因：${response.state.termination_reason || "未知"}`,
-        style: { marginBottom: 16 },
-      });
+      return withLoadError(
+        React.createElement(Alert, {
+          type: completed ? "success" : "info",
+          showIcon: true,
+          message: completed ? "专家团工作流已完成" : "专家团工作流已终止",
+          description: completed
+            ? `实例 ${
+                response.instance_id || "未知"
+              } 已完成，结果文件保留在工作区。`
+            : `原因：${response.state.termination_reason || "未知"}`,
+          style: { marginBottom: 16 },
+        }),
+      );
     }
-    return React.createElement(Empty, {
-      description: "暂无活跃的专家团工作流",
-      style: { padding: 24 },
-    });
+    return withLoadError(
+      React.createElement(Empty, {
+        description: "暂无活跃的专家团工作流",
+        style: { padding: 24 },
+      }),
+    );
   }
 
   const state = response.state;
@@ -385,100 +622,106 @@ export function TeamWorkflowCard() {
     debate: "多方论证",
   };
 
-  return React.createElement(
-    Card,
-    {
-      size: "small",
-      style: { marginBottom: 16 },
-      title: React.createElement(
-        "div",
-        { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement("span", { style: { fontSize: 16 } }, "🔄"),
-        React.createElement(Text, { strong: true }, `${teamName} — 工作流状态`),
-        React.createElement(
-          Tag,
-          { color: "blue", style: { fontSize: 10 } },
-          modeLabels[teamMode] || teamMode,
-        ),
-        React.createElement(
-          Tag,
-          { style: { fontSize: 10 } },
-          `迭代 ${iteration}`,
-        ),
-        verifyRetries > 0
-          ? React.createElement(
-              Tag,
-              { color: "orange", style: { fontSize: 10 } },
-              `验证重试 ${verifyRetries}`,
-            )
-          : null,
-      ),
-      extra: React.createElement(
-        Button,
-        {
-          size: "small",
-          type: "text",
-          icon: ReloadOutlined
-            ? React.createElement(ReloadOutlined)
-            : undefined,
-          onClick: refresh,
-          loading,
-        },
-        "刷新",
-      ),
-    },
-    React.createElement(Steps, {
-      current: phaseIndex,
-      size: "small",
-      items: PHASE_ORDER.map((itemPhase) => {
-        const info = PHASE_LABELS[itemPhase];
-        return {
-          title: `${info.icon} ${info.label}`,
-          description:
-            itemPhase === "plan"
-              ? "分析任务，创建任务分解"
-              : itemPhase === "dispatch"
-              ? "分派专家执行任务"
-              : itemPhase === "verify"
-              ? "交叉验证专家结果"
-              : itemPhase === "synthesize"
-              ? "综合形成最终报告"
-              : "工作流完成",
-        };
-      }),
-    }),
+  return withLoadError(
     React.createElement(
-      "div",
+      Card,
       {
-        style: {
-          marginTop: 12,
-          display: "flex",
-          gap: 6,
-          flexWrap: "wrap",
-        },
+        size: "small",
+        style: { marginBottom: 16 },
+        title: React.createElement(
+          "div",
+          { style: { display: "flex", alignItems: "center", gap: 8 } },
+          React.createElement("span", { style: { fontSize: 16 } }, "🔄"),
+          React.createElement(
+            Text,
+            { strong: true },
+            `${teamName} — 工作流状态`,
+          ),
+          React.createElement(
+            Tag,
+            { color: "blue", style: { fontSize: 10 } },
+            modeLabels[teamMode] || teamMode,
+          ),
+          React.createElement(
+            Tag,
+            { style: { fontSize: 10 } },
+            `迭代 ${iteration}`,
+          ),
+          verifyRetries > 0
+            ? React.createElement(
+                Tag,
+                { color: "orange", style: { fontSize: 10 } },
+                `验证重试 ${verifyRetries}`,
+              )
+            : null,
+        ),
+        extra: React.createElement(
+          Button,
+          {
+            size: "small",
+            type: "text",
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
+            onClick: refresh,
+            loading,
+          },
+          "刷新",
+        ),
       },
-      ...members.map((member, index) =>
-        React.createElement(
-          Tag,
-          { key: `${member.name}-${index}`, style: { fontSize: 11 } },
-          `${member.emoji || ""} ${member.name}（${member.role}）`,
+      React.createElement(Steps, {
+        current: phaseIndex,
+        size: "small",
+        items: PHASE_ORDER.map((itemPhase) => {
+          const info = PHASE_LABELS[itemPhase];
+          return {
+            title: `${info.icon} ${info.label}`,
+            description:
+              itemPhase === "plan"
+                ? "分析任务，创建任务分解"
+                : itemPhase === "dispatch"
+                ? "分派专家执行任务"
+                : itemPhase === "verify"
+                ? "交叉验证专家结果"
+                : itemPhase === "synthesize"
+                ? "综合形成最终报告"
+                : "工作流完成",
+          };
+        }),
+      }),
+      React.createElement(
+        "div",
+        {
+          style: {
+            marginTop: 12,
+            display: "flex",
+            gap: 6,
+            flexWrap: "wrap",
+          },
+        },
+        ...members.map((member, index) =>
+          React.createElement(
+            Tag,
+            { key: `${member.name}-${index}`, style: { fontSize: 11 } },
+            `${member.emoji || ""} ${member.name}（${member.role}）`,
+          ),
         ),
       ),
-    ),
-    state.task
-      ? React.createElement(
-          Paragraph,
-          {
-            style: {
-              fontSize: 12,
-              marginTop: 8,
-              marginBottom: 0,
-              color: "var(--ant-color-text-secondary, #666)",
+      state.task
+        ? React.createElement(
+            Paragraph,
+            {
+              style: {
+                fontSize: 12,
+                marginTop: 8,
+                marginBottom: 0,
+                color: "var(--ant-color-text-secondary, #666)",
+              },
+              ellipsis: { rows: 2 },
             },
-            ellipsis: { rows: 2 },
-          },
-          `任务: ${state.task}`,
-        )
-      : null,
+            `任务: ${state.task}`,
+          )
+        : null,
+    ),
   );
 }

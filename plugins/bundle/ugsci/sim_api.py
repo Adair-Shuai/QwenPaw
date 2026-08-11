@@ -9,7 +9,7 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim_api")
@@ -52,15 +52,39 @@ def build_sim_router(plugin_id: str) -> APIRouter:
             return {"jobs": [], "error": str(exc)}
 
     @router.get("/jobs/{job_id}/stream")
-    async def job_stream(job_id: str):
+    async def job_stream(job_id: str, request: Request):
         async def event_stream():
             try:
+                from .engine.tools import job_store
                 from .engine.tools.launcher import _get_job
             except Exception:
                 yield ("data: " f"{json.dumps({'error': 'Job store unavailable'})}\n\n")
                 return
 
+            terminal_states = {
+                "completed",
+                "failed",
+                "timeout",
+                "error",
+                "interrupted",
+                "cancelled",
+            }
+            try:
+                cursor = max(0, int(request.headers.get("last-event-id") or 0))
+            except (TypeError, ValueError):
+                cursor = 0
+            replayed_any = False
+            for stored_event in job_store.list_job_events(job_id, cursor):
+                replayed_any = True
+                cursor = stored_event["sequence"]
+                yield (
+                    f"id: {cursor}\nevent: simulation\n"
+                    f"data: {json.dumps(stored_event['data'])}\n\n"
+                )
+            last_heartbeat = time.monotonic()
             while True:
+                if await request.is_disconnected():
+                    return
                 job = _get_job(job_id)
                 if not job:
                     yield (
@@ -79,9 +103,8 @@ def build_sim_router(plugin_id: str) -> APIRouter:
                 if job.start_ts > 0:
                     elapsed = time.time() - job.start_ts
                     data["elapsed"] = round(elapsed, 1)
-                    data["remaining"] = round(
-                        max(0, job.timeout - elapsed),
-                        1,
+                    data["remaining"] = (
+                        None if job.unlimited else round(max(0, job.timeout - elapsed), 1)
                     )
                 if job.returncode is not None:
                     data["returncode"] = job.returncode
@@ -90,15 +113,35 @@ def build_sim_router(plugin_id: str) -> APIRouter:
                 if job.end_ts:
                     data["end_ts"] = job.end_ts
 
-                yield f"data: {json.dumps(data)}\n\n"
-                if job.status in {
-                    "completed",
-                    "failed",
-                    "timeout",
-                    "error",
-                }:
+                try:
+                    sequence, changed = job_store.append_job_event_if_changed(
+                        job_id,
+                        data,
+                    )
+                except Exception as exc:
+                    # Keep the live stream useful during a transient store
+                    # outage; the next poll can persist/replay the snapshot.
+                    logger.warning("Failed to persist simulation SSE event %s: %s", job_id, exc)
+                    sequence, changed = cursor, False
+                # Avoid duplicating a terminal event already replayed on
+                # reconnect, while still emitting current state if history
+                # retention removed the event behind the supplied cursor.
+                if changed or (job.status in terminal_states and not replayed_any):
+                    cursor = sequence
+                    yield (
+                        f"id: {sequence}\nevent: simulation\n"
+                        f"data: {json.dumps(data)}\n\n"
+                    )
+                    last_heartbeat = time.monotonic()
+                elif time.monotonic() - last_heartbeat >= 15:
+                    yield f": heartbeat {int(time.time())}\n\n"
+                    last_heartbeat = time.monotonic()
+                if job.status in terminal_states:
                     return
-                await asyncio.sleep(5)
+                try:
+                    await asyncio.sleep(5)
+                except asyncio.CancelledError:
+                    return
 
         return StreamingResponse(
             event_stream(),

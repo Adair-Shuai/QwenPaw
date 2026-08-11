@@ -28,6 +28,28 @@ if (Test-Path $ConsoleDest) {
 $ConsoleDist = Join-Path $ConsoleDir "dist"
 Copy-Item -Path (Join-Path $ConsoleDist "*") -Destination $ConsoleDest -Recurse -Force
 
+Write-Host "[wheel_build] Building plugin frontend bundles..."
+$PluginUiScript = Join-Path $RepoRoot "scripts\pack-tauri\build_plugin_uis.ps1"
+if (Test-Path -LiteralPath $PluginUiScript) {
+  & $PluginUiScript
+  if ($LASTEXITCODE -ne 0) {
+    throw "Plugin UI build failed with exit code $LASTEXITCODE"
+  }
+} else {
+  Write-Warning "build_plugin_uis.ps1 not found; skipping plugin UI build"
+}
+
+Write-Host "[wheel_build] Syncing bundled plugins -> src/qwenpaw/plugins_bundle/..."
+$PluginStageScript = Join-Path $RepoRoot "scripts\pack-tauri\stage_bundled_plugins.py"
+$BundleDest = Join-Path $RepoRoot "src\qwenpaw\plugins_bundle"
+if (-not (Test-Path -LiteralPath $PluginStageScript)) {
+  throw "Plugin staging script not found: $PluginStageScript"
+}
+python $PluginStageScript --repo $RepoRoot --dest $BundleDest
+if ($LASTEXITCODE -ne 0) {
+  throw "Plugin staging failed with exit code $LASTEXITCODE"
+}
+
 Write-Host "[wheel_build] Bundling website docs into package..."
 $DocsSrc = Join-Path $RepoRoot "website\public\docs"
 $DocsDest = Join-Path $RepoRoot "src\qwenpaw\docs"

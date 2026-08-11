@@ -6,7 +6,11 @@
  */
 
 import { apiFetch } from "../core/runtime";
-import type { EngineProbeResponse } from "./types";
+import type {
+  EngineProbeResponse,
+  NeqSimInstallTask,
+  NeqSimRuntimeStatus,
+} from "./types";
 
 export async function fetchDomainEngines(
   force = false,
@@ -50,6 +54,26 @@ export async function probeDomainEngine(
   }>(`/ugsci/domain-engines/${encodeURIComponent(engineId)}/probe`, {
     method: "POST",
   });
+}
+
+export function fetchNeqSimRuntime(force = false): Promise<NeqSimRuntimeStatus> {
+  return apiFetch<NeqSimRuntimeStatus>(
+    "/ugsci/domain-engines/neqsim/runtime",
+    force ? { bypassCache: true } : undefined,
+  );
+}
+
+export function installNeqSimRuntime(): Promise<NeqSimInstallTask> {
+  return apiFetch<NeqSimInstallTask>("/ugsci/domain-engines/neqsim/install", {
+    method: "POST",
+  });
+}
+
+export function fetchNeqSimInstallTask(taskId: string): Promise<NeqSimInstallTask> {
+  return apiFetch<NeqSimInstallTask>(
+    `/ugsci/domain-engines/neqsim/install/${encodeURIComponent(taskId)}`,
+    { bypassCache: true },
+  );
 }
 
 // ─── MCP Provider Status ─────────────────────────────────────────────────────

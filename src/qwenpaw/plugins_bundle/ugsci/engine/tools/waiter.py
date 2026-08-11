@@ -102,6 +102,15 @@ async def wait_for_simulation(
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
+    if not isinstance(poll_interval, (int, float)) or poll_interval <= 0:
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: poll_interval must be positive.")])
+    if not isinstance(max_wait_seconds, (int, float)) or max_wait_seconds < 0:
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: max_wait_seconds must be non-negative (0 means unlimited).")])
+    if not isinstance(stall_timeout, (int, float)) or stall_timeout < 0:
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: stall_timeout must be non-negative (0 disables stall detection).")])
+    if detail_level not in {"summary", "convergence", "full"}:
+        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: detail_level must be summary, convergence, or full.")])
+
     from .launcher import _get_job
     from .monitor import check_simulation_status
 
@@ -119,7 +128,7 @@ async def wait_for_simulation(
         )
 
     # ── Fast path: already finished ─────────────────────────────────
-    terminal_states = {"completed", "failed", "timeout", "error"}
+    terminal_states = {"completed", "failed", "timeout", "error", "interrupted", "cancelled"}
     if job.status in terminal_states:
         return ToolChunk(
             is_last=True,
@@ -140,7 +149,8 @@ async def wait_for_simulation(
 
     # ── Poll loop ──────────────────────────────────────────────────
     start_wait = time.time()
-    last_progress_step: int | None = None
+    from .activity import capture_activity, has_progress
+    last_activity = None
     last_progress_time = time.time()
     poll_count = 0
     stall_detected = False
@@ -167,20 +177,19 @@ async def wait_for_simulation(
         if job.status in terminal_states:
             break
 
-        # Check stall: try to parse progress for new time steps
+        # Stall requires every available signal to be quiet: simulator log
+        # bytes/mtime, parsed time, and process CPU/liveness.  Slow report
+        # steps are therefore not mistaken for a frozen process.
         if stall_timeout > 0:
             try:
-                from ..adapters import get_adapter
-                adapter = get_adapter(job.simulator)
-                progress = adapter.parse_progress(job.working_dir)
-                current_step = progress.current_step or 0
-                if last_progress_step is not None and current_step == last_progress_step:
+                activity = capture_activity(job)
+                if has_progress(last_activity, activity):
+                    last_progress_time = time.time()
+                    last_activity = activity
+                else:
                     if time.time() - last_progress_time >= stall_timeout:
                         stall_detected = True
                         break
-                else:
-                    last_progress_step = current_step
-                    last_progress_time = time.time()
             except Exception:
                 # Progress parse failed — don't trigger stall on errors
                 pass

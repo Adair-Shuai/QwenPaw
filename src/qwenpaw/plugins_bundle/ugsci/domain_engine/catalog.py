@@ -90,42 +90,48 @@ _NEQSIM_ENGINE = DomainEngineDefinition(
     name="PVT 与流体热力学",
     description="基于 NeqSim 的 PVT 计算和流体相态分析",
     domain="fluid_thermodynamics",
-    source="mcp",
-    provider=ProviderRef(kind="driver", id="neqsim"),
+    source="builtin",
+    provider=ProviderRef(kind="driver", id="ugsci-neqsim"),
     operations=(
         DomainOperation(
             id="fluid.flash",
             name="闪蒸计算",
             description="给定组成和条件，计算相态和组成",
-            driver_tool_names=(),  # Populated from MCP tool discovery
+            tool_names=("ugsci_neqsim_flash",),
+            driver_tool_names=("runFlash",),
         ),
         DomainOperation(
             id="fluid.pvt",
             name="PVT 性质",
             description="计算密度、粘度、压缩系数等流体性质",
-            driver_tool_names=(),
+            tool_names=("ugsci_neqsim_pvt",),
+            driver_tool_names=("runPVT",),
         ),
         DomainOperation(
             id="fluid.phase_envelope",
             name="相包络线",
             description="生成相包络线图",
-            driver_tool_names=(),
+            tool_names=("ugsci_neqsim_phase_envelope",),
+            driver_tool_names=("getPhaseEnvelope",),
         ),
         DomainOperation(
             id="process.simulation",
             name="工艺模拟",
             description="简单工艺流程模拟",
-            driver_tool_names=(),
+            tool_names=("ugsci_neqsim_process_simulate",),
+            driver_tool_names=("runProcess",),
         ),
         DomainOperation(
             id="pipeline.flow",
             name="管道流动",
             description="管道流动计算",
-            driver_tool_names=(),
+            tool_names=("ugsci_neqsim_pipeline_flow",),
+            driver_tool_names=("runPipeline",),
         ),
     ),
     dependencies=("java-runtime", "neqsim-mcp-server"),
     tags=("pvt", "thermodynamics", "neqsim", "fluid"),
+    execution_class="external",
 )
 
 
@@ -141,6 +147,7 @@ def _library_engine(
     tool_name: str,
     provider_id: str,
     tags: tuple[str, ...],
+    execution_class: str = "deterministic",
 ) -> DomainEngineDefinition:
     """Build a UGSci capability backed by a replaceable scientific library."""
     return DomainEngineDefinition(
@@ -161,6 +168,7 @@ def _library_engine(
         ),
         dependencies=(dependency,),
         tags=tags,
+        execution_class=execution_class,
     )
 
 
@@ -188,6 +196,7 @@ _SCIENTIFIC_LIBRARY_ENGINES = (
         tool_name="ugsci_bayesian_normal_estimate",
         provider_id="ugsci-bayesian-pymc",
         tags=("bayesian", "probability", "uncertainty"),
+        execution_class="stochastic",
     ),
     _library_engine(
         engine_id="pymoo",
@@ -200,6 +209,7 @@ _SCIENTIFIC_LIBRARY_ENGINES = (
         tool_name="ugsci_multiobjective_quadratic",
         provider_id="ugsci-optimization-pymoo",
         tags=("optimization", "pareto", "pymoo"),
+        execution_class="stochastic",
     ),
     _library_engine(
         engine_id="simpy",
@@ -265,6 +275,31 @@ _SCIENTIFIC_LIBRARY_ENGINES = (
 
 # ─── Reservoir Visualization (UGSci built-in capability) ─────────────────────
 
+_PETROLEUM_CORE_ENGINE = DomainEngineDefinition(
+    schema_version=1,
+    id="petroleum-deterministic-core",
+    name="油气确定性计算内核",
+    description="可审计的单位、储量、物质平衡、黑油 PVT、IPR、节点分析和守恒检查",
+    domain="reservoir_engineering",
+    source="builtin",
+    provider=ProviderRef(kind="builtin", id="ugsci-petroleum-core"),
+    operations=(
+        DomainOperation(id="units.convert", name="工程单位换算", description="显式维度约束的工程单位换算", tool_names=("ugsci_convert_units",)),
+        DomainOperation(id="reservoir.volumetrics.oil_in_place", name="容积法储量", description="计算原始地质储量 OOIP", tool_names=("ugsci_volumetric_oil_in_place",)),
+        DomainOperation(id="reservoir.material_balance.oil", name="油藏物质平衡", description="基于显式 PVT 和水侵项估算 OOIP", tool_names=("ugsci_oil_material_balance",)),
+        DomainOperation(id="reservoir.material_balance.gas_pz", name="气藏 p/z 物质平衡", description="根据 p/z 衰竭估算 OGIP", tool_names=("ugsci_gas_material_balance",)),
+        DomainOperation(id="fluid.pvt.standing_black_oil", name="本地黑油 PVT", description="Standing 泡点、溶解气油比和油体积系数", tool_names=("ugsci_black_oil_pvt",)),
+        DomainOperation(id="production.ipr.vogel", name="Vogel IPR", description="构建油井流入动态关系", tool_names=("ugsci_vogel_ipr",)),
+        DomainOperation(id="production.nodal_analysis", name="节点分析", description="求解 IPR/VLP 工作点", tool_names=("ugsci_nodal_analysis",)),
+        DomainOperation(id="validation.conservation_check", name="质量守恒检查", description="检查库存与流量闭合误差", tool_names=("ugsci_conservation_check",)),
+    ),
+    dependencies=(),
+    tags=("material-balance", "volumetrics", "pvt", "ipr", "nodal", "units", "audit"),
+    execution_class="deterministic",
+    engine_version="1.1.0",
+)
+
+
 _VISUALIZATION_ENGINE = DomainEngineDefinition(
     schema_version=1,
     id="reservoir-visualization",
@@ -295,6 +330,7 @@ _VISUALIZATION_ENGINE = DomainEngineDefinition(
     ),
     dependencies=("three.js",),
     tags=("3d", "grid", "eclipse", "roff", "visualization"),
+    execution_class="visualization",
 )
 
 
@@ -303,6 +339,7 @@ _VISUALIZATION_ENGINE = DomainEngineDefinition(
 _ENGINES: tuple[DomainEngineDefinition, ...] = (
     _WELL_LOG_ENGINE,
     _DECLINE_ENGINE,
+    _PETROLEUM_CORE_ENGINE,
     _NEQSIM_ENGINE,
     _VISUALIZATION_ENGINE,
     *_SCIENTIFIC_LIBRARY_ENGINES,

@@ -30,6 +30,10 @@ def _missing(provider: str, exc: ImportError) -> DomainError:
 
 class SymPyAdapter:
     provider_id = "ugsci-symbolic-sympy"
+    dependency_package = "sympy"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = True
     operation = "math.polynomial.roots"
 
     def compute(self, request: PolynomialRootsRequest) -> dict[str, Any]:
@@ -54,6 +58,10 @@ class SymPyAdapter:
 
 class PyMCAdapter:
     provider_id = "ugsci-bayesian-pymc"
+    dependency_package = "pymc"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = False
     operation = "statistics.bayesian.normal_mean"
 
     def compute(self, request: BayesianNormalRequest) -> dict[str, Any]:
@@ -101,6 +109,10 @@ class PyMCAdapter:
 
 class PymooAdapter:
     provider_id = "ugsci-optimization-pymoo"
+    dependency_package = "pymoo"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = False
     operation = "optimization.quadratic.pareto"
 
     def compute(self, request: MultiObjectiveQuadraticRequest) -> dict[str, Any]:
@@ -144,6 +156,10 @@ class PymooAdapter:
 
 class SimPyAdapter:
     provider_id = "ugsci-queue-simpy"
+    dependency_package = "simpy"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = True
     operation = "simulation.queue.deterministic"
 
     def compute(self, request: QueueSimulationRequest) -> dict[str, Any]:
@@ -184,6 +200,10 @@ class SimPyAdapter:
 
 class NetworkXAdapter:
     provider_id = "ugsci-graph-networkx"
+    dependency_package = "networkx"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = True
     operation = "graph.network.analyze"
 
     def compute(self, request: GraphAnalysisRequest) -> dict[str, Any]:
@@ -218,6 +238,10 @@ class NetworkXAdapter:
 
 class GeoPandasAdapter:
     provider_id = "ugsci-geospatial-geopandas"
+    dependency_package = "geopandas"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = True
     operation = "geospatial.points.analyze"
 
     def compute(self, request: GeospatialPointsRequest) -> dict[str, Any]:
@@ -244,6 +268,10 @@ class GeoPandasAdapter:
 
 class ScikitLearnAdapter:
     provider_id = "ugsci-ml-scikit-learn"
+    dependency_package = "scikit-learn"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = True
     operation = "machine_learning.linear_regression"
 
     def compute(self, request: MachineLearningRegressionRequest) -> dict[str, Any]:
@@ -266,6 +294,10 @@ class ScikitLearnAdapter:
 
 class StatsmodelsAdapter:
     provider_id = "ugsci-statistics-statsmodels"
+    dependency_package = "statsmodels"
+    provider_version = ""
+    engine_version = "1.0.0"
+    deterministic = True
     operation = "statistics.ols_regression"
 
     def compute(self, request: StatisticalRegressionRequest) -> dict[str, Any]:

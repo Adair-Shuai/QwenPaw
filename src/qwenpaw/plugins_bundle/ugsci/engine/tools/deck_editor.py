@@ -7,6 +7,8 @@ basic line-level editing for CMG / COMSOL input files.
 from __future__ import annotations
 
 import os
+import hashlib
+import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -22,6 +24,8 @@ async def edit_simulation_deck(
     content: str = "",
     section: str = "",
     working_dir: str = "",
+    expected_sha256: str = "",
+    create_backup: bool = True,
 ) -> Any:
     """Edit a simulator input file at the keyword level.
 
@@ -83,6 +87,15 @@ async def edit_simulation_deck(
                     text=f"Error: File not found: {deck_path}",
                 ),
             ],
+        )
+
+    original_bytes = deck_path.read_bytes()
+    original_sha256 = hashlib.sha256(original_bytes).hexdigest()
+    if expected_sha256 and expected_sha256.lower() != original_sha256:
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[TextBlock(type="text", text=f"Error: deck changed since diagnosis (expected {expected_sha256}, found {original_sha256}).")],
         )
 
     # ── Read file ────────────────────────────────────────────────────
@@ -229,7 +242,10 @@ async def edit_simulation_deck(
     # write does not leave a partially-written (and potentially corrupt)
     # deck file.
     new_text = "".join(new_lines)
+    backup_path = deck_path.with_suffix(deck_path.suffix + f".{original_sha256[:12]}.bak")
     try:
+        if create_backup and not backup_path.exists():
+            shutil.copy2(deck_path, backup_path)
         dir_path = deck_path.parent
         fd, tmp_path = tempfile.mkstemp(
             dir=str(dir_path),
@@ -267,7 +283,10 @@ async def edit_simulation_deck(
         f"  Keyword:  {keyword}",
         f"  Action:   {action}",
         f"  Lines changed: {lines_changed}",
+        f"  Original SHA256: {original_sha256}",
     ]
+    if create_backup:
+        summary_parts.append(f"  Backup: {backup_path}")
 
     if action == "replace":
         summary_parts.append(f"  Original block ({len(block_lines)} lines):")

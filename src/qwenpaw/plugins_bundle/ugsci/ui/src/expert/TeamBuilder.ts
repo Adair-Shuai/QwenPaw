@@ -1156,6 +1156,7 @@ const { Text } = Typography;
   const [presetTeams, setPresetTeams] = useState<ExpertTeam[]>([]);
   const [builderOpen, setBuilderOpen] = useState(false);
   const [editingTeam, setEditingTeam] = useState<ExpertTeam | null>(null);
+  const [activeTab, setActiveTab] = useState("preset");
 
   // Migrate legacy browser-only definitions, then render the backend source
   // of truth.  localStorage is deliberately not used as a normal fallback:
@@ -1278,7 +1279,8 @@ const { Text } = Typography;
     React.createElement(
       Tabs,
       {
-        defaultActiveKey: "preset",
+        activeKey: activeTab,
+        onChange: setActiveTab,
         items: [
           {
             key: "preset",
@@ -1345,14 +1347,21 @@ const { Text } = Typography;
             children: React.createElement(
               React.Fragment,
               null,
-              React.createElement(TeamWorkflowCard),
-              React.createElement(TeamRunHistory, { activeOnly: true }),
+              React.createElement(TeamWorkflowCard, {
+                enabled: activeTab === "active",
+              }),
+              React.createElement(TeamRunHistory, {
+                activeOnly: true,
+                enabled: activeTab === "active",
+              }),
             ),
           },
           {
             key: "history",
             label: "讨论历史",
-            children: React.createElement(TeamRunHistory),
+            children: React.createElement(TeamRunHistory, {
+              enabled: activeTab === "history",
+            }),
           },
         ],
       },

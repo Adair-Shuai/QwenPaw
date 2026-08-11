@@ -33,7 +33,7 @@ interface BuiltinToolInfo {
  */
 function deriveBuiltinStatus(
   depStatus: DependencyStatus,
-): ProbeStatus | "unconfigured" | "error" {
+): ProbeStatus | "needs_install" | "unconfigured" | "error" {
   if (!depStatus) return "unknown";
   if (depStatus.overall === "available") return "available";
   if (depStatus.overall === "unavailable") return "unavailable";
@@ -67,11 +67,19 @@ export function buildEngineView(
   const def = response.engine;
   const depStatus = response.dependency_status;
 
-  let effectiveStatus: ProbeStatus | "unconfigured" | "error";
+  let effectiveStatus: ProbeStatus | "needs_install" | "unconfigured" | "error";
   let discoveredToolCount: number;
   let mcpProviderKey: string | null;
 
-  if (def.source === "builtin") {
+  if (def.provider.kind === "driver") {
+    if (depStatus.overall === "unavailable") {
+      effectiveStatus = "needs_install";
+    } else {
+      effectiveStatus = deriveMcpStatus(mcpInfo);
+    }
+    discoveredToolCount = mcpInfo?.toolCount ?? 0;
+    mcpProviderKey = mcpInfo?.key ?? def.provider.id;
+  } else if (def.source === "builtin") {
     const dependencyStatus = deriveBuiltinStatus(depStatus);
     const requiredTools = def.operations.flatMap((op) => op.tool_names);
     const registeredTools = requiredTools.filter((name) => builtinTools.has(name));
@@ -134,6 +142,7 @@ export const STATUS_LABELS: Record<string, string> = {
   available: "可用",
   unavailable: "不可用",
   unknown: "未知",
+  needs_install: "待安装",
   unconfigured: "未配置",
   error: "错误",
 };
@@ -142,6 +151,7 @@ export const STATUS_COLORS: Record<string, string> = {
   available: "success",
   unavailable: "error",
   unknown: "default",
+  needs_install: "warning",
   unconfigured: "warning",
   error: "error",
 };

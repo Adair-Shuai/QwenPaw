@@ -504,7 +504,7 @@ def build_capability_summary(engines: List[EngineInfo]) -> str:
     )
     lines.append("")
     lines.append("- `launch_simulation(simulator, deck_file)` — 启动模拟")
-    lines.append("  - simulator 可选: eclipse, cmg_imex, cmg_stars, cmg_gem, comsol")
+    lines.append("  - simulator 可选: eclipse, cmg_imex, cmg_stars, cmg_gem, comsol, intersect, tnavigator")
     lines.append("  - 工具会自动从引擎注册表解析可执行文件路径")
     lines.append("  - 工具会自动处理各模拟器的参数约定 (如 Eclipse 不带 .DATA 后缀)")
     lines.append("  - 返回 job_id，可用于后续监控")

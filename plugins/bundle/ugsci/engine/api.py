@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import threading
 import time
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +57,25 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
         from . import build_capability_summary, list_engines
 
         return {"summary": build_capability_summary(list_engines())}
+
+    @router.get("/adapters")
+    def list_adapter_capabilities_endpoint() -> dict[str, Any]:
+        """Expose simulator adapter capabilities separately from install state."""
+        from .adapters import get_adapter, list_supported_simulators
+
+        adapters: list[dict[str, Any]] = []
+        for simulator in list_supported_simulators():
+            adapter = get_adapter(simulator)
+            adapters.append(
+                {
+                    "simulator": simulator,
+                    "display_name": adapter.display_name,
+                    "deck_extension": adapter.deck_extension,
+                    "log_extension": adapter.log_extension,
+                    "capabilities": asdict(adapter.capabilities),
+                },
+            )
+        return {"adapters": adapters}
 
     @router.post("/detect")
     def detect_engines_endpoint() -> dict[str, Any]:

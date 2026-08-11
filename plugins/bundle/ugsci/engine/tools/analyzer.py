@@ -2,7 +2,9 @@
 """analyze_simulation — analyze simulation results for convergence, balance, and performance."""
 from __future__ import annotations
 
+import asyncio
 import math
+from pathlib import Path
 from typing import Any
 
 import logging
@@ -150,7 +152,11 @@ async def analyze_simulation(
 
     # ── Material balance analysis ────────────────────────────────────
     elif analysis_type == "balance":
-        summary = adapter.read_summary(job.working_dir)
+        summary = await asyncio.to_thread(
+            adapter.read_summary,
+            job.working_dir,
+            case_stem=Path(job.deck_file).stem,
+        )
         lines.append("=== Material Balance Analysis ===")
         lines.append("")
 
@@ -183,7 +189,11 @@ async def analyze_simulation(
 
     # ── Performance analysis ─────────────────────────────────────────
     elif analysis_type == "performance":
-        summary = adapter.read_summary(job.working_dir)
+        summary = await asyncio.to_thread(
+            adapter.read_summary,
+            job.working_dir,
+            case_stem=Path(job.deck_file).stem,
+        )
         lines.append("=== Performance Analysis ===")
         lines.append("")
 
@@ -212,20 +222,36 @@ async def analyze_simulation(
     # ── Comparison analysis ──────────────────────────────────────────
     elif analysis_type == "comparison":
         if not reference_job_id:
-            lines.append("Error: comparison analysis requires reference_job_id.")
+            return ToolChunk(
+                is_last=True,
+                state=ToolResultState.ERROR,
+                content=[TextBlock(type="text", text="Error: comparison analysis requires reference_job_id.")],
+            )
         else:
             ref_job = _get_job(reference_job_id)
             if not ref_job:
-                lines.append(f"Error: Reference job '{reference_job_id}' not found.")
+                return ToolChunk(
+                    is_last=True,
+                    state=ToolResultState.ERROR,
+                    content=[TextBlock(type="text", text=f"Error: Reference job '{reference_job_id}' not found.")],
+                )
             else:
                 lines.append(f"=== Comparison: {job_id} vs {reference_job_id} ===")
                 lines.append("")
 
                 # Read both summaries
-                summary_a = adapter.read_summary(job.working_dir)
+                summary_a = await asyncio.to_thread(
+                    adapter.read_summary,
+                    job.working_dir,
+                    case_stem=Path(job.deck_file).stem,
+                )
                 try:
                     ref_adapter = get_adapter(ref_job.simulator)
-                    summary_b = ref_adapter.read_summary(ref_job.working_dir)
+                    summary_b = await asyncio.to_thread(
+                        ref_adapter.read_summary,
+                        ref_job.working_dir,
+                        case_stem=Path(ref_job.deck_file).stem,
+                    )
                 except Exception:
                     summary_b = summary_a.__class__()
 

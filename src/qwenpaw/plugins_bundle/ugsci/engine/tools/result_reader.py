@@ -2,7 +2,9 @@
 """read_simulation_results — read summary and field data from a completed (or running) simulation."""
 from __future__ import annotations
 
+import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 import logging
@@ -26,7 +28,8 @@ async def read_simulation_results(
             - ``"summary"``: Field-level summary vectors (FOPR, FPR, etc.)
             - ``"well"``: Well-level vectors (WOPR, WWPR per well)
             - ``"report"``: Text report summary from the log file
-            - ``"all"``: Both summary and well data
+            - ``"field"``: Spatial/table exports with bounded previews
+            - ``"all"``: Summary, well, spatial, and metadata results
         variables (`list[str] | None`):
             Variable names to extract (e.g. ``["FOPR", "FPR", "FWCT"]``).
             ``None`` means extract all available.
@@ -45,7 +48,7 @@ async def read_simulation_results(
     from .launcher import _get_job
 
     # ── Validate parameters ─────────────────────────────────────────
-    _VALID_DATA_TYPES = ("summary", "well", "report", "all")
+    _VALID_DATA_TYPES = ("summary", "well", "field", "report", "all")
     if data_type not in _VALID_DATA_TYPES:
         return ToolChunk(
             is_last=True,
@@ -122,13 +125,17 @@ async def read_simulation_results(
         )
 
     # ── Summary / well data ──────────────────────────────────────────
-    summary = adapter.read_summary(
+    summary = await asyncio.to_thread(
+        adapter.read_summary,
         job.working_dir,
         variables=variables,
         wells=wells,
+        case_stem=Path(job.deck_file).stem,
     )
 
-    if not summary.vectors and not summary.well_vectors:
+    if not any(
+        [summary.vectors, summary.well_vectors, summary.fields, summary.metadata]
+    ):
         lines.append("No summary data could be extracted.")
         lines.append(
             "This may be because the simulation has not produced "
@@ -140,6 +147,14 @@ async def read_simulation_results(
             state=ToolResultState.SUCCESS,
             content=[TextBlock(type="text", text="\n".join(lines))],
         )
+
+    if summary.metadata:
+        lines.append("--- Result metadata ---")
+        rendered = json.dumps(summary.metadata, ensure_ascii=False, default=str, indent=2)
+        if len(rendered) > 8000:
+            rendered = rendered[:8000] + "\n... metadata preview truncated ..."
+        lines.append(rendered)
+        lines.append("")
 
     # ── Format field-level vectors ───────────────────────────────────
     if data_type in ("summary", "all") and summary.vectors:
@@ -209,6 +224,36 @@ async def read_simulation_results(
                     f"max={max(values):.4g} "
                     f"last={values[-1]:.4g}",
                 )
+
+    if data_type in ("field", "all") and summary.fields:
+        lines.append("")
+        lines.append("--- Spatial/table exports ---")
+        for index, table in enumerate(summary.fields, 1):
+            lines.append(
+                f"  [{index}] {table.source_file}: kind={table.kind} "
+                f"shape={table.row_count}x{table.column_count}"
+            )
+            if table.coordinates:
+                lines.append(f"      coordinates: {', '.join(table.coordinates)}")
+            if table.variables:
+                variable_preview = list(table.variables[:20])
+                suffix = " ..." if len(table.variables) > 20 else ""
+                lines.append(
+                    f"      variables ({len(table.variables)}): "
+                    f"{', '.join(variable_preview)}{suffix}"
+                )
+            else:
+                lines.append("      variables: unnamed (explicit schema required)")
+            if table.sample_rows:
+                lines.append("      bounded sample:")
+                for row in table.sample_rows[:5]:
+                    preview = row[:12]
+                    suffix = " ..." if len(row) > 12 else ""
+                    lines.append(f"        {preview}{suffix}")
+            warnings = table.metadata.get("warnings")
+            if isinstance(warnings, list):
+                for warning in warnings[:10]:
+                    lines.append(f"      warning: {warning}")
 
     return ToolChunk(
         is_last=True,

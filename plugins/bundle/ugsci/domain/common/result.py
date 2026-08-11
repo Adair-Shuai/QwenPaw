@@ -40,14 +40,20 @@ class DomainResult:
 
     schema_version: int = 1
     engine_id: str = ""
+    engine_version: str = ""
     provider_id: str = ""
+    provider_version: str = ""
     operation: str = ""
     method: str = ""
+    deterministic: bool = True
     result: dict[str, Any] = field(default_factory=dict)
     units: dict[str, str] = field(default_factory=dict)
     metrics: dict[str, float | int | str | None] = field(default_factory=dict)
     assumptions: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    tolerances: dict[str, float | int | str] = field(default_factory=dict)
+    applicability: list[str] = field(default_factory=list)
+    provenance: dict[str, Any] = field(default_factory=dict)
     artifacts: list[ArtifactRef] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
@@ -59,13 +65,19 @@ class DomainResult:
         return {
             "schema_version": self.schema_version,
             "engine_id": self.engine_id,
+            "engine_version": self.engine_version,
             "provider_id": self.provider_id,
+            "provider_version": self.provider_version,
             "operation": self.operation,
             "method": self.method,
+            "deterministic": self.deterministic,
             "result": self.result,
             "units": self.units,
             "metrics": self.metrics,
             "assumptions": self.assumptions,
             "warnings": self.warnings,
+            "tolerances": self.tolerances,
+            "applicability": self.applicability,
+            "provenance": self.provenance,
             "artifacts": [a.to_dict() for a in self.artifacts],
         }

@@ -11,10 +11,13 @@ import {
   fetchDomainEngines,
   fetchBuiltinToolStatuses,
   fetchMcpProviderStatuses,
+  fetchNeqSimInstallTask,
+  fetchNeqSimRuntime,
+  installNeqSimRuntime,
   type McpProviderStatus,
 } from "./domainEngineApi";
 import { buildEngineView, groupByDomain } from "./runtimeStatus";
-import type { DomainEngineView } from "./types";
+import type { DomainEngineView, NeqSimInstallTask } from "./types";
 import { DomainEngineCard } from "./DomainEngineCard";
 import { DomainEngineDetail } from "./DomainEngineDetail";
 
@@ -25,6 +28,11 @@ const DOMAIN_GROUP_LABELS: Record<string, string> = {
   scientific_computing: "科学计算",
   data_modeling: "数据建模",
 };
+
+function isMissingInstallTaskError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return /Install task not found|HTTP 404/i.test(error.message);
+}
 
 export function DomainEngineSection({
   onNavigateToMcp,
@@ -60,15 +68,55 @@ export function DomainEngineSection({
   const [searchText, setSearchText] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeView, setActiveView] = useState<DomainEngineView | null>(null);
+  const [neqsimInstallState, setNeqsimInstallState] = useState<NeqSimInstallTask | null>(null);
 
   // Ref to track the latest agent ID — allows stale fetch responses
   // to be discarded without recreating the loadEngines callback.
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
+  const activeViewRef = useRef<DomainEngineView | null>(activeView);
+  activeViewRef.current = activeView;
+  const installPollGenerationRef = useRef(0);
+
+  // Let the backend installation continue, but stop this component's polling
+  // and state updates after the user navigates away.
+  useEffect(() => () => {
+    installPollGenerationRef.current += 1;
+  }, []);
 
   const loadEngines = useCallback(
-    async (force = false) => {
-      setLoading(true);
+    async (force = false, background = false) => {
+      if (!background) setLoading(true);
+      const scrollSnapshot = background && typeof window !== "undefined"
+        ? {
+            x: window.scrollX,
+            y: window.scrollY,
+            drawerBody: typeof document !== "undefined"
+              ? document.querySelector<HTMLElement>(
+                  ".ugsci-domain-engine-detail-drawer .ant-drawer-body",
+                )
+              : null,
+            drawerTop: typeof document !== "undefined"
+              ? document.querySelector<HTMLElement>(
+                  ".ugsci-domain-engine-detail-drawer .ant-drawer-body",
+                )?.scrollTop || 0
+              : 0,
+          }
+        : null;
+      const restoreScroll = () => {
+        if (!scrollSnapshot || typeof window === "undefined") return;
+        const restore = () => {
+          window.scrollTo(scrollSnapshot.x, scrollSnapshot.y);
+          if (scrollSnapshot.drawerBody?.isConnected) {
+            scrollSnapshot.drawerBody.scrollTop = scrollSnapshot.drawerTop;
+          }
+        };
+        if (typeof window.requestAnimationFrame === "function") {
+          window.requestAnimationFrame(restore);
+        } else {
+          restore();
+        }
+      };
       // Capture the agent at call time so stale responses from a
       // previous agent can be detected and discarded.
       const callerAgent = agentIdRef.current;
@@ -88,7 +136,7 @@ export function DomainEngineSection({
           try {
             // Look up MCP provider info for MCP-sourced engines
             let mcpInfo: McpProviderStatus | null = null;
-            if (resp.engine.source === "mcp") {
+            if (resp.engine.provider.kind === "driver") {
               const providerKey = resp.engine.provider.id;
               mcpInfo = mcpStatuses.get(providerKey) || null;
             }
@@ -98,12 +146,23 @@ export function DomainEngineSection({
           }
         }
         setViews(built);
+        const activeId = activeViewRef.current?.definition.id;
+        if (activeId) {
+          const refreshed = built.find(
+            (view) => view.definition.id === activeId,
+          );
+          if (refreshed) {
+            activeViewRef.current = refreshed;
+            setActiveView(refreshed);
+          }
+        }
+        restoreScroll();
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : "加载领域引擎失败";
         antdMsg.error(msg);
-        setViews([]);
+        if (!background) setViews([]);
       } finally {
-        setLoading(false);
+        if (!background) setLoading(false);
       }
     },
     [],
@@ -136,6 +195,7 @@ export function DomainEngineSection({
   }, [loadEngines]);
 
   const handleCardClick = useCallback((view: DomainEngineView) => {
+    activeViewRef.current = view;
     setActiveView(view);
     setDrawerOpen(true);
   }, []);
@@ -157,6 +217,65 @@ export function DomainEngineSection({
     setDrawerOpen(false);
     onNavigateToSkills?.();
   }, [onNavigateToSkills]);
+
+  const handleInstallNeqsim = useCallback(async () => {
+    const pollGeneration = ++installPollGenerationRef.current;
+    const isCurrentPoll = () => (
+      pollGeneration === installPollGenerationRef.current
+    );
+    try {
+      let task = await installNeqSimRuntime();
+      if (!isCurrentPoll()) return;
+      setNeqsimInstallState(task);
+      while (task.status === "queued" || task.status === "running") {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        if (!isCurrentPoll()) return;
+        try {
+          task = await fetchNeqSimInstallTask(task.id);
+        } catch (pollError: unknown) {
+          if (!isMissingInstallTaskError(pollError)) throw pollError;
+          const runtime = await fetchNeqSimRuntime(true);
+          if (!isCurrentPoll()) return;
+          if (runtime.ready) {
+            task = {
+              ...task,
+              status: "completed",
+              progress: 100,
+              message: "后端重启后已恢复 NeqSim 运行环境状态",
+              error: "",
+              runtime,
+              recovered: true,
+            };
+          } else {
+            task = {
+              ...task,
+              status: "failed",
+              message: "安装进程因后端重启中断",
+              error: "后端重启后未发现完整的 NeqSim 运行环境，请重新安装",
+              runtime,
+              recovered: true,
+            };
+          }
+        }
+        if (!isCurrentPoll()) return;
+        setNeqsimInstallState(task);
+      }
+      if (!isCurrentPoll()) return;
+      if (task.status === "completed") {
+        if (task.warning) {
+          antdMsg.warning(task.warning);
+        } else {
+          antdMsg.success("NeqSim 运行环境已安装并启用");
+        }
+        await loadEngines(true, true);
+      } else {
+        antdMsg.error(task.error || "NeqSim 安装失败");
+      }
+    } catch (err: unknown) {
+      if (!isCurrentPoll()) return;
+      antdMsg.error(err instanceof Error ? err.message : "NeqSim 安装失败");
+    }
+  }, [loadEngines]);
 
   return React.createElement(
     "div",
@@ -264,6 +383,8 @@ export function DomainEngineSection({
       onNavigateToMcp: handleNavigateToMcp,
       onNavigateToTools: handleNavigateToTools,
       onNavigateToSkills: handleNavigateToSkills,
+      onInstallNeqsim: handleInstallNeqsim,
+      neqsimInstallState,
     }),
   );
 }

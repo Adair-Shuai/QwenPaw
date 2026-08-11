@@ -400,12 +400,14 @@ function RichEditorBridge({
   hiddenTextarea,
   editorRef,
   onRawChange,
+  onSelectionChange,
 }: {
   value: string;
   editable: boolean;
   hiddenTextarea: React.RefObject<HTMLTextAreaElement | null>;
   editorRef: React.MutableRefObject<LexicalEditor | null>;
   onRawChange: (value: string, start: number, end: number) => void;
+  onSelectionChange?: (start: number, end: number) => void;
 }) {
   const [editor] = useLexicalComposerContext();
   const valueRef = useRef(value);
@@ -441,9 +443,10 @@ function RichEditorBridge({
         editorState.read(() => {
           const raw = $getRoot().getTextContent();
           const selection = $getSelection();
+          const hasRangeSelection = $isRangeSelection(selection);
           let start = raw.length;
           let end = raw.length;
-          if ($isRangeSelection(selection)) {
+          if (hasRangeSelection) {
             start = selectionPointOffset(
               selection.anchor.key,
               selection.anchor.offset,
@@ -460,6 +463,7 @@ function RichEditorBridge({
             hiddenTextarea.current.selectionStart = start;
             hiddenTextarea.current.selectionEnd = end;
           }
+          if (hasRangeSelection) onSelectionChange?.(start, end);
         });
       }}
     />
@@ -633,7 +637,14 @@ function EditableSurface({
   );
 }
 
-const RichFileReferenceInput = forwardRef<unknown, TextAreaProps>(
+interface RichFileReferenceInputProps extends TextAreaProps {
+  onSelectionChange?: (start: number, end: number) => void;
+}
+
+const RichFileReferenceInput = forwardRef<
+  unknown,
+  RichFileReferenceInputProps
+>(
   function RichFileReferenceInput(
     {
       value,
@@ -650,6 +661,7 @@ const RichFileReferenceInput = forwardRef<unknown, TextAreaProps>(
       onPaste,
       onCompositionStart,
       onCompositionEnd,
+      onSelectionChange,
       autoSize: _autoSize,
       variant: _variant,
       ...textareaProps
@@ -731,6 +743,7 @@ const RichFileReferenceInput = forwardRef<unknown, TextAreaProps>(
             hiddenTextarea={hiddenTextarea}
             editorRef={editorRef}
             onRawChange={handleRawChange}
+            onSelectionChange={onSelectionChange}
           />
           <EditorPastePlugin onPaste={onPaste} />
           <KeyCommandPlugin onKeyDown={onKeyDown} onPressEnter={onPressEnter} />

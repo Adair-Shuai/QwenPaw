@@ -11,6 +11,8 @@ Guide AI agents through reservoir management and production optimization using U
 
 Support reservoir and production engineers in managing hydrocarbon extraction and optimizing well performance. Uses stable UGSci tools for decline curve analysis instead of direct scipy calls.
 
+Use the UGSci deterministic petroleum tools for auditable calculations. Do not recreate material-balance, PVT, IPR, nodal-analysis, unit-conversion, or conservation formulas in ad-hoc Python when the matching tool is available.
+
 ## Roles
 
 - **Reservoir Engineer** - Reservoir modeling, forecasting, depletion strategy
@@ -70,6 +72,25 @@ These tasks are handled by this skill:
 - Nodal analysis
 - Material balance
 - Reserves estimation
+
+## Deterministic Tool Routing
+
+Prefer these stable tools:
+
+| Task | Tool |
+|------|------|
+| Unit conversion | `ugsci_convert_units` |
+| Volumetric OOIP | `ugsci_volumetric_oil_in_place` |
+| Oil material balance | `ugsci_oil_material_balance` |
+| Gas p/z material balance | `ugsci_gas_material_balance` |
+| Local black-oil screening PVT | `ugsci_black_oil_pvt` |
+| Vogel IPR | `ugsci_vogel_ipr` |
+| Screening nodal analysis | `ugsci_nodal_analysis` |
+| Conservation/sanity check | `ugsci_conservation_check` |
+
+For every result, preserve `units`, `metrics`, `assumptions`, `warnings`, `tolerances`, `applicability`, and `provenance`. Treat PyMC and pymoo as stochastic workflow Providers, not deterministic facts. Use NeqSim only when compositional thermodynamics or a higher-fidelity external Provider is required.
+
+The direct Python equations later in this document are background references only. Do not prefer them over the registered UGSci tools.
 
 ## Software Tasks
 
