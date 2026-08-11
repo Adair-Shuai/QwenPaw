@@ -403,22 +403,16 @@ def test_windows_background_handles_are_eventually_deleted(
     import time
 
     monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
-    release_path = tmp_path / "release.signal"
-    child_script_path = tmp_path / "wait_for_release.py"
+    child_script_path = tmp_path / "background_child.py"
     child_script_path.write_text(
-        "from pathlib import Path\n"
-        "import time\n"
-        "\n"
-        "release_path = Path('release.signal')\n"
-        "while not release_path.exists():\n"
-        "    time.sleep(0.05)\n",
+        "import time; time.sleep(5)\n",
         encoding="utf-8",
     )
     escaped_python = sys.executable.replace("'", "''")
     escaped_working_dir = str(tmp_path).replace("'", "''")
     command = (
         f"$child = Start-Process -FilePath '{escaped_python}' "
-        "-ArgumentList 'wait_for_release.py' "
+        "-ArgumentList 'background_child.py' "
         f"-WorkingDirectory '{escaped_working_dir}' "
         "-NoNewWindow -PassThru; Write-Output done"
     )
@@ -431,7 +425,6 @@ def test_windows_background_handles_are_eventually_deleted(
         shell_executable="powershell.exe",
     )
     pending_paths = list(tmp_path.glob("qwenpaw_*"))
-    release_path.touch()
 
     deadline = time.monotonic() + 10.0
     while time.monotonic() < deadline:
