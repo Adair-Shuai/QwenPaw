@@ -98,6 +98,7 @@ def _sanitize_schema_for_gemini(schema: Any) -> Any:
 
     Removes or rewrites constructs that Gemini does not support:
 
+    - ``$schema``: removed entirely.
     - ``additionalProperties``: removed entirely.
     - ``anyOf`` containing ``{"type": "null"}``: simplified to the single
       non-null type (i.e. ``Optional[X]`` becomes just ``X``).
@@ -115,6 +116,7 @@ def _sanitize_schema_for_gemini(schema: Any) -> Any:
         return schema
 
     schema = dict(schema)
+    schema.pop("$schema", None)
 
     # Replace standalone "type": "null" with "type": "object".
     # Some MCP servers emit ``{"type": "null"}`` for parameters that
