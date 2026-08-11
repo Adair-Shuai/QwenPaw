@@ -71,9 +71,6 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Install UGSci plugin UI type dependencies
-        run: npm --prefix ../plugins/bundle/ugsci/ui ci --ignore-scripts
-
       - name: Run TypeScript check
         run: pnpm exec tsc -b --noEmit
 
