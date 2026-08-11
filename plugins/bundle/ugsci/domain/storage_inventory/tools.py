@@ -2,9 +2,10 @@
 """Agent-facing tools for deterministic storage-inventory evaluation."""
 
 import json
-from typing import Annotated, Any, Literal, TypedDict
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
+from typing_extensions import TypedDict
 
 from ..common.errors import DomainError, DomainErrorCode, wrap_unknown_error
 from ..computation.service import ComputationService
