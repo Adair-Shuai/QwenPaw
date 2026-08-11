@@ -76,5 +76,6 @@ def test_store_console_upload_limits_name_and_preserves_extension(
 
     stored_display_name = path.name.split("_", 1)[1]
     assert len(str(path)) <= 240
+    assert len(path.name.encode("utf-8")) <= 255
     assert len(stored_display_name) <= 120
     assert stored_display_name.endswith(".xlsx")

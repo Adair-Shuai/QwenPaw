@@ -12,6 +12,7 @@ _INTERNAL_UPLOAD_PREFIX_RE = re.compile(
     r"^(?:(?:[0-9a-fA-F]{32}|[0-9a-fA-F]{64})_)+",
 )
 _MAX_STORED_DISPLAY_NAME_LENGTH = 120
+_MAX_FILENAME_COMPONENT_BYTES = 255
 _WINDOWS_SAFE_PATH_LENGTH = 240
 
 
@@ -51,6 +52,7 @@ def _store_console_upload(
     stored_display_name = _truncate_filename(
         safe_name,
         min(_MAX_STORED_DISPLAY_NAME_LENGTH, max(path_budget, 1)),
+        max_bytes=_MAX_FILENAME_COMPONENT_BYTES - len(digest) - 1,
     )
     path = (resolved_media_dir / f"{digest}_{stored_display_name}").resolve()
     try:
@@ -61,12 +63,32 @@ def _store_console_upload(
     return path, digest, False
 
 
-def _truncate_filename(name: str, max_length: int) -> str:
-    """Truncate a filename while preserving its extension when possible."""
-    if len(name) <= max_length:
+def _truncate_filename(
+    name: str,
+    max_length: int,
+    *,
+    max_bytes: int | None = None,
+) -> str:
+    """Truncate a filename by characters and UTF-8 bytes, preserving suffix."""
+    if len(name) <= max_length and (
+        max_bytes is None or len(name.encode("utf-8")) <= max_bytes
+    ):
         return name
     suffix = Path(name).suffix
-    if len(suffix) >= max_length:
-        return name[:max_length]
-    stem_length = max_length - len(suffix)
-    return f"{Path(name).stem[:stem_length]}{suffix}"
+    suffix_bytes = len(suffix.encode("utf-8"))
+    if len(suffix) >= max_length or (
+        max_bytes is not None and suffix_bytes >= max_bytes
+    ):
+        return _truncate_utf8(name[:max_length], max_bytes)
+    stem = Path(name).stem[: max_length - len(suffix)]
+    if max_bytes is not None:
+        stem = _truncate_utf8(stem, max_bytes - suffix_bytes)
+    return f"{stem}{suffix}"
+
+
+def _truncate_utf8(value: str, max_bytes: int | None) -> str:
+    """Return the longest prefix that fits within a UTF-8 byte budget."""
+    if max_bytes is None or len(value.encode("utf-8")) <= max_bytes:
+        return value
+    encoded = value.encode("utf-8")[:max_bytes]
+    return encoded.decode("utf-8", errors="ignore")
