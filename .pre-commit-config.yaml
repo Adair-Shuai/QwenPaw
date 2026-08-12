@@ -3,8 +3,8 @@ repos:
     hooks:
       - id: ugsci-python-quality
         name: UGSci hand-written Python quality
-        entry: python3 scripts/check_ugsci_quality.py
-        language: system
+        entry: python scripts/check_ugsci_quality.py
+        language: python
         types: [python]
         files: ^plugins/bundle/ugsci/.*\.py$
         exclude: (^|/)(__pycache__|node_modules|skills|ui/dist|static)(/|$)
