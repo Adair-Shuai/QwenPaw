@@ -257,6 +257,7 @@ jobs:
     uses: ./.github/workflows/component-release.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
+      require_updater_assets: ${{ !inputs.dry_run }}
       core_min_version: ${{ needs.resolve.outputs.tag }}
       release_id: ${{ needs.resolve.outputs.tag }}-${{ needs.resolve.outputs.sha }}
       upload_to_oss: false
