@@ -165,17 +165,25 @@ def calculate_effective_inventory(
     if not request.layers:
         raise DomainError(DomainErrorCode.INVALID_INPUT, "layers must not be empty")
     _required_text(request.cycle_id, "cycle_id")
-    injection_state = _required_text(request.injection_end_state_id, "injection_end_state_id")
-    evaluation_state = _required_text(request.evaluation_state_id, "evaluation_state_id")
+    injection_state = _required_text(
+        request.injection_end_state_id, "injection_end_state_id"
+    )
+    evaluation_state = _required_text(
+        request.evaluation_state_id, "evaluation_state_id"
+    )
     if injection_state.casefold() == evaluation_state.casefold():
         raise DomainError(
             DomainErrorCode.INVALID_INPUT,
             "injection_end_state_id and evaluation_state_id must identify different states",
         )
-    if request.pressure_basis != "absolute":
+    if request.pressure_basis not in {
+        "absolute",
+        "apparent_formation",
+        "report_defined",
+    }:
         raise DomainError(
             DomainErrorCode.INVALID_INPUT,
-            "pressure_basis must be absolute for p/Z inventory calculation",
+            "pressure_basis must be an explicit supported basis for p/Z inventory calculation",
         )
     require_unit(request.gas_volume_unit, "gas_volume")
     require_unit(request.pressure_unit, "pressure")
@@ -212,6 +220,11 @@ def calculate_effective_inventory(
         warnings.append(
             "At least one Z factor is outside the broad engineering screening range [0.2, 2.0]; "
             "confirm the PVT basis before use."
+        )
+    if request.pressure_basis != "absolute":
+        warnings.append(
+            "Pressure basis is report-defined/apparent formation pressure; this is an empirical engineering p/Z estimate. "
+            "Do not reinterpret it as thermodynamic absolute pressure without independent calibration."
         )
     return rows, sum(float(row["effective_inventory"]) for row in rows), warnings
 
@@ -256,7 +269,9 @@ class InventoryAccountingAdapter(_StorageInventoryAdapter):
                 "All volumes use the same standard reference conditions",
                 "Injection and production totals share one accounting time boundary",
             ],
-            applicability=["Book/accounting inventory; not effective controlled inventory"],
+            applicability=[
+                "Book/accounting inventory; not effective controlled inventory"
+            ],
         )
 
 
@@ -296,12 +311,16 @@ class EffectiveInventoryAdapter(_StorageInventoryAdapter):
                 "quality_gate.maximum_inverse_withdrawal_fraction": "dimensionless",
                 "quality_gate.high_sensitivity_warning_above": "dimensionless",
             },
-            metrics={"layer_count": len(rows), "total_produced_gas": sum(float(row["produced_gas"]) for row in rows)},
+            metrics={
+                "layer_count": len(rows),
+                "total_produced_gas": sum(float(row["produced_gas"]) for row in rows),
+            },
             assumptions=[
                 "Each row uses one layer, one production segment and consistent state boundaries",
                 "Pressure is an average equilibrium reservoir pressure for that layer",
                 "Z factors correspond to the same composition, temperature and pressure states",
                 "Layer results are calculated independently before aggregation",
+                "Both states use the explicitly declared pressure basis; no pressure conversion is performed",
             ],
             warnings=warnings,
             applicability=[
@@ -316,14 +335,24 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
     operation = "storage.inventory.evaluate"
 
     def compute(self, request: StorageInventoryEvaluationRequest) -> ComputationOutput:
-        rows, effective, warnings = calculate_effective_inventory(request.effective_inventory)
+        rows, effective, warnings = calculate_effective_inventory(
+            request.effective_inventory
+        )
         design = _positive(request.design_capacity, "design_capacity")
         working = _optional_positive(request.working_gas, "working_gas")
-        design_working = _optional_positive(request.design_working_gas, "design_working_gas")
+        design_working = _optional_positive(
+            request.design_working_gas, "design_working_gas"
+        )
         peak = _optional_positive(request.peak_daily_rate, "peak_daily_rate")
-        design_peak = _optional_positive(request.design_peak_daily_rate, "design_peak_daily_rate")
-        gas_volume_unit = require_unit(request.effective_inventory.gas_volume_unit, "gas_volume")
-        pressure_unit = require_unit(request.effective_inventory.pressure_unit, "pressure")
+        design_peak = _optional_positive(
+            request.design_peak_daily_rate, "design_peak_daily_rate"
+        )
+        gas_volume_unit = require_unit(
+            request.effective_inventory.gas_volume_unit, "gas_volume"
+        )
+        pressure_unit = require_unit(
+            request.effective_inventory.pressure_unit, "pressure"
+        )
         daily_rate_unit = require_unit(request.daily_rate_unit, "gas_rate")
         accounting_values = (
             request.initial_inventory,
@@ -474,7 +503,9 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
             units=units,
             metrics={
                 "layer_count": len(rows),
-                "effective_inventory_design_compliance_percent": effective / design * 100.0,
+                "effective_inventory_design_compliance_percent": effective
+                / design
+                * 100.0,
                 "book_inventory_fill_percent": book / design * 100.0,
                 "effective_to_book_percent": effective / book * 100.0,
             },
@@ -483,7 +514,9 @@ class StorageInventoryEvaluationAdapter(_StorageInventoryAdapter):
                 "Calculation output is always pending review; approval is an external workflow",
             ],
             warnings=warnings,
-            applicability=["Deterministic inventory-evaluation summary after input-data gating"],
+            applicability=[
+                "Deterministic inventory-evaluation summary after input-data gating"
+            ],
         )
 
 

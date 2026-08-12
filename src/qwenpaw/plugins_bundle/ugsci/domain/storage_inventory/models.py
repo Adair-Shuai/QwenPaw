@@ -33,7 +33,9 @@ class EffectiveInventoryRequest:
     evaluation_state_id: str
     gas_volume_unit: str = "1e8_sm3"
     pressure_unit: str = "MPa"
-    pressure_basis: Literal["absolute"] = "absolute"
+    pressure_basis: Literal["absolute", "apparent_formation", "report_defined"] = (
+        "absolute"
+    )
     denominator_relative_tolerance: float = 1e-9
     maximum_inverse_withdrawal_fraction: float = 100.0
 
