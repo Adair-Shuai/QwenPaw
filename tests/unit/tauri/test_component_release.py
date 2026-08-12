@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import importlib.util
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -98,6 +99,9 @@ def test_builds_delta_when_previous_base_is_supplied(tmp_path):
             encoding="utf-8",
         )
         (root / "main.py").write_text(body, encoding="utf-8")
+    stable = os.urandom(100_000)
+    (base / "stable.bin").write_bytes(stable)
+    (source / "stable.bin").write_bytes(stable)
     private = Ed25519PrivateKey.generate()
     key = base64.b64encode(
         private.private_bytes(
@@ -129,6 +133,79 @@ def test_builds_delta_when_previous_base_is_supplied(tmp_path):
         / "1.0.0-1.1.0"
         / "delta.zip"
     ).is_file()
+
+
+def test_builds_ten_direct_deltas_and_binds_signed_history(tmp_path):
+    module = _load()
+    source = tmp_path / "staged" / "demo"
+    source.mkdir(parents=True)
+    (source / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "2.0.0"}), encoding="utf-8",
+    )
+    stable = os.urandom(100_000)
+    (source / "stable.bin").write_bytes(stable)
+    bases = tmp_path / "bases"
+    for index in range(10):
+        base = bases / f"run-{index}" / "demo"
+        base.mkdir(parents=True)
+        (base / "plugin.json").write_text(
+            json.dumps({"id": "demo", "version": f"1.{index}.0"}),
+            encoding="utf-8",
+        )
+        (base / "stable.bin").write_bytes(stable)
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+    manifest = module.build_release(
+        source.parent, tmp_path / "release", product="qwenpaw",
+        channel="stable", target="windows-x86_64", core_min_version="1.0.0",
+        base_url="https://oss.example", private_key_b64=key, base_root=bases,
+        release_id="run-10", release_version="2.0.0", history_count=10,
+    )
+    document = json.loads(manifest.read_text(encoding="utf-8"))
+    assert len(document["components"]["demo"]["deltas"]) == 10
+    pointer = json.loads(
+        manifest.with_name("windows-x86_64.current.json").read_text(),
+    )
+    history = manifest.with_name("windows-x86_64-run-10.history.json")
+    assert pointer["history_size"] == history.stat().st_size
+    import hashlib
+
+    assert pointer["history_sha256"] == hashlib.sha256(
+        history.read_bytes(),
+    ).hexdigest()
+    private.public_key().verify(
+        base64.b64decode(pointer["history_signature"]), history.read_bytes(),
+    )
+
+
+def test_history_count_above_ten_is_rejected(tmp_path):
+    module = _load()
+    source = tmp_path / "source" / "demo"
+    source.mkdir(parents=True)
+    (source / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}), encoding="utf-8",
+    )
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+    with pytest.raises(ValueError, match="between 1 and 10"):
+        module.build_release(
+            source.parent, tmp_path / "release", product="qwenpaw",
+            channel="stable", target="windows-x86_64", core_min_version="1.0.0",
+            base_url="https://oss.example", private_key_b64=key,
+            release_id="run", history_count=11,
+        )
 
 
 def test_release_id_writes_versioned_manifest_and_signed_pointer(tmp_path):

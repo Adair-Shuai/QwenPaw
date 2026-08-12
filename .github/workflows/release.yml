@@ -263,6 +263,8 @@ jobs:
       # The human release version is carried separately in the signed pointer.
       release_id: ${{ needs.resolve.outputs.sha }}-${{ github.run_id }}
       upload_to_oss: false
+      history_count: 10
+      delta_max_ratio: "0.8"
     secrets: inherit
 
   # ── Gate: publish jobs below run only if every prepare job above is green ──
