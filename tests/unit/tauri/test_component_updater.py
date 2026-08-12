@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 from __future__ import annotations
 
 import base64
 import hashlib
 import json
+import os
 import zipfile
 from pathlib import Path
 
@@ -13,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from qwenpaw.components.update import ComponentUpdateError, ComponentUpdater
 from qwenpaw.components.update import ComponentUpdatePlan
+import qwenpaw.components.update as component_update
 
 
 def _plugin(root: Path, version: str, **files: str) -> None:
@@ -157,9 +160,7 @@ def test_delta_can_atomically_replace_installed_directory(tmp_path):
     assert (installed / "main").read_text(encoding="utf-8") == "new"
 
 
-def test_active_pointer_is_atomic_and_optional(
-    tmp_path,
-):  # pylint: disable=protected-access
+def test_active_pointer_is_atomic_and_optional(tmp_path):
     active = tmp_path / "components" / "active.json"
     updater = ComponentUpdater(
         public_key_b64="",
@@ -503,3 +504,309 @@ def test_interrupted_activation_restores_previous_before_planning(tmp_path):
     assert (destination / "data" / "db.json").read_text(
         encoding="utf-8",
     ) == "important"
+
+
+def test_interrupted_activation_commits_valid_new_destination(tmp_path):
+    destination = tmp_path / "plugins" / "demo"
+    previous = destination.parent / ".demo.previous"
+    _plugin(previous, "1.0.0", main="old")
+    _plugin(destination, "1.1.0", main="new")
+    expected = component_update._inventory(destination)
+    active = tmp_path / "components" / "active.json"
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    updater.recover_interrupted_activation(
+        "demo",
+        destination,
+        expected_files=expected,
+        expected_version="1.1.0",
+    )
+    assert not previous.exists()
+    assert (
+        json.loads(active.read_text(encoding="utf-8"))["components"]["demo"][
+            "version"
+        ]
+        == "1.1.0"
+    )
+
+
+def test_stale_previous_is_cleaned_when_active_matches_installed(tmp_path):
+    destination = tmp_path / "plugins" / "demo"
+    previous = destination.parent / ".demo.previous"
+    _plugin(previous, "1.0.0", main="old")
+    _plugin(destination, "1.1.0", main="current")
+    active = tmp_path / "components" / "active.json"
+    active.parent.mkdir(parents=True)
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "target": "windows-x86_64",
+                "components": {
+                    "demo": {"version": "1.1.0", "path": str(destination)},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    updater.recover_interrupted_activation(
+        "demo",
+        destination,
+        expected_files={"not-current": {}},
+        expected_version="1.2.0",
+    )
+    assert not previous.exists()
+    assert (
+        json.loads((destination / "plugin.json").read_text(encoding="utf-8"))[
+            "version"
+        ]
+        == "1.1.0"
+    )
+
+
+def test_runtime_inventory_rejects_hard_links(tmp_path):
+    component = tmp_path / "demo"
+    _plugin(component, "1.0.0", main="content")
+    try:
+        os.link(component / "main", component / "alias")
+    except OSError as exc:
+        pytest.skip(f"hard links are unavailable: {exc}")
+    with pytest.raises(ComponentUpdateError, match="hard link"):
+        component_update._inventory(component)
+
+
+def test_delta_restores_and_verifies_file_modes(monkeypatch, tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    installed = tmp_path / "plugins" / "demo"
+    _plugin(installed, "1.0.0", main="old")
+    plugin = json.dumps({"id": "demo", "version": "1.1.0"}).encode()
+    main = b"new"
+    base_plugin = (installed / "plugin.json").read_bytes()
+    base_main = (installed / "main").read_bytes()
+    inventory = lambda payload, mode: {
+        "size": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "mode": mode,
+    }
+    delta = {
+        "schema_version": 1,
+        "component": "demo",
+        "base_version": "1.0.0",
+        "target_version": "1.1.0",
+        "add": [],
+        "delete": [],
+        "replace": ["main", "plugin.json"],
+        "base_files": {
+            "main": inventory(base_main, 0o644),
+            "plugin.json": inventory(base_plugin, 0o644),
+        },
+        "files": {
+            "main": inventory(main, 0o755),
+            "plugin.json": inventory(plugin, 0o644),
+        },
+        "final_files": {
+            "main": inventory(main, 0o755),
+            "plugin.json": inventory(plugin, 0o644),
+        },
+    }
+    archive = tmp_path / "delta.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("delta.json", json.dumps(delta))
+        bundle.writestr("files/main", main)
+        bundle.writestr("files/plugin.json", plugin)
+    modes: dict[str, int] = {}
+    monkeypatch.setattr(
+        component_update,
+        "_supports_posix_modes",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        component_update,
+        "_file_mode",
+        lambda path: modes.get(path.name, 0o644),
+    )
+    monkeypatch.setattr(
+        Path,
+        "chmod",
+        lambda path, mode: modes.__setitem__(path.name, mode),
+    )
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    plan = ComponentUpdatePlan(
+        "demo",
+        "1.0.0",
+        "1.1.0",
+        "delta",
+        "https://oss/delta.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+    )
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"demo"},
+        target="macos-aarch64",
+        core_version="1.0.0",
+    )
+
+    updater.apply_delta(plan, installed, archive, installed)
+
+    assert modes["main"] == 0o755
+    assert component_update._inventory(installed)["main"]["mode"] == 0o755
+
+
+def test_full_restores_and_verifies_file_modes(monkeypatch, tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    plugin = json.dumps({"id": "demo", "version": "1.1.0"}).encode()
+    main = b"new"
+    inventory = lambda payload, mode: {
+        "size": len(payload),
+        "sha256": hashlib.sha256(payload).hexdigest(),
+        "mode": mode,
+    }
+    expected = {
+        "main": inventory(main, 0o755),
+        "plugin.json": inventory(plugin, 0o644),
+    }
+    archive = tmp_path / "full.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("main", main)
+        bundle.writestr("plugin.json", plugin)
+    modes: dict[str, int] = {}
+    monkeypatch.setattr(
+        component_update,
+        "_supports_posix_modes",
+        lambda: True,
+    )
+    monkeypatch.setattr(
+        component_update,
+        "_file_mode",
+        lambda path: modes.get(path.name, 0o644),
+    )
+    monkeypatch.setattr(
+        Path,
+        "chmod",
+        lambda path, mode: modes.__setitem__(path.name, mode),
+    )
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    plan = ComponentUpdatePlan(
+        "demo",
+        None,
+        "1.1.0",
+        "full",
+        "https://oss/full.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+    )
+    destination = tmp_path / "plugins" / "demo"
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"demo"},
+        target="macos-aarch64",
+        core_version="1.0.0",
+    )
+
+    updater.apply_full(plan, archive, destination, expected_files=expected)
+
+    assert modes["main"] == 0o755
+    assert component_update._inventory(destination)["main"]["mode"] == 0o755
+
+
+def test_invalid_delta_json_is_wrapped(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    installed = tmp_path / "plugins" / "demo"
+    _plugin(installed, "1.0.0", main="old")
+    archive = tmp_path / "delta.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("delta.json", b"{")
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    plan = ComponentUpdatePlan(
+        "demo",
+        "1.0.0",
+        "1.1.0",
+        "delta",
+        "https://oss/delta.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+    )
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+
+    with pytest.raises(ComponentUpdateError, match="invalid delta.json JSON"):
+        updater.apply_delta(plan, installed, archive, installed)
+
+
+def test_invalid_full_plugin_json_is_wrapped(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    plugin = b"{"
+    archive = tmp_path / "full.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("plugin.json", plugin)
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    expected = {
+        "plugin.json": {
+            "size": len(plugin),
+            "sha256": hashlib.sha256(plugin).hexdigest(),
+        },
+    }
+    plan = ComponentUpdatePlan(
+        "demo",
+        None,
+        "1.1.0",
+        "full",
+        "https://oss/full.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+    )
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+
+    with pytest.raises(ComponentUpdateError, match="invalid full plugin JSON"):
+        updater.apply_full(
+            plan,
+            archive,
+            tmp_path / "plugins" / "demo",
+            expected_files=expected,
+        )

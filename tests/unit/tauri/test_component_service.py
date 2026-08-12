@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=unnecessary-lambda,use-implicit-booleaness-not-comparison
 from __future__ import annotations
 
 import json
@@ -90,7 +91,7 @@ def test_existing_newer_plugin_is_not_downgraded(monkeypatch, tmp_path):
         _Client(manifest),
         "https://oss/manifest.json",
     )
-    assert not service.check()
+    assert service.check() == []
 
 
 def test_uninstalled_plugin_is_not_offered_or_installed(monkeypatch, tmp_path):
@@ -131,7 +132,7 @@ def test_uninstalled_plugin_is_not_offered_or_installed(monkeypatch, tmp_path):
         _Client(manifest),
         "https://oss/manifest.json",
     )
-    assert not service.check()
+    assert service.check() == []
     assert service.install("demo") == {
         "component": "demo",
         "updated": False,
@@ -151,23 +152,15 @@ def test_startup_updates_are_disabled_by_default(monkeypatch):
 def test_startup_update_failure_is_non_fatal(monkeypatch):
     class _BrokenService:
         def __init__(self):
-            self.client = type(
-                "Client",
-                (),
-                {"close": staticmethod(lambda: None)},
-            )()
+            self.client = type("Client", (), {"close": lambda self: None})()
 
-        def check(self):
+        def snapshot(self):
             raise RuntimeError("offline")
 
     monkeypatch.setenv("QWENPAW_COMPONENT_UPDATES", "startup")
-
-    def configured_service():
-        return _BrokenService()
-
     monkeypatch.setattr(
         "qwenpaw.components.service.configured_service",
-        configured_service,
+        lambda: _BrokenService(),
     )
     result = run_startup_updates()
     assert result["enabled"] is True
@@ -184,19 +177,14 @@ def test_manual_update_is_queued_for_safe_restart(monkeypatch, tmp_path):
                 (),
                 {"managed_components": {"demo"}},
             )()
-            self.client = type(
-                "Client",
-                (),
-                {"close": staticmethod(lambda: None)},
-            )()
+            self.client = type("Client", (), {"close": lambda self: None})()
 
         def check(self):
             return [{"component": "demo"}]
 
-    service = _Service()
     monkeypatch.setattr(
         "qwenpaw.components.service.configured_service",
-        service.__class__,
+        lambda: _Service(),
     )
     monkeypatch.setattr(
         "qwenpaw.components.service._PENDING_UPDATES_PATH",
@@ -224,16 +212,13 @@ def test_pending_update_runs_even_when_automatic_updates_are_disabled(
 
     class _Service:
         def __init__(self):
-            self.client = type(
-                "Client",
-                (),
-                {"close": staticmethod(lambda: None)},
-            )()
+            self.client = type("Client", (), {"close": lambda self: None})()
 
-        def check(self):
-            return [{"component": "demo"}]
+        def snapshot(self):
+            return {"release": "one"}, [{"component": "demo"}]
 
-        def install(self, component):
+        def _install_from_manifest(self, component, manifest):
+            assert manifest == {"release": "one"}
             return {"component": component, "updated": True}
 
     monkeypatch.delenv("QWENPAW_COMPONENT_UPDATES", raising=False)
@@ -241,10 +226,9 @@ def test_pending_update_runs_even_when_automatic_updates_are_disabled(
         "qwenpaw.components.service._PENDING_UPDATES_PATH",
         pending,
     )
-    service = _Service()
     monkeypatch.setattr(
         "qwenpaw.components.service.configured_service",
-        service.__class__,
+        lambda: _Service(),
     )
     result = run_startup_updates()
     assert result["updated"] == [{"component": "demo", "updated": True}]
@@ -260,26 +244,93 @@ def test_unavailable_pending_update_is_retained(monkeypatch, tmp_path):
 
     class _Service:
         def __init__(self):
-            self.client = type(
-                "Client",
-                (),
-                {"close": staticmethod(lambda: None)},
-            )()
+            self.client = type("Client", (), {"close": lambda self: None})()
 
-        def check(self):
-            return []
+        def snapshot(self):
+            return {"release": "one"}, []
 
     monkeypatch.delenv("QWENPAW_COMPONENT_UPDATES", raising=False)
     monkeypatch.setattr(
         "qwenpaw.components.service._PENDING_UPDATES_PATH",
         pending,
     )
-    service = _Service()
     monkeypatch.setattr(
         "qwenpaw.components.service.configured_service",
-        service.__class__,
+        lambda: _Service(),
     )
     run_startup_updates()
     assert json.loads(pending.read_text(encoding="utf-8"))["components"] == [
         "demo",
     ]
+
+
+def test_startup_batch_reuses_one_manifest_snapshot(monkeypatch, tmp_path):
+    manifest = {
+        "components": {
+            component: {
+                "version": "1.0.0",
+                "files": {},
+                "full": {
+                    "url": f"https://oss/{component}.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                    "size": 1,
+                },
+            }
+            for component in ("alpha", "beta")
+        },
+    }
+
+    class _SnapshotClient:
+        def __init__(self):
+            self.fetches = 0
+
+        def fetch_manifest(self, _url):
+            self.fetches += 1
+            return manifest
+
+        def record_failure(self, _component, _exc):
+            raise AssertionError("installation should not fail")
+
+        def close(self):
+            pass
+
+    client = _SnapshotClient()
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"alpha", "beta"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(
+        updater,
+        client,
+        "https://oss/current.json",
+    )
+    installed: list[tuple[str, object]] = []
+
+    def fake_install(component, *, manifest=None):
+        installed.append((component, manifest))
+        return {"component": component, "updated": True}
+
+    monkeypatch.setattr(service, "_install_component", fake_install)
+    monkeypatch.setattr(
+        "qwenpaw.components.service.get_plugins_dir",
+        lambda: tmp_path / "plugins",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._PENDING_UPDATES_PATH",
+        tmp_path / "missing.json",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: service,
+    )
+    monkeypatch.setenv("QWENPAW_COMPONENT_UPDATES", "startup")
+
+    result = run_startup_updates()
+
+    assert client.fetches == 1
+    assert [component for component, _ in installed] == ["alpha", "beta"]
+    assert all(snapshot is manifest for _, snapshot in installed)
+    assert len(result["updated"]) == 2

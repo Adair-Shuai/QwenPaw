@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Opt-in signed component planning and atomic plugin activation."""
 
+# pylint: disable=too-many-return-statements
+
 from __future__ import annotations
 
 import base64
@@ -110,6 +112,26 @@ def _is_link_like(path: Path) -> bool:
     )
 
 
+def _supports_posix_modes() -> bool:
+    return os.name != "nt"
+
+
+def _file_mode(path: Path) -> int | None:
+    if not _supports_posix_modes():
+        return None
+    return stat.S_IMODE(path.stat().st_mode)
+
+
+def _apply_expected_mode(path: Path, metadata: Any, *, relative: str) -> None:
+    if not isinstance(metadata, dict) or "mode" not in metadata:
+        return
+    mode = metadata["mode"]
+    if type(mode) is not int or not 0 <= mode <= 0o7777:
+        raise ComponentUpdateError(f"invalid file mode for {relative}")
+    if _supports_posix_modes():
+        path.chmod(mode)
+
+
 def _normalize_preserve_paths(
     value: Any,
     *,
@@ -167,17 +189,24 @@ def _inventory(
 ) -> dict[str, dict[str, Any]]:
     result: dict[str, dict[str, Any]] = {}
     for path in root.rglob("*"):
-        if path.is_symlink():
-            raise ComponentUpdateError(f"symlink in component tree: {path}")
+        if _is_link_like(path):
+            raise ComponentUpdateError(f"link in component tree: {path}")
         if not path.is_file():
             continue
+        metadata = path.stat()
+        if metadata.st_nlink > 1:
+            raise ComponentUpdateError(f"hard link in component tree: {path}")
         relative = _safe_path(path.relative_to(root).as_posix())
         if _is_preserved(relative, preserve_paths):
             continue
-        result[relative] = {
-            "size": path.stat().st_size,
+        entry: dict[str, Any] = {
+            "size": metadata.st_size,
             "sha256": _sha256(path),
         }
+        mode = _file_mode(path)
+        if mode is not None:
+            entry["mode"] = mode
+        result[relative] = entry
     return dict(sorted(result.items()))
 
 
@@ -187,12 +216,28 @@ def _content_matches(
 ) -> bool:
     if set(actual) != set(expected):
         return False
-    return all(
-        actual[path].get("size") == metadata.get("size")
-        and actual[path].get("sha256")
-        == str(metadata.get("sha256", "")).lower()
-        for path, metadata in expected.items()
-    )
+    for path, metadata in expected.items():
+        if not isinstance(metadata, dict):
+            return False
+        if "mode" in metadata and (
+            type(metadata["mode"]) is not int
+            or not 0 <= metadata["mode"] <= 0o7777
+        ):
+            return False
+        if actual[path].get("size") != metadata.get("size"):
+            return False
+        if (
+            actual[path].get("sha256")
+            != str(metadata.get("sha256", "")).lower()
+        ):
+            return False
+        if (
+            _supports_posix_modes()
+            and "mode" in metadata
+            and actual[path].get("mode") != metadata["mode"]
+        ):
+            return False
+    return True
 
 
 def _verify_signature(
@@ -558,6 +603,7 @@ class ComponentUpdater:
         component: str,
         destination: Path,
         expected_files: dict[str, dict[str, Any]] | None = None,
+        expected_version: str | None = None,
         preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
     ) -> None:
         """Resolve a crash window before reading the installed component."""
@@ -589,6 +635,7 @@ class ComponentUpdater:
                     "interrupted previous component identity mismatch",
                 )
             previous.replace(destination)
+            self._commit_active(component, str(plugin["version"]), destination)
             return
         active_version: str | None = None
         if self.active_path is not None and self.active_path.is_file():
@@ -623,6 +670,18 @@ class ComponentUpdater:
         ):
             pass
         if (
+            expected_files is not None
+            and expected_version is not None
+            and installed_version == expected_version
+            and _content_matches(
+                _inventory(destination, preserve_paths),
+                expected_files,
+            )
+        ):
+            self._commit_active(component, installed_version, destination)
+            shutil.rmtree(previous)
+            return
+        if (
             active_version is not None
             and active_version == installed_version
             and expected_files is not None
@@ -631,6 +690,10 @@ class ComponentUpdater:
                 expected_files,
             )
         ):
+            shutil.rmtree(previous)
+            return
+        if active_version is not None and active_version == installed_version:
+            _inventory(destination, preserve_paths)
             shutil.rmtree(previous)
             return
         raise ComponentUpdateError(
@@ -897,7 +960,16 @@ class ComponentUpdater:
                     raise ComponentUpdateError(
                         "delta artifact member exceeds safety limit",
                     )
-                delta = json.loads(bundle.read("delta.json"))
+                try:
+                    delta = json.loads(bundle.read("delta.json"))
+                except (
+                    KeyError,
+                    UnicodeDecodeError,
+                    json.JSONDecodeError,
+                ) as exc:
+                    raise ComponentUpdateError(
+                        "invalid delta.json JSON",
+                    ) from exc
                 if not isinstance(delta, dict):
                     raise ComponentUpdateError(
                         "delta.json must contain an object",
@@ -958,11 +1030,23 @@ class ComponentUpdater:
                     candidate = (staged / relative).resolve()
                     candidate.relative_to(staged.resolve())
                     candidate.parent.mkdir(parents=True, exist_ok=True)
-                    with bundle.open(
-                        f"files/{relative}",
-                    ) as source, candidate.open("wb") as target:
+                    with (
+                        bundle.open(
+                            f"files/{relative}",
+                        ) as source,
+                        candidate.open("wb") as target,
+                    ):
                         shutil.copyfileobj(source, target, length=1024 * 1024)
+                    _apply_expected_mode(
+                        candidate,
+                        delta.get("final_files", {}).get(relative),
+                        relative=relative,
+                    )
             expected = delta.get("final_files", {})
+            if not isinstance(expected, dict):
+                raise ComponentUpdateError(
+                    "delta final_files must contain an object",
+                )
             actual = _inventory(staged, plan.preserve_paths)
             if not _content_matches(actual, expected):
                 raise ComponentUpdateError("final file verification failed")
@@ -970,9 +1054,14 @@ class ComponentUpdater:
                 raise ComponentUpdateError(
                     "updated component has no plugin.json",
                 )
-            plugin = json.loads(
-                (staged / "plugin.json").read_text(encoding="utf-8"),
-            )
+            try:
+                plugin = json.loads(
+                    (staged / "plugin.json").read_text(encoding="utf-8"),
+                )
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ComponentUpdateError(
+                    "invalid updated plugin JSON",
+                ) from exc
             if (
                 plugin.get("id") != plan.component
                 or str(plugin.get("version")) != plan.target_version
@@ -1077,10 +1166,18 @@ class ComponentUpdater:
                     candidate = (staged / relative).resolve()
                     candidate.relative_to(staged.resolve())
                     candidate.parent.mkdir(parents=True, exist_ok=True)
-                    with bundle.open(info) as source, candidate.open(
-                        "wb",
-                    ) as target:
+                    with (
+                        bundle.open(info) as source,
+                        candidate.open(
+                            "wb",
+                        ) as target,
+                    ):
                         shutil.copyfileobj(source, target, length=1024 * 1024)
+                    _apply_expected_mode(
+                        candidate,
+                        expected_files.get(relative),
+                        relative=relative,
+                    )
             if not _content_matches(
                 _inventory(staged, plan.preserve_paths),
                 expected_files,
@@ -1089,7 +1186,10 @@ class ComponentUpdater:
             plugin_path = staged / "plugin.json"
             if not plugin_path.is_file():
                 raise ComponentUpdateError("full artifact has no plugin.json")
-            plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+            try:
+                plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ComponentUpdateError("invalid full plugin JSON") from exc
             if (
                 plugin.get("id") != plan.component
                 or str(plugin.get("version")) != plan.target_version

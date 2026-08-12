@@ -5,6 +5,8 @@ No network request is performed unless the OSS endpoint, public key, and
 managed allowlist are all explicitly configured.
 """
 
+# pylint: disable=too-many-branches
+
 from __future__ import annotations
 
 import os
@@ -135,7 +137,39 @@ class ComponentUpdateService:
                 plans.append(asdict(plan))
         return plans
 
+    def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+        """Fetch one manifest and derive plans from that snapshot."""
+        with self._lock:
+            manifest = self.client.fetch_manifest(self.manifest_url)
+        plugins = get_plugins_dir()
+        plans: list[dict[str, Any]] = []
+        for component in sorted(self.updater.managed_components):
+            installed = plugins / component
+            plan = self.updater.plan(
+                manifest,
+                component,
+                installed if installed.is_dir() else None,
+            )
+            if plan is not None:
+                plans.append(asdict(plan))
+        return manifest, plans
+
     def install(self, component: str) -> dict[str, Any]:
+        return self._install(component, manifest=None)
+
+    def _install_from_manifest(
+        self,
+        component: str,
+        manifest: dict[str, Any],
+    ) -> dict[str, Any]:
+        return self._install(component, manifest=manifest)
+
+    def _install(
+        self,
+        component: str,
+        *,
+        manifest: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         token = os.environ.get("QWENPAW_COMPONENT_INSTALL_TOKEN", "").strip()
         presented = os.environ.get(
             "QWENPAW_COMPONENT_INSTALL_AUTH",
@@ -146,21 +180,32 @@ class ComponentUpdateService:
                 "component installation authorization failed",
             )
         with self._lock:
-            return self._install_locked(component)
+            return self._install_locked(component, manifest=manifest)
 
-    def _install_locked(self, component: str) -> dict[str, Any]:
+    def _install_locked(
+        self,
+        component: str,
+        *,
+        manifest: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         try:
-            return self._install_component(component)
+            return self._install_component(component, manifest=manifest)
         except Exception as exc:
             self.client.record_failure(component, exc)
             raise
 
-    def _install_component(self, component: str) -> dict[str, Any]:
+    def _install_component(
+        self,
+        component: str,
+        *,
+        manifest: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         if component not in self.updater.managed_components:
             raise ComponentUpdateError(
                 f"component is not managed: {component}",
             )
-        manifest = self.client.fetch_manifest(self.manifest_url)
+        if manifest is None:
+            manifest = self.client.fetch_manifest(self.manifest_url)
         plugins = get_plugins_dir()
         destination = plugins / component
         entry = manifest["components"].get(component)
@@ -171,9 +216,16 @@ class ComponentUpdateService:
         self.updater.recover_interrupted_activation(
             component,
             destination,
-            expected_files=entry.get("files")
-            if isinstance(entry.get("files"), dict)
-            else None,
+            expected_files=(
+                entry.get("files")
+                if isinstance(entry.get("files"), dict)
+                else None
+            ),
+            expected_version=(
+                str(entry.get("version"))
+                if isinstance(entry.get("version"), str)
+                else None
+            ),
             preserve_paths=tuple(entry.get("preserve") or ("engines",)),
         )
         installed = destination if destination.is_dir() else None
@@ -263,7 +315,12 @@ def run_startup_updates() -> dict[str, Any]:
     errors: list[dict[str, str]] = []
     remaining_pending = set(pending_components)
     try:
-        available = {str(plan["component"]) for plan in service.check()}
+        manifest: dict[str, Any] | None = None
+        if hasattr(service, "snapshot"):
+            manifest, plans = service.snapshot()
+        else:
+            plans = service.check()
+        available = {str(plan["component"]) for plan in plans}
         selected = (
             available
             if mode == "startup"
@@ -271,7 +328,18 @@ def run_startup_updates() -> dict[str, Any]:
         )
         for component in sorted(selected):
             try:
-                updated.append(service.install(component))
+                if manifest is not None and hasattr(
+                    service,
+                    "_install_from_manifest",
+                ):
+                    # pylint: disable-next=protected-access
+                    result = service._install_from_manifest(
+                        component,
+                        manifest,
+                    )
+                else:
+                    result = service.install(component)
+                updated.append(result)
                 remaining_pending.discard(component)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(

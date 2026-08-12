@@ -219,18 +219,33 @@ jobs:
           }
           publish_immutable "$manifest" "$manifest_uri" "manifest ${manifest_name}"
           publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${manifest_name}.sig"
-          history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
-          publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
-          publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
           pointer="component-release/metadata/components/stable/${{ matrix.target }}.current.json"
           remote_pointer="${RUNNER_TEMP}/${{ matrix.target }}.remote-current.json"
           if ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$remote_pointer" >/dev/null 2>&1; then
             python scripts/pack-tauri/check_component_pointer_promotion.py \
               --local "$pointer" --remote "$remote_pointer" --target '${{ matrix.target }}'
+            history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
+            remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["history_url"])' "$remote_pointer")
+            remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
+            remote_history="${RUNNER_TEMP}/${{ matrix.target }}.remote-history.json"
+            remote_history_sig="${RUNNER_TEMP}/${{ matrix.target }}.remote-history.json.sig"
+            ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
+            ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
+            python scripts/pack-tauri/merge_component_history.py \
+              --local-pointer "$pointer" \
+              --local-history "$history" \
+              --local-history-signature "${history}.sig" \
+              --remote-pointer "$remote_pointer" \
+              --remote-history "$remote_history" \
+              --remote-history-signature "$remote_history_sig" \
+              --target '${{ matrix.target }}' --limit '${{ inputs.history_count || 10 }}'
           else
             python scripts/pack-tauri/check_component_pointer_promotion.py \
               --local "$pointer" --target '${{ matrix.target }}'
           fi
+          history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
+          publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
+          publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
           pointer_tmp="oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ossutil cp "$pointer" "$pointer_tmp" --acl public-read
           ossutil ls "$pointer_tmp" >/dev/null

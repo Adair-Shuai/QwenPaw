@@ -570,24 +570,59 @@ jobs:
             manifest_sig_uri="${manifest_uri}.sig"
             publish_immutable "$manifest" "$manifest_uri" "manifest ${base}"
             publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${base}.sig"
-          done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' -print)
+          done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' ! -name '*.history.json' -print)
       - name: Promote signed component pointers last
         if: ${{ !inputs.dry_run }}
         env:
           COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
+          publish_immutable() {
+            local file="$1" uri="$2" label="$3"
+            local remote="${RUNNER_TEMP}/component-${RANDOM}-$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              cmp -s "$file" "$remote" || { echo "immutable ${label} differs" >&2; exit 1; }
+              rm -f "$remote"
+              return
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable" \
+              --header "x-oss-forbid-overwrite:true"
+            cmp -s "$file" <(ossutil cat "$uri")
+          }
           for pointer in component-release/metadata/components/stable/*.current.json; do
             base="$(basename "$pointer")"
             target="${base%.current.json}"
             remote_pointer="${RUNNER_TEMP}/${target}.remote-current.json"
             if ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${base}" "$remote_pointer" >/dev/null 2>&1; then
+              remote_exists=true
               python scripts/pack-tauri/check_component_pointer_promotion.py \
                 --local "$pointer" --remote "$remote_pointer" --target "$target"
             else
+              remote_exists=false
               python scripts/pack-tauri/check_component_pointer_promotion.py \
                 --local "$pointer" --target "$target"
             fi
+            history=$(find component-release/metadata/components/stable -maxdepth 1 -type f -name "${target}-*.history.json" -print -quit)
+            test -s "$history"
+            if [[ "$remote_exists" == true ]]; then
+              remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["history_url"])' "$remote_pointer")
+              remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
+              remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
+              remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
+              ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
+              ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
+              python scripts/pack-tauri/merge_component_history.py \
+                --local-pointer "$pointer" \
+                --local-history "$history" \
+                --local-history-signature "${history}.sig" \
+                --remote-pointer "$remote_pointer" \
+                --remote-history "$remote_history" \
+                --remote-history-signature "$remote_history_sig" \
+                --target "$target" --limit 10
+            fi
+            publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
+            publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
             tmp="oss://${OSS_BUCKET}/metadata/components/stable/${base}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             ossutil cp "$pointer" "$tmp" --acl public-read
             ossutil ls "$tmp" >/dev/null
