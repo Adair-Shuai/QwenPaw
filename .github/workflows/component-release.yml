@@ -48,8 +48,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        target: [windows-x86_64, macos-aarch64, macos-x86_64]
-    if: ${{ inputs.target == '' || inputs.target == matrix.target }}
+        # Build all targets for unified releases, or exactly the requested
+        # target for a manual/single-target invocation.  This is expressed in
+        # the matrix itself because job-level `if` is evaluated before matrix
+        # expansion and cannot safely reference `matrix.target`.
+        target: ${{ fromJSON(inputs.target == '' && '["windows-x86_64","macos-aarch64","macos-x86_64"]' || format('["{0}"]', inputs.target)) }}
     runs-on: ubuntu-latest
     env:
       COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
