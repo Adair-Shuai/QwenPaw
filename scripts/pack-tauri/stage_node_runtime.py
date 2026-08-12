@@ -61,11 +61,17 @@ def _http_get(url: str) -> bytes:
 
 def _verify_sha256(data: bytes, expected: str) -> None:
     expected = expected.strip().lower()
-    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
-        raise SystemExit("Node runtime SHA-256 must be a 64-character hexadecimal digest")
+    if len(expected) != 64 or any(
+        c not in "0123456789abcdef" for c in expected
+    ):
+        raise SystemExit(
+            "Node runtime SHA-256 must be a 64-character hexadecimal digest",
+        )
     actual = hashlib.sha256(data).hexdigest()
     if actual != expected:
-        raise SystemExit(f"Node runtime SHA-256 mismatch: expected {expected}, got {actual}")
+        raise SystemExit(
+            f"Node runtime SHA-256 mismatch: expected {expected}, got {actual}",
+        )
 
 
 def _official_sha256(url: str, archive_name: str) -> str:
@@ -89,7 +95,9 @@ def _extract(archive: Path, suffix: str, workdir: Path) -> Path:
                 _validate_archive_member(info.filename, root)
                 mode = (info.external_attr >> 16) & 0o170000
                 if mode in {0o120000, 0o060000, 0o020000}:
-                    raise SystemExit(f"unsafe ZIP link/device member: {info.filename}")
+                    raise SystemExit(
+                        f"unsafe ZIP link/device member: {info.filename}",
+                    )
             for info in infos:
                 target = (root / info.filename).resolve()
                 _validate_archive_member(info.filename, root)
@@ -134,7 +142,9 @@ def _extract_tar_safely(tar: tarfile.TarFile, workdir: Path) -> None:
         try:
             target.relative_to(root)
         except ValueError:
-            raise SystemExit(f"tar member resolves outside target: {member.name}") from None
+            raise SystemExit(
+                f"tar member resolves outside target: {member.name}",
+            ) from None
         if member.isdir():
             target.mkdir(parents=True, exist_ok=True)
             continue
@@ -143,7 +153,9 @@ def _extract_tar_safely(tar: tarfile.TarFile, workdir: Path) -> None:
             try:
                 link_target.relative_to(root)
             except ValueError:
-                raise SystemExit(f"tar symlink escapes target: {member.name}") from None
+                raise SystemExit(
+                    f"tar symlink escapes target: {member.name}",
+                ) from None
             target.parent.mkdir(parents=True, exist_ok=True)
             target.symlink_to(member.linkname)
             continue
@@ -177,6 +189,7 @@ def prune_runtime(dest: Path) -> int:
 
 
 def main() -> None:
+    # pylint: disable=too-many-statements
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dest", required=True)
     parser.add_argument(
@@ -197,7 +210,10 @@ def main() -> None:
     marker = dest / ".node-runtime-version"
     archive_name = f"node-{version}-{target}.{suffix}"
     url = f"{NODE_DIST_URL}/{version}/{archive_name}"
-    production_hashes = os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower() in {"1", "true", "yes"}
+    production_hashes = os.environ.get(
+        "QWENPAW_REQUIRE_RUNTIME_HASHES",
+        "",
+    ).lower() in {"1", "true", "yes"}
     if production_hashes and not args.sha256:
         raise SystemExit("production build requires QWENPAW_NODE_SHA256")
     expected_sha256 = args.sha256 or _official_sha256(url, archive_name)
@@ -233,7 +249,10 @@ def main() -> None:
         for item in extracted.iterdir():
             shutil.move(str(item), staged_dest / item.name)
 
-        if not (staged_dest / ("node.exe" if platform.system() == "Windows" else "bin/node")).is_file():
+        if not (
+            staged_dest
+            / ("node.exe" if platform.system() == "Windows" else "bin/node")
+        ).is_file():
             raise SystemExit("staging failed: node executable missing")
         backup = dest.with_name(f".{dest.name}.previous")
         if backup.exists():

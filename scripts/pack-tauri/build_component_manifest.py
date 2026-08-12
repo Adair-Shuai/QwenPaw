@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import os
 import re
@@ -13,7 +12,11 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from component_common import canonical_json, file_inventory, read_plugin_metadata
+from component_common import (
+    canonical_json,
+    file_inventory,
+    read_plugin_metadata,
+)
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 
@@ -32,10 +35,16 @@ def build_manifest(
     full_signature: str | None = None,
     deltas: list[dict] | None = None,
 ) -> dict:
-    if not all(isinstance(value, str) and value.strip() for value in (product, channel, target, core_min_version)):
-        raise ValueError("product, channel, target and core_min_version must be non-empty strings")
+    if not all(
+        isinstance(value, str) and value.strip()
+        for value in (product, channel, target, core_min_version)
+    ):
+        raise ValueError(
+            "product, channel, target and core_min_version must be non-empty strings",
+        )
     try:
         from packaging.version import Version
+
         Version(core_min_version)
     except Exception as exc:
         raise ValueError("invalid core_min_version") from exc
@@ -51,9 +60,16 @@ def build_manifest(
         "files": inventory,
     }
     if full_url:
-        if type(full_size) is not int or full_size < 0 or not full_sha256 or not _SHA256.fullmatch(full_sha256) or not full_signature:
+        if (
+            type(full_size) is not int
+            or full_size < 0
+            or not full_sha256
+            or not _SHA256.fullmatch(full_sha256)
+            or not full_signature
+        ):
             raise ValueError(
-                "--full-size, --full-sha256 and --full-signature are required when --full-url is set",
+                "--full-size, --full-sha256 and --full-signature are required "
+                "when --full-url is set",
             )
         entry["full"] = {
             "url": full_url,
@@ -92,7 +108,10 @@ def main() -> int:
     parser.add_argument("--delta-json", action="append", default=[])
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    deltas = [json.loads(Path(path).read_text(encoding="utf-8")) for path in args.delta_json]
+    deltas = [
+        json.loads(Path(path).read_text(encoding="utf-8"))
+        for path in args.delta_json
+    ]
     manifest = build_manifest(
         args.root.resolve(),
         product=args.product,
@@ -108,7 +127,11 @@ def main() -> int:
     )
     args.output.parent.mkdir(parents=True, exist_ok=True)
     payload = canonical_json(manifest)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{args.output.name}.", suffix=".tmp", dir=args.output.parent)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{args.output.name}.",
+        suffix=".tmp",
+        dir=args.output.parent,
+    )
     os.close(fd)
     temporary = Path(temporary_name)
     try:

@@ -269,7 +269,10 @@ class TestShouldSkipAuthDefenseInDepth:
     @patch("qwenpaw.app.auth.is_auth_enabled", return_value=True)
     @patch("qwenpaw.app.auth.has_registered_users", return_value=True)
     def test_bundled_plugin_status_is_public_without_token(
-        self, _auth_enabled, _registered, mock_cfg,
+        self,
+        _auth_enabled,
+        _registered,
+        mock_cfg,
     ):
         """Desktop startup can poll sync state before login completes."""
         from qwenpaw.app.auth import AuthMiddleware  # noqa: F811

@@ -40,7 +40,9 @@ def _request(
     )
 
 
-def _hutubi_reconstructed_layers() -> tuple[EffectiveInventoryLayerRequest, ...]:
+def _hutubi_reconstructed_layers() -> (
+    tuple[EffectiveInventoryLayerRequest, ...]
+):
     """Reconstruct formula inputs from published layer results and Qp=30.2.
 
     The PPT publishes 78.3 and 26.7 (total 105.0) but does not expose the
@@ -93,10 +95,14 @@ def test_effective_inventory_formula_exact_case() -> None:
     assert result.result["layers"][0]["withdrawal_fraction"] == pytest.approx(
         1 / 3,
     )
-    assert result.result["layers"][0]["inverse_withdrawal_fraction"] == pytest.approx(
+    assert result.result["layers"][0][
+        "inverse_withdrawal_fraction"
+    ] == pytest.approx(
         3.0,
     )
-    assert result.units["layers.inverse_withdrawal_fraction"] == "dimensionless"
+    assert (
+        result.units["layers.inverse_withdrawal_fraction"] == "dimensionless"
+    )
     assert result.units["layers.withdrawal_fraction"] == "dimensionless"
 
 
@@ -138,13 +144,23 @@ def test_hutubi_report_level_golden_case() -> None:
     assert result.result["peak_daily_compliance_percent"] == pytest.approx(
         98.2587065,
     )
-    assert result.result["review_status"] == "calculated_recommendation_pending_review"
+    assert (
+        result.result["review_status"]
+        == "calculated_recommendation_pending_review"
+    )
     assert result.result["book_inventory_source"] == "provided_book_inventory"
-    assert result.result["quality_gate"]["maximum_inverse_withdrawal_fraction"] == 100.0
+    assert (
+        result.result["quality_gate"]["maximum_inverse_withdrawal_fraction"]
+        == 100.0
+    )
     assert result.units["layers.produced_gas"] == "1e8_sm3"
     assert result.units["layers.injection_end_p_over_z"] == "mpa"
-    assert result.units["layers.inverse_withdrawal_fraction"] == "dimensionless"
-    assert any("not an approved capacity" in warning for warning in result.warnings)
+    assert (
+        result.units["layers.inverse_withdrawal_fraction"] == "dimensionless"
+    )
+    assert any(
+        "not an approved capacity" in warning for warning in result.warnings
+    )
 
 
 def test_full_reservoir_averages_do_not_replace_layer_calculation() -> None:
@@ -262,8 +278,17 @@ def test_effective_inventory_rejects_unknown_pressure_basis() -> None:
         )
 
 
-def test_effective_inventory_accepts_apparent_formation_pressure_basis() -> None:
-    layer = EffectiveInventoryLayerRequest("layer-a", 1.0, 30.0, 1.0, 20.0, 1.0)
+def test_effective_inventory_accepts_apparent_formation_pressure_basis() -> (
+    None
+):
+    layer = EffectiveInventoryLayerRequest(
+        "layer-a",
+        1.0,
+        30.0,
+        1.0,
+        20.0,
+        1.0,
+    )
     result = EffectiveInventoryAdapter().compute(
         EffectiveInventoryRequest(
             (layer,),
@@ -373,7 +398,9 @@ def test_evaluation_rejects_incompatible_daily_rate_unit() -> None:
         )
 
 
-def test_composite_evaluation_calculates_book_inventory_in_one_request() -> None:
+def test_composite_evaluation_calculates_book_inventory_in_one_request() -> (
+    None
+):
     result = StorageInventoryEvaluationAdapter().compute(
         StorageInventoryEvaluationRequest(
             effective_inventory=_request(*_hutubi_reconstructed_layers()),
@@ -384,14 +411,24 @@ def test_composite_evaluation_calculates_book_inventory_in_one_request() -> None
         ),
     )
     assert result.result["book_inventory"] == pytest.approx(104.88)
-    assert result.result["book_inventory_source"] == "injection_production_accounting"
-    assert result.result["book_inventory_accounting"]["net_change"] == pytest.approx(
+    assert (
+        result.result["book_inventory_source"]
+        == "injection_production_accounting"
+    )
+    assert result.result["book_inventory_accounting"][
+        "net_change"
+    ] == pytest.approx(
         55.6,
     )
-    assert result.units["book_inventory_accounting.initial_inventory"] == "1e8_sm3"
+    assert (
+        result.units["book_inventory_accounting.initial_inventory"]
+        == "1e8_sm3"
+    )
 
 
-def test_composite_evaluation_requires_exactly_one_book_inventory_source() -> None:
+def test_composite_evaluation_requires_exactly_one_book_inventory_source() -> (
+    None
+):
     base = {
         "effective_inventory": _request(*_hutubi_reconstructed_layers()),
         "design_capacity": 107.0,
@@ -430,7 +467,8 @@ def test_composite_evaluation_rejects_zero_accounting_inventory() -> None:
 
 def test_evaluation_contract_cannot_self_declare_review_or_approval() -> None:
     field_names = {
-        field.name for field in dataclasses.fields(StorageInventoryEvaluationRequest)
+        field.name
+        for field in dataclasses.fields(StorageInventoryEvaluationRequest)
     }
     assert "review_status" not in field_names
     assert "review_reference" not in field_names
@@ -442,7 +480,10 @@ def test_evaluation_contract_cannot_self_declare_review_or_approval() -> None:
             design_capacity=107.0,
         ),
     )
-    assert result.result["review_status"] == "calculated_recommendation_pending_review"
+    assert (
+        result.result["review_status"]
+        == "calculated_recommendation_pending_review"
+    )
     assert result.result["review_reference"] is None
 
 
@@ -459,7 +500,9 @@ def test_evaluation_rejects_design_working_gas_above_design_capacity() -> None:
         )
 
 
-def test_evaluation_warns_when_working_gas_exceeds_effective_inventory() -> None:
+def test_evaluation_warns_when_working_gas_exceeds_effective_inventory() -> (
+    None
+):
     result = StorageInventoryEvaluationAdapter().compute(
         StorageInventoryEvaluationRequest(
             effective_inventory=_request(
@@ -479,7 +522,8 @@ def test_evaluation_warns_when_working_gas_exceeds_effective_inventory() -> None
         ),
     )
     assert any(
-        "Working gas exceeds effective" in warning for warning in result.warnings
+        "Working gas exceeds effective" in warning
+        for warning in result.warnings
     )
 
 
@@ -608,15 +652,29 @@ def test_agentscope_function_tool_builds_nested_schema() -> None:
         "evaluation_z",
     ]
     assert all(
-        nested["properties"][name].get("description") for name in nested["required"]
+        nested["properties"][name].get("description")
+        for name in nested["required"]
     )
-    assert "pressure_basis" in nested["properties"]["injection_end_pressure"]["description"]
-    assert "视地层压力" in nested["properties"]["injection_end_pressure"]["description"]
-    assert "pressure_basis" in nested["properties"]["evaluation_pressure"]["description"]
-    assert "视地层压力" in nested["properties"]["evaluation_pressure"]["description"]
+    assert (
+        "pressure_basis"
+        in nested["properties"]["injection_end_pressure"]["description"]
+    )
+    assert (
+        "视地层压力"
+        in nested["properties"]["injection_end_pressure"]["description"]
+    )
+    assert (
+        "pressure_basis"
+        in nested["properties"]["evaluation_pressure"]["description"]
+    )
+    assert (
+        "视地层压力" in nested["properties"]["evaluation_pressure"]["description"]
+    )
     properties = tool.input_schema["properties"]
     assert all(
-        properties[name].get("description") for name in properties if name != "layers"
+        properties[name].get("description")
+        for name in properties
+        if name != "layers"
     )
     assert set(properties["pressure_basis"]["enum"]) == {
         "absolute",

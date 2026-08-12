@@ -69,9 +69,7 @@ class StartupState:
                     # public progress at 100 while optional background work
                     # continues, instead of regressing from 100 to 60.
                     "progress": (
-                        100
-                        if is_ready
-                        else max(0, min(99, int(progress)))
+                        100 if is_ready else max(0, min(99, int(progress)))
                     ),
                     "current": current,
                     "total": total,
