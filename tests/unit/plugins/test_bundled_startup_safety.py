@@ -66,6 +66,113 @@ def test_desktop_fast_path_repairs_missing_entry(
     assert (target / "ui" / "dist" / "index.js").is_file()
 
 
+def test_packaged_same_version_skips_content_hash(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "installed" / "critical-plugin"
+    manifest = _write_plugin(source, "1.0.0")
+    _write_plugin(target, "1.0.0")
+    monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
+    (target / bundled._BUNDLE_REVISION_FILE).write_text(
+        "version:1.0.0",
+        encoding="utf-8",
+    )
+    bundled._write_bundle_complete(target, target)
+
+    def _fail_hash(*_args, **_kwargs):
+        raise AssertionError("packaged startup must not compute bundle hashes")
+
+    monkeypatch.setattr(bundled, "_compute_bundle_hash", _fail_hash)
+
+    changed = bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+    )
+
+    assert changed is False
+    assert (target / bundled._BUNDLE_REVISION_FILE).read_text(
+        encoding="utf-8",
+    ) == "version:1.0.0"
+    assert (target / bundled._BUNDLE_COMPLETE_FILE).is_file()
+
+
+def test_packaged_same_version_repairs_missing_completion_marker(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "installed" / "critical-plugin"
+    manifest = _write_plugin(source, "1.0.0")
+    _write_plugin(target, "1.0.0")
+    monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
+    (target / bundled._BUNDLE_REVISION_FILE).write_text(
+        "version:1.0.0",
+        encoding="utf-8",
+    )
+
+    assert bundled._install_or_update_plugin(source, target, "critical-plugin", manifest)
+    assert (target / bundled._BUNDLE_COMPLETE_FILE).is_file()
+    assert (target / bundled._BUNDLE_REVISION_FILE).read_text(encoding="utf-8") == "version:1.0.0"
+
+
+def test_packaged_same_version_repairs_missing_non_entry_file(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "installed" / "critical-plugin"
+    manifest = _write_plugin(source, "1.0.0")
+    (source / "runtime.py").write_text("VALUE = 1\n", encoding="utf-8")
+    _write_plugin(target, "1.0.0")
+    (target / "runtime.py").write_text("VALUE = 1\n", encoding="utf-8")
+    bundled._write_bundle_revision(target, "version:1.0.0")
+    bundled._write_bundle_complete(target, target)
+    (target / "runtime.py").unlink()
+    monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
+
+    assert bundled._install_or_update_plugin(source, target, "critical-plugin", manifest)
+    assert (target / "runtime.py").is_file()
+
+
+def test_development_same_version_still_detects_content_changes(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    target = tmp_path / "installed" / "critical-plugin"
+    manifest = _write_plugin(source, "1.0.0")
+    _write_plugin(target, "1.0.0")
+    monkeypatch.setattr(bundled, "_is_development_environment", lambda: True)
+
+    # Seed the installed marker from the original source, then change a file
+    # without changing plugin.json/version.
+    original_hash = bundled._compute_bundle_hash(source, manifest)
+    (target / bundled._BUNDLE_HASH_FILE).write_text(
+        original_hash,
+        encoding="utf-8",
+    )
+    (source / "plugin.py").write_text(
+        'VERSION = "1.0.0-dev-edit"\n',
+        encoding="utf-8",
+    )
+
+    changed = bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+    )
+
+    assert changed is True
+    assert (target / "plugin.py").read_text(encoding="utf-8") == (
+        'VERSION = "1.0.0-dev-edit"\n'
+    )
+
+
 def test_failed_update_keeps_previous_plugin(monkeypatch, tmp_path) -> None:
     source = tmp_path / "source"
     target = tmp_path / "installed" / "critical-plugin"
@@ -139,3 +246,20 @@ def test_frontend_revision_changes_without_version_bump(tmp_path) -> None:
     second = _frontend_revision(plugin_dir, entry, "1.0.0")
 
     assert first != second
+
+
+def test_frontend_revision_prefers_release_revision_marker(tmp_path) -> None:
+    plugin_dir = tmp_path / "plugin"
+    manifest = _write_plugin(plugin_dir, "1.0.0")
+    (plugin_dir / bundled._BUNDLE_REVISION_FILE).write_text(
+        "version:1.0.0",
+        encoding="utf-8",
+    )
+
+    revision = _frontend_revision(
+        plugin_dir,
+        manifest["entry"]["frontend"],
+        "1.0.0",
+    )
+
+    assert revision == "1.0.0-version:1.0.0"

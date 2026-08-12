@@ -60,11 +60,19 @@ class StartupState:
     ) -> None:
         """Publish a monotonic user-facing preparation checkpoint."""
         with self._lock:
+            is_ready = bool(self._payload.get("ready"))
             self._payload.update(
                 {
                     "stage": stage,
                     "message": message,
-                    "progress": max(0, min(99, int(progress))),
+                    # Core readiness is a terminal gate for the UI. Keep the
+                    # public progress at 100 while optional background work
+                    # continues, instead of regressing from 100 to 60.
+                    "progress": (
+                        100
+                        if is_ready
+                        else max(0, min(99, int(progress)))
+                    ),
                     "current": current,
                     "total": total,
                     "detail": detail,
@@ -73,7 +81,7 @@ class StartupState:
             )
 
     def mark_ready(self) -> None:
-        """Publish completion and persist the version marker atomically."""
+        """Publish core readiness and persist the version marker atomically."""
         with self._lock:
             self._payload.update(
                 {
@@ -101,6 +109,22 @@ class StartupState:
         except OSError:
             # Marker only controls first-run wording; startup still succeeds.
             pass
+
+    def mark_core_ready(self) -> None:
+        """Publish that the core app is interactive while warm-up continues."""
+        with self._lock:
+            self._payload.update(
+                {
+                    "ready": True,
+                    "stage": "ready",
+                    "message": "核心服务已就绪，正在后台准备扩展…",
+                    "progress": 100,
+                    "current": None,
+                    "total": None,
+                    "detail": None,
+                    "error": None,
+                },
+            )
 
     def mark_error(self, message: str) -> None:
         """Publish a terminal startup error."""

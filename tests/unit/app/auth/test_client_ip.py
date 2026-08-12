@@ -264,3 +264,22 @@ class TestShouldSkipAuthDefenseInDepth:
         req.method = "GET"
         # pylint: disable=protected-access
         assert AuthMiddleware._should_skip_auth(req) is False
+
+    @patch("qwenpaw.app.auth._get_config_cached")
+    @patch("qwenpaw.app.auth.is_auth_enabled", return_value=True)
+    @patch("qwenpaw.app.auth.has_registered_users", return_value=True)
+    def test_bundled_plugin_status_is_public_without_token(
+        self, _auth_enabled, _registered, mock_cfg,
+    ):
+        """Desktop startup can poll sync state before login completes."""
+        from qwenpaw.app.auth import AuthMiddleware  # noqa: F811
+
+        mock_cfg.return_value = _make_config_return(
+            allow_no_auth_hosts=[],
+        )
+        req = _make_request("203.0.113.10")
+        req.url = MagicMock()
+        req.url.path = "/api/plugins/bundled/status"
+        req.method = "GET"
+        # pylint: disable=protected-access
+        assert AuthMiddleware._should_skip_auth(req) is True

@@ -25,10 +25,16 @@ async def get_healthz(request: Request):
         )
     registry = getattr(state, "multi_agent_manager", None)
     agents = registry.list_loaded_agents() if registry else []
+    bundled_plugins = getattr(
+        state,
+        "bundled_plugins_status",
+        {"state": "pending", "installed": [], "error": None},
+    )
     start_time = getattr(state, "startup_time", None)
     uptime = round(time.time() - start_time, 2) if start_time else None
     return {
         "status": "ok",
         "agents_loaded": agents,
+        "bundled_plugins": bundled_plugins,
         "uptime_seconds": uptime,
     }

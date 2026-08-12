@@ -42,11 +42,22 @@ def _frontend_revision(
     version: object,
 ) -> str:
     """Return a stable cache key that changes with frontend content."""
-    bundle_hash = plugin_dir / ".bundle_hash"
+    # Release bundles use a cheap version revision marker. Development
+    # bundles keep the legacy content hash for hot-reload cache busting.
+    revision_file = plugin_dir / ".bundle_revision"
     try:
-        revision = bundle_hash.read_text(encoding="utf-8").strip()
+        revision = revision_file.read_text(encoding="utf-8").strip()
         if revision:
             return f"{version}-{revision[:20]}"
+    except OSError:
+        pass
+    # Backward compatibility for installations created before the revision
+    # marker was introduced. Ignore the old pseudo-hash version marker here;
+    # it is not a content revision.
+    try:
+        legacy = (plugin_dir / ".bundle_hash").read_text(encoding="utf-8").strip()
+        if legacy and not legacy.startswith("version:"):
+            return f"{version}-{legacy[:20]}"
     except OSError:
         pass
     if frontend_entry:

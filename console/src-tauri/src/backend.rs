@@ -29,6 +29,8 @@ const DESKTOP_SHUTDOWN_TOKEN_HEADER: &str = "X-QwenPaw-Desktop-Shutdown-Token";
 const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
 const GRACEFUL_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(60);
 const FORCED_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
+const BACKEND_STARTUP_SLOW_WARNING: Duration = Duration::from_secs(15);
+const BACKEND_STARTUP_FALLBACK_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Shared sidecar process state managed by Tauri.
 #[derive(Default)]
@@ -45,6 +47,7 @@ struct BackendInner {
     terminated: Option<watch::Receiver<bool>>,
     stopping: bool,
     error: Option<String>,
+    launcher: Option<command::LauncherSelection>,
 }
 
 enum StopPlan {
@@ -101,6 +104,36 @@ impl BackendState {
         }
     }
 
+    /// True only for a frozen process selected by Windows Auto mode.
+    fn should_fallback_before_ready(&self, generation: u64) -> bool {
+        self.with_inner(|inner| {
+            self.is_current(generation)
+                && !inner.stopping
+                && inner.port.is_none()
+                && inner.launcher.is_some_and(|launcher| launcher.allows_python_fallback())
+        })
+    }
+
+    fn take_child_for_startup_fallback(&self, generation: u64) -> Option<CommandChild> {
+        self.with_inner(|inner| {
+            if !self.is_current(generation)
+                || inner.stopping
+                || inner.port.is_some()
+                || !inner
+                    .launcher
+                    .is_some_and(|launcher| launcher.allows_python_fallback())
+            {
+                return None;
+            }
+            self.next_generation();
+            inner.stopping = true;
+            inner.shutdown_token = None;
+            inner.terminated = None;
+            inner.launcher = None;
+            inner.child.take()
+        })
+    }
+
     fn clear_startup_state(&self) {
         self.with_inner(|inner| {
             inner.port = None;
@@ -108,6 +141,7 @@ impl BackendState {
             inner.terminated = None;
             inner.stopping = false;
             inner.error = None;
+            inner.launcher = None;
         });
     }
 
@@ -118,6 +152,7 @@ impl BackendState {
                 inner.shutdown_token = None;
                 inner.terminated = None;
                 inner.stopping = false;
+                inner.launcher = None;
             });
         }
     }
@@ -133,6 +168,7 @@ impl BackendState {
                 inner.shutdown_token = None;
                 inner.terminated = None;
                 inner.stopping = false;
+                inner.launcher = None;
                 return StopPlan::NoProcess;
             }
 
@@ -174,6 +210,7 @@ impl BackendState {
             inner.shutdown_token = None;
             inner.terminated = None;
             inner.stopping = false;
+            inner.launcher = None;
         });
     }
 
@@ -353,43 +390,121 @@ fn desktop_log_level() -> log::LevelFilter {
 
 /// Starts the sidecar and records startup failures for the frontend retry UI.
 fn start(app: &tauri::AppHandle) {
+    start_internal(app, None);
+}
+
+/// Force-starts the sidecar in Python mode (Windows frozen fallback only).
+#[cfg(windows)]
+fn start_python(app: &tauri::AppHandle) {
+    start_internal(app, Some(command::LauncherMode::Python));
+}
+
+/// The fallback target is deliberately unavailable on macOS/Linux.  Keeping
+/// this as a platform-specific helper prevents a future startup error path
+/// from accidentally turning into frozen -> frozen recursion there.
+#[cfg(windows)]
+fn fallback_to_python(app: &tauri::AppHandle) {
+    start_python(app);
+}
+
+#[cfg(not(windows))]
+fn fallback_to_python(_app: &tauri::AppHandle) {
+    log::error!("[backend] Python fallback is disabled on this platform");
+}
+
+fn start_internal(app: &tauri::AppHandle, force_mode: Option<command::LauncherMode>) {
     let state = app.state::<BackendState>();
     let generation = state.next_generation();
     state.clear_startup_state();
     let shutdown_token = Uuid::new_v4().to_string();
 
-    let command = match command::create(app) {
-        Ok(command) => command,
-        Err(message) => {
-            state.set_error(message);
-            return;
-        }
-    }
-    .env("PYTHONUTF8", "1")
-    .env("PYTHONIOENCODING", "utf-8")
-    .env("PYTHONUNBUFFERED", "1")
-    .env("PYTHONFAULTHANDLER", "1")
-    .env("QWENPAW_DESKTOP_APP", "1")
-    .env(DESKTOP_SHUTDOWN_TOKEN_ENV, &shutdown_token);
+    let (command, launcher) = match force_mode {
+        Some(mode) => match command::create_with_mode(app, mode) {
+            Ok((cmd, used)) => (cmd, used),
+            Err(message) => {
+                state.set_error(message);
+                return;
+            }
+        },
+        None => match command::create(app) {
+            Ok((cmd, used)) => (cmd, used),
+            Err(message) => {
+                state.set_error(message);
+                return;
+            }
+        },
+    };
+    let command = command
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONFAULTHANDLER", "1")
+        .env("QWENPAW_DESKTOP_APP", "1")
+        .env(DESKTOP_SHUTDOWN_TOKEN_ENV, &shutdown_token);
 
-    log::info!("[backend] starting generation={generation}");
+    log::info!(
+        "[backend] starting generation={generation} requested={:?} actual={:?}",
+        launcher.requested,
+        launcher.actual
+    );
 
     let (rx, child) = match command.spawn() {
         Ok(child) => child,
         Err(err) => {
+            // If the frozen backend failed to spawn and we haven't been
+            // forced into a specific mode, fall back to python.exe.
+            if launcher.allows_python_fallback() {
+                log::warn!(
+                    "[backend] frozen spawn failed: {err}; falling back to python.exe"
+                );
+                fallback_to_python(app);
+                return;
+            }
             state.set_error(format!("failed to spawn backend: {err}"));
             return;
         }
     };
 
     let child_pid = child.pid();
-    log::info!("[backend] spawned generation={generation} pid={child_pid}");
+    log::info!(
+        "[backend] spawned generation={generation} pid={child_pid} requested={:?} actual={:?}",
+        launcher.requested,
+        launcher.actual
+    );
     let (terminated_sender, terminated_receiver) = watch::channel(false);
     state.with_inner(|inner| {
         inner.child = Some(child);
         inner.shutdown_token = Some(shutdown_token);
         inner.terminated = Some(terminated_receiver);
+        inner.launcher = Some(launcher);
         inner.stopping = false;
     });
     events::watch(app.clone(), generation, rx, terminated_sender);
+    watch_startup_timeout(app.clone(), generation, launcher);
+}
+
+fn watch_startup_timeout(
+    app: tauri::AppHandle,
+    generation: u64,
+    launcher: command::LauncherSelection,
+) {
+    if !launcher.allows_python_fallback() {
+        return;
+    }
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(BACKEND_STARTUP_SLOW_WARNING).await;
+        if !app.state::<BackendState>().should_fallback_before_ready(generation) {
+            return;
+        }
+        log::warn!("[backend:{generation}] frozen backend has not reported ready after {} seconds", BACKEND_STARTUP_SLOW_WARNING.as_secs());
+        tokio::time::sleep(BACKEND_STARTUP_FALLBACK_TIMEOUT.saturating_sub(BACKEND_STARTUP_SLOW_WARNING)).await;
+        let state = app.state::<BackendState>();
+        let Some(child) = state.take_child_for_startup_fallback(generation) else { return; };
+        let pid = child.pid();
+        log::warn!("[backend:{generation}] frozen backend did not report ready within {} seconds; terminating pid={pid} and falling back to python.exe", BACKEND_STARTUP_FALLBACK_TIMEOUT.as_secs());
+        if let Err(err) = child.kill() {
+            log::warn!("[backend:{generation}] failed to terminate wedged pid={pid}: {err}");
+        }
+        fallback_to_python(&app);
+    });
 }

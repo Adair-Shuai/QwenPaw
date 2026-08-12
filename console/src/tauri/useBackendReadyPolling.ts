@@ -27,6 +27,22 @@ export interface StartupProgress {
   elapsed_seconds?: number;
 }
 
+async function isBackendHttpReady(apiBaseUrl: string): Promise<boolean> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), BACKEND_REQUEST_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/version`, {
+      signal: controller.signal,
+      cache: "no-store",
+    });
+    return response.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
 interface BackendReadyPollingState {
   shouldGate: boolean;
   status: BackendReadyStatus;
@@ -110,6 +126,15 @@ export default function useBackendReadyPolling(): BackendReadyPollingState {
 
       if (apiBaseUrl) {
         try {
+          // The sidecar is usable as soon as its lightweight HTTP endpoint
+          // responds. Do not keep the entire WebView behind agent/plugin
+          // warm-up; those stages expose their own progress after navigation.
+          if (await isBackendHttpReady(apiBaseUrl)) {
+            if (runRef.current !== runId) return;
+            setReadyUrl(backendConsoleUrl(apiBaseUrl));
+            setStatus("ready");
+            return;
+          }
           controller = new AbortController();
           const timeoutId = setTimeout(
             () => controller?.abort(),

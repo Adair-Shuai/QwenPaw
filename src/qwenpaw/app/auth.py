@@ -58,6 +58,10 @@ _PUBLIC_PATHS: frozenset[str] = frozenset(
         "/api/desktop/shutdown",
         "/api/version",
         "/api/startup/status",
+        # Read-only synchronization state used by the desktop shell before
+        # an access token is available. It contains no credentials or user
+        # data and must remain reachable during the initial auth handshake.
+        "/api/plugins/bundled/status",
         "/api/settings/language",
         "/api/settings/upload-limit",
         "/api/frontend_plugin",

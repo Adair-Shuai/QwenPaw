@@ -11,6 +11,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { pluginSystem } from "./hostExternals";
 import { loadAllPlugins } from "./usePluginLoader";
+import { getApiUrl, getApiToken } from "../api/config";
 import type { PluginRouteDeclaration } from "./hostExternals";
 import {
   routeRegistry,
@@ -84,16 +85,64 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
       setPluginRoutes(derivePluginRoutes());
     });
 
+    let loadPromise: Promise<void> | null = null;
+    let reloadedAfterBundleSync = false;
+    const load = () => {
+      if (!loadPromise) {
+        loadPromise = loadAllPlugins().then(({ failed }) => {
+          if (failed.length > 0) setError(failed.join("; "));
+          setLoading(false);
+        });
+      }
+      return loadPromise;
+    };
+
     // Load all installed plugins and PawApps (non-fatal: one bad module
     // won’t block others). PawApps are 'app'-type plugins: the loader
     // executes their ui bundle, which self-registers the /apps/{id} route
     // so the App Center can render them inline.
-    loadAllPlugins().then(({ failed }) => {
-      if (failed.length > 0) setError(failed.join("; "));
-      setLoading(false);
-    });
+    void load();
+
+    // The backend deliberately lets the core UI become interactive before
+    // bundled-plugin repair finishes. If the first plugin list was observed
+    // during that repair window, refresh once after the atomic sync completes
+    // so newly installed plugins appear without a full app restart.
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    let cancelled = false;
+    const pollBundleSync = async () => {
+      try {
+        const headers: Record<string, string> = {};
+        const token = getApiToken();
+        if (token) headers.Authorization = `Bearer ${token}`;
+        const response = await fetch(getApiUrl("/plugins/bundled/status"), {
+          headers,
+          cache: "no-store",
+        });
+        if (!response.ok || cancelled) return;
+        const status = (await response.json()) as { state?: string };
+        if (status?.state === "ready") {
+          if (!reloadedAfterBundleSync) {
+            reloadedAfterBundleSync = true;
+            await load();
+            // The first request may have raced the final atomic replacement;
+            // invalidate the promise once and refresh the manifest exactly
+            // once after synchronization completes.
+            loadPromise = null;
+            await load();
+          }
+          return;
+        }
+        if (status?.state === "error") return;
+      } catch {
+        // Backend may still be accepting requests; retry below.
+      }
+      if (!cancelled) timer = setTimeout(pollBundleSync, 1500);
+    };
+    void pollBundleSync();
 
     return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
       unsubA();
       unsubB();
     };

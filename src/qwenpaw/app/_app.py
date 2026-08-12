@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -365,6 +365,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     # ================================================================
 
     startup_display = AgentStartupDisplay(read_last_api()).start()
+    app.state.bundled_plugins_status = {
+        "state": "pending",
+        "installed": [],
+        "error": None,
+    }
 
     async def _background_startup():  # pylint: disable=too-many-statements
         try:
@@ -407,30 +412,62 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # on first creation — no reload needed afterwards.
             logger.debug("Initializing plugin system...")
 
-            # Sync bundled plugins (e.g. UGSci) into the user's plugins
-            # directory before the loader scans it.  This makes bundled
-            # plugins available automatically while remaining hot-pluggable:
-            # users can uninstall via CLI/API and the .uninstalled marker
-            # prevents re-installation on next startup.
+            # Component updates are strictly opt-in.  When enabled they must
+            # finish before bundled sync / PluginLoader discovery so no live
+            # plugin directory is replaced while Python modules are loaded.
+            # Every failure is non-fatal and falls through to the existing
+            # bundled-plugin installation path.
+            try:
+                from ..components.service import run_startup_updates
+
+                app.state.component_updates_status = await asyncio.to_thread(
+                    run_startup_updates,
+                )
+            except Exception as exc:
+                app.state.component_updates_status = {
+                    "enabled": True,
+                    "updated": [],
+                    "errors": [{"component": "startup", "error": str(exc)}],
+                }
+                logger.warning("Component startup updates skipped", exc_info=True)
+
+            component_updated_ids: set[str] = set()
+            component_status = getattr(app.state, "component_updates_status", {})
+            if isinstance(component_status, dict):
+                for result in component_status.get("updated", []):
+                    if isinstance(result, dict) and result.get("updated") and result.get("component"):
+                        component_updated_ids.add(str(result["component"]))
+
+            # Run bundled-plugin synchronization off the event loop. The Tauri
+            # gate now proceeds as soon as /api/version responds, so this
+            # preparation no longer blocks the first screen. We still await it
+            # before constructing PluginLoader to prevent discovery racing an
+            # atomic plugin replacement.
             try:
                 from ..plugins.bundled import (
                     ensure_bundled_plugins_installed,
                 )
 
-                startup_state.update(
-                    "plugins",
-                    "正在准备内置专家与扩展…",
-                    24,
+                app.state.bundled_plugins_status = {
+                    "state": "running",
+                    "installed": [],
+                    "error": None,
+                }
+                bundled_sync_task = asyncio.create_task(
+                    asyncio.to_thread(
+                        ensure_bundled_plugins_installed,
+                        skip_ids=component_updated_ids,
+                    ),
+                    name="bundled-plugin-sync",
                 )
-                newly_installed = await asyncio.to_thread(
-                    ensure_bundled_plugins_installed,
-                )
-                if newly_installed:
-                    logger.info(
-                        "Bundled plugins synced: %s",
-                        ", ".join(newly_installed),
-                    )
-            except Exception:
+                app.state.bundled_plugins_task = bundled_sync_task
+            except Exception as exc:
+                bundled_sync_task = None
+                app.state.bundled_plugins_status = {
+                    "state": "error",
+                    "installed": [],
+                    "error": str(exc),
+                }
                 logger.warning(
                     "Failed to sync bundled plugins",
                     exc_info=True,
@@ -439,6 +476,28 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             from ..config.utils import get_plugins_dir
             from ..plugins.loader import PluginLoader
             from ..plugins.runtime import RuntimeHelpers
+
+            newly_installed: list[str] = []
+            if bundled_sync_task is not None:
+                try:
+                    newly_installed = await bundled_sync_task
+                    app.state.bundled_plugins_status = {
+                        "state": "files_ready",
+                        "installed": newly_installed,
+                        "error": None,
+                    }
+                    if newly_installed:
+                        logger.info(
+                            "Bundled plugins synced: %s",
+                            ", ".join(newly_installed),
+                        )
+                except Exception as exc:
+                    app.state.bundled_plugins_status = {
+                        "state": "error",
+                        "installed": [],
+                        "error": str(exc),
+                    }
+                    logger.warning("Failed to sync bundled plugins", exc_info=True)
 
             # PawApps install into the plugins dir alongside other plugins
             # and load through the same pipeline as 'app'-type plugins
@@ -472,6 +531,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 core_elapsed = time.time() - startup_start_time
                 startup_display.mark_core_ready(core_elapsed)
                 app.state.startup_ready.set()
+                startup_state.mark_core_ready()
 
             startup_results = (
                 await workspace_registry.start_all_configured_agents(
@@ -495,6 +555,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 configs=plugin_configs,
             )
             logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
+            app.state.bundled_plugins_status = {
+                "state": "ready",
+                "installed": newly_installed,
+                "error": None,
+            }
             startup_state.update(
                 "plugins",
                 "正在加载功能模块…",
@@ -678,6 +743,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             _bg_task.cancel()
             with suppress(asyncio.CancelledError):
                 await _bg_task
+        bundled_task = getattr(app.state, "bundled_plugins_task", None)
+        if bundled_task is not None and not bundled_task.done():
+            bundled_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await bundled_task
 
         await _stop_browser_runtime(app)
         from ..agents.tools import shutdown_browser_runtime
@@ -890,6 +960,16 @@ def get_version():
 def get_startup_status():
     """Return real preparation progress for the desktop splash screen."""
     return startup_state.snapshot()
+
+
+@app.get("/api/plugins/bundled/status")
+def get_bundled_plugins_status(request: Request):
+    """Return non-blocking bundled-plugin synchronization status."""
+    return getattr(
+        request.app.state,
+        "bundled_plugins_status",
+        {"state": "pending", "installed": [], "error": None},
+    )
 
 
 @app.get("/api/doctor/runtime")

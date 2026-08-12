@@ -60,14 +60,26 @@ class EffectiveInventoryLayerInput(TypedDict):
     ]
     injection_end_pressure: Annotated[
         float,
-        Field(description="Average absolute equilibrium pressure at injection end"),
+        Field(
+            description=(
+                "Average equilibrium formation pressure at injection end; interpret "
+                "according to the explicit pressure_basis (for example, the report's "
+                "视地层压力); no implicit conversion is performed"
+            )
+        ),
     ]
     injection_end_z: Annotated[
         float, Field(description="Z factor at injection-end pressure and temperature")
     ]
     evaluation_pressure: Annotated[
         float,
-        Field(description="Average absolute equilibrium pressure at evaluation state"),
+        Field(
+            description=(
+                "Average equilibrium formation pressure at evaluation state; interpret "
+                "according to the explicit pressure_basis (for example, the report's "
+                "视地层压力); no implicit conversion is performed"
+            )
+        ),
     ]
     evaluation_z: Annotated[
         float, Field(description="Z factor at evaluation pressure and temperature")

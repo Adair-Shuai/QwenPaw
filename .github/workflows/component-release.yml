@@ -1,0 +1,118 @@
+name: Component Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Component target
+        type: choice
+        options: [windows-x86_64, macos-aarch64, macos-x86_64]
+        required: true
+      core_min_version:
+        description: Minimum compatible desktop core version
+        required: true
+      upload_to_oss:
+        description: Upload signed artifacts and publish manifest
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  build-components:
+    runs-on: ubuntu-latest
+    env:
+      COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install release dependencies
+        run: python -m pip install packaging cryptography
+
+      - name: Stage managed bundled plugins and apps
+        run: |
+          python scripts/pack-tauri/stage_bundled_plugins.py \
+            --repo . \
+            --dest component-staging
+
+      - name: Build and sign component release
+        env:
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+        run: |
+          python scripts/pack-tauri/build_component_release.py \
+            --source-root component-staging \
+            --output-root component-release \
+            --target '${{ inputs.target }}' \
+            --core-min-version '${{ inputs.core_min_version }}' \
+            --base-url "$COMPONENT_BASE_URL"
+
+      - name: Verify generated artifacts
+        run: |
+          test -s component-release/metadata/components/stable/${{ inputs.target }}.json
+          test -s component-release/metadata/components/stable/${{ inputs.target }}.json.sig
+          find component-release/artifacts -name '*.zip' -type f -size +0 -print
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: component-release-${{ inputs.target }}
+          path: component-release/
+          if-no-files-found: error
+
+      - name: Install ossutil
+        if: inputs.upload_to_oss
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+
+      - name: Configure OSS
+        if: inputs.upload_to_oss
+        run: |
+          ossutil config -e '${{ secrets.OSS_ENDPOINT }}' \
+            -i '${{ secrets.OSS_ACCESS_KEY_ID }}' \
+            -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
+
+      - name: Upload immutable component artifacts first
+        if: inputs.upload_to_oss
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: |
+          while IFS= read -r file; do
+            relative="${file#component-release/}"
+            if ossutil ls "oss://${OSS_BUCKET}/${relative}" >/dev/null 2>&1; then
+              echo "Refusing to overwrite existing immutable artifact: ${relative}" >&2
+              exit 1
+            fi
+          done < <(find component-release/artifacts -type f)
+          ossutil cp component-release/artifacts/components/ \
+            "oss://${OSS_BUCKET}/artifacts/components/" \
+            --recursive --acl public-read
+
+      - name: Verify artifacts exist on OSS
+        if: inputs.upload_to_oss
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: |
+          while IFS= read -r file; do
+            relative="${file#component-release/}"
+            ossutil ls "oss://${OSS_BUCKET}/${relative}" >/dev/null
+          done < <(find component-release/artifacts -type f)
+
+      # The signed manifest is intentionally published last. Clients cannot
+      # observe a release until all referenced immutable artifacts exist.
+      - name: Publish signed component manifest last
+        if: inputs.upload_to_oss
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: |
+          ossutil cp component-release/metadata/components/stable/${{ inputs.target }}.json.sig \
+            "oss://${OSS_BUCKET}/metadata/components/stable/${{ inputs.target }}.json.sig" \
+            --acl public-read
+          ossutil cp component-release/metadata/components/stable/${{ inputs.target }}.json \
+            "oss://${OSS_BUCKET}/metadata/components/stable/${{ inputs.target }}.json" \
+            --acl public-read

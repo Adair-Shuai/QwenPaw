@@ -37,9 +37,17 @@ def discover_bundled_plugins(repo: Path) -> list[Path]:
     plugins_root = repo / "plugins"
     selected: list[Path] = []
     destination_names: dict[str, Path] = {}
+    component_ids: dict[str, Path] = {}
     for manifest in sorted(plugins_root.glob("*/*/plugin.json")):
         plugin_dir = manifest.parent
         identifier = plugin_id(plugin_dir)
+        previous_id = component_ids.get(identifier)
+        if previous_id is not None:
+            raise ValueError(
+                "Bundled plugins share a manifest id: "
+                f"{previous_id} and {plugin_dir}",
+            )
+        component_ids[identifier] = plugin_dir
         if identifier in PLUGIN_DENYLIST:
             continue
         previous = destination_names.get(plugin_dir.name)

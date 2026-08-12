@@ -83,12 +83,16 @@ Prefer these stable tools:
 | Volumetric OOIP | `ugsci_volumetric_oil_in_place` |
 | Oil material balance | `ugsci_oil_material_balance` |
 | Gas p/z material balance | `ugsci_gas_material_balance` |
+| Storage effective inventory | `ugsci_storage_effective_inventory` |
+| Storage inventory evaluation | `ugsci_storage_inventory_evaluate` |
 | Local black-oil screening PVT | `ugsci_black_oil_pvt` |
 | Vogel IPR | `ugsci_vogel_ipr` |
 | Screening nodal analysis | `ugsci_nodal_analysis` |
 | Conservation/sanity check | `ugsci_conservation_check` |
 
 For every result, preserve `units`, `metrics`, `assumptions`, `warnings`, `tolerances`, `applicability`, and `provenance`. Treat PyMC and pymoo as stochastic workflow Providers, not deterministic facts. Use NeqSim only when compositional thermodynamics or a higher-fidelity external Provider is required.
+
+For storage-inventory p/Z calculations, use the report's explicit pressure basis. Hutubi's source material uses 视地层压力, not a field that may be silently relabeled as absolute pressure. Keep both states on the same basis, do not add/subtract atmospheric pressure implicitly, calculate layer by layer, and label the deterministic result as calculated recommendation pending review.
 
 The direct Python equations later in this document are background references only. Do not prefer them over the registered UGSci tools.
 

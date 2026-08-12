@@ -610,6 +610,10 @@ def test_agentscope_function_tool_builds_nested_schema() -> None:
     assert all(
         nested["properties"][name].get("description") for name in nested["required"]
     )
+    assert "pressure_basis" in nested["properties"]["injection_end_pressure"]["description"]
+    assert "视地层压力" in nested["properties"]["injection_end_pressure"]["description"]
+    assert "pressure_basis" in nested["properties"]["evaluation_pressure"]["description"]
+    assert "视地层压力" in nested["properties"]["evaluation_pressure"]["description"]
     properties = tool.input_schema["properties"]
     assert all(
         properties[name].get("description") for name in properties if name != "layers"

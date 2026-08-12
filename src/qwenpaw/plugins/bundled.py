@@ -14,11 +14,12 @@ Updating: if the bundled version is newer than the installed version
 (compared via ``plugin.json`` → ``version`` field), the plugin is upgraded
 in-place (unless the user has marked it as uninstalled).
 
-Content hash: when the version numbers are equal, a content hash of the
-**entire plugin directory** (all files, recursively) is compared to detect
-content changes that were made without a version bump.  This prevents stale
-plugin files from persisting on machines that already have the same version
-installed from a previous build.
+Content hash: in a source checkout (development mode), when the version
+numbers are equal, a content hash of the **entire plugin directory** (all
+files, recursively) is compared to detect content changes made without a
+version bump.  Packaged and installed applications deliberately do not read
+or hash the plugin tree on startup: the bundled version plus the declared
+entry files are the release integrity boundary.
 
 Force mode: ``ensure_bundled_plugins_installed(force=True)`` bypasses the
 version and content-hash checks, always re-copying every bundled plugin
@@ -34,13 +35,58 @@ import json
 import logging
 import os
 import shutil
+import sys
 import tempfile
 from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_BUNDLE_HASH_FILE = ".bundle_hash"
+_BUNDLE_HASH_FILE = ".bundle_hash"  # development content hash (legacy API)
+_BUNDLE_REVISION_FILE = ".bundle_revision"
+_BUNDLE_COMPLETE_FILE = ".bundle_complete"
+_BUNDLE_HASH_MODE_ENV = "QWENPAW_BUNDLED_PLUGIN_HASH"
+
+
+def _is_development_environment() -> bool:
+    """Return whether unversioned bundled-plugin edits should be detected.
+
+    Hashing the complete plugin tree is useful for source checkouts, where a
+    developer may edit files without bumping ``plugin.json``.  It is an
+    avoidable startup cost for packaged applications, especially on Windows
+    where the bundled tree can contain hundreds of megabytes and many files.
+
+    ``QWENPAW_BUNDLED_PLUGIN_HASH`` is an explicit escape hatch for CI and
+    diagnostics.  ``1/true/yes/on`` enables hashing and
+    ``0/false/no/off`` disables it.  In the absence of an override, a
+    non-frozen checkout containing both ``pyproject.toml`` and ``src/qwenpaw``
+    is considered development mode.
+    """
+    override = os.environ.get(_BUNDLE_HASH_MODE_ENV, "").strip().lower()
+    if override in {"1", "true", "yes", "on"}:
+        return True
+    if override in {"0", "false", "no", "off"}:
+        return False
+
+    # The desktop marker is set for packaged launches even when the Windows
+    # fallback launcher invokes the standalone interpreter.  Treat that path
+    # as production too; source-edit hashing can be explicitly re-enabled via
+    # QWENPAW_BUNDLED_PLUGIN_HASH=1 when diagnosing a packaged build.
+    if os.environ.get("QWENPAW_DESKTOP_APP") == "1":
+        return False
+
+    # A PyInstaller process is a packaged application even when the desktop
+    # marker is present.  Never scan the full bundled tree in that process by
+    # default.
+    if bool(getattr(sys, "frozen", False)):
+        return False
+
+    here = Path(__file__).resolve()
+    return any(
+        (parent / "pyproject.toml").is_file()
+        and (parent / "src" / "qwenpaw").is_dir()
+        for parent in [here, *here.parents]
+    )
 
 # Plugins that are bundled in the repo but should NOT be auto-installed
 # on startup.  Each entry is a plugin ID (from plugin.json → "id" field).
@@ -162,6 +208,8 @@ def _version_tuple(version: str) -> tuple:
 _HASH_EXCLUDED_NAMES = frozenset(
     {
         _BUNDLE_HASH_FILE,
+        _BUNDLE_REVISION_FILE,
+        _BUNDLE_COMPLETE_FILE,
         ".uninstalled",
         "__pycache__",
         "node_modules",
@@ -235,8 +283,10 @@ def _copy_missing_tree(source: Path, target: Path) -> None:
 def _stage_and_replace_bundle(
     source: Path,
     target: Path,
-    bundle_hash: str,
+    bundle_hash: str | None,
     preserve_dirs: frozenset[str],
+    *,
+    bundle_revision: str | None = None,
 ) -> None:
     """Build a complete replacement beside target and swap with rollback."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -261,7 +311,13 @@ def _stage_and_replace_bundle(
         if target.is_dir():
             for dirname in preserve_dirs:
                 _copy_missing_tree(target / dirname, staged / dirname)
-        _write_bundle_hash(staged, bundle_hash)
+        if bundle_hash is not None:
+            _write_bundle_hash(staged, bundle_hash)
+        if bundle_revision is not None:
+            _write_bundle_revision(staged, bundle_revision)
+        # This marker is part of the staged tree, so it becomes visible only
+        # after the complete copy and atomic replacement have succeeded.
+        _write_bundle_complete(staged, source)
 
         if target.exists():
             target.replace(previous)
@@ -312,7 +368,10 @@ def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
     Hashes **all files** in the plugin directory recursively (excluding
     cache files and internal markers) so that any content change — not
     just changes to ``plugin.json`` or the frontend entry — triggers an
-    update on machines that already have the same version installed.
+    update on a development checkout that already has the same version
+    installed.  Callers must gate this function with
+    :func:`_is_development_environment`; packaged startup must not scan the
+    whole tree.
     """
     h = hashlib.md5()
 
@@ -358,6 +417,51 @@ def _read_installed_hash(plugin_dir: Path) -> str | None:
         return None
 
 
+def _read_bundle_revision(plugin_dir: Path) -> str | None:
+    revision_file = plugin_dir / _BUNDLE_REVISION_FILE
+    try:
+        revision = revision_file.read_text(encoding="utf-8").strip()
+        return revision or None
+    except OSError:
+        return None
+
+
+def _bundle_runtime_files(source: Path) -> list[str]:
+    files: list[str] = []
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        if any(part in _HASH_EXCLUDED_NAMES for part in relative.parts[:-1]):
+            continue
+        if path.name in _HASH_EXCLUDED_NAMES or path.suffix in _HASH_EXCLUDED_SUFFIXES:
+            continue
+        if path.suffix == ".map":
+            continue
+        files.append(relative.as_posix())
+    return sorted(files)
+
+
+def _has_bundle_complete_marker(plugin_dir: Path, source: Path) -> bool:
+    marker = plugin_dir / _BUNDLE_COMPLETE_FILE
+    try:
+        payload = json.loads(marker.read_text(encoding="utf-8"))
+        files = payload.get("files")
+        if not isinstance(files, list):
+            return False
+        root = plugin_dir.resolve()
+        for relative in files:
+            if not isinstance(relative, str) or not relative:
+                return False
+            candidate = (plugin_dir / relative).resolve()
+            candidate.relative_to(root)
+            if not candidate.is_file():
+                return False
+        return True
+    except (OSError, ValueError, TypeError, KeyError):
+        return False
+
+
 def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
     """Write the bundle hash so future startups can detect content changes."""
     hash_file = plugin_dir / _BUNDLE_HASH_FILE
@@ -369,6 +473,45 @@ def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
             plugin_dir,
             exc,
         )
+
+
+def _write_bundle_revision(plugin_dir: Path, revision: str) -> None:
+    try:
+        (plugin_dir / _BUNDLE_REVISION_FILE).write_text(revision, encoding="utf-8")
+    except OSError as exc:
+        raise OSError(
+            f"Failed to write bundle revision for {plugin_dir}: {exc}",
+        ) from exc
+
+
+def _write_bundle_complete(plugin_dir: Path, source: Path) -> None:
+    try:
+        payload = {
+            "format": 1,
+            "files": _bundle_runtime_files(source),
+        }
+        (plugin_dir / _BUNDLE_COMPLETE_FILE).write_text(
+            json.dumps(payload, separators=(",", ":")),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        # Do not publish a replacement that cannot prove it was fully staged;
+        # the caller will retain the previous installation and retry later.
+        raise OSError(
+            f"Failed to write bundle completion marker for {plugin_dir}: {exc}",
+        ) from exc
+
+
+def _bundle_hash_for_install(
+    source: Path,
+    manifest: dict[str, Any],
+    *,
+    hash_enabled: bool,
+) -> str:
+    """Return a development content hash or a cheap release revision."""
+    if not hash_enabled:
+        raise ValueError("release installs do not use a content hash")
+    return _compute_bundle_hash(source, manifest)
 
 
 # pylint: disable=too-many-branches,too-many-statements
@@ -392,7 +535,9 @@ def _install_or_update_plugin(
             this function).
     """
     bundled_version = str(bundled_manifest.get("version", "0.0.0"))
+    hash_enabled = _is_development_environment()
     bundled_hash: str | None = None
+    bundled_revision = f"version:{bundled_version}"
 
     # If target_dir is a junction/symlink (development convenience
     # for hot-reload), skip the update entirely — the link already
@@ -422,36 +567,43 @@ def _install_or_update_plugin(
                 return False  # Installed version is newer
 
             if existing_cmp == bundled_cmp:
-                installed_hash = _read_installed_hash(target_dir)
-                # Release bundles are immutable: a matching version and a
-                # completed install marker are enough. Development keeps the
-                # full content-hash check so unversioned source edits sync.
-                if (
-                    os.environ.get("QWENPAW_DESKTOP_APP") == "1"
-                    and installed_hash
-                    and _installation_has_required_entries(
-                        target_dir,
-                        bundled_manifest,
+                # Packaged bundles are immutable. A matching version and all
+                # declared entry files are enough; do not read/hash the full
+                # source tree on startup. Development keeps the full hash
+                # check so unversioned source edits still sync.
+                has_required_entries = _installation_has_required_entries(
+                    target_dir,
+                    bundled_manifest,
+                )
+                if not hash_enabled and has_required_entries:
+                    # A complete marker is the cheap release integrity
+                    # boundary. Missing marker means an interrupted/legacy
+                    # install and forces one complete replacement.
+                    if (
+                        _has_bundle_complete_marker(target_dir, item)
+                        and _read_bundle_revision(target_dir) == bundled_revision
+                    ):
+                        return False
+                    logger.warning(
+                        "Repairing bundled plugin '%s': completion marker or revision missing",
+                        plugin_id,
                     )
-                ):
-                    return False
-                if (
-                    os.environ.get("QWENPAW_DESKTOP_APP") == "1"
-                    and installed_hash
-                ):
+                if not hash_enabled and not has_required_entries:
                     logger.warning(
                         "Repairing bundled plugin '%s': required entry "
                         "file is missing",
                         plugin_id,
                     )
-                bundled_hash = _compute_bundle_hash(item, bundled_manifest)
-                if installed_hash == bundled_hash:
-                    return False  # Content identical
-                logger.info(
-                    "Updating bundled plugin '%s' v%s (content hash changed)",
-                    plugin_id,
-                    bundled_version,
-                )
+                if hash_enabled:
+                    installed_hash = _read_installed_hash(target_dir)
+                    bundled_hash = _bundle_hash_for_install(item, bundled_manifest, hash_enabled=True)
+                    if installed_hash == bundled_hash and _has_bundle_complete_marker(target_dir, item):
+                        return False  # Content identical and fully installed
+                    logger.info(
+                        "Updating bundled plugin '%s' v%s (content hash changed or incomplete)",
+                        plugin_id,
+                        bundled_version,
+                    )
             else:
                 logger.info(
                     "Upgrading bundled plugin '%s' from %s to %s",
@@ -466,23 +618,35 @@ def _install_or_update_plugin(
             )
 
         if bundled_hash is None:
-            bundled_hash = _compute_bundle_hash(item, bundled_manifest)
+            if hash_enabled:
+                bundled_hash = _bundle_hash_for_install(
+                    item,
+                    bundled_manifest,
+                    hash_enabled=True,
+                )
         _stage_and_replace_bundle(
             item,
             target_dir,
             bundled_hash,
             _PRESERVE_ON_UPDATE_DIRS,
+            bundle_revision=None if hash_enabled else bundled_revision,
         )
         return True
 
     logger.info("Installing bundled plugin '%s'", plugin_id)
     try:
-        bundled_hash = _compute_bundle_hash(item, bundled_manifest)
+        if hash_enabled:
+            bundled_hash = _bundle_hash_for_install(
+                item,
+                bundled_manifest,
+                hash_enabled=True,
+            )
         _stage_and_replace_bundle(
             item,
             target_dir,
             bundled_hash,
             frozenset(),
+            bundle_revision=None if hash_enabled else bundled_revision,
         )
         return True
     except Exception as exc:
@@ -497,6 +661,7 @@ def _install_or_update_plugin(
 def ensure_bundled_plugins_installed(
     *,
     force: bool = False,
+    skip_ids: set[str] | None = None,
 ) -> list[str]:
     """Copy bundled plugins into the user's plugins directory.
 
@@ -524,6 +689,7 @@ def ensure_bundled_plugins_installed(
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
     installed_or_updated: list[str] = []
+    skip_ids = skip_ids or set()
 
     for bundled_dir in bundled_dirs:
         for item in sorted(bundled_dir.iterdir()):
@@ -538,6 +704,10 @@ def ensure_bundled_plugins_installed(
                 continue
 
             plugin_id = bundled_manifest.get("id", item.name)
+
+            if plugin_id in skip_ids:
+                logger.info("Skipping bundled sync for remotely updated plugin '%s'", plugin_id)
+                continue
 
             if plugin_id in _BUNDLED_EXCLUDE:
                 logger.debug(
