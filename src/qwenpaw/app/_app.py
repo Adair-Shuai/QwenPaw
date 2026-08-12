@@ -429,13 +429,24 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "updated": [],
                     "errors": [{"component": "startup", "error": str(exc)}],
                 }
-                logger.warning("Component startup updates skipped", exc_info=True)
+                logger.warning(
+                    "Component startup updates skipped",
+                    exc_info=True,
+                )
 
             component_updated_ids: set[str] = set()
-            component_status = getattr(app.state, "component_updates_status", {})
+            component_status = getattr(
+                app.state,
+                "component_updates_status",
+                {},
+            )
             if isinstance(component_status, dict):
                 for result in component_status.get("updated", []):
-                    if isinstance(result, dict) and result.get("updated") and result.get("component"):
+                    if (
+                        isinstance(result, dict)
+                        and result.get("updated")
+                        and result.get("component")
+                    ):
                         component_updated_ids.add(str(result["component"]))
 
             # Run bundled-plugin synchronization off the event loop. The Tauri
@@ -497,7 +508,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                         "installed": [],
                         "error": str(exc),
                     }
-                    logger.warning("Failed to sync bundled plugins", exc_info=True)
+                    logger.warning(
+                        "Failed to sync bundled plugins",
+                        exc_info=True,
+                    )
 
             # PawApps install into the plugins dir alongside other plugins
             # and load through the same pipeline as 'app'-type plugins

@@ -26,7 +26,8 @@ def _load(name: str):
 def _plugin(root: Path, version: str, **files: str) -> None:
     root.mkdir(parents=True)
     (root / "plugin.json").write_text(
-        json.dumps({"id": "demo", "version": version}), encoding="utf-8",
+        json.dumps({"id": "demo", "version": version}),
+        encoding="utf-8",
     )
     for name, content in files.items():
         path = root / name
@@ -34,7 +35,9 @@ def _plugin(root: Path, version: str, **files: str) -> None:
         path.write_text(content, encoding="utf-8")
 
 
-def test_delta_is_deterministic_and_contains_base_and_final_inventory(tmp_path):
+def test_delta_is_deterministic_and_contains_base_and_final_inventory(
+    tmp_path,
+):
     builder = _load("build_component_delta")
     base = tmp_path / "base"
     target = tmp_path / "target"

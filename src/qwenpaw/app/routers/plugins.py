@@ -55,7 +55,9 @@ def _frontend_revision(
     # marker was introduced. Ignore the old pseudo-hash version marker here;
     # it is not a content revision.
     try:
-        legacy = (plugin_dir / ".bundle_hash").read_text(encoding="utf-8").strip()
+        legacy = (
+            (plugin_dir / ".bundle_hash").read_text(encoding="utf-8").strip()
+        )
         if legacy and not legacy.startswith("version:"):
             return f"{version}-{legacy[:20]}"
     except OSError:

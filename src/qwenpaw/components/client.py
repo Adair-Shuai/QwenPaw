@@ -21,7 +21,11 @@ def _https_url(value: str) -> str:
     parsed = urlparse(value)
     if parsed.scheme not in {"https", "http"} or not parsed.netloc:
         raise ComponentUpdateError(f"unsupported component URL: {value!r}")
-    if parsed.scheme == "http" and parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+    if parsed.scheme == "http" and parsed.hostname not in {
+        "127.0.0.1",
+        "localhost",
+        "::1",
+    }:
         raise ComponentUpdateError("component downloads require HTTPS")
     return value
 
@@ -29,18 +33,38 @@ def _https_url(value: str) -> str:
 class ComponentClient:
     """Download signed component metadata/artifacts with resumable caching."""
 
-    def __init__(self, updater: ComponentUpdater, cache_root: Path, *, client: httpx.Client | None = None):
+    def __init__(
+        self,
+        updater: ComponentUpdater,
+        cache_root: Path,
+        *,
+        client: httpx.Client | None = None,
+    ):
         self.updater = updater
         self.cache_root = cache_root.resolve()
-        self.client = client or httpx.Client(timeout=httpx.Timeout(30.0, read=120.0), follow_redirects=False)
-        configured_hosts = os.environ.get("QWENPAW_COMPONENT_ALLOWED_HOSTS", "")
-        self.allowed_hosts = {item.strip().lower() for item in configured_hosts.split(",") if item.strip()}
+        self.client = client or httpx.Client(
+            timeout=httpx.Timeout(30.0, read=120.0),
+            follow_redirects=False,
+        )
+        configured_hosts = os.environ.get(
+            "QWENPAW_COMPONENT_ALLOWED_HOSTS",
+            "",
+        )
+        self.allowed_hosts = {
+            item.strip().lower()
+            for item in configured_hosts.split(",")
+            if item.strip()
+        }
         self._download_lock = threading.RLock()
 
     def close(self) -> None:
         self.client.close()
 
-    def fetch_manifest(self, url: str, signature_url: str | None = None) -> dict:
+    def fetch_manifest(
+        self,
+        url: str,
+        signature_url: str | None = None,
+    ) -> dict:
         url = _https_url(url)
         response = self.client.get(url, headers={"Cache-Control": "no-cache"})
         response.raise_for_status()
@@ -64,54 +88,116 @@ class ComponentClient:
             and pointer_fields.issubset(pointer)
         ):
             return self._fetch_signed_pointer(url, pointer)
-        signature_response = self.client.get(_https_url(signature_url or f"{url}.sig"))
+        signature_response = self.client.get(
+            _https_url(signature_url or f"{url}.sig"),
+        )
         signature_response.raise_for_status()
-        manifest_path, signature_path = self._stage_manifest(response.content, signature_response.content)
+        manifest_path, signature_path = self._stage_manifest(
+            response.content,
+            signature_response.content,
+        )
         return self.updater.load_manifest(manifest_path, signature_path)
 
-    def _fetch_signed_pointer(self, pointer_url: str, pointer: dict) -> dict:
+    def _fetch_signed_pointer(  # pylint: disable=too-many-branches
+        self,
+        pointer_url: str,
+        pointer: dict,
+    ) -> dict:
         signature = pointer.get("signature")
         payload = dict(pointer)
         payload.pop("signature", None)
         if not isinstance(signature, str) or not signature:
-            raise ComponentUpdateError("component pointer signature is required")
-        _verify_pointer_signature(payload, signature, self.updater.public_key_b64)
+            raise ComponentUpdateError(
+                "component pointer signature is required",
+            )
+        _verify_pointer_signature(
+            payload,
+            signature,
+            self.updater.public_key_b64,
+        )
         if payload.get("target") != self.updater.target:
             raise ComponentUpdateError("component pointer target mismatch")
-        if not isinstance(payload.get("release_id"), str) or not payload["release_id"]:
-            raise ComponentUpdateError("component pointer release id is invalid")
-        if not isinstance(payload.get("manifest_url"), str) or not payload["manifest_url"]:
-            raise ComponentUpdateError("component pointer manifest URL is invalid")
-        manifest_url = _https_url(urljoin(pointer_url, str(payload["manifest_url"])))
+        if (
+            not isinstance(payload.get("release_id"), str)
+            or not payload["release_id"]
+        ):
+            raise ComponentUpdateError(
+                "component pointer release id is invalid",
+            )
+        if (
+            not isinstance(payload.get("manifest_url"), str)
+            or not payload["manifest_url"]
+        ):
+            raise ComponentUpdateError(
+                "component pointer manifest URL is invalid",
+            )
+        manifest_url = _https_url(
+            urljoin(pointer_url, str(payload["manifest_url"])),
+        )
         manifest_host = urlparse(manifest_url).hostname.lower()
         pointer_host = urlparse(pointer_url).hostname.lower()
-        if manifest_host != pointer_host and manifest_host not in self.allowed_hosts:
-            raise ComponentUpdateError("component manifest host is not allowlisted")
+        if (
+            manifest_host != pointer_host
+            and manifest_host not in self.allowed_hosts
+        ):
+            raise ComponentUpdateError(
+                "component manifest host is not allowlisted",
+            )
         if "published_at" in payload or "expires_at" in payload:
             for field in ("published_at", "expires_at"):
                 if not isinstance(payload.get(field), str):
-                    raise ComponentUpdateError(f"component pointer {field} is invalid")
+                    raise ComponentUpdateError(
+                        f"component pointer {field} is invalid",
+                    )
             try:
-                expires_at = datetime.fromisoformat(payload["expires_at"].replace("Z", "+00:00"))
+                expires_at = datetime.fromisoformat(
+                    payload["expires_at"].replace("Z", "+00:00"),
+                )
             except ValueError as exc:
-                raise ComponentUpdateError("component pointer expiry is invalid") from exc
+                raise ComponentUpdateError(
+                    "component pointer expiry is invalid",
+                ) from exc
             if expires_at <= datetime.now(timezone.utc):
                 raise ComponentUpdateError("component pointer has expired")
-        manifest_response = self.client.get(manifest_url, headers={"Cache-Control": "no-cache"})
+        manifest_response = self.client.get(
+            manifest_url,
+            headers={"Cache-Control": "no-cache"},
+        )
         manifest_response.raise_for_status()
-        if type(payload.get("manifest_size")) is not int or len(manifest_response.content) != payload["manifest_size"]:
+        if (
+            type(payload.get("manifest_size")) is not int
+            or len(manifest_response.content) != payload["manifest_size"]
+        ):
             raise ComponentUpdateError("component manifest size mismatch")
-        if _sha256_bytes(manifest_response.content).lower() != str(payload.get("manifest_sha256", "")).lower():
+        if (
+            _sha256_bytes(manifest_response.content).lower()
+            != str(payload.get("manifest_sha256", "")).lower()
+        ):
             raise ComponentUpdateError("component manifest sha256 mismatch")
         signature_url = _https_url(f"{manifest_url}.sig")
-        signature_response = self.client.get(signature_url, headers={"Cache-Control": "no-cache"})
+        signature_response = self.client.get(
+            signature_url,
+            headers={"Cache-Control": "no-cache"},
+        )
         signature_response.raise_for_status()
-        if signature_response.text.strip() != str(payload.get("manifest_signature", "")).strip():
-            raise ComponentUpdateError("component manifest signature does not match pointer")
-        manifest_path, signature_path = self._stage_manifest(manifest_response.content, signature_response.content)
+        if (
+            signature_response.text.strip()
+            != str(payload.get("manifest_signature", "")).strip()
+        ):
+            raise ComponentUpdateError(
+                "component manifest signature does not match pointer",
+            )
+        manifest_path, signature_path = self._stage_manifest(
+            manifest_response.content,
+            signature_response.content,
+        )
         return self.updater.load_manifest(manifest_path, signature_path)
 
-    def _stage_manifest(self, manifest: bytes, signature: bytes) -> tuple[Path, Path]:
+    def _stage_manifest(
+        self,
+        manifest: bytes,
+        signature: bytes,
+    ) -> tuple[Path, Path]:
         self.cache_root.mkdir(parents=True, exist_ok=True)
         # Keep each verified JSON/signature pair in its own immutable cache
         # directory.  A crash or concurrent fetch can therefore never leave
@@ -136,11 +222,20 @@ class ComponentClient:
         signature_path = staged / "manifest.json.sig"
         return manifest_path, signature_path
 
-    def download_artifact(self, url: str, *, sha256: str, size: int, name: str) -> Path:
+    def download_artifact(
+        self,
+        url: str,
+        *,
+        sha256: str,
+        size: int,
+        name: str,
+    ) -> Path:
         url = _https_url(url)
         if type(size) is not int or size < 0:
             raise ComponentUpdateError("invalid artifact size")
-        if len(sha256) != 64 or any(char not in "0123456789abcdefABCDEF" for char in sha256):
+        if len(sha256) != 64 or any(
+            char not in "0123456789abcdefABCDEF" for char in sha256
+        ):
             raise ComponentUpdateError("invalid artifact sha256")
         self.cache_root.mkdir(parents=True, exist_ok=True)
         if not name or Path(name).name != name or name in {".", ".."}:
@@ -150,11 +245,26 @@ class ComponentClient:
         final = artifact_root / name
         partial = final.with_name(final.name + ".part")
         with self._download_lock:
-            return self._download_artifact_locked(url, sha256, size, final, partial)
+            return self._download_artifact_locked(
+                url,
+                sha256,
+                size,
+                final,
+                partial,
+            )
 
-    def _download_artifact_locked(self, url: str, sha256: str, size: int, final: Path, partial: Path) -> Path:
+    def _download_artifact_locked(
+        self,
+        url: str,
+        sha256: str,
+        size: int,
+        final: Path,
+        partial: Path,
+    ) -> Path:
         if partial.is_symlink() or final.is_symlink():
-            raise ComponentUpdateError("artifact cache paths may not be symlinks")
+            raise ComponentUpdateError(
+                "artifact cache paths may not be symlinks",
+            )
         existing = partial.stat().st_size if partial.is_file() else 0
         if existing > size:
             partial.unlink(missing_ok=True)
@@ -163,7 +273,10 @@ class ComponentClient:
         with self.client.stream("GET", url, headers=headers) as response:
             status = response.status_code
             content_range = response.headers.get("Content-Range", "")
-            valid_range = not existing or (status == 206 and content_range.startswith(f"bytes {existing}-"))
+            valid_range = not existing or (
+                status == 206
+                and content_range.startswith(f"bytes {existing}-")
+            )
             if valid_range and status != 200:
                 response.raise_for_status()
                 _stream_to_file(response, partial, append=bool(existing))
@@ -186,7 +299,12 @@ class ComponentClient:
         return final
 
 
-def _stream_to_file(response: httpx.Response, path: Path, *, append: bool) -> None:
+def _stream_to_file(
+    response: httpx.Response,
+    path: Path,
+    *,
+    append: bool,
+) -> None:
     mode = "ab" if append else "wb"
     with path.open(mode) as stream:
         for chunk in response.iter_bytes(1024 * 1024):
@@ -212,12 +330,20 @@ def _sha256_bytes(payload: bytes) -> str:
     return hashlib.sha256(payload).hexdigest()
 
 
-def _verify_pointer_signature(payload: dict, signature: str, public_key_b64: str) -> None:
+def _verify_pointer_signature(
+    payload: dict,
+    signature: str,
+    public_key_b64: str,
+) -> None:
     from .update import _verify_signature
 
     _verify_signature(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-        .encode("utf-8")
+        json.dumps(
+            payload,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
         + b"\n",
         signature,
         public_key_b64,

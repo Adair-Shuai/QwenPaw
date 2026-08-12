@@ -19,9 +19,15 @@ async def check_component_updates():
     if service is None:
         return {"enabled": False, "updates": []}
     try:
-        return {"enabled": True, "updates": await asyncio.to_thread(service.check)}
+        return {
+            "enabled": True,
+            "updates": await asyncio.to_thread(service.check),
+        }
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Component update check failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Component update check failed: {exc}",
+        ) from exc
     finally:
         service.client.close()
 
@@ -30,12 +36,18 @@ async def check_component_updates():
 async def install_component_update(component: str):
     service = configured_service()
     if service is None:
-        raise HTTPException(status_code=409, detail="Component updates are not configured")
+        raise HTTPException(
+            status_code=409,
+            detail="Component updates are not configured",
+        )
     try:
         return await asyncio.to_thread(service.install, component)
     except ComponentUpdateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Component update failed: {exc}") from exc
+        raise HTTPException(
+            status_code=502,
+            detail=f"Component update failed: {exc}",
+        ) from exc
     finally:
         service.client.close()

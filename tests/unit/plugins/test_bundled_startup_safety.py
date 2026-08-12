@@ -114,9 +114,16 @@ def test_packaged_same_version_repairs_missing_completion_marker(
         encoding="utf-8",
     )
 
-    assert bundled._install_or_update_plugin(source, target, "critical-plugin", manifest)
+    assert bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+    )
     assert (target / bundled._BUNDLE_COMPLETE_FILE).is_file()
-    assert (target / bundled._BUNDLE_REVISION_FILE).read_text(encoding="utf-8") == "version:1.0.0"
+    assert (target / bundled._BUNDLE_REVISION_FILE).read_text(
+        encoding="utf-8",
+    ) == "version:1.0.0"
 
 
 def test_packaged_same_version_repairs_missing_non_entry_file(
@@ -134,7 +141,12 @@ def test_packaged_same_version_repairs_missing_non_entry_file(
     (target / "runtime.py").unlink()
     monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
 
-    assert bundled._install_or_update_plugin(source, target, "critical-plugin", manifest)
+    assert bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+    )
     assert (target / "runtime.py").is_file()
 
 

@@ -11,7 +11,11 @@ import tempfile
 import zipfile
 from pathlib import Path
 
-from component_common import canonical_json, file_inventory, read_plugin_metadata
+from component_common import (
+    canonical_json,
+    file_inventory,
+    read_plugin_metadata,
+)
 
 
 def build_delta(base: Path, target: Path) -> dict:
@@ -28,7 +32,9 @@ def build_delta(base: Path, target: Path) -> dict:
     component_id, base_version = read_plugin_metadata(base)
     target_id, target_version = read_plugin_metadata(target)
     if component_id != target_id:
-        raise ValueError(f"component id changed: {component_id!r} -> {target_id!r}")
+        raise ValueError(
+            f"component id changed: {component_id!r} -> {target_id!r}",
+        )
     return {
         "schema_version": 1,
         "component": component_id,
@@ -38,7 +44,10 @@ def build_delta(base: Path, target: Path) -> dict:
         "replace": replace,
         "delete": delete,
         "base_files": base_files,
-        "files": {path: target_files[path] for path in sorted(set(add) | set(replace))},
+        "files": {
+            path: target_files[path]
+            for path in sorted(set(add) | set(replace))
+        },
         "final_files": target_files,
     }
 
@@ -46,17 +55,32 @@ def build_delta(base: Path, target: Path) -> dict:
 def write_delta(base: Path, target: Path, output: Path) -> dict:
     delta = build_delta(base, target)
     output.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{output.name}.",
+        suffix=".tmp",
+        dir=output.parent,
+    )
     os.close(fd)
     temporary = Path(temporary_name)
     try:
-        with zipfile.ZipFile(temporary, "w", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
-            info = zipfile.ZipInfo("delta.json", date_time=(1980, 1, 1, 0, 0, 0))
+        with zipfile.ZipFile(
+            temporary,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+            compresslevel=9,
+        ) as archive:
+            info = zipfile.ZipInfo(
+                "delta.json",
+                date_time=(1980, 1, 1, 0, 0, 0),
+            )
             info.compress_type = zipfile.ZIP_DEFLATED
             archive.writestr(info, canonical_json(delta))
             for relative in sorted(set(delta["add"]) | set(delta["replace"])):
                 source = target / Path(relative)
-                info = zipfile.ZipInfo(f"files/{relative}", date_time=(1980, 1, 1, 0, 0, 0))
+                info = zipfile.ZipInfo(
+                    f"files/{relative}",
+                    date_time=(1980, 1, 1, 0, 0, 0),
+                )
                 info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info, source.read_bytes())
         os.replace(temporary, output)
@@ -72,8 +96,20 @@ def main() -> int:
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
-    delta = write_delta(args.base.resolve(), args.target.resolve(), args.output.resolve())
-    print(json.dumps({"component": delta["component"], "base_version": delta["base_version"], "target_version": delta["target_version"]}))
+    delta = write_delta(
+        args.base.resolve(),
+        args.target.resolve(),
+        args.output.resolve(),
+    )
+    print(
+        json.dumps(
+            {
+                "component": delta["component"],
+                "base_version": delta["base_version"],
+                "target_version": delta["target_version"],
+            },
+        ),
+    )
     return 0
 
 

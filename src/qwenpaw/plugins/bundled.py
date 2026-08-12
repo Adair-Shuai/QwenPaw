@@ -88,6 +88,7 @@ def _is_development_environment() -> bool:
         for parent in [here, *here.parents]
     )
 
+
 # Plugins that are bundled in the repo but should NOT be auto-installed
 # on startup.  Each entry is a plugin ID (from plugin.json → "id" field).
 _BUNDLED_EXCLUDE: frozenset[str] = frozenset(
@@ -434,7 +435,10 @@ def _bundle_runtime_files(source: Path) -> list[str]:
         relative = path.relative_to(source)
         if any(part in _HASH_EXCLUDED_NAMES for part in relative.parts[:-1]):
             continue
-        if path.name in _HASH_EXCLUDED_NAMES or path.suffix in _HASH_EXCLUDED_SUFFIXES:
+        if (
+            path.name in _HASH_EXCLUDED_NAMES
+            or path.suffix in _HASH_EXCLUDED_SUFFIXES
+        ):
             continue
         if path.suffix == ".map":
             continue
@@ -442,7 +446,7 @@ def _bundle_runtime_files(source: Path) -> list[str]:
     return sorted(files)
 
 
-def _has_bundle_complete_marker(plugin_dir: Path, source: Path) -> bool:
+def _has_bundle_complete_marker(plugin_dir: Path) -> bool:
     marker = plugin_dir / _BUNDLE_COMPLETE_FILE
     try:
         payload = json.loads(marker.read_text(encoding="utf-8"))
@@ -477,7 +481,10 @@ def _write_bundle_hash(plugin_dir: Path, hash_value: str) -> None:
 
 def _write_bundle_revision(plugin_dir: Path, revision: str) -> None:
     try:
-        (plugin_dir / _BUNDLE_REVISION_FILE).write_text(revision, encoding="utf-8")
+        (plugin_dir / _BUNDLE_REVISION_FILE).write_text(
+            revision,
+            encoding="utf-8",
+        )
     except OSError as exc:
         raise OSError(
             f"Failed to write bundle revision for {plugin_dir}: {exc}",
@@ -498,7 +505,8 @@ def _write_bundle_complete(plugin_dir: Path, source: Path) -> None:
         # Do not publish a replacement that cannot prove it was fully staged;
         # the caller will retain the previous installation and retry later.
         raise OSError(
-            f"Failed to write bundle completion marker for {plugin_dir}: {exc}",
+            "Failed to write bundle completion marker for "
+            f"{plugin_dir}: {exc}",
         ) from exc
 
 
@@ -580,12 +588,14 @@ def _install_or_update_plugin(
                     # boundary. Missing marker means an interrupted/legacy
                     # install and forces one complete replacement.
                     if (
-                        _has_bundle_complete_marker(target_dir, item)
-                        and _read_bundle_revision(target_dir) == bundled_revision
+                        _has_bundle_complete_marker(target_dir)
+                        and _read_bundle_revision(target_dir)
+                        == bundled_revision
                     ):
                         return False
                     logger.warning(
-                        "Repairing bundled plugin '%s': completion marker or revision missing",
+                        "Repairing bundled plugin '%s': completion marker "
+                        "or revision missing",
                         plugin_id,
                     )
                 if not hash_enabled and not has_required_entries:
@@ -596,11 +606,19 @@ def _install_or_update_plugin(
                     )
                 if hash_enabled:
                     installed_hash = _read_installed_hash(target_dir)
-                    bundled_hash = _bundle_hash_for_install(item, bundled_manifest, hash_enabled=True)
-                    if installed_hash == bundled_hash and _has_bundle_complete_marker(target_dir, item):
+                    bundled_hash = _bundle_hash_for_install(
+                        item,
+                        bundled_manifest,
+                        hash_enabled=True,
+                    )
+                    if (
+                        installed_hash == bundled_hash
+                        and _has_bundle_complete_marker(target_dir)
+                    ):
                         return False  # Content identical and fully installed
                     logger.info(
-                        "Updating bundled plugin '%s' v%s (content hash changed or incomplete)",
+                        "Updating bundled plugin '%s' v%s "
+                        "(content hash changed or incomplete)",
                         plugin_id,
                         bundled_version,
                     )
@@ -706,7 +724,10 @@ def ensure_bundled_plugins_installed(
             plugin_id = bundled_manifest.get("id", item.name)
 
             if plugin_id in skip_ids:
-                logger.info("Skipping bundled sync for remotely updated plugin '%s'", plugin_id)
+                logger.info(
+                    "Skipping bundled sync for remotely updated plugin '%s'",
+                    plugin_id,
+                )
                 continue
 
             if plugin_id in _BUNDLED_EXCLUDE:
