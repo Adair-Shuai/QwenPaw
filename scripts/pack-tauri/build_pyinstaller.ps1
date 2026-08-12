@@ -255,7 +255,8 @@ Write-Host ""
 
 Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
-    --dest (Join-Path $BINARIES_DIR "node-runtime")
+    --dest (Join-Path $BINARIES_DIR "node-runtime") `
+    --sha256 $env:QWENPAW_NODE_SHA256
 Assert-LastExit "Failed to stage bundled Node runtime"
 Write-Host ""
 
@@ -272,7 +273,9 @@ Write-Host ""
 
 Write-Host "== Staging bundled Java runtime (NeqSim MCP Server) ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_jre.py") `
-    --dest (Join-Path $BINARIES_DIR "java-runtime")
+    --dest (Join-Path $BINARIES_DIR "java-runtime") `
+    --sha256 $env:QWENPAW_JRE_SHA256 `
+    --java-release $env:QWENPAW_JAVA_RELEASE
 Assert-LastExit "Failed to stage bundled Java runtime"
 Write-Host ""
 

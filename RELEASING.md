@@ -112,10 +112,9 @@ jobs succeed. If anything fails, the release stays a draft.
 
 ## Rollback to the legacy flow
 
-The pre-existing per-artifact workflows are intentionally retained. If the
-orchestrator is broken, publish the release the old way — **Publish** the GitHub
-Release (or `gh release create ...`), which triggers `publish-pypi` /
-`docker-release` / `desktop-release` / `plugins-release` on `release: published`.
+The canonical release flow is `release.yml`. Legacy desktop and plugin
+workflows are no longer production triggers; publishing a GitHub Release
+directly is not a supported fallback because it bypasses the release gates.
 
 > **Warning:** the legacy flow does **not** gate the web release on the desktop
 > build (the very problem this orchestrator fixes), so use it only as an

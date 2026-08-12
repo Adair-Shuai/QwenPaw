@@ -99,7 +99,9 @@ release 就仍是草稿。
 
 旧的按产物拆分的 workflow 是特意保留的。如果编排器坏了，就用旧方式发布——把 GitHub
 Release **点 Publish**（或 `gh release create ...`），会在 `release: published` 上触发
-`publish-pypi` / `docker-release` / `desktop-release` / `plugins-release`。
+正式发布统一走 `release.yml`；旧的 `desktop-release` 和 `plugins-release`
+不再作为生产发布触发器。直接发布 GitHub Release 不再是受支持的回退路径，
+因为它会绕过统一发布门禁。
 
 > **警告**：旧流程**不会**用桌面构建来 gate Web 发布（这正是本编排器要修的问题），
 > 因此仅作应急回退使用。

@@ -13,6 +13,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
@@ -105,7 +106,16 @@ def _http_get(url: str) -> bytes:
     raise RuntimeError(f"failed to fetch {url}")
 
 
-def _resolve_download_url(java_version: str) -> tuple[str, str]:
+def _verify_sha256(data: bytes, expected: str) -> None:
+    expected = expected.strip().lower()
+    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+        raise SystemExit("JRE SHA-256 must be a 64-character hexadecimal digest")
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        raise SystemExit(f"JRE SHA-256 mismatch: expected {expected}, got {actual}")
+
+
+def _resolve_download_url(java_version: str, expected_release: str = "") -> tuple[str, str, str]:
     """Query the Adoptium API for the latest JRE download URL.
 
     Returns (download_url, version_label).
@@ -125,25 +135,72 @@ def _resolve_download_url(java_version: str) -> tuple[str, str]:
         f"?architecture={arch}&heap_size=normal&image_type=jre"
         f"&os={os_name}&project=jdk&vendor=eclipse"
     )
+    checksum = ""
     try:
         meta = json.loads(_http_get(meta_url).decode("utf-8"))
         release_name = meta[0]["release_name"]
+        if expected_release and release_name != expected_release:
+            raise SystemExit(
+                f"Adoptium release drifted: expected {expected_release}, got {release_name}"
+            )
+        binaries = meta[0].get("binaries") or []
+        package = (binaries[0].get("package") or {}) if binaries else {}
+        checksum = str(package.get("checksum") or "")
     except Exception:
         release_name = f"jdk-{java_version}"
-    return url, release_name
+    return url, release_name, checksum
+
+
+def _resolve_sha256(value: str, discovered: str, os_name: str, arch: str, release_name: str) -> str:
+    override = value.strip()
+    if override:
+        return override
+    if discovered.strip():
+        return discovered.strip()
+    raise SystemExit(
+        "JRE SHA-256 is required; set --sha256 or QWENPAW_JRE_SHA256 for the pinned "
+        f"{release_name}-{os_name}-{arch} archive"
+    )
 
 
 def _extract(archive: Path, workdir: Path) -> Path:
     """Extract *archive* into *workdir* and return the JDK root directory."""
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as zip_file:
-            zip_file.extractall(workdir)
+            infos = zip_file.infolist()
+            root = workdir.resolve()
+            for info in infos:
+                _validate_member(info.filename, root)
+                mode = (info.external_attr >> 16) & 0o170000
+                if mode in {0o120000, 0o060000, 0o020000}:
+                    raise SystemExit(f"unsafe JRE ZIP link/device member: {info.filename}")
+            for info in infos:
+                target = (root / info.filename).resolve()
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    with zip_file.open(info) as source, target.open("wb") as dest:
+                        shutil.copyfileobj(source, dest)
     else:
         with tarfile.open(archive, "r:gz") as tar:
-            try:
-                tar.extractall(workdir, filter="data")
-            except TypeError:
-                tar.extractall(workdir)
+            members = tar.getmembers()
+            root = workdir.resolve()
+            for member in members:
+                _validate_member(member.name, root)
+                if not (member.isdir() or member.isfile()):
+                    raise SystemExit(f"unsafe JRE tar member type: {member.name}")
+            for member in members:
+                target = (root / member.name).resolve()
+                if member.isdir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                source = tar.extractfile(member)
+                if source is None:
+                    raise SystemExit(f"cannot read JRE tar member: {member.name}")
+                with source, target.open("wb") as dest:
+                    shutil.copyfileobj(source, dest)
 
     # Find the top-level extracted directory.
     dirs = [p for p in workdir.iterdir() if p.is_dir()]
@@ -156,6 +213,14 @@ def _extract(archive: Path, workdir: Path) -> Path:
     if dirs:
         return dirs[0]
     raise SystemExit("failed to locate extracted JRE directory")
+
+
+def _validate_member(name: str, root: Path) -> None:
+    target = (root / name).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise SystemExit(f"archive member escapes target: {name}") from None
 
 
 def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
@@ -174,9 +239,19 @@ def main() -> None:
         help="Target directory for the JRE",
     )
     parser.add_argument(
+        "--sha256",
+        default=os.environ.get("QWENPAW_JRE_SHA256", ""),
+        help="Expected SHA-256 for the exact JRE archive (required for production builds)",
+    )
+    parser.add_argument(
         "--java-version",
         default=os.environ.get("QWENPAW_JAVA_VERSION", DEFAULT_JAVA_VERSION),
         help=f"Java major version (default: {DEFAULT_JAVA_VERSION})",
+    )
+    parser.add_argument(
+        "--java-release",
+        default=os.environ.get("QWENPAW_JAVA_RELEASE", ""),
+        help="Pinned Adoptium release_name (required for production builds)",
     )
     args = parser.parse_args()
 
@@ -184,9 +259,14 @@ def main() -> None:
     dest = Path(args.dest).resolve()
     marker = dest / ".java-runtime-version"
 
-    download_url, release_name = _resolve_download_url(java_version)
+    if os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower() in {"1", "true", "yes"} and not args.java_release:
+        raise SystemExit("production build requires QWENPAW_JAVA_RELEASE")
+    download_url, release_name, discovered_sha256 = _resolve_download_url(java_version, args.java_release)
     os_name, arch = _target()
-    marker_value = f"{release_name}-{os_name}-{arch}"
+    expected_sha256 = _resolve_sha256(args.sha256, discovered_sha256, os_name, arch, release_name)
+    if os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower() in {"1", "true", "yes"} and not args.sha256:
+        raise SystemExit("production build requires QWENPAW_JRE_SHA256")
+    marker_value = f"{release_name}-{os_name}-{arch}-{expected_sha256.lower()}"
 
     if _is_staged(dest, marker, marker_value):
         print(f"java-runtime already staged ({marker_value}); skipping")
@@ -202,15 +282,28 @@ def main() -> None:
         # Determine the file extension from the platform.
         suffix = ".zip" if os_name == "windows" else ".tar.gz"
         archive = tmpdir / f"jre{suffix}"
-        archive.write_bytes(_http_get(download_url))
+        archive_bytes = _http_get(download_url)
+        _verify_sha256(archive_bytes, args.sha256 or expected_sha256)
+        archive.write_bytes(archive_bytes)
         extracted = _extract(archive, tmpdir)
 
-        if dest.exists():
-            shutil.rmtree(dest)
-        dest.mkdir(parents=True, exist_ok=True)
+        staged_dest = tmpdir / "staged-java-runtime"
+        staged_dest.mkdir(parents=True, exist_ok=True)
         # Move the contents of the extracted JDK root into dest.
         for item in extracted.iterdir():
-            shutil.move(str(item), str(dest / item.name))
+            shutil.move(str(item), str(staged_dest / item.name))
+        backup = dest.with_name(f".{dest.name}.previous")
+        if backup.exists():
+            shutil.rmtree(backup)
+        if dest.exists():
+            dest.replace(backup)
+        try:
+            staged_dest.replace(dest)
+        except Exception:
+            if backup.exists() and not dest.exists():
+                backup.replace(dest)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
 
     java_exe = _java_exe(dest)
     if not java_exe.is_file():

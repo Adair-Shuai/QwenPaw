@@ -192,7 +192,8 @@ echo ""
 
 echo "== Staging bundled Node runtime =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_node_runtime.py" \
-    --dest "${BINARIES_DIR}/node-runtime"
+    --dest "${BINARIES_DIR}/node-runtime" \
+    --sha256 "${QWENPAW_NODE_SHA256:-}"
 echo ""
 
 echo "== Staging bundled OfficeCLI =="
@@ -207,7 +208,9 @@ echo ""
 
 echo "== Staging bundled Java runtime (NeqSim MCP Server) =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_jre.py" \
-    --dest "${BINARIES_DIR}/java-runtime"
+    --dest "${BINARIES_DIR}/java-runtime" \
+    --sha256 "${QWENPAW_JRE_SHA256:-}" \
+    --java-release "${QWENPAW_JAVA_RELEASE:-}"
 echo ""
 
 echo "== Staging bundled NeqSim MCP Server JAR =="

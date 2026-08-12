@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import platform
 import shutil
@@ -58,17 +59,45 @@ def _http_get(url: str) -> bytes:
         return response.read()
 
 
+def _verify_sha256(data: bytes, expected: str) -> None:
+    expected = expected.strip().lower()
+    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+        raise SystemExit("Node runtime SHA-256 must be a 64-character hexadecimal digest")
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        raise SystemExit(f"Node runtime SHA-256 mismatch: expected {expected}, got {actual}")
+
+
+def _official_sha256(url: str, archive_name: str) -> str:
+    sums = _http_get(f"{url.rsplit('/', 1)[0]}/SHASUMS256.txt").decode("utf-8")
+    for line in sums.splitlines():
+        digest, _, name = line.partition("  ")
+        if name.strip() == archive_name:
+            return digest.strip()
+    raise SystemExit(f"Node archive checksum not found for {archive_name}")
+
+
 def _extract(archive: Path, suffix: str, workdir: Path) -> Path:
     if suffix == "zip":
         with zipfile.ZipFile(archive) as zip_file:
-            zip_file.extractall(workdir)
+            infos = zip_file.infolist()
+            root = workdir.resolve()
+            for info in infos:
+                _validate_archive_member(info.filename, root)
+                mode = (info.external_attr >> 16) & 0o170000
+                if mode in {0o120000, 0o060000, 0o020000}:
+                    raise SystemExit(f"unsafe ZIP link/device member: {info.filename}")
+            for info in infos:
+                target = (root / info.filename).resolve()
+                if info.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    continue
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with zip_file.open(info) as source, target.open("wb") as dest:
+                    shutil.copyfileobj(source, dest)
     else:
         with tarfile.open(archive, "r:xz") as tar:
-            try:
-                tar.extractall(workdir, filter="data")
-            except TypeError:
-                _validate_tar_members(tar, workdir)
-                tar.extractall(workdir)
+            _extract_tar_safely(tar, workdir)
 
     roots = [
         path
@@ -80,16 +109,32 @@ def _extract(archive: Path, suffix: str, workdir: Path) -> Path:
     return roots[0]
 
 
-def _validate_tar_members(tar: tarfile.TarFile, workdir: Path) -> None:
+def _validate_archive_member(name: str, root: Path) -> None:
+    target = (root / name).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise SystemExit(f"archive member escapes target: {name}") from None
+
+
+def _extract_tar_safely(tar: tarfile.TarFile, workdir: Path) -> None:
     root = workdir.resolve()
-    for member in tar.getmembers():
+    members = tar.getmembers()
+    for member in members:
+        _validate_archive_member(member.name, root)
+        if not (member.isdir() or member.isfile()):
+            raise SystemExit(f"unsafe tar member type: {member.name}")
+    for member in members:
         target = (root / member.name).resolve()
-        try:
-            target.relative_to(root)
-        except ValueError:
-            raise SystemExit(
-                f"tar member escapes target: {member.name}",
-            ) from None
+        if member.isdir():
+            target.mkdir(parents=True, exist_ok=True)
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        source = tar.extractfile(member)
+        if source is None:
+            raise SystemExit(f"cannot read tar member: {member.name}")
+        with source, target.open("wb") as dest:
+            shutil.copyfileobj(source, dest)
 
 
 def prune_runtime(dest: Path) -> int:
@@ -119,6 +164,11 @@ def main() -> None:
         "--node-version",
         default=os.environ.get("QWENPAW_NODE_VERSION", DEFAULT_NODE_VERSION),
     )
+    parser.add_argument(
+        "--sha256",
+        default=os.environ.get("QWENPAW_NODE_SHA256", ""),
+        help="Expected SHA-256 for the exact Node archive (required for production builds)",
+    )
     args = parser.parse_args()
 
     version = args.node_version
@@ -126,12 +176,19 @@ def main() -> None:
     target = f"{platform_name}-{arch}"
     dest = Path(args.dest).resolve()
     marker = dest / ".node-runtime-version"
+    archive_name = f"node-{version}-{target}.{suffix}"
+    url = f"{NODE_DIST_URL}/{version}/{archive_name}"
+    production_hashes = os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower() in {"1", "true", "yes"}
+    if production_hashes and not args.sha256:
+        raise SystemExit("production build requires QWENPAW_NODE_SHA256")
+    expected_sha256 = args.sha256 or _official_sha256(url, archive_name)
+    marker_value = f"{version}-{target}-{expected_sha256}"
 
     if (
         _node_exe(dest).is_file()
         and _npx_exe(dest).is_file()
         and marker.is_file()
-        and marker.read_text(encoding="utf-8").strip() == f"{version}-{target}"
+        and marker.read_text(encoding="utf-8").strip() == marker_value
     ):
         removed = prune_runtime(dest)
         if removed:
@@ -141,28 +198,42 @@ def main() -> None:
         print(f"node-runtime already staged ({version}-{target}); skipping")
         return
 
-    archive_name = f"node-{version}-{target}.{suffix}"
-    url = f"{NODE_DIST_URL}/{version}/{archive_name}"
     print(f"Staging Node.js {version} for {target}...")
     print(f"Downloading {url}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmpdir = Path(tmp)
         archive = tmpdir / archive_name
-        archive.write_bytes(_http_get(url))
+        archive_bytes = _http_get(url)
+        _verify_sha256(archive_bytes, expected_sha256)
+        archive.write_bytes(archive_bytes)
         extracted = _extract(archive, suffix, tmpdir)
 
-        if dest.exists():
-            shutil.rmtree(dest)
-        dest.mkdir(parents=True, exist_ok=True)
+        staged_dest = tmpdir / "staged-node-runtime"
+        staged_dest.mkdir(parents=True, exist_ok=True)
         for item in extracted.iterdir():
-            shutil.move(str(item), dest / item.name)
+            shutil.move(str(item), staged_dest / item.name)
+
+        if not (staged_dest / ("node.exe" if platform.system() == "Windows" else "bin/node")).is_file():
+            raise SystemExit("staging failed: node executable missing")
+        backup = dest.with_name(f".{dest.name}.previous")
+        if backup.exists():
+            shutil.rmtree(backup)
+        if dest.exists():
+            dest.replace(backup)
+        try:
+            staged_dest.replace(dest)
+        except Exception:
+            if backup.exists() and not dest.exists():
+                backup.replace(dest)
+            raise
+        shutil.rmtree(backup, ignore_errors=True)
 
     if not _node_exe(dest).is_file() or not _npx_exe(dest).is_file():
         raise SystemExit("staging failed: node or npx missing")
     removed = prune_runtime(dest)
     print(f"Pruned {removed / (1024 * 1024):.1f} MiB from node-runtime")
-    marker.write_text(f"{version}-{target}", encoding="utf-8")
+    marker.write_text(marker_value, encoding="utf-8")
     print(f"Staged node-runtime at {dest}")
 
 
