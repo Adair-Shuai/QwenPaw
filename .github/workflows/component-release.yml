@@ -21,6 +21,14 @@ on:
         type: boolean
         required: false
         default: false
+      history_count:
+        type: number
+        required: false
+        default: 10
+      delta_max_ratio:
+        type: string
+        required: false
+        default: "0.8"
   workflow_dispatch:
     inputs:
       target:
@@ -35,6 +43,14 @@ on:
         description: Upload signed artifacts and publish manifest
         type: boolean
         default: false
+      history_count:
+        description: Historical releases used for direct deltas (1-10)
+        type: number
+        default: 10
+      delta_max_ratio:
+        description: Skip deltas at or above this fraction of full size
+        type: string
+        default: "0.8"
 
 permissions:
   contents: read
@@ -85,7 +101,10 @@ jobs:
             --source-root component-staging \
             --base-root component-base \
             --target '${{ matrix.target }}' \
-            --manifest-url "$COMPONENT_BASE_URL/metadata/components/stable/${{ matrix.target }}.current.json"
+            --manifest-url "$COMPONENT_BASE_URL/metadata/components/stable/${{ matrix.target }}.current.json" \
+            --history-count '${{ inputs.history_count || 10 }}' \
+            --history-output component-history/${{ matrix.target }}.history.json \
+            --history-signature-output component-history/${{ matrix.target }}.history.json.sig
 
       - name: Build and sign component release
         env:
@@ -102,7 +121,11 @@ jobs:
             --release-id "${{ inputs.release_id || format('{0}-{1}', github.run_id, github.run_attempt) }}" \
             --release-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}' \
             --release-sequence '${{ github.run_id }}' \
-            --release-attempt '${{ github.run_attempt }}'
+            --release-attempt '${{ github.run_attempt }}' \
+            --history-input component-history/${{ matrix.target }}.history.json \
+            --history-signature-input component-history/${{ matrix.target }}.history.json.sig \
+            --history-count '${{ inputs.history_count || 10 }}' \
+            --delta-max-ratio '${{ inputs.delta_max_ratio || '0.8' }}'
 
       - name: Verify generated artifacts
         run: |
@@ -196,6 +219,9 @@ jobs:
           }
           publish_immutable "$manifest" "$manifest_uri" "manifest ${manifest_name}"
           publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${manifest_name}.sig"
+          history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
+          publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
+          publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
           pointer="component-release/metadata/components/stable/${{ matrix.target }}.current.json"
           remote_pointer="${RUNNER_TEMP}/${{ matrix.target }}.remote-current.json"
           if ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$remote_pointer" >/dev/null 2>&1; then

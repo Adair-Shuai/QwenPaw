@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import argparse
 import base64
+import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 import urllib.error
@@ -26,6 +28,7 @@ from pathlib import Path, PurePosixPath
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from component_common import (
+    canonical_json,
     file_inventory,
     read_plugin_metadata,
     safe_relative_path,
@@ -35,6 +38,7 @@ from component_common import (
 _MAX_MEMBERS = 10_000
 _MAX_TOTAL_BYTES = 512 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
+_RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
@@ -114,6 +118,7 @@ def prepare_base(
     expected_target: str | None = None,
     allow_missing: bool = True,
 ) -> bool:
+    # pylint: disable=too-many-branches,too-many-statements
     """Populate *base_root* from the previous signed release.
 
     Returns ``True`` when a previous release was found and ``False`` for the
@@ -191,8 +196,6 @@ def prepare_base(
             or len(manifest_raw) != manifest_doc["manifest_size"]
         ):
             raise ValueError("previous component manifest size mismatch")
-        import hashlib
-
         if (
             hashlib.sha256(manifest_raw).hexdigest().lower()
             != str(manifest_doc["manifest_sha256"]).lower()
@@ -288,11 +291,177 @@ def prepare_base(
         shutil.rmtree(temporary, ignore_errors=True)
 
 
+def prepare_bases(
+    source_root: Path,
+    base_root: Path,
+    *,
+    pointer_url: str,
+    private_key_b64: str,
+    expected_target: str,
+    history_count: int = 10,
+    history_output: Path | None = None,
+    history_signature_output: Path | None = None,
+) -> int:
+    # pylint: disable=too-many-branches,too-many-statements
+    """Prepare the bases bound to the currently signed pointer."""
+    if not 1 <= history_count <= 10:
+        raise ValueError("history_count must be between 1 and 10")
+    private = _private_key(private_key_b64)
+    try:
+        pointer_raw = _get(pointer_url)
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            base_root.mkdir(parents=True, exist_ok=True)
+            return 0
+        raise
+    pointer = json.loads(pointer_raw.decode("utf-8"))
+    required = {"schema_version", "target", "release_id", "signature"}
+    if (
+        not isinstance(pointer, dict)
+        or pointer.get("schema_version") != 1
+        or not required.issubset(pointer)
+        or pointer.get("target") != expected_target
+    ):
+        raise ValueError("component pointer is invalid")
+    payload = dict(pointer)
+    payload.pop("signature", None)
+    _verify(canonical_json(payload), str(pointer["signature"]), private)
+    history_fields = {
+        "history_url", "history_size", "history_sha256", "history_signature",
+    }
+    if not history_fields.issubset(pointer):
+        release_id = pointer.get("release_id")
+        if not isinstance(release_id, str) or not _RELEASE_ID.fullmatch(release_id):
+            raise ValueError("legacy component pointer release id is invalid")
+        found = prepare_base(
+            source_root,
+            base_root / release_id,
+            manifest_url=pointer_url,
+            private_key_b64=private_key_b64,
+            expected_target=expected_target,
+        )
+        entry = {
+            key: pointer[key]
+            for key in (
+                "target", "release_id", "release_version", "release_sequence",
+                "release_attempt", "manifest_url", "manifest_size",
+                "manifest_sha256", "manifest_signature",
+            )
+            if key in pointer
+        }
+        legacy_history = {
+            "schema_version": 1,
+            "target": expected_target,
+            "releases": [entry],
+        }
+        legacy_raw = canonical_json(legacy_history)
+        legacy_signature = base64.b64encode(private.sign(legacy_raw)).decode("ascii")
+        if history_output is not None:
+            history_output.parent.mkdir(parents=True, exist_ok=True)
+            history_output.write_bytes(legacy_raw)
+        if history_signature_output is not None:
+            history_signature_output.parent.mkdir(parents=True, exist_ok=True)
+            history_signature_output.write_text(
+                legacy_signature + "\n", encoding="utf-8",
+            )
+        return int(found)
+    history_url = urljoin(pointer_url, str(pointer["history_url"]))
+    pointer_host = urlparse(pointer_url)
+    history_host = urlparse(history_url)
+    if (
+        history_host.scheme != pointer_host.scheme
+        or history_host.netloc != pointer_host.netloc
+    ):
+        raise ValueError("component history host mismatch")
+    history_raw = _get(history_url)
+    if (
+        type(pointer.get("history_size")) is not int
+        or len(history_raw) != pointer["history_size"]
+    ):
+        raise ValueError("component history size mismatch")
+    if (
+        hashlib.sha256(history_raw).hexdigest().lower()
+        != str(pointer["history_sha256"]).lower()
+    ):
+        raise ValueError("component history hash mismatch")
+    _verify(history_raw, str(pointer["history_signature"]), private)
+    history = json.loads(history_raw.decode("utf-8"))
+    entries = history.get("releases") if isinstance(history, dict) else None
+    if (
+        history.get("schema_version") != 1
+        or history.get("target") != expected_target
+        or not isinstance(entries, list)
+        or not entries
+    ):
+        raise ValueError("component history is invalid")
+    head = entries[0]
+    if (
+        not isinstance(head, dict)
+        or head.get("release_id") != pointer.get("release_id")
+        or head.get("manifest_url") != pointer.get("manifest_url")
+        or head.get("manifest_sha256") != pointer.get("manifest_sha256")
+    ):
+        raise ValueError("component history head does not match current pointer")
+    if history_output is not None:
+        history_output.parent.mkdir(parents=True, exist_ok=True)
+        history_output.write_bytes(history_raw)
+    if history_signature_output is not None:
+        history_signature_output.parent.mkdir(parents=True, exist_ok=True)
+        history_signature_output.write_text(
+            str(pointer["history_signature"]) + "\n",
+            encoding="utf-8",
+        )
+    prepared = 0
+    seen: set[str] = set()
+    for entry in entries[:history_count]:
+        release_id = entry.get("release_id") if isinstance(entry, dict) else None
+        if (
+            not isinstance(release_id, str)
+            or not _RELEASE_ID.fullmatch(release_id)
+            or release_id in seen
+        ):
+            raise ValueError("component history release id is invalid")
+        seen.add(release_id)
+        if entry.get("target") != expected_target:
+            raise ValueError("component history release target mismatch")
+        manifest_url = str(entry.get("manifest_url", ""))
+        parsed = urlparse(manifest_url)
+        if (
+            parsed.scheme != pointer_host.scheme
+            or parsed.netloc != pointer_host.netloc
+        ):
+            raise ValueError("component history manifest host mismatch")
+        manifest_raw = _get(manifest_url)
+        if (
+            type(entry.get("manifest_size")) is not int
+            or len(manifest_raw) != entry["manifest_size"]
+            or hashlib.sha256(manifest_raw).hexdigest().lower()
+            != str(entry.get("manifest_sha256", "")).lower()
+        ):
+            raise ValueError("component history manifest digest mismatch")
+        manifest_signature = _get(f"{manifest_url}.sig").decode("utf-8").strip()
+        if manifest_signature != str(entry.get("manifest_signature", "")).strip():
+            raise ValueError("component history manifest signature mismatch")
+        if prepare_base(
+            source_root,
+            base_root / release_id,
+            manifest_url=manifest_url,
+            private_key_b64=private_key_b64,
+            expected_target=expected_target,
+            allow_missing=False,
+        ):
+            prepared += 1
+    return prepared
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--base-root", type=Path, required=True)
     parser.add_argument("--manifest-url", required=True)
+    parser.add_argument("--history-count", type=int, default=10)
+    parser.add_argument("--history-output", type=Path)
+    parser.add_argument("--history-signature-output", type=Path)
     parser.add_argument("--target")
     parser.add_argument(
         "--private-key",
@@ -303,18 +472,23 @@ def main() -> int:
         raise SystemExit(
             "COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required",
         )
-    found = prepare_base(
+    count = prepare_bases(
         args.source_root.resolve(),
         args.base_root.resolve(),
-        manifest_url=args.manifest_url,
+        pointer_url=args.manifest_url,
         private_key_b64=args.private_key,
         expected_target=args.target,
+        history_count=args.history_count,
+        history_output=(
+            args.history_output.resolve() if args.history_output else None
+        ),
+        history_signature_output=(
+            args.history_signature_output.resolve()
+            if args.history_signature_output
+            else None
+        ),
     )
-    print(
-        "previous component base prepared"
-        if found
-        else "no previous component release; full-only release",
-    )
+    print(f"prepared {count} historical component base(s)")
     return 0
 
 
