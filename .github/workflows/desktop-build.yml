@@ -228,6 +228,14 @@ jobs:
         id: version
         uses: ./.github/actions/get-version
 
+      - name: Require Apple Silicon build runner
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = "arm64" || {
+            echo "Production macOS builds must run on Apple Silicon; Intel builds are disabled" >&2
+            exit 1
+          }
+
       - name: Set up Python
         uses: actions/setup-python@v5
         env:

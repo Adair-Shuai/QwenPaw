@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from packaging.version import Version
@@ -93,8 +92,12 @@ def merge_history(
         or remote_pointer.get("target") != expected_target
     ):
         raise ValueError("component pointer target mismatch")
-    if _order(local_pointer) <= _order(remote_pointer):
+    local_id = local_pointer.get("release_id")
+    remote_id = remote_pointer.get("release_id")
+    if _order(local_pointer) < _order(remote_pointer):
         raise ValueError("component history promotion is stale or a rollback")
+    if _order(local_pointer) == _order(remote_pointer) and local_id != remote_id:
+        raise ValueError("component pointer release order collision")
     local_history = _verify_history(
         local_pointer, local_history_path, local_signature_path, private,
     )
@@ -123,7 +126,10 @@ def merge_history(
             raise ValueError("component history release id is invalid")
         releases.setdefault(release_id, entry)
     merged = sorted(releases.values(), key=_order, reverse=True)[:limit]
-    if merged[0].get("release_id") != local_pointer.get("release_id"):
+    if merged[0].get("release_id") not in {
+        local_pointer.get("release_id"),
+        remote_pointer.get("release_id"),
+    }:
         raise ValueError("live history is newer than the proposed release")
     history_payload = {
         "schema_version": 1,

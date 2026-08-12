@@ -222,6 +222,7 @@ jobs:
     uses: ./.github/workflows/desktop-build.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
+      require_updater_assets: true
     secrets: inherit
 
   build-plugins:
@@ -605,8 +606,12 @@ jobs:
             fi
             history=$(find component-release/metadata/components/stable -maxdepth 1 -type f -name "${target}-*.history.json" -print -quit)
             test -s "$history"
+            test -s "${history}.sig"
             if [[ "$remote_exists" == true ]]; then
-              remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["history_url"])' "$remote_pointer")
+              remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("history_url", ""))' "$remote_pointer")
+              if [[ -z "$remote_history_url" ]]; then
+                echo "Remote pointer predates signed history; publishing migration history"
+              else
               remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
               remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
               remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
@@ -620,6 +625,7 @@ jobs:
                 --remote-history "$remote_history" \
                 --remote-history-signature "$remote_history_sig" \
                 --target "$target" --limit 10
+              fi
             fi
             publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
             publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"

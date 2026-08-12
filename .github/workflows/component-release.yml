@@ -34,7 +34,7 @@ on:
       target:
         description: Component target
         type: choice
-        options: [windows-x86_64, macos-aarch64, macos-x86_64]
+        options: [windows-x86_64, macos-aarch64]
         required: true
       core_min_version:
         description: Minimum compatible desktop core version
@@ -71,7 +71,7 @@ jobs:
         # target for a manual/single-target invocation.  This is expressed in
         # the matrix itself because job-level `if` is evaluated before matrix
         # expansion and cannot safely reference `matrix.target`.
-        target: ${{ fromJSON(inputs.target == '' && '["windows-x86_64","macos-aarch64","macos-x86_64"]' || format('["{0}"]', inputs.target)) }}
+        target: ${{ fromJSON(inputs.target == '' && '["windows-x86_64","macos-aarch64"]' || format('["{0}"]', inputs.target)) }}
     runs-on: ubuntu-latest
     env:
       COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
@@ -129,8 +129,14 @@ jobs:
 
       - name: Verify generated artifacts
         run: |
-          find component-release/metadata/components/stable -maxdepth 1 -name '${{ matrix.target }}-*.json' -type f -size +0 | grep -q .
+          find component-release/metadata/components/stable -maxdepth 1 \
+            -name '${{ matrix.target }}-*.json' \
+            ! -name '*.history.json' -type f -size +0 | grep -q .
           test -s component-release/metadata/components/stable/${{ matrix.target }}.current.json
+          find component-release/metadata/components/stable -maxdepth 1 \
+            -name '${{ matrix.target }}-*.history.json' -type f -size +0 | grep -q .
+          find component-release/metadata/components/stable -maxdepth 1 \
+            -name '${{ matrix.target }}-*.history.json.sig' -type f -size +0 | grep -q .
           find component-release/artifacts -name '*.zip' -type f -size +0 -print
 
       - uses: actions/upload-artifact@v4
@@ -197,7 +203,10 @@ jobs:
           COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          manifest=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.json' -type f | head -1)
+          manifest=$(find component-release/metadata/components/stable \
+            -name '${{ matrix.target }}-*.json' \
+            ! -name '*.history.json' -type f -print -quit)
+          test -s "$manifest"
           manifest_name=$(basename "$manifest")
           manifest_uri="oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}"
           manifest_sig_uri="${manifest_uri}.sig"
@@ -225,7 +234,10 @@ jobs:
             python scripts/pack-tauri/check_component_pointer_promotion.py \
               --local "$pointer" --remote "$remote_pointer" --target '${{ matrix.target }}'
             history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
-            remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["history_url"])' "$remote_pointer")
+            remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("history_url", ""))' "$remote_pointer")
+            if [[ -z "$remote_history_url" ]]; then
+              echo "Remote pointer predates signed history; publishing migration history"
+            else
             remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
             remote_history="${RUNNER_TEMP}/${{ matrix.target }}.remote-history.json"
             remote_history_sig="${RUNNER_TEMP}/${{ matrix.target }}.remote-history.json.sig"
@@ -239,6 +251,7 @@ jobs:
               --remote-history "$remote_history" \
               --remote-history-signature "$remote_history_sig" \
               --target '${{ matrix.target }}' --limit '${{ inputs.history_count || 10 }}'
+            fi
           else
             python scripts/pack-tauri/check_component_pointer_promotion.py \
               --local "$pointer" --target '${{ matrix.target }}'
