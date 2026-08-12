@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 import zipfile
+from datetime import timedelta
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -53,6 +54,7 @@ def _write_signed_pointer(
     manifest_signature: str,
     private: Ed25519PrivateKey,
 ) -> None:
+    published_at = datetime.now(timezone.utc)
     payload = {
         "schema_version": 1,
         "target": target,
@@ -61,6 +63,8 @@ def _write_signed_pointer(
         "manifest_size": manifest_path.stat().st_size,
         "manifest_sha256": _sha256(manifest_path),
         "manifest_signature": manifest_signature,
+        "published_at": published_at.isoformat().replace("+00:00", "Z"),
+        "expires_at": (published_at + timedelta(days=30)).isoformat().replace("+00:00", "Z"),
     }
     pointer = dict(payload)
     pointer["signature"] = base64.b64encode(

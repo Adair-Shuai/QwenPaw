@@ -145,7 +145,9 @@ jobs:
         run: |
           while IFS= read -r file; do
             relative="${file#component-release/}"
-            ossutil ls "oss://${OSS_BUCKET}/${relative}" >/dev/null
+            remote="${RUNNER_TEMP}/$(basename "$file")"
+            ossutil cp "oss://${OSS_BUCKET}/${relative}" "$remote" >/dev/null
+            cmp -s "$file" "$remote"
           done < <(find component-release/artifacts -type f)
 
       # The signed manifest is intentionally published last. Clients cannot
@@ -165,8 +167,19 @@ jobs:
             echo "Refusing to overwrite immutable component signature: ${manifest_name}.sig" >&2
             exit 1
           fi
-          ossutil cp "$manifest" "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
-          ossutil cp "${manifest}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}.sig" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          manifest_uri="oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}"
+          manifest_sig_uri="${manifest_uri}.sig"
+          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          manifest_tmp="${manifest_uri}.staging-${suffix}"
+          manifest_sig_tmp="${manifest_sig_uri}.staging-${suffix}"
+          ossutil cp "$manifest" "$manifest_tmp" --acl public-read
+          ossutil cp "${manifest}.sig" "$manifest_sig_tmp" --acl public-read
+          ossutil cp "$manifest_tmp" "$manifest_uri" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          ossutil cp "$manifest_sig_tmp" "$manifest_sig_uri" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          ossutil rm "$manifest_tmp" --force || true
+          ossutil rm "$manifest_sig_tmp" --force || true
+          cmp -s "$manifest" <(ossutil cat "$manifest_uri")
+          cmp -s "${manifest}.sig" <(ossutil cat "$manifest_sig_uri")
           pointer="component-release/metadata/components/stable/${{ matrix.target }}.current.json"
           pointer_tmp="oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ossutil cp "$pointer" "$pointer_tmp" --acl public-read

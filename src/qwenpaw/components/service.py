@@ -58,6 +58,10 @@ class ComponentUpdateService:
         return plans
 
     def install(self, component: str) -> dict[str, Any]:
+        token = os.environ.get("QWENPAW_COMPONENT_INSTALL_TOKEN", "").strip()
+        presented = os.environ.get("QWENPAW_COMPONENT_INSTALL_AUTH", "").strip()
+        if token and token != presented:
+            raise ComponentUpdateError("component installation authorization failed")
         with self._lock:
             return self._install_locked(component)
 

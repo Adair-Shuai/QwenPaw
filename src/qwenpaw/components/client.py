@@ -7,6 +7,8 @@ import hashlib
 import json
 import os
 import shutil
+import threading
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urljoin, urlparse
 
@@ -31,6 +33,9 @@ class ComponentClient:
         self.updater = updater
         self.cache_root = cache_root.resolve()
         self.client = client or httpx.Client(timeout=httpx.Timeout(30.0, read=120.0), follow_redirects=False)
+        configured_hosts = os.environ.get("QWENPAW_COMPONENT_ALLOWED_HOSTS", "")
+        self.allowed_hosts = {item.strip().lower() for item in configured_hosts.split(",") if item.strip()}
+        self._download_lock = threading.RLock()
 
     def close(self) -> None:
         self.client.close()
@@ -78,6 +83,20 @@ class ComponentClient:
         if not isinstance(payload.get("manifest_url"), str) or not payload["manifest_url"]:
             raise ComponentUpdateError("component pointer manifest URL is invalid")
         manifest_url = _https_url(urljoin(pointer_url, str(payload["manifest_url"])))
+        manifest_host = urlparse(manifest_url).hostname.lower()
+        pointer_host = urlparse(pointer_url).hostname.lower()
+        if manifest_host != pointer_host and manifest_host not in self.allowed_hosts:
+            raise ComponentUpdateError("component manifest host is not allowlisted")
+        if "published_at" in payload or "expires_at" in payload:
+            for field in ("published_at", "expires_at"):
+                if not isinstance(payload.get(field), str):
+                    raise ComponentUpdateError(f"component pointer {field} is invalid")
+            try:
+                expires_at = datetime.fromisoformat(payload["expires_at"].replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ComponentUpdateError("component pointer expiry is invalid") from exc
+            if expires_at <= datetime.now(timezone.utc):
+                raise ComponentUpdateError("component pointer has expired")
         manifest_response = self.client.get(manifest_url, headers={"Cache-Control": "no-cache"})
         manifest_response.raise_for_status()
         if type(payload.get("manifest_size")) is not int or len(manifest_response.content) != payload["manifest_size"]:
@@ -126,21 +145,37 @@ class ComponentClient:
         self.cache_root.mkdir(parents=True, exist_ok=True)
         if not name or Path(name).name != name or name in {".", ".."}:
             raise ComponentUpdateError("invalid artifact cache name")
-        final = self.cache_root / name
+        artifact_root = self.cache_root / "artifacts" / sha256.lower()
+        artifact_root.mkdir(parents=True, exist_ok=True)
+        final = artifact_root / name
         partial = final.with_name(final.name + ".part")
+        with self._download_lock:
+            return self._download_artifact_locked(url, sha256, size, final, partial)
+
+    def _download_artifact_locked(self, url: str, sha256: str, size: int, final: Path, partial: Path) -> Path:
+        if partial.is_symlink() or final.is_symlink():
+            raise ComponentUpdateError("artifact cache paths may not be symlinks")
         existing = partial.stat().st_size if partial.is_file() else 0
+        if existing > size:
+            partial.unlink(missing_ok=True)
+            existing = 0
         headers = {"Range": f"bytes={existing}-"} if existing else {}
         with self.client.stream("GET", url, headers=headers) as response:
-            if existing and response.status_code == 200:
-                existing = 0
-                partial.unlink(missing_ok=True)
+            status = response.status_code
+            content_range = response.headers.get("Content-Range", "")
+            valid_range = not existing or (status == 206 and content_range.startswith(f"bytes {existing}-"))
+            if valid_range and status != 200:
+                response.raise_for_status()
+                _stream_to_file(response, partial, append=bool(existing))
+            elif valid_range and status == 200 and not existing:
+                response.raise_for_status()
+                _stream_to_file(response, partial, append=False)
+            else:
                 response.close()
+                partial.unlink(missing_ok=True)
                 with self.client.stream("GET", url) as retry:
                     retry.raise_for_status()
                     _stream_to_file(retry, partial, append=False)
-            else:
-                response.raise_for_status()
-                _stream_to_file(response, partial, append=bool(existing))
         if partial.stat().st_size != size:
             raise ComponentUpdateError("downloaded artifact size mismatch")
         digest = _sha256_file(partial)
