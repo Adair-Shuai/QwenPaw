@@ -6,6 +6,7 @@ import json
 
 from qwenpaw.components.service import (
     ComponentUpdateService,
+    configured_service,
     queue_component_update,
     run_startup_updates,
 )
@@ -18,6 +19,55 @@ class _Client:
 
     def fetch_manifest(self, _url):
         return self.manifest
+
+
+def test_configured_service_uses_embedded_production_defaults(monkeypatch):
+    monkeypatch.delenv("QWENPAW_COMPONENT_MANIFEST_URL", raising=False)
+    monkeypatch.delenv("QWENPAW_COMPONENT_PUBLIC_KEY", raising=False)
+    monkeypatch.delenv("QWENPAW_COMPONENT_MANAGED", raising=False)
+    monkeypatch.setattr(
+        "qwenpaw.components.service.detect_target",
+        lambda: "macos-aarch64",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._default_managed_components",
+        lambda: {"demo"},
+    )
+
+    service = configured_service()
+    assert service is not None
+    try:
+        assert service.manifest_url.endswith(
+            "/metadata/components/stable/macos-aarch64.current.json",
+        )
+        assert service.updater.public_key_b64 == (
+            "T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw="
+        )
+        assert service.updater.managed_components == frozenset({"demo"})
+    finally:
+        service.client.close()
+
+
+def test_configured_service_environment_overrides_defaults(monkeypatch):
+    monkeypatch.setenv(
+        "QWENPAW_COMPONENT_MANIFEST_URL",
+        "https://updates.example/custom.current.json",
+    )
+    monkeypatch.setenv("QWENPAW_COMPONENT_PUBLIC_KEY", "custom-key")
+    monkeypatch.setenv("QWENPAW_COMPONENT_MANAGED", "alpha, beta")
+
+    service = configured_service()
+    assert service is not None
+    try:
+        assert service.manifest_url == (
+            "https://updates.example/custom.current.json"
+        )
+        assert service.updater.public_key_b64 == "custom-key"
+        assert service.updater.managed_components == frozenset(
+            {"alpha", "beta"},
+        )
+    finally:
+        service.client.close()
 
 
 def test_new_plugin_is_planned_as_full(monkeypatch, tmp_path):

@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """Manual-first component update orchestration.
 
-No network request is performed unless the OSS endpoint, public key, and
-managed allowlist are all explicitly configured.
+The production OSS endpoint, embedded verification key, and bundled-plugin
+allowlist are safe defaults. Network activity remains manual-first: startup
+updates still require ``QWENPAW_COMPONENT_UPDATES=startup`` or a queued update.
+All three values can be overridden with environment variables for testing.
 """
 
 # pylint: disable=too-many-branches
@@ -19,12 +21,53 @@ import threading
 from ..__version__ import __version__
 from ..config.utils import get_plugins_dir
 from ..constant import WORKING_DIR
+from .update import detect_target
 from .client import ComponentClient
 from .update import ComponentUpdateError, ComponentUpdater
 
 logger = logging.getLogger(__name__)
 _PENDING_UPDATES_PATH = WORKING_DIR / "components" / "pending.json"
 _PENDING_LOCK = threading.RLock()
+
+# The component signing public key is deliberately public and is embedded in
+# the client.  The private key remains a GitHub Actions secret and must never
+# be shipped with the application.
+_DEFAULT_COMPONENT_PUBLIC_KEY = (
+    "T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw="
+)
+_DEFAULT_COMPONENT_BASE_URL = (
+    "https://ugsci-download.oss-cn-beijing.aliyuncs.com"
+)
+_MANAGED_PLUGIN_DENYLIST = frozenset({"cloudpaw", "qwenpaw-pet"})
+
+
+def _default_managed_components() -> set[str]:
+    """Return only bundled plugin IDs eligible for remote management."""
+    try:
+        from ..plugins.bundled import (
+            _get_bundled_plugins_dirs,
+            _read_manifest,
+        )
+
+        managed: set[str] = set()
+        for root in _get_bundled_plugins_dirs():
+            for plugin_dir in sorted(root.iterdir()):
+                if (
+                    not plugin_dir.is_dir()
+                    or plugin_dir.name in {"__pycache__"}
+                ):
+                    continue
+                manifest = _read_manifest(plugin_dir)
+                plugin_id = str((manifest or {}).get("id") or "").strip()
+                if plugin_id and plugin_id not in _MANAGED_PLUGIN_DENYLIST:
+                    managed.add(plugin_id)
+        return managed
+    except Exception:  # pragma: no cover - packaging discovery is best effort
+        logger.warning(
+            "Failed to discover bundled managed components",
+            exc_info=True,
+        )
+        return set()
 
 
 def queue_component_update(component: str) -> dict[str, Any]:
@@ -86,13 +129,22 @@ def queue_component_update(component: str) -> dict[str, Any]:
 
 
 def configured_service() -> "ComponentUpdateService | None":
-    manifest_url = os.environ.get("QWENPAW_COMPONENT_MANIFEST_URL", "").strip()
-    public_key = os.environ.get("QWENPAW_COMPONENT_PUBLIC_KEY", "").strip()
-    managed = {
-        item.strip()
-        for item in os.environ.get("QWENPAW_COMPONENT_MANAGED", "").split(",")
-        if item.strip()
-    }
+    target = detect_target()
+    manifest_url = os.environ.get(
+        "QWENPAW_COMPONENT_MANIFEST_URL",
+        f"{_DEFAULT_COMPONENT_BASE_URL}/metadata/components/stable/"
+        f"{target}.current.json",
+    ).strip()
+    public_key = os.environ.get(
+        "QWENPAW_COMPONENT_PUBLIC_KEY",
+        _DEFAULT_COMPONENT_PUBLIC_KEY,
+    ).strip()
+    managed_raw = os.environ.get("QWENPAW_COMPONENT_MANAGED", "").strip()
+    managed = (
+        {item.strip() for item in managed_raw.split(",") if item.strip()}
+        if managed_raw
+        else _default_managed_components()
+    )
     if not manifest_url or not public_key or not managed:
         return None
     updater = ComponentUpdater(
