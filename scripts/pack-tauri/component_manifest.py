@@ -115,6 +115,6 @@ def validate_manifest(
             raise ValueError(f"local component {component_id!r} missing from manifest")
         if _version(local_version, "local component version") != _version(component["version"], "component version"):
             raise ValueError("local component version does not match manifest")
-        if file_inventory(component_root) != component["files"]:
+        if file_inventory(component_root, tuple(component.get("preserve") or ("engines",))) != component["files"]:
             raise ValueError("local component file inventory does not match manifest")
     return manifest

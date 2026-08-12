@@ -141,7 +141,7 @@ def _resolve_download_url(java_version: str, expected_release: str = "") -> tupl
         release_name = meta[0]["release_name"]
         if expected_release and release_name != expected_release:
             raise SystemExit(
-                f"Adoptium release drifted: expected {expected_release}, got {release_name}"
+                f"Adoptium release drifted: expected {expected_release}, got {release_name}",
             )
         binaries = meta[0].get("binaries") or []
         package = (binaries[0].get("package") or {}) if binaries else {}
@@ -159,7 +159,7 @@ def _resolve_sha256(value: str, discovered: str, os_name: str, arch: str, releas
         return discovered.strip()
     raise SystemExit(
         "JRE SHA-256 is required; set --sha256 or QWENPAW_JRE_SHA256 for the pinned "
-        f"{release_name}-{os_name}-{arch} archive"
+        f"{release_name}-{os_name}-{arch} archive",
     )
 
 

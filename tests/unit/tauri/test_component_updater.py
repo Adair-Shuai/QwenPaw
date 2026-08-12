@@ -102,3 +102,117 @@ def test_full_update_preserves_user_engines(tmp_path):
     updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
     updater.apply_full(plan, archive, destination, expected_files=expected, preserve_from=installed)
     assert (destination / "engines" / "user.json").read_text(encoding="utf-8") == "user-data"
+
+
+def test_full_update_backups_and_restores_all_default_user_data(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+    installed = tmp_path / "installed"
+    _plugin(
+        installed, "1.0.0", **{
+            "engines/user.json": "engine",
+            "data/db.json": "data",
+            "state/session.json": "state",
+            "workspace/note.txt": "workspace",
+            "models/model.bin": "model",
+            "user-data/profile.json": "profile",
+        },
+    )
+    archive = tmp_path / "full.zip"
+    plugin_bytes = json.dumps({"id": "demo", "version": "1.1.0"}).encode()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("plugin.json", plugin_bytes)
+        bundle.writestr("main.py", b"new-code")
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    preserve = ("engines", "data", "state", "workspace", "models", "user-data")
+    plan = ComponentUpdatePlan("demo", "1.0.0", "1.1.0", "full", "https://oss/full.zip", hashlib.sha256(archive.read_bytes()).hexdigest(), signature, preserve)
+    expected = {
+        "main.py": {"size": 8, "sha256": hashlib.sha256(b"new-code").hexdigest()},
+        "plugin.json": {"size": len(plugin_bytes), "sha256": hashlib.sha256(plugin_bytes).hexdigest()},
+    }
+    backup_root = tmp_path / "backups"
+    destination = tmp_path / "plugins" / "demo"
+    updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0", backup_root=backup_root)
+    updater.apply_full(plan, archive, destination, expected_files=expected, preserve_from=installed)
+    for relative, value in {
+        "engines/user.json": "engine", "data/db.json": "data", "state/session.json": "state",
+        "workspace/note.txt": "workspace", "models/model.bin": "model", "user-data/profile.json": "profile",
+    }.items():
+        assert (destination / relative).read_text(encoding="utf-8") == value
+    backups = list((backup_root / "demo").glob("*/backup.json"))
+    assert len(backups) == 1
+    metadata = json.loads(backups[0].read_text(encoding="utf-8"))
+    assert set(metadata["preserve"]) == {"engines", "data", "state", "workspace", "models", "user-data"}
+
+
+def test_manifest_rejects_unsafe_preserve_path(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+    raw = json.dumps({
+        "schema_version": 1, "target": "windows-x86_64", "core_min_version": "1.0.0", "components": {
+            "demo": {
+                "version": "1.1.0", "preserve": ["../outside"], "full": {"url": "https://example/full.zip", "sha256": "a" * 64, "size": 1, "signature": "sig"},
+            },
+        },
+    }).encode()
+    manifest = tmp_path / "manifest.json"
+    signature = tmp_path / "manifest.sig"
+    manifest.write_bytes(raw)
+    signature.write_text(base64.b64encode(private.sign(raw)).decode(), encoding="utf-8")
+    updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
+    with pytest.raises(ComponentUpdateError, match="unsafe component path"):
+        updater.load_manifest(manifest, signature)
+
+
+def test_backup_failure_blocks_full_update(tmp_path, monkeypatch):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+    installed = tmp_path / "plugins" / "demo"
+    _plugin(installed, "1.0.0", **{"data/db.json": "important"})
+    archive = tmp_path / "full.zip"
+    plugin_bytes = json.dumps({"id": "demo", "version": "1.1.0"}).encode()
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("plugin.json", plugin_bytes)
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    plan = ComponentUpdatePlan("demo", "1.0.0", "1.1.0", "full", "https://oss/full.zip", hashlib.sha256(archive.read_bytes()).hexdigest(), signature)
+    expected = {"plugin.json": {"size": len(plugin_bytes), "sha256": hashlib.sha256(plugin_bytes).hexdigest()}}
+    updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
+    monkeypatch.setattr(updater, "_backup_component_data", lambda *_args, **_kwargs: (_ for _ in ()).throw(ComponentUpdateError("backup failed")))
+    with pytest.raises(ComponentUpdateError, match="backup failed"):
+        updater.apply_full(plan, archive, installed, expected_files=expected, preserve_from=installed)
+    assert json.loads((installed / "plugin.json").read_text(encoding="utf-8"))["version"] == "1.0.0"
+    assert (installed / "data" / "db.json").read_text(encoding="utf-8") == "important"
+
+
+def test_overlapping_preserve_paths_are_rejected(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+    raw = json.dumps({
+        "schema_version": 1, "target": "windows-x86_64", "core_min_version": "1.0.0", "components": {
+            "demo": {
+                "version": "1.1.0", "preserve": ["data", "data/cache"], "full": {"url": "https://example/full.zip", "sha256": "a" * 64, "size": 1, "signature": "sig"},
+            },
+        },
+    }).encode()
+    manifest = tmp_path / "manifest.json"
+    signature = tmp_path / "manifest.sig"
+    manifest.write_bytes(raw)
+    signature.write_text(base64.b64encode(private.sign(raw)).decode(), encoding="utf-8")
+    updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
+    with pytest.raises(ComponentUpdateError, match="allowed data root"):
+        updater.load_manifest(manifest, signature)
+
+
+def test_interrupted_activation_restores_previous_before_planning(tmp_path):
+    destination = tmp_path / "plugins" / "demo"
+    previous = destination.parent / ".demo.previous"
+    _plugin(previous, "1.0.0", **{"data/db.json": "important"})
+    updater = ComponentUpdater(public_key_b64="", managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
+    expected = {
+        "data/db.json": {"size": (previous / "data/db.json").stat().st_size, "sha256": hashlib.sha256((previous / "data/db.json").read_bytes()).hexdigest()},
+        "plugin.json": {"size": (previous / "plugin.json").stat().st_size, "sha256": hashlib.sha256((previous / "plugin.json").read_bytes()).hexdigest()},
+    }
+    updater.recover_interrupted_activation("demo", destination, expected_files=expected)
+    assert not previous.exists()
+    assert json.loads((destination / "plugin.json").read_text(encoding="utf-8"))["version"] == "1.0.0"
+    assert (destination / "data" / "db.json").read_text(encoding="utf-8") == "important"

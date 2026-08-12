@@ -7,7 +7,7 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException
 
-from ...components.service import configured_service
+from ...components.service import configured_service, queue_component_update
 from ...components.update import ComponentUpdateError
 
 router = APIRouter(prefix="/components", tags=["components"])
@@ -28,14 +28,12 @@ async def check_component_updates():
 
 @router.post("/{component}/install")
 async def install_component_update(component: str):
-    service = configured_service()
-    if service is None:
-        raise HTTPException(status_code=409, detail="Component updates are not configured")
+    # Component data may be actively mutated by a loaded plugin.  Until the
+    # runtime lifecycle can unload/reload a plugin around the whole snapshot,
+    # only the pre-PluginLoader startup path may replace component files.
     try:
-        return await asyncio.to_thread(service.install, component)
+        return await asyncio.to_thread(queue_component_update, component)
     except ComponentUpdateError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
-        raise HTTPException(status_code=502, detail=f"Component update failed: {exc}") from exc
-    finally:
-        service.client.close()
+        raise HTTPException(status_code=502, detail=f"Component update queue failed: {exc}") from exc

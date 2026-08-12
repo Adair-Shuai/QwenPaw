@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -17,6 +18,17 @@ sys.path.insert(0, str(SCRIPTS))
 
 def _load():
     spec = importlib.util.spec_from_file_location("build_component_release", SCRIPTS / "build_component_release.py")
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_pointer_checker():
+    spec = importlib.util.spec_from_file_location(
+        "check_component_pointer_promotion",
+        SCRIPTS / "check_component_pointer_promotion.py",
+    )
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -88,6 +100,7 @@ def test_release_id_writes_versioned_manifest_and_signed_pointer(tmp_path):
     assert manifest_path.name == "windows-x86_64-run-1.json"
     assert pointer.is_file()
     assert json.loads(pointer.read_text(encoding="utf-8"))["release_id"] == "run-1"
+    assert json.loads(pointer.read_text(encoding="utf-8"))["release_version"] == "1.0.0"
 
 
 def test_previous_signed_pointer_base_is_downloaded_and_verified(tmp_path, monkeypatch):
@@ -155,3 +168,100 @@ def test_previous_signed_pointer_base_is_downloaded_and_verified(tmp_path, monke
     )
     assert (base_root / "demo" / "plugin.json").is_file()
     assert json.loads((base_root / "demo" / "plugin.json").read_text())["version"] == "1.0.0"
+
+
+def test_pointer_promotion_rejects_older_release_version(tmp_path):
+    module = _load()
+    checker = _load_pointer_checker()
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+
+    def build(version, sequence, name):
+        source = tmp_path / name / "source" / "demo"
+        source.mkdir(parents=True)
+        (source / "plugin.json").write_text(
+            json.dumps({"id": "demo", "version": version}), encoding="utf-8",
+        )
+        manifest = module.build_release(
+            source.parent,
+            tmp_path / name / "release",
+            product="qwenpaw",
+            channel="stable",
+            target="windows-x86_64",
+            core_min_version=version,
+            base_url="https://oss.example",
+            private_key_b64=key,
+            release_id=name,
+            release_version=version,
+            release_sequence=sequence,
+            release_attempt=1,
+        )
+        return manifest.with_name("windows-x86_64.current.json")
+
+    local = build("1.9.0", 200, "local")
+    remote = build("2.0.0", 100, "remote")
+    with pytest.raises(ValueError, match="rollback"):
+        checker.check_promotion(
+            local,
+            remote,
+            private_key_b64=key,
+            expected_target="windows-x86_64",
+        )
+
+
+def test_pointer_promotion_orders_same_version_by_run_and_attempt(tmp_path):
+    module = _load()
+    checker = _load_pointer_checker()
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+
+    def build(sequence, attempt, name):
+        source = tmp_path / name / "source" / "demo"
+        source.mkdir(parents=True)
+        (source / "plugin.json").write_text(
+            json.dumps({"id": "demo", "version": "2.0.0"}), encoding="utf-8",
+        )
+        manifest = module.build_release(
+            source.parent,
+            tmp_path / name / "release",
+            product="qwenpaw",
+            channel="stable",
+            target="windows-x86_64",
+            core_min_version="2.0.0",
+            base_url="https://oss.example",
+            private_key_b64=key,
+            release_id=name,
+            release_version="2.0.0",
+            release_sequence=sequence,
+            release_attempt=attempt,
+        )
+        return manifest.with_name("windows-x86_64.current.json")
+
+    remote = build(100, 2, "remote")
+    stale = build(100, 1, "stale")
+    current = build(101, 1, "current")
+    with pytest.raises(ValueError, match="stale"):
+        checker.check_promotion(
+            stale,
+            remote,
+            private_key_b64=key,
+            expected_target="windows-x86_64",
+        )
+    checker.check_promotion(
+        current,
+        remote,
+        private_key_b64=key,
+        expected_target="windows-x86_64",
+    )

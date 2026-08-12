@@ -14,6 +14,9 @@
     "backend": "plugin.py"
   },
   "dependencies": [],
+  "component_update": {
+    "preserve": ["data", "state", "workspace", "models", "user-data"]
+  },
   "qwenpaw_version": {
     "min": "2.1.0",
     "max": "2.2.0"

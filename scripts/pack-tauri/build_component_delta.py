@@ -14,9 +14,9 @@ from pathlib import Path
 from component_common import canonical_json, file_inventory, read_plugin_metadata
 
 
-def build_delta(base: Path, target: Path) -> dict:
-    base_files = file_inventory(base)
-    target_files = file_inventory(target)
+def build_delta(base: Path, target: Path, preserve_paths: tuple[str, ...] = ("engines",)) -> dict:
+    base_files = file_inventory(base, preserve_paths)
+    target_files = file_inventory(target, preserve_paths)
     add = sorted(set(target_files) - set(base_files))
     delete = sorted(set(base_files) - set(target_files))
     replace = sorted(
@@ -43,8 +43,8 @@ def build_delta(base: Path, target: Path) -> dict:
     }
 
 
-def write_delta(base: Path, target: Path, output: Path) -> dict:
-    delta = build_delta(base, target)
+def write_delta(base: Path, target: Path, output: Path, preserve_paths: tuple[str, ...] = ("engines",)) -> dict:
+    delta = build_delta(base, target, preserve_paths)
     output.parent.mkdir(parents=True, exist_ok=True)
     fd, temporary_name = tempfile.mkstemp(prefix=f".{output.name}.", suffix=".tmp", dir=output.parent)
     os.close(fd)

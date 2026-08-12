@@ -40,7 +40,10 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  # Only direct workflows that actually upload a pointer take the global
+  # promotion lock.  Reusable build-only calls use a run-local group so they
+  # cannot deadlock with the unified release workflow that invoked them.
+  group: ${{ inputs.upload_to_oss && 'component-pointer-promotion' || format('component-build-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:
@@ -88,6 +91,7 @@ jobs:
         env:
           COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
+          export SOURCE_DATE_EPOCH="$(git show -s --format=%cI HEAD)"
           python scripts/pack-tauri/build_component_release.py \
             --source-root component-staging \
             --output-root component-release \
@@ -95,7 +99,10 @@ jobs:
             --core-min-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}' \
             --base-url "$COMPONENT_BASE_URL" \
             --base-root component-base \
-            --release-id "${{ inputs.release_id || format('{0}-{1}', github.run_id, github.run_attempt) }}"
+            --release-id "${{ inputs.release_id || format('{0}-{1}', github.run_id, github.run_attempt) }}" \
+            --release-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}' \
+            --release-sequence '${{ github.run_id }}' \
+            --release-attempt '${{ github.run_attempt }}'
 
       - name: Verify generated artifacts
         run: |
@@ -128,18 +135,23 @@ jobs:
         env:
           OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
         run: |
+          set -euo pipefail
           while IFS= read -r file; do
             relative="${file#component-release/}"
-            if ossutil ls "oss://${OSS_BUCKET}/${relative}" >/dev/null 2>&1; then
-              echo "Refusing to overwrite existing immutable artifact: ${relative}" >&2
-              exit 1
+            uri="oss://${OSS_BUCKET}/${relative}"
+            remote="${RUNNER_TEMP}/artifact-${RANDOM}-$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              if ! cmp -s "$file" "$remote"; then
+                echo "Immutable component artifact differs from local build: ${relative}" >&2
+                exit 1
+              fi
+              rm -f "$remote"
+              continue
             fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable" \
+              --header "x-oss-forbid-overwrite:true"
           done < <(find component-release/artifacts -type f)
-          ossutil cp component-release/artifacts/components/ \
-            "oss://${OSS_BUCKET}/artifacts/components/" \
-            --recursive --acl public-read \
-            --meta "Cache-Control:public, max-age=31536000, immutable" \
-            --header "x-oss-forbid-overwrite:true"
 
       - name: Verify artifacts exist on OSS
         if: inputs.upload_to_oss
@@ -159,33 +171,43 @@ jobs:
         if: inputs.upload_to_oss
         env:
           OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
+          set -euo pipefail
           manifest=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.json' -type f | head -1)
           manifest_name=$(basename "$manifest")
-          if ossutil ls "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}" >/dev/null 2>&1; then
-            echo "Refusing to overwrite immutable component manifest: ${manifest_name}" >&2
-            exit 1
-          fi
-          if ossutil ls "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}.sig" >/dev/null 2>&1; then
-            echo "Refusing to overwrite immutable component signature: ${manifest_name}.sig" >&2
-            exit 1
-          fi
           manifest_uri="oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}"
           manifest_sig_uri="${manifest_uri}.sig"
-          suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          manifest_tmp="${manifest_uri}.staging-${suffix}"
-          manifest_sig_tmp="${manifest_sig_uri}.staging-${suffix}"
-          ossutil cp "$manifest" "$manifest_tmp" --acl public-read
-          ossutil cp "${manifest}.sig" "$manifest_sig_tmp" --acl public-read
-          ossutil cp "$manifest_tmp" "$manifest_uri" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
-          ossutil cp "$manifest_sig_tmp" "$manifest_sig_uri" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
-          ossutil rm "$manifest_tmp" --force || true
-          ossutil rm "$manifest_sig_tmp" --force || true
-          cmp -s "$manifest" <(ossutil cat "$manifest_uri")
-          cmp -s "${manifest}.sig" <(ossutil cat "$manifest_sig_uri")
+          publish_immutable() {
+            local file="$1" uri="$2" label="$3"
+            local remote="${RUNNER_TEMP}/manifest-${RANDOM}-$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              if ! cmp -s "$file" "$remote"; then
+                echo "Immutable component ${label} differs from local build" >&2
+                exit 1
+              fi
+              rm -f "$remote"
+              return
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable" \
+              --header "x-oss-forbid-overwrite:true"
+            cmp -s "$file" <(ossutil cat "$uri")
+          }
+          publish_immutable "$manifest" "$manifest_uri" "manifest ${manifest_name}"
+          publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${manifest_name}.sig"
           pointer="component-release/metadata/components/stable/${{ matrix.target }}.current.json"
+          remote_pointer="${RUNNER_TEMP}/${{ matrix.target }}.remote-current.json"
+          if ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$remote_pointer" >/dev/null 2>&1; then
+            python scripts/pack-tauri/check_component_pointer_promotion.py \
+              --local "$pointer" --remote "$remote_pointer" --target '${{ matrix.target }}'
+          else
+            python scripts/pack-tauri/check_component_pointer_promotion.py \
+              --local "$pointer" --target '${{ matrix.target }}'
+          fi
           pointer_tmp="oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           ossutil cp "$pointer" "$pointer_tmp" --acl public-read
           ossutil ls "$pointer_tmp" >/dev/null
           ossutil cp "$pointer_tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
           ossutil rm "$pointer_tmp" --force || true
+          cmp -s "$pointer" <(ossutil cat "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json")

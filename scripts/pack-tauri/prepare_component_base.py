@@ -187,7 +187,8 @@ def prepare_base(
             installed_id, installed_version = read_plugin_metadata(component_base)
             if installed_id != component or installed_version != str(entry["version"]):
                 raise ValueError(f"previous artifact identity mismatch for {component}")
-            if file_inventory(component_base) != entry.get("files"):
+            preserve_paths = tuple(entry.get("preserve") or ("engines",))
+            if file_inventory(component_base, preserve_paths) != entry.get("files"):
                 raise ValueError(f"previous artifact inventory mismatch for {component}")
 
         staged_tree = temporary / "tree"

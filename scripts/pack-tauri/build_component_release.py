@@ -16,7 +16,7 @@ from pathlib import Path
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
-from component_common import canonical_json, file_inventory, iter_files, read_plugin_metadata
+from component_common import DEFAULT_PRESERVE_PATHS, canonical_json, file_inventory, iter_files, read_plugin_metadata
 from build_component_delta import write_delta
 
 
@@ -49,6 +49,9 @@ def _write_signed_pointer(
     *,
     target: str,
     release_id: str,
+    release_version: str,
+    release_sequence: int,
+    release_attempt: int,
     manifest_url: str,
     manifest_path: Path,
     manifest_signature: str,
@@ -59,6 +62,9 @@ def _write_signed_pointer(
         "schema_version": 1,
         "target": target,
         "release_id": release_id,
+        "release_version": release_version,
+        "release_sequence": release_sequence,
+        "release_attempt": release_attempt,
         "manifest_url": manifest_url,
         "manifest_size": manifest_path.stat().st_size,
         "manifest_sha256": _sha256(manifest_path),
@@ -88,7 +94,7 @@ def _full_zip(source: Path, output: Path) -> None:
     os.replace(temporary, output)
 
 
-def build_release(source_root: Path, output_root: Path, *, product: str, channel: str, target: str, core_min_version: str, base_url: str, private_key_b64: str, base_root: Path | None = None, release_id: str | None = None) -> Path:
+def build_release(source_root: Path, output_root: Path, *, product: str, channel: str, target: str, core_min_version: str, base_url: str, private_key_b64: str, base_root: Path | None = None, release_id: str | None = None, release_version: str | None = None, release_sequence: int = 0, release_attempt: int = 0) -> Path:
     private = _private_key(private_key_b64)
     components: dict[str, dict] = {}
     artifact_root = output_root / "artifacts" / "components" / target
@@ -96,6 +102,13 @@ def build_release(source_root: Path, output_root: Path, *, product: str, channel
     seen_components: set[str] = set()
     for source in sorted(path for path in source_root.iterdir() if path.is_dir() and (path / "plugin.json").is_file()):
         component, version = read_plugin_metadata(source)
+        plugin_metadata = json.loads((source / "plugin.json").read_text(encoding="utf-8-sig"))
+        preserve_paths = tuple(
+            dict.fromkeys([
+                *DEFAULT_PRESERVE_PATHS,
+                *plugin_metadata.get("component_update", {}).get("preserve", []),
+            ]),
+        )
         if component in seen_components:
             raise ValueError(f"duplicate component id in release source: {component}")
         seen_components.add(component)
@@ -113,7 +126,7 @@ def build_release(source_root: Path, output_root: Path, *, product: str, channel
                 delta_dir = artifact_root / component / f"{base_version}-{version}"
                 delta_dir.mkdir(parents=True, exist_ok=True)
                 delta_artifact = delta_dir / "delta.zip"
-                write_delta(base_source, source, delta_artifact)
+                write_delta(base_source, source, delta_artifact, preserve_paths)
                 delta_signature = _sign(delta_artifact, private)
                 delta_url = f"artifacts/components/{target}/{component}/{base_version}-{version}/delta.zip"
                 deltas.append({
@@ -127,7 +140,8 @@ def build_release(source_root: Path, output_root: Path, *, product: str, channel
             "kind": "directory",
             "version": version,
             "min_core_version": core_min_version,
-            "files": file_inventory(source),
+            "preserve": list(preserve_paths),
+            "files": file_inventory(source, preserve_paths),
             "full": {
                 "url": f"{base_url.rstrip('/')}/{relative_url}",
                 "size": artifact.stat().st_size,
@@ -160,6 +174,9 @@ def build_release(source_root: Path, output_root: Path, *, product: str, channel
             pointer_path,
             target=target,
             release_id=release_id,
+            release_version=release_version or core_min_version,
+            release_sequence=release_sequence,
+            release_attempt=release_attempt,
             manifest_url=f"{base_url.rstrip('/')}/metadata/components/{channel}/{manifest_name}",
             manifest_path=manifest_path,
             manifest_signature=manifest_signature,
@@ -180,10 +197,13 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--private-key", default=os.environ.get("COMPONENT_SIGNING_PRIVATE_KEY", ""))
     parser.add_argument("--release-id")
+    parser.add_argument("--release-version")
+    parser.add_argument("--release-sequence", type=int, default=0)
+    parser.add_argument("--release-attempt", type=int, default=0)
     args = parser.parse_args()
     if not args.private_key:
         raise SystemExit("COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required")
-    path = build_release(args.source_root.resolve(), args.output_root.resolve(), product=args.product, channel=args.channel, target=args.target, core_min_version=args.core_min_version, base_url=args.base_url, private_key_b64=args.private_key, base_root=args.base_root.resolve() if args.base_root else None, release_id=args.release_id)
+    path = build_release(args.source_root.resolve(), args.output_root.resolve(), product=args.product, channel=args.channel, target=args.target, core_min_version=args.core_min_version, base_url=args.base_url, private_key_b64=args.private_key, base_root=args.base_root.resolve() if args.base_root else None, release_id=args.release_id, release_version=args.release_version, release_sequence=args.release_sequence, release_attempt=args.release_attempt)
     print(f"wrote signed component release: {path}")
     return 0
 

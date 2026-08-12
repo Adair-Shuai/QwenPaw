@@ -15,7 +15,8 @@ from packaging.version import InvalidVersion, Version
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
-_PRESERVED_NAMES = frozenset({"engines", ".uninstalled", ".bundle_hash", ".bundle_revision", ".bundle_complete"})
+DEFAULT_PRESERVE_PATHS = ("engines",)
+_PRESERVED_NAMES = frozenset({*DEFAULT_PRESERVE_PATHS, ".uninstalled", ".bundle_hash", ".bundle_revision", ".bundle_complete"})
 
 
 def safe_relative_path(value: str) -> str:
@@ -31,7 +32,7 @@ def safe_relative_path(value: str) -> str:
     return normalized
 
 
-def iter_files(root: Path) -> Iterator[tuple[str, Path]]:
+def iter_files(root: Path, preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS) -> Iterator[tuple[str, Path]]:
     """Yield regular files below *root* in deterministic path order."""
     root = root.resolve()
     if not root.is_dir():
@@ -45,7 +46,7 @@ def iter_files(root: Path) -> Iterator[tuple[str, Path]]:
         if path.stat().st_nlink > 1:
             raise ValueError(f"hard links are not allowed in component trees: {path}")
         relative = safe_relative_path(path.relative_to(root).as_posix())
-        if relative in _PRESERVED_NAMES or "engines" in PurePosixPath(relative).parts:
+        if relative in _PRESERVED_NAMES or PurePosixPath(relative).parts[0] in preserve_paths or relative in {".uninstalled", ".bundle_hash", ".bundle_revision", ".bundle_complete"}:
             continue
         entries.append((relative, path))
     yield from sorted(entries, key=lambda item: item[0])
@@ -59,7 +60,7 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def file_inventory(root: Path) -> dict[str, dict[str, Any]]:
+def file_inventory(root: Path, preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS) -> dict[str, dict[str, Any]]:
     """Return a deterministic path -> size/hash inventory."""
     return {
         relative: {
@@ -67,7 +68,7 @@ def file_inventory(root: Path) -> dict[str, dict[str, Any]]:
             "sha256": sha256_file(path),
             "mode": stat.S_IMODE(path.stat().st_mode),
         }
-        for relative, path in iter_files(root)
+        for relative, path in iter_files(root, preserve_paths)
     }
 
 

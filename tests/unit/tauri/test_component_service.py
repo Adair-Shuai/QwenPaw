@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 
-from qwenpaw.components.service import ComponentUpdateService, run_startup_updates
+from qwenpaw.components.service import ComponentUpdateService, queue_component_update, run_startup_updates
 from qwenpaw.components.update import ComponentUpdater
 
 
@@ -68,3 +68,50 @@ def test_startup_update_failure_is_non_fatal(monkeypatch):
     result = run_startup_updates()
     assert result["enabled"] is True
     assert result["errors"][0]["component"] == "manifest"
+
+
+def test_manual_update_is_queued_for_safe_restart(monkeypatch, tmp_path):
+    pending = tmp_path / "pending.json"
+    class _Service:
+        def __init__(self):
+            self.updater = type("Updater", (), {"managed_components": {"demo"}})()
+            self.client = type("Client", (), {"close": lambda self: None})()
+        def check(self):
+            return [{"component": "demo"}]
+    monkeypatch.setattr("qwenpaw.components.service.configured_service", lambda: _Service())
+    monkeypatch.setattr("qwenpaw.components.service._PENDING_UPDATES_PATH", pending)
+    assert queue_component_update("demo") == {"component": "demo", "queued": True, "restart_required": True}
+    assert json.loads(pending.read_text(encoding="utf-8"))["components"] == ["demo"]
+
+
+def test_pending_update_runs_even_when_automatic_updates_are_disabled(monkeypatch, tmp_path):
+    pending = tmp_path / "pending.json"
+    pending.write_text(json.dumps({"schema_version": 1, "components": ["demo"]}), encoding="utf-8")
+    class _Service:
+        def __init__(self):
+            self.client = type("Client", (), {"close": lambda self: None})()
+        def check(self):
+            return [{"component": "demo"}]
+        def install(self, component):
+            return {"component": component, "updated": True}
+    monkeypatch.delenv("QWENPAW_COMPONENT_UPDATES", raising=False)
+    monkeypatch.setattr("qwenpaw.components.service._PENDING_UPDATES_PATH", pending)
+    monkeypatch.setattr("qwenpaw.components.service.configured_service", lambda: _Service())
+    result = run_startup_updates()
+    assert result["updated"] == [{"component": "demo", "updated": True}]
+    assert not pending.exists()
+
+
+def test_unavailable_pending_update_is_retained(monkeypatch, tmp_path):
+    pending = tmp_path / "pending.json"
+    pending.write_text(json.dumps({"schema_version": 1, "components": ["demo"]}), encoding="utf-8")
+    class _Service:
+        def __init__(self):
+            self.client = type("Client", (), {"close": lambda self: None})()
+        def check(self):
+            return []
+    monkeypatch.delenv("QWENPAW_COMPONENT_UPDATES", raising=False)
+    monkeypatch.setattr("qwenpaw.components.service._PENDING_UPDATES_PATH", pending)
+    monkeypatch.setattr("qwenpaw.components.service.configured_service", lambda: _Service())
+    run_startup_updates()
+    assert json.loads(pending.read_text(encoding="utf-8"))["components"] == ["demo"]
