@@ -168,6 +168,9 @@ def _extract(archive: Path, workdir: Path) -> Path:
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as zip_file:
             infos = zip_file.infolist()
+            names = [info.filename for info in infos]
+            if len(names) != len(set(names)):
+                raise SystemExit("duplicate JRE ZIP members are not allowed")
             root = workdir.resolve()
             for info in infos:
                 _validate_member(info.filename, root)
@@ -176,24 +179,39 @@ def _extract(archive: Path, workdir: Path) -> Path:
                     raise SystemExit(f"unsafe JRE ZIP link/device member: {info.filename}")
             for info in infos:
                 target = (root / info.filename).resolve()
+                _validate_member(info.filename, root)
                 if info.is_dir():
                     target.mkdir(parents=True, exist_ok=True)
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     with zip_file.open(info) as source, target.open("wb") as dest:
                         shutil.copyfileobj(source, dest)
+                    target.chmod((info.external_attr >> 16) & 0o777 or 0o644)
     else:
         with tarfile.open(archive, "r:gz") as tar:
             members = tar.getmembers()
             root = workdir.resolve()
             for member in members:
                 _validate_member(member.name, root)
-                if not (member.isdir() or member.isfile()):
+                if not (member.isdir() or member.isfile() or member.issym()):
                     raise SystemExit(f"unsafe JRE tar member type: {member.name}")
             for member in members:
                 target = (root / member.name).resolve()
+                try:
+                    target.relative_to(root)
+                except ValueError:
+                    raise SystemExit(f"JRE member resolves outside target: {member.name}") from None
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
+                    continue
+                if member.issym():
+                    link_target = (target.parent / member.linkname).resolve()
+                    try:
+                        link_target.relative_to(root)
+                    except ValueError:
+                        raise SystemExit(f"JRE tar symlink escapes target: {member.name}") from None
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.symlink_to(member.linkname)
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 source = tar.extractfile(member)
@@ -201,6 +219,7 @@ def _extract(archive: Path, workdir: Path) -> Path:
                     raise SystemExit(f"cannot read JRE tar member: {member.name}")
                 with source, target.open("wb") as dest:
                     shutil.copyfileobj(source, dest)
+                target.chmod(member.mode & 0o777 or 0o644)
 
     # Find the top-level extracted directory.
     dirs = [p for p in workdir.iterdir() if p.is_dir()]

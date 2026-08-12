@@ -1,7 +1,7 @@
 # Standalone release pipeline for the QwenPaw Creator plugin.
 #
-# Unlike plugins-release.yml (which publishes ALL plugins on every main
-# QwenPaw GitHub Release), this workflow is driven by the Creator plugin's
+# Unlike the canonical main release (which publishes all main plugins), this
+# workflow is driven by the Creator plugin's
 # own version: it fires when plugins/apps/qwenpaw-creator/plugin.json
 # changes, and only uploads to OSS when that version is not yet on the CDN.
 # Can also be run manually via the Actions tab (with an optional force flag).
@@ -27,8 +27,8 @@ permissions:
   contents: read
 
 concurrency:
-  # Shared with plugins-release.yml so index merges never run concurrently.
-  group: plugins-release
+  # Serialize with canonical release plugin index publication.
+  group: release-plugins-index
   cancel-in-progress: false
 
 env:

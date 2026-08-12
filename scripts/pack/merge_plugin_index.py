@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Merge a newly built plugin index with a historical one from OSS.
 
-Used by the ``plugins-release.yml`` workflow to preserve old plugin
+Used by the canonical ``release.yml`` workflow to preserve old plugin
 versions on the CDN while adding new ones.
 
 Merge rules:
