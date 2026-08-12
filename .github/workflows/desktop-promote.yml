@@ -95,16 +95,41 @@ jobs:
             fi
 
             echo "Promoting ${platform} ${versioned_name} -> ${latest_name}"
-            ossutil cp \
-              "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
-              "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${latest_name}" \
-              --acl public-read \
-              --force
+            tmp_suffix="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            latest_uri="oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${latest_name}"
+            latest_tmp="${latest_uri}.staging-${tmp_suffix}"
+            metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${latest_name}.json"
+            metadata_tmp="${metadata_uri}.staging-${tmp_suffix}"
+            # The versioned metadata points at the immutable versioned object.
+            # Rewrite the alias metadata so consumers following `url` download
+            # the same latest object that was just promoted.
+            versioned_metadata="${RUNNER_TEMP}/${platform}-versioned-metadata.json"
+            latest_metadata="${RUNNER_TEMP}/${platform}-latest-metadata.json"
             ossutil cp \
               "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \
-              "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${latest_name}.json" \
-              --acl public-read \
-              --force
+              "$versioned_metadata"
+            python - "$versioned_metadata" "$latest_metadata" "$latest_name" "$platform" <<'PY'
+            import json
+            import sys
+            from pathlib import Path
+
+            source, destination, latest_name, platform = sys.argv[1:]
+            doc = json.loads(Path(source).read_text(encoding="utf-8"))
+            doc["filename"] = latest_name
+            doc["url"] = f"/files/apps/desktop/{platform}/{latest_name}"
+            Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+            PY
+            ossutil cp \
+              "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
+              "$latest_tmp" \
+              --acl public-read
+            ossutil cp "$latest_metadata" "$metadata_tmp" --acl public-read
+            ossutil ls "$latest_tmp" >/dev/null
+            ossutil ls "$metadata_tmp" >/dev/null
+            ossutil cp "$latest_tmp" "$latest_uri" --acl public-read --force
+            ossutil cp "$metadata_tmp" "$metadata_uri" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+            ossutil rm "$latest_tmp" --force || true
+            ossutil rm "$metadata_tmp" --force || true
           }
 
           promote_latest \
@@ -176,10 +201,12 @@ jobs:
             "${metadata_args[@]}" \
             --notes "$NOTES" \
             --output qwenpaw-tauri-latest-oss.json
-          ossutil cp qwenpaw-tauri-latest-oss.json \
-            "oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest.json" \
-            --acl public-read \
-            --force
+          updater_uri="oss://${OSS_BUCKET}/metadata/qwenpaw-tauri-latest.json"
+          updater_tmp="${updater_uri}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ossutil cp qwenpaw-tauri-latest-oss.json "$updater_tmp" --acl public-read
+          ossutil ls "$updater_tmp" >/dev/null
+          ossutil cp "$updater_tmp" "$updater_uri" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+          ossutil rm "$updater_tmp" --force || true
 
       - name: Update desktop index
         run: |
@@ -228,10 +255,12 @@ jobs:
             "mac-tauri"
 
           # Upload updated desktop/index.json
-          ossutil cp desktop-index.json \
-            "oss://${OSS_BUCKET}/metadata/apps/desktop/index.json" \
-            --acl public-read \
-            --force
+          index_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/index.json"
+          index_tmp="${index_uri}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ossutil cp desktop-index.json "$index_tmp" --acl public-read
+          ossutil ls "$index_tmp" >/dev/null
+          ossutil cp "$index_tmp" "$index_uri" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+          ossutil rm "$index_tmp" --force || true
 
           echo "✓ Desktop index updated"
 
@@ -271,9 +300,11 @@ jobs:
           PYTHON
 
           # Upload main index
-          ossutil cp main-index.json \
-            "oss://${OSS_BUCKET}/metadata/index.json" \
-            --acl public-read \
-            --force
+          index_uri="oss://${OSS_BUCKET}/metadata/index.json"
+          index_tmp="${index_uri}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ossutil cp main-index.json "$index_tmp" --acl public-read
+          ossutil ls "$index_tmp" >/dev/null
+          ossutil cp "$index_tmp" "$index_uri" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+          ossutil rm "$index_tmp" --force || true
 
           echo "✓ Main index updated"

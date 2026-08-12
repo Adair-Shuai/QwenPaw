@@ -11,8 +11,9 @@ on:
   # desktop-publish.yml and gates the web release on the desktop build.
   # Publishing a GitHub Release directly still triggers this OLD, un-gated
   # desktop build. Kept only as an emergency rollback.
-  release:
-    types: [published]
+  # Production publishing is exclusively owned by release.yml.  Keeping this
+  # workflow manual-only prevents the legacy path from overwriting immutable
+  # versioned OSS objects or racing the canonical promote transaction.
   workflow_dispatch:
     inputs:
       upload_to_oss:
@@ -500,12 +501,7 @@ jobs:
   upload-oss:
     needs: [build-tauri-windows, build-tauri-macos]
     # Run on: 1) release trigger, or 2) manual trigger with upload_to_oss checked
-    if: |
-      always() &&
-      (github.event_name == 'release' ||
-       (github.event_name == 'workflow_dispatch' && github.event.inputs.upload_to_oss == 'true')) &&
-      needs.build-tauri-windows.result == 'success' &&
-      needs.build-tauri-macos.result == 'success'
+    if: ${{ false }}
     runs-on: ubuntu-latest
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
@@ -566,10 +562,10 @@ jobs:
             --output win-metadata.json
 
           # Upload file (versioned)
+          if ossutil ls "oss://${OSS_BUCKET}/files/apps/desktop/win/UGSci-Setup-${VERSION}.exe" >/dev/null 2>&1; then exit 1; fi
           ossutil cp "$WIN_EXE" \
             "oss://${OSS_BUCKET}/files/apps/desktop/win/UGSci-Setup-${VERSION}.exe" \
-            --acl public-read \
-            --force
+            --acl public-read
 
           # Upload file (latest)
           ossutil cp "$WIN_EXE" \
@@ -580,8 +576,7 @@ jobs:
           # Upload metadata (versioned)
           ossutil cp win-metadata.json \
             "oss://${OSS_BUCKET}/metadata/apps/desktop/win/UGSci-Setup-${VERSION}.exe.json" \
-            --acl public-read \
-            --force
+            --acl public-read
 
           # Upload metadata (latest)
           ossutil cp win-metadata.json \
@@ -613,10 +608,10 @@ jobs:
             --output mac-metadata.json
 
           # Upload file (versioned)
+          if ossutil ls "oss://${OSS_BUCKET}/files/apps/desktop/mac/UGSci-${VERSION}-macOS.zip" >/dev/null 2>&1; then exit 1; fi
           ossutil cp "$MAC_ZIP" \
             "oss://${OSS_BUCKET}/files/apps/desktop/mac/UGSci-${VERSION}-macOS.zip" \
-            --acl public-read \
-            --force
+            --acl public-read
 
           # Upload file (latest)
           ossutil cp "$MAC_ZIP" \
@@ -627,8 +622,7 @@ jobs:
           # Upload metadata (versioned)
           ossutil cp mac-metadata.json \
             "oss://${OSS_BUCKET}/metadata/apps/desktop/mac/UGSci-${VERSION}-macOS.zip.json" \
-            --acl public-read \
-            --force
+            --acl public-read
 
           # Upload metadata (latest)
           ossutil cp mac-metadata.json \

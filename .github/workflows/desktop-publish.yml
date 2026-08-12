@@ -133,14 +133,37 @@ jobs:
               --version "${VERSION}" \
               --output "${metadata}"
 
+            python - "${metadata}" "${versioned_name}" <<'PY'
+            import json
+            import sys
+            from pathlib import Path
+
+            metadata_path, expected_name = sys.argv[1:]
+            doc = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
+            if doc.get("filename") != expected_name or not str(doc.get("url", "")).endswith("/" + expected_name):
+                raise SystemExit(
+                    f"metadata points at {doc.get('filename')!r}, expected immutable object {expected_name!r}"
+                )
+            PY
+
+            versioned_uri="oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}"
+            metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json"
+            if ossutil ls "$versioned_uri" >/dev/null 2>&1 || ossutil ls "$metadata_uri" >/dev/null 2>&1; then
+              echo "Refusing to overwrite immutable desktop release object for ${VERSION}/${platform}" >&2
+              exit 1
+            fi
             ossutil cp "${artifact}" \
-              "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
+              "$versioned_uri" \
               --acl public-read \
-              --force
+              --meta "Cache-Control:public, max-age=31536000, immutable" \
+              --header "x-oss-forbid-overwrite:true"
             ossutil cp "${metadata}" \
-              "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \
+              "$metadata_uri" \
               --acl public-read \
-              --force
+              --meta "Cache-Control:public, max-age=31536000, immutable" \
+              --header "x-oss-forbid-overwrite:true"
+            ossutil ls "$versioned_uri" >/dev/null
+            ossutil ls "$metadata_uri" >/dev/null
           }
 
           upload_versioned \
@@ -167,10 +190,17 @@ jobs:
             echo "No macOS .app.tar.gz found, skipping"
             exit 0
           fi
+          updater_uri="oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
+          if ossutil ls "$updater_uri" >/dev/null 2>&1; then
+            echo "Refusing to overwrite immutable macOS updater artifact for ${VERSION}" >&2
+            exit 1
+          fi
           ossutil cp "$APP_TAR_GZ" \
-            "oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz" \
+            "$updater_uri" \
             --acl public-read \
-            --force
+            --meta "Cache-Control:public, max-age=31536000, immutable" \
+            --header "x-oss-forbid-overwrite:true"
+          ossutil ls "$updater_uri" >/dev/null
 
       # NOTE: the `latest` files, the updater manifest
       # (qwenpaw-tauri-latest.json) and the index are intentionally NOT uploaded

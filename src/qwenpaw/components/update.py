@@ -133,7 +133,9 @@ class ComponentUpdater:
         self.managed_components = frozenset(_safe_component_id(item) for item in managed_components)
         self.target = target or detect_target()
         self.core_version = core_version
-        self.active_path = active_path.resolve() if active_path is not None else None
+        if active_path is not None and active_path.is_symlink():
+            raise ComponentUpdateError("active path may not be a symlink")
+        self.active_path = active_path.absolute() if active_path is not None else None
         self._lock = threading.RLock()
 
     def _commit_active(self, component: str, version: str, destination: Path) -> None:
@@ -249,12 +251,12 @@ class ComponentUpdater:
             raise ComponentUpdateError("invalid component update plan")
         if (base / ".uninstalled").exists():
             raise ComponentUpdateError("component is marked uninstalled")
+        if base.is_symlink() or destination.is_symlink():
+            raise ComponentUpdateError("component roots may not be symlinks")
         base = base.resolve()
         destination = destination.resolve()
         if destination.exists() and (destination / ".uninstalled").exists():
             raise ComponentUpdateError("component is marked uninstalled")
-        if base.is_symlink() or destination.is_symlink():
-            raise ComponentUpdateError("component roots may not be symlinks")
         destination.parent.mkdir(parents=True, exist_ok=True)
         # Replacing the installed directory is the normal runtime path.  The
         # base is copied into a same-parent staging directory before the
@@ -341,11 +343,11 @@ class ComponentUpdater:
         if _sha256(archive) != plan.artifact_sha256:
             raise ComponentUpdateError("full artifact sha256 mismatch")
         _verify_signature(archive.read_bytes(), plan.artifact_signature, self.public_key_b64)
+        if destination.is_symlink():
+            raise ComponentUpdateError("destination may not be a symlink")
         destination = destination.resolve()
         if destination.exists() and (destination / ".uninstalled").exists():
             raise ComponentUpdateError("component is marked uninstalled")
-        if destination.exists() and destination.is_symlink():
-            raise ComponentUpdateError("destination may not be a symlink")
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(prefix=f".{plan.component}.staging-", dir=str(destination.parent)) as temp:
             staged = Path(temp) / "component"

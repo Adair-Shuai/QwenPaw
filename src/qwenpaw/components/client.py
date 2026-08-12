@@ -4,9 +4,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
+import shutil
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 
@@ -37,14 +39,83 @@ class ComponentClient:
         url = _https_url(url)
         response = self.client.get(url, headers={"Cache-Control": "no-cache"})
         response.raise_for_status()
+        try:
+            pointer = response.json()
+        except ValueError:
+            pointer = None
+        pointer_fields = {
+            "schema_version",
+            "target",
+            "release_id",
+            "manifest_url",
+            "manifest_size",
+            "manifest_sha256",
+            "manifest_signature",
+            "signature",
+        }
+        if (
+            isinstance(pointer, dict)
+            and pointer.get("schema_version") == 1
+            and pointer_fields.issubset(pointer)
+        ):
+            return self._fetch_signed_pointer(url, pointer)
         signature_response = self.client.get(_https_url(signature_url or f"{url}.sig"))
         signature_response.raise_for_status()
-        self.cache_root.mkdir(parents=True, exist_ok=True)
-        manifest_path = self.cache_root / "manifest.json"
-        signature_path = self.cache_root / "manifest.json.sig"
-        _atomic_write(manifest_path, response.content)
-        _atomic_write(signature_path, signature_response.content)
+        manifest_path, signature_path = self._stage_manifest(response.content, signature_response.content)
         return self.updater.load_manifest(manifest_path, signature_path)
+
+    def _fetch_signed_pointer(self, pointer_url: str, pointer: dict) -> dict:
+        signature = pointer.get("signature")
+        payload = dict(pointer)
+        payload.pop("signature", None)
+        if not isinstance(signature, str) or not signature:
+            raise ComponentUpdateError("component pointer signature is required")
+        _verify_pointer_signature(payload, signature, self.updater.public_key_b64)
+        if payload.get("target") != self.updater.target:
+            raise ComponentUpdateError("component pointer target mismatch")
+        if not isinstance(payload.get("release_id"), str) or not payload["release_id"]:
+            raise ComponentUpdateError("component pointer release id is invalid")
+        if not isinstance(payload.get("manifest_url"), str) or not payload["manifest_url"]:
+            raise ComponentUpdateError("component pointer manifest URL is invalid")
+        manifest_url = _https_url(urljoin(pointer_url, str(payload["manifest_url"])))
+        manifest_response = self.client.get(manifest_url, headers={"Cache-Control": "no-cache"})
+        manifest_response.raise_for_status()
+        if type(payload.get("manifest_size")) is not int or len(manifest_response.content) != payload["manifest_size"]:
+            raise ComponentUpdateError("component manifest size mismatch")
+        if _sha256_bytes(manifest_response.content).lower() != str(payload.get("manifest_sha256", "")).lower():
+            raise ComponentUpdateError("component manifest sha256 mismatch")
+        signature_url = _https_url(f"{manifest_url}.sig")
+        signature_response = self.client.get(signature_url, headers={"Cache-Control": "no-cache"})
+        signature_response.raise_for_status()
+        if signature_response.text.strip() != str(payload.get("manifest_signature", "")).strip():
+            raise ComponentUpdateError("component manifest signature does not match pointer")
+        manifest_path, signature_path = self._stage_manifest(manifest_response.content, signature_response.content)
+        return self.updater.load_manifest(manifest_path, signature_path)
+
+    def _stage_manifest(self, manifest: bytes, signature: bytes) -> tuple[Path, Path]:
+        self.cache_root.mkdir(parents=True, exist_ok=True)
+        # Keep each verified JSON/signature pair in its own immutable cache
+        # directory.  A crash or concurrent fetch can therefore never leave
+        # the shared ``manifest.json`` and ``manifest.json.sig`` mixed.
+        digest = _sha256_bytes(manifest)
+        manifests_root = self.cache_root / "manifests"
+        manifests_root.mkdir(parents=True, exist_ok=True)
+        staged = manifests_root / digest
+        if not staged.is_dir():
+            temporary = manifests_root / f".{digest}.{os.getpid()}.tmp"
+            try:
+                temporary.mkdir(parents=True, exist_ok=False)
+                (temporary / "manifest.json").write_bytes(manifest)
+                (temporary / "manifest.json.sig").write_bytes(signature)
+                os.replace(temporary, staged)
+            except FileExistsError:
+                shutil.rmtree(temporary, ignore_errors=True)
+            except Exception:
+                shutil.rmtree(temporary, ignore_errors=True)
+                raise
+        manifest_path = staged / "manifest.json"
+        signature_path = staged / "manifest.json.sig"
+        return manifest_path, signature_path
 
     def download_artifact(self, url: str, *, sha256: str, size: int, name: str) -> Path:
         url = _https_url(url)
@@ -100,3 +171,19 @@ def _sha256_file(path: Path) -> str:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _sha256_bytes(payload: bytes) -> str:
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _verify_pointer_signature(payload: dict, signature: str, public_key_b64: str) -> None:
+    from .update import _verify_signature
+
+    _verify_signature(
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        .encode("utf-8")
+        + b"\n",
+        signature,
+        public_key_b64,
+    )

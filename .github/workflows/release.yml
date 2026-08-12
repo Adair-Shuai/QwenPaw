@@ -252,10 +252,20 @@ jobs:
           path: dist/plugins
           retention-days: 7
 
+  build-components:
+    needs: [resolve]
+    uses: ./.github/workflows/component-release.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      core_min_version: ${{ needs.resolve.outputs.tag }}
+      release_id: ${{ needs.resolve.outputs.tag }}-${{ needs.resolve.outputs.sha }}
+      upload_to_oss: false
+    secrets: inherit
+
   # ── Gate: publish jobs below run only if every prepare job above is green ──
 
   publish-pypi:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
     runs-on: ubuntu-latest
     steps:
       - name: Download dist artifacts
@@ -277,7 +287,7 @@ jobs:
           echo "DRY-RUN: would publish $(ls dist) to PyPI"
 
   push-docker:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
     runs-on: ubuntu-latest
     env:
       ACR_REGISTRY: agentscope-registry.ap-southeast-1.cr.aliyuncs.com
@@ -331,7 +341,7 @@ jobs:
           echo "DRY-RUN: would build+push docker image for ${{ needs.resolve.outputs.tag }}"
 
   publish-desktop:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -340,7 +350,7 @@ jobs:
     secrets: inherit
 
   publish-plugins:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
     runs-on: ubuntu-latest
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
@@ -439,8 +449,75 @@ jobs:
             --meta "Cache-Control:public, max-age=60, must-revalidate"
 
   # ── Finalize: flip the draft to published LAST (pinned to the built SHA) ────
+  publish-components:
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+    steps:
+      - name: Dry-run notice
+        if: ${{ inputs.dry_run }}
+        run: 'echo "DRY-RUN: component artifacts were built but will not be uploaded"'
+
+      - uses: actions/checkout@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/download-artifact@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          pattern: component-release-*
+          path: component-release
+          merge-multiple: true
+      - name: Install and configure ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
+      - name: Upload immutable component artifacts and manifests
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            relative="${file#component-release/}"
+            if ossutil ls "oss://${OSS_BUCKET}/${relative}" >/dev/null 2>&1; then
+              echo "Refusing to overwrite immutable component object: ${relative}" >&2
+              exit 1
+            fi
+          done < <(find component-release/artifacts -type f)
+          while IFS= read -r manifest; do
+            base="$(basename "$manifest")"
+            if ossutil ls "oss://${OSS_BUCKET}/metadata/components/stable/${base}" >/dev/null 2>&1 || \
+               ossutil ls "oss://${OSS_BUCKET}/metadata/components/stable/${base}.sig" >/dev/null 2>&1; then
+              echo "Refusing to overwrite immutable component manifest: ${base}" >&2
+              exit 1
+            fi
+          done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' -print)
+          ossutil cp component-release/artifacts/ "oss://${OSS_BUCKET}/artifacts/" --recursive --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          while IFS= read -r manifest; do
+            base="$(basename "$manifest")"
+            ossutil cp "$manifest" "oss://${OSS_BUCKET}/metadata/components/stable/${base}" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+            ossutil cp "${manifest}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/${base}.sig" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' -print)
+      - name: Promote signed component pointers last
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          for pointer in component-release/metadata/components/stable/*.current.json; do
+            base="$(basename "$pointer")"
+            tmp="oss://${OSS_BUCKET}/metadata/components/stable/${base}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            ossutil cp "$pointer" "$tmp" --acl public-read
+            ossutil ls "$tmp" >/dev/null
+            ossutil cp "$tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${base}" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+            ossutil rm "$tmp" --force || true
+          done
+
   finalize:
-    needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins]
+    needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins, publish-components]
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release

@@ -36,8 +36,39 @@ def _sha256(path: Path) -> str:
 
 def _sign(path: Path, private: Ed25519PrivateKey) -> str:
     signature = base64.b64encode(private.sign(path.read_bytes())).decode("ascii")
-    path.with_name(path.name + ".sig").write_text(signature + "\n", encoding="utf-8")
+    signature_path = path.with_name(path.name + ".sig")
+    temporary = signature_path.with_name(f".{signature_path.name}.tmp")
+    temporary.write_text(signature + "\n", encoding="utf-8")
+    os.replace(temporary, signature_path)
     return signature
+
+
+def _write_signed_pointer(
+    output: Path,
+    *,
+    target: str,
+    release_id: str,
+    manifest_url: str,
+    manifest_path: Path,
+    manifest_signature: str,
+    private: Ed25519PrivateKey,
+) -> None:
+    payload = {
+        "schema_version": 1,
+        "target": target,
+        "release_id": release_id,
+        "manifest_url": manifest_url,
+        "manifest_size": manifest_path.stat().st_size,
+        "manifest_sha256": _sha256(manifest_path),
+        "manifest_signature": manifest_signature,
+    }
+    pointer = dict(payload)
+    pointer["signature"] = base64.b64encode(
+        private.sign(canonical_json(payload)),
+    ).decode("ascii")
+    temporary = output.with_name(f".{output.name}.tmp")
+    temporary.write_bytes(canonical_json(pointer))
+    os.replace(temporary, output)
 
 
 def _full_zip(source: Path, output: Path) -> None:
@@ -53,7 +84,7 @@ def _full_zip(source: Path, output: Path) -> None:
     os.replace(temporary, output)
 
 
-def build_release(source_root: Path, output_root: Path, *, product: str, channel: str, target: str, core_min_version: str, base_url: str, private_key_b64: str, base_root: Path | None = None) -> Path:
+def build_release(source_root: Path, output_root: Path, *, product: str, channel: str, target: str, core_min_version: str, base_url: str, private_key_b64: str, base_root: Path | None = None, release_id: str | None = None) -> Path:
     private = _private_key(private_key_b64)
     components: dict[str, dict] = {}
     artifact_root = output_root / "artifacts" / "components" / target
@@ -115,9 +146,21 @@ def build_release(source_root: Path, output_root: Path, *, product: str, channel
     }
     metadata = output_root / "metadata" / "components" / channel
     metadata.mkdir(parents=True, exist_ok=True)
-    manifest_path = metadata / f"{target}.json"
+    manifest_name = f"{target}-{release_id}.json" if release_id else f"{target}.json"
+    manifest_path = metadata / manifest_name
     manifest_path.write_bytes(canonical_json(manifest))
-    _sign(manifest_path, private)
+    manifest_signature = _sign(manifest_path, private)
+    if release_id:
+        pointer_path = metadata / f"{target}.current.json"
+        _write_signed_pointer(
+            pointer_path,
+            target=target,
+            release_id=release_id,
+            manifest_url=f"{base_url.rstrip('/')}/metadata/components/{channel}/{manifest_name}",
+            manifest_path=manifest_path,
+            manifest_signature=manifest_signature,
+            private=private,
+        )
     return manifest_path
 
 
@@ -132,10 +175,11 @@ def main() -> int:
     parser.add_argument("--core-min-version", required=True)
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--private-key", default=os.environ.get("COMPONENT_SIGNING_PRIVATE_KEY", ""))
+    parser.add_argument("--release-id")
     args = parser.parse_args()
     if not args.private_key:
         raise SystemExit("COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required")
-    path = build_release(args.source_root.resolve(), args.output_root.resolve(), product=args.product, channel=args.channel, target=args.target, core_min_version=args.core_min_version, base_url=args.base_url, private_key_b64=args.private_key, base_root=args.base_root.resolve() if args.base_root else None)
+    path = build_release(args.source_root.resolve(), args.output_root.resolve(), product=args.product, channel=args.channel, target=args.target, core_min_version=args.core_min_version, base_url=args.base_url, private_key_b64=args.private_key, base_root=args.base_root.resolve() if args.base_root else None, release_id=args.release_id)
     print(f"wrote signed component release: {path}")
     return 0
 

@@ -1,6 +1,26 @@
 name: Component Release
 
 on:
+  workflow_call:
+    inputs:
+      target:
+        type: string
+        required: false
+        default: ""
+      ref:
+        type: string
+        required: false
+        default: ""
+      core_min_version:
+        type: string
+        required: true
+      release_id:
+        type: string
+        required: true
+      upload_to_oss:
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       target:
@@ -19,13 +39,24 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build-components:
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [windows-x86_64, macos-aarch64, macos-x86_64]
+    if: ${{ inputs.target == '' || inputs.target == matrix.target }}
     runs-on: ubuntu-latest
     env:
       COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
 
       - uses: actions/setup-python@v5
         with:
@@ -40,6 +71,16 @@ jobs:
             --repo . \
             --dest component-staging
 
+      - name: Fetch and verify previous component base
+        env:
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+        run: |
+          python scripts/pack-tauri/prepare_component_base.py \
+            --source-root component-staging \
+            --base-root component-base \
+            --target '${{ matrix.target }}' \
+            --manifest-url "$COMPONENT_BASE_URL/metadata/components/stable/${{ matrix.target }}.current.json"
+
       - name: Build and sign component release
         env:
           COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
@@ -47,19 +88,21 @@ jobs:
           python scripts/pack-tauri/build_component_release.py \
             --source-root component-staging \
             --output-root component-release \
-            --target '${{ inputs.target }}' \
-            --core-min-version '${{ inputs.core_min_version }}' \
-            --base-url "$COMPONENT_BASE_URL"
+            --target '${{ matrix.target }}' \
+            --core-min-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}' \
+            --base-url "$COMPONENT_BASE_URL" \
+            --base-root component-base \
+            --release-id "${{ inputs.release_id || format('{0}-{1}', github.run_id, github.run_attempt) }}"
 
       - name: Verify generated artifacts
         run: |
-          test -s component-release/metadata/components/stable/${{ inputs.target }}.json
-          test -s component-release/metadata/components/stable/${{ inputs.target }}.json.sig
+          find component-release/metadata/components/stable -maxdepth 1 -name '${{ matrix.target }}-*.json' -type f -size +0 | grep -q .
+          test -s component-release/metadata/components/stable/${{ matrix.target }}.current.json
           find component-release/artifacts -name '*.zip' -type f -size +0 -print
 
       - uses: actions/upload-artifact@v4
         with:
-          name: component-release-${{ inputs.target }}
+          name: component-release-${{ matrix.target }}
           path: component-release/
           if-no-files-found: error
 
@@ -91,7 +134,9 @@ jobs:
           done < <(find component-release/artifacts -type f)
           ossutil cp component-release/artifacts/components/ \
             "oss://${OSS_BUCKET}/artifacts/components/" \
-            --recursive --acl public-read
+            --recursive --acl public-read \
+            --meta "Cache-Control:public, max-age=31536000, immutable" \
+            --header "x-oss-forbid-overwrite:true"
 
       - name: Verify artifacts exist on OSS
         if: inputs.upload_to_oss
@@ -110,9 +155,21 @@ jobs:
         env:
           OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
         run: |
-          ossutil cp component-release/metadata/components/stable/${{ inputs.target }}.json.sig \
-            "oss://${OSS_BUCKET}/metadata/components/stable/${{ inputs.target }}.json.sig" \
-            --acl public-read
-          ossutil cp component-release/metadata/components/stable/${{ inputs.target }}.json \
-            "oss://${OSS_BUCKET}/metadata/components/stable/${{ inputs.target }}.json" \
-            --acl public-read
+          manifest=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.json' -type f | head -1)
+          manifest_name=$(basename "$manifest")
+          if ossutil ls "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}" >/dev/null 2>&1; then
+            echo "Refusing to overwrite immutable component manifest: ${manifest_name}" >&2
+            exit 1
+          fi
+          if ossutil ls "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}.sig" >/dev/null 2>&1; then
+            echo "Refusing to overwrite immutable component signature: ${manifest_name}.sig" >&2
+            exit 1
+          fi
+          ossutil cp "$manifest" "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          ossutil cp "${manifest}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}.sig" --acl public-read --meta "Cache-Control:public, max-age=31536000, immutable" --header "x-oss-forbid-overwrite:true"
+          pointer="component-release/metadata/components/stable/${{ matrix.target }}.current.json"
+          pointer_tmp="oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ossutil cp "$pointer" "$pointer_tmp" --acl public-read
+          ossutil ls "$pointer_tmp" >/dev/null
+          ossutil cp "$pointer_tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+          ossutil rm "$pointer_tmp" --force || true
