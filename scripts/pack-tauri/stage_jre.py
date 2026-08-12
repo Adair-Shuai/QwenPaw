@@ -108,14 +108,23 @@ def _http_get(url: str) -> bytes:
 
 def _verify_sha256(data: bytes, expected: str) -> None:
     expected = expected.strip().lower()
-    if len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
-        raise SystemExit("JRE SHA-256 must be a 64-character hexadecimal digest")
+    if len(expected) != 64 or any(
+        c not in "0123456789abcdef" for c in expected
+    ):
+        raise SystemExit(
+            "JRE SHA-256 must be a 64-character hexadecimal digest",
+        )
     actual = hashlib.sha256(data).hexdigest()
     if actual != expected:
-        raise SystemExit(f"JRE SHA-256 mismatch: expected {expected}, got {actual}")
+        raise SystemExit(
+            f"JRE SHA-256 mismatch: expected {expected}, got {actual}",
+        )
 
 
-def _resolve_download_url(java_version: str, expected_release: str = "") -> tuple[str, str, str]:
+def _resolve_download_url(
+    java_version: str,
+    expected_release: str = "",
+) -> tuple[str, str, str]:
     """Query the Adoptium API for the latest JRE download URL.
 
     Returns (download_url, version_label).
@@ -151,7 +160,13 @@ def _resolve_download_url(java_version: str, expected_release: str = "") -> tupl
     return url, release_name, checksum
 
 
-def _resolve_sha256(value: str, discovered: str, os_name: str, arch: str, release_name: str) -> str:
+def _resolve_sha256(
+    value: str,
+    discovered: str,
+    os_name: str,
+    arch: str,
+    release_name: str,
+) -> str:
     override = value.strip()
     if override:
         return override
@@ -165,6 +180,7 @@ def _resolve_sha256(value: str, discovered: str, os_name: str, arch: str, releas
 
 def _extract(archive: Path, workdir: Path) -> Path:
     """Extract *archive* into *workdir* and return the JDK root directory."""
+    # pylint: disable=too-many-branches,too-many-statements
     if archive.suffix == ".zip":
         with zipfile.ZipFile(archive) as zip_file:
             infos = zip_file.infolist()
@@ -176,7 +192,9 @@ def _extract(archive: Path, workdir: Path) -> Path:
                 _validate_member(info.filename, root)
                 mode = (info.external_attr >> 16) & 0o170000
                 if mode in {0o120000, 0o060000, 0o020000}:
-                    raise SystemExit(f"unsafe JRE ZIP link/device member: {info.filename}")
+                    raise SystemExit(
+                        f"unsafe JRE ZIP link/device member: {info.filename}",
+                    )
             for info in infos:
                 target = (root / info.filename).resolve()
                 _validate_member(info.filename, root)
@@ -184,7 +202,9 @@ def _extract(archive: Path, workdir: Path) -> Path:
                     target.mkdir(parents=True, exist_ok=True)
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    with zip_file.open(info) as source, target.open("wb") as dest:
+                    with zip_file.open(info) as source, target.open(
+                        "wb",
+                    ) as dest:
                         shutil.copyfileobj(source, dest)
                     target.chmod((info.external_attr >> 16) & 0o777 or 0o644)
     else:
@@ -194,13 +214,17 @@ def _extract(archive: Path, workdir: Path) -> Path:
             for member in members:
                 _validate_member(member.name, root)
                 if not (member.isdir() or member.isfile() or member.issym()):
-                    raise SystemExit(f"unsafe JRE tar member type: {member.name}")
+                    raise SystemExit(
+                        f"unsafe JRE tar member type: {member.name}",
+                    )
             for member in members:
                 target = (root / member.name).resolve()
                 try:
                     target.relative_to(root)
                 except ValueError:
-                    raise SystemExit(f"JRE member resolves outside target: {member.name}") from None
+                    raise SystemExit(
+                        f"JRE member resolves outside target: {member.name}",
+                    ) from None
                 if member.isdir():
                     target.mkdir(parents=True, exist_ok=True)
                     continue
@@ -209,14 +233,18 @@ def _extract(archive: Path, workdir: Path) -> Path:
                     try:
                         link_target.relative_to(root)
                     except ValueError:
-                        raise SystemExit(f"JRE tar symlink escapes target: {member.name}") from None
+                        raise SystemExit(
+                            f"JRE tar symlink escapes target: {member.name}",
+                        ) from None
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.symlink_to(member.linkname)
                     continue
                 target.parent.mkdir(parents=True, exist_ok=True)
                 source = tar.extractfile(member)
                 if source is None:
-                    raise SystemExit(f"cannot read JRE tar member: {member.name}")
+                    raise SystemExit(
+                        f"cannot read JRE tar member: {member.name}",
+                    )
                 with source, target.open("wb") as dest:
                     shutil.copyfileobj(source, dest)
                 target.chmod(member.mode & 0o777 or 0o644)
@@ -251,6 +279,7 @@ def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
 
 
 def main() -> None:
+    # pylint: disable=too-many-statements
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dest",
@@ -278,12 +307,29 @@ def main() -> None:
     dest = Path(args.dest).resolve()
     marker = dest / ".java-runtime-version"
 
-    if os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower() in {"1", "true", "yes"} and not args.java_release:
+    if (
+        os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower()
+        in {"1", "true", "yes"}
+        and not args.java_release
+    ):
         raise SystemExit("production build requires QWENPAW_JAVA_RELEASE")
-    download_url, release_name, discovered_sha256 = _resolve_download_url(java_version, args.java_release)
+    download_url, release_name, discovered_sha256 = _resolve_download_url(
+        java_version,
+        args.java_release,
+    )
     os_name, arch = _target()
-    expected_sha256 = _resolve_sha256(args.sha256, discovered_sha256, os_name, arch, release_name)
-    if os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower() in {"1", "true", "yes"} and not args.sha256:
+    expected_sha256 = _resolve_sha256(
+        args.sha256,
+        discovered_sha256,
+        os_name,
+        arch,
+        release_name,
+    )
+    if (
+        os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower()
+        in {"1", "true", "yes"}
+        and not args.sha256
+    ):
         raise SystemExit("production build requires QWENPAW_JRE_SHA256")
     marker_value = f"{release_name}-{os_name}-{arch}-{expected_sha256.lower()}"
 

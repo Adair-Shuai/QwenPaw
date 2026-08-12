@@ -11,12 +11,21 @@ from __future__ import annotations
 import hashlib
 import json
 import stat
-from packaging.version import InvalidVersion, Version
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
+from packaging.version import InvalidVersion, Version
+
 DEFAULT_PRESERVE_PATHS = ("engines",)
-_PRESERVED_NAMES = frozenset({*DEFAULT_PRESERVE_PATHS, ".uninstalled", ".bundle_hash", ".bundle_revision", ".bundle_complete"})
+_PRESERVED_NAMES = frozenset(
+    {
+        *DEFAULT_PRESERVE_PATHS,
+        ".uninstalled",
+        ".bundle_hash",
+        ".bundle_revision",
+        ".bundle_complete",
+    },
+)
 
 
 def safe_relative_path(value: str) -> str:
@@ -32,7 +41,10 @@ def safe_relative_path(value: str) -> str:
     return normalized
 
 
-def iter_files(root: Path, preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS) -> Iterator[tuple[str, Path]]:
+def iter_files(
+    root: Path,
+    preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
+) -> Iterator[tuple[str, Path]]:
     """Yield regular files below *root* in deterministic path order."""
     root = root.resolve()
     if not root.is_dir():
@@ -40,13 +52,27 @@ def iter_files(root: Path, preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PA
     entries: list[tuple[str, Path]] = []
     for path in root.rglob("*"):
         if path.is_symlink():
-            raise ValueError(f"symlinks are not allowed in component trees: {path}")
+            raise ValueError(
+                f"symlinks are not allowed in component trees: {path}",
+            )
         if not path.is_file():
             continue
         if path.stat().st_nlink > 1:
-            raise ValueError(f"hard links are not allowed in component trees: {path}")
+            raise ValueError(
+                f"hard links are not allowed in component trees: {path}",
+            )
         relative = safe_relative_path(path.relative_to(root).as_posix())
-        if relative in _PRESERVED_NAMES or PurePosixPath(relative).parts[0] in preserve_paths or relative in {".uninstalled", ".bundle_hash", ".bundle_revision", ".bundle_complete"}:
+        if (
+            relative in _PRESERVED_NAMES
+            or PurePosixPath(relative).parts[0] in preserve_paths
+            or relative
+            in {
+                ".uninstalled",
+                ".bundle_hash",
+                ".bundle_revision",
+                ".bundle_complete",
+            }
+        ):
             continue
         entries.append((relative, path))
     yield from sorted(entries, key=lambda item: item[0])
@@ -60,7 +86,10 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
-def file_inventory(root: Path, preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS) -> dict[str, dict[str, Any]]:
+def file_inventory(
+    root: Path,
+    preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
+) -> dict[str, dict[str, Any]]:
     """Return a deterministic path -> size/hash inventory."""
     return {
         relative: {
@@ -74,7 +103,12 @@ def file_inventory(root: Path, preserve_paths: tuple[str, ...] = DEFAULT_PRESERV
 
 def canonical_json(data: Any) -> bytes:
     return (
-        json.dumps(data, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        json.dumps(
+            data,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
         + "\n"
     ).encode("utf-8")
 
@@ -86,12 +120,16 @@ def read_plugin_metadata(root: Path) -> tuple[str, str]:
         return root.name, "0.0.0"
     data = json.loads(manifest_path.read_text(encoding="utf-8-sig"))
     if not isinstance(data, dict):
-        raise ValueError(f"plugin.json must contain an object: {manifest_path}")
+        raise ValueError(
+            f"plugin.json must contain an object: {manifest_path}",
+        )
     component_id = data.get("id", root.name)
     version = data.get("version", "0.0.0")
     if not isinstance(component_id, str) or not component_id.strip():
         raise ValueError(f"invalid plugin id: {manifest_path}")
-    if any(char in component_id for char in ("/", "\\", "\x00")) or component_id in {".", ".."}:
+    if any(
+        char in component_id for char in ("/", "\\", "\x00")
+    ) or component_id in {".", ".."}:
         raise ValueError(f"unsafe plugin id: {component_id!r}")
     if not isinstance(version, str) or not version.strip():
         raise ValueError(f"invalid plugin version: {manifest_path}")

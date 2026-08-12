@@ -26,11 +26,17 @@ from component_common import canonical_json
 def _private_key(value: str) -> Ed25519PrivateKey:
     raw = base64.b64decode(value.strip(), validate=True)
     if len(raw) != 32:
-        raise ValueError("component Ed25519 private key must contain 32 raw bytes")
+        raise ValueError(
+            "component Ed25519 private key must contain 32 raw bytes",
+        )
     return Ed25519PrivateKey.from_private_bytes(raw)
 
 
-def _load_verified(path: Path, private: Ed25519PrivateKey, expected_target: str) -> dict[str, Any]:
+def _load_verified(
+    path: Path,
+    private: Ed25519PrivateKey,
+    expected_target: str,
+) -> dict[str, Any]:
     try:
         pointer = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -50,7 +56,9 @@ def _load_verified(path: Path, private: Ed25519PrivateKey, expected_target: str)
             canonical_json(payload),
         )
     except Exception as exc:  # noqa: BLE001
-        raise ValueError(f"component pointer signature verification failed: {path}") from exc
+        raise ValueError(
+            f"component pointer signature verification failed: {path}",
+        ) from exc
     return pointer
 
 
@@ -63,7 +71,9 @@ def _version(pointer: dict[str, Any], path: Path) -> Version | None:
     try:
         return Version(value)
     except InvalidVersion as exc:
-        raise ValueError(f"invalid component pointer release_version: {path}") from exc
+        raise ValueError(
+            f"invalid component pointer release_version: {path}",
+        ) from exc
 
 
 def _order(pointer: dict[str, Any], path: Path) -> tuple[int, int] | None:
@@ -71,18 +81,31 @@ def _order(pointer: dict[str, Any], path: Path) -> tuple[int, int] | None:
     attempt = pointer.get("release_attempt")
     if sequence is None and attempt is None:
         return None
-    if type(sequence) is not int or sequence < 0 or type(attempt) is not int or attempt < 0:
+    if (
+        type(sequence) is not int
+        or sequence < 0
+        or type(attempt) is not int
+        or attempt < 0
+    ):
         raise ValueError(f"invalid component pointer release order: {path}")
     return sequence, attempt
 
 
-def check_promotion(local_path: Path, remote_path: Path | None, *, private_key_b64: str, expected_target: str) -> None:
+def check_promotion(
+    local_path: Path,
+    remote_path: Path | None,
+    *,
+    private_key_b64: str,
+    expected_target: str,
+) -> None:
     private = _private_key(private_key_b64)
     local = _load_verified(local_path, private, expected_target)
     local_version = _version(local, local_path)
     local_order = _order(local, local_path)
     if local_version is None or local_order is None:
-        raise ValueError("new component pointer has no monotonic release metadata")
+        raise ValueError(
+            "new component pointer has no monotonic release metadata",
+        )
     if remote_path is None:
         return
     remote = _load_verified(remote_path, private, expected_target)
@@ -93,12 +116,18 @@ def check_promotion(local_path: Path, remote_path: Path | None, *, private_key_b
     if remote_version is None or remote_order is None:
         return
     if local_version < remote_version:
-        raise ValueError(f"refusing component pointer rollback: {local_version} < {remote_version}")
+        raise ValueError(
+            f"refusing component pointer rollback: {local_version} < {remote_version}",
+        )
     if local_version > remote_version:
         return
     if local_order < remote_order:
-        raise ValueError(f"refusing stale component pointer promotion: {local_order} < {remote_order}")
-    if local_order == remote_order and local.get("release_id") != remote.get("release_id"):
+        raise ValueError(
+            f"refusing stale component pointer promotion: {local_order} < {remote_order}",
+        )
+    if local_order == remote_order and local.get("release_id") != remote.get(
+        "release_id",
+    ):
         raise ValueError("component pointer release order collision")
 
 
@@ -107,10 +136,15 @@ def main() -> int:
     parser.add_argument("--local", type=Path, required=True)
     parser.add_argument("--remote", type=Path)
     parser.add_argument("--target", required=True)
-    parser.add_argument("--private-key", default=os.environ.get("COMPONENT_SIGNING_PRIVATE_KEY", ""))
+    parser.add_argument(
+        "--private-key",
+        default=os.environ.get("COMPONENT_SIGNING_PRIVATE_KEY", ""),
+    )
     args = parser.parse_args()
     if not args.private_key:
-        raise SystemExit("COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required")
+        raise SystemExit(
+            "COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required",
+        )
     check_promotion(
         args.local.resolve(),
         args.remote.resolve() if args.remote else None,
