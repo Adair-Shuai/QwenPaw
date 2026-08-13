@@ -18,7 +18,7 @@ from component_common import (
 )
 
 _MAX_ARCHIVE_MEMBERS = 10_000
-_MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+_MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
 
 
 def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:

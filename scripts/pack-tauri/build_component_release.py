@@ -30,7 +30,7 @@ from component_manifest import validate_manifest
 
 _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MAX_ARCHIVE_MEMBERS = 10_000
-_MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+_MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
 
 
