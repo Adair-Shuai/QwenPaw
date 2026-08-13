@@ -219,16 +219,52 @@ jobs:
             Stop-Process -Force -ErrorAction SilentlyContinue
           exit 0
 
+      - name: Stage desktop verify logs (Tauri Windows)
+        if: failure()
+        shell: pwsh
+        run: |
+          # upload-artifact requires all inputs to share one root directory.
+          # Runner temp and LOCALAPPDATA are on different trees (and may even
+          # be on different drives), so stage every diagnostic file first.
+          $verifyLogRoot = Join-Path $env:RUNNER_TEMP 'desktop-verify-logs'
+          if (Test-Path -LiteralPath $verifyLogRoot) {
+            Remove-Item -LiteralPath $verifyLogRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          New-Item -ItemType Directory -Force -Path $verifyLogRoot | Out-Null
+
+          $files = @(
+            (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stdout.log'),
+            (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stderr.log')
+          )
+          foreach ($file in $files) {
+            if (Test-Path -LiteralPath $file -PathType Leaf) {
+              Copy-Item -LiteralPath $file -Destination $verifyLogRoot -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          $logDirs = @(
+            (Join-Path $env:LOCALAPPDATA 'io.agentscope.qwenpaw.desktop\logs'),
+            (Join-Path $env:LOCALAPPDATA 'com.qwenpaw.desktop\logs')
+          )
+          foreach ($dir in $logDirs) {
+            if (Test-Path -LiteralPath $dir -PathType Container) {
+              $name = Split-Path -Leaf (Split-Path -Parent $dir)
+              $destination = Join-Path $verifyLogRoot $name
+              New-Item -ItemType Directory -Force -Path $destination | Out-Null
+              Copy-Item -Path (Join-Path $dir '*') -Destination $destination -Recurse -Force -ErrorAction SilentlyContinue
+            }
+          }
+
+          if (-not (Get-ChildItem -LiteralPath $verifyLogRoot -Force -Recurse -ErrorAction SilentlyContinue)) {
+            Set-Content -LiteralPath (Join-Path $verifyLogRoot 'NO_LOGS_FOUND.txt') -Value 'No desktop verification logs were produced.' -Encoding UTF8
+          }
+
       - name: Upload desktop verify logs (Tauri Windows)
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verify-logs-tauri-windows-${{ steps.version.outputs.version }}
-          path: |
-            ${{ runner.temp }}/qwenpaw-desktop-stdout.log
-            ${{ runner.temp }}/qwenpaw-desktop-stderr.log
-            ~/AppData/Local/io.agentscope.qwenpaw.desktop/logs/
-            ~/AppData/Local/com.qwenpaw.desktop/logs/
+          path: ${{ runner.temp }}/desktop-verify-logs
           if-no-files-found: ignore
           retention-days: 7
 
