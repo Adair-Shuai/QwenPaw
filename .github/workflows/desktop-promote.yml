@@ -107,7 +107,9 @@ jobs:
       - name: Merge replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
         run: |
-          cp -a replacement-windows/UGSci-Desktop-Tauri-Windows-*/. .
+          # Preserve the artifact directory name; promotion discovers files
+          # beneath UGSci-Desktop-Tauri-Windows-*.
+          cp -a replacement-windows/UGSci-Desktop-Tauri-Windows-* .
 
       - name: Install ossutil
         run: |
