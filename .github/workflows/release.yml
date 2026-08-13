@@ -108,7 +108,15 @@ jobs:
             fi
             echo "Reusing artifacts from run $ARTIFACTS_RUN_ID at $sha"
             artifact_names="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
-            for required in qwenpaw-plugins-dist UGSci-Desktop-Tauri-Windows- UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos component-release-windows-x86_64 component-release-macos-aarch64; do
+            required_artifacts=(qwenpaw-plugins-dist UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos component-release-windows-x86_64 component-release-macos-aarch64)
+            # A Windows-only replacement run is intentionally allowed to provide the
+            # Windows desktop artifact when the historical source run predates the
+            # portable ZIP/Setup packaging. Validate that replacement below instead of
+            # incorrectly rejecting the otherwise reusable source run here.
+            if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]; then
+              required_artifacts+=(UGSci-Desktop-Tauri-Windows-)
+            fi
+            for required in "${required_artifacts[@]}"; do
               if ! grep -q "^${required}" <<<"$artifact_names"; then
                 echo "::error::Artifact source run is missing required artifact prefix: $required"
                 exit 1
