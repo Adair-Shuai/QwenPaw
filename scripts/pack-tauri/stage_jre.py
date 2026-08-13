@@ -147,19 +147,19 @@ def _resolve_download_url(
         f"?architecture={arch}&heap_size=normal&image_type=jre"
         f"&os={os_name}&project=jdk&vendor=eclipse"
     )
-    checksum = ""
-    try:
-        meta = json.loads(_http_get(meta_url).decode("utf-8"))
-        release_name = meta[0]["release_name"]
-        if expected_release and release_name != expected_release:
-            raise SystemExit(
-                f"Adoptium release drifted: expected {expected_release}, got {release_name}",
-            )
-        binaries = meta[0].get("binaries") or []
-        package = (binaries[0].get("package") or {}) if binaries else {}
-        checksum = str(package.get("checksum") or "")
-    except Exception:
-        release_name = f"jdk-{java_version}"
+    meta = json.loads(_http_get(meta_url).decode("utf-8"))
+    if not isinstance(meta, list) or not meta or not isinstance(meta[0], dict):
+        raise SystemExit("Adoptium release metadata is empty or invalid")
+    release_name = str(meta[0].get("release_name") or "")
+    if not release_name:
+        raise SystemExit("Adoptium release metadata has no release_name")
+    if expected_release and release_name != expected_release:
+        raise SystemExit(
+            f"Adoptium release drifted: expected {expected_release}, got {release_name}",
+        )
+    binaries = meta[0].get("binaries") or []
+    package = (binaries[0].get("package") or {}) if binaries else {}
+    checksum = str(package.get("checksum") or "")
     return url, release_name, checksum
 
 

@@ -190,13 +190,22 @@ def test_uninstalled_plugin_is_not_offered_or_installed(monkeypatch, tmp_path):
     }
 
 
-def test_startup_updates_are_disabled_by_default(monkeypatch):
+def test_startup_updates_are_enabled_by_default(monkeypatch):
     monkeypatch.delenv("QWENPAW_COMPONENT_UPDATES", raising=False)
-    assert run_startup_updates() == {
-        "enabled": False,
-        "updated": [],
-        "errors": [],
-    }
+
+    class _Service:
+        def __init__(self):
+            self.client = type("Client", (), {"close": lambda self: None})()
+
+        def snapshot(self):
+            return {"release": "one"}, []
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: _Service(),
+    )
+    result = run_startup_updates()
+    assert result == {"enabled": True, "updated": [], "errors": []}
 
 
 def test_startup_update_failure_is_non_fatal(monkeypatch):

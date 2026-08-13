@@ -44,6 +44,19 @@ def test_safe_extract_rejects_path_traversal(tmp_path):
         helper._extract_safely(str(archive), tmp_path / "dest")
 
 
+def test_safe_extract_rejects_duplicate_members(tmp_path):
+    helper = _load_helper()
+    archive = tmp_path / "runtime.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        for value in (b"one", b"two"):
+            info = tarfile.TarInfo("python/python.exe")
+            info.size = len(value)
+            tar.addfile(info, io.BytesIO(value))
+
+    with pytest.raises(SystemExit, match="duplicate"):
+        helper._extract_safely(str(archive), tmp_path / "dest")
+
+
 def test_production_asset_lookup_never_falls_back_to_latest(monkeypatch):
     helper = _load_helper()
 

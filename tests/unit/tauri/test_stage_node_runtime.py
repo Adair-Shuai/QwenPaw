@@ -110,3 +110,22 @@ def test_atomic_install_tree_restores_previous_runtime_on_failure(
         helper.atomic_install_tree(source, dest)
 
     assert (dest / "node.exe").read_bytes() == b"old"
+
+
+def test_atomic_install_tree_refuses_stale_recovery_directory(tmp_path):
+    helper = _load_helper()
+    source = tmp_path / "source"
+    dest = tmp_path / "node-runtime"
+    backup = tmp_path / ".node-runtime.previous"
+    source.mkdir()
+    dest.mkdir()
+    backup.mkdir()
+    (source / "node.exe").write_bytes(b"new")
+    (dest / "node.exe").write_bytes(b"current")
+    (backup / "node.exe").write_bytes(b"recoverable")
+
+    with pytest.raises(RuntimeError, match="stale runtime recovery"):
+        helper.atomic_install_tree(source, dest)
+
+    assert (dest / "node.exe").read_bytes() == b"current"
+    assert (backup / "node.exe").read_bytes() == b"recoverable"

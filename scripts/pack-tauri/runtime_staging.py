@@ -33,7 +33,9 @@ def atomic_install_tree(source: Path, dest: Path) -> None:
     try:
         shutil.copytree(source, pending, symlinks=True)
         if backup.exists():
-            shutil.rmtree(backup)
+            raise RuntimeError(
+                f"stale runtime recovery directory exists: {backup}",
+            )
         if dest.exists():
             os.replace(dest, backup)
         try:

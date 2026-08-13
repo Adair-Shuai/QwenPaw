@@ -218,6 +218,11 @@ def _extract_safely(archive: str, dest: Path) -> None:
     root = dest.resolve()
     with tarfile.open(archive, "r:gz") as tar:
         members = tar.getmembers()
+        names = [member.name for member in members]
+        if len(names) != len(set(names)):
+            raise SystemExit(
+                "duplicate Python runtime archive members are not allowed",
+            )
         for member in members:
             _validate_member(member, root)
         for member in members:

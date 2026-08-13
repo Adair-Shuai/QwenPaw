@@ -40,9 +40,11 @@ function collectInitialValues(
 export function GenUiInteractionProvider({
   node,
   children,
+  onValuesChange,
 }: {
   node: GenUiNode;
   children?: ReactNode;
+  onValuesChange?: (values: Record<string, unknown>) => void;
 }): ReactElement | null {
   const React = (window as any).QwenPaw?.host?.React;
   if (!React) return null;
@@ -52,6 +54,9 @@ export function GenUiInteractionProvider({
     () => setValues((old: Record<string, unknown>) => ({ ...initial, ...old })),
     [initial],
   );
+  React.useEffect(() => {
+    onValuesChange?.(values);
+  }, [values, onValuesChange]);
   const api = React.useMemo(
     () => ({
       values,

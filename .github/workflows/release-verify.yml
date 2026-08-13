@@ -183,7 +183,10 @@ jobs:
         env:
           ACR_USERNAME: ${{ secrets.ALIYUN_ACR_USERNAME }}
 
-      - name: Build Docker image (amd64 only)
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (amd64 health-check image)
         env:
           DOCKER_NODE_IMAGE: ${{ inputs.docker_node_image }}
           DOCKER_UV_IMAGE: ${{ inputs.docker_uv_image }}
@@ -195,9 +198,26 @@ jobs:
           if [ -n "$DOCKER_UV_IMAGE" ]; then
             BUILD_ARGS="$BUILD_ARGS --build-arg UV_IMAGE=$DOCKER_UV_IMAGE"
           fi
-          docker build \
+          docker buildx build \
+            --platform linux/amd64 \
             -f deploy/Dockerfile \
             -t qwenpaw-verify:test \
+            --load \
+            $BUILD_ARGS \
+            .
+
+      - name: Build Docker image (arm64 parity check)
+        env:
+          DOCKER_NODE_IMAGE: ${{ inputs.docker_node_image }}
+          DOCKER_UV_IMAGE: ${{ inputs.docker_uv_image }}
+        run: |
+          BUILD_ARGS=""
+          if [ -n "$DOCKER_NODE_IMAGE" ]; then BUILD_ARGS="$BUILD_ARGS --build-arg NODE_IMAGE=$DOCKER_NODE_IMAGE"; fi
+          if [ -n "$DOCKER_UV_IMAGE" ]; then BUILD_ARGS="$BUILD_ARGS --build-arg UV_IMAGE=$DOCKER_UV_IMAGE"; fi
+          docker buildx build \
+            --platform linux/arm64 \
+            -f deploy/Dockerfile \
+            --output=type=cacheonly \
             $BUILD_ARGS \
             .
 

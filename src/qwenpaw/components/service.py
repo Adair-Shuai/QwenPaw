@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Manual-first component update orchestration.
+"""Startup component update orchestration.
 
 The production OSS endpoint, embedded verification key, and bundled-plugin
-allowlist are safe defaults. Network activity remains manual-first: startup
-updates still require ``QWENPAW_COMPONENT_UPDATES=startup`` or a queued update.
+allowlist are safe defaults. Startup checks are enabled by default and can be
+disabled with ``QWENPAW_COMPONENT_UPDATES=disabled``. Queued updates are
+always honored.
 All three values can be overridden with environment variables for testing.
 """
 
@@ -334,7 +335,7 @@ class ComponentUpdateService:
 def run_startup_updates() -> dict[str, Any]:
     """Run explicitly enabled startup updates without propagating failures."""
     mode = (
-        os.environ.get("QWENPAW_COMPONENT_UPDATES", "disabled").strip().lower()
+        os.environ.get("QWENPAW_COMPONENT_UPDATES", "startup").strip().lower()
     )
     pending_components: list[str] = []
     if _PENDING_UPDATES_PATH.is_file():
