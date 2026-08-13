@@ -23,6 +23,11 @@ on:
         type: boolean
         required: false
         default: false
+      platform:
+        description: "Desktop platform to build"
+        type: string
+        required: false
+        default: "all"
   workflow_dispatch:
     inputs:
       ref:
@@ -35,6 +40,12 @@ on:
         type: boolean
         required: false
         default: false
+      platform:
+        description: "Desktop platform to build (all, windows, macos)"
+        type: choice
+        options: [all, windows, macos]
+        required: false
+        default: all
 
 permissions:
   contents: read
@@ -66,6 +77,7 @@ jobs:
 
   build-tauri-windows:
     needs: [check-updater-signing]
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
     env:
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_WINDOWS || vars.QWENPAW_NODE_SHA256 }}
@@ -252,6 +264,7 @@ jobs:
 
   build-tauri-macos:
     needs: [check-updater-signing]
+    if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
     env:
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_MACOS || vars.QWENPAW_NODE_SHA256 }}

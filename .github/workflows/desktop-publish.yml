@@ -34,6 +34,11 @@ on:
         type: string
         required: false
         default: ""
+      windows_artifacts_run_id:
+        description: "Optional newer run containing replacement Windows artifacts"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   actions: read
@@ -51,6 +56,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Overlay newer Windows artifacts
+        if: ${{ inputs.windows_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UGSci-Desktop-Tauri-Windows-*
+          run-id: ${{ inputs.windows_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach desktop installers to the draft release
@@ -114,6 +127,14 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Overlay newer Windows artifacts
+        if: ${{ inputs.windows_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UGSci-Desktop-Tauri-Windows-*
+          run-id: ${{ inputs.windows_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install ossutil
