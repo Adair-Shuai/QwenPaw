@@ -203,17 +203,8 @@ jobs:
             ossutil cp \
               "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \
               "$versioned_metadata"
-            python - "$versioned_metadata" "$latest_metadata" "$latest_name" "$platform" <<'PY'
-            import json
-            import sys
-            from pathlib import Path
-
-            source, destination, latest_name, platform = sys.argv[1:]
-            doc = json.loads(Path(source).read_text(encoding="utf-8"))
-            doc["filename"] = latest_name
-            doc["url"] = f"/files/apps/desktop/{platform}/{latest_name}"
-            Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-            PY
+            python -c 'import json,sys; from pathlib import Path; source,destination,latest_name,platform=sys.argv[1:]; doc=json.loads(Path(source).read_text(encoding="utf-8")); doc["filename"]=latest_name; doc["url"]=f"/files/apps/desktop/{platform}/{latest_name}"; Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")' \
+              "$versioned_metadata" "$latest_metadata" "$latest_name" "$platform"
             ossutil cp \
               "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
               "$latest_tmp" \
