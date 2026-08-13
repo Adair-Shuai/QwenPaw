@@ -187,6 +187,15 @@ jobs:
                 throw "Portable Windows installer is missing required entry: $required"
               }
             }
+            $bundledPluginRoot = Join-Path $inspectRoot 'payload\binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle'
+            if (-not (Test-Path -LiteralPath $bundledPluginRoot -PathType Container)) {
+              throw 'Portable Windows installer is missing the frozen bundled plugin tree'
+            }
+            foreach ($pluginId in @('flowforge', 'ugsci', 'ugsci_research')) {
+              if (-not (Test-Path -LiteralPath (Join-Path $bundledPluginRoot "$pluginId\plugin.json") -PathType Leaf)) {
+                throw "Portable Windows installer is missing bundled plugin manifest: $pluginId"
+              }
+            }
             $manifest = Get-Content -LiteralPath (Join-Path $inspectRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($manifest.schema -ne 1 -or $manifest.version -ne '${{ steps.version.outputs.version }}' -or
                 $manifest.platform -ne 'windows-x86_64' -or $manifest.payload -ne 'payload') {

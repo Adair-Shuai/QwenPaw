@@ -30,13 +30,30 @@ foreach ($required in @(
   }
 }
 
+# The frozen backend is the source of truth for bundled managed plugins.  A
+# portable package without this tree can start the shell but cannot populate
+# FlowForge/UGSci and the other built-in plugin UIs on first launch.  Fail the
+# build rather than publishing a deceptively usable-looking package.
+$bundledPluginRoot = Join-Path $PayloadRoot "binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle"
+if (-not (Test-Path -LiteralPath $bundledPluginRoot -PathType Container)) {
+  throw "Portable installer payload is missing frozen bundled plugins: $bundledPluginRoot"
+}
+$requiredPluginIds = @("flowforge", "ugsci", "ugsci_research")
+foreach ($pluginId in $requiredPluginIds) {
+  $manifest = Join-Path $bundledPluginRoot "$pluginId\plugin.json"
+  if (-not (Test-Path -LiteralPath $manifest -PathType Leaf)) {
+    throw "Portable installer payload is missing bundled plugin manifest: $pluginId"
+  }
+}
+
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\..\console\src-tauri\nsis\update-qwenpaw-path.ps1") `
   -Destination $pathHelper -Force
 
 @'
 param(
   [switch]$Silent,
-  [switch]$NoCliPath
+  [switch]$NoCliPath,
+  [string]$InstallDir
 )
 $ErrorActionPreference = "Stop"
 $sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -116,14 +133,15 @@ Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -Error
     if (-not $existingInstallDir -and $entry.DisplayName -match "QwenPaw|UGSci Desktop" -and
         $hasDesktopExe) {
       $candidate = [IO.Path]::GetFullPath([string]$entry.InstallLocation).TrimEnd('\')
-      $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\') + '\'
-      if ($candidate.StartsWith($localRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        $existingInstallDir = $candidate
-        $legacyUninstallKey = $_.PSPath
-      }
+      # The user may have selected any writable volume in the installer UI,
+      # not only %LOCALAPPDATA%.  The per-user uninstall hive plus a matching
+      # UGSci executable is the trust boundary for discovering that location.
+      $existingInstallDir = $candidate
+      $legacyUninstallKey = $_.PSPath
     }
   }
-$installDir = if ($existingInstallDir) { $existingInstallDir } else { $defaultInstallDir }
+$requestedInstallDir = if ($InstallDir) { [IO.Path]::GetFullPath($InstallDir.Trim()) } else { $null }
+$installDir = if ($requestedInstallDir) { $requestedInstallDir } elseif ($existingInstallDir) { $existingInstallDir } else { $defaultInstallDir }
 $installParent = Split-Path -Parent $installDir
 $appExe = Join-Path $installDir "UGSci.exe"
 $stagingDir = Join-Path $installParent ".UGSci Desktop.install-$PID"
@@ -409,8 +427,13 @@ $frameworkCompilers = @(
 )
 $csc = $frameworkCompilers | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
 if (-not $csc) { throw "Windows .NET Framework C# compiler was not found" }
+$iconPath = Join-Path $PSScriptRoot "..\pack\assets\icon.ico"
+if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
+  throw "Setup icon was not found: $iconPath"
+}
 & $csc /nologo /target:winexe /optimize+ "/out:$setupExe" `
-  /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll `
+  "/win32icon:$iconPath" `
+  /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
   $bootstrapSource
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setupExe -PathType Leaf)) {
   throw "Portable Setup bootstrap compilation failed (exit $LASTEXITCODE)"
