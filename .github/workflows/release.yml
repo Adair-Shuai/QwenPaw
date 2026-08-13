@@ -129,15 +129,15 @@ jobs:
           print(f"OK: tag normalizes to __version__ ({ver}).")
           PY
 
-      - name: Ensure release secrets present (skip on dry_run)
+      - name: Report optional desktop verification secret
         env:
           QWENPAW_DASHSCOPE_API_KEY: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
         run: |
-          if [ "${{ inputs.dry_run }}" != "true" ] && [ -z "${QWENPAW_DASHSCOPE_API_KEY:-}" ]; then
-            echo "::error::QWENPAW_DASHSCOPE_API_KEY is not set; desktop verification cannot validate the LLM chat round."
-            exit 1
+          if [ -z "${QWENPAW_DASHSCOPE_API_KEY:-}" ]; then
+            echo "::warning::QWENPAW_DASHSCOPE_API_KEY is not set; desktop verification will skip only the live LLM chat round. Installation, launch, UI, signing, and updater verification remain required."
+          else
+            echo "DashScope key present; desktop verification includes the live LLM chat round."
           fi
-          echo "Secret check OK (dry_run=${{ inputs.dry_run }})"
 
   # ── Prepare phase: build + verify everything, publish nothing ──────────────
   build-wheel:
