@@ -44,6 +44,20 @@ $payloadRoot = Join-Path $sourceRoot "payload"
 $checksumManifest = Join-Path $sourceRoot "checksums.sha256"
 $versionManifest = Join-Path $sourceRoot "version.json"
 
+function Get-Sha256Hex([string]$Path) {
+  $stream = [IO.File]::OpenRead($Path)
+  try {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+      return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    } finally {
+      $sha.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 function Test-PackageIntegrity {
   if (-not (Test-Path -LiteralPath $checksumManifest -PathType Leaf)) {
     throw "Package checksum manifest is missing"
@@ -69,7 +83,7 @@ function Test-PackageIntegrity {
     if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
       throw "Package file is missing: $relative"
     }
-    $actualHash = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actualHash = Get-Sha256Hex -Path $fullPath
     if ($actualHash -ne $expectedHash) { throw "Package checksum mismatch: $relative" }
   }
   foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
