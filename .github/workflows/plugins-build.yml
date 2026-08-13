@@ -1,0 +1,38 @@
+name: Plugins Build (reusable)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref to build"
+        required: false
+        type: string
+        default: release
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  build-plugins:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Pack plugins and build index
+        run: |
+          python scripts/pack/generate_plugin_metadata.py \
+            --plugins-root plugins \
+            --dist dist/plugins \
+            --metadata-out dist/plugins/index.json \
+            --cdn-prefix /files/plugins \
+            --exclude qwenpaw-creator
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-plugins-dist
+          path: dist/plugins
+          retention-days: 14

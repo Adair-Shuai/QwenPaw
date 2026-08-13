@@ -211,7 +211,18 @@ def _zip_plugin(
     out_zip.parent.mkdir(parents=True, exist_ok=True)
     with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as zf:
         for rel in _iter_tree_relpaths(plugin_dir, manifest):
-            zf.write(plugin_dir / rel, f"{plugin_dir.name}/{rel}")
+            # Use stable metadata so rebuilding the same source produces the
+            # same bytes across runners.  The default ``ZipFile.write`` copies
+            # filesystem mtimes, which made immutable OSS objects differ on
+            # every build even when plugin contents were unchanged.
+            source = plugin_dir / rel
+            entry = zipfile.ZipInfo(f"{plugin_dir.name}/{rel}")
+            entry.date_time = (1980, 1, 1, 0, 0, 0)
+            entry.compress_type = zipfile.ZIP_DEFLATED
+            entry.external_attr = 0o100644 << 16
+            entry.create_system = 3
+            with source.open("rb") as stream:
+                zf.writestr(entry, stream.read(), compress_type=zipfile.ZIP_DEFLATED)
 
 
 def _read_manifest(plugin_dir: Path) -> dict[str, Any] | None:

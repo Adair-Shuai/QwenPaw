@@ -43,6 +43,11 @@ on:
         required: false
         type: string
         default: ""
+      plugins_artifacts_run_id:
+        description: "Optional Plugins Build run ID containing replacement plugin artifacts"
+        required: false
+        type: string
+        default: ""
 
 permissions:
   actions: read
@@ -63,6 +68,7 @@ jobs:
       is_prerelease: ${{ steps.pick.outputs.is_prerelease }}
       artifacts_run_id: ${{ steps.pick.outputs.artifacts_run_id }}
       windows_artifacts_run_id: ${{ steps.pick.outputs.windows_artifacts_run_id }}
+      plugins_artifacts_run_id: ${{ steps.pick.outputs.plugins_artifacts_run_id }}
     steps:
       - name: Resolve target draft release and commit
         id: pick
@@ -72,6 +78,7 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
           WINDOWS_ARTIFACTS_RUN_ID: ${{ inputs.windows_artifacts_run_id }}
+          PLUGINS_ARTIFACTS_RUN_ID: ${{ inputs.plugins_artifacts_run_id }}
         run: |
           set -euo pipefail
           TAG="$INPUT_TAG"
@@ -108,7 +115,10 @@ jobs:
             fi
             echo "Reusing artifacts from run $ARTIFACTS_RUN_ID at $sha"
             artifact_names="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
-            required_artifacts=(qwenpaw-plugins-dist UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos component-release-windows-x86_64 component-release-macos-aarch64)
+            required_artifacts=(UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos component-release-windows-x86_64 component-release-macos-aarch64)
+            if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
+              required_artifacts+=(qwenpaw-plugins-dist)
+            fi
             # A Windows-only replacement run is intentionally allowed to provide the
             # Windows desktop artifact when the historical source run predates the
             # portable ZIP/Setup packaging. Validate that replacement below instead of
@@ -132,6 +142,13 @@ jobs:
             windows_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             grep -q '^UGSci-Desktop-Tauri-Windows-' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows desktop artifact"; exit 1; }
           fi
+          if [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
+            plugins_run="$(gh api "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID")"
+            test "$(jq -r .status <<<"$plugins_run")" = completed
+            test "$(jq -r .conclusion <<<"$plugins_run")" = success
+            plugins_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
+            grep -q '^qwenpaw-plugins-dist$' <<<"$plugins_artifacts" || { echo "::error::Replacement run has no qwenpaw-plugins-dist artifact"; exit 1; }
+          fi
           if [[ "$TAG" =~ (beta|alpha|rc|dev) ]]; then
             is_prerelease=true
           else
@@ -144,6 +161,7 @@ jobs:
             echo "is_prerelease=$is_prerelease"
             echo "artifacts_run_id=$ARTIFACTS_RUN_ID"
             echo "windows_artifacts_run_id=$WINDOWS_ARTIFACTS_RUN_ID"
+            echo "plugins_artifacts_run_id=$PLUGINS_ARTIFACTS_RUN_ID"
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout the resolved commit
@@ -354,16 +372,16 @@ jobs:
           python-version: "3.11"
 
       - name: Download plugins dist
-        if: ${{ needs.resolve.outputs.artifacts_run_id == '' }}
+        if: ${{ needs.resolve.outputs.plugins_artifacts_run_id != '' || needs.resolve.outputs.artifacts_run_id == '' }}
         uses: actions/download-artifact@v4
         with:
           name: qwenpaw-plugins-dist
           path: dist/plugins
-          run-id: ${{ needs.resolve.outputs.artifacts_run_id || github.run_id }}
+          run-id: ${{ needs.resolve.outputs.plugins_artifacts_run_id || needs.resolve.outputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Rebuild plugins metadata for resumed release
-        if: ${{ needs.resolve.outputs.artifacts_run_id != '' }}
+        if: ${{ needs.resolve.outputs.artifacts_run_id != '' && needs.resolve.outputs.plugins_artifacts_run_id == '' }}
         run: |
           python scripts/pack/generate_plugin_metadata.py \
             --plugins-root plugins \
