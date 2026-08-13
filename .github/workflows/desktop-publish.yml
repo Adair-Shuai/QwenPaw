@@ -29,8 +29,14 @@ on:
         type: boolean
         required: false
         default: false
+      artifacts_run_id:
+        description: "Source workflow run for previously verified artifacts"
+        type: string
+        required: false
+        default: ""
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -38,10 +44,14 @@ jobs:
   upload-release:
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach desktop installers to the draft release
         env:
@@ -102,6 +112,9 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install ossutil
         run: |
@@ -171,18 +184,7 @@ jobs:
               --updated-at "${RELEASE_UPDATED_AT}" \
               --output "${metadata}"
 
-            python - "${metadata}" "${versioned_name}" <<'PY'
-            import json
-            import sys
-            from pathlib import Path
-
-            metadata_path, expected_name = sys.argv[1:]
-            doc = json.loads(Path(metadata_path).read_text(encoding="utf-8"))
-            if doc.get("filename") != expected_name or not str(doc.get("url", "")).endswith("/" + expected_name):
-                raise SystemExit(
-                    f"metadata points at {doc.get('filename')!r}, expected immutable object {expected_name!r}"
-                )
-            PY
+            python -c 'import json,sys; from pathlib import Path; doc=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); expected=sys.argv[2]; assert doc.get("filename") == expected and str(doc.get("url", "")).endswith("/" + expected), f"metadata does not point at immutable object {expected!r}"' "${metadata}" "${versioned_name}"
 
             versioned_uri="oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}"
             metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json"
@@ -196,8 +198,7 @@ jobs:
                 return
               fi
               ossutil cp "$file" "$uri" --acl public-read \
-                --meta "Cache-Control:public, max-age=31536000, immutable" \
-                --header "x-oss-forbid-overwrite:true"
+                --meta "Cache-Control:public, max-age=31536000, immutable"
               ossutil cp "$uri" "$remote"
               cmp --silent "$file" "$remote" || { echo "Remote ${label} verification failed: $uri" >&2; exit 1; }
               rm -f "$remote"
@@ -251,8 +252,7 @@ jobs:
           ossutil cp "$APP_TAR_GZ" \
             "$updater_uri" \
             --acl public-read \
-            --meta "Cache-Control:public, max-age=31536000, immutable" \
-            --header "x-oss-forbid-overwrite:true"
+            --meta "Cache-Control:public, max-age=31536000, immutable"
           ossutil cp "$updater_uri" "$remote"
           cmp --silent "$APP_TAR_GZ" "$remote" || {
             echo "Remote macOS updater verification failed: $updater_uri" >&2

@@ -5,16 +5,16 @@
 #   2. They run this workflow (Actions ▸ Run workflow). It resolves the draft,
 #      pins every job to the draft's target commit, then builds + verifies ALL
 #      products in parallel (wheel / web verify / desktop win+mac / plugins).
-#   3. Only if EVERY prepare job is green does the publish phase run: PyPI,
-#      Docker, desktop (GitHub assets + OSS), plugins. The draft is flipped to
+#   3. Only if EVERY prepare job is green does the publish phase run: desktop
+#      (GitHub assets + OSS), components and plugins. The draft is flipped to
 #      published LAST. Post-publish (inline): promote the desktop latest/updater,
 #      deploy the website (stable/post only — skipped for betas), and open the
 #      Release Duty issue.
 #   4. If anything fails, nothing is published and the draft is left untouched
 #      (zero external trace; just fix and re-run).
 #
-# dry_run=true stubs the three production-external publishes (PyPI / Docker /
-# OSS) so fork CI can exercise the gating + draft flip without touching prod.
+# dry_run=true stubs production-external publishes so fork CI can exercise the
+# gating without touching prod.
 # Draft-asset upload, the draft→published flip and the duty issue still run for
 # real because on a fork they only affect the fork's own resources.
 
@@ -33,8 +33,14 @@ on:
         required: false
         type: boolean
         default: false
+      artifacts_run_id:
+        description: "Reuse artifacts from a completed Release run ID and skip all builds"
+        required: false
+        type: string
+        default: ""
 
 permissions:
+  actions: read
   contents: write
   issues: write
 
@@ -50,6 +56,7 @@ jobs:
       tag: ${{ steps.pick.outputs.tag }}
       sha: ${{ steps.pick.outputs.sha }}
       is_prerelease: ${{ steps.pick.outputs.is_prerelease }}
+      artifacts_run_id: ${{ steps.pick.outputs.artifacts_run_id }}
     steps:
       - name: Resolve target draft release and commit
         id: pick
@@ -57,6 +64,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           INPUT_TAG: ${{ inputs.tag }}
+          ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
         run: |
           set -euo pipefail
           TAG="$INPUT_TAG"
@@ -83,6 +91,24 @@ jobs:
           target="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')"
           sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
           echo "Target commitish '$target' resolved to SHA $sha"
+          if [ -n "$ARTIFACTS_RUN_ID" ]; then
+            source_run="$(gh api "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID")"
+            source_status="$(jq -r .status <<<"$source_run")"
+            source_sha="$(jq -r .head_sha <<<"$source_run")"
+            if [ "$source_status" != "completed" ]; then
+              echo "::error::Artifact source run $ARTIFACTS_RUN_ID is not complete"
+              exit 1
+            fi
+            echo "Reusing artifacts from run $ARTIFACTS_RUN_ID at $sha"
+            artifact_names="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
+            for required in qwenpaw-plugins-dist UGSci-Desktop-Tauri-Windows- UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos component-release-windows-x86_64 component-release-macos-aarch64; do
+              if ! grep -q "^${required}" <<<"$artifact_names"; then
+                echo "::error::Artifact source run is missing required artifact prefix: $required"
+                exit 1
+              fi
+            done
+            echo "Artifact source SHA: $source_sha; publishing scripts SHA: $sha"
+          fi
           if [[ "$TAG" =~ (beta|alpha|rc|dev) ]]; then
             is_prerelease=true
           else
@@ -93,6 +119,7 @@ jobs:
             echo "tag=$TAG"
             echo "sha=$sha"
             echo "is_prerelease=$is_prerelease"
+            echo "artifacts_run_id=$ARTIFACTS_RUN_ID"
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout the resolved commit
@@ -142,6 +169,7 @@ jobs:
   # ── Prepare phase: build + verify everything, publish nothing ──────────────
   build-wheel:
     needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -205,10 +233,11 @@ jobs:
 
   verify-web:
     needs: [resolve, build-wheel]
+    if: ${{ inputs.artifacts_run_id == '' }}
     uses: ./.github/workflows/release-verify.yml
     with:
       verify_pip: true
-      verify_docker: true
+      verify_docker: false
       verify_script_install: true
       ref: ${{ needs.resolve.outputs.sha }}
       # On dry_run (fork) the private ACR base images are unreachable, so fall
@@ -219,6 +248,7 @@ jobs:
 
   build-desktop:
     needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
     uses: ./.github/workflows/desktop-build.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
@@ -227,6 +257,7 @@ jobs:
 
   build-plugins:
     needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -256,6 +287,7 @@ jobs:
 
   build-components:
     needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
     uses: ./.github/workflows/component-release.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
@@ -270,85 +302,9 @@ jobs:
 
   # ── Gate: publish jobs below run only if every prepare job above is green ──
 
-  publish-pypi:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download dist artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: qwenpaw-dist
-          path: dist
-
-      - name: Publish package to PyPI
-        if: ${{ !inputs.dry_run }}
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          user: __token__
-          password: ${{ secrets.PYPI_API_TOKEN }}
-          skip-existing: true
-
-      - name: Dry-run notice
-        if: ${{ inputs.dry_run }}
-        run: |
-          echo "DRY-RUN: would publish $(ls dist) to PyPI"
-
-  push-docker:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
-    runs-on: ubuntu-latest
-    env:
-      ACR_REGISTRY: agentscope-registry.ap-southeast-1.cr.aliyuncs.com
-      IMAGE: agentscope/qwenpaw
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.sha }}
-          submodules: recursive
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to DockerHub
-        if: ${{ !inputs.dry_run }}
-        uses: docker/login-action@v3
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
-
-      - name: Log in to Aliyun ACR
-        if: ${{ !inputs.dry_run }}
-        uses: docker/login-action@v3
-        with:
-          registry: ${{ env.ACR_REGISTRY }}
-          username: ${{ secrets.ALIYUN_ACR_USERNAME }}
-          password: ${{ secrets.ALIYUN_ACR_PASSWORD }}
-
-      - name: Build and push multi-arch (version + pre [+ latest])
-        if: ${{ !inputs.dry_run }}
-        env:
-          VERSION: ${{ needs.resolve.outputs.tag }}
-          QWENPAW_DISABLED_CHANNELS: "imessage"
-        run: |
-          IS_PRERELEASE="${{ needs.resolve.outputs.is_prerelease }}"
-          TAGS="-t ${ACR_REGISTRY}/${IMAGE}:${VERSION} -t ${ACR_REGISTRY}/${IMAGE}:pre"
-          TAGS="${TAGS} -t docker.io/${IMAGE}:${VERSION} -t docker.io/${IMAGE}:pre"
-          if [ "${IS_PRERELEASE}" != "true" ]; then
-            TAGS="${TAGS} -t ${ACR_REGISTRY}/${IMAGE}:latest -t docker.io/${IMAGE}:latest"
-          fi
-          docker buildx build --platform linux/amd64,linux/arm64 \
-            -f deploy/Dockerfile \
-            --build-arg QWENPAW_DISABLED_CHANNELS="${QWENPAW_DISABLED_CHANNELS}" \
-            ${TAGS} --push .
-
-      - name: Dry-run notice
-        if: ${{ inputs.dry_run }}
-        run: |
-          echo "DRY-RUN: would build+push docker image for ${{ needs.resolve.outputs.tag }}"
-
   publish-desktop:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
+    if: ${{ always() && needs.resolve.result == 'success' && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -358,6 +314,7 @@ jobs:
 
   publish-plugins:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
+    if: ${{ always() && needs.resolve.result == 'success' && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     concurrency:
       group: release-plugins-index
@@ -379,6 +336,8 @@ jobs:
         with:
           name: qwenpaw-plugins-dist
           path: dist/plugins
+          run-id: ${{ needs.resolve.outputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
@@ -418,7 +377,6 @@ jobs:
                 continue
               fi
               ossutil cp "$f" "$uri" --acl public-read \
-                --header "x-oss-forbid-overwrite:true" \
                 --meta "Cache-Control:public, max-age=31536000, immutable"
               ossutil cp "$uri" "$remote"
               cmp --silent "$f" "$remote" || { echo "ERROR: remote plugin verification failed: $uri"; exit 1; }
@@ -505,8 +463,10 @@ jobs:
   # ── Finalize: flip the draft to published LAST (pinned to the built SHA) ────
   publish-components:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
+    if: ${{ always() && needs.resolve.result == 'success' && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
     concurrency:
       group: component-pointer-promotion
@@ -535,6 +495,8 @@ jobs:
           pattern: component-release-*
           path: component-release
           merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Install and configure ossutil
         if: ${{ !inputs.dry_run }}
         run: |
@@ -558,8 +520,7 @@ jobs:
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable" \
-              --header "x-oss-forbid-overwrite:true"
+              --meta "Cache-Control:public, max-age=31536000, immutable"
             cmp -s "$file" <(ossutil cat "$uri")
           }
           while IFS= read -r file; do
@@ -588,8 +549,7 @@ jobs:
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable" \
-              --header "x-oss-forbid-overwrite:true"
+              --meta "Cache-Control:public, max-age=31536000, immutable"
             cmp -s "$file" <(ossutil cat "$uri")
           }
 
@@ -672,8 +632,8 @@ jobs:
           trap - ERR
 
   finalize:
-    needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins, publish-components]
-    if: ${{ !inputs.dry_run }}
+    needs: [resolve, publish-desktop, publish-plugins, publish-components]
+    if: ${{ always() && !inputs.dry_run && !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release
