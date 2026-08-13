@@ -226,8 +226,37 @@ jobs:
               cmp --silent "$file" "$remote" || { echo "Remote ${label} verification failed: $uri" >&2; exit 1; }
               rm -rf "$remote_dir"
             }
+            publish_metadata_immutable() {
+              local file="$1" uri="$2" label="$3"
+              local remote_dir
+              remote_dir="$(mktemp -d)"
+              local remote="${remote_dir}/$(basename "$file")"
+              if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+                if python -c 'import json,sys; from pathlib import Path; a=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); b=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")); a.pop("updated_at",None); b.pop("updated_at",None); raise SystemExit(0 if a == b else 1)' "$file" "$remote"; then
+                  :
+                else
+                  echo "Immutable ${label} differs: ${uri}" >&2
+                  rm -rf "$remote_dir"
+                  exit 1
+                fi
+                rm -rf "$remote_dir"
+                echo "Verified existing immutable ${label} (timestamp-only difference allowed)"
+                return
+              fi
+              ossutil cp "$file" "$uri" --acl public-read \
+                --meta "Cache-Control:public, max-age=31536000, immutable"
+              ossutil cp "$uri" "$remote"
+              if python -c 'import json,sys; from pathlib import Path; a=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); b=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")); a.pop("updated_at",None); b.pop("updated_at",None); raise SystemExit(0 if a == b else 1)' "$file" "$remote"; then
+                :
+              else
+                echo "Remote ${label} verification failed: ${uri}" >&2
+                rm -rf "$remote_dir"
+                exit 1
+              fi
+              rm -rf "$remote_dir"
+            }
             publish_immutable "${artifact}" "$versioned_uri" "desktop artifact"
-            publish_immutable "${metadata}" "$metadata_uri" "desktop metadata"
+            publish_metadata_immutable "${metadata}" "$metadata_uri" "desktop metadata"
           }
 
           upload_versioned \
