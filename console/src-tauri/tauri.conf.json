@@ -73,7 +73,7 @@
           "Russian": "nsis-languages/Russian.nsh",
           "PortugueseBR": "nsis-languages/PortugueseBR.nsh"
         },
-        "compression": "lzma",
+        "compression": "zlib",
         "displayLanguageSelector": false
       }
     },
