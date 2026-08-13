@@ -8,8 +8,6 @@
 name: Release Duty Issue
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -65,10 +63,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          CURRENT_TAG: >-
-            ${{ github.event_name == 'release'
-                && github.event.release.tag_name
-                || inputs.tag }}
+          CURRENT_TAG: ${{ inputs.tag }}
           TYPE_OVERRIDE: ${{ inputs.release_type || '' }}
         run: |
           python - << 'EOF'

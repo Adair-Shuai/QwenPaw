@@ -115,16 +115,49 @@ def _get_bundled_plugins_dirs() -> list[Path]:
     """
     result: list[Path] = []
 
+    def add_candidate(candidate: Path) -> None:
+        """Add a readable bundle directory once, preserving priority.
+
+        PyInstaller's ``__file__`` layout is normally stable, but macOS app
+        bundles can be launched through a symlinked helper or a relocated
+        ``Contents/Resources`` tree.  In those cases ``qwenpaw.__file__`` may
+        not be the only valid anchor.  Keep all fallback anchors explicit and
+        de-duplicate by resolved path so a packaged launch never silently
+        falls back to an empty source tree.
+        """
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            return
+        if resolved.is_dir() and resolved not in result:
+            result.append(resolved)
+
     # When installed as a package, plugins are shipped inside the package
     try:
         import qwenpaw as _qp
 
         package_root = Path(_qp.__file__).parent
-        bundled_dir = package_root / "plugins_bundle"
-        if bundled_dir.is_dir():
-            result.append(bundled_dir)
+        add_candidate(package_root / "plugins_bundle")
     except Exception:
         pass
+
+    # PyInstaller exposes the unpacked onedir root through ``_MEIPASS``.
+    # Prefer the package-relative path above, then use these explicit fallbacks
+    # for macOS .app relocations and alternate bootloader layouts.
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        meipass_root = Path(str(meipass))
+        add_candidate(meipass_root / "qwenpaw" / "plugins_bundle")
+        add_candidate(meipass_root / "plugins_bundle")
+    try:
+        executable_root = Path(sys.executable).resolve().parent
+    except OSError:
+        executable_root = None
+    if executable_root is not None:
+        add_candidate(
+            executable_root / "_internal" / "qwenpaw" / "plugins_bundle",
+        )
+        add_candidate(executable_root / "qwenpaw" / "plugins_bundle")
 
     # Development mode / frozen desktop: look for plugins/bundle/
     # relative to repo root by walking up from this file.

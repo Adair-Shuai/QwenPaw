@@ -92,6 +92,8 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+          fetch-depth: 0
           submodules: recursive
 
       - name: Get version
@@ -178,6 +180,10 @@ jobs:
           } else {
             $portable = Get-ChildItem "$bundle" -Filter 'UGSci-Desktop-portable.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $portable) { throw 'Neither a signed NSIS setup.exe nor the portable Windows installer was produced' }
+            $portableSig = "$($portable.FullName).sig"
+            if ('${{ inputs.require_updater_assets }}' -eq 'true' -and -not (Test-Path -LiteralPath $portableSig -PathType Leaf)) {
+              throw 'Production portable Windows build is missing its updater signature'
+            }
             $inspectRoot = Join-Path $env:RUNNER_TEMP 'qwenpaw-portable-layout'
             if (Test-Path -LiteralPath $inspectRoot) { Remove-Item -LiteralPath $inspectRoot -Recurse -Force }
             Expand-Archive -LiteralPath $portable.FullName -DestinationPath $inspectRoot -Force
@@ -196,12 +202,22 @@ jobs:
                 throw "Portable Windows installer is missing bundled plugin manifest: $pluginId"
               }
             }
+            python scripts/pack-tauri/verify_frozen_plugins.py $bundledPluginRoot
             $manifest = Get-Content -LiteralPath (Join-Path $inspectRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
             if ($manifest.schema -ne 1 -or $manifest.version -ne '${{ steps.version.outputs.version }}' -or
                 $manifest.platform -ne 'windows-x86_64' -or $manifest.payload -ne 'payload') {
               throw 'Portable Windows version.json does not match the build target'
             }
             Copy-Item -LiteralPath $portable.FullName -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" -Force
+            if (Test-Path -LiteralPath $portableSig -PathType Leaf) {
+              Copy-Item -LiteralPath $portableSig -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip.sig" -Force
+              python scripts/pack-tauri/generate_update_manifest.py stage `
+                --bundle-dir $bundle `
+                --pattern 'UGSci-Desktop-portable.zip' `
+                --target windows-x86_64 `
+                --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" `
+                --pubkey-config console/src-tauri/tauri.version.conf.json
+            }
             Write-Host "Using portable Windows installer fallback: $($portable.Name)"
           }
 
@@ -293,6 +309,7 @@ jobs:
           path: |
             dist/UGSci-Tauri-*-Windows-setup.exe
             dist/UGSci-Tauri-*-Windows-portable.zip
+            dist/UGSci-Tauri-*-Windows-portable.zip.sig
           compression-level: 0
           retention-days: 14
 
@@ -303,6 +320,7 @@ jobs:
           name: tauri-updater-meta-windows
           path: |
             dist/UGSci-Tauri-*-Windows-setup.exe.sig
+            dist/UGSci-Tauri-*-Windows-portable.zip.sig
             dist/tauri-windows-x86_64-updater.json
           compression-level: 0
           retention-days: 14
@@ -324,6 +342,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+          fetch-depth: 0
           submodules: recursive
 
       - name: Get version

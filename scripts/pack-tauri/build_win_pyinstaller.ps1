@@ -264,6 +264,14 @@ if ($NsisExe) {
             -PortableRoot $PortableRoot `
             -ZipPath $ZipPath `
             -Version $VERSION
+        if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            Set-Location (Join-Path $REPO_ROOT "console")
+            pnpm exec tauri signer sign $ZipPath
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath "$ZipPath.sig" -PathType Leaf)) {
+                throw "Portable Windows updater ZIP signing failed"
+            }
+            Set-Location $REPO_ROOT
+        }
         Write-Host "Portable zip created: $ZipPath" -ForegroundColor Green
         $LASTEXITCODE = 0
     } else {

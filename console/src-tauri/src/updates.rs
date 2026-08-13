@@ -76,11 +76,24 @@ async fn run_install(app: AppHandle) {
         return emit_error(&app, "install", &err);
     }
 
-    if let Err(err) = update.install(bytes) {
-        return emit_updater_error(&app, "install", &err);
+    if cfg!(windows) {
+        let Some(cache_dir) = cached_update_dir(&app) else {
+            return emit_error(&app, "install", &"cannot determine app data directory");
+        };
+        if let Err(err) = persist_cached_update(&app, &update, &bytes) {
+            return emit_error(&app, "install", &err);
+        }
+        let Ok(meta) = read_cached_update_meta(&cache_dir) else {
+            return emit_error(&app, "install", &"cannot prepare portable Windows update");
+        };
+        let artifact_path = cached_artifact_path(&cache_dir, &meta);
+        install_cached_windows(&app, &artifact_path);
+    } else {
+        if let Err(err) = update.install(bytes) {
+            return emit_updater_error(&app, "install", &err);
+        }
+        app.restart();
     }
-
-    app.restart();
 }
 
 #[tauri::command]
@@ -200,15 +213,36 @@ async fn run_cached_install(app: AppHandle) {
     }
 }
 
-fn install_cached_windows(app: &AppHandle, exe_path: &std::path::Path) {
-    if let Err(err) = std::process::Command::new(exe_path)
-        .args(["/P", "/R", "/UPDATE", "/NO_QWENPAW_PATH"])
-        .spawn()
-    {
+fn install_cached_windows(app: &AppHandle, artifact_path: &std::path::Path) {
+    // Both signed NSIS executables and portable ZIPs use the same cached
+    // extension so the cache metadata cannot be used as a type discriminator.
+    // Inspect the magic bytes immediately before launching anything.
+    let is_zip = std::fs::File::open(artifact_path)
+        .and_then(|mut file| {
+            use std::io::Read;
+            let mut magic = [0u8; 4];
+            file.read_exact(&mut magic)?;
+            Ok(magic[0..2] == *b"PK")
+        })
+        .unwrap_or(false);
+    let result = if is_zip {
+        let escaped = artifact_path.to_string_lossy().replace('\'', "''");
+        let command = format!(
+            "$zip='{escaped}'; $stage=Join-Path $env:TEMP ('UGSci-update-'+[guid]::NewGuid()); Expand-Archive -LiteralPath $zip -DestinationPath $stage -Force; $setup=Join-Path $stage 'Setup.exe'; if (!(Test-Path -LiteralPath $setup)) {{ throw 'portable update is missing Setup.exe' }}; Start-Process -FilePath $setup -ArgumentList '-Silent' -WorkingDirectory $stage -WindowStyle Hidden",
+        );
+        std::process::Command::new("powershell.exe")
+            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", &command])
+            .spawn()
+    } else {
+        std::process::Command::new(artifact_path)
+            .args(["/P", "/R", "/UPDATE", "/NO_QWENPAW_PATH"])
+            .spawn()
+    };
+    if let Err(err) = result {
         return emit_error(
             app,
             "install",
-            &format!("failed to launch installer: {err}"),
+            &format!("failed to launch Windows updater: {err}"),
         );
     }
     // Mirrors tauri-plugin-updater's Windows path: after NSIS is launched the

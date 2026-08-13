@@ -124,12 +124,7 @@ if [ ! -d "${BUNDLED_PLUGIN_ROOT}" ]; then
     echo "ERROR: Frozen backend is missing bundled plugins: ${BUNDLED_PLUGIN_ROOT}"
     exit 1
 fi
-for plugin_id in flowforge ugsci ugsci_research; do
-    if [ ! -f "${BUNDLED_PLUGIN_ROOT}/${plugin_id}/plugin.json" ]; then
-        echo "ERROR: Frozen backend is missing bundled plugin manifest: ${plugin_id}"
-        exit 1
-    fi
-done
+python scripts/pack-tauri/verify_frozen_plugins.py "${BUNDLED_PLUGIN_ROOT}"
 echo "Bundled plugin payload verified"
 echo ""
 
@@ -184,12 +179,8 @@ if [ ! -d "${APP_PLUGIN_ROOT}" ]; then
     echo "ERROR: Final macOS app is missing bundled plugins: ${APP_PLUGIN_ROOT}"
     exit 1
 fi
-for plugin_id in flowforge ugsci ugsci_research; do
-    if [ ! -f "${APP_PLUGIN_ROOT}/${plugin_id}/plugin.json" ]; then
-        echo "ERROR: Final macOS app is missing bundled plugin manifest: ${plugin_id}"
-        exit 1
-    fi
-done
+python scripts/pack-tauri/verify_frozen_plugins.py "${APP_PLUGIN_ROOT}"
+echo "Final macOS app bundled plugin tree verified at ${APP_PLUGIN_ROOT}"
 
 echo "== Step 3b: Verifying Final macOS App Signature =="
 # Tauri signs the outer .app after embedding the pre-signed native resources.

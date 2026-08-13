@@ -39,6 +39,11 @@ on:
         type: string
         required: false
         default: ""
+      macos_artifacts_run_id:
+        description: "Optional newer run containing replacement macOS artifacts"
+        type: string
+        required: false
+        default: ""
 
 permissions:
   actions: read
@@ -60,10 +65,26 @@ jobs:
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
+        run: rm -rf UGSci-Desktop-Tauri-Windows-*
+
+      - name: Download replacement Windows artifacts
+        if: ${{ inputs.windows_artifacts_run_id != '' }}
         uses: actions/download-artifact@v4
         with:
           pattern: UGSci-Desktop-Tauri-Windows-*
           run-id: ${{ inputs.windows_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Overlay newer macOS artifacts
+        if: ${{ inputs.macos_artifacts_run_id != '' }}
+        run: rm -rf UGSci-Desktop-Tauri-macOS-*
+
+      - name: Download replacement macOS artifacts
+        if: ${{ inputs.macos_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UGSci-Desktop-Tauri-macOS-*
+          run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Attach desktop installers to the draft release
@@ -131,10 +152,26 @@ jobs:
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
+        run: rm -rf UGSci-Desktop-Tauri-Windows-*
+
+      - name: Download replacement Windows artifacts
+        if: ${{ inputs.windows_artifacts_run_id != '' }}
         uses: actions/download-artifact@v4
         with:
           pattern: UGSci-Desktop-Tauri-Windows-*
           run-id: ${{ inputs.windows_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Overlay newer macOS artifacts
+        if: ${{ inputs.macos_artifacts_run_id != '' }}
+        run: rm -rf UGSci-Desktop-Tauri-macOS-*
+
+      - name: Download replacement macOS artifacts
+        if: ${{ inputs.macos_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UGSci-Desktop-Tauri-macOS-*
+          run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install ossutil
@@ -167,6 +204,9 @@ jobs:
           elif [ -z "$windows_portable" ]; then
             echo "::error::No Windows installation artifact was downloaded"
             exit 1
+          else
+            test -s tauri-updater-meta-windows/UGSci-Tauri-*-Windows-portable.zip.sig
+            test -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json
           fi
           test -s tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz
           test -s tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz.sig

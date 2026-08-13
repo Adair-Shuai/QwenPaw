@@ -114,8 +114,13 @@ pub(super) fn ensure_current_platform(meta: &UpdateMeta) -> Result<(), String> {
 
 pub(super) fn validate_artifact(platform: &str, bytes: &[u8]) -> Result<(), String> {
     match platform {
-        "windows" if !bytes.starts_with(b"MZ") => {
-            Err("downloaded update is not a Windows installer executable".into())
+        "windows"
+            if !bytes.starts_with(b"MZ")
+                && !bytes.starts_with(b"PK\x03\x04")
+                && !bytes.starts_with(b"PK\x05\x06")
+                && !bytes.starts_with(b"PK\x07\x08") =>
+        {
+            Err("downloaded update is neither a Windows installer nor a portable ZIP".into())
         }
         "macos" if !bytes.starts_with(&[0x1f, 0x8b]) => {
             Err("downloaded update is not a macOS app archive".into())
@@ -132,7 +137,10 @@ fn write_artifact(
     version: &str,
 ) -> Result<PathBuf, String> {
     let file_name = match platform {
-        "windows" => format!("UGSci-Desktop_{version}_x64-setup.exe"),
+        "windows" if bytes.starts_with(b"MZ") => {
+            format!("UGSci-Desktop_{version}_windows.exe")
+        }
+        "windows" => format!("UGSci-Desktop_{version}_windows.zip"),
         "macos" => format!("UGSci-Desktop_{version}_macos.app.tar.gz"),
         _ => return Err("cached updates are not supported on this platform".into()),
     };

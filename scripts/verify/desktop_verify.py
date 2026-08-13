@@ -49,6 +49,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 DEFAULT_MODEL = "qwen3.6-plus"
@@ -161,7 +162,7 @@ def verify_frontend(base_url: str) -> None:
 
 
 def verify_bundled_plugins(base_url: str) -> None:
-    """Require critical bundled plugin frontends to be loaded."""
+    """Require critical plugins and their declared frontend bundles."""
     deadline = time.monotonic() + DEFAULT_TIMEOUT
     last_body = ""
     required = {"flowforge", "ugsci", "ugsci_research"}
@@ -173,13 +174,30 @@ def verify_bundled_plugins(base_url: str) -> None:
             payload = None
         if isinstance(payload, list):
             loaded = {
-                str(item.get("id"))
+                str(item.get("id")): item
                 for item in payload
                 if isinstance(item, dict) and item.get("loaded")
             }
-            if required <= loaded:
+            if required <= set(loaded):
+                for plugin_id in sorted(required):
+                    frontend_entry = str(
+                        loaded[plugin_id].get("frontend_entry") or "",
+                    ).strip()
+                    if not frontend_entry:
+                        raise RuntimeError(
+                            f"Bundled plugin {plugin_id} has no frontend entry",
+                        )
+                    body = _http(
+                        "GET",
+                        f"{base_url}/api/frontend_plugin/{plugin_id}/files/"
+                        f"{urllib.parse.quote(frontend_entry, safe='/')}",
+                    )
+                    if not body.strip():
+                        raise RuntimeError(
+                            f"Bundled plugin {plugin_id} frontend is empty",
+                        )
                 print(
-                    "PASS  bundled plugins loaded -> "
+                    "PASS  bundled plugins and frontend bundles loaded -> "
                     + ", ".join(sorted(required)),
                 )
                 return

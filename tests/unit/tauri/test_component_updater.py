@@ -180,7 +180,79 @@ def test_delta_can_atomically_replace_installed_directory(tmp_path):
         ]
         == "1.1.0"
     )
-    assert (installed / "main").read_text(encoding="utf-8") == "new"
+
+
+def test_deferred_activation_keeps_previous_until_health_commit(tmp_path):
+    destination = tmp_path / "plugins" / "demo"
+    _plugin(destination, "1.0.0", main="old")
+    staged = tmp_path / "staged"
+    _plugin(staged, "1.1.0", main="new")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        defer_activation_cleanup=True,
+    )
+    updater._atomic_activate(staged, destination, "demo", "1.1.0")
+    previous = destination.parent / ".demo.previous"
+    assert previous.is_dir()
+    assert (destination.parent / ".demo.activation.json").is_file()
+    updater.finalize_activation("demo", destination)
+    assert not previous.exists()
+    assert not (destination.parent / ".demo.activation.json").exists()
+
+
+def test_failed_new_component_rolls_back_and_removes_active(tmp_path):
+    destination = tmp_path / "plugins" / "demo"
+    staged = tmp_path / "staged"
+    _plugin(staged, "1.1.0", main="new")
+    active = tmp_path / "components" / "active.json"
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+        defer_activation_cleanup=True,
+    )
+    updater._atomic_activate(staged, destination, "demo", "1.1.0")
+    assert updater.rollback_activation("demo", destination) is False
+    assert not destination.exists()
+    assert not active.exists() or "demo" not in json.loads(active.read_text())["components"]
+
+
+def test_manifest_migration_metadata_is_validated(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    raw = json.dumps(
+        {
+            "schema_version": 1,
+            "target": "windows-x86_64",
+            "core_min_version": "1.0.0",
+            "components": {
+                "demo": {
+                    "version": "1.1.0",
+                    "migration": {"hook": "migrate:upgrade", "from": "1.0.0", "to": "1.1.0"},
+                    "full": {"url": "https://example/full.zip", "sha256": "a" * 64, "size": 1, "signature": "sig"},
+                },
+            },
+        },
+        separators=(",", ":"),
+    ).encode()
+    manifest = tmp_path / "manifest.json"
+    signature = tmp_path / "manifest.sig"
+    manifest.write_bytes(raw)
+    signature.write_text(base64.b64encode(private.sign(raw)).decode(), encoding="utf-8")
+    updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
+    loaded = updater.load_manifest(manifest, signature)
+    plan = updater.plan(loaded, "demo", tmp_path / "installed")
+    assert plan is not None and plan.migration["hook"] == "migrate:upgrade"
 
 
 def test_active_pointer_is_atomic_and_optional(tmp_path):

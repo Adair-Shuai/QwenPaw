@@ -15,12 +15,8 @@ on:
         required: false
         type: boolean
         default: false
-  # NOTE: legacy fallback path. The standard release flow is now release.yml
-  # (see RELEASING.md). Publishing a GitHub Release directly still triggers this
-  # OLD publish, which is NOT gated on the desktop build. Kept only as an
-  # emergency rollback until the old release workflows are removed.
-  release:
-    types: [published]
+  # Deliberately manual-only: publishing the desktop GitHub Release must not
+  # publish a Python distribution to PyPI.
 
 permissions:
   contents: read
@@ -99,7 +95,7 @@ jobs:
   publish:
     needs: [verify, build]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && github.event.inputs.force_push_to_pypi == 'true')
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.force_push_to_pypi == 'true'
     steps:
       - name: Download dist artifacts
         uses: actions/download-artifact@v4

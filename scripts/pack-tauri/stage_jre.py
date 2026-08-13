@@ -220,7 +220,12 @@ def _extract(archive: Path, workdir: Path) -> Path:
             root = workdir.resolve()
             for member in members:
                 _validate_member(member.name, root)
-                if not (member.isdir() or member.isfile() or member.issym()):
+                if not (
+                    member.isdir()
+                    or member.isfile()
+                    or member.issym()
+                    or member.islnk()
+                ):
                     raise SystemExit(
                         f"unsafe JRE tar member type: {member.name}",
                     )
@@ -246,6 +251,18 @@ def _extract(archive: Path, workdir: Path) -> Path:
                     target.parent.mkdir(parents=True, exist_ok=True)
                     target.symlink_to(member.linkname)
                     continue
+                if member.islnk():
+                    link_target = (target.parent / member.linkname).resolve()
+                    try:
+                        link_target.relative_to(root)
+                    except ValueError:
+                        raise SystemExit(
+                            f"JRE tar hardlink escapes target: {member.name}",
+                        ) from None
+                    if not link_target.is_file():
+                        raise SystemExit(
+                            f"JRE tar hardlink target is missing: {member.name}",
+                        )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 source = tar.extractfile(member)
                 if source is None:

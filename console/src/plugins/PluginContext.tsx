@@ -109,6 +109,7 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     // so newly installed plugins appear without a full app restart.
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
+    let syncAttempts = 0;
     const pollBundleSync = async () => {
       try {
         const headers: Record<string, string> = {};
@@ -118,8 +119,18 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
           headers,
           cache: "no-store",
         });
-        if (!response.ok || cancelled) return;
+        if (cancelled) return;
+        if (!response.ok) {
+          syncAttempts += 1;
+          if (syncAttempts < 8)
+            timer = setTimeout(
+              pollBundleSync,
+              Math.min(5000, 1000 * syncAttempts),
+            );
+          return;
+        }
         const status = (await response.json()) as { state?: string };
+        syncAttempts = 0;
         if (status?.state === "ready") {
           if (!reloadedAfterBundleSync) {
             reloadedAfterBundleSync = true;
@@ -132,7 +143,18 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
           }
           return;
         }
-        if (status?.state === "error") return;
+        if (status?.state === "error") {
+          // A transient dependency/install error should not permanently leave
+          // the frontend with an empty plugin list. Retry a few times so a
+          // later atomic repair can become visible without a full restart.
+          syncAttempts += 1;
+          if (syncAttempts < 8)
+            timer = setTimeout(
+              pollBundleSync,
+              Math.min(5000, 1000 * syncAttempts),
+            );
+          return;
+        }
       } catch {
         // Backend may still be accepting requests; retry below.
       }

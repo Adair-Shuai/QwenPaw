@@ -189,6 +189,7 @@ def configured_service() -> "ComponentUpdateService | None":
         core_version=__version__,
         active_path=WORKING_DIR / "components" / "active.json",
         backup_root=WORKING_DIR / "components" / "backups",
+        defer_activation_cleanup=True,
     )
     manifest_host = (urlparse(manifest_url).hostname or "").strip().lower()
     return ComponentUpdateService(
@@ -332,6 +333,15 @@ class ComponentUpdateService:
             }
         plan = self.updater.plan(manifest, component, installed)
         if plan is None:
+            marker = self.updater._activation_marker(destination)  # pylint: disable=protected-access
+            if marker.is_file():
+                return {
+                    "component": component,
+                    "updated": True,
+                    "activation_pending": True,
+                    "version": str(entry.get("version", "")),
+                    "kind": "pending",
+                }
             return {
                 "component": component,
                 "updated": False,
@@ -387,6 +397,7 @@ class ComponentUpdateService:
             str(full["sha256"]),
             str(full.get("signature", "")),
             plan.preserve_paths,
+            plan.migration,
         )
         artifact = self.client.download_artifact(
             full_plan.artifact_url,

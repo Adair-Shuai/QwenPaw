@@ -208,18 +208,18 @@ def _validate_member(member: tarfile.TarInfo, root: Path) -> None:
         raise SystemExit(
             f"Python runtime archive member escapes target: {member.name}",
         ) from None
-    if member.issym():
+    if member.issym() or member.islnk():
         link = Path(member.linkname)
         if link.is_absolute():
             raise SystemExit(
-                f"unsafe absolute Python runtime symlink: {member.name}",
+                f"unsafe absolute Python runtime link: {member.name}",
             )
         link_target = (target.parent / link).resolve()
         try:
             link_target.relative_to(root)
         except ValueError:
             raise SystemExit(
-                f"Python runtime symlink escapes target: {member.name}",
+                f"Python runtime link escapes target: {member.name}",
             ) from None
         return
     if not (member.isdir() or member.isfile()):

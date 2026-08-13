@@ -18,6 +18,7 @@ import uuid
 import zipfile
 import stat
 import threading
+import importlib.util
 from datetime import datetime, timezone
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -339,6 +340,7 @@ class ComponentUpdatePlan:
     artifact_sha256: str
     artifact_signature: str
     preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS
+    migration: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -359,6 +361,7 @@ class ComponentUpdater:
         core_version: str,
         active_path: Path | None = None,
         backup_root: Path | None = None,
+        defer_activation_cleanup: bool = False,
     ):
         self.public_key_b64 = public_key_b64
         self.managed_components = frozenset(
@@ -380,7 +383,115 @@ class ComponentUpdater:
         self.backup_root = (
             backup_root.absolute() if backup_root is not None else None
         )
+        # Production startup keeps the previous tree until PluginLoader has
+        # successfully loaded the candidate. Unit/test callers retain the
+        # historical eager cleanup behavior unless explicitly enabled.
+        self.defer_activation_cleanup = defer_activation_cleanup
         self._lock = threading.RLock()
+
+    def _activation_marker(self, destination: Path) -> Path:
+        return destination.parent / f".{destination.name}.activation.json"
+
+    def pending_activation_components(self, plugins_root: Path) -> set[str]:
+        """Return managed component IDs with an uncommitted activation."""
+        pending: set[str] = set()
+        for component in self.managed_components:
+            destination = plugins_root / component
+            marker = self._activation_marker(destination)
+            if marker.is_file() or (destination.parent / f".{component}.previous").exists():
+                pending.add(component)
+        return pending
+
+    def _remove_active(self, component: str) -> None:
+        if self.active_path is None or not self.active_path.is_file():
+            return
+        try:
+            payload = json.loads(self.active_path.read_text(encoding="utf-8"))
+            components = payload.get("components") if isinstance(payload, dict) else None
+            if isinstance(components, dict):
+                components.pop(component, None)
+                temporary = self.active_path.with_name(f".{self.active_path.name}.{uuid.uuid4().hex}.staging")
+                temporary.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                os.replace(temporary, self.active_path)
+        except (OSError, TypeError, ValueError, json.JSONDecodeError):
+            return
+
+    def finalize_activation(self, component: str, destination: Path) -> None:
+        """Commit a candidate after PluginLoader health checks succeed."""
+        component = _safe_component_id(component)
+        previous = destination.parent / f".{destination.name}.previous"
+        marker = self._activation_marker(destination)
+        if previous.exists():
+            shutil.rmtree(previous, ignore_errors=True)
+        marker.unlink(missing_ok=True)
+
+    def rollback_activation(self, component: str, destination: Path) -> bool:
+        """Restore the last-known-good tree; return whether one existed."""
+        component = _safe_component_id(component)
+        previous = destination.parent / f".{destination.name}.previous"
+        marker = self._activation_marker(destination)
+        if previous.exists():
+            if destination.exists():
+                shutil.rmtree(destination, ignore_errors=True)
+            previous.replace(destination)
+            try:
+                plugin = json.loads((destination / "plugin.json").read_text(encoding="utf-8"))
+                self._commit_active(component, str(plugin.get("version", "")), destination)
+            except (OSError, UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
+                raise ComponentUpdateError("failed to restore previous component") from exc
+            marker.unlink(missing_ok=True)
+            return True
+        if destination.exists():
+            shutil.rmtree(destination, ignore_errors=True)
+        self._remove_active(component)
+        marker.unlink(missing_ok=True)
+        return False
+
+    def _run_migration(self, plan: ComponentUpdatePlan, staged: Path) -> None:
+        """Run an optional, in-process plugin data migration hook.
+
+        The hook is declared by the signed manifest and must be a safe
+        ``module:function`` reference rooted in the staged component. No
+        shell/subprocess execution is permitted. The hook receives the staged
+        component data root and both semantic versions.
+        """
+        migration = plan.migration
+        if not migration:
+            return
+        hook = migration.get("hook")
+        if not isinstance(hook, str) or hook.count(":") != 1:
+            raise ComponentUpdateError("invalid component migration hook")
+        module_name, function_name = hook.split(":", 1)
+        if not module_name.isidentifier() or not function_name.isidentifier():
+            raise ComponentUpdateError("unsafe component migration hook")
+        allowed_from = migration.get("from")
+        if allowed_from not in (None, "*", plan.from_version):
+            raise ComponentUpdateError("component migration source version mismatch")
+        if migration.get("to") not in (None, plan.target_version):
+            raise ComponentUpdateError("component migration target version mismatch")
+        data_root = staged
+        if not any((staged / root).exists() for root in plan.preserve_paths):
+            return
+        module_path = staged / f"{module_name}.py"
+        if not module_path.is_file() or _is_link_like(module_path):
+            raise ComponentUpdateError("component migration module is missing")
+        spec = importlib.util.spec_from_file_location(
+            f"_qwenpaw_component_migration_{plan.component}",
+            module_path,
+        )
+        if spec is None or spec.loader is None:
+            raise ComponentUpdateError("component migration module is invalid")
+        try:
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            callback = getattr(module, function_name, None)
+            if not callable(callback):
+                raise ComponentUpdateError("component migration hook is not callable")
+            callback(data_root, plan.from_version, plan.target_version)
+        except ComponentUpdateError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            raise ComponentUpdateError("component data migration failed") from exc
 
     def _backup_component_data(
         self,
@@ -677,6 +788,7 @@ class ComponentUpdater:
         """Resolve a crash window before reading the installed component."""
         component = _safe_component_id(component)
         previous = destination.parent / f".{destination.name}.previous"
+        marker = self._activation_marker(destination)
         if not previous.exists():
             return
         if (
@@ -746,6 +858,13 @@ class ComponentUpdater:
         ):
             pass
         if (
+            marker.exists()
+        ):
+            # The candidate is intentionally kept for PluginLoader health
+            # validation. Do not mistake a valid candidate for an interrupted
+            # activation and delete its last-known-good rollback tree.
+            return
+        if (
             expected_files is not None
             and expected_version is not None
             and installed_version == expected_version
@@ -801,6 +920,11 @@ class ComponentUpdater:
             if previous.exists() and not destination.exists():
                 previous.replace(destination)
             raise
+        marker = self._activation_marker(destination)
+        marker.write_text(
+            json.dumps({"schema_version": 1, "component": component, "version": version}, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
         try:
             self._commit_active(component, version, destination)
         except Exception:
@@ -809,10 +933,14 @@ class ComponentUpdater:
             if previous.exists() and not destination.exists():
                 previous.replace(destination)
             shutil.rmtree(failed, ignore_errors=True)
+            marker.unlink(missing_ok=True)
             raise
-        # Cleanup is deliberately non-fatal: a locked backup must not turn a
-        # successful activation into a reported failure.
-        shutil.rmtree(previous, ignore_errors=True)
+        # Keep the previous tree until the startup PluginLoader confirms that
+        # the new component can actually be imported. This is the critical
+        # last-known-good rollback boundary. Legacy/direct callers can opt in
+        # to eager cleanup through ``defer_activation_cleanup=False``.
+        if not self.defer_activation_cleanup:
+            self.finalize_activation(component, destination)
 
     def load_manifest(
         self,
@@ -877,6 +1005,26 @@ class ComponentUpdater:
             entry["preserve"] = list(
                 _normalize_preserve_paths(entry.get("preserve")),
             )
+            migration = entry.get("migration")
+            if migration is not None:
+                if not isinstance(migration, dict):
+                    raise ComponentUpdateError(
+                        f"invalid migration metadata for {component}",
+                    )
+                hook = migration.get("hook")
+                if not isinstance(hook, str) or hook.count(":") != 1:
+                    raise ComponentUpdateError(
+                        f"invalid migration hook for {component}",
+                    )
+                module_name, function_name = hook.split(":", 1)
+                if not module_name.isidentifier() or not function_name.isidentifier():
+                    raise ComponentUpdateError(
+                        f"unsafe migration hook for {component}",
+                    )
+                for key in ("from", "to"):
+                    value = migration.get(key)
+                    if value is not None:
+                        _version(value, f"migration {component} {key}")
             full = entry.get("full")
             if not isinstance(full, dict):
                 raise ComponentUpdateError(
@@ -953,6 +1101,7 @@ class ComponentUpdater:
                     str(delta["sha256"]),
                     str(delta.get("signature", "")),
                     preserve_paths,
+                    entry.get("migration"),
                 )
         full = entry.get("full")
         if not isinstance(full, dict):
@@ -966,6 +1115,7 @@ class ComponentUpdater:
             str(full["sha256"]),
             str(full.get("signature", "")),
             preserve_paths,
+            entry.get("migration"),
         )
 
     def apply_delta(
@@ -1152,6 +1302,7 @@ class ComponentUpdater:
                 )
             backup = self._backup_component_data(plan, base, destination)
             self._restore_backup_to_staging(backup, staged, plan)
+            self._run_migration(plan, staged)
             if not _content_matches(
                 _inventory(staged, plan.preserve_paths),
                 expected,
@@ -1284,6 +1435,7 @@ class ComponentUpdater:
                 else None
             )
             self._restore_backup_to_staging(backup, staged, plan)
+            self._run_migration(plan, staged)
             if not _content_matches(
                 _inventory(staged, plan.preserve_paths),
                 expected_files,

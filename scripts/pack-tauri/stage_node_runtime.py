@@ -138,7 +138,7 @@ def _extract_tar_safely(tar: tarfile.TarFile, workdir: Path) -> None:
     members = tar.getmembers()
     for member in members:
         _validate_archive_member(member.name, root)
-        if not (member.isdir() or member.isfile() or member.issym()):
+        if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):
             raise SystemExit(f"unsafe tar member type: {member.name}")
     for member in members:
         target = (root / member.name).resolve()
@@ -162,6 +162,18 @@ def _extract_tar_safely(tar: tarfile.TarFile, workdir: Path) -> None:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.symlink_to(member.linkname)
             continue
+        if member.islnk():
+            link_target = (target.parent / member.linkname).resolve()
+            try:
+                link_target.relative_to(root)
+            except ValueError:
+                raise SystemExit(
+                    f"tar hardlink escapes target: {member.name}",
+                ) from None
+            if not link_target.is_file():
+                raise SystemExit(
+                    f"tar hardlink target is missing: {member.name}",
+                )
         target.parent.mkdir(parents=True, exist_ok=True)
         source = tar.extractfile(member)
         if source is None:

@@ -449,6 +449,26 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                         and result.get("component")
                     ):
                         component_updated_ids.add(str(result["component"]))
+            # A previous process may have exited after atomic activation but
+            # before PluginLoader health confirmation. Include those marker
+            # backed candidates in the same health-check/rollback pass.
+            try:
+                from ..components.service import configured_service
+                from ..config.utils import get_plugins_dir
+
+                pending_service = configured_service()
+                if pending_service is not None:
+                    component_updated_ids.update(
+                        pending_service.updater.pending_activation_components(
+                            get_plugins_dir(),
+                        ),
+                    )
+                    pending_service.client.close()
+            except Exception:
+                logger.debug(
+                    "Unable to inspect pending component activations",
+                    exc_info=True,
+                )
 
             # Run bundled-plugin synchronization off the event loop. The Tauri
             # gate now proceeds as soon as /api/version responds, so this
@@ -570,6 +590,64 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 configs=plugin_configs,
             )
             logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
+
+            # Component activation keeps a last-known-good tree until the
+            # freshly installed managed plugin has actually loaded. Plugin
+            # discovery deliberately swallows individual load exceptions, so
+            # verify the updated IDs explicitly and roll back failed ones.
+            if component_updated_ids:
+                try:
+                    from ..components.service import configured_service
+
+                    recovery_service = configured_service()
+                    if recovery_service is not None:
+                        plugins_root = get_plugins_dir()
+                        for component_id in sorted(component_updated_ids):
+                            record = loaded_plugins.get(component_id)
+                            healthy = bool(record and record.enabled)
+                            destination = plugins_root / component_id
+                            if healthy:
+                                recovery_service.updater.finalize_activation(
+                                    component_id,
+                                    destination,
+                                )
+                                continue
+                            logger.error(
+                                "Updated component %s failed plugin health check; rolling back",
+                                component_id,
+                            )
+                            # ``load_all_plugins`` records incompatible
+                            # candidates as disabled. Remove that record so
+                            # the restored last-known-good manifest can be
+                            # loaded afresh below.
+                            plugin_loader._loaded_plugins.pop(  # pylint: disable=protected-access
+                                component_id,
+                                None,
+                            )
+                            recovery_service.updater.rollback_activation(
+                                component_id,
+                                destination,
+                            )
+                            # The candidate never registered successfully;
+                            # load the restored last-known-good tree when one
+                            # exists so the application remains functional.
+                            restored = destination.is_dir()
+                            if restored:
+                                discovered = {
+                                    manifest.id: (manifest, path)
+                                    for manifest, path in plugin_loader.discover_plugins()
+                                }
+                                item = discovered.get(component_id)
+                                if item is not None:
+                                    await plugin_loader.load_plugin(
+                                        item[0], item[1], plugin_configs.get(component_id),
+                                    )
+                        recovery_service.client.close()
+                except Exception:
+                    logger.warning(
+                        "Component activation health recovery failed",
+                        exc_info=True,
+                    )
             startup_state.update(
                 "plugins",
                 "正在加载功能模块…",

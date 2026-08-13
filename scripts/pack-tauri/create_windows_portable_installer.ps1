@@ -352,7 +352,9 @@ try {
   New-ItemProperty -Path $uninstallKey -Name Publisher -Value "UGSci" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "`"$appExe`",0" -PropertyType String -Force | Out-Null
-  New-ItemProperty -Path $uninstallKey -Name UninstallString -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\uninstall.ps1`"" -PropertyType String -Force | Out-Null
+  $uninstallLauncher = Join-Path $installDir "Uninstall.exe"
+  New-ItemProperty -Path $uninstallKey -Name UninstallString -Value "`"$uninstallLauncher`" --uninstall" -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name QuietUninstallString -Value "`"$uninstallLauncher`" --uninstall --silent" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
   $shell = New-Object -ComObject WScript.Shell
@@ -379,7 +381,7 @@ try {
   [Environment]::SetEnvironmentVariable("Path", $previousUserPath, "User")
   if ($previousUninstall) {
     New-Item -Path $uninstallKey -Force | Out-Null
-    foreach ($name in @("DisplayName", "DisplayVersion", "Publisher", "InstallLocation", "DisplayIcon", "UninstallString", "NoModify", "NoRepair")) {
+    foreach ($name in @("DisplayName", "DisplayVersion", "Publisher", "InstallLocation", "DisplayIcon", "UninstallString", "QuietUninstallString", "NoModify", "NoRepair")) {
       if ($null -ne $previousUninstall.$name) {
         $kind = if ($name -in @("NoModify", "NoRepair")) { "DWord" } else { "String" }
         New-ItemProperty -Path $uninstallKey -Name $name -Value $previousUninstall.$name -PropertyType $kind -Force | Out-Null
@@ -405,8 +407,11 @@ if (-not $Silent) { Write-Host "You can launch it from the Start menu or desktop
 '@ | Set-Content -LiteralPath $installPs1 -Encoding UTF8
 
 @'
+param(
+  [Parameter(Mandatory = $true)] [string]$InstallDir,
+  [string]$CleanupScript
+)
 $ErrorActionPreference = "SilentlyContinue"
-$installDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $prefix = [IO.Path]::GetFullPath($installDir).TrimEnd('\') + '\'
 Get-CimInstance Win32_Process | Where-Object {
   $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
@@ -420,14 +425,23 @@ Remove-Item -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninst
 Remove-Item -LiteralPath (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\UGSci Desktop.lnk") -Force
 Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk") -Force
 & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path (Join-Path $installDir "binaries\python-runtime\python\Scripts")
-$cleanupScript = Join-Path $installDir "uninstall-cleanup.ps1"
-Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$cleanupScript`"", "-InstallDir", "`"$installDir`"") -WindowStyle Hidden
+$cleanupScript = if ($CleanupScript) { $CleanupScript } else { Join-Path $installDir "uninstall-cleanup.ps1" }
+if (Test-Path -LiteralPath $cleanupScript) {
+  Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$cleanupScript`"", "-InstallDir", "`"$installDir`"") -WindowStyle Hidden
+}
 '@ | Set-Content -LiteralPath $uninstallPs1 -Encoding UTF8
 
 @'
 param([Parameter(Mandatory = $true)] [string]$InstallDir)
-Start-Sleep -Seconds 2
+$launcherPid = 0
+[void][int]::TryParse($env:UGSCI_UNINSTALL_LAUNCHER_PID, [ref]$launcherPid)
+if ($launcherPid -gt 0) {
+  Wait-Process -Id $launcherPid -Timeout 30 -ErrorAction SilentlyContinue
+} else {
+  Start-Sleep -Seconds 2
+}
 Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
 '@ | Set-Content -LiteralPath $uninstallCleanupPs1 -Encoding UTF8
 
 [ordered]@{
@@ -460,6 +474,49 @@ if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
   $bootstrapSource
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setupExe -PathType Leaf)) {
   throw "Portable Setup bootstrap compilation failed (exit $LASTEXITCODE)"
+}
+$uninstallLauncher = Join-Path $PayloadRoot "Uninstall.exe"
+$temporaryRoot = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
+$uninstallLauncherSource = Join-Path $temporaryRoot "qwenpaw-portable-uninstall-bootstrap.cs"
+@'
+using System;
+using System.Diagnostics;
+using System.IO;
+
+internal static class PortableUninstallBootstrap
+{
+    private static int Main(string[] args)
+    {
+        string setup = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Setup.exe");
+        if (!File.Exists(setup)) return 3;
+        bool silent = false;
+        foreach (string arg in args)
+            if (string.Equals(arg, "--silent", StringComparison.OrdinalIgnoreCase)) silent = true;
+        var start = new ProcessStartInfo {
+            FileName = setup,
+            Arguments = "--uninstall" + (silent ? " --silent" : ""),
+            WorkingDirectory = AppDomain.CurrentDomain.BaseDirectory,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+            WindowStyle = ProcessWindowStyle.Hidden
+        };
+        using (Process process = Process.Start(start)) {
+            if (process == null) return 3;
+            process.WaitForExit();
+            return process.ExitCode;
+        }
+    }
+}
+'@ | Set-Content -LiteralPath $uninstallLauncherSource -Encoding UTF8
+try {
+  & $csc /nologo /target:winexe /optimize+ "/out:$uninstallLauncher" `
+    "/win32icon:$iconPath" /reference:System.dll /reference:System.Core.dll `
+    $uninstallLauncherSource
+  if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $uninstallLauncher -PathType Leaf)) {
+    throw "Portable uninstall bootstrap compilation failed (exit $LASTEXITCODE)"
+  }
+} finally {
+  Remove-Item -LiteralPath $uninstallLauncherSource -Force -ErrorAction SilentlyContinue
 }
 
 $rootPrefix = $PortableRoot.TrimEnd('\') + '\'

@@ -5,7 +5,7 @@
 # and uploads the Tauri auto-update manifest (qwenpaw-tauri-latest.json), and
 # refreshes the desktop + main index. Splitting this out of desktop-publish.yml
 # ensures existing users' auto-updater is never pointed at a version whose
-# release/PyPI/Docker publish might still have failed.
+# release publishing might still have failed.
 #
 # Skipped entirely when dry_run=true (fork verification never touches prod OSS).
 
@@ -32,6 +32,11 @@ on:
         required: false
         default: ""
         type: string
+      macos_artifacts_run_id:
+        description: "Optional macOS-only run replacing macOS artifacts"
+        required: false
+        default: ""
+        type: string
   workflow_call:
     inputs:
       tag:
@@ -53,6 +58,10 @@ on:
         required: false
         default: ""
       windows_artifacts_run_id:
+        type: string
+        required: false
+        default: ""
+      macos_artifacts_run_id:
         type: string
         required: false
         default: ""
@@ -104,12 +113,27 @@ jobs:
           run-id: ${{ inputs.windows_artifacts_run_id || github.event.inputs.windows_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Overlay replacement macOS artifacts
+        if: ${{ inputs.macos_artifacts_run_id != '' || github.event.inputs.macos_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UGSci-Desktop-Tauri-macOS-*
+          path: replacement-macos
+          merge-multiple: false
+          run-id: ${{ inputs.macos_artifacts_run_id || github.event.inputs.macos_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Merge replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
         run: |
           # Preserve the artifact directory name; promotion discovers files
           # beneath UGSci-Desktop-Tauri-Windows-*.
           cp -a replacement-windows/UGSci-Desktop-Tauri-Windows-* .
+
+      - name: Merge replacement macOS artifacts
+        if: ${{ inputs.macos_artifacts_run_id != '' || github.event.inputs.macos_artifacts_run_id != '' }}
+        run: |
+          cp -a replacement-macos/UGSci-Desktop-Tauri-macOS-* .
 
       - name: Install ossutil
         run: |
@@ -250,6 +274,9 @@ jobs:
           for f in UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-setup.exe; do
             [ -f "$f" ] && ln -sf "../$f" tauri-updater-meta-windows/ 2>/dev/null || true
           done
+          for f in UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-portable.zip; do
+            [ -f "$f" ] && ln -sf "../$f" tauri-updater-meta-windows/ 2>/dev/null || true
+          done
 
       - name: Generate and upload OSS updater manifest
         # The Tauri auto-updater uses OSS only; GitHub Releases only carry
@@ -260,9 +287,9 @@ jobs:
         run: |
           # A unified Tauri manifest has one global version. Publishing it with
           # only the new macOS entry would either remove Windows support or
-          # mislabel an old Windows artifact as the new version. A portable ZIP
-          # is not a signed Tauri updater, so keep the current complete manifest
-          # unchanged until both signed platform artifacts are available.
+          # mislabel an old Windows artifact as the new version. Both NSIS and
+          # the portable ZIP now have a signed updater sidecar; keep the
+          # current complete manifest unchanged until both platforms exist.
           if [ ! -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json ] || \
              [ ! -s tauri-updater-meta-macos/tauri-darwin-aarch64-updater.json ]; then
             echo "Signed updater assets are incomplete; preserving the current OSS updater manifest"
