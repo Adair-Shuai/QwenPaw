@@ -27,11 +27,11 @@ def _manifest_id(path: Path) -> str:
 def test_discovery_uses_only_the_two_plugin_ids_as_denylist():
     helper = _load_helper()
     all_ids = {
-        _manifest_id(path)
+        _manifest_id(path)  # noqa: E501
         for path in (REPO_ROOT / "plugins").glob("*/*/plugin.json")
     }
     selected_ids = {
-        helper.plugin_id(path)
+        helper.plugin_id(path)  # noqa: E501
         for path in helper.discover_bundled_plugins(REPO_ROOT)
     }
 
@@ -43,6 +43,27 @@ def test_discovery_uses_only_the_two_plugin_ids_as_denylist():
         "flowforge",
         "omp-workflows",
     } <= selected_ids
+
+
+def test_desktop_bundled_plugins_accept_current_core_version():
+    """A shipped frontend must never outrun its registered backend."""
+    from qwenpaw._version_compat import check_plugin_version_compat
+    from qwenpaw.plugins.architecture import PluginManifest
+
+    helper = _load_helper()
+    failures = []
+    for plugin_dir in helper.discover_bundled_plugins(REPO_ROOT):
+        manifest_data = json.loads(
+            (plugin_dir / "plugin.json").read_text(encoding="utf-8"),
+        )
+        manifest = PluginManifest.from_dict(
+            manifest_data,
+        )
+        compatible, message = check_plugin_version_compat(manifest)
+        if not compatible:
+            failures.append(f"{manifest.id}: {message}")
+
+    assert not failures, "; ".join(failures)
 
 
 def test_staging_excludes_denied_plugins_and_build_trees(tmp_path):

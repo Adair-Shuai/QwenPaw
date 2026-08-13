@@ -45,8 +45,9 @@ foreach ($hive in @("HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
   if ($reg) {
     $loc = (Get-ItemProperty $reg.PSPath).InstallLocation
     if ($loc -and (Test-Path $loc)) {
-      $found = Get-ChildItem -Path $loc -Filter "qwenpaw-desktop.exe" `
-        -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+      $found = Get-ChildItem -Path $loc -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in @("UGSci.exe", "qwenpaw-desktop.exe") } |
+        Sort-Object @{ Expression = { if ($_.Name -eq "UGSci.exe") { 0 } else { 1 } } } |
         Select-Object -First 1
       if ($found) { $tauriExe = $found.FullName; break }
     }
@@ -67,8 +68,9 @@ if (-not $tauriExe) {
   )
   foreach ($root in $candidateRoots) {
     if (Test-Path $root) {
-      $found = Get-ChildItem -Path $root -Filter "qwenpaw-desktop.exe" `
-        -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+      $found = Get-ChildItem -Path $root -File -Recurse -Depth 3 -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -in @("UGSci.exe", "qwenpaw-desktop.exe") } |
+        Sort-Object @{ Expression = { if ($_.Name -eq "UGSci.exe") { 0 } else { 1 } } } |
         Select-Object -First 1
       if ($found) { $tauriExe = $found.FullName; break }
     }
@@ -88,8 +90,30 @@ if (-not $tauriExe) {
 }
 Write-Host "Installed at: $tauriExe"
 
+# Portable packages must expose the product-facing executable name. Keep the
+# legacy name accepted above because this verifier also covers successful NSIS
+# builds whose Cargo binary is still named qwenpaw-desktop.exe.
+$portable = Get-ChildItem dist/UGSci-Tauri-*-Windows-portable.zip -ErrorAction SilentlyContinue |
+  Select-Object -First 1
+if ($portable -and (Split-Path $tauriExe -Leaf) -ne "UGSci.exe") {
+  throw "Portable Windows package installed an unexpected executable name: $(Split-Path $tauriExe -Leaf)"
+}
+
 # 2b. Verify WebView2 bootstrapper is bundled in the install.
 $installRoot = Split-Path $tauriExe -Parent
+$uninstallEntry = Get-ItemProperty "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop" -ErrorAction SilentlyContinue
+if ($portable) {
+  if (-not $uninstallEntry) { throw "Portable install did not register an uninstall entry" }
+  if ([IO.Path]::GetFullPath($uninstallEntry.InstallLocation) -ne [IO.Path]::GetFullPath($installRoot)) {
+    throw "Portable uninstall registration points at the wrong install location"
+  }
+  if (-not $uninstallEntry.DisplayIcon -or $uninstallEntry.DisplayIcon -notmatch "UGSci\.exe") {
+    throw "Portable uninstall registration is missing the UGSci.exe display icon"
+  }
+  if (-not $uninstallEntry.UninstallString -or $uninstallEntry.UninstallString -notmatch "uninstall\.ps1") {
+    throw "Portable uninstall registration is missing its uninstall command"
+  }
+}
 $runtimeSelection = Join-Path $installRoot "execution-runtime\selection.txt"
 if (-not (Test-Path $runtimeSelection)) {
   throw "Execution runtime selection was not written by the installer"

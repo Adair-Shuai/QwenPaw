@@ -183,8 +183,7 @@ jobs:
               continue
             fi
             ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable" \
-              --header "x-oss-forbid-overwrite:true"
+              --meta "Cache-Control:public, max-age=31536000, immutable"
           done < <(find component-release/artifacts -type f)
 
       - name: Verify artifacts exist on OSS
@@ -217,19 +216,22 @@ jobs:
           manifest_sig_uri="${manifest_uri}.sig"
           publish_immutable() {
             local file="$1" uri="$2" label="$3"
-            local remote="${RUNNER_TEMP}/manifest-${RANDOM}-$(basename "$file")"
+            local remote_dir
+            remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
             if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
               if ! cmp -s "$file" "$remote"; then
                 echo "Immutable component ${label} differs from local build" >&2
                 exit 1
               fi
-              rm -f "$remote"
+              rm -rf "$remote_dir"
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable" \
-              --header "x-oss-forbid-overwrite:true"
-            cmp -s "$file" <(ossutil cat "$uri")
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "Remote component ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
           }
           publish_immutable "$manifest" "$manifest_uri" "manifest ${manifest_name}"
           publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${manifest_name}.sig"
@@ -269,4 +271,8 @@ jobs:
           ossutil ls "$pointer_tmp" >/dev/null
           ossutil cp "$pointer_tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
           ossutil rm "$pointer_tmp" --force || true
-          cmp -s "$pointer" <(ossutil cat "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json")
+          verify_dir="$(mktemp -d)"
+          verify_file="${verify_dir}/${{ matrix.target }}.current.json"
+          ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$verify_file"
+          cmp -s "$pointer" "$verify_file" || { echo "Promoted component pointer verification failed" >&2; exit 1; }
+          rm -rf "$verify_dir"

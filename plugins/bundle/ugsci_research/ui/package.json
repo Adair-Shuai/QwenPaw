@@ -1,6 +1,6 @@
 {
   "name": "ugsci-research-plugin-ui",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Frontend UI for the UGSci Research plugin — Research Mode toggle, Artifact panel, and custom tool cards",
   "scripts": {

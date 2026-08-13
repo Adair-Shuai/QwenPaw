@@ -4,16 +4,16 @@
 #   1. A maintainer creates a DRAFT GitHub Release (tag + notes), does NOT publish.
 #   2. They run this workflow (Actions ▸ Run workflow). It resolves the draft,
 #      pins every job to the draft's target commit, then builds + verifies ALL
-#      products in parallel (wheel / web verify / desktop win+mac / plugins).
+#      products in parallel (wheel verification / desktop win+mac / plugins).
 #   3. Only if EVERY prepare job is green does the publish phase run: desktop
 #      (GitHub assets + OSS), components and plugins. The draft is flipped to
 #      published LAST. Post-publish (inline): promote the desktop latest/updater,
 #      deploy the website (stable/post only — skipped for betas), and open the
 #      Release Duty issue.
-#   4. If anything fails, nothing is published and the draft is left untouched
-#      (zero external trace; just fix and re-run).
+#   4. Failed build phases can be resumed with artifacts_run_id. Versioned OSS
+#      objects are immutable and idempotent; mutable indexes are promoted last.
 #
-# dry_run=true stubs production-external publishes so fork CI can exercise the
+# dry_run=true stubs OSS publishing so fork CI can exercise the
 # gating without touching prod.
 # Draft-asset upload, the draft→published flip and the duty issue still run for
 # real because on a fork they only affect the fork's own resources.
@@ -29,7 +29,7 @@ on:
         type: string
         default: ""
       dry_run:
-        description: "Stub production publishes (PyPI/Docker/OSS) — use on forks"
+        description: "Stub production OSS publishing; use on forks"
         required: false
         type: boolean
         default: false
@@ -240,10 +240,6 @@ jobs:
       verify_docker: false
       verify_script_install: true
       ref: ${{ needs.resolve.outputs.sha }}
-      # On dry_run (fork) the private ACR base images are unreachable, so fall
-      # back to public images for the Docker health-check build.
-      docker_node_image: ${{ inputs.dry_run && 'node:20-slim' || '' }}
-      docker_uv_image: ${{ inputs.dry_run && 'ghcr.io/astral-sh/uv:latest' || '' }}
     secrets: inherit
 
   build-desktop:
@@ -333,12 +329,23 @@ jobs:
           python-version: "3.11"
 
       - name: Download plugins dist
+        if: ${{ needs.resolve.outputs.artifacts_run_id == '' }}
         uses: actions/download-artifact@v4
         with:
           name: qwenpaw-plugins-dist
           path: dist/plugins
           run-id: ${{ needs.resolve.outputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild plugins metadata for resumed release
+        if: ${{ needs.resolve.outputs.artifacts_run_id != '' }}
+        run: |
+          python scripts/pack/generate_plugin_metadata.py \
+            --plugins-root plugins \
+            --dist dist/plugins \
+            --metadata-out dist/plugins/index.json \
+            --cdn-prefix /files/plugins \
+            --exclude qwenpaw-creator
 
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
@@ -420,6 +427,7 @@ jobs:
           cmp --silent dist/plugins/index.json "$remote" || { echo "ERROR: staged plugin index verification failed"; exit 1; }
           ossutil cp "$staging" "$live" --acl public-read --force \
             --meta "Cache-Control:public, max-age=60, must-revalidate"
+          rm -f "$remote"
           ossutil cp "$live" "$remote"
           cmp --silent dist/plugins/index.json "$remote" || { echo "ERROR: promoted plugin index verification failed"; exit 1; }
           rm -f "$remote"
@@ -459,6 +467,7 @@ jobs:
           cmp --silent main-index.json "$remote" || { echo "ERROR: staged main index verification failed"; exit 1; }
           ossutil cp "$staging" "$live" --acl public-read --force \
             --meta "Cache-Control:public, max-age=60, must-revalidate"
+          rm -f "$remote"
           ossutil cp "$live" "$remote"
           cmp --silent main-index.json "$remote" || { echo "ERROR: promoted main index verification failed"; exit 1; }
           rm -f "$remote"
@@ -639,7 +648,11 @@ jobs:
             ossutil ls "$tmp" >/dev/null
             ossutil cp "$tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${base}" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
             ossutil rm "$tmp" --force || true
-            cmp -s "$pointer" <(ossutil cat "oss://${OSS_BUCKET}/metadata/components/stable/${base}")
+            verify_dir="$(mktemp -d)"
+            verify_file="${verify_dir}/${base}"
+            ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${base}" "$verify_file"
+            cmp -s "$pointer" "$verify_file" || { echo "ERROR: promoted component pointer verification failed: ${base}"; exit 1; }
+            rm -rf "$verify_dir"
           done
           trap - ERR
 

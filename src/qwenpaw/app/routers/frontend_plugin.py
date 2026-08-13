@@ -16,7 +16,6 @@ from fastapi import APIRouter, Request
 
 from .plugins import (
     _frontend_revision,
-    _list_plugins_from_disk,
     serve_plugin_ui_file,
 )
 
@@ -41,10 +40,16 @@ async def list_frontend_plugins(request: Request):
     loader = getattr(request.app.state, "plugin_loader", None)
 
     if loader is None:
-        return await asyncio.to_thread(_list_plugins_from_disk)
+        # Disk discovery is available before PluginLoader finishes, but it
+        # cannot prove that backend registration succeeded. Exposing those
+        # frontends early creates clickable routes whose API handlers do not
+        # exist yet (especially visible on slower packaged Windows starts).
+        return []
 
     result = []
     for _plugin_id, record in loader.get_all_loaded_plugins().items():
+        if not record.enabled:
+            continue
         manifest = record.manifest
         frontend_revision = await asyncio.to_thread(
             _frontend_revision,

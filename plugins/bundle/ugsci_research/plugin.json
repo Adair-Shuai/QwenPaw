@@ -1,7 +1,7 @@
 {
   "id": "ugsci_research",
   "name": "UGSci Research",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "tool",
   "description": "UGSci Research — 科学研究模式插件。将 Agent 切换为科学研究工作流，提供文献检索、数据分析、可视化 Artifact 面板等能力，与代码模式并列。",
   "description_i18n": {

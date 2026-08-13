@@ -14,7 +14,7 @@ $versionFile = Join-Path $PortableRoot "version.txt"
 $pathHelper = Join-Path $PortableRoot "update-qwenpaw-path.ps1"
 
 foreach ($required in @(
-  "qwenpaw-desktop.exe",
+  "UGSci.exe",
   "binaries\qwenpaw-backend\qwenpaw-backend.exe",
   "binaries\qwenpaw-backend\qwenpaw.exe",
   "binaries\python-runtime\python\python.exe"
@@ -40,9 +40,12 @@ $legacyUninstallKey = $null
 Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
   ForEach-Object {
     $entry = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+    $hasDesktopExe = $entry.InstallLocation -and (
+      (Test-Path -LiteralPath (Join-Path $entry.InstallLocation "UGSci.exe")) -or
+      (Test-Path -LiteralPath (Join-Path $entry.InstallLocation "qwenpaw-desktop.exe"))
+    )
     if (-not $existingInstallDir -and $entry.DisplayName -match "QwenPaw|UGSci Desktop" -and
-        $entry.InstallLocation -and
-        (Test-Path -LiteralPath (Join-Path $entry.InstallLocation "qwenpaw-desktop.exe"))) {
+        $hasDesktopExe) {
       $candidate = [IO.Path]::GetFullPath([string]$entry.InstallLocation).TrimEnd('\')
       $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\') + '\'
       if ($candidate.StartsWith($localRoot, [StringComparison]::OrdinalIgnoreCase)) {
@@ -53,7 +56,7 @@ Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -Error
   }
 $installDir = if ($existingInstallDir) { $existingInstallDir } else { $defaultInstallDir }
 $installParent = Split-Path -Parent $installDir
-$appExe = Join-Path $installDir "qwenpaw-desktop.exe"
+$appExe = Join-Path $installDir "UGSci.exe"
 $stagingDir = Join-Path $installParent ".UGSci Desktop.install-$PID"
 $backupDir = Join-Path $installParent ".UGSci Desktop.backup-$PID"
 $mutex = New-Object Threading.Mutex($false, "Local\UGSciDesktopPortableInstaller")
@@ -164,8 +167,8 @@ function Ensure-WebView2 {
 }
 
 if (-not (Test-Path $sourceRoot)) { throw "Portable package directory not found" }
-if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "qwenpaw-desktop.exe"))) {
-  throw "Portable package is missing qwenpaw-desktop.exe"
+if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "UGSci.exe"))) {
+  throw "Portable package is missing UGSci.exe"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "binaries\qwenpaw-backend\qwenpaw-backend.exe"))) {
   throw "Portable package is missing the frozen backend"
@@ -242,6 +245,7 @@ try {
   New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $version -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name Publisher -Value "UGSci" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name DisplayIcon -Value "`"$appExe`",0" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name UninstallString -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\uninstall.ps1`"" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
@@ -269,7 +273,7 @@ try {
   [Environment]::SetEnvironmentVariable("Path", $previousUserPath, "User")
   if ($previousUninstall) {
     New-Item -Path $uninstallKey -Force | Out-Null
-    foreach ($name in @("DisplayName", "DisplayVersion", "Publisher", "InstallLocation", "UninstallString", "NoModify", "NoRepair")) {
+    foreach ($name in @("DisplayName", "DisplayVersion", "Publisher", "InstallLocation", "DisplayIcon", "UninstallString", "NoModify", "NoRepair")) {
       if ($null -ne $previousUninstall.$name) {
         $kind = if ($name -in @("NoModify", "NoRepair")) { "DWord" } else { "String" }
         New-ItemProperty -Path $uninstallKey -Name $name -Value $previousUninstall.$name -PropertyType $kind -Force | Out-Null

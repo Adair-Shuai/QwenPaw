@@ -253,7 +253,9 @@ if ($NsisExe) {
         $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
         if (Test-Path $PortableRoot) { Remove-Item -Recurse -Force $PortableRoot }
         New-Item -ItemType Directory -Force -Path $PortableRoot | Out-Null
-        Copy-Item -Force $AppExe.FullName (Join-Path $PortableRoot "qwenpaw-desktop.exe")
+        # Keep the Cargo/Tauri binary name internal to the build tree. The
+        # user-facing portable package exposes a stable product executable.
+        Copy-Item -Force $AppExe.FullName (Join-Path $PortableRoot "UGSci.exe")
         $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
         if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
         Copy-Item -Recurse -Force $Resources (Join-Path $PortableRoot "binaries")

@@ -17,6 +17,7 @@ import { getApiUrl, getApiToken } from "../api/config";
 interface PluginInfo {
   id: string;
   name: string;
+  enabled?: boolean;
   frontend_entry?: string;
   version?: string;
   frontend_revision?: string;
@@ -133,7 +134,12 @@ export async function loadAllPlugins(): Promise<{
     return { loaded: 0, failed: [] };
   }
 
-  const frontendPlugins = plugins.filter((p) => p.frontend_entry);
+  // A disabled record can still carry a frontend entry, but its backend
+  // routes/tools were deliberately not registered. Never expose a UI that
+  // can only answer with 404s.
+  const frontendPlugins = plugins.filter(
+    (p) => p.frontend_entry && p.enabled !== false,
+  );
 
   const results = await Promise.allSettled(
     frontendPlugins.map(async (p) => {
