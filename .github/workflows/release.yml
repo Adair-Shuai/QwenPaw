@@ -310,6 +310,7 @@ jobs:
       tag: ${{ needs.resolve.outputs.tag }}
       ref: ${{ needs.resolve.outputs.sha }}
       dry_run: ${{ inputs.dry_run }}
+      artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}
     secrets: inherit
 
   publish-plugins:
@@ -667,7 +668,6 @@ jobs:
       tag: ${{ needs.resolve.outputs.tag }}
       ref: ${{ needs.resolve.outputs.sha }}
       dry_run: ${{ inputs.dry_run }}
-      artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}
     secrets: inherit
 
   # ── Post-publish: create the Release Duty verification issue (inline) ───────
