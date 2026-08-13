@@ -284,6 +284,15 @@ def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
     )
 
 
+def _prune_regenerable_runtime_files(root: Path, os_name: str) -> None:
+    """Remove VM caches that are unnecessary and troublesome to package."""
+    if os_name != "windows":
+        return
+    for cache in root.glob("bin/server/classes*.jsa"):
+        if cache.is_file():
+            cache.unlink()
+
+
 def main() -> None:
     # pylint: disable=too-many-statements
     parser = argparse.ArgumentParser(description=__doc__)
@@ -365,6 +374,7 @@ def main() -> None:
             shutil.move(str(item), str(staged_dest / item.name))
         if not _java_exe(staged_dest).is_file():
             raise SystemExit("staging failed: java executable missing")
+        _prune_regenerable_runtime_files(staged_dest, os_name)
         atomic_install_tree(staged_dest, dest)
 
     java_exe = _java_exe(dest)

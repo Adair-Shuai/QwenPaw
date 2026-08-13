@@ -57,6 +57,39 @@ def test_safe_extract_rejects_duplicate_members(tmp_path):
         helper._extract_safely(str(archive), tmp_path / "dest")
 
 
+def test_validate_member_accepts_internal_relative_symlink(tmp_path):
+    helper = _load_helper()
+    root = (tmp_path / "dest").resolve()
+    info = tarfile.TarInfo("python/bin/2to3")
+    info.type = tarfile.SYMTYPE
+    info.linkname = "2to3-3.11"
+
+    helper._validate_member(info, root)
+
+
+@pytest.mark.parametrize("linkname", ["/tmp/escape", "../../../escape"])
+def test_validate_member_rejects_unsafe_symlink(tmp_path, linkname):
+    helper = _load_helper()
+    root = (tmp_path / "dest").resolve()
+    info = tarfile.TarInfo("python/bin/2to3")
+    info.type = tarfile.SYMTYPE
+    info.linkname = linkname
+
+    with pytest.raises(SystemExit):
+        helper._validate_member(info, root)
+
+
+def test_validate_member_rejects_hardlink(tmp_path):
+    helper = _load_helper()
+    root = (tmp_path / "dest").resolve()
+    info = tarfile.TarInfo("python/bin/python3")
+    info.type = tarfile.LNKTYPE
+    info.linkname = "python/bin/python3.11"
+
+    with pytest.raises(SystemExit):
+        helper._validate_member(info, root)
+
+
 def test_production_asset_lookup_never_falls_back_to_latest(monkeypatch):
     helper = _load_helper()
 
