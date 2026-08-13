@@ -190,10 +190,12 @@ jobs:
             metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json"
             publish_immutable() {
               local file="$1" uri="$2" label="$3"
-              local remote="${RUNNER_TEMP}/desktop-${RANDOM}-$(basename "$file")"
+              local remote_dir
+              remote_dir="$(mktemp -d)"
+              local remote="${remote_dir}/$(basename "$file")"
               if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
                 cmp --silent "$file" "$remote" || { echo "Immutable ${label} differs: $uri" >&2; exit 1; }
-                rm -f "$remote"
+                rm -rf "$remote_dir"
                 echo "Verified existing immutable ${label}"
                 return
               fi
@@ -201,7 +203,7 @@ jobs:
                 --meta "Cache-Control:public, max-age=31536000, immutable"
               ossutil cp "$uri" "$remote"
               cmp --silent "$file" "$remote" || { echo "Remote ${label} verification failed: $uri" >&2; exit 1; }
-              rm -f "$remote"
+              rm -rf "$remote_dir"
             }
             publish_immutable "${artifact}" "$versioned_uri" "desktop artifact"
             publish_immutable "${metadata}" "$metadata_uri" "desktop metadata"

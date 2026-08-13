@@ -370,17 +370,18 @@ jobs:
               rel="${f#dist/plugins/}"
               echo "Uploading $f -> files/plugins/${rel}"
               uri="oss://${OSS_BUCKET}/files/plugins/${rel}"
-              remote="$(mktemp)"
+              remote_dir="$(mktemp -d)"
+              remote="${remote_dir}/$(basename "$f")"
               if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
                 cmp --silent "$f" "$remote" || { echo "ERROR: immutable plugin object differs: $uri"; exit 1; }
-                rm -f "$remote"
+                rm -rf "$remote_dir"
                 continue
               fi
               ossutil cp "$f" "$uri" --acl public-read \
                 --meta "Cache-Control:public, max-age=31536000, immutable"
               ossutil cp "$uri" "$remote"
               cmp --silent "$f" "$remote" || { echo "ERROR: remote plugin verification failed: $uri"; exit 1; }
-              rm -f "$remote"
+              rm -rf "$remote_dir"
             done < <(find "dist/plugins/${kind}" -type f -name '*.zip' -print0 2>/dev/null || true)
           done
 
@@ -412,7 +413,8 @@ jobs:
           ossutil cp dist/plugins/index.json "$staging" \
             --acl public-read \
             --meta "Cache-Control:public, max-age=60, must-revalidate"
-          remote="$(mktemp)"
+          remote_dir="$(mktemp -d)"
+          remote="${remote_dir}/index.json"
           ossutil cp "$staging" "$remote"
           cmp --silent dist/plugins/index.json "$remote" || { echo "ERROR: staged plugin index verification failed"; exit 1; }
           ossutil cp "$staging" "$live" --acl public-read --force \
@@ -450,7 +452,8 @@ jobs:
           ossutil cp main-index.json "$staging" \
             --acl public-read \
             --meta "Cache-Control:public, max-age=60, must-revalidate"
-          remote="$(mktemp)"
+          remote_dir="$(mktemp -d)"
+          remote="${remote_dir}/index.json"
           ossutil cp "$staging" "$remote"
           cmp --silent main-index.json "$remote" || { echo "ERROR: staged main index verification failed"; exit 1; }
           ossutil cp "$staging" "$live" --acl public-read --force \
@@ -510,18 +513,22 @@ jobs:
           set -euo pipefail
           publish_immutable() {
             local file="$1" uri="$2" label="$3"
-            local remote="${RUNNER_TEMP}/component-${RANDOM}-$(basename "$file")"
+            local remote_dir
+            remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
             if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
               if ! cmp -s "$file" "$remote"; then
                 echo "Immutable component ${label} differs from local build" >&2
                 exit 1
               fi
-              rm -f "$remote"
+              rm -rf "$remote_dir"
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
               --meta "Cache-Control:public, max-age=31536000, immutable"
-            cmp -s "$file" <(ossutil cat "$uri")
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "Remote component ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
           }
           while IFS= read -r file; do
             relative="${file#component-release/}"
@@ -542,15 +549,19 @@ jobs:
           set -euo pipefail
           publish_immutable() {
             local file="$1" uri="$2" label="$3"
-            local remote="${RUNNER_TEMP}/component-${RANDOM}-$(basename "$file")"
+            local remote_dir
+            remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
             if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
               cmp -s "$file" "$remote" || { echo "immutable ${label} differs" >&2; exit 1; }
-              rm -f "$remote"
+              rm -rf "$remote_dir"
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
               --meta "Cache-Control:public, max-age=31536000, immutable"
-            cmp -s "$file" <(ossutil cat "$uri")
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "remote ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
           }
 
           mapfile -t pointers < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*.current.json' | sort)
@@ -656,6 +667,7 @@ jobs:
       tag: ${{ needs.resolve.outputs.tag }}
       ref: ${{ needs.resolve.outputs.sha }}
       dry_run: ${{ inputs.dry_run }}
+      artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}
     secrets: inherit
 
   # ── Post-publish: create the Release Duty verification issue (inline) ───────
