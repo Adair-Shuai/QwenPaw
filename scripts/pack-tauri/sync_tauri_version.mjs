@@ -92,13 +92,17 @@ function writeTauriVersionConfig(file, version) {
   const createUpdaterArtifacts = shouldCreateUpdaterArtifacts();
   const config = {
     version,
-    ...(createUpdaterArtifacts
-      ? {
-          bundle: {
-            createUpdaterArtifacts: true,
-          },
-        }
-      : {}),
+    bundle: {
+      // Keep the Windows installer on the low-memory compressor path even
+      // when this generated config is merged over tauri.conf.json. Large
+      // bundled runtimes can make NSIS LZMA fail during datablock mmap.
+      windows: {
+        nsis: {
+          compression: "zlib",
+        },
+      },
+      ...(createUpdaterArtifacts ? { createUpdaterArtifacts: true } : {}),
+    },
     plugins: {
       updater: {
         pubkey,
