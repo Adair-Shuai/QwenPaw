@@ -29,10 +29,12 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from component_common import (
     canonical_json,
+    decode_base64,
     file_inventory,
     read_plugin_metadata,
     safe_relative_path,
     sha256_file,
+    verify_private_key_public_key,
 )
 
 _MAX_MEMBERS = 10_000
@@ -42,12 +44,17 @@ _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
-    raw = base64.b64decode(value.strip(), validate=True)
+    raw = decode_base64(value, label="component Ed25519 private key")
     if len(raw) != 32:
         raise ValueError(
             "component Ed25519 private key must contain 32 raw bytes",
         )
-    return Ed25519PrivateKey.from_private_bytes(raw)
+    private = Ed25519PrivateKey.from_private_bytes(raw)
+    verify_private_key_public_key(
+        private,
+        os.environ.get("COMPONENT_SIGNING_PUBLIC_KEY", ""),
+    )
+    return private
 
 
 def _verify(data: bytes, signature: str, private: Ed25519PrivateKey) -> None:
@@ -327,11 +334,16 @@ def prepare_bases(
     payload.pop("signature", None)
     _verify(canonical_json(payload), str(pointer["signature"]), private)
     history_fields = {
-        "history_url", "history_size", "history_sha256", "history_signature",
+        "history_url",
+        "history_size",
+        "history_sha256",
+        "history_signature",
     }
     if not history_fields.issubset(pointer):
         release_id = pointer.get("release_id")
-        if not isinstance(release_id, str) or not _RELEASE_ID.fullmatch(release_id):
+        if not isinstance(release_id, str) or not _RELEASE_ID.fullmatch(
+            release_id,
+        ):
             raise ValueError("legacy component pointer release id is invalid")
         found = prepare_base(
             source_root,
@@ -343,9 +355,15 @@ def prepare_bases(
         entry = {
             key: pointer[key]
             for key in (
-                "target", "release_id", "release_version", "release_sequence",
-                "release_attempt", "manifest_url", "manifest_size",
-                "manifest_sha256", "manifest_signature",
+                "target",
+                "release_id",
+                "release_version",
+                "release_sequence",
+                "release_attempt",
+                "manifest_url",
+                "manifest_size",
+                "manifest_sha256",
+                "manifest_signature",
             )
             if key in pointer
         }
@@ -355,14 +373,17 @@ def prepare_bases(
             "releases": [entry],
         }
         legacy_raw = canonical_json(legacy_history)
-        legacy_signature = base64.b64encode(private.sign(legacy_raw)).decode("ascii")
+        legacy_signature = base64.b64encode(private.sign(legacy_raw)).decode(
+            "ascii",
+        )
         if history_output is not None:
             history_output.parent.mkdir(parents=True, exist_ok=True)
             history_output.write_bytes(legacy_raw)
         if history_signature_output is not None:
             history_signature_output.parent.mkdir(parents=True, exist_ok=True)
             history_signature_output.write_text(
-                legacy_signature + "\n", encoding="utf-8",
+                legacy_signature + "\n",
+                encoding="utf-8",
             )
         return int(found)
     history_url = urljoin(pointer_url, str(pointer["history_url"]))
@@ -401,7 +422,9 @@ def prepare_bases(
         or head.get("manifest_url") != pointer.get("manifest_url")
         or head.get("manifest_sha256") != pointer.get("manifest_sha256")
     ):
-        raise ValueError("component history head does not match current pointer")
+        raise ValueError(
+            "component history head does not match current pointer",
+        )
     if history_output is not None:
         history_output.parent.mkdir(parents=True, exist_ok=True)
         history_output.write_bytes(history_raw)
@@ -414,7 +437,9 @@ def prepare_bases(
     prepared = 0
     seen: set[str] = set()
     for entry in entries[:history_count]:
-        release_id = entry.get("release_id") if isinstance(entry, dict) else None
+        release_id = (
+            entry.get("release_id") if isinstance(entry, dict) else None
+        )
         if (
             not isinstance(release_id, str)
             or not _RELEASE_ID.fullmatch(release_id)
@@ -439,8 +464,13 @@ def prepare_bases(
             != str(entry.get("manifest_sha256", "")).lower()
         ):
             raise ValueError("component history manifest digest mismatch")
-        manifest_signature = _get(f"{manifest_url}.sig").decode("utf-8").strip()
-        if manifest_signature != str(entry.get("manifest_signature", "")).strip():
+        manifest_signature = (
+            _get(f"{manifest_url}.sig").decode("utf-8").strip()
+        )
+        if (
+            manifest_signature
+            != str(entry.get("manifest_signature", "")).strip()
+        ):
             raise ValueError("component history manifest signature mismatch")
         if prepare_base(
             source_root,

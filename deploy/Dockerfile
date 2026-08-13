@@ -8,7 +8,11 @@ ARG UV_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:la
 FROM ${NODE_IMAGE} AS console-builder
 WORKDIR /app
 COPY console /app/console
-RUN cd /app/console && npm ci --include=dev && npm run build
+RUN corepack enable \
+ && corepack prepare pnpm@9 --activate \
+ && cd /app/console \
+ && pnpm install --frozen-lockfile \
+ && pnpm run build
 
 # Alias for uv binary so COPY --from can reference a build-arg image.
 FROM ${UV_IMAGE} AS uv-src

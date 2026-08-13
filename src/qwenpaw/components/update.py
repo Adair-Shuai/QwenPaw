@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -250,15 +251,37 @@ def _verify_signature(
             "cryptography is required for component signatures",
         )
     try:
-        key = Ed25519PublicKey.from_public_bytes(
-            base64.b64decode(public_key_b64, validate=True),
+        public_key = _decode_base64(
+            public_key_b64,
+            label="component public key",
         )
-        signature = base64.b64decode(signature_b64, validate=True)
+        signature = _decode_base64(
+            signature_b64,
+            label="component signature",
+        )
+        if len(public_key) != 32 or len(signature) != 64:
+            raise ValueError("invalid Ed25519 key or signature length")
+        key = Ed25519PublicKey.from_public_bytes(
+            public_key,
+        )
         key.verify(signature, data)
     except Exception as exc:  # noqa: BLE001
         raise ComponentUpdateError(
             "component signature verification failed",
         ) from exc
+
+
+def _decode_base64(value: str, *, label: str) -> bytes:
+    normalized = value.strip()
+    if len(normalized) % 4 == 1:
+        raise ValueError(f"{label} has an invalid Base64 length")
+    try:
+        return base64.b64decode(
+            normalized + "=" * (-len(normalized) % 4),
+            validate=True,
+        )
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError(f"{label} must be valid Base64") from exc
 
 
 @dataclass(frozen=True)

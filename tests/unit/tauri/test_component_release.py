@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 from __future__ import annotations
 
 import base64
@@ -140,7 +141,8 @@ def test_builds_ten_direct_deltas_and_binds_signed_history(tmp_path):
     source = tmp_path / "staged" / "demo"
     source.mkdir(parents=True)
     (source / "plugin.json").write_text(
-        json.dumps({"id": "demo", "version": "2.0.0"}), encoding="utf-8",
+        json.dumps({"id": "demo", "version": "2.0.0"}),
+        encoding="utf-8",
     )
     stable = os.urandom(100_000)
     (source / "stable.bin").write_bytes(stable)
@@ -162,10 +164,18 @@ def test_builds_ten_direct_deltas_and_binds_signed_history(tmp_path):
         ),
     ).decode()
     manifest = module.build_release(
-        source.parent, tmp_path / "release", product="qwenpaw",
-        channel="stable", target="windows-x86_64", core_min_version="1.0.0",
-        base_url="https://oss.example", private_key_b64=key, base_root=bases,
-        release_id="run-10", release_version="2.0.0", history_count=10,
+        source.parent,
+        tmp_path / "release",
+        product="qwenpaw",
+        channel="stable",
+        target="windows-x86_64",
+        core_min_version="1.0.0",
+        base_url="https://oss.example",
+        private_key_b64=key,
+        base_root=bases,
+        release_id="run-10",
+        release_version="2.0.0",
+        history_count=10,
     )
     document = json.loads(manifest.read_text(encoding="utf-8"))
     assert len(document["components"]["demo"]["deltas"]) == 10
@@ -176,11 +186,15 @@ def test_builds_ten_direct_deltas_and_binds_signed_history(tmp_path):
     assert pointer["history_size"] == history.stat().st_size
     import hashlib
 
-    assert pointer["history_sha256"] == hashlib.sha256(
-        history.read_bytes(),
-    ).hexdigest()
+    assert (
+        pointer["history_sha256"]
+        == hashlib.sha256(
+            history.read_bytes(),
+        ).hexdigest()
+    )
     private.public_key().verify(
-        base64.b64decode(pointer["history_signature"]), history.read_bytes(),
+        base64.b64decode(pointer["history_signature"]),
+        history.read_bytes(),
     )
 
 
@@ -189,7 +203,8 @@ def test_history_count_above_ten_is_rejected(tmp_path):
     source = tmp_path / "source" / "demo"
     source.mkdir(parents=True)
     (source / "plugin.json").write_text(
-        json.dumps({"id": "demo", "version": "1.0.0"}), encoding="utf-8",
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
     )
     private = Ed25519PrivateKey.generate()
     key = base64.b64encode(
@@ -201,11 +216,66 @@ def test_history_count_above_ten_is_rejected(tmp_path):
     ).decode()
     with pytest.raises(ValueError, match="between 1 and 10"):
         module.build_release(
-            source.parent, tmp_path / "release", product="qwenpaw",
-            channel="stable", target="windows-x86_64", core_min_version="1.0.0",
-            base_url="https://oss.example", private_key_b64=key,
-            release_id="run", history_count=11,
+            source.parent,
+            tmp_path / "release",
+            product="qwenpaw",
+            channel="stable",
+            target="windows-x86_64",
+            core_min_version="1.0.0",
+            base_url="https://oss.example",
+            private_key_b64=key,
+            release_id="run",
+            history_count=11,
         )
+
+
+def test_private_key_accepts_omitted_base64_padding():
+    module = _load()
+    private = Ed25519PrivateKey.generate()
+    key = (
+        base64.b64encode(
+            private.private_bytes(
+                serialization.Encoding.Raw,
+                serialization.PrivateFormat.Raw,
+                serialization.NoEncryption(),
+            ),
+        )
+        .decode()
+        .rstrip("=")
+    )
+
+    loaded = module._private_key(key)
+    message = b"padding-compatible"
+    private.public_key().verify(loaded.sign(message), message)
+
+
+def test_private_key_rejects_invalid_base64():
+    module = _load()
+    with pytest.raises(ValueError, match="valid Base64"):
+        module._private_key("not a key!")
+
+
+def test_private_key_must_match_configured_client_public_key(monkeypatch):
+    module = _load()
+    private = Ed25519PrivateKey.generate()
+    other = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+    expected = base64.b64encode(
+        other.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    monkeypatch.setenv("COMPONENT_SIGNING_PUBLIC_KEY", expected)
+
+    with pytest.raises(ValueError, match="does not match"):
+        module._private_key(key)
 
 
 def test_release_id_writes_versioned_manifest_and_signed_pointer(tmp_path):

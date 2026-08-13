@@ -12,13 +12,16 @@ This script downloads the matching ``install_only`` build and extracts it to
 ``<dest>/python``. Run it with the SAME interpreter used for the PyInstaller
 build so the bundled runtime version matches automatically.
 """
+
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import platform
 import re
+import shutil
 import sys
 import tarfile
 import tempfile
@@ -27,12 +30,15 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from runtime_staging import atomic_install_tree
+
 RELEASES_API_BASE = (
     "https://api.github.com/repos/astral-sh/"
-    "python-build-standalone/releases"
+    + "python-build-standalone/releases"
 )
 DEFAULT_RELEASE = "20260623"
 RELEASE_ENV = "QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE"
+SHA256_ENV = "QWENPAW_PYTHON_RUNTIME_SHA256"
 HTTP_ATTEMPTS = 4
 HTTP_TIMEOUT_SECONDS = 120
 RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
@@ -132,13 +138,23 @@ def _asset_url_from_release(
     return None
 
 
-def _find_asset_url(xy: str, triple: str, release: str) -> tuple[str, str]:
+def _find_asset_url(
+    xy: str,
+    triple: str,
+    release: str,
+    *,
+    allow_latest_fallback: bool = True,
+) -> tuple[str, str]:
     if release and release.lower() != "latest":
         try:
             data = _release_data(release)
         except urllib.error.HTTPError as exc:
             if exc.code != 404:
                 raise
+            if not allow_latest_fallback:
+                raise SystemExit(
+                    f"pinned python-build-standalone release {release} not found",
+                ) from exc
             print(
                 f"python-build-standalone release {release} not found; "
                 "falling back to latest",
@@ -147,6 +163,11 @@ def _find_asset_url(xy: str, triple: str, release: str) -> tuple[str, str]:
             url = _asset_url_from_release(data, xy, triple)
             if url:
                 return url, release
+            if not allow_latest_fallback:
+                raise SystemExit(
+                    "pinned python-build-standalone release has no install_only "
+                    f"asset for Python {xy} / {triple}",
+                )
             print(
                 f"no python-build-standalone install_only asset for "
                 f"Python {xy} / {triple} in release {release}; "
@@ -161,6 +182,58 @@ def _find_asset_url(xy: str, triple: str, release: str) -> tuple[str, str]:
         f"no python-build-standalone install_only asset for "
         f"Python {xy} / {triple} in the latest release",
     )
+
+
+def _verify_sha256(data: bytes, expected: str) -> str:
+    expected = expected.strip().lower()
+    if len(expected) != 64 or any(
+        char not in "0123456789abcdef" for char in expected
+    ):
+        raise SystemExit(
+            "Python runtime SHA-256 must be a 64-character hexadecimal digest",
+        )
+    actual = hashlib.sha256(data).hexdigest()
+    if actual != expected:
+        raise SystemExit(
+            f"Python runtime SHA-256 mismatch: expected {expected}, got {actual}",
+        )
+    return actual
+
+
+def _validate_member(member: tarfile.TarInfo, root: Path) -> None:
+    target = (root / member.name).resolve()
+    try:
+        target.relative_to(root)
+    except ValueError:
+        raise SystemExit(
+            f"Python runtime archive member escapes target: {member.name}",
+        ) from None
+    if not (member.isdir() or member.isfile()):
+        raise SystemExit(
+            f"unsafe Python runtime archive member type: {member.name}",
+        )
+
+
+def _extract_safely(archive: str, dest: Path) -> None:
+    root = dest.resolve()
+    with tarfile.open(archive, "r:gz") as tar:
+        members = tar.getmembers()
+        for member in members:
+            _validate_member(member, root)
+        for member in members:
+            target = (root / member.name).resolve()
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = tar.extractfile(member)
+            if source is None:
+                raise SystemExit(
+                    f"cannot read Python runtime member: {member.name}",
+                )
+            with source, target.open("wb") as output:
+                shutil.copyfileobj(source, output)
+            target.chmod(member.mode & 0o777 or 0o644)
 
 
 def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
@@ -179,6 +252,11 @@ def main() -> None:
         help="Target directory (a 'python' subdir is created inside it)",
     )
     parser.add_argument(
+        "--sha256",
+        default=os.environ.get(SHA256_ENV, ""),
+        help="Expected SHA-256 for the exact standalone Python archive",
+    )
+    parser.add_argument(
         "--python-version",
         default=f"{sys.version_info.major}.{sys.version_info.minor}",
         help="CPython X.Y to stage (default: this interpreter's version)",
@@ -191,7 +269,19 @@ def main() -> None:
     marker = dest / ".python-runtime-version"
 
     preferred_release = _preferred_release()
-    marker_value = f"{xy}-{triple}-{preferred_release}"
+    production_hashes = os.environ.get(
+        "QWENPAW_REQUIRE_RUNTIME_HASHES",
+        "",
+    ).lower() in {"1", "true", "yes"}
+    if production_hashes and preferred_release.lower() == "latest":
+        raise SystemExit(
+            "production build requires a pinned Python runtime release",
+        )
+    if production_hashes and not args.sha256:
+        raise SystemExit(
+            "production build requires QWENPAW_PYTHON_RUNTIME_SHA256",
+        )
+    marker_value = f"{xy}-{triple}-{preferred_release}-{args.sha256.lower()}"
     # Fast path for pinned releases; latest/fallback cache hits need resolving
     # first so the marker check uses the actual release tag.
     if preferred_release.lower() != "latest" and _is_staged(
@@ -203,8 +293,13 @@ def main() -> None:
         return
 
     print(f"Resolving standalone CPython {xy} for {triple}...")
-    url, release = _find_asset_url(xy, triple, preferred_release)
-    marker_value = f"{xy}-{triple}-{release}"
+    url, release = _find_asset_url(
+        xy,
+        triple,
+        preferred_release,
+        allow_latest_fallback=not production_hashes,
+    )
+    marker_value = f"{xy}-{triple}-{release}-{args.sha256.lower()}"
     if _is_staged(dest, marker, marker_value):
         print(f"python-runtime already staged ({marker_value}); skipping")
         return
@@ -212,28 +307,26 @@ def main() -> None:
     print(f"Staging standalone CPython {xy} for {triple}...")
     print(f"Downloading {url}")
 
-    if dest.exists():
-        import shutil
-
-        shutil.rmtree(dest)
-    dest.mkdir(parents=True, exist_ok=True)
-
     with tempfile.NamedTemporaryFile(
         suffix=".tar.gz",
         delete=False,
     ) as tmp:
-        tmp.write(_http_get(url))
+        archive_bytes = _http_get(url)
+        if args.sha256:
+            _verify_sha256(archive_bytes, args.sha256)
+        tmp.write(archive_bytes)
         archive = tmp.name
     try:
-        with tarfile.open(archive, "r:gz") as tar:
-            # ``filter="data"`` is only available on newer CPython patch
-            # releases (3.12+, backported to 3.10.12/3.11.4). Fall back to a
-            # plain extract on older interpreters; the archive comes from the
-            # trusted python-build-standalone release.
-            try:
-                tar.extractall(dest, filter="data")
-            except TypeError:
-                tar.extractall(dest)
+        with tempfile.TemporaryDirectory() as staging_directory:
+            staged_dest = Path(staging_directory) / "python-runtime"
+            staged_dest.mkdir()
+            _extract_safely(archive, staged_dest)
+            staged_exe = _python_exe(staged_dest)
+            if not staged_exe.is_file():
+                raise SystemExit(
+                    f"staging failed: interpreter missing at {staged_exe}",
+                )
+            atomic_install_tree(staged_dest, dest)
     finally:
         os.unlink(archive)
 

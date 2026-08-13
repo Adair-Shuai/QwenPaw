@@ -8,12 +8,15 @@ release tooling can evolve independently.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import hashlib
 import json
 import stat
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
+from cryptography.hazmat.primitives import serialization
 from packaging.version import InvalidVersion, Version
 
 DEFAULT_PRESERVE_PATHS = ("engines",)
@@ -26,6 +29,38 @@ _PRESERVED_NAMES = frozenset(
         ".bundle_complete",
     },
 )
+
+
+def decode_base64(value: str, *, label: str) -> bytes:
+    """Strictly decode standard Base64 while accepting omitted padding."""
+    normalized = value.strip()
+    padded = normalized + "=" * (-len(normalized) % 4)
+    try:
+        return base64.b64decode(padded, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise ValueError(f"{label} must be valid Base64") from exc
+
+
+def verify_private_key_public_key(private: Any, expected_b64: str) -> None:
+    """Fail if a signing private key does not match the client trust root."""
+    if not expected_b64.strip():
+        return
+    expected = decode_base64(
+        expected_b64,
+        label="component Ed25519 public key",
+    )
+    if len(expected) != 32:
+        raise ValueError(
+            "component Ed25519 public key must contain 32 raw bytes",
+        )
+    actual = private.public_key().public_bytes(
+        serialization.Encoding.Raw,
+        serialization.PublicFormat.Raw,
+    )
+    if actual != expected:
+        raise ValueError(
+            "component signing private key does not match the client public key",
+        )
 
 
 def safe_relative_path(value: str) -> str:
@@ -129,7 +164,10 @@ def read_plugin_metadata(root: Path) -> tuple[str, str]:
         raise ValueError(f"invalid plugin id: {manifest_path}")
     if any(
         char in component_id for char in ("/", "\\", "\x00")
-    ) or component_id in {".", ".."}:
+    ) or component_id in {
+        ".",
+        "..",
+    }:
         raise ValueError(f"unsafe plugin id: {component_id!r}")
     if not isinstance(version, str) or not version.strip():
         raise ValueError(f"invalid plugin version: {manifest_path}")

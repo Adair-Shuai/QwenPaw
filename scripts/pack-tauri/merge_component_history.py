@@ -14,14 +14,25 @@ from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from packaging.version import Version
 
-from component_common import canonical_json
+from component_common import (
+    canonical_json,
+    decode_base64,
+    verify_private_key_public_key,
+)
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
-    raw = base64.b64decode(value.strip(), validate=True)
+    raw = decode_base64(value, label="component Ed25519 private key")
     if len(raw) != 32:
-        raise ValueError("component Ed25519 private key must contain 32 raw bytes")
-    return Ed25519PrivateKey.from_private_bytes(raw)
+        raise ValueError(
+            "component Ed25519 private key must contain 32 raw bytes",
+        )
+    private = Ed25519PrivateKey.from_private_bytes(raw)
+    verify_private_key_public_key(
+        private,
+        os.environ.get("COMPONENT_SIGNING_PUBLIC_KEY", ""),
+    )
+    return private
 
 
 def _verify_document(path: Path, private: Ed25519PrivateKey) -> dict:
@@ -57,7 +68,9 @@ def _verify_history(
     if signature != pointer.get("history_signature"):
         raise ValueError("component history signature does not match pointer")
     history = json.loads(raw.decode("utf-8"))
-    if not isinstance(history, dict) or not isinstance(history.get("releases"), list):
+    if not isinstance(history, dict) or not isinstance(
+        history.get("releases"), list,
+    ):
         raise ValueError("component history document is invalid")
     return history
 
@@ -96,13 +109,22 @@ def merge_history(
     remote_id = remote_pointer.get("release_id")
     if _order(local_pointer) < _order(remote_pointer):
         raise ValueError("component history promotion is stale or a rollback")
-    if _order(local_pointer) == _order(remote_pointer) and local_id != remote_id:
+    if (
+        _order(local_pointer) == _order(remote_pointer)
+        and local_id != remote_id
+    ):
         raise ValueError("component pointer release order collision")
     local_history = _verify_history(
-        local_pointer, local_history_path, local_signature_path, private,
+        local_pointer,
+        local_history_path,
+        local_signature_path,
+        private,
     )
     remote_history = _verify_history(
-        remote_pointer, remote_history_path, remote_signature_path, private,
+        remote_pointer,
+        remote_history_path,
+        remote_signature_path,
+        private,
     )
     for pointer, history in (
         (local_pointer, local_history),
@@ -119,7 +141,10 @@ def merge_history(
             raise ValueError("component history head does not match pointer")
     releases: dict[str, dict] = {}
     for entry in [*local_history["releases"], *remote_history["releases"]]:
-        if not isinstance(entry, dict) or entry.get("target") != expected_target:
+        if (
+            not isinstance(entry, dict)
+            or entry.get("target") != expected_target
+        ):
             raise ValueError("component history entry is invalid")
         release_id = entry.get("release_id")
         if not isinstance(release_id, str) or not release_id:
@@ -137,7 +162,9 @@ def merge_history(
         "releases": merged,
     }
     history_raw = canonical_json(history_payload)
-    history_signature = base64.b64encode(private.sign(history_raw)).decode("ascii")
+    history_signature = base64.b64encode(private.sign(history_raw)).decode(
+        "ascii",
+    )
     local_history_path.write_bytes(history_raw)
     local_signature_path.write_text(history_signature + "\n", encoding="utf-8")
     pointer_payload = dict(local_pointer)
@@ -168,7 +195,9 @@ def main() -> int:
     )
     args = parser.parse_args()
     if not args.private_key:
-        raise SystemExit("COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required")
+        raise SystemExit(
+            "COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required",
+        )
     merge_history(
         args.local_pointer.resolve(),
         args.local_history.resolve(),

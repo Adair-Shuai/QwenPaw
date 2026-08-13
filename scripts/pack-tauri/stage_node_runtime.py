@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Stage a Node.js runtime for the Tauri desktop bundle."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +14,8 @@ import tempfile
 import urllib.request
 import zipfile
 from pathlib import Path
+
+from runtime_staging import atomic_install_tree
 
 DEFAULT_NODE_VERSION = "v22.20.0"
 NODE_DIST_URL = "https://nodejs.org/dist"
@@ -254,18 +257,7 @@ def main() -> None:
             / ("node.exe" if platform.system() == "Windows" else "bin/node")
         ).is_file():
             raise SystemExit("staging failed: node executable missing")
-        backup = dest.with_name(f".{dest.name}.previous")
-        if backup.exists():
-            shutil.rmtree(backup)
-        if dest.exists():
-            dest.replace(backup)
-        try:
-            staged_dest.replace(dest)
-        except Exception:
-            if backup.exists() and not dest.exists():
-                backup.replace(dest)
-            raise
-        shutil.rmtree(backup, ignore_errors=True)
+        atomic_install_tree(staged_dest, dest)
 
     if not _node_exe(dest).is_file() or not _npx_exe(dest).is_file():
         raise SystemExit("staging failed: node or npx missing")

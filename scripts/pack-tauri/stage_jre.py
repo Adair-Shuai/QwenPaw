@@ -10,6 +10,7 @@ Java 21+; the JRE is used to launch it as a stdio MCP server subprocess.
 Usage:
     python scripts/pack-tauri/stage_jre.py --dest binaries/java-runtime
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,6 +26,8 @@ import urllib.error
 import urllib.request
 import zipfile
 from pathlib import Path
+
+from runtime_staging import atomic_install_tree
 
 ADOPTIUM_API_BASE = "https://api.adoptium.net/v3"
 DEFAULT_JAVA_VERSION = "21"
@@ -202,9 +205,12 @@ def _extract(archive: Path, workdir: Path) -> Path:
                     target.mkdir(parents=True, exist_ok=True)
                 else:
                     target.parent.mkdir(parents=True, exist_ok=True)
-                    with zip_file.open(info) as source, target.open(
-                        "wb",
-                    ) as dest:
+                    with (
+                        zip_file.open(info) as source,
+                        target.open(
+                            "wb",
+                        ) as dest,
+                    ):
                         shutil.copyfileobj(source, dest)
                     target.chmod((info.external_attr >> 16) & 0o777 or 0o644)
     else:
@@ -357,18 +363,9 @@ def main() -> None:
         # Move the contents of the extracted JDK root into dest.
         for item in extracted.iterdir():
             shutil.move(str(item), str(staged_dest / item.name))
-        backup = dest.with_name(f".{dest.name}.previous")
-        if backup.exists():
-            shutil.rmtree(backup)
-        if dest.exists():
-            dest.replace(backup)
-        try:
-            staged_dest.replace(dest)
-        except Exception:
-            if backup.exists() and not dest.exists():
-                backup.replace(dest)
-            raise
-        shutil.rmtree(backup, ignore_errors=True)
+        if not _java_exe(staged_dest).is_file():
+            raise SystemExit("staging failed: java executable missing")
+        atomic_install_tree(staged_dest, dest)
 
     java_exe = _java_exe(dest)
     if not java_exe.is_file():

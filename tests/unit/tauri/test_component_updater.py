@@ -84,6 +84,29 @@ def test_signed_manifest_and_plan(tmp_path):
     assert plan and plan.artifact_kind == "full"
 
 
+def test_signature_verification_accepts_omitted_base64_padding():
+    private = Ed25519PrivateKey.generate()
+    public = (
+        base64.b64encode(
+            private.public_key().public_bytes(
+                serialization.Encoding.Raw,
+                serialization.PublicFormat.Raw,
+            ),
+        )
+        .decode()
+        .rstrip("=")
+    )
+    data = b"signed component"
+    signature = base64.b64encode(private.sign(data)).decode().rstrip("=")
+
+    component_update._verify_signature(data, signature, public)
+
+
+def test_signature_verification_rejects_impossible_base64_length():
+    with pytest.raises(ComponentUpdateError, match="verification failed"):
+        component_update._verify_signature(b"data", "A", "A")
+
+
 def test_uninstalled_component_is_not_activated(tmp_path):
     updater = ComponentUpdater(
         public_key_b64="",

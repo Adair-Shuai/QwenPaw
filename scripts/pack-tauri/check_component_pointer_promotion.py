@@ -20,16 +20,25 @@ from typing import Any
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from packaging.version import InvalidVersion, Version
 
-from component_common import canonical_json
+from component_common import (
+    canonical_json,
+    decode_base64,
+    verify_private_key_public_key,
+)
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
-    raw = base64.b64decode(value.strip(), validate=True)
+    raw = decode_base64(value, label="component Ed25519 private key")
     if len(raw) != 32:
         raise ValueError(
             "component Ed25519 private key must contain 32 raw bytes",
         )
-    return Ed25519PrivateKey.from_private_bytes(raw)
+    private = Ed25519PrivateKey.from_private_bytes(raw)
+    verify_private_key_public_key(
+        private,
+        os.environ.get("COMPONENT_SIGNING_PUBLIC_KEY", ""),
+    )
+    return private
 
 
 def _load_verified(

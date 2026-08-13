@@ -75,6 +75,10 @@ jobs:
     runs-on: ubuntu-latest
     env:
       COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
+      # This must stay byte-for-byte aligned with the trust root embedded in
+      # src/qwenpaw/components/service.py. It prevents a mistyped/rotated
+      # private-key Secret from publishing updates no installed client trusts.
+      COMPONENT_SIGNING_PUBLIC_KEY: T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw=
     steps:
       - uses: actions/checkout@v4
         with:

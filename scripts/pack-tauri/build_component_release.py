@@ -20,8 +20,10 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from component_common import (
     DEFAULT_PRESERVE_PATHS,
     canonical_json,
+    decode_base64,
     file_inventory,
     read_plugin_metadata,
+    verify_private_key_public_key,
 )
 from build_component_delta import write_delta
 
@@ -29,12 +31,17 @@ _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
-    raw = base64.b64decode(value.strip(), validate=True)
+    raw = decode_base64(value, label="component Ed25519 private key")
     if len(raw) != 32:
         raise ValueError(
             "component Ed25519 private key must contain 32 raw bytes",
         )
-    return Ed25519PrivateKey.from_private_bytes(raw)
+    private = Ed25519PrivateKey.from_private_bytes(raw)
+    verify_private_key_public_key(
+        private,
+        os.environ.get("COMPONENT_SIGNING_PUBLIC_KEY", ""),
+    )
+    return private
 
 
 def _sha256(path: Path) -> str:
@@ -153,7 +160,9 @@ def _write_history(
             history_signature_input is None
             or not history_signature_input.is_file()
         ):
-            raise ValueError("previous component history signature is required")
+            raise ValueError(
+                "previous component history signature is required",
+            )
         _verify_signed_file(history_input, history_signature_input, private)
         previous = json.loads(history_input.read_text(encoding="utf-8"))
         if (
@@ -168,11 +177,12 @@ def _write_history(
             if not isinstance(entry, dict):
                 raise ValueError("previous component history entry is invalid")
             previous_id = entry.get("release_id")
-            if (
-                not isinstance(previous_id, str)
-                or not _RELEASE_ID.fullmatch(previous_id)
+            if not isinstance(previous_id, str) or not _RELEASE_ID.fullmatch(
+                previous_id,
             ):
-                raise ValueError("previous component history release id is invalid")
+                raise ValueError(
+                    "previous component history release id is invalid",
+                )
             if entry.get("target") != target:
                 raise ValueError("previous component history target mismatch")
             if previous_id not in seen:
@@ -247,7 +257,9 @@ def build_release(
 ) -> Path:
     # pylint: disable=too-many-statements
     if not 0 < delta_max_ratio < 1:
-        raise ValueError("delta_max_ratio must be greater than 0 and less than 1")
+        raise ValueError(
+            "delta_max_ratio must be greater than 0 and less than 1",
+        )
     if not 1 <= history_count <= 10:
         raise ValueError("history_count must be between 1 and 10")
     private = _private_key(private_key_b64)
@@ -319,7 +331,10 @@ def build_release(
             delta_dir.mkdir(parents=True, exist_ok=True)
             delta_artifact = delta_dir / "delta.zip"
             write_delta(base_source, source, delta_artifact, preserve_paths)
-            if delta_artifact.stat().st_size >= artifact.stat().st_size * delta_max_ratio:
+            if (
+                delta_artifact.stat().st_size
+                >= artifact.stat().st_size * delta_max_ratio
+            ):
                 delta_artifact.unlink()
                 delta_dir.rmdir()
                 continue
@@ -372,9 +387,7 @@ def build_release(
     manifest_path.write_bytes(canonical_json(manifest))
     manifest_signature = _sign(manifest_path, private)
     if release_id:
-        manifest_url = (
-            f"{base_url.rstrip('/')}/metadata/components/{channel}/{manifest_name}"
-        )
+        manifest_url = f"{base_url.rstrip('/')}/metadata/components/{channel}/{manifest_name}"
         history_path = metadata / f"{target}-{release_id}.history.json"
         history_signature = _write_history(
             history_path,
@@ -455,7 +468,9 @@ def main() -> int:
         release_sequence=args.release_sequence,
         release_attempt=args.release_attempt,
         delta_max_ratio=args.delta_max_ratio,
-        history_input=args.history_input.resolve() if args.history_input else None,
+        history_input=(
+            args.history_input.resolve() if args.history_input else None
+        ),
         history_signature_input=(
             args.history_signature_input.resolve()
             if args.history_signature_input
