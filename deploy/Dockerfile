@@ -58,6 +58,7 @@ RUN apt-get update && apt-get install -y --fix-missing \
     gettext-base \
     xfce4 \
     xfce4-terminal \
+    xserver-common \
     xvfb \
     dbus-x11 \
     fonts-wqy-zenhei \

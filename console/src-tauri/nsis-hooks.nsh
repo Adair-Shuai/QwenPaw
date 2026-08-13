@@ -1,6 +1,5 @@
 !include LogicLib.nsh
 !include nsDialogs.nsh
-SetCompressor /FINAL LZMA
 
 Var QwenPawCliPathCheckbox
 Var QwenPawCliPathState
