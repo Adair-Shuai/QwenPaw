@@ -41,14 +41,20 @@ internal static class PortableSetup
                 Arguments = string.Join(" ", arguments.ToArray()),
                 WorkingDirectory = packageRoot,
                 UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
                 CreateNoWindow = silent,
                 WindowStyle = silent ? ProcessWindowStyle.Hidden : ProcessWindowStyle.Normal
             };
             using (Process process = Process.Start(start)) {
                 if (process == null) throw new InvalidOperationException("Installer process did not start.");
+                string stdout = process.StandardOutput.ReadToEnd();
+                string stderr = process.StandardError.ReadToEnd();
                 process.WaitForExit();
+                string logPath = Path.Combine(Path.GetTempPath(), "ugsci-desktop-setup.log");
+                File.WriteAllText(logPath, stdout + Environment.NewLine + stderr);
                 if (process.ExitCode != 0 && !silent)
-                    MessageBox.Show("UGSci Desktop installation failed (exit " + process.ExitCode.ToString(CultureInfo.InvariantCulture) + ").",
+                    MessageBox.Show("UGSci Desktop installation failed (exit " + process.ExitCode.ToString(CultureInfo.InvariantCulture) + "). Log: " + logPath,
                         "UGSci Desktop Setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 return process.ExitCode;
             }

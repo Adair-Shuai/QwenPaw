@@ -34,8 +34,13 @@ if ($installer) {
   }
   Write-Host "Installing portable Windows package through Setup.exe: $($portable.Name)..."
   $setup = Join-Path $portableRoot "Setup.exe"
+  $setupLog = Join-Path $env:TEMP "ugsci-desktop-setup.log"
+  Remove-Item -LiteralPath $setupLog -Force -ErrorAction SilentlyContinue
   $proc = Start-Process -FilePath $setup -ArgumentList "--silent" -Wait -PassThru
-  if ($proc.ExitCode -ne 0) { throw "Portable Windows Setup.exe failed (exit $($proc.ExitCode))" }
+  if ($proc.ExitCode -ne 0) {
+    if (Test-Path -LiteralPath $setupLog) { Get-Content -LiteralPath $setupLog -Raw | Write-Error }
+    throw "Portable Windows Setup.exe failed (exit $($proc.ExitCode))"
+  }
 }
 # Tauri NSIS spawns elevated child + finishes immediately; allow time for
 # files to settle.
