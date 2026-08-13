@@ -12,6 +12,26 @@
 name: Desktop Promote (reusable)
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Published release tag"
+        required: true
+        type: string
+      ref:
+        description: "Ref/SHA containing promotion scripts"
+        required: false
+        default: release
+        type: string
+      artifacts_run_id:
+        description: "Completed full build run containing macOS artifacts"
+        required: true
+        type: string
+      windows_artifacts_run_id:
+        description: "Optional Windows-only run replacing Windows artifacts"
+        required: false
+        default: ""
+        type: string
   workflow_call:
     inputs:
       tag:
@@ -28,6 +48,14 @@ on:
         type: boolean
         required: false
         default: false
+      artifacts_run_id:
+        type: string
+        required: false
+        default: ""
+      windows_artifacts_run_id:
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -62,6 +90,24 @@ jobs:
 
       - name: Download all artifacts
         uses: actions/download-artifact@v4
+        with:
+          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Overlay replacement Windows artifacts
+        if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          pattern: UGSci-Desktop-Tauri-Windows-*
+          path: replacement-windows
+          merge-multiple: false
+          run-id: ${{ inputs.windows_artifacts_run_id || github.event.inputs.windows_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge replacement Windows artifacts
+        if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
+        run: |
+          cp -a replacement-windows/UGSci-Desktop-Tauri-Windows-*/. .
 
       - name: Install ossutil
         run: |
