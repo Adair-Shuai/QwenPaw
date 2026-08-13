@@ -8,7 +8,7 @@ ARG UV_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:la
 FROM ${NODE_IMAGE} AS console-builder
 WORKDIR /app
 COPY console /app/console
-RUN npm install --global corepack@0.34.6 \
+RUN npm install --global --force corepack@0.34.6 \
  && corepack enable \
  && corepack prepare pnpm@9.15.9 --activate \
  && cd /app/console \
