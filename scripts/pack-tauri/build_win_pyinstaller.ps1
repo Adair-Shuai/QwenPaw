@@ -240,9 +240,12 @@ if ($NsisExe) {
         }
         Write-Host "warning: $message" -ForegroundColor Yellow
     }
-} elseif ($tauriExit -ne 0) {
-    # Tauri build failed — check if the Rust binary was still compiled.
-    Write-Host "Tauri build reported failure (exit $tauriExit); checking for compiled binary" -ForegroundColor Yellow
+} else {
+    # NSIS may fail after Rust compilation (most commonly because its 32-bit
+    # compiler cannot mmap the large resource datablock). Build the installable
+    # zip whenever no setup.exe exists, even if a future Tauri CLI happens to
+    # return zero after a bundler-only failure.
+    Write-Host "No NSIS installer was produced (Tauri exit $tauriExit); checking for compiled binary" -ForegroundColor Yellow
     $AppExe = Get-Item (Join-Path $REPO_ROOT "console\src-tauri\target\release\qwenpaw-desktop.exe") -ErrorAction SilentlyContinue
     if ($AppExe) {
         Write-Host "Compiled binary found; creating complete portable zip" -ForegroundColor Yellow
@@ -254,14 +257,15 @@ if ($NsisExe) {
         $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
         if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
         Copy-Item -Recurse -Force $Resources (Join-Path $PortableRoot "binaries")
-        Compress-Archive -Path (Join-Path $PortableRoot "*") -DestinationPath $ZipPath -Force
+        & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
+            -PortableRoot $PortableRoot `
+            -ZipPath $ZipPath `
+            -Version $VERSION
         Write-Host "Portable zip created: $ZipPath" -ForegroundColor Green
         $LASTEXITCODE = 0
     } else {
-        throw "Tauri build failed (exit $tauriExit) and no compiled binary was found"
+        throw "No Windows installer or compiled desktop binary was produced (Tauri exit $tauriExit)"
     }
-} else {
-    Write-Host "Tauri app built" -ForegroundColor Green
 }
 
 Write-Host ""

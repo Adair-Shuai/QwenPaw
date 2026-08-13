@@ -41,10 +41,10 @@ permissions:
 
 jobs:
   check-updater-signing:
-    if: ${{ inputs.require_updater_assets }}
     runs-on: ubuntu-latest
     steps:
       - name: Require production updater signing configuration
+        if: ${{ inputs.require_updater_assets }}
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -59,6 +59,10 @@ jobs:
           test -n "${{ vars.QWENPAW_JRE_SHA256_WINDOWS || vars.QWENPAW_JRE_SHA256 }}"
           test -n "${{ vars.QWENPAW_JRE_SHA256_MACOS || vars.QWENPAW_JRE_SHA256 }}"
           test -n "${{ vars.QWENPAW_JAVA_RELEASE }}"
+
+      - name: Report unsigned validation mode
+        if: ${{ !inputs.require_updater_assets }}
+        run: echo "Signed updater assets are not required for this standalone validation run"
 
   build-tauri-windows:
     needs: [check-updater-signing]
@@ -142,12 +146,29 @@ jobs:
       - name: Stage Tauri Windows installer and updater assets
         shell: pwsh
         run: |
-          python scripts/pack-tauri/generate_update_manifest.py stage `
-            --bundle-dir console/src-tauri/target/release/bundle/nsis `
-            --pattern '*-setup.exe' `
-            --target windows-x86_64 `
-            --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe" `
-            --pubkey-config console/src-tauri/tauri.version.conf.json
+          $bundle = "console/src-tauri/target/release/bundle"
+          $setup = Get-ChildItem "$bundle/nsis" -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($setup) {
+            python scripts/pack-tauri/generate_update_manifest.py stage `
+              --bundle-dir console/src-tauri/target/release/bundle/nsis `
+              --pattern '*-setup.exe' `
+              --target windows-x86_64 `
+              --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe" `
+              --pubkey-config console/src-tauri/tauri.version.conf.json
+            if ('${{ inputs.require_updater_assets }}' -eq 'true') {
+              if (-not (Test-Path "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe.sig")) {
+                throw 'Production NSIS build is missing its Tauri updater signature'
+              }
+              if (-not (Test-Path 'dist/tauri-windows-x86_64-updater.json')) {
+                throw 'Production NSIS build is missing its updater sidecar'
+              }
+            }
+          } else {
+            $portable = Get-ChildItem "$bundle" -Filter 'UGSci-Desktop-portable.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
+            if (-not $portable) { throw 'Neither a signed NSIS setup.exe nor the portable Windows installer was produced' }
+            Copy-Item -LiteralPath $portable.FullName -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" -Force
+            Write-Host "Using portable Windows installer fallback: $($portable.Name)"
+          }
 
       - name: Verify desktop (Tauri Windows)
         timeout-minutes: 10
@@ -198,11 +219,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: UGSci-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
-          path: dist/UGSci-Tauri-*-Windows-setup.exe
+          path: |
+            dist/UGSci-Tauri-*-Windows-setup.exe
+            dist/UGSci-Tauri-*-Windows-portable.zip
           compression-level: 0
           retention-days: 14
 
       - name: Upload Tauri Windows updater metadata
+        if: hashFiles('dist/tauri-windows-x86_64-updater.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: tauri-updater-meta-windows

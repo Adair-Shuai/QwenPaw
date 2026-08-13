@@ -2,17 +2,30 @@
 # Outputs BASE_URL to $env:GITHUB_ENV for subsequent steps.
 $ErrorActionPreference = "Stop"
 
-# 1. Run NSIS silent install (matches real user installer).
-#    /S = silent, run the installer to completion before continuing.
-$installer = Get-ChildItem dist/UGSci-Tauri-*-Windows-setup.exe |
+# 1. Install the preferred NSIS installer. If NSIS cannot package the large
+# bundled runtime, use the verified-build portable fallback, whose installer
+# script performs the same per-user registration and shortcut setup.
+$installer = Get-ChildItem dist/UGSci-Tauri-*-Windows-setup.exe -ErrorAction SilentlyContinue |
   Select-Object -First 1
-if (-not $installer) { throw "NSIS installer not found in dist/" }
-Write-Host "Installing $($installer.Name) silently..."
-$proc = Start-Process -FilePath $installer.FullName -ArgumentList "/S" `
-  -Wait -PassThru -NoNewWindow
-Write-Host "Installer exited with code $($proc.ExitCode)"
-if ($proc.ExitCode -ne 0) {
-  throw "NSIS installer failed (exit $($proc.ExitCode))"
+if ($installer) {
+  Write-Host "Installing $($installer.Name) silently..."
+  $proc = Start-Process -FilePath $installer.FullName -ArgumentList "/S" `
+    -Wait -PassThru -NoNewWindow
+  Write-Host "Installer exited with code $($proc.ExitCode)"
+  if ($proc.ExitCode -ne 0) { throw "NSIS installer failed (exit $($proc.ExitCode))" }
+} else {
+  $portable = Get-ChildItem dist/UGSci-Tauri-*-Windows-portable.zip -ErrorAction SilentlyContinue |
+    Select-Object -First 1
+  if (-not $portable) { throw "Neither NSIS setup.exe nor portable Windows installer found in dist/" }
+  $portableRoot = Join-Path $env:RUNNER_TEMP "qwenpaw-portable-install"
+  if (Test-Path $portableRoot) { Remove-Item -LiteralPath $portableRoot -Recurse -Force }
+  Expand-Archive -LiteralPath $portable.FullName -DestinationPath $portableRoot -Force
+  $installScript = Get-ChildItem -LiteralPath $portableRoot -Filter install.ps1 -Recurse |
+    Select-Object -First 1
+  if (-not $installScript) { throw "Portable package is missing install.ps1" }
+  Write-Host "Installing portable Windows package $($portable.Name)..."
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript.FullName -Silent
+  if ($LASTEXITCODE -ne 0) { throw "Portable Windows installer failed (exit $LASTEXITCODE)" }
 }
 # Tauri NSIS spawns elevated child + finishes immediately; allow time for
 # files to settle.
@@ -88,6 +101,24 @@ if ($runtimeMode -ne "builtin") {
 }
 Write-Host "Execution runtime selection: $runtimeMode"
 
+# A silent install matches NSIS and registers the bundled qwenpaw CLI in the
+# user PATH. Read the persisted user value because this runner process does not
+# inherit the environment-change broadcast.
+$userPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$cliScripts = Join-Path $installRoot "binaries\qwenpaw-backend"
+$cliEntries = @($userPath -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') })
+if ($cliScripts.TrimEnd('\') -notin $cliEntries) {
+  throw "Silent portable install did not register the bundled QwenPaw CLI in user PATH"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $cliScripts "qwenpaw.exe"))) {
+  throw "Registered QwenPaw CLI executable is missing"
+}
+$cliVersion = & (Join-Path $cliScripts "qwenpaw.exe") --version 2>&1
+if ($LASTEXITCODE -ne 0 -or -not $cliVersion) {
+  throw "Registered QwenPaw CLI did not execute successfully"
+}
+Write-Host "QwenPaw CLI verified: $cliVersion"
+
 $wv2Files = Get-ChildItem -Path $installRoot -Filter "*WebView2*" `
   -Recurse -Depth 3 -ErrorAction SilentlyContinue
 if ($wv2Files) {
@@ -101,13 +132,17 @@ if ($wv2Files) {
 #    Playwright can connect_over_cdp() to the real embedded webview.
 $cdpPort = 9222
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$cdpPort"
+$portFile = Join-Path $env:USERPROFILE ".qwenpaw\desktop_port"
+if (Test-Path -LiteralPath $portFile) {
+  Remove-Item -LiteralPath $portFile -Force
+}
 Start-Process -FilePath $tauriExe
 
 # 4. Wait for the sidecar to write the port file and respond.
 #    The sidecar writes desktop_port at WORKING_DIR root (~/.qwenpaw),
 #    not inside the workspace dir.
-$portFile = Join-Path $env:USERPROFILE ".qwenpaw\desktop_port"
 $port = $null
+$backendReady = $false
 $deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline) {
   if (Test-Path $portFile) {
@@ -118,6 +153,7 @@ while ((Get-Date) -lt $deadline) {
           -UseBasicParsing -TimeoutSec 5 -ErrorAction Stop
         if ($r.StatusCode -eq 200) {
           Write-Host "Tauri app ready on port $port"
+          $backendReady = $true
           break
         }
       } catch {}
@@ -125,7 +161,7 @@ while ((Get-Date) -lt $deadline) {
   }
   Start-Sleep -Seconds 2
 }
-if (-not $port) {
+if (-not $backendReady) {
   Write-Host "::error::Tauri app did not start within 120s"
   exit 1
 }

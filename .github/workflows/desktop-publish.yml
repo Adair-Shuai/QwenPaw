@@ -49,15 +49,31 @@ jobs:
         run: |
           shopt -s nullglob
           mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-setup.exe . 2>/dev/null || true
+          mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-portable.zip . 2>/dev/null || true
           mv UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip . 2>/dev/null || true
           mv tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
-          files=(UGSci-Tauri-*-Windows-setup.exe UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
+          files=(UGSci-Tauri-*-Windows-setup.exe UGSci-Tauri-*-Windows-portable.zip UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::No desktop installers found to attach to the release"
             exit 1
           fi
-          echo "Attaching to draft release ${{ inputs.tag }}: ${files[*]}"
-          gh release upload "${{ inputs.tag }}" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          echo "Attaching immutable assets to draft release ${{ inputs.tag }}: ${files[*]}"
+          mkdir -p "$RUNNER_TEMP/release-assets"
+          for file in "${files[@]}"; do
+            name="$(basename "$file")"
+            if gh release view "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+                --json assets --jq '.assets[].name' | grep -Fxq "$name"; then
+              gh release download "${{ inputs.tag }}" --repo "$GITHUB_REPOSITORY" \
+                --pattern "$name" --dir "$RUNNER_TEMP/release-assets" --clobber
+              cmp --silent "$file" "$RUNNER_TEMP/release-assets/$name" || {
+                echo "::error::Refusing to replace immutable GitHub Release asset: $name"
+                exit 1
+              }
+              echo "Verified existing release asset: $name"
+            else
+              gh release upload "${{ inputs.tag }}" "$file" --repo "$GITHUB_REPOSITORY"
+            fi
+          done
 
   # ── Publish files + updater metadata to OSS (skipped on dry_run) ───────────
   upload-oss:
@@ -106,18 +122,31 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
+          windows_setup=$(find UGSci-Desktop-Tauri-Windows-* -name 'UGSci-Tauri-*-Windows-setup.exe' -type f -print -quit 2>/dev/null || true)
+          windows_portable=$(find UGSci-Desktop-Tauri-Windows-* -name 'UGSci-Tauri-*-Windows-portable.zip' -type f -print -quit 2>/dev/null || true)
+          if [ -n "$windows_setup" ] && [ -n "$windows_portable" ]; then
+            echo "::error::Windows output must be either NSIS or portable, not both"
+            exit 1
+          elif [ -n "$windows_setup" ]; then
+            test -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json
+            test -s tauri-updater-meta-windows/UGSci-Tauri-*-Windows-setup.exe.sig
+          elif [ -z "$windows_portable" ]; then
+            echo "::error::No Windows installation artifact was downloaded"
+            exit 1
+          fi
           test -s tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz
           test -s tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz.sig
           test -s tauri-updater-meta-macos/tauri-darwin-*-updater.json
 
       - name: Process and upload Tauri artifacts (versioned only)
         # Only versioned files are uploaded here. The `latest` files, updater
-        # manifest and index are promoted AFTER the release is published — see
-        # desktop-promote.yml — so the auto-updater is never pointed at a version
-        # whose release/PyPI/Docker publish might still fail.
+        # manifest and index are promoted only after all publishers succeed —
+        # see release.yml and desktop-promote.yml — so the auto-updater is
+        # never pointed at a version whose build gates might still fail.
         if: hashFiles('UGSci-Desktop-Tauri-*/*') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          RELEASE_UPDATED_AT="$(git show -s --format=%cI HEAD)"
 
           upload_versioned() {
             local dirs="$1"
@@ -139,6 +168,7 @@ jobs:
               --product desktop \
               --platform "${platform}" \
               --version "${VERSION}" \
+              --updated-at "${RELEASE_UPDATED_AT}" \
               --output "${metadata}"
 
             python - "${metadata}" "${versioned_name}" <<'PY'
@@ -156,22 +186,24 @@ jobs:
 
             versioned_uri="oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}"
             metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json"
-            if ossutil ls "$versioned_uri" >/dev/null 2>&1 || ossutil ls "$metadata_uri" >/dev/null 2>&1; then
-              echo "Refusing to overwrite immutable desktop release object for ${VERSION}/${platform}" >&2
-              exit 1
-            fi
-            ossutil cp "${artifact}" \
-              "$versioned_uri" \
-              --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable" \
-              --header "x-oss-forbid-overwrite:true"
-            ossutil cp "${metadata}" \
-              "$metadata_uri" \
-              --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable" \
-              --header "x-oss-forbid-overwrite:true"
-            ossutil ls "$versioned_uri" >/dev/null
-            ossutil ls "$metadata_uri" >/dev/null
+            publish_immutable() {
+              local file="$1" uri="$2" label="$3"
+              local remote="${RUNNER_TEMP}/desktop-${RANDOM}-$(basename "$file")"
+              if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+                cmp --silent "$file" "$remote" || { echo "Immutable ${label} differs: $uri" >&2; exit 1; }
+                rm -f "$remote"
+                echo "Verified existing immutable ${label}"
+                return
+              fi
+              ossutil cp "$file" "$uri" --acl public-read \
+                --meta "Cache-Control:public, max-age=31536000, immutable" \
+                --header "x-oss-forbid-overwrite:true"
+              ossutil cp "$uri" "$remote"
+              cmp --silent "$file" "$remote" || { echo "Remote ${label} verification failed: $uri" >&2; exit 1; }
+              rm -f "$remote"
+            }
+            publish_immutable "${artifact}" "$versioned_uri" "desktop artifact"
+            publish_immutable "${metadata}" "$metadata_uri" "desktop metadata"
           }
 
           upload_versioned \
@@ -180,6 +212,13 @@ jobs:
             "win-tauri" \
             "UGSci-Tauri-${VERSION}-Windows-setup.exe" \
             "win-tauri-metadata.json"
+
+          upload_versioned \
+            "UGSci-Desktop-Tauri-Windows-*" \
+            "UGSci-Tauri-*-Windows-portable.zip" \
+            "win-tauri" \
+            "UGSci-Tauri-${VERSION}-Windows-portable.zip" \
+            "win-tauri-portable-metadata.json"
 
           upload_versioned \
             "UGSci-Desktop-Tauri-macOS-*" \
@@ -199,16 +238,27 @@ jobs:
             exit 0
           fi
           updater_uri="oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
-          if ossutil ls "$updater_uri" >/dev/null 2>&1; then
-            echo "Refusing to overwrite immutable macOS updater artifact for ${VERSION}" >&2
-            exit 1
+          remote="${RUNNER_TEMP}/macos-updater-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.app.tar.gz"
+          if ossutil cp "$updater_uri" "$remote" >/dev/null 2>&1; then
+            cmp --silent "$APP_TAR_GZ" "$remote" || {
+              echo "Immutable macOS updater artifact differs: $updater_uri" >&2
+              exit 1
+            }
+            rm -f "$remote"
+            echo "Verified existing immutable macOS updater artifact"
+            exit 0
           fi
           ossutil cp "$APP_TAR_GZ" \
             "$updater_uri" \
             --acl public-read \
             --meta "Cache-Control:public, max-age=31536000, immutable" \
             --header "x-oss-forbid-overwrite:true"
-          ossutil ls "$updater_uri" >/dev/null
+          ossutil cp "$updater_uri" "$remote"
+          cmp --silent "$APP_TAR_GZ" "$remote" || {
+            echo "Remote macOS updater verification failed: $updater_uri" >&2
+            exit 1
+          }
+          rm -f "$remote"
 
       # NOTE: the `latest` files, the updater manifest
       # (qwenpaw-tauri-latest.json) and the index are intentionally NOT uploaded

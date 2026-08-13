@@ -48,6 +48,7 @@ def generate_metadata(
     product: str,
     platform: str,
     version: str,
+    updated_at: str | None = None,
 ) -> dict:
     """Generate metadata for a single artifact file."""
     file_path = Path(filepath)
@@ -59,7 +60,12 @@ def generate_metadata(
     sha256 = calculate_sha256(filepath)
     file_type = get_file_type(filename)
 
+    # A release may provide more than one first-install format for a platform
+    # (for example NSIS and an offline portable ZIP). Keep their index records
+    # distinct instead of silently overwriting one another.
     file_id = f"{product}-{platform}-{version}"
+    if "portable" in filename.lower():
+        file_id = f"{product}-{platform}-portable-{version}"
 
     platform_names = {
         "win-tauri": {
@@ -107,7 +113,7 @@ def generate_metadata(
         "size": format_file_size(file_size),
         "size_bytes": file_size,
         "sha256": sha256,
-        "updated_at": datetime.now(timezone.utc).isoformat(),
+        "updated_at": updated_at or datetime.now(timezone.utc).isoformat(),
         "type": file_type,
     }
 
@@ -173,6 +179,10 @@ def main():
         "--version", required=True, help="Version string (e.g., 1.0.0)"
     )
     parser.add_argument(
+        "--updated-at",
+        help="Stable ISO-8601 release timestamp (recommended for immutable metadata)",
+    )
+    parser.add_argument(
         "--output",
         default="metadata.json",
         help="Output metadata JSON file path",
@@ -190,7 +200,7 @@ def main():
 
     print(f"Generating metadata for: {args.file}")
     metadata = generate_metadata(
-        args.file, args.product, args.platform, args.version
+        args.file, args.product, args.platform, args.version, args.updated_at
     )
 
     with open(args.output, "w", encoding="utf-8") as f:

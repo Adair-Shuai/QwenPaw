@@ -8,63 +8,9 @@ use std::process::{Command as StdCommand, Stdio};
 use tauri::Manager;
 use tauri_plugin_shell::{process::Command, ShellExt};
 
-/// Which backend executable to launch on Windows.
-///
-/// On macOS/Linux the frozen PyInstaller executable is always used and Python
-/// fallback is disabled. On Windows the mode is resolved from the
-/// `QWENPAW_BACKEND_LAUNCHER`
-/// environment variable (default: `auto`).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(super) enum LauncherMode {
-    /// Prefer the frozen PyInstaller executable; fall back to `python.exe -m`
-    /// when the frozen binary is missing or crashes before ready.
-    Auto,
-    /// Force the frozen PyInstaller executable (`qwenpaw-backend.exe`).
-    Frozen,
-    /// Force the bundled standalone CPython (`python.exe -m qwenpaw.tauri.entry`).
-    Python,
-}
-
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct LauncherSelection {
-    pub(super) requested: LauncherMode,
-    pub(super) actual: LauncherMode,
-}
-
-impl LauncherSelection {
-    fn new(requested: LauncherMode, actual: LauncherMode) -> Self {
-        Self { requested, actual }
-    }
-
-    pub(super) fn allows_python_fallback(self) -> bool {
-        allows_python_fallback_impl(
-            cfg!(windows),
-            self.requested,
-            self.actual,
-        )
-    }
-}
-
-fn allows_python_fallback_impl(
-    is_windows: bool,
-    requested: LauncherMode,
-    actual: LauncherMode,
-) -> bool {
-    is_windows && requested == LauncherMode::Auto && actual == LauncherMode::Frozen
-}
-
-/// Reads `QWENPAW_BACKEND_LAUNCHER` to determine the launch mode.
-#[cfg(not(debug_assertions))]
-fn resolve_launcher_mode() -> LauncherMode {
-    match std::env::var("QWENPAW_BACKEND_LAUNCHER")
-        .unwrap_or_default()
-        .to_ascii_lowercase()
-        .as_str()
-    {
-        "frozen" => LauncherMode::Frozen,
-        "python" => LauncherMode::Python,
-        _ => LauncherMode::Auto,
-    }
+    pub(super) packaged: bool,
 }
 
 /// Builds the command used to start the Python backend sidecar.
@@ -81,10 +27,10 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
             .command("uv")
             .args(["run", "python", "-m", "qwenpaw.tauri.entry"])
             .current_dir(repo_root)
-        .env("PYTHONPATH", source_path.display().to_string())
-        // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
-        // See: src/qwenpaw/docs/proxy-bypass-design.md
-        .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
+            .env("PYTHONPATH", source_path.display().to_string())
+            // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
+            // See: src/qwenpaw/docs/proxy-bypass-design.md
+            .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
     } else {
         let (python, prefix_args) = python_command(&repo_root);
         let mut args = prefix_args;
@@ -99,50 +45,30 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
             .command(python)
             .args(args)
             .current_dir(repo_root)
-        .env("PYTHONPATH", source_path.display().to_string())
-        // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
-        // See: src/qwenpaw/docs/proxy-bypass-design.md
-        .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
+            .env("PYTHONPATH", source_path.display().to_string())
+            // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
+            // See: src/qwenpaw/docs/proxy-bypass-design.md
+            .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
     };
     Ok((
         apply_contributed_environment(app, command),
-        LauncherSelection::new(LauncherMode::Python, LauncherMode::Python),
+        LauncherSelection { packaged: false },
     ))
-}
-
-/// Force a specific launcher mode (debug always uses Python).
-#[cfg(debug_assertions)]
-pub(super) fn create_with_mode(
-    app: &tauri::AppHandle,
-    _mode: LauncherMode,
-) -> Result<(Command, LauncherSelection), String> {
-    create(app)
 }
 
 /// Builds the command used to start the packaged Python backend sidecar.
 ///
-/// Returns the command along with the [`LauncherMode`] that was actually
-/// used.  In `Auto` mode (default) the frozen PyInstaller executable is
-/// preferred; if it is missing the bundled standalone CPython is used
-/// instead.  Use [`create_with_mode`] to force a specific launcher.
+/// Packaged builds always launch the frozen PyInstaller executable. The
+/// standalone CPython resource is reserved for plugin dependencies and native
+/// host helpers; it is not a second application backend.
 #[cfg(not(debug_assertions))]
 pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
-    let mode = resolve_launcher_mode();
-    create_with_mode(app, mode)
-}
-
-/// Builds a backend command forcing a specific launcher mode.
-#[cfg(not(debug_assertions))]
-pub(super) fn create_with_mode(
-    app: &tauri::AppHandle,
-    mode: LauncherMode,
-) -> Result<(Command, LauncherSelection), String> {
-    let bundled_python = packaged_python_runtime(app);
     let resource_dir = app
         .path()
         .resource_dir()
         .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
-    let (backend, backend_args, used_mode) = resolve_backend(app, &bundled_python, mode)?;
+    let backend = packaged_backend_executable(app)?;
+    let backend_args: Vec<&'static str> = Vec::new();
     let backend_dir = backend
         .parent()
         .ok_or_else(|| format!("backend executable has no parent: {}", backend.display()))?
@@ -191,10 +117,7 @@ pub(super) fn create_with_mode(
     // build_pyinstaller.ps1).  Only set when the user has not already
     // configured their own mirror or proxy.
     if std::env::var_os("PIP_INDEX_URL").is_none() {
-        command = command.env(
-            "PIP_INDEX_URL",
-            "https://pypi.tuna.tsinghua.edu.cn/simple/",
-        );
+        command = command.env("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple/");
     }
     if std::env::var_os("PIP_EXTRA_INDEX_URL").is_none() {
         command = command.env("PIP_EXTRA_INDEX_URL", "https://pypi.org/simple/");
@@ -260,57 +183,7 @@ pub(super) fn create_with_mode(
     } else {
         log::debug!("[backend] bundled neqsim jar not found");
     }
-    Ok((command, LauncherSelection::new(mode, used_mode)))
-}
-
-/// Resolves the backend executable, arguments, and actual mode used.
-///
-/// On non-Windows platforms the frozen executable is always returned. Python
-/// fallback is intentionally not available there, so a frozen startup failure
-/// is surfaced to the UI instead of being retried recursively.
-/// On Windows the behaviour depends on `mode`:
-/// * `Frozen` — frozen executable only (error if missing).
-/// * `Python` — `python.exe -m` only.
-/// * `Auto`   — frozen first, fall back to `python.exe -m` if missing.
-#[cfg(not(debug_assertions))]
-fn resolve_backend(
-    app: &tauri::AppHandle,
-    bundled_python: &Option<PathBuf>,
-    mode: LauncherMode,
-) -> Result<(PathBuf, Vec<&'static str>, LauncherMode), String> {
-    if !cfg!(windows) {
-        // macOS/Linux: always use the frozen executable.
-        return Ok((packaged_backend_executable(app)?, Vec::new(), LauncherMode::Frozen));
-    }
-    match mode {
-        LauncherMode::Frozen => {
-            let exe = packaged_backend_executable(app)?;
-            Ok((exe, Vec::new(), LauncherMode::Frozen))
-        }
-        LauncherMode::Python => {
-            let python = bundled_python
-                .clone()
-                .ok_or_else(|| "bundled Python runtime not found; reinstall QwenPaw".to_string())?;
-            Ok((python, vec!["-m", "qwenpaw.tauri.entry"], LauncherMode::Python))
-        }
-        LauncherMode::Auto => {
-            // Prefer the frozen PyInstaller backend; fall back to python.exe -m
-            // when the frozen executable is missing (e.g. partial install).
-            match packaged_backend_executable(app) {
-                Ok(exe) => Ok((exe, Vec::new(), LauncherMode::Frozen)),
-                Err(reason) => {
-                    log::warn!(
-                        "[backend] frozen backend unavailable ({}); falling back to python.exe",
-                        reason
-                    );
-                    let python = bundled_python.clone().ok_or_else(|| {
-                        "bundled Python runtime not found; reinstall QwenPaw".to_string()
-                    })?;
-                    Ok((python, vec!["-m", "qwenpaw.tauri.entry"], LauncherMode::Python))
-                }
-            }
-        }
-    }
+    Ok((command, LauncherSelection { packaged: true }))
 }
 
 #[cfg(not(debug_assertions))]
@@ -529,34 +402,5 @@ fn python_command(repo_root: &Path) -> (String, Vec<&'static str>) {
         ("python3".to_string(), vec![])
     } else {
         ("python".to_string(), vec![])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{allows_python_fallback_impl, LauncherMode};
-
-    #[test]
-    fn fallback_requires_windows_auto_frozen_selection() {
-        assert!(allows_python_fallback_impl(
-            true,
-            LauncherMode::Auto,
-            LauncherMode::Frozen
-        ));
-        assert!(!allows_python_fallback_impl(
-            true,
-            LauncherMode::Frozen,
-            LauncherMode::Frozen
-        ));
-        assert!(!allows_python_fallback_impl(
-            true,
-            LauncherMode::Auto,
-            LauncherMode::Python
-        ));
-        assert!(!allows_python_fallback_impl(
-            false,
-            LauncherMode::Auto,
-            LauncherMode::Frozen
-        ));
     }
 }

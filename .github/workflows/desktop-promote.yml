@@ -36,6 +36,9 @@ jobs:
   promote-oss:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
+    concurrency:
+      group: desktop-pointer-promotion
+      cancel-in-progress: false
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
       OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/apps/desktop' }}
@@ -74,6 +77,52 @@ jobs:
             -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
             -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
             -L CH
+
+      - name: Prevent desktop pointer downgrade
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          if ossutil cp "oss://${OSS_BUCKET}/metadata/apps/desktop/index.json" current-desktop-index.json >/dev/null 2>&1; then
+            python - "$VERSION" current-desktop-index.json <<'PY'
+          import json
+          import sys
+          from packaging.version import Version
+
+          candidate = Version(sys.argv[1])
+          index = json.load(open(sys.argv[2], encoding="utf-8"))
+          files = index.get("files", {})
+          for platform in ("win-tauri", "mac-tauri"):
+              latest = index.get("platforms", {}).get(platform, {}).get("latest")
+              current = files.get(latest, {}).get("version") if latest else None
+              if current and candidate < Version(current):
+                  raise SystemExit(
+                      f"refusing desktop pointer downgrade for {platform}: {current} -> {candidate}"
+                  )
+          PY
+          fi
+
+      - name: Snapshot mutable desktop pointers
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/desktop-pointer-backup"
+          : > "$RUNNER_TEMP/desktop-pointer-existing.txt"
+          cat > "$RUNNER_TEMP/desktop-pointer-paths.txt" <<'EOF'
+          files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-setup.exe
+          files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip
+          files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip
+          metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-setup.exe.json
+          metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip.json
+          metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip.json
+          metadata/qwenpaw-tauri-latest.json
+          metadata/apps/desktop/index.json
+          metadata/index.json
+          EOF
+          while IFS= read -r object; do
+            backup="$RUNNER_TEMP/desktop-pointer-backup/$object"
+            mkdir -p "$(dirname "$backup")"
+            if ossutil cp "oss://${OSS_BUCKET}/${object}" "$backup" >/dev/null 2>&1; then
+              echo "$object" >> "$RUNNER_TEMP/desktop-pointer-existing.txt"
+            fi
+          done < "$RUNNER_TEMP/desktop-pointer-paths.txt"
 
       - name: Promote versioned files to latest
         if: hashFiles('UGSci-Desktop-Tauri-*/*') != ''
@@ -140,6 +189,13 @@ jobs:
             "UGSci-Tauri-latest-Windows-setup.exe"
 
           promote_latest \
+            "UGSci-Desktop-Tauri-Windows-*" \
+            "UGSci-Tauri-*-Windows-portable.zip" \
+            "win-tauri" \
+            "UGSci-Tauri-${VERSION}-Windows-portable.zip" \
+            "UGSci-Tauri-latest-Windows-portable.zip"
+
+          promote_latest \
             "UGSci-Desktop-Tauri-macOS-*" \
             "UGSci-Tauri-*-macOS.zip" \
             "mac-tauri" \
@@ -163,6 +219,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          # A unified Tauri manifest has one global version. Publishing it with
+          # only the new macOS entry would either remove Windows support or
+          # mislabel an old Windows artifact as the new version. A portable ZIP
+          # is not a signed Tauri updater, so keep the current complete manifest
+          # unchanged until both signed platform artifacts are available.
+          if [ ! -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json ] || \
+             [ ! -s tauri-updater-meta-macos/tauri-darwin-aarch64-updater.json ]; then
+            echo "Signed updater assets are incomplete; preserving the current OSS updater manifest"
+            exit 0
+          fi
           VERSION="${{ steps.version.outputs.version }}"
           RELEASE_BODY="$(gh release view "${{ inputs.tag }}" --json body -q .body --repo "$GITHUB_REPOSITORY" 2>/dev/null || true)"
           OSS_BASE="${OSS_PUBLIC_BASE_URL%/}"
@@ -211,6 +277,7 @@ jobs:
       - name: Update desktop index
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          RELEASE_UPDATED_AT="$(git show -s --format=%cI HEAD)"
 
           # Download existing desktop/index.json if exists
           ossutil cp "oss://${OSS_BUCKET}/metadata/apps/desktop/index.json" \
@@ -238,6 +305,7 @@ jobs:
               --product desktop \
               --platform "${platform}" \
               --version "$VERSION" \
+              --updated-at "$RELEASE_UPDATED_AT" \
               --output "${metadata}" \
               --merge-index desktop-index.json \
               --output-index desktop-index.json
@@ -247,6 +315,11 @@ jobs:
             "win-tauri-metadata.json" \
             "UGSci-Desktop-Tauri-Windows-*" \
             "UGSci-Tauri-*-Windows-setup.exe" \
+            "win-tauri"
+          merge_tauri_metadata \
+            "win-tauri-portable-metadata.json" \
+            "UGSci-Desktop-Tauri-Windows-*" \
+            "UGSci-Tauri-*-Windows-portable.zip" \
             "win-tauri"
           merge_tauri_metadata \
             "mac-tauri-metadata.json" \
@@ -307,4 +380,20 @@ jobs:
           ossutil cp "$index_tmp" "$index_uri" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
           ossutil rm "$index_tmp" --force || true
 
-          echo "✓ Main index updated"
+          echo "Main index updated"
+
+      - name: Roll back mutable desktop pointers on failure
+        if: ${{ failure() }}
+        run: |
+          set +e
+          while IFS= read -r object; do
+            backup="$RUNNER_TEMP/desktop-pointer-backup/$object"
+            uri="oss://${OSS_BUCKET}/${object}"
+            if grep -Fxq "$object" "$RUNNER_TEMP/desktop-pointer-existing.txt"; then
+              ossutil cp "$backup" "$uri" --acl public-read --force \
+                --meta "Cache-Control:public, max-age=0, must-revalidate"
+            else
+              ossutil rm "$uri" --force >/dev/null 2>&1 || true
+            fi
+          done < "$RUNNER_TEMP/desktop-pointer-paths.txt"
+          echo "Mutable desktop pointers restored after promotion failure"

@@ -286,6 +286,7 @@ jobs:
         with:
           user: __token__
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
 
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
@@ -672,6 +673,7 @@ jobs:
 
   finalize:
     needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins, publish-components]
+    if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release
@@ -684,9 +686,9 @@ jobs:
           echo "Flipping draft $TAG -> published, pinned to $SHA"
           gh release edit "$TAG" --repo "$REPO" --draft=false --target "$SHA"
 
-  # ── Post-publish: promote desktop latest + updater manifest + index ─────────
-  # Runs only after the release is published, so the auto-updater is pointed at
-  # the new version only once the release actually exists.
+  # Only expose OSS latest/updater pointers after the GitHub Release is public.
+  # A failed promotion can then be retried without ever pointing clients at an
+  # inaccessible draft asset.
   promote-desktop:
     needs: [resolve, finalize]
     uses: ./.github/workflows/desktop-promote.yml
@@ -698,7 +700,7 @@ jobs:
 
   # ── Post-publish: create the Release Duty verification issue (inline) ───────
   duty-issue:
-    needs: [resolve, finalize]
+    needs: [resolve, promote-desktop]
     uses: ./.github/workflows/release-duty.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -709,7 +711,7 @@ jobs:
   # GA/post versions. Invoked inline because the finalize job flips the draft
   # with GITHUB_TOKEN, which suppresses deploy-website.yml's own release trigger.
   deploy-website:
-    needs: [resolve, finalize]
+    needs: [resolve, promote-desktop]
     if: needs.resolve.outputs.is_prerelease == 'false'
     uses: ./.github/workflows/deploy-website.yml
     with:

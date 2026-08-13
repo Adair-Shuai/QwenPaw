@@ -160,7 +160,7 @@ FunctionEnd
 !macro QWENPAW_UPDATE_CLI_PATH ACTION
   InitPluginsDir
   File /oname=$PLUGINSDIR\qwenpaw-update-path.ps1 "..\..\..\..\nsis\update-qwenpaw-path.ps1"
-  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-path.ps1" -Action "${ACTION}" -Path "$INSTDIR\binaries\python-runtime\python\Scripts"`
+  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-path.ps1" -Action "${ACTION}" -Path "$INSTDIR\binaries\qwenpaw-backend"`
   Pop $0
   Pop $1
 !macroend
@@ -169,7 +169,7 @@ FunctionEnd
   ${If} $QwenPawCliPathState == 0
     DetailPrint "$(qwenpawCliPathSkipped)"
   ${Else}
-    IfFileExists "$INSTDIR\binaries\python-runtime\python\Scripts\qwenpaw.exe" 0 qwenpaw_cli_path_missing
+    IfFileExists "$INSTDIR\binaries\qwenpaw-backend\qwenpaw.exe" 0 qwenpaw_cli_path_missing
     !insertmacro QWENPAW_UPDATE_CLI_PATH "Add"
     ${If} $0 == 0
       DetailPrint "$(qwenpawCliPathAdded)"
@@ -195,7 +195,7 @@ FunctionEnd
 !macro QWENPAW_REMOVE_LEGACY_CLI_PATH
   InitPluginsDir
   File /oname=$PLUGINSDIR\qwenpaw-update-legacy-path.ps1 "..\..\..\..\nsis\update-qwenpaw-path.ps1"
-  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-legacy-path.ps1" -Action "Remove" -Path "$INSTDIR\binaries\qwenpaw-backend"`
+  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-update-legacy-path.ps1" -Action "Remove" -Path "$INSTDIR\binaries\python-runtime\python\Scripts"`
   Pop $0
   Pop $1
   ${If} $0 != 0

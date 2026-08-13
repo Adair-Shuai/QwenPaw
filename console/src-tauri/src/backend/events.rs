@@ -51,20 +51,11 @@ pub(super) fn watch(
                     let message = termination_message(payload, &last_stderr);
                     let state = app.state::<BackendState>();
                     let stopping = !state.is_current(generation);
-                    let should_fallback = state.should_fallback_before_ready(generation);
                     terminated.send_replace(true);
                     if stopping {
                         log::info!(
                             "[backend:{generation}] process terminated after shutdown request"
                         );
-                    } else if should_fallback {
-                        log::warn!(
-                            "[backend:{generation}] frozen backend crashed before ready; \
-                             falling back to python.exe"
-                        );
-                        log::warn!("[backend:{generation}] {message}");
-                        state.set_error_if_current(generation, message);
-                        super::fallback_to_python(&app);
                     } else {
                         log::warn!("[backend:{generation}] {message}");
                         state.set_error_if_current(generation, message);

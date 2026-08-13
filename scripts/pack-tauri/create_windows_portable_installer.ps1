@@ -1,0 +1,336 @@
+param(
+  [Parameter(Mandatory = $true)] [string]$PortableRoot,
+  [Parameter(Mandatory = $true)] [string]$ZipPath,
+  [Parameter(Mandatory = $true)] [string]$Version
+)
+
+$ErrorActionPreference = "Stop"
+$PortableRoot = (Resolve-Path -LiteralPath $PortableRoot).Path
+$installPs1 = Join-Path $PortableRoot "install.ps1"
+$uninstallPs1 = Join-Path $PortableRoot "uninstall.ps1"
+$uninstallCleanupPs1 = Join-Path $PortableRoot "uninstall-cleanup.ps1"
+$installCmd = Join-Path $PortableRoot "Install.cmd"
+$versionFile = Join-Path $PortableRoot "version.txt"
+$pathHelper = Join-Path $PortableRoot "update-qwenpaw-path.ps1"
+
+foreach ($required in @(
+  "qwenpaw-desktop.exe",
+  "binaries\qwenpaw-backend\qwenpaw-backend.exe",
+  "binaries\qwenpaw-backend\qwenpaw.exe",
+  "binaries\python-runtime\python\python.exe"
+)) {
+  if (-not (Test-Path -LiteralPath (Join-Path $PortableRoot $required))) {
+    throw "Portable installer payload is incomplete: $required"
+  }
+}
+
+Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\..\console\src-tauri\nsis\update-qwenpaw-path.ps1") `
+  -Destination $pathHelper -Force
+
+@'
+param(
+  [switch]$Silent,
+  [switch]$NoCliPath
+)
+$ErrorActionPreference = "Stop"
+$sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$defaultInstallDir = Join-Path $env:LOCALAPPDATA "UGSci Desktop"
+$existingInstallDir = $null
+$legacyUninstallKey = $null
+Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
+  ForEach-Object {
+    $entry = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
+    if (-not $existingInstallDir -and $entry.DisplayName -match "QwenPaw|UGSci Desktop" -and
+        $entry.InstallLocation -and
+        (Test-Path -LiteralPath (Join-Path $entry.InstallLocation "qwenpaw-desktop.exe"))) {
+      $candidate = [IO.Path]::GetFullPath([string]$entry.InstallLocation).TrimEnd('\')
+      $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA).TrimEnd('\') + '\'
+      if ($candidate.StartsWith($localRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $existingInstallDir = $candidate
+        $legacyUninstallKey = $_.PSPath
+      }
+    }
+  }
+$installDir = if ($existingInstallDir) { $existingInstallDir } else { $defaultInstallDir }
+$installParent = Split-Path -Parent $installDir
+$appExe = Join-Path $installDir "qwenpaw-desktop.exe"
+$stagingDir = Join-Path $installParent ".UGSci Desktop.install-$PID"
+$backupDir = Join-Path $installParent ".UGSci Desktop.backup-$PID"
+$mutex = New-Object Threading.Mutex($false, "Local\UGSciDesktopPortableInstaller")
+$mutexAcquired = $false
+try {
+try {
+  $mutexAcquired = $mutex.WaitOne(0)
+} catch [Threading.AbandonedMutexException] {
+  # The previous installer process died; Windows has transferred ownership.
+  $mutexAcquired = $true
+}
+if (-not $mutexAcquired) { throw "Another UGSci Desktop installation is already running" }
+$previousUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+$uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop"
+$previousUninstall = if (Test-Path -LiteralPath $uninstallKey) {
+  Get-ItemProperty -LiteralPath $uninstallKey -ErrorAction SilentlyContinue
+} else { $null }
+
+function Stop-ScopedApplication {
+  param([string]$Root)
+  $prefix = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+  $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+  }
+  foreach ($process in $processes) {
+    Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
+  }
+  if ($processes) { Wait-Process -Id @($processes.ProcessId) -Timeout 8 -ErrorAction SilentlyContinue }
+}
+
+function Resolve-UserPath {
+  param([string]$Value)
+  if (-not $Value) { return $null }
+  $expanded = [Environment]::ExpandEnvironmentVariables($Value.Trim())
+  if ($expanded -eq "~") { $expanded = $env:USERPROFILE }
+  elseif ($expanded.StartsWith("~\") -or $expanded.StartsWith("~/")) {
+    $expanded = Join-Path $env:USERPROFILE $expanded.Substring(2)
+  }
+  return [IO.Path]::GetFullPath($expanded)
+}
+
+function New-UpdateDataBackup {
+  param([string]$ReleaseVersion)
+  $configuredWorkingDir = if ($env:QWENPAW_WORKING_DIR) {
+    $env:QWENPAW_WORKING_DIR
+  } elseif ($env:COPAW_WORKING_DIR) {
+    $env:COPAW_WORKING_DIR
+  } else { $null }
+  $workingDir = if ($configuredWorkingDir) {
+    Resolve-UserPath $configuredWorkingDir
+  } elseif (Test-Path (Join-Path $env:USERPROFILE ".copaw")) {
+    Join-Path $env:USERPROFILE ".copaw"
+  } else {
+    Join-Path $env:USERPROFILE ".qwenpaw"
+  }
+  if (-not $workingDir -or -not (Test-Path -LiteralPath $workingDir)) { return $null }
+  $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+  $backupRoot = Join-Path $env:LOCALAPPDATA "UGSci\update-backups\$stamp-$ReleaseVersion"
+  $workingPrefix = [IO.Path]::GetFullPath($workingDir).TrimEnd('\') + '\'
+  if ([IO.Path]::GetFullPath($backupRoot).StartsWith($workingPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+    throw "Refusing to create the update backup inside the working directory"
+  }
+  New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
+  & robocopy.exe $workingDir (Join-Path $backupRoot "working-dir") /E /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:1 /NFL /NDL /NP | Out-Null
+  if ($LASTEXITCODE -gt 7) { throw "User data backup failed (robocopy exit $LASTEXITCODE)" }
+  $secretDir = if ($env:QWENPAW_SECRET_DIR) {
+    Resolve-UserPath $env:QWENPAW_SECRET_DIR
+  } elseif ($env:COPAW_SECRET_DIR) {
+    Resolve-UserPath $env:COPAW_SECRET_DIR
+  } else { "$workingDir.secret" }
+  if (Test-Path -LiteralPath $secretDir) {
+    & robocopy.exe $secretDir (Join-Path $backupRoot "secret-dir") /E /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:1 /NFL /NDL /NP | Out-Null
+    if ($LASTEXITCODE -gt 7) { throw "Secret data backup failed (robocopy exit $LASTEXITCODE)" }
+  }
+  [ordered]@{
+    version = $ReleaseVersion
+    created_at = (Get-Date).ToUniversalTime().ToString("o")
+    working_dir = $workingDir
+    secret_dir = $secretDir
+  } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupRoot "backup.json") -Encoding UTF8
+  return $backupRoot
+}
+
+function Ensure-WebView2 {
+  $clients = @(
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+    "HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+  )
+  foreach ($client in $clients) {
+    $version = (Get-ItemProperty -LiteralPath $client -Name pv -ErrorAction SilentlyContinue).pv
+    if ($version -and $version -ne "0.0.0.0") { return }
+  }
+  $bootstrapper = Join-Path $env:TEMP "MicrosoftEdgeWebview2Setup-$PID.exe"
+  Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $bootstrapper -UseBasicParsing -TimeoutSec 120
+  $signature = Get-AuthenticodeSignature -FilePath $bootstrapper
+  if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
+    Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
+    throw "Downloaded WebView2 bootstrapper does not have a valid Microsoft signature"
+  }
+  $process = Start-Process -FilePath $bootstrapper -ArgumentList "/silent", "/install" -PassThru
+  if (-not $process.WaitForExit(300000)) {
+    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+    throw "WebView2 installation timed out"
+  }
+  Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
+  if ($process.ExitCode -ne 0) { throw "WebView2 installation failed (exit $($process.ExitCode))" }
+}
+
+if (-not (Test-Path $sourceRoot)) { throw "Portable package directory not found" }
+if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "qwenpaw-desktop.exe"))) {
+  throw "Portable package is missing qwenpaw-desktop.exe"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "binaries\qwenpaw-backend\qwenpaw-backend.exe"))) {
+  throw "Portable package is missing the frozen backend"
+}
+Stop-ScopedApplication -Root $installDir
+Start-Sleep -Milliseconds 500
+
+if (Test-Path $stagingDir) { Remove-Item -LiteralPath $stagingDir -Recurse -Force }
+if (Test-Path $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force }
+New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+Get-ChildItem -LiteralPath $sourceRoot -Force |
+  Where-Object { $_.Name -notin @("install.ps1", "Install.cmd", "uninstall.ps1") } |
+  Copy-Item -Destination $stagingDir -Recurse -Force
+
+$releaseVersion = (Get-Content -LiteralPath (Join-Path $stagingDir "version.txt") -Raw).Trim()
+$hasExistingUserData = $env:QWENPAW_WORKING_DIR -or $env:COPAW_WORKING_DIR -or
+  (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".copaw")) -or
+  (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".qwenpaw"))
+$dataBackup = if ($existingInstallDir -or $hasExistingUserData) {
+  New-UpdateDataBackup -ReleaseVersion $releaseVersion
+} else { $null }
+if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
+Ensure-WebView2
+
+# Keep application data outside the install directory. This makes upgrades
+# and portable-package reinstalls non-destructive for user workspaces/config.
+if (Test-Path $installDir) { Move-Item -LiteralPath $installDir -Destination $backupDir -Force }
+try {
+  Move-Item -LiteralPath $stagingDir -Destination $installDir -Force
+  if (-not (Test-Path -LiteralPath $appExe) -or
+      -not (Test-Path -LiteralPath (Join-Path $installDir "binaries\qwenpaw-backend\qwenpaw-backend.exe"))) {
+    throw "Installed application payload failed validation"
+  }
+
+  if (Test-Path $backupDir) {
+    foreach ($preserved in @("execution-runtime", "optional-components")) {
+      $oldPath = Join-Path $backupDir $preserved
+      $newPath = Join-Path $installDir $preserved
+      if (Test-Path $oldPath) {
+        if (Test-Path $newPath) { Remove-Item -LiteralPath $newPath -Recurse -Force }
+        Copy-Item -LiteralPath $oldPath -Destination $newPath -Recurse -Force
+      }
+    }
+  }
+
+  $runtimeDir = Join-Path $installDir "execution-runtime"
+  New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+  if (-not (Test-Path (Join-Path $runtimeDir "selection.txt"))) {
+    Set-Content -LiteralPath (Join-Path $runtimeDir "selection.txt") -Value "builtin" -Encoding UTF8
+  }
+  Copy-Item -LiteralPath $MyInvocation.MyCommand.Path -Destination (Join-Path $installDir "install.ps1") -Force
+  Copy-Item -LiteralPath (Join-Path $sourceRoot "Install.cmd") -Destination (Join-Path $installDir "Install.cmd") -Force
+  Copy-Item -LiteralPath (Join-Path $sourceRoot "uninstall.ps1") -Destination (Join-Path $installDir "uninstall.ps1") -Force
+
+  $cliScripts = Join-Path $installDir "binaries\qwenpaw-backend"
+  $legacyCliScripts = Join-Path $installDir "binaries\python-runtime\python\Scripts"
+  & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path $legacyCliScripts
+  $enableCliPath = -not $NoCliPath
+  if (-not $Silent -and -not $NoCliPath) {
+    $answer = Read-Host "Add the QwenPaw CLI to your user PATH? [Y/n]"
+    $enableCliPath = -not ($answer -match "^(n|no)$")
+  }
+  if ($enableCliPath -and (Test-Path -LiteralPath (Join-Path $cliScripts "qwenpaw.exe"))) {
+    & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Add -Path $cliScripts
+    Set-Content -LiteralPath (Join-Path $installDir "cli-path.txt") -Value $cliScripts -Encoding UTF8
+  } else {
+    & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path $cliScripts
+    Remove-Item -LiteralPath (Join-Path $installDir "cli-path.txt") -Force -ErrorAction SilentlyContinue
+  }
+
+  $version = (Get-Content -LiteralPath (Join-Path $installDir "version.txt") -Raw).Trim()
+  New-Item -Path $uninstallKey -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name DisplayName -Value "UGSci Desktop" -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $version -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name Publisher -Value "UGSci" -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name UninstallString -Value "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installDir\uninstall.ps1`"" -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null
+  $shell = New-Object -ComObject WScript.Shell
+  $startMenu = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
+  $shortcut = $shell.CreateShortcut((Join-Path $startMenu "UGSci Desktop.lnk"))
+  $shortcut.TargetPath = $appExe
+  $shortcut.WorkingDirectory = $installDir
+  $shortcut.Save()
+  $desktopShortcut = $shell.CreateShortcut((Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk"))
+  $desktopShortcut.TargetPath = $appExe
+  $desktopShortcut.WorkingDirectory = $installDir
+  $desktopShortcut.Save()
+
+  if (Test-Path $backupDir) {
+    Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  if ($legacyUninstallKey -and $legacyUninstallKey -ne (Get-Item -LiteralPath $uninstallKey).PSPath) {
+    # This is cleanup after the new install has fully committed. A stale legacy
+    # entry is harmless, so cleanup failure must not roll back healthy files.
+    Remove-Item -LiteralPath $legacyUninstallKey -Recurse -Force -ErrorAction SilentlyContinue
+  }
+} catch {
+  $installError = $_
+  [Environment]::SetEnvironmentVariable("Path", $previousUserPath, "User")
+  if ($previousUninstall) {
+    New-Item -Path $uninstallKey -Force | Out-Null
+    foreach ($name in @("DisplayName", "DisplayVersion", "Publisher", "InstallLocation", "UninstallString", "NoModify", "NoRepair")) {
+      if ($null -ne $previousUninstall.$name) {
+        $kind = if ($name -in @("NoModify", "NoRepair")) { "DWord" } else { "String" }
+        New-ItemProperty -Path $uninstallKey -Name $name -Value $previousUninstall.$name -PropertyType $kind -Force | Out-Null
+      }
+    }
+  } else {
+    Remove-Item -LiteralPath $uninstallKey -Recurse -Force -ErrorAction SilentlyContinue
+  }
+  Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
+  if (Test-Path $backupDir) {
+    Move-Item -LiteralPath $backupDir -Destination $installDir -Force
+  }
+  throw "Portable installation failed; the previous installation was restored. $installError"
+}
+} finally {
+  Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+  if ($mutexAcquired) { $mutex.ReleaseMutex() }
+  $mutex.Dispose()
+}
+
+Write-Host "UGSci Desktop $version installed to $installDir"
+if (-not $Silent) { Write-Host "You can launch it from the Start menu or desktop shortcut." }
+'@ | Set-Content -LiteralPath $installPs1 -Encoding UTF8
+
+@'
+$ErrorActionPreference = "SilentlyContinue"
+$installDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$prefix = [IO.Path]::GetFullPath($installDir).TrimEnd('\') + '\'
+Get-CimInstance Win32_Process | Where-Object {
+  $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force }
+$cliPathFile = Join-Path $installDir "cli-path.txt"
+if (Test-Path -LiteralPath $cliPathFile) {
+  $cliPath = (Get-Content -LiteralPath $cliPathFile -Raw).Trim()
+  & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path $cliPath
+}
+Remove-Item -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop" -Recurse -Force
+Remove-Item -LiteralPath (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\UGSci Desktop.lnk") -Force
+Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk") -Force
+& (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path (Join-Path $installDir "binaries\python-runtime\python\Scripts")
+$cleanupScript = Join-Path $installDir "uninstall-cleanup.ps1"
+Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $cleanupScript, "-InstallDir", $installDir) -WindowStyle Hidden
+'@ | Set-Content -LiteralPath $uninstallPs1 -Encoding UTF8
+
+@'
+param([Parameter(Mandatory = $true)] [string]$InstallDir)
+Start-Sleep -Seconds 2
+Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
+'@ | Set-Content -LiteralPath $uninstallCleanupPs1 -Encoding UTF8
+
+@'
+@echo off
+setlocal
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
+if errorlevel 1 pause
+'@ | Set-Content -LiteralPath $installCmd -Encoding ASCII
+
+Set-Content -LiteralPath $versionFile -Value $Version -Encoding ASCII
+$ZipPath = [IO.Path]::GetFullPath($ZipPath)
+$zipParent = Split-Path -Parent $ZipPath
+New-Item -ItemType Directory -Path $zipParent -Force | Out-Null
+if (Test-Path $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force }
+Compress-Archive -Path (Join-Path $PortableRoot "*") -DestinationPath $ZipPath -CompressionLevel Optimal -Force
+Write-Host "Portable Windows installer created: $ZipPath"
