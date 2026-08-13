@@ -188,7 +188,7 @@ internal static class PortableSetup
 
             var title = new Label { Text = "Install UGSci Desktop", AutoSize = true, Font = new Font(Font, FontStyle.Bold), Location = new Point(20, 18) };
             var pathLabel = new Label { Text = "Installation folder:", AutoSize = true, Location = new Point(20, 62) };
-            location = new TextBox { Location = new Point(20, 84), Width = 390, Text = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UGSci Desktop") };
+            location = new TextBox { Location = new Point(20, 84), Width = 390, Text = FindInstallLocation() };
             var browse = new Button { Text = "Browse...", Location = new Point(420, 82), Width = 80 };
             browse.Click += delegate { using (var dialog = new FolderBrowserDialog { Description = "Choose where to install UGSci Desktop", SelectedPath = location.Text }) if (dialog.ShowDialog(this) == DialogResult.OK) location.Text = dialog.SelectedPath; };
             addPath = new CheckBox { Text = "Add QwenPaw to my user PATH", AutoSize = true, Location = new Point(20, 122), Checked = !noCliPath };
@@ -204,6 +204,21 @@ internal static class PortableSetup
         private Icon TryLoadIcon()
         {
             try { return Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch { return null; }
+        }
+
+        private string FindInstallLocation()
+        {
+            const string uninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop";
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(uninstallKey))
+                {
+                    string installed = key == null ? null : key.GetValue("InstallLocation") as string;
+                    if (!string.IsNullOrWhiteSpace(installed)) return installed;
+                }
+            }
+            catch { }
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UGSci Desktop");
         }
 
         private void InstallClicked(object sender, EventArgs e)

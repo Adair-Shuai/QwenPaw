@@ -141,8 +141,31 @@ Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -Error
     }
   }
 $requestedInstallDir = if ($InstallDir) { [IO.Path]::GetFullPath($InstallDir.Trim()) } else { $null }
+if ($existingInstallDir -and $requestedInstallDir -and
+    -not $requestedInstallDir.Equals($existingInstallDir, [StringComparison]::OrdinalIgnoreCase)) {
+  throw "UGSci Desktop is already installed at $existingInstallDir. Uninstall it before choosing a different location."
+}
 $installDir = if ($requestedInstallDir) { $requestedInstallDir } elseif ($existingInstallDir) { $existingInstallDir } else { $defaultInstallDir }
+$installDir = [IO.Path]::GetFullPath($installDir).TrimEnd('\')
+$installRoot = [IO.Path]::GetPathRoot($installDir).TrimEnd('\')
+if ($installDir.Equals($installRoot, [StringComparison]::OrdinalIgnoreCase)) {
+  throw "UGSci Desktop cannot be installed directly into a drive root"
+}
+$sourceFull = [IO.Path]::GetFullPath($sourceRoot).TrimEnd('\')
+$sourcePrefix = $sourceFull + '\'
+$installPrefix = $installDir + '\'
+if ($installDir.Equals($sourceFull, [StringComparison]::OrdinalIgnoreCase) -or
+    $installPrefix.StartsWith($sourcePrefix, [StringComparison]::OrdinalIgnoreCase) -or
+    $sourcePrefix.StartsWith($installPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+  throw "The installation folder must be separate from the extracted setup package"
+}
+if ((Test-Path -LiteralPath $installDir -PathType Container) -and
+    -not $existingInstallDir -and
+    @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction Stop).Count -gt 0) {
+  throw "The selected installation folder is not empty. Choose an empty folder or a new UGSci Desktop folder."
+}
 $installParent = Split-Path -Parent $installDir
+New-Item -ItemType Directory -Path $installParent -Force | Out-Null
 $appExe = Join-Path $installDir "UGSci.exe"
 $stagingDir = Join-Path $installParent ".UGSci Desktop.install-$PID"
 $backupDir = Join-Path $installParent ".UGSci Desktop.backup-$PID"
