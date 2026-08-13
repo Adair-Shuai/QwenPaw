@@ -125,8 +125,13 @@ if ($portable) {
   if (-not $uninstallEntry.DisplayIcon -or $uninstallEntry.DisplayIcon -notmatch "UGSci\.exe") {
     throw "Portable uninstall registration is missing the UGSci.exe display icon"
   }
-  if (-not $uninstallEntry.UninstallString -or $uninstallEntry.UninstallString -notmatch "uninstall\.ps1") {
+  if (-not $uninstallEntry.UninstallString -or
+      $uninstallEntry.UninstallString -notmatch "(Uninstall\.exe|uninstall\.ps1)") {
     throw "Portable uninstall registration is missing its uninstall command"
+  }
+  if ($uninstallEntry.UninstallString -match "Uninstall\.exe" -and
+      -not (Test-Path -LiteralPath (Join-Path $installRoot "Uninstall.exe"))) {
+    throw "Portable uninstall registration points to a missing Uninstall.exe"
   }
 }
 $runtimeSelection = Join-Path $installRoot "execution-runtime\selection.txt"
