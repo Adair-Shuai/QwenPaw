@@ -23,6 +23,10 @@ const s = (v: unknown): string => (typeof v === "string" ? v : v != null ? Strin
 const n = (v: unknown): number => (typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0);
 const b = (v: unknown): boolean => Boolean(v);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const recordsEqual = (left: Record<string, unknown>, right: Record<string, unknown>): boolean => {
+  const leftKeys = Object.keys(left); const rightKeys = Object.keys(right);
+  return leftKeys.length === rightKeys.length && leftKeys.every((key) => Object.is(left[key], right[key]));
+};
 
 const TEXT_SIZES: Record<string, string> = { xs: "12px", sm: "13px", base: "14px", lg: "16px" };
 const TEXT_COLORS: Record<string, string> = {
@@ -42,6 +46,7 @@ function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
   const React = host?.React; const antd = host?.antd || {};
   if (!React) return null;
   const p = node.props || {};
+  const interaction = React.useContext(getInteractionContext(React));
   const [values, setValues] = React.useState({} as Record<string, unknown>);
   const [status, setStatus] = React.useState(null as null | { ok: boolean; message: string });
   const initialValues = React.useMemo(() => {
@@ -53,11 +58,15 @@ function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
     }
     return result;
   }, [node]);
-  React.useEffect(() => setValues((old: Record<string, unknown>) => ({ ...initialValues, ...old })), [initialValues]);
+  React.useEffect(() => setValues((old: Record<string, unknown>) => {
+    const next = { ...initialValues, ...old, ...(interaction?.values || {}) };
+    return recordsEqual(old, next) ? old : next;
+  }), [initialValues, interaction?.values]);
   const api = React.useMemo(() => ({ values, setValue: (name: string, value: unknown) => {
     setStatus(null);
     setValues((old: Record<string, unknown>) => ({ ...old, [name]: value }));
-  } }), [values]);
+    interaction?.setValue(name, value);
+  } }), [values, interaction]);
   const submit = () => {
     const missing = (node.children || []).filter((child) => child.props?.required).find((child) => {
       const name = fieldName(child); const value = values[name];
@@ -547,6 +556,7 @@ function GenUiMediaImage(props: {
   return React.createElement("img", {
     src: resolvedUrl,
     alt: props.alt || "",
+    "data-genui-media-source": props.src,
     style: props.style || {},
     onError: () => {
       console.warn("[ugsci.genui] Image failed to load:", props.src);

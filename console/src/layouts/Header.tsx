@@ -1,13 +1,4 @@
-import {
-  Layout,
-  Space,
-  Badge,
-  Spin,
-  Tooltip,
-  Dropdown,
-  Popover,
-  message,
-} from "antd";
+import { Layout, Space, Badge, Spin, Tooltip, Dropdown, message } from "antd";
 import type { MenuProps } from "antd";
 import LanguageSwitcher, {
   LANGUAGE_LIST,
@@ -36,6 +27,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useDesktopUpdate } from "../contexts/DesktopUpdateContext";
 import { isDesktopApp } from "../tauri/backendRuntime";
+import { restartForComponentUpdates } from "../tauri/desktopUpdate";
 import {
   CopyOutlined,
   CheckOutlined,
@@ -46,9 +38,9 @@ import {
   PlayCircleOutlined,
   InfoCircleOutlined,
   DownOutlined,
-  SyncOutlined,
   CheckCircleOutlined,
   ExclamationCircleOutlined,
+  CloudDownloadOutlined,
 } from "@ant-design/icons";
 
 const { Header: AntHeader } = Layout;
@@ -87,6 +79,7 @@ export default function Header() {
   const [latestVersion, setLatestVersion] = useState<string>("");
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateMarkdown, setUpdateMarkdown] = useState<string>("");
+  const [unifiedUpdateBusy, setUnifiedUpdateBusy] = useState(false);
   const logoClicksRef = useRef<number[]>([]);
 
   useEffect(() => {
@@ -172,12 +165,10 @@ export default function Header() {
   }, [onDesktop]);
 
   const hasUpdate = onDesktop
-    ? desktop.hasUpdate
+    ? desktop.hasCoreUpdate || desktop.componentUpdateCount > 0
     : !!version &&
       !!latestVersion &&
       compareVersions(latestVersion, version) > 0;
-
-  const modalVersion = onDesktop ? desktop.version : latestVersion;
 
   const resourcesMenuItems: MenuProps["items"] = [
     {
@@ -267,10 +258,7 @@ export default function Header() {
 
     if (onDesktop) {
       setUpdateMarkdown(
-        desktop.body ||
-          t("sidebar.updateModal.desktopInstallHint", {
-            version: desktop.version,
-          }),
+        desktop.body || t("sidebar.updateModal.unifiedInstallHint"),
       );
       return;
     }
@@ -294,18 +282,34 @@ export default function Header() {
       });
   };
 
-  const handleStartInstall = () => {
+  const handleStartInstall = async () => {
+    if (unifiedUpdateBusy) return;
+    setUnifiedUpdateBusy(true);
     setUpdateModalOpen(false);
-    void desktop.startInstall();
+    try {
+      const queuedComponents = await desktop.queueComponentUpdates();
+      if (desktop.hasCoreUpdate) {
+        if (isReady) {
+          await desktop.installDownloaded();
+        } else {
+          await desktop.startInstall();
+        }
+        return;
+      }
+      if (queuedComponents) {
+        await restartForComponentUpdates();
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      message.error(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
+    } finally {
+      setUnifiedUpdateBusy(false);
+    }
   };
 
   const handleUpdateLater = () => {
     setUpdateModalOpen(false);
     void desktop.startBackgroundDownload();
-  };
-
-  const handleRestartNow = () => {
-    void desktop.installDownloaded();
   };
 
   const handleNavClick = (url: string) => {
@@ -335,6 +339,15 @@ export default function Header() {
   const backgroundFailureTitle = desktop.error?.message
     ? `${t(`sidebar.updateModal.backgroundFailed`)}: ${desktop.error.message}`
     : t(`sidebar.updateModal.backgroundFailed`);
+  const unifiedUpdateTitle = isBackgroundActive
+    ? backgroundDownloadTitle
+    : isReady
+    ? t(`sidebar.updateModal.readyToInstall`)
+    : isBackgroundFailed
+    ? backgroundFailureTitle
+    : hasUpdate
+    ? t("sidebar.updateModal.updateAvailable")
+    : t("sidebar.updateModal.checkUpdates");
 
   return (
     <>
@@ -354,80 +367,51 @@ export default function Header() {
             />
           </Slot>
           <div className={styles.logoDivider} />
-          {version && (
+          {version && <span className={styles.versionBadge}>v{version}</span>}
+          {onDesktop && (
             <Badge
-              dot={!!hasUpdate && !isReady && !isBackgroundActive}
+              dot={hasUpdate && !isReady && !isBackgroundActive}
               color="rgba(37, 99, 235, 1)"
-              offset={[4, 28]}
+              offset={[-1, 3]}
             >
-              <span
-                className={`${styles.versionBadge} ${
-                  hasUpdate || isReady
-                    ? styles.versionBadgeClickable
-                    : styles.versionBadgeDefault
-                }`}
-                onClick={() => {
-                  if (isReady) return; // handled by Popover
-                  if (hasUpdate) handleOpenUpdateModal();
-                }}
-              >
-                v{version}
-              </span>
-            </Badge>
-          )}
-          {isBackgroundActive && (
-            <Tooltip title={backgroundDownloadTitle}>
-              <SyncOutlined
-                spin
-                style={{
-                  marginLeft: 6,
-                  fontSize: 14,
-                  color: "rgba(37, 99, 235, 1)",
-                }}
-              />
-            </Tooltip>
-          )}
-          {isReady && (
-            <Popover
-              content={
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ marginBottom: 12 }}>
-                    {t(`sidebar.updateModal.readyToInstallHint`, {
-                      version: desktop.version,
-                    })}
-                  </p>
-                  <Button
-                    type="primary"
-                    size="small"
-                    onClick={handleRestartNow}
-                    loading={isApplyingDownloadedUpdate}
-                  >
-                    {t(`sidebar.updateModal.restartNow`)}
-                  </Button>
-                </div>
-              }
-              title={t(`sidebar.updateModal.readyToInstall`)}
-              trigger="click"
-            >
-              <Tooltip title={t(`sidebar.updateModal.readyToInstall`)}>
-                <CheckCircleOutlined
-                  style={{ marginLeft: 6, fontSize: 14, color: "#52c41a" }}
+              <Tooltip title={unifiedUpdateTitle}>
+                <Button
+                  type="text"
+                  size="small"
+                  className={`${styles.unifiedUpdateButton} ${
+                    hasUpdate ? styles.unifiedUpdateButtonActive : ""
+                  }`}
+                  icon={
+                    isReady ? (
+                      <CheckCircleOutlined />
+                    ) : isBackgroundFailed ? (
+                      <ExclamationCircleOutlined />
+                    ) : (
+                      <CloudDownloadOutlined />
+                    )
+                  }
+                  loading={
+                    unifiedUpdateBusy ||
+                    isBackgroundActive ||
+                    isApplyingDownloadedUpdate
+                  }
+                  onClick={async () => {
+                    if (hasUpdate) {
+                      handleOpenUpdateModal();
+                      return;
+                    }
+                    setUnifiedUpdateBusy(true);
+                    try {
+                      const found = await desktop.refreshUpdates();
+                      if (found) handleOpenUpdateModal();
+                      else message.success(t("sidebar.updateModal.upToDate"));
+                    } finally {
+                      setUnifiedUpdateBusy(false);
+                    }
+                  }}
                 />
               </Tooltip>
-            </Popover>
-          )}
-          {isBackgroundFailed && (
-            <Tooltip title={backgroundFailureTitle}>
-              <ExclamationCircleOutlined
-                style={{
-                  marginLeft: 6,
-                  fontSize: 14,
-                  color: "#ff4d4f",
-                  cursor: "pointer",
-                }}
-                onClick={() => void desktop.startBackgroundDownload()}
-              />
-            </Tooltip>
+            </Badge>
           )}
         </div>
         <Slot name="header.left" kind="fill" />
@@ -466,7 +450,7 @@ export default function Header() {
           <Button key="close" onClick={() => setUpdateModalOpen(false)}>
             {t("common.close")}
           </Button>,
-          onDesktop && desktop.supportsLaterInstall ? (
+          onDesktop && desktop.hasCoreUpdate && desktop.supportsLaterInstall ? (
             <Button key="later" onClick={handleUpdateLater}>
               {t("sidebar.updateModal.updateLater")}
             </Button>
@@ -477,8 +461,9 @@ export default function Header() {
               type="primary"
               className={styles.updateViewReleasesBtn}
               onClick={handleStartInstall}
+              loading={unifiedUpdateBusy}
             >
-              {t("sidebar.updateModal.installDesktopUpdate")}
+              {t("sidebar.updateModal.installUpdate")}
             </Button>
           ) : (
             <Button
@@ -499,12 +484,10 @@ export default function Header() {
           <div className={styles.updateModalBannerLeft}>
             <span className={styles.updateModalVersionTag}>
               <TagOutlined />
-              Version {modalVersion || version}
+              {t("sidebar.updateModal.updateAvailable")}
             </span>
             <div className={styles.updateModalBannerTitle}>
-              {t("sidebar.updateModal.title", {
-                version: modalVersion || version,
-              })}
+              {t("sidebar.updateModal.unifiedTitle")}
             </div>
           </div>
         </div>

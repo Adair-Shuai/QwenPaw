@@ -19,6 +19,7 @@ import {
   type UpdateProgress,
 } from "../tauri/desktopUpdate";
 import { isDesktopApp } from "../tauri/backendRuntime";
+import api from "../api";
 
 export type UpdatePhase =
   | "idle"
@@ -31,7 +32,8 @@ export type UpdatePhase =
 interface ContextValue {
   phase: UpdatePhase;
   isBackground: boolean;
-  hasUpdate: boolean;
+  hasCoreUpdate: boolean;
+  componentUpdateCount: number;
   supportsLaterInstall: boolean;
   version: string;
   body: string;
@@ -43,6 +45,8 @@ interface ContextValue {
   startBackgroundDownload: () => Promise<void>;
   installDownloaded: () => Promise<void>;
   retry: () => Promise<void>;
+  refreshUpdates: () => Promise<boolean>;
+  queueComponentUpdates: () => Promise<boolean>;
   dismissFailure: () => void;
 }
 
@@ -60,6 +64,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<UpdatePhase>("idle");
   const [isBackground, setIsBackground] = useState(false);
   const [hasUpdate, setHasUpdate] = useState(false);
+  const [componentUpdateCount, setComponentUpdateCount] = useState(0);
   const [supportsLaterInstall, setSupportsLaterInstall] = useState(false);
   const [version, setVersion] = useState("");
   const [body, setBody] = useState("");
@@ -69,8 +74,53 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<UpdateError | null>(null);
 
   const samplesRef = useRef<{ t: number; downloaded: number }[]>([]);
+  const hasCachedUpdateRef = useRef(false);
 
-  // Probe on mount: check remote update + check cached update on disk.
+  const refreshComponentUpdates = useCallback(async (): Promise<number> => {
+    try {
+      const result = await api.checkComponentUpdates();
+      setComponentUpdateCount(result.updates.length);
+      return result.updates.length;
+    } catch (err) {
+      console.warn("[updates] component update check failed", err);
+      return 0;
+    }
+  }, []);
+
+  const refreshDesktopUpdate = useCallback(async (): Promise<boolean> => {
+    if (!isDesktopApp()) return false;
+    try {
+      const info = await checkDesktopUpdate();
+      if (!info) {
+        if (hasCachedUpdateRef.current) {
+          setHasUpdate(true);
+          return true;
+        }
+        setHasUpdate(false);
+        setBody("");
+        setSupportsLaterInstall(false);
+        return false;
+      }
+      setVersion((prev) => prev || info.version);
+      setBody(info.body?.trim() ?? "");
+      setHasUpdate(true);
+      setSupportsLaterInstall(Boolean(info.supportsLaterInstall));
+      return true;
+    } catch (err) {
+      console.warn("[updates] desktop update check failed", err);
+      return hasCachedUpdateRef.current;
+    }
+  }, []);
+
+  const refreshUpdates = useCallback(async () => {
+    const [coreAvailable, componentCount] = await Promise.all([
+      refreshDesktopUpdate(),
+      refreshComponentUpdates(),
+    ]);
+    return coreAvailable || componentCount > 0;
+  }, [refreshComponentUpdates, refreshDesktopUpdate]);
+
+  // Probe on mount: check remote updates + cached desktop update on disk.
   useEffect(() => {
     if (!isDesktopApp()) return;
     let cancelled = false;
@@ -79,6 +129,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     checkCachedUpdate()
       .then((cachedVersion) => {
         if (cancelled || !cachedVersion) return;
+        hasCachedUpdateRef.current = true;
         setVersion(cachedVersion);
         setHasUpdate(true);
         setSupportsLaterInstall(true);
@@ -87,23 +138,20 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {});
 
-    // Also check remote for new updates.
-    checkDesktopUpdate()
-      .then((info) => {
-        if (cancelled || !info) return;
-        setVersion((prev) => prev || info.version);
-        setBody(info.body?.trim() ?? "");
-        setHasUpdate(true);
-        setSupportsLaterInstall(Boolean(info.supportsLaterInstall));
-      })
-      .catch((err) => {
-        console.warn("[updates] desktop update check failed", err);
-      });
+    void refreshUpdates();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [refreshUpdates]);
+
+  const queueComponentUpdates = useCallback(async () => {
+    if (componentUpdateCount <= 0) return false;
+    const result = await api.queueAllComponentUpdates();
+    const queued = result.queued.length > 0;
+    if (queued) setComponentUpdateCount(0);
+    return queued;
+  }, [componentUpdateCount]);
 
   const handleProgress = useCallback((p: UpdateProgress) => {
     const now = Date.now();
@@ -140,6 +188,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       onDownloadProgress: handleProgress,
       onInstallStart: () => setPhase("installing"),
       onDownloadDone: (payload) => {
+        hasCachedUpdateRef.current = true;
+        setHasUpdate(true);
         setPhase("downloaded");
         setVersion(payload.version);
       },
@@ -207,7 +257,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     () => ({
       phase,
       isBackground,
-      hasUpdate,
+      hasCoreUpdate: hasUpdate || phase === "downloaded",
+      componentUpdateCount,
       supportsLaterInstall,
       version,
       body,
@@ -219,12 +270,15 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       startBackgroundDownload,
       installDownloaded: installDownloadedFn,
       retry: startInstall,
+      refreshUpdates,
+      queueComponentUpdates,
       dismissFailure,
     }),
     [
       phase,
       isBackground,
       hasUpdate,
+      componentUpdateCount,
       supportsLaterInstall,
       version,
       body,
@@ -236,6 +290,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       startBackgroundDownload,
       installDownloadedFn,
       dismissFailure,
+      refreshUpdates,
+      queueComponentUpdates,
     ],
   );
 

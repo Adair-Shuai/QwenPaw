@@ -7,6 +7,7 @@ import json
 from qwenpaw.components.service import (
     ComponentUpdateService,
     configured_service,
+    queue_all_component_updates,
     queue_component_update,
     run_startup_updates,
 )
@@ -256,6 +257,39 @@ def test_manual_update_is_queued_for_safe_restart(monkeypatch, tmp_path):
     }
     assert json.loads(pending.read_text(encoding="utf-8"))["components"] == [
         "demo",
+    ]
+
+
+def test_all_available_updates_are_queued_together(monkeypatch, tmp_path):
+    pending = tmp_path / "pending.json"
+
+    class _Service:
+        def __init__(self):
+            self.client = type("Client", (), {"close": lambda self: None})()
+
+        def check(self):
+            return [
+                {"component": "beta"},
+                {"component": "alpha"},
+            ]
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: _Service(),
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._PENDING_UPDATES_PATH",
+        pending,
+    )
+
+    assert queue_all_component_updates() == {
+        "enabled": True,
+        "queued": ["alpha", "beta"],
+        "restart_required": True,
+    }
+    assert json.loads(pending.read_text(encoding="utf-8"))["components"] == [
+        "alpha",
+        "beta",
     ]
 
 

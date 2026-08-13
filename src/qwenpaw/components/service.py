@@ -33,9 +33,7 @@ _PENDING_LOCK = threading.RLock()
 # The component signing public key is deliberately public and is embedded in
 # the client.  The private key remains a GitHub Actions secret and must never
 # be shipped with the application.
-_DEFAULT_COMPONENT_PUBLIC_KEY = (
-    "T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw="
-)
+_DEFAULT_COMPONENT_PUBLIC_KEY = "T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw="
 _DEFAULT_COMPONENT_BASE_URL = (
     "https://ugsci-download.oss-cn-beijing.aliyuncs.com"
 )
@@ -53,10 +51,9 @@ def _default_managed_components() -> set[str]:
         managed: set[str] = set()
         for root in _get_bundled_plugins_dirs():
             for plugin_dir in sorted(root.iterdir()):
-                if (
-                    not plugin_dir.is_dir()
-                    or plugin_dir.name in {"__pycache__"}
-                ):
+                if not plugin_dir.is_dir() or plugin_dir.name in {
+                    "__pycache__",
+                }:
                     continue
                 manifest = _read_manifest(plugin_dir)
                 plugin_id = str((manifest or {}).get("id") or "").strip()
@@ -71,13 +68,49 @@ def _default_managed_components() -> set[str]:
         return set()
 
 
-def queue_component_update(component: str) -> dict[str, Any]:
+def _authorize_component_install() -> None:
     token = os.environ.get("QWENPAW_COMPONENT_INSTALL_TOKEN", "").strip()
     presented = os.environ.get("QWENPAW_COMPONENT_INSTALL_AUTH", "").strip()
     if token and token != presented:
         raise ComponentUpdateError(
             "component installation authorization failed",
         )
+
+
+def _write_pending_components(components: set[str]) -> None:
+    if not components:
+        return
+    with _PENDING_LOCK:
+        _PENDING_UPDATES_PATH.parent.mkdir(parents=True, exist_ok=True)
+        pending: dict[str, Any] = {"schema_version": 1, "components": []}
+        if _PENDING_UPDATES_PATH.is_file():
+            try:
+                existing = json.loads(
+                    _PENDING_UPDATES_PATH.read_text(encoding="utf-8"),
+                )
+                if isinstance(existing, dict) and isinstance(
+                    existing.get("components"),
+                    list,
+                ):
+                    pending = existing
+            except (OSError, json.JSONDecodeError):
+                pass
+        pending["components"] = sorted(
+            {str(item) for item in pending["components"]} | components,
+        )
+        temporary = _PENDING_UPDATES_PATH.with_name(
+            f".{_PENDING_UPDATES_PATH.name}.{os.getpid()}."
+            f"{threading.get_ident()}.tmp",
+        )
+        temporary.write_text(
+            json.dumps(pending, ensure_ascii=False, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, _PENDING_UPDATES_PATH)
+
+
+def queue_component_update(component: str) -> dict[str, Any]:
+    _authorize_component_install()
     service = configured_service()
     if service is None:
         raise ComponentUpdateError("component updates are not configured")
@@ -93,37 +126,33 @@ def queue_component_update(component: str) -> dict[str, Any]:
                 "queued": False,
                 "reason": "up-to-date",
             }
-        with _PENDING_LOCK:
-            _PENDING_UPDATES_PATH.parent.mkdir(parents=True, exist_ok=True)
-            pending: dict[str, Any] = {"schema_version": 1, "components": []}
-            if _PENDING_UPDATES_PATH.is_file():
-                try:
-                    existing = json.loads(
-                        _PENDING_UPDATES_PATH.read_text(encoding="utf-8"),
-                    )
-                    if isinstance(existing, dict) and isinstance(
-                        existing.get("components"),
-                        list,
-                    ):
-                        pending = existing
-                except (OSError, json.JSONDecodeError):
-                    pass
-            pending["components"] = sorted(
-                {str(item) for item in pending["components"]} | {component},
-            )
-            temporary = _PENDING_UPDATES_PATH.with_name(
-                f".{_PENDING_UPDATES_PATH.name}.{os.getpid()}."
-                f"{threading.get_ident()}.tmp",
-            )
-            temporary.write_text(
-                json.dumps(pending, ensure_ascii=False, sort_keys=True) + "\n",
-                encoding="utf-8",
-            )
-            os.replace(temporary, _PENDING_UPDATES_PATH)
+        _write_pending_components({component})
         return {
             "component": component,
             "queued": True,
             "restart_required": True,
+        }
+    finally:
+        service.client.close()
+
+
+def queue_all_component_updates() -> dict[str, Any]:
+    """Queue every currently available managed update for safe restart."""
+    _authorize_component_install()
+    service = configured_service()
+    if service is None:
+        return {"enabled": False, "queued": [], "restart_required": False}
+    try:
+        components = {
+            str(item["component"])
+            for item in service.check()
+            if item.get("component")
+        }
+        _write_pending_components(components)
+        return {
+            "enabled": True,
+            "queued": sorted(components),
+            "restart_required": bool(components),
         }
     finally:
         service.client.close()

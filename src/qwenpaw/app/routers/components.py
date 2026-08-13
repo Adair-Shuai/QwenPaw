@@ -7,7 +7,11 @@ import asyncio
 
 from fastapi import APIRouter, HTTPException
 
-from ...components.service import configured_service, queue_component_update
+from ...components.service import (
+    configured_service,
+    queue_all_component_updates,
+    queue_component_update,
+)
 from ...components.update import ComponentUpdateError
 
 router = APIRouter(prefix="/components", tags=["components"])
@@ -30,6 +34,20 @@ async def check_component_updates():
         ) from exc
     finally:
         service.client.close()
+
+
+@router.post("/updates/install")
+async def install_all_component_updates():
+    """Queue all available managed updates for the next safe startup."""
+    try:
+        return await asyncio.to_thread(queue_all_component_updates)
+    except ComponentUpdateError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(
+            status_code=502,
+            detail=f"Component update queue failed: {exc}",
+        ) from exc
 
 
 @router.post("/{component}/install")

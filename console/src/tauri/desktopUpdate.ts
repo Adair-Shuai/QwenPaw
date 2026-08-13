@@ -48,6 +48,11 @@ export async function checkCachedUpdate(): Promise<string | null> {
   return invoke<string | null>("check_cached_update");
 }
 
+export async function restartForComponentUpdates(): Promise<void> {
+  if (!isDesktopApp()) return;
+  await invoke<void>("restart_for_component_updates");
+}
+
 export interface UpdateEventHandlers {
   onCheckStart?: () => void;
   onDownloadProgress?: (progress: UpdateProgress) => void;

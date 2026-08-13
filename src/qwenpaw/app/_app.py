@@ -186,7 +186,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     #
     # Note: being pure backfill, this could later run asynchronously (off the
     # boot path) to speed up startup.
-    await _sync_scroll_history_on_startup()
+    # The legacy Scroll backfill runs once in background maintenance below.
+    # Keeping it off the request-ready path avoids duplicate startup disk I/O.
 
     # Create core managers (instant — no I/O)
     provider_manager = ProviderManager.get_instance()

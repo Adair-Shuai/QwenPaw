@@ -24,6 +24,12 @@ use version::version_lte;
 
 pub(crate) use version::is_remote_update_newer;
 
+#[tauri::command]
+pub(crate) async fn restart_for_component_updates(app: AppHandle) -> Result<(), String> {
+    backend::stop_and_wait(&app).await?;
+    app.restart();
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct DesktopUpdate {

@@ -144,7 +144,8 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
           } }, "PDF"),
           React.createElement("button", { type: "button", title: "导出 HTML", onClick: (event: any) => {
             const target = event.currentTarget.closest(".qwenpaw-genui-tree")?.querySelector(".qwenpaw-genui-export-target") as HTMLElement | null;
-            if (target) exportGenUiHtml(target, snap.tree.root, exportedValues.current.get(snap.uiId) || {}, snap.uiId, snap.uiId);
+            if (target) void exportGenUiHtml(target, snap.tree.root, exportedValues.current.get(snap.uiId) || {}, snap.uiId, snap.uiId)
+              .catch((error) => console.warn("[ugsci.genui] HTML export failed", error));
           } }, "HTML"),
         ),
       ),

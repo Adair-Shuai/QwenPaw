@@ -48,6 +48,7 @@ pub fn run() {
             updates::download_desktop_update,
             updates::install_downloaded_update,
             updates::check_cached_update,
+            updates::restart_for_component_updates,
             tray::minimize_to_tray,
             tray::quit_app,
             tray::set_tray_labels,
