@@ -160,6 +160,36 @@ def verify_frontend(base_url: str) -> None:
     print("PASS  GET / -> frontend HTML served")
 
 
+def verify_bundled_plugins(base_url: str) -> None:
+    """Require critical bundled plugin frontends to be loaded."""
+    deadline = time.monotonic() + DEFAULT_TIMEOUT
+    last_body = ""
+    required = {"flowforge", "ugsci", "ugsci_research"}
+    while time.monotonic() < deadline:
+        last_body = _http("GET", f"{base_url}/api/frontend_plugin")
+        try:
+            payload = json.loads(last_body)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, list):
+            loaded = {
+                str(item.get("id"))
+                for item in payload
+                if isinstance(item, dict) and item.get("loaded")
+            }
+            if required <= loaded:
+                print(
+                    "PASS  bundled plugins loaded -> "
+                    + ", ".join(sorted(required)),
+                )
+                return
+        time.sleep(2)
+    raise RuntimeError(
+        "Critical bundled plugins did not load before timeout: "
+        f"{sorted(required)}; last response={last_body[:500]}",
+    )
+
+
 def configure_provider(
     base_url: str,
     provider_id: str,
@@ -809,7 +839,7 @@ def _run_llm_with_retry(
 # =============================================================================
 
 
-def main() -> int:
+def main() -> int:  # pylint: disable=too-many-statements
     parser = argparse.ArgumentParser(
         description=(
             "Verify a running QwenPaw desktop backend end-to-end: API "
@@ -911,6 +941,7 @@ def main() -> int:
         # ---- API-level checks (always run, no key needed) ----
         health_check(base_url)
         verify_frontend(base_url)
+        verify_bundled_plugins(base_url)
 
         # ---- UI load (always run unless --skip-ui, no key needed) ----
         # This catches broken Vite bundles, missing assets, CSP issues,

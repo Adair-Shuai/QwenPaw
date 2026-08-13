@@ -118,6 +118,21 @@ bash scripts/pack-tauri/build_pyinstaller.sh
 echo "PyInstaller backend built"
 echo ""
 
+echo "== Step 2a: Verifying Bundled Plugins in Backend =="
+BUNDLED_PLUGIN_ROOT="${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle"
+if [ ! -d "${BUNDLED_PLUGIN_ROOT}" ]; then
+    echo "ERROR: Frozen backend is missing bundled plugins: ${BUNDLED_PLUGIN_ROOT}"
+    exit 1
+fi
+for plugin_id in flowforge ugsci ugsci_research; do
+    if [ ! -f "${BUNDLED_PLUGIN_ROOT}/${plugin_id}/plugin.json" ]; then
+        echo "ERROR: Frozen backend is missing bundled plugin manifest: ${plugin_id}"
+        exit 1
+    fi
+done
+echo "Bundled plugin payload verified"
+echo ""
+
 echo "== Step 2b: Signing PyInstaller Backend =="
 bash "${SIGN_MACOS_BUNDLE}" \
     "${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend" \
@@ -164,6 +179,17 @@ if [ ! -x "${HELPER_PATH}" ]; then
     echo "ERROR: Computer Use helper was not bundled at ${HELPER_PATH}"
     exit 1
 fi
+APP_PLUGIN_ROOT="${APP_PATH}/Contents/Resources/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle"
+if [ ! -d "${APP_PLUGIN_ROOT}" ]; then
+    echo "ERROR: Final macOS app is missing bundled plugins: ${APP_PLUGIN_ROOT}"
+    exit 1
+fi
+for plugin_id in flowforge ugsci ugsci_research; do
+    if [ ! -f "${APP_PLUGIN_ROOT}/${plugin_id}/plugin.json" ]; then
+        echo "ERROR: Final macOS app is missing bundled plugin manifest: ${plugin_id}"
+        exit 1
+    fi
+done
 
 echo "== Step 3b: Verifying Final macOS App Signature =="
 # Tauri signs the outer .app after embedding the pre-signed native resources.

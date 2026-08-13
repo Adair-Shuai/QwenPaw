@@ -570,11 +570,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 configs=plugin_configs,
             )
             logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
-            app.state.bundled_plugins_status = {
-                "state": "ready",
-                "installed": newly_installed,
-                "error": None,
-            }
             startup_state.update(
                 "plugins",
                 "正在加载功能模块…",
@@ -608,6 +603,15 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
             app.state.plugin_loader = plugin_loader
             app.state.plugin_registry = plugin_loader.registry
+            # The frontend refreshes its plugin manifests when it observes
+            # `ready`. Publish that state only after the public endpoint can
+            # actually see the loaded registry, otherwise a one-shot refresh
+            # can permanently cache an empty plugin list.
+            app.state.bundled_plugins_status = {
+                "state": "ready",
+                "installed": newly_installed,
+                "error": None,
+            }
 
             # ---- Plugin Control Commands ----
             logger.debug("Registering plugin control commands...")
