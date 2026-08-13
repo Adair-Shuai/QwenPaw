@@ -20,6 +20,7 @@ import os
 import platform
 import shutil
 import tarfile
+import stat
 import tempfile
 import time
 import urllib.error
@@ -289,8 +290,16 @@ def _prune_regenerable_runtime_files(root: Path, os_name: str) -> None:
     if os_name != "windows":
         return
     for cache in root.glob("bin/server/classes*.jsa"):
-        if cache.is_file():
-            cache.unlink()
+        if not cache.is_file():
+            continue
+        # Windows commonly ships these CDS archives with the read-only bit
+        # set. Clear it before unlinking so packaging can exclude the
+        # regenerable cache instead of failing on the resource copy.
+        try:
+            cache.chmod(stat.S_IWRITE)
+        except OSError:
+            pass
+        cache.unlink()
 
 
 def main() -> None:
