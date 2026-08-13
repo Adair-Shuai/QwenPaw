@@ -8,6 +8,12 @@ ARG UV_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:la
 FROM ${NODE_IMAGE} AS console-builder
 WORKDIR /app
 COPY console /app/console
+# The console tests/build resolve shared UGSci sources through aliases and
+# relative imports outside the console directory. Keep those sources in the
+# Docker build context so pnpm build (including typecheck/tests) matches the
+# repository layout used by local development.
+COPY plugins/bundle/ugsci/ui/src /app/plugins/bundle/ugsci/ui/src
+COPY src/qwenpaw/plugins_bundle/ugsci/ui/src /app/src/qwenpaw/plugins_bundle/ugsci/ui/src
 RUN npm install --global --force corepack@0.34.6 \
  && corepack enable \
  && corepack prepare pnpm@9.15.9 --activate \
