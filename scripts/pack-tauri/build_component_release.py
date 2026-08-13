@@ -26,8 +26,12 @@ from component_common import (
     verify_private_key_public_key,
 )
 from build_component_delta import write_delta
+from component_manifest import validate_manifest
 
 _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_MAX_ARCHIVE_MEMBERS = 10_000
+_MAX_ARCHIVE_BYTES = 512 * 1024 * 1024
+_MAX_MEMBER_BYTES = 128 * 1024 * 1024
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
@@ -201,6 +205,17 @@ def _write_history(
     return _sign(output, private)
 
 
+def _validate_archive(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        infos = archive.infolist()
+        if len(infos) > _MAX_ARCHIVE_MEMBERS:
+            raise ValueError("component archive contains too many members")
+        if sum(info.file_size for info in infos) > _MAX_ARCHIVE_BYTES:
+            raise ValueError("component archive is too large")
+        if any(info.file_size > _MAX_MEMBER_BYTES for info in infos):
+            raise ValueError("component archive member is too large")
+
+
 def _full_zip(source: Path, output: Path) -> None:
     temporary = output.with_name(f".{output.name}.tmp")
     with zipfile.ZipFile(
@@ -296,6 +311,7 @@ def build_release(
         component_dir.mkdir(parents=True, exist_ok=True)
         artifact = component_dir / "full.zip"
         _full_zip(source, artifact)
+        _validate_archive(artifact)
         signature = _sign(artifact, private)
         relative_url = (
             f"artifacts/components/{target}/{component}/{version}/full.zip"
@@ -331,6 +347,7 @@ def build_release(
             delta_dir.mkdir(parents=True, exist_ok=True)
             delta_artifact = delta_dir / "delta.zip"
             write_delta(base_source, source, delta_artifact, preserve_paths)
+            _validate_archive(delta_artifact)
             if (
                 delta_artifact.stat().st_size
                 >= artifact.stat().st_size * delta_max_ratio
@@ -382,6 +399,11 @@ def build_release(
     metadata.mkdir(parents=True, exist_ok=True)
     manifest_name = (
         f"{target}-{release_id}.json" if release_id else f"{target}.json"
+    )
+    validate_manifest(
+        manifest,
+        expected_target=target,
+        core_version=core_min_version,
     )
     manifest_path = metadata / manifest_name
     manifest_path.write_bytes(canonical_json(manifest))

@@ -32,33 +32,44 @@ def plugin_id(plugin_dir: Path) -> str:
     return value
 
 
-def discover_bundled_plugins(repo: Path) -> list[Path]:
+def discover_bundled_plugins(
+    repo: Path,
+    plugin_roots: tuple[str, ...] | None = None,
+) -> list[Path]:
     """Return every manifest plugin except explicitly denied plugin IDs."""
     plugins_root = repo / "plugins"
     selected: list[Path] = []
     destination_names: dict[str, Path] = {}
     component_ids: dict[str, Path] = {}
-    for manifest in sorted(plugins_root.glob("*/*/plugin.json")):
-        plugin_dir = manifest.parent
-        identifier = plugin_id(plugin_dir)
-        previous_id = component_ids.get(identifier)
-        if previous_id is not None:
-            raise ValueError(
-                "Bundled plugins share a manifest id: "
-                f"{previous_id} and {plugin_dir}",
-            )
-        component_ids[identifier] = plugin_dir
-        if identifier in PLUGIN_DENYLIST:
-            continue
-        previous = destination_names.get(plugin_dir.name)
-        if previous is not None:
-            raise ValueError(
-                "Bundled plugins share a destination name: "
-                f"{previous} and {plugin_dir}",
-            )
-        destination_names[plugin_dir.name] = plugin_dir
-        selected.append(plugin_dir)
+    if plugin_roots is None:
+        roots: tuple[str, ...] = tuple(
+            sorted(path.name for path in plugins_root.iterdir() if path.is_dir()),
+        )
+    else:
+        roots = tuple(plugin_roots)
+    for root_name in roots:
+        for manifest in sorted((plugins_root / root_name).glob("*/plugin.json")):
+            plugin_dir = manifest.parent
+            identifier = plugin_id(plugin_dir)
+            previous_id = component_ids.get(identifier)
+            if previous_id is not None:
+                raise ValueError(
+                    "Bundled plugins share a manifest id: "
+                    f"{previous_id} and {plugin_dir}",
+                )
+            component_ids[identifier] = plugin_dir
+            if identifier in PLUGIN_DENYLIST:
+                continue
+            previous = destination_names.get(plugin_dir.name)
+            if previous is not None:
+                raise ValueError(
+                    "Bundled plugins share a destination name: "
+                    f"{previous} and {plugin_dir}",
+                )
+            destination_names[plugin_dir.name] = plugin_dir
+            selected.append(plugin_dir)
     return selected
+
 
 
 def iter_runtime_files(plugin_dir: Path):
@@ -71,12 +82,16 @@ def iter_runtime_files(plugin_dir: Path):
             yield path
 
 
-def stage_bundled_plugins(repo: Path, destination: Path) -> list[str]:
+def stage_bundled_plugins(
+    repo: Path,
+    destination: Path,
+    plugin_roots: tuple[str, ...] | None = None,
+) -> list[str]:
     """Replace destination with the complete selected runtime plugin set."""
     shutil.rmtree(destination, ignore_errors=True)
     destination.mkdir(parents=True, exist_ok=True)
     staged: list[str] = []
-    for source in discover_bundled_plugins(repo):
+    for source in discover_bundled_plugins(repo, plugin_roots=plugin_roots):
         target = destination / source.name
         for source_file in iter_runtime_files(source):
             relative = source_file.relative_to(source)
@@ -93,15 +108,21 @@ def main() -> int:
     parser.add_argument("--repo", type=Path, default=Path.cwd())
     parser.add_argument("--dest", type=Path)
     parser.add_argument("--list-sources", action="store_true")
+    parser.add_argument("--plugin-roots", nargs="*", default=None)
     args = parser.parse_args()
     repo = args.repo.resolve()
+    plugin_roots = tuple(args.plugin_roots) if args.plugin_roots else None
     if args.list_sources:
-        for plugin_dir in discover_bundled_plugins(repo):
+        for plugin_dir in discover_bundled_plugins(repo, plugin_roots=plugin_roots):
             print(plugin_dir)
         return 0
     if args.dest is None:
         parser.error("--dest is required unless --list-sources is used")
-    staged = stage_bundled_plugins(repo, args.dest.resolve())
+    staged = stage_bundled_plugins(
+        repo,
+        args.dest.resolve(),
+        plugin_roots=plugin_roots,
+    )
     print("Bundled plugins: " + ", ".join(staged))
     return 0
 

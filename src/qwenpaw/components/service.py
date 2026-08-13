@@ -18,13 +18,19 @@ from dataclasses import asdict
 from typing import Any
 import logging
 import threading
+from urllib.parse import urlparse
 
 from ..__version__ import __version__
 from ..config.utils import get_plugins_dir
 from ..constant import WORKING_DIR
 from .update import detect_target
 from .client import ComponentClient
-from .update import ComponentUpdateError, ComponentUpdater
+from .update import (
+    DEFAULT_PRESERVE_PATHS,
+    ComponentUpdateError,
+    ComponentUpdatePlan,
+    ComponentUpdater,
+)
 
 logger = logging.getLogger(__name__)
 _PENDING_UPDATES_PATH = WORKING_DIR / "components" / "pending.json"
@@ -184,9 +190,14 @@ def configured_service() -> "ComponentUpdateService | None":
         active_path=WORKING_DIR / "components" / "active.json",
         backup_root=WORKING_DIR / "components" / "backups",
     )
+    manifest_host = (urlparse(manifest_url).hostname or "").strip().lower()
     return ComponentUpdateService(
         updater,
-        ComponentClient(updater, WORKING_DIR / "components" / "cache"),
+        ComponentClient(
+            updater,
+            WORKING_DIR / "components" / "cache",
+            default_allowed_host=manifest_host or None,
+        ),
         manifest_url,
     )
 
@@ -308,7 +319,9 @@ class ComponentUpdateService:
                 if isinstance(entry.get("version"), str)
                 else None
             ),
-            preserve_paths=tuple(entry.get("preserve") or ("engines",)),
+            preserve_paths=tuple(
+                entry.get("preserve") or DEFAULT_PRESERVE_PATHS,
+            ),
         )
         installed = destination if destination.is_dir() else None
         if installed is not None and (installed / ".uninstalled").exists():
@@ -324,40 +337,75 @@ class ComponentUpdateService:
                 "updated": False,
                 "reason": "up-to-date",
             }
-        artifact_meta = (
-            entry["full"]
-            if plan.artifact_kind == "full"
-            else next(
-                item
-                for item in entry.get("deltas", [])
-                if item.get("from") == plan.from_version
+        if plan.artifact_kind == "delta":
+            try:
+                artifact = self.client.download_artifact(
+                    plan.artifact_url,
+                    sha256=plan.artifact_sha256,
+                    size=int(
+                        next(
+                            item
+                            for item in entry.get("deltas", [])
+                            if item.get("from") == plan.from_version
+                        )["size"],
+                    ),
+                    name=f"{component}-{plan.target_version}-delta.zip",
+                )
+                if installed is None:
+                    raise ComponentUpdateError(
+                        "delta update requires an installed base",
+                    )
+                self.updater.apply_delta(
+                    plan,
+                    installed,
+                    artifact,
+                    destination,
+                )
+                return {
+                    "component": component,
+                    "updated": True,
+                    "version": plan.target_version,
+                    "kind": "delta",
+                }
+            except ComponentUpdateError as exc:
+                logger.warning(
+                    "Delta update failed for %s; falling back to full: %s",
+                    component,
+                    exc,
+                )
+        full = entry.get("full")
+        if not isinstance(full, dict):
+            raise ComponentUpdateError(
+                f"component has no full artifact for fallback: {component}",
             )
+        full_plan = ComponentUpdatePlan(
+            component,
+            plan.from_version,
+            plan.target_version,
+            "full",
+            str(full["url"]),
+            str(full["sha256"]),
+            str(full.get("signature", "")),
+            plan.preserve_paths,
         )
         artifact = self.client.download_artifact(
-            plan.artifact_url,
-            sha256=plan.artifact_sha256,
-            size=int(artifact_meta["size"]),
-            name=f"{component}-{plan.target_version}-{plan.artifact_kind}.zip",
+            full_plan.artifact_url,
+            sha256=full_plan.artifact_sha256,
+            size=int(full["size"]),
+            name=f"{component}-{plan.target_version}-full.zip",
         )
-        if plan.artifact_kind == "delta":
-            if installed is None:
-                raise ComponentUpdateError(
-                    "delta update requires an installed base",
-                )
-            self.updater.apply_delta(plan, installed, artifact, destination)
-        else:
-            self.updater.apply_full(
-                plan,
-                artifact,
-                destination,
-                expected_files=entry["files"],
-                preserve_from=installed,
-            )
+        self.updater.apply_full(
+            full_plan,
+            artifact,
+            destination,
+            expected_files=entry["files"],
+            preserve_from=installed,
+        )
         return {
             "component": component,
             "updated": True,
             "version": plan.target_version,
-            "kind": plan.artifact_kind,
+            "kind": "full",
         }
 
 

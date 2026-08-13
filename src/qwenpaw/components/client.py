@@ -53,6 +53,7 @@ class ComponentClient:
         cache_root: Path,
         *,
         client: httpx.Client | None = None,
+        default_allowed_host: str | None = None,
     ):
         self.updater = updater
         self.cache_root = cache_root.resolve()
@@ -69,10 +70,33 @@ class ComponentClient:
             for item in configured_hosts.split(",")
             if item.strip()
         }
+        self.default_allowed_host = (
+            default_allowed_host.strip().lower()
+            if default_allowed_host
+            else None
+        )
         self._download_lock = threading.RLock()
+        self._manifest_lock = threading.RLock()
 
     def close(self) -> None:
         self.client.close()
+
+    def _ensure_allowed_artifact_host(self, url: str) -> None:
+        host = (urlparse(url).hostname or "").strip().lower()
+        if host in {"127.0.0.1", "localhost", "::1"}:
+            return
+        allowed = set(self.allowed_hosts)
+        if self.default_allowed_host:
+            allowed.add(self.default_allowed_host)
+        # Backwards compatibility for tests/custom clients that do not pass
+        # either allowlist input. Production ``configured_service`` always
+        # passes the signed manifest host as the default.
+        if not allowed and self.default_allowed_host is None:
+            return
+        if host not in allowed:
+            raise ComponentUpdateError(
+                f"component artifact host is not allowlisted: {host}",
+            )
 
     def fetch_manifest(
         self,
@@ -267,47 +291,48 @@ class ComponentClient:
         manifest: bytes,
         signature: bytes,
     ) -> tuple[Path, Path]:
-        self.cache_root.mkdir(parents=True, exist_ok=True)
-        # Keep each verified JSON/signature pair in its own immutable cache
-        # directory.  A crash or concurrent fetch can therefore never leave
-        # the shared ``manifest.json`` and ``manifest.json.sig`` mixed.
-        digest = _sha256_bytes(manifest)
-        manifests_root = self.cache_root / "manifests"
-        manifests_root.mkdir(parents=True, exist_ok=True)
-        staged = manifests_root / digest
-        valid_cached = (
-            staged.is_dir()
-            and not staged.is_symlink()
-            and (staged / "manifest.json").is_file()
-            and (staged / "manifest.json.sig").is_file()
-            and _sha256_file(staged / "manifest.json") == digest
-            and (staged / "manifest.json.sig").read_bytes() == signature
-        )
-        if not valid_cached:
-            if staged.exists() or staged.is_symlink():
-                if staged.is_symlink():
-                    staged.unlink()
-                else:
-                    shutil.rmtree(staged)
-            temporary = (
-                manifests_root
-                / f".{digest}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+        with self._manifest_lock:
+            self.cache_root.mkdir(parents=True, exist_ok=True)
+            # Keep each verified JSON/signature pair in its own immutable cache
+            # directory.  A crash or concurrent fetch can therefore never leave
+            # the shared ``manifest.json`` and ``manifest.json.sig`` mixed.
+            digest = _sha256_bytes(manifest)
+            manifests_root = self.cache_root / "manifests"
+            manifests_root.mkdir(parents=True, exist_ok=True)
+            staged = manifests_root / digest
+            valid_cached = (
+                staged.is_dir()
+                and not staged.is_symlink()
+                and (staged / "manifest.json").is_file()
+                and (staged / "manifest.json.sig").is_file()
+                and _sha256_file(staged / "manifest.json") == digest
+                and (staged / "manifest.json.sig").read_bytes() == signature
             )
-            try:
-                temporary.mkdir(parents=True, exist_ok=False)
-                (temporary / "manifest.json").write_bytes(manifest)
-                (temporary / "manifest.json.sig").write_bytes(signature)
-                os.replace(temporary, staged)
-            except FileExistsError:
-                shutil.rmtree(temporary, ignore_errors=True)
-            except Exception:
-                shutil.rmtree(temporary, ignore_errors=True)
-                raise
-        manifest_path = staged / "manifest.json"
-        signature_path = staged / "manifest.json.sig"
-        os.utime(staged, None)
-        self._prune_cache(protected={staged})
-        return manifest_path, signature_path
+            if not valid_cached:
+                if staged.exists() or staged.is_symlink():
+                    if staged.is_symlink():
+                        staged.unlink()
+                    else:
+                        shutil.rmtree(staged)
+                temporary = (
+                    manifests_root
+                    / f".{digest}.{os.getpid()}.{uuid.uuid4().hex}.tmp"
+                )
+                try:
+                    temporary.mkdir(parents=True, exist_ok=False)
+                    (temporary / "manifest.json").write_bytes(manifest)
+                    (temporary / "manifest.json.sig").write_bytes(signature)
+                    os.replace(temporary, staged)
+                except FileExistsError:
+                    shutil.rmtree(temporary, ignore_errors=True)
+                except Exception:
+                    shutil.rmtree(temporary, ignore_errors=True)
+                    raise
+            manifest_path = staged / "manifest.json"
+            signature_path = staged / "manifest.json.sig"
+            os.utime(staged, None)
+            self._prune_cache(protected={staged})
+            return manifest_path, signature_path
 
     def download_artifact(
         self,
@@ -318,6 +343,7 @@ class ComponentClient:
         name: str,
     ) -> Path:
         url = _https_url(url)
+        self._ensure_allowed_artifact_host(url)
         if type(size) is not int or size < 0:
             raise ComponentUpdateError("invalid artifact size")
         if len(sha256) != 64 or any(
@@ -332,34 +358,44 @@ class ComponentClient:
         final = artifact_root / name
         partial = final.with_name(final.name + ".part")
         lease = artifact_root / ".download.lock"
-        with self._download_lock:
-            if (
-                final.is_file()
-                and not final.is_symlink()
-                and final.stat().st_size == size
-                and _sha256_file(final).lower() == sha256.lower()
-            ):
-                os.utime(artifact_root, None)
-                self._prune_cache(protected={artifact_root})
-                return final
-            if final.exists() or final.is_symlink():
-                final.unlink(missing_ok=True)
+        last_error: Exception | None = None
+        for attempt in range(3):
             try:
-                lease.mkdir()
-            except FileExistsError as exc:
-                raise ComponentUpdateError(
-                    "artifact cache download is already in progress",
-                ) from exc
-            try:
-                return self._download_artifact_locked(
-                    url,
-                    sha256,
-                    size,
-                    final,
-                    partial,
-                )
-            finally:
-                shutil.rmtree(lease, ignore_errors=True)
+                with self._download_lock:
+                    if (
+                        final.is_file()
+                        and not final.is_symlink()
+                        and final.stat().st_size == size
+                        and _sha256_file(final).lower() == sha256.lower()
+                    ):
+                        os.utime(artifact_root, None)
+                        self._prune_cache(protected={artifact_root})
+                        return final
+                    if final.exists() or final.is_symlink():
+                        final.unlink(missing_ok=True)
+                    try:
+                        lease.mkdir()
+                    except FileExistsError as exc:
+                        raise ComponentUpdateError(
+                            "artifact cache download is already in progress",
+                        ) from exc
+                    try:
+                        return self._download_artifact_locked(
+                            url,
+                            sha256,
+                            size,
+                            final,
+                            partial,
+                        )
+                    finally:
+                        shutil.rmtree(lease, ignore_errors=True)
+            except (httpx.HTTPError, OSError, ComponentUpdateError) as exc:
+                last_error = exc
+                if attempt < 2:
+                    time.sleep(0.5 * (2**attempt))
+        raise ComponentUpdateError(
+            f"artifact download failed after retries: {last_error}",
+        ) from last_error
 
     def _download_artifact_locked(
         self,

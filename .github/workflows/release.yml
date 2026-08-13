@@ -591,7 +591,31 @@ jobs:
               --header "x-oss-forbid-overwrite:true"
             cmp -s "$file" <(ossutil cat "$uri")
           }
-          for pointer in component-release/metadata/components/stable/*.current.json; do
+
+          mapfile -t pointers < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*.current.json' | sort)
+          previous_dir="${RUNNER_TEMP}/component-previous-pointers"
+          mkdir -p "$previous_dir"
+          promoted_bases=()
+
+          rollback_pointers() {
+            local code=$?
+            if [[ "$code" -ne 0 ]]; then
+              for base in "${promoted_bases[@]}"; do
+                local uri="oss://${OSS_BUCKET}/metadata/components/stable/${base}"
+                if [[ -s "$previous_dir/$base" ]]; then
+                  ossutil cp "$previous_dir/$base" "$uri" --acl public-read --force \
+                    --meta "Cache-Control:public, max-age=0, must-revalidate" >/dev/null || true
+                else
+                  ossutil rm "$uri" --force >/dev/null || true
+                fi
+              done
+            fi
+            return "$code"
+          }
+          trap 'rollback_pointers' ERR
+
+          # Phase 1: validate, merge history, and upload immutable history.
+          for pointer in "${pointers[@]}"; do
             base="$(basename "$pointer")"
             target="${base%.current.json}"
             remote_pointer="${RUNNER_TEMP}/${target}.remote-current.json"
@@ -599,10 +623,12 @@ jobs:
               remote_exists=true
               python scripts/pack-tauri/check_component_pointer_promotion.py \
                 --local "$pointer" --remote "$remote_pointer" --target "$target"
+              cp "$remote_pointer" "$previous_dir/$base"
             else
               remote_exists=false
               python scripts/pack-tauri/check_component_pointer_promotion.py \
                 --local "$pointer" --target "$target"
+              rm -f "$previous_dir/$base"
             fi
             history=$(find component-release/metadata/components/stable -maxdepth 1 -type f -name "${target}-*.history.json" -print -quit)
             test -s "$history"
@@ -612,23 +638,29 @@ jobs:
               if [[ -z "$remote_history_url" ]]; then
                 echo "Remote pointer predates signed history; publishing migration history"
               else
-              remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
-              remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
-              remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
-              ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
-              ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
-              python scripts/pack-tauri/merge_component_history.py \
-                --local-pointer "$pointer" \
-                --local-history "$history" \
-                --local-history-signature "${history}.sig" \
-                --remote-pointer "$remote_pointer" \
-                --remote-history "$remote_history" \
-                --remote-history-signature "$remote_history_sig" \
-                --target "$target" --limit 10
+                remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
+                remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
+                remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
+                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
+                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
+                python scripts/pack-tauri/merge_component_history.py \
+                  --local-pointer "$pointer" \
+                  --local-history "$history" \
+                  --local-history-signature "${history}.sig" \
+                  --remote-pointer "$remote_pointer" \
+                  --remote-history "$remote_history" \
+                  --remote-history-signature "$remote_history_sig" \
+                  --target "$target" --limit 10
               fi
             fi
             publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
             publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
+          done
+
+          # Phase 2: switch all platform pointers after all immutable objects are live.
+          for pointer in "${pointers[@]}"; do
+            base="$(basename "$pointer")"
+            promoted_bases+=("$base")
             tmp="oss://${OSS_BUCKET}/metadata/components/stable/${base}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
             ossutil cp "$pointer" "$tmp" --acl public-read
             ossutil ls "$tmp" >/dev/null
@@ -636,6 +668,7 @@ jobs:
             ossutil rm "$tmp" --force || true
             cmp -s "$pointer" <(ossutil cat "oss://${OSS_BUCKET}/metadata/components/stable/${base}")
           done
+          trap - ERR
 
   finalize:
     needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins, publish-components]

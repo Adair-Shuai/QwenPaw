@@ -10,12 +10,16 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 from component_common import (
+    DEFAULT_PRESERVE_PATHS,
     file_inventory,
     safe_relative_path,
     read_plugin_metadata,
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
+_ALLOWED_PRESERVE_PATHS = frozenset(
+    {"engines", "data", "state", "workspace", "models", "user-data"},
+)
 
 
 def _version(value: Any, field: str) -> Version:
@@ -83,6 +87,35 @@ def validate_manifest(
         _version(component.get("version"), f"{component_id}.version")
         if component.get("kind", "directory") != "directory":
             raise ValueError(f"unsupported component kind for {component_id}")
+        preserve = component.get("preserve")
+        if preserve is not None:
+            if not isinstance(preserve, list) or not preserve:
+                raise ValueError(
+                    f"invalid preserve for {component_id}",
+                )
+            normalized_preserve: list[str] = []
+            for prefix in preserve:
+                if not isinstance(prefix, str):
+                    raise ValueError(
+                        f"invalid preserve entry for {component_id}",
+                    )
+                prefix = safe_relative_path(prefix.rstrip("/"))
+                if prefix not in _ALLOWED_PRESERVE_PATHS:
+                    raise ValueError(
+                        f"unsupported preserve path for {component_id}: {prefix}",
+                    )
+                if any(
+                    prefix == existing
+                    or prefix.startswith(f"{existing}/")
+                    or existing.startswith(f"{prefix}/")
+                    for existing in normalized_preserve
+                ):
+                    raise ValueError(
+                        f"overlapping preserve paths for {component_id}",
+                    )
+                if prefix not in normalized_preserve:
+                    normalized_preserve.append(prefix)
+            component["preserve"] = normalized_preserve
         files = component.get("files")
         if not isinstance(files, dict):
             raise ValueError(
@@ -134,16 +167,25 @@ def validate_manifest(
                 raise ValueError(
                     f"invalid full artifact signature for {component_id}",
                 )
+        target_version = _version(component["version"], f"{component_id}.version")
         deltas = component.get("deltas", [])
         if not isinstance(deltas, list):
             raise ValueError(f"invalid deltas for {component_id}")
+        seen_delta_versions: set[Version] = set()
         for delta in deltas:
             if not isinstance(delta, dict) or not all(
                 delta.get(key)
                 for key in ("from", "url", "sha256", "signature")
             ):
                 raise ValueError(f"invalid delta metadata for {component_id}")
-            _version(delta["from"], f"{component_id}.delta.from")
+            from_version = _version(delta["from"], f"{component_id}.delta.from")
+            if from_version >= target_version:
+                raise ValueError(
+                    f"delta from version is not older for {component_id}",
+                )
+            if from_version in seen_delta_versions:
+                raise ValueError(f"duplicate delta from version for {component_id}")
+            seen_delta_versions.add(from_version)
             if (
                 type(delta.get("size")) is not int
                 or delta["size"] < 0
@@ -176,7 +218,7 @@ def validate_manifest(
         if (
             file_inventory(
                 component_root,
-                tuple(component.get("preserve") or ("engines",)),
+                tuple(component.get("preserve") or DEFAULT_PRESERVE_PATHS),
             )
             != component["files"]
         ):

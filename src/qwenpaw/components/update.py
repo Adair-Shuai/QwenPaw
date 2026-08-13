@@ -9,6 +9,7 @@ import base64
 import binascii
 import hashlib
 import json
+import mmap
 import os
 import platform
 import shutil
@@ -36,7 +37,7 @@ class ComponentUpdateError(ValueError):
     """A component update failed validation or activation."""
 
 
-DEFAULT_PRESERVE_PATHS = ("engines",)
+DEFAULT_PRESERVE_PATHS = ("engines", "data", "state", "user-data")
 ALLOWED_PRESERVE_PATHS = frozenset(
     {"engines", "data", "state", "workspace", "models", "user-data"},
 )
@@ -211,6 +212,16 @@ def _inventory(
     return dict(sorted(result.items()))
 
 
+def _copy_component_file(source: str, destination: str) -> None:
+    """Copy one regular component file after rejecting links/hard links."""
+    path = Path(source)
+    if _is_link_like(path):
+        raise ComponentUpdateError(f"link in component tree: {path}")
+    if path.stat().st_nlink > 1:
+        raise ComponentUpdateError(f"hard link in component tree: {path}")
+    shutil.copy2(path, destination)
+
+
 def _content_matches(
     actual: dict[str, dict[str, Any]],
     expected: dict[str, dict[str, Any]],
@@ -265,6 +276,40 @@ def _verify_signature(
             public_key,
         )
         key.verify(signature, data)
+    except Exception as exc:  # noqa: BLE001
+        raise ComponentUpdateError(
+            "component signature verification failed",
+        ) from exc
+
+
+def _verify_signature_file(
+    path: Path,
+    signature_b64: str,
+    public_key_b64: str,
+) -> None:
+    """Verify an Ed25519 signature over a potentially large file stream."""
+    if Ed25519PublicKey is None:
+        raise ComponentUpdateError(
+            "cryptography is required for component signatures",
+        )
+    try:
+        public_key = _decode_base64(
+            public_key_b64,
+            label="component public key",
+        )
+        signature = _decode_base64(
+            signature_b64,
+            label="component signature",
+        )
+        if len(public_key) != 32 or len(signature) != 64:
+            raise ValueError("invalid Ed25519 key or signature length")
+        key = Ed25519PublicKey.from_public_bytes(public_key)
+        with path.open("rb") as stream:
+            mapped = mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ)
+            try:
+                key.verify(signature, mapped)
+            finally:
+                mapped.close()
     except Exception as exc:  # noqa: BLE001
         raise ComponentUpdateError(
             "component signature verification failed",
@@ -643,22 +688,30 @@ class ComponentUpdater:
                 "interrupted component activation contains an unsafe link",
             )
         if not destination.exists():
-            if expected_files is None or not _content_matches(
-                _inventory(previous, preserve_paths),
-                expected_files,
-            ):
-                raise ComponentUpdateError(
-                    "cannot verify interrupted previous component",
+            # ``previous`` is the exact directory that was atomically moved
+            # aside before activation. It is an older verified version, so it
+            # cannot be compared against the new manifest's expected_files.
+            # Validate links/hard links and identity, then restore it as the
+            # last known-good component.
+            _inventory(previous, preserve_paths)
+            try:
+                plugin = json.loads(
+                    (previous / "plugin.json").read_text(encoding="utf-8"),
                 )
-            plugin = json.loads(
-                (previous / "plugin.json").read_text(encoding="utf-8"),
-            )
-            if plugin.get("id") != component:
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+                raise ComponentUpdateError(
+                    "interrupted previous plugin.json is invalid",
+                ) from exc
+            if not isinstance(plugin, dict) or plugin.get("id") != component:
                 raise ComponentUpdateError(
                     "interrupted previous component identity mismatch",
                 )
             previous.replace(destination)
-            self._commit_active(component, str(plugin["version"]), destination)
+            self._commit_active(
+                component,
+                str(plugin.get("version", "")),
+                destination,
+            )
             return
         active_version: str | None = None
         if self.active_path is not None and self.active_path.is_file():
@@ -949,8 +1002,8 @@ class ComponentUpdater:
             raise ComponentUpdateError("delta artifact sha256 mismatch")
         if not plan.artifact_signature:
             raise ComponentUpdateError("delta artifact signature is required")
-        _verify_signature(
-            archive.read_bytes(),
+        _verify_signature_file(
+            archive,
             plan.artifact_signature,
             self.public_key_b64,
         )
@@ -959,7 +1012,12 @@ class ComponentUpdater:
             dir=str(destination.parent),
         ) as temp:
             staged = Path(temp) / "component"
-            shutil.copytree(base, staged)
+            base_inventory = _inventory(base, plan.preserve_paths)
+            shutil.copytree(
+                base,
+                staged,
+                copy_function=_copy_component_file,
+            )
             with zipfile.ZipFile(archive) as bundle:
                 infos = bundle.infolist()
                 if (
@@ -1006,7 +1064,7 @@ class ComponentUpdater:
                         "delta metadata does not match plan",
                     )
                 if not _content_matches(
-                    _inventory(base, plan.preserve_paths),
+                    base_inventory,
                     delta.get("base_files", {}),
                 ):
                     raise ComponentUpdateError(
@@ -1139,8 +1197,8 @@ class ComponentUpdater:
             raise ComponentUpdateError("full artifact signature is required")
         if _sha256(archive) != plan.artifact_sha256:
             raise ComponentUpdateError("full artifact sha256 mismatch")
-        _verify_signature(
-            archive.read_bytes(),
+        _verify_signature_file(
+            archive,
             plan.artifact_signature,
             self.public_key_b64,
         )

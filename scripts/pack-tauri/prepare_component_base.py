@@ -28,6 +28,7 @@ from pathlib import Path, PurePosixPath
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from component_common import (
+    DEFAULT_PRESERVE_PATHS,
     canonical_json,
     decode_base64,
     file_inventory,
@@ -280,7 +281,9 @@ def prepare_base(
                 raise ValueError(
                     f"previous artifact identity mismatch for {component}",
                 )
-            preserve_paths = tuple(entry.get("preserve") or ("engines",))
+            preserve_paths = tuple(
+                entry.get("preserve") or DEFAULT_PRESERVE_PATHS,
+            )
             if file_inventory(component_base, preserve_paths) != entry.get(
                 "files",
             ):
