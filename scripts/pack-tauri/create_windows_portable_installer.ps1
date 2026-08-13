@@ -388,13 +388,19 @@ $bootstrapSource = Join-Path $PSScriptRoot "windows_portable_bootstrap.cs"
 if (-not (Test-Path -LiteralPath $bootstrapSource -PathType Leaf)) {
   throw "Portable Setup bootstrap source not found: $bootstrapSource"
 }
-$bootstrapCode = Get-Content -LiteralPath $bootstrapSource -Raw -Encoding UTF8
 Remove-Item -LiteralPath $setupExe -Force -ErrorAction SilentlyContinue
-Add-Type -TypeDefinition $bootstrapCode `
-  -Language CSharp `
-  -ReferencedAssemblies @("System.dll", "System.Core.dll", "System.Windows.Forms.dll") `
-  -OutputAssembly $setupExe `
-  -OutputType WindowsApplication
+$frameworkCompilers = @(
+  (Join-Path $env:WINDIR "Microsoft.NET\Framework64\v4.0.30319\csc.exe"),
+  (Join-Path $env:WINDIR "Microsoft.NET\Framework\v4.0.30319\csc.exe")
+)
+$csc = $frameworkCompilers | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+if (-not $csc) { throw "Windows .NET Framework C# compiler was not found" }
+& $csc /nologo /target:winexe /optimize+ "/out:$setupExe" `
+  /reference:System.dll /reference:System.Core.dll /reference:System.Windows.Forms.dll `
+  $bootstrapSource
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setupExe -PathType Leaf)) {
+  throw "Portable Setup bootstrap compilation failed (exit $LASTEXITCODE)"
+}
 
 $rootPrefix = $PortableRoot.TrimEnd('\') + '\'
 $checksumLines = Get-ChildItem -LiteralPath $PortableRoot -File -Recurse -Force |
