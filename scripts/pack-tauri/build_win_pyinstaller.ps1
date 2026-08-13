@@ -250,15 +250,16 @@ if ($NsisExe) {
     if ($AppExe) {
         Write-Host "Compiled binary found; creating complete portable zip" -ForegroundColor Yellow
         $PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci Desktop"
+        $PortablePayload = Join-Path $PortableRoot "payload"
         $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
         if (Test-Path $PortableRoot) { Remove-Item -Recurse -Force $PortableRoot }
-        New-Item -ItemType Directory -Force -Path $PortableRoot | Out-Null
+        New-Item -ItemType Directory -Force -Path $PortablePayload | Out-Null
         # Keep the Cargo/Tauri binary name internal to the build tree. The
         # user-facing portable package exposes a stable product executable.
-        Copy-Item -Force $AppExe.FullName (Join-Path $PortableRoot "UGSci.exe")
+        Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
         $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
         if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
-        Copy-Item -Recurse -Force $Resources (Join-Path $PortableRoot "binaries")
+        Copy-Item -Recurse -Force $Resources (Join-Path $PortablePayload "binaries")
         & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
             -PortableRoot $PortableRoot `
             -ZipPath $ZipPath `

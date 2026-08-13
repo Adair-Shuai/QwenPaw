@@ -20,12 +20,22 @@ if ($installer) {
   $portableRoot = Join-Path $env:RUNNER_TEMP "qwenpaw-portable-install"
   if (Test-Path $portableRoot) { Remove-Item -LiteralPath $portableRoot -Recurse -Force }
   Expand-Archive -LiteralPath $portable.FullName -DestinationPath $portableRoot -Force
-  $installScript = Get-ChildItem -LiteralPath $portableRoot -Filter install.ps1 -Recurse |
-    Select-Object -First 1
-  if (-not $installScript) { throw "Portable package is missing install.ps1" }
-  Write-Host "Installing portable Windows package $($portable.Name)..."
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass -File $installScript.FullName -Silent
-  if ($LASTEXITCODE -ne 0) { throw "Portable Windows installer failed (exit $LASTEXITCODE)" }
+  foreach ($required in @("Setup.exe", "install.ps1", "version.json", "checksums.sha256",
+      "payload\UGSci.exe", "payload\binaries\qwenpaw-backend\qwenpaw-backend.exe")) {
+    if (-not (Test-Path -LiteralPath (Join-Path $portableRoot $required) -PathType Leaf)) {
+      throw "Portable package is missing required entry: $required"
+    }
+  }
+  $unexpectedRootExe = Get-ChildItem -LiteralPath $portableRoot -Filter UGSci.exe -File -ErrorAction SilentlyContinue
+  if ($unexpectedRootExe) { throw "UGSci.exe must be stored under payload/, not at the ZIP root" }
+  $versionManifest = Get-Content -LiteralPath (Join-Path $portableRoot "version.json") -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($versionManifest.schema -ne 1 -or $versionManifest.payload -ne "payload") {
+    throw "Portable package version.json is invalid"
+  }
+  Write-Host "Installing portable Windows package through Setup.exe: $($portable.Name)..."
+  $setup = Join-Path $portableRoot "Setup.exe"
+  $proc = Start-Process -FilePath $setup -ArgumentList "--silent" -Wait -PassThru
+  if ($proc.ExitCode -ne 0) { throw "Portable Windows Setup.exe failed (exit $($proc.ExitCode))" }
 }
 # Tauri NSIS spawns elevated child + finishes immediately; allow time for
 # files to settle.

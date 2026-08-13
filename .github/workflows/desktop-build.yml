@@ -166,6 +166,20 @@ jobs:
           } else {
             $portable = Get-ChildItem "$bundle" -Filter 'UGSci-Desktop-portable.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
             if (-not $portable) { throw 'Neither a signed NSIS setup.exe nor the portable Windows installer was produced' }
+            $inspectRoot = Join-Path $env:RUNNER_TEMP 'qwenpaw-portable-layout'
+            if (Test-Path -LiteralPath $inspectRoot) { Remove-Item -LiteralPath $inspectRoot -Recurse -Force }
+            Expand-Archive -LiteralPath $portable.FullName -DestinationPath $inspectRoot -Force
+            foreach ($required in @('Setup.exe', 'install.ps1', 'version.json', 'checksums.sha256',
+                'payload\UGSci.exe', 'payload\binaries\qwenpaw-backend\qwenpaw-backend.exe')) {
+              if (-not (Test-Path -LiteralPath (Join-Path $inspectRoot $required) -PathType Leaf)) {
+                throw "Portable Windows installer is missing required entry: $required"
+              }
+            }
+            $manifest = Get-Content -LiteralPath (Join-Path $inspectRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($manifest.schema -ne 1 -or $manifest.version -ne '${{ steps.version.outputs.version }}' -or
+                $manifest.platform -ne 'windows-x86_64' -or $manifest.payload -ne 'payload') {
+              throw 'Portable Windows version.json does not match the build target'
+            }
             Copy-Item -LiteralPath $portable.FullName -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" -Force
             Write-Host "Using portable Windows installer fallback: $($portable.Name)"
           }

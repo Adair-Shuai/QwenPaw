@@ -6,12 +6,18 @@ param(
 
 $ErrorActionPreference = "Stop"
 $PortableRoot = (Resolve-Path -LiteralPath $PortableRoot).Path
+$PayloadRoot = Join-Path $PortableRoot "payload"
 $installPs1 = Join-Path $PortableRoot "install.ps1"
-$uninstallPs1 = Join-Path $PortableRoot "uninstall.ps1"
-$uninstallCleanupPs1 = Join-Path $PortableRoot "uninstall-cleanup.ps1"
-$installCmd = Join-Path $PortableRoot "Install.cmd"
-$versionFile = Join-Path $PortableRoot "version.txt"
-$pathHelper = Join-Path $PortableRoot "update-qwenpaw-path.ps1"
+$setupExe = Join-Path $PortableRoot "Setup.exe"
+$versionManifest = Join-Path $PortableRoot "version.json"
+$checksumManifest = Join-Path $PortableRoot "checksums.sha256"
+$uninstallPs1 = Join-Path $PayloadRoot "uninstall.ps1"
+$uninstallCleanupPs1 = Join-Path $PayloadRoot "uninstall-cleanup.ps1"
+$pathHelper = Join-Path $PayloadRoot "update-qwenpaw-path.ps1"
+
+if (-not (Test-Path -LiteralPath $PayloadRoot -PathType Container)) {
+  throw "Portable package payload directory not found: $PayloadRoot"
+}
 
 foreach ($required in @(
   "UGSci.exe",
@@ -19,7 +25,7 @@ foreach ($required in @(
   "binaries\qwenpaw-backend\qwenpaw.exe",
   "binaries\python-runtime\python\python.exe"
 )) {
-  if (-not (Test-Path -LiteralPath (Join-Path $PortableRoot $required))) {
+  if (-not (Test-Path -LiteralPath (Join-Path $PayloadRoot $required))) {
     throw "Portable installer payload is incomplete: $required"
   }
 }
@@ -34,6 +40,55 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$payloadRoot = Join-Path $sourceRoot "payload"
+$checksumManifest = Join-Path $sourceRoot "checksums.sha256"
+$versionManifest = Join-Path $sourceRoot "version.json"
+
+function Test-PackageIntegrity {
+  if (-not (Test-Path -LiteralPath $checksumManifest -PathType Leaf)) {
+    throw "Package checksum manifest is missing"
+  }
+  $root = [IO.Path]::GetFullPath($sourceRoot).TrimEnd('\')
+  $rootPrefix = $root + '\'
+  $expected = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
+  foreach ($line in Get-Content -LiteralPath $checksumManifest -Encoding UTF8) {
+    if (-not $line.Trim()) { continue }
+    if ($line -notmatch '^([0-9a-fA-F]{64})  (.+)$') {
+      throw "Invalid checksum manifest entry: $line"
+    }
+    $expectedHash = $Matches[1].ToLowerInvariant()
+    $relative = $Matches[2].Replace('/', '\')
+    if ([IO.Path]::IsPathRooted($relative) -or $relative.Split('\') -contains '..') {
+      throw "Unsafe checksum path: $relative"
+    }
+    $fullPath = [IO.Path]::GetFullPath((Join-Path $root $relative))
+    if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+      throw "Checksum path escapes package root: $relative"
+    }
+    if (-not $expected.Add($relative)) { throw "Duplicate checksum entry: $relative" }
+    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+      throw "Package file is missing: $relative"
+    }
+    $actualHash = (Get-FileHash -LiteralPath $fullPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $expectedHash) { throw "Package checksum mismatch: $relative" }
+  }
+  foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
+    if ($file.FullName -eq $checksumManifest) { continue }
+    $relative = $file.FullName.Substring($rootPrefix.Length)
+    if (-not $expected.Contains($relative)) { throw "Unchecked package file: $relative" }
+  }
+  foreach ($required in @("Setup.exe", "install.ps1", "version.json", "payload\UGSci.exe",
+      "payload\binaries\qwenpaw-backend\qwenpaw-backend.exe")) {
+    if (-not $expected.Contains($required)) { throw "Required checksum entry is missing: $required" }
+  }
+}
+
+Test-PackageIntegrity
+$packageVersion = Get-Content -LiteralPath $versionManifest -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($packageVersion.schema -ne 1 -or $packageVersion.product -ne "UGSci Desktop" -or
+    $packageVersion.payload -ne "payload" -or -not $packageVersion.version) {
+  throw "version.json is invalid"
+}
 $defaultInstallDir = Join-Path $env:LOCALAPPDATA "UGSci Desktop"
 $existingInstallDir = $null
 $legacyUninstallKey = $null
@@ -166,11 +221,11 @@ function Ensure-WebView2 {
   if ($process.ExitCode -ne 0) { throw "WebView2 installation failed (exit $($process.ExitCode))" }
 }
 
-if (-not (Test-Path $sourceRoot)) { throw "Portable package directory not found" }
-if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "UGSci.exe"))) {
+if (-not (Test-Path $payloadRoot)) { throw "Portable package payload directory not found" }
+if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot "UGSci.exe"))) {
   throw "Portable package is missing UGSci.exe"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot "binaries\qwenpaw-backend\qwenpaw-backend.exe"))) {
+if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot "binaries\qwenpaw-backend\qwenpaw-backend.exe"))) {
   throw "Portable package is missing the frozen backend"
 }
 Stop-ScopedApplication -Root $installDir
@@ -179,11 +234,11 @@ Start-Sleep -Milliseconds 500
 if (Test-Path $stagingDir) { Remove-Item -LiteralPath $stagingDir -Recurse -Force }
 if (Test-Path $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force }
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-Get-ChildItem -LiteralPath $sourceRoot -Force |
-  Where-Object { $_.Name -notin @("install.ps1", "Install.cmd", "uninstall.ps1") } |
+Get-ChildItem -LiteralPath $payloadRoot -Force |
   Copy-Item -Destination $stagingDir -Recurse -Force
+Copy-Item -LiteralPath $versionManifest -Destination (Join-Path $stagingDir "version.json") -Force
 
-$releaseVersion = (Get-Content -LiteralPath (Join-Path $stagingDir "version.txt") -Raw).Trim()
+$releaseVersion = [string]$packageVersion.version
 $hasExistingUserData = $env:QWENPAW_WORKING_DIR -or $env:COPAW_WORKING_DIR -or
   (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".copaw")) -or
   (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".qwenpaw"))
@@ -219,10 +274,6 @@ try {
   if (-not (Test-Path (Join-Path $runtimeDir "selection.txt"))) {
     Set-Content -LiteralPath (Join-Path $runtimeDir "selection.txt") -Value "builtin" -Encoding UTF8
   }
-  Copy-Item -LiteralPath $MyInvocation.MyCommand.Path -Destination (Join-Path $installDir "install.ps1") -Force
-  Copy-Item -LiteralPath (Join-Path $sourceRoot "Install.cmd") -Destination (Join-Path $installDir "Install.cmd") -Force
-  Copy-Item -LiteralPath (Join-Path $sourceRoot "uninstall.ps1") -Destination (Join-Path $installDir "uninstall.ps1") -Force
-
   $cliScripts = Join-Path $installDir "binaries\qwenpaw-backend"
   $legacyCliScripts = Join-Path $installDir "binaries\python-runtime\python\Scripts"
   & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path $legacyCliScripts
@@ -239,7 +290,7 @@ try {
     Remove-Item -LiteralPath (Join-Path $installDir "cli-path.txt") -Force -ErrorAction SilentlyContinue
   }
 
-  $version = (Get-Content -LiteralPath (Join-Path $installDir "version.txt") -Raw).Trim()
+  $version = [string]$packageVersion.version
   New-Item -Path $uninstallKey -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name DisplayName -Value "UGSci Desktop" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $version -PropertyType String -Force | Out-Null
@@ -315,7 +366,7 @@ Remove-Item -LiteralPath (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\P
 Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk") -Force
 & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path (Join-Path $installDir "binaries\python-runtime\python\Scripts")
 $cleanupScript = Join-Path $installDir "uninstall-cleanup.ps1"
-Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $cleanupScript, "-InstallDir", $installDir) -WindowStyle Hidden
+Start-Process powershell.exe -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$cleanupScript`"", "-InstallDir", "`"$installDir`"") -WindowStyle Hidden
 '@ | Set-Content -LiteralPath $uninstallPs1 -Encoding UTF8
 
 @'
@@ -324,14 +375,39 @@ Start-Sleep -Seconds 2
 Remove-Item -LiteralPath $InstallDir -Recurse -Force -ErrorAction SilentlyContinue
 '@ | Set-Content -LiteralPath $uninstallCleanupPs1 -Encoding UTF8
 
-@'
-@echo off
-setlocal
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" %*
-if errorlevel 1 pause
-'@ | Set-Content -LiteralPath $installCmd -Encoding ASCII
+[ordered]@{
+  schema = 1
+  product = "UGSci Desktop"
+  version = $Version
+  platform = "windows-x86_64"
+  entrypoint = "Setup.exe"
+  payload = "payload"
+} | ConvertTo-Json | Set-Content -LiteralPath $versionManifest -Encoding UTF8
 
-Set-Content -LiteralPath $versionFile -Value $Version -Encoding ASCII
+$bootstrapSource = Join-Path $PSScriptRoot "windows_portable_bootstrap.cs"
+if (-not (Test-Path -LiteralPath $bootstrapSource -PathType Leaf)) {
+  throw "Portable Setup bootstrap source not found: $bootstrapSource"
+}
+$bootstrapCode = Get-Content -LiteralPath $bootstrapSource -Raw -Encoding UTF8
+Remove-Item -LiteralPath $setupExe -Force -ErrorAction SilentlyContinue
+Add-Type -TypeDefinition $bootstrapCode `
+  -Language CSharp `
+  -ReferencedAssemblies @("System.dll", "System.Core.dll", "System.Windows.Forms.dll") `
+  -OutputAssembly $setupExe `
+  -OutputType WindowsApplication
+
+$rootPrefix = $PortableRoot.TrimEnd('\') + '\'
+$checksumLines = Get-ChildItem -LiteralPath $PortableRoot -File -Recurse -Force |
+  Where-Object { $_.FullName -ne $checksumManifest } |
+  ForEach-Object {
+    $relative = $_.FullName.Substring($rootPrefix.Length).Replace('\', '/')
+    $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+    [pscustomobject]@{ Relative = $relative; Line = "$hash  $relative" }
+  } |
+  Sort-Object Relative |
+  ForEach-Object { $_.Line }
+$checksumLines | Set-Content -LiteralPath $checksumManifest -Encoding ASCII
+
 $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $zipParent = Split-Path -Parent $ZipPath
 New-Item -ItemType Directory -Path $zipParent -Force | Out-Null
