@@ -73,6 +73,7 @@ def test_frontend_plugins_are_published_before_agent_startup() -> None:
     agent_start = min(agent_start_lines)
     assert min(unrestricted_load_lines) < agent_start
     assert min(loader_publish_lines) < agent_start
+    assert min(loader_publish_lines) < min(unrestricted_load_lines)
     assert max(activation_reconcile_lines) < agent_start
 
 

@@ -5,13 +5,17 @@ from __future__ import annotations
 import json
 from datetime import datetime
 
+import pytest
+
 from qwenpaw.components.service import (
     ComponentUpdateService,
     configured_service,
     queue_all_component_updates,
     queue_component_update,
+    resolve_component_destination,
     run_startup_updates,
 )
+from qwenpaw.components.update import ComponentUpdateError
 from qwenpaw.components.update import ComponentUpdater
 
 
@@ -104,6 +108,450 @@ def test_new_plugin_is_planned_as_full(monkeypatch, tmp_path):
     )
     plans = service.check()
     assert plans[0]["artifact_kind"] == "full"
+
+
+def test_signed_manifest_adopts_new_plugin_as_full(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    monkeypatch.setattr(
+        "qwenpaw.components.service.get_plugins_dir",
+        lambda: plugins,
+    )
+    manifest = {
+        "components": {
+            "new-plugin": {
+                "version": "1.0.0",
+                "files": {},
+                "full": {
+                    "url": "https://oss/new-plugin.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                    "size": 1,
+                },
+            },
+        },
+    }
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"existing"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(
+        updater,
+        _Client(manifest),
+        "https://oss/manifest.json",
+    )
+
+    plans = service.check()
+
+    assert updater.managed_components == frozenset(
+        {"existing", "new-plugin"},
+    )
+    assert len(plans) == 1
+    assert plans[0]["component"] == "new-plugin"
+    assert plans[0]["from_version"] is None
+    assert plans[0]["target_version"] == "1.0.0"
+    assert plans[0]["artifact_kind"] == "full"
+    assert plans[0]["artifact_url"] == "https://oss/new-plugin.zip"
+
+
+def test_signed_new_plugin_can_install_after_service_restart(
+    monkeypatch,
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    monkeypatch.setattr(
+        "qwenpaw.components.service.get_plugins_dir",
+        lambda: plugins,
+    )
+    manifest = {
+        "components": {
+            "new-plugin": {
+                "version": "1.0.0",
+                "files": {},
+                "full": {
+                    "url": "https://oss/new-plugin.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                    "size": 1,
+                },
+            },
+        },
+    }
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"existing"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    monkeypatch.setattr(updater, "plan", lambda *_args, **_kwargs: None)
+    service = ComponentUpdateService(
+        updater,
+        _Client(manifest),
+        "https://oss/manifest.json",
+    )
+
+    result = service.install("new-plugin")
+
+    assert result == {
+        "component": "new-plugin",
+        "updated": False,
+        "reason": "up-to-date",
+    }
+    assert "new-plugin" in updater.managed_components
+
+
+def test_component_directory_alias_is_resolved_by_manifest_id(
+    monkeypatch,
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    alias = plugins / "thinking-log-middleware"
+    alias.mkdir(parents=True)
+    (alias / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "middleware-demo-thinking-log",
+                "version": "1.0.0",
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.get_plugins_dir",
+        lambda: plugins,
+    )
+    manifest = {
+        "components": {
+            "middleware-demo-thinking-log": {
+                "version": "1.1.0",
+                "files": {},
+                "full": {
+                    "url": "https://oss/thinking-log.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                    "size": 1,
+                },
+            },
+        },
+    }
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"middleware-demo-thinking-log"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(
+        updater,
+        _Client(manifest),
+        "https://oss/manifest.json",
+    )
+
+    plans = service.check()
+
+    assert plans[0]["component"] == "middleware-demo-thinking-log"
+    assert plans[0]["from_version"] == "1.0.0"
+
+
+def test_component_destination_rejects_reparse_plugins_root(
+    monkeypatch,
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    monkeypatch.setattr(
+        "qwenpaw.components.service._is_link_like",
+        lambda path: path == plugins,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="plugins directory"):
+        resolve_component_destination(plugins, "demo")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.update._is_link_like",
+        lambda path: path == plugins,
+    )
+    with pytest.raises(ComponentUpdateError, match="plugins directory"):
+        updater.pending_activation_components(plugins)
+
+
+def test_component_destination_recovers_alias_from_hidden_previous(tmp_path):
+    plugins = tmp_path / "plugins"
+    previous = plugins / ".alias.previous"
+    previous.mkdir(parents=True)
+    (previous / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+
+    destination = resolve_component_destination(plugins, "demo")
+
+    assert destination == plugins / "alias"
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=tmp_path / "active.json",
+    )
+    assert updater.rollback_activation("demo", destination) is True
+    assert destination.is_dir()
+    assert not previous.exists()
+
+
+def test_component_destination_ignores_unsafe_previous_alias(tmp_path):
+    plugins = tmp_path / "plugins"
+    previous = plugins / "....previous"
+    previous.mkdir(parents=True)
+    (previous / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+
+    assert resolve_component_destination(plugins, "demo") == plugins / "demo"
+    assert updater.pending_activation_components(plugins) == set()
+
+
+def test_component_destination_rejects_conflicting_direct_directory(tmp_path):
+    plugins = tmp_path / "plugins"
+    direct = plugins / "demo"
+    direct.mkdir(parents=True)
+    (direct / "plugin.json").write_text(
+        json.dumps({"id": "market-plugin", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+
+    try:
+        resolve_component_destination(plugins, "demo")
+    except ComponentUpdateError as exc:
+        assert "occupied" in str(exc)
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("conflicting direct directory was accepted")
+
+
+def test_component_destination_rejects_direct_reparse_point(
+    monkeypatch,
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    direct = plugins / "demo"
+    direct.mkdir(parents=True)
+    (direct / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._is_link_like",
+        lambda path: path == direct,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="must not be a link"):
+        resolve_component_destination(plugins, "demo")
+
+
+def test_component_destination_rejects_duplicate_aliases(tmp_path):
+    plugins = tmp_path / "plugins"
+    for name in ("alias-a", "alias-b"):
+        alias = plugins / name
+        alias.mkdir(parents=True)
+        (alias / "plugin.json").write_text(
+            json.dumps({"id": "demo", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+
+    try:
+        resolve_component_destination(plugins, "demo")
+    except ComponentUpdateError as exc:
+        assert "multiple plugin directories" in str(exc)
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("duplicate aliases were accepted")
+
+
+def test_component_destination_rejects_linked_alias(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    alias = plugins / "legacy-demo"
+    alias.mkdir(parents=True)
+    (alias / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._is_link_like",
+        lambda path: path == alias,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="alias must not be a link"):
+        resolve_component_destination(plugins, "demo")
+
+
+def test_component_destination_rejects_linked_previous_target(
+    monkeypatch,
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    previous = plugins / ".legacy-demo.previous"
+    previous.mkdir(parents=True)
+    (previous / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    destination = plugins / "legacy-demo"
+    destination.mkdir()
+    (destination / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.1.0"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._is_link_like",
+        lambda path: path == destination,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="must not be a link"):
+        resolve_component_destination(plugins, "demo")
+
+
+def test_component_destination_rejects_direct_and_alias_duplicate(tmp_path):
+    plugins = tmp_path / "plugins"
+    for name in ("demo", "legacy-demo"):
+        plugin = plugins / name
+        plugin.mkdir(parents=True)
+        (plugin / "plugin.json").write_text(
+            json.dumps({"id": "demo", "version": "1.0.0"}),
+            encoding="utf-8",
+        )
+
+    try:
+        resolve_component_destination(plugins, "demo")
+    except ComponentUpdateError as exc:
+        assert "multiple plugin directories" in str(exc)
+    else:  # pragma: no cover - assertion guard
+        raise AssertionError("direct and alias duplicate was accepted")
+
+
+def test_alias_activation_marker_is_discovered(tmp_path):
+    plugins = tmp_path / "plugins"
+    alias = plugins / "thinking-log-middleware"
+    alias.mkdir(parents=True)
+    (alias / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "middleware-demo-thinking-log",
+                "version": "1.1.0",
+            },
+        ),
+        encoding="utf-8",
+    )
+    (plugins / ".thinking-log-middleware.activation.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "component": "middleware-demo-thinking-log",
+                "version": "1.1.0",
+            },
+        ),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"middleware-demo-thinking-log"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+
+    assert updater.pending_activation_components(plugins) == {
+        "middleware-demo-thinking-log",
+    }
+
+
+def test_signed_manifest_does_not_take_over_unmanaged_local_plugin(
+    monkeypatch,
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    local = plugins / "local-directory"
+    local.mkdir(parents=True)
+    (local / "plugin.json").write_text(
+        json.dumps({"id": "market-plugin", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.get_plugins_dir",
+        lambda: plugins,
+    )
+    manifest = {
+        "components": {
+            "market-plugin": {
+                "version": "2.0.0",
+                "files": {},
+                "full": {
+                    "url": "https://oss/market-plugin.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                    "size": 1,
+                },
+            },
+        },
+    }
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"existing"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(
+        updater,
+        _Client(manifest),
+        "https://oss/manifest.json",
+    )
+
+    assert service.check() == []
+    assert updater.managed_components == frozenset({"existing"})
+
+
+def test_signed_manifest_cannot_adopt_denied_plugin(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "qwenpaw.components.service.get_plugins_dir",
+        lambda: tmp_path / "plugins",
+    )
+    manifest = {
+        "components": {
+            "cloudpaw": {
+                "version": "1.0.0",
+                "files": {},
+                "full": {
+                    "url": "https://oss/cloudpaw.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                    "size": 1,
+                },
+            },
+        },
+    }
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"existing"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(
+        updater,
+        _Client(manifest),
+        "https://oss/manifest.json",
+    )
+
+    assert service.check() == []
+    assert updater.managed_components == frozenset({"existing"})
 
 
 def test_existing_newer_plugin_is_not_downgraded(monkeypatch, tmp_path):

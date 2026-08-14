@@ -51,7 +51,15 @@ function UpdateTakeoverPage() {
             <Button onClick={update.dismissFailure}>
               {t(`${KEY_PREFIX}.back`)}
             </Button>
-            <Button type="primary" onClick={update.retry}>
+            <Button
+              type="primary"
+              onClick={() => {
+                // retry() stores the failure in DesktopUpdateContext for this
+                // takeover page to render. Consume its rejection at the event
+                // boundary so React does not report an unhandled promise.
+                void update.retry().catch(() => {});
+              }}
+            >
               {t(`${KEY_PREFIX}.retry`)}
             </Button>
           </div>

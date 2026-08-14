@@ -40,7 +40,7 @@ function derivePluginRoutes(): PluginRouteDeclaration[] {
 
 export interface PluginContextValue {
   /** Map of tool-name → React component. Pass to `@agentscope-ai/chat`. */
-  toolRenderConfig: Record<string, React.FC<any>>;
+  toolRenderConfig: Record<string, React.FC<Record<string, unknown>>>;
   /** Page routes registered by plugins. Inject into the router + sidebar. */
   pluginRoutes: PluginRouteDeclaration[];
   /** True until the initial plugin-load attempt completes. */
@@ -67,8 +67,13 @@ const PluginContext = createContext<PluginContextValue>({
  */
 export function PluginProvider({ children }: { children: React.ReactNode }) {
   const [toolRenderConfig, setToolRenderConfig] = useState<
-    Record<string, React.FC<any>>
-  >(pluginSystem.getToolRenderConfig());
+    Record<string, React.FC<Record<string, unknown>>>
+  >(
+    pluginSystem.getToolRenderConfig() as Record<
+      string,
+      React.FC<Record<string, unknown>>
+    >,
+  );
   const [pluginRoutes, setPluginRoutes] = useState<PluginRouteDeclaration[]>(
     derivePluginRoutes(),
   );
@@ -80,7 +85,12 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     // the legacy pluginSystem (toolRenderers) and the new registry
     // (routes via shim + direct route.add) notify on change.
     const unsubA = pluginSystem.subscribe(() => {
-      setToolRenderConfig(pluginSystem.getToolRenderConfig());
+      setToolRenderConfig(
+        pluginSystem.getToolRenderConfig() as Record<
+          string,
+          React.FC<Record<string, unknown>>
+        >,
+      );
     });
     const unsubB = registrySubscribe(() => {
       setPluginRoutes(derivePluginRoutes());
@@ -113,6 +123,15 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     let syncAttempts = 0;
+    let observedLoadedCount = -1;
+
+    const refreshPluginManifest = async () => {
+      await load();
+      if (cancelled) return;
+      loadPromise = null;
+      await load();
+    };
+
     const pollBundleSync = async () => {
       try {
         const status = await fetchBundledPluginStatus();
@@ -130,16 +149,17 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
           return;
         }
         syncAttempts = 0;
+        let refreshedThisPoll = false;
+        const loadedCount = Math.max(0, status.loaded_count ?? 0);
+        if (loadedCount > observedLoadedCount) {
+          observedLoadedCount = loadedCount;
+          await refreshPluginManifest();
+          refreshedThisPoll = true;
+        }
         if (status.state === "registry_ready") {
           if (!reloadedAtRegistryReady) {
             reloadedAtRegistryReady = true;
-            // Join any initial import before invalidating the memoized load.
-            // Otherwise registry_ready can start the same plugin bundle twice
-            // while its first dynamic import is still in flight.
-            await load();
-            if (cancelled) return;
-            loadPromise = null;
-            await load();
+            if (!refreshedThisPoll) await refreshPluginManifest();
           }
           // Static plugin menus/routes are now available, but agent-dependent
           // plugin services may still be starting. Keep polling for `ready`.
@@ -149,10 +169,7 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
             // Perform one final authoritative manifest refresh. This also
             // keeps compatibility with backends that publish `ready` directly
             // without the intermediate registry_ready state.
-            await load();
-            if (cancelled) return;
-            loadPromise = null;
-            await load();
+            if (!refreshedThisPoll) await refreshPluginManifest();
           }
           return;
         }

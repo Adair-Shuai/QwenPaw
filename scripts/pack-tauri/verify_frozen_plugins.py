@@ -165,11 +165,6 @@ def _verify_archive_files(
             raise ValueError(
                 f"invalid or duplicate plugin id in archive: {manifest_name}",
             )
-        if PurePosixPath(plugin_root).name != plugin_id:
-            raise ValueError(
-                "plugin directory name does not match manifest id in archive: "
-                f"{plugin_root} != {plugin_id}",
-            )
         seen.add(plugin_id)
         entry = manifest.get("entry")
         if not isinstance(entry, dict):

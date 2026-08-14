@@ -33,6 +33,13 @@ describe("rootApi", () => {
     await expect(rootApi.getVersion()).resolves.toEqual({ version: "1.2.3" });
   });
 
+  it("getLatestDesktopVersion returns the OSS proxy payload", async () => {
+    vi.mocked(request).mockResolvedValue({ version: "2.1.1-beta.6" });
+    await expect(rootApi.getLatestDesktopVersion()).resolves.toEqual({
+      version: "2.1.1-beta.6",
+    });
+  });
+
   it("propagates request errors", async () => {
     vi.mocked(request).mockRejectedValue(new Error("500"));
     await expect(rootApi.getVersion()).rejects.toThrow("500");

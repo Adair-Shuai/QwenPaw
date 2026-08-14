@@ -1,12 +1,11 @@
 // ── URLs ──────────────────────────────────────────────────────────────────
 
-export const PYPI_URL = "https://pypi.org/pypi/qwenpaw/json";
+export const DESKTOP_UPDATE_MANIFEST_URL =
+  "https://ugsci-download.oss-cn-beijing.aliyuncs.com/metadata/qwenpaw-tauri-latest.json";
 
 export const GITHUB_URL = "https://github.com/agentscope-ai/QwenPaw" as const; // 上游仓库地址，换标后保留以跟踪上游更新
 
 // ── Timing ────────────────────────────────────────────────────────────────
-
-export const ONE_HOUR_MS = 60 * 60 * 1000;
 
 // ── URL helpers ───────────────────────────────────────────────────────────
 
@@ -32,7 +31,7 @@ export const getFeatureDemosUrl = (lang: string): string =>
 // Filter out pre-release versions; post-releases are treated as stable.
 // PEP 440 pre-release suffixes: aN / bN / rcN (or cN) / devN.
 export const isStableVersion = (v: string): boolean =>
-  !/(\d)(a|alpha|b|beta|rc|c|dev)\d*/i.test(v);
+  !/(\d)(?:[-.]?)(a|alpha|b|beta|rc|c|dev)[.-]?\d*/i.test(v);
 
 // Compare two PEP 440 version strings. Returns >0 if a>b, <0 if a<b, 0 if equal.
 // .postN releases sort after their base version (e.g. 1.0.0.post1 > 1.0.0).
@@ -42,7 +41,17 @@ export const compareVersions = (a: string, b: string): number => {
     // Handle .postN suffix
     const postMatch = v.match(/\.post(\d+)$/i);
     const postNum = postMatch ? Number(postMatch[1]) : 0;
-    const baseVersion = v.replace(/\.post\d+$/i, "");
+    const baseVersion = v
+      .replace(/\.post\d+$/i, "")
+      .replace(/[-.]?(alpha|beta|rc)[.-]?(\d+)$/i, (_match, label, num) => {
+        const short =
+          label.toLowerCase() === "alpha"
+            ? "a"
+            : label.toLowerCase() === "beta"
+            ? "b"
+            : "rc";
+        return `${short}${num}`;
+      });
 
     // Handle pre-release suffix (e.g., 1.0.1b1 -> base=1.0.1, preType=b, preNum=1)
     const preMatch = baseVersion.match(/^(.+?)(a|alpha|b|beta|rc|c)(\d*)$/i);
@@ -61,7 +70,7 @@ export const compareVersions = (a: string, b: string): number => {
       preNum = preMatch[3] ? Number(preMatch[3]) : 0;
     }
 
-    const parts = coreVersion.split(/[.\-]/).map((seg) => Number(seg) || 0);
+    const parts = coreVersion.split(/[.-]/).map((seg) => Number(seg) || 0);
     // Append: preType (0 for stable, negative for pre-release), preNum, postNum
     return [...parts, preType, preNum, postNum];
   };

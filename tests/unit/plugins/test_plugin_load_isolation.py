@@ -418,6 +418,40 @@ class TestRegistryCleanup:
 
 class TestLoadAllPluginsIsolation:
     @pytest.mark.asyncio
+    async def test_runtime_dependency_plugins_load_after_self_contained(
+        self,
+        loader,
+        tmp_path,
+        monkeypatch,
+    ):
+        slow_dir = tmp_path / "aaa-slow"
+        _write_plugin(slow_dir, "plugin = object()\n")
+        (slow_dir / "requirements.txt").write_text(
+            "large-runtime-dependency==1.0.0\n",
+            encoding="utf-8",
+        )
+        fast_dir = tmp_path / "zzz-fast"
+        _write_plugin(fast_dir, "plugin = object()\n")
+        comment_only_dir = tmp_path / "bbb-comment-only"
+        _write_plugin(comment_only_dir, "plugin = object()\n")
+        (comment_only_dir / "requirements.txt").write_text(
+            "# No mandatory runtime dependencies.\n",
+            encoding="utf-8",
+        )
+        order: list[str] = []
+
+        async def fake_load(manifest, plugin_dir, config=None):
+            del plugin_dir, config
+            order.append(manifest.id)
+            return None
+
+        monkeypatch.setattr(loader, "load_plugin", fake_load)
+
+        await loader.load_all_plugins()
+
+        assert order == ["bbb-comment-only", "zzz-fast", "aaa-slow"]
+
+    @pytest.mark.asyncio
     async def test_bad_plugin_does_not_block_good_plugin(
         self,
         loader,

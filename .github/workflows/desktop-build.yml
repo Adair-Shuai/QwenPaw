@@ -222,7 +222,7 @@ jobs:
           }
 
       - name: Verify desktop (Tauri Windows)
-        timeout-minutes: 10
+        timeout-minutes: 25
         uses: ./.github/actions/verify-tauri-windows
         with:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
@@ -420,7 +420,7 @@ jobs:
           test -s dist/tauri-darwin-*-updater.json
 
       - name: Verify desktop (Tauri macOS)
-        timeout-minutes: 10
+        timeout-minutes: 25
         uses: ./.github/actions/verify-tauri-macos
         with:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}

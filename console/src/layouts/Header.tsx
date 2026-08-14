@@ -13,17 +13,14 @@ import { ExternalMarkdownLink } from "../components/Markdown/externalLinkCompone
 import {
   getDocsUrl,
   getReleaseNotesUrl,
-  PYPI_URL,
-  ONE_HOUR_MS,
   UPDATE_MD,
-  isStableVersion,
   compareVersions,
 } from "./constants";
 import { useTheme } from "../contexts/ThemeContext";
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Slot } from "../plugins/registry/Slot";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useDesktopUpdate } from "../contexts/DesktopUpdateContext";
 import { isDesktopApp } from "../tauri/backendRuntime";
@@ -44,6 +41,11 @@ import {
 } from "@ant-design/icons";
 
 const { Header: AntHeader } = Layout;
+
+declare const VITE_APP_VERSION: string;
+
+const BUILD_VERSION =
+  typeof VITE_APP_VERSION === "string" ? VITE_APP_VERSION.trim() : "";
 
 // ── Code block with copy button ───────────────────────────────────────────
 function UpdateCodeBlock({ code }: { code: string }) {
@@ -70,22 +72,43 @@ function UpdateCodeBlock({ code }: { code: string }) {
   );
 }
 
+const updateMarkdownComponents: Components = {
+  a: ExternalMarkdownLink,
+  code({ node, className, children, ...props }) {
+    const match = /language-(\w+)/.exec(className || "");
+    const isBlock =
+      node?.position?.start?.line !== node?.position?.end?.line || match;
+    return isBlock ? (
+      <UpdateCodeBlock code={String(children).replace(/\n$/, "")} />
+    ) : (
+      <code className={styles.codeInline} {...props}>
+        {children}
+      </code>
+    );
+  },
+};
+
 export default function Header() {
   const { t, i18n } = useTranslation();
   const { isDark, setThemeMode } = useTheme();
   const desktop = useDesktopUpdate();
   const onDesktop = isDesktopApp();
-  const [version, setVersion] = useState<string>("");
+  const [version, setVersion] = useState<string>(BUILD_VERSION);
   const [latestVersion, setLatestVersion] = useState<string>("");
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
   const [updateMarkdown, setUpdateMarkdown] = useState<string>("");
   const [unifiedUpdateBusy, setUnifiedUpdateBusy] = useState(false);
+  const unifiedUpdateBusyRef = useRef(false);
+  const installActionRef = useRef(false);
   const logoClicksRef = useRef<number[]>([]);
 
   useEffect(() => {
     api
       .getVersion()
-      .then((res) => setVersion(res?.version ?? ""))
+      .then((res) => {
+        const runtimeVersion = res?.version?.trim();
+        if (runtimeVersion) setVersion(runtimeVersion);
+      })
       .catch(() => {});
   }, []);
 
@@ -117,45 +140,13 @@ export default function Header() {
     }
   };
 
-  // Browser-only fallback. Like desktop OSS checks, PyPI is contacted only
-  // after the user clicks the version-number update button.
+  // Browser-only fallback. The same promoted OSS metadata as the desktop
+  // updater is fetched through the local backend to avoid browser CORS.
   const refreshWebUpdate = async (): Promise<boolean> => {
-    const response = await fetch(PYPI_URL, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error(`PyPI update check failed (${response.status})`);
-    }
-    const data = await response.json();
-    const releases = data?.releases ?? {};
-    const versionsWithTime = Object.entries(releases)
-      .filter(([candidate]) => isStableVersion(candidate))
-      .map(([candidate, files]) => {
-        const fileList = files as Array<{ upload_time_iso_8601?: string }>;
-        const latestUpload = fileList
-          .map((file) => file.upload_time_iso_8601)
-          .filter(Boolean)
-          .sort()
-          .pop();
-        return { version: candidate, uploadTime: latestUpload || "" };
-      });
-
-    versionsWithTime.sort((a, b) => {
-      const timeDiff =
-        new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime();
-      return timeDiff !== 0 ? timeDiff : compareVersions(b.version, a.version);
-    });
-
-    const latest = versionsWithTime[0]?.version ?? data?.info?.version ?? "";
-    const releaseTime = versionsWithTime.find(
-      (candidate) => candidate.version === latest,
-    )?.uploadTime;
-    const isOldEnough =
-      !!releaseTime &&
-      new Date(releaseTime) <= new Date(Date.now() - ONE_HOUR_MS);
+    const data = await api.getLatestDesktopVersion();
+    const latest = typeof data?.version === "string" ? data.version.trim() : "";
     const available =
-      isOldEnough &&
-      !!version &&
-      !!latest &&
-      compareVersions(latest, version) > 0;
+      !!version && !!latest && compareVersions(latest, version) > 0;
     setLatestVersion(available ? latest : "");
     return available;
   };
@@ -279,12 +270,27 @@ export default function Header() {
   };
 
   const handleStartInstall = async () => {
-    if (unifiedUpdateBusy) return;
+    if (unifiedUpdateBusyRef.current || installActionRef.current) return;
+    unifiedUpdateBusyRef.current = true;
+    installActionRef.current = true;
     setUnifiedUpdateBusy(true);
     setUpdateModalOpen(false);
     try {
-      const queuedComponents = await desktop.queueComponentUpdates();
+      let queuedComponents = false;
+      let componentQueueError: unknown = null;
+      try {
+        queuedComponents = await desktop.queueComponentUpdates();
+      } catch (err) {
+        componentQueueError = err;
+      }
       if (desktop.hasCoreUpdate) {
+        if (componentQueueError) {
+          const detail =
+            componentQueueError instanceof Error
+              ? componentQueueError.message
+              : String(componentQueueError);
+          message.warning(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
+        }
         if (isReady) {
           await desktop.installDownloaded();
         } else {
@@ -292,6 +298,7 @@ export default function Header() {
         }
         return;
       }
+      if (componentQueueError) throw componentQueueError;
       if (queuedComponents) {
         await restartForComponentUpdates();
       }
@@ -299,13 +306,18 @@ export default function Header() {
       const detail = err instanceof Error ? err.message : String(err);
       message.error(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
     } finally {
+      installActionRef.current = false;
+      unifiedUpdateBusyRef.current = false;
       setUnifiedUpdateBusy(false);
     }
   };
 
   const handleUpdateLater = () => {
     setUpdateModalOpen(false);
-    void desktop.startBackgroundDownload();
+    // The update context records and renders background-download failures.
+    // Consume the rejected promise here so a network failure does not also
+    // surface as an unhandled rejection in the desktop webview.
+    void desktop.startBackgroundDownload().catch(() => {});
   };
 
   const handleNavClick = (url: string) => {
@@ -373,7 +385,12 @@ export default function Header() {
               <Button
                 type="text"
                 size="small"
-                aria-label={t("sidebar.updateModal.checkUpdates")}
+                aria-label={unifiedUpdateTitle}
+                aria-busy={
+                  unifiedUpdateBusy ||
+                  isBackgroundActive ||
+                  isApplyingDownloadedUpdate
+                }
                 className={`${styles.unifiedUpdateButton} ${
                   hasUpdate ? styles.unifiedUpdateButtonActive : ""
                 }`}
@@ -396,10 +413,13 @@ export default function Header() {
                   // clickable brand group. Do not let update clicks count as
                   // logo clicks (the logo owns the hidden DevTools gesture).
                   event.stopPropagation();
+                  if (unifiedUpdateBusyRef.current || installActionRef.current)
+                    return;
                   if (hasUpdate) {
                     handleOpenUpdateModal();
                     return;
                   }
+                  unifiedUpdateBusyRef.current = true;
                   setUnifiedUpdateBusy(true);
                   try {
                     const found = onDesktop
@@ -414,6 +434,7 @@ export default function Header() {
                       `${t("sidebar.updateModal.failedTitle")}: ${detail}`,
                     );
                   } finally {
+                    unifiedUpdateBusyRef.current = false;
                     setUnifiedUpdateBusy(false);
                   }
                 }}
@@ -504,24 +525,7 @@ export default function Header() {
           {updateMarkdown ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              components={{
-                a: ExternalMarkdownLink,
-                code({ node, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || "");
-                  const isBlock =
-                    node?.position?.start?.line !== node?.position?.end?.line ||
-                    match;
-                  return isBlock ? (
-                    <UpdateCodeBlock
-                      code={String(children).replace(/\n$/, "")}
-                    />
-                  ) : (
-                    <code className={styles.codeInline} {...props}>
-                      {children}
-                    </code>
-                  );
-                },
-              }}
+              components={updateMarkdownComponents}
             >
               {updateMarkdown}
             </ReactMarkdown>

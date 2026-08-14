@@ -117,6 +117,26 @@ def _is_link_like(path: Path) -> bool:
     )
 
 
+def _resolve_plugin_child(
+    path: Path,
+    *,
+    plugins_root: Path,
+    label: str,
+) -> Path:
+    """Resolve one direct plugin child without following link-like roots."""
+    if _is_link_like(plugins_root):
+        raise ComponentUpdateError("plugins directory may not be a link")
+    if _is_link_like(path):
+        raise ComponentUpdateError(f"{label} may not be a link")
+    resolved_root = plugins_root.resolve()
+    resolved = path.resolve()
+    if resolved.parent != resolved_root:
+        raise ComponentUpdateError(
+            f"{label} must remain directly inside the plugins directory",
+        )
+    return resolved
+
+
 def _supports_posix_modes() -> bool:
     return os.name != "nt"
 
@@ -371,7 +391,7 @@ class ComponentUpdater:
         )
         self.target = target or detect_target()
         self.core_version = core_version
-        if active_path is not None and active_path.is_symlink():
+        if active_path is not None and _is_link_like(active_path):
             raise ComponentUpdateError("active path may not be a symlink")
         self.active_path = (
             active_path.absolute() if active_path is not None else None
@@ -391,6 +411,13 @@ class ComponentUpdater:
         self.defer_activation_cleanup = defer_activation_cleanup
         self._lock = threading.RLock()
 
+    def extend_managed_components(self, components: set[str]) -> None:
+        """Trust additional IDs obtained from a verified signed manifest."""
+        validated = {_safe_component_id(item) for item in components}
+        self.managed_components = frozenset(
+            set(self.managed_components) | validated,
+        )
+
     def _activation_marker(self, destination: Path) -> Path:
         return destination.parent / f".{destination.name}.activation.json"
 
@@ -400,7 +427,52 @@ class ComponentUpdater:
 
     def pending_activation_components(self, plugins_root: Path) -> set[str]:
         """Return managed component IDs with an uncommitted activation."""
+        if _is_link_like(plugins_root):
+            raise ComponentUpdateError("plugins directory may not be a link")
         pending: set[str] = set()
+        for marker in plugins_root.glob(".*.activation.json"):
+            try:
+                payload = json.loads(marker.read_text(encoding="utf-8"))
+                component = _safe_component_id(payload["component"])
+            except (
+                OSError,
+                KeyError,
+                TypeError,
+                ValueError,
+                json.JSONDecodeError,
+            ):
+                continue
+            if component in self.managed_components:
+                pending.add(component)
+
+        # Recover pre-marker crash windows too. Directory names may be aliases
+        # of the manifest ID, so identify the component from plugin.json.
+        for previous in plugins_root.glob(".*.previous"):
+            destination_name = previous.name[1 : -len(".previous")]
+            try:
+                _safe_component_id(destination_name)
+            except ComponentUpdateError:
+                continue
+            destination = plugins_root / destination_name
+            identity_source = destination if destination.is_dir() else previous
+            try:
+                payload = json.loads(
+                    (identity_source / "plugin.json").read_text(
+                        encoding="utf-8",
+                    ),
+                )
+                component = _safe_component_id(payload["id"])
+            except (
+                OSError,
+                KeyError,
+                TypeError,
+                ValueError,
+                json.JSONDecodeError,
+            ):
+                continue
+            if component in self.managed_components:
+                pending.add(component)
+
         for component in self.managed_components:
             destination = plugins_root / component
             if is_plugin_uninstalled(
@@ -444,7 +516,17 @@ class ComponentUpdater:
     def finalize_activation(self, component: str, destination: Path) -> None:
         """Commit a candidate after PluginLoader health checks succeed."""
         component = _safe_component_id(component)
-        previous = destination.parent / f".{destination.name}.previous"
+        plugins_root = destination.parent
+        destination = _resolve_plugin_child(
+            destination,
+            plugins_root=plugins_root,
+            label="component destination",
+        )
+        previous = _resolve_plugin_child(
+            plugins_root / f".{destination.name}.previous",
+            plugins_root=plugins_root,
+            label="component previous tree",
+        )
         marker = self._activation_marker(destination)
         if previous.exists():
             shutil.rmtree(previous, ignore_errors=True)
@@ -453,7 +535,17 @@ class ComponentUpdater:
     def rollback_activation(self, component: str, destination: Path) -> bool:
         """Restore the last-known-good tree; return whether one existed."""
         component = _safe_component_id(component)
-        previous = destination.parent / f".{destination.name}.previous"
+        plugins_root = destination.parent
+        destination = _resolve_plugin_child(
+            destination,
+            plugins_root=plugins_root,
+            label="component destination",
+        )
+        previous = _resolve_plugin_child(
+            plugins_root / f".{destination.name}.previous",
+            plugins_root=plugins_root,
+            label="component previous tree",
+        )
         marker = self._activation_marker(destination)
         if previous.exists():
             if destination.exists():
@@ -947,11 +1039,21 @@ class ComponentUpdater:
         component: str,
         version: str,
     ) -> None:
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        previous = destination.parent / f".{destination.name}.previous"
+        # pylint: disable=too-many-branches
+        plugins_root = destination.parent
+        plugins_root.mkdir(parents=True, exist_ok=True)
+        destination = _resolve_plugin_child(
+            destination,
+            plugins_root=plugins_root,
+            label="component destination",
+        )
+        previous = _resolve_plugin_child(
+            plugins_root / f".{destination.name}.previous",
+            plugins_root=plugins_root,
+            label="component previous tree",
+        )
         failed = (
-            destination.parent
-            / f".{destination.name}.failed-{uuid.uuid4().hex}"
+            plugins_root / f".{destination.name}.failed-{uuid.uuid4().hex}"
         )
         if previous.exists():
             raise ComponentUpdateError(
@@ -966,18 +1068,41 @@ class ComponentUpdater:
                 previous.replace(destination)
             raise
         marker = self._activation_marker(destination)
-        marker.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "component": component,
-                    "version": version,
-                },
-                sort_keys=True,
-            )
-            + "\n",
-            encoding="utf-8",
+        temporary_marker = marker.with_name(
+            f".{marker.name}.{uuid.uuid4().hex}.staging",
         )
+        try:
+            if marker.exists() or _is_link_like(marker):
+                raise ComponentUpdateError(
+                    f"stale or unsafe activation marker exists: {marker}",
+                )
+            with temporary_marker.open("x", encoding="utf-8") as stream:
+                stream.write(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "component": component,
+                            "version": version,
+                        },
+                        sort_keys=True,
+                    )
+                    + "\n",
+                )
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary_marker, marker)
+        except Exception as exc:
+            temporary_marker.unlink(missing_ok=True)
+            if destination.exists():
+                destination.replace(failed)
+            if previous.exists() and not destination.exists():
+                previous.replace(destination)
+            shutil.rmtree(failed, ignore_errors=True)
+            if isinstance(exc, ComponentUpdateError):
+                raise
+            raise ComponentUpdateError(
+                "failed to publish component activation marker",
+            ) from exc
         try:
             self._commit_active(component, version, destination)
         except Exception:
@@ -1195,16 +1320,23 @@ class ComponentUpdater:
             or plan.component not in self.managed_components
         ):
             raise ComponentUpdateError("invalid component update plan")
+        plugins_root = destination.parent
+        base = _resolve_plugin_child(
+            base,
+            plugins_root=plugins_root,
+            label="component base",
+        )
+        destination = _resolve_plugin_child(
+            destination,
+            plugins_root=plugins_root,
+            label="component destination",
+        )
         if is_plugin_uninstalled(
             plan.component,
-            plugins_dir=destination.parent,
+            plugins_dir=plugins_root.resolve(),
             plugin_dir=base,
         ):
             raise ComponentUpdateError("component is marked uninstalled")
-        if base.is_symlink() or destination.is_symlink():
-            raise ComponentUpdateError("component roots may not be symlinks")
-        base = base.resolve()
-        destination = destination.resolve()
         if is_plugin_uninstalled(
             plan.component,
             plugins_dir=destination.parent,
@@ -1425,15 +1557,23 @@ class ComponentUpdater:
             plan.artifact_signature,
             self.public_key_b64,
         )
-        if destination.is_symlink():
-            raise ComponentUpdateError("destination may not be a symlink")
-        destination = destination.resolve()
+        plugins_root = destination.parent
+        destination = _resolve_plugin_child(
+            destination,
+            plugins_root=plugins_root,
+            label="component destination",
+        )
         legacy_source = (
             preserve_from if preserve_from is not None else destination
         )
+        legacy_source = _resolve_plugin_child(
+            legacy_source,
+            plugins_root=plugins_root,
+            label="component preserve source",
+        )
         if is_plugin_uninstalled(
             plan.component,
-            plugins_dir=destination.parent,
+            plugins_dir=plugins_root.resolve(),
             plugin_dir=legacy_source,
         ):
             raise ComponentUpdateError("component is marked uninstalled")

@@ -1,9 +1,10 @@
 /// <reference types="vitest" />
-import { defineConfig, loadEnv, type Plugin } from "vite";
+import { defineConfig, loadEnv, type Plugin, type ViteDevServer } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import fs from "fs";
 import os from "os";
+import { readQwenPawVersion } from "./buildVersion";
 
 // Vitest-only plugin: transforms .css imports inside node_modules to empty
 // stubs. This prevents errors from packages like @agentscope-ai/icons that
@@ -98,7 +99,7 @@ const PLUGIN_WATCH_ENTRIES: { source: string; syncTargets: string[] }[] = [
 function pluginBundleWatcher() {
   return {
     name: "plugin-bundle-watcher",
-    configureServer(server: any) {
+    configureServer(server: ViteDevServer) {
       const watched: { source: string; syncTargets: string[] }[] = [];
       for (const entry of PLUGIN_WATCH_ENTRIES) {
         if (fs.existsSync(entry.source)) {
@@ -211,12 +212,14 @@ const optionalDepsPlugin = {
   load(id: string) {
     if (!id.startsWith("\0optional-dep:")) return null;
     const dep = id.slice("\0optional-dep:".length);
+    const message =
+      `Optional dependency '${dep}' is not installed. ` +
+      `Install it (npm i ${dep}) or rely on the fallback renderer.`;
     return (
       `// Virtual stub for optional dependency: ${dep}\n` +
       `// The real package is not installed. The dynamic import() will reject,\n` +
       `// and the caller's try/catch or .catch() handler should fall back gracefully.\n` +
-      `throw new Error("Optional dependency '${dep}' is not installed. " +\n` +
-      `  \"Install it (npm i ${dep}) or rely on the fallback renderer.\");\n`
+      `throw new Error(${JSON.stringify(message)});\n`
     );
   },
 };
@@ -259,7 +262,9 @@ function replaceExactOnce(
 ): string | null {
   const first = code.indexOf(target);
   if (first < 0 || first !== code.lastIndexOf(target)) return null;
-  return `${code.slice(0, first)}${replacement}${code.slice(first + target.length)}`;
+  return `${code.slice(0, first)}${replacement}${code.slice(
+    first + target.length,
+  )}`;
 }
 
 function applyDependencyPatch(
@@ -341,9 +346,7 @@ const fixDesignAnchorForwardRefPlugin: Plugin = {
       );
     }
     if (
-      normalizedId.endsWith(
-        "/components/commonComponents/IconButton/index.js",
-      )
+      normalizedId.endsWith("/components/commonComponents/IconButton/index.js")
     ) {
       return applyDependencyPatch(
         "design-icon-button-forward-ref",
@@ -452,6 +455,7 @@ export default defineConfig(({ command, mode }) => {
   // while `vite build --mode test` is a real build that needs real CSS.
   const isVitest = command === "serve" && mode === "test";
   const env = loadEnv(mode, process.cwd(), "");
+  const appVersion = readQwenPawVersion(path.resolve(__dirname, ".."));
   // Empty = same-origin; frontend and backend served together, no hardcoded host.
   // Use a dedicated Vite-prefixed key so unrelated shell BASE_URL values don't leak into the build.
   const apiBaseUrl = env.VITE_API_BASE_URL ?? "";
@@ -459,6 +463,7 @@ export default defineConfig(({ command, mode }) => {
   return {
     define: {
       VITE_API_BASE_URL: JSON.stringify(apiBaseUrl),
+      VITE_APP_VERSION: JSON.stringify(appVersion),
       TOKEN: JSON.stringify(env.TOKEN || ""),
       MOBILE: false,
     },

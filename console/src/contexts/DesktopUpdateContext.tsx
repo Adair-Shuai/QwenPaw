@@ -77,14 +77,9 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const hasCachedUpdateRef = useRef(false);
 
   const refreshComponentUpdates = useCallback(async (): Promise<number> => {
-    try {
-      const result = await api.checkComponentUpdates();
-      setComponentUpdateCount(result.updates.length);
-      return result.updates.length;
-    } catch (err) {
-      console.warn("[updates] component update check failed", err);
-      return 0;
-    }
+    const result = await api.checkComponentUpdates();
+    setComponentUpdateCount(result.updates.length);
+    return result.updates.length;
   }, []);
 
   const refreshDesktopUpdate = useCallback(async (): Promise<boolean> => {
@@ -108,15 +103,31 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (err) {
       console.warn("[updates] desktop update check failed", err);
-      return hasCachedUpdateRef.current;
+      if (hasCachedUpdateRef.current) return true;
+      throw err;
     }
   }, []);
 
   const refreshUpdates = useCallback(async () => {
-    const [coreAvailable, componentCount] = await Promise.all([
+    const [coreResult, componentResult] = await Promise.allSettled([
       refreshDesktopUpdate(),
       refreshComponentUpdates(),
     ]);
+    const coreAvailable =
+      coreResult.status === "fulfilled" ? coreResult.value : false;
+    const componentCount =
+      componentResult.status === "fulfilled" ? componentResult.value : 0;
+    if (coreAvailable || componentCount > 0) return true;
+
+    const failures = [coreResult, componentResult]
+      .filter(
+        (result): result is PromiseRejectedResult =>
+          result.status === "rejected",
+      )
+      .map((result) => toErrorMessage(result.reason));
+    if (failures.length > 0) {
+      throw new Error(failures.join("; "));
+    }
     return coreAvailable || componentCount > 0;
   }, [refreshComponentUpdates, refreshDesktopUpdate]);
 
@@ -215,6 +226,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setPhase("failed");
       setError({ stage: "check", kind: "other", message: toErrorMessage(err) });
+      throw err;
     }
   }, [beginUpdate]);
 
@@ -226,6 +238,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       setPhase("failed");
       setError({ stage: "check", kind: "other", message: toErrorMessage(err) });
+      throw err;
     }
   }, [beginUpdate]);
 
@@ -244,6 +257,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         kind: "other",
         message: toErrorMessage(err),
       });
+      throw err;
     }
   }, []);
 

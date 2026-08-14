@@ -16,6 +16,7 @@ import os
 import json
 from dataclasses import asdict
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 import logging
 import threading
@@ -32,6 +33,8 @@ from .update import (
     ComponentUpdateError,
     ComponentUpdatePlan,
     ComponentUpdater,
+    _is_link_like,
+    _safe_component_id,
 )
 
 logger = logging.getLogger(__name__)
@@ -77,6 +80,127 @@ def _default_managed_components() -> set[str]:
             exc_info=True,
         )
         return set()
+
+
+def resolve_component_destination(plugins: Path, component: str) -> Path:
+    """Resolve an installed plugin by ID while preserving aliases."""
+    # pylint: disable=too-many-statements
+    if _is_link_like(plugins):
+        raise ComponentUpdateError("plugins directory must not be a link")
+    direct = plugins / component
+    if _is_link_like(direct):
+        raise ComponentUpdateError(
+            f"component destination must not be a link: {direct}",
+        )
+    candidates: set[Path] = set()
+    if direct.exists():
+        if not direct.is_dir():
+            raise ComponentUpdateError(
+                f"component destination is not a directory: {direct}",
+            )
+        try:
+            manifest = json.loads(
+                (direct / "plugin.json").read_text(encoding="utf-8"),
+            )
+        except (
+            OSError,
+            ValueError,
+            TypeError,
+            json.JSONDecodeError,
+        ) as exc:
+            raise ComponentUpdateError(
+                "component destination is occupied by an invalid plugin: "
+                f"{direct}",
+            ) from exc
+        if str(manifest.get("id") or "").strip() == component:
+            candidates.add(direct)
+        else:
+            raise ComponentUpdateError(
+                "component destination is occupied by a different "
+                f"plugin: {direct}",
+            )
+    if plugins.is_dir():
+        for plugin_dir in sorted(plugins.iterdir()):
+            if not plugin_dir.is_dir() or plugin_dir == direct:
+                continue
+            identity_source = plugin_dir
+            destination = plugin_dir
+            if plugin_dir.name.startswith("."):
+                suffix = ".previous"
+                if not plugin_dir.name.endswith(suffix):
+                    continue
+                destination_name = plugin_dir.name[1 : -len(suffix)]
+                try:
+                    _safe_component_id(destination_name)
+                except ComponentUpdateError:
+                    continue
+                # A pre-marker crash can leave only `.alias.previous` on
+                # disk. Resolve it to the original alias destination.
+                destination = plugins / destination_name
+                if _is_link_like(destination):
+                    try:
+                        linked_manifest = json.loads(
+                            (destination / "plugin.json").read_text(
+                                encoding="utf-8",
+                            ),
+                        )
+                    except (
+                        OSError,
+                        ValueError,
+                        TypeError,
+                        json.JSONDecodeError,
+                    ):
+                        linked_manifest = {}
+                    if (
+                        str(linked_manifest.get("id") or "").strip()
+                        == component
+                    ):
+                        raise ComponentUpdateError(
+                            "component destination must not be a link: "
+                            f"{destination}",
+                        )
+                    continue
+                identity_source = (
+                    destination if destination.is_dir() else plugin_dir
+                )
+            if _is_link_like(plugin_dir):
+                try:
+                    linked_manifest = json.loads(
+                        (plugin_dir / "plugin.json").read_text(
+                            encoding="utf-8",
+                        ),
+                    )
+                except (
+                    OSError,
+                    ValueError,
+                    TypeError,
+                    json.JSONDecodeError,
+                ):
+                    linked_manifest = {}
+                if str(linked_manifest.get("id") or "").strip() == component:
+                    raise ComponentUpdateError(
+                        f"component alias must not be a link: {plugin_dir}",
+                    )
+                continue
+            try:
+                manifest = json.loads(
+                    (identity_source / "plugin.json").read_text(
+                        encoding="utf-8",
+                    ),
+                )
+            except (OSError, ValueError, TypeError, json.JSONDecodeError):
+                continue
+            if str(manifest.get("id") or "").strip() == component:
+                candidates.add(destination)
+    if len(candidates) > 1:
+        rendered = ", ".join(str(path) for path in sorted(candidates))
+        raise ComponentUpdateError(
+            f"multiple plugin directories claim component {component}: "
+            f"{rendered}",
+        )
+    if candidates:
+        return next(iter(candidates))
+    return direct
 
 
 def _authorize_component_install() -> None:
@@ -208,11 +332,11 @@ def queue_component_update(component: str) -> dict[str, Any]:
     if service is None:
         raise ComponentUpdateError("component updates are not configured")
     try:
+        plans = {str(item["component"]): item for item in service.check()}
         if component not in service.updater.managed_components:
             raise ComponentUpdateError(
                 f"component is not managed: {component}",
             )
-        plans = {str(item["component"]): item for item in service.check()}
         if component not in plans:
             return {
                 "component": component,
@@ -302,13 +426,57 @@ class ComponentUpdateService:
         self.manifest_url = manifest_url
         self._lock = threading.RLock()
 
+    def _adopt_signed_new_components(
+        self,
+        manifest: dict[str, Any],
+        plugins: Path,
+    ) -> None:
+        """Adopt signed new plugins without taking over local plugins."""
+        entries = manifest.get("components")
+        if not isinstance(entries, dict):
+            return
+        additions: set[str] = set()
+        for raw_component in entries:
+            component = str(raw_component).strip()
+            if (
+                not component
+                or component in _MANAGED_PLUGIN_DENYLIST
+                or component in self.updater.managed_components
+            ):
+                continue
+            try:
+                destination = resolve_component_destination(
+                    plugins,
+                    component,
+                )
+            except ComponentUpdateError as exc:
+                logger.warning(
+                    "Ignoring signed component %s because its local "
+                    "destination is ambiguous or occupied: %s",
+                    component,
+                    exc,
+                )
+                continue
+            if destination.exists():
+                logger.warning(
+                    "Ignoring signed component %s because an unmanaged local "
+                    "plugin already occupies %s",
+                    component,
+                    destination,
+                )
+                continue
+            additions.add(component)
+        if additions:
+            self.updater.extend_managed_components(additions)
+
     def check(self) -> list[dict[str, Any]]:
         with self._lock:
             manifest = self.client.fetch_manifest(self.manifest_url)
         plugins = get_plugins_dir()
+        self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
         for component in sorted(self.updater.managed_components):
-            installed = plugins / component
+            installed = resolve_component_destination(plugins, component)
             plan = self.updater.plan(
                 manifest,
                 component,
@@ -324,9 +492,10 @@ class ComponentUpdateService:
         with self._lock:
             manifest = self.client.fetch_manifest(self.manifest_url)
         plugins = get_plugins_dir()
+        self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
         for component in sorted(self.updater.managed_components):
-            installed = plugins / component
+            installed = resolve_component_destination(plugins, component)
             plan = self.updater.plan(
                 manifest,
                 component,
@@ -383,14 +552,15 @@ class ComponentUpdateService:
         *,
         manifest: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        if manifest is None:
+            manifest = self.client.fetch_manifest(self.manifest_url)
+        plugins = get_plugins_dir()
+        self._adopt_signed_new_components(manifest, plugins)
         if component not in self.updater.managed_components:
             raise ComponentUpdateError(
                 f"component is not managed: {component}",
             )
-        if manifest is None:
-            manifest = self.client.fetch_manifest(self.manifest_url)
-        plugins = get_plugins_dir()
-        destination = plugins / component
+        destination = resolve_component_destination(plugins, component)
         entry = manifest["components"].get(component)
         if not isinstance(entry, dict):
             raise ComponentUpdateError(

@@ -59,6 +59,7 @@ export interface BundledPluginStatus {
   state: BundledPluginState;
   installed: string[];
   error?: string | null;
+  loaded_count?: number;
 }
 
 /** Entry from ``GET /api/plugins/catalog`` (official CDN manifest). */

@@ -3,7 +3,6 @@
  *
  * Covers:
  * - URL constants
- * - ONE_HOUR_MS value
  * - getWebsiteLang()
  * - getDocsUrl(), getFaqUrl(), getReleaseNotesUrl()
  * - isStableVersion()
@@ -12,9 +11,8 @@
  */
 import { describe, it, expect } from "vitest";
 import {
-  PYPI_URL,
+  DESKTOP_UPDATE_MANIFEST_URL,
   GITHUB_URL,
-  ONE_HOUR_MS,
   getWebsiteLang,
   getDocsUrl,
   getFaqUrl,
@@ -25,19 +23,16 @@ import {
 } from "./constants";
 
 describe("URL constants", () => {
-  it("PYPI_URL points to qwenpaw json endpoint", () => {
-    expect(PYPI_URL).toBe("https://pypi.org/pypi/qwenpaw/json");
+  it("uses the promoted OSS desktop update manifest", () => {
+    expect(DESKTOP_UPDATE_MANIFEST_URL).toContain(
+      "ugsci-download.oss-cn-beijing.aliyuncs.com",
+    );
+    expect(DESKTOP_UPDATE_MANIFEST_URL).toContain("qwenpaw-tauri-latest.json");
   });
 
   it("GITHUB_URL points to QwenPaw repo", () => {
     expect(GITHUB_URL).toContain("github.com");
     expect(GITHUB_URL).toContain("QwenPaw");
-  });
-});
-
-describe("ONE_HOUR_MS", () => {
-  it("equals 3600000 ms", () => {
-    expect(ONE_HOUR_MS).toBe(60 * 60 * 1000);
   });
 });
 
@@ -86,6 +81,7 @@ describe("isStableVersion", () => {
     ["1.0.0.post1", true],
     ["1.0.0a1", false],
     ["1.0.0beta2", false],
+    ["1.0.0-beta.2", false],
     ["2.0rc1", false],
     ["3.0.0dev1", false],
     ["1.0.0c3", false],
@@ -107,6 +103,9 @@ describe("compareVersions", () => {
     ["1.0.0rc1", "1.0.0", -1],
     ["1.0.0a1", "1.0.0b1", -1],
     ["1.0.0b1", "1.0.0rc1", -1],
+    ["2.1.1-beta.6", "2.1.1b6", 0],
+    ["2.1.1-alpha.2", "2.1.1a2", 0],
+    ["2.1.1-rc.3", "2.1.1rc3", 0],
     ["1.0.0", "1.0.0.post1", -1],
     ["1.0.0.post1", "1.0.0.post2", -1],
   ] as [string, string, number][])(

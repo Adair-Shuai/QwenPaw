@@ -136,6 +136,187 @@ def test_uninstalled_component_is_not_activated(tmp_path):
         updater.apply_delta(plan, base, tmp_path / "missing.zip", destination)
 
 
+def test_delta_rejects_reparse_component_root(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    installed = plugins / "demo"
+    _plugin(installed, "1.0.0", main="old")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = ComponentUpdatePlan(
+        component="demo",
+        from_version="1.0.0",
+        target_version="1.1.0",
+        artifact_kind="delta",
+        artifact_url="https://example/delta.zip",
+        artifact_sha256="a" * 64,
+        artifact_signature="signature",
+    )
+    monkeypatch.setattr(
+        component_update,
+        "_is_link_like",
+        lambda path: path == installed,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="may not be a link"):
+        updater.apply_delta(
+            plan,
+            installed,
+            tmp_path / "missing.zip",
+            installed,
+        )
+
+
+def test_delta_rejects_reparse_plugins_root(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    installed = plugins / "demo"
+    _plugin(installed, "1.0.0", main="old")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = ComponentUpdatePlan(
+        component="demo",
+        from_version="1.0.0",
+        target_version="1.1.0",
+        artifact_kind="delta",
+        artifact_url="https://example/delta.zip",
+        artifact_sha256="a" * 64,
+        artifact_signature="signature",
+    )
+    monkeypatch.setattr(
+        component_update,
+        "_is_link_like",
+        lambda path: path == plugins,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="plugins directory"):
+        updater.apply_delta(
+            plan,
+            installed,
+            tmp_path / "missing.zip",
+            installed,
+        )
+
+
+def test_full_rejects_reparse_component_destination(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    destination = plugins / "demo"
+    destination.mkdir(parents=True)
+    archive = tmp_path / "full.zip"
+    archive.write_bytes(b"archive")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = ComponentUpdatePlan(
+        component="demo",
+        from_version="1.0.0",
+        target_version="1.1.0",
+        artifact_kind="full",
+        artifact_url="https://example/full.zip",
+        artifact_sha256="a" * 64,
+        artifact_signature="signature",
+    )
+    monkeypatch.setattr(component_update, "_sha256", lambda _path: "a" * 64)
+    monkeypatch.setattr(
+        component_update,
+        "_verify_signature_file",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        component_update,
+        "_is_link_like",
+        lambda path: path == destination,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="may not be a link"):
+        updater.apply_full(plan, archive, destination, expected_files={})
+
+
+def test_full_rejects_reparse_plugins_root(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    destination = plugins / "demo"
+    destination.mkdir(parents=True)
+    archive = tmp_path / "full.zip"
+    archive.write_bytes(b"archive")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = ComponentUpdatePlan(
+        component="demo",
+        from_version="1.0.0",
+        target_version="1.1.0",
+        artifact_kind="full",
+        artifact_url="https://example/full.zip",
+        artifact_sha256="a" * 64,
+        artifact_signature="signature",
+    )
+    monkeypatch.setattr(component_update, "_sha256", lambda _path: "a" * 64)
+    monkeypatch.setattr(
+        component_update,
+        "_verify_signature_file",
+        lambda *_args: None,
+    )
+    monkeypatch.setattr(
+        component_update,
+        "_is_link_like",
+        lambda path: path == plugins,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="plugins directory"):
+        updater.apply_full(plan, archive, destination, expected_files={})
+
+
+def test_full_rejects_preserve_source_outside_plugins(monkeypatch, tmp_path):
+    plugins = tmp_path / "plugins"
+    destination = plugins / "demo"
+    preserve_source = tmp_path / "outside"
+    _plugin(preserve_source, "1.0.0", **{"data/db.json": "important"})
+    archive = tmp_path / "full.zip"
+    archive.write_bytes(b"archive")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = ComponentUpdatePlan(
+        component="demo",
+        from_version="1.0.0",
+        target_version="1.1.0",
+        artifact_kind="full",
+        artifact_url="https://example/full.zip",
+        artifact_sha256="a" * 64,
+        artifact_signature="signature",
+    )
+    monkeypatch.setattr(component_update, "_sha256", lambda _path: "a" * 64)
+    monkeypatch.setattr(
+        component_update,
+        "_verify_signature_file",
+        lambda *_args: None,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="preserve source"):
+        updater.apply_full(
+            plan,
+            archive,
+            destination,
+            expected_files={},
+            preserve_from=preserve_source,
+        )
+
+
 def test_component_plan_respects_tombstone_without_install_directory(tmp_path):
     plugins = tmp_path / "plugins"
     tombstones = plugins / ".uninstalled"
@@ -240,6 +421,42 @@ def test_deferred_activation_keeps_previous_until_health_commit(tmp_path):
     assert not (destination.parent / ".demo.activation.json").exists()
 
 
+def test_atomic_activation_rejects_link_like_marker_and_restores_previous(
+    monkeypatch,
+    tmp_path,
+):
+    destination = tmp_path / "plugins" / "demo"
+    _plugin(destination, "1.0.0", main="old")
+    staged = tmp_path / "staged"
+    _plugin(staged, "1.1.0", main="new")
+    marker = destination.parent / ".demo.activation.json"
+    original_is_link_like = component_update._is_link_like
+    monkeypatch.setattr(
+        component_update,
+        "_is_link_like",
+        lambda path: path == marker or original_is_link_like(path),
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        defer_activation_cleanup=True,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="unsafe activation marker"):
+        updater._atomic_activate(staged, destination, "demo", "1.1.0")
+
+    restored = json.loads(
+        (destination / "plugin.json").read_text(encoding="utf-8"),
+    )
+    assert restored["version"] == "1.0.0"
+    assert not (destination.parent / ".demo.previous").exists()
+    assert not list(
+        destination.parent.glob("..demo.activation.json.*.staging"),
+    )
+
+
 def test_failed_new_component_rolls_back_and_removes_active(tmp_path):
     destination = tmp_path / "plugins" / "demo"
     staged = tmp_path / "staged"
@@ -334,7 +551,7 @@ def test_full_update_preserves_user_engines(tmp_path):
             serialization.PublicFormat.Raw,
         ),
     ).decode()
-    installed = tmp_path / "installed"
+    installed = tmp_path / "plugins" / "legacy-demo"
     _plugin(installed, "1.0.0", **{"engines/user.json": "user-data"})
     archive = tmp_path / "full.zip"
     plugin_bytes = json.dumps({"id": "demo", "version": "1.1.0"}).encode()
@@ -389,7 +606,7 @@ def test_full_update_backups_and_restores_all_default_user_data(tmp_path):
             serialization.PublicFormat.Raw,
         ),
     ).decode()
-    installed = tmp_path / "installed"
+    installed = tmp_path / "plugins" / "legacy-demo"
     _plugin(
         installed,
         "1.0.0",
@@ -656,6 +873,25 @@ def test_interrupted_activation_restores_previous_before_planning(tmp_path):
     assert (destination / "data" / "db.json").read_text(
         encoding="utf-8",
     ) == "important"
+
+
+def test_rollback_rejects_destination_outside_plugins(tmp_path):
+    plugins = tmp_path / "plugins"
+    plugins.mkdir()
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "keep.txt"
+    sentinel.write_text("important", encoding="utf-8")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+
+    with pytest.raises(ComponentUpdateError, match="plugins directory"):
+        updater.rollback_activation("demo", plugins / "..")
+    assert sentinel.read_text(encoding="utf-8") == "important"
 
 
 def test_interrupted_activation_commits_valid_new_destination(tmp_path):

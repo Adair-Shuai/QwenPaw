@@ -799,6 +799,21 @@ class PluginLoader:
             Dictionary of plugin_id -> PluginRecord
         """
         discovered = self.discover_plugins()
+        # Plugins with missing runtime requirements can spend minutes
+        # downloading on a fresh desktop installation. Load plugins whose
+        # requirements are already satisfied first; comment-only requirement
+        # files used by UGSci and FlowForge must not be treated as slow.
+        discovered.sort(
+            key=lambda item: (
+                bool(
+                    self._find_unsatisfied_dependencies(
+                        item[1] / "requirements.txt",
+                    ),
+                ),
+                item[0].plugin_type == "app",
+                item[0].id,
+            ),
+        )
 
         for manifest, plugin_dir in discovered:
             if types is not None and manifest.plugin_type not in types:

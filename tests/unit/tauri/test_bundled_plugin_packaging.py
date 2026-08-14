@@ -24,11 +24,12 @@ def _manifest_id(path: Path) -> str:
     return json.loads(path.read_text(encoding="utf-8"))["id"]
 
 
-def test_discovery_uses_only_the_two_plugin_ids_as_denylist():
+def test_default_discovery_uses_desktop_managed_roots_and_denylist():
     helper = _load_helper()
     all_ids = {
         _manifest_id(path)  # noqa: E501
-        for path in (REPO_ROOT / "plugins").glob("*/*/plugin.json")
+        for root in helper.DEFAULT_PLUGIN_ROOTS
+        for path in (REPO_ROOT / "plugins" / root).glob("*/plugin.json")
     }
     selected_ids = {
         helper.plugin_id(path)  # noqa: E501
@@ -43,6 +44,9 @@ def test_discovery_uses_only_the_two_plugin_ids_as_denylist():
         "flowforge",
         "omp-workflows",
     } <= selected_ids
+    assert "azure-bot" not in selected_ids
+    assert "middleware-demo-thinking-log" not in selected_ids
+    assert "wan27-tool" not in selected_ids
 
 
 def test_desktop_bundled_plugins_accept_current_core_version():

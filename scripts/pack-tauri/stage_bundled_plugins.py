@@ -9,6 +9,7 @@ import shutil
 from pathlib import Path
 
 PLUGIN_DENYLIST = frozenset({"cloudpaw", "qwenpaw-pet"})
+DEFAULT_PLUGIN_ROOTS = ("bundle", "apps")
 _IGNORED_NAMES = frozenset(
     {
         ".git",
@@ -41,14 +42,9 @@ def discover_bundled_plugins(
     selected: list[Path] = []
     destination_names: dict[str, Path] = {}
     component_ids: dict[str, Path] = {}
-    if plugin_roots is None:
-        roots: tuple[str, ...] = tuple(
-            sorted(
-                path.name for path in plugins_root.iterdir() if path.is_dir()
-            ),
-        )
-    else:
-        roots = tuple(plugin_roots)
+    roots = (
+        DEFAULT_PLUGIN_ROOTS if plugin_roots is None else tuple(plugin_roots)
+    )
     for root_name in roots:
         for manifest in sorted(
             (plugins_root / root_name).glob("*/plugin.json"),

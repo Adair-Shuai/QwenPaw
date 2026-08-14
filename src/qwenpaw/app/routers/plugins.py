@@ -118,7 +118,15 @@ def _list_plugins_from_disk() -> list[dict]:
 
         from ...plugins.architecture import PluginManifest
 
-        disk_manifest = PluginManifest.from_dict(manifest)
+        try:
+            disk_manifest = PluginManifest.from_dict(manifest)
+        except Exception as exc:
+            logger.warning(
+                "Invalid plugin manifest %s: %s",
+                manifest_path,
+                exc,
+            )
+            continue
 
         result.append(
             {
@@ -127,7 +135,10 @@ def _list_plugins_from_disk() -> list[dict]:
                 "version": manifest.get("version", "0.0.0"),
                 "description": manifest.get("description", ""),
                 "author": manifest.get("author", ""),
-                "enabled": True,
+                # A disk-only record is discoverable but not yet proven to
+                # have registered its backend. Keep it disabled until the
+                # loader publishes the authoritative loaded record.
+                "enabled": False,
                 "loaded": False,
                 "plugin_type": disk_manifest.plugin_type,
                 "frontend_entry": frontend_entry,
@@ -339,12 +350,12 @@ def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
                 for tool_name in tool_names:
                     if tool_name in agent_cfg.tools.builtin_tools:
                         continue
-                    agent_cfg.tools.builtin_tools[
-                        tool_name
-                    ] = BuiltinToolConfig(
-                        name=tool_name,
-                        enabled=False,
-                        config={},
+                    agent_cfg.tools.builtin_tools[tool_name] = (
+                        BuiltinToolConfig(
+                            name=tool_name,
+                            enabled=False,
+                            config={},
+                        )
                     )
                     changed = True
                 if changed:
@@ -662,8 +673,10 @@ async def list_plugins(request: Request):
         return _list_plugins_from_disk()
 
     result = []
+    loaded_ids: set[str] = set()
     for _plugin_id, record in loader.get_all_loaded_plugins().items():
         manifest = record.manifest
+        loaded_ids.add(manifest.id)
         result.append(
             {
                 "id": manifest.id,
@@ -677,6 +690,16 @@ async def list_plugins(request: Request):
                 "frontend_entry": manifest.entry.frontend,
             },
         )
+
+    # Plugin loading is intentionally incremental. A slow backend startup
+    # hook must not delay publication of another plugin's frontend menus,
+    # routes, or slots. Merge not-yet-loaded manifests from disk while the
+    # loader continues preparing their Python runtime in the background.
+    result.extend(
+        plugin
+        for plugin in _list_plugins_from_disk()
+        if plugin.get("id") not in loaded_ids
+    )
 
     return result
 

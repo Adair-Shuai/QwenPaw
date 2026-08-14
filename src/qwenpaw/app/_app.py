@@ -2,10 +2,15 @@
 # pylint: disable=redefined-outer-name,unused-argument
 import asyncio
 import hmac
+import json
 import mimetypes
 import os
+import re
 import sys
+import threading
 import time
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
@@ -62,6 +67,21 @@ from .startup_state import startup_state
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
+
+DESKTOP_UPDATE_MANIFEST_URL = (
+    "https://ugsci-download.oss-cn-beijing.aliyuncs.com/"
+    "metadata/qwenpaw-tauri-latest.json"
+)
+_DESKTOP_VERSION_CACHE_TTL_SECONDS = 60.0
+_DESKTOP_VERSION_STALE_TTL_SECONDS = 600.0
+_DESKTOP_VERSION_MAX_BYTES = 64 * 1024
+_DESKTOP_VERSION_PATTERN = re.compile(
+    r"^\d+\.\d+\.\d+(?:(?:[-.]?(?:a|alpha|b|beta|rc)[.-]?\d+)"
+    r"|(?:\.post\d+))?$",
+    re.IGNORECASE,
+)
+_desktop_version_cache: tuple[str, float] | None = None
+_desktop_version_lock = threading.Lock()
 
 # Ensure static assets are served with browser-compatible MIME types across
 # platforms (notably Windows may miss .js/.mjs mappings).
@@ -550,6 +570,12 @@ async def lifespan(
             plugin_loader = PluginLoader(plugin_dirs)
 
             plugin_loader.registry.set_plugin_http_app(app)
+            # Publish the loader before incremental registration starts. The
+            # public frontend manifest can then expose each successfully
+            # loaded plugin immediately instead of waiting for a later,
+            # dependency-heavy optional plugin to finish downloading.
+            app.state.plugin_loader = plugin_loader
+            app.state.plugin_registry = plugin_loader.registry
 
             config = load_config(get_config_path())
             plugin_configs = (
@@ -584,7 +610,10 @@ async def lifespan(
             # perspective and does not depend on slow agent/MCP startup.
             if component_updated_ids:
                 try:
-                    from ..components.service import configured_service
+                    from ..components.service import (
+                        configured_service,
+                        resolve_component_destination,
+                    )
 
                     recovery_service = configured_service()
                     if recovery_service is not None:
@@ -592,7 +621,10 @@ async def lifespan(
                         for component_id in sorted(component_updated_ids):
                             record = loaded_plugins.get(component_id)
                             healthy = bool(record and record.enabled)
-                            destination = plugins_root / component_id
+                            destination = resolve_component_destination(
+                                plugins_root,
+                                component_id,
+                            )
                             if healthy:
                                 recovery_service.updater.finalize_activation(
                                     component_id,
@@ -634,8 +666,6 @@ async def lifespan(
                         exc_info=True,
                     )
 
-            app.state.plugin_loader = plugin_loader
-            app.state.plugin_registry = plugin_loader.registry
             app.state.bundled_plugins_status = {
                 "state": "registry_ready",
                 "installed": newly_installed,
@@ -1088,6 +1118,66 @@ def get_version():
     }
 
 
+def _fetch_latest_desktop_version() -> str:
+    global _desktop_version_cache  # pylint: disable=global-statement
+    now = time.monotonic()
+    cached = _desktop_version_cache
+    if cached is not None and now - cached[1] <= (
+        _DESKTOP_VERSION_CACHE_TTL_SECONDS
+    ):
+        return cached[0]
+
+    with _desktop_version_lock:
+        now = time.monotonic()
+        cached = _desktop_version_cache
+        if cached is not None and now - cached[1] <= (
+            _DESKTOP_VERSION_CACHE_TTL_SECONDS
+        ):
+            return cached[0]
+        try:
+            request = urllib.request.Request(
+                DESKTOP_UPDATE_MANIFEST_URL,
+                headers={"User-Agent": f"UGSci/{__version__}"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                raw = response.read(_DESKTOP_VERSION_MAX_BYTES + 1)
+            if len(raw) > _DESKTOP_VERSION_MAX_BYTES:
+                raise ValueError("desktop update manifest is too large")
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("desktop update manifest must be an object")
+            version = str(payload.get("version") or "").strip()
+            if not _DESKTOP_VERSION_PATTERN.fullmatch(version):
+                raise ValueError("desktop update manifest version is invalid")
+        except (OSError, UnicodeDecodeError, ValueError):
+            if cached is not None and now - cached[1] <= (
+                _DESKTOP_VERSION_STALE_TTL_SECONDS
+            ):
+                logger.warning("Using stale desktop update version cache")
+                return cached[0]
+            raise
+        _desktop_version_cache = (version, now)
+        return version
+
+
+@app.get("/api/version/latest")
+def get_latest_desktop_version():
+    """Proxy the fixed production OSS manifest without exposing CORS."""
+    try:
+        return {"version": _fetch_latest_desktop_version()}
+    except (
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+        urllib.error.URLError,
+    ) as exc:
+        logger.warning("Desktop update manifest lookup failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Desktop update manifest is unavailable",
+        ) from exc
+
+
 @app.get("/api/startup/status")
 def get_startup_status():
     """Return real preparation progress for the desktop splash screen."""
@@ -1097,11 +1187,18 @@ def get_startup_status():
 @app.get("/api/plugins/bundled/status")
 def get_bundled_plugins_status(request: Request):
     """Return non-blocking bundled-plugin synchronization status."""
-    return getattr(
-        request.app.state,
-        "bundled_plugins_status",
-        {"state": "pending", "installed": [], "error": None},
+    status = dict(
+        getattr(
+            request.app.state,
+            "bundled_plugins_status",
+            {"state": "pending", "installed": [], "error": None},
+        ),
     )
+    loader = getattr(request.app.state, "plugin_loader", None)
+    status["loaded_count"] = (
+        len(loader.get_all_loaded_plugins()) if loader is not None else 0
+    )
+    return status
 
 
 @app.get("/api/doctor/runtime")
