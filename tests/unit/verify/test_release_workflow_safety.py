@@ -38,6 +38,20 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert "grep -qx 'tauri-updater-meta-macos'" in release
 
 
+def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
+    release = _workflow("release.yml")
+
+    assert "allow_published_resume:" in release
+    assert (
+        "ALLOW_PUBLISHED_RESUME: ${{ inputs.allow_published_resume }}"
+        in release
+    )
+    assert '"$ALLOW_PUBLISHED_RESUME" != "true"' in release
+    assert '"$ARTIFACTS_RUN_ID"' in release
+    assert "uses: ./.github/workflows/release-duty.yml" not in release
+    assert "issues: write" not in release
+
+
 def test_replacement_desktop_runs_overlay_pair() -> None:
     publish = _workflow("desktop-publish.yml")
     promote = _workflow("desktop-promote.yml")

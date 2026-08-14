@@ -38,6 +38,11 @@ on:
         required: false
         type: string
         default: ""
+      allow_published_resume:
+        description: "Allow an artifact-only retry after the GitHub Release was already published"
+        required: false
+        type: boolean
+        default: false
       windows_artifacts_run_id:
         description: "Optional Desktop Build run ID containing a replacement Windows artifact"
         required: false
@@ -62,7 +67,6 @@ on:
 permissions:
   actions: read
   contents: write
-  issues: write
 
 concurrency:
   group: release-${{ inputs.tag || github.ref }}
@@ -89,6 +93,7 @@ jobs:
           REPO: ${{ github.repository }}
           INPUT_TAG: ${{ inputs.tag }}
           ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
+          ALLOW_PUBLISHED_RESUME: ${{ inputs.allow_published_resume }}
           WINDOWS_ARTIFACTS_RUN_ID: ${{ inputs.windows_artifacts_run_id }}
           PLUGINS_ARTIFACTS_RUN_ID: ${{ inputs.plugins_artifacts_run_id }}
           MACOS_ARTIFACTS_RUN_ID: ${{ inputs.macos_artifacts_run_id }}
@@ -113,8 +118,11 @@ jobs:
           echo "Target tag: $TAG"
           isDraft="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq '.isDraft')"
           if [ "$isDraft" != "true" ]; then
-            echo "::error::Release $TAG is not a draft; refusing to operate on a published release."
-            exit 1
+            if [ "$ALLOW_PUBLISHED_RESUME" != "true" ] || [ -z "$ARTIFACTS_RUN_ID" ]; then
+              echo "::error::Release $TAG is not a draft; pass allow_published_resume=true with artifacts_run_id for an idempotent retry."
+              exit 1
+            fi
+            echo "::notice::Resuming already-published release $TAG from attested artifacts $ARTIFACTS_RUN_ID"
           fi
           target="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')"
           sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
@@ -889,14 +897,6 @@ jobs:
     secrets: inherit
 
   # ── Post-publish: create the Release Duty verification issue (inline) ───────
-  duty-issue:
-    needs: [resolve, promote-desktop]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.promote-desktop.result == 'success' }}
-    uses: ./.github/workflows/release-duty.yml
-    with:
-      tag: ${{ needs.resolve.outputs.tag }}
-    secrets: inherit
-
   # ── Post-publish: deploy the public website (stable + post only) ────────────
   # Skipped for pre-releases (beta/alpha/rc/dev) so the site advertises only
   # GA/post versions. Invoked inline because the finalize job flips the draft
