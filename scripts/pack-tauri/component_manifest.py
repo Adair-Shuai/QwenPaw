@@ -13,7 +13,7 @@ from component_common import (
     DEFAULT_PRESERVE_PATHS,
     file_inventory,
     safe_relative_path,
-    read_plugin_metadata,
+    read_component_metadata,
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
@@ -89,7 +89,7 @@ def validate_manifest(
             raise ValueError(f"unsupported component kind for {component_id}")
         preserve = component.get("preserve")
         if preserve is not None:
-            if not isinstance(preserve, list) or not preserve:
+            if not isinstance(preserve, list):
                 raise ValueError(
                     f"invalid preserve for {component_id}",
                 )
@@ -212,7 +212,7 @@ def validate_manifest(
                 )
 
     if component_root is not None:
-        component_id, local_version = read_plugin_metadata(component_root)
+        component_id, local_version, _ = read_component_metadata(component_root)
         component = components.get(component_id)
         if component is None:
             raise ValueError(
@@ -226,7 +226,11 @@ def validate_manifest(
         if (
             file_inventory(
                 component_root,
-                tuple(component.get("preserve") or DEFAULT_PRESERVE_PATHS),
+                tuple(
+                    component.get("preserve")
+                    if component.get("preserve") is not None
+                    else DEFAULT_PRESERVE_PATHS,
+                ),
             )
             != component["files"]
         ):

@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """Build and sign complete managed-plugin component release artifacts."""
 
+# pylint: disable=too-many-branches
+
 from __future__ import annotations
 
 import argparse
@@ -22,7 +24,7 @@ from component_common import (
     canonical_json,
     decode_base64,
     file_inventory,
-    read_plugin_metadata,
+    read_component_metadata,
     verify_private_key_public_key,
 )
 from build_component_delta import write_delta
@@ -32,6 +34,9 @@ _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
+_LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    "python-packages": (150_000, 6 * 1024**3, 1024**3),
+}
 
 
 def _private_key(value: str) -> Ed25519PrivateKey:
@@ -205,14 +210,22 @@ def _write_history(
     return _sign(output, private)
 
 
-def _validate_archive(path: Path) -> None:
+def _archive_limits(component: str) -> tuple[int, int, int]:
+    return _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+        component,
+        (_MAX_ARCHIVE_MEMBERS, _MAX_ARCHIVE_BYTES, _MAX_MEMBER_BYTES),
+    )
+
+
+def _validate_archive(path: Path, *, component: str) -> None:
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
-        if len(infos) > _MAX_ARCHIVE_MEMBERS:
+        max_members, max_bytes, max_member_bytes = _archive_limits(component)
+        if len(infos) > max_members:
             raise ValueError("component archive contains too many members")
-        if sum(info.file_size for info in infos) > _MAX_ARCHIVE_BYTES:
+        if sum(info.file_size for info in infos) > max_bytes:
             raise ValueError("component archive is too large")
-        if any(info.file_size > _MAX_MEMBER_BYTES for info in infos):
+        if any(info.file_size > max_member_bytes for info in infos):
             raise ValueError("component archive member is too large")
 
 
@@ -240,13 +253,16 @@ def _base_sources(base_root: Path | None, source_name: str) -> list[Path]:
     if base_root is None or not base_root.exists():
         return []
     direct = base_root / source_name
-    if (direct / "plugin.json").is_file():
+    if (direct / "plugin.json").is_file() or (direct / "component.json").is_file():
         return [direct]
     return sorted(
         candidate / source_name
         for candidate in base_root.iterdir()
         if candidate.is_dir()
-        and (candidate / source_name / "plugin.json").is_file()
+        and (
+            (candidate / source_name / "plugin.json").is_file()
+            or (candidate / source_name / "component.json").is_file()
+        )
     )
 
 
@@ -285,23 +301,24 @@ def build_release(
     for source in sorted(
         path
         for path in source_root.iterdir()
-        if path.is_dir() and (path / "plugin.json").is_file()
+        if path.is_dir()
+        and ((path / "plugin.json").is_file() or (path / "component.json").is_file())
     ):
-        component, version = read_plugin_metadata(source)
-        plugin_metadata = json.loads(
-            (source / "plugin.json").read_text(encoding="utf-8-sig"),
-        )
-        preserve_paths = tuple(
-            dict.fromkeys(
-                [
-                    *DEFAULT_PRESERVE_PATHS,
-                    *plugin_metadata.get("component_update", {}).get(
-                        "preserve",
-                        [],
-                    ),
-                ],
-            ),
-        )
+        component, version, component_metadata = read_component_metadata(source)
+        if (source / "component.json").is_file():
+            preserve_paths = tuple(dict.fromkeys(component_metadata.get("preserve", [])))
+        else:
+            preserve_paths = tuple(
+                dict.fromkeys(
+                    [
+                        *DEFAULT_PRESERVE_PATHS,
+                        *component_metadata.get("component_update", {}).get(
+                            "preserve",
+                            [],
+                        ),
+                    ],
+                ),
+            )
         if component in seen_components:
             raise ValueError(
                 f"duplicate component id in release source: {component}",
@@ -311,7 +328,7 @@ def build_release(
         component_dir.mkdir(parents=True, exist_ok=True)
         artifact = component_dir / "full.zip"
         _full_zip(source, artifact)
-        _validate_archive(artifact)
+        _validate_archive(artifact, component=component)
         signature = _sign(artifact, private)
         relative_url = (
             f"artifacts/components/{target}/{component}/{version}/full.zip"
@@ -319,27 +336,27 @@ def build_release(
         deltas: list[dict] = []
         seen_base_versions: set[str] = set()
         for base_source in _base_sources(base_root, source.name):
-            base_component, base_version = read_plugin_metadata(base_source)
+            base_component, base_version, base_metadata = read_component_metadata(base_source)
             if (
                 base_component != component
                 or base_version == version
                 or base_version in seen_base_versions
             ):
                 continue
-            base_metadata = json.loads(
-                (base_source / "plugin.json").read_text(encoding="utf-8-sig"),
-            )
-            base_preserve = tuple(
-                dict.fromkeys(
-                    [
-                        *DEFAULT_PRESERVE_PATHS,
-                        *base_metadata.get("component_update", {}).get(
-                            "preserve",
-                            [],
-                        ),
-                    ],
-                ),
-            )
+            if (base_source / "component.json").is_file():
+                base_preserve = tuple(dict.fromkeys(base_metadata.get("preserve", [])))
+            else:
+                base_preserve = tuple(
+                    dict.fromkeys(
+                        [
+                            *DEFAULT_PRESERVE_PATHS,
+                            *base_metadata.get("component_update", {}).get(
+                                "preserve",
+                                [],
+                            ),
+                        ],
+                    ),
+                )
             if base_preserve != preserve_paths:
                 continue
             seen_base_versions.add(base_version)
@@ -347,7 +364,7 @@ def build_release(
             delta_dir.mkdir(parents=True, exist_ok=True)
             delta_artifact = delta_dir / "delta.zip"
             write_delta(base_source, source, delta_artifact, preserve_paths)
-            _validate_archive(delta_artifact)
+            _validate_archive(delta_artifact, component=component)
             if (
                 delta_artifact.stat().st_size
                 >= artifact.stat().st_size * delta_max_ratio
@@ -371,6 +388,7 @@ def build_release(
             )
         components[component] = {
             "kind": "directory",
+            "install_scope": component_metadata.get("install_scope", "plugin"),
             "version": version,
             "min_core_version": core_min_version,
             "preserve": list(preserve_paths),

@@ -35,6 +35,7 @@ from .update import (
     ComponentUpdater,
     _is_link_like,
     _safe_component_id,
+    _safe_path,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,19 @@ _DEFAULT_COMPONENT_BASE_URL = (
     "https://ugsci-download.oss-cn-beijing.aliyuncs.com"
 )
 _MANAGED_PLUGIN_DENYLIST = frozenset({"cloudpaw", "qwenpaw-pet"})
+DIRECTORY_COMPONENT_IDS = frozenset(
+    {
+        "backend",
+        "python-runtime",
+        "python-packages",
+        "node-runtime",
+        "java-runtime",
+        "officecli",
+        "neqsim",
+        "computer-use-helper",
+    },
+)
+_MANAGED_COMPONENTS_ROOT = WORKING_DIR / "components" / "managed"
 
 
 def _default_managed_components() -> set[str]:
@@ -73,13 +87,13 @@ def _default_managed_components() -> set[str]:
                 plugin_id = str((manifest or {}).get("id") or "").strip()
                 if plugin_id and plugin_id not in _MANAGED_PLUGIN_DENYLIST:
                     managed.add(plugin_id)
-        return managed
+        return managed | set(DIRECTORY_COMPONENT_IDS)
     except Exception:  # pragma: no cover - packaging discovery is best effort
         logger.warning(
             "Failed to discover bundled managed components",
             exc_info=True,
         )
-        return set()
+        return set(DIRECTORY_COMPONENT_IDS)
 
 
 def resolve_component_destination(plugins: Path, component: str) -> Path:
@@ -201,6 +215,103 @@ def resolve_component_destination(plugins: Path, component: str) -> Path:
     if candidates:
         return next(iter(candidates))
     return direct
+
+
+def _resolve_managed_directory(
+    updater: ComponentUpdater,
+    component: str,
+    *,
+    target_version: str | None = None,
+) -> Path | None:
+    """Resolve a runtime/tool tree without trusting paths from the pointer."""
+    component = _safe_component_id(component)
+    root = _MANAGED_COMPONENTS_ROOT.absolute()
+    if _is_link_like(root):
+        raise ComponentUpdateError(
+            "managed components root must not be a link",
+        )
+    component_root = root / component
+    if _is_link_like(component_root):
+        raise ComponentUpdateError("managed component root must not be a link")
+    if target_version is not None:
+        # Versions are parsed by the signed-manifest validator; additionally
+        # reject path syntax before deriving a filesystem destination.
+        _safe_path(target_version)
+        return component_root / target_version
+    version, path = updater.active_directory_record(component)
+    if version is None or path is None:
+        return None
+    _safe_path(version)
+    expected = (component_root / version).absolute()
+    if path.absolute() != expected:
+        raise ComponentUpdateError(
+            f"active path for {component} escapes its managed root",
+        )
+    if _is_link_like(path):
+        raise ComponentUpdateError(
+            "active managed component may not be a link",
+        )
+    return path if path.is_dir() else None
+
+
+def _bundled_directory_records() -> dict[str, tuple[str, Path]]:
+    """Read the immutable desktop active pointer supplied by Tauri."""
+    raw_root = os.environ.get("QWENPAW_TAURI_RESOURCE_DIR", "").strip()
+    if not raw_root:
+        return {}
+    resource_root = Path(raw_root).absolute()
+    if not resource_root.is_dir() or _is_link_like(resource_root):
+        return {}
+    active_path = resource_root / "state" / "active.json"
+    if not active_path.is_file():
+        active_path = resource_root / "binaries" / "state" / "active.json"
+    if not active_path.is_file() or _is_link_like(active_path):
+        return {}
+    try:
+        payload = json.loads(active_path.read_text(encoding="utf-8"))
+        schema = payload.get("schemaVersion", payload.get("schema_version"))
+        components = payload.get("components")
+        if schema != 1 or not isinstance(components, dict):
+            return {}
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    records: dict[str, tuple[str, Path]] = {}
+    for component, record in components.items():
+        if component not in DIRECTORY_COMPONENT_IDS or not isinstance(
+            record,
+            dict,
+        ):
+            continue
+        try:
+            component = _safe_component_id(component)
+            version = str(record["version"]).strip()
+            relative = _safe_path(str(record["path"]))
+            destination = (resource_root / Path(relative)).absolute()
+            destination.relative_to(resource_root)
+            current = resource_root
+            for part in Path(relative).parts:
+                current /= part
+                if _is_link_like(current):
+                    raise ComponentUpdateError(
+                        "bundled directory component path contains a link",
+                    )
+            if not version or not destination.is_dir():
+                continue
+            records[component] = (version, destination)
+        except (KeyError, OSError, ValueError, ComponentUpdateError):
+            continue
+    return records
+
+
+def _resolve_installed_directory(
+    updater: ComponentUpdater,
+    component: str,
+) -> Path | None:
+    managed = _resolve_managed_directory(updater, component)
+    if managed is not None:
+        return managed
+    _, bundled = updater.bundled_directory_record(component)
+    return bundled if bundled is not None and bundled.is_dir() else None
 
 
 def _authorize_component_install() -> None:
@@ -394,6 +505,11 @@ def configured_service() -> "ComponentUpdateService | None":
     )
     if not manifest_url or not public_key or not managed:
         return None
+    bundled_records = {
+        component: record
+        for component, record in _bundled_directory_records().items()
+        if component in managed
+    }
     updater = ComponentUpdater(
         public_key_b64=public_key,
         managed_components=managed,
@@ -401,6 +517,8 @@ def configured_service() -> "ComponentUpdateService | None":
         active_path=WORKING_DIR / "components" / "active.json",
         backup_root=WORKING_DIR / "components" / "backups",
         defer_activation_cleanup=True,
+        directory_components=managed & set(DIRECTORY_COMPONENT_IDS),
+        bundled_directory_records=bundled_records,
     )
     manifest_host = (urlparse(manifest_url).hostname or "").strip().lower()
     return ComponentUpdateService(
@@ -476,12 +594,24 @@ class ComponentUpdateService:
         self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
         for component in sorted(self.updater.managed_components):
-            installed = resolve_component_destination(plugins, component)
+            installed = (
+                _resolve_installed_directory(self.updater, component)
+                if self.updater.is_directory_component(component)
+                else resolve_component_destination(plugins, component)
+            )
             plan = self.updater.plan(
                 manifest,
                 component,
-                installed if installed.is_dir() else None,
-                plugins_root=plugins,
+                (
+                    installed
+                    if installed is not None and installed.is_dir()
+                    else None
+                ),
+                plugins_root=(
+                    None
+                    if self.updater.is_directory_component(component)
+                    else plugins
+                ),
             )
             if plan is not None:
                 plans.append(asdict(plan))
@@ -495,12 +625,24 @@ class ComponentUpdateService:
         self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
         for component in sorted(self.updater.managed_components):
-            installed = resolve_component_destination(plugins, component)
+            installed = (
+                _resolve_installed_directory(self.updater, component)
+                if self.updater.is_directory_component(component)
+                else resolve_component_destination(plugins, component)
+            )
             plan = self.updater.plan(
                 manifest,
                 component,
-                installed if installed.is_dir() else None,
-                plugins_root=plugins,
+                (
+                    installed
+                    if installed is not None and installed.is_dir()
+                    else None
+                ),
+                plugins_root=(
+                    None
+                    if self.updater.is_directory_component(component)
+                    else plugins
+                ),
             )
             if plan is not None:
                 plans.append(asdict(plan))
@@ -560,13 +702,29 @@ class ComponentUpdateService:
             raise ComponentUpdateError(
                 f"component is not managed: {component}",
             )
-        destination = resolve_component_destination(plugins, component)
         entry = manifest["components"].get(component)
         if not isinstance(entry, dict):
             raise ComponentUpdateError(
                 f"component is missing from manifest: {component}",
             )
-        if is_plugin_uninstalled(
+        directory_component = self.updater.is_directory_component(component)
+        installed = (
+            _resolve_installed_directory(self.updater, component)
+            if directory_component
+            else resolve_component_destination(plugins, component)
+        )
+        destination = (
+            _resolve_managed_directory(
+                self.updater,
+                component,
+                target_version=str(entry.get("version", "")),
+            )
+            if directory_component
+            else installed
+        )
+        if destination is None:
+            raise ComponentUpdateError("managed component destination missing")
+        if not directory_component and is_plugin_uninstalled(
             component,
             plugins_dir=plugins,
             plugin_dir=destination,
@@ -576,29 +734,30 @@ class ComponentUpdateService:
                 "updated": False,
                 "reason": "uninstalled",
             }
-        self.updater.recover_interrupted_activation(
-            component,
-            destination,
-            expected_files=(
-                entry.get("files")
-                if isinstance(entry.get("files"), dict)
-                else None
-            ),
-            expected_version=(
-                str(entry.get("version"))
-                if isinstance(entry.get("version"), str)
-                else None
-            ),
-            preserve_paths=tuple(
-                entry.get("preserve") or DEFAULT_PRESERVE_PATHS,
-            ),
-        )
-        installed = destination if destination.is_dir() else None
+        if not directory_component:
+            self.updater.recover_interrupted_activation(
+                component,
+                destination,
+                expected_files=(
+                    entry.get("files")
+                    if isinstance(entry.get("files"), dict)
+                    else None
+                ),
+                expected_version=(
+                    str(entry.get("version"))
+                    if isinstance(entry.get("version"), str)
+                    else None
+                ),
+                preserve_paths=tuple(
+                    entry.get("preserve") or DEFAULT_PRESERVE_PATHS,
+                ),
+            )
+            installed = destination if destination.is_dir() else None
         plan = self.updater.plan(
             manifest,
             component,
             installed,
-            plugins_root=plugins,
+            plugins_root=None if directory_component else plugins,
         )
         if plan is None:
             if self.updater.activation_pending(destination):
@@ -638,6 +797,8 @@ class ComponentUpdateService:
                     artifact,
                     destination,
                 )
+                if directory_component:
+                    self.updater.finalize_activation(component, destination)
                 return {
                     "component": component,
                     "updated": True,
@@ -679,6 +840,8 @@ class ComponentUpdateService:
             expected_files=entry["files"],
             preserve_from=installed,
         )
+        if directory_component:
+            self.updater.finalize_activation(component, destination)
         return {
             "component": component,
             "updated": True,

@@ -186,13 +186,25 @@ export function OfficialPluginList({ onInstalled }: OfficialPluginListProps) {
                   size="small"
                   icon={<Download size={14} />}
                   loading={installingId === entry.id}
-                  disabled={installingId !== null && installingId !== entry.id}
+                  disabled={
+                    entry.installed ||
+                    entry.upgrade_available ||
+                    (installingId !== null && installingId !== entry.id)
+                  }
+                  title={
+                    entry.installed || entry.upgrade_available
+                      ? t("pluginManager.updateFromHeader", {
+                          defaultValue:
+                            "Use the update button next to the version number to update installed plugins.",
+                        })
+                      : undefined
+                  }
                   onClick={() => void handleInstall(entry)}
                 >
-                  {entry.upgrade_available
-                    ? t("pluginManager.catalogUpgradeBtn")
-                    : entry.installed
-                    ? t("pluginManager.catalogReinstall")
+                  {entry.installed || entry.upgrade_available
+                    ? t("pluginManager.updateFromHeaderBtn", {
+                        defaultValue: "Update from header",
+                      })
                     : t("pluginManager.catalogInstall")}
                 </Button>
               </div>

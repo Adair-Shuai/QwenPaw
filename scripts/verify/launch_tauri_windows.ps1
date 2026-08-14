@@ -21,7 +21,9 @@ if ($installer) {
   if (Test-Path $portableRoot) { Remove-Item -LiteralPath $portableRoot -Recurse -Force }
   Expand-Archive -LiteralPath $portable.FullName -DestinationPath $portableRoot -Force
   foreach ($required in @("Setup.exe", "install.ps1", "version.json", "checksums.sha256",
-      "payload\UGSci.exe", "payload\binaries\qwenpaw-backend\qwenpaw-backend.exe")) {
+      "payload\UGSci.exe", "payload\binaries\state\active.json",
+      "payload\binaries\cli\qwenpaw.exe",
+      "payload\binaries\update-assistant\UGSciUpdateAssistant.exe")) {
     if (-not (Test-Path -LiteralPath (Join-Path $portableRoot $required) -PathType Leaf)) {
       throw "Portable package is missing required entry: $required"
     }
@@ -149,7 +151,7 @@ Write-Host "Execution runtime selection: $runtimeMode"
 # user PATH. Read the persisted user value because this runner process does not
 # inherit the environment-change broadcast.
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-$cliScripts = Join-Path $installRoot "binaries\qwenpaw-backend"
+$cliScripts = Join-Path $installRoot "binaries\cli"
 $cliEntries = @($userPath -split ';' | ForEach-Object { $_.Trim().TrimEnd('\') })
 if ($cliScripts.TrimEnd('\') -notin $cliEntries) {
   throw "Silent portable install did not register the bundled QwenPaw CLI in user PATH"

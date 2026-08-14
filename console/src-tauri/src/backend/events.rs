@@ -51,11 +51,45 @@ pub(super) fn watch(
                     let message = termination_message(payload, &last_stderr);
                     let state = app.state::<BackendState>();
                     let stopping = !state.is_current(generation);
+                    let retry_bundled = state.with_inner(|inner| {
+                        !stopping
+                            && inner.port.is_none()
+                            && inner
+                                .launcher
+                                .is_some_and(|launcher| launcher.managed_backend)
+                    });
                     terminated.send_replace(true);
                     if stopping {
                         log::info!(
                             "[backend:{generation}] process terminated after shutdown request"
                         );
+                    } else if retry_bundled {
+                        match crate::runtime_layout::disable_managed_component(
+                            "backend",
+                        ) {
+                            Ok(()) => {
+                                log::error!(
+                                    "[backend:{generation}] managed backend failed startup; rolling back to bundled backend: {message}"
+                                );
+                                state.clear_child_if_current(generation);
+                                let retry_app = app.clone();
+                                tauri::async_runtime::spawn(async move {
+                                    tokio::time::sleep(
+                                        std::time::Duration::from_millis(200),
+                                    )
+                                    .await;
+                                    super::start_internal(&retry_app);
+                                });
+                            }
+                            Err(err) => {
+                                state.set_error_if_current(
+                                    generation,
+                                    format!(
+                                        "{message}\n\nManaged backend rollback failed: {err}"
+                                    ),
+                                );
+                            }
+                        }
                     } else {
                         log::warn!("[backend:{generation}] {message}");
                         state.set_error_if_current(generation, message);

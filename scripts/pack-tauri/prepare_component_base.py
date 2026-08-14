@@ -32,7 +32,7 @@ from component_common import (
     canonical_json,
     decode_base64,
     file_inventory,
-    read_plugin_metadata,
+    read_component_metadata,
     safe_relative_path,
     sha256_file,
     verify_private_key_public_key,
@@ -41,6 +41,9 @@ from component_common import (
 _MAX_MEMBERS = 10_000
 _MAX_TOTAL_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
+_LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    "python-packages": (150_000, 6 * 1024**3, 1024**3),
+}
 _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -96,16 +99,27 @@ def _get(url: str) -> bytes:
         return response.read()
 
 
-def _safe_extract(archive_bytes: bytes, destination: Path) -> None:
+def _safe_extract(
+    archive_bytes: bytes,
+    destination: Path,
+    *,
+    component: str,
+) -> None:
     with zipfile.ZipFile(__import__("io").BytesIO(archive_bytes)) as archive:
         infos = archive.infolist()
         names = [info.filename for info in infos]
-        if len(names) > _MAX_MEMBERS or len(set(names)) != len(names):
+        max_members, max_bytes, max_member_bytes = (
+            _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+                component,
+                (_MAX_MEMBERS, _MAX_TOTAL_BYTES, _MAX_MEMBER_BYTES),
+            )
+        )
+        if len(names) > max_members or len(set(names)) != len(names):
             raise ValueError("previous full artifact has invalid members")
-        if sum(info.file_size for info in infos) > _MAX_TOTAL_BYTES:
+        if sum(info.file_size for info in infos) > max_bytes:
             raise ValueError("previous full artifact is too large")
         for info in infos:
-            if info.is_dir() or info.file_size > _MAX_MEMBER_BYTES:
+            if info.is_dir() or info.file_size > max_member_bytes:
                 raise ValueError(
                     "previous full artifact contains an unsafe member",
                 )
@@ -270,8 +284,9 @@ def prepare_base(
             item
             for item in source_root.iterdir()
             if (item / "plugin.json").is_file()
+            or (item / "component.json").is_file()
         ):
-            component, _ = read_plugin_metadata(source)
+            component, _, _ = read_component_metadata(source)
             entry = manifest["components"].get(component)
             if not isinstance(entry, dict):
                 continue
@@ -300,9 +315,13 @@ def prepare_base(
             # manifest/plugin ID independently.
             component_base = temporary / "tree" / source.name
             component_base.mkdir(parents=True)
-            _safe_extract(artifact, component_base)
+            _safe_extract(
+                artifact,
+                component_base,
+                component=component,
+            )
             _restore_inventory_modes(component_base, entry.get("files"))
-            installed_id, installed_version = read_plugin_metadata(
+            installed_id, installed_version, _ = read_component_metadata(
                 component_base,
             )
             if installed_id != component or installed_version != str(
@@ -311,8 +330,11 @@ def prepare_base(
                 raise ValueError(
                     f"previous artifact identity mismatch for {component}",
                 )
-            preserve_paths = tuple(
-                entry.get("preserve") or DEFAULT_PRESERVE_PATHS,
+            preserve_value = entry.get("preserve")
+            preserve_paths = (
+                tuple(preserve_value)
+                if isinstance(preserve_value, (list, tuple))
+                else DEFAULT_PRESERVE_PATHS
             )
             if file_inventory(component_base, preserve_paths) != entry.get(
                 "files",

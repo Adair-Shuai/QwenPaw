@@ -215,10 +215,10 @@ jobs:
           mkdir -p "$RUNNER_TEMP/desktop-pointer-backup"
           : > "$RUNNER_TEMP/desktop-pointer-existing.txt"
           cat > "$RUNNER_TEMP/desktop-pointer-paths.txt" <<'EOF'
-          files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-setup.exe
+          files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-updater.exe
           files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip
           files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip
-          metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-setup.exe.json
+          metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-updater.exe.json
           metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip.json
           metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip.json
           metadata/qwenpaw-tauri-latest.json
@@ -283,10 +283,10 @@ jobs:
 
           promote_latest \
             "UGSci-Desktop-Tauri-Windows-*" \
-            "UGSci-Tauri-*-Windows-setup.exe" \
+            "UGSci-Tauri-*-Windows-updater.exe" \
             "win-tauri" \
-            "UGSci-Tauri-${VERSION}-Windows-setup.exe" \
-            "UGSci-Tauri-latest-Windows-setup.exe"
+            "UGSci-Tauri-${VERSION}-Windows-updater.exe" \
+            "UGSci-Tauri-latest-Windows-updater.exe"
 
           promote_latest \
             "UGSci-Desktop-Tauri-Windows-*" \
@@ -308,7 +308,7 @@ jobs:
           # The manifest generator expects the artifact binary alongside the
           # sidecar JSON.  After artifact splitting the exe lives in a separate
           # artifact directory, so we symlink it into the meta directory.
-          for f in UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-setup.exe; do
+          for f in UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-updater.exe; do
             [ -f "$f" ] && ln -sf "../$f" tauri-updater-meta-windows/ 2>/dev/null || true
           done
           for f in UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-portable.zip; do
@@ -414,11 +414,6 @@ jobs:
               --output-index desktop-index.json
           }
 
-          merge_tauri_metadata \
-            "win-tauri-metadata.json" \
-            "UGSci-Desktop-Tauri-Windows-*" \
-            "UGSci-Tauri-*-Windows-setup.exe" \
-            "win-tauri"
           merge_tauri_metadata \
             "win-tauri-portable-metadata.json" \
             "UGSci-Desktop-Tauri-Windows-*" \

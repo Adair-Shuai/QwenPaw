@@ -119,11 +119,27 @@ def test_windows_native_ui_verification_survives_missing_cdp() -> None:
     assert '$cdpUrl = ""' in launcher
 
 
-def test_component_release_stages_only_managed_bundled_plugins() -> None:
+def test_component_release_stages_plugins_and_versioned_desktop_layers(
+) -> None:
     component_release = _workflow("component-release.yml")
 
     assert "--plugin-roots bundle apps" in component_release
     assert "stage_bundled_plugins.py" in component_release
+    assert "stage_desktop_components.py" in component_release
+    assert "desktop-components-${{ matrix.target }}" in component_release
+
+
+def test_windows_b5_migration_uses_signed_visible_bridge() -> None:
+    build = _workflow("desktop-build.yml")
+    publish = _workflow("desktop-publish.yml")
+    promote = _workflow("desktop-promote.yml")
+
+    assert "UGSci-Desktop-migration.exe" in build
+    assert "Windows-updater.exe.sig" in build
+    assert "Windows-portable.zip" in publish
+    assert "Windows-updater.exe" in publish
+    assert "Windows-updater.exe" in promote
+    assert "Windows-setup.exe" not in promote
 
 
 def test_desktop_verification_has_production_startup_budget() -> None:

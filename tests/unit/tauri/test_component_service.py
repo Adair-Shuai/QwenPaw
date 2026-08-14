@@ -14,6 +14,7 @@ from qwenpaw.components.service import (
     queue_component_update,
     resolve_component_destination,
     run_startup_updates,
+    _resolve_managed_directory,
 )
 from qwenpaw.components.update import ComponentUpdateError
 from qwenpaw.components.update import ComponentUpdater
@@ -108,6 +109,107 @@ def test_new_plugin_is_planned_as_full(monkeypatch, tmp_path):
     )
     plans = service.check()
     assert plans[0]["artifact_kind"] == "full"
+
+
+def test_runtime_component_uses_external_versioned_root(monkeypatch, tmp_path):
+    managed = tmp_path / "managed"
+    active = tmp_path / "state" / "active.json"
+    installed = managed / "backend" / "1.0.0"
+    installed.mkdir(parents=True)
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": {
+                    "backend": {
+                        "version": "1.0.0",
+                        "path": str(installed.absolute()),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._MANAGED_COMPONENTS_ROOT",
+        managed,
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    service = ComponentUpdateService(
+        updater,
+        _Client(
+            {
+                "schema_version": 1,
+                "components": {
+                    "backend": {
+                        "version": "1.1.0",
+                        "files": {},
+                        "full": {
+                            "url": "https://oss/backend.zip",
+                            "sha256": "a" * 64,
+                            "signature": "sig",
+                            "size": 1,
+                        },
+                    },
+                },
+            },
+        ),
+        "https://oss/manifest.json",
+    )
+
+    plans = service.check()
+
+    assert plans[0]["component"] == "backend"
+    assert plans[0]["from_version"] == "1.0.0"
+    assert plans[0]["preserve_paths"] == ()
+
+
+def test_runtime_active_pointer_cannot_escape_managed_root(
+    monkeypatch,
+    tmp_path,
+):
+    managed = tmp_path / "managed"
+    active = tmp_path / "state" / "active.json"
+    escaped = tmp_path / "outside"
+    escaped.mkdir()
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": {
+                    "backend": {
+                        "version": "1.0.0",
+                        "path": str(escaped),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._MANAGED_COMPONENTS_ROOT",
+        managed,
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+
+    with pytest.raises(ComponentUpdateError, match="escapes"):
+        _resolve_managed_directory(updater, "backend")
 
 
 def test_signed_manifest_adopts_new_plugin_as_full(monkeypatch, tmp_path):

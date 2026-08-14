@@ -144,9 +144,11 @@ export function useOsAppMarket({ onInstalled }: UseOsAppMarketOptions) {
       installingIdRef.current = entry.id;
       setInstallingId(entry.id);
       try {
-        const result = await installPlugin(buildMarketDownloadUrl(entry), {
-          force: true,
-        });
+        if (entry.installed) {
+          message.info(tRef.current("pluginManager.updateFromHeader"));
+          return;
+        }
+        const result = await installPlugin(buildMarketDownloadUrl(entry));
         message.success(`${tRef.current("os.appInstalled")}: ${result.name}`);
         onInstalled();
         setTimeout(() => window.location.reload(), 800);

@@ -137,11 +137,11 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           shopt -s nullglob
-          mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-setup.exe . 2>/dev/null || true
           mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-portable.zip . 2>/dev/null || true
+          mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-updater.exe . 2>/dev/null || true
           mv UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip . 2>/dev/null || true
           mv tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
-          files=(UGSci-Tauri-*-Windows-setup.exe UGSci-Tauri-*-Windows-portable.zip UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
+          files=(UGSci-Tauri-*-Windows-portable.zip UGSci-Tauri-*-Windows-updater.exe UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::No desktop installers found to attach to the release"
             exit 1
@@ -278,21 +278,14 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
-          windows_setup=$(find UGSci-Desktop-Tauri-Windows-* -name 'UGSci-Tauri-*-Windows-setup.exe' -type f -print -quit 2>/dev/null || true)
           windows_portable=$(find UGSci-Desktop-Tauri-Windows-* -name 'UGSci-Tauri-*-Windows-portable.zip' -type f -print -quit 2>/dev/null || true)
-          if [ -n "$windows_setup" ] && [ -n "$windows_portable" ]; then
-            echo "::error::Windows output must be either NSIS or portable, not both"
-            exit 1
-          elif [ -n "$windows_setup" ]; then
-            test -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json
-            test -s tauri-updater-meta-windows/UGSci-Tauri-*-Windows-setup.exe.sig
-          elif [ -z "$windows_portable" ]; then
+          windows_updater=$(find UGSci-Desktop-Tauri-Windows-* -name 'UGSci-Tauri-*-Windows-updater.exe' -type f -print -quit 2>/dev/null || true)
+          if [ -z "$windows_portable" ] || [ -z "$windows_updater" ]; then
             echo "::error::No Windows installation artifact was downloaded"
             exit 1
-          else
-            test -s tauri-updater-meta-windows/UGSci-Tauri-*-Windows-portable.zip.sig
-            test -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json
           fi
+          test -s tauri-updater-meta-windows/UGSci-Tauri-*-Windows-updater.exe.sig
+          test -s tauri-updater-meta-windows/tauri-windows-x86_64-updater.json
           test -s tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz
           test -s tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz.sig
           test -s tauri-updater-meta-macos/tauri-darwin-*-updater.json
@@ -386,17 +379,17 @@ jobs:
 
           upload_versioned \
             "UGSci-Desktop-Tauri-Windows-*" \
-            "UGSci-Tauri-*-Windows-setup.exe" \
-            "win-tauri" \
-            "UGSci-Tauri-${VERSION}-Windows-setup.exe" \
-            "win-tauri-metadata.json"
-
-          upload_versioned \
-            "UGSci-Desktop-Tauri-Windows-*" \
             "UGSci-Tauri-*-Windows-portable.zip" \
             "win-tauri" \
             "UGSci-Tauri-${VERSION}-Windows-portable.zip" \
             "win-tauri-portable-metadata.json"
+
+          upload_versioned \
+            "UGSci-Desktop-Tauri-Windows-*" \
+            "UGSci-Tauri-*-Windows-updater.exe" \
+            "win-tauri" \
+            "UGSci-Tauri-${VERSION}-Windows-updater.exe" \
+            "win-tauri-updater-metadata.json"
 
           upload_versioned \
             "UGSci-Desktop-Tauri-macOS-*" \

@@ -21,9 +21,9 @@ if (-not (Test-Path -LiteralPath $PayloadRoot -PathType Container)) {
 
 foreach ($required in @(
   "UGSci.exe",
-  "binaries\qwenpaw-backend\qwenpaw-backend.exe",
-  "binaries\qwenpaw-backend\qwenpaw.exe",
-  "binaries\python-runtime\python\python.exe"
+  "binaries\state\active.json",
+  "binaries\cli\qwenpaw.exe",
+  "binaries\update-assistant\UGSciUpdateAssistant.exe"
 )) {
   if (-not (Test-Path -LiteralPath (Join-Path $PayloadRoot $required))) {
     throw "Portable installer payload is incomplete: $required"
@@ -34,9 +34,9 @@ foreach ($required in @(
 # portable package without this tree can start the shell but cannot populate
 # FlowForge/UGSci and the other built-in plugin UIs on first launch.  Fail the
 # build rather than publishing a deceptively usable-looking package.
-$bundledPluginRoot = Join-Path $PayloadRoot "binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle"
+$bundledPluginRoot = Join-Path $backendLayer "qwenpaw\plugins_bundle"
 if (-not (Test-Path -LiteralPath $bundledPluginRoot -PathType Container)) {
-  throw "Portable installer payload is missing frozen bundled plugins: $bundledPluginRoot"
+  throw "Portable installer payload is missing layered bundled plugins: $bundledPluginRoot"
 }
 $requiredPluginIds = @("flowforge", "ugsci", "ugsci_research")
 foreach ($pluginId in $requiredPluginIds) {
@@ -54,6 +54,8 @@ param(
   [switch]$Silent,
   [switch]$NoCliPath,
   [switch]$NoDesktopShortcut,
+  [switch]$DeferredCommit,
+  [string]$TransactionFile,
   [string]$InstallDir
 )
 $ErrorActionPreference = "Stop"
@@ -69,6 +71,35 @@ function Get-NormalizedDirectoryPath([string]$Path) {
     return $volumeRoot
   }
   return $full.TrimEnd('\')
+}
+
+$activeLayout = Get-Content -LiteralPath (Join-Path $PayloadRoot "binaries\state\active.json") `
+  -Raw -Encoding UTF8 | ConvertFrom-Json
+if ($activeLayout.schemaVersion -ne 1 -or -not $activeLayout.components) {
+  throw "Portable installer active runtime layout is invalid"
+}
+function Resolve-PayloadComponent([string]$Id) {
+  $component = $activeLayout.components.$Id
+  $relative = if ($component) { ([string]$component.path).Replace('/', '\') } else { "" }
+  if (-not $relative.StartsWith("binaries\", [StringComparison]::OrdinalIgnoreCase) -or
+      [IO.Path]::IsPathRooted($relative) -or $relative.Split('\') -contains '..') {
+    throw "Portable installer active component is invalid: $Id"
+  }
+  $candidate = [IO.Path]::GetFullPath((Join-Path $PayloadRoot $relative))
+  $prefix = [IO.Path]::GetFullPath($PayloadRoot).TrimEnd('\') + '\'
+  if (-not $candidate.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $candidate -PathType Container)) {
+    throw "Portable installer active component escapes or is missing: $Id"
+  }
+  return $candidate
+}
+$backendLayer = Resolve-PayloadComponent "backend"
+$pythonLayer = Resolve-PayloadComponent "python-runtime"
+if (-not (Test-Path -LiteralPath (Join-Path $pythonLayer "python\python.exe") -PathType Leaf)) {
+  throw "Portable installer layered Python runtime is incomplete"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $backendLayer "qwenpaw\tauri\entry.py") -PathType Leaf)) {
+  throw "Portable installer layered backend is incomplete"
 }
 
 function Get-DirectoryPrefix([string]$Path) {
@@ -126,11 +157,9 @@ function Test-PackageIntegrity {
   }
   foreach ($required in @(
       "Setup.exe", "install.ps1", "version.json", "payload\Setup.exe", "payload\Uninstall.exe",
-      "payload\UGSci.exe", "payload\binaries\qwenpaw-backend\qwenpaw-backend.exe",
-      "payload\binaries\qwenpaw-backend\qwenpaw.exe",
-      "payload\binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle\flowforge\plugin.json",
-      "payload\binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle\ugsci\plugin.json",
-      "payload\binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle\ugsci_research\plugin.json"
+      "payload\UGSci.exe", "payload\binaries\state\active.json",
+      "payload\binaries\cli\qwenpaw.exe",
+      "payload\binaries\update-assistant\UGSciUpdateAssistant.exe"
     )) {
     if (-not $expected.Contains($required)) { throw "Required checksum entry is missing: $required" }
   }
@@ -143,13 +172,36 @@ if ($packageVersion.schema -ne 1 -or $packageVersion.product -ne "UGSci Desktop"
   throw "version.json is invalid"
 }
 
+function Resolve-InstalledComponent([string]$Root, [string]$Id) {
+  $activePath = Join-Path $Root "binaries\state\active.json"
+  if (-not (Test-Path -LiteralPath $activePath -PathType Leaf)) {
+    throw "Installed active runtime layout is missing"
+  }
+  $layout = Get-Content -LiteralPath $activePath -Raw -Encoding UTF8 | ConvertFrom-Json
+  if ($layout.schemaVersion -ne 1 -or -not $layout.components.$Id.path) {
+    throw "Installed active component is invalid: $Id"
+  }
+  $relative = ([string]$layout.components.$Id.path).Replace('/', '\')
+  if ([IO.Path]::IsPathRooted($relative) -or $relative.Split('\') -contains '..') {
+    throw "Installed active component path is unsafe: $Id"
+  }
+  $rootFull = [IO.Path]::GetFullPath($Root).TrimEnd('\')
+  $candidate = [IO.Path]::GetFullPath((Join-Path $rootFull $relative))
+  if (-not $candidate.StartsWith($rootFull + '\', [StringComparison]::OrdinalIgnoreCase) -or
+      -not (Test-Path -LiteralPath $candidate -PathType Container)) {
+    throw "Installed active component escapes or is missing: $Id"
+  }
+  return $candidate
+}
+
 function Test-ExistingUGSciInstall {
   param([Parameter(Mandatory = $true)] [string]$Root)
   if (-not (Test-Path -LiteralPath $Root -PathType Container)) { return $false }
   $desktopExists = (Test-Path -LiteralPath (Join-Path $Root "UGSci.exe") -PathType Leaf) -or
     (Test-Path -LiteralPath (Join-Path $Root "qwenpaw-desktop.exe") -PathType Leaf)
   $backendExists = Test-Path -LiteralPath (Join-Path $Root "binaries\qwenpaw-backend\qwenpaw-backend.exe") -PathType Leaf
-  if ($desktopExists -and $backendExists) { return $true }
+  $layeredExists = Test-Path -LiteralPath (Join-Path $Root "binaries\state\active.json") -PathType Leaf
+  if ($desktopExists -and ($backendExists -or $layeredExists)) { return $true }
 
   $versionPath = Join-Path $Root "version.json"
   if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) { return $false }
@@ -208,6 +260,9 @@ $requestedInstallDir = if ($InstallDir) {
   }
   Get-NormalizedDirectoryPath -Path $InstallDir.Trim()
 } else { $null }
+if ($DeferredCommit -and (-not $TransactionFile -or -not [IO.Path]::IsPathRooted($TransactionFile))) {
+  throw "Deferred update commit requires an absolute transaction file path"
+}
 if ($existingInstallDir -and $requestedInstallDir -and
     -not $requestedInstallDir.Equals($existingInstallDir, [StringComparison]::OrdinalIgnoreCase)) {
   throw "UGSci Desktop is already installed at $existingInstallDir. Uninstall it before choosing a different location."
@@ -245,8 +300,9 @@ if ((Test-Path -LiteralPath $installDir -PathType Container) -and
 $installParent = Split-Path -Parent $installDir
 New-Item -ItemType Directory -Path $installParent -Force | Out-Null
 $appExe = Join-Path $installDir "UGSci.exe"
-$stagingDir = Join-Path $installParent ".UGSci Desktop.install-$PID"
-$backupDir = Join-Path $installParent ".UGSci Desktop.backup-$PID"
+$transactionId = [Guid]::NewGuid().ToString("N")
+$stagingDir = Join-Path $installParent ".UGSci Desktop.install-$transactionId"
+$backupDir = Join-Path $installParent ".UGSci Desktop.backup-$transactionId"
 $mutex = New-Object Threading.Mutex($false, "Local\UGSciDesktopPortableInstaller")
 $mutexAcquired = $false
 try {
@@ -407,17 +463,43 @@ if (-not (Test-Path $payloadRoot)) { throw "Portable package payload directory n
 if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot "UGSci.exe"))) {
   throw "Portable package is missing UGSci.exe"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot "binaries\qwenpaw-backend\qwenpaw-backend.exe"))) {
-  throw "Portable package is missing the frozen backend"
+$payloadBackend = Resolve-InstalledComponent -Root $payloadRoot -Id "backend"
+$payloadPython = Resolve-InstalledComponent -Root $payloadRoot -Id "python-runtime"
+if (-not (Test-Path -LiteralPath (Join-Path $payloadBackend "qwenpaw\tauri\entry.py") -PathType Leaf)) {
+  throw "Portable package is missing the layered Python backend"
 }
-if (-not (Test-Path -LiteralPath (Join-Path $payloadRoot "binaries\qwenpaw-backend\qwenpaw.exe"))) {
-  throw "Portable package is missing the QwenPaw command line executable"
+
+function Move-DirectoryWithRetry {
+  param(
+    [Parameter(Mandatory = $true)] [string]$Source,
+    [Parameter(Mandatory = $true)] [string]$Destination,
+    [int]$Attempts = 30,
+    [int]$DelayMilliseconds = 500
+  )
+  $lastError = $null
+  for ($attempt = 1; $attempt -le $Attempts; $attempt++) {
+    try {
+      Move-Item -LiteralPath $Source -Destination $Destination -Force -ErrorAction Stop
+      return
+    } catch {
+      $lastError = $_
+      if ($attempt -lt $Attempts) { Start-Sleep -Milliseconds $DelayMilliseconds }
+    }
+  }
+  throw "Cannot move the existing UGSci Desktop installation after $Attempts attempts. A process is still using its files. $lastError"
+}
+if (-not (Test-Path -LiteralPath (Join-Path $payloadPython "python\python.exe") -PathType Leaf)) {
+  throw "Portable package is missing the layered Python runtime"
 }
 Stop-ScopedApplication -Root $installDir
 Start-Sleep -Milliseconds 500
 
-if (Test-Path $stagingDir) { Remove-Item -LiteralPath $stagingDir -Recurse -Force }
-if (Test-Path $backupDir) { Remove-Item -LiteralPath $backupDir -Recurse -Force }
+# GUID-scoped transaction directories are never pre-deleted.  An existing path
+# indicates corruption or an impossible collision; it may be recovery material
+# from an interrupted update and must not be destroyed.
+if ((Test-Path -LiteralPath $stagingDir) -or (Test-Path -LiteralPath $backupDir)) {
+  throw "A unique installer transaction path already exists; setup will not overwrite recovery data"
+}
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 Get-ChildItem -LiteralPath $payloadRoot -Force |
   Copy-Item -Destination $stagingDir -Recurse -Force
@@ -433,14 +515,22 @@ $dataBackup = if ($existingInstallDir -or $hasExistingUserData) {
 if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
 Ensure-WebView2
 
+$previousTreeMoved = $false
+$newTreeActivated = $false
 try {
   # Moving the previous tree is the first destructive mutation and therefore
   # must be covered by the rollback handler below.
-  if (Test-Path $installDir) { Move-Item -LiteralPath $installDir -Destination $backupDir -Force }
+  if (Test-Path $installDir) {
+    Move-DirectoryWithRetry -Source $installDir -Destination $backupDir
+    $previousTreeMoved = $true
+  }
   Move-Item -LiteralPath $stagingDir -Destination $installDir -Force
+  $newTreeActivated = $true
+  $installedBackend = Resolve-InstalledComponent -Root $installDir -Id "backend"
+  $installedPython = Resolve-InstalledComponent -Root $installDir -Id "python-runtime"
   if (-not (Test-Path -LiteralPath $appExe) -or
-      -not (Test-Path -LiteralPath (Join-Path $installDir "binaries\qwenpaw-backend\qwenpaw-backend.exe")) -or
-      -not (Test-Path -LiteralPath (Join-Path $installDir "binaries\qwenpaw-backend\qwenpaw.exe"))) {
+      -not (Test-Path -LiteralPath (Join-Path $installedBackend "qwenpaw\tauri\entry.py")) -or
+      -not (Test-Path -LiteralPath (Join-Path $installedPython "python\python.exe"))) {
     throw "Installed application payload failed validation"
   }
 
@@ -460,7 +550,7 @@ try {
   if (-not (Test-Path (Join-Path $runtimeDir "selection.txt"))) {
     Set-Content -LiteralPath (Join-Path $runtimeDir "selection.txt") -Value "builtin" -Encoding UTF8
   }
-  $cliScripts = Join-Path $installDir "binaries\qwenpaw-backend"
+  $cliScripts = Join-Path $installDir "binaries\cli"
   $legacyCliScripts = Join-Path $installDir "binaries\python-runtime\python\Scripts"
   & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path $legacyCliScripts
   $enableCliPath = -not $NoCliPath
@@ -493,7 +583,9 @@ try {
   $shortcut.TargetPath = $appExe
   $shortcut.WorkingDirectory = $installDir
   $shortcut.Save()
-  if (-not $NoDesktopShortcut) {
+  $createDesktopShortcut = (-not $NoDesktopShortcut) -and
+    ((-not $DeferredCommit) -or (-not $existingInstallDir) -or ($null -ne $previousDesktopShortcut))
+  if ($createDesktopShortcut) {
     $desktopShortcut = $shell.CreateShortcut($desktopShortcutPath)
     $desktopShortcut.TargetPath = $appExe
     $desktopShortcut.WorkingDirectory = $installDir
@@ -502,7 +594,30 @@ try {
     Remove-Item -LiteralPath $desktopShortcutPath -Force -ErrorAction SilentlyContinue
   }
 
-  if (Test-Path $backupDir) {
+  if ($DeferredCommit) {
+    if (-not $previousTreeMoved -or -not (Test-Path -LiteralPath $backupDir -PathType Container)) {
+      throw "Deferred update commit requires a recoverable previous installation"
+    }
+    $transactionParent = Split-Path -Parent ([IO.Path]::GetFullPath($TransactionFile))
+    New-Item -ItemType Directory -Path $transactionParent -Force | Out-Null
+    $previousVersion = if ($previousUninstall -and $previousUninstall.DisplayVersion) {
+      [string]$previousUninstall.DisplayVersion
+    } elseif (Test-Path -LiteralPath (Join-Path $backupDir "version.json") -PathType Leaf) {
+      try { [string](Get-Content -LiteralPath (Join-Path $backupDir "version.json") -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { "" }
+    } else { "" }
+    [ordered]@{
+      schema_version = 1
+      install_dir = $installDir
+      backup_dir = $backupDir
+      target_version = $version
+      previous_version = $previousVersion
+      start_menu_shortcut_path = $startMenuShortcutPath
+      start_menu_shortcut_base64 = if ($previousStartMenuShortcut) { [Convert]::ToBase64String($previousStartMenuShortcut) } else { "" }
+      desktop_shortcut_path = $desktopShortcutPath
+      desktop_shortcut_base64 = if ($previousDesktopShortcut) { [Convert]::ToBase64String($previousDesktopShortcut) } else { "" }
+      created_at = (Get-Date).ToUniversalTime().ToString("o")
+    } | ConvertTo-Json | Set-Content -LiteralPath $TransactionFile -Encoding UTF8
+  } elseif (Test-Path $backupDir) {
     Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
   }
   if ($legacyUninstallKey -and $legacyUninstallKey -ne (Get-Item -LiteralPath $uninstallKey).PSPath) {
@@ -523,9 +638,28 @@ try {
       }
     }
   }
-  Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
-  if (Test-Path $backupDir) {
-    Move-Item -LiteralPath $backupDir -Destination $installDir -Force
+  # Never delete the original tree when the initial old -> backup rename
+  # failed.  That was the b6 rollback bug: a locked UGSci.exe made Move-Item
+  # fail, then the catch block removed the still-original installation and
+  # incorrectly claimed it had restored it.
+  $rollbackError = $null
+  try {
+    if ($newTreeActivated -and (Test-Path -LiteralPath $installDir)) {
+      Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction Stop
+      $newTreeActivated = $false
+    }
+    if ($previousTreeMoved) {
+      if (-not (Test-Path -LiteralPath $backupDir -PathType Container)) {
+        throw "rollback cannot find the previous installation at $backupDir"
+      }
+      Move-Item -LiteralPath $backupDir -Destination $installDir -Force
+      $previousTreeMoved = $false
+      if (-not (Test-Path -LiteralPath (Join-Path $installDir "UGSci.exe") -PathType Leaf)) {
+        throw "rollback restored an invalid application tree"
+      }
+    }
+  } catch {
+    $rollbackError = $_
   }
   try {
     if ($previousStartMenuShortcut) {
@@ -542,7 +676,16 @@ try {
     # Shortcut restoration is best effort; the application files, registry,
     # and PATH restoration above remain the rollback source of truth.
   }
-  throw "Portable installation failed; the previous installation was restored. $installError"
+  $rollbackState = if ($rollbackError) {
+    "rollback failed: $rollbackError"
+  } elseif (Test-Path -LiteralPath (Join-Path $installDir "UGSci.exe") -PathType Leaf) {
+    "the previous installation is available"
+  } elseif ($previousTreeMoved) {
+    "the previous installation could not be restored"
+  } else {
+    "the original installation was not modified"
+  }
+  throw "Portable installation failed; $rollbackState. $installError"
 }
 } finally {
   Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue

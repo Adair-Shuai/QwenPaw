@@ -723,6 +723,8 @@ class InstallPluginRequest(BaseModel):
     """Request body for installing a plugin from a path or URL."""
 
     source: str
+    # Kept for wire compatibility. Public install routes reject force so all
+    # installed-plugin updates remain owned by the signed component updater.
     force: bool = False
 
 
@@ -750,6 +752,15 @@ async def install_plugin(
         raise HTTPException(
             status_code=503,
             detail="Plugin loader is not ready yet. Try again shortly.",
+        )
+
+    if body.force:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Installed plugins can only be updated from the update "
+                "button next to the application version."
+            ),
         )
 
     source = body.source.strip()
@@ -833,6 +844,15 @@ async def upload_plugin(
         raise HTTPException(
             status_code=503,
             detail="Plugin loader is not ready yet. Try again shortly.",
+        )
+
+    if force:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Installed plugins can only be updated from the update "
+                "button next to the application version."
+            ),
         )
 
     if not file.filename or not file.filename.endswith(".zip"):
@@ -1195,7 +1215,38 @@ async def search_market_plugins(
                 params=params,
             )
             resp.raise_for_status()
-            return resp.json()
+            payload = resp.json()
+            installed = {
+                str(plugin.get("id") or ""): str(
+                    plugin.get("version") or "0.0.0",
+                )
+                for plugin in _list_plugins_from_disk()
+                if plugin.get("id")
+            }
+            data = payload.get("data") if isinstance(payload, dict) else None
+            plugins = data.get("plugins") if isinstance(data, dict) else None
+            if isinstance(plugins, list):
+                for entry in plugins:
+                    if not isinstance(entry, dict):
+                        continue
+                    plugin_id = str(entry.get("id") or "")
+                    candidates = {
+                        plugin_id,
+                        plugin_id.removeprefix("@"),
+                        f"@{plugin_id}" if plugin_id else "",
+                    }
+                    installed_id = next(
+                        (
+                            candidate
+                            for candidate in candidates
+                            if candidate in installed
+                        ),
+                        None,
+                    )
+                    entry["installed"] = installed_id is not None
+                    if installed_id is not None:
+                        entry["installed_version"] = installed[installed_id]
+            return payload
     except Exception as exc:
         logger.warning("Plugin market search failed: %s", exc)
         raise HTTPException(

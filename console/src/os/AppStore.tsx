@@ -304,15 +304,15 @@ export default function AppStore() {
                   )}
                   <div className={styles.storeActions}>
                     {canUpdate && (
-                      <Button
-                        type="primary"
-                        size="small"
-                        icon={<RefreshCw size={14} />}
-                        loading={installingId === marketEntry!.id}
-                        onClick={() => installMarketPlugin(marketEntry!)}
-                      >
-                        {t("os.update", "Update")}
-                      </Button>
+                      <Tooltip title={t("pluginManager.updateFromHeader")}>
+                        <Button
+                          size="small"
+                          icon={<RefreshCw size={14} />}
+                          disabled
+                        >
+                          {t("pluginManager.updateFromHeaderBtn")}
+                        </Button>
+                      </Tooltip>
                     )}
                     <Button
                       size="small"
@@ -454,11 +454,14 @@ export default function AppStore() {
                         icon={<Download size={14} />}
                         loading={installingId === entry.id}
                         disabled={
-                          installingId !== null && installingId !== entry.id
+                          entry.installed ||
+                          (installingId !== null && installingId !== entry.id)
                         }
                         onClick={() => installMarketPlugin(entry)}
                       >
-                        {t("os.appMarketInstall", "Install")}
+                        {entry.installed
+                          ? t("pluginManager.updateFromHeaderBtn")
+                          : t("os.appMarketInstall", "Install")}
                       </Button>
                     </Tooltip>
                   </div>

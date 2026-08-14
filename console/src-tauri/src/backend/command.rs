@@ -11,6 +11,7 @@ use tauri_plugin_shell::{process::Command, ShellExt};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct LauncherSelection {
     pub(super) packaged: bool,
+    pub(super) managed_backend: bool,
 }
 
 /// Builds the command used to start the Python backend sidecar.
@@ -52,27 +53,29 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     };
     Ok((
         apply_contributed_environment(app, command),
-        LauncherSelection { packaged: false },
+        LauncherSelection {
+            packaged: false,
+            managed_backend: false,
+        },
     ))
 }
 
 /// Builds the command used to start the packaged Python backend sidecar.
 ///
-/// Packaged builds always launch the frozen PyInstaller executable. The
-/// standalone CPython resource is reserved for plugin dependencies and native
-/// host helpers; it is not a second application backend.
+/// b5/b6 launch the frozen PyInstaller executable. b7 can atomically select a
+/// Python backend layer plus independent interpreter/dependency layers through
+/// `state/active.json`. An invalid or incomplete selection falls back to the
+/// frozen executable so a failed migration cannot brick startup.
 #[cfg(not(debug_assertions))]
 pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
     let resource_dir = app
         .path()
         .resource_dir()
         .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
-    let backend = packaged_backend_executable(app)?;
-    let backend_args: Vec<&'static str> = Vec::new();
-    let backend_dir = backend
-        .parent()
-        .ok_or_else(|| format!("backend executable has no parent: {}", backend.display()))?
-        .to_path_buf();
+    let launch = packaged_backend_launch(app)?;
+    let backend = launch.executable;
+    let backend_args = launch.args;
+    let backend_dir = launch.working_directory;
     log::info!(
         "[backend] packaged command: {} {} cwd={}",
         backend.display(),
@@ -104,6 +107,13 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
         // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
         // See: src/qwenpaw/docs/proxy-bypass-design.md
         .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
+    if !launch.python_paths.is_empty() {
+        let python_path = std::env::join_paths(&launch.python_paths)
+            .map_err(|err| format!("failed to join packaged PYTHONPATH entries: {err}"))?
+            .into_string()
+            .map_err(|_| "packaged PYTHONPATH contains non-Unicode data".to_string())?;
+        command = command.env("PYTHONPATH", python_path);
+    }
     if cfg!(windows) {
         // Mark this as a desktop backend regardless of frozen vs python mode.
         // PYTHONNOUSERSITE keeps the python.exe path reproducible; harmless
@@ -183,17 +193,28 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     } else {
         log::debug!("[backend] bundled neqsim jar not found");
     }
-    Ok((command, LauncherSelection { packaged: true }))
+    Ok((
+        command,
+        LauncherSelection {
+            packaged: true,
+            managed_backend: launch.managed_backend,
+        },
+    ))
 }
 
 #[cfg(not(debug_assertions))]
 fn packaged_python_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let base = app
-        .path()
-        .resource_dir()
-        .ok()?
-        .join("binaries")
-        .join("python-runtime")
+    let resource_dir = app.path().resource_dir().ok()?;
+    let base = crate::runtime_layout::resolve_component(&resource_dir, "python-runtime")
+        .map(|selected| {
+            log::info!(
+                "[backend] active python runtime version={} root={}",
+                selected.version,
+                selected.root.display()
+            );
+            selected.root
+        })
+        .unwrap_or_else(|| resource_dir.join("binaries").join("python-runtime"))
         .join("python");
     let candidates = if cfg!(windows) {
         vec![base.join("python.exe")]
@@ -213,12 +234,10 @@ fn packaged_java_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
     // (bin/java) and the macOS bundle layout (Contents/Home/bin/java),
     // so we always return the root directory when a java binary can be
     // found in either location.
-    let root = app
-        .path()
-        .resource_dir()
-        .ok()?
-        .join("binaries")
-        .join("java-runtime");
+    let resource_dir = app.path().resource_dir().ok()?;
+    let root = crate::runtime_layout::resolve_component(&resource_dir, "java-runtime")
+        .map(|selected| selected.root)
+        .unwrap_or_else(|| resource_dir.join("binaries").join("java-runtime"));
     // Flat layout: <root>/bin/java (Windows, Linux, flattened macOS)
     let java = if cfg!(windows) {
         root.join("bin").join("java.exe")
@@ -241,13 +260,11 @@ fn packaged_java_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
 
 #[cfg(not(debug_assertions))]
 fn packaged_neqsim_jar(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let jar = app
-        .path()
-        .resource_dir()
-        .ok()?
-        .join("binaries")
-        .join("neqsim")
-        .join("neqsim-mcp-server.jar");
+    let resource_dir = app.path().resource_dir().ok()?;
+    let root = crate::runtime_layout::resolve_component(&resource_dir, "neqsim")
+        .map(|selected| selected.root)
+        .unwrap_or_else(|| resource_dir.join("binaries").join("neqsim"));
+    let jar = root.join("neqsim-mcp-server.jar");
     jar.is_file().then_some(jar)
 }
 
@@ -264,12 +281,10 @@ fn apply_contributed_environment(app: &tauri::AppHandle, mut command: Command) -
 
 #[cfg(not(debug_assertions))]
 fn packaged_node_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let root = app
-        .path()
-        .resource_dir()
-        .ok()?
-        .join("binaries")
-        .join("node-runtime");
+    let resource_dir = app.path().resource_dir().ok()?;
+    let root = crate::runtime_layout::resolve_component(&resource_dir, "node-runtime")
+        .map(|selected| selected.root)
+        .unwrap_or_else(|| resource_dir.join("binaries").join("node-runtime"));
     let node = if cfg!(windows) {
         root.join("node.exe")
     } else {
@@ -280,12 +295,10 @@ fn packaged_node_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
 
 #[cfg(not(debug_assertions))]
 fn packaged_officecli_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let dir = app
-        .path()
-        .resource_dir()
-        .ok()?
-        .join("binaries")
-        .join("officecli");
+    let resource_dir = app.path().resource_dir().ok()?;
+    let dir = crate::runtime_layout::resolve_component(&resource_dir, "officecli")
+        .map(|selected| selected.root)
+        .unwrap_or_else(|| resource_dir.join("binaries").join("officecli"));
     let binary = if cfg!(windows) {
         dir.join("officecli.exe")
     } else {
@@ -301,13 +314,23 @@ fn packaged_backend_executable(app: &tauri::AppHandle) -> Result<PathBuf, String
     } else {
         "qwenpaw-backend"
     };
-    let path = app
+    let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|err| format!("failed to resolve resource directory: {err}"))?
-        .join("binaries")
-        .join("qwenpaw-backend")
-        .join(executable_name);
+        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
+    let root = crate::runtime_layout::resolve_component(&resource_dir, "backend")
+        .filter(|selected| selected.kind.as_deref() != Some("python"))
+        .map(|selected| {
+            log::info!(
+                "[backend] active backend version={} kind={} root={}",
+                selected.version,
+                selected.kind.as_deref().unwrap_or("frozen"),
+                selected.root.display()
+            );
+            selected.root
+        })
+        .unwrap_or_else(|| resource_dir.join("binaries").join("qwenpaw-backend"));
+    let path = root.join(executable_name);
 
     if path.is_file() {
         Ok(path)
@@ -317,6 +340,67 @@ fn packaged_backend_executable(app: &tauri::AppHandle) -> Result<PathBuf, String
             path.display()
         ))
     }
+}
+
+#[cfg(not(debug_assertions))]
+struct PackagedBackendLaunch {
+    executable: PathBuf,
+    args: Vec<String>,
+    working_directory: PathBuf,
+    python_paths: Vec<PathBuf>,
+    managed_backend: bool,
+}
+
+#[cfg(not(debug_assertions))]
+fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaunch, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
+    if let Some(backend) = crate::runtime_layout::resolve_component(&resource_dir, "backend") {
+        if backend.kind.as_deref() == Some("python") {
+            let package = backend.root.join("qwenpaw");
+            if package.is_dir() {
+                let python = packaged_python_runtime(app).ok_or_else(|| {
+                    "active Python backend requires an active or bundled Python runtime".to_string()
+                })?;
+                let mut python_paths = vec![backend.root.clone()];
+                if let Some(dependencies) =
+                    crate::runtime_layout::resolve_component(&resource_dir, "python-packages")
+                {
+                    python_paths.push(dependencies.root);
+                }
+                log::info!(
+                    "[backend] selected layered Python backend version={} root={}",
+                    backend.version,
+                    backend.root.display()
+                );
+                return Ok(PackagedBackendLaunch {
+                    executable: python,
+                    args: vec!["-m".to_string(), "qwenpaw.tauri.entry".to_string()],
+                    working_directory: backend.root,
+                    python_paths,
+                    managed_backend: true,
+                });
+            }
+            log::warn!(
+                "[backend] active Python backend is incomplete at {}; falling back to frozen backend",
+                backend.root.display()
+            );
+        }
+    }
+    let executable = packaged_backend_executable(app)?;
+    let working_directory = executable
+        .parent()
+        .ok_or_else(|| format!("backend executable has no parent: {}", executable.display()))?
+        .to_path_buf();
+    Ok(PackagedBackendLaunch {
+        executable,
+        args: Vec::new(),
+        working_directory,
+        python_paths: Vec::new(),
+        managed_backend: false,
+    })
 }
 
 #[cfg(not(debug_assertions))]

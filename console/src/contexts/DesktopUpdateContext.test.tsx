@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   installDownloadedUpdate: vi.fn(),
   onUpdateEvent: vi.fn(),
   checkComponentUpdates: vi.fn(),
+  queueAllComponentUpdates: vi.fn(),
 }));
 
 vi.mock("../tauri/backendRuntime", () => ({
@@ -27,7 +28,7 @@ vi.mock("../tauri/desktopUpdate", () => ({
 vi.mock("../api", () => ({
   default: {
     checkComponentUpdates: mocks.checkComponentUpdates,
-    queueAllComponentUpdates: vi.fn(),
+    queueAllComponentUpdates: mocks.queueAllComponentUpdates,
   },
 }));
 
@@ -64,6 +65,7 @@ function UpdateProbe() {
         install
       </button>
       <output>{result}</output>
+      <output data-testid="check-warning">{updates.checkWarning ?? ""}</output>
     </>
   );
 }
@@ -75,6 +77,9 @@ describe("DesktopUpdateProvider", () => {
     mocks.installDesktopUpdate.mockReset().mockResolvedValue(undefined);
     mocks.installDownloadedUpdate.mockReset().mockResolvedValue(undefined);
     mocks.checkComponentUpdates.mockReset().mockResolvedValue({ updates: [] });
+    mocks.queueAllComponentUpdates
+      .mockReset()
+      .mockResolvedValue({ queued: [] });
     mocks.onUpdateEvent.mockReset().mockResolvedValue(() => {});
   });
 
@@ -108,6 +113,31 @@ describe("DesktopUpdateProvider", () => {
     fireEvent.click(screen.getByRole("button", { name: "refresh" }));
 
     await waitFor(() => expect(screen.getByText("failed")).toBeInTheDocument());
+  });
+
+  it("reports partial source failure while keeping a valid core update", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValueOnce({
+      version: "2.1.1-beta.8",
+      body: "update",
+      supportsLaterInstall: true,
+    });
+    mocks.checkComponentUpdates.mockRejectedValueOnce(
+      new Error("component manifest unavailable"),
+    );
+
+    render(
+      <DesktopUpdateProvider>
+        <UpdateProbe />
+      </DesktopUpdateProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("available")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("check-warning")).toHaveTextContent(
+      "Components: component manifest unavailable",
+    );
   });
 
   it("rethrows immediate install failures to the update button", async () => {

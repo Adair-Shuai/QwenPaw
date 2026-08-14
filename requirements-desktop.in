@@ -1,0 +1,20 @@
+.[local,codex,qoder]
+
+# Offline desktop document/data/petroleum toolchain. These packages live in
+# the independently versioned python-packages component, never in CPython.
+numpy
+pandas
+scipy
+matplotlib
+requests
+openpyxl
+python-docx
+python-pptx
+Pillow
+lasio
+welly
+bruges
+simpeg
+dlisio
+xtgeo
+pvtlib

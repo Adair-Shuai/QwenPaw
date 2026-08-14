@@ -41,6 +41,7 @@ interface ContextValue {
   total: number | null;
   throughputBps: number;
   error: UpdateError | null;
+  checkWarning: string | null;
   startInstall: () => Promise<void>;
   startBackgroundDownload: () => Promise<void>;
   installDownloaded: () => Promise<void>;
@@ -72,14 +73,22 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [total, setTotal] = useState<number | null>(null);
   const [throughputBps, setThroughputBps] = useState(0);
   const [error, setError] = useState<UpdateError | null>(null);
+  const [checkWarning, setCheckWarning] = useState<string | null>(null);
 
   const samplesRef = useRef<{ t: number; downloaded: number }[]>([]);
   const hasCachedUpdateRef = useRef(false);
 
   const refreshComponentUpdates = useCallback(async (): Promise<number> => {
-    const result = await api.checkComponentUpdates();
-    setComponentUpdateCount(result.updates.length);
-    return result.updates.length;
+    try {
+      const result = await api.checkComponentUpdates();
+      setComponentUpdateCount(result.updates.length);
+      return result.updates.length;
+    } catch (err) {
+      // Never leave a stale badge/action behind after the source could not be
+      // checked. The caller still receives the error and can block install.
+      setComponentUpdateCount(0);
+      throw err;
+    }
   }, []);
 
   const refreshDesktopUpdate = useCallback(async (): Promise<boolean> => {
@@ -109,6 +118,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refreshUpdates = useCallback(async () => {
+    setCheckWarning(null);
     const [coreResult, componentResult] = await Promise.allSettled([
       refreshDesktopUpdate(),
       refreshComponentUpdates(),
@@ -117,16 +127,22 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       coreResult.status === "fulfilled" ? coreResult.value : false;
     const componentCount =
       componentResult.status === "fulfilled" ? componentResult.value : 0;
-    if (coreAvailable || componentCount > 0) return true;
-
-    const failures = [coreResult, componentResult]
-      .filter(
-        (result): result is PromiseRejectedResult =>
-          result.status === "rejected",
-      )
-      .map((result) => toErrorMessage(result.reason));
+    const failures = [
+      coreResult.status === "rejected"
+        ? `Desktop: ${toErrorMessage(coreResult.reason)}`
+        : null,
+      componentResult.status === "rejected"
+        ? `Components: ${toErrorMessage(componentResult.reason)}`
+        : null,
+    ].filter((value): value is string => Boolean(value));
     if (failures.length > 0) {
-      throw new Error(failures.join("; "));
+      const detail = failures.join("; ");
+      if (!coreAvailable && componentCount <= 0) {
+        throw new Error(detail);
+      }
+      // One source can still offer a valid update, but the unified dialog
+      // must disclose that the other source could not be checked.
+      setCheckWarning(detail);
     }
     return coreAvailable || componentCount > 0;
   }, [refreshComponentUpdates, refreshDesktopUpdate]);
@@ -157,12 +173,16 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const queueComponentUpdates = useCallback(async () => {
-    if (componentUpdateCount <= 0) return false;
+    // Re-check immediately before queuing. A previous partial OSS failure
+    // must not silently turn a core update into a core-only update.
+    const available = await refreshComponentUpdates();
+    setCheckWarning(null);
+    if (available <= 0) return false;
     const result = await api.queueAllComponentUpdates();
     const queued = result.queued.length > 0;
     if (queued) setComponentUpdateCount(0);
     return queued;
-  }, [componentUpdateCount]);
+  }, [refreshComponentUpdates]);
 
   const handleProgress = useCallback((p: UpdateProgress) => {
     const now = Date.now();
@@ -280,6 +300,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       total,
       throughputBps,
       error,
+      checkWarning,
       startInstall,
       startBackgroundDownload,
       installDownloaded: installDownloadedFn,
@@ -300,6 +321,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       total,
       throughputBps,
       error,
+      checkWarning,
       startInstall,
       startBackgroundDownload,
       installDownloadedFn,

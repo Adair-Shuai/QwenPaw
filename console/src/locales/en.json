@@ -3504,6 +3504,8 @@
     "catalogReinstall": "Reinstall",
     "catalogUpgrade": "Upgrade available",
     "catalogUpgradeBtn": "Upgrade",
+    "updateFromHeader": "Use the update button next to the version number to update installed plugins.",
+    "updateFromHeaderBtn": "Update from header",
     "catalogInstalled": "Installed",
     "catalogSha256": "SHA256",
     "kindBundle": "Bundle",

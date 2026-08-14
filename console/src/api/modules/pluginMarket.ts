@@ -21,6 +21,9 @@ export interface MarketPluginEntry {
   qwenpaw_compat_labels?: string[];
   /** Whether this plugin is featured (true = featured, false or undefined = not). */
   is_featured?: boolean;
+  /** Added by the local proxy so installed entries cannot be overwritten. */
+  installed?: boolean;
+  installed_version?: string;
 }
 
 /** Return whether a marketplace entry is classified as an app. */

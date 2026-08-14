@@ -259,7 +259,9 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                 )}
                 <Tooltip
                   title={
-                    !isCompatible(entry)
+                    entry.installed
+                      ? t("pluginManager.updateFromHeader")
+                      : !isCompatible(entry)
                       ? `This plugin is labeled for QwenPaw ${
                           entry.qwenpaw_compat_labels?.join(", ") ?? "unknown"
                         }; compatibility with QwenPaw ${
@@ -274,7 +276,8 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                     icon={<Download size={14} />}
                     loading={installingId === entry.id}
                     disabled={
-                      installingId !== null && installingId !== entry.id
+                      entry.installed ||
+                      (installingId !== null && installingId !== entry.id)
                     }
                     onClick={() => {
                       if (!isCompatible(entry)) {
@@ -303,7 +306,9 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                       }
                     }}
                   >
-                    {t("pluginManager.catalogInstall")}
+                    {entry.installed
+                      ? t("pluginManager.updateFromHeaderBtn")
+                      : t("pluginManager.catalogInstall")}
                   </Button>
                 </Tooltip>
               </div>

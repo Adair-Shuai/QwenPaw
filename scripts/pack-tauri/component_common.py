@@ -176,3 +176,33 @@ def read_plugin_metadata(root: Path) -> tuple[str, str]:
     except InvalidVersion as exc:
         raise ValueError(f"invalid plugin version: {version!r}") from exc
     return component_id.strip(), version.strip()
+
+
+def read_component_metadata(root: Path) -> tuple[str, str, dict[str, Any]]:
+    """Read either a generic managed component or legacy plugin manifest."""
+    descriptor_path = root / "component.json"
+    if descriptor_path.is_file():
+        data = json.loads(descriptor_path.read_text(encoding="utf-8-sig"))
+        if not isinstance(data, dict) or data.get("schema_version") != 1:
+            raise ValueError(f"invalid component.json: {descriptor_path}")
+        component_id = data.get("id")
+        version = data.get("version")
+        if not isinstance(component_id, str) or not component_id.strip():
+            raise ValueError(f"invalid component id: {descriptor_path}")
+        if any(char in component_id for char in ("/", "\\", "\x00")):
+            raise ValueError(f"unsafe component id: {component_id!r}")
+        if not isinstance(version, str) or not version.strip():
+            raise ValueError(f"invalid component version: {descriptor_path}")
+        try:
+            Version(version)
+        except InvalidVersion as exc:
+            raise ValueError(f"invalid component version: {version!r}") from exc
+        preserve = data.get("preserve", [])
+        if not isinstance(preserve, list) or not all(
+            isinstance(item, str) and item for item in preserve
+        ):
+            raise ValueError(f"invalid component preserve list: {descriptor_path}")
+        return component_id.strip(), version.strip(), data
+    component_id, version = read_plugin_metadata(root)
+    plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8-sig"))
+    return component_id, version, plugin

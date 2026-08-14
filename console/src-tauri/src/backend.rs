@@ -456,6 +456,25 @@ fn start_internal(app: &tauri::AppHandle) {
     let (rx, child) = match command.spawn() {
         Ok(child) => child,
         Err(err) => {
+            if launcher.managed_backend {
+                match crate::runtime_layout::disable_managed_component(
+                    "backend",
+                ) {
+                    Ok(()) => {
+                        log::error!(
+                            "[backend] managed backend failed to spawn: {err}; rolled back to bundled backend"
+                        );
+                        start_internal(app);
+                        return;
+                    }
+                    Err(rollback_err) => {
+                        state.set_error(format!(
+                            "failed to spawn managed backend: {err}; rollback failed: {rollback_err}"
+                        ));
+                        return;
+                    }
+                }
+            }
             state.set_error(format!("failed to spawn backend: {err}"));
             return;
         }

@@ -14,7 +14,7 @@ from pathlib import Path
 from component_common import (
     canonical_json,
     file_inventory,
-    read_plugin_metadata,
+    read_component_metadata,
 )
 
 
@@ -33,8 +33,8 @@ def build_delta(
         if base_files[path]["sha256"] != target_files[path]["sha256"]
         or base_files[path].get("mode") != target_files[path].get("mode")
     )
-    component_id, base_version = read_plugin_metadata(base)
-    target_id, target_version = read_plugin_metadata(target)
+    component_id, base_version, _ = read_component_metadata(base)
+    target_id, target_version, _ = read_component_metadata(target)
     if component_id != target_id:
         raise ValueError(
             f"component id changed: {component_id!r} -> {target_id!r}",
@@ -44,6 +44,7 @@ def build_delta(
         "component": component_id,
         "base_version": base_version,
         "target_version": target_version,
+        "preserve": list(preserve_paths),
         "add": add,
         "replace": replace,
         "delete": delete,

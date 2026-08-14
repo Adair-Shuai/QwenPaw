@@ -9,6 +9,7 @@ mod computer_use_runtime;
 mod external_link;
 mod reveal;
 mod runtime_env;
+mod runtime_layout;
 mod tray;
 mod ui_verification;
 mod updates;

@@ -48,10 +48,19 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
 
   const handleInstall = useCallback(
     async (entry: OfficialPluginCatalogEntry) => {
+      if (entry.installed || entry.upgrade_available) {
+        message.info(
+          t("pluginManager.updateFromHeader", {
+            defaultValue:
+              "Use the update button next to the version number to update installed plugins.",
+          }),
+        );
+        return;
+      }
       setInstallingId(entry.id);
       try {
         const result = await installPlugin(entry.install_url, {
-          force: entry.installed || entry.upgrade_available,
+          force: false,
         });
         message.success(`${t("pluginManager.installSuccess")}: ${result.name}`);
         onInstalled();
@@ -64,7 +73,7 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
         setInstallingId(null);
       }
     },
-    [loadCatalog, message, onInstalled, t],
+    [message, onInstalled, t],
   );
 
   return {

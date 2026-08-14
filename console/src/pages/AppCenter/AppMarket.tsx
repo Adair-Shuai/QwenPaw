@@ -214,9 +214,11 @@ export function AppMarket({
       });
 
       try {
-        const result = await installPlugin(buildMarketDownloadUrl(entry), {
-          force: true,
-        });
+        if (entry.installed) {
+          message.info(tRef.current("pluginManager.updateFromHeader"));
+          return;
+        }
+        const result = await installPlugin(buildMarketDownloadUrl(entry));
         message.success({
           content: `${tRef.current("appCenter.installSuccess", "安装成功")}: ${
             result.name
@@ -386,12 +388,15 @@ export function AppMarket({
                         icon={<Download size={14} />}
                         loading={installingId === entry.id}
                         disabled={
+                          entry.installed ||
                           !versionChecked ||
                           (installingId !== null && installingId !== entry.id)
                         }
                         onClick={() => requestInstall(entry)}
                       >
-                        {installingId === entry.id
+                        {entry.installed
+                          ? t("pluginManager.updateFromHeaderBtn")
+                          : installingId === entry.id
                           ? t("appCenter.installing", "安装中...")
                           : t("appCenter.install", "安装")}
                       </Button>

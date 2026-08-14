@@ -2,6 +2,8 @@
 # -*- coding: utf-8 -*-
 """Verify the complete runtime shape of desktop-bundled plugins."""
 
+# pylint: disable=too-many-branches
+
 from __future__ import annotations
 
 import json
@@ -13,7 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 CRITICAL_PLUGINS = frozenset({"flowforge", "ugsci", "ugsci_research"})
-MACOS_PLUGIN_SUFFIX = PurePosixPath(
+LEGACY_MACOS_PLUGIN_SUFFIX = PurePosixPath(
     "Contents/Resources/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle",
 )
 
@@ -118,21 +120,56 @@ def _verify_archive_files(
             part.startswith("._") for part in PurePosixPath(name).parts
         )
     }
-    app_roots = {
-        PurePosixPath(*PurePosixPath(name).parts[: index + 1]).as_posix()
+    active_manifests = sorted(
+        name
         for name in payload_files
-        for index, part in enumerate(PurePosixPath(name).parts)
-        if part.endswith(".app")
-        and index + 1 < len(PurePosixPath(name).parts)
-        and PurePosixPath(name).parts[index + 1] == "Contents"
-    }
-    if len(app_roots) != 1:
+        if name.endswith("binaries/state/active.json")
+    )
+    if len(active_manifests) > 1:
         raise ValueError(
-            "macOS desktop archive must contain exactly one .app bundle; "
-            f"found {sorted(app_roots)}",
+            "desktop archive contains multiple active runtime manifests: "
+            + ", ".join(active_manifests),
         )
-    app_root = next(iter(app_roots))
-    expected_root = (PurePosixPath(app_root) / MACOS_PLUGIN_SUFFIX).as_posix()
+    if active_manifests:
+        active_name = active_manifests[0]
+        active = json.loads(read_file(active_name).decode("utf-8"))
+        if active.get("schemaVersion") != 1:
+            raise ValueError("desktop active runtime manifest has an unsupported schema")
+        backend = (active.get("components") or {}).get("backend") or {}
+        backend_path = str(backend.get("path") or "")
+        backend_relative = PurePosixPath(backend_path)
+        if (
+            backend_relative.is_absolute()
+            or ".." in backend_relative.parts
+            or not backend_path.startswith("binaries/")
+        ):
+            raise ValueError("desktop active backend path is unsafe")
+        suffix = "binaries/state/active.json"
+        prefix = active_name[: -len(suffix)]
+        expected_root = (
+            PurePosixPath(prefix)
+            / backend_relative
+            / "qwenpaw"
+            / "plugins_bundle"
+        ).as_posix()
+    else:
+        app_roots = {
+            PurePosixPath(*PurePosixPath(name).parts[: index + 1]).as_posix()
+            for name in payload_files
+            for index, part in enumerate(PurePosixPath(name).parts)
+            if part.endswith(".app")
+            and index + 1 < len(PurePosixPath(name).parts)
+            and PurePosixPath(name).parts[index + 1] == "Contents"
+        }
+        if len(app_roots) != 1:
+            raise ValueError(
+                "legacy desktop archive must contain exactly one .app bundle; "
+                f"found {sorted(app_roots)}",
+            )
+        app_root = next(iter(app_roots))
+        expected_root = (
+            PurePosixPath(app_root) / LEGACY_MACOS_PLUGIN_SUFFIX
+        ).as_posix()
 
     all_manifests = sorted(
         name
@@ -148,7 +185,7 @@ def _verify_archive_files(
     ]
     if unexpected:
         raise ValueError(
-            "bundled plugin manifests exist outside the frozen backend path: "
+            "bundled plugin manifests exist outside the selected backend path: "
             + ", ".join(unexpected),
         )
     manifests = [

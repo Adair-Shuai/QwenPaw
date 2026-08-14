@@ -444,7 +444,7 @@ jobs:
           retention-days: 7
 
   build-components:
-    needs: [resolve]
+    needs: [resolve, build-desktop]
     if: ${{ inputs.artifacts_run_id == '' }}
     uses: ./.github/workflows/component-release.yml
     with:
@@ -456,6 +456,7 @@ jobs:
       upload_to_oss: false
       history_count: 10
       delta_max_ratio: "0.8"
+      include_desktop_components: true
     secrets: inherit
 
   # ── Gate: publish jobs below run only if every prepare job above is green ──

@@ -3524,6 +3524,8 @@
     "catalogReinstall": "重新安装",
     "catalogUpgrade": "可升级",
     "catalogUpgradeBtn": "升级",
+    "updateFromHeader": "已安装插件请通过顶部版本号右侧的升级按钮统一更新。",
+    "updateFromHeaderBtn": "从顶部升级",
     "catalogInstalled": "已安装",
     "catalogSha256": "SHA256",
     "kindBundle": "插件包",

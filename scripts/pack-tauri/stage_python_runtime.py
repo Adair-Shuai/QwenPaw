@@ -208,7 +208,14 @@ def _validate_member(member: tarfile.TarInfo, root: Path) -> None:
         raise SystemExit(
             f"Python runtime archive member escapes target: {member.name}",
         ) from None
-    if member.issym() or member.islnk():
+    if member.islnk():
+        # Hard links are unnecessary for the standalone runtime and make the
+        # extraction result depend on archive member ordering and pre-existing
+        # files. Reject them instead of trying to reproduce tar semantics.
+        raise SystemExit(
+            f"Python runtime hard links are not allowed: {member.name}",
+        )
+    if member.issym():
         link = Path(member.linkname)
         if link.is_absolute():
             raise SystemExit(

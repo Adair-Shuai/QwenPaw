@@ -16,6 +16,10 @@ cd "$REPO_ROOT"
 
 DIST="${DIST:-dist}"
 VERSION=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)
+LAYERED_DESKTOP=false
+if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
+    LAYERED_DESKTOP=true
+fi
 
 echo "========================================="
 echo "UGSci PyInstaller Build"
@@ -58,6 +62,7 @@ uninstall_python_package() {
     fi
 }
 
+if [ "$LAYERED_DESKTOP" = false ]; then
 # Install PyInstaller if not present
 echo "== Installing PyInstaller =="
 if ! "$PYTHON_BIN" -c "import PyInstaller" 2> /dev/null; then
@@ -148,6 +153,12 @@ chmod +x "${DEST}/qwenpaw-backend"
 chmod +x "${DEST}/qwenpaw"
 echo "Copied to: ${DEST}"
 echo ""
+else
+    echo "== Layered desktop mode: skipping PyInstaller and legacy dependency install =="
+    BINARIES_DIR="${REPO_ROOT}/console/src-tauri/binaries"
+    DEST="${BINARIES_DIR}/qwenpaw-backend"
+    mkdir -p "${BINARIES_DIR}"
+fi
 
 # Stage a standalone CPython (same X.Y/arch as this build's interpreter) so the
 # frozen backend can install third-party plugin dependencies at runtime.
@@ -158,36 +169,43 @@ echo "== Staging bundled Python runtime =="
 # The Chrome Native Messaging host runs under this standalone interpreter,
 # outside the PyInstaller backend, so its dependencies must be installed here.
 NATIVE_HOST_PYTHON="${BINARIES_DIR}/python-runtime/python/bin/python3"
-"$NATIVE_HOST_PYTHON" -m pip install \
-    --disable-pip-version-check \
-    --no-input \
-    --no-deps \
-    --only-binary=:all: \
-    -r "${REPO_ROOT}/scripts/pack-tauri/native-host-requirements.txt"
-"$NATIVE_HOST_PYTHON" \
-    "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
-    --check-runtime
+if [ ! -x "$NATIVE_HOST_PYTHON" ]; then
+    NATIVE_HOST_PYTHON="${BINARIES_DIR}/python-runtime/python/bin/python"
+fi
+if [ "$LAYERED_DESKTOP" = false ]; then
+    "$NATIVE_HOST_PYTHON" -m pip install \
+        --disable-pip-version-check \
+        --no-input \
+        --no-deps \
+        --only-binary=:all: \
+        -r "${REPO_ROOT}/scripts/pack-tauri/native-host-requirements.txt"
+    "$NATIVE_HOST_PYTHON" \
+        "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
+        --check-runtime
+fi
 echo ""
 
 # Pre-install common Python libraries into the bundled runtime so users on
 # machines without Python can handle files (Excel/Word/PPT/images/data
 # processing) without waiting for a pip download on first use.
-echo "== Installing common Python packages into bundled runtime =="
 PY_RUNTIME_BIN="${BINARIES_DIR}/python-runtime/python/bin/python3"
 if [ ! -f "$PY_RUNTIME_BIN" ]; then
     PY_RUNTIME_BIN="${BINARIES_DIR}/python-runtime/python/bin/python"
 fi
-PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple/}"
-PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-https://pypi.org/simple/}"
-echo "Using PyPI mirror: ${PIP_INDEX_URL} (extra: ${PIP_EXTRA_INDEX_URL})"
-"$PY_RUNTIME_BIN" -m pip install \
-    --disable-pip-version-check \
-    --no-input \
-    --index-url "$PIP_INDEX_URL" \
-    --extra-index-url "$PIP_EXTRA_INDEX_URL" \
-    numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow \
-    lasio welly bruges simpeg dlisio xtgeo pvtlib
-echo "Common + petroleum domain packages installed"
+if [ "$LAYERED_DESKTOP" = false ]; then
+    echo "== Installing common Python packages into bundled runtime =="
+    PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple/}"
+    PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-https://pypi.org/simple/}"
+    echo "Using PyPI mirror: ${PIP_INDEX_URL} (extra: ${PIP_EXTRA_INDEX_URL})"
+    "$PY_RUNTIME_BIN" -m pip install \
+        --disable-pip-version-check \
+        --no-input \
+        --index-url "$PIP_INDEX_URL" \
+        --extra-index-url "$PIP_EXTRA_INDEX_URL" \
+        numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow \
+        lasio welly bruges simpeg dlisio xtgeo pvtlib
+    echo "Common + petroleum domain packages installed"
+fi
 echo ""
 
 echo "== Staging bundled Node runtime =="
@@ -218,10 +236,56 @@ echo "== Staging bundled NeqSim MCP Server JAR =="
     --dest "${BINARIES_DIR}/neqsim"
 echo ""
 
+if [ "$LAYERED_DESKTOP" = true ]; then
+    echo "== Assembling independently versioned desktop layers =="
+    install_python_packages "build>=1.2,<2"
+    RUNTIME_PYTHON="${BINARIES_DIR}/python-runtime/python/bin/python3"
+    if [ ! -x "${RUNTIME_PYTHON}" ]; then
+        RUNTIME_PYTHON="${BINARIES_DIR}/python-runtime/python/bin/python"
+    fi
+    "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/build_python_layers.py" \
+        --repo "${REPO_ROOT}" \
+        --host-python "${PYTHON_BIN}" \
+        --runtime-python "${RUNTIME_PYTHON}" \
+        --output "${BINARIES_DIR}" \
+        --version "${VERSION}"
+
+    echo "Building versioned Computer Use helper..."
+    cargo build --manifest-path "${REPO_ROOT}/console/src-tauri/Cargo.toml" \
+        --release --bin qwenpaw-computer-use-helper
+    COMPUTER_USE_LAYER="${BINARIES_DIR}/tools/computer-use/${VERSION}"
+    mkdir -p "${COMPUTER_USE_LAYER}"
+    cp "${REPO_ROOT}/console/src-tauri/target/release/qwenpaw-computer-use-helper" \
+        "${COMPUTER_USE_LAYER}/qwenpaw-computer-use-helper"
+    chmod +x "${COMPUTER_USE_LAYER}/qwenpaw-computer-use-helper"
+
+    # Layered builds never create the legacy frozen backend. Remove a stale
+    # tree left by an earlier local build so it cannot leak into the package.
+    rm -rf "${BINARIES_DIR}/qwenpaw-backend"
+    "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/assemble_desktop_layout.py" \
+        --binaries "${BINARIES_DIR}" \
+        --version "${VERSION}"
+    DEPENDENCY_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-packages"]["path"])' "${BINARIES_DIR}/state/active.json")
+    case "$DEPENDENCY_PATH" in
+        binaries/*) ;;
+        *) echo "ERROR: invalid layered Python dependency path: ${DEPENDENCY_PATH}" >&2; exit 1 ;;
+    esac
+    PYTHONPATH="${REPO_ROOT}/console/src-tauri/${DEPENDENCY_PATH}" \
+        "$NATIVE_HOST_PYTHON" \
+        "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
+        --check-runtime
+    echo "Layered desktop layout assembled"
+    echo ""
+fi
+
 echo "========================================="
-echo "PyInstaller Build Complete!"
+echo "Desktop Backend Build Complete!"
 echo "========================================="
 echo "Output:"
-echo "  Bundle: ${BACKEND_DIR}"
-echo "  Tauri resource: ${DEST}"
+if [ "$LAYERED_DESKTOP" = true ]; then
+    echo "  Layered resources: ${BINARIES_DIR}"
+else
+    echo "  Bundle: ${BACKEND_DIR}"
+    echo "  Tauri resource: ${DEST}"
+fi
 echo ""

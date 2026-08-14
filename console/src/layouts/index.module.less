@@ -441,24 +441,30 @@
 }
 
 .unifiedUpdateButton {
-  margin-left: 5px;
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  margin-left: 7px;
+  width: 28px;
+  min-width: 28px;
+  height: 28px;
   padding: 0;
   color: #1677ff;
-  background: rgba(22, 119, 255, 0.08);
+  background: rgba(22, 119, 255, 0.14);
+  border: 1px solid rgba(22, 119, 255, 0.2);
   border-radius: 999px;
 
   :global(.anticon) {
-    font-size: 14px;
+    font-size: 16px;
   }
 }
 
 .unifiedUpdateButton:hover,
 .unifiedUpdateButtonActive {
   color: #1677ff !important;
-  background: rgba(22, 119, 255, 0.1) !important;
+  background: rgba(22, 119, 255, 0.2) !important;
+  border-color: rgba(22, 119, 255, 0.36) !important;
 }
 
 .collapseBtn {

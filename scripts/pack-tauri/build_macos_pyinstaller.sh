@@ -119,7 +119,11 @@ echo "PyInstaller backend built"
 echo ""
 
 echo "== Step 2a: Verifying Bundled Plugins in Backend =="
-BUNDLED_PLUGIN_ROOT="${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle"
+if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
+    BUNDLED_PLUGIN_ROOT="${REPO_ROOT}/console/src-tauri/binaries/app/backend/${VERSION}/qwenpaw/plugins_bundle"
+else
+    BUNDLED_PLUGIN_ROOT="${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle"
+fi
 if [ ! -d "${BUNDLED_PLUGIN_ROOT}" ]; then
     echo "ERROR: Frozen backend is missing bundled plugins: ${BUNDLED_PLUGIN_ROOT}"
     exit 1
@@ -129,17 +133,23 @@ echo "Bundled plugin payload verified"
 echo ""
 
 echo "== Step 2b: Signing PyInstaller Backend =="
-bash "${SIGN_MACOS_BUNDLE}" \
-    "${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend" \
-    "${APPLE_SIGNING_IDENTITY}"
-echo "PyInstaller backend signed"
-echo ""
-
-echo "== Step 2c: Signing Bundled OfficeCLI =="
-bash "${SIGN_MACOS_BUNDLE}" \
-    "${REPO_ROOT}/console/src-tauri/binaries/officecli" \
-    "${APPLE_SIGNING_IDENTITY}"
-echo "Bundled OfficeCLI signed"
+if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
+    bash "${SIGN_MACOS_BUNDLE}" \
+        "${REPO_ROOT}/console/src-tauri/binaries" \
+        "${APPLE_SIGNING_IDENTITY}"
+    echo "Versioned runtime and tool layers signed"
+else
+    bash "${SIGN_MACOS_BUNDLE}" \
+        "${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend" \
+        "${APPLE_SIGNING_IDENTITY}"
+    echo "PyInstaller backend signed"
+    echo ""
+    echo "== Step 2c: Signing Bundled OfficeCLI =="
+    bash "${SIGN_MACOS_BUNDLE}" \
+        "${REPO_ROOT}/console/src-tauri/binaries/officecli" \
+        "${APPLE_SIGNING_IDENTITY}"
+    echo "Bundled OfficeCLI signed"
+fi
 echo ""
 
 # Step 3: Build Tauri app
@@ -169,12 +179,17 @@ if [ -z "${APP_PATH}" ] || [ ! -d "${APP_PATH}" ]; then
     exit 1
 fi
 echo "Found app bundle: ${APP_PATH}"
-HELPER_PATH="${APP_PATH}/Contents/MacOS/qwenpaw-computer-use-helper"
+if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
+    HELPER_PATH="${APP_PATH}/Contents/Resources/binaries/tools/computer-use/${VERSION}/qwenpaw-computer-use-helper"
+    APP_PLUGIN_ROOT="${APP_PATH}/Contents/Resources/binaries/app/backend/${VERSION}/qwenpaw/plugins_bundle"
+else
+    HELPER_PATH="${APP_PATH}/Contents/MacOS/qwenpaw-computer-use-helper"
+    APP_PLUGIN_ROOT="${APP_PATH}/Contents/Resources/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle"
+fi
 if [ ! -x "${HELPER_PATH}" ]; then
     echo "ERROR: Computer Use helper was not bundled at ${HELPER_PATH}"
     exit 1
 fi
-APP_PLUGIN_ROOT="${APP_PATH}/Contents/Resources/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle"
 if [ ! -d "${APP_PLUGIN_ROOT}" ]; then
     echo "ERROR: Final macOS app is missing bundled plugins: ${APP_PLUGIN_ROOT}"
     exit 1

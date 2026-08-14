@@ -1,4 +1,13 @@
-import { Layout, Space, Badge, Spin, Tooltip, Dropdown, message } from "antd";
+import {
+  Layout,
+  Space,
+  Badge,
+  Spin,
+  Tooltip,
+  Dropdown,
+  Alert,
+  message,
+} from "antd";
 import type { MenuProps } from "antd";
 import LanguageSwitcher, {
   LANGUAGE_LIST,
@@ -283,14 +292,8 @@ export default function Header() {
       } catch (err) {
         componentQueueError = err;
       }
+      if (componentQueueError) throw componentQueueError;
       if (desktop.hasCoreUpdate) {
-        if (componentQueueError) {
-          const detail =
-            componentQueueError instanceof Error
-              ? componentQueueError.message
-              : String(componentQueueError);
-          message.warning(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
-        }
         if (isReady) {
           await desktop.installDownloaded();
         } else {
@@ -298,13 +301,16 @@ export default function Header() {
         }
         return;
       }
-      if (componentQueueError) throw componentQueueError;
       if (queuedComponents) {
         await restartForComponentUpdates();
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       message.error(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
+      // Keep the unified decision surface visible so the user can retry or
+      // cancel. A component-source failure must never silently become a
+      // core-only update.
+      setUpdateModalOpen(true);
     } finally {
       installActionRef.current = false;
       unifiedUpdateBusyRef.current = false;
@@ -522,6 +528,18 @@ export default function Header() {
 
         {/* Markdown content */}
         <div className={styles.updateModalBody}>
+          {desktop.checkWarning && (
+            <Alert
+              type="warning"
+              showIcon
+              message={t("sidebar.updateModal.partialCheckWarning", {
+                defaultValue:
+                  "Some update sources could not be checked. They will be checked again before installation.",
+              })}
+              description={desktop.checkWarning}
+              style={{ marginBottom: 16 }}
+            />
+          )}
           {updateMarkdown ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}

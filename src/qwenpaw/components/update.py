@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """Opt-in signed component planning and atomic plugin activation."""
 
-# pylint: disable=too-many-return-statements
+# pylint: disable=too-many-branches,too-many-return-statements
 
 from __future__ import annotations
 
@@ -54,6 +54,19 @@ _FORBIDDEN_PRESERVE_PATHS = {"plugin.json", *_INTERNAL_PRESERVED_NAMES}
 _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
+_LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    # Scientific Python dependency layers legitimately contain tens of
+    # thousands of small files. Keep a finite, component-scoped ceiling so
+    # production artifacts fit without weakening plugin archive limits.
+    "python-packages": (150_000, 6 * 1024**3, 1024**3),
+}
+
+
+def _archive_limits(component: str) -> tuple[int, int, int]:
+    return _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+        component,
+        (_MAX_ARCHIVE_MEMBERS, _MAX_ARCHIVE_BYTES, _MAX_MEMBER_BYTES),
+    )
 
 
 def _safe_component_id(value: Any) -> str:
@@ -372,7 +385,7 @@ class _BackupSnapshot:
 
 
 class ComponentUpdater:
-    """Plan and apply managed plugin updates; never auto-runs at startup."""
+    """Plan and apply signed managed updates; never auto-runs at startup."""
 
     def __init__(
         self,
@@ -384,6 +397,8 @@ class ComponentUpdater:
         active_path: Path | None = None,
         backup_root: Path | None = None,
         defer_activation_cleanup: bool = False,
+        directory_components: set[str] | None = None,
+        bundled_directory_records: dict[str, tuple[str, Path]] | None = None,
     ):
         self.public_key_b64 = public_key_b64
         self.managed_components = frozenset(
@@ -409,6 +424,32 @@ class ComponentUpdater:
         # successfully loaded the candidate. Unit/test callers retain the
         # historical eager cleanup behavior unless explicitly enabled.
         self.defer_activation_cleanup = defer_activation_cleanup
+        # These are signed, managed directory trees (runtimes/tools/backend),
+        # not plugins.  Keeping the distinction explicit prevents a signed
+        # manifest from silently turning an arbitrary plugin into executable
+        # runtime content.
+        self.directory_components = frozenset(
+            _safe_component_id(item)
+            for item in (directory_components or set())
+        )
+        if not self.directory_components <= self.managed_components:
+            raise ComponentUpdateError(
+                "directory components must also be managed components",
+            )
+        self.bundled_directory_records: dict[str, tuple[str, Path]] = {}
+        for item, record in (bundled_directory_records or {}).items():
+            item = _safe_component_id(item)
+            if item not in self.directory_components:
+                raise ComponentUpdateError(
+                    "bundled directory record is not a directory component",
+                )
+            version, path = record
+            _version(version, "bundled component version")
+            if not path.is_absolute() or _is_link_like(path):
+                raise ComponentUpdateError(
+                    "bundled directory component path is unsafe",
+                )
+            self.bundled_directory_records[item] = (version, path)
         self._lock = threading.RLock()
 
     def extend_managed_components(self, components: set[str]) -> None:
@@ -417,6 +458,44 @@ class ComponentUpdater:
         self.managed_components = frozenset(
             set(self.managed_components) | validated,
         )
+
+    def is_directory_component(self, component: str) -> bool:
+        return component in self.directory_components
+
+    def active_directory_record(
+        self,
+        component: str,
+    ) -> tuple[str | None, Path | None]:
+        component = _safe_component_id(component)
+        if self.active_path is None or not self.active_path.is_file():
+            return None, None
+        try:
+            payload = json.loads(self.active_path.read_text(encoding="utf-8"))
+            if payload.get("schema_version") != 1:
+                return None, None
+            if payload.get("target") not in {None, self.target}:
+                return None, None
+            record = payload["components"][component]
+            version = str(record["version"])
+            path = Path(str(record["path"]))
+            return version, path
+        except (
+            OSError,
+            KeyError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+        ):
+            return None, None
+
+    def bundled_directory_record(
+        self,
+        component: str,
+    ) -> tuple[str | None, Path | None]:
+        record = self.bundled_directory_records.get(
+            _safe_component_id(component),
+        )
+        return record if record is not None else (None, None)
 
     def _activation_marker(self, destination: Path) -> Path:
         return destination.parent / f".{destination.name}.activation.json"
@@ -640,7 +719,7 @@ class ComponentUpdater:
     ) -> _BackupSnapshot | None:
         """Persist and verify data before component activation."""
         # pylint: disable=too-many-branches,too-many-statements
-        if not source.is_dir():
+        if not plan.preserve_paths or not source.is_dir():
             return None
         if _is_link_like(source):
             raise ComponentUpdateError("backup source may not be a symlink")
@@ -903,10 +982,17 @@ class ComponentUpdater:
                     payload["components"].update(existing["components"])
             except (OSError, json.JSONDecodeError, TypeError):
                 pass
-        payload["components"][component] = {
+        record = {
             "version": version,
             "path": str(destination),
         }
+        # Runtime execution type is derived from the fixed client allowlist,
+        # never from remote Manifest input. The Rust launcher needs this to
+        # start a layered backend with Python instead of looking for a frozen
+        # qwenpaw-backend executable.
+        if component == "backend" and component in self.directory_components:
+            record["kind"] = "python"
+        payload["components"][component] = record
         temporary = self.active_path.with_name(
             f".{self.active_path.name}.{uuid.uuid4().hex}.staging",
         )
@@ -1180,8 +1266,19 @@ class ComponentUpdater:
                 raise ComponentUpdateError(
                     f"core version is below {component} minimum",
                 )
+            raw_preserve = entry.get("preserve")
             entry["preserve"] = list(
-                _normalize_preserve_paths(entry.get("preserve")),
+                ()
+                if self.is_directory_component(component)
+                and raw_preserve == []
+                else _normalize_preserve_paths(
+                    raw_preserve,
+                    default=(
+                        ()
+                        if self.is_directory_component(component)
+                        else DEFAULT_PRESERVE_PATHS
+                    ),
+                ),
             )
             migration = entry.get("migration")
             if migration is not None:
@@ -1258,18 +1355,57 @@ class ComponentUpdater:
             return None
         if plugins_root is None and installed is not None:
             plugins_root = installed.parent
-        if plugins_root is not None and is_plugin_uninstalled(
-            component,
-            plugins_dir=plugins_root,
-            plugin_dir=installed,
+        directory_component = self.is_directory_component(component)
+        if (
+            not directory_component
+            and plugins_root is not None
+            and is_plugin_uninstalled(
+                component,
+                plugins_dir=plugins_root,
+                plugin_dir=installed,
+            )
         ):
             return None
         target_version = str(entry.get("version", ""))
         if not target_version:
             raise ComponentUpdateError("component target version is missing")
         current_version: str | None = None
-        preserve_paths = _normalize_preserve_paths(entry.get("preserve"))
-        if installed is not None and (installed / "plugin.json").is_file():
+        raw_preserve = entry.get("preserve")
+        preserve_paths = (
+            ()
+            if directory_component and raw_preserve == []
+            else _normalize_preserve_paths(
+                raw_preserve,
+                default=(
+                    () if directory_component else DEFAULT_PRESERVE_PATHS
+                ),
+            )
+        )
+        if directory_component:
+            active_version, active_directory = self.active_directory_record(
+                component,
+            )
+            if (
+                installed is not None
+                and active_directory is not None
+                and installed.absolute() == active_directory.absolute()
+            ):
+                current_version = active_version
+            if current_version is None and installed is not None:
+                bundled_version, bundled_directory = (
+                    self.bundled_directory_record(component)
+                )
+                if (
+                    bundled_directory is not None
+                    and installed.absolute() == bundled_directory.absolute()
+                ):
+                    current_version = bundled_version
+            if current_version is not None and _version(
+                current_version,
+                "installed version",
+            ) >= _version(target_version, "target version"):
+                return None
+        elif installed is not None and (installed / "plugin.json").is_file():
             data = json.loads(
                 (installed / "plugin.json").read_text(encoding="utf-8"),
             )
@@ -1331,13 +1467,14 @@ class ComponentUpdater:
             plugins_root=plugins_root,
             label="component destination",
         )
-        if is_plugin_uninstalled(
+        directory_component = self.is_directory_component(plan.component)
+        if not directory_component and is_plugin_uninstalled(
             plan.component,
             plugins_dir=plugins_root.resolve(),
             plugin_dir=base,
         ):
             raise ComponentUpdateError("component is marked uninstalled")
-        if is_plugin_uninstalled(
+        if not directory_component and is_plugin_uninstalled(
             plan.component,
             plugins_dir=destination.parent,
             plugin_dir=destination,
@@ -1374,10 +1511,12 @@ class ComponentUpdater:
             )
             with zipfile.ZipFile(archive) as bundle:
                 infos = bundle.infolist()
+                max_members, max_bytes, max_member_bytes = _archive_limits(
+                    plan.component,
+                )
                 if (
-                    len(infos) > _MAX_ARCHIVE_MEMBERS
-                    or sum(info.file_size for info in infos)
-                    > _MAX_ARCHIVE_BYTES
+                    len(infos) > max_members
+                    or sum(info.file_size for info in infos) > max_bytes
                 ):
                     raise ComponentUpdateError(
                         "delta artifact exceeds safety limits",
@@ -1391,7 +1530,7 @@ class ComponentUpdater:
                     raise ComponentUpdateError(
                         "delta artifact contains directory members",
                     )
-                if any(info.file_size > _MAX_MEMBER_BYTES for info in infos):
+                if any(info.file_size > max_member_bytes for info in infos):
                     raise ComponentUpdateError(
                         "delta artifact member exceeds safety limit",
                     )
@@ -1485,25 +1624,29 @@ class ComponentUpdater:
             actual = _inventory(staged, plan.preserve_paths)
             if not _content_matches(actual, expected):
                 raise ComponentUpdateError("final file verification failed")
-            if not (staged / "plugin.json").is_file():
+            if (
+                not directory_component
+                and not (staged / "plugin.json").is_file()
+            ):
                 raise ComponentUpdateError(
                     "updated component has no plugin.json",
                 )
-            try:
-                plugin = json.loads(
-                    (staged / "plugin.json").read_text(encoding="utf-8"),
-                )
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ComponentUpdateError(
-                    "invalid updated plugin JSON",
-                ) from exc
-            if (
-                plugin.get("id") != plan.component
-                or str(plugin.get("version")) != plan.target_version
-            ):
-                raise ComponentUpdateError(
-                    "updated plugin identity/version mismatch",
-                )
+            if not directory_component:
+                try:
+                    plugin = json.loads(
+                        (staged / "plugin.json").read_text(encoding="utf-8"),
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ComponentUpdateError(
+                        "invalid updated plugin JSON",
+                    ) from exc
+                if (
+                    plugin.get("id") != plan.component
+                    or str(plugin.get("version")) != plan.target_version
+                ):
+                    raise ComponentUpdateError(
+                        "updated plugin identity/version mismatch",
+                    )
             backup = self._backup_component_data(plan, base, destination)
             self._restore_backup_to_staging(backup, staged, plan)
             self._run_migration(plan, staged)
@@ -1514,16 +1657,17 @@ class ComponentUpdater:
                 raise ComponentUpdateError(
                     "restored delta component inventory mismatch",
                 )
-            plugin = json.loads(
-                (staged / "plugin.json").read_text(encoding="utf-8"),
-            )
-            if (
-                plugin.get("id") != plan.component
-                or str(plugin.get("version")) != plan.target_version
-            ):
-                raise ComponentUpdateError(
-                    "restored delta plugin identity/version mismatch",
+            if not directory_component:
+                plugin = json.loads(
+                    (staged / "plugin.json").read_text(encoding="utf-8"),
                 )
+                if (
+                    plugin.get("id") != plan.component
+                    or str(plugin.get("version")) != plan.target_version
+                ):
+                    raise ComponentUpdateError(
+                        "restored delta plugin identity/version mismatch",
+                    )
             self._atomic_activate(
                 staged,
                 destination,
@@ -1571,7 +1715,8 @@ class ComponentUpdater:
             plugins_root=plugins_root,
             label="component preserve source",
         )
-        if is_plugin_uninstalled(
+        directory_component = self.is_directory_component(plan.component)
+        if not directory_component and is_plugin_uninstalled(
             plan.component,
             plugins_dir=plugins_root.resolve(),
             plugin_dir=legacy_source,
@@ -1586,10 +1731,12 @@ class ComponentUpdater:
             staged.mkdir()
             with zipfile.ZipFile(archive) as bundle:
                 infos = bundle.infolist()
+                max_members, max_bytes, max_member_bytes = _archive_limits(
+                    plan.component,
+                )
                 if (
-                    len(infos) > _MAX_ARCHIVE_MEMBERS
-                    or sum(info.file_size for info in infos)
-                    > _MAX_ARCHIVE_BYTES
+                    len(infos) > max_members
+                    or sum(info.file_size for info in infos) > max_bytes
                 ):
                     raise ComponentUpdateError(
                         "full artifact exceeds safety limits",
@@ -1603,7 +1750,7 @@ class ComponentUpdater:
                     if (
                         info.is_dir()
                         or info.filename.startswith("/")
-                        or info.file_size > _MAX_MEMBER_BYTES
+                        or info.file_size > max_member_bytes
                     ):
                         raise ComponentUpdateError(
                             "invalid full artifact member",
@@ -1635,19 +1782,26 @@ class ComponentUpdater:
             ):
                 raise ComponentUpdateError("full artifact inventory mismatch")
             plugin_path = staged / "plugin.json"
-            if not plugin_path.is_file():
-                raise ComponentUpdateError("full artifact has no plugin.json")
-            try:
-                plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
-            except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-                raise ComponentUpdateError("invalid full plugin JSON") from exc
-            if (
-                plugin.get("id") != plan.component
-                or str(plugin.get("version")) != plan.target_version
-            ):
-                raise ComponentUpdateError(
-                    "full plugin identity/version mismatch",
-                )
+            if not directory_component:
+                if not plugin_path.is_file():
+                    raise ComponentUpdateError(
+                        "full artifact has no plugin.json",
+                    )
+                try:
+                    plugin = json.loads(
+                        plugin_path.read_text(encoding="utf-8"),
+                    )
+                except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+                    raise ComponentUpdateError(
+                        "invalid full plugin JSON",
+                    ) from exc
+                if (
+                    plugin.get("id") != plan.component
+                    or str(plugin.get("version")) != plan.target_version
+                ):
+                    raise ComponentUpdateError(
+                        "full plugin identity/version mismatch",
+                    )
             backup = (
                 self._backup_component_data(plan, preserve_from, destination)
                 if preserve_from is not None
@@ -1662,14 +1816,15 @@ class ComponentUpdater:
                 raise ComponentUpdateError(
                     "restored full component inventory mismatch",
                 )
-            plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
-            if (
-                plugin.get("id") != plan.component
-                or str(plugin.get("version")) != plan.target_version
-            ):
-                raise ComponentUpdateError(
-                    "restored full plugin identity/version mismatch",
-                )
+            if not directory_component:
+                plugin = json.loads(plugin_path.read_text(encoding="utf-8"))
+                if (
+                    plugin.get("id") != plan.component
+                    or str(plugin.get("version")) != plan.target_version
+                ):
+                    raise ComponentUpdateError(
+                        "restored full plugin identity/version mismatch",
+                    )
             self._atomic_activate(
                 staged,
                 destination,

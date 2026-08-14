@@ -40,6 +40,16 @@ def _load_pointer_checker():
     return module
 
 
+def test_python_dependency_layer_has_bounded_production_archive_limits():
+    module = _load()
+    large = module._archive_limits("python-packages")
+    regular = module._archive_limits("demo")
+
+    assert large[0] >= 50_000
+    assert large[1] <= 8 * 1024**3
+    assert regular[0] == 10_000
+
+
 def test_builds_signed_full_release_and_excludes_user_inventory(tmp_path):
     module = _load()
     source = tmp_path / "staged" / "demo"
@@ -134,6 +144,51 @@ def test_builds_delta_when_previous_base_is_supplied(tmp_path):
         / "1.0.0-1.1.0"
         / "delta.zip"
     ).is_file()
+
+
+def test_builds_generic_runtime_component_without_plugin_manifest(tmp_path):
+    module = _load()
+    source = tmp_path / "staged" / "python-runtime"
+    source.mkdir(parents=True)
+    (source / "component.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "id": "python-runtime",
+                "version": "3.11.9",
+                "install_scope": "desktop-runtime",
+                "preserve": [],
+            },
+        ),
+        encoding="utf-8",
+    )
+    (source / "python.exe").write_bytes(b"runtime")
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+
+    manifest_path = module.build_release(
+        source.parent,
+        tmp_path / "release",
+        product="qwenpaw",
+        channel="stable",
+        target="windows-x86_64",
+        core_min_version="2.1.1b7",
+        base_url="https://oss.example",
+        private_key_b64=key,
+    )
+
+    entry = json.loads(manifest_path.read_text())["components"][
+        "python-runtime"
+    ]
+    assert entry["install_scope"] == "desktop-runtime"
+    assert entry["preserve"] == []
+    assert "python.exe" in entry["files"]
 
 
 def test_builds_ten_direct_deltas_and_binds_signed_history(tmp_path):

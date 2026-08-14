@@ -12,13 +12,17 @@ import zipfile
 from pathlib import Path
 
 from component_common import (
+    DEFAULT_PRESERVE_PATHS,
     file_inventory,
-    read_plugin_metadata,
+    read_component_metadata,
     safe_relative_path,
 )
 
 _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
+_LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    "python-packages": (150_000, 6 * 1024**3),
+}
 
 
 def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
@@ -37,12 +41,6 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
             raise ValueError(
                 "component delta contains duplicate archive members",
             )
-        if len(infos) > _MAX_ARCHIVE_MEMBERS:
-            raise ValueError(
-                "component delta contains too many archive members",
-            )
-        if sum(info.file_size for info in infos) > _MAX_ARCHIVE_BYTES:
-            raise ValueError("component delta is too large to extract")
         for info in infos:
             if (
                 info.is_dir()
@@ -57,6 +55,16 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
             raise ValueError("invalid component delta archive") from exc
         if not isinstance(delta, dict):
             raise ValueError("delta.json must contain an object")
+        component_limit = _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+            str(delta.get("component", "")),
+            (_MAX_ARCHIVE_MEMBERS, _MAX_ARCHIVE_BYTES),
+        )
+        if len(infos) > component_limit[0]:
+            raise ValueError(
+                "component delta contains too many archive members",
+            )
+        if sum(info.file_size for info in infos) > component_limit[1]:
+            raise ValueError("component delta is too large to extract")
         if delta.get("schema_version") != 1:
             raise ValueError("unsupported component delta schema")
         if not isinstance(delta.get("base_files"), dict) or not isinstance(
@@ -64,7 +72,7 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
             dict,
         ):
             raise ValueError("delta must contain base_files and final_files")
-        component_id, base_version = read_plugin_metadata(base)
+        component_id, base_version, _ = read_component_metadata(base)
         if (
             delta.get("component") != component_id
             or delta.get("base_version") != base_version
@@ -106,7 +114,13 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
             raise ValueError(
                 "delta archive contains unexpected or missing members",
             )
-        current = file_inventory(base)
+        raw_preserve = delta.get("preserve", list(DEFAULT_PRESERVE_PATHS))
+        if not isinstance(raw_preserve, list) or not all(
+            isinstance(item, str) for item in raw_preserve
+        ):
+            raise ValueError("delta preserve list is invalid")
+        preserve_paths = tuple(raw_preserve)
+        current = file_inventory(base, preserve_paths)
         expected_base = delta.get("base_files")
         if expected_base is not None and current != expected_base:
             raise ValueError("base component does not match delta")
@@ -130,7 +144,7 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
                 mode = metadata.get("mode")
                 if type(mode) is int and 0 <= mode <= 0o7777:
                     candidate.chmod(mode)
-            actual = file_inventory(staged)
+            actual = file_inventory(staged, preserve_paths)
             if actual != delta.get("final_files"):
                 raise ValueError(
                     "final component inventory does not match delta",

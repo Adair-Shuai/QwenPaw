@@ -79,6 +79,7 @@ jobs:
     needs: [check-updater-signing]
     if: ${{ inputs.platform == 'all' || inputs.platform == 'windows' }}
     env:
+      QWENPAW_LAYERED_DESKTOP: "true"
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_WINDOWS || vars.QWENPAW_NODE_SHA256 }}
       QWENPAW_JRE_SHA256: ${{ vars.QWENPAW_JRE_SHA256_WINDOWS || vars.QWENPAW_JRE_SHA256 }}
@@ -112,7 +113,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: uv.lock
+          cache-dependency-glob: requirements-desktop.lock
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -161,65 +162,39 @@ jobs:
         shell: pwsh
         run: |
           $bundle = "console/src-tauri/target/release/bundle"
-          $setup = Get-ChildItem "$bundle/nsis" -Filter '*-setup.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if ($setup) {
-            python scripts/pack-tauri/generate_update_manifest.py stage `
-              --bundle-dir console/src-tauri/target/release/bundle/nsis `
-              --pattern '*-setup.exe' `
-              --target windows-x86_64 `
-              --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe" `
-              --pubkey-config console/src-tauri/tauri.version.conf.json
-            if ('${{ inputs.require_updater_assets }}' -eq 'true') {
-              if (-not (Test-Path "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-setup.exe.sig")) {
-                throw 'Production NSIS build is missing its Tauri updater signature'
-              }
-              if (-not (Test-Path 'dist/tauri-windows-x86_64-updater.json')) {
-                throw 'Production NSIS build is missing its updater sidecar'
-              }
-            }
-          } else {
-            $portable = Get-ChildItem "$bundle" -Filter 'UGSci-Desktop-portable.zip' -ErrorAction SilentlyContinue | Select-Object -First 1
-            if (-not $portable) { throw 'Neither a signed NSIS setup.exe nor the portable Windows installer was produced' }
-            $portableSig = "$($portable.FullName).sig"
-            if ('${{ inputs.require_updater_assets }}' -eq 'true' -and -not (Test-Path -LiteralPath $portableSig -PathType Leaf)) {
-              throw 'Production portable Windows build is missing its updater signature'
-            }
-            $inspectRoot = Join-Path $env:RUNNER_TEMP 'qwenpaw-portable-layout'
-            if (Test-Path -LiteralPath $inspectRoot) { Remove-Item -LiteralPath $inspectRoot -Recurse -Force }
-            Expand-Archive -LiteralPath $portable.FullName -DestinationPath $inspectRoot -Force
-            foreach ($required in @('Setup.exe', 'install.ps1', 'version.json', 'checksums.sha256',
-                'payload\UGSci.exe', 'payload\binaries\qwenpaw-backend\qwenpaw-backend.exe')) {
-              if (-not (Test-Path -LiteralPath (Join-Path $inspectRoot $required) -PathType Leaf)) {
-                throw "Portable Windows installer is missing required entry: $required"
-              }
-            }
-            $bundledPluginRoot = Join-Path $inspectRoot 'payload\binaries\qwenpaw-backend\_internal\qwenpaw\plugins_bundle'
-            if (-not (Test-Path -LiteralPath $bundledPluginRoot -PathType Container)) {
-              throw 'Portable Windows installer is missing the frozen bundled plugin tree'
-            }
-            foreach ($pluginId in @('flowforge', 'ugsci', 'ugsci_research')) {
-              if (-not (Test-Path -LiteralPath (Join-Path $bundledPluginRoot "$pluginId\plugin.json") -PathType Leaf)) {
-                throw "Portable Windows installer is missing bundled plugin manifest: $pluginId"
-              }
-            }
-            python scripts/pack-tauri/verify_frozen_plugins.py $bundledPluginRoot
-            $manifest = Get-Content -LiteralPath (Join-Path $inspectRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-            if ($manifest.schema -ne 1 -or $manifest.version -ne '${{ steps.version.outputs.version }}' -or
-                $manifest.platform -ne 'windows-x86_64' -or $manifest.payload -ne 'payload') {
-              throw 'Portable Windows version.json does not match the build target'
-            }
-            Copy-Item -LiteralPath $portable.FullName -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" -Force
-            if (Test-Path -LiteralPath $portableSig -PathType Leaf) {
-              Copy-Item -LiteralPath $portableSig -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip.sig" -Force
-              python scripts/pack-tauri/generate_update_manifest.py stage `
-                --bundle-dir $bundle `
-                --pattern 'UGSci-Desktop-portable.zip' `
-                --target windows-x86_64 `
-                --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" `
-                --pubkey-config console/src-tauri/tauri.version.conf.json
-            }
-            Write-Host "Using portable Windows installer fallback: $($portable.Name)"
+          $portable = Get-Item "$bundle/UGSci-Desktop-portable.zip" -ErrorAction Stop
+          $bridge = Get-Item "$bundle/UGSci-Desktop-migration.exe" -ErrorAction Stop
+          $bridgeSig = "$($bridge.FullName).sig"
+          if ('${{ inputs.require_updater_assets }}' -eq 'true' -and -not (Test-Path -LiteralPath $bridgeSig -PathType Leaf)) {
+            throw 'Production b5-to-b7 migration bridge is missing its updater signature'
           }
+          $inspectRoot = Join-Path $env:RUNNER_TEMP 'qwenpaw-portable-layout'
+          if (Test-Path -LiteralPath $inspectRoot) { Remove-Item -LiteralPath $inspectRoot -Recurse -Force }
+          Expand-Archive -LiteralPath $portable.FullName -DestinationPath $inspectRoot -Force
+          foreach ($required in @('Setup.exe', 'install.ps1', 'version.json', 'checksums.sha256',
+              'payload\UGSci.exe', 'payload\binaries\state\active.json',
+              'payload\binaries\cli\qwenpaw.exe', 'payload\binaries\update-assistant\UGSciUpdateAssistant.exe')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $inspectRoot $required) -PathType Leaf)) {
+              throw "Portable Windows installer is missing required entry: $required"
+            }
+          }
+          python scripts/pack-tauri/verify_frozen_plugins.py --archive $portable.FullName
+          $manifest = Get-Content -LiteralPath (Join-Path $inspectRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
+          if ($manifest.schema -ne 1 -or $manifest.version -ne '${{ steps.version.outputs.version }}' -or
+              $manifest.platform -ne 'windows-x86_64' -or $manifest.payload -ne 'payload') {
+            throw 'Portable Windows version.json does not match the build target'
+          }
+          Copy-Item -LiteralPath $portable.FullName -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" -Force
+          python scripts/pack-tauri/generate_update_manifest.py stage `
+            --bundle-dir $bundle `
+            --pattern 'UGSci-Desktop-migration.exe' `
+            --target windows-x86_64 `
+            --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-updater.exe" `
+            --pubkey-config console/src-tauri/tauri.version.conf.json
+          if ('${{ inputs.require_updater_assets }}' -eq 'true' -and -not (Test-Path 'dist/tauri-windows-x86_64-updater.json')) {
+            throw 'Production Windows migration bridge updater metadata is missing'
+          }
+          Write-Host 'Staged ZIP + Setup.exe for first install and visible migration bridge for b5 update'
 
       - name: Verify desktop (Tauri Windows)
         timeout-minutes: 25
@@ -308,9 +283,23 @@ jobs:
         with:
           name: UGSci-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
           path: |
-            dist/UGSci-Tauri-*-Windows-setup.exe
             dist/UGSci-Tauri-*-Windows-portable.zip
-            dist/UGSci-Tauri-*-Windows-portable.zip.sig
+            dist/UGSci-Tauri-*-Windows-updater.exe
+          compression-level: 0
+          retention-days: 14
+
+      - name: Archive Windows versioned component source
+        run: |
+          python scripts/pack-tauri/desktop_component_archive.py pack `
+            --source console/src-tauri/binaries `
+            --output dist/desktop-components-windows-x86_64.tar
+
+      - name: Upload Windows versioned component source
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-components-windows-x86_64
+          path: dist/desktop-components-windows-x86_64.tar
+          if-no-files-found: error
           compression-level: 0
           retention-days: 14
 
@@ -320,8 +309,7 @@ jobs:
         with:
           name: tauri-updater-meta-windows
           path: |
-            dist/UGSci-Tauri-*-Windows-setup.exe.sig
-            dist/UGSci-Tauri-*-Windows-portable.zip.sig
+            dist/UGSci-Tauri-*-Windows-updater.exe.sig
             dist/tauri-windows-x86_64-updater.json
           compression-level: 0
           retention-days: 14
@@ -330,6 +318,7 @@ jobs:
     needs: [check-updater-signing]
     if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
     env:
+      QWENPAW_LAYERED_DESKTOP: "true"
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_MACOS || vars.QWENPAW_NODE_SHA256 }}
       QWENPAW_JRE_SHA256: ${{ vars.QWENPAW_JRE_SHA256_MACOS || vars.QWENPAW_JRE_SHA256 }}
@@ -372,7 +361,7 @@ jobs:
         uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-          cache-dependency-glob: uv.lock
+          cache-dependency-glob: requirements-desktop.lock
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
@@ -471,6 +460,21 @@ jobs:
         with:
           name: UGSci-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
           path: dist/UGSci-Tauri-*-macOS.zip
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+      - name: Archive macOS versioned component source
+        run: |
+          python scripts/pack-tauri/desktop_component_archive.py pack \
+            --source console/src-tauri/binaries \
+            --output dist/desktop-components-macos-aarch64.tar
+
+      - name: Upload macOS versioned component source
+        uses: actions/upload-artifact@v4
+        with:
+          name: desktop-components-macos-aarch64
+          path: dist/desktop-components-macos-aarch64.tar
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

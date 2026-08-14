@@ -29,6 +29,11 @@ on:
         type: string
         required: false
         default: "0.8"
+      include_desktop_components:
+        description: Include versioned backend/runtime/tool layers from desktop build artifacts
+        type: boolean
+        required: false
+        default: false
   workflow_dispatch:
     inputs:
       target:
@@ -54,6 +59,7 @@ on:
         default: "0.8"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -98,6 +104,28 @@ jobs:
             --repo . \
             --dest component-staging \
             --plugin-roots bundle apps
+
+      - name: Download versioned desktop component source
+        if: ${{ inputs.include_desktop_components }}
+        uses: actions/download-artifact@v4
+        with:
+          name: desktop-components-${{ matrix.target }}
+          path: desktop-component-archive
+
+      - name: Extract versioned desktop component source
+        if: ${{ inputs.include_desktop_components }}
+        run: |
+          python scripts/pack-tauri/desktop_component_archive.py extract \
+            --archive 'desktop-component-archive/desktop-components-${{ matrix.target }}.tar' \
+            --output desktop-component-source
+
+      - name: Stage backend, runtime and tool components
+        if: ${{ inputs.include_desktop_components }}
+        run: |
+          python scripts/pack-tauri/stage_desktop_components.py \
+            --binaries desktop-component-source/binaries \
+            --output component-staging \
+            --fallback-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}'
 
       - name: Fetch and verify previous component base
         env:

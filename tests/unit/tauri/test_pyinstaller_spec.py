@@ -9,6 +9,7 @@ SPEC_PATH = REPO_ROOT / "scripts" / "pack-tauri" / "qwenpaw.spec"
 WINDOWS_BUILD_PATH = (
     REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.ps1"
 )
+UNIX_BUILD_PATH = REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.sh"
 
 
 def _collected_submodule_packages() -> set[str]:
@@ -44,7 +45,7 @@ def test_desktop_packagers_use_denylist_plugin_discovery():
 def test_whisper_is_opt_in_for_desktop_pyinstaller_builds():
     spec = SPEC_PATH.read_text(encoding="utf-8")
     unix_build = (
-        REPO_ROOT / "scripts/pack-tauri/build_pyinstaller.sh"
+        UNIX_BUILD_PATH
     ).read_text(
         encoding="utf-8",
     )
@@ -54,3 +55,34 @@ def test_whisper_is_opt_in_for_desktop_pyinstaller_builds():
     assert 'excludes=[] if INCLUDE_WHISPER else ["whisper", "torch"' in spec
     assert ".[local,codex,qoder]" in unix_build
     assert ".[local,codex,qoder]" in windows_build
+
+
+def test_layered_builds_skip_pyinstaller_and_use_locked_dependency_layer():
+    unix_build = UNIX_BUILD_PATH.read_text(encoding="utf-8")
+    windows_build = WINDOWS_BUILD_PATH.read_text(encoding="utf-8")
+    layer_builder = (
+        REPO_ROOT / "scripts/pack-tauri/build_python_layers.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'if [ "$LAYERED_DESKTOP" = false ]; then' in unix_build
+    assert "if (-not $LAYERED_DESKTOP)" in windows_build
+    assert "--uv" not in unix_build
+    assert "--uv" not in windows_build
+    assert 'repo / "requirements-desktop.lock"' in layer_builder
+    assert '"--require-hashes"' in layer_builder
+    assert 'repo / "uv.lock"' not in layer_builder
+
+
+def test_layered_builds_do_not_install_domain_packages_into_interpreter():
+    unix_build = UNIX_BUILD_PATH.read_text(encoding="utf-8")
+    windows_build = WINDOWS_BUILD_PATH.read_text(encoding="utf-8")
+
+    unix_layered_branch = unix_build.split(
+        'if [ "$LAYERED_DESKTOP" = true ]; then', 1,
+    )[1]
+    windows_layered_branch = windows_build.split(
+        "if ($LAYERED_DESKTOP) {",
+        1,
+    )[1]
+    assert "numpy pandas scipy" not in unix_layered_branch
+    assert "numpy pandas scipy" not in windows_layered_branch

@@ -49,7 +49,9 @@ internal static class PortableSetup
                     {
                         VerifyPackage(packageRoot);
                         string silentLog;
-                        return RunInstaller(packageRoot, null, HasNoCliPath(args), false, out silentLog);
+                        return RunInstaller(packageRoot, null, HasNoCliPath(args), false,
+                            HasArgument(args, "--deferred-commit"),
+                            ArgumentValue(args, "--transaction-file"), out silentLog);
                     }
 
                     Application.EnableVisualStyles();
@@ -155,11 +157,28 @@ internal static class PortableSetup
         return false;
     }
 
-    private static int RunInstaller(string packageRoot, string installDir, bool noCliPath, bool noDesktopShortcut, out string logPath)
+    private static string ArgumentValue(string[] args, string name)
+    {
+        for (int i = 0; i + 1 < args.Length; i++)
+            if (string.Equals(args[i], name, StringComparison.OrdinalIgnoreCase))
+                return args[i + 1];
+        return null;
+    }
+
+    private static int RunInstaller(string packageRoot, string installDir, bool noCliPath,
+        bool noDesktopShortcut, bool deferredCommit, string transactionFile, out string logPath)
     {
         var arguments = new List<string> { "-Silent" };
         if (noCliPath) arguments.Add("-NoCliPath");
         if (noDesktopShortcut) arguments.Add("-NoDesktopShortcut");
+        if (deferredCommit)
+        {
+            if (string.IsNullOrWhiteSpace(transactionFile))
+                throw new ArgumentException("Deferred commit requires --transaction-file.");
+            arguments.Add("-DeferredCommit");
+            arguments.Add("-TransactionFile");
+            arguments.Add(transactionFile);
+        }
         if (!string.IsNullOrWhiteSpace(installDir)) arguments.Add("-InstallDir");
         if (!string.IsNullOrWhiteSpace(installDir)) arguments.Add(installDir);
         ProcessResult result = RunPowerShell(packageRoot, Path.Combine(packageRoot, "install.ps1"), arguments, false);
@@ -467,7 +486,8 @@ internal static class PortableSetup
             installStatus.Text = "Backing up data and installing application files...";
             var thread = new Thread(new ThreadStart(delegate {
                 int code = 1; string error = null; string logPath = null;
-                try { code = RunInstaller(packageRoot, dir, forceNoCliPath || !addPath.Checked, !desktopShortcut.Checked, out logPath); }
+                try { code = RunInstaller(packageRoot, dir, forceNoCliPath || !addPath.Checked,
+                    !desktopShortcut.Checked, false, null, out logPath); }
                 catch (Exception ex) { error = ex.Message; logPath = WriteFailureLog("setup", ex); }
                 BeginInvoke((MethodInvoker)delegate {
                     busy = false;

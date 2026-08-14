@@ -127,8 +127,12 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
     async (entry: MarketPluginEntry) => {
       setInstallingId(entry.id);
       try {
+        if (entry.installed) {
+          message.info(tRef.current("pluginManager.updateFromHeader"));
+          return;
+        }
         const downloadUrl = buildMarketDownloadUrl(entry);
-        const result = await installPlugin(downloadUrl, { force: true });
+        const result = await installPlugin(downloadUrl);
         message.success(
           `${tRef.current("pluginManager.installSuccess")}: ${result.name}`,
         );

@@ -87,7 +87,10 @@ async fn run_install(app: AppHandle) {
             return emit_error(&app, "install", &"cannot prepare portable Windows update");
         };
         let artifact_path = cached_artifact_path(&cache_dir, &meta);
-        install_cached_windows(&app, &artifact_path);
+        if let Err(err) = install_cached_windows(&app, &artifact_path, &meta) {
+            let _ = backend::restart_backend(app.clone()).await;
+            emit_error(&app, "install", &err);
+        }
     } else {
         if let Err(err) = update.install(bytes) {
             return emit_updater_error(&app, "install", &err);
@@ -203,7 +206,10 @@ async fn run_cached_install(app: AppHandle) {
             if let Err(err) = backend::stop_and_wait(&app).await {
                 return emit_error(&app, "install", &err);
             }
-            install_cached_windows(&app, &artifact_path);
+            if let Err(err) = install_cached_windows(&app, &artifact_path, &meta) {
+                let _ = backend::restart_backend(app.clone()).await;
+                emit_error(&app, "install", &err);
+            }
         }
         "macos" => install_cached_macos(&app, &cache_dir, &meta, bytes).await,
         _ => {
@@ -213,7 +219,11 @@ async fn run_cached_install(app: AppHandle) {
     }
 }
 
-fn install_cached_windows(app: &AppHandle, artifact_path: &std::path::Path) {
+fn install_cached_windows(
+    app: &AppHandle,
+    artifact_path: &std::path::Path,
+    meta: &cache::UpdateMeta,
+) -> Result<(), String> {
     // Both signed NSIS executables and portable ZIPs use the same cached
     // extension so the cache metadata cannot be used as a type discriminator.
     // Inspect the magic bytes immediately before launching anything.
@@ -226,29 +236,97 @@ fn install_cached_windows(app: &AppHandle, artifact_path: &std::path::Path) {
         })
         .unwrap_or(false);
     let result = if is_zip {
-        let escaped = artifact_path.to_string_lossy().replace('\'', "''");
-        let command = format!(
-            "$zip='{escaped}'; $stage=Join-Path $env:TEMP ('UGSci-update-'+[guid]::NewGuid()); Expand-Archive -LiteralPath $zip -DestinationPath $stage -Force; $setup=Join-Path $stage 'Setup.exe'; if (!(Test-Path -LiteralPath $setup)) {{ throw 'portable update is missing Setup.exe' }}; Start-Process -FilePath $setup -ArgumentList '-Silent' -WorkingDirectory $stage -WindowStyle Hidden",
-        );
-        std::process::Command::new("powershell.exe")
-            .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-Command", &command])
-            .spawn()
+        launch_windows_update_assistant(app, artifact_path, meta)
     } else {
         std::process::Command::new(artifact_path)
             .args(["/P", "/R", "/UPDATE", "/NO_QWENPAW_PATH"])
             .spawn()
+            .map(|_| ())
+            .map_err(|err| format!("failed to launch Windows updater: {err}"))
     };
-    if let Err(err) = result {
-        return emit_error(
-            app,
-            "install",
-            &format!("failed to launch Windows updater: {err}"),
-        );
-    }
+    result?;
     // Mirrors tauri-plugin-updater's Windows path: after NSIS is launched the
     // current process must exit so the installer can replace locked files.
     app.cleanup_before_exit();
     std::process::exit(0);
+}
+
+#[cfg(windows)]
+fn launch_windows_update_assistant(
+    app: &AppHandle,
+    artifact_path: &std::path::Path,
+    meta: &cache::UpdateMeta,
+) -> Result<(), String> {
+    use std::time::{Duration, Instant};
+    use tauri::Manager;
+
+    if meta.sha256.len() != 64 {
+        return Err("cached update has no valid SHA-256 for the update assistant".into());
+    }
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
+    let assistant = resource_dir
+        .join("binaries")
+        .join("update-assistant")
+        .join("UGSciUpdateAssistant.exe");
+    if !assistant.is_file() {
+        return Err(format!(
+            "Windows update assistant is missing at {}",
+            assistant.display()
+        ));
+    }
+    let ready_file =
+        artifact_path.with_file_name(format!(".update-assistant-ready-{}", uuid::Uuid::new_v4()));
+    let _ = std::fs::remove_file(&ready_file);
+    let mut child = std::process::Command::new(&assistant)
+        .arg("--package")
+        .arg(artifact_path)
+        .arg("--sha256")
+        .arg(&meta.sha256)
+        .arg("--version")
+        .arg(&meta.version)
+        .arg("--parent-pid")
+        .arg(std::process::id().to_string())
+        .arg("--ready-file")
+        .arg(&ready_file)
+        .spawn()
+        .map_err(|err| format!("failed to launch Windows update assistant: {err}"))?;
+
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while Instant::now() < deadline {
+        if ready_file.is_file() {
+            let _ = std::fs::remove_file(&ready_file);
+            log::info!(
+                "[updates] Windows update assistant ready pid={} version={}",
+                child.id(),
+                meta.version
+            );
+            return Ok(());
+        }
+        if let Some(status) = child
+            .try_wait()
+            .map_err(|err| format!("cannot query Windows update assistant: {err}"))?
+        {
+            return Err(format!(
+                "Windows update assistant exited before showing its window ({status})"
+            ));
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    let _ = child.kill();
+    let _ = std::fs::remove_file(&ready_file);
+    Err("Windows update assistant did not show its window in time".into())
+}
+
+#[cfg(not(windows))]
+fn launch_windows_update_assistant(
+    _app: &AppHandle,
+    _artifact_path: &std::path::Path,
+    _meta: &cache::UpdateMeta,
+) -> Result<(), String> {
+    Err("Windows update assistant is unavailable on this platform".into())
 }
 
 async fn install_cached_macos(

@@ -84,6 +84,288 @@ def test_signed_manifest_and_plan(tmp_path):
     assert plan and plan.artifact_kind == "full"
 
 
+def test_directory_component_plans_from_atomic_active_pointer(tmp_path):
+    active = tmp_path / "state" / "active.json"
+    installed = tmp_path / "managed" / "backend" / "1.0.0"
+    installed.mkdir(parents=True)
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": {
+                    "backend": {
+                        "version": "1.0.0",
+                        "path": str(installed.absolute()),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    manifest = {
+        "components": {
+            "backend": {
+                "version": "1.1.0",
+                "deltas": [
+                    {
+                        "from": "1.0.0",
+                        "url": "https://oss/backend.delta.zip",
+                        "sha256": "a" * 64,
+                        "signature": "sig",
+                    },
+                ],
+                "full": {},
+            },
+        },
+    }
+
+    plan = updater.plan(manifest, "backend", installed)
+
+    assert plan is not None
+    assert plan.from_version == "1.0.0"
+    assert plan.artifact_kind == "delta"
+    assert not plan.preserve_paths
+
+
+def test_directory_component_at_target_version_has_no_plan(tmp_path):
+    active = tmp_path / "state" / "active.json"
+    installed = tmp_path / "managed" / "backend" / "1.1.0"
+    installed.mkdir(parents=True)
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": {
+                    "backend": {
+                        "version": "1.1.0",
+                        "path": str(installed.absolute()),
+                        "kind": "python",
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+
+    assert updater.plan(
+        {
+            "components": {
+                "backend": {
+                    "version": "1.1.0",
+                    "full": {
+                        "url": "https://oss/backend.zip",
+                        "sha256": "a" * 64,
+                        "signature": "sig",
+                    },
+                },
+            },
+        },
+        "backend",
+        installed,
+    ) is None
+
+
+def test_bundled_directory_component_is_used_as_fresh_install_baseline(
+    tmp_path,
+):
+    bundled = tmp_path / "resources" / "binaries" / "app" / "backend"
+    bundled.mkdir(parents=True)
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"backend"},
+        directory_components={"backend"},
+        bundled_directory_records={"backend": ("1.1.0", bundled.absolute())},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+
+    assert updater.plan(
+        {
+            "components": {
+                "backend": {
+                    "version": "1.1.0",
+                    "full": {
+                        "url": "https://oss/backend.zip",
+                        "sha256": "a" * 64,
+                        "signature": "sig",
+                    },
+                },
+            },
+        },
+        "backend",
+        bundled,
+    ) is None
+
+
+def test_directory_component_full_activation_is_versioned(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    archive = tmp_path / "backend.zip"
+    payload = b"new backend"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("qwenpaw/__init__.py", payload)
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    expected = {
+        "qwenpaw/__init__.py": {
+            "size": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+    }
+    active = tmp_path / "state" / "active.json"
+    old = tmp_path / "managed" / "backend" / "1.0.0"
+    old.mkdir(parents=True)
+    (old / "old.py").write_text("old", encoding="utf-8")
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": {
+                    "backend": {
+                        "version": "1.0.0",
+                        "path": str(old.absolute()),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    destination = tmp_path / "managed" / "backend" / "1.1.0"
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    plan = ComponentUpdatePlan(
+        "backend",
+        "1.0.0",
+        "1.1.0",
+        "full",
+        "https://oss/backend.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+        (),
+    )
+
+    updater.apply_full(plan, archive, destination, expected_files=expected)
+
+    pointer = json.loads(active.read_text(encoding="utf-8"))
+    assert pointer["components"]["backend"] == {
+        "kind": "python",
+        "path": str(destination),
+        "version": "1.1.0",
+    }
+    assert (destination / "qwenpaw" / "__init__.py").read_bytes() == payload
+    assert (old / "old.py").is_file()
+
+
+def test_directory_component_delta_does_not_require_plugin_json(tmp_path):
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    base = tmp_path / "managed" / "node-runtime" / "20.0.0"
+    base.mkdir(parents=True)
+    (base / "node.exe").write_bytes(b"old")
+    new_bytes = b"new"
+    final_files = {
+        "node.exe": {
+            "size": len(new_bytes),
+            "sha256": hashlib.sha256(new_bytes).hexdigest(),
+        },
+    }
+    archive = tmp_path / "node.delta.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(
+            "delta.json",
+            json.dumps(
+                {
+                    "component": "node-runtime",
+                    "base_version": "20.0.0",
+                    "target_version": "20.0.1",
+                    "base_files": component_update._inventory(base, ()),
+                    "delete": [],
+                    "add": [],
+                    "replace": ["node.exe"],
+                    "final_files": final_files,
+                },
+            ),
+        )
+        bundle.writestr("files/node.exe", new_bytes)
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    active = tmp_path / "state" / "active.json"
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": {
+                    "node-runtime": {
+                        "version": "20.0.0",
+                        "path": str(base),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    destination = base.parent / "20.0.1"
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"node-runtime"},
+        directory_components={"node-runtime"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    plan = ComponentUpdatePlan(
+        "node-runtime",
+        "20.0.0",
+        "20.0.1",
+        "delta",
+        "https://oss/node.delta.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+        (),
+    )
+
+    updater.apply_delta(plan, base, archive, destination)
+
+    assert (destination / "node.exe").read_bytes() == new_bytes
+    assert (base / "node.exe").read_bytes() == b"old"
+    pointer = json.loads(active.read_text(encoding="utf-8"))
+    assert pointer["components"]["node-runtime"]["version"] == "20.0.1"
+
+
 def test_signature_verification_accepts_omitted_base64_padding():
     private = Ed25519PrivateKey.generate()
     public = (

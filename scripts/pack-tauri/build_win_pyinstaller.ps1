@@ -43,6 +43,16 @@ function Invoke-NativeWithRetry {
     }
 }
 
+function Assert-LastExit {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Message
+    )
+    if ($LASTEXITCODE -ne 0) {
+        throw "$Message (exit code $LASTEXITCODE)"
+    }
+}
+
 # Extract version
 if (Test-Path $VERSION_FILE) {
     $content = Get-Content $VERSION_FILE -Raw
@@ -203,6 +213,8 @@ Write-Host ""
 
 # Step 3: Build Tauri app
 Write-Host "== Step 3: Building Tauri App ==" -ForegroundColor Yellow
+& (Join-Path $REPO_ROOT "scripts\pack-tauri\build_windows_update_assistant.ps1")
+Assert-LastExit "Failed to build the Windows update assistant"
 $BUNDLE_DIR = Join-Path $REPO_ROOT "console\src-tauri\target\release\bundle"
 $NSIS_DIR = Join-Path $BUNDLE_DIR "nsis"
 if (Test-Path $NSIS_DIR) {
@@ -277,6 +289,41 @@ if ($NsisExe) {
     } else {
         throw "No Windows installer or compiled desktop binary was produced (Tauri exit $tauriExit)"
     }
+}
+
+# b7 always ships the user-facing ZIP + Setup.exe package, even when NSIS also
+# succeeds.  The migration bridge is the signed updater artifact consumed by
+# b5; it carries this exact ZIP as a PE overlay and hands off to the visible
+# update assistant instead of the legacy hidden PowerShell path.
+$AppExe = Get-Item (Join-Path $REPO_ROOT "console\src-tauri\target\release\qwenpaw-desktop.exe") -ErrorAction Stop
+$PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci Desktop"
+$PortablePayload = Join-Path $PortableRoot "payload"
+$ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
+if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
+    if (Test-Path $PortableRoot) { Remove-Item -Recurse -Force $PortableRoot }
+    New-Item -ItemType Directory -Force -Path $PortablePayload | Out-Null
+    Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
+    $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
+    if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
+    Copy-Item -Recurse -Force $Resources (Join-Path $PortablePayload "binaries")
+    & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
+        -PortableRoot $PortableRoot -ZipPath $ZipPath -Version $VERSION
+}
+if ($env:TAURI_SIGNING_PRIVATE_KEY -and -not (Test-Path -LiteralPath "$ZipPath.sig" -PathType Leaf)) {
+    Set-Location (Join-Path $REPO_ROOT "console")
+    pnpm exec tauri signer sign $ZipPath
+    Assert-LastExit "Portable Windows updater ZIP signing failed"
+    Set-Location $REPO_ROOT
+}
+$MigrationBridge = Join-Path $BUNDLE_DIR "UGSci-Desktop-migration.exe"
+& (Join-Path $REPO_ROOT "scripts\pack-tauri\build_windows_migration_bridge.ps1") `
+    -PackagePath $ZipPath -Version $VERSION -OutputPath $MigrationBridge
+Assert-LastExit "Failed to build the b5-to-b7 Windows migration bridge"
+if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+    Set-Location (Join-Path $REPO_ROOT "console")
+    pnpm exec tauri signer sign $MigrationBridge
+    Assert-LastExit "Windows migration bridge updater signing failed"
+    Set-Location $REPO_ROOT
 }
 
 Write-Host ""

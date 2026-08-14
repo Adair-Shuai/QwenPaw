@@ -1208,13 +1208,14 @@ fn helper_path(_app: &tauri::AppHandle) -> Result<PathBuf, String> {
 
 #[cfg(all(not(debug_assertions), not(target_os = "macos")))]
 fn helper_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
-    let path = app
+    let resource_dir = app
         .path()
         .resource_dir()
-        .map_err(|err| format!("failed to resolve resources: {err}"))?
-        .join("binaries")
-        .join("qwenpaw-backend")
-        .join(helper_name());
+        .map_err(|err| format!("failed to resolve resources: {err}"))?;
+    let root = crate::runtime_layout::resolve_component(&resource_dir, "computer-use-helper")
+        .map(|selected| selected.root)
+        .unwrap_or_else(|| resource_dir.join("binaries").join("qwenpaw-backend"));
+    let path = root.join(helper_name());
     path.is_file()
         .then_some(path.clone())
         .ok_or_else(|| format!("Computer Use helper not found at {}", path.display()))
