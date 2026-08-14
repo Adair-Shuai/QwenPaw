@@ -36,6 +36,21 @@ def test_update_assistant_is_bundled_and_built_before_tauri() -> None:
     assert BUILD.is_file()
 
 
+def test_layered_windows_build_skips_monolithic_nsis_bundle() -> None:
+    build = (
+        REPO_ROOT
+        / "scripts"
+        / "pack-tauri"
+        / "build_win_pyinstaller.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert '$env:QWENPAW_LAYERED_DESKTOP -match "^(1|true|yes)$"' in build
+    assert (
+        "pnpm exec tauri build --no-bundle "
+        "--config src-tauri/tauri.version.conf.json"
+    ) in build
+
+
 def test_assistant_covers_visible_handoff_and_safe_install_stages() -> None:
     source = SOURCE.read_text(encoding="utf-8")
 

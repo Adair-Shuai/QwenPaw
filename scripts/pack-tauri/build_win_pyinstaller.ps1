@@ -223,16 +223,20 @@ if (Test-Path $NSIS_DIR) {
 
 Set-Location console
 
-# Build the Tauri app.  The NSIS installer is a 32-bit application with a
-# 2 GB virtual address-space limit; if the bundled Python runtime is too
-# large, makensis crashes with "Internal compiler error #12345".  When
-# that happens the Rust binary is still compiled successfully; we create
-# a portable zip so the CI can upload a distributable artifact.
+# Layered b7 releases are distributed as ZIP + the visible Setup.exe. Avoid
+# asking Tauri/NSIS to duplicate the complete runtime tree into a monolithic
+# installer: apart from wasting about 15 minutes, makensis snapshots mutable
+# Python cache files and can fail when one disappears before compression.
+# Legacy non-layered builds retain the normal Tauri bundling path.
 Write-Host "Building Tauri app for Windows..."
 # Use Continue so stderr from tauri build (e.g. NSIS failure) doesn't throw.
 $prevEAP = $ErrorActionPreference
 $ErrorActionPreference = "Continue"
-pnpm exec tauri build --config src-tauri/tauri.version.conf.json
+if ($env:QWENPAW_LAYERED_DESKTOP -match "^(1|true|yes)$") {
+    pnpm exec tauri build --no-bundle --config src-tauri/tauri.version.conf.json
+} else {
+    pnpm exec tauri build --config src-tauri/tauri.version.conf.json
+}
 $tauriExit = $LASTEXITCODE
 $ErrorActionPreference = $prevEAP
 

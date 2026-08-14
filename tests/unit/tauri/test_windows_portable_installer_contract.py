@@ -17,6 +17,19 @@ def _script() -> str:
     return INSTALLER.read_text(encoding="utf-8")
 
 
+def test_packager_resolves_layered_backend_before_plugin_validation() -> None:
+    script = _script()
+
+    assert "$activeLayoutPath" in script
+    assert "$backendComponent = $activeLayout.components.backend" in script
+    assert script.index("$backendLayer = [IO.Path]::GetFullPath") < (
+        script.index("$bundledPluginRoot = Join-Path $backendLayer")
+    )
+    assert "Portable installer backend component escapes or is missing" in (
+        script
+    )
+
+
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:
     """A locked b5/b6 executable must leave the old tree untouched."""
     script = _script()

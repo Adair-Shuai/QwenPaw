@@ -30,6 +30,27 @@ foreach ($required in @(
   }
 }
 
+$activeLayoutPath = Join-Path $PayloadRoot "binaries\state\active.json"
+$activeLayout = Get-Content -LiteralPath $activeLayoutPath -Raw -Encoding UTF8 |
+  ConvertFrom-Json
+$backendComponent = $activeLayout.components.backend
+$backendRelative = if ($backendComponent) {
+  ([string]$backendComponent.path).Replace('/', '\')
+} else {
+  ""
+}
+if (-not $backendRelative.StartsWith("binaries\", [StringComparison]::OrdinalIgnoreCase) -or
+    [IO.Path]::IsPathRooted($backendRelative) -or
+    $backendRelative.Split('\') -contains '..') {
+  throw "Portable installer backend component is invalid"
+}
+$backendLayer = [IO.Path]::GetFullPath((Join-Path $PayloadRoot $backendRelative))
+$payloadPrefix = [IO.Path]::GetFullPath($PayloadRoot).TrimEnd('\') + '\'
+if (-not $backendLayer.StartsWith($payloadPrefix, [StringComparison]::OrdinalIgnoreCase) -or
+    -not (Test-Path -LiteralPath $backendLayer -PathType Container)) {
+  throw "Portable installer backend component escapes or is missing"
+}
+
 # The frozen backend is the source of truth for bundled managed plugins.  A
 # portable package without this tree can start the shell but cannot populate
 # FlowForge/UGSci and the other built-in plugin UIs on first launch.  Fail the
