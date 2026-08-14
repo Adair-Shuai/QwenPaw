@@ -7,6 +7,8 @@ import stat
 import tarfile
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "pack-tauri" / "desktop_component_archive.py"
@@ -51,3 +53,51 @@ def test_archive_preserves_hidden_files_and_executable_mode(tmp_path):
     ) == "3.11"
     if os.name != "nt":
         assert stat.S_IMODE((restored / "python").stat().st_mode) == 0o755
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows symlinks require privileges",
+)
+def test_archive_materializes_internal_runtime_symlinks(tmp_path):
+    module = _load()
+    source = tmp_path / "src" / "binaries"
+    runtime = source / "runtimes" / "node" / "22"
+    target = runtime / "lib" / "corepack.js"
+    target.parent.mkdir(parents=True)
+    target.write_text("#!/usr/bin/env node\n", encoding="utf-8")
+    target.chmod(0o755)
+    link = runtime / "bin" / "corepack"
+    link.parent.mkdir()
+    link.symlink_to(Path("../lib/corepack.js"))
+    archive = tmp_path / "components.tar"
+    output = tmp_path / "output"
+
+    module.pack(source, archive)
+    with tarfile.open(archive, "r:") as bundle:
+        stored = bundle.getmember("binaries/runtimes/node/22/bin/corepack")
+        assert stored.isfile()
+        assert not stored.issym()
+
+    module.extract(archive, output)
+    restored = output / "binaries/runtimes/node/22/bin/corepack"
+    assert restored.is_file()
+    assert not restored.is_symlink()
+    assert restored.read_text(encoding="utf-8") == "#!/usr/bin/env node\n"
+
+
+@pytest.mark.skipif(
+    os.name == "nt",
+    reason="Windows symlinks require privileges",
+)
+def test_archive_rejects_symlinks_outside_component_source(tmp_path):
+    module = _load()
+    source = tmp_path / "src" / "binaries"
+    runtime = source / "runtimes" / "node" / "22" / "bin"
+    runtime.mkdir(parents=True)
+    outside = tmp_path / "outside"
+    outside.write_text("not part of the component", encoding="utf-8")
+    (runtime / "corepack").symlink_to(outside)
+
+    with pytest.raises(ValueError, match="unsafe file symlink"):
+        module.pack(source, tmp_path / "components.tar")

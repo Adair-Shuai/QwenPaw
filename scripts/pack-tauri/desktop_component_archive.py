@@ -37,10 +37,42 @@ def _safe_name(value: str) -> PurePosixPath:
 def pack(source: Path, output: Path) -> None:
     source = source.resolve()
     if not source.is_dir() or source.name != "binaries":
-        raise ValueError("desktop component source must be a binaries directory")
+        raise ValueError(
+            "desktop component source must be a binaries directory",
+        )
     output.parent.mkdir(parents=True, exist_ok=True)
     epoch = int(os.environ.get("SOURCE_DATE_EPOCH", "0") or "0")
     temporary = output.with_name(f".{output.name}.tmp")
+
+    for directory, directory_names, file_names in os.walk(
+        source,
+        followlinks=False,
+    ):
+        current = Path(directory)
+        for name in directory_names:
+            candidate = current / name
+            if candidate.is_symlink():
+                raise ValueError(
+                    "desktop component source contains a directory symlink: "
+                    f"{candidate.relative_to(source)}",
+                )
+        for name in file_names:
+            candidate = current / name
+            if not candidate.is_symlink():
+                continue
+            try:
+                target = candidate.resolve(strict=True)
+                target.relative_to(source)
+            except (FileNotFoundError, RuntimeError, ValueError) as error:
+                raise ValueError(
+                    "desktop component source contains an unsafe file symlink: "
+                    f"{candidate.relative_to(source)}",
+                ) from error
+            if not target.is_file():
+                raise ValueError(
+                    "desktop component file symlink target is not a regular file: "
+                    f"{candidate.relative_to(source)}",
+                )
 
     def normalize(info: tarfile.TarInfo) -> tarfile.TarInfo:
         if info.issym() or info.islnk() or info.isdev() or info.isfifo():
@@ -56,8 +88,22 @@ def pack(source: Path, output: Path) -> None:
         return info
 
     try:
-        with tarfile.open(temporary, "w", format=tarfile.PAX_FORMAT) as archive:
-            archive.add(source, arcname="binaries", recursive=True, filter=normalize)
+        # Official macOS Node distributions contain internal executable
+        # symlinks (for example bin/corepack). Materialize those targets as
+        # regular archive members so extraction can keep rejecting every
+        # symlink/hardlink while retaining a functional runtime.
+        with tarfile.open(
+            temporary,
+            "w",
+            format=tarfile.PAX_FORMAT,
+            dereference=True,
+        ) as archive:
+            archive.add(
+                source,
+                arcname="binaries",
+                recursive=True,
+                filter=normalize,
+            )
         os.replace(temporary, output)
     finally:
         temporary.unlink(missing_ok=True)
@@ -74,20 +120,35 @@ def extract(archive_path: Path, output: Path) -> None:
         with tarfile.open(archive_path, "r:") as archive:
             members = archive.getmembers()
             if len(members) > MAX_MEMBERS:
-                raise ValueError("desktop component archive has too many members")
+                raise ValueError(
+                    "desktop component archive has too many members",
+                )
             total = 0
             for member in members:
                 relative = _safe_name(member.name)
                 if not relative.parts or relative.parts[0] != "binaries":
-                    raise ValueError("desktop component archive root must be binaries")
-                if member.issym() or member.islnk() or member.isdev() or member.isfifo():
-                    raise ValueError("desktop component archive contains a link/device")
+                    raise ValueError(
+                        "desktop component archive root must be binaries",
+                    )
+                if (
+                    member.issym()
+                    or member.islnk()
+                    or member.isdev()
+                    or member.isfifo()
+                ):
+                    raise ValueError(
+                        "desktop component archive contains a link/device",
+                    )
                 if member.isfile():
                     if member.size > MAX_MEMBER_BYTES:
-                        raise ValueError("desktop component archive member is too large")
+                        raise ValueError(
+                            "desktop component archive member is too large",
+                        )
                     total += member.size
                     if total > MAX_TOTAL_BYTES:
-                        raise ValueError("desktop component archive is too large")
+                        raise ValueError(
+                            "desktop component archive is too large",
+                        )
                 target = (temporary / Path(*relative.parts)).resolve()
                 target.relative_to(temporary.resolve())
                 if member.isdir():
@@ -95,11 +156,15 @@ def extract(archive_path: Path, output: Path) -> None:
                     target.chmod(member.mode & 0o7777)
                     continue
                 if not member.isfile():
-                    raise ValueError("desktop component archive member is unsupported")
+                    raise ValueError(
+                        "desktop component archive member is unsupported",
+                    )
                 target.parent.mkdir(parents=True, exist_ok=True)
                 source = archive.extractfile(member)
                 if source is None:
-                    raise ValueError("desktop component archive member is unreadable")
+                    raise ValueError(
+                        "desktop component archive member is unreadable",
+                    )
                 with source, target.open("wb") as destination:
                     shutil.copyfileobj(source, destination, length=1024 * 1024)
                 target.chmod(member.mode & 0o7777)
