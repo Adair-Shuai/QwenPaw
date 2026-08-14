@@ -48,6 +48,11 @@ def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
     )
     assert '"$ALLOW_PUBLISHED_RESUME" != "true"' in release
     assert '"$ARTIFACTS_RUN_ID"' in release
+    assert "was_draft: ${{ steps.pick.outputs.was_draft }}" in release
+    assert 'echo "was_draft=$isDraft"' in release
+    assert 'if [ "$WAS_DRAFT" = "true" ]' in release
+    assert "already published; verifying instead of mutating it" in release
+    assert 'test "$target_sha" = "$SHA"' in release
     assert "uses: ./.github/workflows/release-duty.yml" not in release
     assert "issues: write" not in release
 
