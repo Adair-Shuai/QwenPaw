@@ -76,13 +76,25 @@ def _read_adopted_components() -> set[str]:
             payload = json.loads(
                 _ADOPTED_COMPONENTS_PATH.read_text(encoding="utf-8"),
             )
+            if not isinstance(payload, dict):
+                return set()
             if payload.get("schema_version") != 1:
                 return set()
-            return {
-                _safe_component_id(str(item))
-                for item in payload.get("components", [])
-                if str(item).strip()
-            }
+            raw_components = payload.get("components", [])
+            if not isinstance(raw_components, list):
+                return set()
+            components: set[str] = set()
+            for item in raw_components:
+                if not isinstance(item, str) or not item.strip():
+                    continue
+                try:
+                    components.add(_safe_component_id(item))
+                except ComponentUpdateError:
+                    logger.warning(
+                        "Ignoring invalid component id in adoption state: %r",
+                        item,
+                    )
+            return components
         except (
             OSError,
             TypeError,
@@ -119,6 +131,12 @@ def set_component_update_adoption(component: str, adopted: bool) -> None:
             encoding="utf-8",
         )
         os.replace(temporary, _ADOPTED_COMPONENTS_PATH)
+
+
+def is_component_update_adopted(component: str) -> bool:
+    """Return whether *component* opted into signed OSS updates."""
+    component = _safe_component_id(component)
+    return component in _read_adopted_components()
 
 
 def _default_managed_components() -> set[str]:

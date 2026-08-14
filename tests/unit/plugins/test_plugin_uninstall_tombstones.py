@@ -7,10 +7,11 @@ import json
 import shutil
 from contextlib import asynccontextmanager
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from click.testing import CliRunner
+from fastapi import HTTPException
 
 from qwenpaw.app.routers import plugins as plugin_router
 from qwenpaw.cli import plugin_commands
@@ -107,6 +108,110 @@ async def test_api_uninstall_persists_tombstone_before_deleting(
     assert result["id"] == "demo"
     assert (plugins / ".uninstalled" / "demo").is_file()
     _assert_restart_does_not_restore(monkeypatch, plugins, source_root)
+
+
+@pytest.mark.asyncio
+async def test_api_uninstall_restores_adoption_when_delete_fails(
+    monkeypatch,
+):
+    calls: list[tuple[str, bool]] = []
+
+    class FakeLoader:
+        registry = object()
+
+        @asynccontextmanager
+        async def plugin_lifecycle(self, _plugin_id):
+            yield
+
+        @staticmethod
+        def get_loaded_plugin(_plugin_id):
+            return SimpleNamespace(manifest=SimpleNamespace(meta={}))
+
+        @staticmethod
+        async def unload_plugin(_plugin_id, delete_files=False):
+            assert delete_files is True
+            raise OSError("locked")
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(plugin_loader=FakeLoader()),
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_router,
+        "_collect_plugin_runtime_ids",
+        lambda *_args: (set(), set()),
+    )
+    monkeypatch.setattr(bundled, "mark_plugin_uninstalled", lambda *_: True)
+    clear_marker = MagicMock()
+    monkeypatch.setattr(bundled, "clear_uninstalled_marker", clear_marker)
+    monkeypatch.setattr(
+        "qwenpaw.components.service.is_component_update_adopted",
+        lambda _plugin_id: True,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.set_component_update_adoption",
+        lambda plugin_id, adopted: calls.append((plugin_id, adopted)),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await plugin_router.uninstall_plugin("demo", request)
+
+    assert error.value.status_code == 500
+    assert calls == [("demo", False), ("demo", True)]
+    clear_marker.assert_called_once_with("demo")
+
+
+@pytest.mark.asyncio
+async def test_api_uninstall_does_not_mutate_when_adoption_write_fails(
+    monkeypatch,
+):
+    unloaded = False
+
+    class FakeLoader:
+        registry = object()
+
+        @asynccontextmanager
+        async def plugin_lifecycle(self, _plugin_id):
+            yield
+
+        @staticmethod
+        def get_loaded_plugin(_plugin_id):
+            return SimpleNamespace(manifest=SimpleNamespace(meta={}))
+
+        @staticmethod
+        async def unload_plugin(_plugin_id, delete_files=False):
+            nonlocal unloaded
+            assert delete_files is True
+            unloaded = True
+
+    request = SimpleNamespace(
+        app=SimpleNamespace(
+            state=SimpleNamespace(plugin_loader=FakeLoader()),
+        ),
+    )
+    monkeypatch.setattr(
+        plugin_router,
+        "_collect_plugin_runtime_ids",
+        lambda *_args: (set(), set()),
+    )
+    mark_marker = MagicMock()
+    monkeypatch.setattr(bundled, "mark_plugin_uninstalled", mark_marker)
+    monkeypatch.setattr(
+        "qwenpaw.components.service.is_component_update_adopted",
+        lambda _plugin_id: True,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.set_component_update_adoption",
+        MagicMock(side_effect=OSError("read-only filesystem")),
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await plugin_router.uninstall_plugin("demo", request)
+
+    assert error.value.status_code == 500
+    assert unloaded is False
+    mark_marker.assert_not_called()
 
 
 def test_offline_cli_uninstall_persists_tombstone_after_delete(

@@ -4,6 +4,7 @@
 from importlib.util import module_from_spec, spec_from_file_location
 import json
 from pathlib import Path
+import sys
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -35,6 +36,68 @@ def test_dependency_layer_digest_is_a_valid_component_version():
     value = helper._dependency_version("e3028883b2090145" + "0" * 48)
     assert value == "0+sha.e3028883b2090145"
     assert str(Version(value)) == value
+
+
+def test_python_layer_main_preserves_virtualenv_interpreter_symlink(
+    monkeypatch,
+    tmp_path,
+):
+    helper = _load_python_layers()
+    repo = tmp_path / "repo"
+    output = tmp_path / "output"
+    runtime = tmp_path / "runtime-python"
+    venv_python = tmp_path / "venv" / "bin" / "python"
+    repo.mkdir()
+    output.mkdir()
+    runtime.write_text("runtime", encoding="utf-8")
+    venv_python.parent.mkdir(parents=True)
+    try:
+        venv_python.symlink_to(Path(sys.executable))
+    except OSError:
+        # Windows developer machines may not permit symlink creation.  The
+        # production regression covered here is the macOS virtualenv path.
+        return
+
+    captured = {}
+
+    def fake_build_layers(
+        repo_arg,
+        host_arg,
+        runtime_arg,
+        output_arg,
+        version,
+    ):
+        captured.update(
+            repo=repo_arg,
+            host=host_arg,
+            runtime=runtime_arg,
+            output=output_arg,
+            version=version,
+        )
+        return {}
+
+    monkeypatch.setattr(helper, "build_layers", fake_build_layers)
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "build_python_layers.py",
+            "--repo",
+            str(repo),
+            "--host-python",
+            str(venv_python),
+            "--runtime-python",
+            str(runtime),
+            "--output",
+            str(output),
+            "--version",
+            "2.1.1b7",
+        ],
+    )
+
+    assert helper.main() == 0
+    assert captured["host"] == venv_python.absolute()
+    assert captured["host"] != venv_python.resolve()
 
 
 def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):

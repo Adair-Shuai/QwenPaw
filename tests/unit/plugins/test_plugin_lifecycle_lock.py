@@ -105,6 +105,79 @@ async def test_public_install_route_rejects_force_reinstall():
 
 
 @pytest.mark.asyncio
+async def test_url_install_rolls_back_when_adoption_write_fails(
+    monkeypatch,
+    tmp_path,
+):
+    request = MagicMock()
+    loader = MagicMock()
+    request.app.state.plugin_loader = loader
+    extracted = tmp_path / "extracted"
+    extracted.mkdir()
+    record = MagicMock()
+    record.manifest.id = "demo"
+    record.manifest.name = "Demo"
+    record.manifest.version = "1.0.0"
+    record.manifest.description = ""
+    record.manifest.author = ""
+    installed = False
+
+    async def fake_load(*_args, **_kwargs):
+        nonlocal installed
+        if installed:
+            raise ValueError("Plugin 'demo' is already loaded")
+        installed = True
+        return record
+
+    async def fake_rollback(*_args):
+        nonlocal installed
+        installed = False
+
+    monkeypatch.setattr(
+        "qwenpaw.app.routers.plugins._async_download",
+        AsyncMock(),
+    )
+    monkeypatch.setattr(
+        "qwenpaw.app.routers.plugins._extract_downloaded_plugin_zip",
+        lambda *_args: extracted,
+    )
+    monkeypatch.setattr(
+        (
+            "qwenpaw.app.routers.plugins."
+            "_load_plugin_with_optional_force_reinstall"
+        ),
+        AsyncMock(side_effect=fake_load),
+    )
+    monkeypatch.setattr(
+        "qwenpaw.app.routers.plugins._rollback_failed_remote_install",
+        AsyncMock(side_effect=fake_rollback),
+    )
+    adoption_write = MagicMock(side_effect=[OSError("disk full"), None])
+    monkeypatch.setattr(
+        "qwenpaw.components.service.set_component_update_adoption",
+        adoption_write,
+    )
+
+    with pytest.raises(HTTPException) as error:
+        await install_plugin(
+            InstallPluginRequest(source="https://example/plugin.zip"),
+            request,
+        )
+
+    assert error.value.status_code == 500
+    assert installed is False
+
+    result = await install_plugin(
+        InstallPluginRequest(source="https://example/plugin.zip"),
+        request,
+    )
+
+    assert result["id"] == "demo"
+    assert installed is True
+    assert adoption_write.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_force_reinstall_removes_obsolete_tools_before_reload():
     """Agent reload must not run before obsolete tool configs are deleted."""
     order: list[str] = []

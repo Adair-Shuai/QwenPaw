@@ -66,6 +66,34 @@ def test_remote_install_can_be_adopted_by_signed_component_manifest(
     ] == ["demo"]
 
 
+def test_invalid_adopted_id_does_not_discard_valid_entries(
+    monkeypatch,
+    tmp_path,
+):
+    # pylint: disable=protected-access
+    adopted_path = tmp_path / "components" / "adopted.json"
+    adopted_path.parent.mkdir(parents=True)
+    adopted_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "components": ["valid-plugin", "../invalid", "other"],
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._ADOPTED_COMPONENTS_PATH",
+        adopted_path,
+    )
+
+    set_component_update_adoption("new-plugin", True)
+
+    assert json.loads(adopted_path.read_text(encoding="utf-8"))[
+        "components"
+    ] == ["new-plugin", "other", "valid-plugin"]
+
+
 def test_configured_service_uses_embedded_production_defaults(monkeypatch):
     monkeypatch.delenv("QWENPAW_COMPONENT_MANIFEST_URL", raising=False)
     monkeypatch.delenv("QWENPAW_COMPONENT_PUBLIC_KEY", raising=False)

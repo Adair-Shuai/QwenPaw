@@ -166,7 +166,12 @@ def main() -> int:
     args = parser.parse_args()
     metadata = build_layers(
         args.repo.resolve(),
-        args.host_python.resolve(),
+        # Do not resolve the host interpreter symlink.  On macOS a virtual
+        # environment's ``bin/python`` commonly points at the framework
+        # interpreter; resolving it discards the venv context and makes
+        # build-time modules installed into that venv (notably ``build``)
+        # invisible.
+        args.host_python.absolute(),
         args.runtime_python.resolve(),
         args.output.resolve(),
         args.version.strip(),

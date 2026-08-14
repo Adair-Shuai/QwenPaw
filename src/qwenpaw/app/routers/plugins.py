@@ -602,6 +602,30 @@ async def _load_plugin_with_optional_force_reinstall(
     )
 
 
+async def _rollback_failed_remote_install(loader, request: Request, record):
+    """Remove a URL plugin when updater enrollment cannot be persisted."""
+    plugin_id = record.manifest.id
+    provider_ids, command_names = _collect_plugin_runtime_ids(
+        loader.registry,
+        plugin_id,
+    )
+    try:
+        await loader.unload_plugin(plugin_id, delete_files=True)
+    finally:
+        _post_unload_cleanup(
+            request,
+            plugin_id,
+            provider_ids,
+            command_names,
+        )
+        await asyncio.to_thread(
+            _remove_plugin_tools_from_agents,
+            plugin_id,
+            record.manifest.meta or {},
+        )
+        await _schedule_all_agents_reload(request)
+
+
 async def _finish_plugin_install_after_load(
     request: Request,
     record,
@@ -797,11 +821,18 @@ async def install_plugin(
         if is_url:
             from ...components.service import set_component_update_adoption
 
-            await asyncio.to_thread(
-                set_component_update_adoption,
-                record.manifest.id,
-                True,
-            )
+            try:
+                await asyncio.to_thread(
+                    set_component_update_adoption,
+                    record.manifest.id,
+                    True,
+                )
+            except Exception:
+                # A URL install is only complete once it is enrolled in the
+                # signed component updater. Remove the just-installed copy so
+                # a retry cannot be trapped behind an "already loaded" 409.
+                await _rollback_failed_remote_install(loader, request, record)
+                raise
     except HTTPException:
         raise
     except ValueError as exc:
@@ -949,17 +980,36 @@ async def uninstall_plugin(plugin_id: str, request: Request):
             # Persist the user's intent before deleting the plugin directory.
             # The tombstone lives outside that directory, so a successful
             # unload cannot erase it and startup cannot resurrect the bundle.
-            from ...plugins.bundled import mark_plugin_uninstalled
+            from ...plugins.bundled import (
+                clear_uninstalled_marker,
+                mark_plugin_uninstalled,
+            )
+            from ...components.service import (
+                is_component_update_adopted,
+                set_component_update_adoption,
+            )
 
-            await asyncio.to_thread(mark_plugin_uninstalled, plugin_id)
-            await loader.unload_plugin(plugin_id, delete_files=True)
-            from ...components.service import set_component_update_adoption
-
+            was_adopted = await asyncio.to_thread(
+                is_component_update_adopted,
+                plugin_id,
+            )
             await asyncio.to_thread(
                 set_component_update_adoption,
                 plugin_id,
                 False,
             )
+            try:
+                await asyncio.to_thread(mark_plugin_uninstalled, plugin_id)
+                await loader.unload_plugin(plugin_id, delete_files=True)
+            except Exception:
+                if was_adopted:
+                    await asyncio.to_thread(
+                        set_component_update_adoption,
+                        plugin_id,
+                        True,
+                    )
+                await asyncio.to_thread(clear_uninstalled_marker, plugin_id)
+                raise
             _post_unload_cleanup(
                 request,
                 plugin_id,
