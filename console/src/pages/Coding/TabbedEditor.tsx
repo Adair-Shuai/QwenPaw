@@ -27,26 +27,30 @@ import Editor, {
 import type { editor as MonacoEditor } from "monaco-editor";
 import {
   Check,
+  ChevronLeft,
+  ChevronRight,
   Code2,
   Download,
   Eye,
   FileCode,
   FolderOpen,
   GitCompareArrows,
+  ListFilter,
   MessageSquarePlus,
   RefreshCw,
   RotateCcw,
   Save,
+  Search,
   X,
 } from "lucide-react";
 import { Dropdown, Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 import FilePreview, { isPreviewable } from "./FilePreview";
-import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { workspaceApi } from "../../api/modules/workspace";
 import { useWorkspaceWatch } from "../../hooks/useWorkspaceWatch";
 import { useTheme } from "../../contexts/ThemeContext";
 import { setTextareaValue } from "../Chat/utils";
+import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { clearLastEditorCopy, setLastEditorCopy } from "./lastEditorCopy";
 import {
   useCodingTabsStore,
@@ -85,9 +89,9 @@ interface TabbedEditorProps {
   onSaveFile?: (path: string, content: string) => Promise<void>;
   onDownloadFile?: (path: string) => Promise<void>;
   onRevealFile?: (path: string) => Promise<void>;
+  headerActions?: ReactNode;
   chatId?: string;
   projectDirOverride?: string;
-  headerActions?: ReactNode;
   navigation?: {
     path: string;
     line: number;
@@ -200,16 +204,13 @@ export default function TabbedEditor({
   onSaveFile,
   onDownloadFile,
   onRevealFile,
+  headerActions,
   chatId,
   projectDirOverride,
-  headerActions,
   navigation,
 }: TabbedEditorProps) {
   const { t } = useTranslation();
   const { isDark } = useTheme();
-  // Plugin renderers are registered asynchronously after the files workspace
-  // can already be visible. Re-render when the registry changes so a DAT,
-  // EGRID, DLIS, etc. tab cannot remain stuck in the generic text preview.
   useSyncExternalStore(
     subscribeRendererRegistry,
     getRendererRegistrySnapshot,
@@ -217,6 +218,9 @@ export default function TabbedEditor({
   );
   const editorRef = useRef<MonacoEditor.IStandaloneCodeEditor | null>(null);
   const tabElementsRef = useRef(new Map<string, HTMLDivElement>());
+  const tabViewportRef = useRef<HTMLDivElement | null>(null);
+  const openFilesPanelRef = useRef<HTMLDivElement | null>(null);
+  const openFilesButtonRef = useRef<HTMLButtonElement | null>(null);
   const activeTabPathRef = useRef(activeTabPath);
   const activeDisplayPathRef = useRef(activeTabPath);
   const navigationRef = useRef(navigation);
@@ -228,6 +232,8 @@ export default function TabbedEditor({
   const [previewRevision, setPreviewRevision] = useState(0);
   const [resolvingDiff, setResolvingDiff] = useState(false);
   const [hasSelection, setHasSelection] = useState(false);
+  const [openFilesVisible, setOpenFilesVisible] = useState(false);
+  const [openFilesQuery, setOpenFilesQuery] = useState("");
 
   /**
    * Paths whose tabs are currently in "Preview" mode instead of code editor.
@@ -666,16 +672,6 @@ export default function TabbedEditor({
     onSaveFile,
   ]);
 
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-        e.preventDefault();
-        void handleSave();
-      }
-    },
-    [handleSave],
-  );
-
   const handleRefreshPreview = useCallback(async () => {
     if (!activeTabPath || refreshing) return;
     setRefreshing(true);
@@ -686,11 +682,21 @@ export default function TabbedEditor({
       }
       setPreviewRevision((current) => current + 1);
     } catch {
-      // Preserve the current preview if the latest file cannot be loaded.
+      // Keep the current preview when the latest file cannot be loaded.
     } finally {
       setRefreshing(false);
     }
   }, [activeTabPath, onLoadFile, onTabContentChange, refreshing]);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "s") {
+        e.preventDefault();
+        void handleSave();
+      }
+    },
+    [handleSave],
+  );
 
   // ---- Copy to Chat -------------------------------------------------------
 
@@ -713,6 +719,11 @@ export default function TabbedEditor({
       formatSelectionForChat(activeDisplayPath, code, startLine, endLine, mode),
     );
   }, [activeDisplayPath, activeTabPath]);
+
+  // Keep the hidden button implementation available for future restoration.
+  void MessageSquarePlus;
+  void hasSelection;
+  void handleCopyToChat;
 
   // ---- Diff actions -------------------------------------------------------
 
@@ -932,6 +943,33 @@ export default function TabbedEditor({
     });
   }, [activeTabPath, tabs.length]);
 
+  useEffect(() => {
+    if (!openFilesVisible) return undefined;
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        openFilesPanelRef.current?.contains(target) ||
+        openFilesButtonRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setOpenFilesVisible(false);
+    };
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      setOpenFilesVisible(false);
+      openFilesButtonRef.current?.focus();
+    };
+
+    document.addEventListener("click", handleDocumentClick);
+    document.addEventListener("keydown", handleEscape);
+    return () => {
+      document.removeEventListener("click", handleDocumentClick);
+      document.removeEventListener("keydown", handleEscape);
+    };
+  }, [openFilesVisible]);
+
   // ---- Empty state --------------------------------------------------------
 
   if (tabs.length === 0) {
@@ -939,7 +977,7 @@ export default function TabbedEditor({
       <div className={styles.wrap}>
         {headerActions && (
           <div className={styles.tabBar}>
-            <div className={styles.tabScroller} />
+            <div className={styles.tabViewport} />
             <div className={styles.tabBarActions}>{headerActions}</div>
           </div>
         )}
@@ -951,9 +989,55 @@ export default function TabbedEditor({
     );
   }
 
-  const shortPath = (path: string) => {
-    const displayPath = visibleEditorPath(path);
-    return displayPath.split("/").slice(-2).join("/");
+  const fileName = (path: string) => {
+    const displayPath = visibleEditorPath(path).replace(/\\/g, "/");
+    const segments = displayPath.split("/").filter(Boolean);
+    return segments[segments.length - 1] || displayPath;
+  };
+
+  const parentPath = (path: string) => {
+    const displayPath = visibleEditorPath(path).replace(/\\/g, "/");
+    const separatorIndex = displayPath.lastIndexOf("/");
+    return separatorIndex < 0 ? "" : displayPath.slice(0, separatorIndex);
+  };
+
+  const filteredTabs = (() => {
+    const query = openFilesQuery.trim().toLowerCase();
+    if (!query) return tabs;
+    return tabs.filter((tab) =>
+      (tab.displayPath ?? visibleEditorPath(tab.path))
+        .replace(/\\/g, "/")
+        .toLowerCase()
+        .includes(query),
+    );
+  })();
+
+  const scrollTabs = (direction: -1 | 1) => {
+    const viewport = tabViewportRef.current;
+    if (!viewport) return;
+    viewport.scrollBy({
+      left: viewport.clientWidth * 0.8 * direction,
+      behavior: "smooth",
+    });
+  };
+
+  const handleTabKeyDown = (event: React.KeyboardEvent, index: number) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      onTabSelect(tabs[index].path);
+      return;
+    }
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const offset = event.key === "ArrowLeft" ? -1 : 1;
+    const nextIndex = (index + offset + tabs.length) % tabs.length;
+    onTabSelect(tabs[nextIndex].path);
+    tabElementsRef.current.get(tabs[nextIndex].path)?.focus();
+  };
+
+  const handleCloseAllTabs = () => {
+    tabs.forEach((tab) => onTabClose(tab.path));
+    setOpenFilesVisible(false);
   };
 
   const activeInPreview = activeTabPath
@@ -970,75 +1054,224 @@ export default function TabbedEditor({
     <div className={styles.wrap} onKeyDown={handleKeyDown}>
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
       <div className={styles.tabBar}>
-        <div className={styles.tabScroller} role="tablist">
-          {tabs.map((tab) => {
-            const active = tab.path === activeTabPath;
-            const hasDiff = Boolean(pendingDiffs[tab.path]);
-            return (
-              <Dropdown
-                key={tab.path}
-                trigger={["contextMenu"]}
-                menu={{
-                  items: [
-                    {
-                      key: "close",
-                      label: t("files.closeTab"),
-                      onClick: () => onTabClose(tab.path),
-                    },
-                    {
-                      key: "closeOthers",
-                      label: t("files.closeOtherTabs"),
-                      disabled: tabs.length <= 1,
-                      onClick: () => onCloseOtherTabs(tab.path),
-                    },
-                  ],
-                }}
-              >
-                <div
-                  ref={(element) => {
-                    if (element) tabElementsRef.current.set(tab.path, element);
-                    else tabElementsRef.current.delete(tab.path);
+        <div className={styles.tabViewport} ref={tabViewportRef} role="tablist">
+          <div className={styles.tabRail}>
+            {tabs.map((tab, index) => {
+              const active = tab.path === activeTabPath;
+              const hasDiff = Boolean(pendingDiffs[tab.path]);
+              return (
+                <Dropdown
+                  key={tab.path}
+                  trigger={["contextMenu"]}
+                  menu={{
+                    items: [
+                      {
+                        key: "close",
+                        label: t("files.closeTab"),
+                        onClick: () => onTabClose(tab.path),
+                      },
+                      {
+                        key: "closeOthers",
+                        label: t("files.closeOtherTabs"),
+                        disabled: tabs.length <= 1,
+                        onClick: () => onCloseOtherTabs(tab.path),
+                      },
+                    ],
                   }}
-                  className={`${styles.tab} ${active ? styles.tabActive : ""} ${
-                    hasDiff ? styles.tabDiff : ""
-                  }`}
-                  onClick={() => onTabSelect(tab.path)}
-                  role="tab"
-                  tabIndex={0}
-                  onKeyDown={(e) => e.key === "Enter" && onTabSelect(tab.path)}
-                  title={tab.displayPath ?? visibleEditorPath(tab.path)}
                 >
-                  {hasDiff ? (
-                    <GitCompareArrows size={11} className={styles.diffDot} />
-                  ) : tab.dirty ? (
-                    <span className={styles.dirtyDot} />
-                  ) : null}
-                  <span className={styles.tabName}>
-                    {shortPath(tab.displayPath ?? tab.path)}
-                  </span>
-                  <button
-                    type="button"
-                    className={styles.closeBtn}
-                    onClick={(e) => {
-                      e.stopPropagation();
+                  <div
+                    ref={(element) => {
+                      if (element)
+                        tabElementsRef.current.set(tab.path, element);
+                      else tabElementsRef.current.delete(tab.path);
+                    }}
+                    className={`${styles.tab} ${
+                      active ? styles.tabActive : ""
+                    }`}
+                    onClick={() => onTabSelect(tab.path)}
+                    onAuxClick={(event) => {
+                      if (event.button !== 1) return;
+                      event.preventDefault();
                       onTabClose(tab.path);
                     }}
-                    aria-label={t("files.closeTab")}
+                    role="tab"
+                    aria-selected={active}
+                    tabIndex={active ? 0 : -1}
+                    onKeyDown={(event) => handleTabKeyDown(event, index)}
+                    title={tab.displayPath ?? visibleEditorPath(tab.path)}
                   >
-                    <X size={11} />
-                  </button>
-                </div>
-              </Dropdown>
-            );
-          })}
+                    {hasDiff ? (
+                      <GitCompareArrows size={11} className={styles.diffDot} />
+                    ) : tab.dirty ? (
+                      <span className={styles.dirtyDot} />
+                    ) : null}
+                    <span className={styles.tabName}>
+                      {fileName(tab.displayPath ?? tab.path)}
+                    </span>
+                    <button
+                      type="button"
+                      className={styles.closeBtn}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onTabClose(tab.path);
+                      }}
+                      aria-label={`${t("files.closeTab")}: ${fileName(
+                        tab.displayPath ?? tab.path,
+                      )}`}
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                </Dropdown>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className={styles.tabControls}>
+          <button
+            type="button"
+            className={`${styles.tabControlBtn} ${styles.scrollControl}`}
+            onClick={() => scrollTabs(-1)}
+            aria-label={t("files.scrollTabsLeft")}
+          >
+            <ChevronLeft size={13} />
+          </button>
+          <button
+            type="button"
+            className={`${styles.tabControlBtn} ${styles.scrollControl}`}
+            onClick={() => scrollTabs(1)}
+            aria-label={t("files.scrollTabsRight")}
+          >
+            <ChevronRight size={13} />
+          </button>
+          <button
+            ref={openFilesButtonRef}
+            type="button"
+            className={`${styles.openFilesBtn} ${
+              openFilesVisible ? styles.openFilesBtnActive : ""
+            }`}
+            onClick={() => setOpenFilesVisible((visible) => !visible)}
+            aria-label={t("files.openFiles", { count: tabs.length })}
+            aria-expanded={openFilesVisible}
+            aria-haspopup="dialog"
+          >
+            <ListFilter size={13} />
+            <span className={styles.openFilesLabel}>
+              {t("files.openFilesLabel")}
+            </span>
+            <span className={styles.tabCount}>{tabs.length}</span>
+          </button>
         </div>
         {headerActions && (
           <div className={styles.tabBarActions}>{headerActions}</div>
+        )}
+
+        {openFilesVisible && (
+          <div
+            className={styles.openFilesPanel}
+            ref={openFilesPanelRef}
+            role="dialog"
+            aria-label={t("files.openFilesLabel")}
+          >
+            <div className={styles.openFilesHeader}>
+              <div className={styles.openFilesTitleRow}>
+                <strong>{t("files.openFilesLabel")}</strong>
+                <span>{t("files.openFileCount", { count: tabs.length })}</span>
+              </div>
+              <label className={styles.openFilesSearch}>
+                <Search size={13} />
+                <input
+                  autoFocus
+                  type="search"
+                  value={openFilesQuery}
+                  onChange={(event) => setOpenFilesQuery(event.target.value)}
+                  aria-label={t("files.searchOpenFiles")}
+                  placeholder={t("files.searchOpenFiles")}
+                />
+              </label>
+            </div>
+
+            <div className={styles.openFilesList}>
+              {filteredTabs.length > 0 ? (
+                filteredTabs.map((tab) => {
+                  const active = tab.path === activeTabPath;
+                  const displayPath =
+                    tab.displayPath ?? visibleEditorPath(tab.path);
+                  const hasDiff = Boolean(pendingDiffs[tab.path]);
+                  return (
+                    <div
+                      key={tab.path}
+                      className={`${styles.openFileItem} ${
+                        active ? styles.openFileItemActive : ""
+                      }`}
+                    >
+                      <button
+                        type="button"
+                        className={styles.openFileMain}
+                        onClick={() => {
+                          onTabSelect(tab.path);
+                          setOpenFilesVisible(false);
+                        }}
+                      >
+                        <FileCode size={14} />
+                        <span className={styles.openFileCopy}>
+                          <span className={styles.openFileName}>
+                            {fileName(displayPath)}
+                            {hasDiff ? (
+                              <GitCompareArrows
+                                size={11}
+                                className={styles.diffDot}
+                              />
+                            ) : tab.dirty ? (
+                              <span className={styles.dirtyDot} />
+                            ) : null}
+                          </span>
+                          <span className={styles.openFilePath}>
+                            {parentPath(displayPath)}
+                          </span>
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        className={styles.openFileClose}
+                        onClick={() => onTabClose(tab.path)}
+                        aria-label={`${t("files.closeTab")}: ${fileName(
+                          displayPath,
+                        )}`}
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className={styles.openFilesEmpty}>
+                  {t("files.noOpenFilesFound")}
+                </div>
+              )}
+            </div>
+
+            <div className={styles.openFilesFooter}>
+              <button
+                type="button"
+                onClick={() => onCloseOtherTabs(activeTabPath)}
+                disabled={tabs.length <= 1}
+              >
+                {t("files.closeOtherTabs")}
+              </button>
+              <button type="button" onClick={handleCloseAllTabs}>
+                {t("files.closeAllTabs")}
+              </button>
+            </div>
+          </div>
         )}
       </div>
 
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <div className={styles.toolbar}>
+        <span className={styles.fileName}>{activeDisplayPath}</span>
+
         <div className={styles.toolbarRight}>
           {activeDiff && (
             <div className={styles.diffActions}>
@@ -1146,7 +1379,7 @@ export default function TabbedEditor({
             )}
             {!activeDiff && !activeInPreview && (
               <>
-                <Tooltip
+                {/* <Tooltip
                   title={
                     hasSelection
                       ? t("files.copySelectionToChat")
@@ -1161,7 +1394,7 @@ export default function TabbedEditor({
                   >
                     <MessageSquarePlus size={13} />
                   </button>
-                </Tooltip>
+                </Tooltip> */}
                 <Tooltip title={t("common.save")}>
                   <button
                     type="button"

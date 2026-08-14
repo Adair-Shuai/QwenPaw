@@ -54,5 +54,8 @@
       "esbuild",
       "msw"
     ]
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
