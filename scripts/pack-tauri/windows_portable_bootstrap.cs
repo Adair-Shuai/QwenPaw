@@ -280,7 +280,12 @@ internal static class PortableSetup
             Match match = pattern.Match(rawLine);
             if (!match.Success) throw new InvalidDataException("Invalid checksum manifest entry.");
             string relative = SafeRelativePath(match.Groups[2].Value);
-            string fullPath = Path.Combine(prefix, relative);
+            string canonicalPath = Path.Combine(root, relative);
+            // .NET Framework has inconsistent File.Exists support for the
+            // \\?\ prefix on ordinary short paths (including root-level
+            // install.ps1).  Keep normal paths while they fit under MAX_PATH,
+            // and only opt into the extended form for genuinely deep files.
+            string fullPath = PathForIo(canonicalPath);
             if (!expected.Add(relative)) throw new InvalidDataException("Duplicate checksum entry: " + relative);
             if (!File.Exists(fullPath)) throw new InvalidDataException("Package file is missing: " + relative);
             string actual = Sha256(fullPath);
@@ -301,6 +306,12 @@ internal static class PortableSetup
                      Path.Combine("payload", "binaries", "cli", "qwenpaw.exe"),
                      Path.Combine("payload", "binaries", "update-assistant", "UGSciUpdateAssistant.exe") })
             if (!expected.Contains(required)) throw new InvalidDataException("Required checksum entry is missing: " + required);
+    }
+
+    private static string PathForIo(string path)
+    {
+        string canonical = Path.GetFullPath(path);
+        return canonical.Length < 248 ? canonical : ToExtendedPath(canonical);
     }
 
     private static string SafeRelativePath(string value)

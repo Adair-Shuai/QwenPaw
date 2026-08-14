@@ -47,6 +47,8 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
     assert "string ioRoot = ToExtendedPath(root);" in source
+    assert "string fullPath = PathForIo(canonicalPath);" in source
+    assert "return canonical.Length < 248 ? canonical" in source
     assert (
         'string manifest = Path.Combine(root, "checksums.sha256");'
         in source
