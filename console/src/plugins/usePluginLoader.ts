@@ -23,6 +23,12 @@ interface PluginInfo {
   frontend_revision?: string;
 }
 
+// Plugin bundles register capabilities through global host APIs as a side
+// effect. Re-executing the same bundle duplicates routes, menu items, chat
+// slots, and React keys. Manifest refreshes must therefore be idempotent per
+// plugin revision while still allowing an upgraded bundle to run.
+const loadedPluginRevisions = new Map<string, string>();
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────────────────────────────────────
@@ -143,10 +149,13 @@ export async function loadAllPlugins(): Promise<{
 
   const results = await Promise.allSettled(
     frontendPlugins.map(async (p) => {
+      const revision = p.frontend_revision || p.version || "0";
+      if (loadedPluginRevisions.get(p.id) === revision) return;
       await executePluginScript(
         resolveUrl(p.id, p.frontend_entry!),
-        p.frontend_revision || p.version || "0",
+        revision,
       );
+      loadedPluginRevisions.set(p.id, revision);
       console.info(`[PluginLoader] ✓ ${p.id}`);
     }),
   );
