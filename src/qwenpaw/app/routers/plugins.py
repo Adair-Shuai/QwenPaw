@@ -1003,12 +1003,29 @@ async def uninstall_plugin(plugin_id: str, request: Request):
                 await loader.unload_plugin(plugin_id, delete_files=True)
             except Exception:
                 if was_adopted:
+                    try:
+                        await asyncio.to_thread(
+                            set_component_update_adoption,
+                            plugin_id,
+                            True,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to restore component update adoption "
+                            "after uninstall rollback for '%s'",
+                            plugin_id,
+                        )
+                try:
                     await asyncio.to_thread(
-                        set_component_update_adoption,
+                        clear_uninstalled_marker,
                         plugin_id,
-                        True,
                     )
-                await asyncio.to_thread(clear_uninstalled_marker, plugin_id)
+                except Exception:
+                    logger.exception(
+                        "Failed to clear uninstall marker while rolling "
+                        "back plugin '%s'",
+                        plugin_id,
+                    )
                 raise
             _post_unload_cleanup(
                 request,
