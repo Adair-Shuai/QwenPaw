@@ -145,18 +145,30 @@ jobs:
 
       - name: Stop server
         if: always()
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -f "$RUNNER_TEMP/qwenpaw.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/qwenpaw.pid")" 2>/dev/null || true
-          fi
-          if [ "$RUNNER_OS" = "Linux" ] || [ "$RUNNER_OS" = "macOS" ]; then
-            lsof -ti:8088 | xargs kill 2>/dev/null || true
-          fi
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            pid=$(netstat -ano 2>/dev/null | grep ':8088 ' | grep LISTEN | awk '{print $5}' | tr -d '\r' | head -1) || true
-            if [ -n "$pid" ]; then taskkill //F //PID "$pid" 2>/dev/null || true; fi
-          fi
+          $ErrorActionPreference = "Continue"
+          $pidFile = Join-Path $env:RUNNER_TEMP "qwenpaw.pid"
+          if (Test-Path -LiteralPath $pidFile) {
+            $serverPid = 0
+            [void][int]::TryParse(
+              (Get-Content -LiteralPath $pidFile -Raw).Trim(),
+              [ref]$serverPid
+            )
+            if ($serverPid -gt 0) {
+              Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+          }
+          if ($env:RUNNER_OS -eq "Windows") {
+            Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty OwningProcess -Unique |
+              Where-Object { $_ -gt 0 } |
+              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+          } else {
+            & bash -c 'lsof -ti:8088 | xargs kill 2>/dev/null || true'
+          }
+          exit 0
 
   # ── Docker build + health check ────────────────────────────────────────────
   verify-docker:
@@ -365,15 +377,27 @@ jobs:
 
       - name: Stop server
         if: always()
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -f "$RUNNER_TEMP/qwenpaw.pid" ]; then
-            kill "$(cat "$RUNNER_TEMP/qwenpaw.pid")" 2>/dev/null || true
-          fi
-          if [ "$RUNNER_OS" = "Linux" ] || [ "$RUNNER_OS" = "macOS" ]; then
-            lsof -ti:8088 | xargs kill 2>/dev/null || true
-          fi
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            pid=$(netstat -ano 2>/dev/null | grep ':8088 ' | grep LISTEN | awk '{print $5}' | tr -d '\r' | head -1) || true
-            if [ -n "$pid" ]; then taskkill //F //PID "$pid" 2>/dev/null || true; fi
-          fi
+          $ErrorActionPreference = "Continue"
+          $pidFile = Join-Path $env:RUNNER_TEMP "qwenpaw.pid"
+          if (Test-Path -LiteralPath $pidFile) {
+            $serverPid = 0
+            [void][int]::TryParse(
+              (Get-Content -LiteralPath $pidFile -Raw).Trim(),
+              [ref]$serverPid
+            )
+            if ($serverPid -gt 0) {
+              Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
+            }
+            Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
+          }
+          if ($env:RUNNER_OS -eq "Windows") {
+            Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue |
+              Select-Object -ExpandProperty OwningProcess -Unique |
+              Where-Object { $_ -gt 0 } |
+              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+          } else {
+            & bash -c 'lsof -ti:8088 | xargs kill 2>/dev/null || true'
+          }
+          exit 0
