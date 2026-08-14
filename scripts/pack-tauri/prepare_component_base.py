@@ -117,6 +117,35 @@ def _safe_extract(archive_bytes: bytes, destination: Path) -> None:
                 shutil.copyfileobj(source, target, length=1024 * 1024)
 
 
+def _restore_inventory_modes(
+    root: Path,
+    inventory: object,
+) -> None:
+    """Restore signed modes that portable ZIP extraction does not preserve."""
+    if not isinstance(inventory, dict):
+        raise ValueError("previous component inventory is invalid")
+    resolved_root = root.resolve()
+    for relative, metadata in inventory.items():
+        normalized = safe_relative_path(str(relative))
+        if normalized != relative or not isinstance(metadata, dict):
+            raise ValueError("previous component inventory is invalid")
+        mode = metadata.get("mode")
+        if type(mode) is not int or not 0 <= mode <= 0o7777:
+            raise ValueError("previous component inventory mode is invalid")
+        target = (resolved_root / PurePosixPath(normalized)).resolve()
+        try:
+            target.relative_to(resolved_root)
+        except ValueError as exc:
+            raise ValueError(
+                "previous component inventory path escapes root",
+            ) from exc
+        if not target.is_file() or target.is_symlink():
+            raise ValueError(
+                f"previous component inventory file is missing: {relative}",
+            )
+        target.chmod(mode)
+
+
 def prepare_base(
     source_root: Path,
     base_root: Path,
@@ -272,6 +301,7 @@ def prepare_base(
             component_base = temporary / "tree" / source.name
             component_base.mkdir(parents=True)
             _safe_extract(artifact, component_base)
+            _restore_inventory_modes(component_base, entry.get("files"))
             installed_id, installed_version = read_plugin_metadata(
                 component_base,
             )

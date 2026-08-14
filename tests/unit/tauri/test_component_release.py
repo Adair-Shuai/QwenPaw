@@ -401,6 +401,80 @@ def test_previous_signed_pointer_base_is_downloaded_and_verified(
     )
 
 
+def test_previous_base_restores_signed_file_modes(tmp_path, monkeypatch):
+    release_module = _load()
+    prepare_spec = importlib.util.spec_from_file_location(
+        "prepare_component_base_modes",
+        SCRIPTS / "prepare_component_base.py",
+    )
+    assert prepare_spec and prepare_spec.loader
+    prepare = importlib.util.module_from_spec(prepare_spec)
+    prepare_spec.loader.exec_module(prepare)
+
+    source = tmp_path / "source" / "demo"
+    source.mkdir(parents=True)
+    (source / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.1.0"}),
+        encoding="utf-8",
+    )
+    previous = tmp_path / "previous" / "demo"
+    previous.mkdir(parents=True)
+    (previous / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    launcher = previous / "launch.sh"
+    launcher.write_text("#!/bin/sh\n", encoding="utf-8")
+    launcher.chmod(0o755)
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+    release_root = tmp_path / "release"
+    manifest = release_module.build_release(
+        previous.parent,
+        release_root,
+        product="qwenpaw",
+        channel="stable",
+        target="macos-aarch64",
+        core_min_version="1.0.0",
+        base_url="https://oss.example",
+        private_key_b64=key,
+        release_id="old",
+    )
+    pointer = manifest.with_name("macos-aarch64.current.json")
+    artifact = next((release_root / "artifacts").rglob("full.zip"))
+    metadata_base = "https://oss.example/metadata/components/stable"
+    urls = {
+        f"{metadata_base}/macos-aarch64.current.json": pointer.read_bytes(),
+        f"{metadata_base}/macos-aarch64-old.json": manifest.read_bytes(),
+        f"{metadata_base}/macos-aarch64-old.json.sig": manifest.with_name(
+            manifest.name + ".sig",
+        ).read_bytes(),
+        "https://oss.example/artifacts/components/macos-aarch64/"
+        "demo/1.0.0/full.zip": artifact.read_bytes(),
+    }
+    monkeypatch.setattr(prepare, "_get", lambda url: urls[url])
+    base_root = tmp_path / "component-base"
+    assert prepare.prepare_base(
+        source.parent,
+        base_root,
+        manifest_url=f"{metadata_base}/macos-aarch64.current.json",
+        private_key_b64=key,
+        expected_target="macos-aarch64",
+    )
+    expected_mode = json.loads(manifest.read_text(encoding="utf-8"))[
+        "components"
+    ]["demo"]["files"]["launch.sh"]["mode"]
+    assert (
+        base_root / "demo" / "launch.sh"
+    ).stat().st_mode & 0o777 == expected_mode
+
+
 def test_pointer_promotion_rejects_older_release_version(tmp_path):
     module = _load()
     checker = _load_pointer_checker()
