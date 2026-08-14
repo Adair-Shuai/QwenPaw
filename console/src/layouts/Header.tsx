@@ -7,6 +7,7 @@ import {
   Dropdown,
   Alert,
   message,
+  Button as AntButton,
 } from "antd";
 import type { MenuProps } from "antd";
 import LanguageSwitcher, {
@@ -388,7 +389,7 @@ export default function Header() {
             offset={[-1, 3]}
           >
             <Tooltip title={unifiedUpdateTitle}>
-              <Button
+              <AntButton
                 type="text"
                 size="small"
                 aria-label={unifiedUpdateTitle}

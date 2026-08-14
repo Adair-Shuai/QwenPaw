@@ -62,11 +62,16 @@ describe("Header update entry", () => {
   it("always renders the unified update button next to the version", async () => {
     render(<Header />);
 
+    const button = screen.getByRole("button", {
+      name: "sidebar.updateModal.checkUpdates",
+    });
+    const version = await screen.findByText("v2.1.1b7");
+
+    expect(button).toBeVisible();
     expect(
-      screen.getByRole("button", {
-        name: "sidebar.updateModal.checkUpdates",
-      }),
+      button.querySelector(".anticon-cloud-download"),
     ).toBeInTheDocument();
-    expect(await screen.findByText("v2.1.1b7")).toBeInTheDocument();
+    expect(version).toBeVisible();
+    expect(version.nextElementSibling).toContainElement(button);
   });
 });

@@ -450,13 +450,17 @@
   min-width: 28px;
   height: 28px;
   padding: 0;
-  color: #1677ff;
-  background: rgba(22, 119, 255, 0.14);
-  border: 1px solid rgba(22, 119, 255, 0.2);
+  // Keep the update affordance visible even when the generic header
+  // .ant-btn-text theme rule is loaded later in the stylesheet.
+  color: #1677ff !important;
+  background: rgba(22, 119, 255, 0.14) !important;
+  border: 1px solid rgba(22, 119, 255, 0.28) !important;
   border-radius: 999px;
+  box-shadow: 0 1px 3px rgba(22, 119, 255, 0.16);
 
   :global(.anticon) {
     font-size: 16px;
+    color: inherit !important;
   }
 }
 
