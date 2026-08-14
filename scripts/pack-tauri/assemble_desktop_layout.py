@@ -5,8 +5,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
 
@@ -27,6 +29,16 @@ def _move(source: Path, destination: Path) -> None:
     source.replace(destination)
 
 
+def _component_directory(version: str) -> str:
+    """Return a stable directory name that leaves room for deep runtime files."""
+    safe = re.sub(r"[^A-Za-z0-9._+-]", "-", version).strip(".-")
+    if len(safe) <= 48:
+        return safe
+    digest = hashlib.sha256(version.encode("utf-8")).hexdigest()[:16]
+    prefix = safe[:28].rstrip(".-")
+    return f"{prefix}-{digest}"
+
+
 def assemble(
     root: Path,
     desktop_version: str,
@@ -41,9 +53,11 @@ def assemble(
     node_version = _marker_version(node_source, ".node-runtime-version")
     java_version = _marker_version(java_source, ".java-runtime-version")
 
-    python_destination = root / "runtimes" / "python" / python_version
-    node_destination = root / "runtimes" / "node" / node_version
-    java_destination = root / "runtimes" / "java" / java_version
+    python_destination = (
+        root / "runtimes" / "python" / _component_directory(python_version)
+    )
+    node_destination = root / "runtimes" / "node" / _component_directory(node_version)
+    java_destination = root / "runtimes" / "java" / _component_directory(java_version)
     office_version = desktop_version
     neqsim_version = desktop_version
     office_destination = root / "tools" / "officecli" / office_version

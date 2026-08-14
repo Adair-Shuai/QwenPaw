@@ -170,6 +170,47 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
     assert written == active
 
 
+def test_assemble_shortens_hash_heavy_runtime_directories(tmp_path):
+    helper = _load()
+    binaries = tmp_path / "src-tauri" / "binaries"
+    full_hash = "b" * 64
+    versions = {
+        "python-runtime": f"3.12-x86_64-pc-windows-msvc-release-{full_hash}",
+        "node-runtime": f"v22.20.0-win-x64-{full_hash}",
+        "java-runtime": f"jdk-21.0.12+8-windows-x64-{full_hash}",
+    }
+    markers = {
+        "python-runtime": ".python-runtime-version",
+        "node-runtime": ".node-runtime-version",
+        "java-runtime": ".java-runtime-version",
+    }
+    for name, version in versions.items():
+        root = binaries / name
+        root.mkdir(parents=True)
+        (root / markers[name]).write_text(version, encoding="utf-8")
+    (binaries / "officecli").mkdir()
+    (binaries / "neqsim").mkdir()
+    (binaries / "app/backend/2.1.1b7/qwenpaw").mkdir(parents=True)
+    (binaries / "runtimes/python-packages/lockhash").mkdir(parents=True)
+    helper_root = binaries / "tools/computer-use/2.1.1b7"
+    helper_root.mkdir(parents=True)
+    (helper_root / "qwenpaw-computer-use-helper.exe").write_bytes(b"MZ")
+
+    active = helper.assemble(binaries, "2.1.1b7", "windows-x86_64")
+
+    for component_id, version in (
+        ("python-runtime", versions["python-runtime"]),
+        ("node-runtime", versions["node-runtime"]),
+        ("java-runtime", versions["java-runtime"]),
+    ):
+        component = active["components"][component_id]
+        assert component["version"] == version
+        directory = Path(component["path"]).name
+        assert len(directory) <= 45
+        assert full_hash not in directory
+        assert (tmp_path / "src-tauri" / component["path"]).is_dir()
+
+
 def test_assemble_requires_exactly_one_dependency_layer(tmp_path):
     helper = _load()
     binaries = tmp_path / "src-tauri" / "binaries"
