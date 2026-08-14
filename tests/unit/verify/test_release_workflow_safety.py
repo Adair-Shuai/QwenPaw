@@ -36,6 +36,17 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert release.count("was not built from release commit $sha") >= 3
     assert "grep -qx 'tauri-updater-meta-windows'" in release
     assert "grep -qx 'tauri-updater-meta-macos'" in release
+    assert "Replacement artifact run IDs require artifacts_run_id" in release
+    assert release.count(".github/workflows/desktop-build.yml") >= 2
+    assert ".github/workflows/plugins-build.yml" in release
+    assert ".github/workflows/component-release.yml" in release
+    assert 'grep -Fqx "build-tauri-windows"$\'\\t\'"success"' in release
+    assert 'grep -Fqx "build-tauri-macos"$\'\\t\'"success"' in release
+    assert 'grep -Fqx "build-plugins"$\'\\t\'"success"' in release
+    assert "build-components (windows-x86_64)" in release
+    assert "build-components (macos-aarch64)" in release
+    assert "component-release-windows-x86_64" in release
+    assert "component-release-macos-aarch64" in release
 
 
 def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
@@ -53,7 +64,7 @@ def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
     assert 'release="$(gh release view "$TAG"' in release
     assert 'case "$is_draft" in' in release
     assert 'gh release edit "$TAG" --repo "$REPO" --draft=false' in release
-    assert '--draft=false --target' not in release
+    assert "--draft=false --target" not in release
     assert "already published; verifying instead of mutating it" in release
     assert 'test "$target_sha" = "$SHA"' in release
     assert 'test "$published_is_draft" = "false"' in release
@@ -119,14 +130,37 @@ def test_windows_native_ui_verification_survives_missing_cdp() -> None:
     assert '$cdpUrl = ""' in launcher
 
 
-def test_component_release_stages_plugins_and_versioned_desktop_layers(
-) -> None:
+def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
+    None
+):
     component_release = _workflow("component-release.yml")
 
     assert "--plugin-roots bundle apps" in component_release
     assert "stage_bundled_plugins.py" in component_release
     assert "stage_desktop_components.py" in component_release
     assert "desktop-components-${{ matrix.target }}" in component_release
+    assert "windows_desktop_artifacts_run_id:" in component_release
+    assert "macos_desktop_artifacts_run_id:" in component_release
+    assert "include_desktop_components:" in component_release
+    assert "default: true" in component_release
+    assert (
+        "run-id: ${{ steps.desktop-source.outputs.run_id }}"
+        in component_release
+    )
+    assert "github-token: ${{ secrets.GITHUB_TOKEN }}" in component_release
+    assert ".github/workflows/desktop-build.yml" in component_release
+    assert "expected_job='build-tauri-windows'" in component_release
+    assert "expected_job='build-tauri-macos'" in component_release
+
+    release = _workflow("release.yml")
+    assert (
+        "windows_desktop_artifacts_run_id: "
+        "${{ format('{0}', github.run_id) }}" in release
+    )
+    assert (
+        "macos_desktop_artifacts_run_id: "
+        "${{ format('{0}', github.run_id) }}" in release
+    )
 
 
 def test_windows_b5_migration_uses_signed_visible_bridge() -> None:

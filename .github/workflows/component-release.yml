@@ -34,6 +34,16 @@ on:
         type: boolean
         required: false
         default: false
+      windows_desktop_artifacts_run_id:
+        description: Optional standalone Desktop Build run containing Windows component source
+        type: string
+        required: false
+        default: ""
+      macos_desktop_artifacts_run_id:
+        description: Optional standalone Desktop Build run containing macOS component source
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
     inputs:
       target:
@@ -57,6 +67,20 @@ on:
         description: Skip deltas at or above this fraction of full size
         type: string
         default: "0.8"
+      include_desktop_components:
+        description: Include backend, runtime and tool layers from Desktop Build artifacts
+        type: boolean
+        default: true
+      windows_desktop_artifacts_run_id:
+        description: Successful Desktop Build run ID for Windows component source
+        required: false
+        type: string
+        default: ""
+      macos_desktop_artifacts_run_id:
+        description: Successful Desktop Build run ID for macOS component source
+        required: false
+        type: string
+        default: ""
 
 permissions:
   actions: read
@@ -105,12 +129,78 @@ jobs:
             --dest component-staging \
             --plugin-roots bundle apps
 
+      - name: Resolve desktop component artifact source
+        if: ${{ inputs.include_desktop_components }}
+        id: desktop-source
+        env:
+          WINDOWS_RUN_ID: ${{ inputs.windows_desktop_artifacts_run_id }}
+          MACOS_RUN_ID: ${{ inputs.macos_desktop_artifacts_run_id }}
+        run: |
+          set -euo pipefail
+          case '${{ matrix.target }}' in
+            windows-x86_64) run_id="$WINDOWS_RUN_ID" ;;
+            macos-aarch64) run_id="$MACOS_RUN_ID" ;;
+            *) echo "::error::Unsupported desktop component target: ${{ matrix.target }}"; exit 1 ;;
+          esac
+          if [ -z "$run_id" ]; then
+            echo "::error::Complete component builds require a Desktop Build run ID for ${{ matrix.target }}"
+            exit 1
+          fi
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          if [ "$run_id" = "$GITHUB_RUN_ID" ]; then
+            echo "external=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "external=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Validate external Desktop Build artifact source
+        if: ${{ inputs.include_desktop_components && steps.desktop-source.outputs.external == 'true' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_RUN_ID: ${{ steps.desktop-source.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          source_run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID")"
+          test "$(jq -r .status <<<"$source_run")" = completed || {
+            echo "::error::Desktop Build run $SOURCE_RUN_ID is not complete"
+            exit 1
+          }
+          test "$(jq -r .conclusion <<<"$source_run")" = success || {
+            echo "::error::Desktop Build run $SOURCE_RUN_ID did not succeed"
+            exit 1
+          }
+          test "$(jq -r .path <<<"$source_run")" = '.github/workflows/desktop-build.yml' || {
+            echo "::error::Desktop component source must come from desktop-build.yml"
+            exit 1
+          }
+          expected_sha="$(git rev-parse HEAD)"
+          test "$(jq -r .head_sha <<<"$source_run")" = "$expected_sha" || {
+            echo "::error::Desktop Build run $SOURCE_RUN_ID was not built from $expected_sha"
+            exit 1
+          }
+          case '${{ matrix.target }}' in
+            windows-x86_64) expected_job='build-tauri-windows' ;;
+            macos-aarch64) expected_job='build-tauri-macos' ;;
+          esac
+          jobs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+          grep -Fqx "$expected_job"$'\t'"success" <<<"$jobs" || {
+            echo "::error::Desktop Build run $SOURCE_RUN_ID has no successful $expected_job job"
+            exit 1
+          }
+          artifacts="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
+          grep -Fqx 'desktop-components-${{ matrix.target }}' <<<"$artifacts" || {
+            echo "::error::Desktop Build run $SOURCE_RUN_ID is missing desktop-components-${{ matrix.target }}"
+            exit 1
+          }
+
       - name: Download versioned desktop component source
         if: ${{ inputs.include_desktop_components }}
         uses: actions/download-artifact@v4
         with:
           name: desktop-components-${{ matrix.target }}
           path: desktop-component-archive
+          run-id: ${{ steps.desktop-source.outputs.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Extract versioned desktop component source
         if: ${{ inputs.include_desktop_components }}

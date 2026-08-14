@@ -128,6 +128,15 @@ jobs:
           target="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')"
           sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
           echo "Target commitish '$target' resolved to SHA $sha"
+          if [ -z "$ARTIFACTS_RUN_ID" ] && {
+               [ -n "$WINDOWS_ARTIFACTS_RUN_ID" ] ||
+               [ -n "$MACOS_ARTIFACTS_RUN_ID" ] ||
+               [ -n "$COMPONENTS_ARTIFACTS_RUN_ID" ] ||
+               [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ];
+             }; then
+            echo "::error::Replacement artifact run IDs require artifacts_run_id from the base unified release run"
+            exit 1
+          fi
           if [ -n "$ARTIFACTS_RUN_ID" ]; then
             source_run="$(gh api "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID")"
             source_status="$(jq -r .status <<<"$source_run")"
@@ -235,11 +244,13 @@ jobs:
             echo "Artifact source SHA: $source_sha; publishing scripts SHA: $sha"
           fi
           if [ -n "$WINDOWS_ARTIFACTS_RUN_ID" ]; then
-            test -n "$ARTIFACTS_RUN_ID" || { echo "::error::windows_artifacts_run_id requires artifacts_run_id"; exit 1; }
             windows_run="$(gh api "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID")"
             test "$(jq -r .status <<<"$windows_run")" = completed
             test "$(jq -r .conclusion <<<"$windows_run")" = success
             test "$(jq -r .head_sha <<<"$windows_run")" = "$sha" || { echo "::error::Replacement Windows run was not built from release commit $sha"; exit 1; }
+            test "$(jq -r .path <<<"$windows_run")" = '.github/workflows/desktop-build.yml' || { echo "::error::Replacement Windows run must come from desktop-build.yml"; exit 1; }
+            windows_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+            grep -Fqx "build-tauri-windows"$'\t'"success" <<<"$windows_jobs" || { echo "::error::Replacement Windows run has no successful build-tauri-windows job"; exit 1; }
             windows_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             grep -q '^UGSci-Desktop-Tauri-Windows-' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows desktop artifact"; exit 1; }
             grep -qx 'tauri-updater-meta-windows' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows updater metadata"; exit 1; }
@@ -249,6 +260,9 @@ jobs:
             test "$(jq -r .status <<<"$plugins_run")" = completed
             test "$(jq -r .conclusion <<<"$plugins_run")" = success
             test "$(jq -r .head_sha <<<"$plugins_run")" = "$sha" || { echo "::error::Replacement plugin run was not built from release commit $sha"; exit 1; }
+            test "$(jq -r .path <<<"$plugins_run")" = '.github/workflows/plugins-build.yml' || { echo "::error::Replacement plugin run must come from plugins-build.yml"; exit 1; }
+            plugins_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+            grep -Fqx "build-plugins"$'\t'"success" <<<"$plugins_jobs" || { echo "::error::Replacement plugin run has no successful build-plugins job"; exit 1; }
             plugins_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             grep -q '^qwenpaw-plugins-dist$' <<<"$plugins_artifacts" || { echo "::error::Replacement run has no qwenpaw-plugins-dist artifact"; exit 1; }
           fi
@@ -259,10 +273,21 @@ jobs:
               test "$(jq -r .status <<<"$run_json")" = completed
               test "$(jq -r .conclusion <<<"$run_json")" = success
               test "$(jq -r .head_sha <<<"$run_json")" = "$sha" || { echo "::error::Replacement run $value was not built from release commit $sha"; exit 1; }
+              run_path="$(jq -r .path <<<"$run_json")"
               names="$(gh api --paginate "repos/$REPO/actions/runs/$value/artifacts?per_page=100" --jq '.artifacts[].name')"
               grep -q "^${prefix}" <<<"$names" || { echo "::error::Replacement run $value has no artifact prefix $prefix"; exit 1; }
               if [ "$run_id" = "MACOS_ARTIFACTS_RUN_ID" ]; then
+                test "$run_path" = '.github/workflows/desktop-build.yml' || { echo "::error::Replacement macOS run must come from desktop-build.yml"; exit 1; }
+                jobs="$(gh api --paginate "repos/$REPO/actions/runs/$value/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+                grep -Fqx "build-tauri-macos"$'\t'"success" <<<"$jobs" || { echo "::error::Replacement macOS run has no successful build-tauri-macos job"; exit 1; }
                 grep -qx 'tauri-updater-meta-macos' <<<"$names" || { echo "::error::Replacement macOS run has no updater metadata"; exit 1; }
+              else
+                test "$run_path" = '.github/workflows/component-release.yml' || { echo "::error::Replacement component run must come from component-release.yml"; exit 1; }
+                jobs="$(gh api --paginate "repos/$REPO/actions/runs/$value/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+                grep -Fqx "build-components (windows-x86_64)"$'\t'"success" <<<"$jobs" || { echo "::error::Replacement component run has no successful Windows component job"; exit 1; }
+                grep -Fqx "build-components (macos-aarch64)"$'\t'"success" <<<"$jobs" || { echo "::error::Replacement component run has no successful macOS component job"; exit 1; }
+                grep -Fqx 'component-release-windows-x86_64' <<<"$names" || { echo "::error::Replacement component run is missing Windows artifacts"; exit 1; }
+                grep -Fqx 'component-release-macos-aarch64' <<<"$names" || { echo "::error::Replacement component run is missing macOS artifacts"; exit 1; }
               fi
             fi
           done
@@ -457,6 +482,8 @@ jobs:
       history_count: 10
       delta_max_ratio: "0.8"
       include_desktop_components: true
+      windows_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
+      macos_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
     secrets: inherit
 
   # ── Gate: publish jobs below run only if every prepare job above is green ──
