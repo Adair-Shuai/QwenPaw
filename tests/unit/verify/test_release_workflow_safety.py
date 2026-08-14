@@ -50,9 +50,14 @@ def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
     assert '"$ARTIFACTS_RUN_ID"' in release
     assert "was_draft: ${{ steps.pick.outputs.was_draft }}" in release
     assert 'echo "was_draft=$isDraft"' in release
-    assert 'if [ "$WAS_DRAFT" = "true" ]' in release
+    assert 'release="$(gh release view "$TAG"' in release
+    assert 'case "$is_draft" in' in release
+    assert 'gh release edit "$TAG" --repo "$REPO" --draft=false' in release
+    assert '--draft=false --target' not in release
     assert "already published; verifying instead of mutating it" in release
     assert 'test "$target_sha" = "$SHA"' in release
+    assert 'test "$published_is_draft" = "false"' in release
+    assert 'test "$published_sha" = "$SHA"' in release
     assert "uses: ./.github/workflows/release-duty.yml" not in release
     assert "issues: write" not in release
 

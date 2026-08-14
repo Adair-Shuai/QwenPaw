@@ -875,20 +875,37 @@ jobs:
           REPO: ${{ github.repository }}
           TAG: ${{ needs.resolve.outputs.tag }}
           SHA: ${{ needs.resolve.outputs.sha }}
-          WAS_DRAFT: ${{ needs.resolve.outputs.was_draft }}
         run: |
           set -euo pipefail
-          if [ "$WAS_DRAFT" = "true" ]; then
-            echo "Flipping draft $TAG -> published, pinned to $SHA"
-            gh release edit "$TAG" --repo "$REPO" --draft=false --target "$SHA"
-          else
-            echo "Release $TAG is already published; verifying instead of mutating it"
-            is_draft="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq '.isDraft')"
-            target="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')"
-            target_sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
-            test "$is_draft" = "false" || { echo "::error::Release $TAG unexpectedly became a draft"; exit 1; }
-            test "$target_sha" = "$SHA" || { echo "::error::Published release $TAG targets $target_sha, expected $SHA"; exit 1; }
-          fi
+          release="$(gh release view "$TAG" --repo "$REPO" --json isDraft,targetCommitish)"
+          is_draft="$(jq -r '.isDraft' <<<"$release")"
+          target="$(jq -r '.targetCommitish' <<<"$release")"
+          target_sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
+          test "$target_sha" = "$SHA" || { echo "::error::Release $TAG targets $target_sha, expected $SHA"; exit 1; }
+
+          case "$is_draft" in
+            true)
+              echo "Publishing draft $TAG already pinned to $SHA"
+              # The resolve gate already verified the release target. Publishing
+              # must not also mutate target_commitish: GitHub can reject that
+              # combined PATCH for the Actions integration even with contents:write.
+              gh release edit "$TAG" --repo "$REPO" --draft=false
+              ;;
+            false)
+              echo "Release $TAG is already published; verifying instead of mutating it"
+              ;;
+            *)
+              echo "::error::Release $TAG returned invalid isDraft value: $is_draft"
+              exit 1
+              ;;
+          esac
+
+          published="$(gh release view "$TAG" --repo "$REPO" --json isDraft,targetCommitish)"
+          published_is_draft="$(jq -r '.isDraft' <<<"$published")"
+          published_target="$(jq -r '.targetCommitish' <<<"$published")"
+          published_sha="$(gh api "repos/$REPO/commits/$published_target" --jq '.sha')"
+          test "$published_is_draft" = "false" || { echo "::error::Release $TAG is still a draft after finalize"; exit 1; }
+          test "$published_sha" = "$SHA" || { echo "::error::Finalized release $TAG targets $published_sha, expected $SHA"; exit 1; }
 
   # Only expose OSS latest/updater pointers after the GitHub Release is public.
   # A failed promotion can then be retried without ever pointing clients at an
