@@ -34,8 +34,9 @@ on:
       target:
         description: Component target
         type: choice
-        options: [windows-x86_64, macos-aarch64]
+        options: [all, windows-x86_64, macos-aarch64]
         required: true
+        default: all
       core_min_version:
         description: Minimum compatible desktop core version
         required: true
@@ -71,7 +72,7 @@ jobs:
         # target for a manual/single-target invocation.  This is expressed in
         # the matrix itself because job-level `if` is evaluated before matrix
         # expansion and cannot safely reference `matrix.target`.
-        target: ${{ fromJSON(inputs.target == '' && '["windows-x86_64","macos-aarch64"]' || format('["{0}"]', inputs.target)) }}
+        target: ${{ fromJSON((inputs.target == '' || inputs.target == 'all') && '["windows-x86_64","macos-aarch64"]' || format('["{0}"]', inputs.target)) }}
     runs-on: ubuntu-latest
     env:
       COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
