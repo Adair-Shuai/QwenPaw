@@ -167,7 +167,10 @@ def validate_manifest(
                 raise ValueError(
                     f"invalid full artifact signature for {component_id}",
                 )
-        target_version = _version(component["version"], f"{component_id}.version")
+        target_version = _version(
+            component["version"],
+            f"{component_id}.version",
+        )
         deltas = component.get("deltas", [])
         if not isinstance(deltas, list):
             raise ValueError(f"invalid deltas for {component_id}")
@@ -178,13 +181,18 @@ def validate_manifest(
                 for key in ("from", "url", "sha256", "signature")
             ):
                 raise ValueError(f"invalid delta metadata for {component_id}")
-            from_version = _version(delta["from"], f"{component_id}.delta.from")
+            from_version = _version(
+                delta["from"],
+                f"{component_id}.delta.from",
+            )
             if from_version >= target_version:
                 raise ValueError(
                     f"delta from version is not older for {component_id}",
                 )
             if from_version in seen_delta_versions:
-                raise ValueError(f"duplicate delta from version for {component_id}")
+                raise ValueError(
+                    f"duplicate delta from version for {component_id}",
+                )
             seen_delta_versions.add(from_version)
             if (
                 type(delta.get("size")) is not int

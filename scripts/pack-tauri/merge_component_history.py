@@ -69,7 +69,8 @@ def _verify_history(
         raise ValueError("component history signature does not match pointer")
     history = json.loads(raw.decode("utf-8"))
     if not isinstance(history, dict) or not isinstance(
-        history.get("releases"), list,
+        history.get("releases"),
+        list,
     ):
         raise ValueError("component history document is invalid")
     return history

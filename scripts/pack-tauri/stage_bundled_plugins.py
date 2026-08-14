@@ -43,12 +43,16 @@ def discover_bundled_plugins(
     component_ids: dict[str, Path] = {}
     if plugin_roots is None:
         roots: tuple[str, ...] = tuple(
-            sorted(path.name for path in plugins_root.iterdir() if path.is_dir()),
+            sorted(
+                path.name for path in plugins_root.iterdir() if path.is_dir()
+            ),
         )
     else:
         roots = tuple(plugin_roots)
     for root_name in roots:
-        for manifest in sorted((plugins_root / root_name).glob("*/plugin.json")):
+        for manifest in sorted(
+            (plugins_root / root_name).glob("*/plugin.json"),
+        ):
             plugin_dir = manifest.parent
             identifier = plugin_id(plugin_dir)
             previous_id = component_ids.get(identifier)
@@ -69,7 +73,6 @@ def discover_bundled_plugins(
             destination_names[plugin_dir.name] = plugin_dir
             selected.append(plugin_dir)
     return selected
-
 
 
 def iter_runtime_files(plugin_dir: Path):
@@ -113,7 +116,10 @@ def main() -> int:
     repo = args.repo.resolve()
     plugin_roots = tuple(args.plugin_roots) if args.plugin_roots else None
     if args.list_sources:
-        for plugin_dir in discover_bundled_plugins(repo, plugin_roots=plugin_roots):
+        for plugin_dir in discover_bundled_plugins(
+            repo,
+            plugin_roots=plugin_roots,
+        ):
             print(plugin_dir)
         return 0
     if args.dest is None:

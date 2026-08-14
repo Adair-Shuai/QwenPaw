@@ -37,18 +37,26 @@ def verify(root: Path) -> None:
         plugin_root = manifest_path.parent
         real_plugin_root = str(plugin_root.resolve())
         if real_plugin_root in seen_dirs:
-            raise ValueError(f"duplicate plugin directory alias: {manifest_path}")
+            raise ValueError(
+                f"duplicate plugin directory alias: {manifest_path}",
+            )
         seen_dirs.add(real_plugin_root)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         plugin_id = str(manifest.get("id") or "").strip()
         if not plugin_id or plugin_id in seen:
-            raise ValueError(f"invalid or duplicate plugin id: {manifest_path}")
+            raise ValueError(
+                f"invalid or duplicate plugin id: {manifest_path}",
+            )
         seen.add(plugin_id)
         entry = manifest.get("entry")
         if not isinstance(entry, dict):
             raise ValueError(f"plugin {plugin_id} has no entry object")
         for kind in ("backend", "frontend"):
-            target = _safe_entry(plugin_root, entry.get(kind), f"{plugin_id}.{kind}")
+            target = _safe_entry(
+                plugin_root,
+                entry.get(kind),
+                f"{plugin_id}.{kind}",
+            )
             if target is not None and not target.is_file():
                 raise ValueError(
                     f"plugin {plugin_id} is missing {kind} entry: {target}",
@@ -56,7 +64,8 @@ def verify(root: Path) -> None:
     missing = CRITICAL_PLUGINS - seen
     if missing:
         raise ValueError(
-            "critical bundled plugins are missing: " + ", ".join(sorted(missing)),
+            "critical bundled plugins are missing: "
+            + ", ".join(sorted(missing)),
         )
     print("Verified bundled plugins: " + ", ".join(sorted(seen)))
 

@@ -219,7 +219,10 @@ def test_failed_new_component_rolls_back_and_removes_active(tmp_path):
     updater._atomic_activate(staged, destination, "demo", "1.1.0")
     assert updater.rollback_activation("demo", destination) is False
     assert not destination.exists()
-    assert not active.exists() or "demo" not in json.loads(active.read_text())["components"]
+    assert (
+        not active.exists()
+        or "demo" not in json.loads(active.read_text())["components"]
+    )
 
 
 def test_manifest_migration_metadata_is_validated(tmp_path):
@@ -238,8 +241,17 @@ def test_manifest_migration_metadata_is_validated(tmp_path):
             "components": {
                 "demo": {
                     "version": "1.1.0",
-                    "migration": {"hook": "migrate:upgrade", "from": "1.0.0", "to": "1.1.0"},
-                    "full": {"url": "https://example/full.zip", "sha256": "a" * 64, "size": 1, "signature": "sig"},
+                    "migration": {
+                        "hook": "migrate:upgrade",
+                        "from": "1.0.0",
+                        "to": "1.1.0",
+                    },
+                    "full": {
+                        "url": "https://example/full.zip",
+                        "sha256": "a" * 64,
+                        "size": 1,
+                        "signature": "sig",
+                    },
                 },
             },
         },
@@ -248,8 +260,16 @@ def test_manifest_migration_metadata_is_validated(tmp_path):
     manifest = tmp_path / "manifest.json"
     signature = tmp_path / "manifest.sig"
     manifest.write_bytes(raw)
-    signature.write_text(base64.b64encode(private.sign(raw)).decode(), encoding="utf-8")
-    updater = ComponentUpdater(public_key_b64=public, managed_components={"demo"}, target="windows-x86_64", core_version="1.0.0")
+    signature.write_text(
+        base64.b64encode(private.sign(raw)).decode(),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
     loaded = updater.load_manifest(manifest, signature)
     plan = updater.plan(loaded, "demo", tmp_path / "installed")
     assert plan is not None and plan.migration["hook"] == "migrate:upgrade"

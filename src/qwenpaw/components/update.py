@@ -392,13 +392,20 @@ class ComponentUpdater:
     def _activation_marker(self, destination: Path) -> Path:
         return destination.parent / f".{destination.name}.activation.json"
 
+    def activation_pending(self, destination: Path) -> bool:
+        """Return whether a component awaits its health check."""
+        return self._activation_marker(destination).is_file()
+
     def pending_activation_components(self, plugins_root: Path) -> set[str]:
         """Return managed component IDs with an uncommitted activation."""
         pending: set[str] = set()
         for component in self.managed_components:
             destination = plugins_root / component
             marker = self._activation_marker(destination)
-            if marker.is_file() or (destination.parent / f".{component}.previous").exists():
+            if (
+                marker.is_file()
+                or (destination.parent / f".{component}.previous").exists()
+            ):
                 pending.add(component)
         return pending
 
@@ -407,11 +414,21 @@ class ComponentUpdater:
             return
         try:
             payload = json.loads(self.active_path.read_text(encoding="utf-8"))
-            components = payload.get("components") if isinstance(payload, dict) else None
+            components = (
+                payload.get("components")
+                if isinstance(payload, dict)
+                else None
+            )
             if isinstance(components, dict):
                 components.pop(component, None)
-                temporary = self.active_path.with_name(f".{self.active_path.name}.{uuid.uuid4().hex}.staging")
-                temporary.write_text(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
+                temporary = self.active_path.with_name(
+                    f".{self.active_path.name}.{uuid.uuid4().hex}.staging",
+                )
+                temporary.write_text(
+                    json.dumps(payload, ensure_ascii=False, sort_keys=True)
+                    + "\n",
+                    encoding="utf-8",
+                )
                 os.replace(temporary, self.active_path)
         except (OSError, TypeError, ValueError, json.JSONDecodeError):
             return
@@ -435,10 +452,24 @@ class ComponentUpdater:
                 shutil.rmtree(destination, ignore_errors=True)
             previous.replace(destination)
             try:
-                plugin = json.loads((destination / "plugin.json").read_text(encoding="utf-8"))
-                self._commit_active(component, str(plugin.get("version", "")), destination)
-            except (OSError, UnicodeDecodeError, ValueError, TypeError, json.JSONDecodeError) as exc:
-                raise ComponentUpdateError("failed to restore previous component") from exc
+                plugin = json.loads(
+                    (destination / "plugin.json").read_text(encoding="utf-8"),
+                )
+                self._commit_active(
+                    component,
+                    str(plugin.get("version", "")),
+                    destination,
+                )
+            except (
+                OSError,
+                UnicodeDecodeError,
+                ValueError,
+                TypeError,
+                json.JSONDecodeError,
+            ) as exc:
+                raise ComponentUpdateError(
+                    "failed to restore previous component",
+                ) from exc
             marker.unlink(missing_ok=True)
             return True
         if destination.exists():
@@ -466,9 +497,13 @@ class ComponentUpdater:
             raise ComponentUpdateError("unsafe component migration hook")
         allowed_from = migration.get("from")
         if allowed_from not in (None, "*", plan.from_version):
-            raise ComponentUpdateError("component migration source version mismatch")
+            raise ComponentUpdateError(
+                "component migration source version mismatch",
+            )
         if migration.get("to") not in (None, plan.target_version):
-            raise ComponentUpdateError("component migration target version mismatch")
+            raise ComponentUpdateError(
+                "component migration target version mismatch",
+            )
         data_root = staged
         if not any((staged / root).exists() for root in plan.preserve_paths):
             return
@@ -486,12 +521,16 @@ class ComponentUpdater:
             spec.loader.exec_module(module)
             callback = getattr(module, function_name, None)
             if not callable(callback):
-                raise ComponentUpdateError("component migration hook is not callable")
+                raise ComponentUpdateError(
+                    "component migration hook is not callable",
+                )
             callback(data_root, plan.from_version, plan.target_version)
         except ComponentUpdateError:
             raise
         except Exception as exc:  # noqa: BLE001
-            raise ComponentUpdateError("component data migration failed") from exc
+            raise ComponentUpdateError(
+                "component data migration failed",
+            ) from exc
 
     def _backup_component_data(
         self,
@@ -636,7 +675,7 @@ class ComponentUpdater:
         staged: Path,
         plan: ComponentUpdatePlan,
     ) -> None:
-        # pylint: disable=too-many-branches
+        # pylint: disable=too-many-branches,too-many-statements
         if backup is None:
             return
         try:
@@ -857,9 +896,7 @@ class ComponentUpdater:
             json.JSONDecodeError,
         ):
             pass
-        if (
-            marker.exists()
-        ):
+        if marker.exists():
             # The candidate is intentionally kept for PluginLoader health
             # validation. Do not mistake a valid candidate for an interrupted
             # activation and delete its last-known-good rollback tree.
@@ -922,7 +959,15 @@ class ComponentUpdater:
             raise
         marker = self._activation_marker(destination)
         marker.write_text(
-            json.dumps({"schema_version": 1, "component": component, "version": version}, sort_keys=True) + "\n",
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "component": component,
+                    "version": version,
+                },
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
         try:
@@ -947,7 +992,7 @@ class ComponentUpdater:
         path: Path,
         signature_path: Path,
     ) -> dict[str, Any]:
-        # pylint: disable=too-many-branches
+        # pylint: disable=too-many-branches,too-many-statements
         raw = path.read_bytes()
         _verify_signature(
             raw,
@@ -1017,7 +1062,10 @@ class ComponentUpdater:
                         f"invalid migration hook for {component}",
                     )
                 module_name, function_name = hook.split(":", 1)
-                if not module_name.isidentifier() or not function_name.isidentifier():
+                if (
+                    not module_name.isidentifier()
+                    or not function_name.isidentifier()
+                ):
                     raise ComponentUpdateError(
                         f"unsafe migration hook for {component}",
                     )

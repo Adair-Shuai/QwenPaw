@@ -138,7 +138,12 @@ def _extract_tar_safely(tar: tarfile.TarFile, workdir: Path) -> None:
     members = tar.getmembers()
     for member in members:
         _validate_archive_member(member.name, root)
-        if not (member.isdir() or member.isfile() or member.issym() or member.islnk()):
+        if not (
+            member.isdir()
+            or member.isfile()
+            or member.issym()
+            or member.islnk()
+        ):
             raise SystemExit(f"unsafe tar member type: {member.name}")
     for member in members:
         target = (root / member.name).resolve()

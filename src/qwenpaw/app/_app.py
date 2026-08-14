@@ -129,7 +129,9 @@ async def _stop_browser_runtime(app: FastAPI) -> None:
 
 
 @asynccontextmanager
-async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
+async def lifespan(
+    # pylint: disable=too-many-statements
+    # pylint: disable=too-many-branches,too-many-nested-blocks
     app: FastAPI,
 ):
     startup_start_time = time.time()
@@ -613,14 +615,17 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                 )
                                 continue
                             logger.error(
-                                "Updated component %s failed plugin health check; rolling back",
+                                "Updated component %s failed plugin "
+                                "health check; "
+                                "rolling back",
                                 component_id,
                             )
                             # ``load_all_plugins`` records incompatible
                             # candidates as disabled. Remove that record so
                             # the restored last-known-good manifest can be
                             # loaded afresh below.
-                            plugin_loader._loaded_plugins.pop(  # pylint: disable=protected-access
+                            # pylint: disable=protected-access
+                            plugin_loader._loaded_plugins.pop(
                                 component_id,
                                 None,
                             )
@@ -633,14 +638,19 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                             # exists so the application remains functional.
                             restored = destination.is_dir()
                             if restored:
+                                discovered_plugins = (
+                                    plugin_loader.discover_plugins()
+                                )
                                 discovered = {
                                     manifest.id: (manifest, path)
-                                    for manifest, path in plugin_loader.discover_plugins()
+                                    for manifest, path in discovered_plugins
                                 }
                                 item = discovered.get(component_id)
                                 if item is not None:
                                     await plugin_loader.load_plugin(
-                                        item[0], item[1], plugin_configs.get(component_id),
+                                        item[0],
+                                        item[1],
+                                        plugin_configs.get(component_id),
                                     )
                         recovery_service.client.close()
                 except Exception:

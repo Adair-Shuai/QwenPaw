@@ -333,8 +333,7 @@ class ComponentUpdateService:
             }
         plan = self.updater.plan(manifest, component, installed)
         if plan is None:
-            marker = self.updater._activation_marker(destination)  # pylint: disable=protected-access
-            if marker.is_file():
+            if self.updater.activation_pending(destination):
                 return {
                     "component": component,
                     "updated": True,
