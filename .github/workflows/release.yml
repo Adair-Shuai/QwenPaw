@@ -69,10 +69,9 @@ permissions:
   contents: write
 
 concurrency:
-  # A wedged runner from an obsolete commit must not block a corrected release
-  # for hours.  Keep duplicate dispatches for the same tag+commit serialized,
-  # while allowing a hotfix commit to start immediately.
-  group: release-${{ inputs.tag || github.ref }}-${{ github.sha }}
+  # A release tag is a single production transaction. Never allow two commits
+  # for the same tag to race GitHub assets or mutable OSS pointers.
+  group: release-${{ inputs.tag || github.ref }}
   cancel-in-progress: false
 
 jobs:

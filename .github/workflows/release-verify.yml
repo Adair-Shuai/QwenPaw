@@ -161,12 +161,23 @@ jobs:
             Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
           }
           if ($env:RUNNER_OS -eq "Windows") {
+            $installRoot = [IO.Path]::GetFullPath((Join-Path $HOME ".qwenpaw"))
             Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty OwningProcess -Unique |
               Where-Object { $_ -gt 0 } |
-              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+              ForEach-Object {
+                $listener = Get-CimInstance Win32_Process -Filter "ProcessId = $_" -ErrorAction SilentlyContinue
+                $executable = [string]$listener.ExecutablePath
+                $commandLine = [string]$listener.CommandLine
+                if (
+                  $executable.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                  $commandLine.Contains($installRoot, [StringComparison]::OrdinalIgnoreCase)
+                ) {
+                  Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+                }
+              }
           } else {
-            & bash -c 'lsof -ti:8088 | xargs kill 2>/dev/null || true'
+            & bash -c 'for pid in $(lsof -ti:8088 2>/dev/null); do command=$(ps -o command= -p "$pid" 2>/dev/null || true); case "$command" in *"$HOME/.qwenpaw"*) kill "$pid" 2>/dev/null || true;; esac; done'
           }
           exit 0
 
@@ -393,11 +404,22 @@ jobs:
             Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
           }
           if ($env:RUNNER_OS -eq "Windows") {
+            $installRoot = [IO.Path]::GetFullPath((Join-Path $HOME ".qwenpaw"))
             Get-NetTCPConnection -LocalPort 8088 -State Listen -ErrorAction SilentlyContinue |
               Select-Object -ExpandProperty OwningProcess -Unique |
               Where-Object { $_ -gt 0 } |
-              ForEach-Object { Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }
+              ForEach-Object {
+                $listener = Get-CimInstance Win32_Process -Filter "ProcessId = $_" -ErrorAction SilentlyContinue
+                $executable = [string]$listener.ExecutablePath
+                $commandLine = [string]$listener.CommandLine
+                if (
+                  $executable.StartsWith($installRoot, [StringComparison]::OrdinalIgnoreCase) -or
+                  $commandLine.Contains($installRoot, [StringComparison]::OrdinalIgnoreCase)
+                ) {
+                  Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue
+                }
+              }
           } else {
-            & bash -c 'lsof -ti:8088 | xargs kill 2>/dev/null || true'
+            & bash -c 'for pid in $(lsof -ti:8088 2>/dev/null); do command=$(ps -o command= -p "$pid" 2>/dev/null || true); case "$command" in *"$HOME/.qwenpaw"*) kill "$pid" 2>/dev/null || true;; esac; done'
           }
           exit 0
