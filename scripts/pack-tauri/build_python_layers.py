@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import argparse
+from collections.abc import Iterator
+from contextlib import contextmanager
 import hashlib
 import json
 import os
@@ -14,7 +16,12 @@ import subprocess
 import tempfile
 
 
-def _run(command: list[str], *, cwd: Path, env: dict[str, str] | None = None) -> None:
+def _run(
+    command: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str] | None = None,
+) -> None:
     subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
@@ -28,8 +35,12 @@ def _sha256(path: Path) -> str:
 
 def _dependency_version(lock_hash: str) -> str:
     """Return a stable PEP 440 version for a dependency lock digest."""
-    if len(lock_hash) < 16 or any(char not in "0123456789abcdef" for char in lock_hash):
-        raise ValueError("desktop requirements digest must be lowercase SHA-256")
+    if len(lock_hash) < 16 or any(
+        char not in "0123456789abcdef" for char in lock_hash
+    ):
+        raise ValueError(
+            "desktop requirements digest must be lowercase SHA-256",
+        )
     return f"0+sha.{lock_hash[:16]}"
 
 
@@ -37,10 +48,49 @@ def _safe_empty(path: Path, parent: Path) -> None:
     resolved = path.resolve()
     root = parent.resolve()
     if resolved == root or root not in resolved.parents:
-        raise ValueError(f"refusing to replace layer outside {root}: {resolved}")
+        raise ValueError(
+            f"refusing to replace layer outside {root}: {resolved}",
+        )
     if resolved.exists():
         shutil.rmtree(resolved)
     resolved.mkdir(parents=True)
+
+
+@contextmanager
+def _staged_console(repo: Path) -> Iterator[None]:
+    """Temporarily expose the built console to setuptools without dirtying src."""
+    console_dist = repo / "console" / "dist"
+    if not (console_dist / "index.html").is_file():
+        raise FileNotFoundError(
+            f"built console is missing index.html: {console_dist / 'index.html'}",
+        )
+    console_dest = repo / "src" / "qwenpaw" / "console"
+    package_root = (repo / "src" / "qwenpaw").resolve()
+    resolved_destination = console_dest.resolve()
+    if (
+        resolved_destination == package_root
+        or package_root not in resolved_destination.parents
+    ):
+        raise ValueError(
+            f"invalid packaged console destination: {console_dest}",
+        )
+
+    with tempfile.TemporaryDirectory(
+        prefix=".ugsci-console-backup-",
+        dir=repo,
+    ) as temporary:
+        backup = Path(temporary) / "console"
+        had_existing = console_dest.exists()
+        if had_existing:
+            shutil.move(str(console_dest), str(backup))
+        try:
+            shutil.copytree(console_dist, console_dest)
+            yield
+        finally:
+            if console_dest.exists():
+                shutil.rmtree(console_dest)
+            if had_existing:
+                shutil.move(str(backup), str(console_dest))
 
 
 def build_layers(
@@ -56,7 +106,9 @@ def build_layers(
             "requirements-desktop.lock is required for a reproducible desktop layer",
         )
     if not runtime_python.is_file():
-        raise FileNotFoundError(f"standalone Python is missing: {runtime_python}")
+        raise FileNotFoundError(
+            f"standalone Python is missing: {runtime_python}",
+        )
 
     lock_hash = _sha256(lock)
     # Component versions are parsed with packaging.version.Version at runtime.
@@ -68,7 +120,9 @@ def build_layers(
     _safe_empty(dependencies, output)
     _safe_empty(backend, output)
 
-    with tempfile.TemporaryDirectory(prefix="ugsci-python-layers-") as temporary:
+    with tempfile.TemporaryDirectory(
+        prefix="ugsci-python-layers-",
+    ) as temporary:
         temporary_root = Path(temporary)
         wheels = temporary_root / "wheels"
         wheels.mkdir()
@@ -88,20 +142,23 @@ def build_layers(
             ],
             cwd=repo,
         )
-        _run(
-            [
-                str(host_python),
-                "-m",
-                "build",
-                "--wheel",
-                "--outdir",
-                str(wheels),
-            ],
-            cwd=repo,
-        )
+        with _staged_console(repo):
+            _run(
+                [
+                    str(host_python),
+                    "-m",
+                    "build",
+                    "--wheel",
+                    "--outdir",
+                    str(wheels),
+                ],
+                cwd=repo,
+            )
         wheel_candidates = sorted(wheels.glob("qwenpaw-*.whl"))
         if len(wheel_candidates) != 1:
-            raise RuntimeError(f"expected one QwenPaw wheel, found {wheel_candidates}")
+            raise RuntimeError(
+                f"expected one QwenPaw wheel, found {wheel_candidates}",
+            )
         wheel = wheel_candidates[0]
         _run(
             [
@@ -118,6 +175,11 @@ def build_layers(
             ],
             cwd=repo,
         )
+        packaged_console = backend / "qwenpaw" / "console" / "index.html"
+        if not packaged_console.is_file():
+            raise RuntimeError(
+                f"backend wheel does not contain the console: {packaged_console}",
+            )
 
         environment = dict(os.environ)
         environment["PYTHONNOUSERSITE"] = "1"

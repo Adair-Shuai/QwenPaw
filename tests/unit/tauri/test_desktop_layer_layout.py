@@ -38,6 +38,41 @@ def test_dependency_layer_digest_is_a_valid_component_version():
     assert str(Version(value)) == value
 
 
+def test_python_layer_console_staging_requires_built_console(tmp_path):
+    helper = _load_python_layers()
+    repo = tmp_path / "repo"
+    (repo / "src/qwenpaw").mkdir(parents=True)
+
+    try:
+        with helper._staged_console(repo):  # pylint: disable=protected-access
+            pass
+    except FileNotFoundError as error:
+        assert "built console is missing index.html" in str(error)
+    else:
+        raise AssertionError("missing console build was accepted")
+
+
+def test_python_layer_console_staging_restores_existing_files(tmp_path):
+    helper = _load_python_layers()
+    repo = tmp_path / "repo"
+    dist = repo / "console/dist"
+    destination = repo / "src/qwenpaw/console"
+    dist.mkdir(parents=True)
+    destination.mkdir(parents=True)
+    (dist / "index.html").write_text("new console", encoding="utf-8")
+    (dist / "assets.js").write_text("bundle", encoding="utf-8")
+    (destination / "old.txt").write_text("existing", encoding="utf-8")
+
+    with helper._staged_console(repo):  # pylint: disable=protected-access
+        staged_index = (destination / "index.html").read_text(encoding="utf-8")
+        assert staged_index == "new console"
+        assert not (destination / "old.txt").exists()
+
+    assert (destination / "old.txt").read_text(encoding="utf-8") == "existing"
+    assert not (destination / "index.html").exists()
+    assert not list(repo.glob(".ugsci-console-backup-*"))
+
+
 def test_python_layer_main_preserves_virtualenv_interpreter_symlink(
     monkeypatch,
     tmp_path,
