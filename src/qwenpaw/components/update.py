@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import base64
 import binascii
+import contextlib
+import errno
 import hashlib
 import json
 import mmap
@@ -18,6 +20,7 @@ import uuid
 import zipfile
 import stat
 import threading
+import time
 import importlib.util
 from datetime import datetime, timezone
 from dataclasses import dataclass
@@ -27,6 +30,7 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 from ..plugins.bundled import is_plugin_uninstalled
+from ..update_policy import ALLOWED_PRESERVE_PATHS, DEFAULT_PRESERVE_PATHS
 
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
@@ -40,16 +44,78 @@ class ComponentUpdateError(ValueError):
     """A component update failed validation or activation."""
 
 
-DEFAULT_PRESERVE_PATHS = ("engines", "data", "state", "user-data")
-ALLOWED_PRESERVE_PATHS = frozenset(
-    {"engines", "data", "state", "workspace", "models", "user-data"},
-)
 _INTERNAL_PRESERVED_NAMES = {
     ".uninstalled",
     ".bundle_hash",
     ".bundle_revision",
     ".bundle_complete",
 }
+
+_ACTIVE_LOCKS_GUARD = threading.Lock()
+_ACTIVE_LOCKS: dict[str, threading.RLock] = {}
+_ACTIVE_LOCK_STATE = threading.local()
+
+
+def _active_process_lock(path: Path) -> threading.RLock:
+    """Return the process-wide lock shared by every updater for *path*."""
+    key = os.path.normcase(str(path.absolute()))
+    with _ACTIVE_LOCKS_GUARD:
+        return _ACTIVE_LOCKS.setdefault(key, threading.RLock())
+
+
+@contextlib.contextmanager
+def _active_file_lock(active_path: Path):
+    """Serialize active.json RMW across threads and backend processes."""
+    key = os.path.normcase(os.path.abspath(active_path))
+    process_lock = _active_process_lock(active_path)
+    lock_path = active_path.with_name(f".{active_path.name}.lock")
+    with process_lock:
+        held = getattr(_ACTIVE_LOCK_STATE, "paths", set())
+        if key in held:
+            # The process lock is re-entrant. Do not attempt to lock the same
+            # byte through a second file descriptor, which can self-deadlock
+            # on some Windows/POSIX implementations.
+            yield
+            return
+        lock_path.parent.mkdir(parents=True, exist_ok=True)
+        fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o644)
+        acquired = False
+        try:
+            if os.name == "nt":
+                import msvcrt
+
+                while not acquired:
+                    try:
+                        os.lseek(fd, 0, os.SEEK_SET)
+                        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+                        acquired = True
+                    except OSError as exc:
+                        if exc.errno not in (errno.EACCES, errno.EDEADLOCK):
+                            raise
+                        time.sleep(0.05)
+            else:
+                import fcntl
+
+                fcntl.flock(fd, fcntl.LOCK_EX)
+                acquired = True
+            held.add(key)
+            _ACTIVE_LOCK_STATE.paths = held
+            yield
+        finally:
+            held.discard(key)
+            if acquired:
+                if os.name == "nt":
+                    import msvcrt
+
+                    os.lseek(fd, 0, os.SEEK_SET)
+                    msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(fd, fcntl.LOCK_UN)
+            os.close(fd)
+
+
 _FORBIDDEN_PRESERVE_PATHS = {"plugin.json", *_INTERNAL_PRESERVED_NAMES}
 _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
@@ -569,28 +635,42 @@ class ComponentUpdater:
         return pending
 
     def _remove_active(self, component: str) -> None:
-        if self.active_path is None or not self.active_path.is_file():
+        if self.active_path is None:
             return
+        with _active_file_lock(self.active_path):
+            # Re-read only after both locks are held. Another updater may have
+            # committed a sibling component while this caller was waiting.
+            if not self.active_path.is_file():
+                return
+            try:
+                payload = json.loads(
+                    self.active_path.read_text(encoding="utf-8"),
+                )
+                components = (
+                    payload.get("components")
+                    if isinstance(payload, dict)
+                    else None
+                )
+                if isinstance(components, dict):
+                    components.pop(component, None)
+                    self._write_active_payload(payload)
+            except (OSError, TypeError, ValueError, json.JSONDecodeError):
+                return
+
+    def _write_active_payload(self, payload: dict[str, Any]) -> None:
+        """Atomically replace active.json; caller must hold its file lock."""
+        assert self.active_path is not None
+        temporary = self.active_path.with_name(
+            f".{self.active_path.name}.{uuid.uuid4().hex}.staging",
+        )
         try:
-            payload = json.loads(self.active_path.read_text(encoding="utf-8"))
-            components = (
-                payload.get("components")
-                if isinstance(payload, dict)
-                else None
+            temporary.write_text(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
+                encoding="utf-8",
             )
-            if isinstance(components, dict):
-                components.pop(component, None)
-                temporary = self.active_path.with_name(
-                    f".{self.active_path.name}.{uuid.uuid4().hex}.staging",
-                )
-                temporary.write_text(
-                    json.dumps(payload, ensure_ascii=False, sort_keys=True)
-                    + "\n",
-                    encoding="utf-8",
-                )
-                os.replace(temporary, self.active_path)
-        except (OSError, TypeError, ValueError, json.JSONDecodeError):
-            return
+            os.replace(temporary, self.active_path)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     def finalize_activation(self, component: str, destination: Path) -> None:
         """Commit a candidate after PluginLoader health checks succeed."""
@@ -965,43 +1045,40 @@ class ComponentUpdater:
         if self.active_path is None:
             return
         self.active_path.parent.mkdir(parents=True, exist_ok=True)
-        payload: dict[str, Any] = {
-            "schema_version": 1,
-            "target": self.target,
-            "components": {},
-        }
-        if self.active_path.is_file():
-            try:
-                existing = json.loads(
-                    self.active_path.read_text(encoding="utf-8"),
-                )
-                if (
-                    isinstance(existing, dict)
-                    and existing.get("target") == self.target
-                    and isinstance(existing.get("components"), dict)
-                ):
-                    payload["components"].update(existing["components"])
-            except (OSError, json.JSONDecodeError, TypeError):
-                pass
-        record = {
-            "version": version,
-            "path": str(destination),
-        }
-        # Runtime execution type is derived from the fixed client allowlist,
-        # never from remote Manifest input. The Rust launcher needs this to
-        # start a layered backend with Python instead of looking for a frozen
-        # qwenpaw-backend executable.
-        if component == "backend" and component in self.directory_components:
-            record["kind"] = "python"
-        payload["components"][component] = record
-        temporary = self.active_path.with_name(
-            f".{self.active_path.name}.{uuid.uuid4().hex}.staging",
-        )
-        temporary.write_text(
-            json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n",
-            encoding="utf-8",
-        )
-        os.replace(temporary, self.active_path)
+        with _active_file_lock(self.active_path):
+            payload: dict[str, Any] = {
+                "schema_version": 1,
+                "target": self.target,
+                "components": {},
+            }
+            # Re-read inside the cross-process critical section so concurrent
+            # commits merge rather than replacing one another.
+            if self.active_path.is_file():
+                try:
+                    existing = json.loads(
+                        self.active_path.read_text(encoding="utf-8"),
+                    )
+                    if (
+                        isinstance(existing, dict)
+                        and existing.get("target") == self.target
+                        and isinstance(existing.get("components"), dict)
+                    ):
+                        payload["components"].update(existing["components"])
+                except (OSError, json.JSONDecodeError, TypeError):
+                    pass
+            record = {
+                "version": version,
+                "path": str(destination),
+            }
+            # Runtime execution type is derived from the fixed client
+            # allowlist, never from remote Manifest input.
+            if (
+                component == "backend"
+                and component in self.directory_components
+            ):
+                record["kind"] = "python"
+            payload["components"][component] = record
+            self._write_active_payload(payload)
 
     def recover_interrupted_activation(
         self,

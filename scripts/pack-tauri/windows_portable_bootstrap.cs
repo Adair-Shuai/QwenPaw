@@ -575,17 +575,64 @@ internal static class PortableSetup
 
         private string FindInstallLocation()
         {
-            const string uninstallKey = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop";
+            string uninstallRoot = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+            string[] preferredKeys = { "UGSci Desktop", "QwenPaw Desktop", "QwenPaw" };
+            foreach (string keyName in preferredKeys)
+            {
+                string installed = ReadTrustedInstallLocation(uninstallRoot + "\\" + keyName);
+                if (!string.IsNullOrWhiteSpace(installed)) return installed;
+            }
             try
             {
-                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(uninstallKey))
+                using (var root = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(uninstallRoot))
                 {
-                    string installed = key == null ? null : key.GetValue("InstallLocation") as string;
-                    if (!string.IsNullOrWhiteSpace(installed)) return installed;
+                    if (root != null)
+                    {
+                        foreach (string keyName in root.GetSubKeyNames())
+                        {
+                            using (var key = root.OpenSubKey(keyName))
+                            {
+                                string displayName = key == null ? null : key.GetValue("DisplayName") as string;
+                                if (string.IsNullOrWhiteSpace(displayName) ||
+                                    (displayName.IndexOf("UGSci Desktop", StringComparison.OrdinalIgnoreCase) < 0 &&
+                                     displayName.IndexOf("QwenPaw", StringComparison.OrdinalIgnoreCase) < 0)) continue;
+                            }
+                            string installed = ReadTrustedInstallLocation(uninstallRoot + "\\" + keyName);
+                            if (!string.IsNullOrWhiteSpace(installed)) return installed;
+                        }
+                    }
                 }
             }
             catch { }
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UGSci Desktop");
+        }
+
+        private static string ReadTrustedInstallLocation(string keyPath)
+        {
+            try
+            {
+                using (var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(keyPath))
+                {
+                    string value = key == null ? null : key.GetValue("InstallLocation") as string;
+                    if (string.IsNullOrWhiteSpace(value) || !Path.IsPathRooted(value.Trim())) return null;
+                    string location = Path.GetFullPath(value.Trim()).TrimEnd(
+                        Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    if (!Directory.Exists(location)) return null;
+                    bool desktop = File.Exists(Path.Combine(location, "UGSci.exe")) ||
+                        File.Exists(Path.Combine(location, "qwenpaw-desktop.exe"));
+                    bool runtime = File.Exists(Path.Combine(location, "binaries", "state", "active.json")) ||
+                        File.Exists(Path.Combine(location, "binaries", "qwenpaw-backend", "qwenpaw-backend.exe"));
+                    bool productMarker = false;
+                    string versionPath = Path.Combine(location, "version.json");
+                    if (File.Exists(versionPath))
+                    {
+                        string version = File.ReadAllText(versionPath);
+                        productMarker = version.IndexOf("UGSci Desktop", StringComparison.OrdinalIgnoreCase) >= 0;
+                    }
+                    return desktop && (runtime || productMarker) ? location : null;
+                }
+            }
+            catch { return null; }
         }
 
         private bool TryNormalizeInstallLocation(string value, out string normalized, out string error)

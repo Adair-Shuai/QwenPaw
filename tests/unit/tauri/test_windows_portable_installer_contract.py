@@ -93,6 +93,23 @@ def test_bootstrap_checksum_contract_matches_layered_payload() -> None:
     )
 
 
+def test_bootstrap_prefills_only_trusted_canonical_or_legacy_install() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert '"UGSci Desktop", "QwenPaw Desktop", "QwenPaw"' in source
+    assert 'key.GetValue("DisplayName") as string' in source
+    assert 'key.GetValue("InstallLocation") as string' in source
+    assert 'File.Exists(Path.Combine(location, "UGSci.exe"))' in source
+    assert (
+        'File.Exists(Path.Combine(location, "qwenpaw-desktop.exe"))' in source
+    )
+    assert (
+        'Path.Combine(location, "binaries", "state", "active.json")'
+        in source
+    )
+    assert 'Path.Combine(location, "version.json")' in source
+
+
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:
     """A locked b5/b6 executable must leave the old tree untouched."""
     script = _script()

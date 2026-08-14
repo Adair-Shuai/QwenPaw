@@ -29,7 +29,6 @@ from plugins.bundle.ugsci.engine.manager import (
     init_default_engines,
 )
 
-
 # ──────────────────────────────────────────────────────────────────────────
 # _migrate_legacy_engines
 # ──────────────────────────────────────────────────────────────────────────
@@ -325,6 +324,47 @@ def test_bundled_preserves_engines_dir_on_update(
 
     # The plugin code should be updated
     assert (target_dir / "main.py").read_text(encoding="utf-8") == "# v1.0.0\n"
+
+
+@pytest.mark.parametrize(
+    "dirname",
+    ["engines", "data", "state", "workspace", "models", "user-data"],
+)
+def test_bundled_full_update_preserves_all_user_data_roots(
+    tmp_path: Path,
+    dirname: str,
+) -> None:
+    """Full bundled sync overlays user data into the staged replacement."""
+    from qwenpaw.plugins.bundled import _install_or_update_plugin
+    from qwenpaw.plugins.bundled import _read_manifest
+
+    source = tmp_path / "source"
+    target = tmp_path / "installed"
+    source.mkdir()
+    target.mkdir()
+    (source / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "2.0.0"}),
+        encoding="utf-8",
+    )
+    (target / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    (source / dirname).mkdir()
+    (target / dirname).mkdir()
+    (source / dirname / "shipped.json").write_text("new", encoding="utf-8")
+    (target / dirname / "shipped.json").write_text("old", encoding="utf-8")
+    (target / dirname / "user.json").write_text("keep", encoding="utf-8")
+
+    manifest = _read_manifest(source)
+    assert manifest is not None
+    assert _install_or_update_plugin(source, target, "demo", manifest)
+    user_value = (target / dirname / "user.json").read_text(encoding="utf-8")
+    shipped_value = (target / dirname / "shipped.json").read_text(
+        encoding="utf-8",
+    )
+    assert user_value == "keep"
+    assert shipped_value == "new"
 
 
 def test_bundled_hash_excludes_engines_dir(

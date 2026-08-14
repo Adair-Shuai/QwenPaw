@@ -1207,6 +1207,70 @@ def test_interrupted_activation_commits_valid_new_destination(tmp_path):
     )
 
 
+def test_concurrent_active_commits_merge_sibling_components(
+    tmp_path,
+    monkeypatch,
+):
+    """Different updater instances cannot lose an active.json RMW update."""
+    import threading
+    import time
+
+    active = tmp_path / "components" / "active.json"
+    updaters = [
+        ComponentUpdater(
+            public_key_b64="",
+            managed_components={"alpha", "beta"},
+            target="windows-x86_64",
+            core_version="1.0.0",
+            active_path=active,
+        )
+        for _ in range(2)
+    ]
+    original = ComponentUpdater._write_active_payload
+    writers = 0
+    max_writers = 0
+    writers_guard = threading.Lock()
+
+    def slow_write(self, payload):
+        nonlocal writers, max_writers
+        with writers_guard:
+            writers += 1
+            max_writers = max(max_writers, writers)
+        try:
+            time.sleep(0.05)
+            original(self, payload)
+        finally:
+            with writers_guard:
+                writers -= 1
+
+    monkeypatch.setattr(ComponentUpdater, "_write_active_payload", slow_write)
+    threads = [
+        threading.Thread(
+            target=updater._commit_active,
+            args=(component, "1.0.0", tmp_path / component),
+        )
+        for updater, component in zip(updaters, ("alpha", "beta"), strict=True)
+    ]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+    payload = json.loads(active.read_text(encoding="utf-8"))
+    assert set(payload["components"]) == {"alpha", "beta"}
+    assert max_writers == 1
+
+
+def test_active_file_lock_is_reentrant_without_relocking_os_file(tmp_path):
+    """Nested helpers in one thread must not self-deadlock on Windows."""
+    active = tmp_path / "components" / "active.json"
+    with component_update._active_file_lock(active):
+        with component_update._active_file_lock(active):
+            active.write_text("{}", encoding="utf-8")
+    assert active.read_text(encoding="utf-8") == "{}"
+
+
 def test_stale_previous_is_cleaned_when_active_matches_installed(tmp_path):
     destination = tmp_path / "plugins" / "demo"
     previous = destination.parent / ".demo.previous"

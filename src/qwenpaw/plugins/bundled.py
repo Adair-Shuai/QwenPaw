@@ -40,6 +40,8 @@ import tempfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
+from ..update_policy import DEFAULT_PRESERVE_PATHS
+
 logger = logging.getLogger(__name__)
 
 _BUNDLE_HASH_FILE = ".bundle_hash"  # development content hash (legacy API)
@@ -386,7 +388,7 @@ _HASH_EXCLUDED_NAMES = frozenset(
         # User-generated engine configs may exist in the plugin dir
         # on older installations.  Exclude from hash so they don't
         # trigger spurious updates (cf. BUG-009).
-        "engines",
+        *DEFAULT_PRESERVE_PATHS,
     },
 )
 _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
@@ -528,7 +530,7 @@ def _stage_and_replace_bundle(
 # already present in the new bundle are kept; only **missing** files are
 # restored from the backup so bundle updates take precedence for code.
 # See BUG-009: engine configs were lost on plugin upgrade.
-_PRESERVE_ON_UPDATE_DIRS = frozenset({"engines"})
+_PRESERVE_ON_UPDATE_DIRS = frozenset(DEFAULT_PRESERVE_PATHS)
 
 
 def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:

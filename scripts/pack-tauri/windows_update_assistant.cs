@@ -222,7 +222,7 @@ internal static class UGSciUpdateAssistant
                 WriteJournal("parent-exited", null);
 
                 SetStage("Recovering previous update", "Checking for an interrupted installation transaction...", 74);
-                RecoverInterruptedTransactions(stateRoot);
+                RecoverInterruptedTransactions(stateRoot, options);
 
                 SetStage("Installing update", "Backing up data and replacing application components...", 76);
                 string transactionFile = Path.Combine(stateRoot, "install-transaction-" +
@@ -439,9 +439,79 @@ internal static class UGSciUpdateAssistant
             if (string.IsNullOrWhiteSpace(parent) ||
                 !string.Equals(Path.GetDirectoryName(value.backup_dir), parent, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The deferred update backup is outside the installation parent.");
+            string trustedInstall = FindTrustedRegisteredInstallLocation();
+            if (string.IsNullOrWhiteSpace(trustedInstall) ||
+                !string.Equals(value.install_dir, trustedInstall, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The deferred update target does not match the registered installation.");
+            string backupName = Path.GetFileName(value.backup_dir);
+            const string backupPrefix = ".UGSci Desktop.backup-";
+            string backupId = backupName != null && backupName.StartsWith(backupPrefix, StringComparison.Ordinal)
+                ? backupName.Substring(backupPrefix.Length) : "";
+            Guid parsedBackupId;
+            if (backupId.Length != 32 || !Guid.TryParseExact(backupId, "N", out parsedBackupId))
+                throw new InvalidDataException("The deferred update backup name is invalid.");
+            ValidateShortcutPath(value.start_menu_shortcut_path, true);
+            ValidateShortcutPath(value.desktop_shortcut_path, false);
             if (!Directory.Exists(value.backup_dir))
                 throw new InvalidDataException("The deferred update backup directory is missing.");
             return value;
+        }
+
+        private static string FindTrustedRegisteredInstallLocation()
+        {
+            string rootPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall";
+            string[] keys = { "UGSci Desktop", "QwenPaw Desktop", "QwenPaw" };
+            foreach (string keyName in keys)
+            {
+                using (RegistryKey key = Registry.CurrentUser.OpenSubKey(rootPath + "\\" + keyName))
+                {
+                    string location = key == null ? null : key.GetValue("InstallLocation") as string;
+                    if (IsTrustedInstallLocation(location))
+                        return Path.GetFullPath(location).TrimEnd(Path.DirectorySeparatorChar);
+                }
+            }
+            using (RegistryKey root = Registry.CurrentUser.OpenSubKey(rootPath))
+            {
+                if (root == null) return null;
+                foreach (string keyName in root.GetSubKeyNames())
+                using (RegistryKey key = root.OpenSubKey(keyName))
+                {
+                    string display = key == null ? null : key.GetValue("DisplayName") as string;
+                    string location = key == null ? null : key.GetValue("InstallLocation") as string;
+                    if (!string.IsNullOrWhiteSpace(display) &&
+                        (display.IndexOf("UGSci Desktop", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         display.IndexOf("QwenPaw", StringComparison.OrdinalIgnoreCase) >= 0) &&
+                        IsTrustedInstallLocation(location))
+                        return Path.GetFullPath(location).TrimEnd(Path.DirectorySeparatorChar);
+                }
+            }
+            return null;
+        }
+
+        private static bool IsTrustedInstallLocation(string location)
+        {
+            if (string.IsNullOrWhiteSpace(location) || !Path.IsPathRooted(location)) return false;
+            try
+            {
+                string root = Path.GetFullPath(location);
+                return Directory.Exists(root) &&
+                    (File.Exists(Path.Combine(root, "UGSci.exe")) ||
+                     File.Exists(Path.Combine(root, "qwenpaw-desktop.exe")));
+            }
+            catch { return false; }
+        }
+
+        private static void ValidateShortcutPath(string path, bool startMenu)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            string expectedRoot = startMenu
+                ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                    "Microsoft", "Windows", "Start Menu", "Programs")
+                : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
+            string full = Path.GetFullPath(path);
+            string expected = Path.Combine(Path.GetFullPath(expectedRoot), "UGSci Desktop.lnk");
+            if (!string.Equals(full, expected, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("The deferred update shortcut path is outside the expected Windows folder.");
         }
 
         private static void CommitTransaction(InstallTransaction value)
@@ -462,13 +532,23 @@ internal static class UGSciUpdateAssistant
             }
         }
 
-        private static void RecoverInterruptedTransactions(string stateDirectory)
+        private static void RecoverInterruptedTransactions(string stateDirectory, Options options)
         {
             if (!Directory.Exists(stateDirectory)) return;
             foreach (string path in Directory.GetFiles(stateDirectory, "install-transaction-*.json"))
             {
-                InstallTransaction interrupted = ReadTransaction(path);
-                RollbackTransaction(interrupted, null, false);
+                try
+                {
+                    InstallTransaction interrupted = ReadTransaction(path);
+                    RollbackTransaction(interrupted, null, false);
+                }
+                catch (Exception error)
+                {
+                    string isolated = path + ".invalid-" + Guid.NewGuid().ToString("N");
+                    try { File.Move(path, isolated); } catch { }
+                    WriteFailure(options, new InvalidDataException(
+                        "An unsafe or corrupt interrupted update transaction was isolated: " + path, error));
+                }
             }
         }
 
@@ -569,10 +649,35 @@ internal static class UGSciUpdateAssistant
         private static string[] StartupMarkers()
         {
             string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            return new[] {
-                Path.Combine(profile, ".qwenpaw", "cache", "startup-complete.json"),
-                Path.Combine(profile, ".copaw", "cache", "startup-complete.json")
-            };
+            var markers = new System.Collections.Generic.List<string>();
+            AddWorkingDirectoryMarker(markers, Environment.GetEnvironmentVariable("QWENPAW_WORKING_DIR"));
+            AddWorkingDirectoryMarker(markers, Environment.GetEnvironmentVariable("COPAW_WORKING_DIR"));
+            markers.Add(Path.Combine(profile, ".qwenpaw", "cache", "startup-complete.json"));
+            markers.Add(Path.Combine(profile, ".copaw", "cache", "startup-complete.json"));
+            return markers.ToArray();
+        }
+
+        private static void AddWorkingDirectoryMarker(System.Collections.Generic.List<string> markers, string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return;
+            try
+            {
+                string candidate = value.Trim();
+                if (candidate == "~" || candidate.StartsWith("~\\", StringComparison.Ordinal) ||
+                    candidate.StartsWith("~/", StringComparison.Ordinal))
+                {
+                    string profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                    candidate = candidate.Length == 1 ? profile :
+                        Path.Combine(profile, candidate.Substring(2));
+                }
+                // Match Python's Path(...).expanduser().resolve(): relative
+                // values are resolved against the inherited process cwd.
+                string root = Path.GetFullPath(candidate);
+                string marker = Path.Combine(root, "cache", "startup-complete.json");
+                if (!markers.Exists(item => string.Equals(
+                    item, marker, StringComparison.OrdinalIgnoreCase))) markers.Add(marker);
+            }
+            catch { }
         }
 
         private static void WaitForStartupHealth(DateTime previousMarker, string targetVersion,

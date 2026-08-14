@@ -69,7 +69,7 @@ def test_assistant_covers_visible_handoff_and_safe_install_stages() -> None:
         in source
     )
     assert "ReadTransaction(transactionFile)" in source
-    assert "RecoverInterruptedTransactions(stateRoot)" in source
+    assert "RecoverInterruptedTransactions(stateRoot, options)" in source
     assert (
         'Directory.GetFiles(stateDirectory, "install-transaction-*.json")'
         in source
@@ -93,6 +93,29 @@ def test_assistant_covers_visible_handoff_and_safe_install_stages() -> None:
     assert 'WriteJournal("health-checked"' in source
     assert 'WriteJournal("restarted"' in source
     assert "Process.Start(new ProcessStartInfo" in source
+
+
+def test_assistant_trusts_working_dir_markers_and_hardens_recovery() -> None:
+    source = SOURCE.read_text(encoding="utf-8")
+
+    assert (
+        'Environment.GetEnvironmentVariable("QWENPAW_WORKING_DIR")' in source
+    )
+    assert (
+        'Environment.GetEnvironmentVariable("COPAW_WORKING_DIR")' in source
+    )
+    assert 'candidate.StartsWith("~\\\\"' in source
+    assert "Path.GetFullPath(candidate)" in source
+    assert 'Path.Combine(root, "cache", "startup-complete.json")' in source
+    assert "FindTrustedRegisteredInstallLocation()" in source
+    assert '"UGSci Desktop", "QwenPaw Desktop", "QwenPaw"' in source
+    assert 'const string backupPrefix = ".UGSci Desktop.backup-"' in source
+    assert 'Guid.TryParseExact(backupId, "N"' in source
+    assert (
+        'Path.Combine(Path.GetFullPath(expectedRoot), "UGSci Desktop.lnk")'
+        in source
+    )
+    assert 'path + ".invalid-" + Guid.NewGuid().ToString("N")' in source
 
 
 def test_tauri_waits_for_the_visible_ready_signal_before_exit() -> None:
