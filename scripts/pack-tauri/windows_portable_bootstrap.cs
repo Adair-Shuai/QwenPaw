@@ -587,6 +587,11 @@ internal static class PortableSetup
     {
         string logPath = NewLogPath(operation);
         try { File.WriteAllText(logPath, error.ToString()); } catch { }
+        if (string.Equals(operation, "setup", StringComparison.OrdinalIgnoreCase))
+        {
+            try { File.Copy(logPath, Path.Combine(Path.GetTempPath(), "ugsci-desktop-setup.log"), true); }
+            catch { }
+        }
         return logPath;
     }
 }

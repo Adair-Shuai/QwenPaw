@@ -716,6 +716,10 @@ try {
 
 Write-Host "UGSci Desktop $version installed to $installDir"
 if (-not $Silent) { Write-Host "You can launch it from the Start menu or desktop shortcut." }
+# Native tools such as robocopy use successful non-zero status codes.  Do not
+# let PowerShell propagate the last native status and make Setup.exe report a
+# false installation failure after the transaction committed successfully.
+exit 0
 '@ | Set-Content -LiteralPath $installPs1 -Encoding UTF8
 
 @'

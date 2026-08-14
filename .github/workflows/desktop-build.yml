@@ -235,12 +235,19 @@ jobs:
           $files = @(
             (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stdout.log'),
             (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stderr.log'),
-            (Join-Path $env:RUNNER_TEMP 'qwenpaw-native-ui-report.json')
+            (Join-Path $env:RUNNER_TEMP 'qwenpaw-native-ui-report.json'),
+            (Join-Path $env:TEMP 'ugsci-desktop-setup.log')
           )
           foreach ($file in $files) {
             if (Test-Path -LiteralPath $file -PathType Leaf) {
               Copy-Item -LiteralPath $file -Destination $verifyLogRoot -Force -ErrorAction SilentlyContinue
             }
+          }
+
+          Get-ChildItem -LiteralPath $env:TEMP -Filter 'ugsci-desktop-setup-*.log' `
+              -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -LiteralPath $_.FullName -Destination $verifyLogRoot `
+              -Force -ErrorAction SilentlyContinue
           }
 
           $logDirs = @(

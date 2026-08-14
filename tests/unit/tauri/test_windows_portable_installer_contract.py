@@ -30,6 +30,16 @@ def test_packager_resolves_layered_backend_before_plugin_validation() -> None:
     )
 
 
+def test_successful_install_resets_native_tool_exit_code() -> None:
+    script = _script()
+    success_tail = script.split(
+        'Write-Host "UGSci Desktop $version installed to $installDir"',
+        1,
+    )[1].split("'@ | Set-Content", 1)[0]
+
+    assert "exit 0" in success_tail
+
+
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:
     """A locked b5/b6 executable must leave the old tree untouched."""
     script = _script()
