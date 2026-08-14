@@ -460,9 +460,9 @@ b7 后应让 runtime、backend、frontend、plugin 成为独立 build job；未�
 推荐在仓库根目录执行：
 
 ```powershell
-uv pip compile requirements-desktop.in --generate-hashes --python-version 3.11 --no-emit-package qwenpaw --output-file requirements-desktop.lock
+uv pip compile requirements-desktop.in --generate-hashes --python-version 3.11 --universal --no-emit-package qwenpaw --output-file requirements-desktop.lock
 ```
 
-必须保留 `--no-emit-package qwenpaw`。QwenPaw backend 会单独构建成 wheel；如果锁文件包含本地项目条目 `.`，`pip --require-hashes` 会因为本地目录没有制品哈希而拒绝生产构建。
+必须保留 `--universal` 和 `--no-emit-package qwenpaw`。前者保留 Windows/macOS 平台依赖标记，避免 macOS 尝试安装 `pywin32`；后者用于排除会单独构建 wheel 的 QwenPaw backend。如果锁文件包含本地项目条目 `.`，`pip --require-hashes` 会因为本地目录没有制品哈希而拒绝生产构建。
 
 非分层模式仍保留旧 PyInstaller 路径，仅用于手动兼容验证，不属于 b7 生产发行链路。Chrome Native Messaging Host 在分层模式下通过 `PYTHONPATH` 使用 `python-packages` 组件，不能把其依赖重新写入 CPython 组件。

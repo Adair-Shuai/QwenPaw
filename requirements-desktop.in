@@ -1,4 +1,4 @@
-.[local,codex,qoder]
+.[local,qoder]
 
 # Offline desktop document/data/petroleum toolchain. These packages live in
 # the independently versioned python-packages component, never in CPython.
