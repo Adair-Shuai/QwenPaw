@@ -362,6 +362,10 @@ b5 用户不需要卸载或重新安装。迁移顺序：
 
 重试时必须校验来源 workflow、commit SHA、完成状态和 artifact attestation。不得拿其他 commit 的成功产物拼接发布。
 
+统一发布的并发组使用 `tag + commit SHA`。同一个 tag、同一个提交的重复触发会串行执行；修复提交使用不同 SHA，可以绕过旧提交上卡死的 runner。不要只按 tag 加锁，否则 checkout 后置清理、操作系统进程或 GitHub runner 卡死时，会让已修复的生产发布继续排队数小时。废弃运行应先普通取消，未释放时再使用 GitHub Actions force-cancel；新运行必须重新解析 Draft Release，并确认其 SHA 是最新 `release` 提交。
+
+验证 job 的清理步骤必须幂等并显式 `exit 0`。停止已经退出的测试服务、清理不存在的 PID 或端口监听，不得把已经通过的安装和健康检查改判为失败。Windows 使用 PowerShell 的 `Stop-Process`/`Get-NetTCPConnection`，避免 Git Bash 对 `taskkill /PID` 参数的路径转换和返回码差异。
+
 b7 后应让 runtime、backend、frontend、plugin 成为独立 build job；未变化层从可信缓存或既有 immutable artifact 复用，避免每次完整重建。
 
 ## 13. 发布操作清单
