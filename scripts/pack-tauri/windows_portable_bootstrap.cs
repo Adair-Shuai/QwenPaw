@@ -265,7 +265,12 @@ internal static class PortableSetup
         string prefix = ioRoot.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
             ioRoot.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)
                 ? ioRoot : ioRoot + Path.DirectorySeparatorChar;
-        string manifest = Path.Combine(ioRoot, "checksums.sha256");
+        // .NET Framework's File.Exists/File.ReadAllLines can return false for
+        // an extended-length path even when the short manifest path exists.
+        // The manifest is always at the package root, so read it through the
+        // canonical normal path and reserve the extended prefix for payload
+        // traversal and hashing where paths can actually exceed MAX_PATH.
+        string manifest = Path.Combine(root, "checksums.sha256");
         if (!File.Exists(manifest)) throw new InvalidDataException("checksums.sha256 is missing.");
         var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var pattern = new Regex("^([0-9a-fA-F]{64})  (.+)$", RegexOptions.CultureInvariant);
@@ -284,7 +289,7 @@ internal static class PortableSetup
         }
         foreach (string file in Directory.GetFiles(ioRoot, "*", SearchOption.AllDirectories))
         {
-            if (string.Equals(file, manifest, StringComparison.OrdinalIgnoreCase)) continue;
+            if (string.Equals(file, ToExtendedPath(manifest), StringComparison.OrdinalIgnoreCase)) continue;
             string relative = file.Substring(prefix.Length);
             if (!expected.Contains(relative)) throw new InvalidDataException("Unchecked package file: " + relative);
         }
@@ -292,11 +297,9 @@ internal static class PortableSetup
                      Path.Combine("payload", "Setup.exe"),
                      Path.Combine("payload", "Uninstall.exe"),
                      Path.Combine("payload", "UGSci.exe"),
-                     Path.Combine("payload", "binaries", "qwenpaw-backend", "qwenpaw-backend.exe"),
-                     Path.Combine("payload", "binaries", "qwenpaw-backend", "qwenpaw.exe"),
-                     Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "flowforge", "plugin.json"),
-                     Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "ugsci", "plugin.json"),
-                     Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "ugsci_research", "plugin.json") })
+                     Path.Combine("payload", "binaries", "state", "active.json"),
+                     Path.Combine("payload", "binaries", "cli", "qwenpaw.exe"),
+                     Path.Combine("payload", "binaries", "update-assistant", "UGSciUpdateAssistant.exe") })
             if (!expected.Contains(required)) throw new InvalidDataException("Required checksum entry is missing: " + required);
     }
 

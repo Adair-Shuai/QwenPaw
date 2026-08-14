@@ -48,6 +48,11 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
 
     assert "string ioRoot = ToExtendedPath(root);" in source
     assert (
+        'string manifest = Path.Combine(root, "checksums.sha256");'
+        in source
+    )
+    assert 'Path.Combine(ioRoot, "checksums.sha256")' not in source
+    assert (
         'Directory.GetFiles(ioRoot, "*", SearchOption.AllDirectories)'
         in source
     )
@@ -55,6 +60,27 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     assert 'segment == "." || segment == ".."' in source
     assert "segment.IndexOf(':') >= 0" in source
     assert 'return @"\\\\?\\" + path;' in source
+
+
+def test_bootstrap_checksum_contract_matches_layered_payload() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert (
+        'Path.Combine("payload", "binaries", "state", "active.json")'
+        in source
+    )
+    assert (
+        'Path.Combine("payload", "binaries", "cli", "qwenpaw.exe")'
+        in source
+    )
+    assert (
+        'Path.Combine("payload", "binaries", "update-assistant", '
+        '"UGSciUpdateAssistant.exe")' in source
+    )
+    assert (
+        'Path.Combine("payload", "binaries", "qwenpaw-backend"'
+        not in source
+    )
 
 
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:
