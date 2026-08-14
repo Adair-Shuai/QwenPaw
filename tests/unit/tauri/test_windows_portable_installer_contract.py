@@ -48,7 +48,15 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
 
     assert "string ioRoot = ToExtendedPath(root);" in source
     assert "string fullPath = PathForIo(canonicalPath);" in source
-    assert "return canonical.Length < 248 ? canonical" in source
+    assert "if (!Path.IsPathRooted(path))" in source
+    assert "path = Path.GetFullPath(path);" in source
+    assert "return path.Length < 248 ? path : ToExtendedPath(path);" in source
+    path_for_io = source.split(
+        "private static string PathForIo(string path)", 1,
+    )[1].split("private static string SafeRelativePath", 1)[0]
+    assert path_for_io.index("Path.IsPathRooted(path)") < path_for_io.index(
+        "Path.GetFullPath(path)",
+    )
     assert (
         'string manifest = Path.Combine(root, "checksums.sha256");'
         in source

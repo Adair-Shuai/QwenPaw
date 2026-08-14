@@ -310,8 +310,15 @@ internal static class PortableSetup
 
     private static string PathForIo(string path)
     {
-        string canonical = Path.GetFullPath(path);
-        return canonical.Length < 248 ? canonical : ToExtendedPath(canonical);
+        // VerifyPackage combines an already-normalized absolute package root
+        // with a validated relative path.  Calling Path.GetFullPath here is
+        // unsafe on the .NET Framework used by the bootstrap: it throws for
+        // paths over MAX_PATH before we get a chance to add the extended path
+        // prefix.  Preserve short-path compatibility and convert long,
+        // already-absolute paths directly.
+        if (!Path.IsPathRooted(path))
+            path = Path.GetFullPath(path);
+        return path.Length < 248 ? path : ToExtendedPath(path);
     }
 
     private static string SafeRelativePath(string value)
