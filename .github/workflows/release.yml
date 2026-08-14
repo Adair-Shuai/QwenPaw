@@ -797,6 +797,12 @@ jobs:
   # inaccessible draft asset.
   promote-desktop:
     needs: [resolve, finalize]
+    # The reusable build jobs are intentionally skipped during artifact-resume
+    # releases. GitHub's implicit success() can propagate those transitive
+    # skips past an always()-gated finalize job and skip promotion even though
+    # resolve + finalize both succeeded. Check the direct dependencies
+    # explicitly so immutable artifacts are promoted after a resumed release.
+    if: ${{ always() && needs.resolve.result == 'success' && needs.finalize.result == 'success' }}
     uses: ./.github/workflows/desktop-promote.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -810,6 +816,7 @@ jobs:
   # ── Post-publish: create the Release Duty verification issue (inline) ───────
   duty-issue:
     needs: [resolve, promote-desktop]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.promote-desktop.result == 'success' }}
     uses: ./.github/workflows/release-duty.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -821,7 +828,7 @@ jobs:
   # with GITHUB_TOKEN, which suppresses deploy-website.yml's own release trigger.
   deploy-website:
     needs: [resolve, promote-desktop]
-    if: needs.resolve.outputs.is_prerelease == 'false'
+    if: ${{ always() && needs.resolve.result == 'success' && needs.promote-desktop.result == 'success' && needs.resolve.outputs.is_prerelease == 'false' }}
     uses: ./.github/workflows/deploy-website.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
