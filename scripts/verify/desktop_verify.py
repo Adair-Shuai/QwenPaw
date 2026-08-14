@@ -175,6 +175,7 @@ def verify_bundled_plugins(base_url: str) -> None:
     deadline = time.monotonic() + DEFAULT_TIMEOUT
     last_body = ""
     required = {"flowforge", "ugsci", "ugsci_research"}
+    forbidden = {"cloudpaw", "qwenpaw-pet"}
     while time.monotonic() < deadline:
         last_body = _http("GET", f"{base_url}/api/frontend_plugin")
         try:
@@ -187,6 +188,12 @@ def verify_bundled_plugins(base_url: str) -> None:
                 for item in payload
                 if isinstance(item, dict) and item.get("loaded")
             }
+            contaminated = forbidden & set(loaded)
+            if contaminated:
+                raise RuntimeError(
+                    "Packaged desktop loaded source-only/denied plugins: "
+                    + ", ".join(sorted(contaminated)),
+                )
             if required <= set(loaded):
                 for plugin_id in sorted(required):
                     frontend_entry = str(

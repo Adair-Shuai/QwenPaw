@@ -439,7 +439,9 @@ jobs:
             PORT="${BASE_URL##*:}"
             lsof -ti:"$PORT" | xargs kill 2>/dev/null || true
           fi
-          rm -rf dist/verify-tauri
+          if [ -n "${TAURI_VERIFY_ROOT:-}" ] && [[ "$TAURI_VERIFY_ROOT" == "${RUNNER_TEMP:-/tmp}"/qwenpaw-verify-tauri.* ]]; then
+            rm -rf -- "$TAURI_VERIFY_ROOT"
+          fi
 
       - name: Upload desktop verify logs (Tauri macOS)
         if: failure()
@@ -469,6 +471,7 @@ jobs:
         with:
           name: UGSci-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
           path: dist/UGSci-Tauri-*-macOS.zip
+          if-no-files-found: error
           compression-level: 0
           retention-days: 14
 
@@ -480,5 +483,6 @@ jobs:
             dist/UGSci-Tauri-*-macOS.app.tar.gz
             dist/UGSci-Tauri-*-macOS.app.tar.gz.sig
             dist/tauri-darwin-*-updater.json
+          if-no-files-found: error
           compression-level: 0
           retention-days: 14

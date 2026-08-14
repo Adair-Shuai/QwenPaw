@@ -46,7 +46,15 @@ while IFS= read -r plugin_dir; do
     echo "  - $plugin_name: building..."
     (
         cd "$ui_dir"
-        npm ci --prefix "$ui_dir" 2>/dev/null || npm install --prefix "$ui_dir"
+        if ! npm ci --prefix "$ui_dir"; then
+            if [ "${QWENPAW_ALLOW_NPM_INSTALL_FALLBACK:-false}" = "true" ]; then
+                echo "  - $plugin_name: npm ci failed; using explicitly enabled npm install fallback"
+                npm install --prefix "$ui_dir"
+            else
+                echo "  - $plugin_name: ERROR - npm ci failed; fix the lockfile or set QWENPAW_ALLOW_NPM_INSTALL_FALLBACK=true for a non-production local build"
+                exit 1
+            fi
+        fi
         npm run build --prefix "$ui_dir"
     )
 

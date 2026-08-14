@@ -23,6 +23,7 @@ Checks:
      (catches stale plugin builds)
   9. Tauri CSP connect-src includes http://127.0.0.1:* for backend
      fetch() calls from the bootstrap page
+ 10. The real-WebView UI verification command is present in the Tauri ACL
 
 Usage:
     python scripts/pack-tauri/verify_build_assets.py
@@ -303,6 +304,56 @@ def _check_plugin_loader_strategy(repo: Path) -> list[str]:
     return errors
 
 
+def _check_ui_verification_permission(repo: Path) -> list[str]:
+    """Require the custom command ACL used by native desktop release checks.
+
+    Tauri v2 applies the capability ACL after the bootstrap webview navigates
+    to the loopback-hosted console. Registering a command in Rust is not enough:
+    without an explicit permission, the frontend invoke is rejected and CI can
+    never prove that bundled plugin menus/routes/slots executed in the real
+    WKWebView/WebView2 instance.
+    """
+    errors: list[str] = []
+    capability_path = (
+        repo / "console" / "src-tauri" / "capabilities" / "default.json"
+    )
+    permission_path = (
+        repo / "console" / "src-tauri" / "permissions" / "ui-verification.toml"
+    )
+
+    try:
+        capability = json.loads(capability_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return [f"Unable to read Tauri default capability: {exc}"]
+
+    permissions = capability.get("permissions", [])
+    if "ui-verification" not in permissions:
+        errors.append(
+            "console/src-tauri/capabilities/default.json does not grant the "
+            "ui-verification permission to the desktop webview.",
+        )
+
+    try:
+        permission_text = permission_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        errors.append(
+            "console/src-tauri/permissions/ui-verification.toml is missing or "
+            f"unreadable: {exc}",
+        )
+    else:
+        if 'identifier = "ui-verification"' not in permission_text:
+            errors.append(
+                "The UI verification permission has the wrong identifier.",
+            )
+        if '"report_ui_verification"' not in permission_text:
+            errors.append(
+                "The UI verification permission does not allow "
+                "report_ui_verification.",
+            )
+
+    return errors
+
+
 def _check_plugin_sync(repo: Path) -> list[str]:
     """Verify plugin dist files are synced between plugins/bundle/ and
     src/qwenpaw/plugins_bundle/.
@@ -530,7 +581,7 @@ def main() -> int:
 
     repo = _repo_root()
     all_errors: list[str] = []
-    total = 8
+    total = 9
 
     print("=== Build Asset Verification ===")
     print(f"Repository: {repo}")
@@ -616,6 +667,17 @@ def main() -> int:
         "plugin" in e.lower() and "stale" in e.lower() for e in all_errors
     ):
         print("  [OK] Plugin source files are not newer than dist bundles")
+
+    # 9. Native UI verification command ACL
+    errs = _check_ui_verification_permission(repo)
+    all_errors.extend(errs)
+    _run_check(
+        "native UI verification permission",
+        9,
+        total,
+        errs,
+        "Real-WebView plugin verification command is allowed",
+    )
 
     print()
     if all_errors:

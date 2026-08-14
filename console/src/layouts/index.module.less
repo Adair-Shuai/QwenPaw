@@ -442,8 +442,17 @@
 
 .unifiedUpdateButton {
   margin-left: 5px;
-  color: rgba(26, 23, 22, 0.45);
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #1677ff;
+  background: rgba(22, 119, 255, 0.08);
   border-radius: 999px;
+
+  :global(.anticon) {
+    font-size: 14px;
+  }
 }
 
 .unifiedUpdateButton:hover,

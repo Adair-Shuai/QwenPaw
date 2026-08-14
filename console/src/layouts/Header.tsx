@@ -391,7 +391,11 @@ export default function Header() {
                   isBackgroundActive ||
                   isApplyingDownloadedUpdate
                 }
-                onClick={async () => {
+                onClick={async (event) => {
+                  // The update action sits beside the version inside the
+                  // clickable brand group. Do not let update clicks count as
+                  // logo clicks (the logo owns the hidden DevTools gesture).
+                  event.stopPropagation();
                   if (hasUpdate) {
                     handleOpenUpdateModal();
                     return;

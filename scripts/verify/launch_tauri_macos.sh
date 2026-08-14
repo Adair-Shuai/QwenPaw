@@ -5,9 +5,9 @@ set -euo pipefail
 
 # 1. Unpack the freshly built Tauri zip.
 echo "[launch_tauri_macos] Unpacking zip..."
-mkdir -p dist/verify-tauri
-unzip -q dist/UGSci-Tauri-*-macOS.zip -d dist/verify-tauri
-APP="$(find dist/verify-tauri -maxdepth 3 -name '*.app' -type d | head -1)"
+TAURI_VERIFY_ROOT="$(mktemp -d "${RUNNER_TEMP:-/tmp}/qwenpaw-verify-tauri.XXXXXX")"
+unzip -q dist/UGSci-Tauri-*-macOS.zip -d "$TAURI_VERIFY_ROOT"
+APP="$(find "$TAURI_VERIFY_ROOT" -maxdepth 3 -name '*.app' -type d | head -1)"
 if [ -z "$APP" ]; then
   echo "::error::Tauri .app not found inside zip"
   exit 1
@@ -78,5 +78,6 @@ echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
 echo "QWENPAW_UI_VERIFY_NONCE=$QWENPAW_UI_VERIFY_NONCE" >> "$GITHUB_ENV"
 echo "QWENPAW_UI_VERIFY_REPORT_PATH=$QWENPAW_UI_VERIFY_REPORT_PATH" >> "$GITHUB_ENV"
 echo "TAURI_PID=$TAURI_PID" >> "$GITHUB_ENV"
+echo "TAURI_VERIFY_ROOT=$TAURI_VERIFY_ROOT" >> "$GITHUB_ENV"
 echo "[launch_tauri_macos] Native UI report: $QWENPAW_UI_VERIFY_REPORT_PATH"
 echo "$BASE_URL"

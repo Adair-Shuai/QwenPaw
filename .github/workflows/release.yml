@@ -122,16 +122,80 @@ jobs:
           if [ -n "$ARTIFACTS_RUN_ID" ]; then
             source_run="$(gh api "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID")"
             source_status="$(jq -r .status <<<"$source_run")"
+            source_conclusion="$(jq -r .conclusion <<<"$source_run")"
             source_sha="$(jq -r .head_sha <<<"$source_run")"
+            source_path="$(jq -r .path <<<"$source_run")"
             if [ "$source_status" != "completed" ]; then
               echo "::error::Artifact source run $ARTIFACTS_RUN_ID is not complete"
+              exit 1
+            fi
+            if [ "$source_path" != ".github/workflows/release.yml" ]; then
+              echo "::error::Artifact source run $ARTIFACTS_RUN_ID came from $source_path, not the unified release workflow"
               exit 1
             fi
             if [ "$source_sha" != "$sha" ]; then
               echo "::error::Artifact source run $ARTIFACTS_RUN_ID was built from $source_sha, not release commit $sha"
               exit 1
             fi
-            echo "Reusing artifacts from run $ARTIFACTS_RUN_ID at $sha"
+            source_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+            require_source_job_success() {
+              local job_name="$1"
+              if ! grep -Fqx "$job_name"$'\t'"success" <<<"$source_jobs"; then
+                echo "::error::Artifact source run does not attest a successful job: $job_name"
+                exit 1
+              fi
+            }
+            require_source_prefix_success() {
+              local prefix="$1"
+              local matches
+              matches="$(awk -F '\t' -v prefix="$prefix" 'index($1, prefix) == 1 { print }' <<<"$source_jobs")"
+              if [ -z "$matches" ]; then
+                echo "::error::Artifact source run has no jobs matching prefix: $prefix"
+                exit 1
+              fi
+              if awk -F '\t' '$2 != "success" { bad = 1 } END { exit !bad }' <<<"$matches"; then
+                echo "::error::Artifact source run has a non-successful job under prefix: $prefix"
+                printf '%s\n' "$matches"
+                exit 1
+              fi
+            }
+            require_source_gate_prefix() {
+              local prefix="$1"
+              local matches
+              matches="$(awk -F '\t' -v prefix="$prefix" 'index($1, prefix) == 1 { print }' <<<"$source_jobs")"
+              if [ -z "$matches" ]; then
+                echo "::error::Artifact source run has no verification jobs matching prefix: $prefix"
+                exit 1
+              fi
+              if awk -F '\t' '$2 != "success" && $2 != "skipped" { bad = 1 } END { exit !bad }' <<<"$matches"; then
+                echo "::error::Artifact source run has a failed verification job under prefix: $prefix"
+                printf '%s\n' "$matches"
+                exit 1
+              fi
+              if ! awk -F '\t' '$2 == "success" { found = 1 } END { exit !found }' <<<"$matches"; then
+                echo "::error::Artifact source run has no successful verification job under prefix: $prefix"
+                exit 1
+              fi
+            }
+            require_source_job_success "resolve"
+            require_source_job_success "build-wheel"
+            require_source_gate_prefix "verify-web / "
+            if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-plugins"
+            fi
+            if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
+              require_source_prefix_success "build-components / build-components ("
+            fi
+            if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-desktop / check-updater-signing"
+            fi
+            if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-desktop / build-tauri-windows"
+            fi
+            if [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-desktop / build-tauri-macos"
+            fi
+            echo "Reusing attested artifacts from run $ARTIFACTS_RUN_ID at $sha (overall conclusion=$source_conclusion)"
             artifact_names="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             required_artifacts=()
             if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then

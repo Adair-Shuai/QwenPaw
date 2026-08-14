@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "ui-verification"
+description = "Allows release CI to record plugin UI registrations from the real Tauri webview. The command is a no-op unless the CI nonce and report path are present."
+commands.allow = ["report_ui_verification"]

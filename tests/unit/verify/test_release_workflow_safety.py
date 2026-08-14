@@ -17,7 +17,22 @@ def _workflow(name: str) -> str:
 def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     release = _workflow("release.yml")
 
+    assert 'source_path="$(jq -r .path' in release
+    assert (
+        'if [ "$source_path" != ".github/workflows/release.yml" ]' in release
+    )
     assert 'if [ "$source_sha" != "$sha" ]' in release
+    assert 'require_source_job_success "build-wheel"' in release
+    assert 'require_source_gate_prefix "verify-web / "' in release
+    assert (
+        'require_source_job_success "build-desktop / build-tauri-windows"'
+        in release
+    )
+    assert (
+        'require_source_job_success "build-desktop / build-tauri-macos"'
+        in release
+    )
+    assert 'if [ "$source_conclusion" != "success" ]' not in release
     assert release.count("was not built from release commit $sha") >= 3
     assert "grep -qx 'tauri-updater-meta-windows'" in release
     assert "grep -qx 'tauri-updater-meta-macos'" in release
@@ -47,3 +62,34 @@ def test_replacement_desktop_runs_overlay_pair() -> None:
     assert "Overlay replacement macOS updater metadata" in promote
     assert "cp -a replacement-windows/tauri-updater-meta-windows ." in promote
     assert "cp -a replacement-macos/tauri-updater-meta-macos ." in promote
+
+
+def test_final_macos_archives_are_reverified_before_publish_and_promote() -> (
+    None
+):
+    publish = _workflow("desktop-publish.yml")
+    promote = _workflow("desktop-promote.yml")
+    verifier = "scripts/pack-tauri/verify_frozen_plugins.py --archive"
+
+    # Each publish job verifies both the first-install ZIP and updater archive.
+    assert publish.count(verifier) == 4
+    # Pointer promotion repeats both checks after any replacement overlay.
+    assert promote.count(verifier) == 2
+
+
+def test_windows_native_ui_verification_survives_missing_cdp() -> None:
+    action = (
+        REPO_ROOT
+        / ".github"
+        / "actions"
+        / "verify-tauri-windows"
+        / "action.yml"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        REPO_ROOT / "scripts" / "verify" / "launch_tauri_windows.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert "if ($env:CDP_URL) {" in action
+    assert '$verifyArgs += @("--cdp-url", $env:CDP_URL)' in action
+    assert 'throw "CDP is required' not in launcher
+    assert '$cdpUrl = ""' in launcher

@@ -1,7 +1,9 @@
 name: Verify Desktop (Tauri Windows)
 description: |
-  Install NSIS-built Tauri desktop, launch the shell with CDP enabled,
-  and drive the real WebView2 through the shared Playwright UI verifier.
+  Install the Tauri desktop, launch the real WebView2 shell, require its
+  nonce-bound native plugin-registration report, and run the shared
+  Playwright UI verifier through CDP when available (Chromium fallback when
+  hosted WebView2 does not expose CDP).
   Stop / cleanup / log upload steps live in the caller workflow because
   composite actions cannot use `if: always()`.
 
@@ -39,10 +41,12 @@ runs:
           "--base-url", $env:BASE_URL,
           "--ui-mode", "tauri-windows",
           "--headed",
-          "--cdp-url", $env:CDP_URL,
           "--native-ui-report", $env:QWENPAW_UI_VERIFY_REPORT_PATH,
           "--native-ui-nonce", $env:QWENPAW_UI_VERIFY_NONCE
         )
+        if ($env:CDP_URL) {
+          $verifyArgs += @("--cdp-url", $env:CDP_URL)
+        }
         if ($env:ALLOW_FLAKY_LLM -eq "true") {
           $verifyArgs += "--allow-flaky-llm"
         }

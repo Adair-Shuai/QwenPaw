@@ -13,6 +13,9 @@ from pathlib import Path, PurePosixPath
 from typing import Callable
 
 CRITICAL_PLUGINS = frozenset({"flowforge", "ugsci", "ugsci_research"})
+MACOS_PLUGIN_SUFFIX = PurePosixPath(
+    "Contents/Resources/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle",
+)
 
 
 def _safe_entry(root: Path, value: object, label: str) -> Path | None:
@@ -107,13 +110,52 @@ def _verify_archive_files(
     files: set[str],
     read_file: Callable[[str], bytes],
 ) -> None:
-    manifests = sorted(
+    payload_files = {
         name
         for name in files
+        if "__MACOSX" not in PurePosixPath(name).parts
+        and not any(
+            part.startswith("._") for part in PurePosixPath(name).parts
+        )
+    }
+    app_roots = {
+        PurePosixPath(*PurePosixPath(name).parts[: index + 1]).as_posix()
+        for name in payload_files
+        for index, part in enumerate(PurePosixPath(name).parts)
+        if part.endswith(".app")
+        and index + 1 < len(PurePosixPath(name).parts)
+        and PurePosixPath(name).parts[index + 1] == "Contents"
+    }
+    if len(app_roots) != 1:
+        raise ValueError(
+            "macOS desktop archive must contain exactly one .app bundle; "
+            f"found {sorted(app_roots)}",
+        )
+    app_root = next(iter(app_roots))
+    expected_root = (PurePosixPath(app_root) / MACOS_PLUGIN_SUFFIX).as_posix()
+
+    all_manifests = sorted(
+        name
+        for name in payload_files
         if name.endswith("/plugin.json")
         and len(PurePosixPath(name).parts) >= 3
         and PurePosixPath(name).parts[-3] == "plugins_bundle"
     )
+    unexpected = [
+        name
+        for name in all_manifests
+        if PurePosixPath(name).parent.parent.as_posix() != expected_root
+    ]
+    if unexpected:
+        raise ValueError(
+            "bundled plugin manifests exist outside the frozen backend path: "
+            + ", ".join(unexpected),
+        )
+    manifests = [
+        name
+        for name in all_manifests
+        if PurePosixPath(name).parent.parent.as_posix() == expected_root
+    ]
     seen: set[str] = set()
     for manifest_name in manifests:
         plugin_root = str(PurePosixPath(manifest_name).parent)
@@ -122,6 +164,11 @@ def _verify_archive_files(
         if not plugin_id or plugin_id in seen:
             raise ValueError(
                 f"invalid or duplicate plugin id in archive: {manifest_name}",
+            )
+        if PurePosixPath(plugin_root).name != plugin_id:
+            raise ValueError(
+                "plugin directory name does not match manifest id in archive: "
+                f"{plugin_root} != {plugin_id}",
             )
         seen.add(plugin_id)
         entry = manifest.get("entry")
@@ -136,6 +183,10 @@ def _verify_archive_files(
             if target is not None and target not in files:
                 raise ValueError(
                     f"plugin {plugin_id} is missing {kind} entry in archive: {target}",
+                )
+            if target is not None and not read_file(target):
+                raise ValueError(
+                    f"plugin {plugin_id} has an empty {kind} entry in archive: {target}",
                 )
     missing = CRITICAL_PLUGINS - seen
     if missing:

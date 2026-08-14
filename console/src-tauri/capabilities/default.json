@@ -19,6 +19,7 @@
     "open-external-link",
     "reveal-in-file-manager",
     "tray",
+    "ui-verification",
     "core:window:allow-set-position",
     "core:window:allow-set-size",
     "core:window:allow-outer-position",

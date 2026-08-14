@@ -161,7 +161,21 @@ pub fn report_ui_verification(snapshot: UiVerificationSnapshot) -> Result<(), St
     let Some((nonce, report_path)) = verification_target()? else {
         return Ok(());
     };
-    write_report(&report_path, &nonce, &snapshot)
+    match write_report(&report_path, &nonce, &snapshot) {
+        Ok(()) => {
+            log::info!(
+                "[ui-verification] wrote native plugin report: menus={}, routes={}, slots={}",
+                snapshot.menus.len(),
+                snapshot.routes.len(),
+                snapshot.slots.len(),
+            );
+            Ok(())
+        }
+        Err(err) => {
+            log::error!("[ui-verification] failed to write native plugin report: {err}");
+            Err(err)
+        }
+    }
 }
 
 #[cfg(test)]

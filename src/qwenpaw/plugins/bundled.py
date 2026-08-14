@@ -150,6 +150,11 @@ def _get_bundled_plugins_dirs() -> list[Path]:
     # Prefer the package-relative path above, then use these explicit fallbacks
     # for macOS .app relocations and alternate bootloader layouts.
     meipass = getattr(sys, "_MEIPASS", None)
+    frozen_runtime = (
+        bool(getattr(sys, "frozen", False))
+        or bool(meipass)
+        or os.environ.get("QWENPAW_DESKTOP_APP") == "1"
+    )
     if meipass:
         meipass_root = Path(str(meipass))
         add_candidate(meipass_root / "qwenpaw" / "plugins_bundle")
@@ -164,10 +169,14 @@ def _get_bundled_plugins_dirs() -> list[Path]:
         )
         add_candidate(executable_root / "qwenpaw" / "plugins_bundle")
 
-    # Development mode / frozen desktop: look for plugins/bundle/
+    # Development mode only: look for plugins/bundle/. Frozen applications
+    # must use only the signed package/_MEIPASS/executable roots above.
     # relative to repo root by walking up from this file.
     # In the frozen build, plugins/bundle/ is packaged at the bundle
     # root, so walking up from __file__ will find it.
+    if frozen_runtime:
+        return result
+
     here = Path(__file__).resolve().parent
     for parent in [here, *here.parents]:
         candidate = parent / "plugins" / "bundle"

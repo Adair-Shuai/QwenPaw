@@ -157,6 +157,63 @@ def test_macos_onedir_fallback_discovers_plugins_next_to_executable(
     assert plugin_root.resolve() in discovered
 
 
+def test_frozen_runtime_never_discovers_plugins_from_checkout_parent(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """A signed desktop must not borrow plugins from a nearby source tree."""
+    checkout = tmp_path / "checkout"
+    fake_module = checkout / "src" / "qwenpaw" / "plugins" / "bundled.py"
+    fake_module.parent.mkdir(parents=True)
+    fake_module.write_text("", encoding="utf-8")
+    source_plugins = checkout / "plugins" / "bundle"
+    _write_plugin(source_plugins / "source-only", "1.0.0")
+
+    import qwenpaw
+
+    unrelated_package = tmp_path / "installed" / "qwenpaw" / "__init__.py"
+    unrelated_package.parent.mkdir(parents=True)
+    unrelated_package.write_text("", encoding="utf-8")
+    monkeypatch.setattr(qwenpaw, "__file__", str(unrelated_package))
+    monkeypatch.setattr(bundled, "__file__", str(fake_module))
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "app" / "backend"))
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+
+    discovered = bundled._get_bundled_plugins_dirs()
+
+    assert source_plugins.resolve() not in discovered
+
+
+def test_desktop_marker_never_discovers_plugins_from_checkout_parent(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Python-mode desktop diagnostics must obey the frozen plugin boundary."""
+    checkout = tmp_path / "checkout"
+    fake_module = checkout / "src" / "qwenpaw" / "plugins" / "bundled.py"
+    fake_module.parent.mkdir(parents=True)
+    fake_module.write_text("", encoding="utf-8")
+    source_plugins = checkout / "plugins" / "bundle"
+    _write_plugin(source_plugins / "source-only", "1.0.0")
+
+    import qwenpaw
+
+    unrelated_package = tmp_path / "installed" / "qwenpaw" / "__init__.py"
+    unrelated_package.parent.mkdir(parents=True)
+    unrelated_package.write_text("", encoding="utf-8")
+    monkeypatch.setattr(qwenpaw, "__file__", str(unrelated_package))
+    monkeypatch.setattr(bundled, "__file__", str(fake_module))
+    monkeypatch.setattr(sys, "executable", str(tmp_path / "app" / "backend"))
+    monkeypatch.setattr(sys, "frozen", False, raising=False)
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    monkeypatch.setenv("QWENPAW_DESKTOP_APP", "1")
+
+    discovered = bundled._get_bundled_plugins_dirs()
+
+    assert source_plugins.resolve() not in discovered
+
+
 def test_desktop_fast_path_repairs_missing_entry(
     monkeypatch,
     tmp_path,

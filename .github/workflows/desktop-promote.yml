@@ -158,6 +158,20 @@ jobs:
           cp -a replacement-macos/UGSci-Desktop-Tauri-macOS-* .
           cp -a replacement-macos/tauri-updater-meta-macos .
 
+      - name: Re-verify final macOS archives before pointer promotion
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          mac_zips=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip)
+          mac_updaters=(tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz)
+          if [ "${#mac_zips[@]}" -ne 1 ] || [ "${#mac_updaters[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS ZIP and updater archive; found ${#mac_zips[@]} ZIP(s), ${#mac_updaters[@]} updater archive(s)"
+            exit 1
+          fi
+          python scripts/pack-tauri/verify_frozen_plugins.py --archive "${mac_zips[0]}"
+          python scripts/pack-tauri/verify_frozen_plugins.py --archive "${mac_updaters[0]}"
+
       - name: Install ossutil
         run: |
           wget https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
