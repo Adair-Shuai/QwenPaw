@@ -451,21 +451,63 @@ jobs:
       - name: Sync plugin zips to OSS (long-cache, immutable)
         if: ${{ !inputs.dry_run }}
         run: |
+          set -euo pipefail
           shopt -s nullglob
+          conflicts=()
+          declare -A existing=()
+          validate_relative_key() {
+            local rel="$1"
+            case "$rel" in
+              ''|/*|../*|*/../*|*\\*)
+                echo "ERROR: unsafe plugin artifact path: $rel" >&2
+                return 1
+                ;;
+            esac
+          }
+          # Preflight every existing immutable object before uploading any new
+          # object. Unchanged versions are byte-identical and are reused;
+          # changed content under the same version must bump plugin.json.
+          while IFS= read -r -d '' f; do
+            rel="${f#dist/plugins/}"
+            validate_relative_key "$rel"
+            uri="oss://${OSS_BUCKET}/files/plugins/${rel}"
+            remote_dir="$(mktemp -d)"
+            remote="${remote_dir}/$(basename "$f")"
+            if stat_output="$(ossutil stat "$uri" 2>&1)"; then
+              ossutil cp "$uri" "$remote"
+              if ! cmp --silent "$f" "$remote"; then
+                conflicts+=("${rel}")
+              fi
+              existing["$rel"]=1
+            elif grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
+              existing["$rel"]=0
+            else
+              echo "$stat_output" >&2
+              echo "ERROR: could not determine immutable plugin state: $uri" >&2
+              rm -rf "$remote_dir"
+              exit 1
+            fi
+            rm -rf "$remote_dir"
+          done < <(find dist/plugins -type f -name '*.zip' -print0)
+          if [ ${#conflicts[@]} -ne 0 ]; then
+            printf 'ERROR: plugin content changed without a version bump: %s\n' \
+              "${conflicts[@]}" >&2
+            exit 1
+          fi
           for kind in bundle tool apps; do
             while IFS= read -r -d '' f; do
               rel="${f#dist/plugins/}"
+              validate_relative_key "$rel"
+              if [[ "${existing[$rel]:-0}" == "1" ]]; then
+                echo "Reusing unchanged immutable plugin: files/plugins/${rel}"
+                continue
+              fi
               echo "Uploading $f -> files/plugins/${rel}"
               uri="oss://${OSS_BUCKET}/files/plugins/${rel}"
               remote_dir="$(mktemp -d)"
               remote="${remote_dir}/$(basename "$f")"
-              if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
-                cmp --silent "$f" "$remote" || { echo "ERROR: immutable plugin object differs: $uri"; exit 1; }
-                rm -rf "$remote_dir"
-                continue
-              fi
               ossutil cp "$f" "$uri" --acl public-read \
-                --meta "Cache-Control:public, max-age=31536000, immutable"
+                --meta "x-oss-forbid-overwrite:true#Cache-Control:public, max-age=31536000, immutable"
               ossutil cp "$uri" "$remote"
               cmp --silent "$f" "$remote" || { echo "ERROR: remote plugin verification failed: $uri"; exit 1; }
               rm -rf "$remote_dir"

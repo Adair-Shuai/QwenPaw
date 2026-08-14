@@ -24,8 +24,11 @@ sys.path.insert(
 from generate_plugin_metadata import (  # noqa: E402
     _iter_tree_relpaths,
     _normalize_pack_exclude,
+    _safe_entry_relpath,
+    _safe_release_segment,
     _validate_declared_entries,
     _zip_plugin,
+    discover_and_pack,
     get_version,
 )
 
@@ -251,6 +254,28 @@ def test_zip_plugin_applies_pack_exclude(tmp_path: Path) -> None:
     assert not any("ui/src" in n for n in names)
 
 
+def test_zip_plugin_is_byte_identical_for_unchanged_content(
+    tmp_path: Path,
+) -> None:
+    """Rebuilds can safely reuse an immutable OSS object."""
+    plugin_dir = _make_plugin_tree(tmp_path)
+    manifest = _demo_manifest()
+    (plugin_dir / "plugin.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+    first_zip = tmp_path / "first" / "demo-plugin-1.0.0.zip"
+    second_zip = tmp_path / "second" / "demo-plugin-1.0.0.zip"
+
+    _zip_plugin(plugin_dir, first_zip, manifest)
+    for source in plugin_dir.rglob("*"):
+        if source.is_file():
+            source.touch()
+    _zip_plugin(plugin_dir, second_zip, manifest)
+
+    assert first_zip.read_bytes() == second_zip.read_bytes()
+
+
 def test_validate_declared_entries_rejects_missing_frontend(
     tmp_path: Path,
 ) -> None:
@@ -291,3 +316,50 @@ def test_zip_plugin_without_manifest_packs_everything(
         names = set(zf.namelist())
     assert "demo-plugin/backend/tests/test_api.py" in names
     assert "demo-plugin/ui/src/App.tsx" in names
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["../escape", "a/b", "a\\b", "/absolute", "C:drive", "", ".", ".."],
+)
+def test_release_segments_reject_path_escapes(value: str) -> None:
+    with pytest.raises(ValueError, match="unsafe"):
+        _safe_release_segment(value, "plugin id")
+
+
+@pytest.mark.parametrize(
+    "value",
+    ["../secret.py", "a/../../b.py", "/absolute.py", "C:\\secret.py"],
+)
+def test_entry_paths_reject_path_escapes(value: str) -> None:
+    with pytest.raises(ValueError, match="unsafe"):
+        _safe_entry_relpath(value, "plugin entry")
+
+
+def test_zip_plugin_rejects_symlinked_files(tmp_path: Path) -> None:
+    plugin_dir = _make_plugin_tree(tmp_path)
+    target = tmp_path / "outside.txt"
+    target.write_text("secret", encoding="utf-8")
+    link = plugin_dir / "leak.txt"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symlinks unavailable on this platform")
+
+    with pytest.raises(ValueError, match="symlinked file"):
+        _zip_plugin(plugin_dir, tmp_path / "out.zip", _demo_manifest())
+
+
+def test_duplicate_plugin_id_version_fails_closed(tmp_path: Path) -> None:
+    plugins_root = tmp_path / "plugins"
+    for kind in ("bundle", "apps"):
+        plugin_dir = plugins_root / kind / f"demo-{kind}"
+        plugin_dir.mkdir(parents=True)
+        manifest = {"id": "same-id", "version": "1.0.0"}
+        (plugin_dir / "plugin.json").write_text(
+            json.dumps(manifest),
+            encoding="utf-8",
+        )
+
+    with pytest.raises(ValueError, match="duplicate published plugin"):
+        discover_and_pack(plugins_root, tmp_path / "dist", "/files/plugins")

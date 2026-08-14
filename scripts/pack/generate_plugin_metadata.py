@@ -15,10 +15,10 @@ Layout produced under ``--dist``::
 Each plugin is stored under its own directory on the CDN
 (``/files/plugins/{kind}/{plugin_id}/…``), not flat under ``{kind}/``.
 
-Each plugin source tree is full-rebuild zipped: this means deletions in the
-repo propagate through to OSS on the next run (no stale entries left behind).
-Rebuilding the same version overwrites the zip at a stable URL; bump the
-plugin version in ``plugin.json`` when you need a distinct release artifact.
+Each plugin source tree is full-rebuild zipped deterministically: unchanged
+source produces byte-identical ZIPs on every runner. Published version URLs
+are immutable; bump the plugin version in ``plugin.json`` whenever packaged
+content changes.
 
 A plugin can opt out of publishing by setting ``"publish": false`` in its
 ``plugin.json``.
@@ -44,6 +44,7 @@ import fnmatch
 import hashlib
 import json
 import os
+import re
 import shutil
 import sys
 import zipfile
@@ -52,6 +53,7 @@ from pathlib import Path
 from typing import Any
 
 KIND_DIRS = ("bundle", "tool", "apps")
+_RELEASE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 EXCLUDE_PATTERNS = (
     "__pycache__",
@@ -72,6 +74,30 @@ EXCLUDE_PATTERNS = (
 
 def _is_excluded(name: str) -> bool:
     return any(fnmatch.fnmatch(name, pat) for pat in EXCLUDE_PATTERNS)
+
+
+def _safe_release_segment(value: object, label: str) -> str:
+    """Return an OSS path-safe plugin id or version segment."""
+    text = str(value or "").strip()
+    if not _RELEASE_SEGMENT.fullmatch(text) or text in {".", ".."}:
+        raise ValueError(f"unsafe {label}: {value!r}")
+    return text
+
+
+def _safe_entry_relpath(value: str, label: str) -> str:
+    """Normalize and validate a plugin-root-relative manifest entry."""
+    raw = value.strip().replace("\\", "/")
+    path = Path(raw)
+    parts = raw.split("/")
+    if (
+        not raw
+        or raw.startswith("/")
+        or path.is_absolute()
+        or any(part in {"", ".", ".."} for part in parts)
+        or ":" in parts[0]
+    ):
+        raise ValueError(f"unsafe {label}: {value!r}")
+    return "/".join(parts)
 
 
 def _normalize_pack_exclude(manifest: dict[str, Any]) -> list[str]:
@@ -115,7 +141,7 @@ def _protected_relpaths(manifest: dict[str, Any]) -> set[str]:
     if isinstance(entry, dict):
         for value in entry.values():
             if isinstance(value, str) and value.strip():
-                protected.add(value.strip().replace("\\", "/").strip("/"))
+                protected.add(_safe_entry_relpath(value, "plugin entry"))
     return protected
 
 
@@ -163,11 +189,21 @@ def _iter_tree_relpaths(
     protected = _protected_relpaths(manifest or {})
     rels: list[str] = []
     for root, dirs, files in os.walk(plugin_dir):
+        root_path = Path(root)
+        for dirname in dirs:
+            candidate = root_path / dirname
+            if candidate.is_symlink():
+                raise ValueError(
+                    f"cannot package symlinked directory: {candidate}",
+                )
         dirs[:] = [d for d in dirs if not _is_excluded(d)]
         for fname in files:
             if _is_excluded(fname):
                 continue
-            rel = (Path(root) / fname).relative_to(plugin_dir).as_posix()
+            source = root_path / fname
+            if source.is_symlink():
+                raise ValueError(f"cannot package symlinked file: {source}")
+            rel = source.relative_to(plugin_dir).as_posix()
             if _is_pack_excluded(rel, pack_exclude, protected):
                 continue
             rels.append(rel)
@@ -188,8 +224,15 @@ def _validate_declared_entries(
     for value in entry.values():
         if not isinstance(value, str) or not value.strip():
             continue
-        rel = value.strip().replace("\\", "/").strip("/")
-        if not (plugin_dir / rel).is_file():
+        rel = _safe_entry_relpath(value, "plugin entry")
+        candidate = (plugin_dir / rel).resolve()
+        try:
+            candidate.relative_to(plugin_dir.resolve())
+        except ValueError as exc:
+            raise ValueError(
+                f"plugin entry escapes plugin root: {value!r}",
+            ) from exc
+        if not candidate.is_file():
             missing.append(rel)
 
     if missing:
@@ -388,6 +431,7 @@ def discover_and_pack(
         "platforms": {},
         "files": {},
     }
+    published_ids: dict[str, Path] = {}
 
     if not plugins_root.is_dir():
         print(
@@ -408,10 +452,16 @@ def discover_and_pack(
                 print(f"  - skip {plugin_dir.name} (publish=false)")
                 continue
 
-            plugin_id = str(manifest.get("id") or plugin_dir.name)
+            plugin_id = _safe_release_segment(
+                manifest.get("id") or plugin_dir.name,
+                "plugin id",
+            )
             if not _selected(only, exclude, plugin_id, plugin_dir.name):
                 continue
-            version = str(manifest.get("version") or "0.0.0")
+            version = _safe_release_segment(
+                manifest.get("version") or "0.0.0",
+                f"version for plugin {plugin_id}",
+            )
             zip_name = f"{plugin_id}-{version}.zip"
             zip_path = dist_root / kind / plugin_id / zip_name
 
@@ -425,6 +475,13 @@ def discover_and_pack(
                 f"{cdn_prefix.rstrip('/')}/{kind}/{plugin_id}/{zip_name}"
             )
             file_id = f"{plugin_id}-{version}"
+            previous = published_ids.get(file_id)
+            if previous is not None:
+                raise ValueError(
+                    f"duplicate published plugin id/version {file_id}: "
+                    f"{previous} and {plugin_dir}",
+                )
+            published_ids[file_id] = plugin_dir
             metadata = _build_metadata(
                 manifest,
                 file_id=file_id,
