@@ -57,9 +57,17 @@ jobs:
       actions: read
       contents: write
     steps:
-      - name: Download all artifacts
+      - name: Download desktop installer artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: UGSci-Desktop-Tauri-*
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download desktop updater artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tauri-updater-meta-*
           run-id: ${{ inputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -144,9 +152,17 @@ jobs:
         id: version
         uses: ./.github/actions/get-version
 
-      - name: Download all artifacts
+      - name: Download desktop installer artifacts
         uses: actions/download-artifact@v4
         with:
+          pattern: UGSci-Desktop-Tauri-*
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download desktop updater artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tauri-updater-meta-*
           run-id: ${{ inputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
