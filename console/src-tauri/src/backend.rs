@@ -1,6 +1,7 @@
 //! Backend sidecar lifecycle for the Tauri desktop app.
 
 use std::{
+    process::Command,
     sync::{
         atomic::{AtomicU64, Ordering},
         Mutex,
@@ -26,9 +27,12 @@ const DESKTOP_SHUTDOWN_TOKEN_HEADER: &str = "X-QwenPaw-Desktop-Shutdown-Token";
 /// milliseconds in the happy path; this is only a fallback so a wedged
 /// backend never blocks quit. uvicorn's own `timeout_graceful_shutdown`
 /// bounds the sidecar's internal drain independently.
-const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(3);
-const GRACEFUL_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(60);
-const FORCED_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
+const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
+// Uvicorn is configured with a five-second graceful-drain budget. Give it a
+// small margin, then terminate the owned sidecar so quitting never leaves the
+// desktop host lingering for a minute.
+const GRACEFUL_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(7);
+const FORCED_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 const BACKEND_STARTUP_SLOW_WARNING: Duration = Duration::from_secs(15);
 
 /// Shared sidecar process state managed by Tauri.
@@ -170,14 +174,12 @@ impl BackendState {
     }
 
     fn force_kill(&self) {
-        let child = self.with_inner(|inner| inner.child.take());
-        let Some(child) = child else {
+        let pid = self.with_inner(|inner| inner.child.as_ref().map(|child| child.pid()));
+        let Some(pid) = pid else {
             return;
         };
-
-        let pid = child.pid();
-        if let Err(err) = child.kill() {
-            log::warn!("[backend] failed to stop process pid={pid}: {err}");
+        if let Err(err) = kill_process_tree(pid) {
+            log::warn!("[backend] failed to stop process tree pid={pid}: {err}");
         }
     }
 
@@ -245,15 +247,67 @@ impl BackendState {
                         self.finish_stop();
                         Ok(())
                     }
-                    Err(force_err) => {
-                        self.finish_stop();
-                        Err(format!(
-                            "{err}; failed to confirm forced backend termination: {force_err}"
-                        ))
-                    }
+                    Err(force_err) => Err(format!(
+                        "{err}; failed to confirm forced backend termination: {force_err}"
+                    )),
                 }
             }
         }
+    }
+}
+
+#[cfg(windows)]
+fn kill_process_tree(pid: u32) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+
+    const CREATE_NO_WINDOW: u32 = 0x08000000;
+    let status = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .status()
+        .map_err(|err| format!("failed to launch taskkill: {err}"))?;
+    if status.success() {
+        Ok(())
+    } else {
+        Err(format!("taskkill exited with status {status}"))
+    }
+}
+
+#[cfg(not(windows))]
+fn kill_process_tree(pid: u32) -> Result<(), String> {
+    fn descendants(pid: u32, output: &mut Vec<u32>) {
+        let Ok(result) = Command::new("pgrep")
+            .args(["-P", &pid.to_string()])
+            .output()
+        else {
+            return;
+        };
+        for line in String::from_utf8_lossy(&result.stdout).lines() {
+            if let Ok(child) = line.trim().parse::<u32>() {
+                descendants(child, output);
+                output.push(child);
+            }
+        }
+    }
+
+    let mut targets = Vec::new();
+    descendants(pid, &mut targets);
+    targets.push(pid);
+    let mut failed = Vec::new();
+    for target in targets {
+        match Command::new("kill")
+            .args(["-KILL", &target.to_string()])
+            .status()
+        {
+            Ok(status) if status.success() => {}
+            Ok(status) => failed.push(format!("{target}:{status}")),
+            Err(err) => failed.push(format!("{target}:{err}")),
+        }
+    }
+    if failed.is_empty() {
+        Ok(())
+    } else {
+        Err(format!("kill failures: {}", failed.join(", ")))
     }
 }
 

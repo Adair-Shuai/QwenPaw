@@ -117,52 +117,48 @@ export default function Header() {
     }
   };
 
-  // Web-only PyPI fallback: desktop path is owned by DesktopUpdateContext.
-  useEffect(() => {
-    if (onDesktop) return;
+  // Browser-only fallback. Like desktop OSS checks, PyPI is contacted only
+  // after the user clicks the version-number update button.
+  const refreshWebUpdate = async (): Promise<boolean> => {
+    const response = await fetch(PYPI_URL, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error(`PyPI update check failed (${response.status})`);
+    }
+    const data = await response.json();
+    const releases = data?.releases ?? {};
+    const versionsWithTime = Object.entries(releases)
+      .filter(([candidate]) => isStableVersion(candidate))
+      .map(([candidate, files]) => {
+        const fileList = files as Array<{ upload_time_iso_8601?: string }>;
+        const latestUpload = fileList
+          .map((file) => file.upload_time_iso_8601)
+          .filter(Boolean)
+          .sort()
+          .pop();
+        return { version: candidate, uploadTime: latestUpload || "" };
+      });
 
-    fetch(PYPI_URL)
-      .then((res) => res.json())
-      .then((data) => {
-        const releases = data?.releases ?? {};
+    versionsWithTime.sort((a, b) => {
+      const timeDiff =
+        new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime();
+      return timeDiff !== 0 ? timeDiff : compareVersions(b.version, a.version);
+    });
 
-        const versionsWithTime = Object.entries(releases)
-          .filter(([v]) => isStableVersion(v))
-          .map(([v, files]) => {
-            const fileList = files as Array<{ upload_time_iso_8601?: string }>;
-            const latestUpload = fileList
-              .map((f) => f.upload_time_iso_8601)
-              .filter(Boolean)
-              .sort()
-              .pop();
-            return { version: v, uploadTime: latestUpload || "" };
-          });
-
-        versionsWithTime.sort((a, b) => {
-          const timeDiff =
-            new Date(b.uploadTime).getTime() - new Date(a.uploadTime).getTime();
-          return timeDiff !== 0
-            ? timeDiff
-            : compareVersions(b.version, a.version);
-        });
-
-        const versions = versionsWithTime.map((v) => v.version);
-        const latest = versions[0] ?? data?.info?.version ?? "";
-
-        const releaseTime = versionsWithTime.find((v) => v.version === latest)
-          ?.uploadTime;
-        const isOldEnough =
-          !!releaseTime &&
-          new Date(releaseTime) <= new Date(Date.now() - ONE_HOUR_MS);
-
-        if (isOldEnough) {
-          setLatestVersion(latest);
-        } else {
-          setLatestVersion("");
-        }
-      })
-      .catch(() => {});
-  }, [onDesktop]);
+    const latest = versionsWithTime[0]?.version ?? data?.info?.version ?? "";
+    const releaseTime = versionsWithTime.find(
+      (candidate) => candidate.version === latest,
+    )?.uploadTime;
+    const isOldEnough =
+      !!releaseTime &&
+      new Date(releaseTime) <= new Date(Date.now() - ONE_HOUR_MS);
+    const available =
+      isOldEnough &&
+      !!version &&
+      !!latest &&
+      compareVersions(latest, version) > 0;
+    setLatestVersion(available ? latest : "");
+    return available;
+  };
 
   const hasUpdate = onDesktop
     ? desktop.hasCoreUpdate || desktop.componentUpdateCount > 0
@@ -368,51 +364,58 @@ export default function Header() {
           </Slot>
           <div className={styles.logoDivider} />
           {version && <span className={styles.versionBadge}>v{version}</span>}
-          {onDesktop && (
-            <Badge
-              dot={hasUpdate && !isReady && !isBackgroundActive}
-              color="rgba(37, 99, 235, 1)"
-              offset={[-1, 3]}
-            >
-              <Tooltip title={unifiedUpdateTitle}>
-                <Button
-                  type="text"
-                  size="small"
-                  className={`${styles.unifiedUpdateButton} ${
-                    hasUpdate ? styles.unifiedUpdateButtonActive : ""
-                  }`}
-                  icon={
-                    isReady ? (
-                      <CheckCircleOutlined />
-                    ) : isBackgroundFailed ? (
-                      <ExclamationCircleOutlined />
-                    ) : (
-                      <CloudDownloadOutlined />
-                    )
+          <Badge
+            dot={hasUpdate && !isReady && !isBackgroundActive}
+            color="rgba(37, 99, 235, 1)"
+            offset={[-1, 3]}
+          >
+            <Tooltip title={unifiedUpdateTitle}>
+              <Button
+                type="text"
+                size="small"
+                aria-label={t("sidebar.updateModal.checkUpdates")}
+                className={`${styles.unifiedUpdateButton} ${
+                  hasUpdate ? styles.unifiedUpdateButtonActive : ""
+                }`}
+                icon={
+                  isReady ? (
+                    <CheckCircleOutlined />
+                  ) : isBackgroundFailed ? (
+                    <ExclamationCircleOutlined />
+                  ) : (
+                    <CloudDownloadOutlined />
+                  )
+                }
+                loading={
+                  unifiedUpdateBusy ||
+                  isBackgroundActive ||
+                  isApplyingDownloadedUpdate
+                }
+                onClick={async () => {
+                  if (hasUpdate) {
+                    handleOpenUpdateModal();
+                    return;
                   }
-                  loading={
-                    unifiedUpdateBusy ||
-                    isBackgroundActive ||
-                    isApplyingDownloadedUpdate
+                  setUnifiedUpdateBusy(true);
+                  try {
+                    const found = onDesktop
+                      ? await desktop.refreshUpdates()
+                      : await refreshWebUpdate();
+                    if (found) handleOpenUpdateModal();
+                    else message.success(t("sidebar.updateModal.upToDate"));
+                  } catch (err) {
+                    const detail =
+                      err instanceof Error ? err.message : String(err);
+                    message.error(
+                      `${t("sidebar.updateModal.failedTitle")}: ${detail}`,
+                    );
+                  } finally {
+                    setUnifiedUpdateBusy(false);
                   }
-                  onClick={async () => {
-                    if (hasUpdate) {
-                      handleOpenUpdateModal();
-                      return;
-                    }
-                    setUnifiedUpdateBusy(true);
-                    try {
-                      const found = await desktop.refreshUpdates();
-                      if (found) handleOpenUpdateModal();
-                      else message.success(t("sidebar.updateModal.upToDate"));
-                    } finally {
-                      setUnifiedUpdateBusy(false);
-                    }
-                  }}
-                />
-              </Tooltip>
-            </Badge>
-          )}
+                }}
+              />
+            </Tooltip>
+          </Badge>
         </div>
         <Slot name="header.left" kind="fill" />
         <Space size="middle">

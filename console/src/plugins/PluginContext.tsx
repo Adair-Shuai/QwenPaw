@@ -11,7 +11,8 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { pluginSystem } from "./hostExternals";
 import { loadAllPlugins } from "./usePluginLoader";
-import { getApiUrl, getApiToken } from "../api/config";
+import { fetchBundledPluginStatus } from "../api/modules/plugin";
+import { reportPluginUiVerification } from "../tauri/uiVerification";
 import type { PluginRouteDeclaration } from "./hostExternals";
 import {
   routeRegistry,
@@ -86,11 +87,13 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     });
 
     let loadPromise: Promise<void> | null = null;
-    let reloadedAfterBundleSync = false;
+    let reloadedAtRegistryReady = false;
+    let reloadedAtReady = false;
     const load = () => {
       if (!loadPromise) {
-        loadPromise = loadAllPlugins().then(({ failed }) => {
-          if (failed.length > 0) setError(failed.join("; "));
+        loadPromise = loadAllPlugins().then(async ({ failed }) => {
+          setError(failed.length > 0 ? failed.join("; ") : null);
+          await reportPluginUiVerification();
           setLoading(false);
         });
       }
@@ -112,38 +115,9 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     let syncAttempts = 0;
     const pollBundleSync = async () => {
       try {
-        const headers: Record<string, string> = {};
-        const token = getApiToken();
-        if (token) headers.Authorization = `Bearer ${token}`;
-        const response = await fetch(getApiUrl("/plugins/bundled/status"), {
-          headers,
-          cache: "no-store",
-        });
+        const status = await fetchBundledPluginStatus();
         if (cancelled) return;
-        if (!response.ok) {
-          syncAttempts += 1;
-          if (syncAttempts < 8)
-            timer = setTimeout(
-              pollBundleSync,
-              Math.min(5000, 1000 * syncAttempts),
-            );
-          return;
-        }
-        const status = (await response.json()) as { state?: string };
-        syncAttempts = 0;
-        if (status?.state === "ready") {
-          if (!reloadedAfterBundleSync) {
-            reloadedAfterBundleSync = true;
-            await load();
-            // The first request may have raced the final atomic replacement;
-            // invalidate the promise once and refresh the manifest exactly
-            // once after synchronization completes.
-            loadPromise = null;
-            await load();
-          }
-          return;
-        }
-        if (status?.state === "error") {
+        if (status.state === "error") {
           // A transient dependency/install error should not permanently leave
           // the frontend with an empty plugin list. Retry a few times so a
           // later atomic repair can become visible without a full restart.
@@ -153,6 +127,33 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
               pollBundleSync,
               Math.min(5000, 1000 * syncAttempts),
             );
+          return;
+        }
+        syncAttempts = 0;
+        if (status.state === "registry_ready") {
+          if (!reloadedAtRegistryReady) {
+            reloadedAtRegistryReady = true;
+            // Join any initial import before invalidating the memoized load.
+            // Otherwise registry_ready can start the same plugin bundle twice
+            // while its first dynamic import is still in flight.
+            await load();
+            if (cancelled) return;
+            loadPromise = null;
+            await load();
+          }
+          // Static plugin menus/routes are now available, but agent-dependent
+          // plugin services may still be starting. Keep polling for `ready`.
+        } else if (status.state === "ready") {
+          if (!reloadedAtReady) {
+            reloadedAtReady = true;
+            // Perform one final authoritative manifest refresh. This also
+            // keeps compatibility with backends that publish `ready` directly
+            // without the intermediate registry_ready state.
+            await load();
+            if (cancelled) return;
+            loadPromise = null;
+            await load();
+          }
           return;
         }
       } catch {

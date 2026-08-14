@@ -25,17 +25,6 @@ internal static class PortableSetup
         try
         {
             string packageRoot = AppDomain.CurrentDomain.BaseDirectory;
-            if (HasArgument(args, "--uninstall"))
-                return RunUninstaller(packageRoot, silent);
-            if (silent)
-            {
-                VerifyPackage(packageRoot);
-                string silentLog;
-                return RunInstaller(packageRoot, null, HasNoCliPath(args), out silentLog);
-            }
-
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
             using (var singleton = new Mutex(false, "Local\\UGSciDesktopPortableSetup"))
             {
                 bool acquired;
@@ -43,12 +32,28 @@ internal static class PortableSetup
                 catch (AbandonedMutexException) { acquired = true; }
                 if (!acquired)
                 {
-                    MessageBox.Show("Another UGSci Desktop setup window is already open.",
-                        "UGSci Desktop Setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    if (!silent)
+                        MessageBox.Show("Another UGSci Desktop setup or uninstall operation is already running.",
+                            "UGSci Desktop Setup", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    else
+                        WriteFailureLog(HasArgument(args, "--uninstall") ? "uninstall" : "setup",
+                            new InvalidOperationException(
+                            "Another UGSci Desktop setup or uninstall operation is already running."));
                     return LaunchFailureExitCode;
                 }
                 try
                 {
+                    if (HasArgument(args, "--uninstall"))
+                        return RunUninstaller(packageRoot, silent);
+                    if (silent)
+                    {
+                        VerifyPackage(packageRoot);
+                        string silentLog;
+                        return RunInstaller(packageRoot, null, HasNoCliPath(args), false, out silentLog);
+                    }
+
+                    Application.EnableVisualStyles();
+                    Application.SetCompatibleTextRenderingDefault(false);
                     using (var form = new SetupForm(packageRoot, HasNoCliPath(args)))
                     {
                         Application.Run(form);
@@ -64,7 +69,11 @@ internal static class PortableSetup
         catch (Exception error)
         {
             if (!silent)
-                MessageBox.Show(error.Message, "UGSci Desktop Setup", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            {
+                string logPath = WriteFailureLog(HasArgument(args, "--uninstall") ? "uninstall" : "setup", error);
+                MessageBox.Show(error.Message + "\n\nLog: " + logPath, "UGSci Desktop Setup",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
             else
                 WriteFailureLog(HasArgument(args, "--uninstall") ? "uninstall" : "setup", error);
             return error is InvalidDataException ? InvalidPackageExitCode : LaunchFailureExitCode;
@@ -88,7 +97,16 @@ internal static class PortableSetup
         if (!File.Exists(cleanup)) throw new FileNotFoundException("The UGSci Desktop cleanup script is missing.", cleanup);
         File.Copy(cleanup, temporaryCleanup, true);
         ProcessResult result;
-        try { result = RunPowerShell(installRoot, temporaryScript, new[] { "-InstallDir", installRoot, "-CleanupScript", temporaryCleanup }, true); }
+        bool keepTemporaryCleanup = false;
+        try
+        {
+            result = RunPowerShell(installRoot, temporaryScript, new[] {
+                "-InstallDir", installRoot,
+                "-CleanupScript", temporaryCleanup,
+                "-LauncherPid", Process.GetCurrentProcess().Id.ToString(CultureInfo.InvariantCulture)
+            }, true);
+            keepTemporaryCleanup = result.ExitCode == 0;
+        }
         catch (Exception error)
         {
             string logPath = NewLogPath("uninstall");
@@ -100,13 +118,13 @@ internal static class PortableSetup
         finally
         {
             try { File.Delete(temporaryScript); } catch { }
-            // cleanup is intentionally retained: the detached cleanup process
-            // needs it after this launcher exits and removes the install tree.
+            if (!keepTemporaryCleanup)
+                try { File.Delete(temporaryCleanup); } catch { }
         }
         if (!silent)
         {
             if (result.ExitCode == 0)
-                MessageBox.Show("UGSci Desktop was uninstalled successfully.", "UGSci Desktop Uninstall",
+                MessageBox.Show("UGSci Desktop was removed from Windows. Remaining application files will be deleted after this window closes.", "UGSci Desktop Uninstall",
                     MessageBoxButtons.OK, MessageBoxIcon.Information);
             else
                 MessageBox.Show("UGSci Desktop could not be uninstalled.\n\nLog: " + result.LogPath,
@@ -137,10 +155,11 @@ internal static class PortableSetup
         return false;
     }
 
-    private static int RunInstaller(string packageRoot, string installDir, bool noCliPath, out string logPath)
+    private static int RunInstaller(string packageRoot, string installDir, bool noCliPath, bool noDesktopShortcut, out string logPath)
     {
         var arguments = new List<string> { "-Silent" };
         if (noCliPath) arguments.Add("-NoCliPath");
+        if (noDesktopShortcut) arguments.Add("-NoDesktopShortcut");
         if (!string.IsNullOrWhiteSpace(installDir)) arguments.Add("-InstallDir");
         if (!string.IsNullOrWhiteSpace(installDir)) arguments.Add(installDir);
         ProcessResult result = RunPowerShell(packageRoot, Path.Combine(packageRoot, "install.ps1"), arguments, false);
@@ -219,8 +238,13 @@ internal static class PortableSetup
 
     private static void VerifyPackage(string packageRoot)
     {
-        string root = Path.GetFullPath(packageRoot).TrimEnd(Path.DirectorySeparatorChar);
-        string prefix = root + Path.DirectorySeparatorChar;
+        string root = Path.GetFullPath(packageRoot);
+        string volumeRoot = Path.GetPathRoot(root);
+        if (!string.Equals(root, volumeRoot, StringComparison.OrdinalIgnoreCase))
+            root = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        string prefix = root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
+            root.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+                ? root : root + Path.DirectorySeparatorChar;
         string manifest = Path.Combine(root, "checksums.sha256");
         if (!File.Exists(manifest)) throw new InvalidDataException("checksums.sha256 is missing.");
         var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -249,8 +273,14 @@ internal static class PortableSetup
             if (!expected.Contains(relative)) throw new InvalidDataException("Unchecked package file: " + relative);
         }
         foreach (string required in new[] { "Setup.exe", "install.ps1", "version.json",
+                     Path.Combine("payload", "Setup.exe"),
+                     Path.Combine("payload", "Uninstall.exe"),
                      Path.Combine("payload", "UGSci.exe"),
-                     Path.Combine("payload", "binaries", "qwenpaw-backend", "qwenpaw-backend.exe") })
+                     Path.Combine("payload", "binaries", "qwenpaw-backend", "qwenpaw-backend.exe"),
+                     Path.Combine("payload", "binaries", "qwenpaw-backend", "qwenpaw.exe"),
+                     Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "flowforge", "plugin.json"),
+                     Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "ugsci", "plugin.json"),
+                     Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "ugsci_research", "plugin.json") })
             if (!expected.Contains(required)) throw new InvalidDataException("Required checksum entry is missing: " + required);
     }
 
@@ -265,16 +295,24 @@ internal static class PortableSetup
     {
         private readonly string packageRoot;
         private readonly bool forceNoCliPath;
+        private readonly Panel[] pages = new Panel[6];
+        private readonly Button backButton;
+        private readonly Button nextButton;
+        private readonly Button cancelButton;
         private readonly TextBox location;
-        private readonly CheckBox addPath;
-        private readonly Button install;
         private readonly Button browse;
-        private readonly ProgressBar progress;
-        private readonly Label status;
+        private readonly CheckBox addPath;
+        private readonly CheckBox desktopShortcut;
+        private readonly Label verifyStatus;
+        private readonly ProgressBar verifyProgress;
+        private readonly Label installStatus;
+        private readonly ProgressBar installProgress;
+        private readonly Label completeStatus;
+        private int pageIndex;
+        private int resultCode = 1;
         private bool busy;
         private bool allowClose;
         private bool verificationComplete;
-        private int resultCode = 1;
         public int ResultCode { get { return resultCode; } }
 
         public SetupForm(string root, bool noCliPath)
@@ -287,56 +325,171 @@ internal static class PortableSetup
             MaximizeBox = false;
             MinimizeBox = false;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(520, 230);
+            ClientSize = new Size(620, 410);
 
-            var title = new Label { Text = "Install UGSci Desktop", AutoSize = true, Font = new Font(Font, FontStyle.Bold), Location = new Point(20, 18) };
-            var pathLabel = new Label { Text = "Installation folder:", AutoSize = true, Location = new Point(20, 62) };
-            location = new TextBox { Location = new Point(20, 84), Width = 390, Text = FindInstallLocation() };
-            browse = new Button { Text = "Browse...", Location = new Point(420, 82), Width = 80 };
-            browse.Click += delegate { using (var dialog = new FolderBrowserDialog { Description = "Choose where to install UGSci Desktop", SelectedPath = location.Text }) if (dialog.ShowDialog(this) == DialogResult.OK) location.Text = dialog.SelectedPath; };
-            addPath = new CheckBox { Text = "Add QwenPaw to my user PATH", AutoSize = true, Location = new Point(20, 122), Checked = !noCliPath };
-            if (noCliPath) addPath.Enabled = false;
-            status = new Label { Text = "Preparing package verification...", AutoSize = true, Location = new Point(20, 160), ForeColor = Color.DimGray };
-            progress = new ProgressBar { Location = new Point(20, 185), Width = 390, Style = ProgressBarStyle.Marquee, Visible = true };
-            install = new Button { Text = "Install", Location = new Point(420, 182), Width = 80, DialogResult = DialogResult.None, Enabled = false };
-            install.Click += InstallClicked;
-            Controls.AddRange(new Control[] { title, pathLabel, location, browse, addPath, status, progress, install });
-            AcceptButton = install;
+            var host = new Panel { Dock = DockStyle.Top, Height = 350, BackColor = Color.White };
+            Controls.Add(host);
+            for (int i = 0; i < pages.Length; i++)
+            {
+                pages[i] = new Panel { Dock = DockStyle.Fill, Visible = false, BackColor = Color.White };
+                host.Controls.Add(pages[i]);
+            }
+
+            pages[0].Controls.Add(new Label { Text = "Welcome to UGSci Desktop Setup", Font = new Font(Font.FontFamily, 17, FontStyle.Bold), AutoSize = true, Location = new Point(35, 45) });
+            pages[0].Controls.Add(new Label { Text = "This wizard installs UGSci Desktop and its bundled QwenPaw runtime.\n\nClose UGSci Desktop before continuing. Existing user data is backed up before an upgrade.", AutoSize = true, MaximumSize = new Size(535, 0), Location = new Point(38, 105) });
+            verifyStatus = new Label { Text = "Verifying installation package...", AutoSize = true, Location = new Point(38, 250), ForeColor = Color.DimGray };
+            verifyProgress = new ProgressBar { Location = new Point(38, 278), Width = 525, Style = ProgressBarStyle.Marquee };
+            pages[0].Controls.AddRange(new Control[] { verifyStatus, verifyProgress });
+
+            pages[1].Controls.Add(PageTitle("Important information"));
+            var notice = new RichTextBox { ReadOnly = true, BorderStyle = BorderStyle.FixedSingle, Location = new Point(38, 78), Size = new Size(525, 225), BackColor = Color.White, Text = "UGSci Desktop includes the QwenPaw backend, managed bundled plugins, and third-party runtimes.\n\nSetup may download the Microsoft WebView2 runtime when it is missing. During an upgrade, application files are replaced atomically. QwenPaw workspaces, secrets, engines, models, state, and other user data are backed up or preserved.\n\nDo not select a folder containing unrelated files. Setup will refuse to delete or overwrite an unrecognized non-empty folder." };
+            pages[1].Controls.Add(notice);
+
+            pages[2].Controls.Add(PageTitle("Choose installation location"));
+            pages[2].Controls.Add(new Label { Text = "Install UGSci Desktop to:", AutoSize = true, Location = new Point(38, 105) });
+            location = new TextBox { Location = new Point(38, 132), Width = 420, Text = FindInstallLocation() };
+            browse = new Button { Text = "Browse...", Location = new Point(470, 130), Width = 93 };
+            browse.Click += BrowseClicked;
+            pages[2].Controls.AddRange(new Control[] { location, browse, new Label { Text = "An existing UGSci installation or uninstall remnant can be repaired in place.\nFolders with unrelated files are rejected.", AutoSize = true, Location = new Point(38, 180), ForeColor = Color.DimGray } });
+
+            pages[3].Controls.Add(PageTitle("Installation options"));
+            addPath = new CheckBox { Text = "Add QwenPaw command line tools to my user PATH", AutoSize = true, Location = new Point(45, 110), Checked = !noCliPath, Enabled = !noCliPath };
+            desktopShortcut = new CheckBox { Text = "Create a UGSci Desktop shortcut on the desktop", AutoSize = true, Location = new Point(45, 150), Checked = true };
+            pages[3].Controls.AddRange(new Control[] { addPath, desktopShortcut, new Label { Text = "A Start menu shortcut and uninstall entry are always created.", AutoSize = true, Location = new Point(45, 205), ForeColor = Color.DimGray } });
+
+            pages[4].Controls.Add(PageTitle("Installing UGSci Desktop"));
+            installStatus = new Label { Text = "Preparing installation...", AutoSize = true, Location = new Point(38, 125) };
+            installProgress = new ProgressBar { Location = new Point(38, 160), Width = 525, Style = ProgressBarStyle.Marquee };
+            pages[4].Controls.AddRange(new Control[] { installStatus, installProgress });
+
+            pages[5].Controls.Add(PageTitle("Setup complete"));
+            completeStatus = new Label { AutoSize = true, MaximumSize = new Size(535, 0), Location = new Point(38, 115) };
+            pages[5].Controls.Add(completeStatus);
+
+            backButton = new Button { Text = "< Back", Location = new Point(350, 365), Width = 80 };
+            nextButton = new Button { Text = "Next >", Location = new Point(438, 365), Width = 80, Enabled = false };
+            cancelButton = new Button { Text = "Cancel", Location = new Point(526, 365), Width = 80 };
+            backButton.Click += delegate { if (pageIndex > 0 && pageIndex < 4) ShowPage(pageIndex - 1); };
+            nextButton.Click += NextClicked;
+            cancelButton.Click += delegate { Close(); };
+            Controls.AddRange(new Control[] { backButton, nextButton, cancelButton });
+            AcceptButton = nextButton;
+            CancelButton = cancelButton;
+            ShowPage(0);
             Shown += delegate { VerifyPackageInBackground(); };
             FormClosing += SetupFormClosing;
+        }
+
+        private static Label PageTitle(string text)
+        {
+            return new Label { Text = text, Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 14, FontStyle.Bold), AutoSize = true, Location = new Point(35, 35) };
+        }
+
+        private void BrowseClicked(object sender, EventArgs e)
+        {
+            using (var dialog = new FolderBrowserDialog { Description = "Choose where to install UGSci Desktop", SelectedPath = location.Text })
+                if (dialog.ShowDialog(this) == DialogResult.OK) location.Text = dialog.SelectedPath;
+        }
+
+        private void ShowPage(int index)
+        {
+            pageIndex = index;
+            for (int i = 0; i < pages.Length; i++) pages[i].Visible = i == index;
+            pages[index].BringToFront();
+            backButton.Enabled = !busy && index > 0 && index < 4;
+            backButton.Visible = index < 4;
+            cancelButton.Enabled = !busy && index < 5;
+            cancelButton.Visible = index < 5;
+            nextButton.Enabled = !busy && ((index == 0 && verificationComplete) || (index > 0 && index < 4) || index == 5);
+            nextButton.Text = index == 3 ? "Install" : (index == 5 ? "Finish" : "Next >");
+        }
+
+        private void NextClicked(object sender, EventArgs e)
+        {
+            if (busy) return;
+            if (pageIndex == 0 && verificationComplete) ShowPage(1);
+            else if (pageIndex == 1) ShowPage(2);
+            else if (pageIndex == 2)
+            {
+                string normalized;
+                string validationError;
+                if (!TryNormalizeInstallLocation(location.Text, out normalized, out validationError))
+                    MessageBox.Show(this, validationError, Text, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                else
+                {
+                    location.Text = normalized;
+                    ShowPage(3);
+                }
+            }
+            else if (pageIndex == 3) StartInstall();
+            else if (pageIndex == 5) { allowClose = true; Close(); }
         }
 
         private void VerifyPackageInBackground()
         {
             busy = true;
-            location.Enabled = false;
-            browse.Enabled = false;
-            addPath.Enabled = false;
-            status.Text = "Verifying installation package...";
+            ShowPage(0);
             var thread = new Thread(new ThreadStart(delegate {
                 string error = null;
-                try { VerifyPackage(packageRoot); }
-                catch (Exception ex) { error = ex.Message; }
-                if (IsDisposed || !IsHandleCreated) return;
+                try { VerifyPackage(packageRoot); } catch (Exception ex) { error = ex.Message; }
                 BeginInvoke((MethodInvoker)delegate {
                     busy = false;
-                    progress.Visible = false;
+                    verifyProgress.Visible = false;
                     if (error == null)
                     {
                         verificationComplete = true;
-                        status.Text = "Ready to install.";
-                        location.Enabled = true;
-                        browse.Enabled = true;
-                        addPath.Enabled = !forceNoCliPath;
-                        install.Enabled = true;
+                        verifyStatus.Text = "Package verified. Click Next to continue.";
+                        ShowPage(0);
                     }
                     else
                     {
                         resultCode = InvalidPackageExitCode;
-                        status.Text = "Package verification failed.";
-                        MessageBox.Show(this, error, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        verifyStatus.Text = "Package verification failed.";
+                        string logPath = WriteFailureLog("setup", new InvalidDataException(error));
+                        MessageBox.Show(this, error + "\n\nLog: " + logPath, Text,
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
                         allowClose = true;
                         Close();
+                    }
+                });
+            }));
+            thread.IsBackground = true;
+            thread.Start();
+        }
+
+        private void StartInstall()
+        {
+            string dir = location.Text.Trim();
+            busy = true;
+            installProgress.Style = ProgressBarStyle.Marquee;
+            installProgress.Value = 0;
+            ShowPage(4);
+            installStatus.Text = "Backing up data and installing application files...";
+            var thread = new Thread(new ThreadStart(delegate {
+                int code = 1; string error = null; string logPath = null;
+                try { code = RunInstaller(packageRoot, dir, forceNoCliPath || !addPath.Checked, !desktopShortcut.Checked, out logPath); }
+                catch (Exception ex) { error = ex.Message; logPath = WriteFailureLog("setup", ex); }
+                BeginInvoke((MethodInvoker)delegate {
+                    busy = false;
+                    resultCode = code;
+                    if (error != null || code != 0)
+                    {
+                        installProgress.Style = ProgressBarStyle.Continuous;
+                        installProgress.Value = 0;
+                        installStatus.Text = "Installation failed.";
+                        string details = error ?? ("Installer exited with code " + code.ToString(CultureInfo.InvariantCulture));
+                        if (!string.IsNullOrWhiteSpace(logPath)) details += "\n\nLog: " + logPath;
+                        MessageBox.Show(this, details, Text, MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        ShowPage(3);
+                    }
+                    else
+                    {
+                        resultCode = 0;
+                        completeStatus.Text = "UGSci Desktop was installed successfully.\n\nYou can start it from the Start menu" +
+                            (desktopShortcut.Checked ? " or desktop shortcut." : ".") +
+                            "\n\nThe downloaded ZIP and its extracted setup folder can now be deleted.";
+                        allowClose = true;
+                        ShowPage(5);
                     }
                 });
             }));
@@ -349,8 +502,7 @@ internal static class PortableSetup
             if (busy && !allowClose)
             {
                 e.Cancel = true;
-                MessageBox.Show(this, "Please wait for the current operation to finish.", Text,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                MessageBox.Show(this, "Please wait for the current operation to finish.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
         }
 
@@ -374,25 +526,40 @@ internal static class PortableSetup
             return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "UGSci Desktop");
         }
 
-        private void InstallClicked(object sender, EventArgs e)
+        private bool TryNormalizeInstallLocation(string value, out string normalized, out string error)
         {
-            if (!verificationComplete || busy) return;
-            string dir = location.Text.Trim();
-            if (string.IsNullOrWhiteSpace(dir)) { MessageBox.Show(this, "Choose an installation folder.", Text, MessageBoxButtons.OK, MessageBoxIcon.Warning); return; }
-            busy = true;
-            install.Enabled = false; location.Enabled = false; browse.Enabled = false; addPath.Enabled = false; progress.Visible = true; status.Text = "Installing...";
-            bool noCli = forceNoCliPath || !addPath.Checked;
-            var thread = new Thread(new ThreadStart(delegate {
-                int code = 1; string error = null; string logPath = null;
-                try { code = RunInstaller(packageRoot, dir, noCli, out logPath); }
-                catch (Exception ex) { error = ex.Message; logPath = WriteFailureLog("setup", ex); }
-                BeginInvoke((MethodInvoker)delegate {
-                    busy = false; progress.Visible = false; resultCode = code;
-                    if (error != null || code != 0) { status.Text = "Installation failed."; string details = error ?? ("Installer exited with code " + code.ToString(CultureInfo.InvariantCulture)); if (!string.IsNullOrWhiteSpace(logPath)) details += "\n\nLog: " + logPath; MessageBox.Show(this, details, Text, MessageBoxButtons.OK, MessageBoxIcon.Error); install.Enabled = true; location.Enabled = true; browse.Enabled = true; addPath.Enabled = !forceNoCliPath; }
-                    else { status.Text = "Installation complete. A desktop shortcut was created."; MessageBox.Show(this, "UGSci Desktop was installed successfully.", Text, MessageBoxButtons.OK, MessageBoxIcon.Information); allowClose = true; DialogResult = DialogResult.OK; Close(); }
-                });
-            }));
-            thread.IsBackground = true; thread.Start();
+            normalized = null;
+            error = null;
+            try
+            {
+                if (string.IsNullOrWhiteSpace(value))
+                    throw new ArgumentException("Choose an installation folder.");
+                if (!Path.IsPathRooted(value.Trim()))
+                    throw new ArgumentException("The installation folder must be an absolute path.");
+                normalized = Path.GetFullPath(value.Trim()).TrimEnd(
+                    Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string volumeRoot = Path.GetPathRoot(normalized);
+                if (string.Equals(normalized, volumeRoot == null ? null : volumeRoot.TrimEnd(
+                        Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar),
+                        StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("UGSci Desktop cannot be installed directly into a drive root.");
+
+                string source = Path.GetFullPath(packageRoot).TrimEnd(
+                    Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                string sourcePrefix = source + Path.DirectorySeparatorChar;
+                string installPrefix = normalized + Path.DirectorySeparatorChar;
+                if (string.Equals(normalized, source, StringComparison.OrdinalIgnoreCase) ||
+                    installPrefix.StartsWith(sourcePrefix, StringComparison.OrdinalIgnoreCase) ||
+                    sourcePrefix.StartsWith(installPrefix, StringComparison.OrdinalIgnoreCase))
+                    throw new ArgumentException("The installation folder must be separate from the extracted setup package.");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                error = ex.Message;
+                normalized = null;
+                return false;
+            }
         }
     }
 

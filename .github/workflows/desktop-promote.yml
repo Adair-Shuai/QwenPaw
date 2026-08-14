@@ -113,6 +113,15 @@ jobs:
           run-id: ${{ inputs.windows_artifacts_run_id || github.event.inputs.windows_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Overlay replacement Windows updater metadata
+        if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-updater-meta-windows
+          path: replacement-windows/tauri-updater-meta-windows
+          run-id: ${{ inputs.windows_artifacts_run_id || github.event.inputs.windows_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Overlay replacement macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' || github.event.inputs.macos_artifacts_run_id != '' }}
         uses: actions/download-artifact@v4
@@ -123,17 +132,31 @@ jobs:
           run-id: ${{ inputs.macos_artifacts_run_id || github.event.inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Overlay replacement macOS updater metadata
+        if: ${{ inputs.macos_artifacts_run_id != '' || github.event.inputs.macos_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-updater-meta-macos
+          path: replacement-macos/tauri-updater-meta-macos
+          run-id: ${{ inputs.macos_artifacts_run_id || github.event.inputs.macos_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Merge replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
         run: |
-          # Preserve the artifact directory name; promotion discovers files
-          # beneath UGSci-Desktop-Tauri-Windows-*.
+          rm -rf UGSci-Desktop-Tauri-Windows-* tauri-updater-meta-windows
+          # Preserve the artifact directory names; promotion discovers files
+          # beneath UGSci-Desktop-Tauri-Windows-* and updater metadata under
+          # tauri-updater-meta-windows.
           cp -a replacement-windows/UGSci-Desktop-Tauri-Windows-* .
+          cp -a replacement-windows/tauri-updater-meta-windows .
 
       - name: Merge replacement macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' || github.event.inputs.macos_artifacts_run_id != '' }}
         run: |
+          rm -rf UGSci-Desktop-Tauri-macOS-* tauri-updater-meta-macos
           cp -a replacement-macos/UGSci-Desktop-Tauri-macOS-* .
+          cp -a replacement-macos/tauri-updater-meta-macos .
 
       - name: Install ossutil
         run: |

@@ -272,9 +272,11 @@ async def lifespan(
 
         factory_kwargs = WorkspaceBootstrapFactory.build_bootstrap_kwargs(
             app_services,
-            extra_command_specs=_api_action_command_specs
-            if _api_action_command_specs
-            else None,
+            extra_command_specs=(
+                _api_action_command_specs
+                if _api_action_command_specs
+                else None
+            ),
         )
         # Merge factory output into workspace_registry._bootstrap_kwargs
         for key, value in factory_kwargs.items():
@@ -306,6 +308,9 @@ async def lifespan(
             exc_info=True,
         )
 
+    if workspace_registry is None:
+        raise RuntimeError("Workspace registry failed to initialize")
+
     # Start token usage manager background tasks
     logger.debug("Starting TokenUsageManager background tasks...")
     from ..token_usage import get_token_usage_manager
@@ -322,7 +327,7 @@ async def lifespan(
     app.state.plugin_loader = None
     app.state.plugin_registry = None
 
-    async def _get_agent_by_id(agent_id: str = None):
+    async def _get_agent_by_id(agent_id: str | None = None):
         """Get agent instance by ID, or active agent if not specified."""
         if agent_id is None:
             config = load_config(get_config_path())
@@ -561,6 +566,86 @@ async def lifespan(
             )
             logger.debug("Phase 1: channel plugins loaded")
 
+            # Publish all plugin registrations before starting agents and
+            # their external MCP runtimes. A missing or slow MCP process can
+            # otherwise delay this point for minutes while the desktop UI is
+            # already reachable, causing both Windows WebView2 and macOS
+            # WKWebView clients to observe an empty frontend-plugin manifest.
+            loaded_plugins = await plugin_loader.load_all_plugins(
+                configs=plugin_configs,
+            )
+            logger.debug(
+                "Loaded %d plugin registration(s) before agent startup",
+                len(loaded_plugins),
+            )
+
+            # Reconcile managed component activations before publishing the
+            # frontend manifest. This keeps rollback atomic from the UI's
+            # perspective and does not depend on slow agent/MCP startup.
+            if component_updated_ids:
+                try:
+                    from ..components.service import configured_service
+
+                    recovery_service = configured_service()
+                    if recovery_service is not None:
+                        plugins_root = get_plugins_dir()
+                        for component_id in sorted(component_updated_ids):
+                            record = loaded_plugins.get(component_id)
+                            healthy = bool(record and record.enabled)
+                            destination = plugins_root / component_id
+                            if healthy:
+                                recovery_service.updater.finalize_activation(
+                                    component_id,
+                                    destination,
+                                )
+                                continue
+                            logger.error(
+                                "Updated component %s failed plugin "
+                                "health check; rolling back",
+                                component_id,
+                            )
+                            # pylint: disable=protected-access
+                            plugin_loader._loaded_plugins.pop(
+                                component_id,
+                                None,
+                            )
+                            recovery_service.updater.rollback_activation(
+                                component_id,
+                                destination,
+                            )
+                            if destination.is_dir():
+                                discovered = {
+                                    manifest.id: (manifest, path)
+                                    for manifest, path in (
+                                        plugin_loader.discover_plugins()
+                                    )
+                                }
+                                item = discovered.get(component_id)
+                                if item is not None:
+                                    await plugin_loader.load_plugin(
+                                        item[0],
+                                        item[1],
+                                        plugin_configs.get(component_id),
+                                    )
+                        recovery_service.client.close()
+                except Exception:
+                    logger.warning(
+                        "Component activation health recovery failed",
+                        exc_info=True,
+                    )
+
+            app.state.plugin_loader = plugin_loader
+            app.state.plugin_registry = plugin_loader.registry
+            app.state.bundled_plugins_status = {
+                "state": "registry_ready",
+                "installed": newly_installed,
+                "error": None,
+            }
+            logger.debug(
+                "Published %d plugin registration(s) before agent startup",
+                len(loaded_plugins),
+            )
+
             startup_state.update("agents", "正在启动专家服务…", 42)
 
             def _mark_core_agents_ready(_results: dict[str, bool]) -> None:
@@ -586,78 +671,6 @@ async def lifespan(
 
             provider_manager.start_local_model_resume(local_model_manager)
 
-            # Phase 2: load remaining plugins (channel plugins already
-            # loaded — load_plugin skips them automatically)
-            loaded_plugins = await plugin_loader.load_all_plugins(
-                configs=plugin_configs,
-            )
-            logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
-
-            # Component activation keeps a last-known-good tree until the
-            # freshly installed managed plugin has actually loaded. Plugin
-            # discovery deliberately swallows individual load exceptions, so
-            # verify the updated IDs explicitly and roll back failed ones.
-            if component_updated_ids:
-                try:
-                    from ..components.service import configured_service
-
-                    recovery_service = configured_service()
-                    if recovery_service is not None:
-                        plugins_root = get_plugins_dir()
-                        for component_id in sorted(component_updated_ids):
-                            record = loaded_plugins.get(component_id)
-                            healthy = bool(record and record.enabled)
-                            destination = plugins_root / component_id
-                            if healthy:
-                                recovery_service.updater.finalize_activation(
-                                    component_id,
-                                    destination,
-                                )
-                                continue
-                            logger.error(
-                                "Updated component %s failed plugin "
-                                "health check; "
-                                "rolling back",
-                                component_id,
-                            )
-                            # ``load_all_plugins`` records incompatible
-                            # candidates as disabled. Remove that record so
-                            # the restored last-known-good manifest can be
-                            # loaded afresh below.
-                            # pylint: disable=protected-access
-                            plugin_loader._loaded_plugins.pop(
-                                component_id,
-                                None,
-                            )
-                            recovery_service.updater.rollback_activation(
-                                component_id,
-                                destination,
-                            )
-                            # The candidate never registered successfully;
-                            # load the restored last-known-good tree when one
-                            # exists so the application remains functional.
-                            restored = destination.is_dir()
-                            if restored:
-                                discovered_plugins = (
-                                    plugin_loader.discover_plugins()
-                                )
-                                discovered = {
-                                    manifest.id: (manifest, path)
-                                    for manifest, path in discovered_plugins
-                                }
-                                item = discovered.get(component_id)
-                                if item is not None:
-                                    await plugin_loader.load_plugin(
-                                        item[0],
-                                        item[1],
-                                        plugin_configs.get(component_id),
-                                    )
-                        recovery_service.client.close()
-                except Exception:
-                    logger.warning(
-                        "Component activation health recovery failed",
-                        exc_info=True,
-                    )
             startup_state.update(
                 "plugins",
                 "正在加载功能模块…",
@@ -688,18 +701,6 @@ async def lifespan(
                 logger.debug(
                     f"Registered plugin provider: {provider_id}",
                 )
-
-            app.state.plugin_loader = plugin_loader
-            app.state.plugin_registry = plugin_loader.registry
-            # The frontend refreshes its plugin manifests when it observes
-            # `ready`. Publish that state only after the public endpoint can
-            # actually see the loaded registry, otherwise a one-shot refresh
-            # can permanently cache an empty plugin list.
-            app.state.bundled_plugins_status = {
-                "state": "ready",
-                "installed": newly_installed,
-                "error": None,
-            }
 
             # ---- Plugin Control Commands ----
             logger.debug("Registering plugin control commands...")
@@ -781,6 +782,17 @@ async def lifespan(
             except Exception as e:
                 logger.warning(f"Approval service setup skipped: {e}")
 
+            # Runtime helpers, core agents, control commands, startup hooks,
+            # and approval wiring are now usable. Static plugin menus/routes
+            # were exposed earlier as registry_ready; only now publish full
+            # readiness so agent-dependent plugin pages stop showing their
+            # initialization state.
+            app.state.bundled_plugins_status = {
+                "state": "ready",
+                "installed": newly_installed,
+                "error": None,
+            }
+
             # ---- Skill pool auto-update sync ----
             try:
                 startup_state.update("skills", "正在更新技能资料…", 84)
@@ -826,8 +838,8 @@ async def lifespan(
 
             startup_elapsed = time.time() - startup_start_time
             logger.info(
-                "Background startup completed in "
-                f"{startup_elapsed:.3f} seconds",
+                "Background startup completed in %.3f seconds",
+                startup_elapsed,
             )
             if app.state.startup_ready.is_set():
                 startup_display.complete(startup_elapsed)
@@ -838,6 +850,19 @@ async def lifespan(
                 "Background startup encountered an error",
                 exc_info=True,
             )
+            if (
+                getattr(
+                    app.state,
+                    "bundled_plugins_status",
+                    {},
+                ).get("state")
+                != "ready"
+            ):
+                app.state.bundled_plugins_status = {
+                    "state": "error",
+                    "installed": [],
+                    "error": str(exc),
+                }
             startup_state.mark_error(str(exc))
 
     _bg_task = asyncio.create_task(_background_startup())

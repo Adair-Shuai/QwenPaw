@@ -47,6 +47,20 @@ export interface PluginStatus {
   version?: string;
 }
 
+export type BundledPluginState =
+  | "pending"
+  | "running"
+  | "files_ready"
+  | "registry_ready"
+  | "ready"
+  | "error";
+
+export interface BundledPluginStatus {
+  state: BundledPluginState;
+  installed: string[];
+  error?: string | null;
+}
+
 /** Entry from ``GET /api/plugins/catalog`` (official CDN manifest). */
 export interface OfficialPluginCatalogEntry {
   id: string;
@@ -83,6 +97,24 @@ export async function fetchPlugins(): Promise<PluginInfo[]> {
   if (!response.ok) {
     console.warn("[plugin] Failed to fetch plugin list:", response.status);
     return [];
+  }
+
+  return response.json();
+}
+
+/**
+ * Fetch the backend's bundled-plugin preparation state. The desktop HTTP
+ * server becomes reachable before plugin discovery finishes, so callers must
+ * not treat an early disk-scan response as the final runtime state.
+ */
+export async function fetchBundledPluginStatus(): Promise<BundledPluginStatus> {
+  const response = await fetch(getApiUrl("/plugins/bundled/status"), {
+    headers: buildAuthHeaders(),
+    cache: "no-store",
+  });
+
+  if (!response.ok) {
+    throw new Error(`Plugin startup status failed (${response.status})`);
   }
 
   return response.json();

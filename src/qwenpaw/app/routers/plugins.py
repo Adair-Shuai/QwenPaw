@@ -106,6 +106,14 @@ def _list_plugins_from_disk() -> list[dict]:
             continue
 
         plugin_id = manifest.get("id", item.name)
+        from ...plugins.bundled import is_plugin_uninstalled
+
+        if is_plugin_uninstalled(
+            plugin_id,
+            plugins_dir=plugins_dir,
+            plugin_dir=item,
+        ):
+            continue
         frontend_entry = manifest.get("entry", {}).get("frontend")
 
         from ...plugins.architecture import PluginManifest
@@ -887,6 +895,12 @@ async def uninstall_plugin(plugin_id: str, request: Request):
                 loader.registry,
                 plugin_id,
             )
+            # Persist the user's intent before deleting the plugin directory.
+            # The tombstone lives outside that directory, so a successful
+            # unload cannot erase it and startup cannot resurrect the bundle.
+            from ...plugins.bundled import mark_plugin_uninstalled
+
+            await asyncio.to_thread(mark_plugin_uninstalled, plugin_id)
             await loader.unload_plugin(plugin_id, delete_files=True)
             _post_unload_cleanup(
                 request,
@@ -911,15 +925,6 @@ async def uninstall_plugin(plugin_id: str, request: Request):
             status_code=500,
             detail=f"Plugin uninstallation failed: {exc}",
         ) from exc
-
-    # Mark as uninstalled so bundled plugins don't get re-installed
-    # on next startup (hot-pluggable behavior)
-    try:
-        from ...plugins.bundled import mark_plugin_uninstalled
-
-        mark_plugin_uninstalled(plugin_id)
-    except Exception:
-        pass  # Non-critical
 
     return {
         "id": plugin_id,

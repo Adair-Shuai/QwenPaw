@@ -39,7 +39,9 @@ runs:
           "--base-url", $env:BASE_URL,
           "--ui-mode", "tauri-windows",
           "--headed",
-          "--cdp-url", $env:CDP_URL
+          "--cdp-url", $env:CDP_URL,
+          "--native-ui-report", $env:QWENPAW_UI_VERIFY_REPORT_PATH,
+          "--native-ui-nonce", $env:QWENPAW_UI_VERIFY_NONCE
         )
         if ($env:ALLOW_FLAKY_LLM -eq "true") {
           $verifyArgs += "--allow-flaky-llm"

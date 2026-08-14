@@ -9,6 +9,7 @@ const hoisted = vi.hoisted(() => ({
   },
   stableT: (k: string) => k,
   fetchPluginsMock: vi.fn(),
+  fetchBundledPluginStatusMock: vi.fn(),
   uninstallPluginMock: vi.fn(),
   // Captured Modal.confirm options; initialized per-test in beforeEach.
   modalConfirmMock: vi.fn(),
@@ -26,6 +27,7 @@ vi.mock("react-i18next", () => ({
 
 vi.mock("@/api/modules/plugin", () => ({
   fetchPlugins: hoisted.fetchPluginsMock,
+  fetchBundledPluginStatus: hoisted.fetchBundledPluginStatusMock,
   uninstallPlugin: hoisted.uninstallPluginMock,
 }));
 
@@ -52,6 +54,7 @@ const {
   messageMock,
   modalConfirmMock,
   refreshMock,
+  fetchBundledPluginStatusMock,
   uninstallPluginMock,
   pluginsData,
 } = hoisted;
@@ -70,6 +73,12 @@ describe("usePluginManager", () => {
     modalConfirmMock.mockReset();
     refreshMock.mockReset();
     uninstallPluginMock.mockReset();
+    fetchBundledPluginStatusMock.mockReset();
+    fetchBundledPluginStatusMock.mockResolvedValue({
+      state: "ready",
+      installed: [],
+      error: null,
+    });
     pluginsData.length = 0;
     pluginsData.push(makePlugin());
   });
@@ -118,5 +127,33 @@ describe("usePluginManager", () => {
       "pluginManager.uninstallSuccess",
     );
     expect(refreshMock).toHaveBeenCalled();
+  });
+
+  it("refreshes at registry readiness and again at full runtime readiness", async () => {
+    vi.useFakeTimers();
+    fetchBundledPluginStatusMock
+      .mockResolvedValueOnce({
+        state: "registry_ready",
+        installed: [],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        state: "ready",
+        installed: [],
+        error: null,
+      });
+
+    const { unmount } = renderHook(() => usePluginManager());
+    await act(async () => Promise.resolve());
+    expect(refreshMock).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1500);
+      await Promise.resolve();
+    });
+    expect(refreshMock).toHaveBeenCalledTimes(2);
+
+    unmount();
+    vi.useRealTimers();
   });
 });

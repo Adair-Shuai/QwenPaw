@@ -2,9 +2,9 @@
 """Startup component update orchestration.
 
 The production OSS endpoint, embedded verification key, and bundled-plugin
-allowlist are safe defaults. Startup checks are enabled by default and can be
-disabled with ``QWENPAW_COMPONENT_UPDATES=disabled``. Queued updates are
-always honored.
+allowlist are safe defaults. Remote checks are initiated by the desktop
+version/update control. Startup only activates updates explicitly queued by
+that user-facing flow.
 All three values can be overridden with environment variables for testing.
 """
 
@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 import json
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from typing import Any
 import logging
 import threading
@@ -23,6 +24,7 @@ from urllib.parse import urlparse
 from ..__version__ import __version__
 from ..config.utils import get_plugins_dir
 from ..constant import WORKING_DIR
+from ..plugins.bundled import is_plugin_uninstalled
 from .update import detect_target
 from .client import ComponentClient
 from .update import (
@@ -35,6 +37,9 @@ from .update import (
 logger = logging.getLogger(__name__)
 _PENDING_UPDATES_PATH = WORKING_DIR / "components" / "pending.json"
 _PENDING_LOCK = threading.RLock()
+_PENDING_SCHEMA_VERSION = 2
+_PENDING_MAX_ATTEMPTS = 5
+_PENDING_MAX_AGE = timedelta(days=7)
 
 # The component signing public key is deliberately public and is embedded in
 # the client.  The private key remains a GitHub Actions secret and must never
@@ -83,36 +88,118 @@ def _authorize_component_install() -> None:
         )
 
 
-def _write_pending_components(components: set[str]) -> None:
-    if not components:
-        return
+def _pending_now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def _new_pending_record() -> dict[str, Any]:
+    return {
+        "queued_at": _pending_now().isoformat(),
+        "attempts": 0,
+        "last_error": None,
+    }
+
+
+def _load_pending_records() -> dict[str, dict[str, Any]]:
+    if not _PENDING_UPDATES_PATH.is_file():
+        return {}
+    try:
+        payload = json.loads(
+            _PENDING_UPDATES_PATH.read_text(encoding="utf-8"),
+        )
+    except (OSError, json.JSONDecodeError):
+        logger.warning("Pending component update queue is invalid")
+        return {}
+    if not isinstance(payload, dict):
+        return {}
+    components = payload.get("components")
+    if isinstance(components, list):
+        # Backward-compatible migration from schema 1.
+        return {
+            str(component): _new_pending_record()
+            for component in components
+            if str(component).strip()
+        }
+    if not isinstance(components, dict):
+        return {}
+    records: dict[str, dict[str, Any]] = {}
+    for component, raw in components.items():
+        component_id = str(component).strip()
+        if not component_id or not isinstance(raw, dict):
+            continue
+        record = _new_pending_record()
+        queued_at = raw.get("queued_at")
+        if isinstance(queued_at, str) and queued_at.strip():
+            record["queued_at"] = queued_at.strip()
+        try:
+            record["attempts"] = max(0, int(raw.get("attempts", 0)))
+        except (TypeError, ValueError):
+            record["attempts"] = 0
+        last_error = raw.get("last_error")
+        record["last_error"] = (
+            str(last_error) if last_error is not None else None
+        )
+        records[component_id] = record
+    return records
+
+
+def _pending_expired(record: dict[str, Any]) -> bool:
+    if int(record.get("attempts", 0)) >= _PENDING_MAX_ATTEMPTS:
+        return True
+    try:
+        queued_at = datetime.fromisoformat(str(record["queued_at"]))
+        if queued_at.tzinfo is None:
+            queued_at = queued_at.replace(tzinfo=timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return True
+    elapsed = _pending_now() - queued_at.astimezone(timezone.utc)
+    return elapsed > _PENDING_MAX_AGE
+
+
+def _store_pending_records(records: dict[str, dict[str, Any]]) -> None:
     with _PENDING_LOCK:
         _PENDING_UPDATES_PATH.parent.mkdir(parents=True, exist_ok=True)
-        pending: dict[str, Any] = {"schema_version": 1, "components": []}
-        if _PENDING_UPDATES_PATH.is_file():
-            try:
-                existing = json.loads(
-                    _PENDING_UPDATES_PATH.read_text(encoding="utf-8"),
-                )
-                if isinstance(existing, dict) and isinstance(
-                    existing.get("components"),
-                    list,
-                ):
-                    pending = existing
-            except (OSError, json.JSONDecodeError):
-                pass
-        pending["components"] = sorted(
-            {str(item) for item in pending["components"]} | components,
-        )
+        if not records:
+            _PENDING_UPDATES_PATH.unlink(missing_ok=True)
+            return
         temporary = _PENDING_UPDATES_PATH.with_name(
             f".{_PENDING_UPDATES_PATH.name}.{os.getpid()}."
             f"{threading.get_ident()}.tmp",
         )
         temporary.write_text(
-            json.dumps(pending, ensure_ascii=False, sort_keys=True) + "\n",
+            json.dumps(
+                {
+                    "schema_version": _PENDING_SCHEMA_VERSION,
+                    "components": {
+                        component: records[component]
+                        for component in sorted(records)
+                    },
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
         os.replace(temporary, _PENDING_UPDATES_PATH)
+
+
+def _write_pending_components(components: set[str]) -> None:
+    if not components:
+        return
+    with _PENDING_LOCK:
+        records = _load_pending_records()
+        for component in components:
+            records.setdefault(str(component), _new_pending_record())
+        _store_pending_records(records)
+
+
+def _record_pending_failure(
+    record: dict[str, Any],
+    error: BaseException | str,
+) -> None:
+    record["attempts"] = int(record.get("attempts", 0)) + 1
+    record["last_error"] = str(error)
 
 
 def queue_component_update(component: str) -> dict[str, Any]:
@@ -226,6 +313,7 @@ class ComponentUpdateService:
                 manifest,
                 component,
                 installed if installed.is_dir() else None,
+                plugins_root=plugins,
             )
             if plan is not None:
                 plans.append(asdict(plan))
@@ -243,6 +331,7 @@ class ComponentUpdateService:
                 manifest,
                 component,
                 installed if installed.is_dir() else None,
+                plugins_root=plugins,
             )
             if plan is not None:
                 plans.append(asdict(plan))
@@ -307,6 +396,16 @@ class ComponentUpdateService:
             raise ComponentUpdateError(
                 f"component is missing from manifest: {component}",
             )
+        if is_plugin_uninstalled(
+            component,
+            plugins_dir=plugins,
+            plugin_dir=destination,
+        ):
+            return {
+                "component": component,
+                "updated": False,
+                "reason": "uninstalled",
+            }
         self.updater.recover_interrupted_activation(
             component,
             destination,
@@ -325,13 +424,12 @@ class ComponentUpdateService:
             ),
         )
         installed = destination if destination.is_dir() else None
-        if installed is not None and (installed / ".uninstalled").exists():
-            return {
-                "component": component,
-                "updated": False,
-                "reason": "uninstalled",
-            }
-        plan = self.updater.plan(manifest, component, installed)
+        plan = self.updater.plan(
+            manifest,
+            component,
+            installed,
+            plugins_root=plugins,
+        )
         if plan is None:
             if self.updater.activation_pending(destination):
                 return {
@@ -420,32 +518,34 @@ class ComponentUpdateService:
 
 
 def run_startup_updates() -> dict[str, Any]:
-    """Run explicitly enabled startup updates without propagating failures."""
-    mode = (
-        os.environ.get("QWENPAW_COMPONENT_UPDATES", "startup").strip().lower()
-    )
-    pending_components: list[str] = []
-    if _PENDING_UPDATES_PATH.is_file():
-        try:
-            payload = json.loads(
-                _PENDING_UPDATES_PATH.read_text(encoding="utf-8"),
-            )
-            if isinstance(payload, dict) and isinstance(
-                payload.get("components"),
-                list,
-            ):
-                pending_components = [
-                    str(item) for item in payload["components"]
-                ]
-        except (OSError, json.JSONDecodeError):
-            logger.warning(
-                "Pending component update queue is invalid",
-                exc_info=True,
-            )
-    if mode != "startup" and not pending_components:
+    """Activate only updates explicitly queued by the desktop update UI.
+
+    Startup must never perform a fresh remote update on its own. The version
+    icon owns discovery and consent; restart merely consumes its durable queue.
+    """
+    pending_records = {
+        component: record
+        for component, record in _load_pending_records().items()
+        if not _pending_expired(record)
+    }
+    _store_pending_records(pending_records)
+    pending_components = sorted(pending_records)
+    if not pending_components:
         return {"enabled": False, "updated": [], "errors": []}
     service = configured_service()
     if service is None:
+        for record in pending_records.values():
+            _record_pending_failure(
+                record,
+                "component updates are not configured",
+            )
+        _store_pending_records(
+            {
+                component: record
+                for component, record in pending_records.items()
+                if not _pending_expired(record)
+            },
+        )
         return {
             "enabled": False,
             "updated": [],
@@ -453,7 +553,7 @@ def run_startup_updates() -> dict[str, Any]:
         }
     updated: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
-    remaining_pending = set(pending_components)
+    remaining_pending = dict(pending_records)
     try:
         manifest: dict[str, Any] | None = None
         if hasattr(service, "snapshot"):
@@ -461,11 +561,12 @@ def run_startup_updates() -> dict[str, Any]:
         else:
             plans = service.check()
         available = {str(plan["component"]) for plan in plans}
-        selected = (
-            available
-            if mode == "startup"
-            else available & set(pending_components)
-        )
+        selected = available & set(pending_components)
+        # A successful manifest/plan snapshot is authoritative. A queued
+        # component absent from plans is already current, was withdrawn, or is
+        # no longer managed; retaining it would cause an OSS request forever.
+        for component in set(pending_components) - available:
+            remaining_pending.pop(component, None)
         for component in sorted(selected):
             try:
                 if manifest is not None and hasattr(
@@ -480,7 +581,7 @@ def run_startup_updates() -> dict[str, Any]:
                 else:
                     result = service.install(component)
                 updated.append(result)
-                remaining_pending.discard(component)
+                remaining_pending.pop(component, None)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
                     "Startup component update failed for %s",
@@ -488,28 +589,19 @@ def run_startup_updates() -> dict[str, Any]:
                     exc_info=True,
                 )
                 errors.append({"component": component, "error": str(exc)})
+                _record_pending_failure(remaining_pending[component], exc)
     except Exception as exc:  # noqa: BLE001
         logger.warning("Startup component update check failed", exc_info=True)
         errors.append({"component": "manifest", "error": str(exc)})
+        for record in remaining_pending.values():
+            _record_pending_failure(record, exc)
     finally:
         service.client.close()
-        if pending_components:
-            if remaining_pending:
-                temporary = _PENDING_UPDATES_PATH.with_name(
-                    f".{_PENDING_UPDATES_PATH.name}.{os.getpid()}.tmp",
-                )
-                temporary.write_text(
-                    json.dumps(
-                        {
-                            "schema_version": 1,
-                            "components": sorted(remaining_pending),
-                        },
-                        sort_keys=True,
-                    )
-                    + "\n",
-                    encoding="utf-8",
-                )
-                os.replace(temporary, _PENDING_UPDATES_PATH)
-            else:
-                _PENDING_UPDATES_PATH.unlink(missing_ok=True)
+        _store_pending_records(
+            {
+                component: record
+                for component, record in remaining_pending.items()
+                if not _pending_expired(record)
+            },
+        )
     return {"enabled": True, "updated": updated, "errors": errors}

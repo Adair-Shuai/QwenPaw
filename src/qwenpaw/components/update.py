@@ -26,6 +26,8 @@ from typing import Any
 
 from packaging.version import InvalidVersion, Version
 
+from ..plugins.bundled import is_plugin_uninstalled
+
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PublicKey,
@@ -401,6 +403,12 @@ class ComponentUpdater:
         pending: set[str] = set()
         for component in self.managed_components:
             destination = plugins_root / component
+            if is_plugin_uninstalled(
+                component,
+                plugins_dir=plugins_root,
+                plugin_dir=destination,
+            ):
+                continue
             marker = self._activation_marker(destination)
             if (
                 marker.is_file()
@@ -1112,6 +1120,8 @@ class ComponentUpdater:
         manifest: dict[str, Any],
         component: str,
         installed: Path | None,
+        *,
+        plugins_root: Path | None = None,
     ) -> ComponentUpdatePlan | None:
         component = _safe_component_id(component)
         if component not in self.managed_components:
@@ -1121,7 +1131,13 @@ class ComponentUpdater:
         entry = (manifest.get("components") or {}).get(component)
         if not isinstance(entry, dict):
             return None
-        if installed is not None and (installed / ".uninstalled").exists():
+        if plugins_root is None and installed is not None:
+            plugins_root = installed.parent
+        if plugins_root is not None and is_plugin_uninstalled(
+            component,
+            plugins_dir=plugins_root,
+            plugin_dir=installed,
+        ):
             return None
         target_version = str(entry.get("version", ""))
         if not target_version:
@@ -1179,13 +1195,21 @@ class ComponentUpdater:
             or plan.component not in self.managed_components
         ):
             raise ComponentUpdateError("invalid component update plan")
-        if (base / ".uninstalled").exists():
+        if is_plugin_uninstalled(
+            plan.component,
+            plugins_dir=destination.parent,
+            plugin_dir=base,
+        ):
             raise ComponentUpdateError("component is marked uninstalled")
         if base.is_symlink() or destination.is_symlink():
             raise ComponentUpdateError("component roots may not be symlinks")
         base = base.resolve()
         destination = destination.resolve()
-        if destination.exists() and (destination / ".uninstalled").exists():
+        if is_plugin_uninstalled(
+            plan.component,
+            plugins_dir=destination.parent,
+            plugin_dir=destination,
+        ):
             raise ComponentUpdateError("component is marked uninstalled")
         destination.parent.mkdir(parents=True, exist_ok=True)
         # Replacing the installed directory is the normal runtime path.  The
@@ -1404,7 +1428,14 @@ class ComponentUpdater:
         if destination.is_symlink():
             raise ComponentUpdateError("destination may not be a symlink")
         destination = destination.resolve()
-        if destination.exists() and (destination / ".uninstalled").exists():
+        legacy_source = (
+            preserve_from if preserve_from is not None else destination
+        )
+        if is_plugin_uninstalled(
+            plan.component,
+            plugins_dir=destination.parent,
+            plugin_dir=legacy_source,
+        ):
             raise ComponentUpdateError("component is marked uninstalled")
         destination.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(

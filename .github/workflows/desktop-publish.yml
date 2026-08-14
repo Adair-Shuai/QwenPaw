@@ -73,7 +73,7 @@ jobs:
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
-        run: rm -rf UGSci-Desktop-Tauri-Windows-*
+        run: rm -rf UGSci-Desktop-Tauri-Windows-* tauri-updater-meta-windows
 
       - name: Download replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
@@ -83,15 +83,33 @@ jobs:
           run-id: ${{ inputs.windows_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download replacement Windows updater metadata
+        if: ${{ inputs.windows_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-updater-meta-windows
+          path: tauri-updater-meta-windows
+          run-id: ${{ inputs.windows_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Overlay newer macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' }}
-        run: rm -rf UGSci-Desktop-Tauri-macOS-*
+        run: rm -rf UGSci-Desktop-Tauri-macOS-* tauri-updater-meta-macos
 
       - name: Download replacement macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' }}
         uses: actions/download-artifact@v4
         with:
           pattern: UGSci-Desktop-Tauri-macOS-*
+          run-id: ${{ inputs.macos_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download replacement macOS updater metadata
+        if: ${{ inputs.macos_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-updater-meta-macos
+          path: tauri-updater-meta-macos
           run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -168,7 +186,7 @@ jobs:
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
-        run: rm -rf UGSci-Desktop-Tauri-Windows-*
+        run: rm -rf UGSci-Desktop-Tauri-Windows-* tauri-updater-meta-windows
 
       - name: Download replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
@@ -178,15 +196,33 @@ jobs:
           run-id: ${{ inputs.windows_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Download replacement Windows updater metadata
+        if: ${{ inputs.windows_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-updater-meta-windows
+          path: tauri-updater-meta-windows
+          run-id: ${{ inputs.windows_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
       - name: Overlay newer macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' }}
-        run: rm -rf UGSci-Desktop-Tauri-macOS-*
+        run: rm -rf UGSci-Desktop-Tauri-macOS-* tauri-updater-meta-macos
 
       - name: Download replacement macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' }}
         uses: actions/download-artifact@v4
         with:
           pattern: UGSci-Desktop-Tauri-macOS-*
+          run-id: ${{ inputs.macos_artifacts_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download replacement macOS updater metadata
+        if: ${{ inputs.macos_artifacts_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: tauri-updater-meta-macos
+          path: tauri-updater-meta-macos
           run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 

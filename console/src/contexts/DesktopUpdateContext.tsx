@@ -120,7 +120,9 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     return coreAvailable || componentCount > 0;
   }, [refreshComponentUpdates, refreshDesktopUpdate]);
 
-  // Probe on mount: check remote updates + cached desktop update on disk.
+  // Probe only the local cache on mount. Remote core/component discovery is
+  // deliberately owned by the version-number update button so startup never
+  // contacts OSS or starts an update flow without an explicit user action.
   useEffect(() => {
     if (!isDesktopApp()) return;
     let cancelled = false;
@@ -138,12 +140,10 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       })
       .catch(() => {});
 
-    void refreshUpdates();
-
     return () => {
       cancelled = true;
     };
-  }, [refreshUpdates]);
+  }, []);
 
   const queueComponentUpdates = useCallback(async () => {
     if (componentUpdateCount <= 0) return false;

@@ -17,10 +17,26 @@ echo "[launch_tauri_macos] Found app: $APP"
 # 2. Remove macOS quarantine (CI download marks it).
 xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true
 
-# 3. Launch the full Tauri shell (matches real user double-click).
+# 3. Launch the full Tauri shell. CI executes the bundle executable directly
+# so the nonce/report environment reaches the real embedded WKWebView; macOS
+# `open` does not reliably forward the caller's environment.
 echo "[launch_tauri_macos] Launching Tauri shell..."
-open "$APP"
-echo "[launch_tauri_macos] open exit=$?"
+export QWENPAW_UI_VERIFY_NONCE="$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')"
+export QWENPAW_UI_VERIFY_REPORT_PATH="${RUNNER_TEMP:-/tmp}/qwenpaw-native-ui-report.json"
+rm -f "$QWENPAW_UI_VERIFY_REPORT_PATH"
+BUNDLE_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+APP_EXECUTABLE="$APP/Contents/MacOS/$BUNDLE_EXECUTABLE"
+if [ ! -x "$APP_EXECUTABLE" ]; then
+  echo "::error::Tauri bundle executable is missing or not executable: $APP_EXECUTABLE"
+  exit 1
+fi
+PORT_FILE="$HOME/.qwenpaw/desktop_port"
+rm -f "$PORT_FILE"
+"$APP_EXECUTABLE" \
+  >"${RUNNER_TEMP:-/tmp}/qwenpaw-desktop-stdout.log" \
+  2>"${RUNNER_TEMP:-/tmp}/qwenpaw-desktop-stderr.log" &
+TAURI_PID=$!
+echo "[launch_tauri_macos] pid=$TAURI_PID"
 sleep 3
 echo "[launch_tauri_macos] Process snapshot after launch:"
 ps -ef | grep -iE "qwenpaw|tauri" | grep -v grep || echo "  (no matching processes)"
@@ -28,7 +44,6 @@ ps -ef | grep -iE "qwenpaw|tauri" | grep -v grep || echo "  (no matching process
 # 4. Wait for the sidecar to write the port file and respond.
 #    The sidecar writes desktop_port at WORKING_DIR root (~/.qwenpaw),
 #    not inside the workspace dir.
-PORT_FILE="$HOME/.qwenpaw/desktop_port"
 PORT=""
 for i in $(seq 1 60); do
   if [ -f "$PORT_FILE" ]; then
@@ -60,4 +75,8 @@ rm -f "$HOME/.qwenpaw/workspaces/default/BOOTSTRAP.md"
 
 export BASE_URL="http://127.0.0.1:$PORT"
 echo "BASE_URL=$BASE_URL" >> "$GITHUB_ENV"
+echo "QWENPAW_UI_VERIFY_NONCE=$QWENPAW_UI_VERIFY_NONCE" >> "$GITHUB_ENV"
+echo "QWENPAW_UI_VERIFY_REPORT_PATH=$QWENPAW_UI_VERIFY_REPORT_PATH" >> "$GITHUB_ENV"
+echo "TAURI_PID=$TAURI_PID" >> "$GITHUB_ENV"
+echo "[launch_tauri_macos] Native UI report: $QWENPAW_UI_VERIFY_REPORT_PATH"
 echo "$BASE_URL"

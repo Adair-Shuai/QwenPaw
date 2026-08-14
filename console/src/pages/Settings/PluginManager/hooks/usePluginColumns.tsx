@@ -1,18 +1,24 @@
 import { useTranslation } from "react-i18next";
-import { Tag, Tooltip, Button, Space, Typography } from "antd";
+import { Tag, Tooltip, Button, Space, Typography, Spin } from "antd";
 import { Package, Trash2, CheckCircle, XCircle } from "lucide-react";
-import type { PluginType, PluginInfo } from "@/api/modules/plugin";
+import type {
+  BundledPluginState,
+  PluginType,
+  PluginInfo,
+} from "@/api/modules/plugin";
 import { PluginTypeTag } from "../components/PluginTypeTag";
 
 const { Text } = Typography;
 
 interface UsePluginColumnsOptions {
   uninstallingId: string | null;
+  bundleState: BundledPluginState;
   onUninstall: (record: PluginInfo) => void;
 }
 
 export function usePluginColumns({
   uninstallingId,
+  bundleState,
   onUninstall,
 }: UsePluginColumnsOptions) {
   const { t } = useTranslation();
@@ -70,8 +76,17 @@ export function usePluginColumns({
       dataIndex: "loaded",
       key: "loaded",
       width: 110,
-      render: (loaded: boolean) =>
-        loaded ? (
+      render: (loaded: boolean) => {
+        if (!loaded && bundleState !== "ready" && bundleState !== "error") {
+          return (
+            <Tag
+              style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
+            >
+              <Spin size="small" /> {t("common.loading")}
+            </Tag>
+          );
+        }
+        return loaded ? (
           <Tag
             icon={<CheckCircle size={12} />}
             color="success"
@@ -87,7 +102,8 @@ export function usePluginColumns({
           >
             {t("pluginManager.statusUnloaded")}
           </Tag>
-        ),
+        );
+      },
     },
     {
       title: "",

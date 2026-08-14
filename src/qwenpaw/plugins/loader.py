@@ -302,6 +302,18 @@ class PluginLoader:
                     continue
                 try:
                     manifest = self._load_manifest(manifest_path)
+                    from .bundled import is_plugin_uninstalled
+
+                    if is_plugin_uninstalled(
+                        manifest.id,
+                        plugins_dir=plugin_dir,
+                        plugin_dir=item,
+                    ):
+                        logger.info(
+                            "Skipping explicitly uninstalled plugin: %s",
+                            manifest.id,
+                        )
+                        continue
                     discovered.append((manifest, item))
                     logger.info(f"Discovered plugin: {manifest.id}")
                 except Exception as e:
@@ -433,7 +445,7 @@ class PluginLoader:
             return
         logger.info(
             "Plugin '%s' has %d unsatisfied dependency(ies): %s. "
-            "Installing...",
+            + "Installing...",
             plugin_id,
             len(missing_deps),
             ", ".join(missing_deps),
@@ -1223,7 +1235,15 @@ class PluginLoader:
             target_dir,
         )
         del _installed_path
-        return await self.load_plugin(installed_manifest, target_dir, config)
+        record = await self.load_plugin(installed_manifest, target_dir, config)
+        from .bundled import clear_uninstalled_marker
+
+        await asyncio.to_thread(
+            clear_uninstalled_marker,
+            plugin_id,
+            plugins_dir=_resolved_install_dir,
+        )
+        return record
 
     async def unload_plugin(
         self,
@@ -1414,8 +1434,8 @@ class PluginLoader:
                 if claimed not in tool_names:
                     logger.warning(
                         "Skipping unload cleanup for tool '%s': "
-                        "manifest of plugin '%s' claims it but "
-                        "ownership is held by %r",
+                        + "manifest of plugin '%s' claims it but "
+                        + "ownership is held by %r",
                         claimed,
                         plugin_id,
                         _TOOL_PLUGIN_OWNERS.get(claimed),

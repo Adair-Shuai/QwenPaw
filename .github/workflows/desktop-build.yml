@@ -259,7 +259,8 @@ jobs:
 
           $files = @(
             (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stdout.log'),
-            (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stderr.log')
+            (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stderr.log'),
+            (Join-Path $env:RUNNER_TEMP 'qwenpaw-native-ui-report.json')
           )
           foreach ($file in $files) {
             if (Test-Path -LiteralPath $file -PathType Leaf) {
@@ -448,6 +449,7 @@ jobs:
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/qwenpaw-native-ui-report.json
             ~/Library/Logs/io.agentscope.qwenpaw.desktop/
             ~/Library/Logs/com.qwenpaw.desktop/
           if-no-files-found: ignore

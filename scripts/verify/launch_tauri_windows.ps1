@@ -176,6 +176,9 @@ if ($wv2Files) {
 #    Playwright can connect_over_cdp() to the real embedded webview.
 $cdpPort = 9222
 $env:WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = "--remote-debugging-port=$cdpPort"
+$env:QWENPAW_UI_VERIFY_NONCE = [Guid]::NewGuid().ToString("N")
+$env:QWENPAW_UI_VERIFY_REPORT_PATH = Join-Path $env:RUNNER_TEMP "qwenpaw-native-ui-report.json"
+Remove-Item -LiteralPath $env:QWENPAW_UI_VERIFY_REPORT_PATH -Force -ErrorAction SilentlyContinue
 $portFile = Join-Path $env:USERPROFILE ".qwenpaw\desktop_port"
 if (Test-Path -LiteralPath $portFile) {
   Remove-Item -LiteralPath $portFile -Force
@@ -230,8 +233,7 @@ for ($i = 1; $i -le 30; $i++) {
   } catch { Start-Sleep -Seconds 2 }
 }
 if (-not $cdpReady) {
-  Write-Host "::warning::CDP not available, falling back to standalone browser"
-  $cdpUrl = ""
+  throw "CDP is required for production Tauri Windows verification"
 }
 
 $baseUrl = "http://127.0.0.1:$port"
@@ -239,5 +241,8 @@ $env:BASE_URL = $baseUrl
 $env:CDP_URL = $cdpUrl
 "BASE_URL=$baseUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 "CDP_URL=$cdpUrl" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+"QWENPAW_UI_VERIFY_NONCE=$env:QWENPAW_UI_VERIFY_NONCE" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+"QWENPAW_UI_VERIFY_REPORT_PATH=$env:QWENPAW_UI_VERIFY_REPORT_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 Write-Host "BASE_URL=$baseUrl"
 Write-Host "CDP_URL=$cdpUrl"
+Write-Host "Native UI report: $env:QWENPAW_UI_VERIFY_REPORT_PATH"

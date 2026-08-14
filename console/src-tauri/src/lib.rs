@@ -10,6 +10,7 @@ mod external_link;
 mod reveal;
 mod runtime_env;
 mod tray;
+mod ui_verification;
 mod updates;
 
 use tauri::{Manager, RunEvent, WebviewWindow, WindowEvent};
@@ -53,6 +54,7 @@ pub fn run() {
             tray::quit_app,
             tray::set_tray_labels,
             tray::ack_close,
+            ui_verification::report_ui_verification,
         ])
         .manage(backend::BackendState::default())
         .manage(computer_use_runtime::ComputerUseRuntimeState::default())
@@ -91,7 +93,9 @@ pub fn run() {
                     }
                     #[cfg(not(target_os = "macos"))]
                     let _ = (&api, &code);
-                    if let Err(err) = tauri::async_runtime::block_on(backend::stop_and_wait(app_handle)) {
+                    if let Err(err) =
+                        tauri::async_runtime::block_on(backend::stop_and_wait(app_handle))
+                    {
                         log::warn!("[backend] graceful shutdown did not complete: {err}");
                     }
                     computer_use_runtime::stop(app_handle);

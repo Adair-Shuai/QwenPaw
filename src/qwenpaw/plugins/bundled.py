@@ -6,9 +6,9 @@ into the user's ``~/.qwenpaw/plugins/`` directory so they are automatically
 available without manual installation.
 
 Hot-pluggable: if the user explicitly uninstalls a bundled plugin (via CLI
-or API), a marker file ``.uninstalled`` is written inside the target
-directory.  This function respects the marker and will NOT re-copy a plugin
-that the user has intentionally removed.
+or API), a persistent tombstone is written to
+``plugins/.uninstalled/<plugin-id>``.  This function respects the tombstone
+and will NOT re-copy a plugin that the user has intentionally removed.
 
 Updating: if the bundled version is newer than the installed version
 (compared via ``plugin.json`` → ``version`` field), the plugin is upgraded
@@ -37,7 +37,7 @@ import os
 import shutil
 import sys
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -46,6 +46,11 @@ _BUNDLE_HASH_FILE = ".bundle_hash"  # development content hash (legacy API)
 _BUNDLE_REVISION_FILE = ".bundle_revision"
 _BUNDLE_COMPLETE_FILE = ".bundle_complete"
 _BUNDLE_HASH_MODE_ENV = "QWENPAW_BUNDLED_PLUGIN_HASH"
+_UNINSTALLED_DIR = ".uninstalled"
+_UNINSTALLED_MESSAGE = (
+    "This plugin was explicitly uninstalled by the user.\n"
+    "Delete this file or reinstall the plugin to allow it again.\n"
+)
 
 
 def _is_development_environment() -> bool:
@@ -206,22 +211,143 @@ def _read_manifest(plugin_dir: Path) -> dict[str, Any] | None:
         return None
 
 
+def validate_plugin_id(plugin_id: str) -> str:
+    """Validate an ID before using it as a tombstone filename."""
+    value = str(plugin_id or "")
+    posix = PurePosixPath(value)
+    windows = PureWindowsPath(value)
+    unsafe = any(
+        (
+            not value,
+            value != value.strip(),
+            value in {".", ".."},
+            "\x00" in value,
+            posix.is_absolute(),
+            windows.is_absolute(),
+            bool(windows.drive),
+            posix.name != value,
+            windows.name != value,
+        ),
+    )
+    if unsafe:
+        raise ValueError(f"unsafe plugin id: {value!r}")
+    return value
+
+
+def _plugins_root(plugins_dir: Path | None = None) -> Path:
+    if plugins_dir is not None:
+        return Path(plugins_dir)
+    from ..config.utils import get_plugins_dir
+
+    return get_plugins_dir()
+
+
+def _uninstalled_marker(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+) -> Path:
+    """Return the contained persistent tombstone path for ``plugin_id``."""
+    safe_id = validate_plugin_id(plugin_id)
+    root = _plugins_root(plugins_dir)
+    marker = root / _UNINSTALLED_DIR / safe_id
+    try:
+        marker.resolve().relative_to(root.resolve())
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"unsafe plugin tombstone path: {safe_id!r}") from exc
+    return marker
+
+
+def _write_uninstalled_marker(marker: Path) -> None:
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    if marker.parent.is_symlink() or marker.is_symlink():
+        raise ValueError("plugin tombstone path may not contain a symlink")
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=marker.parent,
+            prefix=f".{marker.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(_UNINSTALLED_MESSAGE)
+            temporary = Path(handle.name)
+        os.replace(temporary, marker)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def is_plugin_uninstalled(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+    plugin_dir: Path | None = None,
+) -> bool:
+    """Return whether a persistent or legacy uninstall marker exists.
+
+    Legacy ``<plugin-dir>/.uninstalled`` markers are migrated best-effort to
+    the persistent root.  If migration fails, the legacy marker still wins so
+    a storage error can never resurrect an explicitly removed plugin.
+    """
+    root = _plugins_root(plugins_dir)
+    marker = _uninstalled_marker(plugin_id, plugins_dir=root)
+    legacy_dir = (
+        Path(plugin_dir) if plugin_dir is not None else root / plugin_id
+    )
+    legacy = legacy_dir / ".uninstalled"
+    if marker.exists():
+        if legacy.exists() or legacy.is_symlink():
+            try:
+                legacy.unlink()
+            except OSError:
+                logger.debug(
+                    "Unable to remove legacy uninstall marker %s",
+                    legacy,
+                    exc_info=True,
+                )
+        return True
+    if not (legacy.exists() or legacy.is_symlink()):
+        return False
+    try:
+        _write_uninstalled_marker(marker)
+    except (OSError, ValueError):
+        logger.warning(
+            "Failed to migrate legacy uninstall marker for %s",
+            plugin_id,
+            exc_info=True,
+        )
+        return True
+    try:
+        legacy.unlink()
+    except OSError:
+        logger.debug(
+            "Unable to remove migrated legacy uninstall marker %s",
+            legacy,
+            exc_info=True,
+        )
+    return True
+
+
 def _is_uninstalled(plugin_dir: Path) -> bool:
-    """Check if the user has explicitly uninstalled this plugin."""
-    return (plugin_dir / ".uninstalled").exists()
+    """Backward-compatible directory-based uninstall check."""
+    manifest = _read_manifest(plugin_dir) or {}
+    plugin_id = str(manifest.get("id") or plugin_dir.name)
+    return is_plugin_uninstalled(
+        plugin_id,
+        plugins_dir=plugin_dir.parent,
+        plugin_dir=plugin_dir,
+    )
 
 
 def _mark_uninstalled(plugin_dir: Path) -> None:
-    """Write a marker file so the plugin won't be re-installed on restart."""
-    marker = plugin_dir / ".uninstalled"
-    try:
-        marker.write_text(
-            "This plugin was explicitly uninstalled by the user.\n"
-            "Delete this file to allow re-installation on next startup.\n",
-            encoding="utf-8",
-        )
-    except Exception as exc:
-        logger.warning("Failed to write uninstalled marker: %s", exc)
+    """Backward-compatible directory-based tombstone writer."""
+    manifest = _read_manifest(plugin_dir) or {}
+    plugin_id = str(manifest.get("id") or plugin_dir.name)
+    mark_plugin_uninstalled(plugin_id, plugins_dir=plugin_dir.parent)
 
 
 def _version_tuple(version: str) -> tuple:
@@ -433,8 +559,8 @@ def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
     all_files.sort()
 
     for f in all_files:
-        rel = f.relative_to(plugin_dir).as_posix()
-        h.update(rel.encode("utf-8"))
+        relative_name = f.relative_to(plugin_dir).as_posix()
+        h.update(relative_name.encode("utf-8"))
         h.update(f.read_bytes())
 
     return h.hexdigest()
@@ -773,7 +899,11 @@ def ensure_bundled_plugins_installed(
 
             target_dir = plugins_dir / plugin_id
 
-            if _is_uninstalled(target_dir):
+            if is_plugin_uninstalled(
+                plugin_id,
+                plugins_dir=plugins_dir,
+                plugin_dir=target_dir,
+            ):
                 logger.debug(
                     "Skipping bundled plugin '%s' — user has uninstalled it",
                     plugin_id,
@@ -804,7 +934,11 @@ def ensure_bundled_plugins_installed(
     return installed_or_updated
 
 
-def mark_plugin_uninstalled(plugin_id: str) -> bool:
+def mark_plugin_uninstalled(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+) -> bool:
     """Mark a plugin as explicitly uninstalled by the user.
 
     This prevents ``ensure_bundled_plugins_installed`` from re-installing
@@ -814,19 +948,30 @@ def mark_plugin_uninstalled(plugin_id: str) -> bool:
         plugin_id: The plugin's ID from its manifest.
 
     Returns:
-        ``True`` if the marker was written, ``False`` if the plugin
-        directory doesn't exist.
+        ``True`` when the persistent tombstone was written.  The plugin
+        directory does not need to exist.
     """
-    from ..config.utils import get_plugins_dir
-
-    target_dir = get_plugins_dir() / plugin_id
-    if not target_dir.exists():
-        return False
-    _mark_uninstalled(target_dir)
+    root = _plugins_root(plugins_dir)
+    marker = _uninstalled_marker(plugin_id, plugins_dir=root)
+    _write_uninstalled_marker(marker)
+    legacy = root / validate_plugin_id(plugin_id) / ".uninstalled"
+    if legacy.exists() or legacy.is_symlink():
+        try:
+            legacy.unlink()
+        except OSError:
+            logger.debug(
+                "Unable to remove legacy uninstall marker %s",
+                legacy,
+                exc_info=True,
+            )
     return True
 
 
-def clear_uninstalled_marker(plugin_id: str) -> bool:
+def clear_uninstalled_marker(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+) -> bool:
     """Remove the ``.uninstalled`` marker so a plugin can be re-installed.
 
     Args:
@@ -835,10 +980,20 @@ def clear_uninstalled_marker(plugin_id: str) -> bool:
     Returns:
         ``True`` if the marker was removed, ``False`` if it didn't exist.
     """
-    from ..config.utils import get_plugins_dir
-
-    marker = get_plugins_dir() / plugin_id / ".uninstalled"
-    if marker.exists():
-        marker.unlink()
-        return True
-    return False
+    root = _plugins_root(plugins_dir)
+    safe_id = validate_plugin_id(plugin_id)
+    markers = (
+        _uninstalled_marker(safe_id, plugins_dir=root),
+        root / safe_id / ".uninstalled",
+    )
+    changed = False
+    for marker in markers:
+        if marker.exists() or marker.is_symlink():
+            marker.unlink()
+            changed = True
+    tombstone_root = root / _UNINSTALLED_DIR
+    try:
+        tombstone_root.rmdir()
+    except OSError:
+        pass
+    return changed

@@ -1,7 +1,8 @@
 name: Verify Desktop (Tauri macOS)
 description: |
-  Unpack Tauri .app zip, launch the shell (open <APP>), and drive the
-  embedded WebKit through the shared Playwright UI verifier. Stop /
+  Unpack the Tauri .app zip, launch the real shell, require a native
+  embedded-WKWebView plugin registration report, and run supplemental
+  Playwright WebKit compatibility checks. Stop /
   cleanup / log upload steps live in the caller workflow because
   composite actions cannot use `if: always()`.
 
@@ -41,5 +42,7 @@ runs:
         python scripts/verify/desktop_verify.py \
           --base-url "$BASE_URL" \
           --ui-mode tauri-macos \
+          --native-ui-report "$QWENPAW_UI_VERIFY_REPORT_PATH" \
+          --native-ui-nonce "$QWENPAW_UI_VERIFY_NONCE" \
           --headed \
           ${extra_flags[@]+"${extra_flags[@]}"}

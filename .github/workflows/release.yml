@@ -127,6 +127,10 @@ jobs:
               echo "::error::Artifact source run $ARTIFACTS_RUN_ID is not complete"
               exit 1
             fi
+            if [ "$source_sha" != "$sha" ]; then
+              echo "::error::Artifact source run $ARTIFACTS_RUN_ID was built from $source_sha, not release commit $sha"
+              exit 1
+            fi
             echo "Reusing artifacts from run $ARTIFACTS_RUN_ID at $sha"
             artifact_names="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             required_artifacts=()
@@ -162,13 +166,16 @@ jobs:
             windows_run="$(gh api "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID")"
             test "$(jq -r .status <<<"$windows_run")" = completed
             test "$(jq -r .conclusion <<<"$windows_run")" = success
+            test "$(jq -r .head_sha <<<"$windows_run")" = "$sha" || { echo "::error::Replacement Windows run was not built from release commit $sha"; exit 1; }
             windows_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             grep -q '^UGSci-Desktop-Tauri-Windows-' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows desktop artifact"; exit 1; }
+            grep -qx 'tauri-updater-meta-windows' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows updater metadata"; exit 1; }
           fi
           if [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
             plugins_run="$(gh api "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID")"
             test "$(jq -r .status <<<"$plugins_run")" = completed
             test "$(jq -r .conclusion <<<"$plugins_run")" = success
+            test "$(jq -r .head_sha <<<"$plugins_run")" = "$sha" || { echo "::error::Replacement plugin run was not built from release commit $sha"; exit 1; }
             plugins_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             grep -q '^qwenpaw-plugins-dist$' <<<"$plugins_artifacts" || { echo "::error::Replacement run has no qwenpaw-plugins-dist artifact"; exit 1; }
           fi
@@ -178,8 +185,12 @@ jobs:
               run_json="$(gh api "repos/$REPO/actions/runs/$value")"
               test "$(jq -r .status <<<"$run_json")" = completed
               test "$(jq -r .conclusion <<<"$run_json")" = success
+              test "$(jq -r .head_sha <<<"$run_json")" = "$sha" || { echo "::error::Replacement run $value was not built from release commit $sha"; exit 1; }
               names="$(gh api --paginate "repos/$REPO/actions/runs/$value/artifacts?per_page=100" --jq '.artifacts[].name')"
               grep -q "^${prefix}" <<<"$names" || { echo "::error::Replacement run $value has no artifact prefix $prefix"; exit 1; }
+              if [ "$run_id" = "MACOS_ARTIFACTS_RUN_ID" ]; then
+                grep -qx 'tauri-updater-meta-macos' <<<"$names" || { echo "::error::Replacement macOS run has no updater metadata"; exit 1; }
+              fi
             fi
           done
           if [[ "$TAG" =~ (beta|alpha|rc|dev) ]]; then

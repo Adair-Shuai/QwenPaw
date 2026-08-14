@@ -13,13 +13,20 @@ import styles from "./index.module.less";
 export default function PluginManagerPage() {
   const { t } = useTranslation();
 
-  const { plugins, loading, refresh, uninstallingId, handleUninstall } =
-    usePluginManager();
+  const {
+    plugins,
+    loading,
+    bundleState,
+    refresh,
+    uninstallingId,
+    handleUninstall,
+  } = usePluginManager();
 
   const installModal = useInstallModal(refresh);
 
   const columns = usePluginColumns({
     uninstallingId,
+    bundleState,
     onUninstall: handleUninstall,
   });
 

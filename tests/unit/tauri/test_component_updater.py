@@ -117,7 +117,9 @@ def test_uninstalled_component_is_not_activated(tmp_path):
     base = tmp_path / "base"
     destination = tmp_path / "destination"
     _plugin(base, "1.0.0", main="old")
-    (base / ".uninstalled").write_text("1", encoding="utf-8")
+    tombstones = destination.parent / ".uninstalled"
+    tombstones.mkdir()
+    (tombstones / "demo").write_text("1", encoding="utf-8")
     plan = type(
         "Plan",
         (),
@@ -132,6 +134,41 @@ def test_uninstalled_component_is_not_activated(tmp_path):
     )()
     with pytest.raises(ComponentUpdateError, match="uninstalled"):
         updater.apply_delta(plan, base, tmp_path / "missing.zip", destination)
+
+
+def test_component_plan_respects_tombstone_without_install_directory(tmp_path):
+    plugins = tmp_path / "plugins"
+    tombstones = plugins / ".uninstalled"
+    tombstones.mkdir(parents=True)
+    (tombstones / "demo").write_text("1", encoding="utf-8")
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    manifest = {
+        "components": {
+            "demo": {
+                "version": "1.1.0",
+                "full": {
+                    "url": "https://example/full.zip",
+                    "sha256": "a" * 64,
+                    "signature": "sig",
+                },
+            },
+        },
+    }
+
+    assert (
+        updater.plan(
+            manifest,
+            "demo",
+            None,
+            plugins_root=plugins,
+        )
+        is None
+    )
 
 
 def test_delta_can_atomically_replace_installed_directory(tmp_path):

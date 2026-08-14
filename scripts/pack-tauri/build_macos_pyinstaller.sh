@@ -239,6 +239,12 @@ else
     echo "ERROR: Failed to create ZIP archive"
     exit 1
 fi
+
+echo "== Step 4a: Verifying Plugins in Final macOS ZIP =="
+unzip -tq "${ZIP_NAME}" >/dev/null
+python "${REPO_ROOT}/scripts/pack-tauri/verify_frozen_plugins.py" \
+    --archive "${ZIP_NAME}"
+echo "Final macOS ZIP contains valid bundled plugin manifests and entries"
 echo ""
 
 UPDATER_NAME="${DIST_ROOT}/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
@@ -256,6 +262,11 @@ if ls "${BUNDLE_DIR}/macos/"*.app.tar.gz >/dev/null 2>&1; then
         --target "${UPDATER_TARGET}" \
         --output "${UPDATER_NAME}" \
         --pubkey-config "${REPO_ROOT}/console/src-tauri/tauri.version.conf.json"
+    echo "== Verifying Plugins in Final macOS Updater Archive =="
+    tar -tzf "${UPDATER_NAME}" >/dev/null
+    python "${REPO_ROOT}/scripts/pack-tauri/verify_frozen_plugins.py" \
+        --archive "${UPDATER_NAME}"
+    echo "Final macOS updater archive contains valid bundled plugin manifests and entries"
 else
     if [[ -n "${TAURI_SIGNING_PRIVATE_KEY:-}" ]]; then
         echo "ERROR: TAURI_SIGNING_PRIVATE_KEY is set, but no .app.tar.gz updater archive was produced"

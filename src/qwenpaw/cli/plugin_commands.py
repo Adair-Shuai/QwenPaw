@@ -593,6 +593,14 @@ def install(source: str, force: bool):
         )
         return
 
+    from ..plugins.bundled import validate_plugin_id
+
+    try:
+        plugin_id = validate_plugin_id(plugin_id)
+    except ValueError as exc:
+        click.echo(f"Invalid plugin ID: {exc}", err=True)
+        return
+
     click.echo(f"Installing plugin: {plugin_name} ({plugin_id})")
 
     plugin_dir = get_plugins_dir()
@@ -633,6 +641,10 @@ def install(source: str, force: bool):
         click.echo("Installing dependencies...")
         if not _install_requirements_cli(requirements_file, target_dir):
             return
+
+    from ..plugins.bundled import clear_uninstalled_marker
+
+    clear_uninstalled_marker(plugin_id, plugins_dir=plugin_dir)
 
     click.echo(f"\n✅ Plugin '{plugin_name}' installed successfully!")
     click.echo(f"Location: {target_dir}")
@@ -692,8 +704,16 @@ def list():  # pylint: disable=redefined-builtin
 def info(plugin_id: str):
     """Show detailed information about a plugin."""
     from ..config.utils import get_plugins_dir
+    from ..plugins.bundled import validate_plugin_id
 
-    plugin_dir = get_plugins_dir() / plugin_id
+    try:
+        plugin_id = validate_plugin_id(plugin_id)
+    except ValueError as exc:
+        click.echo(f"Invalid plugin ID: {exc}", err=True)
+        return
+
+    plugins_dir = get_plugins_dir()
+    plugin_dir = plugins_dir / plugin_id
 
     if not plugin_dir.exists():
         click.echo(f"❌ Plugin '{plugin_id}' not found", err=True)
@@ -791,26 +811,36 @@ def uninstall(plugin_id: str):
         )
         return
 
+    from ..plugins.bundled import (
+        mark_plugin_uninstalled,
+        validate_plugin_id,
+    )
+
+    try:
+        plugin_id = validate_plugin_id(resolved_id)
+    except ValueError as exc:
+        click.echo(f"Invalid plugin ID: {exc}", err=True)
+        return
+
     # If the app is running, delegate to the live API for hot-uninstall
     if _is_running():
         click.echo(
             "QwenPaw is running — using hot-uninstall via API...",
         )
         if not click.confirm(
-            f"Uninstall plugin '{resolved_id}'?",
+            f"Uninstall plugin '{plugin_id}'?",
         ):
             click.echo("Cancelled.")
             return
-        _api_uninstall_plugin(resolved_id)
+        _api_uninstall_plugin(plugin_id)
         return
-
-    plugin_id = resolved_id
 
     # ── Offline uninstall (app is not running) ────────────────────────
 
     from ..config.utils import get_plugins_dir
 
-    plugin_dir = get_plugins_dir() / plugin_id
+    plugins_dir = get_plugins_dir()
+    plugin_dir = plugins_dir / plugin_id
 
     if not plugin_dir.exists():
         click.echo(f"❌ Plugin '{plugin_id}' not found", err=True)
@@ -837,11 +867,13 @@ def uninstall(plugin_id: str):
     # Mark as uninstalled so bundled plugins don't get re-installed
     # on next startup (hot-pluggable behavior)
     try:
-        from ..plugins.bundled import mark_plugin_uninstalled
-
-        mark_plugin_uninstalled(plugin_id)
-    except Exception:
-        pass  # Non-critical — just won't prevent re-installation
+        mark_plugin_uninstalled(plugin_id, plugins_dir=plugins_dir)
+    except (OSError, ValueError) as exc:
+        click.echo(
+            f"Failed to persist plugin uninstall state: {exc}",
+            err=True,
+        )
+        return
 
     try:
         shutil.rmtree(plugin_dir)

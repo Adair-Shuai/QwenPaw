@@ -99,6 +99,27 @@ def _check_console_dist(repo: Path) -> list[str]:
             "console/dist/assets/ has no JS files.\n"
             "  Rebuild: cd console && npm run build:prod",
         )
+        return errors
+
+    # Release verification relies on this command being present in the actual
+    # bundled SPA. Timestamp-only checks can be fooled by copied/generated
+    # files, so assert the production JavaScript contains the native reporter.
+    required_markers = {
+        "report_ui_verification": (
+            "native Tauri WebView plugin verification reporter"
+        ),
+    }
+    javascript = list(assets_dir.glob("*.js"))
+    for marker, label in required_markers.items():
+        if not any(
+            marker in path.read_text(encoding="utf-8", errors="ignore")
+            for path in javascript
+        ):
+            errors.append(
+                f"console/dist is missing the {label} ({marker}).\n"
+                "  The frontend build is stale or incomplete. Rebuild: "
+                "cd console && npm run build:prod",
+            )
 
     return errors
 
@@ -141,29 +162,39 @@ def _check_staleness(repo: Path, strict: bool = False) -> list[str]:
     """Warn (or fail in strict mode) if console/dist is older than source."""
     errors: list[str] = []
     dist_index = repo / "console" / "dist" / "index.html"
-    main_tsx = repo / "console" / "src" / "main.tsx"
-    host_externals = repo / "console" / "src" / "plugins" / "hostExternals.ts"
-    use_plugin_loader = (
-        repo / "console" / "src" / "plugins" / "usePluginLoader.ts"
-    )
+    source_root = repo / "console" / "src"
 
     if not dist_index.is_file():
         return errors  # Already caught by _check_console_dist
 
     dist_mtime = dist_index.stat().st_mtime
 
-    for src_file in [main_tsx, host_externals, use_plugin_loader]:
-        if src_file.is_file() and src_file.stat().st_mtime > dist_mtime:
-            msg = (
-                f"WARNING: {src_file.relative_to(repo)} is newer than "
-                f"console/dist/index.html.\n"
-                "  The frontend build is stale. Rebuild: "
-                "cd console && npm run build:prod"
-            )
-            if strict:
-                errors.append(msg)
-            else:
-                print(f"  [WARN] {msg}", file=sys.stderr)
+    source_suffixes = {".css", ".json", ".less", ".ts", ".tsx"}
+    newer_sources = sorted(
+        path
+        for path in source_root.rglob("*")
+        if path.is_file()
+        and path.suffix in source_suffixes
+        and ".test." not in path.name
+        and "__tests__" not in path.parts
+        and path.stat().st_mtime > dist_mtime
+    )
+    if newer_sources:
+        preview = ", ".join(
+            str(path.relative_to(repo)) for path in newer_sources[:8]
+        )
+        if len(newer_sources) > 8:
+            preview += f", ... (+{len(newer_sources) - 8} more)"
+        msg = (
+            f"WARNING: console source files are newer than console/dist/index.html: "
+            f"{preview}.\n"
+            "  The frontend build is stale. Rebuild: "
+            "cd console && npm run build:prod"
+        )
+        if strict:
+            errors.append(msg)
+        else:
+            print(f"  [WARN] {msg}", file=sys.stderr)
 
     return errors
 
