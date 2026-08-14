@@ -11,6 +11,9 @@ INSTALLER = (
     / "pack-tauri"
     / "create_windows_portable_installer.ps1"
 )
+BOOTSTRAP = (
+    REPO_ROOT / "scripts" / "pack-tauri" / "windows_portable_bootstrap.cs"
+)
 
 
 def _script() -> str:
@@ -40,6 +43,20 @@ def test_successful_install_resets_native_tool_exit_code() -> None:
     assert "exit 0" in success_tail
 
 
+def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "string ioRoot = ToExtendedPath(root);" in source
+    assert (
+        'Directory.GetFiles(ioRoot, "*", SearchOption.AllDirectories)'
+        in source
+    )
+    assert "SafeRelativePath(match.Groups[2].Value)" in source
+    assert 'segment == "." || segment == ".."' in source
+    assert "segment.IndexOf(':') >= 0" in source
+    assert 'return @"\\\\?\\" + path;' in source
+
+
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:
     """A locked b5/b6 executable must leave the old tree untouched."""
     script = _script()
@@ -63,12 +80,12 @@ def test_failed_initial_rename_cannot_delete_the_original_install() -> None:
     # The b6 bug unconditionally removed installDir in catch even when the
     # first Move-Item failed, then falsely claimed that rollback succeeded.
     catch_body = script.split("$installError = $_", 1)[1].split(
-        "} finally {", 1,
+        "} finally {",
+        1,
     )[0]
     assert (
         "Remove-Item -LiteralPath $installDir -Recurse -Force "
-        "-ErrorAction SilentlyContinue"
-        not in catch_body
+        "-ErrorAction SilentlyContinue" not in catch_body
     )
     assert "the previous installation was restored" not in catch_body
 
@@ -78,15 +95,15 @@ def test_rollback_verifies_the_restored_executable() -> None:
 
     assert (
         'Test-Path -LiteralPath (Join-Path $installDir "UGSci.exe") '
-        "-PathType Leaf"
-        in script
+        "-PathType Leaf" in script
     )
     assert "rollback restored an invalid application tree" in script
     assert '"rollback failed: $rollbackError"' in script
 
 
-def test_update_assistant_can_defer_commit_until_external_health_check(
-) -> None:
+def test_update_assistant_can_defer_commit_until_external_health_check() -> (
+    None
+):
     script = _script()
 
     assert "[switch]$DeferredCommit" in script

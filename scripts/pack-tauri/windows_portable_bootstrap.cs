@@ -257,14 +257,15 @@ internal static class PortableSetup
 
     private static void VerifyPackage(string packageRoot)
     {
-        string root = Path.GetFullPath(packageRoot);
+        string root = Path.IsPathRooted(packageRoot) ? packageRoot : Path.GetFullPath(packageRoot);
         string volumeRoot = Path.GetPathRoot(root);
         if (!string.Equals(root, volumeRoot, StringComparison.OrdinalIgnoreCase))
             root = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        string prefix = root.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
-            root.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)
-                ? root : root + Path.DirectorySeparatorChar;
-        string manifest = Path.Combine(root, "checksums.sha256");
+        string ioRoot = ToExtendedPath(root);
+        string prefix = ioRoot.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
+            ioRoot.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)
+                ? ioRoot : ioRoot + Path.DirectorySeparatorChar;
+        string manifest = Path.Combine(ioRoot, "checksums.sha256");
         if (!File.Exists(manifest)) throw new InvalidDataException("checksums.sha256 is missing.");
         var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var pattern = new Regex("^([0-9a-fA-F]{64})  (.+)$", RegexOptions.CultureInvariant);
@@ -273,19 +274,15 @@ internal static class PortableSetup
             if (string.IsNullOrWhiteSpace(rawLine)) continue;
             Match match = pattern.Match(rawLine);
             if (!match.Success) throw new InvalidDataException("Invalid checksum manifest entry.");
-            string relative = match.Groups[2].Value.Replace('/', Path.DirectorySeparatorChar);
-            if (Path.IsPathRooted(relative) || relative.IndexOf("..", StringComparison.Ordinal) >= 0)
-                throw new InvalidDataException("Unsafe checksum path: " + relative);
-            string fullPath = Path.GetFullPath(Path.Combine(root, relative));
-            if (!fullPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("Checksum path escapes the package root.");
+            string relative = SafeRelativePath(match.Groups[2].Value);
+            string fullPath = Path.Combine(prefix, relative);
             if (!expected.Add(relative)) throw new InvalidDataException("Duplicate checksum entry: " + relative);
             if (!File.Exists(fullPath)) throw new InvalidDataException("Package file is missing: " + relative);
             string actual = Sha256(fullPath);
             if (!string.Equals(actual, match.Groups[1].Value, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Package checksum mismatch: " + relative);
         }
-        foreach (string file in Directory.GetFiles(root, "*", SearchOption.AllDirectories))
+        foreach (string file in Directory.GetFiles(ioRoot, "*", SearchOption.AllDirectories))
         {
             if (string.Equals(file, manifest, StringComparison.OrdinalIgnoreCase)) continue;
             string relative = file.Substring(prefix.Length);
@@ -301,6 +298,30 @@ internal static class PortableSetup
                      Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "ugsci", "plugin.json"),
                      Path.Combine("payload", "binaries", "qwenpaw-backend", "_internal", "qwenpaw", "plugins_bundle", "ugsci_research", "plugin.json") })
             if (!expected.Contains(required)) throw new InvalidDataException("Required checksum entry is missing: " + required);
+    }
+
+    private static string SafeRelativePath(string value)
+    {
+        string relative = value.Replace('/', Path.DirectorySeparatorChar)
+            .Replace(Path.AltDirectorySeparatorChar, Path.DirectorySeparatorChar);
+        if (string.IsNullOrWhiteSpace(relative) || Path.IsPathRooted(relative))
+            throw new InvalidDataException("Unsafe checksum path: " + value);
+        string[] segments = relative.Split(Path.DirectorySeparatorChar);
+        foreach (string segment in segments)
+        {
+            if (string.IsNullOrWhiteSpace(segment) || segment == "." || segment == ".." ||
+                segment.IndexOf(':') >= 0)
+                throw new InvalidDataException("Unsafe checksum path: " + value);
+        }
+        return string.Join(Path.DirectorySeparatorChar.ToString(), segments);
+    }
+
+    private static string ToExtendedPath(string path)
+    {
+        if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path;
+        if (path.StartsWith(@"\\", StringComparison.Ordinal))
+            return @"\\?\UNC\" + path.Substring(2);
+        return @"\\?\" + path;
     }
 
     private static string Sha256(string path)
