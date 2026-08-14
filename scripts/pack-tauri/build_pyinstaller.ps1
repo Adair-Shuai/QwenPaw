@@ -350,17 +350,25 @@ if ($LAYERED_DESKTOP) {
     Assert-LastExit "Failed to build QwenPaw CLI launchers"
     & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\assemble_desktop_layout.py") `
         --binaries $BINARIES_DIR `
-        --version $VERSION
+        --version $VERSION `
+        --target windows-x86_64
     Assert-LastExit "Failed to assemble versioned desktop runtime layout"
     $previousPythonPath = $env:PYTHONPATH
     try {
         $activeLayout = Get-Content (Join-Path $BINARIES_DIR 'state\active.json') -Raw | ConvertFrom-Json
         $dependencyRelativePath = $activeLayout.components.'python-packages'.path
-        if (-not $dependencyRelativePath -or [System.IO.Path]::IsPathRooted($dependencyRelativePath)) {
-            throw "Layered Python dependency path is invalid: $dependencyRelativePath"
+        $runtimeRelativePath = $activeLayout.components.'python-runtime'.path
+        foreach ($relativePath in @($dependencyRelativePath, $runtimeRelativePath)) {
+            if (-not $relativePath -or [System.IO.Path]::IsPathRooted($relativePath)) {
+                throw "Layered Python component path is invalid: $relativePath"
+            }
         }
-        $env:PYTHONPATH = Join-Path (Join-Path $REPO_ROOT 'console\src-tauri') $dependencyRelativePath
-        & $NATIVE_HOST_PYTHON `
+        $tauriResourceRoot = Join-Path $REPO_ROOT 'console\src-tauri'
+        $env:PYTHONPATH = Join-Path $tauriResourceRoot $dependencyRelativePath
+        $layeredPython = Join-Path `
+            (Join-Path $tauriResourceRoot $runtimeRelativePath) `
+            'python\python.exe'
+        & $layeredPython `
             (Join-Path $REPO_ROOT "plugins\bundle\chrome\assets\scripts\nm_host.py") `
             --check-runtime
         Assert-LastExit "Layered Python dependencies cannot run the Native Messaging host"

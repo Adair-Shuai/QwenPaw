@@ -52,6 +52,8 @@ const ACTIVE_SCHEMA_VERSION: u32 = 1;
 struct ActiveLayout {
     #[serde(alias = "schema_version")]
     schema_version: u32,
+    #[serde(default)]
+    target: Option<String>,
     components: HashMap<String, ActiveComponent>,
 }
 
@@ -69,6 +71,21 @@ pub(crate) struct ResolvedComponent {
     pub(crate) version: String,
     pub(crate) root: PathBuf,
     pub(crate) kind: Option<String>,
+    pub(crate) managed: bool,
+}
+
+fn current_target() -> &'static str {
+    if cfg!(all(target_os = "windows", target_arch = "x86_64")) {
+        "windows-x86_64"
+    } else if cfg!(all(target_os = "macos", target_arch = "aarch64")) {
+        "macos-aarch64"
+    } else if cfg!(all(target_os = "macos", target_arch = "x86_64")) {
+        "macos-x86_64"
+    } else if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+        "linux-x86_64"
+    } else {
+        "unsupported"
+    }
 }
 
 pub(crate) fn active_manifest_path(resource_dir: &Path) -> PathBuf {
@@ -103,6 +120,18 @@ pub(crate) fn resolve_component(resource_dir: &Path, id: &str) -> Option<Resolve
         );
         return None;
     }
+    if layout
+        .target
+        .as_deref()
+        .is_some_and(|target| target != current_target())
+    {
+        log::warn!(
+            "[runtime] ignoring bundled layout for target={:?}; current={}",
+            layout.target,
+            current_target()
+        );
+        return None;
+    }
     let selected = layout.components.get(id)?;
     if selected.version.trim().is_empty() {
         return None;
@@ -115,6 +144,7 @@ pub(crate) fn resolve_component(resource_dir: &Path, id: &str) -> Option<Resolve
     Some(ResolvedComponent {
         version: selected.version.trim().to_string(),
         root: candidate,
+        managed: false,
         kind: selected
             .kind
             .as_deref()
@@ -132,7 +162,11 @@ fn managed_components_root() -> Option<PathBuf> {
         .or_else(|| {
             let home = dirs::home_dir()?;
             let legacy = home.join(".copaw");
-            Some(if legacy.exists() { legacy } else { home.join(".qwenpaw") })
+            Some(if legacy.exists() {
+                legacy
+            } else {
+                home.join(".qwenpaw")
+            })
         })?;
     let working_dir = if working_dir.is_absolute() {
         working_dir
@@ -155,6 +189,9 @@ fn resolve_managed_component(id: &str) -> Option<ResolvedComponent> {
     let raw = std::fs::read_to_string(&manifest_path).ok()?;
     let layout: ActiveLayout = serde_json::from_str(&raw).ok()?;
     if layout.schema_version != ACTIVE_SCHEMA_VERSION {
+        return None;
+    }
+    if layout.target.as_deref() != Some(current_target()) {
         return None;
     }
     let selected = layout.components.get(id)?;
@@ -185,6 +222,7 @@ fn resolve_managed_component(id: &str) -> Option<ResolvedComponent> {
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(str::to_string),
+        managed: true,
     })
 }
 
@@ -212,6 +250,9 @@ pub(crate) fn disable_managed_component(id: &str) -> Result<(), String> {
         .map_err(|err| format!("failed to read managed active pointer: {err}"))?;
     let mut payload: Value = serde_json::from_str(&raw)
         .map_err(|err| format!("invalid managed active pointer: {err}"))?;
+    if payload.get("target").and_then(Value::as_str) != Some(current_target()) {
+        return Err("managed active pointer target does not match this platform".to_string());
+    }
     let components = payload
         .get_mut("components")
         .and_then(Value::as_object_mut)
@@ -237,10 +278,8 @@ pub(crate) fn disable_managed_component(id: &str) -> Result<(), String> {
         .join("managed")
         .join(id)
         .join(format!(".{version}.activation.json"));
-    let temporary = manifest_path.with_file_name(format!(
-        ".active.json.{}.staging",
-        std::process::id(),
-    ));
+    let temporary =
+        manifest_path.with_file_name(format!(".active.json.{}.staging", std::process::id(),));
     let encoded = serde_json::to_vec(&payload)
         .map_err(|err| format!("failed to encode managed active pointer: {err}"))?;
     std::fs::write(&temporary, encoded)
@@ -303,15 +342,14 @@ mod tests {
         let _guard = ENV_LOCK.lock().unwrap();
         let temp = tempfile::tempdir().unwrap();
         let working = temp.path().join("working");
-        let selected = working
-            .join("components/managed/backend/2.1.1b7");
+        let selected = working.join("components/managed/backend/2.1.1b7");
         std::fs::create_dir_all(&selected).unwrap();
         std::fs::create_dir_all(working.join("components")).unwrap();
         std::fs::write(
             working.join("components/active.json"),
             serde_json::json!({
                 "schema_version": 1,
-                "target": "windows-x86_64",
+                "target": current_target(),
                 "components": {
                     "backend": {
                         "version": "2.1.1b7",
@@ -342,16 +380,13 @@ mod tests {
         let components = working.join("components");
         let backend = components.join("managed/backend/2.1.1b7");
         std::fs::create_dir_all(&backend).unwrap();
-        let marker = backend
-            .parent()
-            .unwrap()
-            .join(".2.1.1b7.activation.json");
+        let marker = backend.parent().unwrap().join(".2.1.1b7.activation.json");
         std::fs::write(&marker, "{}").unwrap();
         std::fs::write(
             components.join("active.json"),
             serde_json::json!({
                 "schema_version": 1,
-                "target": "windows-x86_64",
+                "target": current_target(),
                 "components": {
                     "backend": {
                         "version": "2.1.1b7",
@@ -374,14 +409,45 @@ mod tests {
             Some(value) => std::env::set_var("QWENPAW_WORKING_DIR", value),
             None => std::env::remove_var("QWENPAW_WORKING_DIR"),
         }
-        let payload: Value = serde_json::from_str(
-            &std::fs::read_to_string(components.join("active.json")).unwrap(),
-        )
-        .unwrap();
+        let payload: Value =
+            serde_json::from_str(&std::fs::read_to_string(components.join("active.json")).unwrap())
+                .unwrap();
         assert!(payload["components"].get("backend").is_none());
         assert!(payload["components"].get("node-runtime").is_some());
         assert!(!marker.exists());
         assert!(backend.is_dir());
+    }
+
+    #[test]
+    fn ignores_managed_pointer_for_another_platform() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let working = temp.path().join("working");
+        let selected = working.join("components/managed/backend/2.1.1b7");
+        std::fs::create_dir_all(&selected).unwrap();
+        std::fs::write(
+            working.join("components/active.json"),
+            serde_json::json!({
+                "schema_version": 1,
+                "target": "foreign-platform",
+                "components": {
+                    "backend": {
+                        "version": "2.1.1b7",
+                        "path": selected.to_string_lossy(),
+                        "kind": "python"
+                    }
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let previous = std::env::var_os("QWENPAW_WORKING_DIR");
+        std::env::set_var("QWENPAW_WORKING_DIR", &working);
+        assert!(resolve_managed_component("backend").is_none());
+        match previous {
+            Some(value) => std::env::set_var("QWENPAW_WORKING_DIR", value),
+            None => std::env::remove_var("QWENPAW_WORKING_DIR"),
+        }
     }
 
     #[test]

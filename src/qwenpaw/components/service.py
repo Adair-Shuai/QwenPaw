@@ -66,6 +66,59 @@ DIRECTORY_COMPONENT_IDS = frozenset(
     },
 )
 _MANAGED_COMPONENTS_ROOT = WORKING_DIR / "components" / "managed"
+_ADOPTED_COMPONENTS_PATH = WORKING_DIR / "components" / "adopted.json"
+_ADOPTED_LOCK = threading.RLock()
+
+
+def _read_adopted_components() -> set[str]:
+    with _ADOPTED_LOCK:
+        try:
+            payload = json.loads(
+                _ADOPTED_COMPONENTS_PATH.read_text(encoding="utf-8"),
+            )
+            if payload.get("schema_version") != 1:
+                return set()
+            return {
+                _safe_component_id(str(item))
+                for item in payload.get("components", [])
+                if str(item).strip()
+            }
+        except (
+            OSError,
+            TypeError,
+            ValueError,
+            json.JSONDecodeError,
+            ComponentUpdateError,
+        ):
+            return set()
+
+
+def set_component_update_adoption(component: str, adopted: bool) -> None:
+    """Allow a remotely installed plugin to join signed OSS updates."""
+    component = _safe_component_id(component)
+    with _ADOPTED_LOCK:
+        components = _read_adopted_components()
+        if adopted:
+            components.add(component)
+        else:
+            components.discard(component)
+        _ADOPTED_COMPONENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = _ADOPTED_COMPONENTS_PATH.with_name(
+            f".{_ADOPTED_COMPONENTS_PATH.name}.{os.getpid()}.staging",
+        )
+        temporary.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "components": sorted(components),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, _ADOPTED_COMPONENTS_PATH)
 
 
 def _default_managed_components() -> set[str]:
@@ -270,8 +323,13 @@ def _bundled_directory_records() -> dict[str, tuple[str, Path]]:
     try:
         payload = json.loads(active_path.read_text(encoding="utf-8"))
         schema = payload.get("schemaVersion", payload.get("schema_version"))
+        target = payload.get("target")
         components = payload.get("components")
-        if schema != 1 or not isinstance(components, dict):
+        if (
+            schema != 1
+            or target not in {None, detect_target()}
+            or not isinstance(components, dict)
+        ):
             return {}
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return {}
@@ -554,6 +612,7 @@ class ComponentUpdateService:
         if not isinstance(entries, dict):
             return
         additions: set[str] = set()
+        adopted = _read_adopted_components()
         for raw_component in entries:
             component = str(raw_component).strip()
             if (
@@ -575,7 +634,7 @@ class ComponentUpdateService:
                     exc,
                 )
                 continue
-            if destination.exists():
+            if destination.exists() and component not in adopted:
                 logger.warning(
                     "Ignoring signed component %s because an unmanaged local "
                     "plugin already occupies %s",

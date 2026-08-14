@@ -56,7 +56,7 @@ pub(super) fn watch(
                             && inner.port.is_none()
                             && inner
                                 .launcher
-                                .is_some_and(|launcher| launcher.managed_backend)
+                                .is_some_and(|launcher| launcher.has_managed_components())
                     });
                     terminated.send_replace(true);
                     if stopping {
@@ -64,9 +64,11 @@ pub(super) fn watch(
                             "[backend:{generation}] process terminated after shutdown request"
                         );
                     } else if retry_bundled {
-                        match crate::runtime_layout::disable_managed_component(
-                            "backend",
-                        ) {
+                        let launcher = state.with_inner(|inner| inner.launcher);
+                        match launcher
+                            .ok_or_else(|| "managed launcher state is missing".to_string())
+                            .and_then(super::rollback_managed_launcher)
+                        {
                             Ok(()) => {
                                 log::error!(
                                     "[backend:{generation}] managed backend failed startup; rolling back to bundled backend: {message}"
@@ -74,19 +76,14 @@ pub(super) fn watch(
                                 state.clear_child_if_current(generation);
                                 let retry_app = app.clone();
                                 tauri::async_runtime::spawn(async move {
-                                    tokio::time::sleep(
-                                        std::time::Duration::from_millis(200),
-                                    )
-                                    .await;
+                                    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
                                     super::start_internal(&retry_app);
                                 });
                             }
                             Err(err) => {
                                 state.set_error_if_current(
                                     generation,
-                                    format!(
-                                        "{message}\n\nManaged backend rollback failed: {err}"
-                                    ),
+                                    format!("{message}\n\nManaged backend rollback failed: {err}"),
                                 );
                             }
                         }

@@ -93,6 +93,7 @@ def test_directory_component_plans_from_atomic_active_pointer(tmp_path):
         json.dumps(
             {
                 "schema_version": 1,
+                "target": "windows-x86_64",
                 "components": {
                     "backend": {
                         "version": "1.0.0",
@@ -145,6 +146,7 @@ def test_directory_component_at_target_version_has_no_plan(tmp_path):
         json.dumps(
             {
                 "schema_version": 1,
+                "target": "windows-x86_64",
                 "components": {
                     "backend": {
                         "version": "1.1.0",

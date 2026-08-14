@@ -264,14 +264,16 @@ if [ "$LAYERED_DESKTOP" = true ]; then
     rm -rf "${BINARIES_DIR}/qwenpaw-backend"
     "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/assemble_desktop_layout.py" \
         --binaries "${BINARIES_DIR}" \
-        --version "${VERSION}"
+        --version "${VERSION}" \
+        --target macos-aarch64
     DEPENDENCY_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-packages"]["path"])' "${BINARIES_DIR}/state/active.json")
-    case "$DEPENDENCY_PATH" in
-        binaries/*) ;;
-        *) echo "ERROR: invalid layered Python dependency path: ${DEPENDENCY_PATH}" >&2; exit 1 ;;
+    RUNTIME_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-runtime"]["path"])' "${BINARIES_DIR}/state/active.json")
+    case "$DEPENDENCY_PATH:$RUNTIME_PATH" in
+        binaries/*:binaries/*) ;;
+        *) echo "ERROR: invalid layered Python component paths" >&2; exit 1 ;;
     esac
     PYTHONPATH="${REPO_ROOT}/console/src-tauri/${DEPENDENCY_PATH}" \
-        "$NATIVE_HOST_PYTHON" \
+        "${REPO_ROOT}/console/src-tauri/${RUNTIME_PATH}/python/bin/python3" \
         "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
         --check-runtime
     echo "Layered desktop layout assembled"

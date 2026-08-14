@@ -64,8 +64,22 @@ function UpdateProbe() {
       >
         install
       </button>
+      <button
+        type="button"
+        onClick={() =>
+          void updates
+            .queueComponentUpdates()
+            .then((queued) => setResult(queued ? "queued" : "nothing"))
+            .catch(() => setResult("queue-failed"))
+        }
+      >
+        queue
+      </button>
       <output>{result}</output>
       <output data-testid="check-warning">{updates.checkWarning ?? ""}</output>
+      <output data-testid="component-count">
+        {updates.componentUpdateCount}
+      </output>
     </>
   );
 }
@@ -155,5 +169,55 @@ describe("DesktopUpdateProvider", () => {
     await waitFor(() =>
       expect(screen.getByText("install-failed")).toBeInTheDocument(),
     );
+  });
+
+  it("clears stale component state when the install-time recheck fails", async () => {
+    mocks.checkComponentUpdates
+      .mockResolvedValueOnce({ updates: [{ component: "demo" }] })
+      .mockRejectedValueOnce(new Error("component source unavailable"));
+
+    render(
+      <DesktopUpdateProvider>
+        <UpdateProbe />
+      </DesktopUpdateProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("component-count")).toHaveTextContent("1"),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "queue" }));
+    await waitFor(() =>
+      expect(screen.getByText("queue-failed")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("component-count")).toHaveTextContent("0");
+    expect(mocks.queueAllComponentUpdates).not.toHaveBeenCalled();
+  });
+
+  it("clears an earlier partial warning after a successful install-time recheck", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValueOnce({
+      version: "2.1.1-beta.8",
+      body: "update",
+      supportsLaterInstall: true,
+    });
+    mocks.checkComponentUpdates
+      .mockRejectedValueOnce(new Error("temporary component failure"))
+      .mockResolvedValueOnce({ updates: [] });
+
+    render(
+      <DesktopUpdateProvider>
+        <UpdateProbe />
+      </DesktopUpdateProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("check-warning")).not.toBeEmptyDOMElement(),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "queue" }));
+    await waitFor(() =>
+      expect(screen.getByText("nothing")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("check-warning")).toBeEmptyDOMElement();
   });
 });

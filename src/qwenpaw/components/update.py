@@ -473,7 +473,7 @@ class ComponentUpdater:
             payload = json.loads(self.active_path.read_text(encoding="utf-8"))
             if payload.get("schema_version") != 1:
                 return None, None
-            if payload.get("target") not in {None, self.target}:
+            if payload.get("target") != self.target:
                 return None, None
             record = payload["components"][component]
             version = str(record["version"])
@@ -975,9 +975,10 @@ class ComponentUpdater:
                 existing = json.loads(
                     self.active_path.read_text(encoding="utf-8"),
                 )
-                if isinstance(existing, dict) and isinstance(
-                    existing.get("components"),
-                    dict,
+                if (
+                    isinstance(existing, dict)
+                    and existing.get("target") == self.target
+                    and isinstance(existing.get("components"), dict)
                 ):
                     payload["components"].update(existing["components"])
             except (OSError, json.JSONDecodeError, TypeError):

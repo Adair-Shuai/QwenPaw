@@ -26,6 +26,13 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _dependency_version(lock_hash: str) -> str:
+    """Return a stable PEP 440 version for a dependency lock digest."""
+    if len(lock_hash) < 16 or any(char not in "0123456789abcdef" for char in lock_hash):
+        raise ValueError("desktop requirements digest must be lowercase SHA-256")
+    return f"0+sha.{lock_hash[:16]}"
+
+
 def _safe_empty(path: Path, parent: Path) -> None:
     resolved = path.resolve()
     root = parent.resolve()
@@ -52,7 +59,10 @@ def build_layers(
         raise FileNotFoundError(f"standalone Python is missing: {runtime_python}")
 
     lock_hash = _sha256(lock)
-    dependency_version = lock_hash[:16]
+    # Component versions are parsed with packaging.version.Version at runtime.
+    # A raw digest may begin with a letter, so encode it as valid PEP 440 local
+    # version metadata while retaining a stable content-derived identity.
+    dependency_version = _dependency_version(lock_hash)
     dependencies = output / "runtimes" / "python-packages" / dependency_version
     backend = output / "app" / "backend" / version
     _safe_empty(dependencies, output)

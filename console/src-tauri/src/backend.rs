@@ -34,6 +34,7 @@ const GRACEFUL_SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(2);
 const GRACEFUL_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(7);
 const FORCED_SHUTDOWN_EXIT_TIMEOUT: Duration = Duration::from_secs(2);
 const BACKEND_STARTUP_SLOW_WARNING: Duration = Duration::from_secs(15);
+const BACKEND_STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 
 /// Shared sidecar process state managed by Tauri.
 #[derive(Default)]
@@ -113,6 +114,17 @@ impl BackendState {
                 && !inner.stopping
                 && inner.port.is_none()
                 && inner.child.is_some()
+        })
+    }
+
+    fn launcher_if_starting(&self, generation: u64) -> Option<command::LauncherSelection> {
+        self.with_inner(|inner| {
+            (self.is_current(generation)
+                && !inner.stopping
+                && inner.port.is_none()
+                && inner.child.is_some())
+            .then_some(inner.launcher)
+            .flatten()
         })
     }
 
@@ -456,13 +468,11 @@ fn start_internal(app: &tauri::AppHandle) {
     let (rx, child) = match command.spawn() {
         Ok(child) => child,
         Err(err) => {
-            if launcher.managed_backend {
-                match crate::runtime_layout::disable_managed_component(
-                    "backend",
-                ) {
+            if launcher.has_managed_components() {
+                match rollback_managed_launcher(launcher) {
                     Ok(()) => {
                         log::error!(
-                            "[backend] managed backend failed to spawn: {err}; rolled back to bundled backend"
+                            "[backend] managed Python stack failed to spawn: {err}; rolled back to bundled backend"
                         );
                         start_internal(app);
                         return;
@@ -509,5 +519,61 @@ fn watch_slow_startup(app: tauri::AppHandle, generation: u64) {
                 BACKEND_STARTUP_SLOW_WARNING.as_secs()
             );
         }
+        tokio::time::sleep(BACKEND_STARTUP_TIMEOUT.saturating_sub(BACKEND_STARTUP_SLOW_WARNING))
+            .await;
+        let state = app.state::<BackendState>();
+        let Some(launcher) = state.launcher_if_starting(generation) else {
+            return;
+        };
+        log::error!(
+            "[backend:{generation}] backend did not report ready within {} seconds",
+            BACKEND_STARTUP_TIMEOUT.as_secs()
+        );
+        if let Err(err) = state.stop_and_wait().await {
+            state.set_error(format!(
+                "backend startup timed out and could not be stopped: {err}"
+            ));
+            return;
+        }
+        if launcher.has_managed_components() {
+            match rollback_managed_launcher(launcher) {
+                Ok(()) => {
+                    log::error!(
+                        "[backend:{generation}] rolled back timed-out managed Python stack"
+                    );
+                    start_internal(&app);
+                }
+                Err(err) => state.set_error(format!(
+                    "backend startup timed out; managed rollback failed: {err}"
+                )),
+            }
+        } else {
+            state.set_error(format!(
+                "bundled backend did not report ready within {} seconds",
+                BACKEND_STARTUP_TIMEOUT.as_secs()
+            ));
+        }
     });
+}
+
+fn rollback_managed_launcher(launcher: command::LauncherSelection) -> Result<(), String> {
+    let selected = [
+        ("backend", launcher.managed_backend),
+        ("python-packages", launcher.managed_python_packages),
+        ("python-runtime", launcher.managed_python_runtime),
+    ];
+    let mut failures = Vec::new();
+    for (component, managed) in selected {
+        if !managed {
+            continue;
+        }
+        if let Err(err) = crate::runtime_layout::disable_managed_component(component) {
+            failures.push(format!("{component}: {err}"));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
+    }
 }

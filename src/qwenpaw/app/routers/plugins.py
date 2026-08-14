@@ -794,6 +794,14 @@ async def install_plugin(
             source_path,
             force=body.force,
         )
+        if is_url:
+            from ...components.service import set_component_update_adoption
+
+            await asyncio.to_thread(
+                set_component_update_adoption,
+                record.manifest.id,
+                True,
+            )
     except HTTPException:
         raise
     except ValueError as exc:
@@ -945,6 +953,13 @@ async def uninstall_plugin(plugin_id: str, request: Request):
 
             await asyncio.to_thread(mark_plugin_uninstalled, plugin_id)
             await loader.unload_plugin(plugin_id, delete_files=True)
+            from ...components.service import set_component_update_adoption
+
+            await asyncio.to_thread(
+                set_component_update_adoption,
+                plugin_id,
+                False,
+            )
             _post_unload_cleanup(
                 request,
                 plugin_id,

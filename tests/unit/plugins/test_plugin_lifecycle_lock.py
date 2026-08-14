@@ -9,10 +9,13 @@ from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from fastapi import HTTPException
 
 from qwenpaw.app.routers.plugins import (
+    InstallPluginRequest,
     _finish_plugin_install_after_load,
     _tool_names_from_meta,
+    install_plugin,
 )
 from qwenpaw.governance.tool_registry import (
     DEFAULT_REGISTRY,
@@ -81,6 +84,24 @@ def test_force_reinstall_removed_tools_are_old_minus_new():
         ),
     )
     assert sorted(old_tools - new_tools) == ["old_tool"]
+
+
+@pytest.mark.asyncio
+async def test_public_install_route_rejects_force_reinstall():
+    request = MagicMock()
+    request.app.state.plugin_loader = MagicMock()
+
+    with pytest.raises(HTTPException) as error:
+        await install_plugin(
+            InstallPluginRequest(
+                source="https://example/plugin.zip",
+                force=True,
+            ),
+            request,
+        )
+
+    assert error.value.status_code == 409
+    assert "application version" in str(error.value.detail)
 
 
 @pytest.mark.asyncio

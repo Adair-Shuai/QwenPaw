@@ -8,6 +8,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
+PYTHON_LAYERS = REPO_ROOT / "scripts" / "pack-tauri" / "build_python_layers.py"
 
 
 def _load():
@@ -16,6 +17,24 @@ def _load():
     module = module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def _load_python_layers():
+    spec = spec_from_file_location("build_python_layers", PYTHON_LAYERS)
+    assert spec and spec.loader
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_dependency_layer_digest_is_a_valid_component_version():
+    # pylint: disable=protected-access
+    from packaging.version import Version
+
+    helper = _load_python_layers()
+    value = helper._dependency_version("e3028883b2090145" + "0" * 48)
+    assert value == "0+sha.e3028883b2090145"
+    assert str(Version(value)) == value
 
 
 def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
@@ -37,7 +56,7 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
     helper_root.mkdir(parents=True)
     (helper_root / "qwenpaw-computer-use-helper.exe").write_bytes(b"MZ")
 
-    active = helper.assemble(binaries, "2.1.1b7")
+    active = helper.assemble(binaries, "2.1.1b7", "windows-x86_64")
 
     assert not (binaries / "python-runtime").exists()
     assert (binaries / "runtimes/python/python-3.12-sha").is_dir()
@@ -45,6 +64,7 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
     assert (binaries / "runtimes/java/java-21-sha").is_dir()
     assert (binaries / "tools/officecli/2.1.1b7").is_dir()
     assert active["components"]["backend"]["kind"] == "python"
+    assert active["target"] == "windows-x86_64"
     assert active["components"]["backend"]["path"].startswith(
         "binaries/app/backend/",
     )
@@ -73,7 +93,7 @@ def test_assemble_requires_exactly_one_dependency_layer(tmp_path):
     (helper_root / "qwenpaw-computer-use-helper.exe").write_bytes(b"MZ")
 
     try:
-        helper.assemble(binaries, "2.1.1b7")
+        helper.assemble(binaries, "2.1.1b7", "windows-x86_64")
     except ValueError as error:
         assert "exactly one Python dependency layer" in str(error)
     else:
@@ -100,8 +120,9 @@ def test_assemble_accepts_extensionless_macos_helper(tmp_path):
     helper_root.mkdir(parents=True)
     (helper_root / "qwenpaw-computer-use-helper").write_bytes(b"Mach-O")
 
-    active = helper.assemble(binaries, "2.1.1b7")
+    active = helper.assemble(binaries, "2.1.1b7", "macos-aarch64")
 
     assert active["components"]["computer-use-helper"]["path"].endswith(
         "/tools/computer-use/2.1.1b7",
     )
+    assert active["target"] == "macos-aarch64"

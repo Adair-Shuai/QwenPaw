@@ -14,6 +14,7 @@ from qwenpaw.components.service import (
     queue_component_update,
     resolve_component_destination,
     run_startup_updates,
+    set_component_update_adoption,
     _resolve_managed_directory,
 )
 from qwenpaw.components.update import ComponentUpdateError
@@ -26,6 +27,43 @@ class _Client:
 
     def fetch_manifest(self, _url):
         return self.manifest
+
+
+def test_remote_install_can_be_adopted_by_signed_component_manifest(
+    monkeypatch,
+    tmp_path,
+):
+    # pylint: disable=protected-access
+    adopted_path = tmp_path / "components" / "adopted.json"
+    monkeypatch.setattr(
+        "qwenpaw.components.service._ADOPTED_COMPONENTS_PATH",
+        adopted_path,
+    )
+    plugins = tmp_path / "plugins"
+    plugin = plugins / "demo"
+    plugin.mkdir(parents=True)
+    (plugin / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"base"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(updater, _Client({}), "https://example")
+
+    set_component_update_adoption("demo", True)
+    service._adopt_signed_new_components(
+        {"components": {"demo": {"version": "1.1.0"}}},
+        plugins,
+    )
+
+    assert "demo" in updater.managed_components
+    assert json.loads(adopted_path.read_text(encoding="utf-8"))[
+        "components"
+    ] == ["demo"]
 
 
 def test_configured_service_uses_embedded_production_defaults(monkeypatch):
@@ -121,6 +159,7 @@ def test_runtime_component_uses_external_versioned_root(monkeypatch, tmp_path):
         json.dumps(
             {
                 "schema_version": 1,
+                "target": "windows-x86_64",
                 "components": {
                     "backend": {
                         "version": "1.0.0",
@@ -148,6 +187,7 @@ def test_runtime_component_uses_external_versioned_root(monkeypatch, tmp_path):
         _Client(
             {
                 "schema_version": 1,
+                "target": "windows-x86_64",
                 "components": {
                     "backend": {
                         "version": "1.1.0",
@@ -185,6 +225,7 @@ def test_runtime_active_pointer_cannot_escape_managed_root(
         json.dumps(
             {
                 "schema_version": 1,
+                "target": "windows-x86_64",
                 "components": {
                     "backend": {
                         "version": "1.0.0",

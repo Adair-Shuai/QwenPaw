@@ -12,6 +12,14 @@ use tauri_plugin_shell::{process::Command, ShellExt};
 pub(super) struct LauncherSelection {
     pub(super) packaged: bool,
     pub(super) managed_backend: bool,
+    pub(super) managed_python_runtime: bool,
+    pub(super) managed_python_packages: bool,
+}
+
+impl LauncherSelection {
+    pub(super) fn has_managed_components(self) -> bool {
+        self.managed_backend || self.managed_python_runtime || self.managed_python_packages
+    }
 }
 
 /// Builds the command used to start the Python backend sidecar.
@@ -56,6 +64,8 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
         LauncherSelection {
             packaged: false,
             managed_backend: false,
+            managed_python_runtime: false,
+            managed_python_packages: false,
         },
     ))
 }
@@ -198,24 +208,33 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
         LauncherSelection {
             packaged: true,
             managed_backend: launch.managed_backend,
+            managed_python_runtime: launch.managed_python_runtime,
+            managed_python_packages: launch.managed_python_packages,
         },
     ))
 }
 
 #[cfg(not(debug_assertions))]
 fn packaged_python_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
+    packaged_python_runtime_selection(app).map(|(path, _managed)| path)
+}
+
+#[cfg(not(debug_assertions))]
+fn packaged_python_runtime_selection(app: &tauri::AppHandle) -> Option<(PathBuf, bool)> {
     let resource_dir = app.path().resource_dir().ok()?;
-    let base = crate::runtime_layout::resolve_component(&resource_dir, "python-runtime")
+    let selected = crate::runtime_layout::resolve_component(&resource_dir, "python-runtime");
+    let (base, managed) = selected
+        .as_ref()
         .map(|selected| {
             log::info!(
                 "[backend] active python runtime version={} root={}",
                 selected.version,
                 selected.root.display()
             );
-            selected.root
+            (selected.root.clone(), selected.managed)
         })
-        .unwrap_or_else(|| resource_dir.join("binaries").join("python-runtime"))
-        .join("python");
+        .unwrap_or_else(|| (resource_dir.join("binaries").join("python-runtime"), false));
+    let base = base.join("python");
     let candidates = if cfg!(windows) {
         vec![base.join("python.exe")]
     } else {
@@ -224,7 +243,17 @@ fn packaged_python_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
             base.join("bin").join("python"),
         ]
     };
-    candidates.into_iter().find(|path| path.is_file())
+    let found = candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .map(|path| (path, managed));
+    if found.is_none() && managed {
+        log::error!("[backend] managed Python runtime is incomplete; disabling it before launch");
+        if crate::runtime_layout::disable_managed_component("python-runtime").is_ok() {
+            return packaged_python_runtime_selection(app);
+        }
+    }
+    found
 }
 
 #[cfg(not(debug_assertions))]
@@ -349,6 +378,8 @@ struct PackagedBackendLaunch {
     working_directory: PathBuf,
     python_paths: Vec<PathBuf>,
     managed_backend: bool,
+    managed_python_runtime: bool,
+    managed_python_packages: bool,
 }
 
 #[cfg(not(debug_assertions))]
@@ -361,13 +392,17 @@ fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaun
         if backend.kind.as_deref() == Some("python") {
             let package = backend.root.join("qwenpaw");
             if package.is_dir() {
-                let python = packaged_python_runtime(app).ok_or_else(|| {
-                    "active Python backend requires an active or bundled Python runtime".to_string()
-                })?;
+                let (python, managed_python_runtime) = packaged_python_runtime_selection(app)
+                    .ok_or_else(|| {
+                        "active Python backend requires an active or bundled Python runtime"
+                            .to_string()
+                    })?;
                 let mut python_paths = vec![backend.root.clone()];
+                let mut managed_python_packages = false;
                 if let Some(dependencies) =
                     crate::runtime_layout::resolve_component(&resource_dir, "python-packages")
                 {
+                    managed_python_packages = dependencies.managed;
                     python_paths.push(dependencies.root);
                 }
                 log::info!(
@@ -380,13 +415,19 @@ fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaun
                     args: vec!["-m".to_string(), "qwenpaw.tauri.entry".to_string()],
                     working_directory: backend.root,
                     python_paths,
-                    managed_backend: true,
+                    managed_backend: backend.managed,
+                    managed_python_runtime,
+                    managed_python_packages,
                 });
             }
             log::warn!(
-                "[backend] active Python backend is incomplete at {}; falling back to frozen backend",
+                "[backend] active Python backend is incomplete at {}; falling back to bundled backend",
                 backend.root.display()
             );
+            if backend.managed {
+                crate::runtime_layout::disable_managed_component("backend")?;
+                return packaged_backend_launch(app);
+            }
         }
     }
     let executable = packaged_backend_executable(app)?;
@@ -400,6 +441,8 @@ fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaun
         working_directory,
         python_paths: Vec::new(),
         managed_backend: false,
+        managed_python_runtime: false,
+        managed_python_packages: false,
     })
 }
 

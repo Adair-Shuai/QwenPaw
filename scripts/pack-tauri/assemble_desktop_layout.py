@@ -27,7 +27,11 @@ def _move(source: Path, destination: Path) -> None:
     source.replace(destination)
 
 
-def assemble(root: Path, desktop_version: str) -> dict[str, object]:
+def assemble(
+    root: Path,
+    desktop_version: str,
+    target: str | None = None,
+) -> dict[str, object]:
     python_source = root / "python-runtime"
     node_source = root / "node-runtime"
     java_source = root / "java-runtime"
@@ -77,8 +81,9 @@ def assemble(root: Path, desktop_version: str) -> dict[str, object]:
             result["kind"] = kind
         return result
 
-    active = {
+    active: dict[str, object] = {
         "schemaVersion": 1,
+        "target": target,
         "components": {
             "backend": entry(desktop_version, backend_root, "python"),
             "python-packages": entry(dependencies.name, dependencies),
@@ -103,8 +108,18 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binaries", type=Path, required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--target", required=True)
     args = parser.parse_args()
-    print(json.dumps(assemble(args.binaries.resolve(), args.version.strip()), sort_keys=True))
+    print(
+        json.dumps(
+            assemble(
+                args.binaries.resolve(),
+                args.version.strip(),
+                args.target.strip(),
+            ),
+            sort_keys=True,
+        ),
+    )
     return 0
 
 
