@@ -161,6 +161,7 @@ if (-not (Test-Path -LiteralPath (Join-Path $cliScripts "qwenpaw.exe"))) {
 }
 $cliVersion = & (Join-Path $cliScripts "qwenpaw.exe") --version 2>&1
 if ($LASTEXITCODE -ne 0 -or -not $cliVersion) {
+  Write-Host "Registered QwenPaw CLI failed: exit=$LASTEXITCODE output=[$cliVersion]"
   throw "Registered QwenPaw CLI did not execute successfully"
 }
 Write-Host "QwenPaw CLI verified: $cliVersion"

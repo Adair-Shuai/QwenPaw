@@ -82,6 +82,10 @@ b6 Windows ZIP 的真实统计如下：
 12. Windows b5→b6 下载完成后，主程序立即退出，隐藏 PowerShell 慢速解压 1 GB ZIP；无安装进度，看起来像崩溃。
 13. 更新缺少跨进程锁，用户重新启动 b5 并再次点击可产生多个并发解压和安装器。
 14. 只检查 CI 构建成功不够，必须实际安装、启动 backend、加载插件并验证更新后的健康状态。
+15. Windows ZIP 即使成员清单与 CRC 校验通过，旧 .NET Framework 的 `Directory.GetFiles` 仍可能在 `\\?\` 深层路径上抛出 `Illegal characters in path`；Setup 的清单外文件检查必须使用支持长路径的原生枚举，并拒绝 reparse point。
+16. 事务文件若在旧目录移动后才创建，会留下机器断电窗口；事务必须在首次破坏性操作前原子写入，并完整保存 PATH、卸载注册表和值类型，不能只备份应用文件。
+17. 插件 index、主 index 与各平台组件 pointer 若由并行 job 在 GitHub Release 发布前分别切换，会产生半发布状态；必须在 Release 成功后由单一 promotion 事务统一切换并支持补偿回滚。
+18. Windows 安装包内 `qwenpaw.exe` 必须通过 `python -m qwenpaw` 启动 Click CLI；`-m qwenpaw.cli.main` 只会导入模块而不调用命令，导致 `--version` 无输出且返回 0，验证脚本会误判为 CLI 不可用。
 
 ## 3. b7 目标架构
 
@@ -216,11 +220,14 @@ release.yml
 ├─ plugin build
 ├─ component build
 ├─ publish immutable artifacts
-├─ promote pointers/indexes
-└─ publish GitHub Draft Release last
+├─ publish GitHub Draft Release
+├─ atomically promote plugin/component indexes and pointers
+└─ promote desktop latest/updater metadata last
 ```
 
 桌面单独验证可手动运行 `Desktop Build (reusable)`。正式发布前先创建 Draft Release，再运行 `Release (unified)`。
+
+插件 index、主 index、Windows/macOS 组件 current pointer 作为同一组生产可变元数据处理。发布任务在切换前必须重新读取线上状态、保存四个对象的快照、逐个通过 staging 回读校验；任一切换失败时恢复已经切换的对象。独立组件发布、Creator 插件发布、统一发布和桌面 latest promotion 共用 `oss-production-metadata` 锁，避免不同 workflow 并发覆盖。GitHub Release 未正式发布时不得切换这些生产指针。
 
 ### 6.2 Windows
 
@@ -272,16 +279,17 @@ b5 用户不需要卸载或重新安装。迁移顺序：
 1. 下载并校验 b7 迁移更新；
 2. 启动独立更新助手并确认窗口已显示；
 3. 获取系统级单实例更新锁；
-4. 备份用户数据、当前安装元数据和 b5 可执行文件；
-5. 安装各版本化 runtime、依赖层、backend 和 app；
-6. 写入候选 `active.json`；
-7. 启动候选 backend，检查端口、版本和基本 API；
-8. 验证 bundled plugins、FlowForge、技能、领域工具和专家索引；
-9. 原子提交 active pointer；
-10. 自动启动 b7；
-11. 成功后保留一个可回滚版本并异步清理旧 staging。
+4. 备份用户数据、当前安装元数据、用户 PATH、原卸载注册表项、快捷方式和 b5 可执行文件；
+5. 在第一次移动旧安装目录前，原子写入 `prepared` 事务；随后按 `old-moved`、`new-activated`、`registered` 更新事务阶段；
+6. 安装各版本化 runtime、依赖层、backend 和 app；
+7. 写入候选 `active.json`；
+8. 启动候选 backend，检查端口、版本和基本 API；
+9. 验证 bundled plugins、FlowForge、技能、领域工具和专家索引；
+10. 原子提交 active pointer；
+11. 自动启动 b7；
+12. 成功后保留一个可回滚版本并异步清理旧 staging。
 
-任一步失败：恢复原 active pointer、恢复备份并重新启动 b5。失败时更新窗口必须保留，并提供重试、恢复和打开日志。
+任一步失败：恢复原 active pointer、旧安装目录、用户 PATH、原卸载注册表项和快捷方式，再重新启动 b5。进程或机器在目录移动期间中断时，下一次更新助手必须根据持久事务和同级 backup 自动恢复；不得只恢复文件而留下指向新版本的 PATH 或残缺卸载项。失败时更新窗口必须保留，并提供重试、恢复和打开日志。
 
 ## 8. 安装阶段 UI
 

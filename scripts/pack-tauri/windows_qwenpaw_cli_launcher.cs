@@ -33,7 +33,11 @@ internal static class QwenPawCliLauncher
             string dependencies = Resolve(installRoot, layout.components["python-packages"].path);
             string python = Path.Combine(pythonRoot, "python", "python.exe");
             if (!File.Exists(python)) throw new FileNotFoundException("UGSci Python runtime is missing.", python);
-            var quoted = new List<string> { "-m", "qwenpaw.cli.main" };
+            var quoted = new List<string> { "-m", "qwenpaw" };
+            // python -m qwenpaw reaches src/qwenpaw/__main__.py which calls
+            // the Click CLI.  -m qwenpaw.cli.main only imports the module:
+            // main.py has no __main__ guard, so --version would print
+            // nothing and exit 0, which callers interpret as a failed CLI.
             foreach (string arg in args) quoted.Add(Quote(arg));
             var start = new ProcessStartInfo {
                 FileName = python,

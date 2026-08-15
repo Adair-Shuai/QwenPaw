@@ -85,6 +85,20 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     assert 'return @"\\\\?\\" + path;' in source
 
 
+def test_cli_launcher_uses_python_module_entry_point() -> None:
+    launcher = (
+        REPO_ROOT
+        / "scripts"
+        / "pack-tauri"
+        / "windows_qwenpaw_cli_launcher.cs"
+    )
+    source = launcher.read_text(encoding="utf-8")
+
+    assert 'new List<string> { "-m", "qwenpaw" }' in source
+    assert '"qwenpaw.cli.main"' not in source
+    assert "python -m qwenpaw reaches src/qwenpaw/__main__.py" in source
+
+
 def test_bootstrap_checksum_contract_matches_layered_payload() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
