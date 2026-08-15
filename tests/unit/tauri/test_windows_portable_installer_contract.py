@@ -85,6 +85,35 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     assert 'return @"\\\\?\\" + path;' in source
 
 
+def test_installer_retains_webview2_bootstrapper_in_staging() -> None:
+    script = _script()
+
+    assert "function Ensure-WebView2 {" in script
+    assert "param([string]$DestinationDir)" in script
+    assert (
+        'Copy-Item -LiteralPath $bootstrapper -Destination '
+        '(Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe") -Force'
+    ) in script
+    assert "Ensure-WebView2 -DestinationDir $stagingDir" in script
+
+
+def test_windows_verifier_accepts_registered_webview2() -> None:
+    verifier = (
+        REPO_ROOT / "scripts" / "verify" / "launch_tauri_windows.ps1"
+    )
+    source = verifier.read_text(encoding="utf-8")
+
+    assert "WebView2 runtime is registered on this machine" in source
+    assert (
+        "EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+        in source
+    )
+    assert (
+        "::warning::WebView2 runtime is not installed "
+        "and no bootstrapper was found in install dir"
+    ) in source
+
+
 def test_cli_launcher_uses_python_module_entry_point() -> None:
     launcher = (
         REPO_ROOT

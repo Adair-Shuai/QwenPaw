@@ -17,6 +17,8 @@ def test_package_init_contains_pywin32_pth_bootstrap() -> None:
     init_source = PACKAGE_INIT.read_text(encoding="utf-8")
 
     assert "bootstrap_windows_pth_dirs" in module_source
+    assert "_ensure_mcp_types_bound()" in module_source
+    assert "setattr(mcp_module, \"types\", types_module)" in module_source
     assert "pywin32.pth" in module_source
     assert "_process_pth_file(entry, pth)" in module_source
     assert 'stripped.startswith("import ")' in module_source

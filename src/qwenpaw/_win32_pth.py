@@ -25,6 +25,7 @@ def bootstrap_windows_pth_dirs() -> None:
         if os.path.isfile(pth):
             _process_pth_file(entry, pth)
             break
+    _ensure_mcp_types_bound()
 
 
 def _process_pth_file(directory: str, pth: str) -> None:
@@ -52,3 +53,21 @@ def _process_pth_file(directory: str, pth: str) -> None:
                 for item in sys.path
             ):
                 sys.path.append(candidate)
+
+
+def _ensure_mcp_types_bound() -> None:
+    """Bind mcp.types so agentscope can evaluate ``mcp.types.Tool``.
+
+    agentscope._logging imports mcp.client/mcp.types while mcp/__init__ is
+    still initializing on Windows, which leaves the ``types`` attribute unset
+    on the parent module even though mcp.types is cached. Importing mcp fully
+    and binding the submodule explicitly repairs that attribute.
+    """
+    try:
+        import importlib
+
+        mcp_module = importlib.import_module("mcp")
+        types_module = importlib.import_module("mcp.types")
+        setattr(mcp_module, "types", types_module)
+    except Exception:
+        pass

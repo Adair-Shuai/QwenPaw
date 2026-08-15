@@ -168,10 +168,21 @@ Write-Host "QwenPaw CLI verified: $cliVersion"
 
 $wv2Files = Get-ChildItem -Path $installRoot -Filter "*WebView2*" `
   -Recurse -Depth 3 -ErrorAction SilentlyContinue
+$webView2Registered = $false
+foreach ($client in @(
+    "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+    "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
+    "HKCU:\Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
+)) {
+  $pv = (Get-ItemProperty -LiteralPath $client -Name pv -ErrorAction SilentlyContinue).pv
+  if ($pv -and $pv -ne "0.0.0.0") { $webView2Registered = $true; break }
+}
 if ($wv2Files) {
   Write-Host "WebView2 bootstrapper present: $($wv2Files[0].Name)"
+} elseif ($webView2Registered) {
+  Write-Host "WebView2 runtime is registered on this machine"
 } else {
-  Write-Host "::warning::WebView2 bootstrapper not found in install dir"
+  Write-Host "::warning::WebView2 runtime is not installed and no bootstrapper was found in install dir"
 }
 
 # 3. Launch the full Tauri shell with CDP debugging requested.

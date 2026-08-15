@@ -489,6 +489,7 @@ function New-UpdateDataBackup {
 }
 
 function Ensure-WebView2 {
+  param([string]$DestinationDir)
   $clients = @(
     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
     "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -510,8 +511,11 @@ function Ensure-WebView2 {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     throw "WebView2 installation timed out"
   }
-  Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
   if ($process.ExitCode -ne 0) { throw "WebView2 installation failed (exit $($process.ExitCode))" }
+  if ($DestinationDir -and (Test-Path -LiteralPath $DestinationDir -PathType Container)) {
+    Copy-Item -LiteralPath $bootstrapper -Destination (Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe") -Force
+  }
+  Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
 }
 
 if (-not (Test-Path $payloadRoot)) { throw "Portable package payload directory not found" }
@@ -568,7 +572,7 @@ $dataBackup = if ($existingInstallDir -or $hasExistingUserData) {
   New-UpdateDataBackup -ReleaseVersion $releaseVersion -InstallDir $installDir
 } else { $null }
 if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
-Ensure-WebView2
+Ensure-WebView2 -DestinationDir $stagingDir
 
 $previousVersion = if ($previousUninstall -and $previousUninstall.DisplayVersion) {
   [string]$previousUninstall.DisplayVersion
