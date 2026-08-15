@@ -224,9 +224,6 @@ jobs:
             if [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
               required_artifacts+=(UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos)
             fi
-            if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
-              : # component artifacts are checked below from the base run
-            fi
             if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
               required_artifacts+=(qwenpaw-plugins-dist)
             fi
@@ -293,7 +290,7 @@ jobs:
               fi
             fi
           done
-          if [[ "$TAG" =~ (beta|alpha|rc|dev) ]]; then
+          if [[ "$TAG" =~ (beta|alpha|rc|dev) ]] || [[ "$TAG" =~ (^|[-.])b[0-9] ]] || [[ "$TAG" =~ (^|[-.])a[0-9] ]]; then
             is_prerelease=true
           else
             is_prerelease=false

@@ -222,3 +222,31 @@ def test_desktop_verification_has_production_startup_budget() -> None:
     desktop_build = _workflow("desktop-build.yml")
 
     assert desktop_build.count("timeout-minutes: 25") >= 2
+
+
+def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
+    publish = _workflow("desktop-publish.yml")
+    promote = _workflow("desktop-promote.yml")
+    release = _workflow("release.yml")
+
+    # macOS updater archive gets a versioned metadata JSON next to its binary.
+    assert "mac-tauri-updater-metadata.json" in publish
+    assert "UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json" in publish
+    assert "generate_oss_metadata.py" in publish
+
+    # macOS updater archive gets a latest pointer and participates in rollback.
+    assert "UGSci-Tauri-latest-macOS.app.tar.gz" in promote
+    assert (
+        "metadata/apps/desktop/mac-tauri/"
+        "UGSci-Tauri-latest-macOS.app.tar.gz.json"
+    ) in promote
+    assert '"tauri-updater-meta-macos"' in promote
+
+    # Promotion downloads only desktop artifacts instead of the whole run.
+    assert "- name: Download desktop artifacts" in promote
+    assert "pattern: UGSci-Desktop-Tauri-*|tauri-updater-meta-*" in promote
+
+    # Prerelease detection covers PEP 440 short tags and the dead no-op block
+    # is gone.
+    assert "[-.])b[0-9]" in release
+    assert "component artifacts are checked below" not in release

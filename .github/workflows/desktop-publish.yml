@@ -403,12 +403,22 @@ jobs:
         if: hashFiles('tauri-updater-meta-macos/*.app.tar.gz') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"
+          RELEASE_UPDATED_AT="$(git show -s --format=%cI HEAD)"
           APP_TAR_GZ=$(find tauri-updater-meta-macos -name "UGSci-Tauri-*-macOS.app.tar.gz" | head -1)
           if [ -z "$APP_TAR_GZ" ]; then
             echo "No macOS .app.tar.gz found, skipping"
             exit 0
           fi
+          python scripts/pack/generate_oss_metadata.py \
+            --file "$APP_TAR_GZ" \
+            --product desktop \
+            --platform mac-tauri \
+            --version "$VERSION" \
+            --updated-at "$RELEASE_UPDATED_AT" \
+            --output mac-tauri-updater-metadata.json
+
           updater_uri="oss://${OSS_BUCKET}/files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
+          metadata_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json"
           remote="${RUNNER_TEMP}/macos-updater-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.app.tar.gz"
           if ossutil cp "$updater_uri" "$remote" >/dev/null 2>&1; then
             cmp --silent "$APP_TAR_GZ" "$remote" || {
@@ -417,6 +427,33 @@ jobs:
             }
             rm -f "$remote"
             echo "Verified existing immutable macOS updater artifact"
+          else
+            ossutil cp "$APP_TAR_GZ" \
+              "$updater_uri" \
+              --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$updater_uri" "$remote"
+            cmp --silent "$APP_TAR_GZ" "$remote" || {
+              echo "Remote macOS updater verification failed: $updater_uri" >&2
+              exit 1
+            }
+            rm -f "$remote"
+          fi
+
+          metadata_tmp="${RUNNER_TEMP}/macos-updater-metadata-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
+          if ossutil cp "$metadata_uri" "$metadata_tmp" >/dev/null 2>&1; then
+            python -c 'import json,sys; from pathlib import Path; a=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); b=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")); a.pop("updated_at",None); b.pop("updated_at",None); raise SystemExit(0 if a == b else 1)' mac-tauri-updater-metadata.json "$metadata_tmp"
+            echo "Verified existing immutable macOS updater metadata"
+            rm -f "$metadata_tmp"
+          else
+            ossutil cp mac-tauri-updater-metadata.json "$metadata_tmp" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$metadata_tmp" "$metadata_uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$metadata_uri" "$metadata_tmp"
+            python -c 'import json,sys; from pathlib import Path; a=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); b=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")); a.pop("updated_at",None); b.pop("updated_at",None); raise SystemExit(0 if a == b else 1)' mac-tauri-updater-metadata.json "$metadata_tmp"
+            rm -f "$metadata_tmp"
+          fi            echo "Verified existing immutable macOS updater artifact"
             exit 0
           fi
           ossutil cp "$APP_TAR_GZ" \
