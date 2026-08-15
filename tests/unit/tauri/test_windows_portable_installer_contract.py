@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Regression guards for the Windows portable install transaction."""
 
+import hashlib
+import importlib.util
+import zipfile
 from pathlib import Path
 
 
@@ -13,6 +16,12 @@ INSTALLER = (
 )
 BOOTSTRAP = (
     REPO_ROOT / "scripts" / "pack-tauri" / "windows_portable_bootstrap.cs"
+)
+ZIP_BUILDER = (
+    REPO_ROOT
+    / "scripts"
+    / "pack-tauri"
+    / "build_windows_portable_zip.py"
 )
 
 
@@ -91,6 +100,49 @@ def test_bootstrap_checksum_contract_matches_layered_payload() -> None:
         'Path.Combine("payload", "binaries", "qwenpaw-backend"'
         not in source
     )
+
+
+def test_packager_prunes_bytecode_and_uses_verified_zip_builder() -> None:
+    script = _script()
+    builder = ZIP_BUILDER.read_text(encoding="utf-8")
+
+    assert 'Where-Object { $_.Name -eq "__pycache__" }' in script
+    assert '$_.Extension -in @(".pyc", ".pyo")' in script
+    assert "build_windows_portable_zip.py" in script
+    assert "Compress-Archive -Path" not in script
+    assert "allowZip64=True" in builder
+    assert "archive.testzip()" in builder
+    assert "archived != expected" in builder
+
+
+def test_verified_zip_builder_preserves_nested_manifest_members(
+    tmp_path: Path,
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "build_windows_portable_zip",
+        ZIP_BUILDER,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    root = tmp_path / "portable"
+    deep = root.joinpath(*(["deep-segment"] * 8), "payload.py")
+    deep.parent.mkdir(parents=True)
+    deep.write_text("payload", encoding="utf-8")
+    relative = deep.relative_to(root).as_posix()
+    digest = hashlib.sha256(deep.read_bytes()).hexdigest()
+    (root / "checksums.sha256").write_text(
+        f"{digest}  {relative}\n",
+        encoding="ascii",
+    )
+
+    destination = tmp_path / "portable.zip"
+    module.build_archive(root, destination)
+
+    with zipfile.ZipFile(destination) as archive:
+        assert relative in archive.namelist()
+        assert archive.read(relative) == b"payload"
 
 
 def test_bootstrap_prefills_only_trusted_canonical_or_legacy_install() -> None:

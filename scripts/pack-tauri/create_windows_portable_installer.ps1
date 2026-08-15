@@ -890,6 +890,19 @@ try {
   Remove-Item -LiteralPath $uninstallLauncherSource -Force -ErrorAction SilentlyContinue
 }
 
+# Python bytecode caches are machine-local, reproducible and unnecessary in
+# the installer. Compress-Archive can silently omit sufficiently deep .pyc
+# paths while leaving them in the checksum manifest, producing a ZIP that is
+# guaranteed to fail Setup verification. Remove them before hashing and use a
+# ZIP builder that verifies the final member set and CRCs.
+Get-ChildItem -LiteralPath $PortableRoot -Directory -Recurse -Force |
+  Where-Object { $_.Name -eq "__pycache__" } |
+  Sort-Object { $_.FullName.Length } -Descending |
+  Remove-Item -Recurse -Force
+Get-ChildItem -LiteralPath $PortableRoot -File -Recurse -Force |
+  Where-Object { $_.Extension -in @(".pyc", ".pyo") } |
+  Remove-Item -Force
+
 $rootPrefix = $PortableRoot.TrimEnd('\') + '\'
 $checksumLines = Get-ChildItem -LiteralPath $PortableRoot -File -Recurse -Force |
   Where-Object { $_.FullName -ne $checksumManifest } |
@@ -906,5 +919,12 @@ $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $zipParent = Split-Path -Parent $ZipPath
 New-Item -ItemType Directory -Path $zipParent -Force | Out-Null
 if (Test-Path $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force }
-Compress-Archive -Path (Join-Path $PortableRoot "*") -DestinationPath $ZipPath -CompressionLevel Optimal -Force
+$zipBuilder = Join-Path $PSScriptRoot "build_windows_portable_zip.py"
+if (-not (Test-Path -LiteralPath $zipBuilder -PathType Leaf)) {
+  throw "Verified portable ZIP builder was not found: $zipBuilder"
+}
+& python $zipBuilder --root $PortableRoot --output $ZipPath
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
+  throw "Verified portable ZIP creation failed (exit $LASTEXITCODE)"
+}
 Write-Host "Portable Windows installer created: $ZipPath"
