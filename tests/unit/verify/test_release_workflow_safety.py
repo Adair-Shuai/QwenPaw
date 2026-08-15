@@ -241,6 +241,10 @@ def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
         "UGSci-Tauri-latest-macOS.app.tar.gz.json"
     ) in promote
     assert '"tauri-updater-meta-macos"' in promote
+    assert (
+        '"mac-tauri-updater-metadata.json"' in promote
+        and '"UGSci-Tauri-*-macOS.app.tar.gz"' in promote
+    )
 
     # Promotion downloads only desktop artifacts instead of the whole run.
     assert "- name: Download desktop artifacts" in promote

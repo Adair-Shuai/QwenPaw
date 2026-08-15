@@ -435,6 +435,13 @@ jobs:
             "UGSci-Tauri-*-macOS.zip" \
             "mac-tauri"
 
+
+          merge_tauri_metadata \
+            "mac-tauri-updater-metadata.json" \
+            "tauri-updater-meta-macos" \
+            "UGSci-Tauri-*-macOS.app.tar.gz" \
+            "mac-tauri"
+
           # Upload updated desktop/index.json
           index_uri="oss://${OSS_BUCKET}/metadata/apps/desktop/index.json"
           index_tmp="${index_uri}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
