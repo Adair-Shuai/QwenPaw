@@ -44,7 +44,10 @@ def build_delta(
         "component": component_id,
         "base_version": base_version,
         "target_version": target_version,
-        "preserve": list(preserve_paths),
+        # preserve is deliberately NOT embedded here: the signed Manifest is
+        # the authoritative preserve list, and including it would change delta
+        # bytes whenever the default policy evolves, breaking immutability
+        # for otherwise unchanged components (e.g. agent-kanban 0.1.0->0.1.1).
         "add": add,
         "replace": replace,
         "delete": delete,

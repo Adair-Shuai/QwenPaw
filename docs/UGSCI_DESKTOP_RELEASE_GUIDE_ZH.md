@@ -89,6 +89,7 @@ b6 Windows ZIP 的真实统计如下：
 19. 便携包中 python-packages 层通过 PYTHONPATH 加载，不会处理 `.pth`；pywin32 依赖 `pywin32.pth` 注册 `pywin32_system32` DLL 目录，否则 `mcp.os.win32` 导入 `pywintypes` 失败，桌面 backend 启动后立即退出。`qwenpaw` 包初始化时必须先处理依赖层的 `.pth`。
 20. Windows 便携包中 `agentscope._logging` 会在 `mcp/__init__` 尚未完成时引入 `mcp.client`/`mcp.types`，导致父模块 `mcp.types` 属性缺失、`agentscope.mcp._mcp_client` 注解求值抛 `AttributeError: module 'mcp' has no attribute 'types'`。`qwenpaw` 初始化必须在 Windows 上完整导入 `mcp` 并显式绑定 `mcp.types`。
 21. WebView2 验证不能只要求安装目录里存在 bootstrapper 文件：CI 机器通常已注册 WebView2 runtime，安装脚本会提前返回而不落盘引导器。验证应同时接受注册表中的 WebView2 版本；首次安装时也把校验过的引导器复制进 staging，随安装保留为修复资产。
+22. delta.zip 内的 `delta.json` 不得嵌入 `preserve` 列表：签名 Manifest 才是权威来源。若把默认 preserve 策略写进 delta.json，未变更插件会在策略调整后生成不同字节的 delta，与已发布 immutable 对象冲突（agent-kanban 0.1.0→0.1.1 曾因此失败）。
 
 ## 3. b7 目标架构
 

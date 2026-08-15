@@ -57,6 +57,12 @@ def test_delta_is_deterministic_and_contains_base_and_final_inventory(
     assert delta["delete"] == ["removed"]
     assert delta["base_files"]
     assert delta["final_files"]
+    # The signed Manifest is the authoritative preserve list; embedding it
+    # here would change delta bytes whenever the default policy evolves.
+    assert "preserve" not in delta
+    with zipfile.ZipFile(first) as archive:
+        embedded = json.loads(archive.read("delta.json"))
+    assert "preserve" not in embedded
 
 
 def test_apply_delta_reconstructs_target_and_rejects_tampered_base(tmp_path):
