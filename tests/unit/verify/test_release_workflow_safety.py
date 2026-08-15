@@ -163,6 +163,48 @@ def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
     )
 
 
+def test_mutable_release_metadata_is_promoted_only_after_finalize() -> None:
+    release = _workflow("release.yml")
+    publish_plugins = release.index("  publish-plugins:")
+    publish_components = release.index("  publish-components:")
+    finalize = release.index("  finalize:")
+    promote = release.index("  promote-release-metadata:")
+    desktop_promote = release.index("  promote-desktop:")
+
+    assert publish_plugins < finalize < promote < desktop_promote
+    assert publish_components < finalize < promote
+    assert "name: plugin-promotion-metadata" in release
+    assert "name: component-promotion-metadata" in release
+    assert (
+        "needs: [resolve, publish-plugins, publish-components, finalize]"
+        in release
+    )
+    pre_finalize = release[:finalize]
+    assert "metadata/plugins/.staging" not in pre_finalize
+    assert "metadata/.staging" not in pre_finalize
+    assert "Phase 2: switch all platform pointers" not in pre_finalize
+    promotion_block = release[promote:desktop_promote]
+    assert (
+        "find promotion/plugins -type f -name 'index.json'"
+        in promotion_block
+    )
+    assert "metadata/plugins/index.json" in promotion_block
+    assert "metadata/index.json" in promotion_block
+    assert "metadata/components/stable/$base" in promotion_block
+    assert "rollback_metadata" in promotion_block
+    assert (
+        "needs: [resolve, finalize, promote-release-metadata]" in release
+    )
+    assert release.count("group: oss-production-metadata") == 1
+
+    for workflow in (
+        "component-release.yml",
+        "creator-release.yml",
+        "desktop-promote.yml",
+    ):
+        assert "oss-production-metadata" in _workflow(workflow)
+
+
 def test_windows_b5_migration_uses_signed_visible_bridge() -> None:
     build = _workflow("desktop-build.yml")
     publish = _workflow("desktop-publish.yml")

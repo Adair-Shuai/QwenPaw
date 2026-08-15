@@ -412,15 +412,28 @@ internal static class UGSciUpdateAssistant
         private sealed class InstallTransaction
         {
             public int schema_version { get; set; }
+            public string stage { get; set; }
             public string install_dir { get; set; }
             public string backup_dir { get; set; }
+            public string staging_dir { get; set; }
             public string target_version { get; set; }
             public string previous_version { get; set; }
+            public string previous_user_path { get; set; }
+            public string previous_uninstall_key_path { get; set; }
+            public RegistryValueSnapshot[] previous_uninstall_values { get; set; }
+            public bool canonical_uninstall_previously_existed { get; set; }
             public string start_menu_shortcut_path { get; set; }
             public string start_menu_shortcut_base64 { get; set; }
             public string desktop_shortcut_path { get; set; }
             public string desktop_shortcut_base64 { get; set; }
             public string transaction_file { get; set; }
+        }
+
+        private sealed class RegistryValueSnapshot
+        {
+            public string name { get; set; }
+            public string kind { get; set; }
+            public object value { get; set; }
         }
 
         private static InstallTransaction ReadTransaction(string path)
@@ -429,19 +442,27 @@ internal static class UGSciUpdateAssistant
                 throw new InvalidDataException("Setup did not create the deferred update transaction.");
             var serializer = new JavaScriptSerializer();
             InstallTransaction value = serializer.Deserialize<InstallTransaction>(File.ReadAllText(path, Encoding.UTF8));
-            if (value == null || value.schema_version != 1 ||
+            if (value == null || (value.schema_version != 1 && value.schema_version != 2) ||
                 string.IsNullOrWhiteSpace(value.install_dir) || string.IsNullOrWhiteSpace(value.backup_dir))
                 throw new InvalidDataException("The deferred update transaction is invalid.");
+            if (value.schema_version == 1 && string.IsNullOrWhiteSpace(value.stage)) value.stage = "registered";
+            if (value.schema_version == 2 &&
+                value.stage != "prepared" && value.stage != "old-moved" &&
+                value.stage != "new-activated" && value.stage != "registered")
+                throw new InvalidDataException("The deferred update transaction stage is invalid.");
             value.install_dir = Path.GetFullPath(value.install_dir).TrimEnd(Path.DirectorySeparatorChar);
             value.backup_dir = Path.GetFullPath(value.backup_dir).TrimEnd(Path.DirectorySeparatorChar);
+            if (!string.IsNullOrWhiteSpace(value.staging_dir))
+                value.staging_dir = Path.GetFullPath(value.staging_dir).TrimEnd(Path.DirectorySeparatorChar);
             value.transaction_file = path;
             string parent = Path.GetDirectoryName(value.install_dir);
             if (string.IsNullOrWhiteSpace(parent) ||
                 !string.Equals(Path.GetDirectoryName(value.backup_dir), parent, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The deferred update backup is outside the installation parent.");
-            string trustedInstall = FindTrustedRegisteredInstallLocation();
-            if (string.IsNullOrWhiteSpace(trustedInstall) ||
-                !string.Equals(value.install_dir, trustedInstall, StringComparison.OrdinalIgnoreCase))
+            string trustedInstall = SnapshotValue(value, "InstallLocation") ?? FindTrustedRegisteredInstallLocation();
+            if (string.IsNullOrWhiteSpace(trustedInstall) || !Path.IsPathRooted(trustedInstall) ||
+                !string.Equals(value.install_dir, Path.GetFullPath(trustedInstall).TrimEnd(Path.DirectorySeparatorChar),
+                    StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The deferred update target does not match the registered installation.");
             string backupName = Path.GetFileName(value.backup_dir);
             const string backupPrefix = ".UGSci Desktop.backup-";
@@ -450,11 +471,49 @@ internal static class UGSciUpdateAssistant
             Guid parsedBackupId;
             if (backupId.Length != 32 || !Guid.TryParseExact(backupId, "N", out parsedBackupId))
                 throw new InvalidDataException("The deferred update backup name is invalid.");
+            if (!string.IsNullOrWhiteSpace(value.staging_dir))
+            {
+                string stagingName = Path.GetFileName(value.staging_dir);
+                const string stagingPrefix = ".UGSci Desktop.install-";
+                string stagingId = stagingName != null && stagingName.StartsWith(stagingPrefix, StringComparison.Ordinal)
+                    ? stagingName.Substring(stagingPrefix.Length) : "";
+                Guid parsedStagingId;
+                if (!string.Equals(Path.GetDirectoryName(value.staging_dir), parent, StringComparison.OrdinalIgnoreCase) ||
+                    stagingId.Length != 32 || !Guid.TryParseExact(stagingId, "N", out parsedStagingId))
+                    throw new InvalidDataException("The deferred update staging directory is invalid.");
+            }
             ValidateShortcutPath(value.start_menu_shortcut_path, true);
             ValidateShortcutPath(value.desktop_shortcut_path, false);
-            if (!Directory.Exists(value.backup_dir))
+            ValidateRegistrySnapshot(value);
+            if (value.stage != "prepared" && !Directory.Exists(value.backup_dir))
                 throw new InvalidDataException("The deferred update backup directory is missing.");
             return value;
+        }
+
+        private static string SnapshotValue(InstallTransaction value, string name)
+        {
+            if (value.previous_uninstall_values == null) return null;
+            foreach (RegistryValueSnapshot entry in value.previous_uninstall_values)
+                if (entry != null && string.Equals(entry.name, name, StringComparison.OrdinalIgnoreCase))
+                    return Convert.ToString(entry.value, CultureInfo.InvariantCulture);
+            return null;
+        }
+
+        private static void ValidateRegistrySnapshot(InstallTransaction value)
+        {
+            if (value.schema_version < 2 || string.IsNullOrWhiteSpace(value.previous_uninstall_key_path)) return;
+            const string root = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\";
+            string keyPath = value.previous_uninstall_key_path;
+            if (!keyPath.StartsWith(root, StringComparison.OrdinalIgnoreCase) ||
+                keyPath.Substring(root.Length).IndexOf('\\') >= 0)
+                throw new InvalidDataException("The previous uninstall registry key is outside the uninstall hive.");
+            string display = SnapshotValue(value, "DisplayName");
+            string location = SnapshotValue(value, "InstallLocation");
+            if (string.IsNullOrWhiteSpace(display) ||
+                (display.IndexOf("UGSci Desktop", StringComparison.OrdinalIgnoreCase) < 0 &&
+                 display.IndexOf("QwenPaw", StringComparison.OrdinalIgnoreCase) < 0) ||
+                string.IsNullOrWhiteSpace(location))
+                throw new InvalidDataException("The previous uninstall registry snapshot is not a UGSci installation.");
         }
 
         private static string FindTrustedRegisteredInstallLocation()
@@ -568,17 +627,31 @@ internal static class UGSciUpdateAssistant
                 }
                 catch { try { application.Kill(); } catch { } }
             }
+            // A process can die after the atomic old -> backup rename but
+            // before the next transaction-file replacement. Infer that narrow
+            // transition from the trusted sibling backup instead of assuming
+            // that a persisted "prepared" stage means no filesystem mutation.
+            if (value.stage == "prepared" && !Directory.Exists(value.backup_dir))
+            {
+                if (!Directory.Exists(value.install_dir))
+                    throw new InvalidDataException("A prepared update lost both the installation and its backup.");
+                RestorePreviousWindowsState(value);
+                RestorePreviousShortcuts(value, Path.Combine(value.install_dir, "UGSci.exe"), value.install_dir);
+                DeleteTransactionAndStaging(value);
+                return;
+            }
             string failed = value.install_dir + ".failed-" + Guid.NewGuid().ToString("N");
-            MoveDirectoryWithRetry(value.install_dir, failed, TimeSpan.FromSeconds(30));
+            if (Directory.Exists(value.install_dir))
+                MoveDirectoryWithRetry(value.install_dir, failed, TimeSpan.FromSeconds(30));
             try
             {
-                MoveDirectoryWithRetry(value.backup_dir, value.install_dir, TimeSpan.FromSeconds(30));
+                if (!Directory.Exists(value.install_dir))
+                    MoveDirectoryWithRetry(value.backup_dir, value.install_dir, TimeSpan.FromSeconds(30));
             }
             catch
             {
-                // Never leave InstallLocation empty.  If restoring the old tree
-                // fails, put the known-complete new tree back before reporting
-                // the rollback failure.
+                // Never leave InstallLocation empty. If restoring the old tree
+                // fails, put the complete new tree back before surfacing the error.
                 if (!Directory.Exists(value.install_dir) && Directory.Exists(failed))
                     MoveDirectoryWithRetry(failed, value.install_dir, TimeSpan.FromSeconds(30));
                 throw;
@@ -587,20 +660,72 @@ internal static class UGSciUpdateAssistant
             if (!File.Exists(executable))
                 throw new InvalidDataException("Rollback restored a directory without UGSci.exe.");
             ValidateRestoredRuntime(value.install_dir);
-            const string keyPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop";
-            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(keyPath))
-            {
-                key.SetValue("InstallLocation", value.install_dir, RegistryValueKind.String);
-                key.SetValue("DisplayIcon", "\"" + executable + "\",0", RegistryValueKind.String);
-                if (!string.IsNullOrWhiteSpace(value.previous_version))
-                    key.SetValue("DisplayVersion", value.previous_version, RegistryValueKind.String);
-            }
+            RestorePreviousWindowsState(value);
             RestorePreviousShortcuts(value, executable, value.install_dir);
             if (restartApplication)
                 Process.Start(new ProcessStartInfo {
                     FileName = executable, WorkingDirectory = value.install_dir, UseShellExecute = true
                 });
+            DeleteTransactionAndStaging(value);
+        }
+
+        private static void RestorePreviousWindowsState(InstallTransaction value)
+        {
+            if (value.schema_version >= 2)
+                Environment.SetEnvironmentVariable("Path", value.previous_user_path, EnvironmentVariableTarget.User);
+            const string canonical = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop";
+            try { Registry.CurrentUser.DeleteSubKeyTree(canonical, false); } catch { }
+            if (value.schema_version >= 2 && !string.IsNullOrWhiteSpace(value.previous_uninstall_key_path))
+            {
+                try { Registry.CurrentUser.DeleteSubKeyTree(value.previous_uninstall_key_path, false); } catch { }
+                using (RegistryKey key = Registry.CurrentUser.CreateSubKey(value.previous_uninstall_key_path))
+                {
+                    foreach (RegistryValueSnapshot entry in value.previous_uninstall_values ?? new RegistryValueSnapshot[0])
+                    {
+                        if (entry == null || entry.name == null || string.IsNullOrWhiteSpace(entry.kind)) continue;
+                        RegistryValueKind kind = (RegistryValueKind)Enum.Parse(typeof(RegistryValueKind), entry.kind, true);
+                        key.SetValue(entry.name, ConvertRegistryValue(entry.value, kind), kind);
+                    }
+                }
+                return;
+            }
+            using (RegistryKey key = Registry.CurrentUser.CreateSubKey(canonical))
+            {
+                key.SetValue("InstallLocation", value.install_dir, RegistryValueKind.String);
+                key.SetValue("DisplayIcon", "\"" + Path.Combine(value.install_dir, "UGSci.exe") + "\",0", RegistryValueKind.String);
+                if (!string.IsNullOrWhiteSpace(value.previous_version))
+                    key.SetValue("DisplayVersion", value.previous_version, RegistryValueKind.String);
+            }
+        }
+
+        private static object ConvertRegistryValue(object raw, RegistryValueKind kind)
+        {
+            if (kind == RegistryValueKind.DWord) return Convert.ToInt32(raw, CultureInfo.InvariantCulture);
+            if (kind == RegistryValueKind.QWord) return Convert.ToInt64(raw, CultureInfo.InvariantCulture);
+            if (kind == RegistryValueKind.MultiString)
+            {
+                object[] values = raw as object[];
+                if (values == null) return new string[0];
+                var converted = new string[values.Length];
+                for (int i = 0; i < values.Length; i++) converted[i] = Convert.ToString(values[i], CultureInfo.InvariantCulture);
+                return converted;
+            }
+            if (kind == RegistryValueKind.Binary)
+            {
+                object[] values = raw as object[];
+                if (values == null) return new byte[0];
+                var converted = new byte[values.Length];
+                for (int i = 0; i < values.Length; i++) converted[i] = Convert.ToByte(values[i], CultureInfo.InvariantCulture);
+                return converted;
+            }
+            return raw ?? string.Empty;
+        }
+
+        private static void DeleteTransactionAndStaging(InstallTransaction value)
+        {
             try { File.Delete(value.transaction_file); } catch { }
+            if (!string.IsNullOrWhiteSpace(value.staging_dir))
+                try { if (Directory.Exists(value.staging_dir)) Directory.Delete(value.staging_dir, true); } catch { }
         }
 
         private static void ValidateRestoredRuntime(string installDirectory)

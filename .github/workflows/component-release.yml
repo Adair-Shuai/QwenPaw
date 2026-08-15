@@ -90,7 +90,7 @@ concurrency:
   # Only direct workflows that actually upload a pointer take the global
   # promotion lock.  Reusable build-only calls use a run-local group so they
   # cannot deadlock with the unified release workflow that invoked them.
-  group: ${{ inputs.upload_to_oss && 'component-pointer-promotion' || format('component-build-{0}', github.run_id) }}
+  group: ${{ inputs.upload_to_oss && 'oss-production-metadata' || format('component-build-{0}', github.run_id) }}
   cancel-in-progress: false
 
 jobs:

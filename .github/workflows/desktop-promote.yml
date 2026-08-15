@@ -74,7 +74,7 @@ jobs:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
     concurrency:
-      group: desktop-pointer-promotion
+      group: oss-production-metadata
       cancel-in-progress: false
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}

@@ -118,6 +118,34 @@ def test_assistant_trusts_working_dir_markers_and_hardens_recovery() -> None:
     assert 'path + ".invalid-" + Guid.NewGuid().ToString("N")' in source
 
 
+def test_assistant_restores_staged_transaction_and_windows_state() -> None:
+    source = SOURCE.read_text(encoding="utf-8")
+
+    for stage in ("prepared", "old-moved", "new-activated", "registered"):
+        rejected = f'value.stage != "{stage}"' in source
+        handled = f'value.stage == "{stage}"' in source
+        assert rejected or handled
+    assert (
+        'value.stage == "prepared" && !Directory.Exists(value.backup_dir)'
+        in source
+    )
+    assert "Infer that narrow" in source
+    assert "RestorePreviousWindowsState(value)" in source
+    assert (
+        'Environment.SetEnvironmentVariable("Path", value.previous_user_path'
+        in source
+    )
+    assert "previous_uninstall_key_path" in source
+    assert "previous_uninstall_values" in source
+    assert "Registry.CurrentUser.DeleteSubKeyTree(canonical, false)" in source
+    assert (
+        "Registry.CurrentUser.CreateSubKey(value.previous_uninstall_key_path)"
+        in source
+    )
+    assert "ConvertRegistryValue(entry.value, kind)" in source
+    assert "DeleteTransactionAndStaging(value)" in source
+
+
 def test_tauri_waits_for_the_visible_ready_signal_before_exit() -> None:
     updates_path = (
         REPO_ROOT / "console" / "src-tauri" / "src" / "updates.rs"

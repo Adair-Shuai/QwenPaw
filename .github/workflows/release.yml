@@ -544,7 +544,7 @@ jobs:
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
         run: |
-          echo "DRY-RUN: would sync $(find dist/plugins -name '*.zip' | wc -l) plugin zips + index to OSS"
+          echo "DRY-RUN: would sync $(find dist/plugins -name '*.zip' | wc -l) immutable plugin zips to OSS"
 
       - name: Install ossutil
         if: ${{ !inputs.dry_run }}
@@ -629,85 +629,13 @@ jobs:
             done < <(find "dist/plugins/${kind}" -type f -name '*.zip' -print0 2>/dev/null || true)
           done
 
-      - name: Merge historical versions into index
+      - name: Upload prepared plugin metadata
         if: ${{ !inputs.dry_run }}
-        run: |
-          uri="oss://${OSS_BUCKET}/metadata/plugins/index.json"
-          if stat_output="$(ossutil stat "$uri" 2>&1)"; then
-            ossutil cp "$uri" existing-index.json
-            python3 -m json.tool existing-index.json >/dev/null
-          elif grep -Eq 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
-            echo '{}' > existing-index.json
-          else
-            echo "$stat_output" >&2
-            echo "ERROR: could not determine plugin index state" >&2
-            exit 1
-          fi
-          python3 scripts/pack/merge_plugin_index.py \
-            --new dist/plugins/index.json \
-            --old existing-index.json \
-            --out dist/plugins/index.json \
-            --retire-plugin-id computer-use-tool
-
-      - name: Upload plugins index (short-cache)
-        if: ${{ !inputs.dry_run }}
-        run: |
-          live="oss://${OSS_BUCKET}/metadata/plugins/index.json"
-          staging="oss://${OSS_BUCKET}/metadata/plugins/.staging/index-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
-          ossutil cp dist/plugins/index.json "$staging" \
-            --acl public-read \
-            --meta "Cache-Control:public, max-age=60, must-revalidate"
-          remote_dir="$(mktemp -d)"
-          remote="${remote_dir}/index.json"
-          ossutil cp "$staging" "$remote"
-          cmp --silent dist/plugins/index.json "$remote" || { echo "ERROR: staged plugin index verification failed"; exit 1; }
-          ossutil cp "$staging" "$live" --acl public-read --force \
-            --meta "Cache-Control:public, max-age=60, must-revalidate"
-          rm -f "$remote"
-          ossutil cp "$live" "$remote"
-          cmp --silent dist/plugins/index.json "$remote" || { echo "ERROR: promoted plugin index verification failed"; exit 1; }
-          rm -f "$remote"
-          ossutil rm "$staging" --force || true
-
-      - name: Patch main metadata index to advertise plugins product
-        if: ${{ !inputs.dry_run }}
-        run: |
-          uri="oss://${OSS_BUCKET}/metadata/index.json"
-          if stat_output="$(ossutil stat "$uri" 2>&1)"; then
-            ossutil cp "$uri" main-index.json
-            python3 -m json.tool main-index.json >/dev/null
-          elif grep -Eq 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
-            cat > main-index.json << 'EOF'
-          {
-            "version": "1.0",
-            "updated_at": "",
-            "products": {}
-          }
-          EOF
-          else
-            echo "$stat_output" >&2
-            echo "ERROR: could not determine main index state" >&2
-            exit 1
-          fi
-          python3 scripts/pack/patch_main_index.py \
-            --index main-index.json \
-            --out   main-index.json
-          live="oss://${OSS_BUCKET}/metadata/index.json"
-          staging="oss://${OSS_BUCKET}/metadata/.staging/index-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.json"
-          ossutil cp main-index.json "$staging" \
-            --acl public-read \
-            --meta "Cache-Control:public, max-age=60, must-revalidate"
-          remote_dir="$(mktemp -d)"
-          remote="${remote_dir}/index.json"
-          ossutil cp "$staging" "$remote"
-          cmp --silent main-index.json "$remote" || { echo "ERROR: staged main index verification failed"; exit 1; }
-          ossutil cp "$staging" "$live" --acl public-read --force \
-            --meta "Cache-Control:public, max-age=60, must-revalidate"
-          rm -f "$remote"
-          ossutil cp "$live" "$remote"
-          cmp --silent main-index.json "$remote" || { echo "ERROR: promoted main index verification failed"; exit 1; }
-          rm -f "$remote"
-          ossutil rm "$staging" --force || true
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-promotion-metadata
+          path: dist/plugins/index.json
+          if-no-files-found: error
 
   # ── Finalize: flip the draft to published LAST (pinned to the built SHA) ────
   publish-components:
@@ -787,110 +715,16 @@ jobs:
             publish_immutable "$manifest" "$manifest_uri" "manifest ${base}"
             publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${base}.sig"
           done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' ! -name '*.history.json' -print)
-      - name: Promote signed component pointers last
+      - name: Upload prepared component promotion metadata
         if: ${{ !inputs.dry_run }}
-        env:
-          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
-        run: |
-          set -euo pipefail
-          publish_immutable() {
-            local file="$1" uri="$2" label="$3"
-            local remote_dir
-            remote_dir="$(mktemp -d)"
-            local remote="${remote_dir}/$(basename "$file")"
-            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
-              cmp -s "$file" "$remote" || { echo "immutable ${label} differs" >&2; exit 1; }
-              rm -rf "$remote_dir"
-              return
-            fi
-            ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable"
-            ossutil cp "$uri" "$remote"
-            cmp -s "$file" "$remote" || { echo "remote ${label} verification failed" >&2; exit 1; }
-            rm -rf "$remote_dir"
-          }
-
-          mapfile -t pointers < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*.current.json' | sort)
-          previous_dir="${RUNNER_TEMP}/component-previous-pointers"
-          mkdir -p "$previous_dir"
-          promoted_bases=()
-
-          rollback_pointers() {
-            local code=$?
-            if [[ "$code" -ne 0 ]]; then
-              for base in "${promoted_bases[@]}"; do
-                local uri="oss://${OSS_BUCKET}/metadata/components/stable/${base}"
-                if [[ -s "$previous_dir/$base" ]]; then
-                  ossutil cp "$previous_dir/$base" "$uri" --acl public-read --force \
-                    --meta "Cache-Control:public, max-age=0, must-revalidate" >/dev/null || true
-                else
-                  ossutil rm "$uri" --force >/dev/null || true
-                fi
-              done
-            fi
-            return "$code"
-          }
-          trap 'rollback_pointers' ERR
-
-          # Phase 1: validate, merge history, and upload immutable history.
-          for pointer in "${pointers[@]}"; do
-            base="$(basename "$pointer")"
-            target="${base%.current.json}"
-            remote_pointer="${RUNNER_TEMP}/${target}.remote-current.json"
-            if ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${base}" "$remote_pointer" >/dev/null 2>&1; then
-              remote_exists=true
-              python scripts/pack-tauri/check_component_pointer_promotion.py \
-                --local "$pointer" --remote "$remote_pointer" --target "$target"
-              cp "$remote_pointer" "$previous_dir/$base"
-            else
-              remote_exists=false
-              python scripts/pack-tauri/check_component_pointer_promotion.py \
-                --local "$pointer" --target "$target"
-              rm -f "$previous_dir/$base"
-            fi
-            history=$(find component-release/metadata/components/stable -maxdepth 1 -type f -name "${target}-*.history.json" -print -quit)
-            test -s "$history"
-            test -s "${history}.sig"
-            if [[ "$remote_exists" == true ]]; then
-              remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("history_url", ""))' "$remote_pointer")
-              if [[ -z "$remote_history_url" ]]; then
-                echo "Remote pointer predates signed history; publishing migration history"
-              else
-                remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
-                remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
-                remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
-                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
-                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
-                python scripts/pack-tauri/merge_component_history.py \
-                  --local-pointer "$pointer" \
-                  --local-history "$history" \
-                  --local-history-signature "${history}.sig" \
-                  --remote-pointer "$remote_pointer" \
-                  --remote-history "$remote_history" \
-                  --remote-history-signature "$remote_history_sig" \
-                  --target "$target" --limit 10
-              fi
-            fi
-            publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
-            publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
-          done
-
-          # Phase 2: switch all platform pointers after all immutable objects are live.
-          for pointer in "${pointers[@]}"; do
-            base="$(basename "$pointer")"
-            promoted_bases+=("$base")
-            tmp="oss://${OSS_BUCKET}/metadata/components/stable/${base}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-            ossutil cp "$pointer" "$tmp" --acl public-read
-            ossutil ls "$tmp" >/dev/null
-            ossutil cp "$tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${base}" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
-            ossutil rm "$tmp" --force || true
-            verify_dir="$(mktemp -d)"
-            verify_file="${verify_dir}/${base}"
-            ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${base}" "$verify_file"
-            cmp -s "$pointer" "$verify_file" || { echo "ERROR: promoted component pointer verification failed: ${base}"; exit 1; }
-            rm -rf "$verify_dir"
-          done
-          trap - ERR
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: |
+            component-release/metadata/components/stable/*.current.json
+            component-release/metadata/components/stable/*.history.json
+            component-release/metadata/components/stable/*.history.json.sig
+          if-no-files-found: error
 
   finalize:
     needs: [resolve, publish-desktop, publish-plugins, publish-components]
@@ -937,17 +771,223 @@ jobs:
           test "$published_is_draft" = "false" || { echo "::error::Release $TAG is still a draft after finalize"; exit 1; }
           test "$published_sha" = "$SHA" || { echo "::error::Finalized release $TAG targets $published_sha, expected $SHA"; exit 1; }
 
+  promote-release-metadata:
+    needs: [resolve, publish-plugins, publish-components, finalize]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.publish-plugins.result == 'success' && needs.publish-components.result == 'success' && needs.finalize.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: oss-production-metadata
+      cancel-in-progress: false
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      COMPONENT_SIGNING_PUBLIC_KEY: T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw=
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install metadata verification dependencies
+        run: python -m pip install --quiet packaging cryptography
+
+      - name: Download prepared plugin metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-promotion-metadata
+          path: promotion/plugins
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download prepared component pointers
+        uses: actions/download-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: promotion/components
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install and configure ossutil
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
+
+      - name: Promote plugin indexes and component pointers atomically
+        env:
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          plugin_index=$(find promotion/plugins -type f -name 'index.json' -print -quit)
+          test -s "$plugin_index"
+          mapfile -t component_pointers < <(find promotion/components -type f -name '*.current.json' | sort)
+          test "${#component_pointers[@]}" -eq 2
+
+          read_remote_or_default() {
+            local key="$1" output="$2" fallback="$3"
+            local uri="oss://${OSS_BUCKET}/${key}"
+            local stat_output
+            if stat_output="$(ossutil stat "$uri" 2>&1)"; then
+              ossutil cp "$uri" "$output" >/dev/null
+            elif grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
+              printf '%s\n' "$fallback" > "$output"
+            else
+              echo "$stat_output" >&2
+              echo "ERROR: could not read current metadata: $key" >&2
+              exit 1
+            fi
+          }
+
+          read_remote_or_default 'metadata/plugins/index.json' existing-plugin-index.json '{}'
+          python3 scripts/pack/merge_plugin_index.py \
+            --new "$plugin_index" \
+            --old existing-plugin-index.json \
+            --out prepared-plugin-index.json \
+            --retire-plugin-id computer-use-tool
+          read_remote_or_default 'metadata/index.json' main-index.json '{"version":"1.0","updated_at":"","products":{}}'
+          python3 scripts/pack/patch_main_index.py --index main-index.json --out main-index.json
+
+          publish_immutable() {
+            local file="$1" uri="$2" label="$3"
+            local remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              cmp -s "$file" "$remote" || { echo "immutable ${label} differs" >&2; exit 1; }
+              rm -rf "$remote_dir"
+              return
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "remote ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
+          }
+
+          for pointer in "${component_pointers[@]}"; do
+            base="$(basename "$pointer")"
+            target="${base%.current.json}"
+            case "$base" in
+              windows-x86_64.current.json|macos-aarch64.current.json) ;;
+              *) echo "ERROR: unexpected component pointer: $base" >&2; exit 1 ;;
+            esac
+            remote_pointer="${RUNNER_TEMP}/${target}.remote-current.json"
+            pointer_uri="oss://${OSS_BUCKET}/metadata/components/stable/${base}"
+            if pointer_stat="$(ossutil stat "$pointer_uri" 2>&1)"; then
+              ossutil cp "$pointer_uri" "$remote_pointer" >/dev/null
+              remote_exists=true
+              python scripts/pack-tauri/check_component_pointer_promotion.py \
+                --local "$pointer" --remote "$remote_pointer" --target "$target"
+            elif grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$pointer_stat"; then
+              remote_exists=false
+              python scripts/pack-tauri/check_component_pointer_promotion.py \
+                --local "$pointer" --target "$target"
+            else
+              echo "$pointer_stat" >&2
+              echo "ERROR: could not read current component pointer: $base" >&2
+              exit 1
+            fi
+            history=$(find promotion/components -type f -name "${target}-*.history.json" -print -quit)
+            test -s "$history"
+            test -s "${history}.sig"
+            if [[ "$remote_exists" == true ]]; then
+              remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("history_url", ""))' "$remote_pointer")
+              if [[ -n "$remote_history_url" ]]; then
+                remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
+                remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
+                remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
+                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
+                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
+                python scripts/pack-tauri/merge_component_history.py \
+                  --local-pointer "$pointer" \
+                  --local-history "$history" \
+                  --local-history-signature "${history}.sig" \
+                  --remote-pointer "$remote_pointer" \
+                  --remote-history "$remote_history" \
+                  --remote-history-signature "$remote_history_sig" \
+                  --target "$target" --limit 10
+              fi
+            fi
+            publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
+            publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
+          done
+
+          entries="${RUNNER_TEMP}/release-mutable-entries.tsv"
+          : > "$entries"
+          printf '%s\t%s\t%s\n' 'prepared-plugin-index.json' 'metadata/plugins/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
+          printf '%s\t%s\t%s\n' 'main-index.json' 'metadata/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
+          for pointer in "${component_pointers[@]}"; do
+            base="$(basename "$pointer")"
+            printf '%s\t%s\t%s\n' "$pointer" "metadata/components/stable/$base" 'public, max-age=0, must-revalidate' >> "$entries"
+          done
+
+          backup_dir="${RUNNER_TEMP}/release-mutable-backup"
+          mkdir -p "$backup_dir"
+          : > "$backup_dir/existing.txt"
+          : > "$backup_dir/promoted.txt"
+          while IFS=$'\t' read -r local key cache; do
+            backup="$backup_dir/${key//\//__}"
+            uri="oss://${OSS_BUCKET}/${key}"
+            if stat_output="$(ossutil stat "$uri" 2>&1)"; then
+              ossutil cp "$uri" "$backup" >/dev/null
+              echo "$key" >> "$backup_dir/existing.txt"
+            elif ! grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
+              echo "$stat_output" >&2
+              echo "ERROR: could not snapshot mutable metadata: $key" >&2
+              exit 1
+            fi
+          done < "$entries"
+
+          rollback_metadata() {
+            local code=$?
+            if [[ "$code" -ne 0 ]]; then
+              while IFS= read -r key; do
+                [[ -n "$key" ]] || continue
+                uri="oss://${OSS_BUCKET}/${key}"
+                backup="$backup_dir/${key//\//__}"
+                if grep -Fxq "$key" "$backup_dir/existing.txt"; then
+                  ossutil cp "$backup" "$uri" --acl public-read --force >/dev/null || true
+                else
+                  ossutil rm "$uri" --force >/dev/null || true
+                fi
+              done < "$backup_dir/promoted.txt"
+            fi
+            return "$code"
+          }
+          trap 'rollback_metadata' ERR
+
+          while IFS=$'\t' read -r local key cache; do
+            uri="oss://${OSS_BUCKET}/${key}"
+            staging="oss://${OSS_BUCKET}/${key}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            ossutil cp "$local" "$staging" --acl public-read --meta "Cache-Control:${cache}"
+            staged="${RUNNER_TEMP}/staged-${RANDOM}-$(basename "$key")"
+            ossutil cp "$staging" "$staged"
+            cmp -s "$local" "$staged" || { echo "ERROR: staged metadata verification failed: $key" >&2; exit 1; }
+            echo "$key" >> "$backup_dir/promoted.txt"
+            ossutil cp "$staging" "$uri" --acl public-read --force --meta "Cache-Control:${cache}"
+            ossutil rm "$staging" --force || true
+            promoted="${RUNNER_TEMP}/promoted-${RANDOM}-$(basename "$key")"
+            ossutil cp "$uri" "$promoted"
+            cmp -s "$local" "$promoted" || { echo "ERROR: promoted metadata verification failed: $key" >&2; exit 1; }
+          done < "$entries"
+          trap - ERR
+
   # Only expose OSS latest/updater pointers after the GitHub Release is public.
   # A failed promotion can then be retried without ever pointing clients at an
   # inaccessible draft asset.
   promote-desktop:
-    needs: [resolve, finalize]
+    needs: [resolve, finalize, promote-release-metadata]
     # The reusable build jobs are intentionally skipped during artifact-resume
     # releases. GitHub's implicit success() can propagate those transitive
     # skips past an always()-gated finalize job and skip promotion even though
     # resolve + finalize both succeeded. Check the direct dependencies
     # explicitly so immutable artifacts are promoted after a resumed release.
-    if: ${{ always() && needs.resolve.result == 'success' && needs.finalize.result == 'success' }}
+    if: ${{ always() && needs.resolve.result == 'success' && needs.finalize.result == 'success' && needs.promote-release-metadata.result == 'success' }}
     uses: ./.github/workflows/desktop-promote.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}

@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -261,10 +262,6 @@ internal static class PortableSetup
         string volumeRoot = Path.GetPathRoot(root);
         if (!string.Equals(root, volumeRoot, StringComparison.OrdinalIgnoreCase))
             root = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        string ioRoot = ToExtendedPath(root);
-        string prefix = ioRoot.EndsWith(Path.DirectorySeparatorChar.ToString(), StringComparison.Ordinal) ||
-            ioRoot.EndsWith(Path.AltDirectorySeparatorChar.ToString(), StringComparison.Ordinal)
-                ? ioRoot : ioRoot + Path.DirectorySeparatorChar;
         // .NET Framework's File.Exists/File.ReadAllLines can return false for
         // an extended-length path even when the short manifest path exists.
         // The manifest is always at the package root, so read it through the
@@ -292,10 +289,9 @@ internal static class PortableSetup
             if (!string.Equals(actual, match.Groups[1].Value, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Package checksum mismatch: " + relative);
         }
-        foreach (string file in Directory.GetFiles(ioRoot, "*", SearchOption.AllDirectories))
+        foreach (string relative in EnumeratePackageFiles(root))
         {
-            if (string.Equals(file, ToExtendedPath(manifest), StringComparison.OrdinalIgnoreCase)) continue;
-            string relative = file.Substring(prefix.Length);
+            if (string.Equals(relative, "checksums.sha256", StringComparison.OrdinalIgnoreCase)) continue;
             if (!expected.Contains(relative)) throw new InvalidDataException("Unchecked package file: " + relative);
         }
         foreach (string required in new[] { "Setup.exe", "install.ps1", "version.json",
@@ -306,6 +302,82 @@ internal static class PortableSetup
                      Path.Combine("payload", "binaries", "cli", "qwenpaw.exe"),
                      Path.Combine("payload", "binaries", "update-assistant", "UGSciUpdateAssistant.exe") })
             if (!expected.Contains(required)) throw new InvalidDataException("Required checksum entry is missing: " + required);
+    }
+
+    private const int ErrorNoMoreFiles = 18;
+    private static readonly IntPtr InvalidFindHandle = new IntPtr(-1);
+
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct Win32FindData
+    {
+        public FileAttributes Attributes;
+        public System.Runtime.InteropServices.ComTypes.FILETIME CreationTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastAccessTime;
+        public System.Runtime.InteropServices.ComTypes.FILETIME LastWriteTime;
+        public uint FileSizeHigh;
+        public uint FileSizeLow;
+        public uint Reserved0;
+        public uint Reserved1;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 260)] public string FileName;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 14)] public string AlternateFileName;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr FindFirstFileW(string fileName, out Win32FindData findData);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool FindNextFileW(IntPtr findHandle, out Win32FindData findData);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool FindClose(IntPtr findHandle);
+
+    private static IEnumerable<string> EnumeratePackageFiles(string root)
+    {
+        foreach (string relative in EnumeratePackageFiles(root, "")) yield return relative;
+    }
+
+    private static IEnumerable<string> EnumeratePackageFiles(string root, string relativeDirectory)
+    {
+        string directory = string.IsNullOrEmpty(relativeDirectory)
+            ? root : Path.Combine(root, relativeDirectory);
+        string search = ToExtendedPath(directory.TrimEnd(Path.DirectorySeparatorChar,
+            Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar + "*");
+        Win32FindData data;
+        IntPtr handle = FindFirstFileW(search, out data);
+        if (handle == InvalidFindHandle)
+            throw new IOException("Cannot enumerate package directory: " + relativeDirectory,
+                Marshal.GetLastWin32Error());
+        try
+        {
+            while (true)
+            {
+                string name = data.FileName;
+                if (name != "." && name != "..")
+                {
+                    string relative = string.IsNullOrEmpty(relativeDirectory)
+                        ? name : Path.Combine(relativeDirectory, name);
+                    if ((data.Attributes & FileAttributes.ReparsePoint) != 0)
+                        throw new InvalidDataException("Package contains a reparse point: " + relative);
+                    if ((data.Attributes & FileAttributes.Directory) != 0)
+                    {
+                        foreach (string child in EnumeratePackageFiles(root, relative)) yield return child;
+                    }
+                    else
+                        yield return relative;
+                }
+                if (FindNextFileW(handle, out data)) continue;
+                int error = Marshal.GetLastWin32Error();
+                if (error != ErrorNoMoreFiles)
+                    throw new IOException("Cannot enumerate package directory: " + relativeDirectory, error);
+                break;
+            }
+        }
+        finally
+        {
+            FindClose(handle);
+        }
     }
 
     private static string PathForIo(string path)

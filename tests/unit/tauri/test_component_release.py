@@ -191,6 +191,47 @@ def test_builds_generic_runtime_component_without_plugin_manifest(tmp_path):
     assert "python.exe" in entry["files"]
 
 
+def test_plugin_release_default_preserve_policy_matches_runtime(tmp_path):
+    module = _load()
+    source = tmp_path / "staged" / "demo"
+    source.mkdir(parents=True)
+    (source / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    (source / "main.py").write_text("pass\n", encoding="utf-8")
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        ),
+    ).decode()
+
+    manifest_path = module.build_release(
+        source.parent,
+        tmp_path / "release",
+        product="qwenpaw",
+        channel="stable",
+        target="windows-x86_64",
+        core_min_version="2.1.1b7",
+        base_url="https://oss.example",
+        private_key_b64=key,
+    )
+
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    entry = manifest["components"]["demo"]
+    assert entry["preserve"] == [
+        "engines",
+        "data",
+        "state",
+        "workspace",
+        "models",
+        "user-data",
+    ]
+
+
 def test_builds_ten_direct_deltas_and_binds_signed_history(tmp_path):
     module = _load()
     source = tmp_path / "staged" / "demo"

@@ -261,6 +261,7 @@ function Get-UnrelatedInstallEntries {
 $defaultInstallDir = Join-Path $env:LOCALAPPDATA "UGSci Desktop"
 $existingInstallDir = $null
 $legacyUninstallKey = $null
+$legacyUninstallKeyPath = $null
 Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -ErrorAction SilentlyContinue |
   ForEach-Object {
     $entry = Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue
@@ -273,6 +274,7 @@ Get-ChildItem "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall" -Error
       # UGSci executable is the trust boundary for discovering that location.
       $existingInstallDir = $candidate
       $legacyUninstallKey = $_.PSPath
+      $legacyUninstallKeyPath = "Software\Microsoft\Windows\CurrentVersion\Uninstall\$($_.PSChildName)"
     }
   }
 $requestedInstallDir = if ($InstallDir) {
@@ -336,6 +338,7 @@ try {
 if (-not $mutexAcquired) { throw "Another UGSci Desktop installation is already running" }
 $previousUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop"
+$canonicalUninstallKeyPath = "Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop"
 $previousUninstall = if (Test-Path -LiteralPath $uninstallKey) {
   Get-ItemProperty -LiteralPath $uninstallKey -ErrorAction SilentlyContinue
 } else { $null }
@@ -347,6 +350,37 @@ $previousStartMenuShortcut = if (Test-Path -LiteralPath $startMenuShortcutPath -
 $previousDesktopShortcut = if (Test-Path -LiteralPath $desktopShortcutPath -PathType Leaf) {
   [IO.File]::ReadAllBytes($desktopShortcutPath)
 } else { $null }
+
+function Get-UninstallRegistrySnapshot {
+  param([string]$KeyPath)
+  if (-not $KeyPath) { return @() }
+  $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($KeyPath)
+  if (-not $key) { return @() }
+  try {
+    return @($key.GetValueNames() | ForEach-Object {
+      $name = $_
+      $kind = $key.GetValueKind($name).ToString()
+      $value = $key.GetValue($name, $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+      [ordered]@{ name = $name; kind = $kind; value = $value }
+    })
+  } finally { $key.Dispose() }
+}
+
+$previousUninstallKeyPath = if ($legacyUninstallKeyPath) { $legacyUninstallKeyPath } elseif (Test-Path -LiteralPath $uninstallKey) { $canonicalUninstallKeyPath } else { $null }
+$previousUninstallValues = @(Get-UninstallRegistrySnapshot -KeyPath $previousUninstallKeyPath)
+$canonicalUninstallPreviouslyExisted = Test-Path -LiteralPath $uninstallKey
+
+function Write-InstallTransaction {
+  param([Parameter(Mandatory = $true)] [string]$Stage)
+  if (-not $DeferredCommit) { return }
+  $transactionParent = Split-Path -Parent ([IO.Path]::GetFullPath($TransactionFile))
+  New-Item -ItemType Directory -Path $transactionParent -Force | Out-Null
+  $temporary = "$TransactionFile.$PID.tmp"
+  $transactionState.stage = $Stage
+  $transactionState.updated_at = (Get-Date).ToUniversalTime().ToString("o")
+  $transactionState | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $temporary -Encoding UTF8
+  Move-Item -LiteralPath $temporary -Destination $TransactionFile -Force
+}
 
 function Stop-ScopedApplication {
   param([string]$Root)
@@ -536,6 +570,32 @@ $dataBackup = if ($existingInstallDir -or $hasExistingUserData) {
 if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
 Ensure-WebView2
 
+$previousVersion = if ($previousUninstall -and $previousUninstall.DisplayVersion) {
+  [string]$previousUninstall.DisplayVersion
+} elseif (Test-Path -LiteralPath (Join-Path $installDir "version.json") -PathType Leaf) {
+  try { [string](Get-Content -LiteralPath (Join-Path $installDir "version.json") -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { "" }
+} else { "" }
+$transactionState = [ordered]@{
+  schema_version = 2
+  stage = "prepared"
+  install_dir = $installDir
+  backup_dir = $backupDir
+  staging_dir = $stagingDir
+  target_version = $releaseVersion
+  previous_version = $previousVersion
+  previous_user_path = $previousUserPath
+  previous_uninstall_key_path = $previousUninstallKeyPath
+  previous_uninstall_values = $previousUninstallValues
+  canonical_uninstall_previously_existed = [bool]$canonicalUninstallPreviouslyExisted
+  start_menu_shortcut_path = $startMenuShortcutPath
+  start_menu_shortcut_base64 = if ($previousStartMenuShortcut) { [Convert]::ToBase64String($previousStartMenuShortcut) } else { "" }
+  desktop_shortcut_path = $desktopShortcutPath
+  desktop_shortcut_base64 = if ($previousDesktopShortcut) { [Convert]::ToBase64String($previousDesktopShortcut) } else { "" }
+  created_at = (Get-Date).ToUniversalTime().ToString("o")
+  updated_at = (Get-Date).ToUniversalTime().ToString("o")
+}
+if ($DeferredCommit) { Write-InstallTransaction -Stage "prepared" }
+
 $previousTreeMoved = $false
 $newTreeActivated = $false
 try {
@@ -544,9 +604,11 @@ try {
   if (Test-Path $installDir) {
     Move-DirectoryWithRetry -Source $installDir -Destination $backupDir
     $previousTreeMoved = $true
+    if ($DeferredCommit) { Write-InstallTransaction -Stage "old-moved" }
   }
   Move-Item -LiteralPath $stagingDir -Destination $installDir -Force
   $newTreeActivated = $true
+  if ($DeferredCommit) { Write-InstallTransaction -Stage "new-activated" }
   $installedBackend = Resolve-InstalledComponent -Root $installDir -Id "backend"
   $installedPython = Resolve-InstalledComponent -Root $installDir -Id "python-runtime"
   if (-not (Test-Path -LiteralPath $appExe) -or
@@ -619,25 +681,7 @@ try {
     if (-not $previousTreeMoved -or -not (Test-Path -LiteralPath $backupDir -PathType Container)) {
       throw "Deferred update commit requires a recoverable previous installation"
     }
-    $transactionParent = Split-Path -Parent ([IO.Path]::GetFullPath($TransactionFile))
-    New-Item -ItemType Directory -Path $transactionParent -Force | Out-Null
-    $previousVersion = if ($previousUninstall -and $previousUninstall.DisplayVersion) {
-      [string]$previousUninstall.DisplayVersion
-    } elseif (Test-Path -LiteralPath (Join-Path $backupDir "version.json") -PathType Leaf) {
-      try { [string](Get-Content -LiteralPath (Join-Path $backupDir "version.json") -Raw -Encoding UTF8 | ConvertFrom-Json).version } catch { "" }
-    } else { "" }
-    [ordered]@{
-      schema_version = 1
-      install_dir = $installDir
-      backup_dir = $backupDir
-      target_version = $version
-      previous_version = $previousVersion
-      start_menu_shortcut_path = $startMenuShortcutPath
-      start_menu_shortcut_base64 = if ($previousStartMenuShortcut) { [Convert]::ToBase64String($previousStartMenuShortcut) } else { "" }
-      desktop_shortcut_path = $desktopShortcutPath
-      desktop_shortcut_base64 = if ($previousDesktopShortcut) { [Convert]::ToBase64String($previousDesktopShortcut) } else { "" }
-      created_at = (Get-Date).ToUniversalTime().ToString("o")
-    } | ConvertTo-Json | Set-Content -LiteralPath $TransactionFile -Encoding UTF8
+    Write-InstallTransaction -Stage "registered"
   } elseif (Test-Path $backupDir) {
     Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
   }
@@ -705,6 +749,9 @@ try {
     "the previous installation could not be restored"
   } else {
     "the original installation was not modified"
+  }
+  if (-not $rollbackError -and $DeferredCommit) {
+    Remove-Item -LiteralPath $TransactionFile -Force -ErrorAction SilentlyContinue
   }
   throw "Portable installation failed; $rollbackState. $installError"
 }

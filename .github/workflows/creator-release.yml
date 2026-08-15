@@ -28,7 +28,7 @@ permissions:
 
 concurrency:
   # Serialize with canonical release plugin index publication.
-  group: release-plugins-index
+  group: oss-production-metadata
   cancel-in-progress: false
 
 env:

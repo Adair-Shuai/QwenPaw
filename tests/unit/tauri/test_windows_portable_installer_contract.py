@@ -55,7 +55,7 @@ def test_successful_install_resets_native_tool_exit_code() -> None:
 def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
-    assert "string ioRoot = ToExtendedPath(root);" in source
+    assert "string search = ToExtendedPath(directory.TrimEnd" in source
     assert "string fullPath = PathForIo(canonicalPath);" in source
     assert "if (!Path.IsPathRooted(path))" in source
     assert "path = Path.GetFullPath(path);" in source
@@ -71,10 +71,14 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
         in source
     )
     assert 'Path.Combine(ioRoot, "checksums.sha256")' not in source
-    assert (
+    assert "EnumeratePackageFiles(root)" in source
+    assert "FindFirstFileW" in source
+    assert "FindNextFileW" in source
+    assert "FileAttributes.ReparsePoint" in source
+    legacy_enumeration = (
         'Directory.GetFiles(ioRoot, "*", SearchOption.AllDirectories)'
-        in source
     )
+    assert legacy_enumeration not in source
     assert "SafeRelativePath(match.Groups[2].Value)" in source
     assert 'segment == "." || segment == ".."' in source
     assert "segment.IndexOf(':') >= 0" in source
@@ -217,9 +221,27 @@ def test_update_assistant_can_defer_commit_until_external_health_check() -> (
         "Deferred update commit requires a recoverable previous installation"
         in script
     )
-    assert "schema_version = 1" in script
+    assert "schema_version = 2" in script
+    prepared = script.index('Write-InstallTransaction -Stage "prepared"')
+    old_move = script.index("Move-DirectoryWithRetry -Source $installDir")
+    activated = script.index(
+        "Move-Item -LiteralPath $stagingDir -Destination $installDir",
+    )
+    assert prepared < old_move < activated
+    assert 'Write-InstallTransaction -Stage "old-moved"' in script
+    assert 'Write-InstallTransaction -Stage "new-activated"' in script
+    assert 'Write-InstallTransaction -Stage "registered"' in script
+    assert (
+        "Move-Item -LiteralPath $temporary "
+        "-Destination $TransactionFile -Force"
+    ) in script
     assert "backup_dir = $backupDir" in script
+    assert "staging_dir = $stagingDir" in script
     assert "previous_version = $previousVersion" in script
+    assert "previous_user_path = $previousUserPath" in script
+    assert "previous_uninstall_key_path = $previousUninstallKeyPath" in script
+    assert "previous_uninstall_values = $previousUninstallValues" in script
+    assert "Get-UninstallRegistrySnapshot" in script
     assert '[Guid]::NewGuid().ToString("N")' in script
     assert "start_menu_shortcut_base64" in script
     assert "desktop_shortcut_base64" in script

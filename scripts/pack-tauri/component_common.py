@@ -19,7 +19,14 @@ from typing import Any, Iterator
 from cryptography.hazmat.primitives import serialization
 from packaging.version import InvalidVersion, Version
 
-DEFAULT_PRESERVE_PATHS = ("engines", "data", "state", "user-data")
+DEFAULT_PRESERVE_PATHS = (
+    "engines",
+    "data",
+    "state",
+    "workspace",
+    "models",
+    "user-data",
+)
 _PRESERVED_NAMES = frozenset(
     {
         *DEFAULT_PRESERVE_PATHS,
