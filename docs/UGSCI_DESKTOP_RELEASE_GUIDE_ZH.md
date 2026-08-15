@@ -86,6 +86,7 @@ b6 Windows ZIP 的真实统计如下：
 16. 事务文件若在旧目录移动后才创建，会留下机器断电窗口；事务必须在首次破坏性操作前原子写入，并完整保存 PATH、卸载注册表和值类型，不能只备份应用文件。
 17. 插件 index、主 index 与各平台组件 pointer 若由并行 job 在 GitHub Release 发布前分别切换，会产生半发布状态；必须在 Release 成功后由单一 promotion 事务统一切换并支持补偿回滚。
 18. Windows 安装包内 `qwenpaw.exe` 必须通过 `python -m qwenpaw` 启动 Click CLI；`-m qwenpaw.cli.main` 只会导入模块而不调用命令，导致 `--version` 无输出且返回 0，验证脚本会误判为 CLI 不可用。
+19. 便携包中 python-packages 层通过 PYTHONPATH 加载，不会处理 `.pth`；pywin32 依赖 `pywin32.pth` 注册 `pywin32_system32` DLL 目录，否则 `mcp.os.win32` 导入 `pywintypes` 失败，桌面 backend 启动后立即退出。`qwenpaw` 包初始化时必须先处理依赖层的 `.pth`。
 
 ## 3. b7 目标架构
 

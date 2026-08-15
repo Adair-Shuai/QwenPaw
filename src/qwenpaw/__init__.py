@@ -2,8 +2,12 @@
 import logging
 import os
 import time
+
+from ._win32_pth import bootstrap_windows_pth_dirs
 from . import _compat as _compat_bootstrap
 from .utils.logging import setup_logger
+
+bootstrap_windows_pth_dirs()
 
 # Fallback before we can safely read canonical constant definitions.
 LOG_LEVEL_ENV = "QWENPAW_LOG_LEVEL"
