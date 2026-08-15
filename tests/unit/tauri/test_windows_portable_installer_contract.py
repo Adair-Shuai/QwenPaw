@@ -290,3 +290,11 @@ def test_update_assistant_can_defer_commit_until_external_health_check() -> (
     assert "desktop_shortcut_base64" in script
     assert "setup will not overwrite recovery data" in script
     assert "} elseif (Test-Path $backupDir)" in script
+
+
+def test_bootstrap_missing_file_error_guides_long_path_extraction() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "\"Package file is missing: \" + relative" in source
+    assert "extract to a short path" in source
+    assert "use 7-Zip" in source

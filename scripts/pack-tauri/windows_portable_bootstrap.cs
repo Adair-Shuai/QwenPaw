@@ -284,7 +284,9 @@ internal static class PortableSetup
             // and only opt into the extended form for genuinely deep files.
             string fullPath = PathForIo(canonicalPath);
             if (!expected.Add(relative)) throw new InvalidDataException("Duplicate checksum entry: " + relative);
-            if (!File.Exists(fullPath)) throw new InvalidDataException("Package file is missing: " + relative);
+            if (!File.Exists(fullPath))
+                throw new InvalidDataException("Package file is missing: " + relative +
+                    ". The archive may not have been extracted with long-path support; extract to a short path such as C:\\\\UGSciSetup, use 7-Zip, or enable Windows long paths, then retry.");
             string actual = Sha256(fullPath);
             if (!string.Equals(actual, match.Groups[1].Value, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("Package checksum mismatch: " + relative);

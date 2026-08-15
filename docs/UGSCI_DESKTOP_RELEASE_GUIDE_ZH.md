@@ -90,6 +90,7 @@ b6 Windows ZIP 的真实统计如下：
 20. Windows 便携包中 `agentscope._logging` 会在 `mcp/__init__` 尚未完成时引入 `mcp.client`/`mcp.types`，导致父模块 `mcp.types` 属性缺失、`agentscope.mcp._mcp_client` 注解求值抛 `AttributeError: module 'mcp' has no attribute 'types'`。`qwenpaw` 初始化必须在 Windows 上完整导入 `mcp` 并显式绑定 `mcp.types`。
 21. WebView2 验证不能只要求安装目录里存在 bootstrapper 文件：CI 机器通常已注册 WebView2 runtime，安装脚本会提前返回而不落盘引导器。验证应同时接受注册表中的 WebView2 版本；首次安装时也把校验过的引导器复制进 staging，随安装保留为修复资产。
 22. delta.zip 内的 `delta.json` 不得嵌入 `preserve` 列表：签名 Manifest 才是权威来源。若把默认 preserve 策略写进 delta.json，未变更插件会在策略调整后生成不同字节的 delta，与已发布 immutable 对象冲突（agent-kanban 0.1.0→0.1.1 曾因此失败）。
+23. python-packages 依赖层含 modelscope 等超深路径（成员相对路径约 197 字符）。Windows 解压（更新助手 FileStream、资源管理器手动解压）若未启用长路径支持，会静默丢失该文件，Setup 校验报 `Package file is missing`。更新助手必须用 `\\\\?\\` 扩展路径解压；手动解压请使用 7-Zip 或解压到短路径（如 `C:\\UGSciSetup`）。
 
 ## 3. b7 目标架构
 

@@ -165,3 +165,14 @@ def test_tauri_waits_for_the_visible_ready_signal_before_exit() -> None:
     assert install_body.index("result?;") < install_body.index(
         "app.cleanup_before_exit()",
     )
+
+
+def test_assistant_extracts_with_long_path_safe_io() -> None:
+    source = SOURCE.read_text(encoding="utf-8")
+
+    assert "private static string ToExtendedPath(string path)" in source
+    assert "private static string PathForIo(string path)" in source
+    assert "PathForIo(output)" in source
+    assert "Unsafe ZIP entry path" in source
+    assert "segment == \"..\" || segment == \".\"" in source
+    assert "Path.GetFullPath(Path.Combine(destination, name))" not in source

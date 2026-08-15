@@ -337,6 +337,21 @@ internal static class UGSciUpdateAssistant
             }
         }
 
+        private static string ToExtendedPath(string path)
+        {
+            if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path;
+            if (path.StartsWith(@"\\", StringComparison.Ordinal))
+                return @"\\?\UNC\" + path.Substring(2);
+            return @"\\?\" + path;
+        }
+
+        private static string PathForIo(string path)
+        {
+            // Reserve the extended prefix for genuinely deep members so the
+            // short-path profile keeps working for the common case.
+            return path.Length < 248 ? path : ToExtendedPath(path);
+        }
+
         private static void ExtractSafely(string zipPath, string destination, Action<int, string> report)
         {
             string root = Path.GetFullPath(destination).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
@@ -350,7 +365,14 @@ internal static class UGSciUpdateAssistant
                     if (string.IsNullOrWhiteSpace(name)) continue;
                     if (Path.IsPathRooted(name) || name.IndexOf(':') >= 0)
                         throw new InvalidDataException("Unsafe absolute ZIP entry: " + entry.FullName);
-                    string output = Path.GetFullPath(Path.Combine(destination, name));
+                    foreach (string segment in name.Split(Path.DirectorySeparatorChar))
+                        if (segment == ".." || segment == ".")
+                            throw new InvalidDataException("Unsafe ZIP entry path: " + entry.FullName);
+                    // Path.GetFullPath cannot be applied to members that exceed
+                    // MAX_PATH on .NET Framework, so containment is derived from
+                    // the validated relative segments above plus the trusted
+                    // destination root.
+                    string output = Path.Combine(destination, name);
                     if (!output.StartsWith(root, StringComparison.OrdinalIgnoreCase))
                         throw new InvalidDataException("ZIP entry escapes the staging directory: " + entry.FullName);
                     int unixType = (entry.ExternalAttributes >> 16) & 0xF000;
@@ -359,14 +381,15 @@ internal static class UGSciUpdateAssistant
                     if (entry.FullName.EndsWith("/", StringComparison.Ordinal) ||
                         entry.FullName.EndsWith("\\", StringComparison.Ordinal))
                     {
-                        Directory.CreateDirectory(output);
+                        Directory.CreateDirectory(PathForIo(output));
                         continue;
                     }
                     string parent = Path.GetDirectoryName(output);
-                    if (!string.IsNullOrWhiteSpace(parent)) Directory.CreateDirectory(parent);
-                    if (File.Exists(output)) throw new InvalidDataException("Duplicate ZIP output path: " + entry.FullName);
+                    if (!string.IsNullOrWhiteSpace(parent)) Directory.CreateDirectory(PathForIo(parent));
+                    string ioOutput = PathForIo(output);
+                    if (File.Exists(ioOutput)) throw new InvalidDataException("Duplicate ZIP output path: " + entry.FullName);
                     using (Stream input = entry.Open())
-                    using (var target = new FileStream(output, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+                    using (var target = new FileStream(ioOutput, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                     {
                         byte[] buffer = new byte[1024 * 1024]; int read;
                         while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
