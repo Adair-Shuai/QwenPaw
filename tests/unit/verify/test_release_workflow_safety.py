@@ -306,6 +306,13 @@ def test_macos_updater_step_has_single_upload_block() -> None:
         )
         == 1
     )
+    assert (
+        'ossutil cp mac-tauri-updater-metadata.json "$metadata_uri"' in publish
+    )
+    assert (
+        'ossutil cp mac-tauri-updater-metadata.json "$metadata_tmp"'
+        not in publish
+    )
 
 
 def test_python_runtime_release_pin_is_consistent_across_builds() -> None:

@@ -1,7 +1,7 @@
 {
   "id": "agent-kanban",
   "name": "Agent Kanban",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "A Kanban board to create issues, assign them to agents, auto-run them via the assigned agent, and watch their output stream in real time.",
   "author": "QwenPaw Team",
   "type": "app",

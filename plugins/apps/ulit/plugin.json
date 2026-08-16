@@ -1,7 +1,7 @@
 {
   "id": "ulit",
   "name": "ULit 文研",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "app",
   "description": "Local-first, evidence-grounded literature reading and research workspace.",
   "description_i18n": {
