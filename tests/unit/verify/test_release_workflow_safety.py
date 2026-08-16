@@ -16,12 +16,15 @@ def _workflow(name: str) -> str:
 
 def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     release = _workflow("release.yml")
+    components = _workflow("component-release.yml")
 
     assert 'source_path="$(jq -r .path' in release
     assert (
         'if [ "$source_path" != ".github/workflows/release.yml" ]' in release
     )
     assert 'if [ "$source_sha" != "$sha" ]' in release
+    assert "validate_artifact_reuse_diff" in release
+    assert "Cannot reuse artifacts across product change" in release
     assert 'require_source_job_success "build-wheel"' in release
     assert 'require_source_gate_prefix "verify-web / "' in release
     assert (
@@ -47,6 +50,12 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert "build-components (macos-aarch64)" in release
     assert "component-release-windows-x86_64" in release
     assert "component-release-macos-aarch64" in release
+    assert (
+        ".github/workflows/desktop-build.yml|.github/workflows/release.yml"
+        in components
+    )
+    assert "Desktop artifacts cannot cross product change" in components
+    assert 'expected_job="build-desktop / ${expected_job}"' in components
 
 
 def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:

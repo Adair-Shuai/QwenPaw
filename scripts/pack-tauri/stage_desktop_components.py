@@ -13,7 +13,6 @@ import shutil
 
 from packaging.version import InvalidVersion, Version
 
-
 SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 
@@ -48,29 +47,70 @@ def _release_version(value: str, fallback: str, digest: str) -> str:
         return f"{base.public}+sha.{digest[:12]}"
 
 
+def _normalize_python_packages_metadata(root: Path) -> None:
+    """Remove backend-only fields from the reusable dependency layer."""
+    metadata_path = root / ".ugsci-component.json"
+    if not metadata_path.is_file():
+        return
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    normalized = {
+        "schemaVersion": 2,
+        "dependencyVersion": metadata.get("dependencyVersion"),
+        "desktopRequirementsSha256": metadata.get(
+            "desktopRequirementsSha256",
+        ),
+    }
+    if not all(
+        isinstance(value, str) and value
+        for value in normalized.values()
+        if value != 2
+    ):
+        raise ValueError("python-packages metadata is incomplete")
+    metadata_path.write_text(
+        json.dumps(normalized, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+
 def stage(binaries: Path, output: Path, fallback_version: str) -> list[dict]:
     active_path = binaries / "state" / "active.json"
     active = json.loads(active_path.read_text(encoding="utf-8"))
-    if active.get("schemaVersion") != 1 or not isinstance(active.get("components"), dict):
+    if active.get("schemaVersion") != 1 or not isinstance(
+        active.get("components"),
+        dict,
+    ):
         raise ValueError("desktop active.json is invalid")
     resource_root = binaries.parent.resolve()
     output.mkdir(parents=True, exist_ok=True)
     staged: list[dict] = []
     for component_id, entry in sorted(active["components"].items()):
-        if not isinstance(component_id, str) or not SAFE_ID.fullmatch(component_id):
+        if not isinstance(component_id, str) or not SAFE_ID.fullmatch(
+            component_id,
+        ):
             raise ValueError(f"unsafe desktop component id: {component_id!r}")
         if not isinstance(entry, dict):
             raise ValueError(f"invalid active component entry: {component_id}")
         relative = _safe_relative(str(entry.get("path", "")))
         source = (resource_root / Path(*relative.parts)).resolve()
         if resource_root not in source.parents or not source.is_dir():
-            raise ValueError(f"active component source is missing or outside resources: {source}")
-        digest = _tree_digest(source)
-        version = _release_version(str(entry.get("version", "")), fallback_version, digest)
+            raise ValueError(
+                f"active component source is missing or outside resources: {source}",
+            )
         destination = output / component_id
         if destination.exists():
             shutil.rmtree(destination)
         shutil.copytree(source, destination, symlinks=False)
+        if component_id == "python-packages":
+            _normalize_python_packages_metadata(destination)
+        digest = _tree_digest(destination)
+        if component_id == "python-packages":
+            version = f"0+sha.{digest[:16]}"
+        else:
+            version = _release_version(
+                str(entry.get("version", "")),
+                fallback_version,
+                digest,
+            )
         descriptor = {
             "schema_version": 1,
             "id": component_id,
@@ -82,7 +122,13 @@ def stage(binaries: Path, output: Path, fallback_version: str) -> list[dict]:
             "preserve": [],
         }
         (destination / "component.json").write_text(
-            json.dumps(descriptor, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            json.dumps(
+                descriptor,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
             encoding="utf-8",
         )
         staged.append(descriptor)

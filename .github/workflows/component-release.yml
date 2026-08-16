@@ -165,24 +165,48 @@ jobs:
             echo "::error::Desktop Build run $SOURCE_RUN_ID is not complete"
             exit 1
           }
-          test "$(jq -r .conclusion <<<"$source_run")" = success || {
-            echo "::error::Desktop Build run $SOURCE_RUN_ID did not succeed"
-            exit 1
-          }
-          test "$(jq -r .path <<<"$source_run")" = '.github/workflows/desktop-build.yml' || {
-            echo "::error::Desktop component source must come from desktop-build.yml"
-            exit 1
-          }
+          source_path="$(jq -r .path <<<"$source_run")"
+          case "$source_path" in
+            .github/workflows/desktop-build.yml|.github/workflows/release.yml) ;;
+            *)
+              echo "::error::Desktop component source must come from desktop-build.yml or release.yml"
+              exit 1
+              ;;
+          esac
           expected_sha="$(git rev-parse HEAD)"
-          test "$(jq -r .head_sha <<<"$source_run")" = "$expected_sha" || {
-            echo "::error::Desktop Build run $SOURCE_RUN_ID was not built from $expected_sha"
-            exit 1
-          }
+          source_sha="$(jq -r .head_sha <<<"$source_run")"
+          if [ "$source_sha" != "$expected_sha" ]; then
+            comparison="$(gh api "repos/$GITHUB_REPOSITORY/compare/${source_sha}...${expected_sha}")"
+            status="$(jq -r .status <<<"$comparison")"
+            if [ "$status" != ahead ] && [ "$status" != identical ]; then
+              echo "::error::Desktop artifact source is not an ancestor of $expected_sha"
+              exit 1
+            fi
+            while IFS= read -r file; do
+              case "$file" in
+                .github/workflows/release.yml|\
+                .github/workflows/component-release.yml|\
+                scripts/pack-tauri/build_python_layers.py|\
+                scripts/pack-tauri/stage_desktop_components.py|\
+                tests/unit/tauri/test_desktop_layer_layout.py|\
+                tests/unit/tauri/test_stage_desktop_components.py|\
+                tests/unit/verify/test_release_workflow_safety.py)
+                  ;;
+                *)
+                  echo "::error::Desktop artifacts cannot cross product change: $file"
+                  exit 1
+                  ;;
+              esac
+            done < <(jq -r '.files[]?.filename' <<<"$comparison")
+          fi
           case '${{ matrix.target }}' in
             windows-x86_64) expected_job='build-tauri-windows' ;;
             macos-aarch64) expected_job='build-tauri-macos' ;;
           esac
           jobs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+          if [ "$source_path" = '.github/workflows/release.yml' ]; then
+            expected_job="build-desktop / ${expected_job}"
+          fi
           grep -Fqx "$expected_job"$'\t'"success" <<<"$jobs" || {
             echo "::error::Desktop Build run $SOURCE_RUN_ID has no successful $expected_job job"
             exit 1

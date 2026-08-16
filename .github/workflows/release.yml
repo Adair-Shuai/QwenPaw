@@ -103,6 +103,33 @@ jobs:
           COMPONENTS_ARTIFACTS_RUN_ID: ${{ inputs.components_artifacts_run_id }}
         run: |
           set -euo pipefail
+          validate_artifact_reuse_diff() {
+            local base_sha="$1" head_sha="$2"
+            local comparison status file
+            comparison="$(gh api "repos/$REPO/compare/${base_sha}...${head_sha}")"
+            status="$(jq -r .status <<<"$comparison")"
+            if [ "$status" != "ahead" ] && [ "$status" != "identical" ]; then
+              echo "::error::Artifact source $base_sha is not an ancestor of release commit $head_sha"
+              exit 1
+            fi
+            while IFS= read -r file; do
+              case "$file" in
+                .github/workflows/release.yml|\
+                .github/workflows/component-release.yml|\
+                scripts/pack-tauri/build_python_layers.py|\
+                scripts/pack-tauri/stage_desktop_components.py|\
+                tests/unit/tauri/test_desktop_layer_layout.py|\
+                tests/unit/tauri/test_stage_desktop_components.py|\
+                tests/unit/verify/test_release_workflow_safety.py)
+                  ;;
+                *)
+                  echo "::error::Cannot reuse artifacts across product change: $file"
+                  exit 1
+                  ;;
+              esac
+            done < <(jq -r '.files[]?.filename' <<<"$comparison")
+            echo "Reusing product artifacts across release-tooling-only changes"
+          }
           TAG="$INPUT_TAG"
           if [ -z "$TAG" ]; then
             drafts="$(gh release list --repo "$REPO" --limit 100 \
@@ -154,8 +181,7 @@ jobs:
               exit 1
             fi
             if [ "$source_sha" != "$sha" ]; then
-              echo "::error::Artifact source run $ARTIFACTS_RUN_ID was built from $source_sha, not release commit $sha"
-              exit 1
+              validate_artifact_reuse_diff "$source_sha" "$sha"
             fi
             source_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
             require_source_job_success() {

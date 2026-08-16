@@ -3,7 +3,6 @@ from importlib.util import module_from_spec, spec_from_file_location
 import json
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "scripts" / "pack-tauri" / "stage_desktop_components.py"
 
@@ -26,6 +25,19 @@ def test_stages_every_active_layer_with_release_metadata(tmp_path):
     packages.mkdir(parents=True)
     (backend / "backend.py").write_text("ok", encoding="utf-8")
     (packages / "dependency.py").write_text("ok", encoding="utf-8")
+    (packages / ".ugsci-component.json").write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "backendVersion": "2.1.1b7",
+                "backendWheel": "qwenpaw-2.1.1b7.whl",
+                "backendWheelSha256": "a" * 64,
+                "dependencyVersion": "0+sha.lock",
+                "desktopRequirementsSha256": "b" * 64,
+            },
+        ),
+        encoding="utf-8",
+    )
     (binaries / "state").mkdir()
     (binaries / "state" / "active.json").write_text(
         json.dumps(
@@ -53,8 +65,71 @@ def test_stages_every_active_layer_with_release_metadata(tmp_path):
     descriptor = json.loads(
         (tmp_path / "staged/python-packages/component.json").read_text(),
     )
-    assert descriptor["version"].startswith("2.1.1b7+sha.")
+    assert descriptor["version"].startswith("0+sha.")
     assert descriptor["install_scope"] == "desktop-runtime"
+    dependency_metadata = json.loads(
+        (
+            tmp_path / "staged/python-packages/.ugsci-component.json"
+        ).read_text(),
+    )
+    assert dependency_metadata == {
+        "schemaVersion": 2,
+        "dependencyVersion": "0+sha.lock",
+        "desktopRequirementsSha256": "b" * 64,
+    }
+
+
+def test_python_package_version_ignores_backend_build_metadata(tmp_path):
+    helper = _load()
+
+    def staged_version(root: Path, backend_version: str) -> str:
+        binaries = root / "resources/binaries"
+        packages = binaries / "runtimes/python-packages/lock-version"
+        packages.mkdir(parents=True)
+        (packages / "dependency.py").write_text("same", encoding="utf-8")
+        (packages / ".ugsci-component.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "backendVersion": backend_version,
+                    "backendWheel": f"qwenpaw-{backend_version}.whl",
+                    "backendWheelSha256": backend_version * 8,
+                    "dependencyVersion": "0+sha.lock",
+                    "desktopRequirementsSha256": "c" * 64,
+                },
+            ),
+            encoding="utf-8",
+        )
+        (binaries / "state").mkdir()
+        (binaries / "state/active.json").write_text(
+            json.dumps(
+                {
+                    "schemaVersion": 1,
+                    "components": {
+                        "python-packages": {
+                            "version": "0+sha.lock",
+                            "path": (
+                                "binaries/runtimes/python-packages/"
+                                "lock-version"
+                            ),
+                        },
+                    },
+                },
+            ),
+            encoding="utf-8",
+        )
+        return helper.stage(
+            binaries,
+            root / "staged",
+            backend_version,
+        )[
+            0
+        ]["version"]
+
+    assert staged_version(tmp_path / "one", "2.1.1b7") == staged_version(
+        tmp_path / "two",
+        "2.1.1b8",
+    )
 
 
 def test_rejects_active_path_escape(tmp_path):

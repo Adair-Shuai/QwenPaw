@@ -198,7 +198,7 @@ def build_layers(
             cwd=repo,
             env=environment,
         )
-        metadata = {
+        backend_metadata = {
             "schemaVersion": 1,
             "backendVersion": version,
             "backendWheel": wheel.name,
@@ -206,16 +206,21 @@ def build_layers(
             "dependencyVersion": dependency_version,
             "desktopRequirementsSha256": lock_hash,
         }
+        dependency_metadata = {
+            "schemaVersion": 2,
+            "dependencyVersion": dependency_version,
+            "desktopRequirementsSha256": lock_hash,
+        }
 
     (backend / ".ugsci-component.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        json.dumps(backend_metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
     (dependencies / ".ugsci-component.json").write_text(
-        json.dumps(metadata, indent=2, sort_keys=True) + "\n",
+        json.dumps(dependency_metadata, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    return metadata
+    return backend_metadata
 
 
 def main() -> int:
