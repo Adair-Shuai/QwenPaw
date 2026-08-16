@@ -298,7 +298,17 @@ def prepare_base(
                 raise ValueError(
                     f"previous manifest has no full artifact for {component}",
                 )
-            artifact = _get(str(full["url"]))
+            try:
+                artifact = _get(str(full["url"]))
+            except urllib.error.HTTPError as exc:
+                if allow_missing and exc.code == 404:
+                    print(
+                        "warning: previous full artifact is unavailable for "
+                        f"{component}; skipping delta base {manifest_url}",
+                        file=sys.stderr,
+                    )
+                    return False
+                raise
             if len(artifact) != int(full["size"]):
                 raise ValueError(
                     f"previous full artifact size mismatch for {component}",
@@ -556,7 +566,7 @@ def prepare_bases(
             manifest_url=manifest_url,
             private_key_b64=private_key_b64,
             expected_target=expected_target,
-            allow_missing=False,
+            allow_missing=True,
         ):
             prepared += 1
     return prepared
