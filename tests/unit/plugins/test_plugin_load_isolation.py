@@ -440,8 +440,13 @@ class TestLoadAllPluginsIsolation:
         )
         order: list[str] = []
 
-        async def fake_load(manifest, plugin_dir, config=None):
-            del plugin_dir, config
+        async def fake_load(
+            manifest,
+            plugin_dir,
+            config=None,
+            deps_ensured=False,
+        ):
+            del plugin_dir, config, deps_ensured
             order.append(manifest.id)
             return None
 

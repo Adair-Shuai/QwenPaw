@@ -2,6 +2,7 @@
 """Opt-in signed component planning and atomic plugin activation."""
 
 # pylint: disable=too-many-branches,too-many-return-statements
+# pylint: disable=unused-argument
 
 from __future__ import annotations
 
@@ -11,6 +12,7 @@ import contextlib
 import errno
 import hashlib
 import json
+import logging
 import mmap
 import os
 import platform
@@ -32,6 +34,8 @@ from packaging.version import InvalidVersion, Version
 from ..plugins.bundled import is_plugin_uninstalled
 from ..update_policy import ALLOWED_PRESERVE_PATHS, DEFAULT_PRESERVE_PATHS
 
+logger = logging.getLogger(__name__)
+
 try:
     from cryptography.hazmat.primitives.asymmetric.ed25519 import (
         Ed25519PublicKey,
@@ -42,6 +46,42 @@ except ImportError:  # pragma: no cover - dependency is declared by the project
 
 class ComponentUpdateError(ValueError):
     """A component update failed validation or activation."""
+
+
+def _remove_readonly(func: Any, path: str, _exc_info: Any) -> None:
+    """``shutil.rmtree`` onerror handler that clears the read-only bit.
+
+    Windows refuses to delete files with the read-only attribute (common in
+    archives, VCS checkouts, and some installers), which turns
+    ``rmtree(ignore_errors=True)`` into silent residue that later blocks
+    activation. Retrying after ``chmod`` removes that residue.
+    """
+    try:
+        os.chmod(path, stat.S_IWRITE | stat.S_IREAD)
+    except OSError:
+        pass
+    func(path)
+
+
+def _long_path(path: Path) -> Path:
+    """Prefix a Windows path with ``\\\\?\\`` when it nears MAX_PATH.
+
+    Component trees (python-packages especially) nest deeply enough that
+    ``<managed>/<component>/<version>/...`` can exceed the legacy 260-char
+    limit, after which extraction and deletion fail with opaque
+    ``FileNotFoundError``/``OSError``. The extended-length prefix opts the
+    path out of that limit. Only over-length paths are rewritten (shorter
+    ones are returned unchanged) so normal path semantics — ``lstat``-based
+    link checks, ``relative_to`` — are preserved everywhere else. On
+    non-Windows platforms it is a no-op.
+    """
+    if os.name != "nt":
+        return path
+    text = str(path.absolute())
+    if text.startswith("\\\\?\\") or len(text) < 240:
+        return path
+    # Extended-length paths require absolute, backslash-separated form.
+    return Path("\\\\?\\" + text.replace("/", "\\"))
 
 
 _INTERNAL_PRESERVED_NAMES = {
@@ -688,8 +728,94 @@ class ComponentUpdater:
         )
         marker = self._activation_marker(destination)
         if previous.exists():
-            shutil.rmtree(previous, ignore_errors=True)
+            shutil.rmtree(previous, onerror=_remove_readonly)
         marker.unlink(missing_ok=True)
+        # Reclaim superseded versions of directory components; they are never
+        # read again once a new version commits, and runtimes can be GiB each.
+        if component in self.directory_components:
+            self._gc_managed_versions(component, keep=destination)
+
+    def _gc_managed_versions(
+        self,
+        component: str,
+        *,
+        keep: Path,
+        retain: int = 1,
+    ) -> None:
+        """Delete superseded version trees of a directory component.
+
+        Managed directory components live at ``<component>/<version>`` and
+        accumulate one tree per update (python-packages alone can be several
+        GiB). Only the active version is ever read again after a successful
+        commit, so older trees are pure disk growth. We keep the just-committed
+        tree plus ``retain`` previous version(s) as a manual-rollback cushion
+        and delete the rest, best-effort: a locked tree (Windows file handle)
+        is skipped, never fatal.
+
+        Safety rails: only directories under the component's own root whose
+        names parse as versions are touched; the active version and the keep
+        tree are always skipped; link-like entries are never descended.
+        """
+        component_root = keep.parent
+        if _is_link_like(component_root):
+            return
+        active_version: str | None = None
+        if self.active_path is not None and self.active_path.is_file():
+            try:
+                payload = json.loads(
+                    self.active_path.read_text(encoding="utf-8"),
+                )
+                active_version = str(
+                    payload["components"][component]["version"],
+                )
+            except (
+                OSError,
+                KeyError,
+                TypeError,
+                ValueError,
+                json.JSONDecodeError,
+            ):
+                active_version = None
+        keep_resolved = keep.resolve()
+        candidates: list[tuple[Version, Path]] = []
+        try:
+            children = list(component_root.iterdir())
+        except OSError:
+            return
+        for child in children:
+            if not child.is_dir() or _is_link_like(child):
+                continue
+            # Skip activation artifacts and non-version directories.
+            if child.name.startswith("."):
+                continue
+            try:
+                parsed = Version(child.name)
+            except InvalidVersion:
+                continue
+            if active_version is not None and child.name == active_version:
+                continue
+            if child.resolve() == keep_resolved:
+                continue
+            candidates.append((parsed, child))
+        # Newest first; keep ``retain`` of the newest, delete the rest.
+        candidates.sort(key=lambda item: item[0], reverse=True)
+        for _, stale in candidates[retain:]:
+            try:
+                # Managed runtime trees nest deeply; on Windows the path may
+                # exceed MAX_PATH, so delete through the extended-length form.
+                shutil.rmtree(_long_path(stale), onerror=_remove_readonly)
+                logger.info(
+                    "Reclaimed superseded directory component %s: %s",
+                    component,
+                    stale,
+                )
+            except OSError as exc:
+                logger.warning(
+                    "Could not reclaim superseded directory component %s "
+                    "(left for a later pass): %s",
+                    stale,
+                    exc,
+                )
 
     def rollback_activation(self, component: str, destination: Path) -> bool:
         """Restore the last-known-good tree; return whether one existed."""
@@ -708,7 +834,9 @@ class ComponentUpdater:
         marker = self._activation_marker(destination)
         if previous.exists():
             if destination.exists():
-                shutil.rmtree(destination, ignore_errors=True)
+                # A read-only remnant here must not silently survive: the
+                # previous.replace() below requires a clear destination.
+                shutil.rmtree(destination, onerror=_remove_readonly)
             previous.replace(destination)
             try:
                 plugin = json.loads(
@@ -732,7 +860,7 @@ class ComponentUpdater:
             marker.unlink(missing_ok=True)
             return True
         if destination.exists():
-            shutil.rmtree(destination, ignore_errors=True)
+            shutil.rmtree(destination, onerror=_remove_readonly)
         self._remove_active(component)
         marker.unlink(missing_ok=True)
         return False
@@ -1079,6 +1207,114 @@ class ComponentUpdater:
                 record["kind"] = "python"
             payload["components"][component] = record
             self._write_active_payload(payload)
+
+    def recover_interrupted_directory_activation(
+        self,
+        component: str,
+        destination: Path,
+        expected_files: dict[str, dict[str, Any]] | None = None,
+        expected_version: str | None = None,
+        preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
+    ) -> None:
+        """Clear a directory component's leftover activation artifacts.
+
+        Directory components (backend, runtimes) finalize inline in the
+        service after ``apply_full``/``apply_delta``. A crash between
+        ``_atomic_activate`` and that finalize leaves a stale activation
+        marker and/or ``.previous`` tree under the target-version directory,
+        which would otherwise permanently block retrying that version.
+
+        Unlike the plugin recovery path, this never restores or commits:
+        a directory component's currently-running version is owned by
+        ``active.json`` and lives in a *different* version directory than
+        ``destination`` (which is the not-yet-active target tree). We only:
+
+        * complete a fully-applied candidate (content matches the signed
+          manifest) by dropping the stale marker + previous tree — this is
+          the finalize the crash interrupted;
+        * discard a partially-applied candidate (content mismatch) so the
+          version can be downloaded and applied fresh;
+        * remove an orphaned ``.previous`` tree with no marker (crash during
+          the atomic swap) so the next apply is not blocked by it.
+        """
+        component = _safe_component_id(component)
+        if component not in self.directory_components:
+            raise ComponentUpdateError(
+                "directory recovery requires a directory component",
+            )
+        previous = destination.parent / f".{destination.name}.previous"
+        marker = self._activation_marker(destination)
+        if _is_link_like(previous) or _is_link_like(marker):
+            raise ComponentUpdateError(
+                "interrupted directory activation contains an unsafe link",
+            )
+        # Never touch the tree that active.json currently points at: when the
+        # manifest version equals the running version, ``destination`` IS the
+        # live component, and deleting it would break the running app.
+        _, active_dir = self.active_directory_record(component)
+        destination_is_active = (
+            active_dir is not None
+            and active_dir.resolve() == destination.resolve()
+        )
+        if marker.exists():
+            complete = (
+                expected_files is not None
+                and destination.is_dir()
+                and _content_matches(
+                    _inventory(destination, preserve_paths),
+                    expected_files,
+                )
+            )
+            if complete:
+                # The crash hit after a successful apply but before finalize.
+                logger.info(
+                    "Completing interrupted directory activation for %s",
+                    component,
+                )
+                if previous.exists():
+                    shutil.rmtree(previous, ignore_errors=True)
+                marker.unlink(missing_ok=True)
+                return
+            if destination_is_active:
+                # The "partial" tree is actually the live component (manifest
+                # version == running version, e.g. a hand-edited file). Leave
+                # it and the marker alone rather than deleting a running tree.
+                logger.warning(
+                    "Leaving marker on live directory component %s; its "
+                    "content differs from the signed manifest",
+                    component,
+                )
+                return
+            # Partially applied candidate: discard so the version is retried.
+            logger.warning(
+                "Discarding partially applied directory component %s",
+                component,
+            )
+            if destination.exists():
+                shutil.rmtree(destination, ignore_errors=True)
+            if previous.exists():
+                shutil.rmtree(previous, ignore_errors=True)
+            marker.unlink(missing_ok=True)
+            return
+        if previous.exists():
+            if destination_is_active:
+                # The stale previous belongs to the live component's own
+                # failed swap; removing it is safe (the live tree stays).
+                logger.warning(
+                    "Removing stale previous tree for live directory "
+                    "component %s",
+                    component,
+                )
+                shutil.rmtree(previous, ignore_errors=True)
+                return
+            # Crash during the atomic swap: the candidate never activated.
+            # The running version lives in its own directory, so this stale
+            # tree is pure residue blocking the next apply.
+            logger.warning(
+                "Removing stale previous tree for directory component %s",
+                component,
+            )
+            shutil.rmtree(previous, ignore_errors=True)
 
     def recover_interrupted_activation(
         self,
@@ -1470,9 +1706,10 @@ class ComponentUpdater:
             ):
                 current_version = active_version
             if current_version is None and installed is not None:
-                bundled_version, bundled_directory = (
-                    self.bundled_directory_record(component)
-                )
+                (
+                    bundled_version,
+                    bundled_directory,
+                ) = self.bundled_directory_record(component)
                 if (
                     bundled_directory is not None
                     and installed.absolute() == bundled_directory.absolute()
@@ -1535,17 +1772,30 @@ class ComponentUpdater:
         ):
             raise ComponentUpdateError("invalid component update plan")
         plugins_root = destination.parent
-        base = _resolve_plugin_child(
-            base,
-            plugins_root=plugins_root,
-            label="component base",
-        )
+        directory_component = self.is_directory_component(plan.component)
+        if directory_component:
+            # The delta base of a directory component is either its managed
+            # version dir (a sibling of destination) or, on the first update
+            # after installation, the bundled tree inside the Tauri resource
+            # dir. Both are validated by service-side resolution before
+            # reaching here, so the plugins-root sibling constraint does not
+            # apply; only link-like traversal is rejected.
+            if _is_link_like(base):
+                raise ComponentUpdateError(
+                    "component base may not be a link",
+                )
+            base = base.resolve()
+        else:
+            base = _resolve_plugin_child(
+                base,
+                plugins_root=plugins_root,
+                label="component base",
+            )
         destination = _resolve_plugin_child(
             destination,
             plugins_root=plugins_root,
             label="component destination",
         )
-        directory_component = self.is_directory_component(plan.component)
         if not directory_component and is_plugin_uninstalled(
             plan.component,
             plugins_dir=plugins_root.resolve(),
@@ -1785,15 +2035,28 @@ class ComponentUpdater:
             plugins_root=plugins_root,
             label="component destination",
         )
+        directory_component = self.is_directory_component(plan.component)
         legacy_source = (
             preserve_from if preserve_from is not None else destination
         )
-        legacy_source = _resolve_plugin_child(
-            legacy_source,
-            plugins_root=plugins_root,
-            label="component preserve source",
-        )
-        directory_component = self.is_directory_component(plan.component)
+        if directory_component and preserve_from is not None:
+            # Directory components preserve data from their managed version
+            # dir or, on the first update after installation, from the
+            # bundled tree in the Tauri resource dir -- both resolved by the
+            # service before reaching here. The plugins-root sibling
+            # constraint only applies to plugin components; for directory
+            # components, reject link-like traversal instead.
+            if _is_link_like(legacy_source):
+                raise ComponentUpdateError(
+                    "component preserve source may not be a link",
+                )
+            legacy_source = legacy_source.resolve()
+        else:
+            legacy_source = _resolve_plugin_child(
+                legacy_source,
+                plugins_root=plugins_root,
+                label="component preserve source",
+            )
         if not directory_component and is_plugin_uninstalled(
             plan.component,
             plugins_dir=plugins_root.resolve(),

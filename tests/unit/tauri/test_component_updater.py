@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=protected-access
+# pylint: disable=protected-access,unused-argument
 from __future__ import annotations
 
 import base64
 import hashlib
 import json
 import os
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -167,22 +168,25 @@ def test_directory_component_at_target_version_has_no_plan(tmp_path):
         active_path=active,
     )
 
-    assert updater.plan(
-        {
-            "components": {
-                "backend": {
-                    "version": "1.1.0",
-                    "full": {
-                        "url": "https://oss/backend.zip",
-                        "sha256": "a" * 64,
-                        "signature": "sig",
+    assert (
+        updater.plan(
+            {
+                "components": {
+                    "backend": {
+                        "version": "1.1.0",
+                        "full": {
+                            "url": "https://oss/backend.zip",
+                            "sha256": "a" * 64,
+                            "signature": "sig",
+                        },
                     },
                 },
             },
-        },
-        "backend",
-        installed,
-    ) is None
+            "backend",
+            installed,
+        )
+        is None
+    )
 
 
 def test_bundled_directory_component_is_used_as_fresh_install_baseline(
@@ -199,22 +203,25 @@ def test_bundled_directory_component_is_used_as_fresh_install_baseline(
         core_version="1.0.0",
     )
 
-    assert updater.plan(
-        {
-            "components": {
-                "backend": {
-                    "version": "1.1.0",
-                    "full": {
-                        "url": "https://oss/backend.zip",
-                        "sha256": "a" * 64,
-                        "signature": "sig",
+    assert (
+        updater.plan(
+            {
+                "components": {
+                    "backend": {
+                        "version": "1.1.0",
+                        "full": {
+                            "url": "https://oss/backend.zip",
+                            "sha256": "a" * 64,
+                            "signature": "sig",
+                        },
                     },
                 },
             },
-        },
-        "backend",
-        bundled,
-    ) is None
+            "backend",
+            bundled,
+        )
+        is None
+    )
 
 
 def test_directory_component_full_activation_is_versioned(tmp_path):
@@ -1546,3 +1553,391 @@ def test_invalid_full_plugin_json_is_wrapped(tmp_path):
             tmp_path / "plugins" / "demo",
             expected_files=expected,
         )
+
+
+def _p0_keypair():
+    private = Ed25519PrivateKey.generate()
+    public = base64.b64encode(
+        private.public_key().public_bytes(
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
+    ).decode()
+    return private, public
+
+
+def _p0_full_plan(private, archive, component="backend", target="2.0.0"):
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    return ComponentUpdatePlan(
+        component,
+        "1.0.0",
+        target,
+        "full",
+        "https://oss/full.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+        (),
+    )
+
+
+def test_full_directory_component_preserves_from_bundled_resource(tmp_path):
+    """P0-1: first update after install must accept a preserve source inside
+    the Tauri resource dir (a different parent than the managed destination).
+    """
+    private, public = _p0_keypair()
+    archive = tmp_path / "backend.zip"
+    payload = b"new backend"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("qwenpaw/__init__.py", payload)
+    expected = {
+        "qwenpaw/__init__.py": {
+            "size": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+    }
+    destination = tmp_path / "managed" / "backend" / "2.0.0"
+    bundled = tmp_path / "resources" / "binaries" / "backend"
+    (bundled / "data").mkdir(parents=True)
+    (bundled / "data" / "user.json").write_text("user-data", encoding="utf-8")
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = _p0_full_plan(private, archive)
+
+    # No preserve paths: nothing is copied, but the call must not reject the
+    # bundled source merely for living outside the destination's parent.
+    updater.apply_full(
+        plan,
+        archive,
+        destination,
+        expected_files=expected,
+        preserve_from=bundled,
+    )
+    assert (destination / "qwenpaw" / "__init__.py").is_file()
+
+
+def test_full_plugin_preserve_source_outside_plugins_still_rejected(tmp_path):
+    """P0-1 guard rail: plugin components keep the strict sibling check."""
+    private, public = _p0_keypair()
+    archive = tmp_path / "demo.zip"
+    payload = b"plugin"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr("plugin.json", b'{"id": "demo", "version": "2.0.0"}')
+        bundle.writestr("keep.py", payload)
+    expected = {
+        "plugin.json": {
+            "size": 31,
+            "sha256": hashlib.sha256(
+                b'{"id": "demo", "version": "2.0.0"}',
+            ).hexdigest(),
+        },
+        "keep.py": {
+            "size": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+    }
+    plugins = tmp_path / "plugins"
+    destination = plugins / "demo"
+    outside = tmp_path / "elsewhere" / "demo"
+    outside.mkdir(parents=True)
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    plan = _p0_full_plan(private, archive, component="demo")
+
+    with pytest.raises(ComponentUpdateError, match="preserve source"):
+        updater.apply_full(
+            plan,
+            archive,
+            destination,
+            expected_files=expected,
+            preserve_from=outside,
+        )
+
+
+def test_delta_directory_component_base_may_be_bundled(tmp_path):
+    """P0-1: delta base may live in the resource dir for directory components.
+
+    Same scenario as test_delta_directory_component_activation but with the
+    base tree under a DIFFERENT parent than the destination (the bundled
+    resource dir), which the pre-fix sibling check rejected.
+    """
+    private, public = _p0_keypair()
+    bundled = tmp_path / "resources" / "backend"
+    bundled.mkdir(parents=True)
+    (bundled / "runtime.dat").write_bytes(b"old")
+    new_bytes = b"new"
+    final_files = {
+        "runtime.dat": {
+            "size": len(new_bytes),
+            "sha256": hashlib.sha256(new_bytes).hexdigest(),
+        },
+    }
+    archive = tmp_path / "delta.zip"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(
+            "delta.json",
+            json.dumps(
+                {
+                    "component": "backend",
+                    "base_version": "1.0.0",
+                    "target_version": "2.0.0",
+                    "base_files": component_update._inventory(bundled, ()),
+                    "delete": [],
+                    "add": [],
+                    "replace": ["runtime.dat"],
+                    "final_files": final_files,
+                },
+            ),
+        )
+        bundle.writestr("files/runtime.dat", new_bytes)
+    signature = base64.b64encode(private.sign(archive.read_bytes())).decode()
+    active = tmp_path / "state" / "active.json"
+    active.parent.mkdir()
+    destination = tmp_path / "managed" / "backend" / "2.0.0"
+    updater = ComponentUpdater(
+        public_key_b64=public,
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    plan = ComponentUpdatePlan(
+        "backend",
+        "1.0.0",
+        "2.0.0",
+        "delta",
+        "https://oss/delta.zip",
+        hashlib.sha256(archive.read_bytes()).hexdigest(),
+        signature,
+        (),
+    )
+
+    updater.apply_delta(plan, bundled, archive, destination)
+
+    assert (destination / "runtime.dat").read_bytes() == new_bytes
+    assert (bundled / "runtime.dat").read_bytes() == b"old"
+    pointer = json.loads(active.read_text(encoding="utf-8"))
+    assert pointer["components"]["backend"]["version"] == "2.0.0"
+
+
+def _p1_dir_updater(tmp_path, component="backend", active_path=None):
+    private, public = _p0_keypair()
+    return private, ComponentUpdater(
+        public_key_b64=public,
+        managed_components={component},
+        directory_components={component},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active_path,
+    )
+
+
+def test_directory_recovery_completes_applied_candidate(tmp_path):
+    """Complete an applied candidate after a pre-finalize crash."""
+    _, updater = _p1_dir_updater(tmp_path)
+    destination = tmp_path / "managed" / "backend" / "2.0.0"
+    destination.mkdir(parents=True)
+    payload = b"runtime"
+    (destination / "runtime.dat").write_bytes(payload)
+    expected = {
+        "runtime.dat": {
+            "size": len(payload),
+            "sha256": hashlib.sha256(payload).hexdigest(),
+        },
+    }
+    previous = destination.parent / f".{destination.name}.previous"
+    previous.mkdir()
+    (previous / "old.dat").write_bytes(b"old")
+    marker = destination.parent / f".{destination.name}.activation.json"
+    marker.write_text(
+        '{"schema_version": 1, "component": "backend", "version": "2.0.0"}',
+        encoding="utf-8",
+    )
+
+    updater.recover_interrupted_directory_activation(
+        "backend",
+        destination,
+        expected_files=expected,
+        expected_version="2.0.0",
+    )
+    # Complete candidate: marker + previous cleared, candidate kept.
+    assert not marker.exists()
+    assert not previous.exists()
+    assert (destination / "runtime.dat").is_file()
+
+
+def test_directory_recovery_discards_partial_candidate(tmp_path):
+    """P1-2: crash mid-apply -> discard the partial candidate for a retry."""
+    _, updater = _p1_dir_updater(tmp_path)
+    destination = tmp_path / "managed" / "backend" / "2.0.0"
+    destination.mkdir(parents=True)
+    (destination / "runtime.dat").write_bytes(b"corrupt")
+    expected = {
+        "runtime.dat": {
+            "size": 7,
+            "sha256": hashlib.sha256(b"runtime").hexdigest(),
+        },
+    }
+    marker = destination.parent / f".{destination.name}.activation.json"
+    marker.write_text(
+        '{"schema_version": 1, "component": "backend", "version": "2.0.0"}',
+        encoding="utf-8",
+    )
+
+    updater.recover_interrupted_directory_activation(
+        "backend",
+        destination,
+        expected_files=expected,
+        expected_version="2.0.0",
+    )
+    # Partial candidate discarded so the version can be re-applied fresh.
+    assert not destination.exists()
+    assert not marker.exists()
+
+
+def test_directory_recovery_clears_orphan_previous(tmp_path):
+    """P1-2: crash during the swap leaves a stale previous with no marker."""
+    _, updater = _p1_dir_updater(tmp_path)
+    destination = tmp_path / "managed" / "backend" / "2.0.0"
+    # No destination, no marker: candidate never activated.
+    previous = destination.parent / f".{destination.name}.previous"
+    previous.mkdir(parents=True)
+    (previous / "old.dat").write_bytes(b"old")
+
+    updater.recover_interrupted_directory_activation("backend", destination)
+    assert not previous.exists()
+
+
+def test_gc_removes_superseded_versions_keeps_active_and_latest(tmp_path):
+    """P1-3: old managed versions are reclaimed; active + latest kept."""
+    _, updater = _p1_dir_updater(tmp_path)
+    root = tmp_path / "managed" / "backend"
+    for version in ("1.0.0", "1.1.0", "1.2.0", "2.0.0"):
+        d = root / version
+        d.mkdir(parents=True)
+        (d / "runtime.dat").write_bytes(version.encode())
+    active = tmp_path / "state" / "active.json"
+    active.parent.mkdir()
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "target": "windows-x86_64",
+                "components": {
+                    "backend": {
+                        "version": "2.0.0",
+                        "path": str(root / "2.0.0"),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    updater_with_active = ComponentUpdater(
+        public_key_b64=updater.public_key_b64,
+        managed_components={"backend"},
+        directory_components={"backend"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+        active_path=active,
+    )
+    # keep = just-committed 2.0.0; retain=1 keeps newest other (1.2.0);
+    # active (2.0.0) always kept. 1.0.0 and 1.1.0 should be reclaimed.
+    updater_with_active._gc_managed_versions("backend", keep=root / "2.0.0")
+    remaining = {p.name for p in root.iterdir() if p.is_dir()}
+    assert "2.0.0" in remaining  # active/keep never removed
+    assert "1.2.0" in remaining  # newest retained
+    assert "1.0.0" not in remaining
+    assert "1.1.0" not in remaining
+
+
+def test_gc_never_removes_active_version(tmp_path):
+    """P1-3 guard rail: the active version is never reclaimed."""
+    root = tmp_path / "managed" / "backend"
+    for version in ("1.0.0", "2.0.0", "3.0.0"):
+        (root / version).mkdir(parents=True)
+    active = tmp_path / "state" / "active.json"
+    active.parent.mkdir()
+    # Active is an OLDER version (1.0.0) than the keep tree (3.0.0).
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "target": "windows-x86_64",
+                "components": {
+                    "backend": {
+                        "version": "1.0.0",
+                        "path": str(root / "1.0.0"),
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    _, updater = _p1_dir_updater(tmp_path, active_path=active)
+    updater._gc_managed_versions("backend", keep=root / "3.0.0")
+    remaining = {p.name for p in root.iterdir() if p.is_dir()}
+    assert "1.0.0" in remaining  # active is sacred even when older
+    assert "3.0.0" in remaining  # keep tree
+
+
+def test_remove_readonly_clears_readonly_bit(tmp_path):
+    """P1-4: the rmtree onerror handler removes read-only files."""
+    target = tmp_path / "tree" / "file.dat"
+    target.parent.mkdir(parents=True)
+    target.write_bytes(b"x")
+    target.chmod(0o444)  # read-only
+    shutil.rmtree(target.parent, onerror=component_update._remove_readonly)
+    assert not target.parent.exists()
+
+
+def test_directory_recovery_never_deletes_live_tree(tmp_path):
+    """P1-2 safety: recovery must never delete the tree active.json runs."""
+    active = tmp_path / "state" / "active.json"
+    active.parent.mkdir()
+    live = tmp_path / "managed" / "backend" / "2.0.0"
+    live.mkdir(parents=True)
+    (live / "runtime.dat").write_bytes(b"edited")  # differs from manifest
+    active.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "target": "windows-x86_64",
+                "components": {
+                    "backend": {"version": "2.0.0", "path": str(live)},
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    _, updater = _p1_dir_updater(tmp_path, active_path=active)
+    marker = live.parent / f".{live.name}.activation.json"
+    marker.write_text(
+        '{"schema_version": 1, "component": "backend", "version": "2.0.0"}',
+        encoding="utf-8",
+    )
+    # Manifest expects different content -> looks "partial", but it is live.
+    expected = {
+        "runtime.dat": {
+            "size": 7,
+            "sha256": hashlib.sha256(b"runtime").hexdigest(),
+        },
+    }
+    updater.recover_interrupted_directory_activation(
+        "backend",
+        live,
+        expected_files=expected,
+        expected_version="2.0.0",
+    )
+    # Live tree and its marker are left untouched.
+    assert (live / "runtime.dat").read_bytes() == b"edited"
+    assert marker.exists()

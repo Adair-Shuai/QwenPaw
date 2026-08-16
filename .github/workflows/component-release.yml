@@ -393,5 +393,23 @@ jobs:
           verify_dir="$(mktemp -d)"
           verify_file="${verify_dir}/${{ matrix.target }}.current.json"
           ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$verify_file"
-          cmp -s "$pointer" "$verify_file" || { echo "Promoted component pointer verification failed" >&2; exit 1; }
+          # Post-promotion readback, polarity-aware:
+          #   live == ours          -> our promotion is in effect (pass)
+          #   live strictly newer   -> a concurrent NEWER run legitimately won
+          #                            the race; accept with a warning (fail
+          #                            here would be a false alarm)
+          #   live older / collision-> an OLDER run clobbered our pointer;
+          #                            fail loudly so the damage is visible
+          # Note: this narrows but cannot fully close the race (an overwrite
+          # after the readback is invisible); OSS has no CAS writes, so the
+          # oss-production-metadata concurrency group remains the hard guard.
+          if cmp -s "$pointer" "$verify_file"; then
+            :
+          elif python scripts/pack-tauri/check_component_pointer_promotion.py \
+            --local "$verify_file" --remote "$pointer" --target '${{ matrix.target }}'; then
+            echo "::warning::A newer concurrent promotion superseded this run's component pointer; accepting the newer live pointer"
+          else
+            echo "::error::Promoted component pointer lost a race to an OLDER release; re-run the release to re-promote" >&2
+            exit 1
+          fi
           rm -rf "$verify_dir"

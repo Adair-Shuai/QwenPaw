@@ -21,6 +21,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from component_common import (
     DEFAULT_PRESERVE_PATHS,
+    atomic_write_bytes,
+    atomic_write_text,
     canonical_json,
     decode_base64,
     file_inventory,
@@ -66,9 +68,7 @@ def _sign(path: Path, private: Ed25519PrivateKey) -> str:
         "ascii",
     )
     signature_path = path.with_name(path.name + ".sig")
-    temporary = signature_path.with_name(f".{signature_path.name}.tmp")
-    temporary.write_text(signature + "\n", encoding="utf-8")
-    os.replace(temporary, signature_path)
+    atomic_write_text(signature_path, signature + "\n")
     return signature
 
 
@@ -113,9 +113,7 @@ def _write_signed_pointer(
     pointer["signature"] = base64.b64encode(
         private.sign(canonical_json(payload)),
     ).decode("ascii")
-    temporary = output.with_name(f".{output.name}.tmp")
-    temporary.write_bytes(canonical_json(pointer))
-    os.replace(temporary, output)
+    atomic_write_bytes(output, canonical_json(pointer))
 
 
 def _verify_signed_file(
@@ -204,9 +202,7 @@ def _write_history(
         "target": target,
         "releases": releases[:history_count],
     }
-    temporary = output.with_name(f".{output.name}.tmp")
-    temporary.write_bytes(canonical_json(payload))
-    os.replace(temporary, output)
+    atomic_write_bytes(output, canonical_json(payload))
     return _sign(output, private)
 
 
@@ -239,9 +235,22 @@ def _full_zip(source: Path, output: Path) -> None:
     ) as archive:
         # Full packages include default engines for first installation, while
         # the managed inventory deliberately excludes engines as user data.
-        for path in sorted(
-            item for item in source.rglob("*") if item.is_file()
-        ):
+        # Symlink check must come BEFORE the is_file() filter (same order as
+        # component_common.iter_files): a dangling symlink reports
+        # is_file() == False and would otherwise be silently skipped instead
+        # of rejected. st_nlink follows the link, so it only runs after the
+        # symlink has been ruled out.
+        for path in sorted(source.rglob("*")):
+            if path.is_symlink():
+                raise ValueError(
+                    f"links are not allowed in component trees: {path}",
+                )
+            if not path.is_file():
+                continue
+            if path.stat().st_nlink > 1:
+                raise ValueError(
+                    f"links are not allowed in component trees: {path}",
+                )
             relative = path.relative_to(source).as_posix()
             info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
@@ -253,7 +262,9 @@ def _base_sources(base_root: Path | None, source_name: str) -> list[Path]:
     if base_root is None or not base_root.exists():
         return []
     direct = base_root / source_name
-    if (direct / "plugin.json").is_file() or (direct / "component.json").is_file():
+    if (direct / "plugin.json").is_file() or (
+        direct / "component.json"
+    ).is_file():
         return [direct]
     return sorted(
         candidate / source_name
@@ -302,11 +313,18 @@ def build_release(
         path
         for path in source_root.iterdir()
         if path.is_dir()
-        and ((path / "plugin.json").is_file() or (path / "component.json").is_file())
+        and (
+            (path / "plugin.json").is_file()
+            or (path / "component.json").is_file()
+        )
     ):
-        component, version, component_metadata = read_component_metadata(source)
+        component, version, component_metadata = read_component_metadata(
+            source,
+        )
         if (source / "component.json").is_file():
-            preserve_paths = tuple(dict.fromkeys(component_metadata.get("preserve", [])))
+            preserve_paths = tuple(
+                dict.fromkeys(component_metadata.get("preserve", [])),
+            )
         else:
             preserve_paths = tuple(
                 dict.fromkeys(
@@ -336,7 +354,11 @@ def build_release(
         deltas: list[dict] = []
         seen_base_versions: set[str] = set()
         for base_source in _base_sources(base_root, source.name):
-            base_component, base_version, base_metadata = read_component_metadata(base_source)
+            (
+                base_component,
+                base_version,
+                base_metadata,
+            ) = read_component_metadata(base_source)
             if (
                 base_component != component
                 or base_version == version
@@ -344,7 +366,9 @@ def build_release(
             ):
                 continue
             if (base_source / "component.json").is_file():
-                base_preserve = tuple(dict.fromkeys(base_metadata.get("preserve", [])))
+                base_preserve = tuple(
+                    dict.fromkeys(base_metadata.get("preserve", [])),
+                )
             else:
                 base_preserve = tuple(
                     dict.fromkeys(
@@ -424,7 +448,7 @@ def build_release(
         core_version=core_min_version,
     )
     manifest_path = metadata / manifest_name
-    manifest_path.write_bytes(canonical_json(manifest))
+    atomic_write_bytes(manifest_path, canonical_json(manifest))
     manifest_signature = _sign(manifest_path, private)
     if release_id:
         manifest_url = f"{base_url.rstrip('/')}/metadata/components/{channel}/{manifest_name}"

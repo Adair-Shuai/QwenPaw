@@ -36,7 +36,12 @@ def test_default_discovery_uses_desktop_managed_roots_and_denylist():
         for path in helper.discover_bundled_plugins(REPO_ROOT)
     }
 
-    assert helper.PLUGIN_DENYLIST == {"cloudpaw", "qwenpaw-pet"}
+    assert helper.PLUGIN_DENYLIST == {
+        "cloudpaw",
+        "qwenpaw-pet",
+        "qwenpaw-creator",
+        "azure-bot",
+    }
     assert selected_ids == all_ids - helper.PLUGIN_DENYLIST
     assert {
         "agent-kanban",
@@ -45,6 +50,7 @@ def test_default_discovery_uses_desktop_managed_roots_and_denylist():
         "omp-workflows",
     } <= selected_ids
     assert "azure-bot" not in selected_ids
+    assert "qwenpaw-creator" not in selected_ids
     assert "middleware-demo-thinking-log" not in selected_ids
     assert "wan27-tool" not in selected_ids
 

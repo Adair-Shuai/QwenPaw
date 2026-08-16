@@ -12,6 +12,7 @@ import zipfile
 from pathlib import Path
 
 from component_common import (
+    DEFAULT_PRESERVE_PATHS,
     canonical_json,
     file_inventory,
     read_component_metadata,
@@ -21,7 +22,7 @@ from component_common import (
 def build_delta(
     base: Path,
     target: Path,
-    preserve_paths: tuple[str, ...] = ("engines",),
+    preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
 ) -> dict:
     base_files = file_inventory(base, preserve_paths)
     target_files = file_inventory(target, preserve_paths)
@@ -64,7 +65,7 @@ def write_delta(
     base: Path,
     target: Path,
     output: Path,
-    preserve_paths: tuple[str, ...] = ("engines",),
+    preserve_paths: tuple[str, ...] = DEFAULT_PRESERVE_PATHS,
 ) -> dict:
     delta = build_delta(base, target, preserve_paths)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -108,11 +109,25 @@ def main() -> int:
     parser.add_argument("--base", type=Path, required=True)
     parser.add_argument("--target", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--preserve",
+        action="append",
+        default=None,
+        help=(
+            "Preserve path (repeatable). Defaults to the shared "
+            "DEFAULT_PRESERVE_PATHS when omitted. Must match the signed "
+            "manifest preserve list for the component."
+        ),
+    )
     args = parser.parse_args()
+    preserve = (
+        tuple(args.preserve) if args.preserve else DEFAULT_PRESERVE_PATHS
+    )
     delta = write_delta(
         args.base.resolve(),
         args.target.resolve(),
         args.output.resolve(),
+        preserve,
     )
     print(
         json.dumps(

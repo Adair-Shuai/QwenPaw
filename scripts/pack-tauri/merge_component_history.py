@@ -15,6 +15,8 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from packaging.version import Version
 
 from component_common import (
+    atomic_write_bytes,
+    atomic_write_text,
     canonical_json,
     decode_base64,
     verify_private_key_public_key,
@@ -166,8 +168,8 @@ def merge_history(
     history_signature = base64.b64encode(private.sign(history_raw)).decode(
         "ascii",
     )
-    local_history_path.write_bytes(history_raw)
-    local_signature_path.write_text(history_signature + "\n", encoding="utf-8")
+    atomic_write_bytes(local_history_path, history_raw)
+    atomic_write_text(local_signature_path, history_signature + "\n")
     pointer_payload = dict(local_pointer)
     pointer_payload.pop("signature", None)
     pointer_payload["history_size"] = len(history_raw)
@@ -177,7 +179,7 @@ def merge_history(
     pointer["signature"] = base64.b64encode(
         private.sign(canonical_json(pointer_payload)),
     ).decode("ascii")
-    local_pointer_path.write_bytes(canonical_json(pointer))
+    atomic_write_bytes(local_pointer_path, canonical_json(pointer))
 
 
 def main() -> int:

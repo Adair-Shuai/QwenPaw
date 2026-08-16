@@ -505,6 +505,8 @@ async def lifespan(
             try:
                 from ..plugins.bundled import (
                     ensure_bundled_plugins_installed,
+                    finalize_bundled_plugin_activation,
+                    rollback_bundled_plugin_activation,
                 )
 
                 app.state.bundled_plugins_status = {
@@ -516,6 +518,7 @@ async def lifespan(
                     asyncio.to_thread(
                         ensure_bundled_plugins_installed,
                         skip_ids=component_updated_ids,
+                        defer_activation_cleanup=True,
                     ),
                     name="bundled-plugin-sync",
                 )
@@ -537,6 +540,8 @@ async def lifespan(
             from ..plugins.runtime import RuntimeHelpers
 
             newly_installed: list[str] = []
+            bundled_ready_ids: list[str] = []
+            bundled_health_errors: list[str] = []
             if bundled_sync_task is not None:
                 try:
                     newly_installed = await bundled_sync_task
@@ -605,6 +610,89 @@ async def lifespan(
                 len(loaded_plugins),
             )
 
+            # Bundled software upgrades use the same last-known-good boundary
+            # as signed component updates. The sync step keeps the previous
+            # tree until the new candidate has actually imported and
+            # registered. A broken new bundle is rolled back before agents or
+            # the frontend consume its registrations.
+            for plugin_id in newly_installed:
+                record = loaded_plugins.get(plugin_id)
+                healthy = bool(record and record.enabled)
+                if healthy:
+                    try:
+                        finalize_bundled_plugin_activation(
+                            plugin_id,
+                            plugins_dir=get_plugins_dir(),
+                        )
+                        bundled_ready_ids.append(plugin_id)
+                        continue
+                    except Exception as exc:
+                        logger.error(
+                            "Could not finalize bundled plugin %s; "
+                            "rolling back: %s",
+                            plugin_id,
+                            exc,
+                            exc_info=True,
+                        )
+                else:
+                    logger.error(
+                        "Bundled plugin %s failed its load health check; "
+                        "rolling back",
+                        plugin_id,
+                    )
+
+                bundled_health_errors.append(plugin_id)
+                if plugin_loader.get_loaded_plugin(plugin_id) is not None:
+                    try:
+                        await plugin_loader.unload_plugin(
+                            plugin_id,
+                            delete_files=False,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to unload unhealthy bundled plugin %s",
+                            plugin_id,
+                            exc_info=True,
+                        )
+                        # Ensure a stale in-memory record cannot be exposed as
+                        # the restored version below.
+                        # pylint: disable-next=protected-access
+                        plugin_loader._loaded_plugins.pop(
+                            plugin_id,
+                            None,
+                        )
+                        plugin_loader.registry.unregister_plugin(plugin_id)
+                try:
+                    restored = rollback_bundled_plugin_activation(
+                        plugin_id,
+                        plugins_dir=get_plugins_dir(),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back bundled plugin %s",
+                        plugin_id,
+                    )
+                    continue
+                if not restored:
+                    continue
+                try:
+                    discovered = {
+                        manifest.id: (manifest, path)
+                        for manifest, path in plugin_loader.discover_plugins()
+                    }
+                    previous = discovered.get(plugin_id)
+                    if previous is not None:
+                        await plugin_loader.load_plugin(
+                            previous[0],
+                            previous[1],
+                            plugin_configs.get(plugin_id),
+                        )
+                except Exception:
+                    logger.exception(
+                        "Restored bundled plugin %s also failed to load",
+                        plugin_id,
+                    )
+
             # Reconcile managed component activations before publishing the
             # frontend manifest. This keeps rollback atomic from the UI's
             # perspective and does not depend on slow agent/MCP startup.
@@ -619,6 +707,17 @@ async def lifespan(
                     if recovery_service is not None:
                         plugins_root = get_plugins_dir()
                         for component_id in sorted(component_updated_ids):
+                            if recovery_service.updater.is_directory_component(
+                                component_id,
+                            ):
+                                # Directory components (backend, runtimes)
+                                # are not plugins: they finalize inline in
+                                # _install_component and must never enter the
+                                # plugin health-check/rollback path -- a
+                                # rollback here would find no previous tree
+                                # and delete the freshly committed active
+                                # record, permanently breaking their updates.
+                                continue
                             record = loaded_plugins.get(component_id)
                             healthy = bool(record and record.enabled)
                             destination = resolve_component_destination(
@@ -668,8 +767,13 @@ async def lifespan(
 
             app.state.bundled_plugins_status = {
                 "state": "registry_ready",
-                "installed": newly_installed,
-                "error": None,
+                "installed": bundled_ready_ids,
+                "error": (
+                    "Bundled plugin load failed: "
+                    + ", ".join(bundled_health_errors)
+                    if bundled_health_errors
+                    else None
+                ),
             }
             logger.debug(
                 "Published %d plugin registration(s) before agent startup",
@@ -819,8 +923,13 @@ async def lifespan(
             # initialization state.
             app.state.bundled_plugins_status = {
                 "state": "ready",
-                "installed": newly_installed,
-                "error": None,
+                "installed": bundled_ready_ids,
+                "error": (
+                    "Bundled plugin load failed: "
+                    + ", ".join(bundled_health_errors)
+                    if bundled_health_errors
+                    else None
+                ),
             }
 
             # ---- Skill pool auto-update sync ----

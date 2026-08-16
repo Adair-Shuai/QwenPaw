@@ -453,19 +453,7 @@ jobs:
             ossutil cp "$metadata_uri" "$metadata_tmp"
             python -c 'import json,sys; from pathlib import Path; a=json.loads(Path(sys.argv[1]).read_text(encoding="utf-8")); b=json.loads(Path(sys.argv[2]).read_text(encoding="utf-8")); a.pop("updated_at",None); b.pop("updated_at",None); raise SystemExit(0 if a == b else 1)' mac-tauri-updater-metadata.json "$metadata_tmp"
             rm -f "$metadata_tmp"
-          fi            echo "Verified existing immutable macOS updater artifact"
-            exit 0
           fi
-          ossutil cp "$APP_TAR_GZ" \
-            "$updater_uri" \
-            --acl public-read \
-            --meta "Cache-Control:public, max-age=31536000, immutable"
-          ossutil cp "$updater_uri" "$remote"
-          cmp --silent "$APP_TAR_GZ" "$remote" || {
-            echo "Remote macOS updater verification failed: $updater_uri" >&2
-            exit 1
-          }
-          rm -f "$remote"
 
       # NOTE: the `latest` files, the updater manifest
       # (qwenpaw-tauri-latest.json) and the index are intentionally NOT uploaded

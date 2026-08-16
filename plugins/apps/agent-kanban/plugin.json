@@ -10,7 +10,8 @@
     "frontend": "ui/index.js"
   },
   "qwenpaw_version": {
-    "min": "2.0.1"
+    "min": "2.0.1",
+  "max": "2.2.0"
   },
   "meta": {
     "pawapp": {

@@ -18,6 +18,7 @@ import json
 import os
 import re
 import shutil
+import sys
 import tempfile
 import urllib.error
 import urllib.request
@@ -108,11 +109,13 @@ def _safe_extract(
     with zipfile.ZipFile(__import__("io").BytesIO(archive_bytes)) as archive:
         infos = archive.infolist()
         names = [info.filename for info in infos]
-        max_members, max_bytes, max_member_bytes = (
-            _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
-                component,
-                (_MAX_MEMBERS, _MAX_TOTAL_BYTES, _MAX_MEMBER_BYTES),
-            )
+        (
+            max_members,
+            max_bytes,
+            max_member_bytes,
+        ) = _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+            component,
+            (_MAX_MEMBERS, _MAX_TOTAL_BYTES, _MAX_MEMBER_BYTES),
         )
         if len(names) > max_members or len(set(names)) != len(names):
             raise ValueError("previous full artifact has invalid members")
@@ -345,9 +348,29 @@ def prepare_base(
 
         staged_tree = temporary / "tree"
         base_root.parent.mkdir(parents=True, exist_ok=True)
-        if base_root.exists():
-            shutil.rmtree(base_root)
-        staged_tree.replace(base_root)
+        backup = base_root.parent / f".{base_root.name}.previous"
+        if backup.exists():
+            shutil.rmtree(backup)
+        try:
+            if base_root.exists():
+                base_root.replace(backup)
+            staged_tree.replace(base_root)
+        except Exception:
+            if not base_root.exists() and backup.exists():
+                backup.replace(base_root)
+            raise
+        if backup.exists():
+            # A locked leftover backup (e.g. antivirus scan holding a handle
+            # on Windows) is harmless; warn instead of failing a preparation
+            # that already succeeded. It is overwritten on the next run.
+            try:
+                shutil.rmtree(backup)
+            except OSError:
+                print(
+                    f"warning: could not remove leftover backup {backup}; "
+                    "it will be replaced on the next run",
+                    file=sys.stderr,
+                )
         return True
     finally:
         shutil.rmtree(temporary, ignore_errors=True)

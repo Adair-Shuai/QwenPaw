@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=unnecessary-lambda,use-implicit-booleaness-not-comparison
+# pylint: disable=protected-access
 from __future__ import annotations
 
 import json
@@ -331,9 +332,18 @@ def test_signed_new_plugin_can_install_after_service_restart(
     tmp_path,
 ):
     plugins = tmp_path / "plugins"
+    adopted_path = tmp_path / "components" / "adopted.json"
     monkeypatch.setattr(
         "qwenpaw.components.service.get_plugins_dir",
         lambda: plugins,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._ADOPTED_COMPONENTS_PATH",
+        adopted_path,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._COMPONENT_INSTALL_LOCKS",
+        tmp_path / "component-install-locks",
     )
     manifest = {
         "components": {
@@ -370,6 +380,31 @@ def test_signed_new_plugin_can_install_after_service_restart(
         "reason": "up-to-date",
     }
     assert "new-plugin" in updater.managed_components
+    assert json.loads(adopted_path.read_text(encoding="utf-8"))[
+        "components"
+    ] == ["new-plugin"]
+
+    # Simulate the next backend process after the plugin now exists on disk.
+    installed = plugins / "new-plugin"
+    installed.mkdir(parents=True)
+    (installed / "plugin.json").write_text(
+        json.dumps({"id": "new-plugin", "version": "1.0.0"}),
+        encoding="utf-8",
+    )
+    restarted_updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"existing"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    restarted = ComponentUpdateService(
+        restarted_updater,
+        _Client(manifest),
+        "https://oss/manifest.json",
+    )
+
+    assert restarted.check() == []
+    assert "new-plugin" in restarted_updater.managed_components
 
 
 def test_component_directory_alias_is_resolved_by_manifest_id(
@@ -1106,3 +1141,71 @@ def test_queued_startup_batch_reuses_one_manifest_snapshot(
     assert [component for component, _ in installed] == ["alpha", "beta"]
     assert all(snapshot is manifest for _, snapshot in installed)
     assert len(result["updated"]) == 2
+
+
+def test_install_uses_cross_process_component_lock() -> None:
+    """Claim 2: installs must hold a cross-process per-component lock."""
+    import inspect
+
+    import qwenpaw.components.service as svc
+
+    source = inspect.getsource(svc.ComponentUpdateService._install)
+    assert "plugin_install_lock" in source, (
+        "_install_from_manifest must take the cross-process component lock; "
+        "threading.RLock alone cannot stop two backend processes racing "
+        "_atomic_activate"
+    )
+    assert "_component_install_lock_path" in source
+    assert hasattr(svc, "_component_install_lock_path")
+
+
+def test_component_install_lock_timeout_fails_closed(
+    monkeypatch,
+) -> None:
+    """A timed-out component lock must never proceed into activation."""
+    from contextlib import contextmanager
+
+    @contextmanager
+    def unavailable_lock(*_args, **_kwargs):
+        yield False
+
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    service = ComponentUpdateService(updater, _Client({}), "https://example")
+    called = False
+
+    def should_not_install(*_args, **_kwargs):
+        nonlocal called
+        called = True
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service.plugin_install_lock",
+        unavailable_lock,
+    )
+    monkeypatch.setattr(service, "_install_locked", should_not_install)
+
+    with pytest.raises(ComponentUpdateError, match="already in progress"):
+        service.install("demo")
+    assert called is False
+
+
+def test_delta_lease_contention_does_not_fall_back_to_full() -> None:
+    """Claim 2: delta lease contention must propagate, not trigger full."""
+    import inspect
+
+    import qwenpaw.components.service as svc
+
+    source = inspect.getsource(svc.ComponentUpdateService._install_component)
+    marker = '"already in progress" in str(exc)'
+    fallback = source.find("falling back to full")
+    contention = source.find(marker)
+    assert contention != -1, (
+        "delta contention must be detected and re-raised before the full "
+        "fallback; otherwise two processes race activation via different "
+        "artifact leases"
+    )
+    assert contention < fallback

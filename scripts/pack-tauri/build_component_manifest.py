@@ -8,14 +8,14 @@ import argparse
 import json
 import os
 import re
-import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 from component_common import (
+    atomic_write_bytes,
     canonical_json,
     file_inventory,
-    read_plugin_metadata,
+    read_component_metadata,
 )
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
@@ -48,10 +48,19 @@ def build_manifest(
         Version(core_min_version)
     except Exception as exc:
         raise ValueError("invalid core_min_version") from exc
-    component_id, discovered_version = read_plugin_metadata(root)
+    component_id, discovered_version, _ = read_component_metadata(root)
     component_version = version or discovered_version
-    if not isinstance(component_version, str):
-        raise ValueError("component version must be a string")
+    if not isinstance(component_version, str) or not component_version.strip():
+        raise ValueError(
+            "component version must be a non-empty string "
+            f"(resolved {component_version!r} for {component_id!r})",
+        )
+    if component_version == "0.0.0":
+        raise ValueError(
+            "component version resolved to the 0.0.0 placeholder for "
+            f"{component_id!r}: pass --version or add a plugin.json/"
+            "component.json with a real version",
+        )
     inventory = file_inventory(root)
     entry: dict = {
         "kind": "directory",
@@ -125,21 +134,8 @@ def main() -> int:
         full_signature=args.full_signature,
         deltas=deltas,
     )
-    args.output.parent.mkdir(parents=True, exist_ok=True)
     payload = canonical_json(manifest)
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{args.output.name}.",
-        suffix=".tmp",
-        dir=args.output.parent,
-    )
-    os.close(fd)
-    temporary = Path(temporary_name)
-    try:
-        temporary.write_bytes(payload)
-        os.replace(temporary, args.output)
-    except Exception:
-        temporary.unlink(missing_ok=True)
-        raise
+    atomic_write_bytes(args.output, payload)
     print(f"wrote {args.output} ({len(manifest['components'])} component)")
     return 0
 

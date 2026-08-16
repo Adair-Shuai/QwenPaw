@@ -12,7 +12,9 @@ import base64
 import binascii
 import hashlib
 import json
+import os
 import stat
+import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterator
 
@@ -155,6 +157,30 @@ def canonical_json(data: Any) -> bytes:
     ).encode("utf-8")
 
 
+def atomic_write_bytes(path: Path, payload: bytes) -> None:
+    """Write *payload* to *path* atomically (temp file + ``os.replace``)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary_name = tempfile.mkstemp(
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        dir=str(path.parent),
+    )
+    os.close(fd)
+    temporary = Path(temporary_name)
+    try:
+        temporary.write_bytes(payload)
+        os.replace(temporary, path)
+    except Exception:
+        temporary.unlink(missing_ok=True)
+        raise
+
+
+def atomic_write_text(path: Path, text: str) -> None:
+    """Write *text* (UTF-8) to *path* atomically."""
+    atomic_write_bytes(path, text.encode("utf-8"))
+
+
 def read_plugin_metadata(root: Path) -> tuple[str, str]:
     """Read plugin id/version when a component is a plugin directory."""
     manifest_path = root / "plugin.json"
@@ -203,13 +229,23 @@ def read_component_metadata(root: Path) -> tuple[str, str, dict[str, Any]]:
         try:
             Version(version)
         except InvalidVersion as exc:
-            raise ValueError(f"invalid component version: {version!r}") from exc
+            raise ValueError(
+                f"invalid component version: {version!r}",
+            ) from exc
         preserve = data.get("preserve", [])
         if not isinstance(preserve, list) or not all(
             isinstance(item, str) and item for item in preserve
         ):
-            raise ValueError(f"invalid component preserve list: {descriptor_path}")
+            raise ValueError(
+                f"invalid component preserve list: {descriptor_path}",
+            )
         return component_id.strip(), version.strip(), data
     component_id, version = read_plugin_metadata(root)
-    plugin = json.loads((root / "plugin.json").read_text(encoding="utf-8-sig"))
+    plugin_path = root / "plugin.json"
+    if plugin_path.is_file():
+        plugin = json.loads(plugin_path.read_text(encoding="utf-8-sig"))
+    else:
+        # No descriptor at all: surface the 0.0.0 placeholder so callers can
+        # reject it explicitly instead of crashing on a missing file.
+        plugin = {}
     return component_id, version, plugin

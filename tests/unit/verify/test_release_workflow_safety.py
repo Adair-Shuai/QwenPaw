@@ -185,16 +185,13 @@ def test_mutable_release_metadata_is_promoted_only_after_finalize() -> None:
     assert "Phase 2: switch all platform pointers" not in pre_finalize
     promotion_block = release[promote:desktop_promote]
     assert (
-        "find promotion/plugins -type f -name 'index.json'"
-        in promotion_block
+        "find promotion/plugins -type f -name 'index.json'" in promotion_block
     )
     assert "metadata/plugins/index.json" in promotion_block
     assert "metadata/index.json" in promotion_block
     assert "metadata/components/stable/$base" in promotion_block
     assert "rollback_metadata" in promotion_block
-    assert (
-        "needs: [resolve, finalize, promote-release-metadata]" in release
-    )
+    assert "needs: [resolve, finalize, promote-release-metadata]" in release
     assert release.count("group: oss-production-metadata") == 1
 
     for workflow in (
@@ -254,3 +251,133 @@ def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     # is gone.
     assert "[-.])b[0-9]" in release
     assert "component artifacts are checked below" not in release
+
+
+def test_workflow_bash_blocks_have_no_dangling_merge_residue() -> None:
+    """Guard: no bash keyword may be followed by a bare token on same line.
+
+    Catches incomplete cleanup from workflow edits (e.g. the
+    desktop-publish.yml macOS updater step, where a stale ``fi`` line kept
+    ``echo``/``exit 0`` and a duplicated upload block after it -- a hard bash
+    syntax error that fails the publish step whenever it runs).
+    """
+    import re
+
+    # Only ``fi`` and ``done`` terminate a compound command; a bare token
+    # after them on the same line is a syntax error. Redirects (``<``, ``>``,
+    # ``2>``), separators (``;``, ``&``) and comments (``#``) are legitimate.
+    # ``then``/``else``/``do`` may legally be followed by a command, so they
+    # are intentionally not checked.
+    pattern = re.compile(r"^\s*(?:fi|done)\s+[^;#<>&\s]")
+    for workflow in sorted(
+        (REPO_ROOT / ".github" / "workflows").glob("*.yml"),
+    ):
+        lines = workflow.read_text(encoding="utf-8").splitlines()
+        in_run_block = False
+        run_indent = 0
+        for lineno, line in enumerate(lines, 1):
+            run_match = re.match(r"^(\s+)run:\s*\|", line)
+            if run_match:
+                in_run_block = True
+                run_indent = len(run_match.group(1))
+                continue
+            if in_run_block:
+                stripped = line.strip()
+                if stripped:
+                    indent = len(line) - len(line.lstrip())
+                    if indent <= run_indent:
+                        in_run_block = False
+                        continue
+                    assert not pattern.match(line), (
+                        f"{workflow.name}:{lineno} has a bash keyword "
+                        f"followed by a same-line token (merge residue): "
+                        f"{line!r}"
+                    )
+
+
+def test_macos_updater_step_has_single_upload_block() -> None:
+    """Guard: the macOS updater step must not contain a duplicated upload."""
+    publish = _workflow("desktop-publish.yml")
+    assert publish.count("Immutable macOS updater artifact differs") == 1
+    assert publish.count("Remote macOS updater verification failed") == 1
+    assert (
+        publish.count(
+            'echo "Verified existing immutable macOS updater artifact"',
+        )
+        == 1
+    )
+
+
+def test_python_runtime_release_pin_is_consistent_across_builds() -> None:
+    """Guard: the python-build-standalone pin must stay in sync everywhere.
+
+    The staged runtime is pinned in three places: the script default
+    (``stage_python_runtime.py``) and the Windows/macOS job env in
+    ``desktop-build.yml``. Upgrading one without the others silently desyncs
+    the bundled runtime from the frozen interpreter, or points the hash
+    check at the wrong archive.
+    """
+    import re
+
+    script = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "stage_python_runtime.py"
+    ).read_text(encoding="utf-8")
+    build = _workflow("desktop-build.yml")
+
+    default_match = re.search(
+        r'^DEFAULT_RELEASE\s*=\s*"(\d{8})"$',
+        script,
+        re.MULTILINE,
+    )
+    assert (
+        default_match
+    ), "DEFAULT_RELEASE pin not found in stage_python_runtime.py"
+    default_release = default_match.group(1)
+
+    workflow_pins = re.findall(
+        r'QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE:\s*"(\d{8})"',
+        build,
+    )
+    assert len(workflow_pins) == 2, (
+        "expected exactly 2 runtime release pins (Windows + macOS) in "
+        f"desktop-build.yml, found {len(workflow_pins)}"
+    )
+    assert set(workflow_pins) == {default_release}, (
+        f"workflow runtime pins {workflow_pins} diverge from the script "
+        f"default {default_release!r}"
+    )
+
+    raw_hashes = re.findall(
+        r'QWENPAW_PYTHON_RUNTIME_SHA256:\s*"([^"]+)"',
+        build,
+    )
+    assert len(raw_hashes) == 2, (
+        "both desktop jobs must pin a runtime SHA256, found "
+        f"{len(raw_hashes)}"
+    )
+    for digest in raw_hashes:
+        assert re.fullmatch(r"[0-9a-f]{64}", digest), (
+            "runtime SHA256 must be a 64-char lowercase hex digest, "
+            f"got {digest!r}"
+        )
+    assert raw_hashes[0] != raw_hashes[1], (
+        "Windows and macOS runtime hashes must differ (different archives); "
+        "an identical value means one job pins the wrong platform's hash"
+    )
+
+
+def test_pointer_post_check_is_polarity_aware() -> None:
+    """Claim 3: post-promotion readback must not false-alarm on newer wins.
+
+    A concurrent NEWER run legitimately winning the race must be accepted
+    (warning), only an OLDER run clobbering our pointer is an error. The
+    check therefore runs check_component_pointer_promotion with roles
+    swapped (local=live, remote=ours) as the acceptance test.
+    """
+    release = _workflow("component-release.yml")
+    assert 'cmp -s "$pointer" "$verify_file"' in release
+    assert '--local "$verify_file" --remote "$pointer"' in release, (
+        "post-promotion readback must accept a strictly-newer live pointer "
+        "via the role-swapped monotonic check instead of cmp-only equality"
+    )
+    assert "newer concurrent promotion superseded" in release

@@ -10,7 +10,7 @@
   },
   "author": "QwenPaw",
   "icon": "Chrome",
-  "qwenpaw_version": {"min": "2.0.0"},
+  "qwenpaw_version": {"min": "2.0.0", "max": "2.2.0"},
   "capabilities": [{"id": "chrome", "name": "Chrome", "description": "Use QwenPaw with this Chrome browser."}],
   "entry": {"backend": "plugin.py", "frontend": "dist/index.js"},
   "dependencies": []

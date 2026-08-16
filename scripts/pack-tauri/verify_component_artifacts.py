@@ -20,9 +20,33 @@ from component_common import (
 
 _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
+_MAX_MEMBER_BYTES = 128 * 1024 * 1024
 _LARGE_DIRECTORY_ARCHIVE_LIMITS = {
-    "python-packages": (150_000, 6 * 1024**3),
+    "python-packages": (150_000, 6 * 1024**3, 1024**3),
 }
+_INTERNAL_PRESERVED_NAMES = (
+    ".uninstalled",
+    ".bundle_hash",
+    ".bundle_revision",
+    ".bundle_complete",
+)
+
+
+def _archive_limits(component: str) -> tuple[int, int, int]:
+    return _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+        component,
+        (_MAX_ARCHIVE_MEMBERS, _MAX_ARCHIVE_BYTES, _MAX_MEMBER_BYTES),
+    )
+
+
+def _is_preserved(relative: str, preserve_paths: tuple[str, ...]) -> bool:
+    """Mirror the runtime ``update.py`` preserved-path predicate."""
+    if relative in _INTERNAL_PRESERVED_NAMES:
+        return True
+    return any(
+        relative == prefix or relative.startswith(f"{prefix}/")
+        for prefix in preserve_paths
+    )
 
 
 def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
@@ -55,16 +79,17 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
             raise ValueError("invalid component delta archive") from exc
         if not isinstance(delta, dict):
             raise ValueError("delta.json must contain an object")
-        component_limit = _LARGE_DIRECTORY_ARCHIVE_LIMITS.get(
+        max_members, max_bytes, max_member_bytes = _archive_limits(
             str(delta.get("component", "")),
-            (_MAX_ARCHIVE_MEMBERS, _MAX_ARCHIVE_BYTES),
         )
-        if len(infos) > component_limit[0]:
+        if len(infos) > max_members:
             raise ValueError(
                 "component delta contains too many archive members",
             )
-        if sum(info.file_size for info in infos) > component_limit[1]:
+        if sum(info.file_size for info in infos) > max_bytes:
             raise ValueError("component delta is too large to extract")
+        if any(info.file_size > max_member_bytes for info in infos):
+            raise ValueError("component delta member is too large")
         if delta.get("schema_version") != 1:
             raise ValueError("unsupported component delta schema")
         if not isinstance(delta.get("base_files"), dict) or not isinstance(
@@ -120,6 +145,13 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
         ):
             raise ValueError("delta preserve list is invalid")
         preserve_paths = tuple(raw_preserve)
+        # Mirror the runtime client: a delta may never touch preserved data.
+        for operation in ("add", "replace", "delete"):
+            for relative in operations[operation]:
+                if _is_preserved(relative, preserve_paths):
+                    raise ValueError(
+                        "delta may not modify preserved data: " f"{relative}",
+                    )
         current = file_inventory(base, preserve_paths)
         expected_base = delta.get("base_files")
         if expected_base is not None and current != expected_base:

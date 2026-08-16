@@ -26,6 +26,7 @@ from ..__version__ import __version__
 from ..config.utils import get_plugins_dir
 from ..constant import WORKING_DIR
 from ..plugins.bundled import is_plugin_uninstalled
+from ..plugins.install_lock import plugin_install_lock
 from .update import detect_target
 from .client import ComponentClient
 from .update import (
@@ -44,6 +45,10 @@ _PENDING_LOCK = threading.RLock()
 _PENDING_SCHEMA_VERSION = 2
 _PENDING_MAX_ATTEMPTS = 5
 _PENDING_MAX_AGE = timedelta(days=7)
+_COMPONENT_INSTALL_LOCKS = WORKING_DIR / "components" / "install-locks"
+# Cross-process install serialization: downloads of large components can run
+# for tens of minutes on slow links, so the peer-wait budget must cover that.
+_COMPONENT_INSTALL_LOCK_TIMEOUT = 3600.0
 
 # The component signing public key is deliberately public and is embedded in
 # the client.  The private key remains a GitHub Actions secret and must never
@@ -68,6 +73,14 @@ DIRECTORY_COMPONENT_IDS = frozenset(
 _MANAGED_COMPONENTS_ROOT = WORKING_DIR / "components" / "managed"
 _ADOPTED_COMPONENTS_PATH = WORKING_DIR / "components" / "adopted.json"
 _ADOPTED_LOCK = threading.RLock()
+
+
+def _component_install_lock_path(component: str) -> Path:
+    """Path to the cross-process lock serializing one component's install."""
+    safe_id = "".join(
+        c if c.isalnum() or c in "-_." else "_" for c in component
+    )
+    return _COMPONENT_INSTALL_LOCKS / f"{safe_id}.lock"
 
 
 def _read_adopted_components() -> set[str]:
@@ -109,28 +122,42 @@ def set_component_update_adoption(component: str, adopted: bool) -> None:
     """Allow a remotely installed plugin to join signed OSS updates."""
     component = _safe_component_id(component)
     with _ADOPTED_LOCK:
-        components = _read_adopted_components()
-        if adopted:
-            components.add(component)
-        else:
-            components.discard(component)
-        _ADOPTED_COMPONENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
-        temporary = _ADOPTED_COMPONENTS_PATH.with_name(
-            f".{_ADOPTED_COMPONENTS_PATH.name}.{os.getpid()}.staging",
-        )
-        temporary.write_text(
-            json.dumps(
-                {
-                    "schema_version": 1,
-                    "components": sorted(components),
-                },
-                ensure_ascii=False,
-                sort_keys=True,
+        with plugin_install_lock(
+            _ADOPTED_COMPONENTS_PATH.with_name(".adopted.lock"),
+            timeout=30.0,
+        ) as acquired:
+            if not acquired:
+                raise ComponentUpdateError(
+                    "component adoption update is already in progress",
+                )
+            # Re-read only after the cross-process lock is held so concurrent
+            # installs of different newly signed plugins merge instead of
+            # replacing one another's adoption entries.
+            components = _read_adopted_components()
+            if adopted:
+                components.add(component)
+            else:
+                components.discard(component)
+            _ADOPTED_COMPONENTS_PATH.parent.mkdir(parents=True, exist_ok=True)
+            temporary = _ADOPTED_COMPONENTS_PATH.with_name(
+                f".{_ADOPTED_COMPONENTS_PATH.name}.{os.getpid()}.staging",
             )
-            + "\n",
-            encoding="utf-8",
-        )
-        os.replace(temporary, _ADOPTED_COMPONENTS_PATH)
+            try:
+                temporary.write_text(
+                    json.dumps(
+                        {
+                            "schema_version": 1,
+                            "components": sorted(components),
+                        },
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    + "\n",
+                    encoding="utf-8",
+                )
+                os.replace(temporary, _ADOPTED_COMPONENTS_PATH)
+            finally:
+                temporary.unlink(missing_ok=True)
 
 
 def is_component_update_adopted(component: str) -> bool:
@@ -508,8 +535,15 @@ def _write_pending_components(components: set[str]) -> None:
 def _record_pending_failure(
     record: dict[str, Any],
     error: BaseException | str,
+    *,
+    count_attempt: bool = True,
 ) -> None:
-    record["attempts"] = int(record.get("attempts", 0)) + 1
+    # Contention (another update process holding the download lease) is not
+    # a genuine attempt: no bytes moved and nothing about the artifact is
+    # wrong. Burning one of the limited attempts on it could exhaust the
+    # retry budget through pure bad luck across restarts.
+    if count_attempt:
+        record["attempts"] = int(record.get("attempts", 0)) + 1
     record["last_error"] = str(error)
 
 
@@ -624,11 +658,11 @@ class ComponentUpdateService:
         self,
         manifest: dict[str, Any],
         plugins: Path,
-    ) -> None:
+    ) -> set[str]:
         """Adopt signed new plugins without taking over local plugins."""
         entries = manifest.get("components")
         if not isinstance(entries, dict):
-            return
+            return set()
         additions: set[str] = set()
         adopted = _read_adopted_components()
         for raw_component in entries:
@@ -663,6 +697,7 @@ class ComponentUpdateService:
             additions.add(component)
         if additions:
             self.updater.extend_managed_components(additions)
+        return additions
 
     def check(self) -> list[dict[str, Any]]:
         with self._lock:
@@ -751,7 +786,24 @@ class ComponentUpdateService:
                 "component installation authorization failed",
             )
         with self._lock:
-            return self._install_locked(component, manifest=manifest)
+            # Cross-process mutual exclusion spanning plan -> download ->
+            # apply -> activate/finalize. ``self._lock`` is process-local and
+            # the artifact download lease is released before activation, so
+            # without this lock two backend processes (e.g. an orphaned
+            # backend plus a fresh launch) could race ``_atomic_activate``
+            # over .previous/marker/destination. Component activation is
+            # safety-first: if the lock cannot be acquired, leave the durable
+            # pending record for a later startup instead of proceeding
+            # unlocked.
+            with plugin_install_lock(
+                _component_install_lock_path(component),
+                timeout=_COMPONENT_INSTALL_LOCK_TIMEOUT,
+            ) as acquired:
+                if not acquired:
+                    raise ComponentUpdateError(
+                        "component installation is already in progress",
+                    )
+                return self._install_locked(component, manifest=manifest)
 
     def _install_locked(
         self,
@@ -774,7 +826,7 @@ class ComponentUpdateService:
         if manifest is None:
             manifest = self.client.fetch_manifest(self.manifest_url)
         plugins = get_plugins_dir()
-        self._adopt_signed_new_components(manifest, plugins)
+        newly_signed = self._adopt_signed_new_components(manifest, plugins)
         if component not in self.updater.managed_components:
             raise ComponentUpdateError(
                 f"component is not managed: {component}",
@@ -784,6 +836,14 @@ class ComponentUpdateService:
             raise ComponentUpdateError(
                 f"component is missing from manifest: {component}",
             )
+        if component in newly_signed:
+            # Reaching the install path means the user queued/approved this
+            # signed new plugin. Persist that trust decision before touching
+            # its files: if download or activation fails, the durable pending
+            # record can retry on a later startup; after a successful install,
+            # a fresh service will not misclassify the directory as an
+            # unmanaged local plugin and silently stop offering updates.
+            set_component_update_adoption(component, True)
         directory_component = self.updater.is_directory_component(component)
         installed = (
             _resolve_installed_directory(self.updater, component)
@@ -830,6 +890,32 @@ class ComponentUpdateService:
                 ),
             )
             installed = destination if destination.is_dir() else None
+        else:
+            # Directory components finalize inline after apply, so a crash
+            # between _atomic_activate and finalize leaves a stale marker +
+            # previous tree that would otherwise block every future update of
+            # this version. The plugin-oriented recover path (restore /
+            # _commit_active) does not apply here: a directory component's
+            # current version is owned by active.json, and ``destination`` is
+            # the not-yet-active target-version tree. We only clear leftover
+            # activation artifacts so the version can be retried.
+            self.updater.recover_interrupted_directory_activation(
+                component,
+                destination,
+                expected_files=(
+                    entry.get("files")
+                    if isinstance(entry.get("files"), dict)
+                    else None
+                ),
+                expected_version=(
+                    str(entry.get("version"))
+                    if isinstance(entry.get("version"), str)
+                    else None
+                ),
+                preserve_paths=tuple(
+                    entry.get("preserve") or DEFAULT_PRESERVE_PATHS,
+                ),
+            )
         plan = self.updater.plan(
             manifest,
             component,
@@ -883,6 +969,13 @@ class ComponentUpdateService:
                     "kind": "delta",
                 }
             except ComponentUpdateError as exc:
+                if "already in progress" in str(exc):
+                    # Download-lease contention is not a delta failure: a peer
+                    # process is fetching the same artifact. Falling back to
+                    # the full artifact here would let both processes proceed
+                    # through DIFFERENT artifact leases into a racing
+                    # activation — exactly what the contention is preventing.
+                    raise
                 logger.warning(
                     "Delta update failed for %s; falling back to full: %s",
                     component,
@@ -999,7 +1092,18 @@ def run_startup_updates() -> dict[str, Any]:
                     exc_info=True,
                 )
                 errors.append({"component": component, "error": str(exc)})
-                _record_pending_failure(remaining_pending[component], exc)
+                # Download-lease contention means another update process is
+                # mid-download; it is not a real attempt and must not consume
+                # the limited retry budget.
+                is_contention = isinstance(
+                    exc,
+                    ComponentUpdateError,
+                ) and "already in progress" in str(exc)
+                _record_pending_failure(
+                    remaining_pending[component],
+                    exc,
+                    count_attempt=not is_contention,
+                )
     except Exception as exc:  # noqa: BLE001
         logger.warning("Startup component update check failed", exc_info=True)
         errors.append({"component": "manifest", "error": str(exc)})

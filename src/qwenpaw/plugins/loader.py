@@ -2,8 +2,10 @@
 """Plugin loader for discovering and loading plugins."""
 
 import asyncio
+import importlib.metadata
 import importlib.util
 import inspect
+import threading
 import json
 import logging
 import os
@@ -11,7 +13,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import threading
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -104,6 +105,19 @@ def _install_lock_path(plugin_id: str) -> Path:
     return _plugin_runtime_dir() / "install-locks" / f"{safe_id}.lock"
 
 
+def _shared_install_lock_path() -> Path:
+    """Path to the global lock serialising writes to the shared dep target.
+
+    Every plugin installs into the same target (the plugin site dir in the
+    frozen build, the current environment otherwise). ``pip`` is not
+    concurrent-safe against a shared ``--target``: two parallel installers
+    can interleave files from different versions of a shared dependency and
+    leave a corrupt hybrid install. The per-plugin lock does not help here —
+    it keys on plugin id, not on the target. This global lock does.
+    """
+    return _plugin_runtime_dir() / "install-locks" / "_shared-target.lock"
+
+
 def _norm_realpath(path: Any) -> str:
     """``realpath`` + ``normcase`` for cross-platform path identity.
 
@@ -175,6 +189,21 @@ _LIFECYCLE_HELD: ContextVar[Optional[_LifecycleHoldKey]] = ContextVar(
     "qwenpaw_plugin_lifecycle_held",
     default=None,
 )
+
+# Cache of requirement lines already verified satisfied in *this* process.
+# ``load_all_plugins`` calls ``_ensure_dependencies_installed`` once per
+# plugin, and the frozen desktop build probes the same requirements.txt
+# entries over and over. ``importlib.metadata`` cannot see the user-writable
+# plugin site dir, so every unsatisfied-looking requirement would otherwise
+# re-trigger an expensive ``pip install`` subprocess on *every* launch
+# (the multi-minute startup users reported). Requirements are immutable
+# within a process lifetime, so memoising "already satisfied" is safe and
+# turns the per-launch cost from minutes into microseconds.
+# Guarded by a lock: probes run on the event-loop thread while install
+# double-checks run in ``asyncio.to_thread`` workers, so check-then-add
+# would otherwise race across threads.
+_SATISFIED_REQUIREMENTS: set[str] = set()
+_SATISFIED_LOCK = threading.Lock()
 
 
 def _ensure_plugin_site_on_path() -> None:
@@ -375,10 +404,27 @@ class PluginLoader:
           are not misreported as missing (issue #5209).
         """
         # 1) Metadata probe: reliable for --target installs and version checks.
+        #    In the frozen desktop build the deps live in the user-writable
+        #    plugin site dir, which ``importlib.metadata`` does not search by
+        #    default, so we extend the probe with that directory. Without it
+        #    every requirement looks unsatisfied and is reinstalled on every
+        #    launch (the multi-minute startup users reported).
+        installed: Optional[str] = None
         try:
             installed = _dist_version(req.name)
         except PackageNotFoundError:
-            installed = None
+            if _is_frozen():
+                try:
+                    site = str(_plugin_site_dir())
+                    dists = importlib.metadata.Distribution.discover(
+                        name=req.name,
+                        path=[site],
+                    )
+                    for _d in dists:
+                        installed = _d.version
+                        break
+                except Exception:
+                    installed = None
         if installed is not None:
             if not req.specifier:
                 return True
@@ -411,12 +457,20 @@ class PluginLoader:
             line = line.strip()
             if not line or line.startswith("#") or line.startswith("-"):
                 continue
+            # Fast path: requirement already verified satisfied this process.
+            with _SATISFIED_LOCK:
+                cached = line in _SATISFIED_REQUIREMENTS
+            if cached:
+                continue
             try:
                 req = Requirement(line)
             except Exception:
                 continue
             if not PluginLoader._is_requirement_satisfied(req):
                 missing.append(line)
+            else:
+                with _SATISFIED_LOCK:
+                    _SATISFIED_REQUIREMENTS.add(line)
 
         return missing
 
@@ -484,7 +538,26 @@ class PluginLoader:
                     plugin_id,
                 )
                 return
-            self._install_requirements(requirements_file, plugin_id)
+            # Serialise the actual pip run across ALL plugins: every plugin
+            # writes into the same shared target dir and pip is not
+            # concurrent-safe there. The long timeout accommodates several
+            # queued installs; the cheap probes above stay concurrent.
+            with plugin_install_lock(
+                _shared_install_lock_path(),
+                timeout=1800.0,
+            ):
+                # Re-probe under the global lock: a plugin that installed
+                # while we queued may have satisfied our shared deps too.
+                _ensure_plugin_site_on_path()
+                importlib.invalidate_caches()
+                if not self._find_unsatisfied_dependencies(requirements_file):
+                    logger.info(
+                        "Plugin '%s' dependencies satisfied while waiting "
+                        "for the shared install lock; skipping pip install",
+                        plugin_id,
+                    )
+                    return
+                self._install_requirements(requirements_file, plugin_id)
 
     def _validate_entry_points(
         self,
@@ -676,6 +749,8 @@ class PluginLoader:
         manifest: PluginManifest,
         source_path: Path,
         config: Optional[Dict] = None,
+        *,
+        deps_ensured: bool = False,
     ) -> PluginRecord:
         """Load a single plugin.
 
@@ -683,6 +758,10 @@ class PluginLoader:
             manifest: Plugin manifest
             source_path: Path to plugin directory
             config: Optional plugin configuration
+            deps_ensured: Skip the dependency check when the caller already
+                ran ``_ensure_dependencies_installed`` for this plugin in the
+                current batch (used by ``load_all_plugins`` phase 1). Callers
+                outside a batch must leave this False.
 
         Returns:
             PluginRecord instance
@@ -697,6 +776,7 @@ class PluginLoader:
                 manifest,
                 source_path,
                 config,
+                deps_ensured=deps_ensured,
             )
 
     async def _load_plugin_unlocked(
@@ -704,6 +784,8 @@ class PluginLoader:
         manifest: PluginManifest,
         source_path: Path,
         config: Optional[Dict] = None,
+        *,
+        deps_ensured: bool = False,
     ) -> PluginRecord:
         """Load a plugin; caller must hold :meth:`plugin_lifecycle`."""
         plugin_id = manifest.id
@@ -728,8 +810,11 @@ class PluginLoader:
             self._loaded_plugins[plugin_id] = record
             return record
 
-        # Ensure plugin dependencies are installed before loading
-        await self._ensure_dependencies_installed(source_path, plugin_id)
+        # Ensure plugin dependencies are installed before loading. Skipped
+        # when the batch loader already ensured them (avoids a redundant
+        # serial re-check per plugin after the concurrent install phase).
+        if not deps_ensured:
+            await self._ensure_dependencies_installed(source_path, plugin_id)
 
         backend_entry = manifest.entry.backend
         frontend_entry = manifest.entry.frontend
@@ -815,13 +900,69 @@ class PluginLoader:
             ),
         )
 
-        for manifest, plugin_dir in discovered:
-            if types is not None and manifest.plugin_type not in types:
-                continue
-            config = configs.get(manifest.id) if configs else None
+        # Phase 1: install dependencies for every selected plugin
+        # concurrently. Dependency installation is the dominant startup cost
+        # (each ``pip install`` subprocess takes seconds-to-minutes) and is
+        # safely parallel: installs for *different* plugins use per-plugin
+        # inter-process locks and an isolated target dir, and the import probe
+        # cache makes already-satisfied plugins return instantly. Running this
+        # phase up-front also means a plugin that finishes installing early
+        # does not have to wait behind unrelated installs before it loads.
+        selected = [
+            (manifest, plugin_dir)
+            for manifest, plugin_dir in discovered
+            if types is None or manifest.plugin_type in types
+        ]
 
+        # Track which plugins finished phase 1 successfully; phase 2 skips
+        # the redundant per-plugin dependency re-check for exactly those.
+        # Mutation happens only on the event-loop thread (the coroutine
+        # bodies never yield between check and add), so no extra locking.
+        deps_ready: set[str] = set()
+
+        async def _install_deps(
+            manifest: "PluginManifest",
+            plugin_dir: Path,
+        ) -> None:
             try:
-                await self.load_plugin(manifest, plugin_dir, config)
+                await self._ensure_dependencies_installed(
+                    plugin_dir,
+                    manifest.id,
+                )
+                deps_ready.add(manifest.id)
+            except Exception as e:
+                # Defer hard failure to the load phase below so the plugin is
+                # still reported as failed through the normal record path:
+                # load_plugin retries the install once (serially) and, on
+                # failure, records the plugin as failed with diagnostics.
+                logger.debug(
+                    "Dependency install for '%s' failed "
+                    "(will retry at load): %s",
+                    manifest.id,
+                    e,
+                )
+
+        await asyncio.gather(
+            *(
+                _install_deps(manifest, plugin_dir)
+                for manifest, plugin_dir in selected
+            ),
+        )
+
+        # Phase 2: load (import + register) serially. Importing is CPU-bound
+        # under the GIL and plugins may share transitive sub-dependency
+        # modules, so concurrent imports risk partially-initialized module
+        # races; keeping it sequential is both correct and, with deps already
+        # installed, fast.
+        for manifest, plugin_dir in selected:
+            config = configs.get(manifest.id) if configs else None
+            try:
+                await self.load_plugin(
+                    manifest,
+                    plugin_dir,
+                    config,
+                    deps_ensured=manifest.id in deps_ready,
+                )
             except Exception as e:
                 logger.error(f"Failed to load plugin '{manifest.id}': {e}")
 
@@ -877,6 +1018,8 @@ class PluginLoader:
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
         ) as proc:
 
@@ -906,6 +1049,20 @@ class PluginLoader:
             stdout=combined,
             stderr="",
         )
+
+    @staticmethod
+    def _after_successful_install() -> None:
+        """Refresh import machinery and the satisfied-cache after install.
+
+        Must run on every successful install path (frozen, pip, uv): the
+        dependency set changed, so finder caches are stale and any memoised
+        "satisfied" verdicts must be re-probed against the new packages
+        (the post-install double-check in ``_install_requirements_locked``
+        depends on this).
+        """
+        importlib.invalidate_caches()
+        with _SATISFIED_LOCK:
+            _SATISFIED_REQUIREMENTS.clear()
 
     def _install_requirements(
         self,
@@ -965,6 +1122,7 @@ class PluginLoader:
             ) from exc
 
         if result.returncode == 0:
+            self._after_successful_install()
             logger.info(
                 f"Dependencies installed for plugin '{plugin_id}'"
                 " (via pip)",
@@ -1020,6 +1178,7 @@ class PluginLoader:
                 f"Dependency installation failed for '{plugin_id}' "
                 f"(via uv): {uv_result.stderr}",
             )
+        self._after_successful_install()
         logger.info(
             f"Dependencies installed for plugin '{plugin_id}' (via uv)",
         )
@@ -1076,7 +1235,7 @@ class PluginLoader:
                 f"Dependency installation failed for '{plugin_id}': "
                 f"{result.stdout}",
             )
-        importlib.invalidate_caches()
+        self._after_successful_install()
         logger.info(
             "Dependencies installed for plugin '%s' into %s",
             plugin_id,

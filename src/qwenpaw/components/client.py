@@ -28,6 +28,11 @@ _CACHE_MAX_ARTIFACTS = 12
 _CACHE_MAX_ARTIFACT_BYTES = 4 * 1024 * 1024 * 1024
 _ORPHAN_PART_SECONDS = 7 * 24 * 60 * 60
 _ORPHAN_TMP_SECONDS = 24 * 60 * 60
+# A live download holds the lease far shorter than this; anything older is a
+# crash remnant (kill -9 / power loss) and must be reclaimable instead of
+# blocking every retry for a full day.
+_DOWNLOAD_LEASE_STALE_SECONDS = 30 * 60
+_DOWNLOAD_LEASE_OWNER = ".owner"
 _DEFAULT_LEGACY_UNTIL_CORE = "2.2.0"
 
 
@@ -373,12 +378,7 @@ class ComponentClient:
                         return final
                     if final.exists() or final.is_symlink():
                         final.unlink(missing_ok=True)
-                    try:
-                        lease.mkdir()
-                    except FileExistsError as exc:
-                        raise ComponentUpdateError(
-                            "artifact cache download is already in progress",
-                        ) from exc
+                    lease_token = self._acquire_download_lease(lease, partial)
                     try:
                         return self._download_artifact_locked(
                             url,
@@ -388,7 +388,7 @@ class ComponentClient:
                             partial,
                         )
                     finally:
-                        shutil.rmtree(lease, ignore_errors=True)
+                        self._release_download_lease(lease, lease_token)
             except (httpx.HTTPError, OSError, ComponentUpdateError) as exc:
                 last_error = exc
                 if attempt < 2:
@@ -396,6 +396,98 @@ class ComponentClient:
         raise ComponentUpdateError(
             f"artifact download failed after retries: {last_error}",
         ) from last_error
+
+    def _acquire_download_lease(self, lease: Path, partial: Path) -> str:
+        """Acquire the per-artifact download lease; returns the owner token.
+
+        Three safeguards over a bare ``mkdir`` lease:
+
+        * **Liveness heartbeat**: an active download keeps rewriting
+          ``partial``, so its mtime acts as a heartbeat. A lease counts as a
+          crash remnant only when BOTH the lease dir and the in-flight
+          payload have been quiet past ``_DOWNLOAD_LEASE_STALE_SECONDS`` —
+          large artifacts (python-packages can be GiB) legitimately download
+          longer than the TTL on slow links, and lease-dir mtime alone would
+          condemn a healthy long download.
+        * **Atomic reclaim**: a stale lease is claimed by ``os.rename`` to a
+          unique quarantine name first. Only one reclaimer wins the rename,
+          which closes the check-then-delete race where two reclaimers could
+          each ``rmtree`` the other's freshly acquired lease.
+        * **Owner token**: the acquirer writes a random token inside the
+          lease. Release only removes the directory while the token still
+          matches, so a process whose lease was reclaimed cannot delete the
+          lease of whoever acquired it next.
+        """
+        token = uuid.uuid4().hex
+        try:
+            lease.mkdir()
+            (lease / _DOWNLOAD_LEASE_OWNER).write_text(
+                token,
+                encoding="utf-8",
+            )
+            return token
+        except FileExistsError:
+            pass
+        now = time.time()
+        live = True  # fail closed: cannot prove staleness -> treat as live
+        try:
+            live = now - lease.stat().st_mtime <= _DOWNLOAD_LEASE_STALE_SECONDS
+        except OSError:
+            pass
+        if not live and partial.is_file():
+            try:
+                live = (
+                    now - partial.stat().st_mtime
+                    <= _DOWNLOAD_LEASE_STALE_SECONDS
+                )
+            except OSError:
+                pass
+        if live:
+            raise ComponentUpdateError(
+                "artifact cache download is already in progress",
+            )
+        quarantine = lease.with_name(f"{lease.name}.reclaim-{token}")
+        logger.warning(
+            "Reclaiming stale artifact download lease: %s",
+            lease,
+        )
+        try:
+            os.rename(lease, quarantine)
+        except OSError as exc:
+            # Another reclaimer won the rename, or a new owner acquired the
+            # lease between our staleness check and here.
+            raise ComponentUpdateError(
+                "artifact cache download is already in progress",
+            ) from exc
+        shutil.rmtree(quarantine, ignore_errors=True)
+        try:
+            lease.mkdir()
+            (lease / _DOWNLOAD_LEASE_OWNER).write_text(
+                token,
+                encoding="utf-8",
+            )
+            return token
+        except FileExistsError as exc:
+            raise ComponentUpdateError(
+                "artifact cache download is already in progress",
+            ) from exc
+
+    def _release_download_lease(self, lease: Path, token: str) -> None:
+        """Remove the lease only while we still own it.
+
+        After a stale reclaim the directory belongs to another process;
+        deleting it would break that owner's mutual exclusion.
+        """
+        try:
+            owner = (
+                (lease / _DOWNLOAD_LEASE_OWNER)
+                .read_text(encoding="utf-8")
+                .strip()
+            )
+        except OSError:
+            return
+        if owner == token:
+            shutil.rmtree(lease, ignore_errors=True)
 
     def _download_artifact_locked(
         self,

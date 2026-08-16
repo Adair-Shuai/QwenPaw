@@ -28,6 +28,8 @@ marker).  This is exposed via the CLI command
 ``qwenpaw plugin sync-bundled --force``.
 """
 
+# pylint: disable=too-many-branches,too-many-statements
+
 from __future__ import annotations
 
 import hashlib
@@ -47,6 +49,8 @@ logger = logging.getLogger(__name__)
 _BUNDLE_HASH_FILE = ".bundle_hash"  # development content hash (legacy API)
 _BUNDLE_REVISION_FILE = ".bundle_revision"
 _BUNDLE_COMPLETE_FILE = ".bundle_complete"
+_BUNDLE_ACTIVATION_SUFFIX = ".bundled-activation.json"
+_BUNDLE_PREVIOUS_SUFFIX = ".bundled-previous"
 _BUNDLE_HASH_MODE_ENV = "QWENPAW_BUNDLED_PLUGIN_HASH"
 _UNINSTALLED_DIR = ".uninstalled"
 _UNINSTALLED_MESSAGE = (
@@ -451,6 +455,132 @@ def _copy_missing_tree(source: Path, target: Path) -> None:
         shutil.copy2(path, destination)
 
 
+def _bundled_activation_paths(
+    plugin_id: str,
+    *,
+    plugins_dir: Path,
+) -> tuple[Path, Path, Path]:
+    """Return the target, previous tree, and health-check marker paths."""
+    safe_id = validate_plugin_id(plugin_id)
+    root = Path(plugins_dir)
+    return (
+        root / safe_id,
+        root / f".{safe_id}{_BUNDLE_PREVIOUS_SUFFIX}",
+        root / f".{safe_id}{_BUNDLE_ACTIVATION_SUFFIX}",
+    )
+
+
+def _remove_plugin_tree(path: Path) -> None:
+    """Remove one plugin tree without following a link-like entry."""
+    if hasattr(os.path, "isjunction") and os.path.isjunction(str(path)):
+        path.rmdir()
+    elif path.is_symlink():
+        path.unlink(missing_ok=True)
+    elif path.exists():
+        shutil.rmtree(path)
+
+
+def _write_bundled_activation_marker(
+    marker: Path,
+    *,
+    plugin_id: str,
+    had_previous: bool,
+) -> None:
+    """Publish a marker only after the candidate tree is fully visible."""
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=marker.parent,
+            prefix=f".{marker.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            json.dump(
+                {
+                    "schema_version": 1,
+                    "plugin_id": plugin_id,
+                    "had_previous": had_previous,
+                },
+                handle,
+                sort_keys=True,
+            )
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+            temporary = Path(handle.name)
+        os.replace(temporary, marker)
+        temporary = None
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def finalize_bundled_plugin_activation(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+) -> None:
+    """Commit a bundled candidate after PluginLoader reports it healthy."""
+    root = _plugins_root(plugins_dir)
+    _target, previous, marker = _bundled_activation_paths(
+        plugin_id,
+        plugins_dir=root,
+    )
+    if previous.is_symlink() or marker.is_symlink():
+        raise ValueError("bundled activation artifacts may not be symlinks")
+    if previous.exists():
+        shutil.rmtree(previous)
+    marker.unlink(missing_ok=True)
+
+
+def rollback_bundled_plugin_activation(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+) -> bool:
+    """Restore the last-known-good bundled tree after a failed load.
+
+    Returns ``True`` when an older installation was restored. A failed first
+    installation has no previous tree, so its broken candidate is removed.
+    """
+    root = _plugins_root(plugins_dir)
+    target, previous, marker = _bundled_activation_paths(
+        plugin_id,
+        plugins_dir=root,
+    )
+    if previous.is_symlink() or marker.is_symlink():
+        raise ValueError("bundled activation artifacts may not be symlinks")
+    _remove_plugin_tree(target)
+    restored = previous.is_dir()
+    if restored:
+        previous.replace(target)
+    marker.unlink(missing_ok=True)
+    return restored
+
+
+def recover_interrupted_bundled_activation(
+    plugin_id: str,
+    *,
+    plugins_dir: Path | None = None,
+) -> bool:
+    """Restore a candidate whose process exited before its health check."""
+    root = _plugins_root(plugins_dir)
+    _target, previous, marker = _bundled_activation_paths(
+        plugin_id,
+        plugins_dir=root,
+    )
+    if not marker.exists() and not previous.exists():
+        return False
+    logger.warning(
+        "Recovering interrupted bundled plugin activation for '%s'",
+        plugin_id,
+    )
+    rollback_bundled_plugin_activation(plugin_id, plugins_dir=root)
+    return True
+
+
 def _stage_and_replace_bundle(
     source: Path,
     target: Path,
@@ -458,6 +588,8 @@ def _stage_and_replace_bundle(
     preserve_dirs: frozenset[str],
     *,
     bundle_revision: str | None = None,
+    defer_activation_cleanup: bool = False,
+    plugin_id: str | None = None,
 ) -> None:
     """Build a complete replacement beside target and swap with rollback."""
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -472,11 +604,24 @@ def _stage_and_replace_bundle(
     # both the new-file rename and the rollback rename (for example because
     # an antivirus scanner briefly holds a handle), the unconditional
     # staging cleanup must not delete the user's last working installation.
-    previous = target.parent / staging_root.name.replace(
-        ".staging-",
-        ".previous-",
-        1,
-    )
+    marker: Path | None = None
+    if defer_activation_cleanup:
+        activation_id = validate_plugin_id(plugin_id or target.name)
+        _target, previous, marker = _bundled_activation_paths(
+            activation_id,
+            plugins_dir=target.parent,
+        )
+        if previous.exists() or marker.exists() or marker.is_symlink():
+            raise RuntimeError(
+                f"stale bundled activation exists for {activation_id}",
+            )
+    else:
+        activation_id = plugin_id or target.name
+        previous = target.parent / staging_root.name.replace(
+            ".staging-",
+            ".previous-",
+            1,
+        )
     try:
         _copy_bundle(source, staged)
         if target.is_dir():
@@ -510,7 +655,23 @@ def _stage_and_replace_bundle(
                         f"at {previous}",
                     ) from rollback_exc
             raise
-        if previous.exists():
+        if marker is not None:
+            try:
+                _write_bundled_activation_marker(
+                    marker,
+                    plugin_id=activation_id,
+                    had_previous=previous.exists(),
+                )
+            except Exception:
+                failed = target.parent / f".{target.name}.bundled-failed"
+                _remove_plugin_tree(failed)
+                if target.exists():
+                    target.replace(failed)
+                if previous.exists() and not target.exists():
+                    previous.replace(target)
+                _remove_plugin_tree(failed)
+                raise
+        elif previous.exists():
             try:
                 shutil.rmtree(previous)
             except OSError:
@@ -701,6 +862,7 @@ def _install_or_update_plugin(
     bundled_manifest: dict[str, Any],
     *,
     force: bool = False,
+    defer_activation_cleanup: bool = False,
 ) -> bool:
     """Install or update a single bundled plugin.
 
@@ -818,6 +980,8 @@ def _install_or_update_plugin(
             bundled_hash,
             _PRESERVE_ON_UPDATE_DIRS,
             bundle_revision=None if hash_enabled else bundled_revision,
+            defer_activation_cleanup=defer_activation_cleanup,
+            plugin_id=plugin_id,
         )
         return True
 
@@ -835,6 +999,8 @@ def _install_or_update_plugin(
             bundled_hash,
             frozenset(),
             bundle_revision=None if hash_enabled else bundled_revision,
+            defer_activation_cleanup=defer_activation_cleanup,
+            plugin_id=plugin_id,
         )
         return True
     except Exception as exc:
@@ -850,6 +1016,7 @@ def ensure_bundled_plugins_installed(
     *,
     force: bool = False,
     skip_ids: set[str] | None = None,
+    defer_activation_cleanup: bool = False,
 ) -> list[str]:
     """Copy bundled plugins into the user's plugins directory.
 
@@ -862,6 +1029,9 @@ def ensure_bundled_plugins_installed(
             and always re-copy every bundled plugin (unless the user
             has explicitly uninstalled it).  Useful for recovering
             from stale plugin states after a software upgrade.
+        defer_activation_cleanup: Keep the previous tree and an activation
+            marker until the startup PluginLoader confirms the candidate.
+            Non-startup callers retain the legacy eager-finalize behavior.
 
     Returns:
         List of plugin IDs that were newly installed or updated.
@@ -922,12 +1092,20 @@ def ensure_bundled_plugins_installed(
                 continue
 
             try:
+                # A prior process may have exited after publishing a bundled
+                # candidate but before PluginLoader could confirm it. Restore
+                # the last-known-good tree, then retry the current bundle.
+                recover_interrupted_bundled_activation(
+                    plugin_id,
+                    plugins_dir=plugins_dir,
+                )
                 if _install_or_update_plugin(
                     item,
                     target_dir,
                     plugin_id,
                     bundled_manifest,
                     force=force,
+                    defer_activation_cleanup=defer_activation_cleanup,
                 ):
                     installed_or_updated.append(plugin_id)
             except Exception:

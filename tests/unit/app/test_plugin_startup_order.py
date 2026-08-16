@@ -107,3 +107,73 @@ def test_registry_and_runtime_readiness_are_distinct() -> None:
     assert hook_invoke_lines
     assert min(state_lines["registry_ready"]) < min(hook_invoke_lines)
     assert max(state_lines["ready"]) > max(hook_invoke_lines)
+
+
+def test_directory_components_skip_plugin_health_check_rollback() -> None:
+    """P0-2 guard: directory components must be skipped in the health loop.
+
+    A directory component (backend, runtimes) is not a plugin, so
+    ``loaded_plugins.get(id)`` is always None. Without the skip, the health
+    check would "roll back" every successfully updated directory component,
+    find no previous tree, and delete its freshly committed active.json
+    record -- permanently breaking updates for that component. This scans the
+    health-check loop and requires the ``is_directory_component`` guard to
+    appear before the rollback call.
+    """
+    startup = _background_startup_node()
+    loop_lines = {
+        "guard": [],
+        "rollback": [],
+    }
+    for node in ast.walk(startup):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        attr = func.attr if isinstance(func, ast.Attribute) else None
+        if attr == "is_directory_component":
+            loop_lines["guard"].append(node.lineno)
+        elif attr == "rollback_activation":
+            loop_lines["rollback"].append(node.lineno)
+    assert loop_lines[
+        "rollback"
+    ], "rollback_activation call not found in _background_startup"
+    assert loop_lines["guard"], (
+        "health-check loop must skip directory components via "
+        "is_directory_component before any rollback (P0-2 regression)"
+    )
+    assert min(loop_lines["guard"]) < max(
+        loop_lines["rollback"],
+    ), "the is_directory_component skip must precede the rollback call"
+
+
+def test_bundled_candidates_are_health_checked_before_agent_startup() -> None:
+    """Bundled software upgrades must finalize or roll back after loading."""
+    startup = _background_startup_node()
+    calls: dict[str, list[int]] = {
+        "load_all_plugins": [],
+        "finalize_bundled_plugin_activation": [],
+        "rollback_bundled_plugin_activation": [],
+        "start_all_configured_agents": [],
+    }
+    for node in ast.walk(startup):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = (
+            func.attr
+            if isinstance(func, ast.Attribute)
+            else func.id
+            if isinstance(func, ast.Name)
+            else None
+        )
+        if name in calls:
+            calls[name].append(node.lineno)
+
+    assert calls["finalize_bundled_plugin_activation"]
+    assert calls["rollback_bundled_plugin_activation"]
+    assert max(calls["load_all_plugins"]) < min(
+        calls["finalize_bundled_plugin_activation"],
+    )
+    assert max(calls["rollback_bundled_plugin_activation"]) < min(
+        calls["start_all_configured_agents"],
+    )

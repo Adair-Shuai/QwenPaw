@@ -8,7 +8,18 @@ import json
 import shutil
 from pathlib import Path
 
-PLUGIN_DENYLIST = frozenset({"cloudpaw", "qwenpaw-pet"})
+# Plugins excluded from the desktop bundle. Users install these on demand
+# from the plugin market instead of receiving them in every release.
+#   cloudpaw / qwenpaw-pet : already excluded (in plugins/bundle).
+#   qwenpaw-creator        : heavy geospatial/3D deps (geopandas, trimesh,
+#                            matplotlib, playwright); pulls ~GBs into the
+#                            installer and slows startup, so ship it via the
+#                            market rather than bundled.
+#   azure-bot              : lives in plugins/channel (not a default bundled
+#                            root) but listed here for explicit intent.
+PLUGIN_DENYLIST = frozenset(
+    {"cloudpaw", "qwenpaw-pet", "qwenpaw-creator", "azure-bot"},
+)
 DEFAULT_PLUGIN_ROOTS = ("bundle", "apps")
 _IGNORED_NAMES = frozenset(
     {

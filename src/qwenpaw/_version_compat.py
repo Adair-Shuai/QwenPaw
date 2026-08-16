@@ -5,9 +5,11 @@ Semantics: left-closed, right-open interval  ``>=min, <max``.
 When ``max`` is not specified, it is derived from ``min`` as
 ``{major}.{minor+1}.0`` (all patch versions of the same minor).
 
-NOTE: Upper-bound (``max``) enforcement is temporarily disabled.
-Restore the commented check in ``check_plugin_version_compat`` when
-re-enabling full range checks.
+Both bounds are enforced (fail closed): a plugin whose declared ``max``
+does not cover the running core is disabled at load time with a clear
+diagnostic, instead of being allowed to break at runtime. When bumping the
+core past a plugin's ``max``, update that plugin's ``qwenpaw_version.max``
+in the same release.
 """
 
 from __future__ import annotations
@@ -64,15 +66,10 @@ def check_plugin_version_compat(
             else _derive_exclusive_max(manifest.min_version)
         )
 
-    # Temporary: only enforce >= min.  Original full-range check:
-    # if current < min_v or current >= max_v:
-    #     msg = (
-    #         f"requires QwenPaw >={min_v}, <{max_v}, current is {current}"
-    #     )
-    #     return False, msg
-    # return True, ""
-    if current < min_v:
-        msg = f"requires QwenPaw >={min_v}, current is {current}"
+    # Full-range check: left-closed, right-open (>=min, <max).  The upper
+    # bound is enforced so a plugin cannot silently run on an incompatible
+    # newer core after an upstream merge bumps the version.
+    if current < min_v or current >= max_v:
+        msg = f"requires QwenPaw >={min_v}, <{max_v}, current is {current}"
         return False, msg
-    _ = max_v  # retained for restoring the upper-bound check above
     return True, ""

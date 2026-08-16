@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 from __future__ import annotations
 
 import base64
@@ -287,4 +288,159 @@ def test_cache_prunes_orphan_part_and_old_manifests(
     downloader._prune_cache(protected=set())
     assert not orphan.exists()
     assert len([item for item in manifests.iterdir() if item.is_dir()]) == 8
+    downloader.close()
+
+
+def _p1_client(tmp_path, handler):
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components=set(),
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    return ComponentClient(
+        updater,
+        tmp_path / "cache",
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+
+def test_stale_download_lease_is_reclaimed(tmp_path):
+    """P1-1a: a crash-remnant lease older than the TTL must not block a day."""
+    artifact = b"data"
+    calls = 0
+
+    def handler(_request):
+        nonlocal calls
+        calls += 1
+        return httpx.Response(
+            200,
+            content=artifact,
+            headers={"Content-Length": str(len(artifact))},
+        )
+
+    downloader = _p1_client(tmp_path, handler)
+    digest = hashlib.sha256(artifact).hexdigest()
+    lease = downloader.cache_root / "artifacts" / digest / ".download.lock"
+    lease.mkdir(parents=True)
+    # Age the lease well past the staleness TTL (simulated crash remnant).
+    old = time.time() - 3600
+    os.utime(lease, (old, old))
+
+    path = downloader.download_artifact(
+        "https://oss.example/artifact.zip",
+        sha256=digest,
+        size=len(artifact),
+        name="artifact.zip",
+    )
+    assert path.read_bytes() == artifact
+    assert calls == 1
+    downloader.close()
+
+
+def test_fresh_download_lease_still_blocks(tmp_path):
+    """P1-1a guard rail: a live (fresh) lease must still fail fast."""
+    artifact = b"data"
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components=set(),
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    downloader = ComponentClient(
+        updater,
+        tmp_path / "cache",
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _r: httpx.Response(200, content=artifact),
+            ),
+        ),
+    )
+    digest = hashlib.sha256(artifact).hexdigest()
+    lease = downloader.cache_root / "artifacts" / digest / ".download.lock"
+    lease.mkdir(parents=True)  # fresh mtime => live download
+    with pytest.raises(ComponentUpdateError, match="already in progress"):
+        downloader.download_artifact(
+            "https://oss.example/artifact.zip",
+            sha256=digest,
+            size=len(artifact),
+            name="artifact.zip",
+        )
+    downloader.close()
+
+
+def test_long_download_lease_with_fresh_part_is_not_reclaimed(tmp_path):
+    """Claim 1: a >TTL download with an actively written .part stays live."""
+    artifact = b"data"
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components=set(),
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    downloader = ComponentClient(
+        updater,
+        tmp_path / "cache",
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _r: httpx.Response(200, content=artifact),
+            ),
+        ),
+    )
+    digest = hashlib.sha256(artifact).hexdigest()
+    root = downloader.cache_root / "artifacts" / digest
+    lease = root / ".download.lock"
+    part = root / "artifact.zip.part"
+    lease.mkdir(parents=True)
+    # Lease dir looks ancient (long download started 2h ago)...
+    old = time.time() - 7200
+    os.utime(lease, (old, old))
+    # ...but the payload is being written right now => still live.
+    part.write_bytes(b"partial")
+
+    with pytest.raises(ComponentUpdateError, match="already in progress"):
+        downloader.download_artifact(
+            "https://oss.example/artifact.zip",
+            sha256=digest,
+            size=len(artifact),
+            name="artifact.zip",
+        )
+    downloader.close()
+
+
+def test_old_owner_cannot_delete_reclaimed_lease(tmp_path):
+    """Claim 1: releasing with a stale token must not remove the new lease."""
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components=set(),
+        target="windows-x86_64",
+        core_version="1.0.0",
+    )
+    downloader = ComponentClient(
+        updater,
+        tmp_path / "cache",
+        client=httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _r: httpx.Response(200, content=b"data"),
+            ),
+        ),
+    )
+    root = downloader.cache_root / "artifacts" / "abc"
+    root.mkdir(parents=True)
+    lease = root / ".download.lock"
+    part = root / "a.zip.part"
+    # Process A acquires.
+    token_a = downloader._acquire_download_lease(lease, part)
+    # Force staleness (lease + part both ancient).
+    old = time.time() - 7200
+    os.utime(lease, (old, old))
+    # Process B reclaims and acquires.
+    token_b = downloader._acquire_download_lease(lease, part)
+    assert token_b != token_a
+    # A finally finishes and tries to release; must NOT delete B's lease.
+    downloader._release_download_lease(lease, token_a)
+    assert lease.is_dir(), "old owner must not remove the reclaimed lease"
+    # B releases normally.
+    downloader._release_download_lease(lease, token_b)
+    assert not lease.exists()
     downloader.close()

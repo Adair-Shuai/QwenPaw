@@ -422,6 +422,120 @@ def test_failed_rollback_retains_previous_plugin_backup(
     )
 
 
+def test_deferred_bundled_update_rolls_back_after_failed_load(
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    plugins = tmp_path / "plugins"
+    target = plugins / "critical-plugin"
+    manifest = _write_plugin(source, "2.0.0")
+    _write_plugin(target, "1.0.0")
+
+    assert bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+        defer_activation_cleanup=True,
+    )
+    assert (target / "plugin.py").read_text(encoding="utf-8") == (
+        'VERSION = "2.0.0"\n'
+    )
+    _target, previous, marker = bundled._bundled_activation_paths(
+        "critical-plugin",
+        plugins_dir=plugins,
+    )
+    assert previous.is_dir()
+    assert marker.is_file()
+
+    assert bundled.rollback_bundled_plugin_activation(
+        "critical-plugin",
+        plugins_dir=plugins,
+    )
+    assert (target / "plugin.py").read_text(encoding="utf-8") == (
+        'VERSION = "1.0.0"\n'
+    )
+    assert not previous.exists()
+    assert not marker.exists()
+
+
+def test_deferred_bundled_update_finalizes_only_after_health(tmp_path) -> None:
+    source = tmp_path / "source"
+    plugins = tmp_path / "plugins"
+    target = plugins / "critical-plugin"
+    manifest = _write_plugin(source, "2.0.0")
+    _write_plugin(target, "1.0.0")
+
+    assert bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+        defer_activation_cleanup=True,
+    )
+    bundled.finalize_bundled_plugin_activation(
+        "critical-plugin",
+        plugins_dir=plugins,
+    )
+
+    _target, previous, marker = bundled._bundled_activation_paths(
+        "critical-plugin",
+        plugins_dir=plugins,
+    )
+    assert (target / "plugin.py").read_text(encoding="utf-8") == (
+        'VERSION = "2.0.0"\n'
+    )
+    assert not previous.exists()
+    assert not marker.exists()
+
+
+def test_failed_first_bundled_install_removes_unhealthy_candidate(
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    plugins = tmp_path / "plugins"
+    target = plugins / "critical-plugin"
+    manifest = _write_plugin(source, "1.0.0")
+
+    assert bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+        defer_activation_cleanup=True,
+    )
+    assert not bundled.rollback_bundled_plugin_activation(
+        "critical-plugin",
+        plugins_dir=plugins,
+    )
+    assert not target.exists()
+
+
+def test_interrupted_bundled_activation_restores_previous_tree(
+    tmp_path,
+) -> None:
+    source = tmp_path / "source"
+    plugins = tmp_path / "plugins"
+    target = plugins / "critical-plugin"
+    manifest = _write_plugin(source, "2.0.0")
+    _write_plugin(target, "1.0.0")
+    bundled._install_or_update_plugin(
+        source,
+        target,
+        "critical-plugin",
+        manifest,
+        defer_activation_cleanup=True,
+    )
+
+    assert bundled.recover_interrupted_bundled_activation(
+        "critical-plugin",
+        plugins_dir=plugins,
+    )
+    assert (target / "plugin.py").read_text(encoding="utf-8") == (
+        'VERSION = "1.0.0"\n'
+    )
+
+
 def test_frontend_revision_changes_without_version_bump(tmp_path) -> None:
     plugin_dir = tmp_path / "plugin"
     manifest = _write_plugin(plugin_dir, "1.0.0")
