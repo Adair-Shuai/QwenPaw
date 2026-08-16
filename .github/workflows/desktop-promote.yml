@@ -97,10 +97,17 @@ jobs:
         id: version
         uses: ./.github/actions/get-version
 
-      - name: Download desktop artifacts
+      - name: Download desktop application artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: UGSci-Desktop-Tauri-*|tauri-updater-meta-*
+          pattern: UGSci-Desktop-Tauri-*
+          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download desktop updater metadata
+        uses: actions/download-artifact@v4
+        with:
+          pattern: tauri-updater-meta-*
           run-id: ${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
