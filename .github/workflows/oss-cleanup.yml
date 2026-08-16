@@ -16,7 +16,9 @@ on:
         default: ''
 
 permissions:
-  contents: read
+  # Draft releases are hidden from a read-only workflow token. Write access is
+  # required only so the guarded purge can verify that the target is a draft.
+  contents: write
 
 jobs:
   cleanup:

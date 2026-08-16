@@ -319,6 +319,7 @@ def test_unpublished_desktop_cleanup_is_draft_guarded_and_exact() -> None:
     """An abandoned build purge must never broaden into release cleanup."""
     cleanup = _workflow("oss-cleanup.yml")
     assert "mode=purge-unpublished" in cleanup
+    assert "contents: write" in cleanup
     assert 'gh release view "$tag" --repo "$REPOSITORY"' in cleanup
     assert 'if [ "$is_draft" != "true" ]' in cleanup
     assert (
