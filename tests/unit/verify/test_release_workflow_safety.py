@@ -315,6 +315,29 @@ def test_macos_updater_step_has_single_upload_block() -> None:
     )
 
 
+def test_unpublished_desktop_cleanup_is_draft_guarded_and_exact() -> None:
+    """An abandoned build purge must never broaden into release cleanup."""
+    cleanup = _workflow("oss-cleanup.yml")
+    assert "mode=purge-unpublished" in cleanup
+    assert "releases/tags/${tag}" in cleanup
+    assert 'if [ "$is_draft" != "true" ]' in cleanup
+    assert (
+        "latest"
+        not in cleanup.split(
+            "- name: Purge abandoned unpublished desktop version",
+            1,
+        )[1].split("- name: List remaining desktop files", 1)[0]
+    )
+    for suffix in (
+        "Windows-portable.zip",
+        "Windows-updater.exe",
+        "macOS.zip",
+        "macOS.app.tar.gz",
+    ):
+        assert f"UGSci-Tauri-${{VERSION}}-{suffix}" in cleanup
+    assert cleanup.count('ossutil rm "$uri" --force') == 1
+
+
 def test_python_runtime_release_pin_is_consistent_across_builds() -> None:
     """Guard: the python-build-standalone pin must stay in sync everywhere.
 

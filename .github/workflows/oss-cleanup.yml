@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
     inputs:
       keep_version:
-        description: 'Version to keep (e.g. 2.0.1b2). Leave empty to auto-detect from __version__.py'
+        description: 'Version to keep, or purge-unpublished:<version> to remove only an abandoned draft build'
         required: false
         type: string
         default: ''
@@ -36,10 +36,21 @@ jobs:
         id: version
         shell: bash
         run: |
-          if [ -n "${{ inputs.keep_version }}" ]; then
-            echo "version=${{ inputs.keep_version }}" >> "$GITHUB_OUTPUT"
+          requested='${{ inputs.keep_version }}'
+          if [[ "$requested" == purge-unpublished:* ]]; then
+            version="${requested#purge-unpublished:}"
+            if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+b[0-9]+$ ]]; then
+              echo "::error::Invalid unpublished version: $version"
+              exit 1
+            fi
+            echo "mode=purge-unpublished" >> "$GITHUB_OUTPUT"
+            echo "version=${version}" >> "$GITHUB_OUTPUT"
+          elif [ -n "$requested" ]; then
+            echo "mode=cleanup-old" >> "$GITHUB_OUTPUT"
+            echo "version=${requested}" >> "$GITHUB_OUTPUT"
           else
             VERSION=$(grep -oP '__version__\s*=\s*"\K[^"]+' src/qwenpaw/__version__.py)
+            echo "mode=cleanup-old" >> "$GITHUB_OUTPUT"
             echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
           fi
 
@@ -59,6 +70,7 @@ jobs:
             -L CH
 
       - name: List all desktop files before cleanup
+        if: steps.version.outputs.mode == 'cleanup-old'
         run: |
           echo "=== Files before cleanup ==="
           for prefix in \
@@ -69,6 +81,7 @@ jobs:
           done
 
       - name: Clean up old desktop versions
+        if: steps.version.outputs.mode == 'cleanup-old'
         env:
           OSS_BUCKET: ${{ env.OSS_BUCKET }}
           VERSION: ${{ steps.version.outputs.version }}
@@ -120,7 +133,51 @@ jobs:
           print(f"\n✓ Cleanup complete: {deleted} deleted, {kept} kept (version={version})")
           PYEOF
 
+      - name: Purge abandoned unpublished desktop version
+        if: steps.version.outputs.mode == 'purge-unpublished'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          OSS_BUCKET: ${{ env.OSS_BUCKET }}
+          VERSION: ${{ steps.version.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="${VERSION%b*}"
+          beta="${VERSION##*b}"
+          tag="v${base}-beta.${beta}"
+          is_draft="$(gh api "repos/${REPOSITORY}/releases/tags/${tag}" --jq '.draft')"
+          if [ "$is_draft" != "true" ]; then
+            echo "::error::Refusing to purge ${VERSION}: ${tag} is not a draft release"
+            exit 1
+          fi
+
+          keys=(
+            "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip"
+            "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe"
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip"
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
+            "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip.json"
+            "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe.json"
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip.json"
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json"
+          )
+          for key in "${keys[@]}"; do
+            uri="oss://${OSS_BUCKET}/${key}"
+            if ossutil stat "$uri" >/dev/null 2>&1; then
+              echo "Deleting abandoned draft object: ${key}"
+              ossutil rm "$uri" --force
+            else
+              echo "Already absent: ${key}"
+            fi
+            if ossutil stat "$uri" >/dev/null 2>&1; then
+              echo "::error::Failed to delete ${key}"
+              exit 1
+            fi
+          done
+
       - name: List remaining desktop files after cleanup
+        if: steps.version.outputs.mode == 'cleanup-old'
         run: |
           echo "=== Files after cleanup ==="
           for prefix in \
