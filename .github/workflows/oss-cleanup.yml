@@ -146,7 +146,8 @@ jobs:
           base="${VERSION%b*}"
           beta="${VERSION##*b}"
           tag="v${base}-beta.${beta}"
-          is_draft="$(gh api "repos/${REPOSITORY}/releases/tags/${tag}" --jq '.draft')"
+          is_draft="$(gh release view "$tag" --repo "$REPOSITORY" \
+            --json isDraft --jq '.isDraft')"
           if [ "$is_draft" != "true" ]; then
             echo "::error::Refusing to purge ${VERSION}: ${tag} is not a draft release"
             exit 1
