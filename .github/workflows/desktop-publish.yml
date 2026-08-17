@@ -233,9 +233,12 @@ jobs:
             name="$(basename "$file")"
             asset_id="$(jq -r --arg name "$name" '.[] | select(.name == $name) | .id' <<<"$release_assets" | head -1)"
             if [ -n "$asset_id" ]; then
-              gh api -H 'Accept: application/octet-stream' \
-                "repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
-                --output "$RUNNER_TEMP/release-assets/$name"
+              curl --fail --location --silent --show-error \
+                --retry 5 --retry-all-errors --retry-delay 3 \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/octet-stream' \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/assets/$asset_id" \
+                -o "$RUNNER_TEMP/release-assets/$name"
               cmp --silent "$file" "$RUNNER_TEMP/release-assets/$name" || {
                 echo "::error::Refusing to replace immutable GitHub Release asset: $name"
                 exit 1
