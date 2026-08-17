@@ -547,6 +547,7 @@ jobs:
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
+      release_id: ${{ needs.resolve.outputs.release_id }}
       ref: ${{ needs.resolve.outputs.sha }}
       dry_run: ${{ inputs.dry_run }}
       artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}

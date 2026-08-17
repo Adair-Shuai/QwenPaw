@@ -58,6 +58,12 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert "build-components (macos-aarch64)" in release
     assert "component-release-windows-x86_64" in release
     assert "component-release-macos-aarch64" in release
+    desktop_publish = _workflow("desktop-publish.yml")
+    assert "release_id:" in desktop_publish
+    assert "RELEASE_ID: ${{ inputs.release_id }}" in desktop_publish
+    assert "releases/$release_id/assets?per_page=100" in desktop_publish
+    assert "releases/$release_id/assets?name=$name" in desktop_publish
+    assert "releases/assets/$asset_id" in desktop_publish
     assert (
         ".github/workflows/desktop-build.yml|.github/workflows/release.yml"
         in components
