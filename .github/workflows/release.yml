@@ -148,7 +148,8 @@ jobs:
           fi
           echo "Target tag: $TAG"
           release="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
-            | jq -s --arg tag "$TAG" 'add | map(select(.tag_name == $tag)) | .[0]')"
+            | jq -s --arg tag "$TAG" \
+              'add | map(select((.tag_name == $tag or .name == $tag))) | .[0]')"
           if [ -z "$release" ] || [ "$release" = "null" ]; then
             echo "::error::Release $TAG was not found in the repository release list"
             exit 1
