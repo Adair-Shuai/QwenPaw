@@ -409,8 +409,16 @@ def build_endpoint(
         "transport": "stdio",
         "command": command,
         "args": [
+            # MCP stdio is UTF-8 by specification.  On Windows, Java may
+            # otherwise select the active console code page for System.out,
+            # which corrupts non-ASCII tool schemas/results and disconnects
+            # the Python MCP client with UnicodeDecodeError.
+            "-Dfile.encoding=UTF-8",
+            "-Dstdout.encoding=UTF-8",
+            "-Dstderr.encoding=UTF-8",
             "-Dquarkus.profile=stdio",
             "-Dquarkus.log.level=WARN",
+            "-Dquarkus.banner.enabled=false",
             "-jar",
             jar,
         ],

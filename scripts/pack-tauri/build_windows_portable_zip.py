@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import zipfile
 from pathlib import Path, PurePosixPath
 
@@ -18,12 +19,49 @@ def _manifest_entries(root: Path) -> set[str]:
         if len(digest) != 64 or not separator or not relative:
             raise ValueError("invalid checksum manifest entry")
         normalized = PurePosixPath(relative).as_posix()
-        if normalized.startswith("/") or ".." in PurePosixPath(normalized).parts:
+        if (
+            normalized.startswith("/")
+            or ".." in PurePosixPath(normalized).parts
+        ):
             raise ValueError(f"unsafe checksum manifest entry: {relative}")
         if normalized in entries:
             raise ValueError(f"duplicate checksum manifest entry: {relative}")
         entries.add(normalized)
     return entries
+
+
+def _filesystem_path(path: Path) -> str:
+    """Return a native path that keeps deep Windows package trees accessible."""
+    native = os.path.abspath(os.fspath(path))
+    if os.name != "nt" or native.startswith("\\\\?\\"):
+        return native
+    if native.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + native[2:]
+    return "\\\\?\\" + native
+
+
+def _archive_files(root: Path) -> list[tuple[str, str]]:
+    native_root = _filesystem_path(root)
+    files: list[tuple[str, str]] = []
+    walk_errors: list[OSError] = []
+    for current, directories, names in os.walk(
+        native_root,
+        onerror=walk_errors.append,
+    ):
+        directories.sort()
+        names.sort()
+        for name in names:
+            source = os.path.join(current, name)
+            if not os.path.isfile(source):
+                continue
+            relative = os.path.relpath(source, native_root).replace(
+                os.sep,
+                "/",
+            )
+            files.append((source, relative))
+    if walk_errors:
+        raise walk_errors[0]
+    return files
 
 
 def build_archive(root: Path, destination: Path) -> None:
@@ -35,8 +73,8 @@ def build_archive(root: Path, destination: Path) -> None:
 
     expected = _manifest_entries(root)
     expected.add("checksums.sha256")
-    files = sorted(path for path in root.rglob("*") if path.is_file())
-    actual = {path.relative_to(root).as_posix() for path in files}
+    files = _archive_files(root)
+    actual = {relative for _, relative in files}
     if actual != expected:
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
@@ -52,11 +90,13 @@ def build_archive(root: Path, destination: Path) -> None:
         compresslevel=9,
         allowZip64=True,
     ) as archive:
-        for path in files:
-            archive.write(path, path.relative_to(root).as_posix())
+        for source, relative in files:
+            archive.write(source, relative)
 
     with zipfile.ZipFile(destination) as archive:
-        archived = {item.filename for item in archive.infolist() if not item.is_dir()}
+        archived = {
+            item.filename for item in archive.infolist() if not item.is_dir()
+        }
         if archived != expected:
             missing = sorted(expected - archived)
             extra = sorted(archived - expected)
@@ -66,7 +106,9 @@ def build_archive(root: Path, destination: Path) -> None:
             )
         bad_member = archive.testzip()
         if bad_member is not None:
-            raise ValueError(f"portable ZIP CRC verification failed: {bad_member}")
+            raise ValueError(
+                f"portable ZIP CRC verification failed: {bad_member}",
+            )
 
 
 def main() -> int:

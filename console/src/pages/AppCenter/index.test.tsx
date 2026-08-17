@@ -10,6 +10,8 @@ const hoisted = vi.hoisted(() => ({
   listApps: vi.fn(),
   uninstall: vi.fn(),
   fetchMarketPlugins: vi.fn(),
+  fetchQwenPawPluginCatalog: vi.fn(),
+  fetchUGSciPluginCatalog: vi.fn(),
   installPlugin: vi.fn(),
 }));
 
@@ -55,6 +57,8 @@ vi.mock("@/api/modules/pluginMarket", async () => {
 
 vi.mock("@/api/modules/plugin", () => ({
   installPlugin: hoisted.installPlugin,
+  fetchQwenPawPluginCatalog: hoisted.fetchQwenPawPluginCatalog,
+  fetchUGSciPluginCatalog: hoisted.fetchUGSciPluginCatalog,
 }));
 
 function LocationProbe() {
@@ -100,12 +104,22 @@ describe("AppCenterPage", () => {
     hoisted.listApps.mockReset();
     hoisted.uninstall.mockReset();
     hoisted.fetchMarketPlugins.mockReset();
+    hoisted.fetchQwenPawPluginCatalog.mockReset();
+    hoisted.fetchUGSciPluginCatalog.mockReset();
     hoisted.installPlugin.mockReset();
     hoisted.listApps.mockResolvedValue({
       apps: [makeApp("alpha-app"), makeApp("beta-app", { category: "games" })],
       total: 2,
     });
     hoisted.fetchMarketPlugins.mockResolvedValue({ plugins: [], total: 0 });
+    hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({
+      updated_at: null,
+      plugins: [],
+    });
+    hoisted.fetchUGSciPluginCatalog.mockResolvedValue({
+      updated_at: null,
+      plugins: [],
+    });
     window.history.replaceState({}, "", "/apps");
   });
 
@@ -123,23 +137,25 @@ describe("AppCenterPage", () => {
   });
 
   it("enters the official view and loads featured apps lazily", async () => {
-    hoisted.fetchMarketPlugins.mockResolvedValue({
+    hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({
       plugins: [
         {
-          id: "agent-kanban",
-          display_name: "Agent Kanban",
-          developer: "zhijianma",
-          owner: "zhijianma",
+          id: "agent-kanban-0.1.0",
+          plugin_id: "agent-kanban",
+          name: "Agent Kanban",
+          description: "Kanban",
+          description_i18n: { en: "Kanban" },
           version: "0.1.0",
-          logo_url: null,
-          downloads: 1536,
-          view_count: 1266,
-          details_url: null,
-          locales: { en: { description: "Kanban", category: "App" } },
-          is_featured: true,
+          author: "QwenPaw Team",
+          kind: "apps",
+          size: "1 KB",
+          sha256: "abc",
+          install_url: "https://download.qwenpaw.agentscope.io/app.zip",
+          installed: false,
+          upgrade_available: false,
         },
       ],
-      total: 1,
+      updated_at: null,
     });
     renderPage();
     await screen.findByText("alpha-app");
@@ -153,8 +169,9 @@ describe("AppCenterPage", () => {
     );
     expect(await screen.findByText("Agent Kanban")).toBeInTheDocument();
     await waitFor(() =>
-      expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(1),
+      expect(hoisted.fetchQwenPawPluginCatalog).toHaveBeenCalledTimes(1),
     );
+    expect(hoisted.fetchMarketPlugins).not.toHaveBeenCalled();
     expect(screen.queryByText("alpha-app")).not.toBeInTheDocument();
   });
 
@@ -168,7 +185,7 @@ describe("AppCenterPage", () => {
       await screen.findByText("appCenter.officialAppsEmpty"),
     ).toBeInTheDocument();
     await waitFor(() =>
-      expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(1),
+      expect(hoisted.fetchQwenPawPluginCatalog).toHaveBeenCalledTimes(1),
     );
   });
 
@@ -241,6 +258,7 @@ describe("AppCenterPage", () => {
     expect(
       await screen.findByText("appCenter.officialAppsEmpty"),
     ).toBeInTheDocument();
+    expect(hoisted.fetchQwenPawPluginCatalog).toHaveBeenCalledTimes(1);
   });
 
   it("filters installed apps by search and offers to clear filters", async () => {

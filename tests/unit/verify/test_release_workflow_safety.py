@@ -234,6 +234,55 @@ def test_desktop_verification_has_production_startup_budget() -> None:
     assert desktop_build.count("timeout-minutes: 25") >= 2
 
 
+def test_desktop_build_pins_and_smoke_tests_neqsim() -> None:
+    desktop_build = _workflow("desktop-build.yml")
+    windows = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.ps1"
+    ).read_text(encoding="utf-8")
+    macos = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.sh"
+    ).read_text(encoding="utf-8")
+
+    assert desktop_build.count("QWENPAW_NEQSIM_SHA256") >= 4
+    assert "smoke_neqsim.py" in windows
+    assert "smoke_neqsim.py" in macos
+
+
+def test_windows_layered_build_allows_discovered_runtime_hashes() -> None:
+    windows = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.ps1"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_win_pyinstaller.ps1"
+    ).read_text(encoding="utf-8")
+    plugin_ui_builder = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_plugin_uis.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert '$NODE_RUNTIME_ARGS += @("--sha256"' in windows
+    assert '$JRE_ARGS += @("--sha256"' in windows
+    assert '$NEQSIM_ARGS += @("--sha256"' in windows
+    assert "[SKIP] makensis (not used by layered desktop builds)" in launcher
+    assert "Tauri icons are current; skipping regeneration" in launcher
+    assert "function Sync-ChangedFiles" in plugin_ui_builder
+
+
+def test_windows_release_avoids_legacy_long_path_archive_commands() -> None:
+    desktop_build = _workflow("desktop-build.yml")
+    verifier = (
+        REPO_ROOT / "scripts" / "verify" / "launch_tauri_windows.ps1"
+    ).read_text(encoding="utf-8")
+    launcher = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_win_pyinstaller.ps1"
+    ).read_text(encoding="utf-8")
+
+    assert "extract_windows_zip.py" in desktop_build
+    assert "Expand-Archive" not in desktop_build
+    assert "extract_windows_zip.py" in verifier
+    assert "Expand-Archive" not in verifier
+    assert "copy_windows_tree.py" in launcher
+
+
 def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     publish = _workflow("desktop-publish.yml")
     promote = _workflow("desktop-promote.yml")

@@ -33,6 +33,7 @@ from packaging.version import InvalidVersion, Version
 
 from ..plugins.bundled import is_plugin_uninstalled
 from ..update_policy import ALLOWED_PRESERVE_PATHS, DEFAULT_PRESERVE_PATHS
+from ..utils.windows_paths import copy_tree, remove_tree
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,10 @@ def _long_path(path: Path) -> Path:
     if text.startswith("\\\\?\\") or len(text) < 240:
         return path
     # Extended-length paths require absolute, backslash-separated form.
-    return Path("\\\\?\\" + text.replace("/", "\\"))
+    normalized = text.replace("/", "\\")
+    if normalized.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + normalized[2:])
+    return Path("\\\\?\\" + normalized)
 
 
 _INTERNAL_PRESERVED_NAMES = {
@@ -728,7 +732,7 @@ class ComponentUpdater:
         )
         marker = self._activation_marker(destination)
         if previous.exists():
-            shutil.rmtree(previous, onerror=_remove_readonly)
+            remove_tree(previous)
         marker.unlink(missing_ok=True)
         # Reclaim superseded versions of directory components; they are never
         # read again once a new version commits, and runtimes can be GiB each.
@@ -803,7 +807,7 @@ class ComponentUpdater:
             try:
                 # Managed runtime trees nest deeply; on Windows the path may
                 # exceed MAX_PATH, so delete through the extended-length form.
-                shutil.rmtree(_long_path(stale), onerror=_remove_readonly)
+                remove_tree(stale)
                 logger.info(
                     "Reclaimed superseded directory component %s: %s",
                     component,
@@ -836,7 +840,7 @@ class ComponentUpdater:
             if destination.exists():
                 # A read-only remnant here must not silently survive: the
                 # previous.replace() below requires a clear destination.
-                shutil.rmtree(destination, onerror=_remove_readonly)
+                remove_tree(destination)
             previous.replace(destination)
             try:
                 plugin = json.loads(
@@ -860,7 +864,7 @@ class ComponentUpdater:
             marker.unlink(missing_ok=True)
             return True
         if destination.exists():
-            shutil.rmtree(destination, onerror=_remove_readonly)
+            remove_tree(destination)
         self._remove_active(component)
         marker.unlink(missing_ok=True)
         return False
@@ -972,11 +976,7 @@ class ComponentUpdater:
                                 "preserved data may not contain links: "
                                 f"{item}",
                             )
-                    shutil.copytree(
-                        candidate,
-                        target,
-                        copy_function=shutil.copy2,
-                    )
+                    copy_tree(candidate, target)
                 elif candidate.is_file():
                     if candidate.stat().st_nlink > 1:
                         raise ComponentUpdateError(
@@ -1029,7 +1029,7 @@ class ComponentUpdater:
             os.replace(staging, committed)
             return _BackupSnapshot(committed, metadata)
         except Exception as exc:
-            shutil.rmtree(staging, ignore_errors=True)
+            remove_tree(staging, ignore_errors=True)
             if isinstance(exc, ComponentUpdateError):
                 raise
             raise ComponentUpdateError(
@@ -1052,7 +1052,7 @@ class ComponentUpdater:
             )
             for expired in committed[keep:]:
                 if not _is_link_like(expired):
-                    shutil.rmtree(expired)
+                    remove_tree(expired)
         except OSError:
             pass
 
@@ -1146,7 +1146,7 @@ class ComponentUpdater:
                 target = staged / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 if target.exists() and target.is_dir():
-                    shutil.rmtree(target)
+                    remove_tree(target)
                 shutil.copy2(source, target)
             for relative, expected in files.items():
                 restored = staged / relative
@@ -1272,7 +1272,7 @@ class ComponentUpdater:
                     component,
                 )
                 if previous.exists():
-                    shutil.rmtree(previous, ignore_errors=True)
+                    remove_tree(previous, ignore_errors=True)
                 marker.unlink(missing_ok=True)
                 return
             if destination_is_active:
@@ -1291,9 +1291,9 @@ class ComponentUpdater:
                 component,
             )
             if destination.exists():
-                shutil.rmtree(destination, ignore_errors=True)
+                remove_tree(destination, ignore_errors=True)
             if previous.exists():
-                shutil.rmtree(previous, ignore_errors=True)
+                remove_tree(previous, ignore_errors=True)
             marker.unlink(missing_ok=True)
             return
         if previous.exists():
@@ -1305,7 +1305,7 @@ class ComponentUpdater:
                     "component %s",
                     component,
                 )
-                shutil.rmtree(previous, ignore_errors=True)
+                remove_tree(previous, ignore_errors=True)
                 return
             # Crash during the atomic swap: the candidate never activated.
             # The running version lives in its own directory, so this stale
@@ -1314,7 +1314,7 @@ class ComponentUpdater:
                 "Removing stale previous tree for directory component %s",
                 component,
             )
-            shutil.rmtree(previous, ignore_errors=True)
+            remove_tree(previous, ignore_errors=True)
 
     def recover_interrupted_activation(
         self,
@@ -1411,7 +1411,7 @@ class ComponentUpdater:
             )
         ):
             self._commit_active(component, installed_version, destination)
-            shutil.rmtree(previous)
+            remove_tree(previous)
             return
         if (
             active_version is not None
@@ -1422,11 +1422,11 @@ class ComponentUpdater:
                 expected_files,
             )
         ):
-            shutil.rmtree(previous)
+            remove_tree(previous)
             return
         if active_version is not None and active_version == installed_version:
             _inventory(destination, preserve_paths)
-            shutil.rmtree(previous)
+            remove_tree(previous)
             return
         raise ComponentUpdateError(
             "interrupted component activation requires verified recovery",
@@ -1497,7 +1497,7 @@ class ComponentUpdater:
                 destination.replace(failed)
             if previous.exists() and not destination.exists():
                 previous.replace(destination)
-            shutil.rmtree(failed, ignore_errors=True)
+            remove_tree(failed, ignore_errors=True)
             if isinstance(exc, ComponentUpdateError):
                 raise
             raise ComponentUpdateError(
@@ -1510,7 +1510,7 @@ class ComponentUpdater:
                 destination.replace(failed)
             if previous.exists() and not destination.exists():
                 previous.replace(destination)
-            shutil.rmtree(failed, ignore_errors=True)
+            remove_tree(failed, ignore_errors=True)
             marker.unlink(missing_ok=True)
             raise
         # Keep the previous tree until the startup PluginLoader confirms that
@@ -1832,11 +1832,7 @@ class ComponentUpdater:
         ) as temp:
             staged = Path(temp) / "component"
             base_inventory = _inventory(base, plan.preserve_paths)
-            shutil.copytree(
-                base,
-                staged,
-                copy_function=_copy_component_file,
-            )
+            copy_tree(base, staged)
             with zipfile.ZipFile(archive) as bundle:
                 infos = bundle.infolist()
                 max_members, max_bytes, max_member_bytes = _archive_limits(

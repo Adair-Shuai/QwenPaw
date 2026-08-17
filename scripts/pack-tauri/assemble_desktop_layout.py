@@ -6,11 +6,24 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 from pathlib import Path
 import re
-import shutil
 import sys
+
+try:
+    from copy_windows_tree import remove_tree
+except ModuleNotFoundError:
+    _helper_spec = importlib.util.spec_from_file_location(
+        "qwenpaw_copy_windows_tree",
+        Path(__file__).with_name("copy_windows_tree.py"),
+    )
+    if _helper_spec is None or _helper_spec.loader is None:
+        raise
+    _helper = importlib.util.module_from_spec(_helper_spec)
+    _helper_spec.loader.exec_module(_helper)
+    remove_tree = _helper.remove_tree
 
 
 def _marker_version(path: Path, marker: str) -> str:
@@ -24,7 +37,7 @@ def _move(source: Path, destination: Path) -> None:
     if not source.is_dir():
         raise FileNotFoundError(f"staged component is missing: {source}")
     if destination.exists():
-        shutil.rmtree(destination)
+        remove_tree(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
     source.replace(destination)
 
@@ -56,13 +69,19 @@ def assemble(
     python_destination = (
         root / "runtimes" / "python" / _component_directory(python_version)
     )
-    node_destination = root / "runtimes" / "node" / _component_directory(node_version)
-    java_destination = root / "runtimes" / "java" / _component_directory(java_version)
+    node_destination = (
+        root / "runtimes" / "node" / _component_directory(node_version)
+    )
+    java_destination = (
+        root / "runtimes" / "java" / _component_directory(java_version)
+    )
     office_version = desktop_version
     neqsim_version = desktop_version
     office_destination = root / "tools" / "officecli" / office_version
     neqsim_destination = root / "tools" / "neqsim" / neqsim_version
-    computer_use_destination = root / "tools" / "computer-use" / desktop_version
+    computer_use_destination = (
+        root / "tools" / "computer-use" / desktop_version
+    )
     _move(python_source, python_destination)
     _move(node_source, node_destination)
     _move(java_source, java_destination)
@@ -79,14 +98,25 @@ def assemble(
         )
 
     backend_root = root / "app" / "backend" / desktop_version
-    dependency_candidates = sorted((root / "runtimes" / "python-packages").iterdir())
+    dependency_candidates = sorted(
+        (root / "runtimes" / "python-packages").iterdir(),
+    )
     if not (backend_root / "qwenpaw").is_dir():
-        raise FileNotFoundError(f"layered QwenPaw backend is missing: {backend_root}")
-    if len(dependency_candidates) != 1 or not dependency_candidates[0].is_dir():
+        raise FileNotFoundError(
+            f"layered QwenPaw backend is missing: {backend_root}",
+        )
+    if (
+        len(dependency_candidates) != 1
+        or not dependency_candidates[0].is_dir()
+    ):
         raise ValueError("exactly one Python dependency layer must be staged")
     dependencies = dependency_candidates[0]
 
-    def entry(version: str, path: Path, kind: str | None = None) -> dict[str, str]:
+    def entry(
+        version: str,
+        path: Path,
+        kind: str | None = None,
+    ) -> dict[str, str]:
         result = {
             "version": version,
             "path": path.relative_to(root.parent).as_posix(),
@@ -106,7 +136,10 @@ def assemble(
             "java-runtime": entry(java_version, java_destination),
             "officecli": entry(office_version, office_destination),
             "neqsim": entry(neqsim_version, neqsim_destination),
-            "computer-use-helper": entry(desktop_version, computer_use_destination),
+            "computer-use-helper": entry(
+                desktop_version,
+                computer_use_destination,
+            ),
         },
     }
     state = root / "state"

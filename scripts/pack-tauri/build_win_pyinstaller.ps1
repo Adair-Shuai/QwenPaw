@@ -15,6 +15,7 @@ if (-not [System.IO.Path]::IsPathRooted($DIST)) {
     $DIST = Join-Path $REPO_ROOT $DIST
 }
 $VERSION_FILE = "src\qwenpaw\__version__.py"
+$LAYERED_DESKTOP = $env:QWENPAW_LAYERED_DESKTOP -match "^(1|true|yes)$"
 
 function Invoke-NativeWithRetry {
     param(
@@ -113,8 +114,11 @@ if (-not $hasMsvc) {
     Write-Host "  [OK] Visual Studio Build Tools (MSVC)" -ForegroundColor Green
 }
 
-# NSIS (makensis)
-if (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
+# NSIS is only used by the legacy monolithic bundle. Layered b7 builds call
+# `tauri build --no-bundle` and create the ZIP + visible Setup.exe themselves.
+if ($LAYERED_DESKTOP) {
+    Write-Host "  [SKIP] makensis (not used by layered desktop builds)" -ForegroundColor DarkGray
+} elseif (-not (Get-Command makensis -ErrorAction SilentlyContinue)) {
     Write-Host "  [MISSING] makensis (NSIS)" -ForegroundColor Red
     Write-Host "    Install: https://nsis.sourceforge.io/Download" -ForegroundColor Gray
     $missing += "makensis"
@@ -142,9 +146,30 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Generating Tauri icons..."
-pnpm exec tauri icon ../scripts/pack/assets/icon.svg
-if ($LASTEXITCODE -ne 0) {
-    throw "Tauri icon generation failed"
+$ICON_SOURCE = Get-Item (Join-Path $REPO_ROOT "scripts\pack\assets\icon.svg")
+$ICON_OUTPUTS = @(
+    "icon.ico",
+    "icon.icns",
+    "icon.png",
+    "32x32.png",
+    "128x128.png",
+    "128x128@2x.png"
+) | ForEach-Object { Join-Path $REPO_ROOT "console\src-tauri\icons\$_" }
+$ICONS_NEED_BUILD = $false
+foreach ($iconOutput in $ICON_OUTPUTS) {
+    if (-not (Test-Path -LiteralPath $iconOutput -PathType Leaf) -or
+        (Get-Item -LiteralPath $iconOutput).LastWriteTimeUtc -lt $ICON_SOURCE.LastWriteTimeUtc) {
+        $ICONS_NEED_BUILD = $true
+        break
+    }
+}
+if ($ICONS_NEED_BUILD) {
+    pnpm exec tauri icon ../scripts/pack/assets/icon.svg
+    if ($LASTEXITCODE -ne 0) {
+        throw "Tauri icon generation failed"
+    }
+} else {
+    Write-Host "Tauri icons are current; skipping regeneration" -ForegroundColor DarkGray
 }
 
 Write-Host "Syncing Tauri version..."
@@ -275,7 +300,9 @@ if ($NsisExe) {
         Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
         $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
         if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
-        Copy-Item -Recurse -Force $Resources (Join-Path $PortablePayload "binaries")
+        python (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
+            --source $Resources --destination (Join-Path $PortablePayload "binaries")
+        Assert-LastExit "Failed to copy Windows portable resources"
         & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
             -PortableRoot $PortableRoot `
             -ZipPath $ZipPath `
@@ -309,7 +336,9 @@ if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
     Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
     $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
     if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
-    Copy-Item -Recurse -Force $Resources (Join-Path $PortablePayload "binaries")
+    python (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
+        --source $Resources --destination (Join-Path $PortablePayload "binaries")
+    Assert-LastExit "Failed to copy Windows portable resources"
     & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
         -PortableRoot $PortableRoot -ZipPath $ZipPath -Version $VERSION
 }

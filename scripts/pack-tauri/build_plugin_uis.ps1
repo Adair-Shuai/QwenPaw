@@ -20,6 +20,31 @@ if (-not (Test-Path $PLUGIN_STAGE_SCRIPT)) {
 
 Write-Host "[build_plugin_uis] Building plugin frontend bundles..."
 
+function Sync-ChangedFiles {
+    param(
+        [Parameter(Mandatory = $true)][string]$Source,
+        [Parameter(Mandatory = $true)][string]$Destination
+    )
+
+    foreach ($sourceFile in Get-ChildItem -LiteralPath $Source -Recurse -File) {
+        $relative = [System.IO.Path]::GetRelativePath($Source, $sourceFile.FullName)
+        $targetFile = Join-Path $Destination $relative
+        $targetDir = Split-Path -Parent $targetFile
+        if (-not (Test-Path -LiteralPath $targetDir -PathType Container)) {
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+        }
+        if (Test-Path -LiteralPath $targetFile -PathType Leaf) {
+            $target = Get-Item -LiteralPath $targetFile
+            if ($target.Length -eq $sourceFile.Length -and
+                (Get-FileHash -Algorithm SHA256 -LiteralPath $targetFile).Hash -eq
+                (Get-FileHash -Algorithm SHA256 -LiteralPath $sourceFile.FullName).Hash) {
+                continue
+            }
+        }
+        Copy-Item -LiteralPath $sourceFile.FullName -Destination $targetFile -Force
+    }
+}
+
 $built = 0
 $skipped = 0
 
@@ -80,7 +105,7 @@ $pluginSources | ForEach-Object {
         if (-not (Test-Path $srcDistDir)) {
             New-Item -ItemType Directory -Force -Path $srcDistDir | Out-Null
         }
-        Copy-Item -Path (Join-Path $uiDir "dist\*") -Destination $srcDistDir -Recurse -Force
+        Sync-ChangedFiles -Source (Join-Path $uiDir "dist") -Destination $srcDistDir
     }
 }
 

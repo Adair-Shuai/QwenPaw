@@ -8,13 +8,17 @@ import hashlib
 import json
 import logging
 import mimetypes
+import os
 import re
 import shutil
+import stat
 import tempfile
 import urllib.request
+import uuid
 import zipfile
 from pathlib import Path
 from typing import Optional
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
@@ -22,10 +26,20 @@ from pydantic import BaseModel
 
 from ..utils import schedule_agent_reload
 from ...plugins.runtime import invoke_plugin_callback
+from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
+
+_EXTERNAL_PLUGIN_UPGRADE_HOSTS = {
+    "download.qwenpaw.agentscope.io",
+    "platform.agentscope.io",
+}
+_PLUGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
+_PLUGIN_UPGRADE_MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
+_PLUGIN_UPGRADE_MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
+_PLUGIN_UPGRADE_MAX_MEMBERS = 20_000
 
 
 def _log_safe(value: object) -> str:
@@ -165,15 +179,28 @@ def _safe_extract_zip(
     Raises:
         ValueError: If any member would escape extract_path
     """
-    extract_resolved = extract_path.resolve()
-    for member in zip_ref.namelist():
-        member_path = (extract_path / member).resolve()
-        if not member_path.is_relative_to(extract_resolved):
-            raise ValueError(
-                f"Zip Slip detected: {member} would extract "
-                "outside the target directory",
-            )
-    zip_ref.extractall(extract_path)
+    extract_root = io_path(extract_path)
+    resolved_root = extract_path.resolve()
+    for info in zip_ref.infolist():
+        normalized = info.filename.replace("\\", "/")
+        candidate = Path(normalized)
+        if (
+            not normalized
+            or "\x00" in normalized
+            or candidate.is_absolute()
+            or ".." in candidate.parts
+            or any(":" in part for part in candidate.parts)
+        ):
+            raise ValueError(f"Zip Slip detected: {info.filename}")
+        output = os.path.join(extract_root, *candidate.parts)
+        if not Path(output).resolve().is_relative_to(resolved_root):
+            raise ValueError(f"Zip Slip detected: {info.filename}")
+        if info.is_dir():
+            os.makedirs(output, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(output), exist_ok=True)
+        with zip_ref.open(info) as source, open(output, "xb") as target:
+            shutil.copyfileobj(source, target, length=1024 * 1024)
 
 
 def _find_plugin_dir(base: Path) -> Path:
@@ -350,12 +377,12 @@ def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
                 for tool_name in tool_names:
                     if tool_name in agent_cfg.tools.builtin_tools:
                         continue
-                    agent_cfg.tools.builtin_tools[tool_name] = (
-                        BuiltinToolConfig(
-                            name=tool_name,
-                            enabled=False,
-                            config={},
-                        )
+                    agent_cfg.tools.builtin_tools[
+                        tool_name
+                    ] = BuiltinToolConfig(
+                        name=tool_name,
+                        enabled=False,
+                        config={},
                     )
                     changed = True
                 if changed:
@@ -659,18 +686,94 @@ def _extract_plugin_zip_bytes(content: bytes, temp_dir: Path) -> Path:
     """Write ZIP bytes, safely extract, return plugin dir (sync I/O)."""
     zip_path = temp_dir / "plugin.zip"
     zip_path.write_bytes(content)
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        _safe_extract_zip(zf, temp_dir)
+    extract_zip(zip_path, temp_dir)
     zip_path.unlink(missing_ok=True)
     return _find_plugin_dir(temp_dir)
 
 
 def _extract_downloaded_plugin_zip(zip_path: Path, temp_dir: Path) -> Path:
     """Safely extract an on-disk ZIP and return the plugin dir (sync I/O)."""
-    with zipfile.ZipFile(zip_path, "r") as zf:
-        _safe_extract_zip(zf, temp_dir)
+    extract_zip(zip_path, temp_dir)
     zip_path.unlink(missing_ok=True)
     return _find_plugin_dir(temp_dir)
+
+
+def _validate_external_upgrade_source(source: str) -> str:
+    """Validate an external catalog URL used for an installed-plugin update."""
+    value = source.strip()
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme.lower() != "https"
+        or not parsed.hostname
+        or parsed.hostname.lower() not in _EXTERNAL_PLUGIN_UPGRADE_HOSTS
+        or parsed.username is not None
+        or parsed.password is not None
+    ):
+        raise ValueError("Plugin source is not an approved external catalog")
+    return value
+
+
+def _validate_upgrade_archive(
+    zip_path: Path,
+    *,
+    expected_plugin_id: str,
+    expected_version: str | None,
+) -> None:
+    """Reject unsafe or mismatched external plugin upgrade archives."""
+    if zip_path.stat().st_size > _PLUGIN_UPGRADE_MAX_ARCHIVE_BYTES:
+        raise ValueError("Plugin archive exceeds the 256 MB limit")
+
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        members = zip_ref.infolist()
+        if len(members) > _PLUGIN_UPGRADE_MAX_MEMBERS:
+            raise ValueError("Plugin archive contains too many files")
+
+        extracted_size = 0
+        manifests: list[zipfile.ZipInfo] = []
+        for member in members:
+            normalized = member.filename.replace("\\", "/")
+            if "\x00" in normalized:
+                raise ValueError("Plugin archive contains an unsafe path")
+            mode = (member.external_attr >> 16) & 0o170000
+            if mode == stat.S_IFLNK:
+                raise ValueError("Plugin archive links are not allowed")
+            if not member.is_dir():
+                extracted_size += member.file_size
+                if extracted_size > _PLUGIN_UPGRADE_MAX_EXTRACTED_BYTES:
+                    raise ValueError(
+                        "Extracted plugin exceeds the 512 MB limit",
+                    )
+                if normalized == "plugin.json" or normalized.endswith(
+                    "/plugin.json",
+                ):
+                    manifests.append(member)
+
+        if len(manifests) != 1:
+            raise ValueError(
+                "Plugin archive must contain exactly one plugin.json",
+            )
+        try:
+            manifest = json.loads(zip_ref.read(manifests[0]))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise ValueError(
+                "Plugin archive contains an invalid plugin.json",
+            ) from exc
+
+    if not isinstance(manifest, dict):
+        raise ValueError("Plugin archive contains an invalid plugin.json")
+    if str(manifest.get("id") or "") != expected_plugin_id:
+        raise ValueError("Plugin id does not match the selected catalog entry")
+    actual_version = str(manifest.get("version") or "")
+    if expected_version and actual_version != expected_version:
+        raise ValueError(
+            "Plugin version does not match the selected catalog entry",
+        )
+
+
+def _sha256_file(path: Path) -> str:
+    """Return a streaming SHA256 digest for a downloaded archive."""
+    with path.open("rb") as handle:
+        return hashlib.file_digest(handle, "sha256").hexdigest()
 
 
 # ── Routes ───────────────────────────────────────────────────────────────
@@ -750,6 +853,15 @@ class InstallPluginRequest(BaseModel):
     # Kept for wire compatibility. Public install routes reject force so all
     # installed-plugin updates remain owned by the signed component updater.
     force: bool = False
+
+
+class ReplacePluginRequest(BaseModel):
+    """Verified external update for an already installed plugin."""
+
+    source: str
+    plugin_id: str
+    version: str | None = None
+    sha256: str | None = None
 
 
 @router.post(
@@ -847,7 +959,7 @@ async def install_plugin(
         ) from exc
     finally:
         if temp_dir is not None and await asyncio.to_thread(temp_dir.exists):
-            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
+            await asyncio.to_thread(remove_tree, temp_dir)
 
     return {
         "id": record.manifest.id,
@@ -859,6 +971,148 @@ async def install_plugin(
         "message": (
             f"Plugin '{record.manifest.name}' installed successfully."
         ),
+    }
+
+
+@router.post(
+    "/replace",
+    summary="Replace an installed plugin from an approved catalog",
+    description=(
+        "Download and verify an official or marketplace plugin archive, "
+        "then replace the installed copy under the plugin lifecycle lock."
+    ),
+)
+async def replace_installed_plugin(
+    body: ReplacePluginRequest,
+    request: Request,
+):  # pylint: disable=too-many-statements
+    """Securely upgrade an installed external plugin with rollback."""
+    loader = getattr(request.app.state, "plugin_loader", None)
+    if loader is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Plugin loader is not ready yet. Try again shortly.",
+        )
+
+    plugin_id = body.plugin_id.strip()
+    if not _PLUGIN_ID_PATTERN.fullmatch(plugin_id):
+        raise HTTPException(status_code=400, detail="Invalid plugin id")
+    try:
+        source = _validate_external_upgrade_source(body.source)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    expected_sha256 = (body.sha256 or "").strip().lower()
+    if expected_sha256 and not re.fullmatch(r"[0-9a-f]{64}", expected_sha256):
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid plugin archive SHA256",
+        )
+
+    from ...config.utils import get_plugins_dir
+
+    plugins_dir = get_plugins_dir().resolve()
+    destination = (plugins_dir / plugin_id).resolve()
+    if not destination.is_relative_to(plugins_dir):
+        raise HTTPException(status_code=400, detail="Invalid plugin id")
+    if not await asyncio.to_thread(destination.is_dir):
+        raise HTTPException(
+            status_code=404,
+            detail=f"Plugin '{plugin_id}' is not installed.",
+        )
+
+    temp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp))
+    zip_path = temp_dir / "plugin.zip"
+    backup_path: Path | None = None
+    replacement_started = False
+    try:
+        await _async_download(source, zip_path)
+        actual_sha256 = await asyncio.to_thread(_sha256_file, zip_path)
+        if expected_sha256 and actual_sha256 != expected_sha256:
+            raise ValueError("Plugin archive SHA256 verification failed")
+        await asyncio.to_thread(
+            _validate_upgrade_archive,
+            zip_path,
+            expected_plugin_id=plugin_id,
+            expected_version=(body.version or "").strip() or None,
+        )
+        source_path = await asyncio.to_thread(
+            _extract_downloaded_plugin_zip,
+            zip_path,
+            temp_dir,
+        )
+
+        backup_root = plugins_dir.parent / "plugin-upgrades" / "backups"
+        await asyncio.to_thread(backup_root.mkdir, parents=True, exist_ok=True)
+        concrete_backup_path = backup_root / f"{plugin_id}-{uuid.uuid4().hex}"
+        backup_path = concrete_backup_path
+        await asyncio.to_thread(
+            copy_tree,
+            destination,
+            concrete_backup_path,
+        )
+
+        replacement_started = True
+        record = await _load_plugin_with_optional_force_reinstall(
+            loader,
+            request,
+            source_path,
+            force=True,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if replacement_started and backup_path is not None:
+            try:
+                await _load_plugin_with_optional_force_reinstall(
+                    loader,
+                    request,
+                    backup_path,
+                    force=True,
+                )
+            except Exception as rollback_exc:  # noqa: BLE001
+                logger.exception(
+                    "Plugin upgrade rollback failed for '%s'",
+                    _log_safe(plugin_id),
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=(
+                        f"Plugin upgrade failed and rollback also failed: "
+                        f"{rollback_exc}"
+                    ),
+                ) from exc
+            logger.warning(
+                "Plugin upgrade failed for '%s'; restored previous version",
+                _log_safe(plugin_id),
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=(
+                    "Plugin upgrade failed; previous version restored: "
+                    f"{exc}"
+                ),
+            ) from exc
+        if isinstance(exc, (ValueError, zipfile.BadZipFile)):
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        logger.exception(
+            "Plugin upgrade failed for '%s'",
+            _log_safe(plugin_id),
+        )
+        raise HTTPException(
+            status_code=500,
+            detail=f"Plugin upgrade failed: {exc}",
+        ) from exc
+    finally:
+        if await asyncio.to_thread(temp_dir.exists):
+            await asyncio.to_thread(remove_tree, temp_dir)
+
+    return {
+        "id": record.manifest.id,
+        "name": record.manifest.name,
+        "version": record.manifest.version,
+        "restart_required": True,
+        "backup_path": str(backup_path) if backup_path else None,
     }
 
 
@@ -930,7 +1184,7 @@ async def upload_plugin(
         ) from exc
     finally:
         if await asyncio.to_thread(temp_dir.exists):
-            await asyncio.to_thread(shutil.rmtree, temp_dir, True)
+            await asyncio.to_thread(remove_tree, temp_dir)
 
     return {
         "id": record.manifest.id,

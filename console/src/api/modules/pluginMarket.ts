@@ -1,5 +1,6 @@
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
+import { fetchPlugins } from "./plugin";
 
 export interface MarketPluginLocale {
   description: string;
@@ -58,6 +59,7 @@ export async function fetchMarketPlugins(
   params: FetchMarketPluginsParams,
   options: { signal?: AbortSignal } = {},
 ): Promise<{ total: number; plugins: MarketPluginEntry[] }> {
+  const installedPromise = fetchPlugins();
   const url = new URL(
     getApiUrl("/plugins/market/search"),
     window.location.origin,
@@ -86,7 +88,25 @@ export async function fetchMarketPlugins(
     throw new Error(json.message || "Failed to fetch market plugins");
   }
 
-  return json.data;
+  const installed = new Map(
+    (await installedPromise).map((plugin) => [plugin.id, plugin.version]),
+  );
+  const plugins = (json.data.plugins ?? []).map((entry) => {
+    const normalizedId = entry.id.startsWith("@")
+      ? entry.id.slice(1)
+      : entry.id;
+    const shortId = normalizedId.split("/").pop() || normalizedId;
+    const installedVersion =
+      installed.get(entry.id) ||
+      installed.get(normalizedId) ||
+      installed.get(shortId);
+    return {
+      ...entry,
+      installed: Boolean(installedVersion),
+      installed_version: installedVersion,
+    };
+  });
+  return { ...json.data, plugins };
 }
 
 export function buildMarketDownloadUrl(entry: MarketPluginEntry): string {

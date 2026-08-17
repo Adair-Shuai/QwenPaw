@@ -233,12 +233,19 @@ echo ""
 
 echo "== Staging bundled NeqSim MCP Server JAR =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_neqsim.py" \
-    --dest "${BINARIES_DIR}/neqsim"
+    --dest "${BINARIES_DIR}/neqsim" \
+    --sha256 "${QWENPAW_NEQSIM_SHA256:-}"
+echo ""
+
+echo "== Verifying bundled NeqSim MCP Server =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/smoke_neqsim.py" \
+    --resource-dir "${BINARIES_DIR}"
 echo ""
 
 if [ "$LAYERED_DESKTOP" = true ]; then
     echo "== Assembling independently versioned desktop layers =="
-    install_python_packages "build>=1.2,<2"
+    install_python_packages \
+        "build>=1.2,<2" "setuptools>=42" "wheel>=0.46,<1"
     RUNTIME_PYTHON="${BINARIES_DIR}/python-runtime/python/bin/python3"
     if [ ! -x "${RUNTIME_PYTHON}" ]; then
         RUNTIME_PYTHON="${BINARIES_DIR}/python-runtime/python/bin/python"

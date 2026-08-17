@@ -2,7 +2,10 @@ import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Input, Select, Spin, Typography, Alert, Tag } from "antd";
 import { Download, RefreshCw, Package } from "lucide-react";
-import type { OfficialPluginCatalogEntry } from "@/api/modules/plugin";
+import type {
+  OfficialPluginCatalogEntry,
+  PluginCatalogSource,
+} from "@/api/modules/plugin";
 import { useOfficialPlugins } from "../hooks/useOfficialPlugins";
 import styles from "./OfficialPluginList.module.less";
 
@@ -44,9 +47,13 @@ function pickLocalizedDescription(
 
 interface OfficialPluginListProps {
   onInstalled: () => void;
+  source?: PluginCatalogSource;
 }
 
-export function OfficialPluginList({ onInstalled }: OfficialPluginListProps) {
+export function OfficialPluginList({
+  onInstalled,
+  source = "qwenpaw",
+}: OfficialPluginListProps) {
   const { t, i18n } = useTranslation();
   const [nameFilter, setNameFilter] = useState("");
   const [kindFilter, setKindFilter] = useState<string | undefined>(undefined);
@@ -58,7 +65,7 @@ export function OfficialPluginList({ onInstalled }: OfficialPluginListProps) {
     installingId,
     loadCatalog,
     handleInstall,
-  } = useOfficialPlugins({ onInstalled });
+  } = useOfficialPlugins({ onInstalled, source });
 
   const filteredPlugins = useMemo(() => {
     return plugins.filter((entry) => {
@@ -86,6 +93,16 @@ export function OfficialPluginList({ onInstalled }: OfficialPluginListProps) {
 
   return (
     <div className={styles.catalogSection}>
+      <Alert
+        type="info"
+        showIcon
+        message={
+          source === "ugsci"
+            ? t("pluginManager.ugsciUpdateRoute")
+            : t("pluginManager.qwenpawUpdateRoute")
+        }
+        style={{ marginBottom: 12 }}
+      />
       <div className={styles.catalogToolbar}>
         <div className={styles.catalogFilters}>
           <Input
@@ -187,24 +204,15 @@ export function OfficialPluginList({ onInstalled }: OfficialPluginListProps) {
                   icon={<Download size={14} />}
                   loading={installingId === entry.id}
                   disabled={
-                    entry.installed ||
-                    entry.upgrade_available ||
+                    (entry.installed && !entry.upgrade_available) ||
                     (installingId !== null && installingId !== entry.id)
-                  }
-                  title={
-                    entry.installed || entry.upgrade_available
-                      ? t("pluginManager.updateFromHeader", {
-                          defaultValue:
-                            "Use the update button next to the version number to update installed plugins.",
-                        })
-                      : undefined
                   }
                   onClick={() => void handleInstall(entry)}
                 >
-                  {entry.installed || entry.upgrade_available
-                    ? t("pluginManager.updateFromHeaderBtn", {
-                        defaultValue: "Update from header",
-                      })
+                  {entry.upgrade_available
+                    ? t("pluginManager.catalogUpgradeBtn")
+                    : entry.installed
+                    ? t("pluginManager.catalogLatest")
                     : t("pluginManager.catalogInstall")}
                 </Button>
               </div>

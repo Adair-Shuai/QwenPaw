@@ -43,6 +43,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from ..update_policy import DEFAULT_PRESERVE_PATHS
+from ..utils.windows_paths import io_path, remove_tree
 
 logger = logging.getLogger(__name__)
 
@@ -401,8 +402,8 @@ _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
 def _copy_bundle(source: Path, target: Path) -> None:
     """Copy only runtime files; development dependencies never reach users."""
     shutil.copytree(
-        source,
-        target,
+        io_path(source),
+        io_path(target),
         ignore=shutil.ignore_patterns(
             "node_modules",
             "__pycache__",
@@ -443,7 +444,7 @@ def _copy_missing_tree(source: Path, target: Path) -> None:
     if not source.is_dir():
         return
     if not target.exists():
-        shutil.copytree(source, target)
+        shutil.copytree(io_path(source), io_path(target))
         return
     for path in source.rglob("*"):
         if not path.is_file():
@@ -477,7 +478,7 @@ def _remove_plugin_tree(path: Path) -> None:
     elif path.is_symlink():
         path.unlink(missing_ok=True)
     elif path.exists():
-        shutil.rmtree(path)
+        remove_tree(path)
 
 
 def _write_bundled_activation_marker(
@@ -531,7 +532,7 @@ def finalize_bundled_plugin_activation(
     if previous.is_symlink() or marker.is_symlink():
         raise ValueError("bundled activation artifacts may not be symlinks")
     if previous.exists():
-        shutil.rmtree(previous)
+        remove_tree(previous)
     marker.unlink(missing_ok=True)
 
 
@@ -673,7 +674,7 @@ def _stage_and_replace_bundle(
                 raise
         elif previous.exists():
             try:
-                shutil.rmtree(previous)
+                remove_tree(previous)
             except OSError:
                 # The replacement is already live.  A locked hidden backup
                 # is harmless and safer than failing a successful startup.
@@ -683,7 +684,7 @@ def _stage_and_replace_bundle(
                     exc_info=True,
                 )
     finally:
-        shutil.rmtree(staging_root, ignore_errors=True)
+        remove_tree(staging_root, ignore_errors=True)
 
 
 # Directories inside a plugin installation that may contain user-generated

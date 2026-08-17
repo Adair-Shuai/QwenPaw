@@ -19,7 +19,9 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -33,6 +35,7 @@ HTTP_TIMEOUT_SECONDS = 180  # the JAR is ~82 MB
 RETRYABLE_HTTP_STATUS = {408, 429, 500, 502, 503, 504}
 JAR_NAME = "neqsim-mcp-server.jar"
 SHA256_NAME = "neqsim-mcp-server.jar.sha256"
+_SHA256_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 def _http_get(url: str) -> bytes:
@@ -90,28 +93,64 @@ def _resolve_release(version: str) -> tuple[str, str, str]:
     return jar_url, sha_url, version
 
 
-def _verify_sha256(jar_data: bytes, sha_url: str) -> bool:
-    """Download the published SHA-256 and compare.  Best-effort: returns
-    False if the checksum file cannot be fetched."""
+def _normalize_sha256(value: str, label: str) -> str:
+    digest = value.strip().split()[0].lower() if value.strip() else ""
+    if not _SHA256_PATTERN.fullmatch(digest):
+        raise SystemExit(f"invalid SHA-256 for {label}: {value!r}")
+    return digest
+
+
+def _published_sha256(sha_url: str, *, required: bool) -> str:
+    """Return the release checksum, optionally failing closed."""
     try:
-        sha_text = _http_get(sha_url).decode("utf-8").strip()
-        # The file may contain just the hash or "hash  filename".
-        expected = sha_text.split()[0].lower()
-        actual = hashlib.sha256(jar_data).hexdigest()
-        if expected != actual:
-            print(
-                f"SHA-256 mismatch: expected {expected}, got {actual}",
-                file=sys.stderr,
-            )
-            return False
-        return True
-    except Exception:
+        return _normalize_sha256(
+            _http_get(sha_url).decode("utf-8"),
+            "published NeqSim checksum",
+        )
+    except Exception as exc:
+        if required:
+            raise SystemExit(
+                "production build could not obtain the published NeqSim "
+                f"checksum: {exc}",
+            ) from exc
         print(
             "WARNING: could not verify SHA-256 (checksum unavailable); "
             "proceeding without verification",
             file=sys.stderr,
         )
-        return True  # non-fatal
+        return ""
+
+
+def _verify_sha256(jar_data: bytes, expected: str) -> str:
+    """Verify bytes against a fixed digest and return the actual digest."""
+    actual = hashlib.sha256(jar_data).hexdigest()
+    if expected and expected != actual:
+        raise SystemExit(
+            f"SHA-256 mismatch: expected {expected}, got {actual}",
+        )
+    return actual
+
+
+def _atomic_write(path: Path, data: bytes) -> None:
+    """Write a build artifact atomically, even under concurrent builds."""
+    with tempfile.NamedTemporaryFile(
+        dir=path.parent,
+        prefix=f".{path.name}.",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+        temporary = Path(stream.name)
+    try:
+        os.replace(temporary, path)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _atomic_write_text(path: Path, value: str) -> None:
+    _atomic_write(path, value.encode("utf-8"))
 
 
 def main() -> None:
@@ -126,6 +165,11 @@ def main() -> None:
         default=os.environ.get("QWENPAW_NEQSIM_VERSION", DEFAULT_VERSION),
         help=f"NeqSim version (default: {DEFAULT_VERSION})",
     )
+    parser.add_argument(
+        "--sha256",
+        default=os.environ.get("QWENPAW_NEQSIM_SHA256", ""),
+        help="Pinned NeqSim JAR SHA-256 (required for production builds)",
+    )
     args = parser.parse_args()
 
     version = args.version
@@ -134,6 +178,21 @@ def main() -> None:
 
     jar_path = dest / JAR_NAME
     marker = dest / ".neqsim-version"
+    sha_marker = dest / SHA256_NAME
+
+    production_hashes = os.environ.get(
+        "QWENPAW_REQUIRE_RUNTIME_HASHES",
+        "",
+    ).lower() in {"1", "true", "yes"}
+    fixed_sha256 = (
+        _normalize_sha256(args.sha256, "QWENPAW_NEQSIM_SHA256")
+        if args.sha256
+        else ""
+    )
+    if production_hashes and not fixed_sha256:
+        raise SystemExit(
+            "production build requires QWENPAW_NEQSIM_SHA256",
+        )
 
     jar_url, sha_url, resolved_version = _resolve_release(version)
     marker_value = resolved_version
@@ -143,8 +202,30 @@ def main() -> None:
         and marker.is_file()
         and marker.read_text(encoding="utf-8").strip() == marker_value
     ):
-        print(f"neqsim-mcp-server already staged ({marker_value}); skipping")
-        return
+        cached_expected = fixed_sha256
+        if not cached_expected and sha_marker.is_file():
+            cached_expected = _normalize_sha256(
+                sha_marker.read_text(encoding="utf-8"),
+                "cached NeqSim checksum",
+            )
+        if not cached_expected:
+            cached_expected = _published_sha256(
+                sha_url,
+                required=production_hashes,
+            )
+        cached_actual = _verify_sha256(jar_path.read_bytes(), cached_expected)
+        if cached_expected:
+            _atomic_write_text(sha_marker, cached_actual)
+            print(
+                f"neqsim-mcp-server already staged ({marker_value}); "
+                "checksum verified",
+            )
+            return
+        print(
+            "WARNING: cached NeqSim JAR has no trusted checksum; "
+            "refreshing it",
+            file=sys.stderr,
+        )
 
     print(f"Staging NeqSim MCP Server {resolved_version}...")
     print(f"Downloading {jar_url}")
@@ -152,13 +233,15 @@ def main() -> None:
     jar_data = _http_get(jar_url)
     print(f"Downloaded {len(jar_data) / 1048576:.2f} MB")
 
-    if not _verify_sha256(jar_data, sha_url):
-        raise SystemExit(
-            "SHA-256 verification failed — refusing to stage untrusted JAR",
-        )
+    expected_sha256 = fixed_sha256 or _published_sha256(
+        sha_url,
+        required=production_hashes,
+    )
+    actual_sha256 = _verify_sha256(jar_data, expected_sha256)
 
-    jar_path.write_bytes(jar_data)
-    marker.write_text(marker_value, encoding="utf-8")
+    _atomic_write(jar_path, jar_data)
+    _atomic_write_text(marker, marker_value)
+    _atomic_write_text(sha_marker, actual_sha256)
     print(f"Staged neqsim-mcp-server at {jar_path}")
 
 

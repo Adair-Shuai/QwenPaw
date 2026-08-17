@@ -119,6 +119,10 @@ UGSCI_ROLE_ALLOWED_TOOLS: dict[str, list[str] | None] = {
     "drilling-engineer": list(_TOOLS_READ_WRITE_SHELL),  # 钻井工程师: read + write + shell
     "production-engineer": list(_TOOLS_READ_SHELL + _TOOLS_SIM_READ_ONLY),  # 采油工程师
     "pvt-analyst": list(_TOOLS_READ_SHELL),          # PVT 分析师: read + shell
+    "data-quality": list(_TOOLS_READ_SHELL),        # 资料审核与数据诊断
+    "geology-diagnostician": list(_TOOLS_READ_AST_SHELL),  # 地质与库型诊断
+    "simulation-analyst": list(_TOOLS_READ_SHELL + _TOOLS_SIM_FULL),  # 数值模拟
+    "result-reviewer": list(_TOOLS_READ_AST_SHELL), # 结果复核
     # Reviewer / verification
     "domain-reviewer": list(_TOOLS_READ_AST_SHELL),  # 领域审核: read-only + AST + shell
     # Generic OMP roles (for interop)
@@ -137,6 +141,10 @@ UGSCI_ROLE_SKILLS: dict[str, list[str] | None] = {
     "drilling-engineer": [],
     "production-engineer": [],
     "pvt-analyst": [],
+    "data-quality": [],
+    "geology-diagnostician": [],
+    "simulation-analyst": [],
+    "result-reviewer": [],
     "domain-reviewer": [],
     "executor": None,
     "planner": [],
@@ -152,6 +160,10 @@ UGSCI_ROLE_DISPLAY_NAMES: dict[str, str] = {
     "drilling-engineer": "钻井工程师",
     "production-engineer": "采油工程师",
     "pvt-analyst": "PVT 分析师",
+    "data-quality": "资料审核与数据诊断专家",
+    "geology-diagnostician": "地质与库型诊断专家",
+    "simulation-analyst": "数值模拟分析专家",
+    "result-reviewer": "结果复核专家",
     "domain-reviewer": "领域审核专家",
     "executor": "执行者",
     "planner": "规划者",

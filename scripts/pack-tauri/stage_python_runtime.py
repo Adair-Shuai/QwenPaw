@@ -274,7 +274,31 @@ def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
     )
 
 
-def main() -> None:
+def _find_reusable_runtime(dest: Path, marker_value: str) -> Path | None:
+    """Return an already verified versioned runtime from a prior build.
+
+    Layered builds move ``python-runtime`` into ``runtimes/python/<version>``.
+    A later rebuild should not need GitHub merely to rediscover the asset URL
+    when that exact release + archive digest is already present locally.
+    The marker includes both pins, so a different release or digest can never
+    be reused accidentally.
+    """
+    runtimes_root = dest.parent / "runtimes" / "python"
+    if not runtimes_root.is_dir():
+        return None
+    for candidate in sorted(runtimes_root.iterdir()):
+        if candidate == dest or not candidate.is_dir():
+            continue
+        if _is_staged(
+            candidate,
+            candidate / ".python-runtime-version",
+            marker_value,
+        ):
+            return candidate
+    return None
+
+
+def main() -> None:  # pylint: disable=too-many-statements
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--dest",
@@ -321,6 +345,19 @@ def main() -> None:
     ):
         print(f"python-runtime already staged ({marker_value}); skipping")
         return
+    if preferred_release.lower() != "latest":
+        reusable = _find_reusable_runtime(dest, marker_value)
+        if reusable is not None:
+            print(
+                "Reusing verified standalone CPython from prior layered "
+                f"build: {reusable}",
+            )
+            atomic_install_tree(reusable, dest)
+            if not _is_staged(dest, marker, marker_value):
+                raise SystemExit(
+                    "reused Python runtime failed marker validation",
+                )
+            return
 
     print(f"Resolving standalone CPython {xy} for {triple}...")
     url, release = _find_asset_url(

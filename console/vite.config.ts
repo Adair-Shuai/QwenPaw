@@ -455,7 +455,13 @@ export default defineConfig(({ command, mode }) => {
   // while `vite build --mode test` is a real build that needs real CSS.
   const isVitest = command === "serve" && mode === "test";
   const env = loadEnv(mode, process.cwd(), "");
-  const appVersion = readQwenPawVersion(path.resolve(__dirname, ".."));
+  const adjacentRoot = path.resolve(__dirname, "..");
+  const sourceRoot =
+    env.QWENPAW_SOURCE_ROOT ||
+    (fs.existsSync(path.join(adjacentRoot, "src", "qwenpaw", "__version__.py"))
+      ? adjacentRoot
+      : path.join(os.homedir(), "Documents", "QwenPaw"));
+  const appVersion = readQwenPawVersion(sourceRoot);
   // Empty = same-origin; frontend and backend served together, no hardcoded host.
   // Use a dedicated Vite-prefixed key so unrelated shell BASE_URL values don't leak into the build.
   const apiBaseUrl = env.VITE_API_BASE_URL ?? "";

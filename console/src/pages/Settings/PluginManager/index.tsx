@@ -1,6 +1,7 @@
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Button, Empty, Spin, Table, Tabs } from "antd";
-import { ExternalLink, Package, Plus } from "lucide-react";
+import { CloudUpload, Package, Plus } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { usePluginManager } from "./hooks/usePluginManager";
 import { usePluginColumns } from "./hooks/usePluginColumns";
@@ -8,10 +9,12 @@ import { useInstallModal } from "./hooks/useInstallModal";
 import { InstallPluginModal } from "./components/InstallPluginModal";
 import { OfficialPluginList } from "./components/OfficialPluginList";
 import { MarketPluginList } from "./components/MarketPluginList";
+import { UGSciPublisherModal } from "@/components/UGSciPublisher/UGSciPublisherModal";
 import styles from "./index.module.less";
 
 export default function PluginManagerPage() {
   const { t } = useTranslation();
+  const [publisherOpen, setPublisherOpen] = useState(false);
 
   const {
     plugins,
@@ -57,7 +60,12 @@ export default function PluginManagerPage() {
     {
       key: "official",
       label: t("pluginManager.officialTitle"),
-      children: <OfficialPluginList onInstalled={refresh} />,
+      children: <OfficialPluginList source="qwenpaw" onInstalled={refresh} />,
+    },
+    {
+      key: "ugsci",
+      label: t("pluginManager.ugsciTitle"),
+      children: <OfficialPluginList source="ugsci" onInstalled={refresh} />,
     },
     {
       key: "market",
@@ -74,12 +82,10 @@ export default function PluginManagerPage() {
         extra={
           <>
             <Button
-              icon={<ExternalLink size={16} />}
-              onClick={() =>
-                window.open("https://platform.agentscope.io/plugins", "_blank")
-              }
+              icon={<CloudUpload size={16} />}
+              onClick={() => setPublisherOpen(true)}
             >
-              {t("pluginManager.publishBtn")}
+              发布到 UGSci
             </Button>
             <Button
               type="primary"
@@ -97,6 +103,11 @@ export default function PluginManagerPage() {
       </div>
 
       <InstallPluginModal {...installModal} />
+      <UGSciPublisherModal
+        open={publisherOpen}
+        kind="plugin"
+        onClose={() => setPublisherOpen(false)}
+      />
     </div>
   );
 }

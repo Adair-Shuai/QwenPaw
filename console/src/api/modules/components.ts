@@ -17,6 +17,13 @@ export interface QueueComponentUpdatesResponse {
   restart_required: boolean;
 }
 
+export interface QueueComponentUpdateResponse {
+  component: string;
+  queued: boolean;
+  restart_required?: boolean;
+  reason?: string;
+}
+
 export const componentsApi = {
   checkComponentUpdates: () =>
     request<ComponentUpdatesResponse>("/components/updates"),
@@ -24,4 +31,9 @@ export const componentsApi = {
     request<QueueComponentUpdatesResponse>("/components/updates/install", {
       method: "POST",
     }),
+  queueComponentUpdate: (component: string) =>
+    request<QueueComponentUpdateResponse>(
+      `/components/${encodeURIComponent(component)}/install`,
+      { method: "POST" },
+    ),
 };

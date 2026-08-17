@@ -44,9 +44,7 @@ def test_desktop_packagers_use_denylist_plugin_discovery():
 
 def test_whisper_is_opt_in_for_desktop_pyinstaller_builds():
     spec = SPEC_PATH.read_text(encoding="utf-8")
-    unix_build = (
-        UNIX_BUILD_PATH
-    ).read_text(
+    unix_build = (UNIX_BUILD_PATH).read_text(
         encoding="utf-8",
     )
     windows_build = WINDOWS_BUILD_PATH.read_text(encoding="utf-8")
@@ -70,6 +68,9 @@ def test_layered_builds_skip_pyinstaller_and_use_locked_dependency_layer():
     assert "--uv" not in windows_build
     assert 'repo / "requirements-desktop.lock"' in layer_builder
     assert '"--require-hashes"' in layer_builder
+    assert '"--no-isolation"' in layer_builder
+    assert '"wheel>=0.46,<1"' in windows_build
+    assert '"wheel>=0.46,<1"' in unix_build
     assert 'repo / "uv.lock"' not in layer_builder
 
 
@@ -78,7 +79,8 @@ def test_layered_builds_do_not_install_domain_packages_into_interpreter():
     windows_build = WINDOWS_BUILD_PATH.read_text(encoding="utf-8")
 
     unix_layered_branch = unix_build.split(
-        'if [ "$LAYERED_DESKTOP" = true ]; then', 1,
+        'if [ "$LAYERED_DESKTOP" = true ]; then',
+        1,
     )[1]
     windows_layered_branch = windows_build.split(
         "if ($LAYERED_DESKTOP) {",

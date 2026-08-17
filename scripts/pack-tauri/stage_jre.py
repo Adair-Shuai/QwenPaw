@@ -302,6 +302,38 @@ def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
     )
 
 
+def _local_marker_match(
+    dest: Path,
+    marker: Path,
+    *,
+    os_name: str,
+    arch: str,
+    release: str,
+    sha256: str,
+) -> str | None:
+    """Accept a previously verified JRE before querying Adoptium metadata."""
+    if not _java_exe(dest).is_file() or not marker.is_file():
+        return None
+    value = marker.read_text(encoding="utf-8").strip()
+    platform_suffix = f"-{os_name}-{arch}-"
+    if platform_suffix not in value:
+        return None
+    marker_release, marker_hash = value.rsplit(platform_suffix, 1)
+    valid_hash = len(marker_hash) == 64 and all(
+        char in "0123456789abcdef" for char in marker_hash
+    )
+    release_matches = not release or marker_release == release
+    hash_matches = not sha256 or marker_hash == sha256.strip().lower()
+    if (
+        not marker_release
+        or not valid_hash
+        or not release_matches
+        or not hash_matches
+    ):
+        return None
+    return value
+
+
 def _prune_regenerable_runtime_files(root: Path, os_name: str) -> None:
     """Remove VM caches that are unnecessary and troublesome to package."""
     if os_name != "windows":
@@ -347,6 +379,7 @@ def main() -> None:
     java_version = args.java_version
     dest = Path(args.dest).resolve()
     marker = dest / ".java-runtime-version"
+    os_name, arch = _target()
 
     if (
         os.environ.get("QWENPAW_REQUIRE_RUNTIME_HASHES", "").lower()
@@ -354,11 +387,21 @@ def main() -> None:
         and not args.java_release
     ):
         raise SystemExit("production build requires QWENPAW_JAVA_RELEASE")
+    cached_marker = _local_marker_match(
+        dest,
+        marker,
+        os_name=os_name,
+        arch=arch,
+        release=args.java_release,
+        sha256=args.sha256,
+    )
+    if cached_marker is not None:
+        print(f"java-runtime already staged ({cached_marker}); skipping")
+        return
     download_url, release_name, discovered_sha256 = _resolve_download_url(
         java_version,
         args.java_release,
     )
-    os_name, arch = _target()
     expected_sha256 = _resolve_sha256(
         args.sha256,
         discovered_sha256,

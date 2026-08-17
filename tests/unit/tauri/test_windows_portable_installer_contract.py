@@ -18,10 +18,10 @@ BOOTSTRAP = (
     REPO_ROOT / "scripts" / "pack-tauri" / "windows_portable_bootstrap.cs"
 )
 ZIP_BUILDER = (
-    REPO_ROOT
-    / "scripts"
-    / "pack-tauri"
-    / "build_windows_portable_zip.py"
+    REPO_ROOT / "scripts" / "pack-tauri" / "build_windows_portable_zip.py"
+)
+TREE_PREPARER = (
+    REPO_ROOT / "scripts" / "pack-tauri" / "prepare_windows_portable_tree.py"
 )
 
 
@@ -61,14 +61,14 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     assert "path = Path.GetFullPath(path);" in source
     assert "return path.Length < 248 ? path : ToExtendedPath(path);" in source
     path_for_io = source.split(
-        "private static string PathForIo(string path)", 1,
+        "private static string PathForIo(string path)",
+        1,
     )[1].split("private static string SafeRelativePath", 1)[0]
     assert path_for_io.index("Path.IsPathRooted(path)") < path_for_io.index(
         "Path.GetFullPath(path)",
     )
     assert (
-        'string manifest = Path.Combine(root, "checksums.sha256");'
-        in source
+        'string manifest = Path.Combine(root, "checksums.sha256");' in source
     )
     assert 'Path.Combine(ioRoot, "checksums.sha256")' not in source
     assert "EnumeratePackageFiles(root)" in source
@@ -91,22 +91,19 @@ def test_installer_retains_webview2_bootstrapper_in_staging() -> None:
     assert "function Ensure-WebView2 {" in script
     assert "param([string]$DestinationDir)" in script
     assert (
-        'Copy-Item -LiteralPath $bootstrapper -Destination '
+        "Copy-Item -LiteralPath $bootstrapper -Destination "
         '(Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe") -Force'
     ) in script
     assert "Ensure-WebView2 -DestinationDir $stagingDir" in script
 
 
 def test_windows_verifier_accepts_registered_webview2() -> None:
-    verifier = (
-        REPO_ROOT / "scripts" / "verify" / "launch_tauri_windows.ps1"
-    )
+    verifier = REPO_ROOT / "scripts" / "verify" / "launch_tauri_windows.ps1"
     source = verifier.read_text(encoding="utf-8")
 
     assert "WebView2 runtime is registered on this machine" in source
     assert (
-        "EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}"
-        in source
+        "EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" in source
     )
     assert (
         "::warning::WebView2 runtime is not installed "
@@ -132,34 +129,84 @@ def test_bootstrap_checksum_contract_matches_layered_payload() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
     assert (
-        'Path.Combine("payload", "binaries", "state", "active.json")'
-        in source
+        'Path.Combine("payload", "binaries", "state", "active.json")' in source
     )
     assert (
-        'Path.Combine("payload", "binaries", "cli", "qwenpaw.exe")'
-        in source
+        'Path.Combine("payload", "binaries", "cli", "qwenpaw.exe")' in source
     )
     assert (
         'Path.Combine("payload", "binaries", "update-assistant", '
         '"UGSciUpdateAssistant.exe")' in source
     )
     assert (
-        'Path.Combine("payload", "binaries", "qwenpaw-backend"'
-        not in source
+        'Path.Combine("payload", "binaries", "qwenpaw-backend"' not in source
     )
 
 
 def test_packager_prunes_bytecode_and_uses_verified_zip_builder() -> None:
     script = _script()
     builder = ZIP_BUILDER.read_text(encoding="utf-8")
+    preparer = TREE_PREPARER.read_text(encoding="utf-8")
 
-    assert 'Where-Object { $_.Name -eq "__pycache__" }' in script
-    assert '$_.Extension -in @(".pyc", ".pyo")' in script
+    assert "prepare_windows_portable_tree.py" in script
+    assert 'directory == "__pycache__"' in preparer
+    assert 'endswith((".pyc", ".pyo"))' in preparer
+    assert 'return "\\\\\\\\?\\\\" + native' in preparer
     assert "build_windows_portable_zip.py" in script
     assert "Compress-Archive -Path" not in script
     assert "allowZip64=True" in builder
     assert "archive.testzip()" in builder
     assert "archived != expected" in builder
+    assert 'return "\\\\\\\\?\\\\" + native' in builder
+    assert "onerror=walk_errors.append" in builder
+
+
+def test_installer_file_transactions_are_long_path_safe() -> None:
+    script = _script()
+
+    assert "function ConvertTo-LongIoPath" in script
+    assert "function Copy-DirectoryLongPathSafe" in script
+    assert "function Remove-DirectoryLongPathSafe" in script
+    assert "[IO.Directory]::EnumerateFiles" in script
+    assert "[IO.File]::Copy" in script
+    assert "Copy-DirectoryLongPathSafe -Source $payloadRoot" in script
+    assert "Remove-DirectoryLongPathSafe -Path $installDir" in script
+    assert (
+        '$stagingDir = Join-Path $installParent ".ug-i-$transactionId"'
+        in script
+    )
+    assert (
+        '$backupDir = Join-Path $installParent ".ug-b-$transactionId"'
+        in script
+    )
+    assert "[IO.Directory]::EnumerateFiles($rootIo" in script
+
+
+def test_first_level_install_does_not_recreate_drive_root() -> None:
+    """Installing to C:\\UGSci must not call New-Item against C:\\ itself."""
+    script = _script()
+
+    parent_block = script.split(
+        "$installParent = Split-Path -Parent $installDir",
+        1,
+    )[1].split('$appExe = Join-Path $installDir "UGSci.exe"', 1)[0]
+    assert "New-Item -ItemType Directory -Path $installParent" not in (
+        parent_block
+    )
+    assert "Test-Path -LiteralPath $installParent -PathType Container" in (
+        parent_block
+    )
+    assert "[IO.Directory]::CreateDirectory($installParent)" in parent_block
+    assert "The installation folder has an invalid parent path" in parent_block
+
+
+def test_installer_forces_utf8_when_capturing_localized_errors() -> None:
+    """Setup.exe must not mojibake Windows PowerShell error messages."""
+    script = _script()
+
+    assert "$utf8Encoding = New-Object Text.UTF8Encoding($false)" in script
+    assert "[Console]::OutputEncoding = $utf8Encoding" in script
+    assert "$OutputEncoding = $utf8Encoding" in script
 
 
 def test_verified_zip_builder_preserves_nested_manifest_members(
@@ -203,8 +250,7 @@ def test_bootstrap_prefills_only_trusted_canonical_or_legacy_install() -> None:
         'File.Exists(Path.Combine(location, "qwenpaw-desktop.exe"))' in source
     )
     assert (
-        'Path.Combine(location, "binaries", "state", "active.json")'
-        in source
+        'Path.Combine(location, "binaries", "state", "active.json")' in source
     )
     assert 'Path.Combine(location, "version.json")' in source
 
@@ -295,6 +341,6 @@ def test_update_assistant_can_defer_commit_until_external_health_check() -> (
 def test_bootstrap_missing_file_error_guides_long_path_extraction() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
-    assert "\"Package file is missing: \" + relative" in source
+    assert '"Package file is missing: " + relative' in source
     assert "extract to a short path" in source
     assert "use 7-Zip" in source

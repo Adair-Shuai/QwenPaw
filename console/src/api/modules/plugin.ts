@@ -87,6 +87,90 @@ export interface OfficialPluginCatalog {
   error?: string | null;
 }
 
+export type PluginCatalogSource = "qwenpaw" | "ugsci";
+
+interface RemoteCatalogFile {
+  id?: string;
+  plugin_id?: string;
+  name?: string | Record<string, string>;
+  description?: string | Record<string, string>;
+  version?: string;
+  author?: string;
+  platform?: string;
+  size?: string;
+  sha256?: string;
+  url?: string;
+  qwenpaw_version?: { min?: string; max?: string };
+}
+
+const QWENPAW_PLUGIN_CDN = "https://download.qwenpaw.agentscope.io";
+const UGSCI_PLUGIN_IDS = new Set(["ugsci", "ugsci_research", "uideas", "ulit"]);
+
+function comparePluginVersions(a: string, b: string): number {
+  const tokenize = (value: string) =>
+    value
+      .replace(/^v/i, "")
+      .split(/[.+-]/)
+      .flatMap((part) => part.match(/\d+|[a-z]+/gi) ?? [])
+      .map((part) => (/^\d+$/.test(part) ? Number(part) : part.toLowerCase()));
+  const left = tokenize(a);
+  const right = tokenize(b);
+  const length = Math.max(left.length, right.length);
+  for (let index = 0; index < length; index += 1) {
+    const l = left[index] ?? 0;
+    const r = right[index] ?? 0;
+    if (l === r) continue;
+    if (typeof l === "number" && typeof r === "number") return l - r;
+    if (typeof l === "number") return 1;
+    if (typeof r === "number") return -1;
+    return l.localeCompare(r);
+  }
+  return 0;
+}
+
+function latestPerPlugin(
+  plugins: OfficialPluginCatalogEntry[],
+): OfficialPluginCatalogEntry[] {
+  const latest = new Map<string, OfficialPluginCatalogEntry>();
+  for (const entry of plugins) {
+    const current = latest.get(entry.plugin_id);
+    if (!current || comparePluginVersions(entry.version, current.version) > 0) {
+      latest.set(entry.plugin_id, entry);
+    }
+  }
+  return [...latest.values()].sort((a, b) =>
+    `${a.kind}:${a.name}`.localeCompare(`${b.kind}:${b.name}`),
+  );
+}
+
+function localizedValue(
+  value: string | Record<string, string> | undefined,
+): string {
+  if (!value) return "";
+  if (typeof value === "string") return value;
+  return value["zh-CN"] || value.zh || value["en-US"] || value.en || "";
+}
+
+function isCompatible(entry: RemoteCatalogFile, appVersion: string): boolean {
+  if (!appVersion || !entry.qwenpaw_version) return true;
+  const { min, max } = entry.qwenpaw_version;
+  if (min && comparePluginVersions(appVersion, min) < 0) return false;
+  if (max && comparePluginVersions(appVersion, max) > 0) return false;
+  return true;
+}
+
+async function installedVersionMap(): Promise<Map<string, string>> {
+  const plugins = await fetchPlugins();
+  const installed = new Map<string, string>();
+  for (const plugin of plugins) {
+    const current = installed.get(plugin.id);
+    if (!current || comparePluginVersions(plugin.version, current) > 0) {
+      installed.set(plugin.id, plugin.version);
+    }
+  }
+  return installed;
+}
+
 /**
  * Fetch the list of loaded plugins from the backend.
  */
@@ -136,6 +220,133 @@ export async function fetchPluginCatalog(): Promise<OfficialPluginCatalog> {
     );
   }
 
+  return response.json();
+}
+
+export async function fetchUGSciPluginCatalog(): Promise<OfficialPluginCatalog> {
+  const [catalog, installed] = await Promise.all([
+    fetchPluginCatalog(),
+    installedVersionMap(),
+  ]);
+  const plugins = latestPerPlugin(catalog.plugins ?? [])
+    .filter(
+      (entry) =>
+        UGSCI_PLUGIN_IDS.has(entry.plugin_id) ||
+        entry.author?.toLowerCase().includes("ugsci"),
+    )
+    .map((entry) => {
+      const installedVersion = installed.get(entry.plugin_id);
+      return {
+        ...entry,
+        installed: Boolean(installedVersion),
+        installed_version: installedVersion,
+        upgrade_available: Boolean(
+          installedVersion &&
+            comparePluginVersions(entry.version, installedVersion) > 0,
+        ),
+      };
+    });
+  return { ...catalog, plugins };
+}
+
+export async function fetchQwenPawPluginCatalog(): Promise<OfficialPluginCatalog> {
+  const [mainResponse, installed, versionResponse] = await Promise.all([
+    fetch(`${QWENPAW_PLUGIN_CDN}/metadata/index.json`, { cache: "no-store" }),
+    installedVersionMap(),
+    fetch(getApiUrl("/version"), { headers: buildAuthHeaders() }).catch(
+      () => null,
+    ),
+  ]);
+  if (!mainResponse.ok) {
+    throw new Error(`Failed to load QwenPaw catalog (${mainResponse.status})`);
+  }
+  const main = await mainResponse.json();
+  const indexPath = main?.products?.plugins?.index_url;
+  if (typeof indexPath !== "string" || !indexPath.startsWith("/")) {
+    throw new Error("Invalid QwenPaw plugin catalog index");
+  }
+  const appVersion = versionResponse?.ok
+    ? String((await versionResponse.json())?.version ?? "")
+    : "";
+  const indexResponse = await fetch(`${QWENPAW_PLUGIN_CDN}${indexPath}`, {
+    cache: "no-store",
+  });
+  if (!indexResponse.ok) {
+    throw new Error(`Failed to load QwenPaw plugins (${indexResponse.status})`);
+  }
+  const index = await indexResponse.json();
+  const files = Object.values(index?.files ?? {}) as RemoteCatalogFile[];
+  const plugins = files
+    .filter((entry) => entry && isCompatible(entry, appVersion))
+    .filter(
+      (entry) => typeof entry.url === "string" && entry.url.startsWith("/"),
+    )
+    .map((entry) => {
+      const pluginId = String(entry.plugin_id || entry.id || "");
+      const catalogVersion = String(entry.version || "0.0.0");
+      const installedVersion = installed.get(pluginId);
+      const descriptions =
+        typeof entry.description === "object" ? entry.description : undefined;
+      return {
+        id: String(entry.id || `${pluginId}-${catalogVersion}`),
+        plugin_id: pluginId,
+        name: localizedValue(entry.name) || pluginId,
+        description: localizedValue(entry.description),
+        description_i18n: descriptions,
+        version: catalogVersion,
+        author: String(entry.author || ""),
+        kind: String(entry.platform || ""),
+        size: String(entry.size || ""),
+        sha256: String(entry.sha256 || ""),
+        install_url: `${QWENPAW_PLUGIN_CDN}${entry.url}`,
+        installed: Boolean(installedVersion),
+        installed_version: installedVersion,
+        upgrade_available: Boolean(
+          installedVersion &&
+            comparePluginVersions(catalogVersion, installedVersion) > 0,
+        ),
+      } satisfies OfficialPluginCatalogEntry;
+    });
+  return {
+    updated_at: String(index?.updated_at ?? "") || null,
+    plugins: latestPerPlugin(plugins),
+    error: null,
+  };
+}
+
+export interface RuntimePluginReplaceResult {
+  id: string;
+  name: string;
+  version: string;
+  restart_required: boolean;
+  backup_path?: string;
+}
+
+export async function replaceInstalledPlugin(options: {
+  source: string;
+  pluginId: string;
+  version?: string;
+  sha256?: string;
+}): Promise<RuntimePluginReplaceResult> {
+  const response = await fetch(getApiUrl("/plugins/replace"), {
+    method: "POST",
+    headers: {
+      ...buildAuthHeaders(),
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      source: options.source,
+      plugin_id: options.pluginId,
+      version: options.version,
+      sha256: options.sha256,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({}));
+    throw new Error(
+      body.detail ?? `Plugin upgrade failed (${response.status})`,
+    );
+  }
   return response.json();
 }
 

@@ -80,6 +80,10 @@ param(
   [string]$InstallDir
 )
 $ErrorActionPreference = "Stop"
+$utf8Encoding = New-Object Text.UTF8Encoding($false)
+[Console]::InputEncoding = $utf8Encoding
+[Console]::OutputEncoding = $utf8Encoding
+$OutputEncoding = $utf8Encoding
 $sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $payloadRoot = Join-Path $sourceRoot "payload"
 $checksumManifest = Join-Path $sourceRoot "checksums.sha256"
@@ -130,7 +134,10 @@ function Get-DirectoryPrefix([string]$Path) {
 }
 
 function Get-Sha256Hex([string]$Path) {
-  $stream = [IO.File]::OpenRead($Path)
+  $ioPath = if ($Path.Length -lt 248) { $Path } elseif ($Path.StartsWith('\\')) {
+    '\\?\UNC\' + $Path.Substring(2)
+  } else { '\\?\' + $Path }
+  $stream = [IO.File]::OpenRead($ioPath)
   try {
     $sha = [Security.Cryptography.SHA256]::Create()
     try {
@@ -160,20 +167,25 @@ function Test-PackageIntegrity {
     if ([IO.Path]::IsPathRooted($relative) -or $relative.Split('\') -contains '..') {
       throw "Unsafe checksum path: $relative"
     }
-    $fullPath = [IO.Path]::GetFullPath((Join-Path $root $relative))
+    $fullPath = Join-Path $root $relative
     if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
       throw "Checksum path escapes package root: $relative"
     }
     if (-not $expected.Add($relative)) { throw "Duplicate checksum entry: $relative" }
-    if (-not (Test-Path -LiteralPath $fullPath -PathType Leaf)) {
+    $ioPath = if ($fullPath.Length -lt 248) { $fullPath } elseif ($fullPath.StartsWith('\\')) {
+      '\\?\UNC\' + $fullPath.Substring(2)
+    } else { '\\?\' + $fullPath }
+    if (-not [IO.File]::Exists($ioPath)) {
       throw "Package file is missing: $relative"
     }
     $actualHash = Get-Sha256Hex -Path $fullPath
     if ($actualHash -ne $expectedHash) { throw "Package checksum mismatch: $relative" }
   }
-  foreach ($file in Get-ChildItem -LiteralPath $root -File -Recurse -Force) {
-    if ($file.FullName -eq $checksumManifest) { continue }
-    $relative = $file.FullName.Substring($rootPrefix.Length)
+  $rootIo = if ($root.StartsWith('\\')) { '\\?\UNC\' + $root.Substring(2) } else { '\\?\' + $root }
+  foreach ($file in [IO.Directory]::EnumerateFiles($rootIo, '*', [IO.SearchOption]::AllDirectories)) {
+    $normalFile = if ($file.StartsWith('\\?\UNC\')) { '\\' + $file.Substring(8) } elseif ($file.StartsWith('\\?\')) { $file.Substring(4) } else { $file }
+    if ($normalFile -eq $checksumManifest) { continue }
+    $relative = $normalFile.Substring($rootPrefix.Length)
     if (-not $expected.Contains($relative)) { throw "Unchecked package file: $relative" }
   }
   foreach ($required in @(
@@ -321,11 +333,23 @@ if ((Test-Path -LiteralPath $installDir -PathType Container) -and
   if (-not $existingInstallDir) { $existingInstallDir = $installDir }
 }
 $installParent = Split-Path -Parent $installDir
-New-Item -ItemType Directory -Path $installParent -Force | Out-Null
+if (-not $installParent -or -not [IO.Path]::IsPathRooted($installParent)) {
+  throw "The installation folder has an invalid parent path"
+}
+# A first-level destination such as C:\UGSci has C:\ as its parent.  Some
+# Windows PowerShell / filesystem-provider combinations reject directory
+# already existing volume root with CreateDirectoryArgumentError.  Never ask
+# the provider to recreate an existing root (or any existing parent).
+if (-not (Test-Path -LiteralPath $installParent -PathType Container)) {
+  [IO.Directory]::CreateDirectory($installParent) | Out-Null
+}
+if (-not (Test-Path -LiteralPath $installParent -PathType Container)) {
+  throw "The installation folder parent could not be created: $installParent"
+}
 $appExe = Join-Path $installDir "UGSci.exe"
 $transactionId = [Guid]::NewGuid().ToString("N")
-$stagingDir = Join-Path $installParent ".UGSci Desktop.install-$transactionId"
-$backupDir = Join-Path $installParent ".UGSci Desktop.backup-$transactionId"
+$stagingDir = Join-Path $installParent ".ug-i-$transactionId"
+$backupDir = Join-Path $installParent ".ug-b-$transactionId"
 $mutex = New-Object Threading.Mutex($false, "Local\UGSciDesktopPortableInstaller")
 $mutexAcquired = $false
 try {
@@ -547,6 +571,42 @@ function Move-DirectoryWithRetry {
   }
   throw "Cannot move the existing UGSci Desktop installation after $Attempts attempts. A process is still using its files. $lastError"
 }
+
+function ConvertTo-LongIoPath {
+  param([Parameter(Mandatory = $true)] [string]$Path)
+  $full = [IO.Path]::GetFullPath($Path)
+  if ($full.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $full }
+  if ($full.StartsWith('\\', [StringComparison]::Ordinal)) {
+    return '\\?\UNC\' + $full.Substring(2)
+  }
+  return '\\?\' + $full
+}
+
+function Copy-DirectoryLongPathSafe {
+  param(
+    [Parameter(Mandatory = $true)] [string]$Source,
+    [Parameter(Mandatory = $true)] [string]$Destination
+  )
+  $sourceIo = ConvertTo-LongIoPath $Source
+  $destinationIo = ConvertTo-LongIoPath $Destination
+  [IO.Directory]::CreateDirectory($destinationIo) | Out-Null
+  foreach ($directory in [IO.Directory]::EnumerateDirectories($sourceIo, '*', [IO.SearchOption]::AllDirectories)) {
+    $relative = $directory.Substring($sourceIo.TrimEnd('\').Length).TrimStart('\')
+    [IO.Directory]::CreateDirectory([IO.Path]::Combine($destinationIo, $relative)) | Out-Null
+  }
+  foreach ($file in [IO.Directory]::EnumerateFiles($sourceIo, '*', [IO.SearchOption]::AllDirectories)) {
+    $relative = $file.Substring($sourceIo.TrimEnd('\').Length).TrimStart('\')
+    $target = [IO.Path]::Combine($destinationIo, $relative)
+    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
+    [IO.File]::Copy($file, $target, $true)
+  }
+}
+
+function Remove-DirectoryLongPathSafe {
+  param([Parameter(Mandatory = $true)] [string]$Path)
+  $ioPath = ConvertTo-LongIoPath $Path
+  if ([IO.Directory]::Exists($ioPath)) { [IO.Directory]::Delete($ioPath, $true) }
+}
 if (-not (Test-Path -LiteralPath (Join-Path $payloadPython "python\python.exe") -PathType Leaf)) {
   throw "Portable package is missing the layered Python runtime"
 }
@@ -560,8 +620,7 @@ if ((Test-Path -LiteralPath $stagingDir) -or (Test-Path -LiteralPath $backupDir)
   throw "A unique installer transaction path already exists; setup will not overwrite recovery data"
 }
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
-Get-ChildItem -LiteralPath $payloadRoot -Force |
-  Copy-Item -Destination $stagingDir -Recurse -Force
+Copy-DirectoryLongPathSafe -Source $payloadRoot -Destination $stagingDir
 Copy-Item -LiteralPath $versionManifest -Destination (Join-Path $stagingDir "version.json") -Force
 
 $releaseVersion = [string]$packageVersion.version
@@ -626,8 +685,8 @@ try {
       $oldPath = Join-Path $backupDir $preserved
       $newPath = Join-Path $installDir $preserved
       if (Test-Path $oldPath) {
-        if (Test-Path $newPath) { Remove-Item -LiteralPath $newPath -Recurse -Force }
-        Copy-Item -LiteralPath $oldPath -Destination $newPath -Recurse -Force
+        if (Test-Path $newPath) { Remove-DirectoryLongPathSafe -Path $newPath }
+        Copy-DirectoryLongPathSafe -Source $oldPath -Destination $newPath
       }
     }
   }
@@ -687,7 +746,7 @@ try {
     }
     Write-InstallTransaction -Stage "registered"
   } elseif (Test-Path $backupDir) {
-    Remove-Item -LiteralPath $backupDir -Recurse -Force -ErrorAction SilentlyContinue
+    try { Remove-DirectoryLongPathSafe -Path $backupDir } catch { }
   }
   if ($legacyUninstallKey -and $legacyUninstallKey -ne (Get-Item -LiteralPath $uninstallKey).PSPath) {
     # This is cleanup after the new install has fully committed. A stale legacy
@@ -714,7 +773,7 @@ try {
   $rollbackError = $null
   try {
     if ($newTreeActivated -and (Test-Path -LiteralPath $installDir)) {
-      Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction Stop
+      Remove-DirectoryLongPathSafe -Path $installDir
       $newTreeActivated = $false
     }
     if ($previousTreeMoved) {
@@ -760,7 +819,7 @@ try {
   throw "Portable installation failed; $rollbackState. $installError"
 }
 } finally {
-  Remove-Item -LiteralPath $stagingDir -Recurse -Force -ErrorAction SilentlyContinue
+  try { Remove-DirectoryLongPathSafe -Path $stagingDir } catch { }
   if ($mutexAcquired) { $mutex.ReleaseMutex() }
   $mutex.Dispose()
 }
@@ -859,7 +918,12 @@ foreach ($pidText in @($WaitPids -split ',')) {
   }
 }
 for ($attempt = 0; $attempt -lt 5 -and (Test-Path -LiteralPath $installDir); $attempt++) {
-  Remove-Item -LiteralPath $installDir -Recurse -Force -ErrorAction SilentlyContinue
+  try {
+    $ioPath = if ($installDir.StartsWith('\\')) {
+      '\\?\UNC\' + $installDir.Substring(2)
+    } else { '\\?\' + $installDir }
+    if ([IO.Directory]::Exists($ioPath)) { [IO.Directory]::Delete($ioPath, $true) }
+  } catch { }
   if (Test-Path -LiteralPath $installDir) { Start-Sleep -Seconds 1 }
 }
 Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force -ErrorAction SilentlyContinue
@@ -946,25 +1010,11 @@ try {
 # paths while leaving them in the checksum manifest, producing a ZIP that is
 # guaranteed to fail Setup verification. Remove them before hashing and use a
 # ZIP builder that verifies the final member set and CRCs.
-Get-ChildItem -LiteralPath $PortableRoot -Directory -Recurse -Force |
-  Where-Object { $_.Name -eq "__pycache__" } |
-  Sort-Object { $_.FullName.Length } -Descending |
-  Remove-Item -Recurse -Force
-Get-ChildItem -LiteralPath $PortableRoot -File -Recurse -Force |
-  Where-Object { $_.Extension -in @(".pyc", ".pyo") } |
-  Remove-Item -Force
-
-$rootPrefix = $PortableRoot.TrimEnd('\') + '\'
-$checksumLines = Get-ChildItem -LiteralPath $PortableRoot -File -Recurse -Force |
-  Where-Object { $_.FullName -ne $checksumManifest } |
-  ForEach-Object {
-    $relative = $_.FullName.Substring($rootPrefix.Length).Replace('\', '/')
-    $hash = (Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-    [pscustomobject]@{ Relative = $relative; Line = "$hash  $relative" }
-  } |
-  Sort-Object Relative |
-  ForEach-Object { $_.Line }
-$checksumLines | Set-Content -LiteralPath $checksumManifest -Encoding ASCII
+python (Join-Path $PSScriptRoot "prepare_windows_portable_tree.py") `
+  --root $PortableRoot --manifest $checksumManifest
+if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $checksumManifest -PathType Leaf)) {
+  throw "Portable tree preparation and checksum generation failed (exit $LASTEXITCODE)"
+}
 
 $ZipPath = [IO.Path]::GetFullPath($ZipPath)
 $zipParent = Split-Path -Parent $ZipPath

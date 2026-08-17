@@ -18,7 +18,10 @@ import type {
   MarketPluginSortBy,
 } from "@/api/modules/pluginMarket";
 import { openExternalLink } from "@/utils/openExternalLink";
-import { useMarketPlugins } from "../hooks/useMarketPlugins";
+import {
+  isMarketUpgradeAvailable,
+  useMarketPlugins,
+} from "../hooks/useMarketPlugins";
 import styles from "./OfficialPluginList.module.less";
 import marketStyles from "./MarketPluginList.module.less";
 
@@ -259,9 +262,7 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                 )}
                 <Tooltip
                   title={
-                    entry.installed
-                      ? t("pluginManager.updateFromHeader")
-                      : !isCompatible(entry)
+                    !isCompatible(entry)
                       ? `This plugin is labeled for QwenPaw ${
                           entry.qwenpaw_compat_labels?.join(", ") ?? "unknown"
                         }; compatibility with QwenPaw ${
@@ -276,7 +277,7 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                     icon={<Download size={14} />}
                     loading={installingId === entry.id}
                     disabled={
-                      entry.installed ||
+                      (entry.installed && !isMarketUpgradeAvailable(entry)) ||
                       (installingId !== null && installingId !== entry.id)
                     }
                     onClick={() => {
@@ -307,7 +308,9 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
                     }}
                   >
                     {entry.installed
-                      ? t("pluginManager.updateFromHeaderBtn")
+                      ? isMarketUpgradeAvailable(entry)
+                        ? t("pluginManager.catalogUpgradeBtn")
+                        : t("pluginManager.catalogLatest")
                       : t("pluginManager.catalogInstall")}
                   </Button>
                 </Tooltip>

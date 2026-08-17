@@ -206,7 +206,8 @@ internal static class UGSciUpdateAssistant
                 VerifySha256(options.PackagePath, options.ExpectedSha256);
                 WriteJournal("verified", null);
 
-                stagingRoot = Path.Combine(stateRoot, "staging", Sanitize(options.TargetVersion) + "-" +
+                stagingRoot = Path.Combine(Environment.GetFolderPath(
+                    Environment.SpecialFolder.LocalApplicationData), "UGSci", "u",
                     Guid.NewGuid().ToString("N"));
                 Directory.CreateDirectory(stagingRoot);
                 SetStage("Extracting update", "Preparing application files. UGSci has not crashed.", 5);
@@ -488,18 +489,24 @@ internal static class UGSciUpdateAssistant
                     StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The deferred update target does not match the registered installation.");
             string backupName = Path.GetFileName(value.backup_dir);
-            const string backupPrefix = ".UGSci Desktop.backup-";
+            const string backupPrefix = ".ug-b-";
+            const string legacyBackupPrefix = ".UGSci Desktop.backup-";
             string backupId = backupName != null && backupName.StartsWith(backupPrefix, StringComparison.Ordinal)
-                ? backupName.Substring(backupPrefix.Length) : "";
+                ? backupName.Substring(backupPrefix.Length) :
+                backupName != null && backupName.StartsWith(legacyBackupPrefix, StringComparison.Ordinal)
+                    ? backupName.Substring(legacyBackupPrefix.Length) : "";
             Guid parsedBackupId;
             if (backupId.Length != 32 || !Guid.TryParseExact(backupId, "N", out parsedBackupId))
                 throw new InvalidDataException("The deferred update backup name is invalid.");
             if (!string.IsNullOrWhiteSpace(value.staging_dir))
             {
                 string stagingName = Path.GetFileName(value.staging_dir);
-                const string stagingPrefix = ".UGSci Desktop.install-";
+                const string stagingPrefix = ".ug-i-";
+                const string legacyStagingPrefix = ".UGSci Desktop.install-";
                 string stagingId = stagingName != null && stagingName.StartsWith(stagingPrefix, StringComparison.Ordinal)
-                    ? stagingName.Substring(stagingPrefix.Length) : "";
+                    ? stagingName.Substring(stagingPrefix.Length) :
+                    stagingName != null && stagingName.StartsWith(legacyStagingPrefix, StringComparison.Ordinal)
+                        ? stagingName.Substring(legacyStagingPrefix.Length) : "";
                 Guid parsedStagingId;
                 if (!string.Equals(Path.GetDirectoryName(value.staging_dir), parent, StringComparison.OrdinalIgnoreCase) ||
                     stagingId.Length != 32 || !Guid.TryParseExact(stagingId, "N", out parsedStagingId))

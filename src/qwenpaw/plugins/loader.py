@@ -25,6 +25,7 @@ from packaging.requirements import Requirement
 from .architecture import PluginManifest, PluginRecord
 from .api import PluginApi
 from .registry import PluginRegistry
+from ..utils.windows_paths import copy_tree, remove_tree
 
 logger = logging.getLogger(__name__)
 
@@ -1385,8 +1386,8 @@ class PluginLoader:
 
             def _replace_tree() -> None:
                 if target_dir.exists():
-                    shutil.rmtree(target_dir)
-                shutil.copytree(source_path, target_dir)
+                    remove_tree(target_dir)
+                copy_tree(source_path, target_dir)
 
             await asyncio.to_thread(_replace_tree)
             logger.info(
@@ -1546,7 +1547,7 @@ class PluginLoader:
         if delete_files:
             source_path = record.source_path
             if await asyncio.to_thread(source_path.exists):
-                await asyncio.to_thread(shutil.rmtree, source_path)
+                await asyncio.to_thread(remove_tree, source_path)
                 logger.info(
                     f"Deleted plugin files at {source_path}",
                 )

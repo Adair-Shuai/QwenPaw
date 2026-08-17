@@ -1,0 +1,81 @@
+.intro {
+  margin-bottom: 16px;
+}
+
+.statusGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0;
+}
+
+.statusCard {
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  padding: 12px;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.statusTitle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+  margin-bottom: 4px;
+}
+
+.formRow {
+  margin-bottom: 16px;
+}
+
+.label {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.inspection {
+  margin-top: 14px;
+  border: 1px solid var(--ant-color-border-secondary);
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.inspectionHeader {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.meta {
+  color: var(--ant-color-text-secondary);
+  font-size: 13px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.uploadBox {
+  border: 1px dashed var(--ant-color-border);
+  border-radius: 10px;
+  padding: 20px;
+  text-align: center;
+  background: var(--ant-color-fill-quaternary);
+}
+
+.fileName {
+  margin-top: 8px;
+  color: var(--ant-color-text-secondary);
+}
+
+@media (max-width: 680px) {
+  .statusGrid {
+    grid-template-columns: 1fr;
+  }
+}

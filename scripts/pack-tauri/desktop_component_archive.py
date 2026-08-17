@@ -5,11 +5,25 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import os
 import shutil
 import tarfile
 import tempfile
 from pathlib import Path, PurePosixPath
+
+try:
+    from copy_windows_tree import remove_tree
+except ModuleNotFoundError:
+    _helper_spec = importlib.util.spec_from_file_location(
+        "qwenpaw_copy_windows_tree",
+        Path(__file__).with_name("copy_windows_tree.py"),
+    )
+    if _helper_spec is None or _helper_spec.loader is None:
+        raise
+    _helper = importlib.util.module_from_spec(_helper_spec)
+    _helper_spec.loader.exec_module(_helper)
+    remove_tree = _helper.remove_tree
 
 
 MAX_MEMBERS = 200_000
@@ -169,10 +183,10 @@ def extract(archive_path: Path, output: Path) -> None:
                     shutil.copyfileobj(source, destination, length=1024 * 1024)
                 target.chmod(member.mode & 0o7777)
         if output.exists():
-            shutil.rmtree(output)
+            remove_tree(output)
         temporary.replace(output)
     finally:
-        shutil.rmtree(temporary, ignore_errors=True)
+        remove_tree(temporary, ignore_errors=True)
 
 
 def main() -> int:

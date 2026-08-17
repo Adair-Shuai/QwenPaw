@@ -6,10 +6,26 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
+import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+
+try:
+    from copy_windows_tree import copy_tree, remove_tree
+except ModuleNotFoundError:
+    _helper_spec = importlib.util.spec_from_file_location(
+        "qwenpaw_copy_windows_tree",
+        Path(__file__).with_name("copy_windows_tree.py"),
+    )
+    if _helper_spec is None or _helper_spec.loader is None:
+        raise
+    _helper = importlib.util.module_from_spec(_helper_spec)
+    _helper_spec.loader.exec_module(_helper)
+    copy_tree = _helper.copy_tree
+    remove_tree = _helper.remove_tree
 
 from packaging.version import InvalidVersion, Version
 
@@ -98,8 +114,11 @@ def stage(binaries: Path, output: Path, fallback_version: str) -> list[dict]:
             )
         destination = output / component_id
         if destination.exists():
-            shutil.rmtree(destination)
-        shutil.copytree(source, destination, symlinks=False)
+            remove_tree(destination)
+        if os.name == "nt":
+            copy_tree(source, destination)
+        else:
+            shutil.copytree(source, destination, symlinks=False)
         if component_id == "python-packages":
             _normalize_python_packages_metadata(destination)
         digest = _tree_digest(destination)

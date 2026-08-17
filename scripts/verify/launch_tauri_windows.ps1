@@ -19,7 +19,9 @@ if ($installer) {
   if (-not $portable) { throw "Neither NSIS setup.exe nor portable Windows installer found in dist/" }
   $portableRoot = Join-Path $env:RUNNER_TEMP "qwenpaw-portable-install"
   if (Test-Path $portableRoot) { Remove-Item -LiteralPath $portableRoot -Recurse -Force }
-  Expand-Archive -LiteralPath $portable.FullName -DestinationPath $portableRoot -Force
+  python scripts/pack-tauri/extract_windows_zip.py `
+    --archive $portable.FullName --destination $portableRoot
+  if ($LASTEXITCODE -ne 0) { throw "Portable ZIP extraction failed" }
   foreach ($required in @("Setup.exe", "install.ps1", "version.json", "checksums.sha256",
       "payload\UGSci.exe", "payload\binaries\state\active.json",
       "payload\binaries\cli\qwenpaw.exe",

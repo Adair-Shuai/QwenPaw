@@ -69,6 +69,8 @@ jobs:
           test -n "${{ vars.QWENPAW_NODE_SHA256_MACOS || vars.QWENPAW_NODE_SHA256 }}"
           test -n "${{ vars.QWENPAW_JRE_SHA256_WINDOWS || vars.QWENPAW_JRE_SHA256 }}"
           test -n "${{ vars.QWENPAW_JRE_SHA256_MACOS || vars.QWENPAW_JRE_SHA256 }}"
+          test -n "${{ vars.QWENPAW_NEQSIM_SHA256_WINDOWS || vars.QWENPAW_NEQSIM_SHA256 || 'c91fbfaa9e10ef7f7b70ed5ebf92c6ae3b7b5a1c917ea73b872d1f8b823fa412' }}"
+          test -n "${{ vars.QWENPAW_NEQSIM_SHA256_MACOS || vars.QWENPAW_NEQSIM_SHA256 || 'c91fbfaa9e10ef7f7b70ed5ebf92c6ae3b7b5a1c917ea73b872d1f8b823fa412' }}"
           test -n "${{ vars.QWENPAW_JAVA_RELEASE }}"
 
       - name: Report unsigned validation mode
@@ -83,6 +85,7 @@ jobs:
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_WINDOWS || vars.QWENPAW_NODE_SHA256 }}
       QWENPAW_JRE_SHA256: ${{ vars.QWENPAW_JRE_SHA256_WINDOWS || vars.QWENPAW_JRE_SHA256 }}
+      QWENPAW_NEQSIM_SHA256: ${{ vars.QWENPAW_NEQSIM_SHA256_WINDOWS || vars.QWENPAW_NEQSIM_SHA256 || 'c91fbfaa9e10ef7f7b70ed5ebf92c6ae3b7b5a1c917ea73b872d1f8b823fa412' }}
       QWENPAW_JAVA_RELEASE: ${{ vars.QWENPAW_JAVA_RELEASE }}
       QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE: "20260623"
       QWENPAW_PYTHON_RUNTIME_SHA256: "7e0a8abfee952efc63dff290022a73f0185b586f522678ae7a757a56f23c289b"
@@ -170,7 +173,8 @@ jobs:
           }
           $inspectRoot = Join-Path $env:RUNNER_TEMP 'qwenpaw-portable-layout'
           if (Test-Path -LiteralPath $inspectRoot) { Remove-Item -LiteralPath $inspectRoot -Recurse -Force }
-          Expand-Archive -LiteralPath $portable.FullName -DestinationPath $inspectRoot -Force
+          python scripts/pack-tauri/extract_windows_zip.py `
+            --archive $portable.FullName --destination $inspectRoot
           foreach ($required in @('Setup.exe', 'install.ps1', 'version.json', 'checksums.sha256',
               'payload\UGSci.exe', 'payload\binaries\state\active.json',
               'payload\binaries\cli\qwenpaw.exe', 'payload\binaries\update-assistant\UGSciUpdateAssistant.exe')) {
@@ -329,6 +333,7 @@ jobs:
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_MACOS || vars.QWENPAW_NODE_SHA256 }}
       QWENPAW_JRE_SHA256: ${{ vars.QWENPAW_JRE_SHA256_MACOS || vars.QWENPAW_JRE_SHA256 }}
+      QWENPAW_NEQSIM_SHA256: ${{ vars.QWENPAW_NEQSIM_SHA256_MACOS || vars.QWENPAW_NEQSIM_SHA256 || 'c91fbfaa9e10ef7f7b70ed5ebf92c6ae3b7b5a1c917ea73b872d1f8b823fa412' }}
       QWENPAW_JAVA_RELEASE: ${{ vars.QWENPAW_JAVA_RELEASE }}
       QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE: "20260623"
       QWENPAW_PYTHON_RUNTIME_SHA256: "d2324bfd1a7b9fc44ccd884c3a2505bcab6691dbfd4f8270e10c50aaa4e19506"

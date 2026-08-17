@@ -104,3 +104,21 @@ def test_production_asset_lookup_never_falls_back_to_latest(monkeypatch):
             "20260623",
             allow_latest_fallback=False,
         )
+
+
+def test_finds_exact_reusable_layered_runtime(tmp_path, monkeypatch):
+    helper = _load_helper()
+    monkeypatch.setattr(helper.platform, "system", lambda: "Windows")
+    dest = tmp_path / "binaries" / "python-runtime"
+    candidate = tmp_path / "binaries" / "runtimes" / "python" / "short-id"
+    executable = candidate / "python" / "python.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"python")
+    marker_value = "3.11-x86_64-pc-windows-msvc-20260623-" + "a" * 64
+    (candidate / ".python-runtime-version").write_text(
+        marker_value,
+        encoding="utf-8",
+    )
+
+    assert helper._find_reusable_runtime(dest, marker_value) == candidate
+    assert helper._find_reusable_runtime(dest, marker_value + "x") is None

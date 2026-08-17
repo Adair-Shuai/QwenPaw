@@ -213,7 +213,9 @@ New-Item -ItemType Directory -Force -Path $BINARIES_DIR | Out-Null
 $DEST = Join-Path $BINARIES_DIR "qwenpaw-backend"
 New-Item -ItemType Directory -Force -Path $DEST | Out-Null
 Get-ChildItem -LiteralPath $DEST -Force | Remove-Item -Recurse -Force
-Copy-Item -Recurse -Force (Join-Path $BACKEND_DIR "*") $DEST
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
+    --source $BACKEND_DIR --destination $DEST
+Assert-LastExit "Failed to copy layered backend into Tauri resources"
 Write-Host "Copied to: $DEST" -ForegroundColor Green
 Write-Host ""
 } else {
@@ -266,9 +268,14 @@ if (-not $LAYERED_DESKTOP) {
 Write-Host ""
 
 Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
+$NODE_RUNTIME_ARGS = @(
+    "--dest", (Join-Path $BINARIES_DIR "node-runtime")
+)
+if ($env:QWENPAW_NODE_SHA256) {
+    $NODE_RUNTIME_ARGS += @("--sha256", $env:QWENPAW_NODE_SHA256)
+}
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
-    --dest (Join-Path $BINARIES_DIR "node-runtime") `
-    --sha256 $env:QWENPAW_NODE_SHA256
+    @NODE_RUNTIME_ARGS
 Assert-LastExit "Failed to stage bundled Node runtime"
 Write-Host ""
 
@@ -284,17 +291,36 @@ Assert-LastExit "Failed to stage bundled OfficeCLI"
 Write-Host ""
 
 Write-Host "== Staging bundled Java runtime (NeqSim MCP Server) ==" -ForegroundColor Yellow
+$JRE_ARGS = @(
+    "--dest", (Join-Path $BINARIES_DIR "java-runtime")
+)
+if ($env:QWENPAW_JRE_SHA256) {
+    $JRE_ARGS += @("--sha256", $env:QWENPAW_JRE_SHA256)
+}
+if ($env:QWENPAW_JAVA_RELEASE) {
+    $JRE_ARGS += @("--java-release", $env:QWENPAW_JAVA_RELEASE)
+}
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_jre.py") `
-    --dest (Join-Path $BINARIES_DIR "java-runtime") `
-    --sha256 $env:QWENPAW_JRE_SHA256 `
-    --java-release $env:QWENPAW_JAVA_RELEASE
+    @JRE_ARGS
 Assert-LastExit "Failed to stage bundled Java runtime"
 Write-Host ""
 
 Write-Host "== Staging bundled NeqSim MCP Server JAR ==" -ForegroundColor Yellow
+$NEQSIM_ARGS = @(
+    "--dest", (Join-Path $BINARIES_DIR "neqsim")
+)
+if ($env:QWENPAW_NEQSIM_SHA256) {
+    $NEQSIM_ARGS += @("--sha256", $env:QWENPAW_NEQSIM_SHA256)
+}
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_neqsim.py") `
-    --dest (Join-Path $BINARIES_DIR "neqsim")
+    @NEQSIM_ARGS
 Assert-LastExit "Failed to stage NeqSim MCP Server JAR"
+Write-Host ""
+
+Write-Host "== Verifying bundled NeqSim MCP Server ==" -ForegroundColor Yellow
+& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\smoke_neqsim.py") `
+    --resource-dir $BINARIES_DIR
+Assert-LastExit "Bundled NeqSim MCP Server smoke test failed"
 Write-Host ""
 
 Write-Host "== Building Computer Use helper ==" -ForegroundColor Yellow
@@ -331,7 +357,11 @@ Write-Host ""
 
 if ($LAYERED_DESKTOP) {
     Write-Host "== Building versioned Python backend and dependency layers ==" -ForegroundColor Yellow
-    Install-PythonPackages -Packages @("build>=1.2,<2")
+    Install-PythonPackages -Packages @(
+        "build>=1.2,<2",
+        "setuptools>=42",
+        "wheel>=0.46,<1"
+    )
     & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\build_python_layers.py") `
         --repo $REPO_ROOT `
         --host-python $PYTHON_BIN `

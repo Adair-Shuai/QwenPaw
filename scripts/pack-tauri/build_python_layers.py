@@ -8,12 +8,27 @@ import argparse
 from collections.abc import Iterator
 from contextlib import contextmanager
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+
+try:
+    from copy_windows_tree import copy_tree, remove_tree
+except ModuleNotFoundError:
+    _helper_spec = importlib.util.spec_from_file_location(
+        "qwenpaw_copy_windows_tree",
+        Path(__file__).with_name("copy_windows_tree.py"),
+    )
+    if _helper_spec is None or _helper_spec.loader is None:
+        raise
+    _helper = importlib.util.module_from_spec(_helper_spec)
+    _helper_spec.loader.exec_module(_helper)
+    copy_tree = _helper.copy_tree
+    remove_tree = _helper.remove_tree
 
 
 def _run(
@@ -52,7 +67,7 @@ def _safe_empty(path: Path, parent: Path) -> None:
             f"refusing to replace layer outside {root}: {resolved}",
         )
     if resolved.exists():
-        shutil.rmtree(resolved)
+        remove_tree(resolved)
     resolved.mkdir(parents=True)
 
 
@@ -84,11 +99,14 @@ def _staged_console(repo: Path) -> Iterator[None]:
         if had_existing:
             shutil.move(str(console_dest), str(backup))
         try:
-            shutil.copytree(console_dist, console_dest)
+            if os.name == "nt":
+                copy_tree(console_dist, console_dest)
+            else:
+                shutil.copytree(console_dist, console_dest)
             yield
         finally:
             if console_dest.exists():
-                shutil.rmtree(console_dest)
+                remove_tree(console_dest)
             if had_existing:
                 shutil.move(str(backup), str(console_dest))
 
@@ -149,6 +167,7 @@ def build_layers(
                     "-m",
                     "build",
                     "--wheel",
+                    "--no-isolation",
                     "--outdir",
                     str(wheels),
                 ],

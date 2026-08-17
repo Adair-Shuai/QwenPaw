@@ -28,8 +28,10 @@ import {
   RefreshCw,
   Info,
   RotateCcw,
+  Sparkles,
   Store,
   X,
+  CloudUpload,
 } from "lucide-react";
 import { PageHeader } from "@/components/PageHeader";
 import { useAppMessage } from "@/hooks/useAppMessage";
@@ -46,6 +48,7 @@ import {
   withOsPawAppHistoryState,
 } from "../../utils/navigationMode";
 import styles from "./index.module.less";
+import { UGSciPublisherModal } from "@/components/UGSciPublisher/UGSciPublisherModal";
 
 // Code-split market views so their bundle + network fetch never block the
 // installed-apps section from rendering or being used.
@@ -56,7 +59,7 @@ const AppMarket = lazy(() =>
 const { Option } = Select;
 
 /** URL-persisted App Center views; unknown values fall back to installed. */
-type AppCenterView = "installed" | "official" | "market";
+type AppCenterView = "installed" | "official" | "ugsci" | "market";
 
 // Featured installed apps (e.g. Creator) are pinned to the top of the grid.
 // Lower index = higher placement.
@@ -79,12 +82,13 @@ export default function AppCenterPage() {
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [activeApp, setActiveApp] = useState<AppCardData | null>(null);
   const [loadError, setLoadError] = useState(false);
+  const [publisherOpen, setPublisherOpen] = useState(false);
 
   // View state is URL-driven so refresh / back / forward keep working.
   // Unknown `view` values safely fall back to the installed-apps view.
   const viewParam = searchParams.get("view");
   const view: AppCenterView =
-    viewParam === "official" || viewParam === "market"
+    viewParam === "official" || viewParam === "ugsci" || viewParam === "market"
       ? viewParam
       : "installed";
 
@@ -510,7 +514,17 @@ export default function AppCenterPage() {
 
   return (
     <div className={styles.page}>
-      <PageHeader current={t("nav.apps", "Apps")} />
+      <PageHeader
+        current={t("nav.apps", "Apps")}
+        extra={
+          <Button
+            icon={<CloudUpload size={16} />}
+            onClick={() => setPublisherOpen(true)}
+          >
+            发布 UGSci 应用
+          </Button>
+        }
+      />
 
       <div className={styles.pageBody}>
         <div className={styles.pageInner}>
@@ -559,6 +573,15 @@ export default function AppCenterPage() {
                 ),
               },
               {
+                key: "ugsci",
+                label: (
+                  <span className={styles.tabLabel}>
+                    <Sparkles size={15} />
+                    {t("appCenter.ugsciApps", "UGSci 应用")}
+                  </span>
+                ),
+              },
+              {
                 key: "market",
                 label: (
                   <span className={styles.tabLabel}>
@@ -580,7 +603,17 @@ export default function AppCenterPage() {
                 </div>
               }
             >
-              <AppMarket channel="official" onInstalled={fetchApps} />
+              <AppMarket channel="qwenpaw" onInstalled={fetchApps} />
+            </Suspense>
+          ) : view === "ugsci" ? (
+            <Suspense
+              fallback={
+                <div className={styles.stateBlock}>
+                  <Spin />
+                </div>
+              }
+            >
+              <AppMarket channel="ugsci" onInstalled={fetchApps} />
             </Suspense>
           ) : view === "market" ? (
             <Suspense
@@ -597,6 +630,11 @@ export default function AppCenterPage() {
           )}
         </div>
       </div>
+      <UGSciPublisherModal
+        open={publisherOpen}
+        kind="app"
+        onClose={() => setPublisherOpen(false)}
+      />
     </div>
   );
 }

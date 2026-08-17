@@ -72,7 +72,14 @@ def test_user_runtime_discovery(
     assert status.detected_neqsim_version == "3.17.0"
     assert status.java_source == "user"
     assert status.jar_source == "user"
-    assert build_endpoint(status)["command"] == str(java.resolve())
+    endpoint = build_endpoint(status)
+    assert endpoint["command"] == str(java.resolve())
+    assert endpoint["args"][:3] == [
+        "-Dfile.encoding=UTF-8",
+        "-Dstdout.encoding=UTF-8",
+        "-Dstderr.encoding=UTF-8",
+    ]
+    assert "-Dquarkus.banner.enabled=false" in endpoint["args"]
 
 
 def test_missing_runtime_is_installable(

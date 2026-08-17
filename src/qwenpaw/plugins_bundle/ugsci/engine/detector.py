@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
-"""Engine detector — per-software detection strategies with multi-drive search.
+"""Engine detector — portable per-software detection strategies.
 
 Each software has its own optimized detection strategy:
 
-* **CMG**    — multi-drive search for ``<DRIVE>:\\CMG\\<MODULE>\\<VERSION>\\Win_x64\\EXE\\mx*.exe``
-* **COMSOL** — multi-drive search for ``<DRIVE>:\\Program Files\\COMSOL\\COMSOL*\\bin\\win64\\comsol.exe``
+* **CMG**    — explicit configuration, environment, registry, then ``PATH``
+* **COMSOL** — explicit configuration, environment, registry, then ``PATH``
 * **Eclipse** — Schlumberger directory structure
 * **Intersect** — Schlumberger directory structure
 
@@ -18,7 +18,6 @@ import platform
 import re
 import shutil
 import subprocess
-import string
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -39,47 +38,49 @@ from .manager import (
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.engine.detector")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Multi-drive enumeration
+# Portable configured search roots
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def _get_available_drives() -> List[str]:
-    """Return all available drive letters on Windows, **C: first**.
+def _configured_paths(
+    engine: EngineInfo,
+    env_names: Tuple[str, ...] = (),
+) -> List[Path]:
+    """Return existing paths supplied by users, launchers, or installers.
 
-    On non-Windows platforms returns an empty list (Linux/macOS use
-    a single root filesystem).
+    Discovery must not guess machine-specific installation roots.  The only
+    filesystem roots accepted here are engine configuration values and
+    explicit environment variables.  Registry and ``PATH`` discovery are
+    handled by the individual strategies.
     """
-    if platform.system().lower() != "windows":
-        return []
+    raw_values = [
+        engine.executable_path,
+        engine.install_dir,
+        *engine.extra_paths,
+        *(os.environ.get(name, "") for name in env_names),
+    ]
+    paths: List[Path] = []
+    seen: set[str] = set()
+    for raw_value in raw_values:
+        value = str(raw_value or "").strip()
+        if not value:
+            continue
+        candidate = Path(os.path.expandvars(value)).expanduser()
+        if not candidate.exists():
+            continue
+        normalized = os.path.normcase(os.path.abspath(str(candidate)))
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        paths.append(candidate)
+    return paths
 
-    drives: List[str] = []
-    for letter in string.ascii_uppercase:
-        drive_root = f"{letter}:\\"
-        if os.path.exists(drive_root):
-            drives.append(letter)
 
-    # Sort: C: first, then A-B, then D-Z
-    drives.sort(key=lambda d: (d != "C", d))
-    return drives
-
-
-def _build_search_paths(folder_name: str) -> List[str]:
-    """Build a prioritised list of candidate paths across all drives.
-
-    Checks ``<DRIVE>:\\<folder_name>`` and
-    ``<DRIVE>:\\Program Files\\<folder_name>`` and
-    ``<DRIVE>:\\Program Files (x86)\\<folder_name>``
-    for every available drive, **C: first**.
-    """
-    candidates: List[str] = []
-    for drive_letter in _get_available_drives():
-        drive = f"{drive_letter}:"
-        candidates.extend([
-            os.path.join(drive, os.sep, folder_name),
-            os.path.join(drive, os.sep, "Program Files", folder_name),
-            os.path.join(drive, os.sep, "Program Files (x86)", folder_name),
-        ])
-    return candidates
+def _bounded_roots(path: Path, parent_depth: int = 3) -> List[Path]:
+    """Return a configured directory and a bounded set of its parents."""
+    root = path.parent if path.is_file() else path
+    roots = [root, *list(root.parents)[:parent_depth]]
+    return [candidate for candidate in roots if candidate.is_dir()]
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -347,13 +348,27 @@ def _extract_cmg_version(
 
 
 def _detect_cmg(engine: EngineInfo) -> EngineInfo:
-    """CMG detection strategy: multi-drive search, C: first.
+    """Detect CMG from explicit configuration, registry, or ``PATH``."""
+    # 1. User/launcher configuration and explicit environment overrides.
+    for configured in _configured_paths(engine, ("CMG_HOME", "CMG_ROOT")):
+        if configured.is_file():
+            engine.executable_path = str(configured)
+            engine.install_dir = str(configured.parent)
+            engine.status = "detected"
+            return engine
+        for candidate in _bounded_roots(configured):
+            result = _detect_cmg_from_home(str(candidate))
+            if result:
+                modules, module_paths, version = result
+                return _apply_cmg_result(
+                    engine,
+                    str(candidate),
+                    modules,
+                    module_paths,
+                    version,
+                )
 
-    CMG directory structure (consistent across all drives):
-      ``<DRIVE>:\\CMG\\<MODULE>\\<VERSION>\\<PLATFORM>\\EXE\\mx*.exe``
-    e.g. ``D:\\CMG\\IMEX\\2025.30\\Win_x64\\EXE\\mx202530.exe``
-    """
-    # 1. Registry
+    # 2. Registry
     reg_path = _get_from_registry("CMG")
     if reg_path and os.path.isdir(reg_path):
         result = _detect_cmg_from_home(reg_path)
@@ -361,34 +376,9 @@ def _detect_cmg(engine: EngineInfo) -> EngineInfo:
             modules, module_paths, version = result
             return _apply_cmg_result(engine, reg_path, modules, module_paths, version)
 
-    # 2. Multi-drive search: C: first, then other drives
-    for candidate in _build_search_paths("CMG"):
-        if not os.path.isdir(candidate):
-            continue
-        # Verify it looks like a CMG install (has module subdirs or version dirs)
-        has_module = any(
-            os.path.isdir(os.path.join(candidate, mod))
-            for mod in _CMG_MODULE_DIRS
-        )
-        if not has_module:
-            # Also accept if it has version dirs directly (legacy layout)
-            try:
-                has_version = any(
-                    re.match(r"\d{4}\.\d+", item)
-                    for item in os.listdir(candidate)
-                )
-            except (PermissionError, OSError):
-                has_version = False
-            if not has_version:
-                continue
-
-        result = _detect_cmg_from_home(candidate)
-        if result:
-            modules, module_paths, version = result
-            return _apply_cmg_result(engine, candidate, modules, module_paths, version)
-
-    # 3. Fallback: try PATH
-    for exe_name in ["mx202530.exe", "mx2300.exe", "CMG.exe"]:
+    # 3. PATH.  Exact stable launcher names are preferred; versioned module
+    # executables can still be supplied through executable_path/extra_paths.
+    for exe_name in ("CMG.exe", "Builder.exe", "Results.exe"):
         found = shutil.which(exe_name)
         if found:
             engine.executable_path = found
@@ -526,12 +516,28 @@ def _extract_comsol_version(dir_name: str) -> Optional[str]:
 
 
 def _detect_comsol(engine: EngineInfo) -> EngineInfo:
-    """COMSOL detection strategy: registry + multi-drive, C: first.
+    """Detect COMSOL from explicit configuration, registry, or ``PATH``."""
+    # 1. User/launcher configuration and explicit environment overrides.
+    for configured in _configured_paths(
+        engine,
+        ("COMSOLROOT", "COMSOL_HOME"),
+    ):
+        if configured.is_file() and configured.name.lower() in {
+            name.lower() for name in _COMSOL_EXECUTABLES
+        }:
+            return _apply_comsol_result(
+                engine,
+                str(configured),
+                str(configured.parent),
+                "",
+            )
+        for candidate in _bounded_roots(configured):
+            result = _detect_comsol_from_base(str(candidate))
+            if result:
+                exe, install_dir, version = result
+                return _apply_comsol_result(engine, exe, install_dir, version)
 
-    COMSOL directory structure (consistent across all drives):
-      ``<DRIVE>:\\Program Files\\COMSOL\\COMSOL<version>\\bin\\win64\\comsol.exe``
-    """
-    # 1. Registry — check multiple possible keys and subkeys
+    # 2. Registry — check multiple possible keys and subkeys
     for reg_key in ["COMSOL\\COMSOL", "COMSOL", "COMSOL AB"]:
         # Direct registry value
         reg_path = _get_from_registry(reg_key)
@@ -562,15 +568,6 @@ def _detect_comsol(engine: EngineInfo) -> EngineInfo:
                 if result:
                     exe, install_dir, version = result
                     return _apply_comsol_result(engine, exe, install_dir, version)
-
-    # 2. Multi-drive search: C: first, then other drives
-    for candidate in _build_search_paths("COMSOL"):
-        if not os.path.isdir(candidate):
-            continue
-        result = _detect_comsol_from_base(candidate)
-        if result:
-            exe, install_dir, version = result
-            return _apply_comsol_result(engine, exe, install_dir, version)
 
     # 3. Fallback: try PATH
     for exe_name in _COMSOL_EXECUTABLES:
@@ -649,10 +646,12 @@ _INTERSECT_PRODUCT_RULES = [
 # tNavigator executable patterns (used by tNavigator strategy)
 _TNAVIGATOR_PATTERNS = ["tnav.exe", "tnavigator.exe", "tnavigator"]
 
-# Schlumberger common install roots (relative to drive, by priority)
-_SCHLUMBERGER_FOLDER_NAMES = [
-    "ecl", "SLB", "Schlumberger", "Petrel",
-]
+# Explicit installation-root overrides. Values are supplied by the user or
+# launcher; they are not default filesystem search locations.
+_SCHLUMBERGER_HOME_ENV: Dict[str, Tuple[str, ...]] = {
+    "eclipse": ("ECLIPSE_HOME", "ECL_HOME", "SLB_HOME"),
+    "intersect": ("INTERSECT_HOME", "IX_HOME", "SLB_HOME"),
+}
 
 # Architecture subdirectories within bin/ (Eclipse/Intersect)
 # Includes MPI variant dirs used by Intersect (x64_ilmpi, x64_msmpi)
@@ -835,12 +834,12 @@ def _detect_schlumberger(
     exe_names: set,
     product_rules: List[Tuple[re.Pattern, str]],
 ) -> EngineInfo:
-    """Schlumberger detection: 4-layer cascade.
+    """Schlumberger detection without guessed installation roots.
 
-    Layer 1 — Environment variable PATH
-    Layer 2 — Windows registry (uninstall keys + vendor keys)
-    Layer 3 — Common install paths (multi-drive, C: first)
-    Layer 4 — License verification (env vars + lmutil)
+    Layer 1 — explicit engine configuration / installation environment
+    Layer 2 — environment variable ``PATH``
+    Layer 3 — Windows registry (uninstall keys + vendor keys)
+    Layer 4 — license verification (env vars + lmutil)
 
     Each layer fills in as much info as possible; later layers
     enrich fields left empty by earlier ones.
@@ -851,29 +850,51 @@ def _detect_schlumberger(
     found_install_root: Optional[str] = None
     source: str = "unknown"
 
-    # ── Layer 1: PATH environment variable ───────────────────────
-    # Skip utility/launcher exes in PATH — we want the real simulator.
-    path_env = os.environ.get("PATH", "")
-    for p in path_env.split(os.pathsep):
-        if not p:
-            continue
-        try:
-            pp = Path(p)
-            for exe in pp.glob("*.exe"):
-                exe_lower = exe.name.lower()
-                if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
-                    found_exe = str(exe)
-                    source = "env"
-                    found_version, found_install_root, found_arch = (
-                        _infer_schlumberger_version_and_root(exe)
-                    )
-                    break
-            if found_exe:
+    # ── Layer 1: explicit configuration ──────────────────────────
+    env_names = _SCHLUMBERGER_HOME_ENV.get(engine.id, ())
+    for configured in _configured_paths(engine, env_names):
+        if configured.is_file():
+            exe_lower = configured.name.lower()
+            if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
+                found_exe = str(configured)
+                found_version, found_install_root, found_arch = (
+                    _infer_schlumberger_version_and_root(configured)
+                )
+                source = "configured"
                 break
-        except (PermissionError, OSError):
-            continue
+        for candidate in _bounded_roots(configured):
+            result = _scan_schlumberger_dir(candidate, exe_names)
+            if result:
+                found_exe, found_version, found_install_root, found_arch = result
+                source = "configured"
+                break
+        if found_exe:
+            break
 
-    # ── Layer 2: Windows registry ─────────────────────────────────
+    # ── Layer 2: PATH environment variable ───────────────────────
+    # Skip utility/launcher exes in PATH — we want the real simulator.
+    if not found_exe:
+        path_env = os.environ.get("PATH", "")
+        for p in path_env.split(os.pathsep):
+            if not p:
+                continue
+            try:
+                pp = Path(p)
+                for exe in pp.glob("*.exe"):
+                    exe_lower = exe.name.lower()
+                    if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
+                        found_exe = str(exe)
+                        source = "path"
+                        found_version, found_install_root, found_arch = (
+                            _infer_schlumberger_version_and_root(exe)
+                        )
+                        break
+                if found_exe:
+                    break
+            except (PermissionError, OSError):
+                continue
+
+    # ── Layer 3: Windows registry ─────────────────────────────────
     # Skip non-simulator exes in registry too — we want the real
     # simulator, not Petrel platform or ECLRUN launcher.
     if not found_exe:
@@ -882,31 +903,6 @@ def _detect_schlumberger(
         if reg_result:
             found_exe, found_version, found_install_root, found_arch = reg_result
             source = "registry"
-
-    # ── Layer 3: Common install paths (multi-drive) ───────────────
-    if not found_exe:
-        for drive_letter in _get_available_drives():
-            drive = f"{drive_letter}:"
-            for folder in _SCHLUMBERGER_FOLDER_NAMES:
-                candidates = [
-                    os.path.join(drive, os.sep, folder),
-                    os.path.join(drive, os.sep, "Program Files", folder),
-                    os.path.join(drive, os.sep, "Program Files (x86)", folder),
-                ]
-                for candidate in candidates:
-                    if not os.path.isdir(candidate):
-                        continue
-                    result = _scan_schlumberger_dir(
-                        Path(candidate), exe_names,
-                    )
-                    if result:
-                        found_exe, found_version, found_install_root, found_arch = result
-                        source = "common_path"
-                        break
-                if found_exe:
-                    break
-            if found_exe:
-                break
 
     # ── Apply detection result ────────────────────────────────────
     if found_exe and os.path.isfile(found_exe):
@@ -1580,28 +1576,41 @@ def _strategy_intersect(engine: EngineInfo) -> EngineInfo:
 
 @_register_strategy("tnavigator")
 def _strategy_tnavigator(engine: EngineInfo) -> EngineInfo:
-    """tNavigator detection: multi-drive search for Rock Flow Technologies."""
-    # 1. Registry
-    for reg_key in ["Rock Flow Technologies", "tNavigator", "RFT"]:
-        reg_path = _get_from_registry(reg_key)
-        if reg_path and os.path.isdir(reg_path):
-            found = _find_exe_in_dir(reg_path, _TNAVIGATOR_PATTERNS, ["bin", os.path.join("bin", "win64"), "exe", "bin64"])
+    """Detect tNavigator from explicit configuration, registry, or PATH."""
+    subdirs = ["bin", os.path.join("bin", "win64"), "exe", "bin64"]
+
+    # 1. User/launcher configuration and explicit environment overrides.
+    for configured in _configured_paths(
+        engine,
+        ("TNAVIGATOR_HOME", "TNAV_HOME", "RFT_HOME"),
+    ):
+        if configured.is_file() and configured.name.lower() in {
+            pattern.lower() for pattern in _TNAVIGATOR_PATTERNS
+        }:
+            engine.executable_path = str(configured)
+            engine.install_dir = str(configured.parent)
+            engine.status = "detected"
+            return engine
+        for candidate in _bounded_roots(configured):
+            found = _find_exe_in_dir(
+                str(candidate),
+                _TNAVIGATOR_PATTERNS,
+                subdirs,
+            )
             if found:
                 engine.executable_path = found
-                engine.install_dir = str(Path(found).parent.parent)
+                engine.install_dir = str(candidate)
                 engine.status = "detected"
                 ver = _extract_version_from_exe(found)
                 if ver:
                     engine.version = ver
                 return engine
 
-    # 2. Multi-drive search for Rock Flow Technologies and tNavigator folders
-    _tnav_subdirs = ["bin", os.path.join("bin", "win64"), "exe", "bin64"]
-    for folder_name in ["Rock Flow Technologies", "tNavigator", "RFT"]:
-        for candidate in _build_search_paths(folder_name):
-            if not os.path.isdir(candidate):
-                continue
-            found = _find_exe_in_dir(candidate, _TNAVIGATOR_PATTERNS, _tnav_subdirs)
+    # 2. Registry
+    for reg_key in ["Rock Flow Technologies", "tNavigator", "RFT"]:
+        reg_path = _get_from_registry(reg_key)
+        if reg_path and os.path.isdir(reg_path):
+            found = _find_exe_in_dir(reg_path, _TNAVIGATOR_PATTERNS, subdirs)
             if found:
                 engine.executable_path = found
                 engine.install_dir = str(Path(found).parent.parent)
@@ -1609,7 +1618,6 @@ def _strategy_tnavigator(engine: EngineInfo) -> EngineInfo:
                 ver = _extract_version_from_exe(found)
                 if ver:
                     engine.version = ver
-                logger.info("tNavigator detected: path=%s", found)
                 return engine
 
     # 3. Fallback: try PATH

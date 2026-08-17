@@ -11,6 +11,7 @@ import {
   fetchPlugins,
   fetchPluginCatalog,
   installPlugin,
+  replaceInstalledPlugin,
   uploadPlugin,
   uninstallPlugin,
   fetchPluginStatus,
@@ -150,6 +151,38 @@ describe("plugin module", () => {
     expect(JSON.parse(init.body as string)).toEqual({
       source: "http://x/y",
       force: true,
+    });
+  });
+
+  it("replaceInstalledPlugin uses the authenticated backend route", async () => {
+    const res = {
+      id: "p1",
+      name: "Plugin One",
+      version: "2.0.0",
+      restart_required: true,
+    };
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue(mockResponse({ ok: true, status: 200, json: res }));
+
+    await expect(
+      replaceInstalledPlugin({
+        source: "https://download.qwenpaw.agentscope.io/p1.zip",
+        pluginId: "p1",
+        version: "2.0.0",
+        sha256: "a".repeat(64),
+      }),
+    ).resolves.toEqual(res);
+
+    expect(fetch).toHaveBeenCalledWith("http://test/plugins/replace", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        source: "https://download.qwenpaw.agentscope.io/p1.zip",
+        plugin_id: "p1",
+        version: "2.0.0",
+        sha256: "a".repeat(64),
+      }),
     });
   });
 
