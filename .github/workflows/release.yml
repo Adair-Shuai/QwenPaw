@@ -63,6 +63,11 @@ on:
         required: false
         type: string
         default: ""
+      components_promotion_run_id:
+        description: "Optional prior Release run containing prepared component promotion metadata"
+        required: false
+        type: string
+        default: ""
       plugins_artifacts_run_id:
         description: "Optional Plugins Build run ID containing replacement plugin artifacts"
         required: false
@@ -719,22 +724,37 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: python -m pip install --quiet packaging cryptography
       - uses: actions/download-artifact@v4
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
         with:
           pattern: component-release-*
           path: component-release
           merge-multiple: true
           run-id: ${{ needs.resolve.outputs.components_artifacts_run_id || needs.resolve.outputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download prepared component promotion metadata from prior release run
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: component-release/metadata/components/stable
+          run-id: ${{ inputs.components_promotion_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Re-upload prepared component promotion metadata
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: component-release/metadata/components/stable
+          if-no-files-found: error
       - name: Install and configure ossutil
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
         run: |
           wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
           unzip -q ossutil-v1.7.18-linux-amd64.zip
           sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
           ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
       - name: Upload immutable component artifacts and manifests
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
         run: |
           set -euo pipefail
           publish_immutable() {
@@ -768,7 +788,7 @@ jobs:
             publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${base}.sig"
           done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' ! -name '*.history.json' -print)
       - name: Upload prepared component promotion metadata
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
         uses: actions/upload-artifact@v4
         with:
           name: component-promotion-metadata

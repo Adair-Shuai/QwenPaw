@@ -95,6 +95,7 @@ jobs:
 
       - name: Download replacement Windows updater metadata
         if: ${{ inputs.windows_artifacts_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: tauri-updater-meta-windows
@@ -116,12 +117,60 @@ jobs:
 
       - name: Download replacement macOS updater metadata
         if: ${{ inputs.macos_artifacts_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: tauri-updater-meta-macos
           path: tauri-updater-meta-macos
           run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retry missing replacement updater metadata through GitHub API
+        if: ${{ inputs.windows_artifacts_run_id != '' || inputs.macos_artifacts_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          fetch_artifact() {
+            local run_id="$1" name="$2" destination="$3"
+            local existing=("$destination"/*)
+            if [ "${#existing[@]}" -gt 0 ]; then
+              return 0
+            fi
+            local artifact_id archive
+            artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
+              --jq --arg name "$name" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -1)"
+            test -n "$artifact_id" || { echo "::error::Could not find artifact $name in run $run_id"; exit 1; }
+            archive="$(mktemp)"
+            for attempt in 1 2 3 4 5; do
+              if curl --fail --location --silent --show-error \
+                --retry 3 --retry-all-errors --retry-delay 3 \
+                -H "Authorization: Bearer $GH_TOKEN" \
+                -H 'Accept: application/vnd.github+json' \
+                "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+                -o "$archive"; then
+                mkdir -p "$destination"
+                unzip -oq "$archive" -d "$destination"
+                rm -f "$archive"
+                return 0
+              fi
+              echo "Retrying artifact $name from run $run_id (attempt $attempt)" >&2
+              sleep 5
+            done
+            rm -f "$archive"
+            echo "::error::Unable to download artifact $name from run $run_id" >&2
+            exit 1
+          }
+          if [ -n "${{ inputs.windows_artifacts_run_id }}" ]; then
+            fetch_artifact "${{ inputs.windows_artifacts_run_id }}" \
+              tauri-updater-meta-windows tauri-updater-meta-windows
+          fi
+          if [ -n "${{ inputs.macos_artifacts_run_id }}" ]; then
+            fetch_artifact "${{ inputs.macos_artifacts_run_id }}" \
+              tauri-updater-meta-macos tauri-updater-meta-macos
+          fi
 
       - name: Re-verify final macOS archives before GitHub release upload
         shell: bash
