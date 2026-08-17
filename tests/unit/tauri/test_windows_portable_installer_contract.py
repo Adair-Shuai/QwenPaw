@@ -172,11 +172,11 @@ def test_installer_file_transactions_are_long_path_safe() -> None:
     assert "Copy-DirectoryLongPathSafe -Source $payloadRoot" in script
     assert "Remove-DirectoryLongPathSafe -Path $installDir" in script
     assert (
-        '$stagingDir = Join-Path $installParent ".ug-i-$transactionId"'
+        '$stagingDir = Join-Path $transactionParent ".ug-i-$transactionId"'
         in script
     )
     assert (
-        '$backupDir = Join-Path $installParent ".ug-b-$transactionId"'
+        '$backupDir = Join-Path $transactionParent ".ug-b-$transactionId"'
         in script
     )
     assert "[IO.Directory]::EnumerateFiles($rootIo" in script
@@ -207,6 +207,38 @@ def test_installer_forces_utf8_when_capturing_localized_errors() -> None:
     assert "$utf8Encoding = New-Object Text.UTF8Encoding($false)" in script
     assert "[Console]::OutputEncoding = $utf8Encoding" in script
     assert "$OutputEncoding = $utf8Encoding" in script
+
+
+def test_protected_install_location_requests_administrator_access() -> None:
+    script = _script()
+
+    assert "function Test-DirectoryWriteRequiresElevation" in script
+    assert "function Invoke-ElevatedInstaller" in script
+    assert 'Verb = "RunAs"' in script
+    assert '"-Elevated"' in script
+    assert (
+        '"-InstallDir", (Quote-ProcessArgument $ResolvedInstallDir)' in script
+    )
+    assert "Administrator approval was cancelled" in script
+    assert "$Elevated -and -not (Test-CurrentProcessElevated)" in script
+
+
+def test_installer_stages_at_short_same_volume_path() -> None:
+    script = _script()
+
+    assert "$transactionParent = if (" in script
+    assert "$installRoot -match '^[A-Za-z]:\\\\$'" in script
+    assert (
+        '$stagingDir = Join-Path $transactionParent ".ug-i-$transactionId"'
+        in script
+    )
+    assert (
+        '$backupDir = Join-Path $transactionParent ".ug-b-$transactionId"'
+        in script
+    )
+    assert ".UGSci Desktop.install-" not in script
+    assert "Copy-Item -Destination $stagingDir -Recurse -Force" not in script
+    assert "Copy-DirectoryLongPathSafe -Source $payloadRoot" in script
 
 
 def test_verified_zip_builder_preserves_nested_manifest_members(

@@ -76,6 +76,8 @@ param(
   [switch]$NoCliPath,
   [switch]$NoDesktopShortcut,
   [switch]$DeferredCommit,
+  [switch]$Elevated,
+  [string]$ElevationLogPath,
   [string]$TransactionFile,
   [string]$InstallDir
 )
@@ -84,6 +86,10 @@ $utf8Encoding = New-Object Text.UTF8Encoding($false)
 [Console]::InputEncoding = $utf8Encoding
 [Console]::OutputEncoding = $utf8Encoding
 $OutputEncoding = $utf8Encoding
+$installerScriptPath = $MyInvocation.MyCommand.Path
+if ($ElevationLogPath) {
+  Start-Transcript -LiteralPath $ElevationLogPath -Force | Out-Null
+}
 $sourceRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $payloadRoot = Join-Path $sourceRoot "payload"
 $checksumManifest = Join-Path $sourceRoot "checksums.sha256"
@@ -96,6 +102,89 @@ function Get-NormalizedDirectoryPath([string]$Path) {
     return $volumeRoot
   }
   return $full.TrimEnd('\')
+}
+
+function Test-CurrentProcessElevated {
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  $principal = New-Object Security.Principal.WindowsPrincipal($identity)
+  return $principal.IsInRole(
+    [Security.Principal.WindowsBuiltInRole]::Administrator
+  )
+}
+
+function Test-DirectoryWriteRequiresElevation([string]$Path) {
+  if (Test-CurrentProcessElevated) { return $false }
+  $candidate = [IO.Path]::GetFullPath($Path)
+  while (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
+    $parent = Split-Path -Parent $candidate
+    if (-not $parent -or $parent -eq $candidate) { return $true }
+    $candidate = $parent
+  }
+  $probe = Join-Path $candidate (
+    ".ugsci-write-probe-" + [Guid]::NewGuid().ToString("N")
+  )
+  try {
+    [IO.Directory]::CreateDirectory($probe) | Out-Null
+    return $false
+  } catch {
+    return $true
+  } finally {
+    try {
+      if ([IO.Directory]::Exists($probe)) {
+        [IO.Directory]::Delete($probe, $true)
+      }
+    } catch { }
+  }
+}
+
+function Quote-ProcessArgument([string]$Value) {
+  return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Invoke-ElevatedInstaller([string]$ResolvedInstallDir) {
+  $powershell = Join-Path $env:SystemRoot (
+    "System32\WindowsPowerShell\v1.0\powershell.exe"
+  )
+  $logPath = Join-Path $env:TEMP (
+    "ugsci-elevated-setup-" + [Guid]::NewGuid().ToString("N") + ".log"
+  )
+  $arguments = @(
+    "-NoProfile",
+    "-NonInteractive",
+    "-ExecutionPolicy", "Bypass",
+    "-File", (Quote-ProcessArgument $installerScriptPath),
+    "-Elevated",
+    "-ElevationLogPath", (Quote-ProcessArgument $logPath),
+    "-InstallDir", (Quote-ProcessArgument $ResolvedInstallDir)
+  )
+  if ($Silent) { $arguments += "-Silent" }
+  if ($NoCliPath) { $arguments += "-NoCliPath" }
+  if ($NoDesktopShortcut) { $arguments += "-NoDesktopShortcut" }
+  if ($DeferredCommit) {
+    $arguments += "-DeferredCommit"
+    $arguments += "-TransactionFile"
+    $arguments += Quote-ProcessArgument $TransactionFile
+  }
+  Write-Host (
+    "Administrator approval is required for the selected installation folder."
+  )
+  $start = @{
+    FilePath = $powershell
+    ArgumentList = ($arguments -join " ")
+    Verb = "RunAs"
+    Wait = $true
+    PassThru = $true
+  }
+  if ($Silent) { $start.WindowStyle = "Hidden" }
+  try {
+    $process = Start-Process @start
+  } catch [ComponentModel.Win32Exception] {
+    throw "Administrator approval was cancelled or could not be started."
+  }
+  if (Test-Path -LiteralPath $logPath -PathType Leaf) {
+    Get-Content -LiteralPath $logPath -Encoding UTF8 | Write-Output
+  }
+  exit $process.ExitCode
 }
 
 $activeLayout = Get-Content -LiteralPath (Join-Path $PayloadRoot "binaries\state\active.json") `
@@ -308,6 +397,24 @@ $installRoot = Get-NormalizedDirectoryPath -Path ([IO.Path]::GetPathRoot($instal
 if ($installDir.Equals($installRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw "UGSci Desktop cannot be installed directly into a drive root"
 }
+$installParent = Split-Path -Parent $installDir
+if (-not $installParent -or -not [IO.Path]::IsPathRooted($installParent)) {
+  throw "The installation folder has an invalid parent path"
+}
+$installRequiresElevation = Test-DirectoryWriteRequiresElevation -Path $installParent
+if (-not $Elevated -and $installRequiresElevation) {
+  Invoke-ElevatedInstaller -ResolvedInstallDir $installDir
+}
+if ($Elevated -and -not (Test-CurrentProcessElevated)) {
+  throw "The elevated installer did not receive administrator permissions."
+}
+$transactionParent = if (
+  (Test-CurrentProcessElevated) -and $installRoot -match '^[A-Za-z]:\\$'
+) {
+  $installRoot
+} else {
+  $installParent
+}
 $sourceFull = Get-NormalizedDirectoryPath -Path $sourceRoot
 $sourcePrefix = Get-DirectoryPrefix -Path $sourceFull
 $installPrefix = $installDir + '\'
@@ -332,10 +439,6 @@ if ((Test-Path -LiteralPath $installDir -PathType Container) -and
   }
   if (-not $existingInstallDir) { $existingInstallDir = $installDir }
 }
-$installParent = Split-Path -Parent $installDir
-if (-not $installParent -or -not [IO.Path]::IsPathRooted($installParent)) {
-  throw "The installation folder has an invalid parent path"
-}
 # A first-level destination such as C:\UGSci has C:\ as its parent.  Some
 # Windows PowerShell / filesystem-provider combinations reject directory
 # already existing volume root with CreateDirectoryArgumentError.  Never ask
@@ -348,8 +451,8 @@ if (-not (Test-Path -LiteralPath $installParent -PathType Container)) {
 }
 $appExe = Join-Path $installDir "UGSci.exe"
 $transactionId = [Guid]::NewGuid().ToString("N")
-$stagingDir = Join-Path $installParent ".ug-i-$transactionId"
-$backupDir = Join-Path $installParent ".ug-b-$transactionId"
+$stagingDir = Join-Path $transactionParent ".ug-i-$transactionId"
+$backupDir = Join-Path $transactionParent ".ug-b-$transactionId"
 $mutex = New-Object Threading.Mutex($false, "Local\UGSciDesktopPortableInstaller")
 $mutexAcquired = $false
 try {
