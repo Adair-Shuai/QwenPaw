@@ -10,6 +10,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
+import shutil
 import sys
 
 from packaging.version import InvalidVersion, Version
@@ -68,6 +69,23 @@ def _move(source: Path, destination: Path) -> None:
     if destination.exists():
         remove_tree(destination)
     destination.parent.mkdir(parents=True, exist_ok=True)
+    source_root = source.resolve()
+    links = [path for path in source.rglob("*") if path.is_symlink()]
+    if links:
+        for link in links:
+            target = link.resolve()
+            if source_root not in target.parents:
+                raise ValueError(
+                    "component tree contains a link outside its source: "
+                    f"{link}",
+                )
+        # Python runtimes distributed by python-build-standalone contain
+        # harmless internal links such as bin/2to3.  Materialize those links
+        # before hashing and archiving because managed component trees must be
+        # self-contained and link-free.
+        shutil.copytree(source, destination, symlinks=False)
+        remove_tree(source)
+        return
     source.replace(destination)
 
 

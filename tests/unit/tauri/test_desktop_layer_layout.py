@@ -170,6 +170,44 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
     assert written == active
 
 
+def test_assemble_materializes_internal_runtime_symlinks(tmp_path):
+    helper = _load()
+    binaries = tmp_path / "src-tauri" / "binaries"
+    for name, marker, version in (
+        ("python-runtime", ".python-runtime-version", "python-3.12-sha"),
+        ("node-runtime", ".node-runtime-version", "node-22-sha"),
+        ("java-runtime", ".java-runtime-version", "java-21-sha"),
+    ):
+        root = binaries / name
+        root.mkdir(parents=True)
+        (root / marker).write_text(version, encoding="utf-8")
+    link_target = binaries / "python-runtime" / "bin" / "2to3-3.12"
+    link_target.parent.mkdir(parents=True)
+    link_target.write_text("python", encoding="utf-8")
+    link = link_target.with_name("2to3")
+    try:
+        link.symlink_to(link_target.name)
+    except OSError:
+        return
+    (binaries / "officecli").mkdir()
+    (binaries / "neqsim").mkdir()
+    (binaries / "app/backend/2.1.1b7/qwenpaw/tauri").mkdir(
+        parents=True,
+    )
+    (binaries / "runtimes/python-packages/lockhash").mkdir(parents=True)
+    helper_root = binaries / "tools/computer-use/2.1.1b7"
+    helper_root.mkdir(parents=True)
+    (helper_root / "qwenpaw-computer-use-helper").write_bytes(b"helper")
+
+    helper.assemble(binaries, "2.1.1b7", "macos-aarch64")
+
+    materialized = (
+        binaries / "runtimes/python/python-3.12-sha" / "bin" / "2to3"
+    )
+    assert materialized.read_text(encoding="utf-8") == "python"
+    assert not materialized.is_symlink()
+
+
 def test_assemble_shortens_hash_heavy_runtime_directories(tmp_path):
     helper = _load()
     binaries = tmp_path / "src-tauri" / "binaries"
