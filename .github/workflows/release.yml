@@ -733,12 +733,47 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
       - name: Download prepared component promotion metadata from prior release run
         if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           name: component-promotion-metadata
           path: component-release/metadata/components/stable
           run-id: ${{ inputs.components_promotion_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retry prepared component promotion metadata through GitHub API
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(component-release/metadata/components/stable/*)
+          if [ "${#files[@]}" -gt 0 ]; then
+            exit 0
+          fi
+          artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/${{ inputs.components_promotion_run_id }}/artifacts?per_page=100" \
+            | jq -r '.artifacts[] | select(.name == "component-promotion-metadata" and .expired == false) | .id' | head -1)"
+          test -n "$artifact_id" || { echo "::error::Prepared component promotion metadata artifact not found"; exit 1; }
+          archive="$(mktemp)"
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --location --silent --show-error \
+              --retry 3 --retry-all-errors --retry-delay 3 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              -o "$archive"; then
+              mkdir -p component-release/metadata/components/stable
+              unzip -oq "$archive" -d component-release/metadata/components/stable
+              rm -f "$archive"
+              exit 0
+            fi
+            echo "Retrying component promotion metadata download (attempt $attempt)" >&2
+            sleep 5
+          done
+          rm -f "$archive"
+          echo "::error::Unable to download component promotion metadata" >&2
+          exit 1
       - name: Re-upload prepared component promotion metadata
         if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
         uses: actions/upload-artifact@v4

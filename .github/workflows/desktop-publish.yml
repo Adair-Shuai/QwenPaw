@@ -87,6 +87,7 @@ jobs:
 
       - name: Download replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: UGSci-Desktop-Tauri-Windows-*
@@ -109,6 +110,7 @@ jobs:
 
       - name: Download replacement macOS artifacts
         if: ${{ inputs.macos_artifacts_run_id != '' }}
+        continue-on-error: true
         uses: actions/download-artifact@v4
         with:
           pattern: UGSci-Desktop-Tauri-macOS-*
@@ -125,7 +127,7 @@ jobs:
           run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Retry missing replacement updater metadata through GitHub API
+      - name: Retry missing replacement artifacts through GitHub API
         if: ${{ inputs.windows_artifacts_run_id != '' || inputs.macos_artifacts_run_id != '' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -134,15 +136,16 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           fetch_artifact() {
-            local run_id="$1" name="$2" destination="$3"
-            local existing=("$destination"/*)
-            if [ "${#existing[@]}" -gt 0 ]; then
-              return 0
-            fi
+            local run_id="$1" selector="$2" destination="$3" mode="$4"
             local artifact_id archive
-            artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
-              --jq --arg name "$name" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -1)"
-            test -n "$artifact_id" || { echo "::error::Could not find artifact $name in run $run_id"; exit 1; }
+            if [ "$mode" = exact ]; then
+              artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
+                | jq -r --arg name "$selector" '.artifacts[] | select(.name == $name and .expired == false) | .id' | head -1)"
+            else
+              artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/artifacts?per_page=100" \
+                | jq -r --arg prefix "$selector" '.artifacts[] | select((.name | startswith($prefix)) and .expired == false) | .id' | head -1)"
+            fi
+            test -n "$artifact_id" || { echo "::error::Could not find artifact $selector in run $run_id"; exit 1; }
             archive="$(mktemp)"
             for attempt in 1 2 3 4 5; do
               if curl --fail --location --silent --show-error \
@@ -156,20 +159,36 @@ jobs:
                 rm -f "$archive"
                 return 0
               fi
-              echo "Retrying artifact $name from run $run_id (attempt $attempt)" >&2
+              echo "Retrying artifact $selector from run $run_id (attempt $attempt)" >&2
               sleep 5
             done
             rm -f "$archive"
-            echo "::error::Unable to download artifact $name from run $run_id" >&2
+            echo "::error::Unable to download artifact $selector from run $run_id" >&2
             exit 1
           }
           if [ -n "${{ inputs.windows_artifacts_run_id }}" ]; then
-            fetch_artifact "${{ inputs.windows_artifacts_run_id }}" \
-              tauri-updater-meta-windows tauri-updater-meta-windows
+            if ! compgen -G 'UGSci-Desktop-Tauri-Windows-*' >/dev/null; then
+              fetch_artifact "${{ inputs.windows_artifacts_run_id }}" \
+                UGSci-Desktop-Tauri-Windows- . prefix
+            fi
           fi
           if [ -n "${{ inputs.macos_artifacts_run_id }}" ]; then
-            fetch_artifact "${{ inputs.macos_artifacts_run_id }}" \
-              tauri-updater-meta-macos tauri-updater-meta-macos
+            if ! compgen -G 'UGSci-Desktop-Tauri-macOS-*' >/dev/null; then
+              fetch_artifact "${{ inputs.macos_artifacts_run_id }}" \
+                UGSci-Desktop-Tauri-macOS- . prefix
+            fi
+          fi
+          if [ -n "${{ inputs.windows_artifacts_run_id }}" ]; then
+            if ! compgen -G 'tauri-updater-meta-windows/*' >/dev/null; then
+              fetch_artifact "${{ inputs.windows_artifacts_run_id }}" \
+                tauri-updater-meta-windows tauri-updater-meta-windows exact
+            fi
+          fi
+          if [ -n "${{ inputs.macos_artifacts_run_id }}" ]; then
+            if ! compgen -G 'tauri-updater-meta-macos/*' >/dev/null; then
+              fetch_artifact "${{ inputs.macos_artifacts_run_id }}" \
+                tauri-updater-meta-macos tauri-updater-meta-macos exact
+            fi
           fi
 
       - name: Re-verify final macOS archives before GitHub release upload
