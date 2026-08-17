@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Start the staged NeqSim MCP server and execute a minimal TP flash."""
+"""Start NeqSim through MCP stdio and execute a minimal TP flash."""
 
 from __future__ import annotations
 
@@ -8,17 +8,7 @@ import argparse
 import asyncio
 import json
 import os
-import sys
 from pathlib import Path
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-SOURCE_ROOT = REPO_ROOT / "src"
-if str(SOURCE_ROOT) not in sys.path:
-    sys.path.insert(0, str(SOURCE_ROOT))
-
-from qwenpaw.drivers.handlers.mcp_stateful_client import (  # pylint: disable=wrong-import-position
-    StdIOStatefulClient,
-)
 
 REQUIRED_TOOLS = {
     "runFlash",
@@ -48,53 +38,96 @@ def _resolve_java(resource_dir: Path) -> Path:
 
 
 async def _smoke(java: Path, jar: Path) -> None:
-    client = StdIOStatefulClient(
-        name="neqsim-build-smoke",
-        command=str(java),
-        args=[
-            "-Dfile.encoding=UTF-8",
-            "-Dstdout.encoding=UTF-8",
-            "-Dstderr.encoding=UTF-8",
-            "-Dquarkus.profile=stdio",
-            "-Dquarkus.log.level=WARN",
-            "-Dquarkus.banner.enabled=false",
-            "-jar",
-            str(jar),
-        ],
-        read_timeout_seconds=60,
+    process = await asyncio.create_subprocess_exec(
+        str(java),
+        "-Dfile.encoding=UTF-8",
+        "-Dstdout.encoding=UTF-8",
+        "-Dstderr.encoding=UTF-8",
+        "-Dquarkus.profile=stdio",
+        "-Dquarkus.log.level=WARN",
+        "-Dquarkus.banner.enabled=false",
+        "-jar",
+        str(jar),
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.DEVNULL,
     )
     try:
-        await client.connect(timeout=60)
-        tools = await client.list_tools()
-        names = {tool.name for tool in tools}
+        request_id = 0
+
+        async def notify(method: str, params: dict | None = None) -> None:
+            payload = {"jsonrpc": "2.0", "method": method}
+            if params is not None:
+                payload["params"] = params
+            assert process.stdin is not None
+            process.stdin.write((json.dumps(payload) + "\n").encode())
+            await process.stdin.drain()
+
+        async def request(method: str, params: dict | None = None) -> dict:
+            nonlocal request_id
+            request_id += 1
+            payload = {"jsonrpc": "2.0", "id": request_id, "method": method}
+            if params is not None:
+                payload["params"] = params
+            assert process.stdin is not None and process.stdout is not None
+            process.stdin.write((json.dumps(payload) + "\n").encode())
+            await process.stdin.drain()
+            while True:
+                line = await asyncio.wait_for(process.stdout.readline(), 60)
+                if not line:
+                    raise RuntimeError("NeqSim MCP server closed its stdout")
+                message = json.loads(line)
+                if message.get("id") == request_id:
+                    if "error" in message:
+                        raise RuntimeError(
+                            f"MCP request failed: {message['error']}",
+                        )
+                    return message.get("result", {})
+
+        await request(
+            "initialize",
+            {
+                "protocolVersion": "2024-11-05",
+                "capabilities": {},
+                "clientInfo": {"name": "ugsci-build-smoke", "version": "1"},
+            },
+        )
+        await notify("notifications/initialized")
+        tools_result = await request("tools/list")
+        names = {item.get("name") for item in tools_result.get("tools", [])}
         missing = sorted(REQUIRED_TOOLS - names)
         if missing:
             raise RuntimeError(
                 f"NeqSim MCP server is missing required tools: {missing}",
             )
-        result = await client.call_tool(
-            "runFlash",
+        result = await request(
+            "tools/call",
             {
-                "components": json.dumps(
-                    {"methane": 0.9, "ethane": 0.1},
-                    separators=(",", ":"),
-                ),
-                "temperature": 25.0,
-                "temperatureUnit": "C",
-                "pressure": 100.0,
-                "pressureUnit": "bara",
-                "eos": "SRK",
-                "flashType": "TP",
+                "name": "runFlash",
+                "arguments": {
+                    "components": json.dumps(
+                        {"methane": 0.9, "ethane": 0.1},
+                        separators=(",", ":"),
+                    ),
+                    "temperature": 25.0,
+                    "temperatureUnit": "C",
+                    "pressure": 100.0,
+                    "pressureUnit": "bara",
+                    "eos": "SRK",
+                    "flashType": "TP",
+                },
             },
         )
-        if bool(getattr(result, "isError", False)):
+        if result.get("isError"):
             raise RuntimeError(f"NeqSim TP flash failed: {result}")
         print(
             "NeqSim smoke passed: "
             f"{len(names)} tools discovered; runFlash completed",
         )
     finally:
-        await client.close(ignore_errors=False)
+        if process.returncode is None:
+            process.terminate()
+            await process.wait()
 
 
 def main() -> None:

@@ -330,18 +330,23 @@ $AppExe = Get-Item (Join-Path $REPO_ROOT "console\src-tauri\target\release\qwenp
 $PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci Desktop"
 $PortablePayload = Join-Path $PortableRoot "payload"
 $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
-if (-not (Test-Path -LiteralPath $ZipPath -PathType Leaf)) {
-    if (Test-Path $PortableRoot) { Remove-Item -Recurse -Force $PortableRoot }
-    New-Item -ItemType Directory -Force -Path $PortablePayload | Out-Null
-    Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
-    $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
-    if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
-    python (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
-        --source $Resources --destination (Join-Path $PortablePayload "binaries")
-    Assert-LastExit "Failed to copy Windows portable resources"
-    & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
-        -PortableRoot $PortableRoot -ZipPath $ZipPath -Version $VERSION
+# Always rebuild the portable package. Reusing an existing ZIP can silently
+# ship a stale install.ps1 (including the pre-long-path Copy-Item implementation)
+# when a bundle directory is retained between builds.
+foreach ($staleArtifact in @($ZipPath, "$ZipPath.sig", $PortableRoot)) {
+    if (Test-Path -LiteralPath $staleArtifact) {
+        Remove-Item -LiteralPath $staleArtifact -Recurse -Force
+    }
 }
+New-Item -ItemType Directory -Force -Path $PortablePayload | Out-Null
+Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
+$Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
+if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
+python (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
+    --source $Resources --destination (Join-Path $PortablePayload "binaries")
+Assert-LastExit "Failed to copy Windows portable resources"
+& (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
+    -PortableRoot $PortableRoot -ZipPath $ZipPath -Version $VERSION
 if ($env:TAURI_SIGNING_PRIVATE_KEY -and -not (Test-Path -LiteralPath "$ZipPath.sig" -PathType Leaf)) {
     Set-Location (Join-Path $REPO_ROOT "console")
     pnpm exec tauri signer sign $ZipPath

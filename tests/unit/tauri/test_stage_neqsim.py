@@ -78,11 +78,12 @@ def test_atomic_write_replaces_complete_artifact(tmp_path):
     assert not list(tmp_path.glob(f".{helper.JAR_NAME}.*.tmp"))
 
 
-def test_smoke_can_import_qwenpaw_from_clean_checkout():
+def test_smoke_uses_dependency_free_mcp_stdio_client():
     source = SMOKE_PATH.read_text(encoding="utf-8")
 
-    assert 'SOURCE_ROOT = REPO_ROOT / "src"' in source
-    assert "sys.path.insert(0, str(SOURCE_ROOT))" in source
-    assert source.index("sys.path.insert") < source.index(
-        "from qwenpaw.drivers.handlers.mcp_stateful_client import",
-    )
+    assert "asyncio.create_subprocess_exec" in source
+    assert '"tools/list"' in source
+    assert '"tools/call"' in source
+    assert '"notifications/initialized"' in source
+    assert "from qwenpaw" not in source
+    assert "dotenv" not in source

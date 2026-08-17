@@ -182,6 +182,12 @@ jobs:
               throw "Portable Windows installer is missing required entry: $required"
             }
           }
+          $installScript = Get-Content -LiteralPath (Join-Path $inspectRoot 'install.ps1') -Raw -Encoding UTF8
+          if ($installScript -notmatch 'function Copy-DirectoryLongPathSafe' -or
+              $installScript -notmatch 'Copy-DirectoryLongPathSafe -Source \$payloadRoot' -or
+              $installScript -match 'Copy-Item -Destination \$stagingDir -Recurse -Force') {
+            throw 'Portable Windows installer contains a stale or unsafe install.ps1; long-path-safe copier is required'
+          }
           python scripts/pack-tauri/verify_frozen_plugins.py --archive $portable.FullName
           $manifest = Get-Content -LiteralPath (Join-Path $inspectRoot 'version.json') -Raw -Encoding UTF8 | ConvertFrom-Json
           if ($manifest.schema -ne 1 -or $manifest.version -ne '${{ steps.version.outputs.version }}' -or
