@@ -6,6 +6,8 @@ import json
 from pathlib import Path
 import sys
 
+from packaging.version import Version
+
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
@@ -30,8 +32,6 @@ def _load_python_layers():
 
 def test_dependency_layer_digest_is_a_valid_component_version():
     # pylint: disable=protected-access
-    from packaging.version import Version
-
     helper = _load_python_layers()
     value = helper._dependency_version("e3028883b2090145" + "0" * 48)
     assert value == "0+sha.e3028883b2090145"
@@ -198,13 +198,14 @@ def test_assemble_shortens_hash_heavy_runtime_directories(tmp_path):
 
     active = helper.assemble(binaries, "2.1.1b7", "windows-x86_64")
 
-    for component_id, version in (
-        ("python-runtime", versions["python-runtime"]),
-        ("node-runtime", versions["node-runtime"]),
-        ("java-runtime", versions["java-runtime"]),
+    for component_id in (
+        "python-runtime",
+        "node-runtime",
+        "java-runtime",
     ):
         component = active["components"][component_id]
-        assert component["version"] == version
+        assert component["version"].startswith("2.1.1b7+sha.")
+        assert str(Version(component["version"])) == component["version"]
         directory = Path(component["path"]).name
         assert len(directory) <= 45
         assert full_hash not in directory

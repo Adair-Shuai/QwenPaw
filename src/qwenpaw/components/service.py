@@ -34,6 +34,7 @@ from .update import (
     ComponentUpdateError,
     ComponentUpdatePlan,
     ComponentUpdater,
+    _version,
     _is_link_like,
     _safe_component_id,
     _safe_path,
@@ -388,6 +389,14 @@ def _bundled_directory_records() -> dict[str, tuple[str, Path]]:
         try:
             component = _safe_component_id(component)
             version = str(record["version"]).strip()
+            # Older macOS desktop bundles wrote the JDK archive directory
+            # name (for example ``jdk-21.0.12+8-mac-aarch64-…``) into
+            # active.json instead of a release version.  That value is a
+            # safe path segment but not a PEP 440 version, and must not make
+            # the whole component service fail during startup.  The
+            # component is temporarily omitted from local-version matching;
+            # the signed manifest can still be checked for plugin updates.
+            _version(version, "bundled component version")
             relative = _safe_path(str(record["path"]))
             destination = (resource_root / Path(relative)).absolute()
             destination.relative_to(resource_root)
@@ -401,9 +410,46 @@ def _bundled_directory_records() -> dict[str, tuple[str, Path]]:
             if not version or not destination.is_dir():
                 continue
             records[component] = (version, destination)
-        except (KeyError, OSError, ValueError, ComponentUpdateError):
+        except (KeyError, OSError, ValueError, ComponentUpdateError) as exc:
+            if isinstance(
+                exc,
+                ComponentUpdateError,
+            ) and "bundled component version" in str(exc):
+                logger.warning(
+                    "Ignoring invalid bundled directory component version "
+                    "for %s: %s",
+                    component,
+                    exc,
+                )
             continue
     return records
+
+
+def _valid_active_component_ids() -> set[str]:
+    """Return valid component IDs recorded by the desktop active pointer."""
+    active_path = WORKING_DIR / "components" / "active.json"
+    try:
+        payload = json.loads(active_path.read_text(encoding="utf-8"))
+        components = payload.get("components")
+        if not isinstance(components, dict):
+            return set()
+    except (OSError, TypeError, ValueError, json.JSONDecodeError):
+        return set()
+
+    valid: set[str] = set()
+    for raw_component, raw_record in components.items():
+        if not isinstance(raw_record, dict):
+            continue
+        try:
+            component = _safe_component_id(raw_component)
+            _version(
+                str(raw_record.get("version", "")).strip(),
+                "active component version",
+            )
+        except (ComponentUpdateError, TypeError, ValueError):
+            continue
+        valid.add(component)
+    return valid
 
 
 def _resolve_installed_directory(
@@ -620,6 +666,23 @@ def configured_service() -> "ComponentUpdateService | None":
         for component, record in _bundled_directory_records().items()
         if component in managed
     }
+    directory_components = managed & set(DIRECTORY_COMPONENT_IDS)
+    # A packaged desktop can carry an older active.json whose runtime
+    # directory version is not parseable (the b9 macOS JDK case).  Do not let
+    # that one malformed local record turn every component check into HTTP
+    # 500, and do not offer a phantom runtime update.  Keep the component
+    # disabled until a newer desktop bundle supplies a valid active record.
+    if os.environ.get("QWENPAW_TAURI_RESOURCE_DIR", "").strip():
+        valid_local = set(bundled_records) | _valid_active_component_ids()
+        invalid_local = directory_components - valid_local
+        if invalid_local:
+            logger.warning(
+                "Skipping directory components without a valid local "
+                "version record: %s",
+                ", ".join(sorted(invalid_local)),
+            )
+            managed -= invalid_local
+            directory_components -= invalid_local
     updater = ComponentUpdater(
         public_key_b64=public_key,
         managed_components=managed,
@@ -627,7 +690,7 @@ def configured_service() -> "ComponentUpdateService | None":
         active_path=WORKING_DIR / "components" / "active.json",
         backup_root=WORKING_DIR / "components" / "backups",
         defer_activation_cleanup=True,
-        directory_components=managed & set(DIRECTORY_COMPONENT_IDS),
+        directory_components=directory_components,
         bundled_directory_records=bundled_records,
     )
     manifest_host = (urlparse(manifest_url).hostname or "").strip().lower()

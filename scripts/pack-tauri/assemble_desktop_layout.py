@@ -12,6 +12,8 @@ from pathlib import Path
 import re
 import sys
 
+from packaging.version import InvalidVersion, Version
+
 try:
     from copy_windows_tree import remove_tree
 except ModuleNotFoundError:
@@ -31,6 +33,33 @@ def _marker_version(path: Path, marker: str) -> str:
     if not value or any(character in value for character in "/\\"):
         raise ValueError(f"invalid runtime marker {path / marker}: {value!r}")
     return value
+
+
+def _tree_digest(root: Path) -> str:
+    """Hash a component tree using the release staging contract."""
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        if path.is_symlink():
+            raise ValueError(f"component trees cannot contain links: {path}")
+        if not path.is_file():
+            continue
+        relative = path.relative_to(root).as_posix().encode()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        with path.open("rb") as stream:
+            while chunk := stream.read(1024 * 1024):
+                digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _release_version(value: str, fallback: str, root: Path) -> str:
+    """Normalize runtime markers to the component-release version format."""
+    try:
+        return str(Version(value))
+    except InvalidVersion:
+        digest = _tree_digest(root)
+        base = Version(fallback)
+        return f"{base.public}+sha.{digest[:12]}"
 
 
 def _move(source: Path, destination: Path) -> None:
@@ -62,18 +91,18 @@ def assemble(
     java_source = root / "java-runtime"
     office_source = root / "officecli"
     neqsim_source = root / "neqsim"
-    python_version = _marker_version(python_source, ".python-runtime-version")
-    node_version = _marker_version(node_source, ".node-runtime-version")
-    java_version = _marker_version(java_source, ".java-runtime-version")
+    python_marker = _marker_version(python_source, ".python-runtime-version")
+    node_marker = _marker_version(node_source, ".node-runtime-version")
+    java_marker = _marker_version(java_source, ".java-runtime-version")
 
     python_destination = (
-        root / "runtimes" / "python" / _component_directory(python_version)
+        root / "runtimes" / "python" / _component_directory(python_marker)
     )
     node_destination = (
-        root / "runtimes" / "node" / _component_directory(node_version)
+        root / "runtimes" / "node" / _component_directory(node_marker)
     )
     java_destination = (
-        root / "runtimes" / "java" / _component_directory(java_version)
+        root / "runtimes" / "java" / _component_directory(java_marker)
     )
     office_version = desktop_version
     neqsim_version = desktop_version
@@ -87,6 +116,21 @@ def assemble(
     _move(java_source, java_destination)
     _move(office_source, office_destination)
     _move(neqsim_source, neqsim_destination)
+    python_version = _release_version(
+        python_marker,
+        desktop_version,
+        python_destination,
+    )
+    node_version = _release_version(
+        node_marker,
+        desktop_version,
+        node_destination,
+    )
+    java_version = _release_version(
+        java_marker,
+        desktop_version,
+        java_destination,
+    )
     helper_name = (
         "qwenpaw-computer-use-helper.exe"
         if sys.platform == "win32"

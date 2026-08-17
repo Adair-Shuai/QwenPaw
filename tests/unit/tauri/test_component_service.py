@@ -16,6 +16,7 @@ from qwenpaw.components.service import (
     resolve_component_destination,
     run_startup_updates,
     set_component_update_adoption,
+    _bundled_directory_records,
     _resolve_managed_directory,
 )
 from qwenpaw.components.update import ComponentUpdateError
@@ -28,6 +29,39 @@ class _Client:
 
     def fetch_manifest(self, _url):
         return self.manifest
+
+
+def test_invalid_bundled_runtime_version_does_not_break_component_checks(
+    monkeypatch,
+    tmp_path,
+):
+    resource_root = tmp_path / "resources"
+    active_path = resource_root / "state" / "active.json"
+    java_root = resource_root / "runtimes" / "java"
+    java_root.mkdir(parents=True)
+    active_path.parent.mkdir(parents=True)
+    active_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": 1,
+                "target": "macos-aarch64",
+                "components": {
+                    "java-runtime": {
+                        "version": (
+                            "jdk-21.0.12+8-mac-aarch64-"
+                            "36bb71d6fa5184e12a6483e7662783c2cbd383f5dca"
+                            "8034140f0add5aa797d"
+                        ),
+                        "path": "runtimes/java",
+                    },
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("QWENPAW_TAURI_RESOURCE_DIR", str(resource_root))
+
+    assert _bundled_directory_records() == {}
 
 
 def test_remote_install_can_be_adopted_by_signed_component_manifest(
