@@ -8,9 +8,17 @@ import argparse
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 
-from qwenpaw.drivers.handlers.mcp_stateful_client import StdIOStatefulClient
+REPO_ROOT = Path(__file__).resolve().parents[2]
+SOURCE_ROOT = REPO_ROOT / "src"
+if str(SOURCE_ROOT) not in sys.path:
+    sys.path.insert(0, str(SOURCE_ROOT))
+
+from qwenpaw.drivers.handlers.mcp_stateful_client import (  # pylint: disable=wrong-import-position
+    StdIOStatefulClient,
+)
 
 REQUIRED_TOOLS = {
     "runFlash",

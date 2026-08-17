@@ -11,6 +11,7 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER_PATH = REPO_ROOT / "scripts" / "pack-tauri" / "stage_neqsim.py"
+SMOKE_PATH = REPO_ROOT / "scripts" / "pack-tauri" / "smoke_neqsim.py"
 
 
 def _load_helper():
@@ -75,3 +76,13 @@ def test_atomic_write_replaces_complete_artifact(tmp_path):
 
     assert target.read_bytes() == b"new-complete-artifact"
     assert not list(tmp_path.glob(f".{helper.JAR_NAME}.*.tmp"))
+
+
+def test_smoke_can_import_qwenpaw_from_clean_checkout():
+    source = SMOKE_PATH.read_text(encoding="utf-8")
+
+    assert 'SOURCE_ROOT = REPO_ROOT / "src"' in source
+    assert "sys.path.insert(0, str(SOURCE_ROOT))" in source
+    assert source.index("sys.path.insert") < source.index(
+        "from qwenpaw.drivers.handlers.mcp_stateful_client import",
+    )
