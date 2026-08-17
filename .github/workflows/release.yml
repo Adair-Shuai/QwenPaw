@@ -80,6 +80,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       tag: ${{ steps.pick.outputs.tag }}
+      release_id: ${{ steps.pick.outputs.release_id }}
       sha: ${{ steps.pick.outputs.sha }}
       is_prerelease: ${{ steps.pick.outputs.is_prerelease }}
       artifacts_run_id: ${{ steps.pick.outputs.artifacts_run_id }}
@@ -146,7 +147,14 @@ jobs:
             TAG="$(echo "$drafts" | jq -r '.[0]')"
           fi
           echo "Target tag: $TAG"
-          isDraft="$(gh release view "$TAG" --repo "$REPO" --json isDraft --jq '.isDraft')"
+          release="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+            | jq -s --arg tag "$TAG" 'add | map(select(.tag_name == $tag)) | .[0]')"
+          if [ -z "$release" ] || [ "$release" = "null" ]; then
+            echo "::error::Release $TAG was not found in the repository release list"
+            exit 1
+          fi
+          release_id="$(jq -r '.id' <<<"$release")"
+          isDraft="$(jq -r '.draft' <<<"$release")"
           if [ "$isDraft" != "true" ]; then
             if [ "$ALLOW_PUBLISHED_RESUME" != "true" ] || [ -z "$ARTIFACTS_RUN_ID" ]; then
               echo "::error::Release $TAG is not a draft; pass allow_published_resume=true with artifacts_run_id for an idempotent retry."
@@ -154,7 +162,7 @@ jobs:
             fi
             echo "::notice::Resuming already-published release $TAG from attested artifacts $ARTIFACTS_RUN_ID"
           fi
-          target="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')"
+          target="$(jq -r '.target_commitish' <<<"$release")"
           sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
           echo "Target commitish '$target' resolved to SHA $sha"
           if [ -z "$ARTIFACTS_RUN_ID" ] && {
@@ -323,8 +331,9 @@ jobs:
           fi
           echo "Prerelease (tag-based): $is_prerelease"
           {
-            echo "tag=$TAG"
-            echo "sha=$sha"
+          echo "tag=$TAG"
+          echo "release_id=$release_id"
+          echo "sha=$sha"
             echo "is_prerelease=$is_prerelease"
             echo "artifacts_run_id=$ARTIFACTS_RUN_ID"
             echo "windows_artifacts_run_id=$WINDOWS_ARTIFACTS_RUN_ID"
@@ -761,12 +770,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_ID: ${{ needs.resolve.outputs.release_id }}
           SHA: ${{ needs.resolve.outputs.sha }}
         run: |
           set -euo pipefail
-          release="$(gh release view "$TAG" --repo "$REPO" --json isDraft,targetCommitish)"
-          is_draft="$(jq -r '.isDraft' <<<"$release")"
-          target="$(jq -r '.targetCommitish' <<<"$release")"
+          release="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
+          is_draft="$(jq -r '.draft' <<<"$release")"
+          target="$(jq -r '.target_commitish' <<<"$release")"
           target_sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
           test "$target_sha" = "$SHA" || { echo "::error::Release $TAG targets $target_sha, expected $SHA"; exit 1; }
 
@@ -776,7 +786,7 @@ jobs:
               # The resolve gate already verified the release target. Publishing
               # must not also mutate target_commitish: GitHub can reject that
               # combined PATCH for the Actions integration even with contents:write.
-              gh release edit "$TAG" --repo "$REPO" --draft=false
+              gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false >/dev/null
               ;;
             false)
               echo "Release $TAG is already published; verifying instead of mutating it"
@@ -787,9 +797,9 @@ jobs:
               ;;
           esac
 
-          published="$(gh release view "$TAG" --repo "$REPO" --json isDraft,targetCommitish)"
-          published_is_draft="$(jq -r '.isDraft' <<<"$published")"
-          published_target="$(jq -r '.targetCommitish' <<<"$published")"
+          published="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
+          published_is_draft="$(jq -r '.draft' <<<"$published")"
+          published_target="$(jq -r '.target_commitish' <<<"$published")"
           published_sha="$(gh api "repos/$REPO/commits/$published_target" --jq '.sha')"
           test "$published_is_draft" = "false" || { echo "::error::Release $TAG is still a draft after finalize"; exit 1; }
           test "$published_sha" = "$SHA" || { echo "::error::Finalized release $TAG targets $published_sha, expected $SHA"; exit 1; }
