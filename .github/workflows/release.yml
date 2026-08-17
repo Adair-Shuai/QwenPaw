@@ -125,9 +125,17 @@ jobs:
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/build_python_layers.py|\
                 scripts/pack-tauri/stage_desktop_components.py|\
-                tests/unit/tauri/test_desktop_layer_layout.py|\
                 tests/unit/tauri/test_stage_desktop_components.py|\
                 tests/unit/verify/test_release_workflow_safety.py)
+                  ;;
+                scripts/pack-tauri/assemble_desktop_layout.py|\
+                tests/unit/tauri/test_desktop_layer_layout.py)
+                  if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || \
+                     [ -z "$MACOS_ARTIFACTS_RUN_ID" ] || \
+                     [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
+                    echo "::error::Desktop layout changes require Windows, macOS, and component replacement artifacts"
+                    exit 1
+                  fi
                   ;;
                 *)
                   echo "::error::Cannot reuse artifacts across product change: $file"

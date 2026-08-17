@@ -40,6 +40,14 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert "grep -qx 'tauri-updater-meta-windows'" in release
     assert "grep -qx 'tauri-updater-meta-macos'" in release
     assert "Replacement artifact run IDs require artifacts_run_id" in release
+    assert (
+        "Desktop layout changes require Windows, macOS, and component "
+        "replacement artifacts" in release
+    )
+    assert "scripts/pack-tauri/assemble_desktop_layout.py" in release
+    assert release.count('[ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]') >= 1
+    assert release.count('[ -z "$MACOS_ARTIFACTS_RUN_ID" ]') >= 1
+    assert release.count('[ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]') >= 1
     assert release.count(".github/workflows/desktop-build.yml") >= 2
     assert ".github/workflows/plugins-build.yml" in release
     assert ".github/workflows/component-release.yml" in release
