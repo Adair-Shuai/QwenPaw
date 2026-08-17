@@ -28,6 +28,11 @@ on:
         required: false
         type: string
         default: ""
+      release_id:
+        description: "Draft release ID (use when GitHub hides draft releases from list endpoints)"
+        required: false
+        type: string
+        default: ""
       dry_run:
         description: "Stub production OSS publishing; use on forks"
         required: false
@@ -96,6 +101,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           INPUT_TAG: ${{ inputs.tag }}
+          INPUT_RELEASE_ID: ${{ inputs.release_id }}
           ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
           ALLOW_PUBLISHED_RESUME: ${{ inputs.allow_published_resume }}
           WINDOWS_ARTIFACTS_RUN_ID: ${{ inputs.windows_artifacts_run_id }}
@@ -147,9 +153,13 @@ jobs:
             TAG="$(echo "$drafts" | jq -r '.[0]')"
           fi
           echo "Target tag: $TAG"
-          release="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
-            | jq -s --arg tag "$TAG" \
-              'add | map(select((.tag_name == $tag or .name == $tag))) | .[0]')"
+          if [ -n "$INPUT_RELEASE_ID" ]; then
+            release="$(gh api "repos/$REPO/releases/$INPUT_RELEASE_ID")"
+          else
+            release="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+              | jq -s --arg tag "$TAG" \
+                'add | map(select((.tag_name == $tag or .name == $tag))) | .[0]')"
+          fi
           if [ -z "$release" ] || [ "$release" = "null" ]; then
             echo "::error::Release $TAG was not found in the repository release list"
             exit 1
