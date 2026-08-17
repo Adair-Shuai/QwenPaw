@@ -245,10 +245,14 @@ jobs:
               }
               echo "Verified existing release asset: $name"
             else
-              gh api --method POST \
+              curl --fail --location --silent --show-error \
+                --retry 5 --retry-all-errors --retry-delay 3 \
+                -X POST \
+                -H "Authorization: Bearer $GH_TOKEN" \
                 -H 'Content-Type: application/octet-stream' \
-                "repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
-                --input "$file" >/dev/null
+                --data-binary "@$file" \
+                "https://uploads.github.com/repos/$GITHUB_REPOSITORY/releases/$release_id/assets?name=$name" \
+                >/dev/null
             fi
           done
 
