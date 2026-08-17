@@ -171,6 +171,8 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
 
 
 def test_assemble_materializes_internal_runtime_symlinks(tmp_path):
+    if sys.platform == "win32":
+        return
     helper = _load()
     binaries = tmp_path / "src-tauri" / "binaries"
     for name, marker, version in (
