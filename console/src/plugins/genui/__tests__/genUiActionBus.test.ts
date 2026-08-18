@@ -213,15 +213,42 @@ describe("config-based allowed actions", () => {
     expect(list.length).toBe(2);
   });
 
-  it("dispatches custom allowed action when in config", () => {
+  it("opens http(s) URLs when open_url is allowed", () => {
+    const open = vi.fn();
+    window.open = open;
     (window as any).QwenPaw.genui = {
       config: { allow_actions: ["send_message", "open_url"] },
     };
-    // open_url is now allowed but not handled — should not warn
-    dispatchGenUiAction({ type: "open_url", payload: { url: "/test" } });
-    expect(warnSpy).not.toHaveBeenCalled();
-    // But send_message is not called for open_url
+    const result = dispatchGenUiAction({
+      type: "open_url",
+      payload: { url: "https://example.com/docs" },
+    });
+    expect(result.ok).toBe(true);
+    expect(open).toHaveBeenCalledWith(
+      "https://example.com/docs",
+      "_blank",
+      "noopener,noreferrer",
+    );
     expect(sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("rejects javascript and relative URLs even when open_url is allowed", () => {
+    const open = vi.fn();
+    window.open = open;
+    (window as any).QwenPaw.genui = {
+      config: { allow_actions: ["open_url"] },
+    };
+    expect(
+      dispatchGenUiAction({
+        type: "open_url",
+        payload: { url: "javascript:alert(1)" },
+      }).ok,
+    ).toBe(false);
+    expect(
+      dispatchGenUiAction({ type: "open_url", payload: { url: "/settings" } })
+        .ok,
+    ).toBe(false);
+    expect(open).not.toHaveBeenCalled();
   });
 
   it("blocks actions not in config allow list", () => {

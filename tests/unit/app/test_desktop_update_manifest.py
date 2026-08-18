@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import urllib.error
 
 from fastapi import HTTPException
 import pytest
@@ -19,6 +20,12 @@ class _Response(io.BytesIO):
 
     def __exit__(self, *_args):
         self.close()
+
+
+def test_version_payload_exposes_download_base() -> None:
+    payload = _app.get_version()
+    assert payload["download_base_url"] == _app._distribution.DOWNLOAD_BASE_URL
+    assert payload["version"]
 
 
 def test_latest_desktop_version_uses_fixed_oss_manifest(monkeypatch):
@@ -90,6 +97,37 @@ def test_latest_desktop_version_uses_recent_stale_cache_on_network_error(
     assert _app.get_latest_desktop_version() == {
         "version": "2.1.1-beta.6",
     }
+
+
+def test_latest_core_version_uses_core_manifest(monkeypatch):
+    requested: list[tuple[str, int]] = []
+
+    def fake_urlopen(request, timeout):
+        requested.append((request.full_url, timeout))
+        return _Response(b'{"version":"2.1.1b10"}')
+
+    monkeypatch.setattr(_app.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(_app, "_core_version_cache", None)
+
+    assert _app.get_latest_core_version() == {"version": "2.1.1b10"}
+    assert requested == [(_app.CORE_UPDATE_MANIFEST_URL, 10)]
+
+
+def test_latest_core_version_treats_missing_manifest_as_no_update(monkeypatch):
+    def fake_urlopen(_request, timeout):
+        del timeout
+        raise urllib.error.HTTPError(
+            _app.CORE_UPDATE_MANIFEST_URL,
+            404,
+            "Not Found",
+            hdrs={},
+            fp=None,
+        )
+
+    monkeypatch.setattr(_app, "_core_version_cache", None)
+    monkeypatch.setattr(_app.urllib.request, "urlopen", fake_urlopen)
+
+    assert _app.get_latest_core_version() == {"version": ""}
 
 
 def test_latest_desktop_version_rejects_expired_stale_cache(monkeypatch):

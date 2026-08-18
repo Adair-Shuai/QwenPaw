@@ -403,20 +403,36 @@ export const useCodingTabsStore = create<CodingTabsState>()(
         tabsByAgent: Object.fromEntries(
           Object.entries(state.tabsByAgent).map(([agent, tabs]) => [
             agent,
-            tabs.map((t) => ({
-              path: t.path,
-              displayPath: t.displayPath,
-              content: "",
-              dirty: false,
-              source: t.source,
-              workspaceRoot: t.workspaceRoot,
-              artifactUrl: t.artifactUrl,
-              previewKind: t.previewKind,
-              readOnly: t.readOnly,
-            })),
+            tabs
+              .filter(
+                (tab) => tab.source !== "artifact" || Boolean(tab.artifactUrl),
+              )
+              .map((t) => ({
+                path: t.path,
+                displayPath: t.displayPath,
+                content: "",
+                dirty: false,
+                source: t.source,
+                workspaceRoot: t.workspaceRoot,
+                artifactUrl: t.artifactUrl,
+                previewKind: t.previewKind,
+                readOnly: t.readOnly,
+              })),
           ]),
         ),
-        activeTabByAgent: state.activeTabByAgent,
+        activeTabByAgent: Object.fromEntries(
+          Object.entries(state.activeTabByAgent).map(([agent, path]) => {
+            const tabs = (state.tabsByAgent[agent] ?? []).filter(
+              (tab) => tab.source !== "artifact" || Boolean(tab.artifactUrl),
+            );
+            return [
+              agent,
+              tabs.some((tab) => tab.path === path)
+                ? path
+                : tabs[0]?.path ?? "",
+            ];
+          }),
+        ),
         diffsByAgent: Object.fromEntries(
           Object.entries(state.diffsByAgent).map(([agent, diffs]) => [
             agent,

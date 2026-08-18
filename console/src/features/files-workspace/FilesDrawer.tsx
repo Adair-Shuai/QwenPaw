@@ -13,7 +13,6 @@ import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import styles from "./FilesWorkspace.module.less";
 
 const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
-const WORKSPACE_WIDTH_STORAGE_KEY = "qwenpaw-files-workspace-width";
 const MIN_DRAWER_WIDTH = 420;
 const MIN_CHAT_WIDTH = 420;
 const FilesWorkspace = lazy(() => import("./FilesWorkspace"));
@@ -33,10 +32,7 @@ export default function FilesDrawer({
   const drawerRef = useRef<HTMLElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const prefersReducedMotion = useReducedMotion();
-  const isWorkspace = state.kind === "workspace";
-  const widthStorageKey = isWorkspace
-    ? WORKSPACE_WIDTH_STORAGE_KEY
-    : PREVIEW_WIDTH_STORAGE_KEY;
+  const widthStorageKey = PREVIEW_WIDTH_STORAGE_KEY;
   const [width, setWidth] = useState(0);
 
   useEffect(() => {
@@ -94,9 +90,9 @@ export default function FilesDrawer({
   return (
     <motion.aside
       ref={drawerRef}
-      className={`${styles.drawer} ${
-        isWorkspace ? styles.drawerWorkspace : styles.drawerPreview
-      } ${isResizing ? styles.drawerResizing : ""}`}
+      className={`${styles.drawer} ${styles.drawerPreview} ${
+        isResizing ? styles.drawerResizing : ""
+      }`}
       style={width > 0 ? { width: `${width}px` } : undefined}
       layout={isResizing || prefersReducedMotion ? false : "size"}
       initial={prefersReducedMotion ? false : { opacity: 0, x: 18 }}
@@ -153,13 +149,7 @@ export default function FilesDrawer({
         <FilesWorkspace
           initialTarget={state.target}
           scope={scope}
-          compact={!isWorkspace}
-          onExpand={() => dispatch({ type: "EXPAND_WORKSPACE" })}
-          onCollapse={
-            isWorkspace && state.target
-              ? () => dispatch({ type: "COLLAPSE_TO_PREVIEW" })
-              : undefined
-          }
+          compact
           onClose={close}
         />
       </Suspense>

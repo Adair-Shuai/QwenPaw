@@ -74,7 +74,7 @@ repos:
     hooks:
       - id: black
         language_version: python3.11
-        args: [ --line-length=79 ]
+        args: [ --line-length=79, --target-version=py311 ]
         exclude: '(?x)(^\.codex-tmp/|.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/|^scripts/check_ci_jobs.py|^scripts/check_upstream_ci.py|^scripts/check_latest_ci.py)'
   - repo: https://github.com/PyCQA/flake8
     rev: 6.1.0

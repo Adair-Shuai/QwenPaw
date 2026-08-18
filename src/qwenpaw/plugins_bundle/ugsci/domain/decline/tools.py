@@ -17,6 +17,7 @@ import logging
 from typing import Any
 
 from ..common.errors import DomainError, wrap_unknown_error
+from ..common.tool_chunk import emit_tool_chunk
 from .adapters.scipy_arps import ScipyArpsAdapter
 from .service import DeclineAnalysisService
 
@@ -37,6 +38,7 @@ def _check_agentscope() -> bool:
         try:
             from agentscope.message import TextBlock, ToolResultState  # noqa: F401
             from agentscope.tool import ToolChunk  # noqa: F401
+
             _agentscope_available = True
         except Exception:
             # Catch ImportError, ModuleNotFoundError, and any other
@@ -82,31 +84,7 @@ def _make_error_chunk(exc: DomainError) -> Any:
 
 
 def _make_success_chunk(result_dict: dict[str, Any]) -> Any:
-    """Build a ToolChunk for a success result.
-
-    If agentscope is unavailable, returns a plain dict fallback
-    so that the tool never crashes the agent session.
-    """
-    payload = json.dumps(result_dict, ensure_ascii=False, indent=2)
-    if not _check_agentscope():
-        logger.warning(
-            "agentscope not available; returning plain dict result",
-        )
-        return {"error": False, "payload": result_dict}
-
-    from agentscope.message import TextBlock, ToolResultState
-    from agentscope.tool import ToolChunk
-
-    return ToolChunk(
-        is_last=True,
-        state=ToolResultState.SUCCESS,
-        content=[
-            TextBlock(
-                type="text",
-                text=payload,
-            ),
-        ],
-    )
+    return emit_tool_chunk(result_dict, error=False)
 
 
 async def ugsci_decline_fit(
@@ -166,7 +144,13 @@ async def ugsci_decline_forecast(
     try:
         service = _get_service()
         result = service.forecast(
-            model, qi, di, b, forecast_time, time_unit, rate_unit,
+            model,
+            qi,
+            di,
+            b,
+            forecast_time,
+            time_unit,
+            rate_unit,
         )
         return _make_success_chunk(result.to_dict())
     except DomainError as exc:
@@ -205,7 +189,12 @@ async def ugsci_decline_eur(
     try:
         service = _get_service()
         result = service.eur(
-            model, qi, di, b, time_unit, rate_unit,
+            model,
+            qi,
+            di,
+            b,
+            time_unit,
+            rate_unit,
             forecast_end=forecast_end,
             economic_limit=economic_limit,
         )

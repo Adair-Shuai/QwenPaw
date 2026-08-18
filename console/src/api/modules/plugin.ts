@@ -1,5 +1,8 @@
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
+import { isUGSciCatalogPlugin, UPSTREAM_PLUGIN_CDN } from "../../distribution";
+import { ApiError } from "../request";
+import { componentsApi } from "./components";
 
 /** Matches the backend ``PluginType`` enum values. */
 export type PluginType =
@@ -79,6 +82,7 @@ export interface OfficialPluginCatalogEntry {
   installed: boolean;
   installed_version?: string;
   upgrade_available: boolean;
+  channel?: string;
 }
 
 export interface OfficialPluginCatalog {
@@ -103,8 +107,7 @@ interface RemoteCatalogFile {
   qwenpaw_version?: { min?: string; max?: string };
 }
 
-const QWENPAW_PLUGIN_CDN = "https://download.qwenpaw.agentscope.io";
-const UGSCI_PLUGIN_IDS = new Set(["ugsci", "ugsci_research", "uideas", "ulit"]);
+const QWENPAW_PLUGIN_CDN = UPSTREAM_PLUGIN_CDN;
 
 function comparePluginVersions(a: string, b: string): number {
   const tokenize = (value: string) =>
@@ -229,11 +232,7 @@ export async function fetchUGSciPluginCatalog(): Promise<OfficialPluginCatalog> 
     installedVersionMap(),
   ]);
   const plugins = latestPerPlugin(catalog.plugins ?? [])
-    .filter(
-      (entry) =>
-        UGSCI_PLUGIN_IDS.has(entry.plugin_id) ||
-        entry.author?.toLowerCase().includes("ugsci"),
-    )
+    .filter((entry) => isUGSciCatalogPlugin(entry))
     .map((entry) => {
       const installedVersion = installed.get(entry.plugin_id);
       return {
@@ -348,6 +347,73 @@ export async function replaceInstalledPlugin(options: {
     );
   }
   return response.json();
+}
+
+/** Minimal catalog fields needed to upgrade an installed UGSci plugin. */
+export interface UGSciUpgradeSource {
+  plugin_id: string;
+  version: string;
+  install_url?: string;
+  sha256?: string;
+  upgrade_available?: boolean;
+}
+
+export type UGSciUpgradeResult =
+  | { method: "queued" }
+  | { method: "replaced"; version: string }
+  | { method: "up-to-date" };
+
+/**
+ * Upgrade an installed UGSci plugin/app.
+ *
+ * Primary path: the signed component updater (queued, applied at the next
+ * safe restart). Fallback: the sha256-verified `/plugins/replace` hot swap,
+ * used only when the signed path says the component is not managed (HTTP
+ * 409). Network/5xx errors and an up-to-date signed answer do not fall
+ * through to hot replace.
+ */
+function isUnmanagedComponentError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return false;
+  }
+  if (error.reason === "not_managed") {
+    return true;
+  }
+  // Legacy string details from older backends.
+  return !error.reason && /not managed/i.test(error.message);
+}
+
+function requireUGSciUpgradeDigest(sha256: string | undefined): string {
+  const digest = (sha256 || "").trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(digest)) {
+    throw new Error("UGSci catalog upgrade is missing a SHA-256 digest");
+  }
+  return digest;
+}
+
+export async function upgradeInstalledUGSciPlugin(
+  entry: UGSciUpgradeSource,
+): Promise<UGSciUpgradeResult> {
+  try {
+    const result = await componentsApi.queueComponentUpdate(entry.plugin_id);
+    if (result.queued) return { method: "queued" };
+    // Signed path answered; do not hot-replace just because the catalog is newer.
+    return { method: "up-to-date" };
+  } catch (error) {
+    if (!isUnmanagedComponentError(error)) {
+      throw error;
+    }
+  }
+  if (!entry.upgrade_available || !entry.install_url) {
+    return { method: "up-to-date" };
+  }
+  const replaced = await replaceInstalledPlugin({
+    source: entry.install_url,
+    pluginId: entry.plugin_id,
+    version: entry.version,
+    sha256: requireUGSciUpgradeDigest(entry.sha256),
+  });
+  return { method: "replaced", version: replaced.version };
 }
 
 export async function installPlugin(

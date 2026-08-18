@@ -161,7 +161,8 @@ def test_plugin_registers_team_mode_router_and_simulation_tools(
         "ugsci_sync_manifest_tools",
         "ugsci_init",
     } <= set(api.startup_hooks)
-    assert api.uninstall_hooks == ["ugsci_remove_pool_skills"]
+    assert "ugsci_remove_pool_skills" in api.uninstall_hooks
+    assert "ugsci_dispose_genui" in api.uninstall_hooks
 
 
 def test_manifest_is_the_complete_runtime_tool_catalog(monkeypatch) -> None:

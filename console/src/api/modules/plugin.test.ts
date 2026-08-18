@@ -1,23 +1,33 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
+const hoisted = vi.hoisted(() => ({
+  queueComponentUpdate: vi.fn(),
+}));
+
 vi.mock("../config", () => ({
   getApiUrl: vi.fn((p: string) => "http://test" + p),
 }));
 vi.mock("../authHeaders", () => ({
   buildAuthHeaders: vi.fn(() => ({})),
 }));
+vi.mock("./components", () => ({
+  componentsApi: { queueComponentUpdate: hoisted.queueComponentUpdate },
+}));
 
 import {
   fetchPlugins,
   fetchPluginCatalog,
+  fetchUGSciPluginCatalog,
   installPlugin,
   replaceInstalledPlugin,
+  upgradeInstalledUGSciPlugin,
   uploadPlugin,
   uninstallPlugin,
   fetchPluginStatus,
 } from "./plugin";
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
+import { ApiError } from "../request";
 
 interface MockResponseOptions {
   ok: boolean;
@@ -106,6 +116,51 @@ describe("plugin module", () => {
     await expect(fetchPluginCatalog()).rejects.toThrow("Upstream down");
   });
 
+  it("fetchUGSciPluginCatalog keeps channel or UGSci-author rows", async () => {
+    global.fetch = vi.fn().mockImplementation(async (url: string) => {
+      if (String(url).endsWith("/plugins/catalog")) {
+        return mockResponse({
+          ok: true,
+          status: 200,
+          json: {
+            updated_at: null,
+            plugins: [
+              {
+                plugin_id: "ulit",
+                version: "1.0.0",
+                channel: "ugsci",
+                author: "QwenPaw Team",
+              },
+              {
+                plugin_id: "ugsci",
+                version: "2.0.0",
+                author: "UGSci Team",
+              },
+              {
+                plugin_id: "other",
+                version: "1.0.0",
+                author: "Someone Else",
+              },
+              {
+                plugin_id: "community-app",
+                version: "1.0.0",
+                channel: "community",
+                author: "UGSci Team",
+              },
+            ],
+          },
+        });
+      }
+      return mockResponse({ ok: true, status: 200, json: [] });
+    });
+
+    const result = await fetchUGSciPluginCatalog();
+    expect(result.plugins.map((entry) => entry.plugin_id)).toEqual([
+      "ulit",
+      "ugsci",
+    ]);
+  });
+
   it("fetchPluginCatalog throws fallback message when body has no detail", async () => {
     global.fetch = vi
       .fn()
@@ -184,6 +239,184 @@ describe("plugin module", () => {
         sha256: "a".repeat(64),
       }),
     });
+  });
+
+  it("upgradeInstalledUGSciPlugin prefers the signed component updater", async () => {
+    hoisted.queueComponentUpdate.mockResolvedValue({
+      component: "ugsci",
+      queued: true,
+    });
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        upgrade_available: true,
+      }),
+    ).resolves.toEqual({ method: "queued" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("upgradeInstalledUGSciPlugin falls back to verified replace when not managed", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError("component ugsci is not managed", 409),
+    );
+    global.fetch = vi.fn().mockResolvedValue(
+      mockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          id: "ugsci",
+          name: "UGSci",
+          version: "2.0.0",
+          restart_required: true,
+        },
+      }),
+    );
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "b".repeat(64),
+        upgrade_available: true,
+      }),
+    ).resolves.toEqual({ method: "replaced", version: "2.0.0" });
+
+    const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
+      string,
+      RequestInit,
+    ];
+    expect(url).toBe("http://test/plugins/replace");
+    expect(JSON.parse(init.body as string)).toEqual({
+      source: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+      plugin_id: "ugsci",
+      version: "2.0.0",
+      sha256: "b".repeat(64),
+    });
+  });
+
+  it("upgradeInstalledUGSciPlugin reports up-to-date without a catalog upgrade", async () => {
+    hoisted.queueComponentUpdate.mockResolvedValue({
+      component: "ugsci",
+      queued: false,
+      reason: "up-to-date",
+    });
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "1.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        upgrade_available: false,
+      }),
+    ).resolves.toEqual({ method: "up-to-date" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("upgradeInstalledUGSciPlugin does not replace when signed path is up-to-date", async () => {
+    hoisted.queueComponentUpdate.mockResolvedValue({
+      component: "ugsci",
+      queued: false,
+      reason: "up-to-date",
+    });
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "b".repeat(64),
+        upgrade_available: true,
+      }),
+    ).resolves.toEqual({ method: "up-to-date" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("upgradeInstalledUGSciPlugin does not fall back on queue 502", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError("Component update queue failed", 502),
+    );
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "b".repeat(64),
+        upgrade_available: true,
+      }),
+    ).rejects.toMatchObject({ status: 502 });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("upgradeInstalledUGSciPlugin falls back on structured not_managed reason", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError("component unavailable", 409, "not_managed"),
+    );
+    global.fetch = vi.fn().mockResolvedValue(
+      mockResponse({
+        ok: true,
+        status: 200,
+        json: {
+          id: "ugsci",
+          name: "UGSci",
+          version: "2.0.0",
+          restart_required: true,
+        },
+      }),
+    );
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "b".repeat(64),
+        upgrade_available: true,
+      }),
+    ).resolves.toEqual({ method: "replaced", version: "2.0.0" });
+  });
+
+  it("upgradeInstalledUGSciPlugin does not fall back on other 409 reasons", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError("component updates are not configured", 409, "conflict"),
+    );
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "b".repeat(64),
+        upgrade_available: true,
+      }),
+    ).rejects.toMatchObject({ status: 409, reason: "conflict" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("upgradeInstalledUGSciPlugin requires sha256 on replace fallback", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError("component ugsci is not managed", 409, "not_managed"),
+    );
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        upgrade_available: true,
+      }),
+    ).rejects.toThrow("missing a SHA-256 digest");
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it("uploadPlugin posts FormData and returns json on success", async () => {

@@ -153,7 +153,7 @@ export default function Header() {
   // Browser-only fallback. The same promoted OSS metadata as the desktop
   // updater is fetched through the local backend to avoid browser CORS.
   const refreshWebUpdate = async (): Promise<boolean> => {
-    const data = await api.getLatestDesktopVersion();
+    const data = await api.getLatestCoreVersion();
     const latest = typeof data?.version === "string" ? data.version.trim() : "";
     const available =
       !!version && !!latest && compareVersions(latest, version) > 0;
@@ -260,23 +260,7 @@ export default function Header() {
       return;
     }
 
-    const faqLang = lang === "zh" ? "zh" : "en";
-    const url = `https://qwenpaw.agentscope.io/docs/faq.${faqLang}.md`;
-    fetch(url, { cache: "no-cache" })
-      .then((res) => (res.ok ? res.text() : Promise.reject()))
-      .then((text) => {
-        const zhPattern = /###\s*QwenPaw如何更新[\s\S]*?(?=\n###|$)/;
-        const enPattern = /###\s*How to update QwenPaw[\s\S]*?(?=\n###|$)/;
-        const match = text.match(faqLang === "zh" ? zhPattern : enPattern);
-        setUpdateMarkdown(
-          match && lang !== "ru"
-            ? match[0].trim()
-            : UPDATE_MD[lang] ?? UPDATE_MD.en,
-        );
-      })
-      .catch(() => {
-        setUpdateMarkdown(UPDATE_MD[lang] ?? UPDATE_MD.en);
-      });
+    setUpdateMarkdown(UPDATE_MD[lang] ?? UPDATE_MD.en);
   };
 
   const handleStartInstall = async () => {

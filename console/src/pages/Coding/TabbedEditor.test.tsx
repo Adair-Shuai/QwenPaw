@@ -275,4 +275,80 @@ describe("TabbedEditor hosted preview controls", () => {
     expect(onDownloadFile).toHaveBeenCalledWith("index.html");
     expect(onRevealFile).toHaveBeenCalledWith("index.html");
   });
+
+  it("lets generated artifacts save from preview mode", async () => {
+    const onSaveFile = vi.fn(async () => undefined);
+
+    render(
+      <TabbedEditor
+        tabs={[
+          {
+            path: "artifact::AI 回复.md",
+            displayPath: "AI 回复.md",
+            content: "# Hello",
+            dirty: false,
+            source: "artifact",
+            previewKind: "text",
+            readOnly: false,
+          },
+        ]}
+        activeTabPath="artifact::AI 回复.md"
+        scopeKey={SCOPE_KEY}
+        onTabSelect={vi.fn()}
+        onTabClose={vi.fn()}
+        onCloseOtherTabs={vi.fn()}
+        onTabDirtyChange={vi.fn()}
+        onTabContentChange={vi.fn()}
+        onSaveFile={onSaveFile}
+      />,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /saveToWorkspace|保存到工作区/i }),
+    );
+    await waitFor(() => {
+      expect(onSaveFile).toHaveBeenCalledWith(
+        "artifact::AI 回复.md",
+        "# Hello",
+      );
+    });
+  });
+
+  it("uses the same preview and edit switch as workspace markdown files", () => {
+    render(
+      <TabbedEditor
+        tabs={[
+          {
+            path: "artifact::默认文件名太容易撞.md",
+            displayPath: "默认文件名太容易撞.md",
+            content: "# Hello",
+            dirty: false,
+            source: "artifact",
+            previewKind: "text",
+            readOnly: false,
+          },
+        ]}
+        activeTabPath="artifact::默认文件名太容易撞.md"
+        scopeKey={SCOPE_KEY}
+        onTabSelect={vi.fn()}
+        onTabClose={vi.fn()}
+        onCloseOtherTabs={vi.fn()}
+        onTabDirtyChange={vi.fn()}
+        onTabContentChange={vi.fn()}
+        onSaveFile={vi.fn(async () => undefined)}
+      />,
+    );
+
+    const preview = screen.getByRole("button", {
+      name: /preview|预览|files\.preview/i,
+    });
+    const edit = screen.getByRole("button", {
+      name: /edit|编辑|files\.edit/i,
+    });
+    expect(preview).toBeInTheDocument();
+    expect(edit).toBeInTheDocument();
+
+    fireEvent.click(edit);
+    expect(screen.getByTestId("editor-value")).toHaveTextContent("# Hello");
+  });
 });

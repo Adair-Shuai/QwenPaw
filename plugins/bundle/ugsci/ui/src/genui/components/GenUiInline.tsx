@@ -4,7 +4,8 @@
 import { GenUiTreeView } from "./GenUiRegistry";
 import { GenUiInteractionProvider } from "./GenUiInteraction";
 import {
-  useGenUiStore,
+  useGenUiActions,
+  useGenUiSnapshots,
   genUiSnapshotKey,
   extractGenUiResults,
 } from "../stores/genUi";
@@ -43,7 +44,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
   const React = host?.React;
   if (!React) return null;
 
-  const store = useGenUiStore();
+  const store = useGenUiActions();
   const exportedValues = React.useRef(new Map<string, Record<string, unknown>>());
 
   // Get sessionId from the host (response data doesn't carry it directly).
@@ -97,11 +98,18 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUiIdsKey]);
 
+  const resultUiIds = React.useMemo(
+    () => (results as GenUiTreeResult[])
+      .map((result) => result.ui_id)
+      .filter((uiId): uiId is string => Boolean(uiId)),
+    [results],
+  );
+  const storeSnapshots = useGenUiSnapshots(sessionId, resultUiIds);
+
   // Filter to current session and deduplicate by ui_id (keep latest revision only)
   // Only render snapshots that originate from THIS response bubble's output,
   // not all session snapshots — otherwise trees appear duplicated across bubbles.
-  const sessionSnapshots = Object.values(store.snapshots)
-    .filter((snap: GenUiSnapshot) => snap.sessionId === sessionId)
+  const sessionSnapshots = storeSnapshots
     .filter((snap: GenUiSnapshot) =>
       // Only include snapshots whose ui_id appears in this response's results
       results.some((r: GenUiTreeResult) =>
@@ -111,7 +119,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
         ),
       ),
     )
-    .sort((a: GenUiSnapshot, b: GenUiSnapshot) => a.updatedAt - b.updatedAt); // sort by time for stable order
+    .sort((a: GenUiSnapshot, b: GenUiSnapshot) => a.updatedAt - b.updatedAt);
 
   if (sessionSnapshots.length === 0) return null;
 
@@ -140,7 +148,10 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
           } }, "PNG"),
           React.createElement("button", { type: "button", title: "打印或另存为 PDF", onClick: (event: any) => {
             const target = event.currentTarget.closest(".qwenpaw-genui-tree")?.querySelector(".qwenpaw-genui-export-target") as HTMLElement | null;
-            if (target) printGenUiPdf(target, snap.uiId);
+            if (target) {
+              void printGenUiPdf(target, snap.tree.root, exportedValues.current.get(snap.uiId) || {}, snap.uiId)
+                .catch((error) => console.warn("[ugsci.genui] PDF print failed", error));
+            }
           } }, "PDF"),
           React.createElement("button", { type: "button", title: "导出 HTML", onClick: (event: any) => {
             const target = event.currentTarget.closest(".qwenpaw-genui-tree")?.querySelector(".qwenpaw-genui-export-target") as HTMLElement | null;

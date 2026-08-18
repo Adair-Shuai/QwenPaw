@@ -12,6 +12,14 @@ import {
   isDirectUrl,
 } from "../lib/genUiMedia";
 import { fieldName, getInteractionContext } from "./GenUiInteraction";
+import {
+  CHART_COLORS,
+  FORM_FIELD_KINDS as FORM_FIELD_KIND_LIST,
+  clampHeadingLevel,
+  layoutBoxStyle,
+  resolveChartModel,
+  resolveGenUiIcon,
+} from "../lib/genUiModel";
 
 // React is obtained from window.QwenPaw.host.React at runtime.
 // These aliases avoid `import from "react"` which fails to resolve in
@@ -35,6 +43,18 @@ const TEXT_COLORS: Record<string, string> = {
   warning: "var(--ant-color-warning, #faad14)", error: "var(--ant-color-error, #ff4d4f)",
 };
 
+const FORM_FIELD_KINDS = new Set<string>(FORM_FIELD_KIND_LIST);
+
+function collectFormFields(node: GenUiNode): GenUiNode[] {
+  const fields: GenUiNode[] = [];
+  const walk = (current: GenUiNode) => {
+    if (FORM_FIELD_KINDS.has(current.kind)) fields.push(current);
+    for (const child of current.children || []) walk(child);
+  };
+  for (const child of node.children || []) walk(child);
+  return fields;
+}
+
 let formContext: any = null;
 function getFormContext(React: any): any {
   if (!formContext) formContext = React.createContext(null as any);
@@ -49,15 +69,19 @@ function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
   const interaction = React.useContext(getInteractionContext(React));
   const [values, setValues] = React.useState({} as Record<string, unknown>);
   const [status, setStatus] = React.useState(null as null | { ok: boolean; message: string });
+  const formFields: GenUiNode[] = React.useMemo(
+    () => collectFormFields(node),
+    [node],
+  );
   const initialValues = React.useMemo(() => {
     const result: Record<string, unknown> = {};
-    for (const child of node.children || []) {
+    for (const child of formFields) {
       const cp = child.props || {}; const name = fieldName(child);
       if (cp.value !== undefined) result[name] = cp.value;
       else if (cp.checked !== undefined) result[name] = cp.checked;
     }
     return result;
-  }, [node]);
+  }, [formFields]);
   React.useEffect(() => setValues((old: Record<string, unknown>) => {
     const next = { ...initialValues, ...old, ...(interaction?.values || {}) };
     return recordsEqual(old, next) ? old : next;
@@ -68,7 +92,7 @@ function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
     interaction?.setValue(name, value);
   } }), [values, interaction]);
   const submit = () => {
-    const missing = (node.children || []).filter((child) => child.props?.required).find((child) => {
+    const missing = formFields.filter((child) => child.props?.required).find((child) => {
       const name = fieldName(child); const value = values[name];
       return value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
     });
@@ -82,7 +106,7 @@ function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
   return React.createElement(getFormContext(React).Provider, { value: api },
     React.createElement("div", { style: { margin: "4px 0" } },
       p.title ? React.createElement("div", { style: { fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null,
-      ...(node.children || []).map((child, index) => React.createElement(GenUiTreeView, { key: child.nodeId || index, node: child })),
+      ...(node.children || []).map((child, index) => React.createElement(getMemoTreeView(React), { key: child.nodeId || index, node: child })),
       React.createElement(antd.Button || "button", { type: "primary", size: "small", style: { marginTop: 8 }, onClick: submit }, s(p.submitLabel) || "提交"),
       status ? React.createElement("div", { role: "status", style: { marginTop: 6, fontSize: 12, color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error } }, status.message) : null,
     ),
@@ -131,8 +155,8 @@ function GenUiActionButton({ node, link = false, toggle = false }: { node: GenUi
     if (toggle) setChecked((value: boolean) => !value);
     if (p.action && typeof p.action === "object") {
       setStatus(dispatchGenUiAction(p.action, { formValues: form?.values, formId: form ? "form" : undefined }));
-    } else if (link && typeof p.href === "string" && /^(https?:\/\/|\/)/.test(p.href)) {
-      window.open(p.href, "_blank", "noopener,noreferrer");
+    } else if (link && typeof p.href === "string") {
+      setStatus(dispatchGenUiAction({ type: "open_url", payload: { url: p.href } }));
     }
   };
   return React.createElement("span", { style: { display: "inline-flex", flexDirection: "column", gap: 3 } },
@@ -143,69 +167,97 @@ function GenUiActionButton({ node, link = false, toggle = false }: { node: GenUi
 
 // ── ErrorBoundary ──────────────────────────────────────────────────────────
 
-function GenUiErrorBoundary({ node, children }: { node: GenUiNode; children: ReactNode }): ReactNode {
-  const host = (window as any).QwenPaw?.host;
-  const React = host?.React;
-  if (!React) return null;
+// Host React is resolved at runtime. Cache one class per React identity so
+// the component type stays stable across renders (a class created inside
+// render remounts the whole subtree on every parent update).
+let cachedErrorBoundaryReact: any = null;
+let CachedErrorBoundary: any = null;
 
-  class ErrorBoundary extends React.Component<{ node: GenUiNode; children: ReactNode }, { hasError: boolean }, { kind: string }> {
+function getErrorBoundaryClass(React: any): any {
+  if (CachedErrorBoundary && cachedErrorBoundaryReact === React) return CachedErrorBoundary;
+  cachedErrorBoundaryReact = React;
+  CachedErrorBoundary = class GenUiNodeErrorBoundary extends React.Component<
+    { node: GenUiNode; children: ReactNode },
+    { hasError: boolean }
+  > {
     constructor(props: { node: GenUiNode; children: ReactNode }) {
       super(props);
       this.state = { hasError: false };
     }
     static getDerivedStateFromError() { return { hasError: true }; }
+    componentDidUpdate(prevProps: { node: GenUiNode; children: ReactNode }) {
+      if (prevProps.node !== this.props.node && this.state.hasError) {
+        this.setState({ hasError: false });
+      }
+    }
     componentDidCatch(err: unknown) {
       console.error("[ugsci.genui] Component error for kind '%s':", this.props.node.kind, err);
     }
     render() {
-      if ((this.state as { hasError: boolean }).hasError) {
+      if (this.state.hasError) {
         return React.createElement("div", {
           style: { padding: 8, border: "1px dashed var(--ant-color-error, #ff4d4f)", borderRadius: 8, fontSize: 12, color: TEXT_COLORS.error, fontFamily: "monospace" },
-        }, `⚠️ Component error: ${this.props.node.kind}`);
+        }, `Component error: ${this.props.node.kind}`);
       }
       return this.props.children;
     }
-  }
-  return React.createElement(ErrorBoundary, { node }, children);
+  };
+  return CachedErrorBoundary;
 }
 
 // ── Main tree renderer ─────────────────────────────────────────────────────
+
+function GenUiTreeNodeImpl({ node }: { node: GenUiNode }): ReactElement | null {
+  const host = (window as any).QwenPaw?.host;
+  if (!host?.React) return null;
+  const React = host.React;
+  const antd = host.antd || {};
+  const NodeView = getMemoTreeView(React);
+
+  const p = node.props || {};
+  const children = node.children || [];
+  const renderChildren = () => children.map((c, i) =>
+    React.createElement(NodeView, { key: c.nodeId || i, node: c })
+  );
+
+  return renderNode(React, antd, node, p, children, renderChildren) as ReactElement;
+}
+
+let memoTreeView: any = null;
+let memoTreeViewReact: any = null;
+
+function getMemoTreeView(React: any) {
+  if (memoTreeView && memoTreeViewReact === React) return memoTreeView;
+  memoTreeView = React.memo(GenUiTreeNodeImpl, (prev: { node: GenUiNode }, next: { node: GenUiNode }) => prev.node === next.node);
+  memoTreeViewReact = React;
+  return memoTreeView;
+}
 
 export function GenUiTreeView({ node }: { node: GenUiNode }): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
   if (!host?.React) return null;
   const React = host.React;
-  const antd = host.antd || {};
-
-  const p = node.props || {};
-  const children = node.children || [];
-  const renderChildren = () => children.map((c, i) =>
-    React.createElement(GenUiTreeView, { key: c.nodeId || i, node: c })
+  return React.createElement(
+    getErrorBoundaryClass(React),
+    { node },
+    React.createElement(getMemoTreeView(React), { node }),
   );
-
-  // Wrap each component in an ErrorBoundary for isolation
-  return React.createElement(GenUiErrorBoundary, { node },
-    renderNode(React, antd, node, p, children, renderChildren)
-  ) as ReactElement;
 }
 
 function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, unknown>, children: GenUiNode[], renderChildren: () => any[]): ReactElement | null {
+  // Kind coverage is contract-tested against schema._COMPONENT_CATALOG.
   switch (node.kind) {
     // ── Layout ───────────────────────────────────────────────────────────
-    case "Stack": return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: `${n(p.gap) || 12}px`, padding: p.padding ? `${n(p.padding)}px` : undefined } }, renderChildren());
-    case "Row": return React.createElement("div", { style: { display: "flex", flexDirection: "row", gap: `${n(p.gap) || 12}px`, alignItems: s(p.align) || undefined, justifyContent: s(p.justify) || undefined } }, renderChildren());
-    case "Grid": return React.createElement("div", { style: { display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(n(p.columns) || 2, 1), 6)}, 1fr)`, gap: `${n(p.gap) || 12}px` } }, renderChildren());
-    case "Spacer": return React.createElement("div", { style: { height: `${n(p.size) || 16}px` } });
-    case "ScrollArea": return React.createElement("div", { style: { maxHeight: p.maxHeight ? `${n(p.maxHeight)}px` : "300px", overflowY: "auto", padding: p.padding ? `${n(p.padding)}px` : undefined } }, renderChildren());
-    case "AspectBox": {
-      const ratio = s(p.ratio) || "16:9"; const [rw, rh] = ratio.split(":").map(Number);
-      const ratioVal = rw && rh ? `${rh}/${rw}` : "9/16";
-      return React.createElement("div", { style: { aspectRatio: ratioVal, overflow: "hidden", borderRadius: 8, display: "flex", justifyContent: "center", alignItems: "center" } }, renderChildren());
-    }
+    case "Stack": return React.createElement("div", { style: layoutBoxStyle("Stack", p) }, renderChildren());
+    case "Row": return React.createElement("div", { style: layoutBoxStyle("Row", p) }, renderChildren());
+    case "Grid": return React.createElement("div", { style: layoutBoxStyle("Grid", p) }, renderChildren());
+    case "Spacer": return React.createElement("div", { style: layoutBoxStyle("Spacer", p) });
+    case "ScrollArea": return React.createElement("div", { style: layoutBoxStyle("ScrollArea", p) }, renderChildren());
+    case "AspectBox": return React.createElement("div", { style: layoutBoxStyle("AspectBox", p) }, renderChildren());
 
     // ── Text ─────────────────────────────────────────────────────────────
     case "Text": return React.createElement("div", { style: { fontSize: TEXT_SIZES[s(p.size)] || TEXT_SIZES.base, color: TEXT_COLORS[s(p.color)] || TEXT_COLORS.default, fontWeight: b(p.bold) ? "bold" : "normal", lineHeight: 1.6 } }, s(p.value));
-    case "Heading": { const lvl = Math.min(Math.max(n(p.level) || 2, 1), 4); const sizes: Record<number, string> = { 1: "24px", 2: "20px", 3: "18px", 4: "16px" }; return React.createElement("div", { style: { fontSize: sizes[lvl], fontWeight: "bold", margin: "4px 0" } }, s(p.value)); }
+    case "Heading": { const lvl = clampHeadingLevel(p.level); const sizes: Record<number, string> = { 1: "24px", 2: "20px", 3: "18px", 4: "16px" }; return React.createElement(`h${lvl}`, { style: { fontSize: sizes[lvl], fontWeight: "bold", margin: "4px 0" } }, s(p.value)); }
     case "Divider": return React.createElement(antd.Divider || "hr", p.label ? { children: s(p.label) } : {});
     case "Markdown": {
       const host = (window as any).QwenPaw?.host;
@@ -248,7 +300,30 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
       name: s(p.name),
       size: n(p.size) || 32,
     });
-    case "Icon": return React.createElement("span", { style: { fontSize: n(p.size) || 16, color: TEXT_COLORS[s(p.color)] || TEXT_COLORS.default } }, s(p.name));
+    case "Icon": {
+      const icon = resolveGenUiIcon(p.name);
+      const size = n(p.size) || 16;
+      const color = TEXT_COLORS[s(p.color)] || TEXT_COLORS.default;
+      if (icon.kind === "emoji") {
+        return React.createElement("span", { "aria-hidden": true, style: { fontSize: size, color, lineHeight: 1 } }, icon.text);
+      }
+      if (icon.kind === "svg") {
+        return React.createElement("svg", {
+          width: size,
+          height: size,
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: color,
+          strokeWidth: 2,
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          "aria-hidden": true,
+          focusable: "false",
+          style: { display: "inline-block", verticalAlign: "middle" },
+        }, ...icon.paths.map((d, i) => React.createElement("path", { key: i, d })));
+      }
+      return React.createElement("span", { "aria-hidden": true, style: { width: size, height: size, display: "inline-block" } });
+    }
 
     // ── Cards ───────────────────────────────────────────────────────────
     case "Card": return React.createElement(antd.Card || "div", { title: p.title ? s(p.title) : undefined, size: "small", style: { margin: "4px 0" } }, renderChildren());
@@ -256,13 +331,9 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
     case "MetricCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.title)), React.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, s(p.value)), p.delta ? React.createElement("span", { style: { fontSize: 12, color: s(p.trend) === "up" ? TEXT_COLORS.success : s(p.trend) === "down" ? TEXT_COLORS.error : TEXT_COLORS.muted } }, `${s(p.delta)} ${p.period ? s(p.period) : ""}`.trim()) : null), p.icon ? React.createElement("span", { style: { fontSize: 32 } }, s(p.icon)) : null));
     case "AlertCard": case "Alert": return React.createElement(antd.Alert || "div", { type: s(p.severity) === "success" ? "success" : s(p.severity) === "warning" ? "warning" : s(p.severity) === "error" ? "error" : "info", message: p.title ? s(p.title) : undefined, description: s(p.message), showIcon: true, style: { margin: "4px 0" } });
     case "Callout": return React.createElement(antd.Alert || "div", { type: s(p.variant) === "tip" ? "success" : s(p.variant) === "warning" ? "warning" : s(p.variant) === "important" ? "error" : "info", message: p.title ? s(p.title) : undefined, description: s(p.message), showIcon: true });
-    case "WeatherCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0", display: "flex", alignItems: "center", gap: 16 } }, p.icon ? React.createElement("span", { style: { fontSize: 40 } }, s(p.icon)) : null, React.createElement("div", null, React.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, s(p.temperature)), React.createElement("div", { style: { color: TEXT_COLORS.muted } }, s(p.condition)), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.location))));
-    case "ProfileCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", gap: 12, alignItems: "center" } }, React.createElement(GenUiMediaAvatar, { src: s(p.avatar), name: s(p.name), size: 48 }), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 600 } }, s(p.name)), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.role)), p.bio ? React.createElement("div", { style: { fontSize: 12, marginTop: 4 } }, s(p.bio)) : null)));
-    case "MediaCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0", overflow: "hidden" } }, React.createElement(GenUiMediaImage, { src: s(p.src), alt: s(p.title), style: { width: "100%", maxHeight: 200, objectFit: "cover" } }), React.createElement("div", { style: { padding: "8px 12px" } }, React.createElement("div", { style: { fontWeight: 600 } }, s(p.title)), p.caption ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.caption)) : null));
-    case "QuoteCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0", fontStyle: "italic" } }, React.createElement("div", { style: { fontSize: 14, lineHeight: 1.6 } }, `"${s(p.quote)}"`), React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted, marginTop: 8 } }, `— ${s(p.author)}${p.role ? `, ${s(p.role)}` : ""}`));
     case "TimelineCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start" } }, React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: s(p.status) === "done" ? TEXT_COLORS.success : s(p.status) === "pending" ? TEXT_COLORS.warning : TEXT_COLORS.primary, marginTop: 4, flexShrink: 0 } }), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 600 } }, s(p.title)), p.date ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.date)) : null, p.description ? React.createElement("div", { style: { fontSize: 13, marginTop: 4 } }, s(p.description)) : null)));
-    case "KpiBoard": return React.createElement("div", { style: { margin: "4px 0" } }, p.title ? React.createElement("div", { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null, React.createElement("div", { style: { display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(n(p.columns) || 3, 1), 6)}, 1fr)`, gap: 12 } }, renderChildren()));
-    case "FeatureGrid": return React.createElement("div", { style: { display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(n(p.columns) || 2, 1), 4)}, 1fr)`, gap: `${n(p.gap) || 12}px`, margin: "4px 0" } }, renderChildren());
+    case "KpiBoard": return React.createElement("div", { style: { margin: "4px 0" } }, p.title ? React.createElement("div", { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null, React.createElement("div", { style: layoutBoxStyle("KpiBoard", p) }, renderChildren()));
+    case "FeatureGrid": return React.createElement("div", { style: { ...layoutBoxStyle("FeatureGrid", p), margin: "4px 0" } }, renderChildren());
     case "Stepper": {
       const steps = arr(p.steps).map((st) => s(st));
       const current = n(p.current);
@@ -294,7 +365,7 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
     }
     case "ImageGallery": {
       const images = children.filter((c) => c.kind === "Image");
-      return React.createElement("div", { style: { display: "grid", gridTemplateColumns: `repeat(${Math.min(Math.max(n(p.columns) || 3, 1), 6)}, 1fr)`, gap: `${n(p.gap) || 8}px`, margin: "4px 0" } },
+      return React.createElement("div", { style: { ...layoutBoxStyle("ImageGallery", p), margin: "4px 0" } },
         ...images.map((img, i) => {
           const ip = img.props || {};
           return React.createElement(GenUiMediaImage, { key: i, src: s(ip.src), alt: s(ip.alt), style: { width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" } });
@@ -320,27 +391,29 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
 
     // ── Tabs / Accordion ────────────────────────────────────────────────
     case "Tabs": {
+      const NodeView = getMemoTreeView(React);
       const tabItems = children.filter((c) => c.kind === "TabItem");
       const items = tabItems.map((tab) => ({
         key: s(tab.props?.key) || s(tab.props?.tab),
         label: s(tab.props?.tab),
-        children: (tab.children || []).map((c, i) => React.createElement(GenUiTreeView, { key: c.nodeId || i, node: c })),
+        children: (tab.children || []).map((c, i) => React.createElement(NodeView, { key: c.nodeId || i, node: c })),
       }));
       if (antd.Tabs) return React.createElement(antd.Tabs, { items, defaultActiveKey: s(p.activeKey) || items[0]?.key });
       return React.createElement("div", null, ...items.map((item, i) => React.createElement("div", { key: i }, React.createElement("div", { style: { fontWeight: 600, marginBottom: 4 } }, item.label), item.children)));
     }
     case "TabItem": return React.createElement("div", null, renderChildren());
     case "Accordion": {
+      const NodeView = getMemoTreeView(React);
       const accItems = children.filter((c) => c.kind === "AccordionItem");
       if (antd.Collapse) {
         const panels = accItems.map((item) => ({
           key: s(item.props?.key) || s(item.props?.header),
           label: s(item.props?.header),
-          children: (item.children || []).map((c, i) => React.createElement(GenUiTreeView, { key: c.nodeId || i, node: c })),
+          children: (item.children || []).map((c, i) => React.createElement(NodeView, { key: c.nodeId || i, node: c })),
         }));
         return React.createElement(antd.Collapse, { items: panels });
       }
-      return React.createElement("div", null, ...accItems.map((item, i) => React.createElement("details", { key: i }, React.createElement("summary", { style: { fontWeight: 600, cursor: "pointer", padding: "4px 0" } }, s(item.props?.header)), React.createElement("div", { style: { paddingLeft: 12 } }, (item.children || []).map((c, j) => React.createElement(GenUiTreeView, { key: c.nodeId || j, node: c }))))));
+      return React.createElement("div", null, ...accItems.map((item, i) => React.createElement("details", { key: i }, React.createElement("summary", { style: { fontWeight: 600, cursor: "pointer", padding: "4px 0" } }, s(item.props?.header)), React.createElement("div", { style: { paddingLeft: 12 } }, (item.children || []).map((c, j) => React.createElement(NodeView, { key: c.nodeId || j, node: c }))))));
     }
     case "AccordionItem": return React.createElement("div", null, renderChildren());
 
@@ -353,44 +426,21 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
 }
 
 // ── Chart renderer (SVG-based, no external deps) ─────────────────────────
-const CHART_COLORS = ["#1677ff", "#52c41a", "#faad14", "#ff4d4f", "#722ed1", "#13c2c2", "#eb2f96"];
-
 function GenUiChart({ props: p }: { props: Record<string, unknown> }): ReactElement | null {
   const React = (window as any).QwenPaw?.host?.React;
   if (!React) return null;
 
   const interaction = React.useContext(getInteractionContext(React));
-
-  const chartType = s(p.chart) || "line";
-  const title = s(p.title);
-  let categories = arr(p.categories).map((c) => s(c));
-  let seriesRaw = arr(p.series);
-  const height = n(p.height) || 200;
-  const showLegend = p.showLegend !== false;
+  const model = resolveChartModel(p, interaction?.values);
+  const chartType = model.chartType;
+  const title = model.title;
+  const categories = model.categories;
+  const series = model.series;
+  const height = model.height;
+  const showLegend = model.showLegend;
   const width = 400;
 
-  const generator = p.generator && typeof p.generator === "object" ? p.generator as Record<string, unknown> : {};
-  const coefficientNames = arr(generator.coefficients).map(s);
-  const inferredNames = ["a", "b", "c", "d", "e"];
-  const names = coefficientNames.length > 0 ? coefficientNames : inferredNames;
-  const canGeneratePolynomial = (s(generator.type) === "polynomial" || coefficientNames.length > 0 || inferredNames.every((name) => interaction?.values?.[name] !== undefined));
-  if (canGeneratePolynomial && interaction) {
-    const xMin = typeof generator.xMin === "number" ? generator.xMin : -3;
-    const xMax = typeof generator.xMax === "number" ? generator.xMax : 3;
-    const samples = Math.min(Math.max(n(generator.samples) || 61, 10), 400);
-    const xs = Array.from({ length: samples }, (_, index) => xMin + (xMax - xMin) * index / (samples - 1));
-    const coefficients = names.map((name) => n(interaction.values?.[name]));
-    categories = xs.map((x) => Number(x.toFixed(2)).toString());
-    seriesRaw = [{ name: s(generator.label) || "f(x)", values: xs.map((x) => coefficients.reduce((sum, coefficient, index) => sum + coefficient * Math.pow(x, coefficients.length - index - 1), 0)) }];
-  }
-
-  const series: { name: string; values: number[] }[] = seriesRaw.map((sr, i) => {
-    const r = sr as Record<string, unknown>;
-    const vals = arr(r.values).map((v) => n(v));
-    return { name: s(r.name) || `Series ${i + 1}`, values: vals };
-  });
-
-  if (categories.length === 0 || series.length === 0) {
+  if (model.empty) {
     return React.createElement("div", { style: { padding: 12, color: TEXT_COLORS.muted, fontSize: 12 } }, "Chart: no data");
   }
 

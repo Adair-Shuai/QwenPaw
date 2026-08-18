@@ -6,10 +6,10 @@ import {
   fetchUGSciPluginCatalog,
   installPlugin,
   replaceInstalledPlugin,
+  upgradeInstalledUGSciPlugin,
   type OfficialPluginCatalogEntry,
   type PluginCatalogSource,
 } from "@/api/modules/plugin";
-import { api } from "@/api";
 
 interface UseOfficialPluginsOptions {
   onInstalled: () => void;
@@ -62,12 +62,19 @@ export function useOfficialPlugins({
       setInstallingId(entry.id);
       try {
         if (source === "ugsci" && entry.installed) {
-          const result = await api.queueComponentUpdate(entry.plugin_id);
-          if (!result.queued) {
+          const result = await upgradeInstalledUGSciPlugin(entry);
+          if (result.method === "queued") {
+            message.success(t("pluginManager.ugsciUpgradeQueued"));
+          } else if (result.method === "replaced") {
+            message.success(
+              t("pluginManager.externalUpgradeReady", {
+                version: result.version,
+              }),
+            );
+            onInstalled();
+          } else {
             message.info(t("pluginManager.catalogLatest"));
-            return;
           }
-          message.success(t("pluginManager.ugsciUpgradeQueued"));
           return;
         }
         if (source === "qwenpaw" && entry.installed) {

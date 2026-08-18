@@ -201,13 +201,15 @@ export const getDocsUrl = (lang: string): string =>
 
 ### 4.2 下载与更新服务
 
+> 下载/更新端点已集中到 fork 自有的 `src/qwenpaw/distribution.py` 与
+> `console/src/distribution.ts`（详见 `docs/UPDATE_PIPELINE_ZH.md`），
+> 改端点只需改这两个文件或设置环境变量。
+
 | 当前 URL | 所在文件 | 用途 | 修改建议 |
 |----------|----------|------|----------|
-| `https://ugsci-download.oss-cn-beijing.aliyuncs.com` | `src/qwenpaw/plugins/download_catalog.py` (`PLUGIN_DOWNLOAD_CDN`) | 插件下载 CDN | ✅ 已修改 |
-| `https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/models/llama_cpp` | `src/qwenpaw/local_models/manager.py` | 本地模型下载 | ✅ 已修改 |
-| `https://pypi.org/pypi/qwenpaw/json` | `src/qwenpaw/cli/update_cmd.py` (`_PYPI_JSON_URL`) | 版本检查 | 如自建 PyPI 仓库则修改 |
-| `https://pypi.org/pypi/qwenpaw/json` | `console/src/layouts/constants.ts` (`PYPI_URL`) | 前端版本检查 | 同上 |
-| Tauri updater endpoints | `console/src-tauri/tauri.conf.json` | 桌面端自动更新 | 改为自己的更新服务器 |
+| `https://ugsci-download.oss-cn-beijing.aliyuncs.com` | `src/qwenpaw/distribution.py` (`DOWNLOAD_BASE_URL`，插件目录/组件/桌面清单/模型镜像共用) | 下载与更新根地址 | ✅ 已集中，可用 `QWENPAW_DOWNLOAD_BASE_URL` 覆盖 |
+| `https://pypi.org/pypi/qwenpaw/json` | `src/qwenpaw/distribution.py` (`PYPI_JSON_URL`) | 版本检查 | 如自建 PyPI 仓库设 `QWENPAW_PYPI_JSON_URL` + `QWENPAW_PIP_INDEX_URL` |
+| Tauri updater endpoints | `console/src-tauri/tauri.conf.json` | 桌面端自动更新 | 已指向 UGSci OSS（`metadata/qwenpaw-tauri-latest.json`） |
 
 ### 4.3 技能商店 Market Providers
 

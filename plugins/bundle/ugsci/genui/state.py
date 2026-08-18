@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 import sqlite3
 import threading
 import time
@@ -10,6 +11,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+_UI_ID_RE = re.compile(r"^ui_[A-Za-z0-9_-]{4,80}$")
 
 from .schema import apply_ui_patches, validate_ui_tree
 
@@ -28,7 +31,7 @@ class GenUiSnapshot:
 class GenUiStateStore:
     """Thread-safe SQLite store; ``path=None`` creates an isolated memory DB."""
 
-    def __init__(self, max_entries: int = 256, path: str | Path | None = None) -> None:
+    def __init__(self, max_entries: int = 1024, path: str | Path | None = None) -> None:
         self._max = max_entries
         self._lock = threading.RLock()
         self._path = str(path) if path is not None else ":memory:"
@@ -68,16 +71,58 @@ class GenUiStateStore:
         ).fetchone()[0]
         return max(time.time(), float(latest) + 1e-6)
 
-    def create(self, session_id: str, tree: dict[str, Any], tool_call_id: str = "") -> GenUiSnapshot:
+    def create(
+        self,
+        session_id: str,
+        tree: dict[str, Any],
+        tool_call_id: str = "",
+        ui_id: str | None = None,
+    ) -> GenUiSnapshot:
         if not session_id:
             raise ValueError("session_id is required")
-        snap = GenUiSnapshot(
-            ui_id=f"ui_{uuid4().hex[:24]}", session_id=session_id,
-            revision=1, tree=tree, tool_call_id=tool_call_id,
-            updated_at=0.0,
-        )
+        requested = (ui_id or "").strip()
+        if requested and not _UI_ID_RE.match(requested):
+            raise ValueError(f"invalid ui_id: {ui_id}")
         with self._lock:
-            snap.updated_at = self._next_updated_at_locked()
+            if requested:
+                row = self._db.execute(
+                    "SELECT session_id, ui_id, revision, tree_json, tool_call_id, message_id, updated_at "
+                    "FROM genui_snapshots WHERE session_id=? AND ui_id=?",
+                    (session_id, requested),
+                ).fetchone()
+                existing = self._from_row(row)
+                if existing is not None:
+                    updated = GenUiSnapshot(
+                        ui_id=requested,
+                        session_id=session_id,
+                        revision=existing.revision + 1,
+                        tree=tree,
+                        tool_call_id=tool_call_id or existing.tool_call_id,
+                        message_id=existing.message_id,
+                        updated_at=self._next_updated_at_locked(),
+                    )
+                    self._db.execute(
+                        "UPDATE genui_snapshots SET revision=?, tree_json=?, tool_call_id=?, updated_at=? "
+                        "WHERE session_id=? AND ui_id=?",
+                        (
+                            updated.revision,
+                            json.dumps(updated.tree, ensure_ascii=False),
+                            updated.tool_call_id,
+                            updated.updated_at,
+                            session_id,
+                            requested,
+                        ),
+                    )
+                    self._db.commit()
+                    return updated
+            snap = GenUiSnapshot(
+                ui_id=requested or f"ui_{uuid4().hex[:24]}",
+                session_id=session_id,
+                revision=1,
+                tree=tree,
+                tool_call_id=tool_call_id,
+                updated_at=self._next_updated_at_locked(),
+            )
             self._db.execute(
                 "INSERT INTO genui_snapshots VALUES (?, ?, ?, ?, ?, ?, ?)",
                 (snap.session_id, snap.ui_id, snap.revision,
@@ -106,7 +151,23 @@ class GenUiStateStore:
                 row = (*row[:-1], touched)
         return self._from_row(row)
 
-    def apply_patch(self, session_id: str, ui_id: str, base_revision: int, patches: list[dict[str, Any]]) -> GenUiSnapshot:
+    def apply_patch(
+        self,
+        session_id: str,
+        ui_id: str,
+        base_revision: int,
+        patches: list[dict[str, Any]],
+        *,
+        allow_actions: list[str] | frozenset[str] | None = None,
+        allow_file_input: bool | None = None,
+    ) -> GenUiSnapshot:
+        if allow_actions is None or allow_file_input is None:
+            # Lazy import: emit_core already imports this module.
+            from .emit_core import resolve_allow_actions, resolve_allow_file_input
+            if allow_actions is None:
+                allow_actions = resolve_allow_actions()
+            if allow_file_input is None:
+                allow_file_input = resolve_allow_file_input()
         with self._lock:
             self._db.execute("BEGIN IMMEDIATE")
             try:
@@ -121,7 +182,11 @@ class GenUiStateStore:
                 if snap.revision != base_revision:
                     raise ValueError(f"revision conflict: expected {snap.revision}, got base_revision {base_revision}")
                 try:
-                    validated = validate_ui_tree(apply_ui_patches(snap.tree, patches))
+                    validated = validate_ui_tree(
+                        apply_ui_patches(snap.tree, patches),
+                        allow_actions=allow_actions,
+                        allow_file_input=bool(allow_file_input),
+                    )
                 except Exception as exc:
                     raise ValueError(f"invalid patch result: {exc}") from exc
                 updated = GenUiSnapshot(

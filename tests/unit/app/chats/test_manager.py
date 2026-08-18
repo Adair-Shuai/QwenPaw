@@ -4,6 +4,7 @@
 Uses the real :class:`JsonChatRepository` backed by ``tmp_path`` so the
 tests cover the integrated CRUD path without mocking the repo away.
 """
+
 # pylint: disable=protected-access,redefined-outer-name,unused-argument
 from __future__ import annotations
 
@@ -284,6 +285,44 @@ async def test_delete_chats_returns_true_when_existing(manager: ChatManager):
 @pytest.mark.asyncio
 async def test_delete_chats_returns_false_when_missing(manager: ChatManager):
     assert await manager.delete_chats(["nope"]) is False
+
+
+@pytest.mark.asyncio
+async def test_delete_chats_notifies_session_deleted(manager: ChatManager):
+    from qwenpaw.app.chats.session_events import (
+        register_session_deleted,
+        reset_session_deleted_listeners,
+    )
+
+    reset_session_deleted_listeners()
+    seen: list[str] = []
+    unregister = register_session_deleted(seen.append)
+    spec = await manager.create_chat(_make_spec(session_id="console:gone"))
+    try:
+        assert await manager.delete_chats([spec.id]) is True
+        assert seen == ["console:gone"]
+    finally:
+        unregister()
+        reset_session_deleted_listeners()
+
+
+@pytest.mark.asyncio
+async def test_archive_does_not_notify_session_deleted(manager: ChatManager):
+    from qwenpaw.app.chats.session_events import (
+        register_session_deleted,
+        reset_session_deleted_listeners,
+    )
+
+    reset_session_deleted_listeners()
+    seen: list[str] = []
+    unregister = register_session_deleted(seen.append)
+    spec = await manager.create_chat(_make_spec(session_id="console:keep"))
+    try:
+        await manager.archive_chat(spec.id)
+        assert not seen
+    finally:
+        unregister()
+        reset_session_deleted_listeners()
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,8 @@
 """On-demand GenUI guide payload for the model."""
 from typing import Any
 
+from .schema import list_component_catalog
+
 _GUIDE_PAYLOAD: dict[str, Any] = {
     "purpose": "Ship polished, scannable gen UI: clear hierarchy, calm spacing, consistent variants.",
     "wire_format_and_syntax": [
@@ -23,7 +25,11 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
             "After patching, the tree is re-validated",
         ],
     },
-    "when_to_call": ["Dashboards, multi-card layouts, 6+ nodes.", "When user wants visual UI."],
+    "when_to_call": [
+        "Dashboards, multi-card layouts, 6+ nodes.",
+        "When user wants visual UI.",
+        "Do not rebuild cards that domain/simulation/visualization tools already attached.",
+    ],
     "layout_structure": [
         "Use Stack/Grid for layout. One focal point per block. Avoid 3+ nesting levels.",
         "Use Tabs/Accordion for organizing dense content into collapsible sections.",
@@ -39,6 +45,9 @@ _GUIDE_PAYLOAD: dict[str, Any] = {
 }
 
 def get_genui_guide() -> dict[str, Any]:
-    return _GUIDE_PAYLOAD
+    payload = dict(_GUIDE_PAYLOAD)
+    payload["allowed_kinds"] = [entry["kind"] for entry in list_component_catalog()]
+    payload["kind_source"] = "Same catalog as list_ui_components and schema validation."
+    return payload
 
 __all__ = ["get_genui_guide"]

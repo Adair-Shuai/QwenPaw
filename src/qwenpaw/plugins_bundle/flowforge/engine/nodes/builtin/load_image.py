@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from ...adapter.tool_output import register_tool_artifact
-from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_tree
+from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_ui
 from ..base import WorkflowNode
 
 
@@ -135,7 +135,7 @@ class LoadImageNode(WorkflowNode):
             )
             return NodeOutput(
                 values=(ref.to_dict(), ref.src or "", True),
-                ui={"gen_ui": to_gen_ui_tree([ref], title="Loaded image")},
+                ui=to_gen_ui_ui([ref], title="Loaded image"),
                 metadata={"kind": "image", "file_id": ref.file_id, "source": "session_attachment"},
             )
 
@@ -160,7 +160,7 @@ class LoadImageNode(WorkflowNode):
 
         return NodeOutput(
             values=(ref.to_dict(), ref.src or "", True),
-            ui={"gen_ui": to_gen_ui_tree([ref], title="Loaded image")},
+            ui=to_gen_ui_ui([ref], title="Loaded image"),
             metadata={"kind": "image", "file_id": ref.file_id},
         )
 

@@ -137,6 +137,17 @@ export function dispatchGenUiAction(action: unknown, context: GenUiActionContext
     }
     return { ok: true, message: "已提交" };
   }
+
+  if (effectiveType === "open_url") {
+    const raw = (act.payload?.url as string) || (act.payload?.href as string) || "";
+    const href = typeof raw === "string" ? raw.trim() : "";
+    if (!/^https?:\/\//i.test(href)) {
+      console.warn("[ugsci.genui] open_url: only http(s) URLs are allowed");
+      return { ok: false, message: "仅允许 http(s) 链接" };
+    }
+    window.open(href, "_blank", "noopener,noreferrer");
+    return { ok: true, message: "已打开链接" };
+  }
   return { ok: false, message: "尚未实现此操作" };
 }
 

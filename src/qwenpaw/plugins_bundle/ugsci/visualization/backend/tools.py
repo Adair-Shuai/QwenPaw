@@ -430,7 +430,14 @@ async def generate_visualization_report(
         report = _local_dataset_report(dataset_id, property)
         report["title"] = title
         report["kind"] = "oilgas.analysis-report"
-        return {**report, "viewer": _viewer_result("show-report", report)}
+        viewer = _viewer_result("show-report", report)
+        try:
+            from ...genui.domain_cards import attach_genui
+
+            report = attach_genui(report)
+        except Exception:
+            pass
+        return {**report, "viewer": viewer}
     except Exception as exc:
         return {"kind": "error", "error": str(exc)}
 

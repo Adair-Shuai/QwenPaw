@@ -1,8 +1,9 @@
 /** GenUI frontend registration — registers tool renderers and response.append. */
 
 import { GenUiToolCall } from "./components/GenUiToolCall";
+import { GenUiCatalogCard } from "./components/GenUiCatalogCard";
 import { GenUiInline } from "./components/GenUiInline";
-import { GenUiStoreProvider, resetGenUiStore } from "./stores/genUi";
+import { GenUiStoreProvider, resetGenUiStore, clearSession } from "./stores/genUi";
 import { clearMediaCache } from "./lib/genUiMedia";
 import { apiFetch } from "../core/runtime";
 
@@ -39,9 +40,9 @@ export function registerGenuiFrontend(QP: any, React: any): () => void {
   if (QP.chat?.toolRender) {
     disposables.push(QP.chat.toolRender(PLUGIN_ID, "emit_ui_tree", GenUiToolCall));
     disposables.push(QP.chat.toolRender(PLUGIN_ID, "emit_ui_patch", GenUiToolCall));
-    disposables.push(QP.chat.toolRender(PLUGIN_ID, "list_ui_components", GenUiToolCall));
-    disposables.push(QP.chat.toolRender(PLUGIN_ID, "get_genui_guide", GenUiToolCall));
-    console.info("[ugsci.genui] Registered 4 tool card renderers");
+    disposables.push(QP.chat.toolRender(PLUGIN_ID, "list_ui_components", GenUiCatalogCard));
+    disposables.push(QP.chat.toolRender(PLUGIN_ID, "get_genui_guide", GenUiCatalogCard));
+    console.info("[ugsci.genui] Registered emit/patch + catalog/guide cards");
   }
 
   if (QP.chat?.response?.append) {
@@ -57,7 +58,14 @@ export function registerGenuiFrontend(QP: any, React: any): () => void {
     for (const disposable of disposables.reverse()) disposable?.dispose?.();
     resetGenUiStore();
     clearMediaCache();
+    if (QP.genui) {
+      const next = { ...QP.genui };
+      delete next.dispose;
+      delete next.clearSession;
+      QP.genui = next;
+    }
     disposeRegistrations = null;
   };
+  QP.genui = { ...(QP.genui || {}), dispose: disposeRegistrations, clearSession };
   return disposeRegistrations;
 }

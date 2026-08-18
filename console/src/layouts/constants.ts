@@ -1,7 +1,6 @@
 // ── URLs ──────────────────────────────────────────────────────────────────
 
-export const DESKTOP_UPDATE_MANIFEST_URL =
-  "https://ugsci-download.oss-cn-beijing.aliyuncs.com/metadata/qwenpaw-tauri-latest.json";
+export { DESKTOP_UPDATE_MANIFEST_URL } from "../distribution";
 
 export const GITHUB_URL = "https://github.com/agentscope-ai/QwenPaw" as const; // 上游仓库地址，换标后保留以跟踪上游更新
 
@@ -86,101 +85,56 @@ export const compareVersions = (a: string, b: string): number => {
 };
 
 // ── Update markdown ───────────────────────────────────────────────────────
-// TODO
 export const UPDATE_MD: Record<string, string> = {
   zh: `### UGSci如何更新
 
-要更新 UGSci 到最新版本，可根据你的安装方式选择对应方法：
+请按安装方式选择，不要从公共 PyPI 安装名为 qwenpaw 的上游包。
 
-1. 如果你使用的是一键安装脚本，直接重新运行安装命令即可自动升级。
+1. 桌面端：点击标题栏版本号旁的更新按钮，按提示安装。
 
-2. 如果你是通过 pip 安装，在终端中执行以下命令升级：
+2. 源码安装：拉取本仓库最新代码后重新构建控制台并安装。
 
 \`\`\`
+git pull
+cd console && npm ci && npm run build
+cd .. && pip install -e .
+\`\`\`
+
+3. pip 安装：只有在已配置自建索引时才能用 CLI 升级。
+
+\`\`\`
+set QWENPAW_PYPI_JSON_URL=https://your-index.example/ugsci/json
+set QWENPAW_PIP_INDEX_URL=https://your-index.example/simple
 qwenpaw update
 \`\`\`
 
-3. 如果你是从源码安装，进入项目目录并拉取最新代码后重新安装：
-
-\`\`\`
-cd QwenPaw
-git pull origin main
-cd console && npm ci && npm run build
-cd .. && mkdir -p src/qwenpaw/console
-cp -R console/dist/. src/qwenpaw/console/
-pip install -e .
-\`\`\`
-
-4. 如果你使用的是 Docker，拉取最新镜像并重启容器：
-
-\`\`\`
-docker pull agentscope/qwenpaw:latest
-docker run -p 127.0.0.1:8088:8088 -v qwenpaw-data:/app/working -v qwenpaw-secrets:/app/working.secret -v qwenpaw-backups:/app/working.backups agentscope/qwenpaw:latest
-\`\`\`
-
-升级后重启服务 qwenpaw app。`,
+未配置自建索引时，\`qwenpaw update\` 会拒绝执行，以免覆盖成上游 QwenPaw。`,
 
   ru: `### Как обновить UGSci
 
-Чтобы обновить UGSci, выберите способ в зависимости от типа установки:
+Выберите способ по типу установки. Не устанавливайте пакет qwenpaw с публичного PyPI.
 
-1. Если вы устанавливали через однострочный скрипт, повторно запустите установщик для обновления.
+1. Десктоп: кнопка обновления рядом с номером версии.
 
-2. Если устанавливали через pip, выполните:
+2. Из исходников: git pull, затем пересоберите console и pip install -e .
 
-\`\`\`
-qwenpaw update
-\`\`\`
-
-3. Если устанавливали из исходников, получите последние изменения и переустановите:
-
-\`\`\`
-cd QwenPaw
-git pull origin main
-cd console && npm ci && npm run build
-cd .. && mkdir -p src/qwenpaw/console
-cp -R console/dist/. src/qwenpaw/console/
-pip install -e .
-\`\`\`
-
-4. Если используете Docker, загрузите новый образ и перезапустите контейнер:
-
-\`\`\`
-docker pull agentscope/qwenpaw:latest
-docker run -p 127.0.0.1:8088:8088 -v qwenpaw-data:/app/working -v qwenpaw-secrets:/app/working.secret -v qwenpaw-backups:/app/working.backups agentscope/qwenpaw:latest
-\`\`\`
-
-After upgrading, restart the service with \`qwenpaw app\`.`,
+3. pip: только после настройки своего индекса (QWENPAW_PYPI_JSON_URL и QWENPAW_PIP_INDEX_URL). Без них qwenpaw update будет отказано.`,
 
   en: `### How to update UGSci
 
-To update UGSci, use the method matching your installation type:
+Use the method that matches how you installed UGSci. Do not install the public PyPI package named qwenpaw -- that is upstream QwenPaw.
 
-1. If installed via one-line script, re-run the installer to upgrade.
+1. Desktop: use the update button next to the version number.
 
-2. If installed via pip, run:
+2. Source install: pull this repository, rebuild the console, then pip install -e .
+
+3. pip install: only after you point CLI at a self-hosted index.
 
 \`\`\`
+set QWENPAW_PYPI_JSON_URL=https://your-index.example/ugsci/json
+set QWENPAW_PIP_INDEX_URL=https://your-index.example/simple
 qwenpaw update
 \`\`\`
 
-3. If installed from source, pull the latest code and reinstall:
-
-\`\`\`
-cd QwenPaw
-git pull origin main
-cd console && npm ci && npm run build
-cd .. && mkdir -p src/qwenpaw/console
-cp -R console/dist/. src/qwenpaw/console/
-pip install -e .
-\`\`\`
-
-4. If using Docker, pull the latest image and restart the container:
-
-\`\`\`
-docker pull agentscope/qwenpaw:latest
-docker run -p 127.0.0.1:8088:8088 -v qwenpaw-data:/app/working -v qwenpaw-secrets:/app/working.secret -v qwenpaw-backups:/app/working.backups agentscope/qwenpaw:latest
-\`\`\`
-
-After upgrading, restart the service with \`qwenpaw app\`.`,
+Without those variables, \`qwenpaw update\` refuses so it cannot overwrite this fork.`,
 };

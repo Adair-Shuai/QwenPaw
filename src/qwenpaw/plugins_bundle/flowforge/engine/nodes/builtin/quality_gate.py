@@ -21,7 +21,7 @@ from typing import Any
 import logging
 
 from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema
-from ...io.media import to_gen_ui_tree
+from ...io.media import to_gen_ui_ui
 
 from ..base import WorkflowNode
 from ...adapter.log_compat import get_logger
@@ -125,7 +125,7 @@ class QualityGateNode(WorkflowNode):
         return NodeOutput(
             values=(round(score, 4), passed, inputs.get("asset")),
             next_node=target,
-            ui={"gen_ui": to_gen_ui_tree([ref], title="Gated asset")} if ref and ref.src else None,
+            ui=to_gen_ui_ui([ref], title="Gated asset") if ref and ref.src else None,
             metadata=meta,
         )
 

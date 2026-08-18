@@ -428,14 +428,20 @@ class TestUrlSchemeValidation:
         assert result is not None
 
     def test_url_validation_in_avatar_prop(self) -> None:
-        """The 'avatar' prop should also be URL-validated."""
+        """The Avatar 'src' prop should be URL-validated."""
         tree = {
-            "kind": "ProfileCard",
-            "props": {"name": "User", "avatar": "javascript:alert(1)"},
+            "kind": "Avatar",
+            "props": {"name": "User", "src": "javascript:alert(1)"},
             "children": [],
         }
         with pytest.raises(ValidationError, match="javascript"):
             validate_ui_tree(tree)
+
+    def test_consumer_widgets_are_not_allowed(self) -> None:
+        for kind in ("WeatherCard", "ProfileCard", "MediaCard", "QuoteCard"):
+            tree = {"kind": kind, "props": {}, "children": []}
+            with pytest.raises(ValidationError):
+                validate_ui_tree(tree)
 
     def test_url_validation_in_href_prop(self) -> None:
         """The 'href' prop should also be URL-validated."""

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeArtifactUrl } from "./openFilePreview";
+import { artifactToFileTarget, normalizeArtifactUrl } from "./openFilePreview";
 
 describe("normalizeArtifactUrl", () => {
   it("converts file URLs into backend preview URLs", () => {
@@ -14,5 +14,27 @@ describe("normalizeArtifactUrl", () => {
   it("preserves existing API URLs", () => {
     const url = "/api/files/preview/%2FUsers/report.xlsx";
     expect(normalizeArtifactUrl(url)).toBe(url);
+  });
+});
+
+describe("artifactToFileTarget", () => {
+  it("adds the markdown extension so FilePreview uses preview mode", () => {
+    const target = artifactToFileTarget({
+      id: "response-default:new",
+      title: "默认文件名太容易撞",
+      source: "generated",
+      mimeType: "text/markdown",
+      extension: "md",
+      textContent: "# Hello",
+    });
+
+    expect(target).toMatchObject({
+      source: "artifact",
+      path: "默认文件名太容易撞.md",
+      artifact: {
+        textContent: "# Hello",
+        mimeType: "text/markdown",
+      },
+    });
   });
 });

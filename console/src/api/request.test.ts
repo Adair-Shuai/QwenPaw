@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { request } from "./request";
+import { ApiError, request } from "./request";
 
 // mock config so URL is predictable and token is empty by default
 vi.mock("./config", () => ({
@@ -143,6 +143,23 @@ describe("request", () => {
     } as unknown as Response);
 
     await expect(request("/models")).rejects.toThrow("server exploded");
+    await expect(request("/models")).rejects.toBeInstanceOf(ApiError);
+    await expect(request("/models")).rejects.toMatchObject({ status: 500 });
+  });
+
+  it("parses structured component conflict details", async () => {
+    mockFetch(409, {
+      detail: {
+        reason: "not_managed",
+        message: "component ugsci is not managed",
+      },
+    });
+
+    await expect(request("/components/ugsci/install", { method: "POST" })).rejects.toMatchObject({
+      status: 409,
+      reason: "not_managed",
+      message: expect.stringContaining("component ugsci is not managed"),
+    });
   });
 
   it("injects Authorization header when token is present", async () => {

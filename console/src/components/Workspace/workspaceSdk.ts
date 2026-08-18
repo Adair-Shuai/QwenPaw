@@ -110,7 +110,6 @@ export function createWorkspaceNamespace(): QwenPawWorkspaceNamespace {
     registerRenderers: (renderers) => rendererRegistry.registerAll(renderers),
 
     openArtifact: (artifact) => {
-      useWorkspaceStore.getState().openArtifact(artifact);
       openArtifactPreview(artifact);
     },
 
@@ -119,7 +118,6 @@ export function createWorkspaceNamespace(): QwenPawWorkspaceNamespace {
     },
 
     updateArtifact: (id, patch) => {
-      useWorkspaceStore.getState().updateArtifact(id, patch);
       updateArtifactPreview(id, patch);
     },
 
@@ -195,7 +193,7 @@ export function openArtifactFromToolCall(params: {
     isStreaming: false,
   };
 
-  useWorkspaceStore.getState().openArtifact(artifact);
+  openArtifactPreview(artifact);
   return id;
 }
 
@@ -209,8 +207,7 @@ export function streamArtifactUpdate(
   fullContent: string,
   isDone: boolean,
 ) {
-  const store = useWorkspaceStore.getState();
-  store.updateArtifact(artifactId, {
+  updateArtifactPreview(artifactId, {
     textContent: fullContent,
     isStreaming: !isDone,
     streamProgress: isDone ? 1 : undefined,

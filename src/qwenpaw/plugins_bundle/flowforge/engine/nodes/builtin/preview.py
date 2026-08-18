@@ -29,7 +29,7 @@ from ...io import (
     NodeOutput,
     Schema,
 )
-from ...io.media import KIND_TO_GENUI
+from ...io.media import KIND_TO_GENUI, flowforge_gen_ui_id, publish_gen_ui
 from ..base import WorkflowNode
 
 logger = get_logger(__name__)
@@ -112,7 +112,10 @@ class PreviewNode(WorkflowNode):
         )
         return NodeOutput(
             values=(ref.to_dict(), ref.src or ""),
-            ui={"gen_ui": gen_ui},
+            ui=publish_gen_ui(
+                gen_ui,
+                ui_id=flowforge_gen_ui_id("preview", hidden.unique_id, ref.file_id or ref.src),
+            ),
             metadata={
                 "kind": ref.kind,
                 "genui_kind": KIND_TO_GENUI.get(ref.kind, "Image"),

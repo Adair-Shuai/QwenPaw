@@ -1,12 +1,12 @@
 /** Shared client-side state for interactive controls in one GenUI tree. */
 
 import type { GenUiNode } from "../types/genUi";
+import { fieldName, isFieldKind } from "../lib/genUiModel";
+
+export { fieldName };
 
 type ReactNode = any;
 type ReactElement = any;
-
-const text = (value: unknown): string =>
-  typeof value === "string" ? value : value != null ? String(value) : "";
 
 let interactionContext: any = null;
 
@@ -15,20 +15,11 @@ export function getInteractionContext(React: any): any {
   return interactionContext;
 }
 
-export function fieldName(node: GenUiNode): string {
-  const props = node.props || {};
-  const explicit = text(props.name);
-  if (explicit) return explicit;
-  const label = text(props.label);
-  const coefficient = label.match(/^\s*([a-e])(?:\b|\s|（|\()/i);
-  return coefficient ? coefficient[1].toLowerCase() : label || node.nodeId;
-}
-
 function collectInitialValues(
   node: GenUiNode,
   result: Record<string, unknown> = {},
 ): Record<string, unknown> {
-  if (["Input", "NumberInput", "Select", "Textarea", "Switch", "Slider", "FileInput"].includes(node.kind)) {
+  if (isFieldKind(node.kind)) {
     const props = node.props || {};
     const value = props.value ?? props.checked;
     if (value !== undefined) result[fieldName(node)] = value;

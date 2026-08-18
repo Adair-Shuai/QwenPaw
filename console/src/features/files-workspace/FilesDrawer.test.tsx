@@ -102,10 +102,40 @@ describe("FilesDrawer", () => {
       compact: true,
       initialTarget: { path: "hello.txt" },
     });
-    expect(typeof workspaceProps.current?.onExpand).toBe("function");
+    expect(workspaceProps.current?.onExpand).toBeUndefined();
     expect(typeof workspaceProps.current?.onClose).toBe("function");
     expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
     expect(screen.getByRole("textbox")).toBeInTheDocument();
+  });
+
+  it("keeps an opened workspace as the same preview-only Chat pane", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "hello.txt",
+            root: "project",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={{
+          kind: "session",
+          agentId: "default",
+          sessionId: "session-1",
+        }}
+      />,
+    );
+
+    await screen.findByTestId("files-workspace");
+    expect(workspaceProps.current).toMatchObject({
+      compact: true,
+      initialTarget: { path: "hello.txt" },
+    });
+    expect(workspaceProps.current?.onExpand).toBeUndefined();
+    expect(screen.getByRole("region").className).toContain("drawerPreview");
   });
 
   it("keeps pointer resizing direct until the gesture ends", async () => {

@@ -57,6 +57,7 @@ import {
   useDiffsForScope,
   type EditorTab,
 } from "../../stores/codingTabsStore";
+import { isInlineGeneratedTab } from "../../features/files-workspace/workspaceSavePath";
 import {
   detectCopyMode,
   formatSelectionForChat,
@@ -367,6 +368,7 @@ export default function TabbedEditor({
   const [hunkOverlays, setHunkOverlays] = useState<HunkOverlay[]>([]);
 
   const activeTab = tabs.find((t) => t.path === activeTabPath) ?? null;
+  const isGeneratedArtifact = isInlineGeneratedTab(activeTab ?? undefined);
   const activeDisplayPath = activeTab
     ? activeTab.displayPath ?? visibleEditorPath(activeTab.path)
     : "";
@@ -637,13 +639,10 @@ export default function TabbedEditor({
   // ---- Save ---------------------------------------------------------------
 
   const handleSave = useCallback(async () => {
-    if (
-      !activeTabPath ||
-      saving ||
-      resolvingDiff ||
-      activeDiff ||
-      activeTab?.readOnly
-    ) {
+    if (!activeTabPath || saving || resolvingDiff || activeDiff) {
+      return;
+    }
+    if (activeTab?.readOnly && !isGeneratedArtifact) {
       return;
     }
     setSaving(true);
@@ -670,6 +669,7 @@ export default function TabbedEditor({
     onTabDirtyChange,
     onFileSaved,
     onSaveFile,
+    isGeneratedArtifact,
   ]);
 
   const handleRefreshPreview = useCallback(async () => {
@@ -1377,7 +1377,7 @@ export default function TabbedEditor({
                 </button>
               </Tooltip>
             )}
-            {!activeDiff && !activeInPreview && (
+            {!activeDiff && (isGeneratedArtifact || !activeInPreview) && (
               <>
                 {/* <Tooltip
                   title={
@@ -1395,13 +1395,26 @@ export default function TabbedEditor({
                     <MessageSquarePlus size={13} />
                   </button>
                 </Tooltip> */}
-                <Tooltip title={t("common.save")}>
+                <Tooltip
+                  title={
+                    isGeneratedArtifact
+                      ? t("files.saveToWorkspace")
+                      : t("common.save")
+                  }
+                >
                   <button
                     type="button"
                     className={styles.iconBtn}
+                    aria-label={
+                      isGeneratedArtifact
+                        ? t("files.saveToWorkspace")
+                        : t("common.save")
+                    }
                     onClick={handleSave}
                     disabled={
-                      saving || !activeTab?.dirty || activeTab?.readOnly
+                      saving ||
+                      (!isGeneratedArtifact &&
+                        (!activeTab?.dirty || activeTab?.readOnly))
                     }
                   >
                     <Save size={13} />

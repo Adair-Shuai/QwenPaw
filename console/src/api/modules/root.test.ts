@@ -40,6 +40,13 @@ describe("rootApi", () => {
     });
   });
 
+  it("getLatestCoreVersion returns the core OSS proxy payload", async () => {
+    vi.mocked(request).mockResolvedValue({ version: "2.1.1b10" });
+    await expect(rootApi.getLatestCoreVersion()).resolves.toEqual({
+      version: "2.1.1b10",
+    });
+  });
+
   it("propagates request errors", async () => {
     vi.mocked(request).mockRejectedValue(new Error("500"));
     await expect(rootApi.getVersion()).rejects.toThrow("500");

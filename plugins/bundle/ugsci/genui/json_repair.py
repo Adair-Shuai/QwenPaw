@@ -197,7 +197,7 @@ def try_parse_json_object(raw: str) -> dict[str, Any] | None:
                 tree = _tree_dict_from_parsed(obj)
                 if tree: return tree
         except json.JSONDecodeError: pass
-        for max_del in (3, 8, 16):
+        for max_del in (3,):
             repaired = _try_repair_superfluous_closing_delimiter(candidate, max_deletions=max_del)
             if isinstance(repaired, dict):
                 tree = _tree_dict_from_parsed(repaired)

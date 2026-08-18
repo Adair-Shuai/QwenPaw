@@ -31,6 +31,7 @@ from ..constant import (
     PROJECT_NAME,
     WORKING_DIR,
 )
+from .. import distribution as _distribution
 from ..envs import load_envs_into_environ
 from ..local_models.manager import LocalModelManager
 from ..providers.provider_manager import ProviderManager
@@ -68,10 +69,8 @@ from .startup_state import startup_state
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
 
-DESKTOP_UPDATE_MANIFEST_URL = (
-    "https://ugsci-download.oss-cn-beijing.aliyuncs.com/"
-    "metadata/qwenpaw-tauri-latest.json"
-)
+DESKTOP_UPDATE_MANIFEST_URL = _distribution.DESKTOP_UPDATE_MANIFEST_URL
+CORE_UPDATE_MANIFEST_URL = _distribution.CORE_UPDATE_MANIFEST_URL
 _DESKTOP_VERSION_CACHE_TTL_SECONDS = 60.0
 _DESKTOP_VERSION_STALE_TTL_SECONDS = 600.0
 _DESKTOP_VERSION_MAX_BYTES = 64 * 1024
@@ -82,6 +81,8 @@ _DESKTOP_VERSION_PATTERN = re.compile(
 )
 _desktop_version_cache: tuple[str, float] | None = None
 _desktop_version_lock = threading.Lock()
+_core_version_cache: tuple[str, float] | None = None
+_core_version_lock = threading.Lock()
 
 # Ensure static assets are served with browser-compatible MIME types across
 # platforms (notably Windows may miss .js/.mjs mappings).
@@ -346,6 +347,7 @@ async def lifespan(
     app.state.local_model_manager = local_model_manager
     app.state.plugin_loader = None
     app.state.plugin_registry = None
+    app.state.noncritical_maintenance_task = None
 
     async def _get_agent_by_id(agent_id: str | None = None):
         """Get agent instance by ID, or active agent if not specified."""
@@ -432,7 +434,17 @@ async def lifespan(
                         exc_info=True,
                     )
 
-            await asyncio.to_thread(_run_noncritical_maintenance)
+            # Telemetry upload + legacy scroll-history backfill are pure
+            # maintenance with no bearing on plugin discovery, yet awaiting
+            # them here previously sat in front of component updates, bundled
+            # sync and PluginLoader — delaying when plugins become visible in
+            # the desktop UI. Run them in a concurrent worker thread instead
+            # so they never gate the plugin pipeline; the lifespan shutdown
+            # cancels/awaits the task if it is still running.
+            app.state.noncritical_maintenance_task = asyncio.create_task(
+                asyncio.to_thread(_run_noncritical_maintenance),
+                name="noncritical-maintenance",
+            )
 
             # ---- Plugin System (phase 1: channel plugins) ----
             # Load channel-type plugins *before* agents start so that
@@ -1019,6 +1031,15 @@ async def lifespan(
             bundled_task.cancel()
             with suppress(asyncio.CancelledError):
                 await bundled_task
+        maintenance_task = getattr(
+            app.state,
+            "noncritical_maintenance_task",
+            None,
+        )
+        if maintenance_task is not None and not maintenance_task.done():
+            maintenance_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await maintenance_task
 
         await _stop_browser_runtime(app)
         from ..agents.tools import shutdown_browser_runtime
@@ -1224,6 +1245,7 @@ def get_version():
     """Return the current application version (public-safe payload)."""
     return {
         "version": __version__,
+        "download_base_url": _distribution.DOWNLOAD_BASE_URL,
     }
 
 
@@ -1284,6 +1306,75 @@ def get_latest_desktop_version():
         raise HTTPException(
             status_code=502,
             detail="Desktop update manifest is unavailable",
+        ) from exc
+
+
+def _fetch_latest_core_version() -> str:
+    global _core_version_cache  # pylint: disable=global-statement
+    now = time.monotonic()
+    cached = _core_version_cache
+    if cached is not None and now - cached[1] <= (
+        _DESKTOP_VERSION_CACHE_TTL_SECONDS
+    ):
+        return cached[0]
+
+    with _core_version_lock:
+        now = time.monotonic()
+        cached = _core_version_cache
+        if cached is not None and now - cached[1] <= (
+            _DESKTOP_VERSION_CACHE_TTL_SECONDS
+        ):
+            return cached[0]
+        try:
+            request = urllib.request.Request(
+                CORE_UPDATE_MANIFEST_URL,
+                headers={"User-Agent": f"UGSci/{__version__}"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                raw = response.read(_DESKTOP_VERSION_MAX_BYTES + 1)
+            if len(raw) > _DESKTOP_VERSION_MAX_BYTES:
+                raise ValueError("core update manifest is too large")
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("core update manifest must be an object")
+            version = str(payload.get("version") or "").strip()
+            if not version or not _DESKTOP_VERSION_PATTERN.fullmatch(version):
+                raise ValueError("core update manifest version is invalid")
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                return ""
+            if cached is not None and now - cached[1] <= (
+                _DESKTOP_VERSION_STALE_TTL_SECONDS
+            ):
+                logger.warning("Using stale core update version cache")
+                return cached[0]
+            raise
+        except (OSError, UnicodeDecodeError, ValueError):
+            if cached is not None and now - cached[1] <= (
+                _DESKTOP_VERSION_STALE_TTL_SECONDS
+            ):
+                logger.warning("Using stale core update version cache")
+                return cached[0]
+            raise
+        _core_version_cache = (version, now)
+        return version
+
+
+@app.get("/api/version/latest-core")
+def get_latest_core_version():
+    """Proxy the UGSci core version manifest without exposing CORS."""
+    try:
+        return {"version": _fetch_latest_core_version()}
+    except (
+        OSError,
+        UnicodeDecodeError,
+        ValueError,
+        urllib.error.URLError,
+    ) as exc:
+        logger.warning("Core update manifest lookup failed: %s", exc)
+        raise HTTPException(
+            status_code=502,
+            detail="Core update manifest is unavailable",
         ) from exc
 
 

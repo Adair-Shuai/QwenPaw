@@ -24,9 +24,15 @@ from typing import Any
 from agentscope.message import TextBlock, ToolResultState
 from agentscope.tool import ToolChunk
 
+from .emit_core import (
+    get_session_id,
+    resolve_allow_actions,
+    resolve_allow_file_input,
+    store_validated_tree,
+)
 from .guide import get_genui_guide
 from .json_repair import try_parse_json_object
-from .schema import GENUI_MAX_JSON_CHARS, list_component_catalog, validate_ui_tree, validate_ui_patch, apply_ui_patches
+from .schema import GENUI_MAX_JSON_CHARS, list_component_catalog, validate_ui_patch
 from .state import get_state_store
 from .settings import load_settings
 
@@ -108,7 +114,7 @@ def _payload_size(value: Any) -> int:
         return GENUI_MAX_JSON_CHARS + 1
 
 
-def emit_ui_tree(tree: dict[str, Any] | str) -> ToolChunk:
+def emit_ui_tree(tree: dict[str, Any] | str, ui_id: str = "") -> ToolChunk:
     """Emit a validated generative UI tree that renders inline in the chat.
 
     Use this tool for cards, dashboards, tables, KPIs, charts, and other
@@ -128,10 +134,14 @@ def emit_ui_tree(tree: dict[str, Any] | str) -> ToolChunk:
     Call ``get_genui_guide`` and ``list_ui_components`` before authoring
     non-trivial trees (dashboards, multi-card layouts, 6+ nodes).
 
+    To replace an existing card in this session, pass the previous ``ui_id``.
+    Prefer ``emit_ui_patch`` for small field updates.
+
     Args:
         tree: JSON string of the generative UI tree. Must be valid JSON
               or a repairable JSON-like string (code fences, trailing
               commas, and truncation are handled).
+        ui_id: Optional existing id (``ui_...``) to replace in-session.
 
     Returns:
         ToolChunk with JSON text: ``{ok, kind, ui_id, revision, tree}``
@@ -158,28 +168,22 @@ def emit_ui_tree(tree: dict[str, Any] | str) -> ToolChunk:
             "Check JSON escaping: use \\\" for quotes and \\n for newlines.",
         )
 
+    requested_id = ui_id.strip() if isinstance(ui_id, str) else ""
     try:
-        normalized = validate_ui_tree(parsed_tree)
+        result = store_validated_tree(parsed_tree, ui_id=requested_id)
+    except RuntimeError as exc:
+        code = str(exc)
+        if code == "feature_disabled":
+            return _err("feature_disabled", "GenUI is disabled in UGSci settings.")
+        if code == "missing_session_context":
+            return _err("missing_session_context", "GenUI requires an active session context.")
+        return _err("invalid_tree", code, "Call list_ui_components to verify kind/prop names.")
+    except ValueError as exc:
+        return _err("invalid_ui_id", str(exc), "Pass a previous ui_id from this session, or omit it.")
     except Exception as exc:
         return _err("invalid_tree", str(exc), "Call list_ui_components to verify kind/prop names.")
 
-    session_id = _get_session_id()
-    if not session_id:
-        return _err("missing_session_context", "GenUI requires an active session context.")
-    tool_call_id = _get_tool_call_id()
-    store = get_state_store()
-    snapshot = store.create(session_id=session_id, tree=normalized, tool_call_id=tool_call_id)
-
-    result: dict[str, Any] = {
-        "ok": True,
-        "kind": "genui",
-        "schema_version": "1",
-        "ui_id": snapshot.ui_id,
-        "revision": snapshot.revision,
-        "tree": normalized,
-        "tool_call_id": snapshot.tool_call_id or "",
-    }
-    logger.info("[ugsci.genui] emit_ui_tree: ui_id=%s, session=%s", snapshot.ui_id, session_id)
+    logger.info("[ugsci.genui] emit_ui_tree: ui_id=%s, session=%s", result.get("ui_id"), get_session_id())
     return _ok(result)
 
 
@@ -241,7 +245,7 @@ def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
     base_revision = validated_patch["base_revision"]
     patch_list = validated_patch["patches"]
 
-    session_id = _get_session_id()
+    session_id = get_session_id()
     if not session_id:
         return _err("missing_session_context", "GenUI patching requires an active session context.")
     store = get_state_store()
@@ -252,6 +256,8 @@ def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
             ui_id=ui_id,
             base_revision=base_revision,
             patches=patch_list,
+            allow_actions=resolve_allow_actions(),
+            allow_file_input=resolve_allow_file_input(),
         )
     except ValueError as exc:
         msg = str(exc)

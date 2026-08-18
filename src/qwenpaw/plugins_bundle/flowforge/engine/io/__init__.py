@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from .hidden import Hidden, HiddenHolder
 from .loader import WorkflowDocument, WorkflowLoaderError, load
-from .media import MediaRef, to_gen_ui_tree
+from .media import MediaRef, flowforge_gen_ui_id, publish_gen_ui, to_gen_ui_tree, to_gen_ui_ui
 from .node_output import NodeOutput
 from .schema import Schema
 from .schema_bridge import json_schema_to_inputs
@@ -45,9 +45,12 @@ __all__ = [
     "InputBase",
     "MediaRef",
     "NodeOutput",
+    "flowforge_gen_ui_id",
     "OutputBase",
     "Schema",
+    "publish_gen_ui",
     "to_gen_ui_tree",
+    "to_gen_ui_ui",
     "WidgetInput",
     "WILDCARD_TYPE",
     "WorkflowDocument",

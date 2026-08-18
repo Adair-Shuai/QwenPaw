@@ -204,6 +204,7 @@ markers = [
     "integration: marks tests as integration tests",
     "e2e: marks tests as end-to-end tests",
     "manual_real: opt-in acceptance against real paid provider APIs",
+    "refuse_upstream_core: CLI update must keep the public-PyPI refuse guard",
 ]
 testpaths = [
     "tests",

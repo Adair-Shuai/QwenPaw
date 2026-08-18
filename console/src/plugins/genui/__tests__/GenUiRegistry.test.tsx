@@ -322,6 +322,101 @@ describe("GenUiTreeView — Interaction", () => {
     const after = container.querySelector("polyline")?.getAttribute("points");
     expect(after).not.toBe(before);
   });
+
+  it("does not turn a static chart into a polynomial just because fields a-e exist", () => {
+    const tree: GenUiNode = {
+      nodeId: "root",
+      kind: "Stack",
+      props: {},
+      children: [
+        {
+          nodeId: "a",
+          kind: "Slider",
+          props: { name: "a", label: "a", value: 1 },
+          children: [],
+        },
+        {
+          nodeId: "b",
+          kind: "Slider",
+          props: { name: "b", label: "b", value: 0 },
+          children: [],
+        },
+        {
+          nodeId: "c",
+          kind: "Slider",
+          props: { name: "c", label: "c", value: 0 },
+          children: [],
+        },
+        {
+          nodeId: "d",
+          kind: "Slider",
+          props: { name: "d", label: "d", value: 0 },
+          children: [],
+        },
+        {
+          nodeId: "e",
+          kind: "Slider",
+          props: { name: "e", label: "e", value: 0 },
+          children: [],
+        },
+        {
+          nodeId: "chart",
+          kind: "Chart",
+          props: {
+            chart: "line",
+            categories: ["x", "y"],
+            series: [{ name: "Static", values: [1, 2] }],
+          },
+          children: [],
+        },
+      ],
+    };
+    const { container } = render(
+      React.createElement(
+        GenUiInteractionProvider,
+        { node: tree },
+        React.createElement(GenUiTreeView, { node: tree }),
+      ),
+    );
+    expect(container.textContent).toContain("Static");
+    const points = container.querySelector("polyline")?.getAttribute("points");
+    expect(points?.trim().split(/\s+/)).toHaveLength(2);
+  });
+
+  it("does not open a LinkButton href unless open_url is allowed", () => {
+    const open = vi.fn();
+    window.open = open;
+    const node: GenUiNode = {
+      nodeId: "link",
+      kind: "LinkButton",
+      props: { label: "Docs", href: "https://example.com" },
+      children: [],
+    };
+    const { getByText } = render(React.createElement(GenUiTreeView, { node }));
+    fireEvent.click(getByText("Docs"));
+    expect(open).not.toHaveBeenCalled();
+  });
+
+  it("opens a LinkButton href when open_url is allowed", () => {
+    const open = vi.fn();
+    window.open = open;
+    (window as any).QwenPaw.genui = {
+      config: { allow_actions: ["open_url"] },
+    };
+    const node: GenUiNode = {
+      nodeId: "link",
+      kind: "LinkButton",
+      props: { label: "Docs", href: "https://example.com" },
+      children: [],
+    };
+    const { getByText } = render(React.createElement(GenUiTreeView, { node }));
+    fireEvent.click(getByText("Docs"));
+    expect(open).toHaveBeenCalledWith(
+      "https://example.com",
+      "_blank",
+      "noopener,noreferrer",
+    );
+  });
 });
 
 afterEach(() => {
@@ -732,6 +827,18 @@ describe("GenUiTreeView — Edge Cases", () => {
     expect(container.textContent).toContain("Something went wrong");
   });
 
+  it("uses width/height order for AspectBox ratio", () => {
+    const node: GenUiNode = {
+      nodeId: "box",
+      kind: "AspectBox",
+      props: { ratio: "16:9" },
+      children: [],
+    };
+    const { container } = render(React.createElement(GenUiTreeView, { node }));
+    const box = container.firstElementChild as HTMLElement | null;
+    expect(box?.style.aspectRatio.replace(/\s+/g, "")).toBe("16/9");
+  });
+
   it("renders Grid with columns", () => {
     const node: GenUiNode = {
       nodeId: "n1",
@@ -814,6 +921,100 @@ describe("GenUiTreeView — Edge Cases", () => {
     expect(container.textContent).toContain("Value");
     expect(container.textContent).toContain("Foo");
     expect(container.textContent).toContain("42");
+  });
+
+  it("catches a throwing descendant at the tree root only", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    (window as any).QwenPaw.host.antd.Divider = () => {
+      throw new Error("divider boom");
+    };
+    const node: GenUiNode = {
+      nodeId: "root",
+      kind: "Stack",
+      props: {},
+      children: [
+        { nodeId: "ok1", kind: "Text", props: { value: "sibling-ok" }, children: [] },
+        { nodeId: "boom", kind: "Divider", props: {}, children: [] },
+        { nodeId: "ok2", kind: "Text", props: { value: "also-ok" }, children: [] },
+      ],
+    };
+    const { container } = render(React.createElement(GenUiTreeView, { node }));
+    expect(container.textContent).toContain("Component error: Stack");
+    expect(container.textContent).not.toContain("sibling-ok");
+    expect(container.textContent).not.toContain("Component error: Divider");
+    spy.mockRestore();
+  });
+
+  it("does not wrap Form children in nested error boundaries", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    (window as any).QwenPaw.host.antd.Divider = () => {
+      throw new Error("form divider boom");
+    };
+    const node: GenUiNode = {
+      nodeId: "root",
+      kind: "Stack",
+      props: {},
+      children: [
+        {
+          nodeId: "form",
+          kind: "Form",
+          props: { title: "f" },
+          children: [
+            { nodeId: "ok", kind: "Text", props: { value: "form-ok" }, children: [] },
+            { nodeId: "boom", kind: "Divider", props: {}, children: [] },
+          ],
+        },
+      ],
+    };
+    const { container } = render(React.createElement(GenUiTreeView, { node }));
+    expect(container.textContent).toContain("Component error: Stack");
+    expect(container.textContent).not.toContain("Component error: Form");
+    expect(container.textContent).not.toContain("Component error: Divider");
+    expect(container.textContent).not.toContain("form-ok");
+    spy.mockRestore();
+  });
+
+  it("clears the tree-root error when the node is replaced", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    (window as any).QwenPaw.host.antd.Divider = () => {
+      throw new Error("divider boom");
+    };
+    const boom: GenUiNode = {
+      nodeId: "root",
+      kind: "Stack",
+      props: {},
+      children: [{ nodeId: "boom", kind: "Divider", props: {}, children: [] }],
+    };
+    const { container, rerender } = render(React.createElement(GenUiTreeView, { node: boom }));
+    expect(container.textContent).toContain("Component error: Stack");
+    (window as any).QwenPaw.host.antd.Divider = ({ children }: any) =>
+      React.createElement("hr", null, children);
+    const ok: GenUiNode = {
+      nodeId: "root",
+      kind: "Stack",
+      props: {},
+      children: [{ nodeId: "ok", kind: "Text", props: { value: "recovered" }, children: [] }],
+    };
+    rerender(React.createElement(GenUiTreeView, { node: ok }));
+    expect(container.textContent).toContain("recovered");
+    expect(container.textContent).not.toContain("Component error");
+    spy.mockRestore();
+  });
+
+  it("renders an allowlisted Icon as SVG and hides Lucide-style names", () => {
+    const { container, rerender } = render(
+      React.createElement(GenUiTreeView, {
+        node: { nodeId: "i1", kind: "Icon", props: { name: "check-circle" }, children: [] },
+      }),
+    );
+    expect(container.querySelector("svg")).toBeTruthy();
+    expect(container.textContent).not.toContain("check-circle");
+    rerender(
+      React.createElement(GenUiTreeView, {
+        node: { nodeId: "i2", kind: "Icon", props: { name: "sparkles" }, children: [] },
+      }),
+    );
+    expect(container.textContent).not.toContain("sparkles");
   });
 
   it("preserves zero and false table cell values", () => {

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import math
 from pathlib import Path
 from typing import Any
@@ -289,8 +290,27 @@ async def analyze_simulation(
             )],
         )
 
+    report_text = "\n".join(lines)
+    content = [TextBlock(type="text", text=report_text)]
+    try:
+        from ...genui.domain_cards import attach_genui
+
+        attached = attach_genui({
+            "kind": "simulation.analysis",
+            "operation": f"simulation.analyze.{analysis_type}",
+            "job_id": job_id,
+            "simulator": job.simulator,
+            "status": job.status,
+            "analysis_type": analysis_type,
+            "text": report_text,
+        })
+        envelope = attached.get("genui")
+        if isinstance(envelope, dict) and envelope.get("ok"):
+            content.append(TextBlock(type="text", text=json.dumps(envelope, ensure_ascii=False)))
+    except Exception:
+        pass
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines))],
+        content=content,
     )

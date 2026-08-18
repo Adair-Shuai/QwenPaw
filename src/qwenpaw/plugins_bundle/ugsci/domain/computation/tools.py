@@ -7,6 +7,7 @@ import json
 from typing import Any
 
 from ..common.errors import DomainError, DomainErrorCode, wrap_unknown_error
+from ..common.tool_chunk import emit_tool_chunk
 from .adapters import (
     GeoPandasAdapter,
     NetworkXAdapter,
@@ -33,16 +34,7 @@ _service = ComputationService()
 
 
 def _chunk(payload: dict[str, Any], *, error: bool = False) -> Any:
-    try:
-        from agentscope.message import TextBlock, ToolResultState
-        from agentscope.tool import ToolChunk
-    except Exception:
-        return {"error": error, "payload": payload}
-    return ToolChunk(
-        is_last=True,
-        state=ToolResultState.ERROR if error else ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text=json.dumps(payload, ensure_ascii=False, indent=2))],
-    )
+    return emit_tool_chunk(payload, error=error)
 
 
 def _run(

@@ -19,8 +19,41 @@ const emit = () => listeners.forEach((listener) => listener());
 const subscribe = (listener: () => void) => { listeners.add(listener); return () => listeners.delete(listener); };
 const getSnapshots = () => snapshots;
 
+const pickCache = new Map<string, GenUiSnapshot[]>();
+
+function snapshotsFor(sessionId: string, uiIds: readonly string[]): GenUiSnapshot[] {
+  const picked: GenUiSnapshot[] = [];
+  for (const uiId of uiIds) {
+    if (!uiId) continue;
+    const snap = snapshots[genUiSnapshotKey(sessionId, uiId)]
+      || Object.values(snapshots).find((item) => item.uiId === uiId);
+    if (snap) picked.push(snap);
+  }
+  const ident = `${sessionId}::${uiIds.join("\0")}`;
+  const prev = pickCache.get(ident);
+  if (prev && prev.length === picked.length && prev.every((item, index) => item === picked[index])) {
+    return prev;
+  }
+  pickCache.set(ident, picked);
+  return picked;
+}
+
 export function genUiSnapshotKey(sessionId: string, uiId: string): string {
   return `${sessionId}::${uiId}`;
+}
+
+function coerceGenUiEnvelope(parsed: any): GenUiTreeResult | null {
+  if (!parsed || typeof parsed !== "object") return null;
+  if (parsed.ok === true && (parsed.kind === "genui" || parsed.kind === "genui_patch")) {
+    return parsed as GenUiTreeResult;
+  }
+  if (parsed.genui && typeof parsed.genui === "object") {
+    return coerceGenUiEnvelope(parsed.genui);
+  }
+  if (parsed.ui && typeof parsed.ui === "object") {
+    return coerceGenUiEnvelope(parsed.ui.genui);
+  }
+  return null;
 }
 
 export function parseGenUiResult(resultText: string): GenUiTreeResult | null {
@@ -28,10 +61,14 @@ export function parseGenUiResult(resultText: string): GenUiTreeResult | null {
   try {
     const parsed = JSON.parse(resultText);
     if (Array.isArray(parsed)) {
-      const text = parsed.find((item: any) => item?.type === "text")?.text;
-      return typeof text === "string" ? parseGenUiResult(text) : null;
+      for (const item of parsed) {
+        const text = item?.type === "text" ? item.text : undefined;
+        const nested = typeof text === "string" ? parseGenUiResult(text) : coerceGenUiEnvelope(item);
+        if (nested) return nested;
+      }
+      return null;
     }
-    return parsed && parsed.ok === true && (parsed.kind === "genui" || parsed.kind === "genui_patch") ? parsed : null;
+    return coerceGenUiEnvelope(parsed);
   } catch { return null; }
 }
 
@@ -60,16 +97,19 @@ export function extractGenUiResults(output: unknown): GenUiTreeResult[] {
       // AgentScope's live V1 envelope keeps the tool call and its output as
       // sibling content blocks. Associate them before recursively visiting
       // nested wrappers so an unrelated JSON payload can never become GenUI.
-      const toolName = allowSiblingEnvelope ? value
+      const siblingNames = allowSiblingEnvelope ? value
         .map((item: any) => item?.data?.name ?? item?.name)
-        .find((name: unknown) => GENUI_TOOL_NAMES.has(String(name || ""))) : undefined;
-      if (toolName) {
+        .filter((name: unknown) => Boolean(name))
+        .map((name: unknown) => String(name)) : [];
+      if (allowSiblingEnvelope && siblingNames.length) {
+        const namedEmit = siblingNames.some((name: string) => GENUI_TOOL_NAMES.has(name));
         for (const item of value as any[]) {
           const rawValue = item?.data?.output ?? item?.output
-            ?? item?.data?.result ?? item?.result;
+            ?? item?.data?.result ?? item?.result
+            ?? item?.data?.content ?? item?.content;
           if (rawValue == null) continue;
           const textValue = typeof rawValue === "string" ? rawValue : JSON.stringify(rawValue);
-          const parsed = parseGenUiResult(textValue) || parseGenUiError(textValue);
+          const parsed = parseGenUiResult(textValue) || (namedEmit ? parseGenUiError(textValue) : null);
           if (parsed) results.push(parsed);
         }
       }
@@ -77,13 +117,17 @@ export function extractGenUiResults(output: unknown): GenUiTreeResult[] {
       return;
     }
     const block = value as Record<string, any>;
-    if (block.type === "tool_result" && GENUI_TOOL_NAMES.has(String(block.name || ""))) {
+    if (block.type === "tool_result") {
       const outputBlocks = Array.isArray(block.output) ? block.output : [];
-      const textBlock = outputBlocks.find((item: any) => item?.type === "text");
-      const rawValue = textBlock?.text ?? block.output;
-      const textValue = typeof rawValue === "string" ? rawValue : JSON.stringify(rawValue);
-      const parsed = parseGenUiResult(textValue) || parseGenUiError(textValue);
-      if (parsed) results.push(parsed);
+      const texts = outputBlocks.filter((item: any) => item?.type === "text").map((item: any) => item.text);
+      const rawValue = texts.length ? texts.join("\n") : block.output;
+      const candidates = texts.length ? texts : [typeof rawValue === "string" ? rawValue : JSON.stringify(rawValue)];
+      for (const textValue of candidates) {
+        const parsed = parseGenUiResult(textValue) || (
+          GENUI_TOOL_NAMES.has(String(block.name || "")) ? parseGenUiError(textValue) : null
+        );
+        if (parsed) results.push(parsed);
+      }
       return;
     }
     const isToolEnvelope = TOOL_OUTPUT_TYPES.has(String(block.type || ""));
@@ -103,11 +147,13 @@ export function extractGenUiResults(output: unknown): GenUiTreeResult[] {
     if (!TOOL_OUTPUT_TYPES.has(String(msg.type || "")) || !Array.isArray(msg.content)) continue;
     const content = msg.content as Array<Record<string, any>>;
     const name = content[0]?.data?.name;
-    if (!GENUI_TOOL_NAMES.has(name)) continue;
+    if (!name) continue;
     const value = content[1]?.data?.output;
     if (value == null) continue;
     const text = typeof value === "string" ? value : JSON.stringify(value);
-    const parsed = parseGenUiResult(text) || parseGenUiError(text);
+    const parsed = parseGenUiResult(text) || (
+      GENUI_TOOL_NAMES.has(String(name)) ? parseGenUiError(text) : null
+    );
     if (parsed) results.push(parsed);
   }
   return Array.from(new Map(results.map((item) => [`${item.kind}:${item.ui_id}:${item.revision}`, item])).values());
@@ -158,12 +204,35 @@ const actions = {
   getSnapshot: (sessionId: string, uiId: string) => snapshots[genUiSnapshotKey(sessionId, uiId)],
   clearSession(sessionId: string) {
     snapshots = Object.fromEntries(Object.entries(snapshots).filter(([, value]) => value.sessionId !== sessionId));
+    for (const key of [...pickCache.keys()]) {
+      if (key.startsWith(`${sessionId}::`)) pickCache.delete(key);
+    }
     emit();
   },
   hydrateFromMessages: hydrateGenUiFromMessages,
 };
 
 export function GenUiStoreProvider({ children }: { children: any }) { return children; }
+
+export function useGenUiActions(): Omit<GenUiStoreState, "snapshots"> {
+  return actions;
+}
+
+export function useGenUiSnapshots(sessionId: string, uiIds: readonly string[]): GenUiSnapshot[] {
+  const React = (window as any).QwenPaw?.host?.React as ReactFn | undefined;
+  if (!React) throw new Error("useGenUiSnapshots: host React not available");
+  const key = uiIds.join("\0");
+  const ids = key === "" ? [] : key.split("\0");
+  return React.useSyncExternalStore(
+    subscribe,
+    () => snapshotsFor(sessionId, ids),
+    () => snapshotsFor(sessionId, ids),
+  );
+}
+
+export function clearSession(sessionId: string): void {
+  actions.clearSession(sessionId);
+}
 
 export function useGenUiStore(): GenUiStoreState {
   const React = (window as any).QwenPaw?.host?.React as ReactFn | undefined;
@@ -172,4 +241,8 @@ export function useGenUiStore(): GenUiStoreState {
   return { snapshots: current, ...actions };
 }
 
-export function resetGenUiStore(): void { snapshots = {}; emit(); }
+export function resetGenUiStore(): void {
+  snapshots = {};
+  pickCache.clear();
+  emit();
+}

@@ -13,6 +13,11 @@ import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@/test/common_setup";
 import ChatPage from "./index";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
+import {
+  OPEN_FILE_PREVIEW_EVENT,
+  type OpenFilePreviewDetail,
+} from "@/features/files-workspace/openFilePreview";
+import { useFilesSurfaceStore } from "@/stores/filesSurfaceStore";
 
 // ---------------------------------------------------------------------------
 // Capture AgentScopeRuntimeWebUI options
@@ -62,6 +67,10 @@ vi.mock("../../plugins/PluginContext", () => ({
 }));
 
 vi.mock("./components/ChatSessionInitializer", () => ({
+  default: () => null,
+}));
+
+vi.mock("../../features/files-workspace/FilesDrawer", () => ({
   default: () => null,
 }));
 
@@ -130,12 +139,22 @@ vi.mock("@/api/config", () => ({
   getApiToken: vi.fn(() => ""),
 }));
 
-vi.mock("@/stores/agentStore", () => ({
-  useAgentStore: vi.fn(() => ({
+vi.mock("@/stores/agentStore", () => {
+  const state = () => ({
     selectedAgent: mockSelectedAgent(),
     setSelectedAgent: mockSetSelectedAgent,
-  })),
-}));
+    agents: [{ id: "default", backend: "qwenpaw" }],
+    setLastChatId: vi.fn(),
+    getLastChatId: vi.fn(),
+    removeLastChatId: vi.fn(),
+  });
+  const useAgentStore = Object.assign(vi.fn(() => state()), {
+    getState: state,
+    setState: vi.fn(),
+    subscribe: vi.fn(() => vi.fn()),
+  });
+  return { useAgentStore };
+});
 
 vi.mock("@/contexts/ThemeContext", () => ({
   useTheme: vi.fn(() => ({ isDark: false })),
@@ -171,6 +190,10 @@ vi.mock("./components/ChatActionGroup", () => ({
 
 vi.mock("./components/ChatHeaderTitle", () => ({
   default: () => <div data-testid="header-title" />,
+}));
+
+vi.mock("./components/ChatSessionDrawer", () => ({
+  default: () => null,
 }));
 
 // ---------------------------------------------------------------------------
@@ -216,6 +239,7 @@ describe("ChatPage", () => {
 
   afterEach(() => {
     chatExtensions.__resetForTests();
+    useFilesSurfaceStore.setState({ sessionDrawers: {} });
     vi.clearAllMocks();
   });
 
@@ -468,5 +492,39 @@ describe("ChatPage", () => {
         callsBefore,
       ),
     );
+  });
+
+  it("dispatches open-file-preview when the message Markdown action is clicked", async () => {
+    const previews: OpenFilePreviewDetail[] = [];
+    const onPreview = (event: Event) => {
+      previews.push((event as CustomEvent<OpenFilePreviewDetail>).detail);
+    };
+    window.addEventListener(OPEN_FILE_PREVIEW_EVENT, onPreview);
+
+    try {
+      renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+      await screen.findByTestId("chat-ui");
+      previews.length = 0;
+
+      act(() => {
+        capturedOptions.actions.list[1].onClick({
+          data: {
+            output: [{ role: "assistant", content: "hello from reply" }],
+          },
+        });
+      });
+
+      expect(previews).toHaveLength(1);
+      expect(previews[0].target.source).toBe("artifact");
+      expect(previews[0].target.path).toMatch(/\.md$/i);
+      expect(previews[0].target.artifactUrl).toBeUndefined();
+      expect(previews[0].target.artifact).toMatchObject({
+        textContent: "hello from reply",
+        mimeType: "text/markdown",
+        extension: "md",
+      });
+    } finally {
+      window.removeEventListener(OPEN_FILE_PREVIEW_EVENT, onPreview);
+    }
   });
 });

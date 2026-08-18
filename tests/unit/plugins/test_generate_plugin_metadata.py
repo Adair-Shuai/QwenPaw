@@ -22,6 +22,7 @@ sys.path.insert(
 )
 
 from generate_plugin_metadata import (  # noqa: E402
+    _build_metadata,
     _iter_tree_relpaths,
     _normalize_pack_exclude,
     _safe_entry_relpath,
@@ -31,6 +32,22 @@ from generate_plugin_metadata import (  # noqa: E402
     discover_and_pack,
     get_version,
 )
+
+
+def test_published_metadata_defaults_to_ugsci_channel(tmp_path: Path) -> None:
+    zip_path = tmp_path / "demo.zip"
+    zip_path.write_bytes(b"demo")
+    metadata = _build_metadata(
+        {"id": "ulit", "author": "QwenPaw Team"},
+        file_id="ulit-0.1.2",
+        plugin_id="ulit",
+        version="0.1.2",
+        kind="app",
+        zip_path=zip_path,
+        cdn_path="/files/plugins/ulit-0.1.2.zip",
+    )
+    assert metadata["channel"] == "ugsci"
+    assert metadata["author"] == "QwenPaw Team"
 
 
 def test_structured_qwenpaw_version_passthrough() -> None:

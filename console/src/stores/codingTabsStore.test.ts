@@ -275,6 +275,75 @@ describe("codingTabsStore", () => {
     expect(localStorage.getItem("qwenpaw-files-workbench")).toBeNull();
   });
 
+  it("does not persist in-memory generated artifact tabs", () => {
+    const store = useCodingTabsStore.getState();
+    store.openTab("session:a1:s1", {
+      path: "notes.md",
+      content: "disk",
+      dirty: false,
+      source: "workspace",
+    });
+    store.openTab("session:a1:s1", {
+      path: "artifact::AI 回复.md",
+      displayPath: "AI 回复.md",
+      content: "# ghost",
+      dirty: false,
+      source: "artifact",
+    });
+    store.setActiveTab("session:a1:s1", "artifact::AI 回复.md");
+
+    expect(
+      useCodingTabsStore.getState().tabsByAgent["session:a1:s1"],
+    ).toHaveLength(2);
+
+    const sessionEnvelope = JSON.parse(
+      localStorage.getItem(SESSION_FILES_TABS_STORAGE_KEY) ?? "{}",
+    );
+    const persistedTabs =
+      sessionEnvelope.state.tabsByAgent["session:a1:s1"] ?? [];
+
+    expect(persistedTabs).toEqual([
+      expect.objectContaining({ path: "notes.md", source: "workspace" }),
+    ]);
+    expect(
+      persistedTabs.some(
+        (tab: { source?: string; artifactUrl?: string }) =>
+          tab.source === "artifact" && !tab.artifactUrl,
+      ),
+    ).toBe(false);
+    expect(sessionEnvelope.state.activeTabByAgent["session:a1:s1"]).toBe(
+      "notes.md",
+    );
+  });
+
+  it("persists artifact tabs that have a download URL", () => {
+    const store = useCodingTabsStore.getState();
+    store.openTab("session:a1:s1", {
+      path: "artifact::report.md",
+      displayPath: "report.md",
+      content: "# attached",
+      dirty: false,
+      source: "artifact",
+      artifactUrl: "/api/files/preview/report.md",
+    });
+    store.setActiveTab("session:a1:s1", "artifact::report.md");
+
+    const sessionEnvelope = JSON.parse(
+      localStorage.getItem(SESSION_FILES_TABS_STORAGE_KEY) ?? "{}",
+    );
+
+    expect(sessionEnvelope.state.tabsByAgent["session:a1:s1"]).toEqual([
+      expect.objectContaining({
+        path: "artifact::report.md",
+        source: "artifact",
+        artifactUrl: "/api/files/preview/report.md",
+      }),
+    ]);
+    expect(sessionEnvelope.state.activeTabByAgent["session:a1:s1"]).toBe(
+      "artifact::report.md",
+    );
+  });
+
   it("migrates a temporary Session scope to its backend id", () => {
     const store = useCodingTabsStore.getState();
     store.openTab("session:a1:new", TAB_FOO);

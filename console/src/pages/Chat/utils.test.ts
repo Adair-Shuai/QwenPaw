@@ -4,6 +4,7 @@ import {
   extractUserMessageText,
   buildModelError,
   buildWorkspaceMarkdown,
+  summarizeReplyFilename,
   toStoredName,
   normalizeContentUrls,
   toDisplayUrl,
@@ -351,6 +352,41 @@ describe("buildWorkspaceMarkdown", () => {
     const result = buildWorkspaceMarkdown(response);
     expect(result).toContain("> 💭 块级思考");
     expect(result).toContain("块级回复");
+  });
+});
+
+describe("summarizeReplyFilename", () => {
+  it("uses the first heading as the stem", () => {
+    expect(summarizeReplyFilename("# 默认文件名太容易撞\n\n说明")).toBe(
+      "默认文件名太容易撞",
+    );
+  });
+
+  it("skips thinking quotes and code fences", () => {
+    const markdown = [
+      "> 💭 先想一下文件名",
+      "",
+      "---",
+      "",
+      "```py",
+      "print('no')",
+      "```",
+      "",
+      "实际回复从这里开始。第二句。",
+    ].join("\n");
+    expect(summarizeReplyFilename(markdown)).toBe("实际回复从这里开始。第二句。");
+  });
+
+  it("strips illegal filename characters and truncates", () => {
+    expect(summarizeReplyFilename("notes/a:b?c")).toBe("notes a b c");
+    expect(summarizeReplyFilename("**bold title**")).toBe("bold title");
+    const long = "这是一段用来验证文件名会被截成三十二个字符的回复正文内容继续";
+    expect(Array.from(summarizeReplyFilename(`${long}一二`)).length).toBe(32);
+  });
+
+  it("falls back when nothing usable remains", () => {
+    expect(summarizeReplyFilename("```\ncode\n```", "AI 回复")).toBe("AI 回复");
+    expect(summarizeReplyFilename("> only thinking", "AI 回复")).toBe("AI 回复");
   });
 });
 

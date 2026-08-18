@@ -16,6 +16,7 @@ import functools
 import inspect
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -206,6 +207,69 @@ _GENUI_TOOL_BINDINGS: dict[str, Any] = {
     "get_genui_guide": get_genui_guide_tool,
 }
 
+_active_lock = threading.Lock()
+_active: dict[str, dict[str, Any]] = {}
+
+
+def _remember_registration(plugin_id: str, **fields: Any) -> None:
+    with _active_lock:
+        current = _active.get(plugin_id, {})
+        current.update(fields)
+        _active[plugin_id] = current
+
+
+def _on_session_deleted(session_id: str) -> None:
+    from .state import get_state_store
+
+    get_state_store().clear_session(session_id)
+
+
+def _bind_session_cleanup(plugin_id: str) -> None:
+    """Hook chat-session deletion so SQLite snapshots do not outlive the chat."""
+    rec = None
+    with _active_lock:
+        rec = _active.get(plugin_id)
+    previous = rec.get("session_deleted_unreg") if rec else None
+    if callable(previous):
+        try:
+            previous()
+        except Exception:
+            logger.debug(
+                "[%s.genui] Failed to replace session-deleted listener",
+                plugin_id,
+                exc_info=True,
+            )
+    try:
+        from qwenpaw.app.chats.session_events import register_session_deleted
+    except Exception:
+        logger.debug(
+            "[%s.genui] session_events unavailable; skip snapshot cleanup hook",
+            plugin_id,
+            exc_info=True,
+        )
+        return
+    unreg = register_session_deleted(_on_session_deleted)
+    _remember_registration(plugin_id, session_deleted_unreg=unreg)
+
+
+def _take_registration(plugin_id: str) -> dict[str, Any] | None:
+    with _active_lock:
+        return _active.pop(plugin_id, None)
+
+
+def _remove_prompt_section(registry: Any, name: str | None) -> None:
+    """Drop a named prompt section without waiting for full plugin unload."""
+    if registry is None or not name:
+        return
+    sections = getattr(registry, "_prompt_sections", None)
+    names = getattr(registry, "_prompt_section_names", None)
+    if isinstance(sections, list):
+        sections[:] = [
+            section for section in sections if getattr(section, "name", None) != name
+        ]
+    if isinstance(names, set):
+        names.discard(name)
+
 
 def _request_gated_tool(func: Any, api: Any) -> Any:
     """Wrap a GenUI tool with a request-time feature/channel gate.
@@ -236,21 +300,31 @@ def _request_gated_tool(func: Any, api: Any) -> Any:
     return _gated
 
 
-def _has_existing_emit_ui_tool(registry: Any) -> bool:
-    """Check if emit_ui_tree is already registered by upstream/native capability."""
+def _existing_genui_tool_names(registry: Any) -> set[str]:
+    """Return GenUI tool names already registered by upstream/native code."""
+    found: set[str] = set()
     if registry is None:
-        return False
+        return found
     try:
         wm = registry.get_workspace_manager()
         if wm is None:
-            return False
+            return found
+        known = set(_GENUI_TOOL_BINDINGS)
         for ws in getattr(wm, "agents", {}).values():
             tr = getattr(getattr(ws, "plugins", None), "tool_registry", None)
-            if tr is not None and "emit_ui_tree" in tr:
-                return True
+            if tr is None:
+                continue
+            for name in known:
+                if name in tr:
+                    found.add(name)
     except Exception:
         pass
-    return False
+    return found
+
+
+def _has_existing_emit_ui_tool(registry: Any) -> bool:
+    """Backward-compatible probe used by older tests."""
+    return "emit_ui_tree" in _existing_genui_tool_names(registry)
 
 
 def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
@@ -265,6 +339,7 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
     exclude the prompt contents while keeping stable registrations visible in
     the Console.
     """
+    _bind_session_cleanup(plugin_id)
     try:
         config = get_genui_config(api)
         genui_enabled = bool(config.get("enabled", False))
@@ -278,12 +353,16 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
                 _get_current_channel(),
             )
 
-        # Tool conflict detection (REVIEW D13) — skip if upstream has it
+        # Tool conflict detection (REVIEW D13) — skip only the names
+        # already owned by upstream so list/guide/patch can still register.
         registry = getattr(api, "_registry", None)
-        if _has_existing_emit_ui_tool(registry):
-            logger.info("[%s.genui] emit_ui_tree already registered by upstream", plugin_id)
-            _register_prompt(api, plugin_id, config)
-            return
+        existing_names = _existing_genui_tool_names(registry)
+        if existing_names:
+            logger.info(
+                "[%s.genui] upstream already owns %s — skipping those names",
+                plugin_id,
+                sorted(existing_names),
+            )
 
         specs = validate_tool_bindings(
             _PLUGIN_DIR,
@@ -291,22 +370,25 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
             groups={"genui"},
         )
 
-        registered = 0
+        registered_tools: list[tuple[str, Any]] = []
         for spec in specs:
+            if spec.name in existing_names:
+                continue
             try:
+                gated = _request_gated_tool(
+                    _GENUI_TOOL_BINDINGS[spec.name],
+                    api,
+                )
                 api.register_tool(
                     tool_name=spec.name,
-                    tool_func=_request_gated_tool(
-                        _GENUI_TOOL_BINDINGS[spec.name],
-                        api,
-                    ),
+                    tool_func=gated,
                     description=spec.description,
                     icon=spec.icon,
                     enabled=spec.enabled_by_default,
                     tool_type=spec.tool_type,
                     target_param=spec.target_param,
                 )
-                registered += 1
+                registered_tools.append((spec.name, gated))
             except Exception as exc:
                 logger.error(
                     "[%s.genui] Failed to register '%s': %s",
@@ -316,23 +398,30 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
                     exc_info=True,
                 )
 
-        if registered > 0:
+        if registered_tools:
             logger.info(
                 "[%s.genui] Registered %d tool(s) (descriptor_enabled=%s, global_enabled=%s, channel='%s', "
                 "allow_actions=%s, allow_html=%s)",
                 plugin_id,
-                registered,
+                len(registered_tools),
                 all(spec.enabled_by_default for spec in specs),
                 genui_enabled,
                 _get_current_channel(),
                 config.get("allow_actions"),
                 config.get("allow_html"),
             )
-            # The prompt registration is stable; its request-time condition
-            # makes off -> on and on -> off transitions immediate.
-            _register_prompt(api, plugin_id, config)
+        elif existing_names:
+            logger.info("[%s.genui] All GenUI tools owned upstream; prompt still registered", plugin_id)
         else:
             logger.error("[%s.genui] No tools registered", plugin_id)
+            return
+        _register_prompt(api, plugin_id, config)
+        _remember_registration(
+            plugin_id,
+            api=api,
+            tools=registered_tools,
+            prompt_name=f"{plugin_id}.genui_guide",
+        )
     except Exception as exc:
         logger.error(
             "[%s.genui] Registration failed: %s",
@@ -382,10 +471,47 @@ def _sync_all_agent_tool_configs() -> None:
 def dispose_genui(plugin_id: str = "ugsci") -> None:
     """Clean up GenUI registrations when UGSci plugin is unloaded.
 
-    This is called from UGSciPlugin's lifecycle hook to ensure GenUI
-    tools and prompt sections are properly disposed.
+    Unbridges request-gated tools, drops the prompt section, and closes the
+    process-local snapshot store. Safe to call more than once.
     """
     logger.info("[%s.genui] Disposing GenUI registrations", plugin_id)
+    rec = _take_registration(plugin_id)
+    if rec:
+        unreg = rec.get("session_deleted_unreg")
+        if callable(unreg):
+            try:
+                unreg()
+            except Exception:
+                logger.debug(
+                    "[%s.genui] Failed to drop session-deleted listener",
+                    plugin_id,
+                    exc_info=True,
+                )
+        api = rec.get("api")
+        registry = getattr(api, "_registry", None) if api is not None else None
+        try:
+            from qwenpaw.plugins.api import _unbridge_from_runtime
+        except Exception:  # pragma: no cover - import guard
+            _unbridge_from_runtime = None
+        if _unbridge_from_runtime is not None:
+            for name, func in rec.get("tools") or []:
+                try:
+                    _unbridge_from_runtime(name, func, registry)
+                except Exception:
+                    logger.debug(
+                        "[%s.genui] Failed to unbridge '%s'",
+                        plugin_id,
+                        name,
+                        exc_info=True,
+                    )
+        try:
+            _remove_prompt_section(registry, rec.get("prompt_name"))
+        except Exception:
+            logger.debug(
+                "[%s.genui] Failed to remove prompt section",
+                plugin_id,
+                exc_info=True,
+            )
     from .state import dispose_state_store
     dispose_state_store()
 

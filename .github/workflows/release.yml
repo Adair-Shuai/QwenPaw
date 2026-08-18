@@ -1027,6 +1027,8 @@ jobs:
 
           entries="${RUNNER_TEMP}/release-mutable-entries.tsv"
           : > "$entries"
+          python -c 'from pathlib import Path; import json,re; text=Path("src/qwenpaw/__version__.py").read_text(encoding="utf-8"); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", text); assert m, "could not read __version__"; Path("ugsci-core-latest.json").write_text(json.dumps({"version": m.group(1)}, indent=2)+"\n", encoding="utf-8")'
+          printf '%s\t%s\t%s\n' 'ugsci-core-latest.json' 'metadata/ugsci-core-latest.json' 'public, max-age=60, must-revalidate' >> "$entries"
           printf '%s\t%s\t%s\n' 'prepared-plugin-index.json' 'metadata/plugins/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
           printf '%s\t%s\t%s\n' 'main-index.json' 'metadata/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
           for pointer in "${component_pointers[@]}"; do

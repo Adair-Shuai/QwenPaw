@@ -525,6 +525,7 @@ export default defineConfig(({ command, mode }) => {
           __dirname,
           "../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui",
         ),
+        "html-to-image": path.resolve(__dirname, "src/test/htmlToImageStub.ts"),
         // Preserve vendor deep imports before aliasing the package entrypoint.
         "@agentscope-ai/chat/lib": path.resolve(
           __dirname,

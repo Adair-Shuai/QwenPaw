@@ -128,6 +128,7 @@ describe("UPDATE_MD", () => {
     for (const [, md] of Object.entries(UPDATE_MD)) {
       expect(typeof md).toBe("string");
       expect(md.length).toBeGreaterThan(0);
+      expect(md).not.toMatch(/docker pull agentscope\/qwenpaw/);
     }
   });
 });

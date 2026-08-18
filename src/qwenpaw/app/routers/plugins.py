@@ -25,6 +25,10 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..utils import schedule_agent_reload
+from ...distribution import (
+    EXTERNAL_PLUGIN_UPGRADE_HOSTS,
+    upgrade_source_requires_digest,
+)
 from ...plugins.runtime import invoke_plugin_callback
 from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
 
@@ -32,10 +36,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/plugins", tags=["plugins"])
 
-_EXTERNAL_PLUGIN_UPGRADE_HOSTS = {
-    "download.qwenpaw.agentscope.io",
-    "platform.agentscope.io",
-}
+# Upstream catalogs plus the UGSci-download OSS host (fork endpoint set).
+_EXTERNAL_PLUGIN_UPGRADE_HOSTS = EXTERNAL_PLUGIN_UPGRADE_HOSTS
 _PLUGIN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _PLUGIN_UPGRADE_MAX_ARCHIVE_BYTES = 256 * 1024 * 1024
 _PLUGIN_UPGRADE_MAX_EXTRACTED_BYTES = 512 * 1024 * 1024
@@ -1007,6 +1009,11 @@ async def replace_installed_plugin(
         raise HTTPException(
             status_code=400,
             detail="Invalid plugin archive SHA256",
+        )
+    if upgrade_source_requires_digest(source) and not expected_sha256:
+        raise HTTPException(
+            status_code=400,
+            detail="UGSci plugin upgrades require a SHA256 digest",
         )
 
     from ...config.utils import get_plugins_dir

@@ -170,6 +170,20 @@ class TestLRUEviction:
         assert store.get("s1", snap2.ui_id) is None  # LRU, evicted
 
 
+# ─── Session cleanup ────────────────────────────────────────────────────────
+
+
+class TestClearSession:
+    def test_clear_session_removes_only_that_session(self) -> None:
+        store = GenUiStateStore()
+        tree = {"kind": "Stack", "children": []}
+        keep = store.create(session_id="keep", tree=tree)
+        gone = store.create(session_id="gone", tree=tree)
+        store.clear_session("gone")
+        assert store.get("keep", keep.ui_id) is not None
+        assert store.get("gone", gone.ui_id) is None
+
+
 # ─── get_state_store Singleton ─────────────────────────────────────────────
 
 

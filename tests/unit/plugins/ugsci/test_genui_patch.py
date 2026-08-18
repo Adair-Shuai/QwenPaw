@@ -32,7 +32,6 @@ from qwenpaw.plugins_bundle.ugsci.genui.tools import (
     emit_ui_tree,
 )
 
-
 # ─── helpers ────────────────────────────────────────────────────────────────
 
 
@@ -377,6 +376,135 @@ class TestStateStoreApplyPatch:
         with pytest.raises(ValueError, match="revision conflict"):
             store.apply_patch("s1", snap.ui_id, 1, patches)
 
+    def test_patch_adding_open_url_rejected_by_default(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Patch re-validation must use the emit allowlist (F15)."""
+        target = (
+            "qwenpaw.plugins_bundle.ugsci.genui.emit_core."
+            "resolve_allow_actions"
+        )
+        monkeypatch.setattr(
+            target,
+            lambda: ["send_message", "submit_form"],
+        )
+        store = GenUiStateStore()
+        snap = store.create(session_id="s1", tree=_simple_tree())
+        patches = [
+            {
+                "op": "add",
+                "path": "/root/children/-",
+                "value": {
+                    "kind": "Button",
+                    "props": {
+                        "label": "Go",
+                        "action": {
+                            "type": "open_url",
+                            "payload": {"url": "https://example.com"},
+                        },
+                    },
+                    "children": [],
+                },
+            },
+        ]
+        with pytest.raises(ValueError, match="open_url"):
+            store.apply_patch("s1", snap.ui_id, 1, patches)
+
+    def test_patch_adding_send_message_allowed(self) -> None:
+        store = GenUiStateStore()
+        snap = store.create(session_id="s1", tree=_simple_tree())
+        patches = [
+            {
+                "op": "add",
+                "path": "/root/children/-",
+                "value": {
+                    "kind": "Button",
+                    "props": {
+                        "label": "Ask",
+                        "action": {
+                            "type": "send_message",
+                            "payload": {"text": "hello"},
+                        },
+                    },
+                    "children": [],
+                },
+            },
+        ]
+        new_snap = store.apply_patch("s1", snap.ui_id, 1, patches)
+        assert (
+            new_snap.tree["root"]["children"][2]["props"]["action"]["type"]
+            == "send_message"
+        )
+
+    def test_patch_open_url_allowed_when_explicitly_passed(self) -> None:
+        store = GenUiStateStore()
+        snap = store.create(session_id="s1", tree=_simple_tree())
+        patches = [
+            {
+                "op": "add",
+                "path": "/root/children/-",
+                "value": {
+                    "kind": "Button",
+                    "props": {
+                        "label": "Go",
+                        "action": {
+                            "type": "open_url",
+                            "payload": {"url": "https://example.com"},
+                        },
+                    },
+                    "children": [],
+                },
+            },
+        ]
+        new_snap = store.apply_patch(
+            "s1",
+            snap.ui_id,
+            1,
+            patches,
+            allow_actions=["send_message", "open_url"],
+        )
+        assert (
+            new_snap.tree["root"]["children"][2]["props"]["action"]["type"]
+            == "open_url"
+        )
+
+    def test_patch_file_input_gated_unless_allowed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        target = (
+            "qwenpaw.plugins_bundle.ugsci.genui.emit_core."
+            "resolve_allow_file_input"
+        )
+        monkeypatch.setattr(
+            target,
+            lambda: False,
+        )
+        store = GenUiStateStore()
+        snap = store.create(session_id="s1", tree=_simple_tree())
+        patches = [
+            {
+                "op": "add",
+                "path": "/root/children/-",
+                "value": {
+                    "kind": "FileInput",
+                    "props": {"label": "Upload"},
+                    "children": [],
+                },
+            },
+        ]
+        with pytest.raises(ValueError, match="FileInput"):
+            store.apply_patch("s1", snap.ui_id, 1, patches)
+        new_snap = store.apply_patch(
+            "s1",
+            snap.ui_id,
+            1,
+            patches,
+            allow_file_input=True,
+        )
+        assert new_snap.tree["root"]["children"][2]["kind"] == "FileInput"
+
 
 # ─── emit_ui_patch tool ─────────────────────────────────────────────────────
 
@@ -585,3 +713,51 @@ class TestEmitUiPatchErrors:
         data = _extract_json(chunk)
         assert data["ok"] is False
         assert data["error_code"] == "patch_failed"
+
+    def test_patch_adding_open_url_rejected(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """emit_ui_patch must not bypass emit's action allowlist."""
+        deny = lambda: ["send_message", "submit_form"]
+        emit_target = (
+            "qwenpaw.plugins_bundle.ugsci.genui.emit_core."
+            "resolve_allow_actions"
+        )
+        monkeypatch.setattr(
+            emit_target,
+            deny,
+        )
+        monkeypatch.setattr(
+            "qwenpaw.plugins_bundle.ugsci.genui.tools.resolve_allow_actions",
+            deny,
+        )
+        ui_id = _emit_and_get_ui_id()
+        patch_payload = json.dumps(
+            {
+                "ui_id": ui_id,
+                "base_revision": 1,
+                "patches": [
+                    {
+                        "op": "add",
+                        "path": "/root/children/-",
+                        "value": {
+                            "kind": "Button",
+                            "props": {
+                                "label": "Go",
+                                "action": {
+                                    "type": "open_url",
+                                    "payload": {"url": "https://example.com"},
+                                },
+                            },
+                            "children": [],
+                        },
+                    },
+                ],
+            },
+        )
+        chunk = emit_ui_patch(patch_payload)
+        data = _extract_json(chunk)
+        assert data["ok"] is False
+        assert data["error_code"] == "patch_failed"
+        assert "open_url" in data.get("message", "")

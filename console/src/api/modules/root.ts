@@ -7,4 +7,6 @@ export const rootApi = {
     request<{ version: string }>("/version", { signal }),
   getLatestDesktopVersion: (signal?: AbortSignal) =>
     request<{ version: string }>("/version/latest", { signal }),
+  getLatestCoreVersion: (signal?: AbortSignal) =>
+    request<{ version: string }>("/version/latest-core", { signal }),
 };

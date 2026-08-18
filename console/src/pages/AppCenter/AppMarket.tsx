@@ -36,9 +36,9 @@ import {
   fetchUGSciPluginCatalog,
   installPlugin,
   replaceInstalledPlugin,
+  upgradeInstalledUGSciPlugin,
   type OfficialPluginCatalogEntry,
 } from "@/api/modules/plugin";
-import { api } from "@/api";
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 import styles from "./index.module.less";
@@ -304,13 +304,33 @@ export function AppMarket({
 
       try {
         if (entry.installed) {
-          if (entry.catalog_channel === "ugsci") {
-            const result = await api.queueComponentUpdate(entry.plugin_id!);
-            if (!result.queued) {
-              message.info(tRef.current("pluginManager.catalogLatest"));
-              return;
+          if (entry.catalog_channel === "ugsci" && entry.plugin_id) {
+            const result = await upgradeInstalledUGSciPlugin({
+              plugin_id: entry.plugin_id,
+              version: entry.version,
+              install_url: entry.install_url,
+              sha256: entry.sha256,
+              upgrade_available: entry.upgrade_available,
+            });
+            if (result.method === "queued") {
+              message.success({
+                content: tRef.current("pluginManager.ugsciUpgradeQueued"),
+                key: loadingKey,
+              });
+            } else if (result.method === "replaced") {
+              message.success({
+                content: tRef.current("pluginManager.externalUpgradeReady", {
+                  version: result.version,
+                }),
+                key: loadingKey,
+              });
+              await onInstalled();
+            } else {
+              message.info({
+                content: tRef.current("pluginManager.catalogLatest"),
+                key: loadingKey,
+              });
             }
-            message.success(tRef.current("pluginManager.ugsciUpgradeQueued"));
             return;
           }
           if (
@@ -319,7 +339,10 @@ export function AppMarket({
             entry.plugin_id
           ) {
             if (!entry.upgrade_available) {
-              message.info(tRef.current("pluginManager.catalogLatest"));
+              message.info({
+                content: tRef.current("pluginManager.catalogLatest"),
+                key: loadingKey,
+              });
               return;
             }
             const result = await replaceInstalledPlugin({
@@ -328,15 +351,19 @@ export function AppMarket({
               version: entry.version,
               sha256: entry.sha256,
             });
-            message.success(
-              tRef.current("pluginManager.externalUpgradeReady", {
+            message.success({
+              content: tRef.current("pluginManager.externalUpgradeReady", {
                 version: result.version,
               }),
-            );
+              key: loadingKey,
+            });
             await onInstalled();
             return;
           }
-          message.info(tRef.current("pluginManager.catalogLatest"));
+          message.info({
+            content: tRef.current("pluginManager.catalogLatest"),
+            key: loadingKey,
+          });
           return;
         }
         const result = await installPlugin(

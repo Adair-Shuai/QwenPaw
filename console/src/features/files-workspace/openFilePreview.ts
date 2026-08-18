@@ -11,6 +11,11 @@ export interface OpenFilePreviewDetail {
   trigger?: HTMLElement | null;
 }
 
+export interface UpdateFilePreviewDetail {
+  id: string;
+  patch: Partial<WorkspaceArtifact>;
+}
+
 /** Convert local file URLs/paths into an authenticated backend preview URL. */
 export function normalizeArtifactUrl(url?: string): string | undefined {
   if (!url) return undefined;
@@ -44,6 +49,18 @@ export function openFilePreview(
   );
 }
 
+function previewPathForArtifact(artifact: WorkspaceArtifact): string {
+  const raw = artifact.workspacePath || artifact.title;
+  const extension = artifact.extension?.replace(/^\./, "");
+  if (
+    extension &&
+    !raw.toLowerCase().endsWith(`.${extension.toLowerCase()}`)
+  ) {
+    return `${raw}.${extension}`;
+  }
+  return raw;
+}
+
 export function artifactToFileTarget(artifact: WorkspaceArtifact): FileTarget {
   const normalizedArtifact = {
     ...artifact,
@@ -51,7 +68,7 @@ export function artifactToFileTarget(artifact: WorkspaceArtifact): FileTarget {
   };
   return {
     source: "artifact",
-    path: normalizedArtifact.workspacePath || normalizedArtifact.title,
+    path: previewPathForArtifact(normalizedArtifact),
     root: normalizedArtifact.workspaceRoot,
     artifactUrl: normalizedArtifact.binaryUrl,
     artifact: normalizedArtifact,
@@ -70,6 +87,8 @@ export function updateArtifactPreview(
   patch: Partial<WorkspaceArtifact>,
 ): void {
   window.dispatchEvent(
-    new CustomEvent(UPDATE_FILE_PREVIEW_EVENT, { detail: { id, patch } }),
+    new CustomEvent<UpdateFilePreviewDetail>(UPDATE_FILE_PREVIEW_EVENT, {
+      detail: { id, patch },
+    }),
   );
 }

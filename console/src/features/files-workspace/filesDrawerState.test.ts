@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { CLOSED_FILES_DRAWER, filesDrawerReducer } from "./filesDrawerState";
+import {
+  CLOSED_FILES_DRAWER,
+  filesDrawerReducer,
+  headerWorkspaceToggleEvent,
+} from "./filesDrawerState";
 
 const target = { source: "workspace" as const, path: "src/app.py" };
 
@@ -83,5 +87,36 @@ describe("filesDrawerReducer", () => {
     expect(filesDrawerReducer(workspace, { type: "CLOSE" })).toEqual(
       CLOSED_FILES_DRAWER,
     );
+  });
+});
+
+describe("headerWorkspaceToggleEvent", () => {
+  it("opens an empty workspace from the header when closed", () => {
+    expect(headerWorkspaceToggleEvent(CLOSED_FILES_DRAWER)).toEqual({
+      type: "OPEN_WORKSPACE",
+      trigger: null,
+    });
+  });
+
+  it("closes Preview from the header instead of expanding a file tree", () => {
+    const preview = {
+      kind: "preview" as const,
+      target,
+      trigger: null,
+    };
+    expect(headerWorkspaceToggleEvent(preview)).toEqual({ type: "CLOSE" });
+    expect(
+      filesDrawerReducer(preview, headerWorkspaceToggleEvent(preview)),
+    ).toEqual(CLOSED_FILES_DRAWER);
+  });
+
+  it("closes the expanded workspace", () => {
+    expect(
+      headerWorkspaceToggleEvent({
+        kind: "workspace",
+        target,
+        trigger: null,
+      }),
+    ).toEqual({ type: "CLOSE" });
   });
 });

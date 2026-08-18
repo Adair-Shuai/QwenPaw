@@ -45,6 +45,9 @@ vi.mock("../api", () => ({
     getLatestDesktopVersion: vi.fn().mockResolvedValue({
       version: "2.1.1b7",
     }),
+    getLatestCoreVersion: vi.fn().mockResolvedValue({
+      version: "2.1.1b7",
+    }),
   },
 }));
 vi.mock("../plugins/registry/Slot", () => ({

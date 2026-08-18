@@ -18,6 +18,7 @@ import * as React from "react";
 import {
   GenUiStoreProvider,
   useGenUiStore,
+  useGenUiSnapshots,
   resetGenUiStore,
 } from "@genui-src/stores/genUi";
 import type {
@@ -511,5 +512,37 @@ describe("multiple trees isolation", () => {
       }
     });
     expect(Object.keys(storeState!.snapshots)).toHaveLength(256);
+  });
+});
+
+// ─── per-ui_id subscription (F17) ───────────────────────────────────────────
+
+describe("useGenUiSnapshots", () => {
+  it("does not re-render when an unrelated ui_id changes", () => {
+    let renders = 0;
+    function Selector() {
+      useGenUiSnapshots("s1", ["ui_keep"]);
+      renders += 1;
+      return React.createElement("div");
+    }
+
+    render(
+      React.createElement(
+        GenUiStoreProvider,
+        null,
+        React.createElement(Selector),
+        React.createElement(TestConsumer),
+      ),
+    );
+
+    act(() => {
+      storeState!.setSnapshot(makeSnapshot("s1", "ui_keep", 1, "keep"));
+    });
+    const afterOwn = renders;
+
+    act(() => {
+      storeState!.setSnapshot(makeSnapshot("s1", "ui_other", 1, "other"));
+    });
+    expect(renders).toBe(afterOwn);
   });
 });

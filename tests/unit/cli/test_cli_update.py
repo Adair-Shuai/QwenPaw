@@ -20,11 +20,25 @@ from qwenpaw.cli.update_cmd import (
     _is_newer_version,
     _probe_service,
     _detect_source_type,
+    _require_self_hosted_core_index,
     _run_update_worker_detached,
     _run_update_worker_foreground,
     _select_latest_version,
     run_update_worker,
 )
+
+
+@pytest.fixture(autouse=True)
+def _allow_core_install_in_unit_tests(request, monkeypatch) -> None:
+    if request.node.get_closest_marker("refuse_upstream_core"):
+        return
+    from qwenpaw.cli import update_cmd as update_cmd_module
+
+    monkeypatch.setattr(
+        update_cmd_module,
+        "_require_self_hosted_core_index",
+        lambda: None,
+    )
 
 
 def _install_info(
@@ -207,6 +221,35 @@ def test_detect_installation(
     assert result.environment_root == expected_environment_root
     assert result.environment_kind == "virtualenv"
     assert result.package_dir == expected_package_dir
+
+
+@pytest.mark.refuse_upstream_core
+def test_update_refuses_public_pypi_qwenpaw_overwrite(monkeypatch) -> None:
+    from qwenpaw.cli import update_cmd as update_cmd_module
+
+    monkeypatch.setattr(
+        update_cmd_module,
+        "_detect_installation",
+        _install_info,
+    )
+    monkeypatch.setattr(
+        update_cmd_module,
+        "_fetch_latest_version",
+        lambda **_: "9.9.9",
+    )
+
+    result = CliRunner().invoke(cli, ["update", "--yes"])
+
+    assert result.exit_code != 0
+    assert "Refusing to upgrade the UGSci core" in result.output
+    assert "public PyPI package 'qwenpaw'" in result.output
+
+
+def test_require_self_hosted_core_index_blocks_default_source() -> None:
+    import click
+
+    with pytest.raises(click.ClickException, match="public PyPI package"):
+        _require_self_hosted_core_index()
 
 
 def test_update_reports_up_to_date(monkeypatch) -> None:

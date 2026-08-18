@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ...adapter.tool_output import register_tool_artifact
-from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_tree
+from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_ui
 from ..base import WorkflowNode
 
 _MESH_MIMES = frozenset(
@@ -91,7 +91,7 @@ class LoadMesh3DNode(WorkflowNode):
 
         return NodeOutput(
             values=(ref.to_dict(), ref.src or "", True),
-            ui={"gen_ui": to_gen_ui_tree([ref], title="Loaded mesh")},
+            ui=to_gen_ui_ui([ref], title="Loaded mesh"),
             metadata={"kind": "model3d", "file_id": ref.file_id},
         )
 

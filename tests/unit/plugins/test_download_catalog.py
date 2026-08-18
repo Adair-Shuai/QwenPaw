@@ -3,7 +3,10 @@
 
 from __future__ import annotations
 
-from qwenpaw.plugins.download_catalog import _is_entry_compatible
+from qwenpaw.plugins.download_catalog import (
+    _catalog_channel,
+    _is_entry_compatible,
+)
 
 
 def test_entry_with_qwenpaw_version_compatible() -> None:
@@ -128,3 +131,15 @@ def test_entry_with_empty_dict_qwenpaw_version() -> None:
     # still pass through PluginManifest validation or fallback gracefully
     result = _is_entry_compatible(entry)
     assert isinstance(result, bool)
+
+
+def test_catalog_channel_defaults_ugsci_oss_rows() -> None:
+    assert _catalog_channel(author="QwenPaw Team", channel="") == "ugsci"
+    assert _catalog_channel(author="UGSci Team", channel="") == "ugsci"
+    assert _catalog_channel(author="Someone", channel="ugsci") == "ugsci"
+    assert _catalog_channel(author="Someone", channel="community") == (
+        "community"
+    )
+    assert _catalog_channel(author="UGSci Team", channel="community") == (
+        "community"
+    )

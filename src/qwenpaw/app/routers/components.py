@@ -42,7 +42,10 @@ async def install_all_component_updates():
     try:
         return await asyncio.to_thread(queue_all_component_updates)
     except ComponentUpdateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": str(exc)},
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=502,
@@ -58,7 +61,10 @@ async def install_component_update(component: str):
     try:
         return await asyncio.to_thread(queue_component_update, component)
     except ComponentUpdateError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": exc.reason, "message": str(exc)},
+        ) from exc
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=502,

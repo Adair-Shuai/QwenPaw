@@ -21,6 +21,13 @@ from packaging.version import InvalidVersion, Version
 from ..__version__ import __version__
 from ..constant import WORKING_DIR
 from ..config.utils import read_last_api
+from .. import distribution as _distribution
+from ..distribution import (
+    CORE_UPDATE_MANIFEST_URL,
+    PIP_INDEX_URL,
+    PYPI_JSON_URL,
+    PYPI_PACKAGE_NAME,
+)
 from .process_utils import (
     _base_url,
     _candidate_hosts,
@@ -29,7 +36,7 @@ from .process_utils import (
     _process_table,
 )
 
-_PYPI_JSON_URL = "https://pypi.org/pypi/qwenpaw/json"
+_PYPI_JSON_URL = PYPI_JSON_URL
 
 
 def _subprocess_text_kwargs() -> dict[str, Any]:
@@ -148,12 +155,61 @@ def _select_latest_version(
     return str(max(candidates))
 
 
+def _fetch_core_manifest_version() -> str:
+    """Read the fork's core version advertisement from OSS."""
+    try:
+        resp = httpx.get(
+            CORE_UPDATE_MANIFEST_URL,
+            timeout=10.0,
+            headers={"Accept": "application/json"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as exc:
+        raise click.ClickException(
+            "Failed to fetch the latest UGSci core version: " f"{exc}",
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise click.ClickException(
+            "Received an invalid UGSci core version manifest: " f"{exc}",
+        ) from exc
+    if not isinstance(data, dict):
+        raise click.ClickException(
+            "Received an invalid UGSci core version manifest.",
+        )
+    version = str(data.get("version") or "").strip()
+    if not version:
+        raise click.ClickException(
+            "UGSci core version manifest is missing a version field.",
+        )
+    return version
+
+
 def _fetch_latest_version(*, include_prerelease: bool = False) -> str:
-    """Fetch the latest published QwenPaw version from PyPI."""
-    data = _fetch_pypi_release_data()
-    return _select_latest_version(
-        data,
-        include_prerelease=include_prerelease,
+    """Fetch the latest published core version.
+
+    Self-hosted indexes use their JSON API.  The default path reads the
+    UGSci core OSS manifest and never falls back to public PyPI ``qwenpaw``.
+    """
+    if PYPI_JSON_URL and not _distribution.is_unsafe_upstream_core_update():
+        data = _fetch_pypi_release_data()
+        return _select_latest_version(
+            data,
+            include_prerelease=include_prerelease,
+        )
+    return _fetch_core_manifest_version()
+
+
+def _require_self_hosted_core_index() -> None:
+    """Refuse a pip upgrade that would install upstream public ``qwenpaw``."""
+    if not _distribution.is_unsafe_upstream_core_update():
+        return
+    raise click.ClickException(
+        "Refusing to upgrade the UGSci core from public PyPI package "
+        "'qwenpaw' (that is the upstream QwenPaw project). "
+        "Use the desktop in-app updater, update from source, or set both "
+        "QWENPAW_PYPI_JSON_URL and QWENPAW_PIP_INDEX_URL to a self-hosted "
+        "index that serves this fork.",
     )
 
 
@@ -177,7 +233,7 @@ def _detect_source_type(
 
 def _detect_installation() -> InstallInfo:
     """Inspect the current Python environment and installation style."""
-    dist = metadata.distribution("qwenpaw")
+    dist = metadata.distribution(PYPI_PACKAGE_NAME)
     # if installed through uv, installer will be `uv`
     installer = (dist.read_text("INSTALLER") or "pip").strip() or "pip"
 
@@ -392,7 +448,8 @@ def _build_upgrade_command(
     include_prerelease: bool = False,
 ) -> tuple[list[str], str]:
     """Build the installer command used by the detached update worker."""
-    package_spec = f"qwenpaw=={latest_version}"
+    package_spec = f"{PYPI_PACKAGE_NAME}=={latest_version}"
+    index_args = ["--index-url", PIP_INDEX_URL] if PIP_INDEX_URL else []
     installer = info.installer.lower()
     if installer.startswith("uv") and shutil.which("uv"):
         command = [
@@ -403,6 +460,7 @@ def _build_upgrade_command(
             info.python_executable,
             "--upgrade",
             package_spec,
+            *index_args,
         ]
         if include_prerelease:
             command.append("--prerelease=allow")
@@ -416,6 +474,7 @@ def _build_upgrade_command(
             "--upgrade",
             package_spec,
             "--disable-pip-version-check",
+            *index_args,
         ],
         "pip",
     )
@@ -693,6 +752,9 @@ def update_cmd(ctx: click.Context, yes: bool, prerelease: bool) -> None:
     if version_check is False:
         click.echo("QwenPaw is already up to date.")
         return
+
+    # Refuse before shutting down a running service or spawning pip.
+    _require_self_hosted_core_index()
 
     if not _confirm_source_override(info, yes):
         click.echo("Cancelled.")

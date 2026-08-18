@@ -102,12 +102,14 @@ import {
   parseInternalFileLink,
   rootForFileReference,
 } from "../../features/files-workspace/internalFileLinks";
+import { headerWorkspaceToggleEvent } from "../../features/files-workspace/filesDrawerState";
 import type {
   FilesDrawerEvent,
   FileTarget,
 } from "../../features/files-workspace/types";
 import {
   OPEN_FILE_PREVIEW_EVENT,
+  openArtifactPreview,
   type OpenFilePreviewDetail,
 } from "../../features/files-workspace/openFilePreview";
 import { chatProjectDirectoryApi } from "../../api/modules/chatProjectDirectory";
@@ -181,6 +183,7 @@ import {
   copyText,
   extractCopyableText,
   buildWorkspaceMarkdown,
+  summarizeReplyFilename,
   buildModelError,
   normalizeContentUrls,
   extractUserMessageText,
@@ -1587,14 +1590,10 @@ export default function ChatPage() {
       return false;
     }
   });
-  const workspacePanelOpen = useWorkspaceStore((state) => state.panelOpen);
-  const toggleWorkspacePanel = useCallback(() => {
-    const workspace = useWorkspaceStore.getState();
-    if (!workspace.panelOpen && filesDrawerState.kind !== "closed") {
-      dispatchFilesDrawer({ type: "CLOSE" });
-    }
-    workspace.togglePanel();
-  }, [dispatchFilesDrawer, filesDrawerState.kind]);
+  const filesWorkspaceOpen = filesDrawerState.kind !== "closed";
+  const toggleFilesWorkspace = useCallback(() => {
+    dispatchFilesDrawer(headerWorkspaceToggleEvent(filesDrawerState));
+  }, [dispatchFilesDrawer, filesDrawerState]);
   const toggleHistoryPanel = useCallback(() => {
     setHistoryPanelOpen((prev) => {
       const next = !prev;
@@ -2421,6 +2420,12 @@ export default function ChatPage() {
       );
       useCodingTabsStore.getState().removeScope(removedScopeKey);
       useFilesSurfaceStore.getState().removeSession(removedScopeKey);
+      try {
+        (window as { QwenPaw?: { genui?: { clearSession?: (id: string) => void } } })
+          .QwenPaw?.genui?.clearSession?.(removedId);
+      } catch {
+        // GenUI is optional; session delete must still succeed.
+      }
     };
 
     sessionApi.onSessionSelected = (
@@ -2607,12 +2612,13 @@ export default function ChatPage() {
     (response: CopyableResponse) => {
       const text = buildWorkspaceMarkdown(response);
       if (!text) return;
-      if (filesDrawerState.kind !== "closed") {
-        dispatchFilesDrawer({ type: "CLOSE" });
-      }
-      useWorkspaceStore.getState().openArtifact({
-        id: `response-${workspaceSessionKey}-${Date.now()}`,
-        title: t("workspace.assistantResponse", "AI 回复"),
+      const title = summarizeReplyFilename(
+        text,
+        t("workspace.assistantResponse", "AI 回复"),
+      );
+      openArtifactPreview({
+        id: `response-${workspaceSessionKey}-${title}`,
+        title,
         mimeType: "text/markdown",
         extension: "md",
         textContent: text,
@@ -2626,8 +2632,6 @@ export default function ChatPage() {
     },
     [
       backendChatId,
-      dispatchFilesDrawer,
-      filesDrawerState.kind,
       pendingProjectDir,
       selectedAgent,
       t,
@@ -2925,7 +2929,6 @@ export default function ChatPage() {
     [multimodalCaps, t, usesQwenPawBackend],
   );
 
-  const compactSender = filesDrawerState.kind === "workspace";
   const chatMessagesAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -3296,8 +3299,8 @@ export default function ChatPage() {
               <HarnessModelSelector providerId={selectedAgentBackend} />
             ) : null}
             <ChatActionGroup
-              onToggleWorkspace={toggleWorkspacePanel}
-              workspaceOpen={workspacePanelOpen}
+              onToggleWorkspace={toggleFilesWorkspace}
+              workspaceOpen={filesWorkspaceOpen}
               onToggleHistory={
                 effectiveIsFullMode ? toggleHistoryPanel : undefined
               }
@@ -3378,11 +3381,7 @@ export default function ChatPage() {
           </>
         ),
         actionAffix: (
-          <span
-            className={`${styles.senderActionAffix} ${
-              compactSender ? styles.compactSenderAffix : ""
-            }`}
-          >
+          <span className={styles.senderActionAffix}>
             {(usesQwenPawBackend || backendCapabilities?.context_usage) && (
               <ContextUsageIndicator
                 onCompact={handleCompactCommand}
@@ -3390,16 +3389,12 @@ export default function ChatPage() {
               />
             )}
             {usesQwenPawBackend && (
-              <SessionProjectDirectory
-                scope={sessionScope}
-                compact={compactSender}
-              />
+              <SessionProjectDirectory scope={sessionScope} />
             )}
             {usesQwenPawBackend ? (
               <ApprovalLevelToggle
                 sessionId={queueSessionId}
                 runningConfigApprovalLevel={runningConfigApprovalLevel}
-                compact={compactSender}
                 onChange={(sessionOverride) => {
                   sessionApprovalLevelRef.current = sessionOverride;
                 }}
@@ -3712,10 +3707,9 @@ export default function ChatPage() {
     toggleHistoryPanel,
     handleCompactCommand,
     handleNewCommand,
-    compactSender,
     sessionScope,
-    workspacePanelOpen,
-    toggleWorkspacePanel,
+    filesWorkspaceOpen,
+    toggleFilesWorkspace,
     openResponseInWorkspace,
     isOwner,
     bgTaskCount,
@@ -3724,11 +3718,7 @@ export default function ChatPage() {
   ]);
 
   const filesDrawerClass =
-    filesDrawerState.kind === "closed"
-      ? ""
-      : filesDrawerState.kind === "preview"
-      ? styles.filesPreviewOpen
-      : styles.filesWorkspaceOpen;
+    filesDrawerState.kind === "closed" ? "" : styles.filesPreviewOpen;
 
   return (
     <div

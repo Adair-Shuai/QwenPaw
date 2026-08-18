@@ -46,3 +46,13 @@ export function filesDrawerReducer(
       return CLOSED_FILES_DRAWER;
   }
 }
+
+/** Header Appstore control: toggle the Chat file preview pane. */
+export function headerWorkspaceToggleEvent(
+  state: FilesDrawerState,
+): FilesDrawerEvent {
+  if (state.kind !== "closed") {
+    return { type: "CLOSE" };
+  }
+  return { type: "OPEN_WORKSPACE", trigger: null };
+}

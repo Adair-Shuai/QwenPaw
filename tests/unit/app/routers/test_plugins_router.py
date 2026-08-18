@@ -202,6 +202,30 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
         assert json.load(handle)["version"] == "1.0.0"
 
 
+def test_replace_installed_plugin_requires_sha256_for_ugsci_host():
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(plugin_loader=object())),
+    )
+
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(
+            plugin_router.replace_installed_plugin(
+                plugin_router.ReplacePluginRequest(
+                    source=(
+                        "https://ugsci-download.oss-cn-beijing.aliyuncs.com/"
+                        "ugsci.zip"
+                    ),
+                    plugin_id="ugsci",
+                    version="2.0.0",
+                ),
+                request,
+            ),
+        )
+
+    assert caught.value.status_code == 400
+    assert "SHA256" in caught.value.detail
+
+
 def test_replace_installed_plugin_rejects_unapproved_host():
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(plugin_loader=object())),

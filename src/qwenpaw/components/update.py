@@ -48,6 +48,22 @@ except ImportError:  # pragma: no cover - dependency is declared by the project
 class ComponentUpdateError(ValueError):
     """A component update failed validation or activation."""
 
+    reason: str = "conflict"
+
+    def __init__(
+        self,
+        message: str = "",
+        *,
+        reason: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        if reason is not None:
+            self.reason = reason
+        elif "is not managed" in message:
+            self.reason = "not_managed"
+        else:
+            self.reason = "conflict"
+
 
 def _remove_readonly(func: Any, path: str, _exc_info: Any) -> None:
     """``shutil.rmtree`` onerror handler that clears the read-only bit.
@@ -1279,11 +1295,14 @@ class ComponentUpdater:
                 # The "partial" tree is actually the live component (manifest
                 # version == running version, e.g. a hand-edited file). Leave
                 # it and the marker alone rather than deleting a running tree.
-                logger.warning(
-                    "Leaving marker on live directory component %s; its "
-                    "content differs from the signed manifest",
-                    component,
+                message = " ".join(
+                    (
+                        "Leaving marker on live directory component",
+                        f"{component}; its content differs from",
+                        "the signed manifest",
+                    ),
                 )
+                logger.warning("%s", message)
                 return
             # Partially applied candidate: discard so the version is retried.
             logger.warning(
@@ -1582,16 +1601,18 @@ class ComponentUpdater:
                 )
             raw_preserve = entry.get("preserve")
             entry["preserve"] = list(
-                ()
-                if self.is_directory_component(component)
-                and raw_preserve == []
-                else _normalize_preserve_paths(
-                    raw_preserve,
-                    default=(
-                        ()
-                        if self.is_directory_component(component)
-                        else DEFAULT_PRESERVE_PATHS
-                    ),
+                (
+                    ()
+                    if self.is_directory_component(component)
+                    and raw_preserve == []
+                    else _normalize_preserve_paths(
+                        raw_preserve,
+                        default=(
+                            ()
+                            if self.is_directory_component(component)
+                            else DEFAULT_PRESERVE_PATHS
+                        ),
+                    )
                 ),
             )
             migration = entry.get("migration")

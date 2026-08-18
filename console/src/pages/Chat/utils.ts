@@ -208,6 +208,40 @@ export function buildWorkspaceMarkdown(response: CopyableResponse): string {
   return sections.join("\n\n---\n\n").trim();
 }
 
+const REPLY_FILENAME_MAX_STEM = 32;
+const REPLY_FILENAME_INVALID_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g;
+
+function truncateFilenameStem(text: string, maxChars: number): string {
+  const chars = Array.from(text);
+  if (chars.length <= maxChars) return text;
+  return chars.slice(0, maxChars).join("").replace(/[. ]+$/g, "");
+}
+
+/** First meaningful line of a reply, safe as a default `*.md` stem. */
+export function summarizeReplyFilename(
+  markdown: string,
+  fallback = "AI 回复",
+): string {
+  const withoutFences = markdown.replace(/```[\s\S]*?```/g, "\n");
+  for (const raw of withoutFences.split(/\r?\n/)) {
+    let line = raw.trim();
+    if (!line || line.startsWith(">") || /^[-*_]{3,}$/.test(line)) continue;
+    line = line
+      .replace(/^#{1,6}\s+/, "")
+      .replace(/^[-*+]\s+/, "")
+      .replace(/^\d+\.\s+/, "")
+      .replace(/\[([^\]]+)\]\([^)]*\)/g, "$1")
+      .replace(/[*_`~]/g, "")
+      .replace(REPLY_FILENAME_INVALID_CHARS, " ")
+      .replace(/\s+/g, " ")
+      .replace(/[. ]+$/g, "")
+      .trim();
+    if (!line) continue;
+    return truncateFilenameStem(line, REPLY_FILENAME_MAX_STEM) || fallback;
+  }
+  return fallback;
+}
+
 /** Extract plain text from user message content. */
 export function extractUserMessageText(m: any): string {
   if (typeof m.content === "string") return m.content;

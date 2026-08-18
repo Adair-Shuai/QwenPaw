@@ -24,7 +24,7 @@ from ...io import (
     MediaRef,
     NodeOutput,
     Schema,
-    to_gen_ui_tree,
+    to_gen_ui_ui,
 )
 
 from ..base import WorkflowNode
@@ -122,7 +122,7 @@ class AssetExportNode(WorkflowNode):
 
         ui = None
         if refs:
-            ui = {"gen_ui": to_gen_ui_tree(refs, title=f"Game asset: {name}")}
+            ui = to_gen_ui_ui(refs, title=f"Game asset: {name}")
 
         bundle_url = (bundle or {}).get("url") or ""
         logger.info(

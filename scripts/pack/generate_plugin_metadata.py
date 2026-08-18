@@ -378,6 +378,9 @@ def _build_metadata(
         "platform": kind,
         "version": version,
         "author": str(manifest.get("author") or ""),
+        "channel": (
+            str(manifest.get("channel") or "ugsci").strip().lower() or "ugsci"
+        ),
         "filename": zip_path.name,
         "url": cdn_path,
         "size": _format_size(size_bytes),

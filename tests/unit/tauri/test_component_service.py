@@ -17,6 +17,7 @@ from qwenpaw.components.service import (
     run_startup_updates,
     set_component_update_adoption,
     _bundled_directory_records,
+    _default_managed_components,
     _resolve_managed_directory,
 )
 from qwenpaw.components.update import ComponentUpdateError
@@ -98,7 +99,9 @@ def test_remote_install_can_be_adopted_by_signed_component_manifest(
     assert "demo" in updater.managed_components
     assert json.loads(adopted_path.read_text(encoding="utf-8"))[
         "components"
-    ] == ["demo"]
+    ] == [
+        "demo",
+    ]
 
 
 def test_invalid_adopted_id_does_not_discard_valid_entries(
@@ -126,7 +129,16 @@ def test_invalid_adopted_id_does_not_discard_valid_entries(
 
     assert json.loads(adopted_path.read_text(encoding="utf-8"))[
         "components"
-    ] == ["new-plugin", "other", "valid-plugin"]
+    ] == [
+        "new-plugin",
+        "other",
+        "valid-plugin",
+    ]
+
+
+def test_default_managed_components_include_ugsci_and_u_series() -> None:
+    managed = _default_managed_components()
+    assert {"ugsci", "ugsci_research", "uideas", "ulit"} <= managed
 
 
 def test_configured_service_uses_embedded_production_defaults(monkeypatch):
@@ -416,7 +428,9 @@ def test_signed_new_plugin_can_install_after_service_restart(
     assert "new-plugin" in updater.managed_components
     assert json.loads(adopted_path.read_text(encoding="utf-8"))[
         "components"
-    ] == ["new-plugin"]
+    ] == [
+        "new-plugin",
+    ]
 
     # Simulate the next backend process after the plugin now exists on disk.
     installed = plugins / "new-plugin"
@@ -954,6 +968,34 @@ def test_manual_update_is_queued_for_safe_restart(monkeypatch, tmp_path):
     assert list(payload["components"]) == ["demo"]
     assert payload["components"]["demo"]["attempts"] == 0
     assert payload["components"]["demo"]["queued_at"]
+
+
+def test_queue_unmanaged_component_sets_not_managed_reason(monkeypatch):
+    class _Service:
+        def __init__(self):
+            self.updater = type(
+                "Updater",
+                (),
+                {"managed_components": {"demo"}},
+            )()
+            self.client = type("Client", (), {"close": lambda self: None})()
+
+        def check(self):
+            return []
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: _Service(),
+    )
+    with pytest.raises(ComponentUpdateError) as caught:
+        queue_component_update("ugsci")
+    assert caught.value.reason == "not_managed"
+    assert (
+        ComponentUpdateError(
+            "component updates are not configured",
+        ).reason
+        == "conflict"
+    )
 
 
 def test_all_available_updates_are_queued_together(monkeypatch, tmp_path):

@@ -23,6 +23,7 @@ import threading
 from urllib.parse import urlparse
 
 from ..__version__ import __version__
+from .. import distribution as _distribution
 from ..config.utils import get_plugins_dir
 from ..constant import WORKING_DIR
 from ..plugins.bundled import is_plugin_uninstalled
@@ -53,11 +54,9 @@ _COMPONENT_INSTALL_LOCK_TIMEOUT = 3600.0
 
 # The component signing public key is deliberately public and is embedded in
 # the client.  The private key remains a GitHub Actions secret and must never
-# be shipped with the application.
-_DEFAULT_COMPONENT_PUBLIC_KEY = "T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw="
-_DEFAULT_COMPONENT_BASE_URL = (
-    "https://ugsci-download.oss-cn-beijing.aliyuncs.com"
-)
+# be shipped with the application.  Fork endpoints live in ``distribution``.
+_DEFAULT_COMPONENT_PUBLIC_KEY = _distribution.COMPONENT_PUBLIC_KEY
+_DEFAULT_COMPONENT_BASE_URL = _distribution.COMPONENT_BASE_URL
 _MANAGED_PLUGIN_DENYLIST = frozenset({"cloudpaw", "qwenpaw-pet"})
 DIRECTORY_COMPONENT_IDS = frozenset(
     {

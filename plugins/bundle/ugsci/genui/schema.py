@@ -23,37 +23,9 @@ GENUI_MAX_NESTED_DEPTH = 32
 GENUI_MAX_OBJECT_KEYS = 500
 
 # ─── Component kind whitelists ──────────────────────────────────────────────
+# Allowed kinds are derived from ``_COMPONENT_CATALOG`` below (single table).
+# Phase-3 kinds are unsafe / heavy and stay out of the default schema.
 
-# Phase-1: safe declarative components (PLAN §6.6 第一阶段)
-_PHASE1_KINDS: list[str] = [
-    "Stack", "Grid", "Row", "Spacer",
-    "Text", "Heading", "Divider", "Markdown",
-    "Card", "Stat", "Badge", "Tag", "Progress",
-    "Table", "TableRow", "TableCell", "List", "ListItem",
-    "Image", "Chart", "Icon",
-    "Button", "Input", "Select",
-    "CodeBlock", "JsonDebug",
-    "Alert", "Callout",
-    "DataCard", "MetricCard", "AlertCard",
-]
-
-# Phase-2: additional interactive / layout components (PLAN §6.6 第二阶段)
-_PHASE2_KINDS: list[str] = [
-    "ScrollArea",
-    "Tabs", "TabItem",
-    "Accordion", "AccordionItem",
-    "Form", "Switch", "Slider", "Textarea", "NumberInput", "FileInput",
-    "ImageGallery", "TimelineCard", "KpiBoard",
-    "Chip", "ChipGroup",
-    "SectionHeader", "KeyValueList",
-    "FeatureGrid", "Stepper",
-    "Skeleton", "Avatar",
-    "WeatherCard", "ProfileCard", "MediaCard", "QuoteCard",
-    "InteractiveButton", "ToggleButton", "LinkButton",
-    "AspectBox",
-]
-
-# Phase-3: unsafe / heavy components — excluded from Schema by default (PLAN §6.6 第三阶段)
 _PHASE3_KINDS: list[str] = [
     "HostedCanvasFrame", "HtmlFrame", "ThreeJsFrame",
     "Model3D", "LiveCamera",
@@ -62,11 +34,8 @@ _PHASE3_KINDS: list[str] = [
     "Video",
 ]
 
-# Allowed kinds = phase-1 + phase-2 (phase-3 excluded unless explicitly enabled)
-_ALLOWED_KINDS: list[str] = _PHASE1_KINDS + _PHASE2_KINDS
-
-# Full list (including phase-3) — only used when allow_unsafe_kinds=True
-_FULL_KINDS: list[str] = _ALLOWED_KINDS + _PHASE3_KINDS
+_SAFE_ACTION_TYPES: frozenset[str] = frozenset({"send_message", "submit_form"})
+_GATED_KINDS: frozenset[str] = frozenset({"FileInput"})
 
 # ─── URL scheme validation ──────────────────────────────────────────────────
 
@@ -119,8 +88,6 @@ def _build_ui_tree_schema(allowed_kinds: list[str]) -> dict[str, Any]:
         },
     }
 
-UI_TREE_SCHEMA: dict[str, Any] = _build_ui_tree_schema(_ALLOWED_KINDS)
-
 # ─── UI Patch Schema (RFC 6902 subset) ──────────────────────────────────────
 
 UI_PATCH_SCHEMA: dict[str, Any] = {
@@ -149,6 +116,8 @@ UI_PATCH_SCHEMA: dict[str, Any] = {
 }
 
 # ─── Component catalog ──────────────────────────────────────────────────────
+# Source of truth for allowed ``kind`` values. JSON Schema, list_ui_components,
+# get_genui_guide.allowed_kinds, and renderer contract tests all follow this list.
 
 _COMPONENT_CATALOG: list[dict[str, Any]] = [
     # Layout
@@ -172,16 +141,12 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
     {"kind": "Progress", "description": "Progress bar", "props": {"value": "number (0-100)", "label": "string", "color": "string"}},
     {"kind": "Skeleton", "description": "Loading placeholder", "props": {"rows": "number", "active": "boolean"}},
     {"kind": "Avatar", "description": "User avatar", "props": {"src": "string", "name": "string", "size": "number"}},
-    {"kind": "Icon", "description": "Lucide SVG icon or emoji", "props": {"name": "string", "size": "number", "color": "string"}},
+    {"kind": "Icon", "description": "Decorative SVG from a small allowlist (check, warning, info, error, chart, image) or a short emoji; unknown Lucide-style names are hidden", "props": {"name": "string", "size": "number", "color": "string"}},
     # Cards
     {"kind": "Card", "description": "General-purpose bordered card", "props": {"title": "string", "subtitle": "string", "variant": "string", "padding": "string"}},
     {"kind": "DataCard", "description": "Data summary card", "props": {"title": "string", "value": "string", "description": "string", "icon": "string"}},
     {"kind": "MetricCard", "description": "KPI metric card", "props": {"title": "string", "value": "string", "delta": "string", "trend": "string", "period": "string", "icon": "string"}},
     {"kind": "AlertCard", "description": "Alert / notification card", "props": {"title": "string", "message": "string", "severity": "string", "icon": "string"}},
-    {"kind": "WeatherCard", "description": "Weather display card", "props": {"location": "string", "temperature": "string", "condition": "string", "icon": "string"}},
-    {"kind": "ProfileCard", "description": "User profile card", "props": {"name": "string", "role": "string", "avatar": "string", "bio": "string"}},
-    {"kind": "MediaCard", "description": "Media (image/video) card", "props": {"title": "string", "src": "string", "caption": "string"}},
-    {"kind": "QuoteCard", "description": "Quote / testimonial card", "props": {"quote": "string", "author": "string", "role": "string"}},
     {"kind": "TimelineCard", "description": "Timeline event card", "props": {"title": "string", "date": "string", "description": "string", "status": "string"}},
     {"kind": "KpiBoard", "description": "KPI dashboard board; children are MetricCards", "props": {"title": "string", "columns": "number"}},
     {"kind": "FeatureGrid", "description": "Feature grid; children are Cards", "props": {"columns": "number", "gap": "number"}},
@@ -222,6 +187,22 @@ _COMPONENT_CATALOG: list[dict[str, Any]] = [
     {"kind": "JsonDebug", "description": "Collapsed JSON viewer", "props": {"label": "string", "data": "object"}},
     {"kind": "AspectBox", "description": "Aspect-ratio container", "props": {"ratio": "string (e.g. 16:9)", "fit": "string"}},
 ]
+
+
+def _kinds_from_catalog() -> list[str]:
+    kinds = [str(entry["kind"]) for entry in _COMPONENT_CATALOG]
+    duplicates = sorted({kind for kind in kinds if kinds.count(kind) > 1})
+    if duplicates:
+        raise RuntimeError(f"duplicate GenUI catalog kinds: {duplicates}")
+    overlap = sorted(set(kinds) & set(_PHASE3_KINDS))
+    if overlap:
+        raise RuntimeError(f"catalog kinds overlap unsafe phase-3 list: {overlap}")
+    return kinds
+
+
+_ALLOWED_KINDS: list[str] = _kinds_from_catalog()
+_FULL_KINDS: list[str] = _ALLOWED_KINDS + list(_PHASE3_KINDS)
+UI_TREE_SCHEMA: dict[str, Any] = _build_ui_tree_schema(_ALLOWED_KINDS)
 
 _LIST_COMPONENT_CATALOG_CACHE: list[dict[str, Any]] = list(_COMPONENT_CATALOG)
 
@@ -382,7 +363,42 @@ def _validate_string_and_url_limits(node: dict[str, Any]) -> None:
     for ch in node.get("children") or []:
         if isinstance(ch, dict): _validate_string_and_url_limits(ch)
 
-def validate_ui_tree(tree: dict[str, Any], *, max_depth: int = GENUI_MAX_TREE_DEPTH, max_nodes: int = GENUI_MAX_NODES, allow_unsafe_kinds: bool = False) -> dict[str, Any]:
+def _validate_actions_and_gates(
+    node: dict[str, Any],
+    *,
+    allow_actions: frozenset[str] | None,
+    allow_file_input: bool,
+) -> None:
+    kind = node.get("kind")
+    if kind in _GATED_KINDS and not allow_file_input:
+        raise ValidationError(f"kind '{kind}' is disabled unless HTML/file input is allowed")
+    props = node.get("props")
+    if isinstance(props, dict) and allow_actions is not None:
+        action = props.get("action")
+        if isinstance(action, dict):
+            action_type = action.get("type")
+            if not isinstance(action_type, str) or not action_type.strip():
+                raise ValidationError("action.type is required")
+            if action_type not in allow_actions:
+                raise ValidationError(f"action type '{action_type}' is not allowed")
+    for child in node.get("children") or []:
+        if isinstance(child, dict):
+            _validate_actions_and_gates(
+                child,
+                allow_actions=allow_actions,
+                allow_file_input=allow_file_input,
+            )
+
+
+def validate_ui_tree(
+    tree: dict[str, Any],
+    *,
+    max_depth: int = GENUI_MAX_TREE_DEPTH,
+    max_nodes: int = GENUI_MAX_NODES,
+    allow_unsafe_kinds: bool = False,
+    allow_actions: list[str] | frozenset[str] | None = None,
+    allow_file_input: bool = False,
+) -> dict[str, Any]:
     normalized = normalize_ui_tree(tree)
     schema = UI_TREE_SCHEMA if not allow_unsafe_kinds else _build_ui_tree_schema(_FULL_KINDS)
     jsonschema.validate(instance=normalized, schema=schema)
@@ -392,6 +408,8 @@ def validate_ui_tree(tree: dict[str, Any], *, max_depth: int = GENUI_MAX_TREE_DE
     if d > max_depth: raise ValidationError(f"tree depth {d} exceeds max {max_depth}")
     if n > max_nodes: raise ValidationError(f"tree node count {n} exceeds max {max_nodes}")
     _validate_string_and_url_limits(root)
+    allowed = frozenset(allow_actions) if allow_actions is not None else None
+    _validate_actions_and_gates(root, allow_actions=allowed, allow_file_input=allow_file_input)
     return normalized
 
 # ─── Patch validation and application ───────────────────────────────────────

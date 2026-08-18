@@ -17,6 +17,7 @@ from .models import (
     SessionSource,
 )
 from .repo import BaseChatRepository
+from .session_events import notify_session_deleted
 from ..channels.schema import DEFAULT_CHANNEL
 from ...utils.logging import sanitize_log_value
 
@@ -287,6 +288,7 @@ class ChatManager:
         if deleted:
             for session_id in session_ids:
                 await self._close_browser_session(session_id)
+                notify_session_deleted(session_id)
         return deleted
 
     # ----- Archive Operations -----

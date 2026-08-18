@@ -25,6 +25,7 @@
     "paths": {
       "@/*": ["src/*"],
       "@genui-src/*": ["../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui/*"],
+      "html-to-image": ["src/test/htmlToImageStub.ts"],
       "react": ["node_modules/@types/react/index.d.ts"]
     }
   },

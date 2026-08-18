@@ -222,6 +222,7 @@ def test_mutable_release_metadata_is_promoted_only_after_finalize() -> None:
     )
     assert "metadata/plugins/index.json" in promotion_block
     assert "metadata/index.json" in promotion_block
+    assert "metadata/ugsci-core-latest.json" in promotion_block
     assert "metadata/components/stable/$base" in promotion_block
     assert "rollback_metadata" in promotion_block
     assert "needs: [resolve, finalize, promote-release-metadata]" in release
@@ -496,3 +497,10 @@ def test_pointer_post_check_is_polarity_aware() -> None:
         "via the role-swapped monotonic check instead of cmp-only equality"
     )
     assert "newer concurrent promotion superseded" in release
+
+
+def test_creator_release_uses_parameterized_oss_bucket() -> None:
+    creator = _workflow("creator-release.yml")
+    assert "OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}" in creator
+    assert "oss://${OSS_BUCKET}/" in creator
+    assert "oss://ugsci-download/" not in creator

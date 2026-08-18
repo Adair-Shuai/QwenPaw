@@ -207,6 +207,18 @@ class UGSciPlugin:
                 exc_info=True,
             )
         try:
+            api.register_uninstall_hook(
+                hook_name="ugsci_dispose_genui",
+                callback=self._on_uninstall_dispose_genui,
+            )
+        except Exception as exc:
+            logger.debug(
+                "[%s] GenUI dispose hook unavailable: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+        try:
             api.register_startup_hook(
                 hook_name="ugsci_init",
                 callback=self._on_startup,
@@ -550,6 +562,25 @@ class UGSciPlugin:
         except Exception as exc:
             logger.error(
                 "Failed to remove pool skills for '%s': %s",
+                plugin_id,
+                exc,
+                exc_info=True,
+            )
+
+    @staticmethod
+    def _on_uninstall_dispose_genui(
+        plugin_id: str,
+        delete_files: bool = False,
+    ) -> None:
+        """Release GenUI tools, prompt section, and snapshot store."""
+        del delete_files
+        try:
+            from .genui.registration import dispose_genui
+
+            dispose_genui(plugin_id=plugin_id)
+        except Exception as exc:
+            logger.error(
+                "Failed to dispose GenUI for '%s': %s",
                 plugin_id,
                 exc,
                 exc_info=True,

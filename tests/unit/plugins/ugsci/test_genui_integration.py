@@ -994,7 +994,7 @@ class TestUpstreamConflict:
         api = ConflictApi()
         register_genui(api, plugin_id="ugsci")
 
-        # Tools should NOT be registered (conflict)
-        assert len(api.tools) == 0
-        # But prompt section should still be registered
+        assert "emit_ui_tree" not in api.tools
+        assert "list_ui_components" in api.tools
+        assert "get_genui_guide" in api.tools
         assert "ugsci.genui_guide" in api.prompt_sections

@@ -9,6 +9,8 @@ Covers plan section 9.1:
 - Config gating: genui_enabled, genui_channels, genui_allow_actions (PLAN §8)
 """
 
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import json
@@ -42,6 +44,7 @@ class RecordingPluginApi:
         self.tool_options: dict[str, dict[str, Any]] = {}
         self.prompt_sections: list[str] = []
         self.prompt_kwargs: dict[str, dict[str, Any]] = {}
+        self.uninstall_hooks: list[str] = []
         self._has_existing = has_existing_emit_ui
         # Default config: GenUI enabled for console channel
         self.config = (
@@ -87,6 +90,19 @@ class RecordingPluginApi:
         self.prompt_sections.append(name)
         self.prompt_kwargs[name] = kwargs
 
+    def register_uninstall_hook(
+        self,
+        *,
+        hook_name: str,
+        callback: Any,
+        **_kwargs: Any,
+    ) -> None:
+        self.uninstall_hooks.append(hook_name)
+        setattr(self, hook_name, callback)
+
+    def register_startup_hook(self, **_kwargs: Any) -> None:
+        return None
+
 
 # ─── register_genui ─────────────────────────────────────────────────────────
 
@@ -105,15 +121,13 @@ class TestRegisterGenui:
         assert "ugsci.genui_guide" in api.prompt_sections
 
     def test_conflict_skips_tool_registration(self) -> None:
-        """
-        When emit_ui_tree already exists upstream, tools should not be
-        re-registered.
-        """
+        """When emit_ui_tree exists upstream, skip only that name."""
         api = RecordingPluginApi(has_existing_emit_ui=True)
         register_genui(api, plugin_id="ugsci")
-        # Tools should NOT be registered
-        assert len(api.tools) == 0
-        # But prompt section should still be registered
+        assert "emit_ui_tree" not in api.tools
+        assert "emit_ui_patch" in api.tools
+        assert "list_ui_components" in api.tools
+        assert "get_genui_guide" in api.tools
         assert "ugsci.genui_guide" in api.prompt_sections
 
     def test_no_conflict_registers_tools(self) -> None:
@@ -496,3 +510,71 @@ class TestDisposeGenui:
         # Persistent data survives, while the process-local handle is renewed.
         store2 = get_state_store()
         assert store2 is not store
+
+    def test_dispose_removes_prompt_section_from_registry(self) -> None:
+        """dispose_genui should drop the GenUI prompt section it registered."""
+        api = RecordingPluginApi()
+        api._registry = MagicMock()
+        api._registry.get_workspace_manager.return_value = None
+        api._registry._prompt_sections = [
+            SimpleNamespace(name="ugsci.genui_guide"),
+        ]
+        api._registry._prompt_section_names = {"ugsci.genui_guide"}
+
+        register_genui(api, plugin_id="ugsci")
+        dispose_genui(plugin_id="ugsci")
+
+        assert all(
+            getattr(section, "name", None) != "ugsci.genui_guide"
+            for section in api._registry._prompt_sections
+        )
+        assert "ugsci.genui_guide" not in api._registry._prompt_section_names
+
+    def test_plugin_registers_genui_dispose_hook(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """UGSci uninstall should invoke dispose_genui."""
+        from qwenpaw.plugins_bundle.ugsci import engine
+        from qwenpaw.plugins_bundle.ugsci.plugin import UGSciPlugin
+
+        monkeypatch.setattr(engine, "init_default_engines", lambda: 0)
+        api = RecordingPluginApi()
+        UGSciPlugin().register(api)
+        assert "ugsci_dispose_genui" in api.uninstall_hooks
+        UGSciPlugin._on_uninstall_dispose_genui("ugsci")
+
+    def test_session_delete_clears_store(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from qwenpaw.app.chats.session_events import (
+            notify_session_deleted,
+            reset_session_deleted_listeners,
+        )
+        from qwenpaw.plugins_bundle.ugsci.genui.state import GenUiStateStore
+
+        reset_session_deleted_listeners()
+        store = GenUiStateStore()
+        monkeypatch.setattr(
+            "qwenpaw.plugins_bundle.ugsci.genui.state._global_store",
+            store,
+        )
+        snap = store.create(
+            session_id="s-del",
+            tree={"kind": "Stack", "children": []},
+        )
+        api = RecordingPluginApi()
+        register_genui(api, plugin_id="ugsci")
+        notify_session_deleted("s-del")
+        assert store.get("s-del", snap.ui_id) is None
+
+        dispose_genui(plugin_id="ugsci")
+        leftover = GenUiStateStore()
+        kept = leftover.create(
+            session_id="s-after-dispose",
+            tree={"kind": "Stack", "children": []},
+        )
+        notify_session_deleted("s-after-dispose")
+        assert leftover.get("s-after-dispose", kept.ui_id) is not None
+        reset_session_deleted_listeners()

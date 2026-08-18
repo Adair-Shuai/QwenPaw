@@ -2,16 +2,28 @@ import { getApiUrl, clearAuthToken } from "./config";
 import { buildAuthHeaders } from "./authHeaders";
 import { getLoginHref, isLoginPath } from "../utils/navigationMode";
 
-function getErrorMessageFromBody(
-  text: string,
-  contentType: string,
-): string | null {
+export class ApiError extends Error {
+  status: number;
+  reason?: string;
+
+  constructor(message: string, status: number, reason?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.reason = reason;
+  }
+}
+
+function parseErrorPayload(text: string, contentType: string): {
+  message: string | null;
+  reason?: string;
+} {
   if (!text) {
-    return null;
+    return { message: null };
   }
 
   if (!contentType.includes("application/json")) {
-    return text;
+    return { message: text };
   }
 
   try {
@@ -22,19 +34,37 @@ function getErrorMessageFromBody(
     };
 
     if (typeof payload.detail === "string" && payload.detail) {
-      return payload.detail;
+      return { message: payload.detail };
+    }
+    if (
+      payload.detail &&
+      typeof payload.detail === "object" &&
+      !Array.isArray(payload.detail)
+    ) {
+      const detail = payload.detail as {
+        message?: unknown;
+        reason?: unknown;
+      };
+      return {
+        message:
+          typeof detail.message === "string" && detail.message
+            ? detail.message
+            : text,
+        reason:
+          typeof detail.reason === "string" ? detail.reason : undefined,
+      };
     }
     if (typeof payload.message === "string" && payload.message) {
-      return payload.message;
+      return { message: payload.message };
     }
     if (typeof payload.error === "string" && payload.error) {
-      return payload.error;
+      return { message: payload.error };
     }
   } catch {
-    return text;
+    return { message: text };
   }
 
-  return text;
+  return { message: text };
 }
 
 function buildHeaders(method?: string, extra?: HeadersInit): Headers {
@@ -131,14 +161,14 @@ export async function request<T = unknown>(
 
         const text = await response.text().catch(() => "");
         const contentType = response.headers.get("content-type") || "";
-        const errorMessage = getErrorMessageFromBody(text, contentType);
+        const parsed = parseErrorPayload(text, contentType);
 
         // Preserve raw body for parseErrorDetail() to extract structured fields
-        const finalMessage = errorMessage
-          ? `${errorMessage} - ${text}`
+        const finalMessage = parsed.message
+          ? `${parsed.message} - ${text}`
           : `Request failed: ${response.status} ${response.statusText}`;
 
-        throw new Error(finalMessage);
+        throw new ApiError(finalMessage, response.status, parsed.reason);
       }
 
       if (response.status === 204) {

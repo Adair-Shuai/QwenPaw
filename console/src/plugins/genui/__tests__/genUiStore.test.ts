@@ -81,6 +81,37 @@ describe("parseGenUiResult", () => {
     expect(parseGenUiResult(JSON.stringify(wrongKind))).toBeNull();
   });
 
+  it("reads a nested genui envelope on a domain payload", () => {
+    const nested = {
+      operation: "production.decline.forecast",
+      genui: {
+        ok: true,
+        kind: "genui",
+        ui_id: "ui_nested",
+        revision: 1,
+        tree: { schemaVersion: "1", root: { nodeId: "n1", kind: "Stack", props: {}, children: [] } },
+      },
+    };
+    const result = parseGenUiResult(JSON.stringify(nested));
+    expect(result?.ui_id).toBe("ui_nested");
+  });
+
+  it("reads a FlowForge NodeOutput.ui.genui envelope", () => {
+    const nested = {
+      ui: {
+        gen_ui: { schemaVersion: "1", root: { nodeId: "n1", kind: "Image", props: {}, children: [] } },
+        genui: {
+          ok: true,
+          kind: "genui",
+          ui_id: "ui_ff_preview",
+          revision: 1,
+          tree: { schemaVersion: "1", root: { nodeId: "n1", kind: "Image", props: {}, children: [] } },
+        },
+      },
+    };
+    expect(parseGenUiResult(JSON.stringify(nested))?.ui_id).toBe("ui_ff_preview");
+  });
+
   it("returns null for non-object JSON", () => {
     expect(parseGenUiResult('"just a string"')).toBeNull();
     expect(parseGenUiResult("42")).toBeNull();
@@ -185,6 +216,30 @@ describe("extractGenUiResults", () => {
     ];
     const results = extractGenUiResults(output);
     expect(results).toHaveLength(0);
+  });
+
+  it("extracts nested genui from a domain tool payload", () => {
+    const output = [
+      {
+        type: "plugin_call_output",
+        content: [
+          { data: { name: "ugsci_decline_forecast", call_id: "c1" } },
+          {
+            data: {
+              output: JSON.stringify({
+                operation: "production.decline.forecast",
+                result: { forecast: [] },
+                genui: JSON.parse(validOutput),
+              }),
+              call_id: "c1",
+            },
+          },
+        ],
+      },
+    ];
+    const results = extractGenUiResults(output);
+    expect(results).toHaveLength(1);
+    expect(results[0].ui_id).toBe("ui_test123");
   });
 
   it("handles multiple emit_ui_tree calls", () => {

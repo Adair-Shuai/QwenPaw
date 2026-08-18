@@ -123,7 +123,14 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     let timer: ReturnType<typeof setTimeout> | null = null;
     let cancelled = false;
     let syncAttempts = 0;
+    let pollCount = 0;
     let observedLoadedCount = -1;
+
+    // Plugins are published by the backend shortly after the shell renders.
+    // Poll quickly at first so newly registered plugins surface within a few
+    // hundred ms instead of waiting up to a fixed 1.5s tick, then relax the
+    // cadence once the initial burst is over to keep idle cost low.
+    const nextPollDelay = () => (pollCount <= 10 ? 300 : 1500);
 
     const refreshPluginManifest = async () => {
       await load();
@@ -133,6 +140,7 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     };
 
     const pollBundleSync = async () => {
+      pollCount += 1;
       try {
         const status = await fetchBundledPluginStatus();
         if (cancelled) return;
@@ -176,7 +184,7 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
       } catch {
         // Backend may still be accepting requests; retry below.
       }
-      if (!cancelled) timer = setTimeout(pollBundleSync, 1500);
+      if (!cancelled) timer = setTimeout(pollBundleSync, nextPollDelay());
     };
     void pollBundleSync();
 
