@@ -212,7 +212,9 @@ def validate_manifest(
                 )
 
     if component_root is not None:
-        component_id, local_version, _ = read_component_metadata(component_root)
+        component_id, local_version, _ = read_component_metadata(
+            component_root,
+        )
         component = components.get(component_id)
         if component is None:
             raise ValueError(
@@ -227,9 +229,11 @@ def validate_manifest(
             file_inventory(
                 component_root,
                 tuple(
-                    component.get("preserve")
-                    if component.get("preserve") is not None
-                    else DEFAULT_PRESERVE_PATHS,
+                    (
+                        component.get("preserve")
+                        if component.get("preserve") is not None
+                        else DEFAULT_PRESERVE_PATHS
+                    ),
                 ),
             )
             != component["files"]

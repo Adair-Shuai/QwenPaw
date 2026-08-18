@@ -17,7 +17,6 @@ from .process_utils import (
     _windows_process_snapshot,
 )
 
-
 _PROJECT_ROOT = Path(__file__).resolve().parents[3]
 _CONSOLE_DIR = (_PROJECT_ROOT / "console").resolve()
 _SIGTERM = signal.SIGTERM
@@ -137,11 +136,7 @@ def _find_windows_wrapper_ancestor_pids(pids: set[int]) -> set[int]:
                 break
 
             parent_pid = info[0]
-            if (
-                parent_pid is None
-                or parent_pid == 0
-                or parent_pid in visited
-            ):
+            if parent_pid is None or parent_pid == 0 or parent_pid in visited:
                 break
             visited.add(parent_pid)
 

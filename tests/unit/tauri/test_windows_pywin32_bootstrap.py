@@ -6,7 +6,6 @@ import sys
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 WIN32_PTH_MODULE = REPO_ROOT / "src" / "qwenpaw" / "_win32_pth.py"
 PACKAGE_INIT = REPO_ROOT / "src" / "qwenpaw" / "__init__.py"
@@ -18,14 +17,11 @@ def test_package_init_contains_pywin32_pth_bootstrap() -> None:
 
     assert "bootstrap_windows_pth_dirs" in module_source
     assert "_ensure_mcp_types_bound()" in module_source
-    assert "setattr(mcp_module, \"types\", types_module)" in module_source
+    assert 'setattr(mcp_module, "types", types_module)' in module_source
     assert "pywin32.pth" in module_source
     assert "_process_pth_file(entry, pth)" in module_source
     assert 'stripped.startswith("import ")' in module_source
-    assert (
-        "from ._win32_pth import bootstrap_windows_pth_dirs"
-        in init_source
-    )
+    assert "from ._win32_pth import bootstrap_windows_pth_dirs" in init_source
     assert "bootstrap_windows_pth_dirs()" in init_source
 
 

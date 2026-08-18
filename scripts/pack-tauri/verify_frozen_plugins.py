@@ -134,7 +134,9 @@ def _verify_archive_files(
         active_name = active_manifests[0]
         active = json.loads(read_file(active_name).decode("utf-8"))
         if active.get("schemaVersion") != 1:
-            raise ValueError("desktop active runtime manifest has an unsupported schema")
+            raise ValueError(
+                "desktop active runtime manifest has an unsupported schema",
+            )
         backend = (active.get("components") or {}).get("backend") or {}
         backend_path = str(backend.get("path") or "")
         backend_relative = PurePosixPath(backend_path)
