@@ -30,7 +30,8 @@ jobs:
             --dist dist/plugins \
             --metadata-out dist/plugins/index.json \
             --cdn-prefix /files/plugins \
-            --exclude qwenpaw-creator
+            --exclude qwenpaw-creator \
+            --exclude uproject
       - uses: actions/upload-artifact@v4
         with:
           name: qwenpaw-plugins-dist

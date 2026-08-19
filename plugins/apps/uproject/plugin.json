@@ -1,0 +1,34 @@
+{
+  "id": "uproject",
+  "name": "UProject 科研项目",
+  "version": "0.1.0",
+  "type": "app",
+  "description": "企业科研项目对接对齐台：甲方/乙方、对齐项、对齐会与一键周报。",
+  "description_i18n": {
+    "zh-CN": "企业科研项目对接对齐台：管甲乙方、对齐项、对齐会，一键生成议程和周报。",
+    "en-US": "Client-vendor research project alignment desk: parties, open items, meetings, and weekly briefs."
+  },
+  "author": "UGSci Team",
+  "channel": "ugsci",
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.0.1",
+    "max": "2.2.0"
+  },
+  "meta": {
+    "pawapp": {
+      "icon": "🤝",
+      "category": "research",
+      "entry_page": "/apps/uproject",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": true,
+      "storage": true
+    },
+    "settings": []
+  }
+}

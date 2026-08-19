@@ -232,6 +232,7 @@ def test_mutable_release_metadata_is_promoted_only_after_finalize() -> None:
         "component-release.yml",
         "creator-release.yml",
         "desktop-promote.yml",
+        "uproject-release.yml",
     ):
         assert "oss-production-metadata" in _workflow(workflow)
 
@@ -504,3 +505,15 @@ def test_creator_release_uses_parameterized_oss_bucket() -> None:
     assert "OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}" in creator
     assert "oss://${OSS_BUCKET}/" in creator
     assert "oss://ugsci-download/" not in creator
+
+
+def test_uproject_release_uses_parameterized_oss_bucket() -> None:
+    workflow = _workflow("uproject-release.yml")
+    assert "OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}" in workflow
+    assert "oss://${OSS_BUCKET}/" in workflow
+    assert "oss://ugsci-download/" not in workflow
+    assert '--only "${PLUGIN_ID}"' in workflow
+    assert "ui/index.js" in workflow
+    assert "ui/dist/index.js" not in workflow
+    assert "setup-node" not in workflow
+    assert "npm --prefix" not in workflow

@@ -517,7 +517,8 @@ jobs:
             --dist dist/plugins \
             --metadata-out dist/plugins/index.json \
             --cdn-prefix /files/plugins \
-            --exclude qwenpaw-creator
+            --exclude qwenpaw-creator \
+            --exclude uproject
 
       - name: Upload plugins dist
         uses: actions/upload-artifact@v4
@@ -596,7 +597,8 @@ jobs:
             --dist dist/plugins \
             --metadata-out dist/plugins/index.json \
             --cdn-prefix /files/plugins \
-            --exclude qwenpaw-creator
+            --exclude qwenpaw-creator \
+            --exclude uproject
 
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
