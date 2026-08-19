@@ -12,7 +12,7 @@ import logging
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
-from store import ITEM_KINDS, SIDES, ITEM_STATUSES, new_id, now_iso
+from .store import ITEM_KINDS, SIDES, ITEM_STATUSES, new_id, now_iso
 
 logger = logging.getLogger(__name__)
 

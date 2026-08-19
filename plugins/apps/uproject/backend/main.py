@@ -6,8 +6,6 @@ API prefix: /api/uproject
 
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -16,11 +14,10 @@ from pydantic import BaseModel, Field
 from qwenpaw.pawapp import PawApp
 from qwenpaw.pawapp.deps import get_ctx
 
-BACKEND_DIR = Path(__file__).resolve().parent
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from store import (  # noqa: E402
+# Loaded as plugin_uproject with the plugin root on __path__ (same as ulit).
+# Do not put backend/ on sys.path: uideas also exports a top-level store
+# module, and a cached import would load UIdeas instead of UProject.
+from .backend.store import (
     ITEM_KINDS,
     ITEM_STATUSES,
     MILESTONE_STATUSES,
@@ -38,7 +35,7 @@ from store import (  # noqa: E402
     reset_demo,
     update_project,
 )
-from ai import generate_agenda, generate_minutes_items, generate_weekly  # noqa: E402
+from .backend.ai import generate_agenda, generate_minutes_items, generate_weekly
 
 app = PawApp(name="UProject", app_id="uproject")
 router = APIRouter()

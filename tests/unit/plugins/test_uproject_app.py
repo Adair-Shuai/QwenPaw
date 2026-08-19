@@ -7,15 +7,15 @@ import sys
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
-BACKEND = REPO / "plugins" / "apps" / "uproject" / "backend"
-sys.path.insert(0, str(BACKEND))
+PLUGIN_ROOT = REPO / "plugins" / "apps" / "uproject"
+sys.path.insert(0, str(PLUGIN_ROOT))
 
-from ai import (  # noqa: E402
+from backend.ai import (  # noqa: E402
     extract_items_from_notes,
     fallback_agenda,
     fallback_weekly,
 )
-from store import (  # noqa: E402
+from backend.store import (  # noqa: E402
     annotate_project,
     build_demo_state,
     create_project,
@@ -172,3 +172,16 @@ def test_extract_items_from_notes_classifies_owner_and_status():
     assert any(i["status"] == "blocked" for i in items)
     assert any(i["status"] == "agreed" for i in items)
     assert any(i["kind"] == "acceptance" for i in items)
+
+
+def test_store_import_ignores_cached_uideas_store(monkeypatch):
+    import importlib
+    import types
+
+    import backend.store as uproject_store
+
+    fake = types.ModuleType("store")
+    monkeypatch.setitem(sys.modules, "store", fake)
+    uproject_store = importlib.reload(uproject_store)
+    assert hasattr(uproject_store, "create_project")
+    assert hasattr(uproject_store, "build_demo_state")
