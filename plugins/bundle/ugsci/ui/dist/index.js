@@ -14320,6 +14320,8 @@ function uc(e, t) {
           "roff",
           "roffbin",
           "dat",
+          "sr3",
+          "irf",
           "data",
           "model",
           "tnav",
@@ -14337,13 +14339,15 @@ function uc(e, t) {
           "parquet",
           "well.json",
           "surface.json",
-          "network.json"
+          "network.json",
+          "json"
         ],
         mimeTypes: [
           "application/x-eclipse-grid",
           "application/x-eclipse-init",
           "application/x-eclipse-unrst",
           "application/x-cmg-dat",
+          "application/x-cmg-sr3",
           "application/x-tnavigator-data",
           "application/x-roff",
           "application/x-las",

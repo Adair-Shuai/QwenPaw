@@ -40,6 +40,7 @@ import {
 function UpdateProbe() {
   const updates = useDesktopUpdate();
   const [result, setResult] = useState("idle");
+  const [componentsChecked, setComponentsChecked] = useState("");
   return (
     <>
       <button
@@ -47,11 +48,28 @@ function UpdateProbe() {
         onClick={() =>
           void updates
             .refreshUpdates()
-            .then((available) => setResult(available ? "available" : "current"))
+            .then((next) => {
+              setResult(next.available ? "available" : "current");
+              setComponentsChecked(next.componentsChecked ? "yes" : "no");
+            })
             .catch(() => setResult("failed"))
         }
       >
         refresh
+      </button>
+      <button
+        type="button"
+        onClick={() =>
+          void updates
+            .refreshUpdates("components")
+            .then((next) => {
+              setResult(next.available ? "available" : "current");
+              setComponentsChecked(next.componentsChecked ? "yes" : "no");
+            })
+            .catch(() => setResult("failed"))
+        }
+      >
+        refresh-components
       </button>
       <button
         type="button"
@@ -80,6 +98,10 @@ function UpdateProbe() {
       <output data-testid="component-count">
         {updates.componentUpdateCount}
       </output>
+      <output data-testid="has-core-update">
+        {updates.hasCoreUpdate ? "yes" : "no"}
+      </output>
+      <output data-testid="components-checked">{componentsChecked}</output>
     </>
   );
 }
@@ -114,6 +136,75 @@ describe("DesktopUpdateProvider", () => {
     expect(mocks.checkComponentUpdates).toHaveBeenCalledTimes(1);
   });
 
+  it("skips component checks when a desktop core update is available", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValueOnce({
+      version: "2.1.1-beta.12",
+      body: "desktop core",
+      supportsLaterInstall: true,
+    });
+    mocks.checkComponentUpdates.mockRejectedValue(
+      new Error("core version is below component minimum"),
+    );
+
+    render(
+      <DesktopUpdateProvider>
+        <UpdateProbe />
+      </DesktopUpdateProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("available")).toBeInTheDocument(),
+    );
+    expect(mocks.checkComponentUpdates).not.toHaveBeenCalled();
+    expect(screen.getByTestId("check-warning")).toBeEmptyDOMElement();
+    expect(screen.getByTestId("has-core-update")).toHaveTextContent("yes");
+    expect(screen.getByTestId("component-count")).toHaveTextContent("0");
+    expect(screen.getByTestId("components-checked")).toHaveTextContent("no");
+  });
+
+  it("still checks components after a core-install restart even if core is advertised", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValueOnce({
+      version: "2.1.1-beta.12",
+      body: "desktop core",
+      supportsLaterInstall: true,
+    });
+    mocks.checkComponentUpdates.mockResolvedValueOnce({
+      updates: [{ component: "demo" }],
+    });
+
+    render(
+      <DesktopUpdateProvider>
+        <UpdateProbe />
+      </DesktopUpdateProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh-components" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("available")).toBeInTheDocument(),
+    );
+    expect(mocks.checkDesktopUpdate).not.toHaveBeenCalled();
+    expect(mocks.checkComponentUpdates).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId("components-checked")).toHaveTextContent("yes");
+    expect(screen.getByTestId("component-count")).toHaveTextContent("1");
+  });
+
+  it("reports current when neither desktop nor components have updates", async () => {
+    render(
+      <DesktopUpdateProvider>
+        <UpdateProbe />
+      </DesktopUpdateProvider>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "refresh" }));
+
+    await waitFor(() =>
+      expect(screen.getByText("current")).toBeInTheDocument(),
+    );
+    expect(screen.getByTestId("components-checked")).toHaveTextContent("yes");
+    expect(screen.getByTestId("component-count")).toHaveTextContent("0");
+    expect(screen.getByTestId("has-core-update")).toHaveTextContent("no");
+  });
+
   it("does not report current when one update source fails", async () => {
     mocks.checkComponentUpdates.mockRejectedValueOnce(
       new Error("component manifest unavailable"),
@@ -129,15 +220,13 @@ describe("DesktopUpdateProvider", () => {
     await waitFor(() => expect(screen.getByText("failed")).toBeInTheDocument());
   });
 
-  it("reports partial source failure while keeping a valid core update", async () => {
-    mocks.checkDesktopUpdate.mockResolvedValueOnce({
-      version: "2.1.1-beta.8",
-      body: "update",
-      supportsLaterInstall: true,
-    });
-    mocks.checkComponentUpdates.mockRejectedValueOnce(
-      new Error("component manifest unavailable"),
+  it("reports a desktop check failure while keeping valid component updates", async () => {
+    mocks.checkDesktopUpdate.mockRejectedValueOnce(
+      new Error("desktop manifest unavailable"),
     );
+    mocks.checkComponentUpdates.mockResolvedValueOnce({
+      updates: [{ component: "demo" }],
+    });
 
     render(
       <DesktopUpdateProvider>
@@ -150,8 +239,9 @@ describe("DesktopUpdateProvider", () => {
       expect(screen.getByText("available")).toBeInTheDocument(),
     );
     expect(screen.getByTestId("check-warning")).toHaveTextContent(
-      "Components: component manifest unavailable",
+      "Desktop: desktop manifest unavailable",
     );
+    expect(screen.getByTestId("component-count")).toHaveTextContent("1");
   });
 
   it("rethrows immediate install failures to the update button", async () => {
@@ -194,15 +284,16 @@ describe("DesktopUpdateProvider", () => {
     expect(mocks.queueAllComponentUpdates).not.toHaveBeenCalled();
   });
 
-  it("clears an earlier partial warning after a successful install-time recheck", async () => {
-    mocks.checkDesktopUpdate.mockResolvedValueOnce({
-      version: "2.1.1-beta.8",
-      body: "update",
-      supportsLaterInstall: true,
-    });
+  it("clears an earlier desktop-check warning after a successful component queue", async () => {
+    mocks.checkDesktopUpdate.mockRejectedValueOnce(
+      new Error("temporary desktop failure"),
+    );
     mocks.checkComponentUpdates
-      .mockRejectedValueOnce(new Error("temporary component failure"))
-      .mockResolvedValueOnce({ updates: [] });
+      .mockResolvedValueOnce({ updates: [{ component: "demo" }] })
+      .mockResolvedValueOnce({ updates: [{ component: "demo" }] });
+    mocks.queueAllComponentUpdates.mockResolvedValueOnce({
+      queued: ["demo"],
+    });
 
     render(
       <DesktopUpdateProvider>
@@ -215,9 +306,7 @@ describe("DesktopUpdateProvider", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "queue" }));
-    await waitFor(() =>
-      expect(screen.getByText("nothing")).toBeInTheDocument(),
-    );
+    await waitFor(() => expect(screen.getByText("queued")).toBeInTheDocument());
     expect(screen.getByTestId("check-warning")).toBeEmptyDOMElement();
   });
 });

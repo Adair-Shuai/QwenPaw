@@ -258,6 +258,7 @@
       "updateAvailable": "发现可用更新",
       "unifiedTitle": "发现可用更新",
       "unifiedInstallHint": "更新已准备就绪，QwenPaw 将安全应用更新并自动重启。",
+      "coreFirstInstallHint": "将先安装 UGSci Desktop {{version}} 并重启。组件更新会在新版本启动后再检查。",
       "upToDate": "当前已是最新版本"
     },
     "settings": {
@@ -3541,6 +3542,7 @@
     "qwenpawUpdateRoute": "QwenPaw 官方插件从上游官方目录下载；安装和升级不经过 UGSci OSS。升级完成后重启应用生效。",
     "ugsciUpdateRoute": "UGSci 系列插件使用独立 OSS、签名校验和组件更新链路；升级将在安全重启时原子生效。",
     "ugsciUpgradeQueued": "UGSci 插件升级已加入队列，重启应用后生效。",
+    "coreUpdateRequired": "该升级需要更新版本的 UGSci Desktop。请先通过左上角版本徽标完成软件更新并重启，再升级插件。",
     "externalUpgradeReady": "插件 {{version}} 已安全替换，重启应用后生效。",
     "updateFromHeader": "已安装插件请通过顶部版本号右侧的升级按钮统一更新。",
     "updateFromHeaderBtn": "从顶部升级",

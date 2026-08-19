@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=no-name-in-module
 from __future__ import annotations
 
 import importlib.util
@@ -265,7 +266,7 @@ def test_manifest_concurrent_upserts_are_not_lost(tmp_path):
 
 
 def test_las_reader_converts_fixture(tmp_path):
-    pytest.importorskip("lasio")
+    # Works with lasio when installed, otherwise via the builtin LAS parser.
     from ugsci_visualization_test_plugin.backend.readers.las import LasReader
 
     fixture = (
@@ -284,6 +285,84 @@ def test_las_reader_converts_fixture(tmp_path):
     for filename in result["files"].values():
         if isinstance(filename, str):
             assert (tmp_path / filename).exists()
+
+
+def test_las_builtin_parser_used_when_lasio_missing(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "lasio", None)
+    from ugsci_visualization_test_plugin.backend.readers.las import LasReader
+
+    fixture = (
+        ROOT
+        / "tests"
+        / "unit"
+        / "plugins"
+        / "ugsci"
+        / "fixtures"
+        / "minimal_valid.las"
+    )
+    result = LasReader().read(str(fixture), "fallback", tmp_path)
+    assert result["metadata"]["reader"] == "builtin-las"
+    assert result["metadata"]["well_name"] == "Test Well 001"
+    assert result["n_vertices"] == 11
+    assert set(result["files"]["scalars"]) == {"gr", "rhob", "nphi"}
+    raw = (tmp_path / result["files"]["scalars"]["gr"]).read_bytes()
+    values = struct.unpack(f"<{len(raw) // 4}f", raw)
+    assert abs(values[0] - 85.0) < 1e-6
+    assert result["metadata"]["depth_range"] == [1000.0, 1005.0]
+
+
+def test_grdecl_builtin_reader_without_xtgeo(tmp_path, monkeypatch):
+    monkeypatch.setitem(sys.modules, "xtgeo", None)
+    from ugsci_visualization_test_plugin.backend.readers.eclipse import (
+        EclipseReader,
+    )
+
+    deck = "\n".join(
+        [
+            "-- 2x2x1 corner-point deck",
+            "SPECGRID",
+            " 2 2 1 1 F /",
+            "COORD",
+        ]
+        + [
+            f" {i * 100.0} {j * 100.0} 1000.0 {i * 100.0} {j * 100.0} 1010.0"
+            for j in range(3)
+            for i in range(3)
+        ]
+        + [
+            " /",
+            "ZCORN",
+            " 16*1000.0 16*1010.0 /",
+            "ACTNUM",
+            " 1 1 1 0 /",
+            "PORO",
+            " 0.10 0.20 0.30 0.40 /",
+            "PERMX",
+            " 4*250.0 /",
+            "",
+        ],
+    )
+    source = tmp_path / "mini.grdecl"
+    source.write_text(deck, encoding="utf-8")
+
+    result = EclipseReader().read(str(source), "mini_grdecl", tmp_path)
+    assert result["metadata"]["reader"] == "builtin-grdecl"
+    assert result["grid_dims"] == [2, 2, 1]
+    assert result["n_cells"] == 3  # ACTNUM removes the fourth cell
+    assert result["n_vertices"] == 24
+
+    raw = (tmp_path / result["files"]["scalars"]["porosity"]).read_bytes()
+    porosity = struct.unpack(f"<{len(raw) // 4}f", raw)
+    assert [round(v, 2) for v in porosity] == [0.10, 0.20, 0.30]
+
+    raw = (tmp_path / result["files"]["positions"]).read_bytes()
+    positions = struct.unpack(f"<{len(raw) // 4}f", raw)
+    # First corner of cell (1,1,1) sits at the origin pillar, depth 1000
+    # (z is negated for the viewer).
+    assert positions[0:3] == (0.0, 0.0, -1000.0)
+    xs = positions[0::3]
+    ys = positions[1::3]
+    assert max(xs) == 200.0 and max(ys) == 200.0
 
 
 def test_cmg_reader_parses_component_major_grid_and_repeat_values(tmp_path):
@@ -459,6 +538,8 @@ def test_visualization_exposes_all_ugsci_tool_bindings():
         "get_visualization_command_status",
         "focus_visualization_object",
         "create_intersection",
+        "create_well_section",
+        "create_ijk_slice",
         "capture_visualization",
         "run_visualization_benchmark",
         "filter_visualization",
@@ -671,3 +752,218 @@ def test_vtk_reader_supports_vtu_surface_and_cell_data(tmp_path):
     assert result["n_vertices"] == 3
     assert result["n_cells"] == 1
     assert "pressure" in result["files"]["scalars"]
+
+
+def test_cmg_reader_parses_equalsi_cartesian_wells_and_sr3(tmp_path):
+    h5py = pytest.importorskip("h5py")
+    numpy = pytest.importorskip("numpy")
+    from ugsci_visualization_test_plugin.backend.readers.cmg import CmgReader
+
+    deck = tmp_path / "case.dat"
+    deck.write_text(
+        "\n".join(
+            [
+                "RESULTS SIMULATOR IMEX 2024",
+                "GRID CART 2 1 1",
+                "ORIGIN 0 0 100",
+                "DI",
+                "10 10",
+                "DJ",
+                "20",
+                "DK",
+                "5",
+                "NULL ALL",
+                "2*1",
+                "POR ALL",
+                "0.2 0.3",
+                "PERMI ALL",
+                "2*50",
+                "PERMJ EQUALSI",
+                "PERMK EQUALSI * 0.1",
+                "WELL 'P1'",
+                "PERF GEOA 'P1'",
+                "1 1 1 1.0 OPEN",
+                "TRAJECTORY 'P1'",
+                "0 100 5 10",
+                "20 105 15 10",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    sr3 = tmp_path / "case.sr3"
+    with h5py.File(sr3, "w") as handle:
+        spatial = handle.create_group("SpatialProperties")
+        step = spatial.create_group("000001")
+        step.create_dataset(
+            "PRES",
+            data=numpy.array([100.0, 110.0], dtype="<f4"),
+        )
+        step.create_dataset("SOIL", data=numpy.array([0.7, 0.6], dtype="<f4"))
+        step2 = spatial.create_group("000002")
+        step2.create_dataset(
+            "PRES",
+            data=numpy.array([90.0, 95.0], dtype="<f4"),
+        )
+        step2.create_dataset(
+            "SOIL",
+            data=numpy.array([0.65, 0.55], dtype="<f4"),
+        )
+
+    result = CmgReader().read(
+        str(deck),
+        "case",
+        tmp_path,
+        options={"sr3_path": str(sr3)},
+    )
+    assert result["metadata"]["grid_type"] == "cartesian"
+    assert result["metadata"]["simulator"] == "IMEX"
+    assert result["n_cells"] == 2
+    assert result["files"]["scalars"]["permj"]
+    assert result["files"]["scalars"]["permk"]
+    assert result["metadata"]["has_dynamic_results"] is True
+    assert result["time_steps"]
+    assert "pressure" in result["time_steps"][0]["scalars"]
+    wells = result["related_datasets"]
+    assert wells and wells[0]["source"] == "wellbore"
+    assert wells[0]["n_vertices"] >= 2
+
+
+def test_intersection_samples_nearest_cell_property(tmp_path):
+    from ugsci_visualization_test_plugin.backend.converters import intersection
+
+    create_intersection_along_polyline = (
+        intersection.create_intersection_along_polyline
+    )
+
+    positions = []
+    for origin in ((0.0, 0.0, 0.0), (10.0, 0.0, 0.0)):
+        x0, y0, z0 = origin
+        for dx, dy, dz in (
+            (0, 0, 0),
+            (1, 0, 0),
+            (1, 1, 0),
+            (0, 1, 0),
+            (0, 0, 1),
+            (1, 0, 1),
+            (1, 1, 1),
+            (0, 1, 1),
+        ):
+            positions.extend([x0 + dx, y0 + dy, z0 + dz])
+    result = create_intersection_along_polyline(
+        positions,
+        [],
+        [0, 1],
+        [0.2, 0.8],
+        [0.2, 0.8],
+        0.0,
+        10.0,
+        "demo",
+        tmp_path,
+        property_values=[1.5, 9.5],
+        property_name="porosity",
+    )
+    assert result["source"] == "intersection"
+    assert "porosity" in result["files"]["scalars"]
+    raw = (tmp_path / result["files"]["scalars"]["porosity"]).read_bytes()
+    values = struct.unpack(f"<{len(raw) // 4}f", raw)
+    assert all(value == pytest.approx(1.5) for value in values)
+
+
+def test_slice_histogram_and_well_section_endpoints(tmp_path):
+    from ugsci_visualization_test_plugin.backend.api import build_router
+
+    bin_dir = tmp_path / "data" / "bin"
+    bin_dir.mkdir(parents=True)
+    positions = []
+    for base in (0.0, 10.0):
+        for index in range(8):
+            positions.extend([base + (index % 2), index // 2, 0.0])
+    (bin_dir / "grid_positions.f32").write_bytes(
+        struct.pack(f"<{len(positions)}f", *positions),
+    )
+    (bin_dir / "grid_indices.u32").write_bytes(
+        struct.pack("<72I", *list(range(36)) * 2),
+    )
+    (bin_dir / "grid_cell_ids.u32").write_bytes(struct.pack("<2I", 0, 1))
+    (bin_dir / "grid_scalars.f32").write_bytes(struct.pack("<2f", 0.2, 0.8))
+    well_positions = [0.0, 0.0, 0.0, 5.0, 0.0, -10.0]
+    (bin_dir / "well_positions.f32").write_bytes(
+        struct.pack(f"<{len(well_positions)}f", *well_positions),
+    )
+    (bin_dir / "well_indices.u32").write_bytes(struct.pack("<3I", 0, 1, 0))
+    (bin_dir / "well_cell_ids.u32").write_bytes(struct.pack("<2I", 0, 1))
+    (bin_dir / "manifest.json").write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "datasets": [
+                    {
+                        "id": "grid",
+                        "name": "grid",
+                        "n_vertices": 16,
+                        "n_cells": 2,
+                        "n_indices": 72,
+                        "grid_dims": [2, 1, 1],
+                        "files": {
+                            "positions": "grid_positions.f32",
+                            "indices": "grid_indices.u32",
+                            "cell_ids": "grid_cell_ids.u32",
+                            "scalars": {"porosity": "grid_scalars.f32"},
+                        },
+                    },
+                    {
+                        "id": "well_p1",
+                        "name": "Well P1",
+                        "n_vertices": 2,
+                        "n_cells": 2,
+                        "n_indices": 3,
+                        "source": "wellbore",
+                        "files": {
+                            "positions": "well_positions.f32",
+                            "indices": "well_indices.u32",
+                            "cell_ids": "well_cell_ids.u32",
+                            "scalars": {},
+                        },
+                    },
+                ],
+            },
+        ),
+        encoding="utf-8",
+    )
+    app = FastAPI()
+    app.include_router(build_router(tmp_path), prefix="/api")
+    client = TestClient(app)
+
+    histogram = client.get(
+        "/api/datasets/grid/histogram?property=porosity&bins=8",
+    )
+    assert histogram.status_code == 200
+    assert histogram.json()["count"] == 2
+    assert sum(histogram.json()["counts"]) == 2
+
+    sliced = client.post(
+        "/api/datasets/grid/slices",
+        json={"axis": "i", "index": 1, "property": "porosity"},
+    )
+    assert sliced.status_code == 200
+    assert sliced.json()["source"] == "slice"
+    assert sliced.json()["n_cells"] == 1
+
+    section = client.post(
+        "/api/datasets/grid/well-sections",
+        json={"well_dataset_id": "well_p1", "property": "porosity"},
+    )
+    assert section.status_code == 200
+    assert section.json()["source"] == "well-intersection"
+    assert "porosity" in section.json()["files"]["scalars"]
+
+    curtain = client.post(
+        "/api/datasets/grid/intersections",
+        json={
+            "polyline_x": [0.0, 1.0],
+            "polyline_y": [0.0, 1.0],
+            "property": "porosity",
+        },
+    )
+    assert curtain.status_code == 200
+    assert "porosity" in curtain.json()["files"]["scalars"]

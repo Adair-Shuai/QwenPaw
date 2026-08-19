@@ -599,6 +599,15 @@ def queue_component_update(component: str) -> dict[str, Any]:
         raise ComponentUpdateError("component updates are not configured")
     try:
         plans = {str(item["component"]): item for item in service.check()}
+        # A deferred check means signed updates exist but require a newer
+        # desktop core. Reporting "up-to-date" here would hide the required
+        # core upgrade from plugin-manager/app-market upgrade buttons.
+        if getattr(service, "last_check_deferred", False):
+            raise ComponentUpdateError(
+                "core version is below component minimum; "
+                "install the desktop update first",
+                reason="core_below_minimum",
+            )
         if component not in service.updater.managed_components:
             raise ComponentUpdateError(
                 f"component is not managed: {component}",
@@ -631,6 +640,12 @@ def queue_all_component_updates() -> dict[str, Any]:
             for item in service.check()
             if item.get("component")
         }
+        if getattr(service, "last_check_deferred", False):
+            raise ComponentUpdateError(
+                "core version is below component minimum; "
+                "install the desktop update first",
+                reason="core_below_minimum",
+            )
         _write_pending_components(components)
         return {
             "enabled": True,
@@ -715,6 +730,9 @@ class ComponentUpdateService:
         self.client = client
         self.manifest_url = manifest_url
         self._lock = threading.RLock()
+        # True when the most recent check() deferred because the running
+        # core is older than the manifest minimum (see check()).
+        self.last_check_deferred = False
 
     def _adopt_signed_new_components(
         self,
@@ -761,9 +779,35 @@ class ComponentUpdateService:
             self.updater.extend_managed_components(additions)
         return additions
 
+    def _fetch_manifest_for_current_core(self) -> dict[str, Any] | None:
+        """Load the signed manifest, or defer when this core is too old.
+
+        A newer desktop release can publish components whose
+        ``core_min_version`` exceeds the running core. Discovery must then
+        return "no component updates" so the Header can still install the
+        desktop core. Install/startup snapshot paths keep raising.
+        """
+        try:
+            with self._lock:
+                return self.client.fetch_manifest(self.manifest_url)
+        except ComponentUpdateError as exc:
+            if exc.reason != "core_below_minimum":
+                raise
+            logger.info(
+                "Deferring signed component updates until the desktop "
+                "core meets the manifest minimum: %s",
+                exc,
+            )
+            return None
+
     def check(self) -> list[dict[str, Any]]:
-        with self._lock:
-            manifest = self.client.fetch_manifest(self.manifest_url)
+        manifest = self._fetch_manifest_for_current_core()
+        # Queue endpoints must be able to tell "no updates" apart from
+        # "updates exist but this core is too old"; an empty plan list alone
+        # would let them misreport a deferred check as up-to-date.
+        self.last_check_deferred = manifest is None
+        if manifest is None:
+            return []
         plugins = get_plugins_dir()
         self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
@@ -1169,8 +1213,20 @@ def run_startup_updates() -> dict[str, Any]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Startup component update check failed", exc_info=True)
         errors.append({"component": "manifest", "error": str(exc)})
+        # A core older than the manifest minimum cannot make progress until
+        # the desktop core itself is upgraded. Burning the limited retry
+        # attempts on every restart would silently drop the queue before the
+        # user completes the core install, so keep the records intact.
+        is_core_defer = (
+            isinstance(exc, ComponentUpdateError)
+            and exc.reason == "core_below_minimum"
+        )
         for record in remaining_pending.values():
-            _record_pending_failure(record, exc)
+            _record_pending_failure(
+                record,
+                exc,
+                count_attempt=not is_core_defer,
+            )
     finally:
         service.client.close()
         _store_pending_records(

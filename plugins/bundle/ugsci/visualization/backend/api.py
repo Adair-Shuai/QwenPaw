@@ -57,6 +57,25 @@ class IntersectionRequest(BaseModel):
     z_min: float = 0.0
     z_max: float = 5000.0
     name: str = Field(default="section", max_length=128)
+    property: str = Field(default="", max_length=64)
+
+
+class SliceRequest(BaseModel):
+    """Extract a single I, J or K plane from a 3D grid."""
+
+    axis: Literal["i", "j", "k"] = "k"
+    index: int = Field(ge=1, le=100_000)
+    property: str = Field(default="", max_length=64)
+    name: str = Field(default="slice", max_length=128)
+
+
+class WellSectionRequest(BaseModel):
+    """Build a well-corridor section from a wellbore dataset."""
+
+    well_dataset_id: str = Field(min_length=1, max_length=256)
+    offset: float = Field(default=50.0, gt=0, le=10_000)
+    property: str = Field(default="", max_length=64)
+    name: str = Field(default="wellsec", max_length=128)
 
 
 class CommandAckRequest(BaseModel):
@@ -646,22 +665,136 @@ def build_router(plugin_dir: Path) -> APIRouter:
 
         try:
             from .converters.intersection import create_intersection_along_polyline
+            from .converters.arrays import load_f32, load_u32
             from .security import sanitize_identifier
-            # The current curtain-section converter constructs geometry from
-            # the requested polyline and Z range.  It does not inspect the
-            # source grid arrays, so avoid loading potentially gigabytes of
-            # positions/indices/cell IDs just to discard them.
+            files = ds.get("files") or {}
+            property_name = payload.property or next(iter((files.get("scalars") or {})), "")
+            grid_positions: list[float] = []
+            grid_cell_ids: list[int] = []
+            property_values: list[float] = []
+            if files.get("positions") and files.get("cell_ids") and property_name:
+                grid_positions = load_f32(resource_store.get_path(files["positions"]))
+                grid_cell_ids = load_u32(resource_store.get_path(files["cell_ids"]))
+                scalar_file = (files.get("scalars") or {}).get(property_name)
+                if scalar_file:
+                    property_values = load_f32(resource_store.get_path(scalar_file))
             result = create_intersection_along_polyline(
-                [], [], [],
+                grid_positions, [], grid_cell_ids,
                 payload.polyline_x, payload.polyline_y,
                 payload.z_min, payload.z_max,
                 sanitize_identifier(payload.name, "section"), bin_dir,
+                property_values=property_values or None,
+                property_name=property_name,
             )
             manifest_store.upsert(result)
             return JSONResponse(result)
         except Exception as exc:
             logger.error("Intersection failed: %s", exc, exc_info=True)
             raise HTTPException(500, f"Intersection generation failed: {exc}")
+
+    @router.post("/datasets/{dataset_id}/slices")
+    async def create_slice(dataset_id: str, payload: SliceRequest):
+        ds = manifest_store.get_dataset(dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        files = ds.get("files") or {}
+        if not files.get("positions") or not files.get("indices") or not files.get("cell_ids"):
+            raise HTTPException(422, "Dataset has no grid geometry to slice")
+        try:
+            from .converters.arrays import load_f32, load_u32
+            from .converters.slice import create_ijk_slice
+            from .security import sanitize_identifier
+            positions = load_f32(resource_store.get_path(files["positions"]))
+            indices = load_u32(resource_store.get_path(files["indices"]))
+            cell_ids = load_u32(resource_store.get_path(files["cell_ids"]))
+            property_name = payload.property or next(iter((files.get("scalars") or {})), "")
+            scalars = {}
+            if property_name and (files.get("scalars") or {}).get(property_name):
+                scalars[property_name] = load_f32(
+                    resource_store.get_path(files["scalars"][property_name]),
+                )
+            result = create_ijk_slice(
+                positions, indices, cell_ids, ds.get("grid_dims") or [],
+                payload.axis, payload.index,
+                sanitize_identifier(payload.name, "slice"), bin_dir,
+                scalars=scalars or None,
+            )
+            manifest_store.upsert(result)
+            return JSONResponse(result)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        except Exception as exc:
+            logger.error("Slice failed: %s", exc, exc_info=True)
+            raise HTTPException(500, f"Slice generation failed: {exc}")
+
+    @router.post("/datasets/{dataset_id}/well-sections")
+    async def create_well_section(dataset_id: str, payload: WellSectionRequest):
+        ds = manifest_store.get_dataset(dataset_id)
+        well = manifest_store.get_dataset(payload.well_dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        if not well:
+            raise HTTPException(404, f"Well dataset not found: {payload.well_dataset_id}")
+        well_files = well.get("files") or {}
+        if not well_files.get("positions"):
+            raise HTTPException(422, "Well dataset has no trajectory")
+        try:
+            from .converters.arrays import load_f32, load_u32
+            from .converters.intersection import create_well_intersection
+            from .security import sanitize_identifier
+            coords = load_f32(resource_store.get_path(well_files["positions"]))
+            if len(coords) < 6:
+                raise ValueError("Well trajectory is too short")
+            well_x = [coords[index] for index in range(0, len(coords), 3)]
+            well_y = [coords[index] for index in range(1, len(coords), 3)]
+            well_tvd = [-coords[index] for index in range(2, len(coords), 3)]
+            files = ds.get("files") or {}
+            property_name = payload.property or next(iter((files.get("scalars") or {})), "")
+            grid_positions: list[float] = []
+            grid_cell_ids: list[int] = []
+            property_values: list[float] = []
+            if files.get("positions") and files.get("cell_ids") and property_name:
+                grid_positions = load_f32(resource_store.get_path(files["positions"]))
+                grid_cell_ids = load_u32(resource_store.get_path(files["cell_ids"]))
+                scalar_file = (files.get("scalars") or {}).get(property_name)
+                if scalar_file:
+                    property_values = load_f32(resource_store.get_path(scalar_file))
+            result = create_well_intersection(
+                well_x, well_y, well_tvd,
+                sanitize_identifier(payload.name, "wellsec"), bin_dir,
+                offset=payload.offset,
+                grid_positions=grid_positions or None,
+                grid_cell_ids=grid_cell_ids or None,
+                property_values=property_values or None,
+                property_name=property_name,
+            )
+            manifest_store.upsert(result)
+            return JSONResponse(result)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+        except Exception as exc:
+            logger.error("Well section failed: %s", exc, exc_info=True)
+            raise HTTPException(500, f"Well section generation failed: {exc}")
+
+    @router.get("/datasets/{dataset_id}/histogram")
+    async def dataset_histogram(
+        dataset_id: str, property: str = "", bins: int = 24,
+    ):
+        ds = manifest_store.get_dataset(dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        filename = (ds.get("files", {}).get("scalars", {}) or {}).get(property)
+        if not filename:
+            raise HTTPException(404, f"Property not found: {property}")
+        try:
+            from .converters.arrays import compute_histogram, load_f32, load_u32
+            path = resource_store.get_path(filename)
+            values = load_f32(path) if filename.endswith(".f32") else [float(v) for v in load_u32(path)]
+            payload = compute_histogram(values, bins)
+            payload.update({"dataset_id": dataset_id, "property": property})
+            return JSONResponse(payload)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
 
     # ─── Benchmarks ────────────────────────────────────────────────────
 
@@ -702,8 +835,8 @@ def build_router(plugin_dir: Path) -> APIRouter:
     async def root():
         return PlainTextResponse(
             "Oil & Gas Visualization API\n\n"
-            "Formats: CMG DAT; Eclipse/tNavigator EGRID/GRID/GRDECL/INIT/UNRST; "
-            "ROFF; LAS/DLIS; VTK family; CSV/Arrow/Parquet.\n"
+            "Formats: CMG DAT/SR3; Eclipse/tNavigator EGRID/GRID/GRDECL/INIT/UNRST; "
+            "ROFF; LAS/DLIS; VTK family; CSV/Arrow/Parquet; well/surface/network JSON.\n"
             "Endpoints:\n"
             "  GET  /health                         — Health + capabilities\n"
             "  GET  /capabilities                    — Parsers/formats\n"
@@ -715,9 +848,11 @@ def build_router(plugin_dir: Path) -> APIRouter:
             "  POST /imports/{id}/cancel             — Cancel job\n"
             "  GET  /datasets                        — List datasets\n"
             "  GET  /datasets/{id}/manifest          — Per-dataset manifest\n"
-            "  GET  /datasets/{id}/resources/{rid}    — Per-dataset resource\n"
-            "  DELETE /datasets/{id}/cache           — Clear cache\n"
-            "  POST /datasets/{id}/intersections     — Generate section\n"
+            "  GET  /datasets/{id}/stats             — Property statistics\n"
+            "  GET  /datasets/{id}/histogram         — Property histogram\n"
+            "  POST /datasets/{id}/intersections     — Generate curtain section\n"
+            "  POST /datasets/{id}/slices            — Extract I/J/K slice\n"
+            "  POST /datasets/{id}/well-sections     — Well corridor section\n"
             "  GET  /benchmarks                      — List benchmarks\n"
             "  POST /benchmarks                      — Save benchmark\n"
         )
@@ -733,10 +868,15 @@ def _get_capabilities() -> dict[str, bool]:
         except ImportError:
             return False
     return {
-        "synthetic": True, "las": has_module("lasio"),
+        "synthetic": True,
+        # LAS 2.0 and GRDECL have builtin pure-Python parsers; lasio and
+        # xtgeo only extend coverage (LAS 3.0 quirks, binary EGRID/INIT/UNRST).
+        "las": True,
         "dlis": has_module("dlisio"), "roff": has_module("xtgeo"),
         "eclipse": has_module("xtgeo") or has_module("resdata"),
+        "eclipse_grdecl": True,
         "cmg": True,
+        "cmg_sr3": has_module("h5py"),
         "tnavigator": has_module("xtgeo"),
         "vtk": has_module("meshio"),
         "segy": has_module("segyio"), "arrow": has_module("pyarrow"),
@@ -782,6 +922,9 @@ def _get_all_files(ds: dict) -> dict[str, str]:
             result[files[key]] = files[key]
     for prop_name, fname in files.get("scalars", {}).items():
         result[fname] = fname
+    for step in ds.get("time_steps") or []:
+        for fname in (step.get("scalars") or {}).values():
+            result[fname] = fname
     return result
 
 

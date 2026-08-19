@@ -168,12 +168,31 @@ def build_registry():
         }
         return EclipseReader().read(str(grid), request.name, request.output_dir, options=options)
 
+    def cmg(request):
+        sr3_path = find_companion(request.source, request.companions, {".sr3"})
+        options = dict(request.options)
+        if sr3_path:
+            options["sr3_path"] = str(sr3_path)
+        return CmgReader().read(
+            str(request.source), request.name, request.output_dir, options=options,
+        )
+
+    def cmg_results(request):
+        dat = find_companion(request.source, request.companions, {".dat"})
+        if dat is None:
+            raise ValueError("SR3 import requires a same-stem CMG DAT companion")
+        return CmgReader().read(
+            str(dat), request.name, request.output_dir,
+            options={"sr3_path": str(request.source), **dict(request.options)},
+        )
+
     return FileConversionRegistry([
         ConversionHandler("roff", (".roff", ".roffbin"), roff, (".egrid", ".grid", ".grdecl")),
         ConversionHandler("eclipse", (".egrid", ".grid", ".grdecl"), eclipse_grid),
         ConversionHandler("tnavigator", (".data", ".model", ".tnav", ".tpr"), tnav),
         ConversionHandler("eclipse-results", (".init", ".unrst"), result_file, (".egrid", ".grid", ".grdecl")),
-        ConversionHandler("cmg", (".dat",), reader(CmgReader())),
+        ConversionHandler("cmg", (".dat",), cmg, (".sr3", ".irf")),
+        ConversionHandler("cmg-results", (".sr3",), cmg_results, (".dat",)),
         ConversionHandler("las", (".las", ".las3"), reader(LasReader())),
         ConversionHandler("dlis", (".dlis",), reader(DlisReader())),
         ConversionHandler("vtk", (".vtk", ".vtu", ".pvtu", ".vti", ".xdmf"), reader(VtkReader())),

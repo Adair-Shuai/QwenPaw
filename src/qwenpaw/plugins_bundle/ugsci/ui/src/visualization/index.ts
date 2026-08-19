@@ -48,15 +48,16 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       component: OilGasWorkspaceRenderer,
       extensions: [
         "egrid", "grid", "grdecl", "init", "unrst", "roff", "roffbin",
-        "dat", "data", "model", "tnav", "tpr", "las", "las3", "dlis",
+        "dat", "sr3", "irf", "data", "model", "tnav", "tpr", "las", "las3", "dlis",
         "vtk", "vtu", "pvtu", "vti", "xdmf", "csv", "arrow", "parquet",
-        "well.json", "surface.json", "network.json",
+        "well.json", "surface.json", "network.json", "json",
       ],
       mimeTypes: [
         "application/x-eclipse-grid",
         "application/x-eclipse-init",
         "application/x-eclipse-unrst",
         "application/x-cmg-dat",
+        "application/x-cmg-sr3",
         "application/x-tnavigator-data",
         "application/x-roff",
         "application/x-las",

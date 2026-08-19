@@ -61,6 +61,8 @@ class ComponentUpdateError(ValueError):
             self.reason = reason
         elif "is not managed" in message:
             self.reason = "not_managed"
+        elif "core version is below" in message:
+            self.reason = "core_below_minimum"
         else:
             self.reason = "conflict"
 
@@ -1572,6 +1574,7 @@ class ComponentUpdater:
         ):
             raise ComponentUpdateError(
                 "core version is below component minimum",
+                reason="core_below_minimum",
             )
         components = manifest.get("components")
         if not isinstance(components, dict):
@@ -1598,6 +1601,7 @@ class ComponentUpdater:
             ):
                 raise ComponentUpdateError(
                     f"core version is below {component} minimum",
+                    reason="core_below_minimum",
                 )
             raw_preserve = entry.get("preserve")
             entry["preserve"] = list(

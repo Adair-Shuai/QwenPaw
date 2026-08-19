@@ -281,6 +281,48 @@ async def create_intersection(
     })
 
 
+async def create_well_section(
+    dataset_id: str,
+    well_dataset_id: str,
+    offset: float = 50.0,
+    name: str = "wellsec",
+    property: str = "",  # pylint: disable=redefined-builtin
+) -> dict[str, Any]:
+    """Queue a well-corridor section coloured from the parent grid."""
+    if not dataset_id or not well_dataset_id:
+        return {"kind": "error", "error": "dataset_id and well_dataset_id are required"}
+    if not math.isfinite(float(offset)) or float(offset) <= 0:
+        return {"kind": "error", "error": "offset must be a positive finite number"}
+    return _viewer_result("create-well-section", {
+        "datasetId": dataset_id,
+        "wellDatasetId": well_dataset_id,
+        "offset": float(offset),
+        "name": name,
+        "property": property,
+    })
+
+
+async def create_ijk_slice(
+    dataset_id: str,
+    axis: str = "k",
+    index: int = 1,
+    name: str = "slice",
+    property: str = "",  # pylint: disable=redefined-builtin
+) -> dict[str, Any]:
+    """Queue an I/J/K plane extract for the active viewer."""
+    if axis.lower() not in {"i", "j", "k"}:
+        return {"kind": "error", "error": "axis must be i, j or k"}
+    if not isinstance(index, int) or index < 1:
+        return {"kind": "error", "error": "index must be a 1-based integer"}
+    return _viewer_result("create-slice", {
+        "datasetId": dataset_id,
+        "axis": axis.lower(),
+        "index": index,
+        "name": name,
+        "property": property,
+    })
+
+
 async def capture_visualization() -> dict[str, Any]:
     """Queue a PNG capture of the active viewer."""
     return _viewer_result("capture", {})
@@ -485,6 +527,8 @@ def get_tool_bindings() -> list[tuple[str, Any, str, str, str]]:
         "get_visualization_command_status": get_visualization_command_status,
         "focus_visualization_object": focus_visualization_object,
         "create_intersection": create_intersection,
+        "create_well_section": create_well_section,
+        "create_ijk_slice": create_ijk_slice,
         "capture_visualization": capture_visualization,
         "run_visualization_benchmark": run_visualization_benchmark,
         "filter_visualization": filter_visualization,
@@ -612,6 +656,36 @@ def get_tool_definitions() -> list[dict[str, Any]]:
             },
         },
         {
+            "name": "create_well_section",
+            "description": "沿井轨迹生成着色井剖面",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dataset_id": {"type": "string"},
+                    "well_dataset_id": {"type": "string"},
+                    "offset": {"type": "number", "default": 50},
+                    "name": {"type": "string"},
+                    "property": {"type": "string"},
+                },
+                "required": ["dataset_id", "well_dataset_id"],
+            },
+        },
+        {
+            "name": "create_ijk_slice",
+            "description": "按 I/J/K 层位提取储层切片",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "dataset_id": {"type": "string"},
+                    "axis": {"type": "string", "enum": ["i", "j", "k"], "default": "k"},
+                    "index": {"type": "integer", "minimum": 1},
+                    "name": {"type": "string"},
+                    "property": {"type": "string"},
+                },
+                "required": ["dataset_id", "index"],
+            },
+        },
+        {
             "name": "capture_visualization",
             "description": "截取当前可视化场景为图片",
             "parameters": {"type": "object", "properties": {}},
@@ -729,6 +803,24 @@ async def execute_tool(tool_name: str, args: dict[str, Any], api_base: str) -> d
                 "name": args.get("name", "section"),
             })
             return {"kind": "oilgas.intersection-result", "result": result}
+
+        elif tool_name == "create_well_section":
+            result = _api_post(api_base, f"/datasets/{args['dataset_id']}/well-sections", {
+                "well_dataset_id": args["well_dataset_id"],
+                "offset": args.get("offset", 50),
+                "name": args.get("name", "wellsec"),
+                "property": args.get("property", ""),
+            })
+            return {"kind": "oilgas.well-section-result", "result": result}
+
+        elif tool_name == "create_ijk_slice":
+            result = _api_post(api_base, f"/datasets/{args['dataset_id']}/slices", {
+                "axis": args.get("axis", "k"),
+                "index": args["index"],
+                "name": args.get("name", "slice"),
+                "property": args.get("property", ""),
+            })
+            return {"kind": "oilgas.slice-result", "result": result}
 
         elif tool_name == "capture_visualization":
             cmd_id = command_bus.enqueue("capture", {})

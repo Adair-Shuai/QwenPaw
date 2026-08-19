@@ -65,6 +65,16 @@
 - 发布：`desktop-publish.yml` 上传 dmg/nsis + 签名 latest.json 到 OSS；
   `desktop-promote.yml` 提升 `metadata/qwenpaw-tauri-latest.json`。
 - 后端 `/api/version/latest` 读桌面清单；Web Header **不**读该清单。
+- 桌面 Header「检查更新」**先探测核心**（Tauri 清单）。若有桌面更新，跳过签名组件检查，先下载/验签/安装并重启；组件更新留到新核心启动后再做。旧核心上组件清单 `core_min_version` 更高时，组件检查必须 defer（空列表），不得把整个更新流程打成失败。
+- 核心安装前写入 `ugsci.resumeComponentUpdatesAfterCore`。重启后续跑只调用 `refreshUpdates("components")`：后端未就绪或组件探测失败时**不得清掉标记**，应重试直到组件检查成功。`refreshUpdates` 的返回值用 `hasCoreUpdate` / `componentsChecked` / `componentCount` 区分核心与组件，不能把对象本身或核心的 `available` 当成组件已就绪。
+- **旧核心上的入队与启动语义**（防止 b11→b12 类错误复发）：
+  - 组件**检查**（`GET /api/components/updates`）defer 成空列表，不报错；
+  - 组件**入队**（`POST /api/components/updates/install`、`/<id>/install`）
+    必须返回 409 + `reason: core_below_minimum`，**不得**误报 `up-to-date`；
+    插件管理器/应用市场据此提示「先升级桌面端」（`pluginManager.coreUpdateRequired`），
+    且**不得**回退 `/plugins/replace` 热替换；
+  - **启动消费队列**遇 `core_below_minimum` 记错误但**不消耗** pending 的
+    重试次数（`attempts`），队列保留到核心升级完成后的重启再执行。
 
 ### 2.4 核心包（CLI / Web）
 

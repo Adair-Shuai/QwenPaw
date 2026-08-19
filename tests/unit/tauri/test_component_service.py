@@ -224,6 +224,30 @@ def test_new_plugin_is_planned_as_full(monkeypatch, tmp_path):
     assert plans[0]["artifact_kind"] == "full"
 
 
+def test_component_check_defers_when_core_is_below_manifest_minimum():
+    class _TooNewClient:
+        def fetch_manifest(self, _url):
+            raise ComponentUpdateError(
+                "core version is below component minimum",
+            )
+
+        def close(self):
+            return None
+
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components={"demo"},
+        target="windows-x86_64",
+        core_version="2.1.1b11",
+    )
+    service = ComponentUpdateService(
+        updater,
+        _TooNewClient(),
+        "https://oss/manifest.json",
+    )
+    assert service.check() == []
+
+
 def test_runtime_component_uses_external_versioned_root(monkeypatch, tmp_path):
     managed = tmp_path / "managed"
     active = tmp_path / "state" / "active.json"
@@ -1285,3 +1309,106 @@ def test_delta_lease_contention_does_not_fall_back_to_full() -> None:
         "artifact leases"
     )
     assert contention < fallback
+
+
+def test_queue_on_old_core_reports_core_below_minimum(monkeypatch):
+    """A deferred check must not be misreported as up-to-date.
+
+    On a core older than the manifest minimum, check() defers to an empty
+    plan list. Queue endpoints must surface reason=core_below_minimum so the
+    plugin manager can direct the user to the desktop update instead of
+    claiming the plugin is current.
+    """
+
+    class _Service:
+        def __init__(self):
+            self.updater = type(
+                "Updater",
+                (),
+                {"managed_components": {"ugsci"}},
+            )()
+            self.client = type("Client", (), {"close": lambda self: None})()
+            self.last_check_deferred = False
+
+        def check(self):
+            self.last_check_deferred = True
+            return []
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: _Service(),
+    )
+    with pytest.raises(ComponentUpdateError) as caught:
+        queue_component_update("ugsci")
+    assert caught.value.reason == "core_below_minimum"
+
+
+def test_queue_all_on_old_core_reports_core_below_minimum(
+    monkeypatch,
+    tmp_path,
+):
+    pending = tmp_path / "pending.json"
+
+    class _Service:
+        def __init__(self):
+            self.client = type("Client", (), {"close": lambda self: None})()
+            self.last_check_deferred = False
+
+        def check(self):
+            self.last_check_deferred = True
+            return []
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: _Service(),
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._PENDING_UPDATES_PATH",
+        pending,
+    )
+    with pytest.raises(ComponentUpdateError) as caught:
+        queue_all_component_updates()
+    assert caught.value.reason == "core_below_minimum"
+    assert not pending.exists()
+
+
+def test_startup_core_below_minimum_preserves_pending_attempts(
+    monkeypatch,
+    tmp_path,
+):
+    """Old-core startups must not burn the pending queue's retry budget.
+
+    The queue can only make progress after the desktop core is upgraded;
+    counting each old-core restart as a failed attempt would silently drop
+    the queued components before the user completes the core install.
+    """
+    pending = tmp_path / "pending.json"
+    pending.write_text(
+        json.dumps({"schema_version": 1, "components": ["demo"]}),
+        encoding="utf-8",
+    )
+
+    class _OldCoreService:
+        def __init__(self):
+            self.client = type("Client", (), {"close": lambda self: None})()
+
+        def snapshot(self):
+            raise ComponentUpdateError(
+                "core version is below component minimum",
+                reason="core_below_minimum",
+            )
+
+    monkeypatch.setattr(
+        "qwenpaw.components.service._PENDING_UPDATES_PATH",
+        pending,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        lambda: _OldCoreService(),
+    )
+    for _ in range(6):
+        result = run_startup_updates()
+        assert result["errors"][0]["component"] == "manifest"
+    payload = json.loads(pending.read_text(encoding="utf-8"))
+    assert list(payload["components"]) == ["demo"]
+    assert payload["components"]["demo"]["attempts"] == 0

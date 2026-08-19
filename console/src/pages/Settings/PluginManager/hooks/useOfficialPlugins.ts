@@ -72,6 +72,8 @@ export function useOfficialPlugins({
               }),
             );
             onInstalled();
+          } else if (result.method === "core-update-required") {
+            message.warning(t("pluginManager.coreUpdateRequired"));
           } else {
             message.info(t("pluginManager.catalogLatest"));
           }

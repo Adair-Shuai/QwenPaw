@@ -384,6 +384,49 @@ describe("plugin module", () => {
     ).resolves.toEqual({ method: "replaced", version: "2.0.0" });
   });
 
+  it("upgradeInstalledUGSciPlugin maps core_below_minimum to core-update-required", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError(
+        "core version is below component minimum; install the desktop update first",
+        409,
+        "core_below_minimum",
+      ),
+    );
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "a".repeat(64),
+        upgrade_available: true,
+      }),
+    ).resolves.toEqual({ method: "core-update-required" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("upgradeInstalledUGSciPlugin detects legacy core-minimum messages without reason", async () => {
+    hoisted.queueComponentUpdate.mockRejectedValue(
+      new ApiError(
+        "Component update check failed: core version is below component minimum",
+        409,
+      ),
+    );
+    global.fetch = vi.fn();
+
+    await expect(
+      upgradeInstalledUGSciPlugin({
+        plugin_id: "ugsci",
+        version: "2.0.0",
+        install_url: "https://ugsci-download.oss-cn-beijing.aliyuncs.com/x.zip",
+        sha256: "a".repeat(64),
+        upgrade_available: true,
+      }),
+    ).resolves.toEqual({ method: "core-update-required" });
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   it("upgradeInstalledUGSciPlugin does not fall back on other 409 reasons", async () => {
     hoisted.queueComponentUpdate.mockRejectedValue(
       new ApiError("component updates are not configured", 409, "conflict"),

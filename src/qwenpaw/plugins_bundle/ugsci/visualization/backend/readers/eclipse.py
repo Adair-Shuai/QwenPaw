@@ -46,13 +46,20 @@ class EclipseReader(BaseReader):
         If companion INIT and UNRST files exist alongside, extract
         static and dynamic properties.
         """
-        import xtgeo
+        source_path = Path(file_path)
+        suffix = source_path.suffix.lower()
+        try:
+            import xtgeo
+        except ImportError:
+            if suffix == ".grdecl":
+                # ASCII corner-point decks do not need xtgeo; binary
+                # EGRID/INIT/UNRST files still do.
+                from .grdecl import read_grdecl_dataset
+                return read_grdecl_dataset(file_path, name, bin_dir)
+            raise
 
         options = options or {}
         t0 = time.time()
-
-        source_path = Path(file_path)
-        suffix = source_path.suffix.lower()
         grid_format = "grdecl" if suffix == ".grdecl" else "egrid"
         grd = xtgeo.grid_from_file(str(source_path), fformat=grid_format)
         dims = grd.dimensions

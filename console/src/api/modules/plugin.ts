@@ -361,7 +361,8 @@ export interface UGSciUpgradeSource {
 export type UGSciUpgradeResult =
   | { method: "queued" }
   | { method: "replaced"; version: string }
-  | { method: "up-to-date" };
+  | { method: "up-to-date" }
+  | { method: "core-update-required" };
 
 /**
  * Upgrade an installed UGSci plugin/app.
@@ -383,6 +384,21 @@ function isUnmanagedComponentError(error: unknown): boolean {
   return !error.reason && /not managed/i.test(error.message);
 }
 
+/**
+ * Signed updates exist but require a newer desktop core. This must never
+ * fall through to the hot-replace path: the newer plugin can depend on the
+ * newer core. The UI should direct the user to the desktop update instead.
+ */
+function isCoreBelowMinimumError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 409) {
+    return false;
+  }
+  if (error.reason === "core_below_minimum") {
+    return true;
+  }
+  return !error.reason && /core version is below/i.test(error.message);
+}
+
 function requireUGSciUpgradeDigest(sha256: string | undefined): string {
   const digest = (sha256 || "").trim().toLowerCase();
   if (!/^[0-9a-f]{64}$/.test(digest)) {
@@ -400,6 +416,9 @@ export async function upgradeInstalledUGSciPlugin(
     // Signed path answered; do not hot-replace just because the catalog is newer.
     return { method: "up-to-date" };
   } catch (error) {
+    if (isCoreBelowMinimumError(error)) {
+      return { method: "core-update-required" };
+    }
     if (!isUnmanagedComponentError(error)) {
       throw error;
     }

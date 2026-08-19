@@ -29,6 +29,18 @@ export type UpdatePhase =
   | "downloaded"
   | "failed";
 
+export type RefreshUpdatesScope = "all" | "components";
+
+export interface RefreshUpdatesResult {
+  available: boolean;
+  hasCoreUpdate: boolean;
+  /** False when a desktop-core update is present and components were skipped. */
+  componentsChecked: boolean;
+  componentCount: number;
+  version: string;
+  body: string;
+}
+
 interface ContextValue {
   phase: UpdatePhase;
   isBackground: boolean;
@@ -46,7 +58,9 @@ interface ContextValue {
   startBackgroundDownload: () => Promise<void>;
   installDownloaded: () => Promise<void>;
   retry: () => Promise<void>;
-  refreshUpdates: () => Promise<boolean>;
+  refreshUpdates: (
+    scope?: RefreshUpdatesScope,
+  ) => Promise<RefreshUpdatesResult>;
   queueComponentUpdates: () => Promise<boolean>;
   dismissFailure: () => void;
 }
@@ -91,61 +105,118 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const refreshDesktopUpdate = useCallback(async (): Promise<boolean> => {
-    if (!isDesktopApp()) return false;
+  const refreshDesktopUpdate = useCallback(async (): Promise<{
+    available: boolean;
+    version: string;
+    body: string;
+  }> => {
+    if (!isDesktopApp()) {
+      return { available: false, version: "", body: "" };
+    }
     try {
       const info = await checkDesktopUpdate();
       if (!info) {
         if (hasCachedUpdateRef.current) {
           setHasUpdate(true);
-          return true;
+          return { available: true, version: "", body: "" };
         }
         setHasUpdate(false);
         setBody("");
         setSupportsLaterInstall(false);
-        return false;
+        return { available: false, version: "", body: "" };
       }
-      setVersion((prev) => prev || info.version);
-      setBody(info.body?.trim() ?? "");
+      const nextVersion = info.version;
+      const nextBody = info.body?.trim() ?? "";
+      setVersion((prev) => prev || nextVersion);
+      setBody(nextBody);
       setHasUpdate(true);
       setSupportsLaterInstall(Boolean(info.supportsLaterInstall));
-      return true;
+      return { available: true, version: nextVersion, body: nextBody };
     } catch (err) {
       console.warn("[updates] desktop update check failed", err);
-      if (hasCachedUpdateRef.current) return true;
+      if (hasCachedUpdateRef.current) {
+        return { available: true, version: "", body: "" };
+      }
       throw err;
     }
   }, []);
 
-  const refreshUpdates = useCallback(async () => {
-    setCheckWarning(null);
-    const [coreResult, componentResult] = await Promise.allSettled([
-      refreshDesktopUpdate(),
-      refreshComponentUpdates(),
-    ]);
-    const coreAvailable =
-      coreResult.status === "fulfilled" ? coreResult.value : false;
-    const componentCount =
-      componentResult.status === "fulfilled" ? componentResult.value : 0;
-    const failures = [
-      coreResult.status === "rejected"
-        ? `Desktop: ${toErrorMessage(coreResult.reason)}`
-        : null,
-      componentResult.status === "rejected"
-        ? `Components: ${toErrorMessage(componentResult.reason)}`
-        : null,
-    ].filter((value): value is string => Boolean(value));
-    if (failures.length > 0) {
-      const detail = failures.join("; ");
-      if (!coreAvailable && componentCount <= 0) {
-        throw new Error(detail);
+  const refreshUpdates = useCallback(
+    async (
+      scope: RefreshUpdatesScope = "all",
+    ): Promise<RefreshUpdatesResult> => {
+      setCheckWarning(null);
+      // Post-restart resume must probe signed components even if a leftover
+      // desktop-core advertisement would otherwise skip that check.
+      if (scope === "components") {
+        const componentCount = await refreshComponentUpdates();
+        return {
+          available: componentCount > 0,
+          hasCoreUpdate: false,
+          componentsChecked: true,
+          componentCount,
+          version: "",
+          body: "",
+        };
       }
-      // One source can still offer a valid update, but the unified dialog
-      // must disclose that the other source could not be checked.
-      setCheckWarning(detail);
-    }
-    return coreAvailable || componentCount > 0;
-  }, [refreshComponentUpdates, refreshDesktopUpdate]);
+      let core: { available: boolean; version: string; body: string } = {
+        available: false,
+        version: "",
+        body: "",
+      };
+      let coreError: unknown = null;
+      try {
+        core = await refreshDesktopUpdate();
+      } catch (err) {
+        coreError = err;
+      }
+      // Signed component packages for a newer desktop often declare a higher
+      // core_min_version. Checking them on the old core fails closed and used
+      // to abort the whole Header flow. Install the desktop core first; the
+      // next session (or a later button click) checks components.
+      if (core.available) {
+        setComponentUpdateCount(0);
+        return {
+          available: true,
+          hasCoreUpdate: true,
+          componentsChecked: false,
+          componentCount: 0,
+          version: core.version,
+          body: core.body,
+        };
+      }
+      let componentCount = 0;
+      try {
+        componentCount = await refreshComponentUpdates();
+      } catch (err) {
+        if (coreError) {
+          throw new Error(
+            `Desktop: ${toErrorMessage(
+              coreError,
+            )}; Components: ${toErrorMessage(err)}`,
+          );
+        }
+        throw err;
+      }
+      if (coreError) {
+        if (componentCount <= 0) {
+          throw coreError instanceof Error
+            ? coreError
+            : new Error(`Desktop: ${toErrorMessage(coreError)}`);
+        }
+        setCheckWarning(`Desktop: ${toErrorMessage(coreError)}`);
+      }
+      return {
+        available: componentCount > 0,
+        hasCoreUpdate: false,
+        componentsChecked: true,
+        componentCount,
+        version: "",
+        body: "",
+      };
+    },
+    [refreshComponentUpdates, refreshDesktopUpdate],
+  );
 
   // Probe only the local cache on mount. Remote core/component discovery is
   // deliberately owned by the version-number update button so startup never
@@ -173,8 +244,8 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const queueComponentUpdates = useCallback(async () => {
-    // Re-check immediately before queuing. A previous partial OSS failure
-    // must not silently turn a core update into a core-only update.
+    // Re-check immediately before queuing. Used only after the desktop core
+    // is current; a source failure must not look like "nothing to install".
     const available = await refreshComponentUpdates();
     setCheckWarning(null);
     if (available <= 0) return false;

@@ -36,6 +36,13 @@ import { useDesktopUpdate } from "../contexts/DesktopUpdateContext";
 import { isDesktopApp } from "../tauri/backendRuntime";
 import { restartForComponentUpdates } from "../tauri/desktopUpdate";
 import {
+  clearResumeComponentUpdatesAfterCore,
+  decideResumeComponentUpdates,
+  hasResumeComponentUpdatesAfterCore,
+  markResumeComponentUpdatesAfterCore,
+  RESUME_COMPONENT_UPDATES_RETRY_MS,
+} from "./updateResume";
+import {
   CopyOutlined,
   CheckOutlined,
   TagOutlined,
@@ -121,6 +128,53 @@ export default function Header() {
       })
       .catch(() => {});
   }, []);
+
+  // After a desktop-core install/restart, continue with signed components.
+  // The sidecar answers /api/version before background startup finishes, so
+  // a first probe can fail while the backend is still starting. Keep the
+  // durable flag and retry until a component check actually completes.
+  useEffect(() => {
+    if (!onDesktop) return;
+    if (!hasResumeComponentUpdatesAfterCore()) return;
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    const scheduleRetry = () => {
+      if (cancelled) return;
+      timer = setTimeout(run, RESUME_COMPONENT_UPDATES_RETRY_MS);
+    };
+
+    const run = () => {
+      void desktop
+        .refreshUpdates("components")
+        .then((result) => {
+          if (cancelled) return;
+          const decision = decideResumeComponentUpdates({
+            ok: true,
+            componentsChecked: result.componentsChecked,
+            componentCount: result.componentCount,
+          });
+          if (decision === "retry") {
+            scheduleRetry();
+            return;
+          }
+          clearResumeComponentUpdatesAfterCore();
+          if (decision !== "open") return;
+          setUpdateMarkdown(t("sidebar.updateModal.unifiedInstallHint"));
+          setUpdateModalOpen(true);
+        })
+        .catch(() => {
+          if (cancelled) return;
+          scheduleRetry();
+        });
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+      if (timer !== undefined) clearTimeout(timer);
+    };
+  }, [desktop.refreshUpdates, onDesktop, t]);
 
   // Hidden gesture: 8 rapid clicks on the logo within 3 seconds toggles DevTools
   // in the Tauri desktop build. This keeps DevTools inaccessible via the default
@@ -254,9 +308,14 @@ export default function Header() {
       : "en";
 
     if (onDesktop) {
-      setUpdateMarkdown(
-        desktop.body || t("sidebar.updateModal.unifiedInstallHint"),
-      );
+      const fallback = desktop.hasCoreUpdate
+        ? t("sidebar.updateModal.coreFirstInstallHint", {
+            version: desktop.version,
+            defaultValue:
+              "UGSci Desktop {{version}} will be installed first and the app will restart. Component updates will be checked after the new version starts.",
+          })
+        : t("sidebar.updateModal.unifiedInstallHint");
+      setUpdateMarkdown(desktop.body || fallback);
       return;
     }
 
@@ -270,31 +329,27 @@ export default function Header() {
     setUnifiedUpdateBusy(true);
     setUpdateModalOpen(false);
     try {
-      let queuedComponents = false;
-      let componentQueueError: unknown = null;
-      try {
-        queuedComponents = await desktop.queueComponentUpdates();
-      } catch (err) {
-        componentQueueError = err;
-      }
-      if (componentQueueError) throw componentQueueError;
       if (desktop.hasCoreUpdate) {
-        if (isReady) {
-          await desktop.installDownloaded();
-        } else {
-          await desktop.startInstall();
+        markResumeComponentUpdatesAfterCore();
+        try {
+          if (isReady) {
+            await desktop.installDownloaded();
+          } else {
+            await desktop.startInstall();
+          }
+        } catch (err) {
+          clearResumeComponentUpdatesAfterCore();
+          throw err;
         }
         return;
       }
+      const queuedComponents = await desktop.queueComponentUpdates();
       if (queuedComponents) {
         await restartForComponentUpdates();
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       message.error(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
-      // Keep the unified decision surface visible so the user can retry or
-      // cancel. A component-source failure must never silently become a
-      // core-only update.
       setUpdateModalOpen(true);
     } finally {
       installActionRef.current = false;
@@ -414,7 +469,7 @@ export default function Header() {
                   setUnifiedUpdateBusy(true);
                   try {
                     const found = onDesktop
-                      ? await desktop.refreshUpdates()
+                      ? (await desktop.refreshUpdates()).available
                       : await refreshWebUpdate();
                     if (found) handleOpenUpdateModal();
                     else message.success(t("sidebar.updateModal.upToDate"));

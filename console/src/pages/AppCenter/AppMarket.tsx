@@ -325,6 +325,11 @@ export function AppMarket({
                 key: loadingKey,
               });
               await onInstalled();
+            } else if (result.method === "core-update-required") {
+              message.warning({
+                content: tRef.current("pluginManager.coreUpdateRequired"),
+                key: loadingKey,
+              });
             } else {
               message.info({
                 content: tRef.current("pluginManager.catalogLatest"),

@@ -248,7 +248,13 @@ class JobManager:
 
                 # Atomic manifest update
                 from ..api import _update_manifest
-                _update_manifest(bin_dir, ds_info)
+                related = list(ds_info.get("related_datasets") or [])
+                primary = {key: value for key, value in ds_info.items() if key != "related_datasets"}
+                _update_manifest(bin_dir, primary)
+                for extra in related:
+                    extra.setdefault("metadata", {})["managed"] = True
+                    extra.setdefault("metadata", {})["parent_dataset"] = primary.get("id")
+                    _update_manifest(bin_dir, extra)
 
                 with job._lock:
                     if job.status == "cancelled":
@@ -259,8 +265,11 @@ class JobManager:
                     job.progress = 1.0
                     job.status = "completed"
                     job.finished_at = time.time()
-                    job.result = ds_info
-                job.add_event("completed", {"dataset_id": ds_info["id"]})
+                    job.result = {**primary, "related_datasets": related}
+                job.add_event("completed", {
+                    "dataset_id": primary["id"],
+                    "related_ids": [item.get("id") for item in related],
+                })
 
             except Exception as exc:
                 with job._lock:

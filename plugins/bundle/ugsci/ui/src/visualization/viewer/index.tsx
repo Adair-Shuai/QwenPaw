@@ -87,6 +87,9 @@ class ThreeViewerEngine {
   private restoringScene = false;
   private measureMode = false;
   private measurePoints: THREE.Vector3[] = [];
+  private clipPlane = new THREE.Plane(new THREE.Vector3(0, 0, -1), 0);
+  private wellLogEl: HTMLCanvasElement | null = null;
+  private histogramEl: HTMLCanvasElement | null = null;
 
   // Worker
   private workerManager = new WorkerManager();
@@ -119,6 +122,7 @@ class ThreeViewerEngine {
     this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    this.renderer.localClippingEnabled = true;
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
@@ -152,10 +156,11 @@ class ThreeViewerEngine {
     this.infoEl = this.buildInfoBar();
     this.detailsEl = this.buildDetailsPanel();
     this.legendEl = this.buildLegend();
+    this.histogramEl = this.buildHistogram();
+    this.wellLogEl = this.buildWellLogPanel();
     this.toolbarEl = this.buildToolbar();
     this.viewRouter = new ViewRouter(this.container, (view) => {
-      this.infoEl.textContent = `当前视图: ${ViewRouter.VIEW_LABELS[view]}`;
-      viewerStore.setActiveView(view);
+      void this.applyActiveView(view);
     });
     const viewTabs = this.viewRouter.createTabs();
     viewTabs.className = "oilgas-view-tabs";
@@ -416,6 +421,86 @@ class ThreeViewerEngine {
     });
     sectionBtn.addEventListener("click", () => this.createIntersectionFromUI());
     sidebar.appendChild(sectionBtn);
+
+    const wellSecBtn = document.createElement("button");
+    wellSecBtn.textContent = "沿井生成剖面";
+    Object.assign(wellSecBtn.style, {
+      width: "100%", padding: "7px", background: "#30363d", color: "#c9d1d9",
+      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
+    });
+    wellSecBtn.addEventListener("click", () => { void this.createWellSectionFromUI(); });
+    sidebar.appendChild(wellSecBtn);
+
+    sidebar.appendChild(this.createLabel("IJK 切片 / 后处理"));
+    const sliceRow = document.createElement("div");
+    sliceRow.style.cssText = "display:flex;gap:4px;margin-bottom:6px;";
+    const axisSelect = document.createElement("select");
+    axisSelect.id = "vis-slice-axis";
+    Object.assign(axisSelect.style, this.selectStyle);
+    for (const axis of ["k", "i", "j"]) {
+      const opt = document.createElement("option");
+      opt.value = axis;
+      opt.textContent = axis.toUpperCase();
+      axisSelect.appendChild(opt);
+    }
+    const sliceIndex = document.createElement("input");
+    sliceIndex.type = "number"; sliceIndex.min = "1"; sliceIndex.value = "1";
+    sliceIndex.id = "vis-slice-index";
+    Object.assign(sliceIndex.style, this.selectStyle);
+    sliceRow.appendChild(axisSelect);
+    sliceRow.appendChild(sliceIndex);
+    sidebar.appendChild(sliceRow);
+    const sliceBtn = document.createElement("button");
+    sliceBtn.textContent = "提取切片";
+    Object.assign(sliceBtn.style, {
+      width: "100%", padding: "7px", background: "#30363d", color: "#c9d1d9",
+      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
+    });
+    sliceBtn.addEventListener("click", () => { void this.createSliceFromUI(); });
+    sidebar.appendChild(sliceBtn);
+
+    const isolateK = document.createElement("input");
+    isolateK.type = "range"; isolateK.min = "1"; isolateK.max = "1"; isolateK.value = "1";
+    isolateK.id = "vis-k-layer";
+    Object.assign(isolateK.style, { width: "100%", marginBottom: "4px" });
+    isolateK.addEventListener("input", () => {
+      const kFilter = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
+      const isolate = (this.sidebar.querySelector("#vis-isolate-k") as HTMLInputElement | null)?.checked;
+      if (kFilter && isolate) {
+        kFilter.value = `${isolateK.value}:${isolateK.value}`;
+        this.applyFilters();
+      }
+    });
+    sidebar.appendChild(isolateK);
+    const isolateLabel = document.createElement("label");
+    isolateLabel.style.display = "block"; isolateLabel.style.marginBottom = "8px"; isolateLabel.style.fontSize = "12px";
+    const isolateCheck = document.createElement("input");
+    isolateCheck.type = "checkbox"; isolateCheck.id = "vis-isolate-k"; isolateCheck.style.marginRight = "6px";
+    isolateCheck.addEventListener("change", () => {
+      const kFilter = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
+      if (!kFilter) return;
+      kFilter.value = isolateCheck.checked ? `${isolateK.value}:${isolateK.value}` : "";
+      this.applyFilters();
+    });
+    isolateLabel.appendChild(isolateCheck);
+    isolateLabel.appendChild(document.createTextNode("只显示当前 K 层"));
+    sidebar.appendChild(isolateLabel);
+
+    const clipCheck = document.createElement("input");
+    clipCheck.type = "checkbox"; clipCheck.id = "vis-clip"; clipCheck.style.marginRight = "6px";
+    const clipLabel = document.createElement("label");
+    clipLabel.style.display = "block"; clipLabel.style.marginBottom = "4px"; clipLabel.style.fontSize = "12px";
+    clipLabel.appendChild(clipCheck);
+    clipLabel.appendChild(document.createTextNode("深度裁剪平面"));
+    sidebar.appendChild(clipLabel);
+    const clipSlider = document.createElement("input");
+    clipSlider.type = "range"; clipSlider.min = "0"; clipSlider.max = "100"; clipSlider.value = "50";
+    clipSlider.id = "vis-clip-depth";
+    Object.assign(clipSlider.style, { width: "100%", marginBottom: "12px" });
+    const applyClip = () => this.applyClipPlane(clipCheck.checked, Number(clipSlider.value) / 100);
+    clipCheck.addEventListener("change", applyClip);
+    clipSlider.addEventListener("input", applyClip);
+    sidebar.appendChild(clipSlider);
 
     // Benchmark buttons
     sidebar.appendChild(this.createLabel("性能测试"));
@@ -860,6 +945,255 @@ class ThreeViewerEngine {
     if (title) title.textContent = `${this.currentProperty || "统一颜色"} · ${this.currentColormap}`;
     if (range) range.textContent = `${this.scalarMin.toPrecision(4)}  —  ${this.scalarMax.toPrecision(4)}`;
     this.legendEl.style.display = this.currentProperty ? "block" : "none";
+    this.renderHistogram();
+  }
+
+  private buildHistogram(): HTMLCanvasElement {
+    const canvas = document.createElement("canvas");
+    canvas.width = 220;
+    canvas.height = 72;
+    Object.assign(canvas.style, {
+      position: "absolute", right: "12px", bottom: "92px", width: "160px", height: "56px",
+      background: "rgba(13,17,23,.82)", border: "1px solid #30363d", borderRadius: "6px", zIndex: "12",
+    } as CSSStyleDeclaration);
+    canvas.title = "属性直方图";
+    this.container.appendChild(canvas);
+    return canvas;
+  }
+
+  private buildWellLogPanel(): HTMLCanvasElement {
+    const canvas = document.createElement("canvas");
+    canvas.width = 360;
+    canvas.height = 720;
+    Object.assign(canvas.style, {
+      position: "absolute", top: "88px", right: "12px", bottom: "16px", width: "280px",
+      background: "rgba(13,17,23,.94)", border: "1px solid #30363d", borderRadius: "8px",
+      zIndex: "25", display: "none",
+    } as CSSStyleDeclaration);
+    canvas.title = "测井曲线";
+    this.container.appendChild(canvas);
+    return canvas;
+  }
+
+  private renderHistogram() {
+    const canvas = this.histogramEl;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    ctx.fillStyle = "#0d1117";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const values = this.currentScalarValues;
+    if (!values || values.length < 2) {
+      canvas.style.display = "none";
+      return;
+    }
+    canvas.style.display = "block";
+    const bins = 24;
+    const counts = new Array(bins).fill(0);
+    const min = this.scalarMin;
+    const max = this.scalarMax;
+    const span = max - min || 1;
+    for (const value of values) {
+      if (!Number.isFinite(value)) continue;
+      const slot = Math.min(bins - 1, Math.max(0, Math.floor(((value - min) / span) * bins)));
+      counts[slot] += 1;
+    }
+    const peak = Math.max(...counts, 1);
+    for (let index = 0; index < bins; index++) {
+      const [r, g, b] = colormap(this.currentColormap, (index + 0.5) / bins);
+      ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+      const height = (counts[index] / peak) * (canvas.height - 8);
+      ctx.fillRect(index * (canvas.width / bins), canvas.height - height, canvas.width / bins - 1, height);
+    }
+  }
+
+  private renderWellLog() {
+    const canvas = this.wellLogEl;
+    if (!canvas || !this.currentDataset) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const width = canvas.width;
+    const height = canvas.height;
+    ctx.fillStyle = "#0d1117";
+    ctx.fillRect(0, 0, width, height);
+    ctx.fillStyle = "#58a6ff";
+    ctx.font = "14px sans-serif";
+    ctx.fillText(this.currentDataset.name, 12, 22);
+    const scalars = this.currentDataset.files.scalars || {};
+    const names = Object.keys(scalars).slice(0, 4);
+    if (!this.currentScalarValues || names.length === 0) {
+      ctx.fillStyle = "#8b949e";
+      ctx.fillText("当前数据集没有测井曲线", 12, 48);
+      return;
+    }
+    const depths = this.geometry?.getAttribute("position");
+    const n = this.currentScalarValues.length;
+    const padTop = 40;
+    const padBottom = 20;
+    const trackHeight = height - padTop - padBottom;
+    const trackWidth = (width - 20) / Math.max(names.length, 1);
+    ctx.strokeStyle = "#30363d";
+    for (let track = 0; track < names.length; track++) {
+      const x0 = 10 + track * trackWidth;
+      ctx.strokeRect(x0, padTop, trackWidth - 8, trackHeight);
+      ctx.fillStyle = "#8b949e";
+      ctx.font = "11px sans-serif";
+      ctx.fillText(names[track], x0 + 4, padTop - 8);
+    }
+    const min = this.scalarMin;
+    const span = (this.scalarMax - this.scalarMin) || 1;
+    ctx.strokeStyle = "#58a6ff";
+    ctx.beginPath();
+    for (let index = 0; index < n; index++) {
+      const t = n <= 1 ? 0 : index / (n - 1);
+      const y = padTop + t * trackHeight;
+      const x = 14 + ((this.currentScalarValues[index] - min) / span) * (trackWidth - 16);
+      if (index === 0) ctx.moveTo(x, y);
+      else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    if (depths) {
+      ctx.fillStyle = "#8b949e";
+      ctx.font = "10px monospace";
+      const top = Math.abs(depths.getZ(0) + this.origin[2]);
+      const bottom = Math.abs(depths.getZ(Math.max(0, depths.count - 1)) + this.origin[2]);
+      ctx.fillText(`${top.toFixed(1)}`, 12, padTop + 10);
+      ctx.fillText(`${bottom.toFixed(1)}`, 12, height - 8);
+    }
+  }
+
+  private applyClipPlane(enabled: boolean, fraction: number) {
+    if (!this.geometry?.boundingBox || !this.mesh) return;
+    const box = this.geometry.boundingBox;
+    const z = box.min.z + (box.max.z - box.min.z) * (1 - Math.min(1, Math.max(0, fraction)));
+    this.clipPlane.setFromNormalAndCoplanarPoint(
+      new THREE.Vector3(0, 0, -1),
+      new THREE.Vector3(0, 0, z),
+    );
+    this.renderer.localClippingEnabled = enabled;
+    const material = this.mesh.material as THREE.MeshPhongMaterial;
+    if (material && "clippingPlanes" in material) {
+      material.clippingPlanes = enabled ? [this.clipPlane] : [];
+      material.needsUpdate = true;
+    }
+  }
+
+  private overlaySources(view: string): string[] {
+    if (view === "wellbore" || view === "welllog") return ["wellbore", "las", "dlis"];
+    if (view === "intersection") return ["intersection", "well-intersection", "slice", "surface"];
+    if (view === "network") return ["network", "network-tube"];
+    return [];
+  }
+
+  private async applyActiveView(view: ReturnType<ViewRouter["getActiveView"]>) {
+    viewerStore.setActiveView(view);
+    this.infoEl.textContent = `当前视图: ${ViewRouter.VIEW_LABELS[view]}`;
+    if (this.wellLogEl) this.wellLogEl.style.display = view === "welllog" ? "block" : "none";
+    if (!this.manifest) return;
+    const sourceOf = (dataset: DatasetInfo) => dataset.source || "";
+    const pickFirst = (sources: string[]) => this.manifest!.datasets.find((item) => sources.includes(sourceOf(item)));
+    const current = this.currentDataset?.source || "";
+    if (view === "reservoir") {
+      const grid = this.manifest.datasets.find((item) => !this.overlaySources("wellbore").concat(this.overlaySources("intersection"), this.overlaySources("network"), ["surface"]).includes(sourceOf(item)));
+      if (grid && grid.id !== this.currentDataset?.id) await this.loadDataset(grid.id);
+    } else if (view === "wellbore") {
+      if (!["wellbore", "las", "dlis"].includes(current)) {
+        const well = pickFirst(["wellbore", "las", "dlis"]);
+        if (well) await this.loadDataset(well.id);
+        else this.infoEl.textContent = "没有井轨迹。导入 LAS 或含 WELL/PERF 的 CMG 模型。";
+      }
+    } else if (view === "intersection") {
+      if (!["intersection", "well-intersection", "slice"].includes(current)) {
+        const section = pickFirst(["intersection", "well-intersection", "slice"]);
+        if (section) await this.loadDataset(section.id);
+        else this.infoEl.textContent = "没有剖面。请生成垂直剖面、井剖面或 IJK 切片。";
+      }
+    } else if (view === "welllog") {
+      const log = pickFirst(["las", "dlis"]);
+      if (log && log.id !== this.currentDataset?.id) await this.loadDataset(log.id);
+      this.renderWellLog();
+      if (!log) this.infoEl.textContent = "没有测井曲线。请导入 LAS/DLIS 文件。";
+    } else if (view === "network") {
+      if (!["network", "network-tube"].includes(current)) {
+        const net = pickFirst(["network", "network-tube"]);
+        if (net) await this.loadDataset(net.id);
+        else this.infoEl.textContent = "没有管网数据。请导入 CSV/JSON 管网。";
+      }
+    }
+  }
+
+  private firstWellDataset(): DatasetInfo | undefined {
+    return this.manifest?.datasets.find((item) => ["wellbore", "las", "dlis"].includes(item.source || ""));
+  }
+
+  private async createWellSectionFromUI() {
+    if (!this.currentDataset) return;
+    const well = this.currentDataset.source === "wellbore" || this.currentDataset.source === "las"
+      ? this.currentDataset
+      : this.firstWellDataset();
+    if (!well) {
+      this.showDetails("没有可用井轨迹，无法生成井剖面");
+      return;
+    }
+    const grid = this.manifest?.datasets.find((item) => ["cmg", "egrid", "roff", "eclipse"].includes(item.source || "") || item.grid_dims)
+      || this.currentDataset;
+    try {
+      const response = await fetch(
+        `${this.apiBase}/datasets/${encodeURIComponent(grid.id)}/well-sections`,
+        {
+          method: "POST",
+          headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            well_dataset_id: well.id,
+            offset: 50,
+            property: this.currentProperty,
+            name: `wellsec_${Date.now()}`,
+          }),
+        },
+      );
+      if (!response.ok) {
+        this.showDetails(`井剖面生成失败: HTTP ${response.status}`);
+        return;
+      }
+      const result = await response.json();
+      this.manifest = await this.fetchJson("/manifest");
+      this.updateObjectTree();
+      await this.loadDataset(result.id);
+      this.viewRouter.switchTo("intersection");
+      this.showDetails(`井剖面已生成：${result.name}`);
+    } catch (err) {
+      this.showDetails(`井剖面生成失败：${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  private async createSliceFromUI() {
+    if (!this.currentDataset) return;
+    const axis = (this.sidebar.querySelector("#vis-slice-axis") as HTMLSelectElement)?.value || "k";
+    const index = Number((this.sidebar.querySelector("#vis-slice-index") as HTMLInputElement)?.value || 1);
+    try {
+      const response = await fetch(
+        `${this.apiBase}/datasets/${encodeURIComponent(this.currentDataset.id)}/slices`,
+        {
+          method: "POST",
+          headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+          body: JSON.stringify({
+            axis, index, property: this.currentProperty, name: `slice_${axis}${index}_${Date.now()}`,
+          }),
+        },
+      );
+      if (!response.ok) {
+        this.showDetails(`切片生成失败: HTTP ${response.status}`);
+        return;
+      }
+      const result = await response.json();
+      this.manifest = await this.fetchJson("/manifest");
+      this.updateObjectTree();
+      await this.loadDataset(result.id);
+      this.viewRouter.switchTo("intersection");
+      this.showDetails(`切片已生成：${result.name}`);
+    } catch (err) {
+      this.showDetails(`切片生成失败：${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
   private showDetails(text: string) {
@@ -930,6 +1264,7 @@ class ThreeViewerEngine {
           body: JSON.stringify({
             polyline_x: points.map(([x]) => x), polyline_y: points.map(([, y]) => y),
             z_min: zMin, z_max: zMax, name: `section_${Date.now()}`,
+            property: this.currentProperty,
           }),
         },
       );
@@ -942,6 +1277,7 @@ class ThreeViewerEngine {
       this.updateObjectTree();
       this.showDetails(`剖面已生成：${result.name}`);
       await this.loadDataset(result.id);
+      this.viewRouter.switchTo("intersection");
     } catch (err) {
       this.showDetails(`剖面生成失败：${err instanceof Error ? err.message : String(err)}`);
     }
@@ -1018,9 +1354,9 @@ class ThreeViewerEngine {
       list.appendChild(group);
     };
     const datasets = this.manifest.datasets;
-    appendGroup("📋 网格", datasets.filter((item) => !["las", "dlis", "network", "network-tube", "wellbore", "surface", "intersection", "well-intersection"].includes(item.source || "")));
+    appendGroup("📋 网格", datasets.filter((item) => !["las", "dlis", "network", "network-tube", "wellbore", "surface", "intersection", "well-intersection", "slice"].includes(item.source || "")));
     appendGroup("🛢 井", datasets.filter((item) => ["las", "dlis", "wellbore"].includes(item.source || "")));
-    appendGroup("📐 层面/剖面", datasets.filter((item) => ["surface", "intersection", "well-intersection"].includes(item.source || "")));
+    appendGroup("📐 层面/剖面", datasets.filter((item) => ["surface", "intersection", "well-intersection", "slice"].includes(item.source || "")));
     appendGroup("🔗 管网", datasets.filter((item) => ["network", "network-tube"].includes(item.source || "")));
   }
 
@@ -1321,6 +1657,7 @@ class ThreeViewerEngine {
         vertexColors: hasVertexColors,
         side: THREE.DoubleSide, transparent: true,
         opacity: this.opacity, wireframe: this.wireframe,
+        clippingPlanes: [],
       });
       // Three.js renders transparent DoubleSide materials in two passes by
       // default. Closed reservoir cells need only one pass here.
@@ -1342,6 +1679,14 @@ class ThreeViewerEngine {
     this.controls.update();
 
     this.infoEl.textContent = `${ds.name} — ${ds.n_cells.toLocaleString()} cells | 原点: (${cx.toFixed(0)}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
+    const kSlider = this.sidebar.querySelector("#vis-k-layer") as HTMLInputElement | null;
+    if (kSlider && ds.grid_dims?.[2]) {
+      kSlider.max = String(ds.grid_dims[2]);
+      kSlider.value = kSlider.value || "1";
+    }
+    const sliceIndex = this.sidebar.querySelector("#vis-slice-index") as HTMLInputElement | null;
+    if (sliceIndex && ds.grid_dims?.[2]) sliceIndex.max = String(ds.grid_dims[2]);
+    if (this.viewRouter.getActiveView() === "welllog") this.renderWellLog();
   }
 
   private resetFilters() {
@@ -2059,6 +2404,7 @@ class ThreeViewerEngine {
               z_min: args.z_min,
               z_max: args.z_max,
               name: args.name,
+              property: args.property || this.currentProperty,
             }),
           },
         );
@@ -2071,6 +2417,55 @@ class ThreeViewerEngine {
         this.updateObjectTree();
         this.infoEl.textContent = `剖面已生成: ${result.name || args.name || "section"}`;
         if (result.id) await this.loadDataset(result.id);
+        this.viewRouter.switchTo("intersection");
+        break;
+      }
+      case "create-well-section": {
+        const datasetId = args.datasetId || this.currentDataset?.id;
+        if (!datasetId) break;
+        const response = await fetch(
+          `${this.apiBase}/datasets/${encodeURIComponent(datasetId)}/well-sections`,
+          {
+            method: "POST",
+            headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({
+              well_dataset_id: args.wellDatasetId,
+              offset: args.offset ?? 50,
+              name: args.name,
+              property: args.property || this.currentProperty,
+            }),
+          },
+        );
+        if (!response.ok) throw new Error(`井剖面生成失败: HTTP ${response.status}`);
+        const wellResult = await response.json();
+        this.manifest = await this.fetchJson("/manifest");
+        this.updateObjectTree();
+        if (wellResult.id) await this.loadDataset(wellResult.id);
+        this.viewRouter.switchTo("intersection");
+        break;
+      }
+      case "create-slice": {
+        const datasetId = args.datasetId || this.currentDataset?.id;
+        if (!datasetId) break;
+        const response = await fetch(
+          `${this.apiBase}/datasets/${encodeURIComponent(datasetId)}/slices`,
+          {
+            method: "POST",
+            headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({
+              axis: args.axis || "k",
+              index: args.index,
+              name: args.name,
+              property: args.property || this.currentProperty,
+            }),
+          },
+        );
+        if (!response.ok) throw new Error(`切片生成失败: HTTP ${response.status}`);
+        const sliceResult = await response.json();
+        this.manifest = await this.fetchJson("/manifest");
+        this.updateObjectTree();
+        if (sliceResult.id) await this.loadDataset(sliceResult.id);
+        this.viewRouter.switchTo("intersection");
         break;
       }
       case "capture":
@@ -2196,7 +2591,7 @@ registerEngineFactory("three-reservoir", (options) => {
 });
 
 const OilGasViewerRuntime = {
-  version: "0.2.0",
+  version: "0.3.0",
   mount(element: HTMLElement, options: ViewerMountOptions): ViewerHandle {
     return mountViewer(element, options);
   },
