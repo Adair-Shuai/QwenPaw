@@ -30,11 +30,11 @@ import {
   RightOutlined,
 } from "@ant-design/icons";
 import { Tooltip, message } from "antd";
-import { invoke } from "@tauri-apps/api/core";
 import { workspaceApi } from "@/api/modules/workspace";
 import { buildAuthHeaders } from "@/api/authHeaders";
 import { useAgentStore } from "@/stores/agentStore";
 import { openFilePreview } from "@/features/files-workspace/openFilePreview";
+import { revealWorkspacePath } from "@/features/files-workspace/workspaceReveal";
 import {
   DownloadCancelledError,
   downloadFileFromUrl,
@@ -827,9 +827,11 @@ function getMimeType(ext: string): string {
 // 主组件
 // ─────────────────────────────────────────────────────────────────────────────
 
-const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
-  data,
-}) => {
+const FileSummaryCards: React.FC<{
+  data: Record<string, unknown>;
+  chatId?: string;
+  projectDirOverride?: string;
+}> = ({ data, chatId, projectDirOverride }) => {
   const { isDark } = useTheme();
   const fileInfos = useMemo(() => extractFileInfos(data), [data]);
   const [expandedFiles, setExpandedFiles] = useState(false);
@@ -909,15 +911,15 @@ const FileSummaryCards: React.FC<{ data: Record<string, unknown> }> = ({
 
   /** 点击文件夹图标：在系统文件资源管理器中定位文件 */
   const handleRevealInFileManager = (info: FileInfo) => {
-    // Tauri desktop: invoke native command
-    if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-      invoke("reveal_in_file_manager", { path: info.filePath }).catch((err) => {
-        console.warn("[FileSummaryCards] reveal failed:", err);
-        message.error(`无法打开文件管理器: ${err}`);
-      });
-    } else {
-      message.warning("此功能仅在桌面应用中可用");
-    }
+    if (!info.filePath) return;
+    void revealWorkspacePath({
+      path: info.filePath,
+      chatId,
+      projectDirOverride,
+    }).catch((err) => {
+      console.warn("[FileSummaryCards] reveal failed:", err);
+      message.error("无法打开文件管理器");
+    });
   };
 
   /** 直接保存交付物；二进制与远端文本走统一跨端下载链路。 */

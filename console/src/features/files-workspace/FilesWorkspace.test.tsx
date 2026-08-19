@@ -41,6 +41,7 @@ const lifecycle = vi.hoisted(() => ({
     content: string;
     dirty: boolean;
     source?: "workspace" | "artifact";
+    workspaceRoot?: "project" | "workspace";
     etag?: string;
   }>,
   activeTabPath: "",
@@ -48,10 +49,12 @@ const lifecycle = vi.hoisted(() => ({
     onCloseOtherTabs: (path: string) => void;
     onTabClose?: (path: string) => void;
     onSaveFile: (path: string, content: string) => Promise<void>;
+    onRevealFile?: (path: string) => Promise<void>;
   } | null,
   confirmSave: vi.fn((options: ConfirmSaveOptions) => {
     void options.onOk?.();
   }),
+  revealInFileManager: vi.fn().mockResolvedValue({ ok: true }),
 }));
 
 vi.mock("antd", async () => {
@@ -62,6 +65,7 @@ vi.mock("antd", async () => {
       ...actual.message,
       success: vi.fn(),
       error: vi.fn(),
+      warning: vi.fn(),
     },
     Modal: {
       ...actual.Modal,
@@ -91,6 +95,7 @@ vi.mock("../../stores/codingTabsStore", () => ({
 vi.mock("../../api/modules/workspace", () => ({
   workspaceApi: {
     saveFileContent: lifecycle.saveFileContent,
+    revealInFileManager: lifecycle.revealInFileManager,
   },
 }));
 
@@ -134,6 +139,7 @@ vi.mock("../../pages/Coding/TabbedEditor", () => ({
     onCloseOtherTabs: (path: string) => void;
     onTabClose?: (path: string) => void;
     onSaveFile: (path: string, content: string) => Promise<void>;
+    onRevealFile?: (path: string) => Promise<void>;
   }) {
     lifecycle.editorProps = props;
     useEffect(() => {
@@ -690,6 +696,43 @@ describe("FilesWorkspace directory changes", () => {
           readOnly: true,
         }),
       ),
+    );
+  });
+
+  it("reveals agent-workspace files with the resolved relative path", async () => {
+    lifecycle.tabs = [
+      {
+        path: "workspace-root::agent.json",
+        displayPath: "agent.json",
+        content: "{}",
+        dirty: false,
+        source: "workspace",
+        workspaceRoot: "workspace",
+      },
+    ];
+    lifecycle.activeTabPath = "workspace-root::agent.json";
+
+    render(
+      <FilesWorkspace
+        scope={{
+          kind: "session",
+          agentId: "agent-a",
+          sessionId: "session-a",
+          chatId: "chat-a",
+        }}
+      />,
+    );
+
+    await waitFor(() =>
+      expect(lifecycle.editorProps?.onRevealFile).toEqual(expect.any(Function)),
+    );
+    await lifecycle.editorProps?.onRevealFile?.("workspace-root::agent.json");
+
+    expect(lifecycle.revealInFileManager).toHaveBeenCalledWith(
+      "agent.json",
+      "chat-a",
+      "workspace",
+      undefined,
     );
   });
 });

@@ -5,7 +5,6 @@ import React, {
   useState,
   useSyncExternalStore,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { message } from "antd";
 import { useTranslation } from "react-i18next";
 import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
@@ -14,6 +13,7 @@ import {
   openArtifactPreview,
   UPDATE_FILE_PREVIEW_EVENT,
 } from "../../features/files-workspace/openFilePreview";
+import { revealWorkspacePath } from "../../features/files-workspace/workspaceReveal";
 import {
   DownloadCancelledError,
   downloadFileFromUrl,
@@ -151,20 +151,15 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
       fullscreen: (target) => onFullscreen?.(target),
       revealInFileManager: (target) => {
         if (!target.workspacePath) return;
-        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-          void invoke("reveal_in_file_manager", {
-            path: target.workspacePath,
-          }).catch((error) => {
-            console.warn("[ArtifactPreview] reveal failed:", error);
-            message.error(
-              t("workspace.revealFailed", "无法在文件管理器中打开"),
-            );
-          });
-          return;
-        }
-        message.warning(
-          t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"),
-        );
+        void revealWorkspacePath({
+          path: target.workspacePath,
+          root: target.workspaceRoot ?? "project",
+          chatId: target.chatId,
+          projectDirOverride: target.projectDirOverride,
+        }).catch((error) => {
+          console.warn("[ArtifactPreview] reveal failed:", error);
+          message.error(t("workspace.revealFailed", "无法在文件管理器中打开"));
+        });
       },
     }),
     [download, onClose, onFullscreen, onOpenArtifact, t, updateArtifact],

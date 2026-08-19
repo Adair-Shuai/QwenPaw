@@ -131,13 +131,26 @@ describe("workspaceApi.listDirectory", () => {
   });
 });
 
-describe("workspaceApi.getWatchUrl", () => {
-  it("selects the watched directory root", () => {
-    expect(workspaceApi.getWatchUrl("project")).toBe(
-      "/api/workspace/watch?root=project",
+describe("workspaceApi.revealInFileManager", () => {
+  afterEach(() => vi.clearAllMocks());
+
+  it("posts the selected root and Session headers", async () => {
+    vi.mocked(request).mockResolvedValue({ ok: true });
+
+    await workspaceApi.revealInFileManager(
+      "docs/notes.md",
+      "chat-1",
+      "workspace",
+      "/projects/pending",
     );
-    expect(workspaceApi.getWatchUrl("workspace")).toBe(
-      "/api/workspace/watch?root=workspace",
+
+    expect(request).toHaveBeenCalledWith(
+      "/workspace/reveal?path=docs%2Fnotes.md&root=workspace",
+      {
+        method: "POST",
+        headers: { "X-Chat-Id": "chat-1" },
+        body: "{}",
+      },
     );
   });
 });

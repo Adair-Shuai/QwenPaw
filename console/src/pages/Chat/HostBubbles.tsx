@@ -16,6 +16,7 @@
  * update the imports below.
  */
 import React, { useEffect, useMemo, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { Avatar, Flex } from "antd";
 import {
   CheckCircleOutlined,
@@ -60,6 +61,8 @@ import type {
 } from "../../plugins/registry/types";
 import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
 import { groupResponseMessages } from "./responseMessageGrouping";
+import { resolveWorkspaceSessionScope } from "../../features/files-workspace/workspaceSessionScope";
+import { useAgentStore } from "../../stores/agentStore";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -344,6 +347,12 @@ export function HostResponseCard(props: {
   data: ChatResponseData;
   isLast?: boolean;
 }) {
+  const location = useLocation();
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const { chatId, projectDirOverride } = resolveWorkspaceSessionScope({
+    pathname: location.pathname,
+    selectedAgent,
+  });
   const extScalar = useChatScalarSnapshot();
   const extLists = useChatListSnapshot();
 
@@ -375,7 +384,11 @@ export function HostResponseCard(props: {
   // FileSummaryCards returns null when no file-related tools are found, so
   // it's safe to always include it in contentAppend.
   const fileSummary = (
-    <FileSummaryCards data={props.data as Record<string, unknown>} />
+    <FileSummaryCards
+      data={props.data as Record<string, unknown>}
+      chatId={chatId}
+      projectDirOverride={projectDirOverride}
+    />
   );
 
   const contentAppend =

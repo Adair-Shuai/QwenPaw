@@ -706,6 +706,7 @@
     "download": "Download",
     "revealInFileManager": "Reveal in File Manager",
     "revealDesktopOnly": "This feature is only available in the desktop app",
+    "revealUnavailable": "This file is not available on disk",
     "pdfPreviewUnavailable": "This WebView does not support inline PDF preview. Please download to view.",
     "reload": "Reload",
     "noFileUrl": "No file URL provided",

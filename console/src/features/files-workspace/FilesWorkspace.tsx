@@ -7,7 +7,6 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { Input, Modal, message } from "antd";
 import { useTranslation } from "react-i18next";
 import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
@@ -43,6 +42,11 @@ import {
   isInlineGeneratedTab,
   sanitizeWorkspaceSavePath,
 } from "./workspaceSavePath";
+import {
+  revealTargetFromEditorTab,
+  revealWorkspacePath,
+  stripEditorTabPath,
+} from "./workspaceReveal";
 import {
   UPDATE_FILE_PREVIEW_EVENT,
   type UpdateFilePreviewDetail,
@@ -687,10 +691,7 @@ export default function FilesWorkspace({
             navigation={editorNavigation}
             onDownloadFile={async (path) => {
               const tab = tabsRef.current.find((item) => item.path === path);
-              const separator = path.indexOf("::");
-              const sourcePath =
-                tab?.displayPath ??
-                (separator < 0 ? path : path.slice(separator + 2));
+              const sourcePath = tab?.displayPath ?? stripEditorTabPath(path);
               const filename = sourcePath.split("/").pop() ?? sourcePath;
               if (tab?.artifactUrl) {
                 await downloadFileFromUrl(tab.artifactUrl, filename, {
@@ -733,15 +734,20 @@ export default function FilesWorkspace({
             }}
             onRevealFile={async (path) => {
               const tab = tabsRef.current.find((item) => item.path === path);
-              const sourcePath = tab?.displayPath ?? path;
-              if (!("__TAURI_INTERNALS__" in window)) {
+              const target = revealTargetFromEditorTab(tab, path);
+              if (!target) {
                 message.warning(
-                  t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"),
+                  t("workspace.revealUnavailable", "无法定位该文件的磁盘位置"),
                 );
                 return;
               }
               try {
-                await invoke("reveal_in_file_manager", { path: sourcePath });
+                await revealWorkspacePath({
+                  path: target.path,
+                  root: target.root,
+                  chatId,
+                  projectDirOverride,
+                });
               } catch {
                 message.error(
                   t("workspace.revealFailed", "无法在文件管理器中打开"),

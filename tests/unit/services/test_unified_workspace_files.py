@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Tests for unified Files workspace filesystem primitives."""
+# pylint: disable=no-name-in-module
 
 from __future__ import annotations
 
@@ -14,8 +15,10 @@ from qwenpaw.services.workspace_files import (
     InvalidCursor,
     InvalidWorkspacePath,
     get_file_metadata,
+    host_path_from_api,
     list_directory,
     read_file_chunk,
+    resolve_reveal_target,
     resolve_workspace_path,
     save_text_file,
 )
@@ -272,3 +275,62 @@ def test_save_replaces_existing_file_on_windows_and_posix(
     assert target.read_text(encoding="utf-8") == "new"
     if os.name != "nt":
         assert target.stat().st_ino != original_inode
+
+
+def test_resolve_reveal_target_joins_relative_paths(tmp_path: Path) -> None:
+    """Workspace-relative reveal paths stay under the selected root."""
+    notes = tmp_path / "docs" / "notes.md"
+    notes.parent.mkdir()
+    notes.write_text("hello", encoding="utf-8")
+
+    assert resolve_reveal_target(tmp_path, "docs/notes.md") == notes.resolve()
+
+
+def test_resolve_reveal_target_normalizes_windows_relative_separators(
+    tmp_path: Path,
+) -> None:
+    """Relative backslash paths stay under the workspace root, not CWD."""
+    notes = tmp_path / "src" / "main.py"
+    notes.parent.mkdir()
+    notes.write_text("print(1)", encoding="utf-8")
+
+    assert resolve_reveal_target(tmp_path, r"src\main.py") == notes.resolve()
+
+
+def test_resolve_reveal_target_accepts_absolute_paths_inside_extra_roots(
+    tmp_path: Path,
+) -> None:
+    """Tool results often supply absolute host paths."""
+    project = tmp_path / "project"
+    workspace = tmp_path / "workspace"
+    project.mkdir()
+    workspace.mkdir()
+    hidden = workspace / "secret.md"
+    hidden.write_text("ok", encoding="utf-8")
+
+    resolved = resolve_reveal_target(
+        project,
+        str(hidden),
+        extra_roots=[workspace],
+    )
+    assert resolved == hidden.resolve()
+
+
+def test_resolve_reveal_target_rejects_absolute_paths_outside_roots(
+    tmp_path: Path,
+) -> None:
+    """Reveal must not open files outside the allowed directories."""
+    allowed = tmp_path / "allowed"
+    allowed.mkdir()
+    outside = tmp_path / "outside.txt"
+    outside.write_text("nope", encoding="utf-8")
+
+    with pytest.raises(InvalidWorkspacePath):
+        resolve_reveal_target(allowed, str(outside))
+
+
+def test_host_path_from_api_strips_windows_file_uri() -> None:
+    """file:///C:/... URIs become drive-letter paths."""
+    assert host_path_from_api("file:///C:/Users/me/file.txt") == Path(
+        "C:/Users/me/file.txt",
+    )

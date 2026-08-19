@@ -16,7 +16,13 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { createElement } from "react";
 import { describe, it, expect, vi } from "vitest";
+
+vi.mock("@/features/files-workspace/workspaceReveal", () => ({
+  revealWorkspacePath: vi.fn().mockResolvedValue(undefined),
+}));
+
 import FileSummaryCards, { extractFileInfos } from "./FileSummaryCards";
+import { revealWorkspacePath } from "@/features/files-workspace/workspaceReveal";
 
 // We test the parsing logic indirectly by simulating the data structure
 // that the vendor passes to FileSummaryCards via HostResponseCard.
@@ -461,5 +467,42 @@ describe("FileSummaryCards data parsing", () => {
       expect(name).not.toBe("append_file");
       expect(name).not.toBe("send_file_to_user");
     }
+  });
+
+  it("reveals files with the pending project directory when no chat id exists", () => {
+    render(
+      createElement(FileSummaryCards, {
+        projectDirOverride: "/tmp/pending-project",
+        data: {
+          output: [
+            {
+              id: "msg-write",
+              type: "plugin_call",
+              content: [
+                {
+                  data: {
+                    name: "write_file",
+                    arguments: JSON.stringify({
+                      file_path: "notes.md",
+                      content: "# Delivery",
+                    }),
+                    call_id: "call-write",
+                  },
+                },
+                { data: { output: "Wrote 10 bytes" } },
+              ],
+            },
+          ],
+        },
+      }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "定位 notes.md" }));
+
+    expect(revealWorkspacePath).toHaveBeenCalledWith({
+      path: "notes.md",
+      chatId: undefined,
+      projectDirOverride: "/tmp/pending-project",
+    });
   });
 });

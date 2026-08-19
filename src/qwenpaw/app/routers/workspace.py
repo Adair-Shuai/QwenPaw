@@ -69,6 +69,7 @@ from ...constant import (
     SUPPORTED_AGENT_LANGUAGES,
     WORKING_DIR,
 )
+from ...services.reveal_file import reveal_workspace_path
 from ...services.workspace_files import (
     DEFAULT_CHUNK_SIZE,
     DEFAULT_PAGE_SIZE,
@@ -462,6 +463,67 @@ async def read_workspace_file_metadata(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except (FileNotFoundError, OSError) as exc:
         raise HTTPException(status_code=404, detail="File not found") from exc
+
+
+def _reveal_allowed_roots(workspace: Any, project_dir: Path) -> list[Path]:
+    """Deduplicate project, agent workspace, and global working directories."""
+    roots: list[Path] = []
+    seen: set[str] = set()
+    for candidate in (
+        project_dir,
+        getattr(workspace, "workspace_dir", None),
+        WORKING_DIR,
+    ):
+        if candidate is None:
+            continue
+        try:
+            resolved = str(Path(candidate).resolve())
+        except OSError:
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        roots.append(Path(resolved))
+    return roots
+
+
+@router.post(
+    "/reveal",
+    summary="Reveal a workspace file in the OS file manager",
+)
+async def reveal_workspace_file(
+    request: Request,
+    path: str = Query(...),
+    root: str = Query(default="project"),
+) -> dict[str, bool]:
+    """Open Explorer / Finder for a project or workspace file.
+
+    Relative POSIX paths resolve under the selected *root*. Absolute host
+    paths and ``file:`` URIs are accepted only inside the session project,
+    agent workspace, or global working directory.
+    """
+    workspace = await get_agent_for_request(request)
+    files_root = await _resolve_files_root(request, workspace, root)
+    project_dir = await get_project_dir_for_request(request, workspace)
+    extra_roots = _reveal_allowed_roots(workspace, project_dir)
+    try:
+        async with _FILESYSTEM_SEMAPHORE:
+            await asyncio.to_thread(
+                reveal_workspace_path,
+                files_root,
+                path,
+                extra_roots,
+            )
+    except InvalidWorkspacePath as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="File not found") from exc
+    except OSError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="Unable to open the file manager",
+        ) from exc
+    return {"ok": True}
 
 
 @router.get(

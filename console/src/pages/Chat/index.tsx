@@ -115,11 +115,14 @@ import {
 import { chatProjectDirectoryApi } from "../../api/modules/chatProjectDirectory";
 import { projectDirectoryApi } from "../../api/modules/projectDirectory";
 import {
-  getPendingProjectDirectory,
   migratePendingProjectDirectory,
   setPendingProjectDirectory,
   withPendingProjectDirectory,
 } from "../../features/project-directory/pendingProjectDirectory";
+import {
+  resolveBackendChatId,
+  resolveWorkspaceSessionScope,
+} from "../../features/files-workspace/workspaceSessionScope";
 import {
   useFilesSurfaceStore,
   useSessionFilesDrawer,
@@ -160,17 +163,6 @@ interface ApprovalMessageData {
   exactTarget?: string;
   similarTarget?: string;
   sourceType: string;
-}
-
-function resolveBackendChatId(chatId?: string | null): string | undefined {
-  if (!chatId) return undefined;
-  const resolved = sessionApi.getRealIdForSession(chatId);
-  if (resolved) return resolved;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    chatId,
-  )
-    ? chatId
-    : undefined;
 }
 
 import WhisperSpeechButton, {
@@ -1202,11 +1194,14 @@ export default function ChatPage() {
     () => getSessionIdFromPath(location.pathname),
     [location.pathname],
   );
-  const queueSessionId = chatId ?? sessionApi.lastActiveChatId ?? "new";
-  const backendChatId = resolveBackendChatId(chatId);
-  const pendingProjectDir = backendChatId
-    ? undefined
-    : getPendingProjectDirectory(selectedAgent, queueSessionId) ?? undefined;
+  const {
+    sessionId: queueSessionId,
+    chatId: backendChatId,
+    projectDirOverride: pendingProjectDir,
+  } = resolveWorkspaceSessionScope({
+    selectedAgent,
+    sessionId: chatId,
+  });
   const sessionScope = useMemo<
     Extract<FilesWorkspaceScope, { kind: "session" }>
   >(
@@ -2421,8 +2416,11 @@ export default function ChatPage() {
       useCodingTabsStore.getState().removeScope(removedScopeKey);
       useFilesSurfaceStore.getState().removeSession(removedScopeKey);
       try {
-        (window as { QwenPaw?: { genui?: { clearSession?: (id: string) => void } } })
-          .QwenPaw?.genui?.clearSession?.(removedId);
+        (
+          window as {
+            QwenPaw?: { genui?: { clearSession?: (id: string) => void } };
+          }
+        ).QwenPaw?.genui?.clearSession?.(removedId);
       } catch {
         // GenUI is optional; session delete must still succeed.
       }
@@ -2630,13 +2628,7 @@ export default function ChatPage() {
         projectDirOverride: pendingProjectDir,
       });
     },
-    [
-      backendChatId,
-      pendingProjectDir,
-      selectedAgent,
-      t,
-      workspaceSessionKey,
-    ],
+    [backendChatId, pendingProjectDir, selectedAgent, t, workspaceSessionKey],
   );
 
   const customFetch = useCallback(

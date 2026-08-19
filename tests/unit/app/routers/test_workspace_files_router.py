@@ -383,3 +383,66 @@ async def test_watch_checks_disconnect_after_idle_poll(
     assert watcher.calls == 1
     assert request.calls == 2
     assert watcher.closed is True
+
+
+def test_reveal_opens_relative_project_files(
+    files_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """POST /reveal resolves the workspace-relative path then opens it."""
+    project_dir = files_client.app.state.project_dir
+    target = project_dir / "README.md"
+    target.write_text("Hello", encoding="utf-8")
+    seen: list[tuple[Path, str]] = []
+
+    def fake_reveal(files_root, path, _extra_roots=None):
+        seen.append((Path(files_root), path))
+
+    monkeypatch.setattr(workspace_router, "reveal_workspace_path", fake_reveal)
+
+    response = files_client.post(
+        "/api/workspace/reveal",
+        params={"path": "README.md", "root": "project"},
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": True}
+    assert seen == [(project_dir, "README.md")]
+
+
+def test_reveal_rejects_paths_outside_the_workspace(
+    files_client: TestClient,
+) -> None:
+    """Absolute paths outside the allowed roots are rejected."""
+    response = files_client.post(
+        "/api/workspace/reveal",
+        params={"path": "/etc/passwd", "root": "project"},
+    )
+
+    assert response.status_code == 400
+
+
+def test_reveal_uses_the_agent_workspace_root(
+    files_client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """root=workspace reveals files from the agent configuration directory."""
+    workspace_dir = files_client.app.state.workspace_dir
+    target = workspace_dir / "agent.json"
+    target.write_text("{}", encoding="utf-8")
+    seen: list[str] = []
+    monkeypatch.setattr(
+        workspace_router,
+        "reveal_workspace_path",
+        lambda files_root, path, extra_roots=None: seen.append(
+            f"{files_root}:{path}",
+        ),
+    )
+
+    response = files_client.post(
+        "/api/workspace/reveal",
+        params={"path": "agent.json", "root": "workspace"},
+    )
+
+    assert response.status_code == 200
+    assert seen == [f"{workspace_dir}:agent.json"]

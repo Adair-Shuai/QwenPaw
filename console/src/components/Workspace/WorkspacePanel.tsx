@@ -51,7 +51,6 @@ import {
   ExpandOutlined,
   FileTextOutlined,
 } from "@ant-design/icons";
-import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "react-i18next";
 import { useWorkspaceStore } from "./store/workspaceStore";
 import { rendererRegistry } from "./store/rendererRegistry";
@@ -59,6 +58,7 @@ import { registerBuiltinRenderers } from "./store/builtinRenderers";
 import { useTheme } from "../../contexts/ThemeContext";
 import type { WorkspaceArtifact, RendererContext, WorkspaceApi } from "./types";
 import { buildAuthHeaders } from "../../api/authHeaders";
+import { revealWorkspacePath } from "../../features/files-workspace/workspaceReveal";
 import {
   DownloadCancelledError,
   downloadFileFromUrl,
@@ -181,16 +181,15 @@ const WorkspacePanel: React.FC = () => {
       revealInFileManager: (artifact: WorkspaceArtifact) => {
         const filePath = artifact.workspacePath;
         if (!filePath) return;
-        if (typeof window !== "undefined" && "__TAURI_INTERNALS__" in window) {
-          invoke("reveal_in_file_manager", { path: filePath }).catch((err) => {
-            console.warn("[WorkspacePanel] reveal failed:", err);
-            message.error(`无法打开文件管理器: ${err}`);
-          });
-        } else {
-          message.warning(
-            t("workspace.revealDesktopOnly", "此功能仅在桌面应用中可用"),
-          );
-        }
+        void revealWorkspacePath({
+          path: filePath,
+          root: artifact.workspaceRoot ?? "project",
+          chatId: artifact.chatId,
+          projectDirOverride: artifact.projectDirOverride,
+        }).catch((err) => {
+          console.warn("[WorkspacePanel] reveal failed:", err);
+          message.error(t("workspace.revealFailed", "无法在文件管理器中打开"));
+        });
       },
     }),
     [updateArtifact, closeTab, openArtifact, toggleFullscreen, t],

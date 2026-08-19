@@ -489,6 +489,7 @@
     "download": "下载",
     "revealInFileManager": "在文件夹中打开",
     "revealDesktopOnly": "此功能仅在桌面应用中可用",
+    "revealUnavailable": "无法定位该文件的磁盘位置",
     "pdfPreviewUnavailable": "当前 WebView 不支持 PDF 内联预览，请下载后查看",
     "reload": "重新加载",
     "noFileUrl": "未提供文件 URL",

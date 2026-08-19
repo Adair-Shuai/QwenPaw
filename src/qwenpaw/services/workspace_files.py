@@ -9,9 +9,11 @@ import os
 import secrets
 import stat
 import threading
+from collections.abc import Sequence
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
+from urllib.parse import unquote
 
 
 DEFAULT_PAGE_SIZE = 200
@@ -164,6 +166,74 @@ def resolve_workspace_path(
             "Path resolves outside the workspace",
         ) from exc
     return resolved_target
+
+
+def is_host_filesystem_path(api_path: str) -> bool:
+    """Return True when *api_path* names an absolute host path or file URI."""
+    path = api_path.strip()
+    if not path:
+        return False
+    if path.casefold().startswith("file:"):
+        return True
+    if path.startswith("/") or path.startswith("\\\\"):
+        return True
+    return len(path) >= 2 and path[1] == ":" and path[0].isalpha()
+
+
+def host_path_from_api(api_path: str) -> Path:
+    """Convert an absolute host path or ``file:`` URI into a ``Path``."""
+    path = api_path.strip()
+    if path.casefold().startswith("file://"):
+        rest = unquote(path[len("file://") :])
+        if rest.startswith("/"):
+            if (
+                len(rest) > 2
+                and rest[0] == "/"
+                and rest[2] == ":"
+                and rest[1].isalpha()
+            ):
+                rest = rest[1:]
+            return Path(rest)
+        if rest.startswith("localhost/"):
+            return Path(unquote("/" + rest[len("localhost/") :]))
+        return Path("//" + rest)
+    if path.casefold().startswith("file:"):
+        return Path(unquote(path[5:]))
+    return Path(path)
+
+
+def ensure_path_in_roots(target: Path, roots: Sequence[Path]) -> Path:
+    """Return *target* when it resolves inside one of *roots*."""
+    resolved = target.resolve()
+    for root in roots:
+        try:
+            resolved.relative_to(Path(root).resolve())
+            return resolved
+        except (OSError, ValueError):
+            continue
+    raise InvalidWorkspacePath("Path resolves outside the workspace")
+
+
+def resolve_reveal_target(
+    files_root: Path,
+    api_path: str,
+    extra_roots: Sequence[Path] | None = None,
+) -> Path:
+    """Resolve a Files-workspace path for revealing it in the OS file manager.
+
+    Relative POSIX API paths stay under *files_root*. Absolute host paths and
+    ``file:`` URIs are accepted only when they resolve inside *files_root* or
+    one of *extra_roots*.
+    """
+    if not isinstance(api_path, str):
+        raise InvalidWorkspacePath("Path must be a string")
+    path = api_path.strip()
+    if not path:
+        raise InvalidWorkspacePath("Path cannot be empty")
+    roots = [files_root, *(extra_roots or ())]
+    if is_host_filesystem_path(path):
+        return ensure_path_in_roots(host_path_from_api(path), roots)
+    return resolve_workspace_path(files_root, path.replace("\\", "/"))
 
 
 def _encode_cursor(offset: int) -> str:

@@ -234,6 +234,21 @@ export const workspaceApi = {
   getFileDownloadUrl: (path: string, root: WorkspaceRoot = "project") =>
     getApiUrl(workspaceQuery("/workspace/file-download", { path, root })),
 
+  revealInFileManager: (
+    path: string,
+    chatId?: string,
+    root: WorkspaceRoot = "project",
+    projectDirOverride?: string,
+  ) =>
+    request<{ ok: boolean }>(
+      workspaceQuery("/workspace/reveal", { path, root }),
+      {
+        method: "POST",
+        headers: projectHeaders(chatId, projectDirOverride),
+        body: "{}",
+      },
+    ),
+
   getHtmlFileUriUrl: (path: string, root: WorkspaceRoot = "project") =>
     getApiUrl(workspaceQuery("/workspace/html-file-uri", { path, root })),
 
