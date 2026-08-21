@@ -50,6 +50,7 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     )
     assert "scripts/pack-tauri/assemble_desktop_layout.py" in release
     assert "scripts/pack-tauri/stage_node_runtime.py" in release
+    assert "tests/unit/tauri/test_stage_node_runtime.py" in release
     assert release.count('[ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]') >= 1
     assert release.count('[ -z "$MACOS_ARTIFACTS_RUN_ID" ]') >= 1
     assert release.count('[ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]') >= 1
