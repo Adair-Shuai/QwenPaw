@@ -130,6 +130,7 @@ jobs:
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/build_python_layers.py|\
                 scripts/pack-tauri/stage_node_runtime.py|\
+                tests/unit/tauri/test_stage_node_runtime.py|\
                 scripts/pack-tauri/stage_desktop_components.py|\
                 tests/unit/tauri/test_stage_desktop_components.py|\
                 tests/unit/verify/test_release_workflow_safety.py)
