@@ -36,7 +36,11 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
         in release
     )
     assert 'if [ "$source_conclusion" != "success" ]' not in release
-    assert release.count("was not built from release commit $sha") >= 3
+    assert "verify_cleanup_only_failure" in release
+    assert "only Stop server cleanup was incomplete" in release
+    assert 'validate_artifact_reuse_diff "$windows_sha" "$sha"' in release
+    assert 'validate_artifact_reuse_diff "$plugins_sha" "$sha"' in release
+    assert 'validate_artifact_reuse_diff "$replacement_sha" "$sha"' in release
     assert "grep -qx 'tauri-updater-meta-windows'" in release
     assert "grep -qx 'tauri-updater-meta-macos'" in release
     assert "Replacement artifact run IDs require artifacts_run_id" in release

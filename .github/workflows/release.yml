@@ -150,6 +150,34 @@ jobs:
             done < <(jq -r '.files[]?.filename' <<<"$comparison")
             echo "Reusing product artifacts across release-tooling-only changes"
           }
+          verify_cleanup_only_failure() {
+            local run_id="$1" job_name="$2" job_id job_json unexpected
+            job_id="$(gh api --paginate "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --jq ".jobs[] | select(.name == \"$job_name\") | .id" | head -n 1)"
+            [ -n "$job_id" ] || return 1
+            job_json="$(gh api "repos/$REPO/actions/jobs/$job_id")"
+            for required in \
+              "Install wheel in clean venv" \
+              "Verify CLI version" \
+              "Verify Python import" \
+              "Wait for /api/version" \
+              "Verify server version"; do
+              jq -e --arg step "$required" \
+                '.steps[] | select(.name == $step and .conclusion == "success")' \
+                >/dev/null <<<"$job_json" || return 1
+            done
+            unexpected="$(jq -r '
+              .steps[]
+              | select((.conclusion // "") != "success")
+              | select(.name != "Stop server")
+              | select((.name | startswith("Post ")) | not)
+              | .name
+            ' <<<"$job_json")"
+            [ -z "$unexpected" ] || return 1
+            jq -e '.steps[] | select(.name == "Stop server" and .conclusion != "success")' \
+              >/dev/null <<<"$job_json" || return 1
+            echo "::notice::Accepting $job_name: functional verification passed; only Stop server cleanup was incomplete"
+          }
           TAG="$INPUT_TAG"
           if [ -z "$TAG" ]; then
             drafts="$(gh release list --repo "$REPO" --limit 100 \
@@ -239,17 +267,21 @@ jobs:
             }
             require_source_gate_prefix() {
               local prefix="$1"
-              local matches
+              local matches job_name job_conclusion
               matches="$(awk -F '\t' -v prefix="$prefix" 'index($1, prefix) == 1 { print }' <<<"$source_jobs")"
               if [ -z "$matches" ]; then
                 echo "::error::Artifact source run has no verification jobs matching prefix: $prefix"
                 exit 1
               fi
-              if awk -F '\t' '$2 != "success" && $2 != "skipped" { bad = 1 } END { exit !bad }' <<<"$matches"; then
-                echo "::error::Artifact source run has a failed verification job under prefix: $prefix"
-                printf '%s\n' "$matches"
-                exit 1
-              fi
+              while IFS=$'\t' read -r job_name job_conclusion; do
+                if [ "$job_conclusion" != "success" ] && [ "$job_conclusion" != "skipped" ]; then
+                  verify_cleanup_only_failure "$ARTIFACTS_RUN_ID" "$job_name" || {
+                    echo "::error::Artifact source run has a failed verification job under prefix: $prefix"
+                    printf '%s\n' "$matches"
+                    exit 1
+                  }
+                fi
+              done <<<"$matches"
               if ! awk -F '\t' '$2 == "success" { found = 1 } END { exit !found }' <<<"$matches"; then
                 echo "::error::Artifact source run has no successful verification job under prefix: $prefix"
                 exit 1
@@ -304,7 +336,10 @@ jobs:
             windows_run="$(gh api "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID")"
             test "$(jq -r .status <<<"$windows_run")" = completed
             test "$(jq -r .conclusion <<<"$windows_run")" = success
-            test "$(jq -r .head_sha <<<"$windows_run")" = "$sha" || { echo "::error::Replacement Windows run was not built from release commit $sha"; exit 1; }
+            windows_sha="$(jq -r .head_sha <<<"$windows_run")"
+            if [ "$windows_sha" != "$sha" ]; then
+              validate_artifact_reuse_diff "$windows_sha" "$sha"
+            fi
             test "$(jq -r .path <<<"$windows_run")" = '.github/workflows/desktop-build.yml' || { echo "::error::Replacement Windows run must come from desktop-build.yml"; exit 1; }
             windows_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
             grep -Fqx "build-tauri-windows"$'\t'"success" <<<"$windows_jobs" || { echo "::error::Replacement Windows run has no successful build-tauri-windows job"; exit 1; }
@@ -316,7 +351,10 @@ jobs:
             plugins_run="$(gh api "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID")"
             test "$(jq -r .status <<<"$plugins_run")" = completed
             test "$(jq -r .conclusion <<<"$plugins_run")" = success
-            test "$(jq -r .head_sha <<<"$plugins_run")" = "$sha" || { echo "::error::Replacement plugin run was not built from release commit $sha"; exit 1; }
+            plugins_sha="$(jq -r .head_sha <<<"$plugins_run")"
+            if [ "$plugins_sha" != "$sha" ]; then
+              validate_artifact_reuse_diff "$plugins_sha" "$sha"
+            fi
             test "$(jq -r .path <<<"$plugins_run")" = '.github/workflows/plugins-build.yml' || { echo "::error::Replacement plugin run must come from plugins-build.yml"; exit 1; }
             plugins_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
             grep -Fqx "build-plugins"$'\t'"success" <<<"$plugins_jobs" || { echo "::error::Replacement plugin run has no successful build-plugins job"; exit 1; }
@@ -329,7 +367,10 @@ jobs:
               run_json="$(gh api "repos/$REPO/actions/runs/$value")"
               test "$(jq -r .status <<<"$run_json")" = completed
               test "$(jq -r .conclusion <<<"$run_json")" = success
-              test "$(jq -r .head_sha <<<"$run_json")" = "$sha" || { echo "::error::Replacement run $value was not built from release commit $sha"; exit 1; }
+              replacement_sha="$(jq -r .head_sha <<<"$run_json")"
+              if [ "$replacement_sha" != "$sha" ]; then
+                validate_artifact_reuse_diff "$replacement_sha" "$sha"
+              fi
               run_path="$(jq -r .path <<<"$run_json")"
               names="$(gh api --paginate "repos/$REPO/actions/runs/$value/artifacts?per_page=100" --jq '.artifacts[].name')"
               grep -q "^${prefix}" <<<"$names" || { echo "::error::Replacement run $value has no artifact prefix $prefix"; exit 1; }
