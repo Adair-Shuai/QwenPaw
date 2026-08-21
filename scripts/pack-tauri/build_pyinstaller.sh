@@ -75,11 +75,20 @@ echo "PyInstaller installed"
 # component and is installed into the user-writable runtime on demand. Set
 # QWENPAW_INCLUDE_WHISPER=1 for an offline/full build.
 echo "== Installing project dependencies =="
+# Pin setuptools <82: lark-oapi still calls pkg_resources.declare_namespace
+# at import time. A *fresh* install of setuptools >= 82 removes pkg_resources
+# wholesale, so lark-oapi's except-ImportError fallback (pkgutil.extend_path)
+# kicks in and the import works. The proven failure mode is an *in-place*
+# upgrade of a legacy setuptools (seen on the macOS CI runners, and possible
+# in any environment upgrading an existing install): it can leave a
+# half-removed pkg_resources (module present, declare_namespace gone), which
+# raises an AttributeError the fallback does not catch — crashing the Feishu
+# channel. The pin keeps every environment in the known-good state.
 if [[ "${QWENPAW_INCLUDE_WHISPER:-}" =~ ^(1|true|yes)$ ]]; then
-    install_python_packages -e ".[full]"
+    install_python_packages -e ".[full]" "setuptools<82"
     echo "Project dependencies installed with Whisper/Torch"
 else
-    install_python_packages -e ".[local,codex,qoder]"
+    install_python_packages -e ".[local,codex,qoder]" "setuptools<82"
     echo "Project dependencies installed without optional Whisper/Torch"
 fi
 
@@ -115,6 +124,7 @@ echo ""
 BACKEND_DIR="${DIST}/pyinstaller/qwenpaw-backend"
 BACKEND_EXE="${BACKEND_DIR}/qwenpaw-backend"
 CLI_EXE="${BACKEND_DIR}/qwenpaw"
+MODEL_CATALOG="${BACKEND_DIR}/_internal/qwenpaw/providers/data/model_catalog.json"
 if [ ! -d "${BACKEND_DIR}" ]; then
     echo "ERROR: Backend bundle directory not found at ${BACKEND_DIR}"
     exit 1
@@ -125,6 +135,10 @@ if [ ! -f "${BACKEND_EXE}" ]; then
 fi
 if [ ! -f "${CLI_EXE}" ]; then
     echo "ERROR: CLI executable not found at ${CLI_EXE}"
+    exit 1
+fi
+if [ ! -f "${MODEL_CATALOG}" ]; then
+    echo "ERROR: Model catalog not found at ${MODEL_CATALOG}"
     exit 1
 fi
 

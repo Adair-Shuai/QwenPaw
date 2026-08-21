@@ -4,10 +4,13 @@ import type {
   IAgentScopeRuntimeWebUIMessage,
 } from "@agentscope-ai/chat";
 import { useTurnUsageStore } from "./turnUsageStore";
+import type { TurnUsageToken } from "./turnUsageStore";
 
 export const TURN_USAGE_META_KEY = "qwenpaw_turn_usage";
 
 export interface TurnUsage {
+  provider_id?: string;
+  model_name?: string;
   prompt_tokens?: number;
   completion_tokens?: number;
   total_tokens?: number;
@@ -195,11 +198,17 @@ const PATCH_MAX_ATTEMPTS = 40;
 export function schedulePatchLastResponseCardUsage(
   chatRef: React.RefObject<IAgentScopeRuntimeWebUIRef | null>,
   snapshot: TurnUsageSnapshot,
+  turn?: TurnUsageToken,
 ): void {
-  const tryPatch = () => patchLastResponseCardUsage(chatRef, snapshot);
+  const isCurrentTurn = () =>
+    !turn || useTurnUsageStore.getState().isTurnActive(turn);
+  const tryPatch = () =>
+    isCurrentTurn() && patchLastResponseCardUsage(chatRef, snapshot);
+  if (!isCurrentTurn()) return;
   if (tryPatch()) return;
   let attempt = 0;
   const retry = () => {
+    if (!isCurrentTurn()) return;
     if (tryPatch() || attempt >= PATCH_MAX_ATTEMPTS) return;
     attempt += 1;
     window.setTimeout(retry, PATCH_RETRY_MS);
@@ -415,6 +424,7 @@ function extractTextFromSseEvent(payload: Record<string, unknown>): string {
 export function wrapChatResponseUsageStream(
   response: Response,
   chatRef: React.RefObject<IAgentScopeRuntimeWebUIRef | null>,
+  turn?: TurnUsageToken,
 ): Response {
   if (!response.body) return response;
 
@@ -486,8 +496,17 @@ export function wrapChatResponseUsageStream(
         _notify();
 
         if (pendingUsage) {
-          useTurnUsageStore.getState().setSnapshot(pendingUsage);
-          schedulePatchLastResponseCardUsage(chatRef, pendingUsage);
+          let accepted = true;
+          if (turn) {
+            accepted = useTurnUsageStore
+              .getState()
+              .setSnapshotForTurn(pendingUsage, turn);
+          } else {
+            useTurnUsageStore.getState().setSnapshot(pendingUsage);
+          }
+          if (accepted) {
+            schedulePatchLastResponseCardUsage(chatRef, pendingUsage, turn);
+          }
         }
       },
     }),

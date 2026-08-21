@@ -46,9 +46,11 @@ from ..utils.startup_display import AgentStartupDisplay
 from ..utils.system_info import summarize_python_environment
 from .auth import (
     AuthMiddleware,
+    RuntimeBoundaryMiddleware,
     auto_register_from_env,
     check_proxy_config_sanity,
 )
+from .exception_handlers import register_exception_handlers
 from .migration import (
     ensure_default_agent_exists,
     ensure_qa_agent_exists,
@@ -212,9 +214,11 @@ async def lifespan(
     # The legacy Scroll backfill runs once in background maintenance below.
     # Keeping it off the request-ready path avoids duplicate startup disk I/O.
 
-    # Create core managers (instant — no I/O)
-    provider_manager = ProviderManager.get_instance()
-    local_model_manager = LocalModelManager.get_instance()
+    # Provider initialization scans and may migrate persisted configuration.
+    provider_manager = await asyncio.to_thread(ProviderManager.get_instance)
+    local_model_manager = await asyncio.to_thread(
+        LocalModelManager.get_instance,
+    )
 
     # --- AppServiceManager + WorkspaceRegistry ---
     app_services = None
@@ -816,6 +820,19 @@ async def lifespan(
                 startup_display.mark_finalizing()
 
             provider_manager.start_local_model_resume(local_model_manager)
+            startup_provider_ids = (
+                provider_manager.prepare_startup_provider_model_sync()
+            )
+            asyncio.create_task(
+                provider_manager.sync_startup_provider_models(
+                    startup_provider_ids,
+                ),
+                name="qwenpaw-provider-model-sync",
+            )
+            asyncio.create_task(
+                provider_manager.sync_remote_catalogs(),
+                name="qwenpaw-provider-catalog-sync",
+            )
 
             startup_state.update(
                 "plugins",
@@ -837,7 +854,7 @@ async def lifespan(
                 provider_id,
                 provider_reg,
             ) in plugin_loader.registry.get_all_providers().items():
-                provider_manager.register_plugin_provider(
+                await provider_manager.register_plugin_provider_async(
                     provider_id=provider_id,
                     provider_class=provider_reg.provider_class,
                     label=provider_reg.label,
@@ -1151,11 +1168,13 @@ app = FastAPI(
     redoc_url="/redoc" if DOCS_ENABLED else None,
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
 )
+register_exception_handlers(app)
 
 # Add agent context middleware for agent-scoped routes
 app.add_middleware(AgentContextMiddleware)
 
 app.add_middleware(AuthMiddleware)
+app.add_middleware(RuntimeBoundaryMiddleware)
 
 # Apply CORS middleware if CORS_ORIGINS is set
 if CORS_ORIGINS:

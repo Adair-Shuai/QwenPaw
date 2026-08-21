@@ -81,6 +81,7 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    let cancelled = false;
     // Re-sync state whenever any plugin registers new capabilities — both
     // the legacy pluginSystem (toolRenderers) and the new registry
     // (routes via shim + direct route.add) notify on change.
@@ -96,16 +97,38 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
       setPluginRoutes(derivePluginRoutes());
     });
 
+    // Attach window.QwenPaw.chat/host/audit and register built-in tool
+    // cards before the first plugin bundle executes (deferred so first
+    // paint stays fast, but still ahead of loadAllPlugins).
+    let hostSdkReady: Promise<void> | null = null;
+    const ensureHostSdk = () => {
+      if (!hostSdkReady) {
+        hostSdkReady = (async () => {
+          const [{ installHostSdk }, { registerBuiltinCards }] =
+            await Promise.all([
+              import("./hostSdk/install"),
+              import("../components/Chat/ToolCards/registerBuiltinCards"),
+            ]);
+          installHostSdk();
+          registerBuiltinCards();
+        })();
+      }
+      return hostSdkReady;
+    };
+
     let loadPromise: Promise<void> | null = null;
     let reloadedAtRegistryReady = false;
     let reloadedAtReady = false;
     const load = () => {
       if (!loadPromise) {
-        loadPromise = loadAllPlugins().then(async ({ failed }) => {
-          setError(failed.length > 0 ? failed.join("; ") : null);
-          await reportPluginUiVerification();
-          setLoading(false);
-        });
+        loadPromise = ensureHostSdk()
+          .catch(() => undefined) // host SDK install failure is non-fatal
+          .then(() => loadAllPlugins())
+          .then(async ({ failed }) => {
+            setError(failed.length > 0 ? failed.join("; ") : null);
+            await reportPluginUiVerification();
+            setLoading(false);
+          });
       }
       return loadPromise;
     };
@@ -121,7 +144,6 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     // during that repair window, refresh once after the atomic sync completes
     // so newly installed plugins appear without a full app restart.
     let timer: ReturnType<typeof setTimeout> | null = null;
-    let cancelled = false;
     let syncAttempts = 0;
     let pollCount = 0;
     let observedLoadedCount = -1;

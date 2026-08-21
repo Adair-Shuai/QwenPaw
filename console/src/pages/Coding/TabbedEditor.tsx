@@ -19,6 +19,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
+import "../../monacoSetup";
 import Editor, {
   DiffEditor,
   type Monaco,

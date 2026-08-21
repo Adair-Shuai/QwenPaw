@@ -161,7 +161,6 @@ async function finalizeFromOutput(
   store.updateTaskForSession(sessionId, toolCallId, {
     status,
     result: resultText || null,
-    hintVisible: true,
   });
 
   if (alreadyTerminal) return;
@@ -463,7 +462,6 @@ export async function cancelBackgroundTask(
   useBackgroundTasksStore.getState().updateTaskForSession(sid, toolCallId, {
     status: "cancelled",
     result: live || null,
-    hintVisible: true,
   });
 }
 

@@ -9,12 +9,13 @@ from openai import AsyncOpenAI
 
 from qwenpaw.providers.capping_formatter import _CappingOpenAIFormatter
 from qwenpaw.providers.openai_provider import OpenAIProvider
+from qwenpaw.providers.provider import ModelConnectionResult
+
+# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 from ..utils.http import (
     should_use_custom_http_client,
     build_httpx_proxy_kwargs,
 )
-
-# [PROXY-BYPASS] See: src/qwenpaw/docs/proxy-bypass-design.md
 
 
 class OllamaProvider(OpenAIProvider):
@@ -73,12 +74,20 @@ class OllamaProvider(OpenAIProvider):
         self,
         model_id: str,
         timeout: float = 5,
-    ) -> tuple[bool, str]:
+    ) -> ModelConnectionResult:
         """Check if a specific model is reachable/usable"""
         models = await self.fetch_models(timeout=timeout)
         if any(model.id == model_id for model in models):
-            return True, ""
-        return False, f"Model '{model_id}' not found"
+            return ModelConnectionResult(
+                success=True,
+                verification="provider_only",
+            )
+        return ModelConnectionResult(
+            success=False,
+            message=f"Model '{model_id}' not found",
+            error_kind="model_not_found",
+            verification="provider_only",
+        )
 
     def _context_catalog_enabled(self) -> bool:
         """Ollama serves models locally: the family's cloud window does not

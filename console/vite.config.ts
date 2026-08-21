@@ -753,11 +753,20 @@ export default defineConfig(({ command, mode }) => {
             // because those packages depend on each other. Rollup can split
             // the application graph more safely when shared UI code is left
             // to its default chunking algorithm.
-            if (id.includes("node_modules/monaco-editor/")) {
+            if (
+              id.includes("node_modules/monaco-editor/") ||
+              id.includes("node_modules/@monaco-editor/")
+            ) {
               return "monaco-vendor";
             }
             if (id.includes("node_modules/mermaid/")) {
               return "diagram-vendor";
+            }
+            if (
+              id.includes("node_modules/@ant-design/plots/") ||
+              id.includes("node_modules/@antv/")
+            ) {
+              return "charts-vendor";
             }
             if (id.includes("node_modules/pdfjs-dist/")) {
               return "pdf-vendor";
@@ -768,6 +777,10 @@ export default defineConfig(({ command, mode }) => {
               id.includes("node_modules/jszip/")
             ) {
               return "document-vendor";
+            }
+            // Drag and drop
+            if (id.includes("node_modules/@dnd-kit/")) {
+              return "dnd-vendor";
             }
           },
         },

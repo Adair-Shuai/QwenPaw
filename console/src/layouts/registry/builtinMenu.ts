@@ -37,7 +37,6 @@ import {
   SparkModifyLine,
   SparkMyApplicationLine,
   SparkOtherLine,
-  SparkPluginLine,
   SparkSaveLine,
   SparkScanLine,
   SparkToolLine,
@@ -67,13 +66,13 @@ export const BUILTIN_MENU: MenuItem[] = [
   },
 
   {
-    id: "core.app-center",
+    id: "core.marketplace",
     location: "primary.agentScoped",
-    label: navLabel("nav.apps", "Apps"),
+    label: navLabel("nav.marketplace", "Marketplace"),
     icon: SparkMyApplicationLine,
-    route: "core.app-center",
+    route: "core.marketplace",
     // order 7 ties with ugsci.market; builtin items are registered before
-    // plugin items, so stable sort places "Apps" just above "Market".
+    // plugin items, so stable sort places "Marketplace" just above "Market".
     order: 7,
   },
 
@@ -309,15 +308,6 @@ export const BUILTIN_MENU: MenuItem[] = [
     icon: SparkDebugLine,
     route: "core.debug",
     order: 100,
-  },
-  {
-    id: "core.plugin-manager",
-    location: "primary.settings",
-    parentId: "core.settings-group",
-    label: navLabel("nav.pluginManager", "Plugin Manager"),
-    icon: SparkPluginLine,
-    route: "core.plugin-manager",
-    order: 110,
   },
 ];
 

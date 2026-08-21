@@ -25,6 +25,8 @@ export interface MarketPluginEntry {
   /** Added by the local proxy so installed entries cannot be overwritten. */
   installed?: boolean;
   installed_version?: string;
+  /** Whether this plugin is currently trending. */
+  is_trending?: boolean;
 }
 
 /** Return whether a marketplace entry is classified as an app. */
@@ -51,6 +53,8 @@ export interface FetchMarketPluginsParams {
   search?: string;
   category?: string;
   sort_by?: MarketPluginSortBy;
+  is_featured?: boolean;
+  is_trending?: boolean;
   page_number: number;
   page_size: number;
 }
@@ -69,6 +73,8 @@ export async function fetchMarketPlugins(
   if (params.search) url.searchParams.set("search", params.search);
   if (params.category) url.searchParams.set("category", params.category);
   if (params.sort_by) url.searchParams.set("sort_by", params.sort_by);
+  if (params.is_featured) url.searchParams.set("is_featured", "true");
+  if (params.is_trending) url.searchParams.set("is_trending", "true");
 
   const response = await fetch(url.toString(), {
     headers: buildAuthHeaders(),

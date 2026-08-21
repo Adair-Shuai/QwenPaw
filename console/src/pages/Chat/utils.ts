@@ -367,8 +367,12 @@ export function normalizeContentUrls(part: any): any {
 export function toDisplayUrl(url: string | undefined): string {
   if (!url) return "";
   if (url.startsWith("http://") || url.startsWith("https://")) return url;
-  // filePreviewUrl handles file:// URLs and absolute/relative paths.
-  return chatApi.filePreviewUrl(url);
+  // Data URLs (base64 images etc.) must pass through untouched — routing
+  // them through filePreviewUrl would corrupt the URL and break rendering
+  // of historical messages on session reload.
+  if (url.startsWith("data:")) return url;
+  if (url.startsWith("file://")) url = url.replace("file://", "");
+  return chatApi.filePreviewUrl(url.startsWith("/") ? url : `/${url}`);
 }
 
 // ---------------------------------------------------------------------------

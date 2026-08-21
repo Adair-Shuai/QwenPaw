@@ -12,13 +12,14 @@ const { Text } = Typography;
 
 interface UsePluginColumnsOptions {
   uninstallingId: string | null;
-  bundleState: BundledPluginState;
+  /** Bundled-plugin repair status; omit when the caller has no repair flow. */
+  bundleState?: BundledPluginState;
   onUninstall: (record: PluginInfo) => void;
 }
 
 export function usePluginColumns({
   uninstallingId,
-  bundleState,
+  bundleState = "ready",
   onUninstall,
 }: UsePluginColumnsOptions) {
   const { t } = useTranslation();
@@ -114,7 +115,6 @@ export function usePluginColumns({
           <Button
             type="text"
             danger
-            size="small"
             icon={<Trash2 size={14} />}
             loading={uninstallingId === record.id}
             onClick={() => onUninstall(record)}

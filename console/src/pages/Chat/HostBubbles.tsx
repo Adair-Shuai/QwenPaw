@@ -15,7 +15,12 @@
  * package's top-level exports. If the SDK reorganizes its internal paths,
  * update the imports below.
  */
-import React, { useEffect, useMemo, useState } from "react";
+import React, {
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useState,
+} from "react";
 import { useLocation } from "react-router-dom";
 import { Avatar, Flex } from "antd";
 import {
@@ -41,7 +46,6 @@ import {
 import Images from "@agentscope-ai/chat/lib/DefaultCards/Images";
 import Videos from "@agentscope-ai/chat/lib/DefaultCards/Videos";
 import Files from "@agentscope-ai/chat/lib/DefaultCards/Files";
-import Audios from "@agentscope-ai/chat/lib/DefaultCards/Audios";
 import { renderableCodeComponents } from "../../components/RenderableCodeBlock";
 // Vendor `.d.ts` doesn't yet describe the contentPrepend/contentAppend
 // slots we added in the patched .js (Response/Card.js + Request/Card.js).
@@ -63,6 +67,8 @@ import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
 import { groupResponseMessages } from "./responseMessageGrouping";
 import { resolveWorkspaceSessionScope } from "../../features/files-workspace/workspaceSessionScope";
 import { useAgentStore } from "../../stores/agentStore";
+import { DownloadableAudios } from "../../components/Chat/MediaDownload";
+import ResponseArtifactList from "../../features/files-workspace/ResponseArtifactList";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -73,7 +79,32 @@ function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCardProps = any;
 
-function HostMessage({ data }: { data: IAgentScopeRuntimeMessage }) {
+function DeferredMarkdown({
+  content,
+  cursor,
+}: {
+  content: string;
+  cursor: boolean;
+}) {
+  // Parsing Markdown, code fences, and diagrams is substantially more
+  // expensive than appending stream text. A deferred value lets React skip
+  // obsolete intermediate parses while keeping input and scrolling responsive.
+  const deferredContent = useDeferredValue(content);
+
+  return (
+    <Markdown
+      components={renderableCodeComponents}
+      content={deferredContent}
+      cursor={cursor}
+    />
+  );
+}
+
+const HostMessage = React.memo(function HostMessage({
+  data,
+}: {
+  data: IAgentScopeRuntimeMessage;
+}) {
   const replaceMediaURL = useChatAnywhereOptions(
     (options) => options.api?.replaceMediaURL,
   );
@@ -91,9 +122,8 @@ function HostMessage({ data }: { data: IAgentScopeRuntimeMessage }) {
         switch (item.type) {
           case AgentScopeRuntimeContentType.TEXT:
             return (
-              <Markdown
+              <DeferredMarkdown
                 key={index}
-                components={renderableCodeComponents}
                 content={item.text}
                 cursor={item.status === AgentScopeRuntimeRunStatus.InProgress}
               />
@@ -135,7 +165,7 @@ function HostMessage({ data }: { data: IAgentScopeRuntimeMessage }) {
             );
           case AgentScopeRuntimeContentType.AUDIO:
             return (
-              <Audios
+              <DownloadableAudios
                 key={index}
                 data={[
                   { src: formatMediaURL(item.audio_url || item.data) || "" },
@@ -148,7 +178,7 @@ function HostMessage({ data }: { data: IAgentScopeRuntimeMessage }) {
       })}
     </>
   );
-}
+});
 
 function ToolExecutionGroup({ items }: { items: IAgentScopeRuntimeMessage[] }) {
   const { t } = useTranslation();
@@ -276,12 +306,15 @@ function HostDefaultResponseCard(props: {
         <VendorError data={props.data.error as IAgentScopeRuntimeMessage} />
       ) : null}
       {props.contentAppend}
+      {AgentScopeRuntimeResponseBuilder.maybeDone(props.data as AnyCardProps) ? (
+        <ResponseArtifactList messages={messages} />
+      ) : null}
       <VendorActions data={props.data as AnyCardProps} isLast={props.isLast} />
     </>
   );
 }
 
-export function HostRequestCard(props: { data: ChatRequestData }) {
+function HostRequestCardContent(props: { data: ChatRequestData }) {
   const extScalar = useChatScalarSnapshot();
   const extLists = useChatListSnapshot();
 
@@ -343,7 +376,13 @@ export function HostRequestCard(props: { data: ChatRequestData }) {
   return fallback();
 }
 
-export function HostResponseCard(props: {
+const MemoizedHostRequestCard = React.memo(HostRequestCardContent);
+
+export function HostRequestCard(props: { data: ChatRequestData }) {
+  return <MemoizedHostRequestCard {...props} />;
+}
+
+function HostResponseCardContent(props: {
   data: ChatResponseData;
   isLast?: boolean;
 }) {
@@ -434,4 +473,13 @@ export function HostResponseCard(props: {
     );
   }
   return fallback();
+}
+
+const MemoizedHostResponseCard = React.memo(HostResponseCardContent);
+
+export function HostResponseCard(props: {
+  data: ChatResponseData;
+  isLast?: boolean;
+}) {
+  return <MemoizedHostResponseCard {...props} />;
 }

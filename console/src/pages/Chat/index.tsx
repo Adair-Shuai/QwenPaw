@@ -60,6 +60,12 @@ import {
 import { wrapReplayFastForward } from "./replayFastForward";
 import { useTurnUsageStore } from "./turnUsageStore";
 import ChatHeaderTitle from "./components/ChatHeaderTitle";
+import {
+  buildFallbackSystemMessage,
+  modelFallbackEventKey,
+  parseModelFallbackEvents,
+  type ModelFallbackEvent,
+} from "./fallbackNotice";
 import ChatSessionInitializer from "./components/ChatSessionInitializer";
 import { ApprovalCard } from "../../components/ApprovalCard/ApprovalCard";
 import { commandsApi } from "../../api/modules/commands";
@@ -82,6 +88,7 @@ import {
 } from "../../plugins/registry/types";
 import { ChatScalar, ChatList } from "../../plugins/registry/slotKeys";
 import { HostRequestCard, HostResponseCard } from "./HostBubbles";
+import { DownloadableAudios } from "../../components/Chat/MediaDownload";
 import { withGenericFallback } from "../../components/Chat/ToolCards/adapters/v1Adapter";
 import { applyApprovalLevelToRequestBody } from "./approvalPayload";
 import {
@@ -143,6 +150,7 @@ import {
   restoreAgentMentionModes,
 } from "./components/agentMentionModes";
 import { scrollReverseMessageList } from "./messageScroll";
+import { LONG_CHAT_USER_MESSAGE_ANCHORS } from "./longChatPerformance";
 
 interface ApprovalMessageData {
   requestId: string;
@@ -157,6 +165,8 @@ interface ApprovalMessageData {
   toolParams: Record<string, unknown>;
   createdAt: number;
   timeoutSeconds: number;
+  // One-line rationale the agent emitted before requesting this tool call.
+  reasoning?: string;
   // Approval-scope choice (console-only). When isGeneralized is true the
   // card offers Approve Pattern (similar) vs Approve Exact (exact).
   isGeneralized?: boolean;
@@ -1316,6 +1326,8 @@ export default function ChatPage() {
   const headlineStreamFilterRef = useRef<HeadlineStreamFilterState>(
     createHeadlineFilterState(),
   );
+  const pendingFallbackEventsRef = useRef<ModelFallbackEvent[]>([]);
+  const pendingFallbackEventKeysRef = useRef<Set<string>>(new Set());
   // Use sessionApi.lastActiveChatId when available to avoid "new" collision
   const queueSessionIdRef = useRef(queueSessionId);
   queueSessionIdRef.current = queueSessionId;
@@ -1722,6 +1734,7 @@ export default function ChatPage() {
         toolParams: approval.tool_params,
         createdAt: approval.created_at,
         timeoutSeconds: approval.timeout_seconds,
+        reasoning: approval.reasoning,
         isGeneralized: approval.is_generalized,
         exactTarget: approval.exact_target,
         similarTarget: approval.similar_target,
@@ -2545,6 +2558,7 @@ export default function ChatPage() {
       // agent store and claims the new epoch synchronously with the change,
       // so in-flight results owned by the previous agent are stale by now.
 
+      useTurnUsageStore.getState().invalidateTurn();
       // Immediately block the queue sender. window.currentSessionId is a
       // global that still holds the PREVIOUS agent's session_id until the
       // SDK finishes reloading. Without this guard, scheduleNextSend could
@@ -2637,6 +2651,9 @@ export default function ChatPage() {
       biz_params?: Record<string, unknown>;
       signal?: AbortSignal;
     }): Promise<Response> => {
+      pendingFallbackEventsRef.current = [];
+      pendingFallbackEventKeysRef.current.clear();
+
       if (usesQwenPawBackend) {
         try {
           const activeModels = await providerApi.getActiveModels({
@@ -2734,6 +2751,13 @@ export default function ChatPage() {
         ...buildAuthHeaders(requestAgentId),
       };
 
+      // Per-turn usage tracking (token spend shown after the response ends).
+      const usageTurn = useTurnUsageStore
+        .getState()
+        .beginTurn(
+          requestAgentId,
+          identity.sessionId || session?.session_id || "",
+        );
       let requestBody: Record<string, unknown> = {
         input: finalInput,
         session_id: identity.sessionId || session?.session_id || "",
@@ -2861,7 +2885,7 @@ export default function ChatPage() {
         sessionApi.triggerResolve(localIdToResolve);
       }
 
-      return wrapChatResponseUsageStream(response, chatRef);
+      return wrapChatResponseUsageStream(response, chatRef, usageTurn);
     },
     [extLists, selectedAgent, runningConfigApprovalLevel, usesQwenPawBackend],
   );
@@ -3245,7 +3269,7 @@ export default function ChatPage() {
     }));
     const userMessageAnchorsConfig = {
       ...defaultConfig.theme.bubbleList.userMessageAnchors,
-      variant: "navigator" as const,
+      ...LONG_CHAT_USER_MESSAGE_ANCHORS,
     };
 
     // leftHeader: whole-section render wins, otherwise partial merge {logo, title}.
@@ -3475,6 +3499,13 @@ export default function ChatPage() {
           markLoopModeRunning();
           sanitizeHeadlinePayload(payload, headlineStreamFilterRef.current);
 
+          for (const event of parseModelFallbackEvents(payload)) {
+            const key = modelFallbackEventKey(event);
+            if (pendingFallbackEventKeysRef.current.has(key)) continue;
+            pendingFallbackEventKeysRef.current.add(key);
+            pendingFallbackEventsRef.current.push(event);
+          }
+
           if (payloadCompletesResponse(payload)) {
             const trailing = flushHeadlineFilter(
               headlineStreamFilterRef.current,
@@ -3495,6 +3526,27 @@ export default function ChatPage() {
                   content: [{ type: "text", text: trailing || errorMsg }],
                 },
               ];
+            }
+            if (pendingFallbackEventsRef.current.length > 0) {
+              const fallbackMessage = buildFallbackSystemMessage(
+                pendingFallbackEventsRef.current,
+                (event) =>
+                  t("chat.modelFallbackNotice", {
+                    from: `${event.from_provider_id || ""}:${
+                      event.from_model_id || ""
+                    }`.replace(/^:/, ""),
+                    to: `${event.to_provider_id || ""}:${
+                      event.to_model_id || ""
+                    }`.replace(/^:/, ""),
+                    reason: event.reason_kind || "unknown",
+                  }),
+              );
+              const output = Array.isArray(payload.output)
+                ? payload.output
+                : [];
+              payload.output = [fallbackMessage, ...output];
+              pendingFallbackEventsRef.current = [];
+              pendingFallbackEventKeysRef.current.clear();
             }
           }
 
@@ -3553,6 +3605,12 @@ export default function ChatPage() {
           };
 
           const reconnectIdentity = sessionApi.getSessionIdentity();
+          const usageTurn = useTurnUsageStore
+            .getState()
+            .beginTurn(
+              selectedAgent,
+              reconnectIdentity.sessionId || data.session_id,
+            );
           headlineStreamFilterRef.current = createHeadlineFilterState();
           const response = await fetch(getApiUrl("/console/chat"), {
             method: "POST",
@@ -3571,6 +3629,7 @@ export default function ChatPage() {
           return wrapChatResponseUsageStream(
             wrapReplayFastForward(response),
             chatRef,
+            usageTurn,
           );
         },
       },
@@ -3581,6 +3640,7 @@ export default function ChatPage() {
         // compose plugin slots otherwise.
         AgentScopeRuntimeRequestCard: HostRequestCard,
         AgentScopeRuntimeResponseCard: HostResponseCard,
+        Audios: DownloadableAudios,
         ...pluginCards,
       },
       actions: {
@@ -3820,6 +3880,7 @@ export default function ChatPage() {
               findingsCount={request.findingsCount}
               findingsSummary={request.findingsSummary}
               toolParams={request.toolParams}
+              reasoning={request.reasoning}
               createdAt={request.createdAt}
               timeoutSeconds={request.timeoutSeconds}
               sessionId={request.sessionId}

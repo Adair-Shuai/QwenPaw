@@ -37,6 +37,8 @@ import type {
   HostThemeMode,
   QwenPawChatNamespace,
 } from "./types/qwenpaw";
+import { pawSdkFactory } from "./pawapp-sdk";
+import type { PawSdkFactory } from "./pawapp-sdk/types";
 
 declare const VITE_API_BASE_URL: string;
 
@@ -164,6 +166,10 @@ class PluginSystem {
     this._notify();
   }
 
+  removePlugin(pluginId: string): void {
+    if (this.records.delete(pluginId)) this._notify();
+  }
+
   // ── Read API (consumed by PluginContext / usePlugins) ────────────────────
 
   /** Merged map of all tool renderers across all plugins.
@@ -250,6 +256,8 @@ export interface WindowNamespace {
   sidebar?: QwenPawSidebarNamespace;
   /** Workspace panel API (artifact renderers, open/close tabs). */
   workspace?: import("../components/Workspace/workspaceSdk").QwenPawWorkspaceNamespace;
+  /** App-scoped PawApp SDK. */
+  paw?: PawSdkFactory;
 }
 
 /** Sidebar-related plugin API (simple-mode whitelist, etc.). */
@@ -350,6 +358,7 @@ export function installHostExternals(): void {
   if (!window.QwenPaw.route) window.QwenPaw.route = buildRouteNamespace();
   if (!window.QwenPaw.slot) window.QwenPaw.slot = buildSlotNamespace();
   if (!window.QwenPaw.audit) window.QwenPaw.audit = buildAuditNamespace();
+  if (!window.QwenPaw.paw) window.QwenPaw.paw = pawSdkFactory;
 
   // ── Sidebar simple-mode whitelist API ──────────────────────────────────
   if (!window.QwenPaw.sidebar) {

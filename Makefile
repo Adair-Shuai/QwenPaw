@@ -2,7 +2,8 @@
 
 .PHONY: test test-unit test-contract test-integration test-channel test-channel-contract coverage-full clean gen-browser-manual \
         setup-dev hooks-install hooks-uninstall precommit lint format typecheck \
-        ugsci-check ugsci-sync ci-local act-list act-run act-precommit act-tests
+        ugsci-check ugsci-sync ci-local act-list act-run act-precommit act-tests \
+        install-dev install-mail-mcp
 
 # Python path — prefer the project venv if it exists
 VENV      := .venv
@@ -162,3 +163,11 @@ act-precommit:
 # Run tests workflow locally
 act-tests:
 	act -W ".github/workflows/tests.yml"
+
+## Install the project and bundled mail MCP for development.
+install-dev:
+	$(PYTHON) -m pip install -e .
+
+## Install only the standalone mail MCP package.
+install-mail-mcp:
+	$(PYTHON) -m pip install -e packages/qwenpawmail-mcp

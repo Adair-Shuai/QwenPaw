@@ -18,6 +18,11 @@ interface BackendLoadingPageProps {
   errorMessage?: string;
   startup?: StartupProgress | null;
   onRetry?: () => void;
+  statusText?: string;
+  hintText?: string;
+  retryLabel?: string;
+  showRetry?: boolean;
+  retryDisabled?: boolean;
 }
 
 export default function BackendLoadingPage({
@@ -27,6 +32,11 @@ export default function BackendLoadingPage({
   errorMessage,
   startup,
   onRetry,
+  statusText: statusTextOverride,
+  hintText,
+  retryLabel,
+  showRetry = true,
+  retryDisabled = false,
 }: BackendLoadingPageProps) {
   const { isDark } = useTheme();
   const { t } = useTranslation();
@@ -38,17 +48,16 @@ export default function BackendLoadingPage({
           seconds: elapsed,
           defaultValue: "Backend failed to start within {{seconds}} seconds.",
         });
-  const statusText = hasFailed
-    ? startup?.message || failureText
-    : startup?.message ||
-      (status === "checking"
-        ? elapsed === 0
-          ? t("startup.starting", "Starting backend...")
-          : t("startup.checking", "Connecting to backend...")
-        : t("startup.timeout", {
-            seconds: elapsed,
-            defaultValue: "Backend failed to start within {{seconds}} seconds.",
-          }));
+  const statusText =
+    statusTextOverride ||
+    (hasFailed
+      ? startup?.message || failureText
+      : startup?.message ||
+        (status === "checking"
+          ? elapsed === 0
+            ? t("startup.starting", "Starting backend...")
+            : t("startup.checking", "Connecting to backend...")
+          : failureText));
 
   const percent = hasFailed
     ? Math.min(Math.round((elapsed / totalSec) * 100), 100)
@@ -114,15 +123,16 @@ export default function BackendLoadingPage({
         {hasFailed && (
           <>
             <p className={styles.hint}>
-              {status === "error"
-                ? t(
-                    "startup.errorHint",
-                    "The backend process could not be launched. Check application logs for details.",
-                  )
-                : t(
-                    "startup.timeoutHint",
-                    "Backend failed to start. Please retry, or check application logs for details.",
-                  )}
+              {hintText ||
+                (status === "error"
+                  ? t(
+                      "startup.errorHint",
+                      "The backend process could not be launched. Check application logs for details.",
+                    )
+                  : t(
+                      "startup.timeoutHint",
+                      "Backend failed to start. Please retry, or check application logs for details.",
+                    ))}
             </p>
             {errorMessage && (
               <details className={styles.details}>
@@ -132,13 +142,16 @@ export default function BackendLoadingPage({
                 <pre className={styles.errorDetails}>{errorMessage}</pre>
               </details>
             )}
-            <button
-              className={styles.retryButton}
-              onClick={onRetry}
-              type="button"
-            >
-              {t("startup.retry", "Retry")}
-            </button>
+            {showRetry && (
+              <button
+                className={styles.retryButton}
+                onClick={onRetry}
+                disabled={retryDisabled}
+                type="button"
+              >
+                {retryLabel || t("startup.retry", "Retry")}
+              </button>
+            )}
           </>
         )}
       </div>

@@ -5,19 +5,24 @@
  * via a same-origin URL so plugins can self-register into the
  * `pluginSystem` singleton (hostExternals.ts).
  *
- * Exports `loadAllPlugins()` — the single function PluginContext calls.
+ * Exports `loadAllPlugins()` — the single function PluginContext calls —
+ * plus `loadPawApp()` to mount one newly installed PawApp without a reload.
  */
 
-import { getApiUrl, getApiToken } from "../api/config";
+import { getApiToken, getApiUrl } from "../api/config";
+import { removePluginRuntime } from "./pluginRuntimeCleanup";
+import { routeRegistry } from "./registry/store";
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Plugin manifest type (mirrors backend PluginInfo)
-// ─────────────────────────────────────────────────────────────────────────────
+export interface PluginLoadSummary {
+  loaded: number;
+  failed: string[];
+}
 
-interface PluginInfo {
+interface FrontendPluginInfo {
   id: string;
   name: string;
   enabled?: boolean;
+  plugin_type?: string;
   frontend_entry?: string;
   version?: string;
   frontend_revision?: string;
@@ -29,16 +34,25 @@ interface PluginInfo {
 // plugin revision while still allowing an upgraded bundle to run.
 const loadedPluginRevisions = new Map<string, string>();
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Internal helpers
-// ─────────────────────────────────────────────────────────────────────────────
+const loadingApps = new Map<string, Promise<void>>();
 
-/**
- * Resolve a backend-relative API path (e.g. `/plugins/…/files/index.js`)
- * to a full URL using the same base that all other API calls use.
- */
+function authHeaders(): Record<string, string> {
+  const token = getApiToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
 function resolveUrl(pluginId: string, apiPath: string): string {
   return getApiUrl(`frontend_plugin/${pluginId}/files/${apiPath}`);
+}
+
+async function fetchFrontendPlugins(): Promise<FrontendPluginInfo[]> {
+  const response = await fetch(getApiUrl("/frontend_plugin"), {
+    headers: authHeaders(),
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to list frontend plugins (${response.status})`);
+  }
+  return response.json();
 }
 
 /**
@@ -62,22 +76,20 @@ function resolveUrl(pluginId: string, apiPath: string): string {
  */
 async function executePluginScript(
   entryUrl: string,
-  version: string,
+  version?: string,
 ): Promise<void> {
   // Versioned URLs re-use the WebView disk cache between launches while still
   // invalidating immediately after a plugin upgrade.
-  const versionedUrl = `${entryUrl}${
-    entryUrl.includes("?") ? "&" : "?"
-  }v=${encodeURIComponent(version)}`;
+  const versionedUrl = version
+    ? `${entryUrl}${entryUrl.includes("?") ? "&" : "?"}v=${encodeURIComponent(
+        version,
+      )}`
+    : entryUrl;
 
   // Strategy 1: Fetch + Blob URL import (most reliable in Tauri WebView).
-  const token = getApiToken();
-  const headers: Record<string, string> = {};
-  if (token) headers["Authorization"] = `Bearer ${token}`;
-
   try {
     const response = await fetch(versionedUrl, {
-      headers,
+      headers: authHeaders(),
       cache: "default",
     });
     if (!response.ok) {
@@ -107,48 +119,25 @@ async function executePluginScript(
   await import(/* @vite-ignore */ versionedUrl);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Public API
-// ─────────────────────────────────────────────────────────────────────────────
-
-/**
- * Fetch the plugin list from `GET /api/plugins`, then load every plugin that
- * has a `frontend_entry` in parallel.  Failures are isolated per plugin so
- * one bad plugin never blocks the others.
- *
- * Returns a summary `{ loaded, failed }` for the caller to surface as an error.
- */
-export async function loadAllPlugins(): Promise<{
-  loaded: number;
-  failed: string[];
-}> {
-  const failed: string[] = [];
-
-  let plugins: PluginInfo[];
+/** Load every installed frontend plugin during Console startup. */
+export async function loadAllPlugins(): Promise<PluginLoadSummary> {
+  let plugins: FrontendPluginInfo[];
   try {
-    const token = getApiToken();
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(getApiUrl("/frontend_plugin"), { headers });
-    if (!res.ok) {
-      console.warn(`[PluginLoader] /api/plugins returned ${res.status}`);
-      return { loaded: 0, failed: [] };
-    }
-    plugins = await res.json();
-  } catch (err) {
-    console.warn("[PluginLoader] failed to fetch plugin list:", err);
+    plugins = await fetchFrontendPlugins();
+  } catch (error) {
+    console.warn("[PluginLoader] failed to fetch plugin list:", error);
     return { loaded: 0, failed: [] };
   }
 
   // A disabled record can still carry a frontend entry, but its backend
   // routes/tools were deliberately not registered. Never expose a UI that
   // can only answer with 404s.
-  const frontendPlugins = plugins.filter(
+  const loadable = plugins.filter(
     (p) => p.frontend_entry && p.enabled !== false,
   );
 
   const results = await Promise.allSettled(
-    frontendPlugins.map(async (p) => {
+    loadable.map(async (p) => {
       const revision = p.frontend_revision || p.version || "0";
       if (loadedPluginRevisions.get(p.id) === revision) return;
       await executePluginScript(
@@ -159,19 +148,55 @@ export async function loadAllPlugins(): Promise<{
       console.info(`[PluginLoader] ✓ ${p.id}`);
     }),
   );
+  const failed = results.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [`${loadable[index].id}: ${result.reason}`]
+      : [],
+  );
+  return { loaded: loadable.length - failed.length, failed };
+}
 
-  results.forEach((r, i) => {
-    if (r.status === "rejected") {
-      const msg = `${frontendPlugins[i].id}: ${r.reason}`;
-      console.error(`[PluginLoader] ✗ ${msg}`);
-      failed.push(msg);
+/** Load one newly installed PawApp without reloading the page. */
+export function loadPawApp(appId: string, entryPage?: string): Promise<void> {
+  const registered = () =>
+    routeRegistry
+      .snapshot()
+      .some(
+        (route) =>
+          route.source === appId &&
+          route.path.startsWith("/apps/") &&
+          (!entryPage || route.path === entryPage),
+      );
+  if (registered()) return Promise.resolve();
+
+  const pending = loadingApps.get(appId);
+  if (pending) return pending;
+
+  const promise = (async () => {
+    const plugins = await fetchFrontendPlugins();
+    const plugin = plugins.find((item) => item.id === appId);
+    if (!plugin?.frontend_entry || plugin.plugin_type !== "app") {
+      throw new Error(`PawApp frontend plugin not found: ${appId}`);
     }
+
+    try {
+      await executePluginScript(resolveUrl(plugin.id, plugin.frontend_entry));
+      if (!registered()) {
+        throw new Error(`PawApp ${appId} did not register its app route`);
+      }
+    } catch (error) {
+      removePluginRuntime(appId);
+      throw error;
+    }
+  })().finally(() => {
+    loadingApps.delete(appId);
   });
 
-  console.info(
-    `[PluginLoader] ${frontendPlugins.length - failed.length}/${
-      frontendPlugins.length
-    } plugin(s) loaded`,
-  );
-  return { loaded: frontendPlugins.length - failed.length, failed };
+  loadingApps.set(appId, promise);
+  return promise;
+}
+
+/** Reset pending loads between unit tests. */
+export function resetPawAppLoaderForTests(): void {
+  loadingApps.clear();
 }

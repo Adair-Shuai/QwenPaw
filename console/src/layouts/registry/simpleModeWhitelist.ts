@@ -21,7 +21,7 @@
 const BUILTIN_SIMPLE_MODE_IDS = [
   "core.files",
   "core.inbox",
-  "core.app-center",
+  "core.marketplace",
   "core.cron-jobs",
   // "core.models" — hidden in simple mode; only visible in full mode.
 ];
