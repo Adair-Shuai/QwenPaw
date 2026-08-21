@@ -209,6 +209,8 @@ internal static class UGSciUpdateAssistant
                 stagingRoot = Path.Combine(Environment.GetFolderPath(
                     Environment.SpecialFolder.LocalApplicationData), "UGSci", "u",
                     Guid.NewGuid().ToString("N"));
+                long expandedBytes = GetArchiveExpandedLength(options.PackagePath);
+                EnsureFreeSpace(stagingRoot, expandedBytes, "update package extraction");
                 Directory.CreateDirectory(stagingRoot);
                 SetStage("Extracting update", "Preparing application files. UGSci has not crashed.", 5);
                 ExtractSafely(options.PackagePath, stagingRoot, delegate(int percent, string entry) {
@@ -338,6 +340,46 @@ internal static class UGSciUpdateAssistant
             }
         }
 
+        private static long GetArchiveExpandedLength(string zipPath)
+        {
+            long total = 0;
+            using (var archive = ZipFile.OpenRead(zipPath))
+                foreach (ZipArchiveEntry entry in archive.Entries)
+                    total = checked(total + Math.Max(0, entry.Length));
+            return total;
+        }
+
+        private static void EnsureFreeSpace(string destination, long contentBytes, string purpose)
+        {
+            string full = Path.GetFullPath(destination);
+            string root = Path.GetPathRoot(full);
+            if (string.IsNullOrWhiteSpace(root))
+                throw new IOException("Cannot determine the destination volume for " + purpose + ".");
+            long headroom = Math.Max(512L * 1024L * 1024L,
+                (long)Math.Ceiling(contentBytes * 0.05d));
+            long required = checked(contentBytes + headroom);
+            long available;
+            try { available = new DriveInfo(root).AvailableFreeSpace; }
+            catch (Exception error)
+            {
+                throw new IOException("Cannot determine available disk space on " + root + ".", error);
+            }
+            if (available < required)
+                throw new IOException("Insufficient disk space on " + root + " for " + purpose +
+                    ". The update needs at least " + FormatBytes(required) + " free (" +
+                    FormatBytes(contentBytes) + " data plus " + FormatBytes(headroom) +
+                    " safety headroom), but only " + FormatBytes(available) + " is available.");
+        }
+
+        private static string FormatBytes(long value)
+        {
+            const double GiB = 1024d * 1024d * 1024d;
+            const double MiB = 1024d * 1024d;
+            return value >= GiB
+                ? (value / GiB).ToString("N2", CultureInfo.InvariantCulture) + " GB"
+                : (value / MiB).ToString("N1", CultureInfo.InvariantCulture) + " MB";
+        }
+
         private static string ToExtendedPath(string path)
         {
             if (path.StartsWith(@"\\?\", StringComparison.Ordinal)) return path;
@@ -421,11 +463,21 @@ internal static class UGSciUpdateAssistant
                 FileName = setup,
                 Arguments = "--silent --deferred-commit --transaction-file " + Quote(transactionFile),
                 WorkingDirectory = workingDirectory,
-                UseShellExecute = false,
-                CreateNoWindow = true,
+                UseShellExecute = true,
+                Verb = "runas",
                 WindowStyle = ProcessWindowStyle.Hidden
             };
-            using (Process process = Process.Start(start))
+            Process process;
+            try
+            {
+                process = Process.Start(start);
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                throw new InvalidOperationException(
+                    "Administrator approval was cancelled or could not be started.");
+            }
+            using (process)
             {
                 if (process == null) throw new InvalidOperationException("UGSci Desktop Setup did not start.");
                 process.WaitForExit();

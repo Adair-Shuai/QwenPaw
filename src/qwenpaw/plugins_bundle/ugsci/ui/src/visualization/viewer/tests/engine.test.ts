@@ -27,9 +27,100 @@ describe("Colormap", () => {
     expect(c1[0]).toBeCloseTo(0.993, 2);
 
     const cMid = colormap("viridis", 0.5);
-    // Should be somewhere between c0 and c1
-    expect(cMid[0]).toBeGreaterThan(c0[0]);
-    expect(cMid[0]).toBeLessThan(c1[0]);
+    // The Viridis red channel is not monotonic; at t=0.5 this is the
+    // midpoint between palette entries 6 and 7.
+    expect(cMid[0]).toBeCloseTo(0.146, 3);
+    expect(cMid[1]).toBeCloseTo(0.702, 3);
+    expect(cMid[2]).toBeCloseTo(0.4925, 3);
+  });
+});
+
+describe("Hex topology", () => {
+  it("reorders Eclipse pairing corners to VTK hex winding", async () => {
+    const { maybeRemapHexPositions, usesEclipsePairing, isHexCellMesh } = await import("../hexTopology");
+    const pairing = new Float32Array([
+      0, 0, 0,  1, 0, 0,  0, 1, 0,  1, 1, 0,
+      0, 0, 1,  1, 0, 1,  0, 1, 1,  1, 1, 1,
+    ]);
+    expect(isHexCellMesh(8, 1)).toBe(true);
+    expect(usesEclipsePairing(pairing, 1)).toBe(true);
+    expect(maybeRemapHexPositions(pairing, 1)).toBe(true);
+    expect(usesEclipsePairing(pairing, 1)).toBe(false);
+    expect(Array.from(pairing.slice(6, 9))).toEqual([1, 1, 0]);
+  });
+
+  it("fans non-planar hex faces from the OPM face centroid", async () => {
+    const {
+      HEX_FILL_INDICES_PER_CELL,
+      HEX_FILL_VERTS_PER_CELL,
+      tessellateHexOpmFan,
+    } = await import("../hexTopology");
+    const corners = new Float32Array([
+      0, 0, 0,  1, 0, 0,  1, 1, 0,  0, 1, 0,
+      0, 0, 1,  1, 0, 1,  1, 1, 1.4,  0, 1, 1,
+    ]);
+    const fan = tessellateHexOpmFan(corners, 1);
+    expect(fan.positions.length).toBe(HEX_FILL_VERTS_PER_CELL * 3);
+    expect(fan.indices.length).toBe(HEX_FILL_INDICES_PER_CELL);
+    const topBase = 5;
+    const n0 = [fan.normals[topBase * 3], fan.normals[topBase * 3 + 1], fan.normals[topBase * 3 + 2]];
+    for (let vertex = 1; vertex < 5; vertex++) {
+      expect(fan.normals[(topBase + vertex) * 3]).toBeCloseTo(n0[0], 5);
+      expect(fan.normals[(topBase + vertex) * 3 + 1]).toBeCloseTo(n0[1], 5);
+      expect(fan.normals[(topBase + vertex) * 3 + 2]).toBeCloseTo(n0[2], 5);
+    }
+    expect(Array.from(fan.indices.slice(12, 24))).toEqual([
+      topBase + 4, topBase, topBase + 1,
+      topBase + 4, topBase + 1, topBase + 2,
+      topBase + 4, topBase + 2, topBase + 3,
+      topBase + 4, topBase + 3, topBase,
+    ]);
+  });
+
+  it("uses (0,0,1) for a collapsed face normal", async () => {
+    const { tessellateHexOpmFan } = await import("../hexTopology");
+    const collapsed = new Float32Array([
+      0, 0, 0,  0, 0, 0,  0, 0, 0,  0, 0, 0,
+      0, 0, 1,  1, 0, 1,  1, 1, 1,  0, 1, 1,
+    ]);
+    const fan = tessellateHexOpmFan(collapsed, 1);
+    expect(fan.normals[0]).toBe(0);
+    expect(fan.normals[1]).toBe(0);
+    expect(fan.normals[2]).toBe(1);
+  });
+
+  it("loads compact 14-vert disk meshes through the viewer pipeline", async () => {
+    const {
+      HEX_COMPACT_VERTS_PER_CELL,
+      HEX_FILL_INDICES_PER_CELL,
+      HEX_FILL_VERTS_PER_CELL,
+      VTK_HEX_EDGES,
+      buildHexEdgeIndex,
+      extractHexCorners,
+      prepareHexView,
+    } = await import("../hexTopology");
+    const pairing = new Float32Array([
+      0, 0, 0,  1, 0, 0,  0, 1, 0,  1, 1, 0,
+      0, 0, 1,  1, 0, 1,  0, 1, 1,  1, 1, 1,
+    ]);
+    const compact = new Float32Array(HEX_COMPACT_VERTS_PER_CELL * 3);
+    compact.set(pairing.subarray(0, 24), 0);
+    for (let face = 0; face < 6; face++) {
+      compact[24 + face * 3] = 0.5;
+      compact[24 + face * 3 + 1] = 0.5;
+      compact[24 + face * 3 + 2] = face < 1 ? 0 : 1;
+    }
+    const view = prepareHexView(compact, 1);
+    expect(view).not.toBeNull();
+    expect(view!.remapped).toBe(true);
+    expect(Array.from(view!.corners.slice(6, 9))).toEqual([1, 1, 0]);
+    expect(view!.fill.positions.length).toBe(HEX_FILL_VERTS_PER_CELL * 3);
+    expect(view!.fill.indices.length).toBe(HEX_FILL_INDICES_PER_CELL);
+    const corners = extractHexCorners(compact, 1);
+    expect(corners.length).toBe(24);
+    const edges = buildHexEdgeIndex([0]);
+    expect(edges.length).toBe(VTK_HEX_EDGES.length * 2);
+    expect(Math.max(...Array.from(edges))).toBeLessThan(8);
   });
 });
 
@@ -83,3 +174,182 @@ function createTestColormap() {
 
   return { colormap };
 }
+
+describe("Well placement", () => {
+  it("treats UTM-scale XY as spatial even when vertical", async () => {
+    const { trajectoryPlacement, wellPlacement, isGridDataset, isDepthOnlyWell } = await import("../wellClassification");
+    expect(trajectoryPlacement([500000, 500000], [4000000, 4000000])).toBe("spatial");
+    expect(trajectoryPlacement([0, 0], [0, 0])).toBe("depth-only");
+    expect(wellPlacement({
+      id: "las_1",
+      name: "LAS: A",
+      n_vertices: 2,
+      n_cells: 1,
+      n_indices: 2,
+      source: "las",
+      files: { positions: "", indices: "", cell_ids: "", scalars: {} },
+    })).toBe("depth-only");
+    expect(wellPlacement({
+      id: "well_1",
+      name: "Well: A-1",
+      n_vertices: 2,
+      n_cells: 2,
+      n_indices: 2,
+      source: "wellbore",
+      files: { positions: "", indices: "", cell_ids: "", scalars: {} },
+      metadata: { placement: "spatial", spatial: true },
+    })).toBe("spatial");
+    expect(isDepthOnlyWell({
+      id: "las_1",
+      name: "LAS: A",
+      n_vertices: 2,
+      n_cells: 1,
+      n_indices: 2,
+      source: "las",
+      files: { positions: "", indices: "", cell_ids: "", scalars: {} },
+    })).toBe(true);
+    expect(isGridDataset({
+      id: "grid",
+      name: "Grid",
+      n_vertices: 8,
+      n_cells: 1,
+      n_indices: 36,
+      source: "cmg",
+      grid_dims: [2, 2, 2],
+      files: { positions: "", indices: "", cell_ids: "", scalars: {} },
+    })).toBe(true);
+  });
+
+  it("downsamples polylines and keeps a visible tube radius", async () => {
+    const { downsamplePolyline, uniquePolyline, visualWellRadius } = await import("../wellClassification");
+    const dense = Array.from({ length: 1000 }, (_, index) => [index, 0, -index] as [number, number, number]);
+    expect(downsamplePolyline(dense, 10)).toHaveLength(10);
+    expect(uniquePolyline([0, 0, 0, 0, 0, 0, 1, 0, -10])).toEqual([[0, 0, 0], [1, 0, -10]]);
+    expect(visualWellRadius([[0, 0, 0], [1000, 0, -1000]])).toBeGreaterThanOrEqual(1.5);
+    expect(visualWellRadius([[0, 0, 0], [1000, 0, -1000]])).toBeLessThanOrEqual(80);
+  });
+});
+
+function dummyDataset(partial: Record<string, unknown>) {
+  return {
+    id: "id",
+    name: "name",
+    n_vertices: 8,
+    n_cells: 1,
+    n_indices: 36,
+    files: { positions: "", indices: "", cell_ids: "", scalars: {} },
+    ...partial,
+  } as import("../contracts/types").DatasetInfo;
+}
+
+describe("Component tree grouping", () => {
+  it("classifies grids, wells, logs, surfaces and networks", async () => {
+    const { classifyDatasetGroup, datasetMatchesQuery } = await import("../ui/componentTree");
+    expect(classifyDatasetGroup(dummyDataset({ source: "cmg", grid_dims: [2, 2, 2] }))).toBe("grids");
+    expect(classifyDatasetGroup(dummyDataset({
+      source: "wellbore",
+      metadata: { placement: "spatial", spatial: true },
+    }))).toBe("wells");
+    expect(classifyDatasetGroup(dummyDataset({ source: "las" }))).toBe("logs");
+    expect(classifyDatasetGroup(dummyDataset({ source: "intersection" }))).toBe("surfaces");
+    expect(classifyDatasetGroup(dummyDataset({ source: "network" }))).toBe("networks");
+    expect(datasetMatchesQuery(dummyDataset({ name: "Hugin fm", id: "surf_1" }), "hugin")).toBe(true);
+    expect(datasetMatchesQuery(dummyDataset({ name: "Hugin fm", id: "surf_1" }), "nope")).toBe(false);
+  });
+});
+
+describe("Well map projection", () => {
+  it("round-trips pixel mapping and hits the nearest well", async () => {
+    const { wellMapTransform, hitTestWellMap, unionBounds } = await import("../ui/wellMap");
+    const points = [
+      { id: "a", name: "A", x: 0, y: 0 },
+      { id: "b", name: "B", x: 1000, y: 500 },
+    ];
+    const bounds = unionBounds(points);
+    expect(bounds).not.toBeNull();
+    const transform = wellMapTransform(bounds!, 228, 176);
+    const [px, py] = transform.toPixel(1000, 500);
+    const [x, y] = transform.fromPixel(px, py);
+    expect(x).toBeCloseTo(1000, 0);
+    expect(y).toBeCloseTo(500, 0);
+    expect(hitTestWellMap(points, bounds!, 228, 176, px, py)).toBe("b");
+  });
+});
+
+describe("Chrome layout", () => {
+  it("puts the tree on the left and inspector on the right", async () => {
+    const { chromeInsets, LAYOUT } = await import("../ui/layout");
+    expect(chromeInsets(false, false)).toEqual({
+      left: LAYOUT.treeWidth,
+      right: LAYOUT.inspectorWidth,
+    });
+    expect(chromeInsets(true, true)).toEqual({
+      left: LAYOUT.treeCollapsed,
+      right: LAYOUT.inspectorCollapsed,
+    });
+    expect(LAYOUT.slicePlayerHeight).toBe(32);
+  });
+});
+
+describe("Inspector tabs", () => {
+  it("exposes Controls, Actions and Addons", async () => {
+    const { INSPECTOR_TABS } = await import("../ui/inspectorTabs");
+    expect(INSPECTOR_TABS.map((tab) => tab.id)).toEqual(["controls", "actions", "addons"]);
+    expect(INSPECTOR_TABS.map((tab) => tab.label)).toEqual(["Controls", "Actions", "Addons"]);
+  });
+});
+
+describe("Import filename rules", () => {
+  it("accepts reservoir and well files and ranks the primary grid first", async () => {
+    const { classifyPickedFiles, isImportableFilename } = await import("../ui/importFormats");
+    expect(isImportableFilename("NORNE.EGRID")).toBe(true);
+    expect(isImportableFilename("notes.txt")).toBe(false);
+    const picked = classifyPickedFiles([
+      new File([""], "case.INIT"),
+      new File([""], "case.EGRID"),
+      new File([""], "case.UNRST"),
+    ]);
+    expect(picked?.primary.name).toBe("case.EGRID");
+    expect(picked?.companion?.name).toBe("case.INIT");
+    expect(picked?.extra.map((file) => file.name)).toEqual(["case.UNRST"]);
+  });
+});
+
+describe("Colormap CSS", () => {
+  it("builds a rainbow CSS gradient", async () => {
+    const { colormapCssGradient, COLORMAPS } = await import("../rendering/colormaps");
+    expect(COLORMAPS.rainbow.length).toBeGreaterThan(3);
+    expect(colormapCssGradient("rainbow")).toContain("linear-gradient");
+  });
+});
+
+describe("Named views", () => {
+  it("places the camera on the requested geographic axis", async () => {
+    const THREE = await import("three");
+    const { namedViewPose, viewDistanceForBox } = await import("../ui/standardViews");
+    const { sliceRangeText } = await import("../ui/slicePlayer");
+    const target = new THREE.Vector3(10, 20, 30);
+    const top = namedViewPose("top", target, 100);
+    expect(top.position.z).toBeCloseTo(130);
+    expect(top.up.y).toBeCloseTo(1);
+    const north = namedViewPose("north", target, 50);
+    expect(north.position.y).toBeCloseTo(70);
+    expect(north.up.z).toBeCloseTo(1);
+    const east = namedViewPose("east", target, 50);
+    expect(east.position.x).toBeCloseTo(60);
+    const box = new THREE.Box3(new THREE.Vector3(-10, -10, -10), new THREE.Vector3(10, 10, 10));
+    expect(viewDistanceForBox(box, 1, 50)).toBeGreaterThan(10);
+    expect(sliceRangeText(4)).toBe("4:4");
+  });
+});
+
+describe("Object context menu", () => {
+  it("disables object actions when nothing is picked", async () => {
+    const { objectContextItems } = await import("../ui/contextMenu");
+    const empty = objectContextItems(false);
+    expect(empty.find((item) => item.id === "delete")?.disabled).toBe(true);
+    expect(empty.find((item) => item.id === "show-all")?.disabled).toBeFalsy();
+    const picked = objectContextItems(true);
+    expect(picked.every((item) => !item.disabled)).toBe(true);
+  });
+});

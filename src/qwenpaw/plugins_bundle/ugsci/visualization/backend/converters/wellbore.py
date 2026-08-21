@@ -11,6 +11,33 @@ import struct
 from pathlib import Path
 from typing import Any
 
+# Metres. A vertical well in UTM is spatial even if XY does not vary.
+# LAS/DLIS sticks collapsed to the origin stay depth-only.
+SPATIAL_XY_METERS = 1.0
+
+
+def trajectory_placement(x: list[float], y: list[float]) -> dict[str, Any]:
+    """Classify a trajectory as a spatial well or a depth-only log."""
+    easts: list[float] = []
+    norths: list[float] = []
+    for east, north in zip(x, y):
+        try:
+            xe = float(east)
+            yn = float(north)
+        except (TypeError, ValueError):
+            continue
+        if xe != xe or yn != yn:
+            continue
+        easts.append(xe)
+        norths.append(yn)
+    if not easts:
+        return {"kind": "well-log", "placement": "depth-only", "spatial": False}
+    max_abs = max(max(abs(value) for value in easts), max(abs(value) for value in norths))
+    span = max(max(easts) - min(easts), max(norths) - min(norths))
+    if max_abs > SPATIAL_XY_METERS or span > SPATIAL_XY_METERS:
+        return {"kind": "wellbore", "placement": "spatial", "spatial": True}
+    return {"kind": "well-log", "placement": "depth-only", "spatial": False}
+
 
 def convert_well_trajectory(
     md: list[float],
@@ -69,6 +96,8 @@ def convert_well_trajectory(
         "metadata": {
             "md_range": [float(md[0]), float(md[-1])],
             "tvd_range": [float(min(tvd)), float(max(tvd))],
+            "well_name": name,
+            **trajectory_placement(x, y),
         },
     }
 

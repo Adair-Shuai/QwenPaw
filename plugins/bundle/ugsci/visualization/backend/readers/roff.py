@@ -94,39 +94,25 @@ def convert_grid_to_binary(
     positions: list[float] = []
     cell_ids: list[int] = []
 
+    from ..converters.hex import XTGEO_TO_VTK, compact_hex_centroid_mesh
+
     for cell_idx in range(n_total):
         if not active_mask[cell_idx]:
             continue
-        for ci in range(8):
-            x_arr, y_arr, z_arr = corner_xyz[ci]
+        for eclipse_index in XTGEO_TO_VTK:
+            x_arr, y_arr, z_arr = corner_xyz[eclipse_index]
             x = float(x_arr[cell_idx]) if x_arr[cell_idx] is not None else 0.0
             y = float(y_arr[cell_idx]) if y_arr[cell_idx] is not None else 0.0
             z = float(z_arr[cell_idx]) if z_arr[cell_idx] is not None else 0.0
             positions.extend([x, y, -z])
         cell_ids.append(cell_idx)  # Store ORIGINAL cell index, not output index
 
+    positions, packed_indices = compact_hex_centroid_mesh(positions)
     n_vertices = len(positions) // 3
     _write_f32(bin_dir / f"{name}_positions.f32", positions)
     _write_u32(bin_dir / f"{name}_cell_ids.u32", cell_ids)
 
-    # Build indices: each cell = 6 quad faces = 12 triangles
-    faces = [
-        (0, 1, 2, 3),  # top
-        (4, 7, 6, 5),  # bottom
-        (0, 1, 5, 4),  # front
-        (3, 2, 6, 7),  # back
-        (0, 3, 7, 4),  # left
-        (1, 2, 6, 5),  # right
-    ]
-    indices: list[int] = []
-    for cell_i in range(n_active):
-        base = cell_i * 8
-        for face in faces:
-            a, b, c, d = face
-            indices.extend([
-                base + a, base + b, base + c,
-                base + a, base + c, base + d,
-            ])
+    indices = list(packed_indices)
     _write_u32(bin_dir / f"{name}_indices.u32", indices)
 
     print(f"  Vertices: {n_vertices:,}, Triangles: {len(indices) // 3:,}")

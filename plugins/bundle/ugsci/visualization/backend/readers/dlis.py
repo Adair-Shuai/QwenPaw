@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from .base import BaseReader, write_f32, write_u32, register_reader
+from ..converters.wellbore import trajectory_placement
 
 
 class DlisReader(BaseReader):
@@ -121,6 +122,10 @@ class DlisReader(BaseReader):
                 "metadata": {
                     "n_channels": len(scalars_files),
                     "depth_range": [float(depths[0]), float(depths[-1])],
+                    **trajectory_placement(
+                        [0.0] * n_samples,
+                        [0.0] * n_samples,
+                    ),
                 },
             }
 

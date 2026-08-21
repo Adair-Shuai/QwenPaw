@@ -73,7 +73,7 @@ b6 Windows ZIP 的真实统计如下：
 3. 早期 portable 包入口参数存在尾随空格，导致 backend 模块加载失败。
 4. 初始安装包一度遗漏 bundled plugins；Windows 和 macOS 都必须验证插件实体和 UI 构建产物。
 5. `Setup.exe` 一度只是 PowerShell 包装器，没有正常 GUI、图标和可靠错误反馈。
-6. 已安装目录非空时，必须区分 UGSci 残留与用户其他文件：前者可安全覆盖，后者必须阻止并提示选择目录。
+6. 已安装目录非空时，必须区分 UGSci 残留与用户其他文件：前者可安全覆盖，后者必须阻止。`Setup.exe` 在选择安装位置点 Next 时就要弹出失败说明（可识别条件、`desktop.ini` 等无关文件、已装到其他目录需先卸载），不能等到点 Install 之后才由 PowerShell 报一句短错误。首次安装默认目录为 `Program Files\UGSci Desktop`，`Setup.exe` / `Uninstall.exe` 以 `requireAdministrator` 运行；未提权时 `install.ps1` 必须 `RunAs`。已有 `%LOCALAPPDATA%\UGSci Desktop` 安装仍可原地升级。
 7. 插件版本化对象使用强制覆盖会导致 immutable artifact 冲突；未变化插件不应重复上传或覆盖。
 8. 旧插件发布 workflow 曾绕过统一发布链路，造成 index 与制品短暂不一致。
 9. Manifest 和 `.sig` 分文件覆盖存在短暂不匹配窗口，最终改为版本化 Manifest，最后切换 signed pointer。
@@ -88,9 +88,9 @@ b6 Windows ZIP 的真实统计如下：
 18. Windows 安装包内 `qwenpaw.exe` 必须通过 `python -m qwenpaw` 启动 Click CLI；`-m qwenpaw.cli.main` 只会导入模块而不调用命令，导致 `--version` 无输出且返回 0，验证脚本会误判为 CLI 不可用。
 19. 便携包中 python-packages 层通过 PYTHONPATH 加载，不会处理 `.pth`；pywin32 依赖 `pywin32.pth` 注册 `pywin32_system32` DLL 目录，否则 `mcp.os.win32` 导入 `pywintypes` 失败，桌面 backend 启动后立即退出。`qwenpaw` 包初始化时必须先处理依赖层的 `.pth`。
 20. Windows 便携包中 `agentscope._logging` 会在 `mcp/__init__` 尚未完成时引入 `mcp.client`/`mcp.types`，导致父模块 `mcp.types` 属性缺失、`agentscope.mcp._mcp_client` 注解求值抛 `AttributeError: module 'mcp' has no attribute 'types'`。`qwenpaw` 初始化必须在 Windows 上完整导入 `mcp` 并显式绑定 `mcp.types`。
-21. WebView2 验证不能只要求安装目录里存在 bootstrapper 文件：CI 机器通常已注册 WebView2 runtime，安装脚本会提前返回而不落盘引导器。验证应同时接受注册表中的 WebView2 版本；首次安装时也把校验过的引导器复制进 staging，随安装保留为修复资产。
+21. WebView2 必须随 Windows 便携包提供 Evergreen Standalone 离线安装器（`MicrosoftEdgeWebView2RuntimeInstallerX64.exe`），Setup 在运行时缺失时先静默安装该文件，不得依赖安装现场联网下载。下载或安装失败时 Setup **不得中止**：应用文件、CLI 与 backend 仍应装完；仅桌面窗口与可视化不可用。安装目录写入 `webview2-missing.txt` 提示，完成页给出警告。该标记与安装器文件名必须列入安装目录自有文件，以免升级时被当成无关内容拒绝。桌面进程若因缺少 WebView2 无法建窗，应先尝试旁路的离线安装器，再提示用户，不得让整次安装回滚。CI 验证同时接受注册表中的 WebView2 版本与安装目录中的离线安装器。
 22. delta.zip 内的 `delta.json` 不得嵌入 `preserve` 列表：签名 Manifest 才是权威来源。若把默认 preserve 策略写进 delta.json，未变更插件会在策略调整后生成不同字节的 delta，与已发布 immutable 对象冲突（agent-kanban 0.1.0→0.1.1 曾因此失败）。
-23. python-packages 依赖层含 modelscope 等超深路径（成员相对路径约 197 字符）。Windows 解压（更新助手 FileStream、资源管理器手动解压）若未启用长路径支持，会静默丢失该文件，Setup 校验报 `Package file is missing`。更新助手必须用 `\\\\?\\` 扩展路径解压；手动解压请使用 7-Zip 或解压到短路径（如 `C:\\UGSciSetup`）。
+23. python-packages 不得包含超过 180 字符的安装包相对路径。modelscope 的 `msdatasets` 数据集实现（例如 `image_quality_assessment_degradation_dataset.py`）在打包时必须剪掉——UGSci 只用 `modelscope.hub` 下载模型。超过该预算时，Windows 资源管理器解压会静默丢文件，Setup 报 `Package file is missing`。Setup 校验必须用 `GetFileAttributesW` / `CreateFileW` 的 `\\\\?\\` 路径，不能依赖 .NET Framework 的 `File.Exists`。更新助手解压同样使用扩展路径。
 
 ## 3. b7 目标架构
 

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from .base import write_f32, write_u32
-from .cmg import _CELL_CORNERS, _build_hex_indices
+from .cmg import _CELL_CORNERS
 
 _PROPERTY_KEYWORDS = {
     "PORO": "porosity",
@@ -98,7 +98,9 @@ def parse_grdecl(path: Path) -> dict[str, Any]:
                 actnum = _read_values(tokens, n_total, keyword)
             else:
                 properties[_PROPERTY_KEYWORDS[keyword]] = _read_values(
-                    tokens, n_total, keyword,
+                    tokens,
+                    n_total,
+                    keyword,
                 )
 
     if dims is None:
@@ -132,9 +134,7 @@ def _cell_corner(
     """Locate one cell corner on its COORD pillar at the ZCORN depth."""
     di, dj, dk = delta
     zcorn_index = (
-        (2 * i + di)
-        + 2 * ncol * (2 * j + dj)
-        + 4 * ncol * nrow * (2 * k + dk)
+        (2 * i + di) + 2 * ncol * (2 * j + dj) + 4 * ncol * nrow * (2 * k + dk)
     )
     z = zcorn[zcorn_index]
     pillar = ((j + dj) * (ncol + 1) + (i + di)) * 6
@@ -156,8 +156,7 @@ def read_grdecl_dataset(file_path: str, name: str, bin_dir: Path) -> dict[str, A
 
     actnum = parsed["actnum"]
     active_ids = [
-        index for index in range(n_total)
-        if actnum is None or actnum[index] != 0.0
+        index for index in range(n_total) if actnum is None or actnum[index] != 0.0
     ]
 
     coord, zcorn = parsed["coord"], parsed["zcorn"]
@@ -171,7 +170,9 @@ def read_grdecl_dataset(file_path: str, name: str, bin_dir: Path) -> dict[str, A
             positions.extend([float(x), float(y), float(-z)])
 
     n_active = len(active_ids)
-    indices = _build_hex_indices(n_active)
+    from ..converters.hex import compact_hex_centroid_mesh
+
+    positions, indices = compact_hex_centroid_mesh(positions)
     prefix = name
     write_f32(bin_dir / f"{prefix}_positions.f32", positions)
     write_u32(bin_dir / f"{prefix}_indices.u32", list(indices))
@@ -186,7 +187,7 @@ def read_grdecl_dataset(file_path: str, name: str, bin_dir: Path) -> dict[str, A
     return {
         "id": prefix,
         "name": f"Eclipse: {prefix} ({ncol}x{nrow}x{nlay}, {n_active:,} active)",
-        "n_vertices": n_active * 8,
+        "n_vertices": len(positions) // 3,
         "n_cells": n_active,
         "n_indices": len(indices),
         "grid_dims": [ncol, nrow, nlay],

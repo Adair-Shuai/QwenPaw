@@ -82,11 +82,15 @@ class EclipseReader(BaseReader):
         positions: list[float] = []
         cell_ids: list[int] = []
 
+        # xtgeo corners are Eclipse pairing order (SW,SE,NW,NE).  Reorder to
+        # VTK hexahedron winding so the shared 6-quad table is planar.
+        from ..converters.hex import XTGEO_TO_VTK, compact_hex_centroid_mesh
+
         for cell_idx in range(n_total):
             if not active_mask[cell_idx]:
                 continue
-            for ci in range(8):
-                x_arr, y_arr, z_arr = corner_xyz[ci]
+            for eclipse_index in XTGEO_TO_VTK:
+                x_arr, y_arr, z_arr = corner_xyz[eclipse_index]
                 x = float(x_arr[cell_idx]) if x_arr[cell_idx] is not None else 0.0
                 y = float(y_arr[cell_idx]) if y_arr[cell_idx] is not None else 0.0
                 z = float(z_arr[cell_idx]) if z_arr[cell_idx] is not None else 0.0
@@ -94,22 +98,12 @@ class EclipseReader(BaseReader):
             cell_ids.append(cell_idx)
 
         prefix = name
+        packed_positions, packed_indices = compact_hex_centroid_mesh(positions)
+        positions = packed_positions
         write_f32(bin_dir / f"{prefix}_positions.f32", positions)
         write_u32(bin_dir / f"{prefix}_cell_ids.u32", cell_ids)
 
-        faces = [
-            (0, 1, 2, 3), (4, 7, 6, 5), (0, 1, 5, 4),
-            (3, 2, 6, 7), (0, 3, 7, 4), (1, 2, 6, 5),
-        ]
-        indices: list[int] = []
-        for cell_i in range(n_active):
-            base = cell_i * 8
-            for face in faces:
-                a, b, c, d = face
-                indices.extend([
-                    base + a, base + b, base + c,
-                    base + a, base + c, base + d,
-                ])
+        indices = list(packed_indices)
         write_u32(bin_dir / f"{prefix}_indices.u32", indices)
 
         # Extract static properties from INIT file

@@ -30,6 +30,53 @@ def _load_python_layers():
     return module
 
 
+def test_python_layer_prunes_modelscope_dataset_trees(tmp_path):
+    helper = _load_python_layers()
+    root = tmp_path / "python-packages" / "0+sha.0123456789abcdef"
+    datasets = root / "modelscope" / "msdatasets" / "dataset_cls"
+    datasets.mkdir(parents=True)
+    (datasets / "marker.py").write_text("unused", encoding="utf-8")
+    hub = root / "modelscope" / "hub"
+    hub.mkdir(parents=True)
+    (hub / "api.py").write_text("ok", encoding="utf-8")
+
+    removed = helper.prune_python_packages(root)
+    assert removed == ["modelscope/msdatasets"]
+    assert not (root / "modelscope" / "msdatasets").exists()
+    assert (hub / "api.py").is_file()
+
+    helper.assert_portable_relative_paths(
+        root,
+        packaged_prefix=(
+            "payload/binaries/runtimes/python-packages/"
+            "0+sha.0123456789abcdef"
+        ),
+    )
+
+
+def test_python_layer_rejects_windows_breaking_payload_paths(tmp_path):
+    helper = _load_python_layers()
+    root = tmp_path / "python-packages" / "0+sha.0123456789abcdef"
+    nested = root / "pkg"
+    nested.mkdir(parents=True)
+    (nested / "module.py").write_text("x", encoding="utf-8")
+
+    try:
+        helper.assert_portable_relative_paths(
+            root,
+            packaged_prefix=(
+                "payload/binaries/runtimes/python-packages/"
+                "0+sha.0123456789abcdef"
+            ),
+            limit=40,
+        )
+    except RuntimeError as error:
+        assert "over 40 characters" in str(error)
+        assert "Windows Explorer will drop them" in str(error)
+    else:
+        raise AssertionError("overlong packaged path was accepted")
+
+
 def test_dependency_layer_digest_is_a_valid_component_version():
     # pylint: disable=protected-access
     helper = _load_python_layers()

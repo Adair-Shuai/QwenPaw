@@ -7,7 +7,11 @@
  * - Dataset switching, property coloring, cell picking
  * - Colormap, opacity, wireframe controls
  * - I/J/K, region, property-range filters
- * - Object tree (grid/well/surface/network)
+ * - Component tree (grid/well/surface/network) with search and delete
+ * - Local file import, workspace-tree import, drag-and-drop
+ * - Right-hand inspector, readout HUD, plan-view well map
+ * - Named views, orthographic camera, Z exaggeration, I/J/K slice player
+ * - North arrow / scale bar, context menu, isolate/hide/show-all
  * - Time step switching (UNRST dynamic properties)
  * - Cross-view selection sync via store
  * - Coordinate origin rebase
@@ -18,16 +22,80 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import { ViewRouter } from "./app/view-router";
 import { mountViewer } from "./mount";
 import { registerEngineFactory } from "./engines/registry";
 import { viewerStore } from "./stores/viewerState";
-import { sampleColormap as colormap } from "./rendering/colormaps";
+import { colormapCssGradient, COLORMAP_NAMES, sampleColormap as colormap } from "./rendering/colormaps";
+import { applyChromeOffsets, LAYOUT } from "./ui/layout";
+import {
+  type ComponentGroupId,
+  renderComponentTree,
+} from "./ui/componentTree";
+import {
+  createWellMapPanel,
+  drawWellMap,
+  hitTestWellMap,
+  unionBounds,
+  type MapBounds,
+  type WellMapPoint,
+} from "./ui/wellMap";
+import { createReadoutPanel, updateReadout } from "./ui/readout";
+import {
+  appendControlRow,
+  createBoolSwitch,
+  createControlTable,
+  createInspectorTabs,
+  inspectorActionButton,
+} from "./ui/inspectorTabs";
+import {
+  bindDropImport,
+  createHiddenFileInput,
+  importLocalFiles,
+  openWorkspacePicker,
+  type ImportDialogHost,
+} from "./ui/importDialog";
+import {
+  applyOrthographicFrustum,
+  cameraAzimuthRad,
+  metersPerPixel,
+  namedViewPose,
+  USER_VIEW_KEY,
+  viewDistanceForBox,
+  type NamedView,
+} from "./ui/standardViews";
+import { objectContextItems, showContextMenu } from "./ui/contextMenu";
+import { createSlicePlayer, sliceRangeText, type SlicePlayer } from "./ui/slicePlayer";
+import { createCompassHud, type CompassHud } from "./ui/compass";
+import { createViewCluster } from "./ui/viewCluster";
+import {
+  createShortcutsOverlay,
+  hideShortcutsOverlay,
+  toggleShortcutsOverlay,
+} from "./ui/shortcutsOverlay";
+import {
+  isDepthOnlyWell,
+  isGridDataset,
+  isSpatialWell,
+  uniquePolyline,
+  wellDisplayName,
+} from "./wellClassification";
+import { buildWellTubeMesh } from "./wellTubeGeometry";
+import {
+  buildHexEdgeIndex,
+  extractHexCorners,
+  isHexCellMesh,
+  isHexCornerMesh,
+  maybeRemapHexPositions,
+  tessellateHexOpmFan,
+} from "./hexTopology";
 import { WorkerManager } from "./workers/workerManager";
 import { ViewerCommandBridge } from "./commands/commandBridge";
 import type {
   DatasetInfo,
   DatasetManifest,
+  DomainSelection,
   ViewerHandle,
   ViewerMountOptions,
 } from "./contracts/types";
@@ -37,9 +105,18 @@ import type {
 class ThreeViewerEngine {
   private renderer: THREE.WebGLRenderer;
   private scene: THREE.Scene;
-  private camera: THREE.PerspectiveCamera;
+  private modelRoot: THREE.Group;
+  private perspectiveCamera: THREE.PerspectiveCamera;
+  private orthoCamera: THREE.OrthographicCamera;
+  private camera: THREE.PerspectiveCamera | THREE.OrthographicCamera;
   private controls: OrbitControls;
-  private mesh: THREE.Mesh | THREE.Line | THREE.LineSegments | null = null;
+  private gridHelper: THREE.GridHelper;
+  private axesHelper: THREE.AxesHelper;
+  private mesh: THREE.Object3D | null = null;
+  private labelRenderer: CSS2DRenderer;
+  private hexEdgeLines: THREE.LineSegments | null = null;
+  private hexCornerPositions: Float32Array | null = null;
+  private isHexMesh = false;
   /** Secondary objects (wells, surfaces and networks) shown alongside the active dataset. */
   private overlayMeshes = new Map<string, THREE.Object3D>();
   private overlayLoading = new Set<string>();
@@ -80,7 +157,12 @@ class ThreeViewerEngine {
   private filterJ: [number, number] = [0, Infinity];
   private filterK: [number, number] = [0, Infinity];
   private filterPropertyRange: [number, number] = [-Infinity, Infinity];
+  private filterPropertyExclude = false;
   private filterBounds: [number, number, number, number, number, number] | null = null;
+  private zScale = 1;
+  private useOrtho = false;
+  private wellLabelsVisible = true;
+  private sliceTimer: number | null = null;
   private filterUndoStack: string[] = [];
   private filterRedoStack: string[] = [];
   private lastFilterState = "";
@@ -105,6 +187,24 @@ class ThreeViewerEngine {
   private viewRouter: ViewRouter;
   private sidebarCollapsed = false;
   private objectTreeCollapsed = false;
+  private readoutEl: HTMLElement;
+  private wellMapRoot: HTMLElement;
+  private wellMapCanvas: HTMLCanvasElement;
+  private wellPlanPoints = new Map<string, WellMapPoint>();
+  private gridMapBounds: MapBounds | null = null;
+  private treeQuery = "";
+  private collapsedGroups = new Set<string>();
+  private selectedObjectId: string | null = null;
+  private hoverCoords: [number, number, number] | null = null;
+  private fileInput: HTMLInputElement | null = null;
+  private dropUnbind: (() => void) | null = null;
+  private slicePlayer!: SlicePlayer;
+  private compassHud!: CompassHud;
+  private viewClusterEl!: HTMLElement;
+  private shortcutsEl!: HTMLElement;
+  private importBusy = false;
+  private highlightedOverlayId: string | null = null;
+  private storeUnsubscribe: (() => void) | null = null;
   private scalarMin = 0;
   private scalarMax = 1;
 
@@ -124,13 +224,30 @@ class ThreeViewerEngine {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.localClippingEnabled = true;
     container.appendChild(this.renderer.domElement);
+    if (getComputedStyle(container).position === "static") {
+      container.style.position = "relative";
+    }
+    this.labelRenderer = new CSS2DRenderer();
+    this.labelRenderer.setSize(w, h);
+    Object.assign(this.labelRenderer.domElement.style, {
+      position: "absolute",
+      inset: "0",
+      pointerEvents: "none",
+    });
+    container.appendChild(this.labelRenderer.domElement);
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x0d1117);
     this.scene.fog = new THREE.Fog(0x0d1117, 2000, 8000);
+    this.modelRoot = new THREE.Group();
+    this.modelRoot.name = "oilgas-model";
+    this.scene.add(this.modelRoot);
 
-    this.camera = new THREE.PerspectiveCamera(50, w / h, 1, 20000);
-    this.camera.position.set(3000, 3000, 3000);
+    this.perspectiveCamera = new THREE.PerspectiveCamera(50, w / h, 1, 20000);
+    this.perspectiveCamera.position.set(3000, 3000, 3000);
+    this.orthoCamera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 20000);
+    this.orthoCamera.position.copy(this.perspectiveCamera.position);
+    this.camera = this.perspectiveCamera;
 
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
@@ -144,10 +261,18 @@ class ThreeViewerEngine {
     const dir2 = new THREE.DirectionalLight(0x8090ff, 0.5);
     dir2.position.set(-500, -500, -500);
     this.scene.add(dir2);
-    this.scene.add(new THREE.GridHelper(5000, 50, 0x30363d, 0x21262d));
-    this.scene.add(new THREE.AxesHelper(2000));
+    this.gridHelper = new THREE.GridHelper(5000, 50, 0x30363d, 0x21262d);
+    this.gridHelper.rotation.x = Math.PI / 2;
+    this.scene.add(this.gridHelper);
+    this.axesHelper = new THREE.AxesHelper(2000);
+    this.scene.add(this.axesHelper);
+    this.raycaster.params.Line = { threshold: 12 };
 
     this.renderer.domElement.addEventListener("click", this.onCanvasClick);
+    this.renderer.domElement.addEventListener("pointermove", this.onCanvasPointerMove);
+    this.renderer.domElement.addEventListener("pointerleave", this.onCanvasPointerLeave);
+    this.renderer.domElement.addEventListener("dblclick", this.onCanvasDblClick);
+    this.renderer.domElement.addEventListener("contextmenu", this.onCanvasContextMenu);
     window.addEventListener("resize", this.onResize);
 
     this.sidebar = this.buildSidebar();
@@ -159,13 +284,33 @@ class ThreeViewerEngine {
     this.histogramEl = this.buildHistogram();
     this.wellLogEl = this.buildWellLogPanel();
     this.toolbarEl = this.buildToolbar();
+    this.readoutEl = this.buildReadout();
+    const wellMap = createWellMapPanel();
+    this.wellMapRoot = wellMap.root;
+    this.wellMapCanvas = wellMap.canvas;
+    this.wellMapCanvas.addEventListener("click", this.onWellMapClick);
+    this.container.appendChild(this.wellMapRoot);
+    this.slicePlayer = createSlicePlayer({
+      onAxis: (axis) => this.applySliceAxis(axis),
+      onIndex: (axis, index) => this.applySliceIndex(axis, index),
+      onPlay: (playing) => this.setSlicePlaying(playing),
+    });
+    this.container.appendChild(this.slicePlayer.root);
+    this.compassHud = createCompassHud();
+    this.container.appendChild(this.compassHud.root);
+    this.viewClusterEl = createViewCluster((view) => this.applyNamedView(view));
+    this.container.appendChild(this.viewClusterEl);
+    this.shortcutsEl = createShortcutsOverlay();
+    this.container.appendChild(this.shortcutsEl);
     this.viewRouter = new ViewRouter(this.container, (view) => {
       void this.applyActiveView(view);
     });
     const viewTabs = this.viewRouter.createTabs();
     viewTabs.className = "oilgas-view-tabs";
-    Object.assign(viewTabs.style, { top: "48px", left: "440px", right: "8px", overflowX: "auto" });
+    Object.assign(viewTabs.style, { top: "48px", left: "276px", right: "288px", overflowX: "auto" });
     this.container.appendChild(viewTabs);
+    this.storeUnsubscribe = viewerStore.subscribe(() => this.syncChromeFromStore());
+    this.updatePanelOffsets();
 
     this.commandBridge = new ViewerCommandBridge({
       apiBase: this.apiBase,
@@ -175,6 +320,16 @@ class ThreeViewerEngine {
       onCommandError: (message) => {
         this.infoEl.textContent = `Agent 命令失败: ${message}`;
       },
+    });
+
+    this.fileInput = createHiddenFileInput((files) => {
+      void this.handlePickedFiles(files);
+    });
+    this.container.appendChild(this.fileInput);
+    this.container.tabIndex = 0;
+    this.container.addEventListener("keydown", this.onViewerKeyDown);
+    this.dropUnbind = bindDropImport(this.container, (files) => {
+      void this.handlePickedFiles(files);
     });
 
     this.startLoop();
@@ -210,47 +365,92 @@ class ThreeViewerEngine {
   private buildSidebar(): HTMLElement {
     const sidebar = document.createElement("div");
     Object.assign(sidebar.style, {
-      position: "absolute", top: "0", left: "0", bottom: "0",
-      width: "252px", background: "rgba(13,17,23,0.96)",
-      borderRight: "1px solid #30363d", overflowY: "auto",
-      padding: "12px", boxSizing: "border-box", zIndex: "100",
+      position: "absolute", top: "0", right: "0", bottom: "0", left: "auto",
+      width: String(LAYOUT.inspectorWidth) + "px", background: "rgba(13,17,23,0.96)",
+      borderLeft: "1px solid #30363d", borderRight: "0", overflow: "hidden",
+      padding: "0", boxSizing: "border-box", zIndex: "100",
       fontFamily: "-apple-system, sans-serif", color: "#c9d1d9", fontSize: "13px",
+      display: "flex", flexDirection: "column",
     } as CSSStyleDeclaration);
-    sidebar.className = "oilgas-panel oilgas-control-panel";
+    sidebar.className = "oilgas-panel oilgas-inspector-panel";
 
     const collapseBtn = document.createElement("button");
     collapseBtn.type = "button";
-    collapseBtn.textContent = "‹";
-    collapseBtn.title = "收起控制面板";
-    collapseBtn.setAttribute("aria-label", "收起控制面板");
+    collapseBtn.textContent = "<";
+    collapseBtn.title = "收起属性面板";
+    collapseBtn.setAttribute("aria-label", "收起属性面板");
     Object.assign(collapseBtn.style, this.iconButtonStyle);
     collapseBtn.style.position = "absolute";
     collapseBtn.style.top = "8px";
-    collapseBtn.style.right = "6px";
+    collapseBtn.style.left = "6px";
+    collapseBtn.style.right = "auto";
+    collapseBtn.style.zIndex = "2";
     collapseBtn.addEventListener("click", () => this.toggleSidebar(collapseBtn));
     sidebar.appendChild(collapseBtn);
 
+    const body = document.createElement("div");
+    body.id = "vis-inspector-body";
+    body.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 10px 8px;overflow:hidden;";
+
     const title = document.createElement("div");
     Object.assign(title.style, {
-      fontSize: "15px", fontWeight: "600", marginBottom: "12px",
-      color: "#58a6ff", borderBottom: "1px solid #30363d", paddingBottom: "8px",
+      fontSize: "15px", fontWeight: "600", marginBottom: "10px",
+      color: "#58a6ff", padding: "0 0 8px 28px",
+      borderBottom: "1px solid #30363d",
     });
-    title.textContent = "油气三维可视化";
-    sidebar.appendChild(title);
+    title.textContent = "属性";
+    body.appendChild(title);
 
-    // Dataset
-    sidebar.appendChild(this.createLabel("数据集"));
+    const objectCard = document.createElement("div");
+    objectCard.id = "vis-inspector-object";
+    objectCard.style.cssText = "margin:0 0 10px;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:7px;flex:0 0 auto;";
+    const objectName = document.createElement("div");
+    objectName.dataset.objectName = "true";
+    objectName.style.cssText = "font-weight:600;color:#e6edf3;margin-bottom:4px;";
+    objectName.textContent = "未选中对象";
+    const objectMeta = document.createElement("div");
+    objectMeta.dataset.objectMeta = "true";
+    objectMeta.style.cssText = "font-size:11px;color:#8b949e;margin-bottom:6px;";
+    objectMeta.textContent = "在组件树或三维视图中点选";
+    const visibleSwitch = createBoolSwitch("vis-inspector-visible", true, (value) => {
+      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      if (dataset) void this.toggleDatasetVisibility(dataset, value);
+    });
+    const visibleRow = document.createElement("div");
+    visibleRow.style.cssText = "display:grid;grid-template-columns:42% 1fr;gap:8px;align-items:center;";
+    const visibleName = document.createElement("div");
+    visibleName.textContent = "visible";
+    visibleName.style.cssText = "color:#8b949e;font-size:11px;";
+    visibleRow.append(visibleName, visibleSwitch);
+    objectCard.append(objectName, objectMeta, visibleRow);
+    body.appendChild(objectCard);
+
+    const tabs = createInspectorTabs();
+    body.appendChild(tabs.tabBar);
+
+    const panes = document.createElement("div");
+    panes.style.cssText = "flex:1;min-height:0;overflow:auto;";
+    const controlsTable = createControlTable();
+    const actionsTable = createControlTable();
+    tabs.panes.controls.appendChild(controlsTable.table);
+    tabs.panes.actions.appendChild(actionsTable.table);
+    panes.append(tabs.panes.controls, tabs.panes.actions, tabs.panes.addons);
+    body.appendChild(panes);
+
+    const compact = (el: HTMLElement) => {
+      Object.assign(el.style, this.selectStyle, { marginBottom: "0" } as CSSStyleDeclaration);
+      return el;
+    };
+
     const dsSelect = document.createElement("select");
-    Object.assign(dsSelect.style, this.selectStyle);
+    compact(dsSelect);
     dsSelect.id = "vis-dataset";
     dsSelect.setAttribute("aria-label", "数据集");
     dsSelect.addEventListener("change", () => this.loadDataset(dsSelect.value));
-    sidebar.appendChild(dsSelect);
+    appendControlRow(controlsTable.body, "dataset", dsSelect);
 
-    // Property
-    sidebar.appendChild(this.createLabel("属性"));
     const propSelect = document.createElement("select");
-    Object.assign(propSelect.style, this.selectStyle);
+    compact(propSelect);
     propSelect.id = "vis-property";
     propSelect.setAttribute("aria-label", "属性");
     for (const p of ["porosity", "permeability", "facies"]) {
@@ -267,12 +467,10 @@ class ThreeViewerEngine {
       });
       this.reloadPropertyColors();
     });
-    sidebar.appendChild(propSelect);
+    appendControlRow(controlsTable.body, "property", propSelect);
 
-    // Time step
-    sidebar.appendChild(this.createLabel("时间步"));
     const tsSelect = document.createElement("select");
-    Object.assign(tsSelect.style, this.selectStyle);
+    compact(tsSelect);
     tsSelect.id = "vis-timestep";
     tsSelect.setAttribute("aria-label", "时间步");
     tsSelect.innerHTML = '<option value="0">静态</option>';
@@ -281,16 +479,11 @@ class ThreeViewerEngine {
       viewerStore.setTimeStep(this.currentTimeStep);
       this.reloadPropertyColors();
     });
-    sidebar.appendChild(tsSelect);
+    appendControlRow(controlsTable.body, "timeStep", tsSelect);
 
-    const playBtn = document.createElement("button");
-    playBtn.type = "button";
-    playBtn.textContent = "播放时间步";
+    const playBtn = inspectorActionButton("播放时间步");
     playBtn.title = "播放/暂停动态结果时间步";
-    Object.assign(playBtn.style, {
-      width: "100%", padding: "6px", background: "#21262d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
-    });
+    playBtn.style.marginBottom = "0";
     playBtn.addEventListener("click", () => {
       if (this.timestepTimer !== null) {
         window.clearInterval(this.timestepTimer);
@@ -310,15 +503,13 @@ class ThreeViewerEngine {
         void this.executeCommand("set-timestep", { timeStep: next });
       }, 700);
     });
-    sidebar.appendChild(playBtn);
+    appendControlRow(controlsTable.body, "play", playBtn);
 
-    // Colormap
-    sidebar.appendChild(this.createLabel("色图"));
     const cmSelect = document.createElement("select");
-    Object.assign(cmSelect.style, this.selectStyle);
+    compact(cmSelect);
     cmSelect.id = "vis-colormap";
     cmSelect.setAttribute("aria-label", "色图");
-    for (const cm of ["viridis", "plasma", "turbo", "gray"]) {
+    for (const cm of COLORMAP_NAMES) {
       const opt = document.createElement("option");
       opt.value = cm; opt.textContent = cm;
       cmSelect.appendChild(opt);
@@ -328,115 +519,168 @@ class ThreeViewerEngine {
       viewerStore.setColorMap({ name: this.currentColormap });
       this.reloadPropertyColors();
     });
-    sidebar.appendChild(cmSelect);
+    appendControlRow(controlsTable.body, "colorRamp", cmSelect);
 
-    // Opacity
-    sidebar.appendChild(this.createLabel("透明度"));
+    const opacityWrap = document.createElement("div");
     const opacitySlider = document.createElement("input");
     opacitySlider.type = "range"; opacitySlider.min = "10"; opacitySlider.max = "100"; opacitySlider.value = "85";
-    Object.assign(opacitySlider.style, { width: "100%", marginBottom: "12px" });
+    opacitySlider.id = "vis-opacity";
+    Object.assign(opacitySlider.style, { width: "100%", margin: "0" });
+    const opacityValue = document.createElement("div");
+    opacityValue.id = "vis-opacity-value";
+    opacityValue.style.cssText = "font-size:11px;color:#8b949e;font-family:monospace;text-align:right;";
+    opacityValue.textContent = "0.85";
     opacitySlider.addEventListener("input", () => {
-      this.opacity = parseInt(opacitySlider.value) / 100;
-      if (this.mesh) {
-        (this.mesh.material as any).opacity = this.opacity;
-        (this.mesh.material as any).needsUpdate = true;
-      }
+      this.applyOpacity(parseInt(opacitySlider.value, 10) / 100);
     });
-    sidebar.appendChild(opacitySlider);
+    opacityWrap.append(opacitySlider, opacityValue);
+    appendControlRow(controlsTable.body, "opacity", opacityWrap);
 
-    // Wireframe
-    sidebar.appendChild(this.createLabel("显示模式"));
-    const wfCheck = document.createElement("input");
-    wfCheck.type = "checkbox"; wfCheck.id = "vis-wireframe"; wfCheck.style.marginRight = "6px";
-    wfCheck.addEventListener("change", () => {
-      this.wireframe = wfCheck.checked;
-      if (this.mesh?.material instanceof THREE.MeshPhongMaterial) {
-        this.mesh.material.wireframe = this.wireframe;
-      }
-    });
-    const wfLabel = document.createElement("label");
-    wfLabel.style.display = "block"; wfLabel.style.marginBottom = "12px";
-    wfLabel.appendChild(wfCheck); wfLabel.appendChild(document.createTextNode("线框模式"));
-    sidebar.appendChild(wfLabel);
+    appendControlRow(
+      controlsTable.body,
+      "wireframe",
+      createBoolSwitch("vis-wireframe", false, (value) => {
+        this.wireframe = value;
+        this.applyWireframeMode();
+      }),
+    );
 
-    // IJK Filters
-    sidebar.appendChild(this.createLabel("I/J/K 过滤"));
     const filterDiv = document.createElement("div");
-    filterDiv.style.cssText = "display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 4px; margin-bottom: 12px;";
+    filterDiv.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;";
     for (const axis of ["I", "J", "K"]) {
       const input = document.createElement("input");
       input.type = "text"; input.placeholder = axis;
-      input.id = `vis-filter-${axis.toLowerCase()}`;
-      input.style.cssText = "width:100%; padding:4px; background:#161b22; border:1px solid #30363d; border-radius:4px; color:#c9d1d9; font-size:11px; text-align:center;";
+      input.id = "vis-filter-" + axis.toLowerCase();
+      input.style.cssText = "width:100%;padding:4px;background:#161b22;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:11px;text-align:center;box-sizing:border-box;";
       input.addEventListener("input", () => this.applyFilters());
       input.addEventListener("change", () => this.applyFilters());
       filterDiv.appendChild(input);
     }
-    sidebar.appendChild(filterDiv);
+    appendControlRow(controlsTable.body, "filterIJK", filterDiv);
 
-    // Property range filter
-    sidebar.appendChild(this.createLabel("属性范围过滤"));
     const propRangeDiv = document.createElement("div");
-    propRangeDiv.style.cssText = "display: flex; gap: 4px; margin-bottom: 12px;";
+    propRangeDiv.style.cssText = "display:flex;gap:4px;";
     const minInput = document.createElement("input");
     minInput.type = "number"; minInput.placeholder = "min"; minInput.step = "0.01";
     minInput.id = "vis-filter-prop-min";
-    Object.assign(minInput.style, this.selectStyle);
+    compact(minInput);
     minInput.addEventListener("input", () => this.applyFilters());
     minInput.addEventListener("change", () => this.applyFilters());
     const maxInput = document.createElement("input");
     maxInput.type = "number"; maxInput.placeholder = "max"; maxInput.step = "0.01";
     maxInput.id = "vis-filter-prop-max";
-    Object.assign(maxInput.style, this.selectStyle);
+    compact(maxInput);
     maxInput.addEventListener("input", () => this.applyFilters());
     maxInput.addEventListener("change", () => this.applyFilters());
-    propRangeDiv.appendChild(minInput); propRangeDiv.appendChild(maxInput);
-    sidebar.appendChild(propRangeDiv);
+    propRangeDiv.append(minInput, maxInput);
+    appendControlRow(controlsTable.body, "propertyRange", propRangeDiv);
+    appendControlRow(
+      controlsTable.body,
+      "excludeRange",
+      createBoolSwitch("vis-filter-prop-exclude", false, (checked) => {
+        this.filterPropertyExclude = checked;
+        this.applyFilters();
+      }),
+    );
 
-    // Section / slice creation
-    sidebar.appendChild(this.createLabel("剖面/切片"));
+    const isolateK = document.createElement("input");
+    isolateK.type = "range"; isolateK.min = "1"; isolateK.max = "1"; isolateK.value = "1";
+    isolateK.id = "vis-k-layer";
+    Object.assign(isolateK.style, { width: "100%", margin: "0" });
+    isolateK.addEventListener("input", () => {
+      const kFilter = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
+      const isolate = (this.sidebar.querySelector("#vis-isolate-k") as HTMLInputElement | null)?.checked;
+      if (kFilter && isolate) {
+        kFilter.value = isolateK.value + ":" + isolateK.value;
+        this.applyFilters();
+      }
+    });
+    appendControlRow(
+      controlsTable.body,
+      "isolateK",
+      createBoolSwitch("vis-isolate-k", false, (checked) => {
+        const kFilter = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
+        if (!kFilter) return;
+        kFilter.value = checked ? isolateK.value + ":" + isolateK.value : "";
+        this.applyFilters();
+      }),
+    );
+    appendControlRow(controlsTable.body, "kLayer", isolateK);
+
+    const zScaleWrap = document.createElement("div");
+    const zScaleSlider = document.createElement("input");
+    zScaleSlider.type = "range";
+    zScaleSlider.min = "10";
+    zScaleSlider.max = "800";
+    zScaleSlider.value = "100";
+    zScaleSlider.id = "vis-z-scale";
+    Object.assign(zScaleSlider.style, { width: "100%", margin: "0" });
+    const zScaleValue = document.createElement("div");
+    zScaleValue.id = "vis-z-scale-value";
+    zScaleValue.style.cssText = "font-size:11px;color:#8b949e;font-family:monospace;text-align:right;";
+    zScaleValue.textContent = "1.00x";
+    zScaleSlider.addEventListener("input", () => {
+      this.setZScale(parseInt(zScaleSlider.value, 10) / 100);
+    });
+    zScaleWrap.append(zScaleSlider, zScaleValue);
+    appendControlRow(controlsTable.body, "zScale", zScaleWrap);
+    appendControlRow(
+      controlsTable.body,
+      "orthographic",
+      createBoolSwitch("vis-ortho", false, (checked) => this.setOrthographic(checked)),
+    );
+
+    const clipSlider = document.createElement("input");
+    clipSlider.type = "range"; clipSlider.min = "0"; clipSlider.max = "100"; clipSlider.value = "50";
+    clipSlider.id = "vis-clip-depth";
+    Object.assign(clipSlider.style, { width: "100%", margin: "0" });
+    const applyClip = () => {
+      const clipCheck = this.sidebar.querySelector("#vis-clip") as HTMLInputElement | null;
+      this.applyClipPlane(Boolean(clipCheck?.checked), Number(clipSlider.value) / 100);
+    };
+    clipSlider.addEventListener("input", applyClip);
+    appendControlRow(
+      controlsTable.body,
+      "clipPlane",
+      createBoolSwitch("vis-clip", false, () => applyClip()),
+    );
+    appendControlRow(controlsTable.body, "clipDepth", clipSlider);
+
     const polylineInput = document.createElement("input");
     polylineInput.type = "text";
     polylineInput.placeholder = "x,y; x,y; ...";
     polylineInput.id = "vis-polyline";
-    Object.assign(polylineInput.style, this.selectStyle);
-    sidebar.appendChild(polylineInput);
+    compact(polylineInput);
+    appendControlRow(actionsTable.body, "polyline", polylineInput);
+
     const zRangeDiv = document.createElement("div");
-    zRangeDiv.style.cssText = "display:flex;gap:4px;margin-bottom:6px;";
+    zRangeDiv.style.cssText = "display:flex;gap:4px;";
     const zMinInput = document.createElement("input");
     zMinInput.type = "number"; zMinInput.placeholder = "z min"; zMinInput.value = "0";
     zMinInput.id = "vis-section-z-min";
-    Object.assign(zMinInput.style, this.selectStyle);
+    compact(zMinInput);
     const zMaxInput = document.createElement("input");
     zMaxInput.type = "number"; zMaxInput.placeholder = "z max"; zMaxInput.value = "5000";
     zMaxInput.id = "vis-section-z-max";
-    Object.assign(zMaxInput.style, this.selectStyle);
-    zRangeDiv.appendChild(zMinInput); zRangeDiv.appendChild(zMaxInput);
-    sidebar.appendChild(zRangeDiv);
-    const sectionBtn = document.createElement("button");
-    sectionBtn.textContent = "生成垂直剖面";
-    Object.assign(sectionBtn.style, {
-      width: "100%", padding: "7px", background: "#30363d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
-    });
+    compact(zMaxInput);
+    zRangeDiv.append(zMinInput, zMaxInput);
+    appendControlRow(actionsTable.body, "zRange", zRangeDiv);
+
+    const sectionBtn = inspectorActionButton("生成垂直剖面");
+    sectionBtn.style.marginBottom = "0";
     sectionBtn.addEventListener("click", () => this.createIntersectionFromUI());
-    sidebar.appendChild(sectionBtn);
+    appendControlRow(actionsTable.body, "intersection", sectionBtn);
 
-    const wellSecBtn = document.createElement("button");
-    wellSecBtn.textContent = "沿井生成剖面";
-    Object.assign(wellSecBtn.style, {
-      width: "100%", padding: "7px", background: "#30363d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
-    });
+    const wellSecBtn = inspectorActionButton("沿井生成剖面");
+    wellSecBtn.style.marginBottom = "0";
     wellSecBtn.addEventListener("click", () => { void this.createWellSectionFromUI(); });
-    sidebar.appendChild(wellSecBtn);
+    appendControlRow(actionsTable.body, "wellSection", wellSecBtn);
 
-    sidebar.appendChild(this.createLabel("IJK 切片 / 后处理"));
     const sliceRow = document.createElement("div");
-    sliceRow.style.cssText = "display:flex;gap:4px;margin-bottom:6px;";
+    sliceRow.style.cssText = "display:flex;gap:4px;";
     const axisSelect = document.createElement("select");
     axisSelect.id = "vis-slice-axis";
-    Object.assign(axisSelect.style, this.selectStyle);
+    compact(axisSelect);
     for (const axis of ["k", "i", "j"]) {
       const opt = document.createElement("option");
       opt.value = axis;
@@ -446,120 +690,110 @@ class ThreeViewerEngine {
     const sliceIndex = document.createElement("input");
     sliceIndex.type = "number"; sliceIndex.min = "1"; sliceIndex.value = "1";
     sliceIndex.id = "vis-slice-index";
-    Object.assign(sliceIndex.style, this.selectStyle);
-    sliceRow.appendChild(axisSelect);
-    sliceRow.appendChild(sliceIndex);
-    sidebar.appendChild(sliceRow);
-    const sliceBtn = document.createElement("button");
-    sliceBtn.textContent = "提取切片";
-    Object.assign(sliceBtn.style, {
-      width: "100%", padding: "7px", background: "#30363d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "12px", marginBottom: "8px",
-    });
+    compact(sliceIndex);
+    sliceRow.append(axisSelect, sliceIndex);
+    appendControlRow(actionsTable.body, "slice", sliceRow);
+
+    const sliceBtn = inspectorActionButton("提取切片");
+    sliceBtn.style.marginBottom = "0";
     sliceBtn.addEventListener("click", () => { void this.createSliceFromUI(); });
-    sidebar.appendChild(sliceBtn);
+    appendControlRow(actionsTable.body, "extractSlice", sliceBtn);
 
-    const isolateK = document.createElement("input");
-    isolateK.type = "range"; isolateK.min = "1"; isolateK.max = "1"; isolateK.value = "1";
-    isolateK.id = "vis-k-layer";
-    Object.assign(isolateK.style, { width: "100%", marginBottom: "4px" });
-    isolateK.addEventListener("input", () => {
-      const kFilter = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
-      const isolate = (this.sidebar.querySelector("#vis-isolate-k") as HTMLInputElement | null)?.checked;
-      if (kFilter && isolate) {
-        kFilter.value = `${isolateK.value}:${isolateK.value}`;
-        this.applyFilters();
-      }
-    });
-    sidebar.appendChild(isolateK);
-    const isolateLabel = document.createElement("label");
-    isolateLabel.style.display = "block"; isolateLabel.style.marginBottom = "8px"; isolateLabel.style.fontSize = "12px";
-    const isolateCheck = document.createElement("input");
-    isolateCheck.type = "checkbox"; isolateCheck.id = "vis-isolate-k"; isolateCheck.style.marginRight = "6px";
-    isolateCheck.addEventListener("change", () => {
-      const kFilter = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
-      if (!kFilter) return;
-      kFilter.value = isolateCheck.checked ? `${isolateK.value}:${isolateK.value}` : "";
-      this.applyFilters();
-    });
-    isolateLabel.appendChild(isolateCheck);
-    isolateLabel.appendChild(document.createTextNode("只显示当前 K 层"));
-    sidebar.appendChild(isolateLabel);
-
-    const clipCheck = document.createElement("input");
-    clipCheck.type = "checkbox"; clipCheck.id = "vis-clip"; clipCheck.style.marginRight = "6px";
-    const clipLabel = document.createElement("label");
-    clipLabel.style.display = "block"; clipLabel.style.marginBottom = "4px"; clipLabel.style.fontSize = "12px";
-    clipLabel.appendChild(clipCheck);
-    clipLabel.appendChild(document.createTextNode("深度裁剪平面"));
-    sidebar.appendChild(clipLabel);
-    const clipSlider = document.createElement("input");
-    clipSlider.type = "range"; clipSlider.min = "0"; clipSlider.max = "100"; clipSlider.value = "50";
-    clipSlider.id = "vis-clip-depth";
-    Object.assign(clipSlider.style, { width: "100%", marginBottom: "12px" });
-    const applyClip = () => this.applyClipPlane(clipCheck.checked, Number(clipSlider.value) / 100);
-    clipCheck.addEventListener("change", applyClip);
-    clipSlider.addEventListener("input", applyClip);
-    sidebar.appendChild(clipSlider);
-
-    // Benchmark buttons
-    sidebar.appendChild(this.createLabel("性能测试"));
-    const benchBtn = document.createElement("button");
-    benchBtn.textContent = "运行基准测试";
-    Object.assign(benchBtn.style, {
-      width: "100%", padding: "8px", background: "#238636", color: "#fff",
-      border: "1px solid #2ea043", borderRadius: "6px", cursor: "pointer", fontSize: "13px", marginBottom: "8px",
-    });
-    benchBtn.addEventListener("click", () => this.runBenchmark());
-    sidebar.appendChild(benchBtn);
-
-    const dispBtn = document.createElement("button");
-    dispBtn.textContent = "内存泄漏测试 (10x)";
-    Object.assign(dispBtn.style, {
-      width: "100%", padding: "8px", background: "#da3633", color: "#fff",
-      border: "1px solid #f85149", borderRadius: "6px", cursor: "pointer", fontSize: "13px",
-    });
-    dispBtn.addEventListener("click", () => this.runLeakTest());
-    sidebar.appendChild(dispBtn);
-
-    // Screenshot
-    sidebar.appendChild(this.createLabel("导出"));
-    const ssBtn = document.createElement("button");
-    ssBtn.textContent = "截图";
-    Object.assign(ssBtn.style, {
-      width: "100%", padding: "8px", background: "#1f6feb", color: "#fff",
-      border: "1px solid #388bfd", borderRadius: "6px", cursor: "pointer", fontSize: "13px", marginBottom: "8px",
-    });
+    const ssBtn = inspectorActionButton("截图", { tone: "primary" });
+    ssBtn.style.marginBottom = "0";
     ssBtn.addEventListener("click", () => this.captureScreenshot());
-    sidebar.appendChild(ssBtn);
+    appendControlRow(actionsTable.body, "capture", ssBtn);
 
-    const statsBtn = document.createElement("button");
-    statsBtn.textContent = "属性统计";
-    Object.assign(statsBtn.style, {
-      width: "100%", padding: "8px", background: "#30363d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "13px", marginBottom: "8px",
-    });
+    const statsBtn = inspectorActionButton("属性统计");
+    statsBtn.style.marginBottom = "0";
     statsBtn.addEventListener("click", () => this.showDatasetStats());
-    sidebar.appendChild(statsBtn);
+    appendControlRow(actionsTable.body, "stats", statsBtn);
 
-    const exportBtn = document.createElement("button");
-    exportBtn.textContent = "导出属性 CSV";
-    Object.assign(exportBtn.style, {
-      width: "100%", padding: "8px", background: "#30363d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "13px",
-    });
+    const exportBtn = inspectorActionButton("导出属性 CSV");
+    exportBtn.style.marginBottom = "0";
     exportBtn.addEventListener("click", () => this.exportDataset());
-    sidebar.appendChild(exportBtn);
+    appendControlRow(actionsTable.body, "exportCsv", exportBtn);
 
-    const sceneExportBtn = document.createElement("button");
-    sceneExportBtn.textContent = "导出场景 JSON";
-    Object.assign(sceneExportBtn.style, {
-      width: "100%", padding: "8px", background: "#30363d", color: "#c9d1d9",
-      border: "1px solid #484f58", borderRadius: "6px", cursor: "pointer", fontSize: "13px", marginTop: "8px",
-    });
+    const sceneExportBtn = inspectorActionButton("导出场景 JSON");
+    sceneExportBtn.style.marginBottom = "0";
     sceneExportBtn.addEventListener("click", () => this.exportSceneState());
-    sidebar.appendChild(sceneExportBtn);
+    appendControlRow(actionsTable.body, "exportScene", sceneExportBtn);
 
+    const importFileBtn = inspectorActionButton("导入本地文件", { tone: "primary" });
+    importFileBtn.addEventListener("click", () => this.fileInput?.click());
+    appendControlRow(actionsTable.body, "importFile", importFileBtn);
+    const importWsBtn = inspectorActionButton("从工作区导入");
+    importWsBtn.addEventListener("click", () => this.openWorkspaceImport());
+    appendControlRow(actionsTable.body, "importWorkspace", importWsBtn);
+    const deleteBtn = inspectorActionButton("删除当前对象", { tone: "danger" });
+    deleteBtn.addEventListener("click", () => {
+      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      if (dataset) void this.deleteCatalogDataset(dataset);
+    });
+    appendControlRow(actionsTable.body, "deleteObject", deleteBtn);
+
+    const benchBtn = inspectorActionButton("运行基准测试", { tone: "primary" });
+    benchBtn.addEventListener("click", () => this.runBenchmark());
+    tabs.panes.addons.appendChild(this.createLabel("性能测试"));
+    tabs.panes.addons.appendChild(benchBtn);
+    const dispBtn = inspectorActionButton("内存泄漏测试 (10x)", { tone: "danger" });
+    dispBtn.addEventListener("click", () => this.runLeakTest());
+    tabs.panes.addons.appendChild(dispBtn);
+    const restoreBtn = inspectorActionButton("恢复内置示例");
+    restoreBtn.addEventListener("click", () => { void this.restoreBuiltinExamples(); });
+    tabs.panes.addons.appendChild(this.createLabel("\u76ee\u5f55"));
+    tabs.panes.addons.appendChild(restoreBtn);
+
+    const displayTable = createControlTable();
+    tabs.panes.addons.appendChild(this.createLabel("\u663e\u793a"));
+    tabs.panes.addons.appendChild(displayTable.table);
+    appendControlRow(displayTable.body, "axes", createBoolSwitch("vis-show-axes", true, (on) => {
+      this.axesHelper.visible = on;
+    }));
+    appendControlRow(displayTable.body, "floorGrid", createBoolSwitch("vis-show-grid", true, (on) => {
+      this.gridHelper.visible = on;
+    }));
+    appendControlRow(displayTable.body, "wellLabels", createBoolSwitch("vis-show-well-labels", true, (on) => {
+      this.wellLabelsVisible = on;
+      this.setWellLabelsVisible(on);
+    }));
+    appendControlRow(displayTable.body, "legend", createBoolSwitch("vis-show-legend", true, (on) => {
+      this.legendEl.style.display = on && this.currentProperty ? "block" : "none";
+    }));
+    appendControlRow(displayTable.body, "histogram", createBoolSwitch("vis-show-histogram", true, (on) => {
+      if (this.histogramEl) this.histogramEl.style.display = on && this.currentScalarValues ? "block" : "none";
+    }));
+    appendControlRow(displayTable.body, "wellMap", createBoolSwitch("vis-show-wellmap", true, (on) => {
+      this.wellMapRoot.style.display = on ? "block" : "none";
+    }));
+    appendControlRow(displayTable.body, "compass", createBoolSwitch("vis-show-compass", true, (on) => {
+      this.compassHud.root.style.display = on ? "flex" : "none";
+    }));
+    const bgInput = document.createElement("input");
+    bgInput.type = "color";
+    bgInput.id = "vis-bg-color";
+    bgInput.value = "#0d1117";
+    bgInput.style.cssText = "width:100%;height:24px;padding:0;border:1px solid #30363d;background:#161b22;";
+    bgInput.addEventListener("input", () => this.setBackgroundColor(bgInput.value));
+    appendControlRow(displayTable.body, "background", bgInput);
+
+    tabs.setBadge("controls", controlsTable.body.childElementCount);
+    tabs.setBadge("actions", actionsTable.body.childElementCount);
+    tabs.setBadge("addons", tabs.panes.addons.childElementCount);
+
+    const saveBtn = inspectorActionButton("Save", { tone: "primary" });
+    saveBtn.style.cssText += "flex:1;margin:0;width:auto;";
+    saveBtn.addEventListener("click", () => this.saveScene());
+    const resetBtn = inspectorActionButton("Reset");
+    resetBtn.style.cssText += "flex:1;margin:0;width:auto;";
+    resetBtn.addEventListener("click", () => this.resetInspectorControls());
+    const footerHint = document.createElement("div");
+    footerHint.style.cssText = "color:#6e7681;font-size:10px;white-space:nowrap;";
+    footerHint.textContent = "场景";
+    tabs.footer.append(saveBtn, resetBtn, footerHint);
+    body.appendChild(tabs.footer);
+
+    sidebar.appendChild(body);
     this.container.appendChild(sidebar);
     return sidebar;
   }
@@ -567,8 +801,8 @@ class ThreeViewerEngine {
   private buildObjectTree(): HTMLElement {
     const tree = document.createElement("div");
     Object.assign(tree.style, {
-      position: "absolute", top: "0", left: "280px", bottom: "0",
-      width: "176px", background: "rgba(13,17,23,0.92)",
+      position: "absolute", top: "0", left: "0", bottom: "0",
+      width: String(LAYOUT.treeWidth) + "px", background: "rgba(13,17,23,0.96)",
       borderRight: "1px solid #30363d", overflowY: "auto",
       padding: "8px", zIndex: "90", boxSizing: "border-box",
       fontFamily: "-apple-system, sans-serif", color: "#8b949e", fontSize: "12px",
@@ -577,9 +811,9 @@ class ThreeViewerEngine {
 
     const collapseBtn = document.createElement("button");
     collapseBtn.type = "button";
-    collapseBtn.textContent = "‹";
-    collapseBtn.title = "收起对象树";
-    collapseBtn.setAttribute("aria-label", "收起对象树");
+    collapseBtn.textContent = "<";
+    collapseBtn.title = "收起组件树";
+    collapseBtn.setAttribute("aria-label", "收起组件树");
     Object.assign(collapseBtn.style, this.iconButtonStyle);
     collapseBtn.style.position = "absolute";
     collapseBtn.style.top = "8px";
@@ -588,9 +822,37 @@ class ThreeViewerEngine {
     tree.appendChild(collapseBtn);
 
     const title = document.createElement("div");
-    title.style.cssText = "font-weight:600; color:#58a6ff; margin-bottom:8px; font-size:13px;";
-    title.textContent = "对象树";
+    title.style.cssText = "font-weight:600; color:#58a6ff; margin:2px 28px 8px 2px; font-size:13px; letter-spacing:.04em;";
+    title.textContent = "COMPONENTS";
     tree.appendChild(title);
+
+    const search = document.createElement("input");
+    search.type = "search";
+    search.id = "vis-object-search";
+    search.placeholder = "查找组件...";
+    search.setAttribute("aria-label", "查找组件");
+    search.style.cssText = "width:100%;box-sizing:border-box;margin-bottom:8px;padding:6px 8px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:12px;";
+    search.addEventListener("input", () => {
+      this.treeQuery = search.value;
+      this.updateObjectTree();
+    });
+    tree.appendChild(search);
+
+    const treeActions = document.createElement("div");
+    treeActions.style.cssText = "display:flex;gap:6px;margin-bottom:8px;";
+    const addTreeBtn = (label: string, title: string, action: () => void) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = label;
+      btn.title = title;
+      btn.style.cssText = "flex:1;padding:4px 6px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;cursor:pointer;font-size:11px;";
+      btn.addEventListener("click", action);
+      treeActions.appendChild(btn);
+    };
+    addTreeBtn("文件", "导入本地文件", () => this.fileInput?.click());
+    addTreeBtn("工作区", "从工作区文件树导入", () => this.openWorkspaceImport());
+    addTreeBtn("恢复", "恢复已隐藏的内置示例", () => { void this.restoreBuiltinExamples(); });
+    tree.appendChild(treeActions);
 
     const list = document.createElement("div");
     list.id = "vis-object-list";
@@ -616,47 +878,60 @@ class ThreeViewerEngine {
 
   private toggleSidebar(button: HTMLButtonElement) {
     this.sidebarCollapsed = !this.sidebarCollapsed;
-    const width = this.sidebarCollapsed ? "42px" : "252px";
+    const width = this.sidebarCollapsed ? String(LAYOUT.inspectorCollapsed) + "px" : String(LAYOUT.inspectorWidth) + "px";
     this.sidebar.style.width = width;
-    for (const child of Array.from(this.sidebar.children)) {
-      if (child !== button) (child as HTMLElement).style.display = this.sidebarCollapsed ? "none" : "";
-    }
+    const body = this.sidebar.querySelector("#vis-inspector-body") as HTMLElement | null;
+    if (body) body.style.display = this.sidebarCollapsed ? "none" : "flex";
     button.style.display = "block";
-    button.textContent = this.sidebarCollapsed ? "›" : "‹";
-    button.title = this.sidebarCollapsed ? "展开控制面板" : "收起控制面板";
+    button.textContent = this.sidebarCollapsed ? "<" : ">";
+    button.title = this.sidebarCollapsed ? "展开属性面板" : "收起属性面板";
     button.setAttribute("aria-label", button.title);
     this.updatePanelOffsets();
   }
 
   private toggleObjectTree(button: HTMLButtonElement) {
     this.objectTreeCollapsed = !this.objectTreeCollapsed;
-    const width = this.objectTreeCollapsed ? "34px" : "176px";
+    const width = this.objectTreeCollapsed ? String(LAYOUT.treeCollapsed) + "px" : String(LAYOUT.treeWidth) + "px";
     this.objectTree.style.width = width;
     this.objectTree.style.padding = this.objectTreeCollapsed ? "0" : "8px";
     for (const child of Array.from(this.objectTree.children)) {
       if (child !== button) (child as HTMLElement).style.display = this.objectTreeCollapsed ? "none" : "";
     }
-    button.style.display = this.objectTreeCollapsed ? "block" : "block";
+    button.style.display = "block";
     button.style.right = this.objectTreeCollapsed ? "5px" : "6px";
-    button.textContent = this.objectTreeCollapsed ? "›" : "‹";
-    button.title = this.objectTreeCollapsed ? "展开对象树" : "收起对象树";
+    button.textContent = this.objectTreeCollapsed ? ">" : "<";
+    button.title = this.objectTreeCollapsed ? "展开组件树" : "收起组件树";
     button.setAttribute("aria-label", button.title);
     this.updatePanelOffsets();
   }
 
   private updatePanelOffsets() {
-    const sidebarWidth = this.sidebarCollapsed ? 42 : 252;
-    const treeWidth = this.objectTreeCollapsed ? 34 : 176;
-    this.objectTree.style.left = `${sidebarWidth}px`;
-    this.toolbarEl?.style.setProperty("left", `${sidebarWidth + treeWidth + 12}px`);
-    this.container.querySelector<HTMLElement>(".oilgas-view-tabs")?.style.setProperty("left", `${sidebarWidth + treeWidth + 12}px`);
-    this.infoEl.style.left = `${sidebarWidth + 8}px`;
+    applyChromeOffsets({
+      tree: this.objectTree,
+      inspector: this.sidebar,
+      toolbar: this.toolbarEl,
+      tabs: this.container.querySelector<HTMLElement>(".oilgas-view-tabs"),
+      info: this.infoEl,
+      hud: this.hudEl,
+      readout: this.readoutEl,
+      wellMap: this.wellMapRoot,
+      legend: this.legendEl,
+      histogram: this.histogramEl,
+      details: this.detailsEl,
+      wellLog: this.wellLogEl,
+      slicePlayer: this.slicePlayer?.root,
+      compass: this.compassHud?.root,
+      viewCluster: this.viewClusterEl,
+      shortcuts: this.shortcutsEl,
+      treeCollapsed: this.objectTreeCollapsed,
+      inspectorCollapsed: this.sidebarCollapsed,
+    });
   }
 
   private buildToolbar(): HTMLElement {
     const toolbar = document.createElement("div");
     Object.assign(toolbar.style, {
-      position: "absolute", top: "8px", left: "440px", right: "8px", height: "34px",
+      position: "absolute", top: "8px", left: "276px", right: "288px", height: "34px",
       display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px",
       background: "rgba(13,17,23,.78)", border: "1px solid #30363d", borderRadius: "7px",
       zIndex: "20", pointerEvents: "none", boxSizing: "border-box",
@@ -672,8 +947,13 @@ class ThreeViewerEngine {
       Object.assign(btn.style, { ...this.iconButtonStyle, width: "auto", padding: "0 8px", fontSize: "11px", pointerEvents: "auto" });
       btn.addEventListener("click", action); toolbar.appendChild(btn);
     };
+    addButton("导入", "导入本地油气文件", () => this.fileInput?.click());
+    addButton("工作区", "从项目或 Agent 工作区导入", () => this.openWorkspaceImport());
     addButton("适配", "适配当前数据", () => this.fitView());
+    addButton("顶视", "顶视 (Alt+T)", () => this.applyNamedView("top"));
     addButton("重置", "重置视图", () => this.resetView());
+    addButton("存视角", "保存用户视角", () => this.storeUserView());
+    addButton("用视角", "恢复用户视角", () => this.recallUserView());
     addButton("撤销", "撤销上一次筛选", () => this.undoFilter());
     addButton("重做", "重做筛选", () => this.redoFilter());
     addButton("保存", "保存当前场景", () => this.saveScene());
@@ -685,46 +965,102 @@ class ThreeViewerEngine {
       this.measurePoints = [];
       this.infoEl.textContent = this.measureMode ? "测距模式：依次点击两个点" : "已退出测距模式";
     });
-    addButton("对象", "切换对象树", () => {
+    addButton("对象", "切换组件树", () => {
       const btn = this.objectTree.querySelector("button") as HTMLButtonElement | null;
       if (btn) this.toggleObjectTree(btn);
     });
     const spacer = document.createElement("span"); spacer.style.flex = "1"; toolbar.appendChild(spacer);
-    const hint = document.createElement("span"); hint.textContent = "拖拽旋转 · 滚轮缩放 · 点击拾取";
+    const hint = document.createElement("span"); hint.textContent = "拖拽旋转 · 滚轮缩放 · 点击拾取 · 悬停读数";
     hint.style.cssText = "font-size:11px;color:#8b949e;white-space:nowrap;"; toolbar.appendChild(hint);
     this.container.appendChild(toolbar);
     return toolbar;
   }
 
   private fitView() {
+    const box = this.worldModelBox();
+    if (box) {
+      this.frameBox(box);
+      return;
+    }
     if (!this.geometry) return;
     this.geometry.computeBoundingBox();
-    const box = this.geometry.boundingBox;
-    if (!box) return;
-    this.frameBox(box);
+    const local = this.geometry.boundingBox;
+    if (!local) return;
+    this.frameBox(local);
   }
 
-  private frameBox(box: THREE.Box3) {
+  private worldModelBox(): THREE.Box3 | null {
+    const box = new THREE.Box3();
+    let any = false;
+    if (this.mesh?.visible) {
+      box.expandByObject(this.mesh);
+      any = true;
+    }
+    for (const overlay of this.overlayMeshes.values()) {
+      if (!overlay.visible) continue;
+      box.expandByObject(overlay);
+      any = true;
+    }
+    return any && !box.isEmpty() ? box : null;
+  }
+
+  private viewportAspect(): number {
+    return Math.max(this.container.clientWidth / Math.max(this.container.clientHeight, 1), 0.2);
+  }
+
+  private applyCameraProjection() {
+    const aspect = this.viewportAspect();
+    if (this.camera instanceof THREE.PerspectiveCamera) {
+      this.camera.aspect = aspect;
+      this.camera.updateProjectionMatrix();
+      return;
+    }
+    applyOrthographicFrustum(
+      this.camera,
+      Math.max(this.camera.position.distanceTo(this.controls.target), 1),
+      aspect,
+    );
+  }
+
+  private frameBox(box: THREE.Box3, view: NamedView = "iso") {
     const center = box.getCenter(new THREE.Vector3());
-    const size = box.getSize(new THREE.Vector3());
-    const direction = new THREE.Vector3(1, 1, 0.8).normalize();
-    const verticalFov = THREE.MathUtils.degToRad(this.camera.fov);
-    const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * this.camera.aspect);
-    const distanceForWidth = (size.x + size.y) * 0.5 / Math.tan(horizontalFov / 2);
-    const distanceForHeight = (size.z + 0.45 * (size.x + size.y)) * 0.5
-      / Math.tan(verticalFov / 2);
-    const distance = Math.max(distanceForWidth, distanceForHeight, 1) * 1.15;
+    const distance = viewDistanceForBox(box, this.viewportAspect(), this.perspectiveCamera.fov);
+    const pose = namedViewPose(view, center, distance);
+    this.camera.up.copy(pose.up);
+    this.camera.position.copy(pose.position);
     this.controls.target.copy(center);
-    this.camera.position.copy(center).addScaledVector(direction, distance);
+    this.applyCameraProjection();
     this.controls.update();
   }
 
   private resetView() {
     this.fitView();
+    this.resetInspectorControls();
+  }
+
+  private resetInspectorControls() {
+    this.resetFilters();
+    this.applyOpacity(0.85);
+    const wireframe = this.sidebar.querySelector("#vis-wireframe") as HTMLInputElement | null;
+    if (wireframe) {
+      wireframe.checked = false;
+      wireframe.dispatchEvent(new Event("change"));
+    }
+    const clip = this.sidebar.querySelector("#vis-clip") as HTMLInputElement | null;
+    if (clip) {
+      clip.checked = false;
+      clip.dispatchEvent(new Event("change"));
+    }
+    const isolate = this.sidebar.querySelector("#vis-isolate-k") as HTMLInputElement | null;
+    if (isolate) {
+      isolate.checked = false;
+      isolate.dispatchEvent(new Event("change"));
+    }
     this.currentColormap = "viridis";
     const select = this.sidebar.querySelector("#vis-colormap") as HTMLSelectElement | null;
     if (select) select.value = this.currentColormap;
     void this.reloadPropertyColors();
+    this.infoEl.textContent = "已重置显示与过滤";
   }
 
   private filterStateSnapshot(): string {
@@ -732,12 +1068,16 @@ class ThreeViewerEngine {
     return JSON.stringify({
       i: value("#vis-filter-i"), j: value("#vis-filter-j"), k: value("#vis-filter-k"),
       min: value("#vis-filter-prop-min"), max: value("#vis-filter-prop-max"),
+      exclude: this.filterPropertyExclude,
       bounds: this.filterBounds,
     });
   }
 
   private restoreFilterSnapshot(snapshot: string) {
-    const state = JSON.parse(snapshot) as { i?: string; j?: string; k?: string; min?: string; max?: string; bounds?: number[] | null };
+    const state = JSON.parse(snapshot) as {
+      i?: string; j?: string; k?: string; min?: string; max?: string;
+      exclude?: boolean; bounds?: number[] | null;
+    };
     const fields: Record<string, string> = {
       "#vis-filter-i": state.i || "", "#vis-filter-j": state.j || "", "#vis-filter-k": state.k || "",
       "#vis-filter-prop-min": state.min || "", "#vis-filter-prop-max": state.max || "",
@@ -745,6 +1085,12 @@ class ThreeViewerEngine {
     for (const [selector, value] of Object.entries(fields)) {
       const input = this.sidebar.querySelector(selector) as HTMLInputElement | null;
       if (input) input.value = value;
+    }
+    this.filterPropertyExclude = Boolean(state.exclude);
+    const exclude = this.sidebar.querySelector("#vis-filter-prop-exclude") as HTMLInputElement | null;
+    if (exclude) {
+      exclude.checked = this.filterPropertyExclude;
+      exclude.dispatchEvent(new Event("ugsci-sync"));
     }
     this.filterBounds = Array.isArray(state.bounds) && state.bounds.length === 6
       ? state.bounds as [number, number, number, number, number, number]
@@ -786,9 +1132,12 @@ class ThreeViewerEngine {
       overlays: Array.from(this.overlayMeshes.entries())
         .filter(([, object]) => object.visible)
         .map(([datasetId]) => datasetId),
+      zScale: this.zScale,
+      ortho: this.useOrtho,
       camera: {
         position: this.camera.position.toArray(),
         target: this.controls.target.toArray(),
+        up: this.camera.up.toArray(),
       },
     };
     localStorage.setItem("ugsci.visualization.scene", JSON.stringify(scene));
@@ -821,8 +1170,11 @@ class ThreeViewerEngine {
           if (dataset && dataset.id !== this.currentDataset?.id) await this.toggleDatasetVisibility(dataset, true);
         }
       }
+      if (Number.isFinite(scene.zScale)) this.setZScale(Number(scene.zScale));
+      if (typeof scene.ortho === "boolean") this.setOrthographic(scene.ortho);
       if (Array.isArray(scene.camera?.position) && scene.camera.position.length === 3) this.camera.position.fromArray(scene.camera.position);
       if (Array.isArray(scene.camera?.target) && scene.camera.target.length === 3) this.controls.target.fromArray(scene.camera.target);
+      if (Array.isArray(scene.camera?.up) && scene.camera.up.length === 3) this.camera.up.fromArray(scene.camera.up);
       this.controls.update();
       this.infoEl.textContent = "场景已恢复";
     } catch (err) {
@@ -847,7 +1199,13 @@ class ThreeViewerEngine {
       overlays: Array.from(this.overlayMeshes.entries())
         .filter(([, object]) => object.visible)
         .map(([datasetId]) => datasetId),
-      camera: { position: this.camera.position.toArray(), target: this.controls.target.toArray() },
+      zScale: this.zScale,
+      ortho: this.useOrtho,
+      camera: {
+        position: this.camera.position.toArray(),
+        target: this.controls.target.toArray(),
+        up: this.camera.up.toArray(),
+      },
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
     const link = document.createElement("a");
@@ -867,10 +1225,10 @@ class ThreeViewerEngine {
   private buildHud(): HTMLElement {
     const hud = document.createElement("div");
     Object.assign(hud.style, {
-      position: "absolute", top: "8px", right: "8px",
+      position: "absolute", top: "88px", right: "288px",
       background: "rgba(22,27,34,0.85)", border: "1px solid #30363d",
-      borderRadius: "8px", padding: "10px 14px", fontSize: "12px",
-      fontFamily: "monospace", pointerEvents: "none", zIndex: "10", minWidth: "160px",
+      borderRadius: "8px", padding: "8px 12px", fontSize: "11px",
+      fontFamily: "monospace", pointerEvents: "none", zIndex: "10", minWidth: "148px",
     });
     for (const label of ["FPS", "Frame", "Draw Calls", "Triangles", "JS Heap"]) {
       const row = document.createElement("div");
@@ -885,6 +1243,12 @@ class ThreeViewerEngine {
     }
     this.container.appendChild(hud);
     return hud;
+  }
+
+  private buildReadout(): HTMLElement {
+    const el = createReadoutPanel();
+    this.container.appendChild(el);
+    return el;
   }
 
   private buildInfoBar(): HTMLElement {
@@ -920,13 +1284,19 @@ class ThreeViewerEngine {
       position: "absolute", right: "8px", bottom: "278px", width: "178px",
       padding: "9px 10px", background: "rgba(13,17,23,.88)", border: "1px solid #30363d",
       borderRadius: "7px", zIndex: "11", color: "#c9d1d9", fontSize: "11px",
-      pointerEvents: "none", boxSizing: "border-box",
+      pointerEvents: "auto", cursor: "pointer", boxSizing: "border-box",
     } as CSSStyleDeclaration);
+    el.title = "\u70b9\u51fb\u7f16\u8f91\u5c5e\u6027\u8303\u56f4";
+    el.addEventListener("click", () => {
+      const minInput = this.sidebar.querySelector("#vis-filter-prop-min") as HTMLInputElement | null;
+      minInput?.focus();
+    });
     const title = document.createElement("div");
     title.dataset.legendTitle = "true";
     title.style.cssText = "display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;color:#c9d1d9;font-weight:600;";
     el.appendChild(title);
     const gradient = document.createElement("div");
+    gradient.dataset.legendGradient = "true";
     gradient.style.cssText = "height:8px;border-radius:4px;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);";
     el.appendChild(gradient);
     const range = document.createElement("div");
@@ -944,8 +1314,18 @@ class ThreeViewerEngine {
     const range = this.legendEl.querySelector("[data-legend-range]");
     if (title) title.textContent = `${this.currentProperty || "统一颜色"} · ${this.currentColormap}`;
     if (range) range.textContent = `${this.scalarMin.toPrecision(4)}  —  ${this.scalarMax.toPrecision(4)}`;
-    this.legendEl.style.display = this.currentProperty ? "block" : "none";
+    const gradient = this.legendEl.querySelector("[data-legend-gradient]") as HTMLElement | null;
+    if (gradient) gradient.style.background = colormapCssGradient(this.currentColormap);
+    this.legendEl.style.display = this.currentProperty && this.legendVisible() ? "block" : "none";
     this.renderHistogram();
+  }
+
+  private legendVisible(): boolean {
+    return (this.sidebar.querySelector("#vis-show-legend") as HTMLInputElement | null)?.checked !== false;
+  }
+
+  private histogramVisible(): boolean {
+    return (this.sidebar.querySelector("#vis-show-histogram") as HTMLInputElement | null)?.checked !== false;
   }
 
   private buildHistogram(): HTMLCanvasElement {
@@ -956,7 +1336,15 @@ class ThreeViewerEngine {
       position: "absolute", right: "12px", bottom: "92px", width: "160px", height: "56px",
       background: "rgba(13,17,23,.82)", border: "1px solid #30363d", borderRadius: "6px", zIndex: "12",
     } as CSSStyleDeclaration);
-    canvas.title = "属性直方图";
+    canvas.title = "\u70b9\u51fb\u8bbe\u6700\u5c0f\u503c\uff0cShift+\u70b9\u51fb\u8bbe\u6700\u5927\u503c\uff0c\u53cc\u51fb\u6e05\u9664";
+    canvas.addEventListener("click", (event) => this.onHistogramClick(event));
+    canvas.addEventListener("dblclick", () => {
+      const minInput = this.sidebar.querySelector("#vis-filter-prop-min") as HTMLInputElement | null;
+      const maxInput = this.sidebar.querySelector("#vis-filter-prop-max") as HTMLInputElement | null;
+      if (minInput) minInput.value = "";
+      if (maxInput) maxInput.value = "";
+      this.applyFilters();
+    });
     this.container.appendChild(canvas);
     return canvas;
   }
@@ -987,7 +1375,7 @@ class ThreeViewerEngine {
       canvas.style.display = "none";
       return;
     }
-    canvas.style.display = "block";
+    canvas.style.display = this.histogramVisible() ? "block" : "none";
     const bins = 24;
     const counts = new Array(bins).fill(0);
     const min = this.scalarMin;
@@ -1071,7 +1459,7 @@ class ThreeViewerEngine {
       new THREE.Vector3(0, 0, z),
     );
     this.renderer.localClippingEnabled = enabled;
-    const material = this.mesh.material as THREE.MeshPhongMaterial;
+    const material = (this.mesh as THREE.Mesh).material as THREE.MeshPhongMaterial | undefined;
     if (material && "clippingPlanes" in material) {
       material.clippingPlanes = enabled ? [this.clipPlane] : [];
       material.needsUpdate = true;
@@ -1089,6 +1477,7 @@ class ThreeViewerEngine {
     viewerStore.setActiveView(view);
     this.infoEl.textContent = `当前视图: ${ViewRouter.VIEW_LABELS[view]}`;
     if (this.wellLogEl) this.wellLogEl.style.display = view === "welllog" ? "block" : "none";
+    if (this.wellMapRoot) this.wellMapRoot.style.display = view === "welllog" ? "none" : "block";
     if (!this.manifest) return;
     const sourceOf = (dataset: DatasetInfo) => dataset.source || "";
     const pickFirst = (sources: string[]) => this.manifest!.datasets.find((item) => sources.includes(sourceOf(item)));
@@ -1097,10 +1486,10 @@ class ThreeViewerEngine {
       const grid = this.manifest.datasets.find((item) => !this.overlaySources("wellbore").concat(this.overlaySources("intersection"), this.overlaySources("network"), ["surface"]).includes(sourceOf(item)));
       if (grid && grid.id !== this.currentDataset?.id) await this.loadDataset(grid.id);
     } else if (view === "wellbore") {
-      if (!["wellbore", "las", "dlis"].includes(current)) {
-        const well = pickFirst(["wellbore", "las", "dlis"]);
+      if (!(this.currentDataset && isSpatialWell(this.currentDataset))) {
+        const well = this.manifest.datasets.find(isSpatialWell);
         if (well) await this.loadDataset(well.id);
-        else this.infoEl.textContent = "没有井轨迹。导入 LAS 或含 WELL/PERF 的 CMG 模型。";
+        else this.infoEl.textContent = "没有空间井轨迹。测井曲线请用「测井」页签；LAS 不会画在原点。";
       }
     } else if (view === "intersection") {
       if (!["intersection", "well-intersection", "slice"].includes(current)) {
@@ -1123,16 +1512,16 @@ class ThreeViewerEngine {
   }
 
   private firstWellDataset(): DatasetInfo | undefined {
-    return this.manifest?.datasets.find((item) => ["wellbore", "las", "dlis"].includes(item.source || ""));
+    return this.manifest?.datasets.find(isSpatialWell);
   }
 
   private async createWellSectionFromUI() {
     if (!this.currentDataset) return;
-    const well = this.currentDataset.source === "wellbore" || this.currentDataset.source === "las"
+    const well = isSpatialWell(this.currentDataset)
       ? this.currentDataset
       : this.firstWellDataset();
     if (!well) {
-      this.showDetails("没有可用井轨迹，无法生成井剖面");
+      this.showDetails("没有空间井轨迹，无法生成井剖面。仅深度测井不能用来切三维剖面。");
       return;
     }
     const grid = this.manifest?.datasets.find((item) => ["cmg", "egrid", "roff", "eclipse"].includes(item.source || "") || item.grid_dims)
@@ -1287,81 +1676,784 @@ class ThreeViewerEngine {
 
   private async init() {
     try {
-      this.manifest = await this.fetchJson("/manifest");
-      const dsSelect = this.sidebar.querySelector("#vis-dataset") as HTMLSelectElement;
-      if (dsSelect && this.manifest) {
-        dsSelect.innerHTML = "";
-        for (const ds of this.manifest.datasets) {
-          const opt = document.createElement("option");
-          opt.value = ds.id;
-          opt.textContent = `${ds.name} (${ds.n_cells.toLocaleString()} cells)`;
-          dsSelect.appendChild(opt);
-        }
-        this.updateObjectTree();
-        if (this.manifest.datasets.length > 0) {
-          const preferred = this.manifest.datasets.find((item) =>
-            !["intersection", "well-intersection"].includes(item.source || "") &&
-            Object.keys(item.files.scalars || {}).length > 0,
-          ) || this.manifest.datasets.find((item) =>
-            !["intersection", "well-intersection"].includes(item.source || ""),
-          ) || this.manifest.datasets[0];
-          await this.loadDataset(preferred.id);
-        }
-      }
+      await this.refreshCatalog();
     } catch (err) {
       this.infoEl.textContent = `加载失败: ${err instanceof Error ? err.message : String(err)}`;
     }
   }
 
+  private syncDatasetSelect() {
+    const dsSelect = this.sidebar.querySelector("#vis-dataset") as HTMLSelectElement;
+    if (!dsSelect || !this.manifest) return;
+    const previous = dsSelect.value;
+    dsSelect.innerHTML = "";
+    for (const ds of this.manifest.datasets) {
+      const opt = document.createElement("option");
+      opt.value = ds.id;
+      opt.textContent = `${ds.name} (${ds.n_cells.toLocaleString()} cells)`;
+      dsSelect.appendChild(opt);
+    }
+    if (this.manifest.datasets.some((item) => item.id === previous)) {
+      dsSelect.value = previous;
+    }
+  }
+
+  private preferredDatasetId(): string | null {
+    if (!this.manifest || this.manifest.datasets.length === 0) return null;
+    const preferred = this.manifest.datasets.find((item) =>
+      isGridDataset(item) && Object.keys(item.files.scalars || {}).length > 0,
+    ) || this.manifest.datasets.find(isGridDataset) || this.manifest.datasets.find((item) =>
+      !["intersection", "well-intersection"].includes(item.source || "") &&
+      !isDepthOnlyWell(item) &&
+      Object.keys(item.files.scalars || {}).length > 0,
+    ) || this.manifest.datasets[0];
+    return preferred.id;
+  }
+
+  private async refreshCatalog(preferredId?: string) {
+    this.manifest = await this.fetchJson("/manifest");
+    this.syncDatasetSelect();
+    this.updateObjectTree();
+    const datasets = this.manifest?.datasets || [];
+    if (datasets.length === 0) {
+      this.clearSceneForEmptyCatalog();
+      this.infoEl.textContent = "场景为空。可用工具栏「导入」或从工作区选择文件。";
+      return;
+    }
+    const requested = preferredId && datasets.some((item) => item.id === preferredId)
+      ? preferredId
+      : null;
+    if (requested) {
+      await this.loadDataset(requested);
+      return;
+    }
+    if (this.currentDataset && datasets.some((item) => item.id === this.currentDataset?.id)) {
+      return;
+    }
+    const next = this.preferredDatasetId();
+    if (next) await this.loadDataset(next);
+  }
+
+  private clearSceneForEmptyCatalog() {
+    this.currentDataset = null;
+    this.selectedObjectId = null;
+    this.disposeCurrentMesh();
+    this.clearOverlays();
+    viewerStore.setDataset(null);
+    this.updateObjectTree();
+  }
+
+  private importDialogHost(): ImportDialogHost {
+    return {
+      apiBase: this.apiBase,
+      authToken: this.authToken,
+      container: this.container,
+      onStatus: (message) => {
+        this.infoEl.textContent = message;
+      },
+      onImported: async (datasetId) => {
+        this.infoEl.textContent = "导入完成，正在加载三维场景";
+        await this.refreshCatalog(datasetId);
+      },
+    };
+  }
+
+  private openWorkspaceImport() {
+    openWorkspacePicker(this.importDialogHost());
+  }
+
+  private async handlePickedFiles(files: File[]) {
+    if (this.importBusy) {
+      this.infoEl.textContent = "已有导入任务进行中";
+      return;
+    }
+    this.importBusy = true;
+    try {
+      await importLocalFiles(this.importDialogHost(), files);
+    } catch (error) {
+      this.infoEl.textContent = error instanceof Error ? error.message : String(error);
+    } finally {
+      this.importBusy = false;
+    }
+  }
+
+  private async deleteCatalogDataset(dataset: DatasetInfo) {
+    const managed = Boolean(dataset.metadata && dataset.metadata.managed);
+    const confirmed = window.confirm(
+      managed
+        ? `删除「${dataset.name}」及其缓存文件？此操作不可恢复。`
+        : `从场景移除「${dataset.name}」？内置示例可在组件树「恢复」或 Addons 中重新显示。`,
+    );
+    if (!confirmed) return;
+    try {
+      const response = await fetch(
+        `${this.apiBase}/datasets/${encodeURIComponent(dataset.id)}`,
+        { method: "DELETE", headers: this.authHeaders() },
+      );
+      if (!response.ok) throw new Error(`删除失败: HTTP ${response.status}`);
+      const result = await response.json();
+      this.infoEl.textContent = result.status === "removed"
+        ? `已删除 ${dataset.name}`
+        : `已从场景移除 ${dataset.name}（示例文件仍保留，可恢复）`;
+      if (this.currentDataset?.id === dataset.id) this.currentDataset = null;
+      if (this.selectedObjectId === dataset.id) this.selectedObjectId = null;
+      const overlay = this.overlayMeshes.get(dataset.id);
+      if (overlay) {
+        this.disposeObject3D(overlay);
+        this.overlayMeshes.delete(dataset.id);
+      }
+      await this.refreshCatalog();
+    } catch (error) {
+      this.infoEl.textContent = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  private async restoreBuiltinExamples() {
+    try {
+      const response = await fetch(`${this.apiBase}/catalog/restore-examples`, {
+        method: "POST",
+        headers: this.authHeaders(),
+      });
+      if (!response.ok) throw new Error(`恢复失败: HTTP ${response.status}`);
+      const result = await response.json();
+      await this.refreshCatalog();
+      this.infoEl.textContent = result.count
+        ? `已恢复 ${result.count} 个内置示例`
+        : "没有已隐藏的内置示例";
+    } catch (error) {
+      this.infoEl.textContent = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  private onViewerKeyDown = (event: KeyboardEvent) => {
+    const target = event.target as HTMLElement | null;
+    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+    if (event.key === "Escape") {
+      hideShortcutsOverlay(this.shortcutsEl);
+      this.container.querySelectorAll(".oilgas-context-menu").forEach((node) => node.remove());
+      return;
+    }
+    if (event.key === "?" || (event.shiftKey && event.key === "/")) {
+      event.preventDefault();
+      toggleShortcutsOverlay(this.shortcutsEl);
+      return;
+    }
+    if (event.key === "Delete" || event.key === "Backspace") {
+      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      if (!dataset) return;
+      event.preventDefault();
+      void this.deleteCatalogDataset(dataset);
+      return;
+    }
+    const key = event.key.toLowerCase();
+    if (event.altKey) {
+      const named: Record<string, NamedView> = {
+        t: "top", b: "bottom", n: "north", s: "south", e: "east", w: "west", i: "iso",
+      };
+      if (named[key]) {
+        event.preventDefault();
+        this.applyNamedView(named[key]);
+      }
+      return;
+    }
+    if (event.ctrlKey || event.metaKey) return;
+    if (key === "f") { event.preventDefault(); this.fitView(); }
+    else if (key === "o") { event.preventDefault(); this.setOrthographic(!this.useOrtho); }
+    else if (key === "g") {
+      event.preventDefault();
+      this.gridHelper.visible = !this.gridHelper.visible;
+      const input = this.sidebar.querySelector("#vis-show-grid") as HTMLInputElement | null;
+      if (input) {
+        input.checked = this.gridHelper.visible;
+        input.dispatchEvent(new Event("ugsci-sync"));
+      }
+    } else if (key === "i") {
+      event.preventDefault();
+      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      if (dataset) void this.isolateDataset(dataset);
+    } else if (key === "h") {
+      event.preventDefault();
+      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      if (dataset) void this.toggleDatasetVisibility(dataset, false);
+    } else if (key === "a") {
+      event.preventDefault();
+      this.showAllVisible();
+    }
+  };
+
+  private onCatalogKeyDown = this.onViewerKeyDown;
+
   private updateObjectTree() {
     const list = this.objectTree.querySelector("#vis-object-list");
     if (!list || !this.manifest) return;
-    list.innerHTML = "";
-
-    const appendGroup = (title: string, datasets: DatasetInfo[]) => {
-      const group = document.createElement("div");
-      group.style.cssText = "margin-bottom: 8px;";
-      const header = document.createElement("div");
-      header.textContent = title;
-      header.style.cssText = "font-weight:600;color:#c9d1d9;margin-bottom:4px;";
-      group.appendChild(header);
-      if (datasets.length === 0) {
-        const empty = document.createElement("div");
-        empty.textContent = "暂无数据";
-        empty.style.cssText = "padding-left:16px;color:#484f58;";
-        group.appendChild(empty);
-      }
-      for (const dataset of datasets) {
-        const item = document.createElement("div");
-        const check = document.createElement("input");
-        check.type = "checkbox";
-        check.checked = dataset.id === this.currentDataset?.id || this.overlayMeshes.has(dataset.id);
-        check.title = `显示/隐藏 ${dataset.name}`;
-        check.setAttribute("aria-label", `显示/隐藏 ${dataset.name}`);
-        check.style.marginRight = "5px";
-        check.addEventListener("click", (event) => event.stopPropagation());
-        check.addEventListener("change", () => { void this.toggleDatasetVisibility(dataset, check.checked); });
-        item.appendChild(check);
-        item.appendChild(document.createTextNode(dataset.name));
-        item.dataset.datasetId = dataset.id;
-        item.title = `${dataset.name} · ${dataset.n_cells.toLocaleString()} cells`;
-        item.style.cssText = "padding:4px 6px 4px 14px;margin:1px 0;border-radius:4px;cursor:pointer;color:#8b949e;line-height:1.35;";
-        item.addEventListener("click", () => this.loadDataset(dataset.id));
-        item.addEventListener("mouseenter", () => { if (item.dataset.selected !== "true") item.style.color = "#58a6ff"; });
-        item.addEventListener("mouseleave", () => { if (item.dataset.selected !== "true") item.style.color = "#8b949e"; });
-        group.appendChild(item);
-      }
-      list.appendChild(group);
-    };
-    const datasets = this.manifest.datasets;
-    appendGroup("📋 网格", datasets.filter((item) => !["las", "dlis", "network", "network-tube", "wellbore", "surface", "intersection", "well-intersection", "slice"].includes(item.source || "")));
-    appendGroup("🛢 井", datasets.filter((item) => ["las", "dlis", "wellbore"].includes(item.source || "")));
-    appendGroup("📐 层面/剖面", datasets.filter((item) => ["surface", "intersection", "well-intersection", "slice"].includes(item.source || "")));
-    appendGroup("🔗 管网", datasets.filter((item) => ["network", "network-tube"].includes(item.source || "")));
+    const visibleIds = this.collectVisibleIds();
+    renderComponentTree(list as HTMLElement, this.manifest.datasets, {
+      query: this.treeQuery,
+      activeId: this.currentDataset?.id || null,
+      selectedId: this.selectedObjectId,
+      visibleIds,
+      collapsedGroups: this.collapsedGroups,
+      onToggleGroup: (groupId: ComponentGroupId) => {
+        if (this.collapsedGroups.has(groupId)) this.collapsedGroups.delete(groupId);
+        else this.collapsedGroups.add(groupId);
+        this.updateObjectTree();
+      },
+      onToggleVisible: (dataset, visible) => {
+        void this.toggleDatasetVisibility(dataset, visible);
+      },
+      onSelect: (dataset) => {
+        void this.selectDatasetFromTree(dataset);
+      },
+      onFocus: (dataset) => {
+        void this.focusDataset(dataset);
+      },
+      onDelete: (dataset) => {
+        void this.deleteCatalogDataset(dataset);
+      },
+      onContextMenu: (dataset, event) => {
+        this.openObjectContextMenu(dataset, event.clientX, event.clientY);
+      },
+    });
   }
 
   private isLineDataset(dataset: DatasetInfo): boolean {
-    return ["las", "dlis", "network", "wellbore"].includes(dataset.source || "");
+    return ["network", "network-tube"].includes(dataset.source || "");
+  }
+
+  private datasetById(id: string): DatasetInfo | undefined {
+    return this.manifest?.datasets.find((dataset) => dataset.id === id);
+  }
+
+  private applyNamedView(view: NamedView) {
+    const box = this.worldModelBox();
+    if (!box) {
+      this.infoEl.textContent = "没有可适配的对象";
+      return;
+    }
+    this.frameBox(box, view);
+    this.infoEl.textContent = "\u89c6\u89d2: " + view;
+  }
+
+  private setZScale(value: number) {
+    this.zScale = Math.min(8, Math.max(0.1, value));
+    this.modelRoot.scale.set(1, 1, this.zScale);
+    const label = this.sidebar.querySelector("#vis-z-scale-value");
+    if (label) label.textContent = this.zScale.toFixed(2) + "x";
+    const slider = this.sidebar.querySelector("#vis-z-scale") as HTMLInputElement | null;
+    if (slider) slider.value = String(Math.round(this.zScale * 100));
+  }
+
+  private setOrthographic(enabled: boolean) {
+    this.useOrtho = enabled;
+    const current = this.camera;
+    const next = enabled ? this.orthoCamera : this.perspectiveCamera;
+    next.position.copy(current.position);
+    next.up.copy(current.up);
+    next.lookAt(this.controls.target);
+    this.camera = next;
+    this.controls.object = next;
+    this.applyCameraProjection();
+    this.controls.update();
+    const input = this.sidebar.querySelector("#vis-ortho") as HTMLInputElement | null;
+    if (input && input.checked !== enabled) {
+      input.checked = enabled;
+      input.dispatchEvent(new Event("ugsci-sync"));
+    }
+    this.infoEl.textContent = enabled ? "\u6b63\u4ea4\u6295\u5f71" : "\u900f\u89c6\u6295\u5f71";
+  }
+
+  private setBackgroundColor(hex: string) {
+    const color = new THREE.Color(hex);
+    this.scene.background = color;
+    const fog = this.scene.fog;
+    if (fog instanceof THREE.Fog) fog.color.copy(color);
+  }
+
+  private setWellLabelsVisible(visible: boolean) {
+    const visit = (object: THREE.Object3D | null) => {
+      object?.traverse((node) => {
+        if (node.name === "oilgas-well-label") node.visible = visible;
+      });
+    };
+    visit(this.mesh);
+    for (const overlay of this.overlayMeshes.values()) visit(overlay);
+  }
+
+  private applySliceAxis(axis: "i" | "j" | "k" | null) {
+    const i = this.sidebar.querySelector("#vis-filter-i") as HTMLInputElement | null;
+    const j = this.sidebar.querySelector("#vis-filter-j") as HTMLInputElement | null;
+    const k = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
+    if (!axis) {
+      if (i) i.value = "";
+      if (j) j.value = "";
+      if (k) k.value = "";
+      this.applyFilters();
+      return;
+    }
+    this.applySliceIndex(axis, this.slicePlayer.index());
+  }
+
+  private applySliceIndex(axis: "i" | "j" | "k", index: number) {
+    const i = this.sidebar.querySelector("#vis-filter-i") as HTMLInputElement | null;
+    const j = this.sidebar.querySelector("#vis-filter-j") as HTMLInputElement | null;
+    const k = this.sidebar.querySelector("#vis-filter-k") as HTMLInputElement | null;
+    if (i) i.value = axis === "i" ? sliceRangeText(index) : "";
+    if (j) j.value = axis === "j" ? sliceRangeText(index) : "";
+    if (k) k.value = axis === "k" ? sliceRangeText(index) : "";
+    this.applyFilters();
+  }
+
+  private setSlicePlaying(playing: boolean) {
+    if (this.sliceTimer !== null) {
+      window.clearInterval(this.sliceTimer);
+      this.sliceTimer = null;
+    }
+    if (!playing) return;
+    this.sliceTimer = window.setInterval(() => {
+      const axis = this.slicePlayer.axis();
+      if (!axis) {
+        this.slicePlayer.setPlaying(false);
+        this.setSlicePlaying(false);
+        return;
+      }
+      const dims = this.currentDataset?.grid_dims;
+      const max = axis === "i" ? dims?.[0] : axis === "j" ? dims?.[1] : dims?.[2];
+      const limit = Math.max(1, Number(max) || 1);
+      const next = (this.slicePlayer.index() % limit) + 1;
+      this.slicePlayer.setIndex(next);
+    }, 400);
+  }
+
+  private storeUserView() {
+    const payload = {
+      position: this.camera.position.toArray(),
+      target: this.controls.target.toArray(),
+      up: this.camera.up.toArray(),
+      zScale: this.zScale,
+      ortho: this.useOrtho,
+    };
+    localStorage.setItem(USER_VIEW_KEY, JSON.stringify(payload));
+    this.infoEl.textContent = "\u7528\u6237\u89c6\u89d2\u5df2\u4fdd\u5b58";
+  }
+
+  private recallUserView() {
+    const raw = localStorage.getItem(USER_VIEW_KEY);
+    if (!raw) {
+      this.infoEl.textContent = "\u6ca1\u6709\u5df2\u4fdd\u5b58\u89c6\u89d2";
+      return;
+    }
+    try {
+      const view = JSON.parse(raw);
+      if (Number.isFinite(view.zScale)) this.setZScale(Number(view.zScale));
+      if (typeof view.ortho === "boolean") this.setOrthographic(view.ortho);
+      if (Array.isArray(view.position)) this.camera.position.fromArray(view.position);
+      if (Array.isArray(view.target)) this.controls.target.fromArray(view.target);
+      if (Array.isArray(view.up)) this.camera.up.fromArray(view.up);
+      this.applyCameraProjection();
+      this.controls.update();
+      this.infoEl.textContent = "\u5df2\u6062\u590d\u7528\u6237\u89c6\u89d2";
+    } catch {
+      this.infoEl.textContent = "\u89c6\u89d2\u6570\u636e\u65e0\u6548";
+    }
+  }
+
+  private openObjectContextMenu(dataset: DatasetInfo | null, clientX: number, clientY: number) {
+    showContextMenu(this.container, clientX, clientY, objectContextItems(Boolean(dataset)), (id) => {
+      void this.handleObjectContext(dataset, id);
+    });
+  }
+
+  private async handleObjectContext(dataset: DatasetInfo | null, action: string) {
+    if (action === "show-all") {
+      this.showAllVisible();
+      return;
+    }
+    if (!dataset) return;
+    if (action === "focus") await this.focusDataset(dataset);
+    else if (action === "isolate") await this.isolateDataset(dataset);
+    else if (action === "hide") await this.toggleDatasetVisibility(dataset, false);
+    else if (action === "delete") await this.deleteCatalogDataset(dataset);
+  }
+
+  private async isolateDataset(dataset: DatasetInfo) {
+    if (this.mesh && this.currentDataset) this.mesh.visible = this.currentDataset.id === dataset.id;
+    for (const [id, overlay] of this.overlayMeshes) overlay.visible = id === dataset.id;
+    if (dataset.id !== this.currentDataset?.id) {
+      await this.toggleDatasetVisibility(dataset, true, { quiet: true });
+      const overlay = this.overlayMeshes.get(dataset.id);
+      if (overlay) overlay.visible = true;
+      if (this.mesh) this.mesh.visible = false;
+    }
+    this.infoEl.textContent = "\u4ec5\u663e\u793a " + dataset.name;
+    this.updateObjectTree();
+  }
+
+  private showAllVisible() {
+    if (this.mesh) this.mesh.visible = true;
+    for (const overlay of this.overlayMeshes.values()) overlay.visible = true;
+    this.updateObjectTree();
+    this.infoEl.textContent = "\u5df2\u663e\u793a\u5168\u90e8\u5df2\u52a0\u8f7d\u5bf9\u8c61";
+  }
+
+  private hitToModelPoint(world: THREE.Vector3): THREE.Vector3 {
+    return this.modelRoot.worldToLocal(world.clone());
+  }
+
+  private onHistogramClick(event: MouseEvent) {
+    if (event.detail > 1 || !this.histogramEl) return;
+    const span = this.scalarMax - this.scalarMin;
+    if (!Number.isFinite(span) || span === 0) return;
+    const rect = this.histogramEl.getBoundingClientRect();
+    const t = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(rect.width, 1)));
+    const value = this.scalarMin + t * span;
+    const minInput = this.sidebar.querySelector("#vis-filter-prop-min") as HTMLInputElement | null;
+    const maxInput = this.sidebar.querySelector("#vis-filter-prop-max") as HTMLInputElement | null;
+    if (event.shiftKey) {
+      if (maxInput) maxInput.value = String(value);
+    } else if (minInput) {
+      minInput.value = String(value);
+    }
+    this.applyFilters();
+  }
+
+  private onCanvasContextMenu = (event: MouseEvent) => {
+    event.preventDefault();
+    this.canvasNdc(event);
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
+    const dataset = hit ? this.datasetFromHit(hit.object) : this.datasetById(this.selectedObjectId || this.currentDataset?.id || "") || null;
+    this.openObjectContextMenu(dataset, event.clientX, event.clientY);
+  };
+
+  private updateCompassHud() {
+    this.compassHud.setAzimuth(cameraAzimuthRad(this.camera.position, this.controls.target));
+    this.compassHud.setMetersPerPixel(
+      metersPerPixel(this.camera, this.controls.target, this.container.clientHeight),
+    );
+  }
+
+  private collectVisibleIds(): Set<string> {
+    const ids = new Set<string>();
+    if (this.mesh?.visible && this.currentDataset) ids.add(this.currentDataset.id);
+    for (const [id, overlay] of this.overlayMeshes) {
+      if (overlay.visible) ids.add(id);
+    }
+    return ids;
+  }
+
+  private selectionTypeFor(dataset: DatasetInfo): DomainSelection["type"] {
+    if (isSpatialWell(dataset) || isDepthOnlyWell(dataset)) return "well";
+    if (this.isLineDataset(dataset)) return "segment";
+    if (isGridDataset(dataset)) return "surface";
+    return "surface";
+  }
+
+  private tagSceneObject(object: THREE.Object3D, dataset: DatasetInfo) {
+    object.userData.datasetId = dataset.id;
+    object.userData.kind = this.selectionTypeFor(dataset);
+  }
+
+  private applyOpacity(value: number) {
+    this.opacity = value;
+    const label = this.sidebar.querySelector("#vis-opacity-value");
+    if (label) label.textContent = value.toFixed(2);
+    const slider = this.sidebar.querySelector("#vis-opacity") as HTMLInputElement | null;
+    if (slider) slider.value = String(Math.round(value * 100));
+    const selected = this.overlayMeshes.get(this.selectedObjectId || "") || this.mesh;
+    this.visitObjectMaterials(selected, (material) => {
+      (material as THREE.Material & { opacity: number }).opacity = value;
+      material.transparent = value < 0.999;
+      material.needsUpdate = true;
+    });
+  }
+
+  private visitObjectMaterials(
+    object: THREE.Object3D | null | undefined,
+    callback: (material: THREE.Material) => void,
+  ) {
+    if (!object) return;
+    object.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.material) return;
+      if (Array.isArray(mesh.material)) mesh.material.forEach(callback);
+      else callback(mesh.material);
+    });
+  }
+
+  private publishSelection(selection: DomainSelection | null) {
+    if (selection?.type === "cell") {
+      this.selectedObjectId = this.currentDataset?.id || null;
+    } else {
+      this.selectedObjectId = selection?.id || null;
+    }
+    viewerStore.setSelection(selection);
+    if (selection && this.onSelectionCallback) {
+      this.onSelectionCallback({
+        type: selection.type,
+        id: selection.id,
+        coords: selection.coordinates,
+      });
+    }
+    this.updateInspectorObject();
+    this.updateReadoutHud();
+    this.highlightSelection();
+    this.refreshWellMap();
+    this.updateObjectTree();
+  }
+
+  private updateInspectorObject() {
+    const nameEl = this.sidebar.querySelector("[data-object-name]");
+    const metaEl = this.sidebar.querySelector("[data-object-meta]");
+    const visible = this.sidebar.querySelector("#vis-inspector-visible") as HTMLInputElement | null;
+    const selected = viewerStore.getState().selected;
+    const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+    if (!dataset) {
+      if (nameEl) nameEl.textContent = "未选中对象";
+      if (metaEl) metaEl.textContent = "在组件树或三维视图中点选";
+      return;
+    }
+    if (nameEl) {
+      nameEl.textContent = isSpatialWell(dataset) || isDepthOnlyWell(dataset)
+        ? wellDisplayName(dataset)
+        : dataset.name;
+    }
+    if (metaEl) {
+      const bits = [
+        selected?.type === "cell" ? "cell " + selected.id : (dataset.source || "object"),
+        dataset.n_cells ? dataset.n_cells.toLocaleString() + " cells" : "",
+        selected?.coordinates
+          ? "E " + selected.coordinates[0].toFixed(1) + "  N " + selected.coordinates[1].toFixed(1)
+          : "",
+      ].filter(Boolean);
+      metaEl.textContent = bits.join(" · ");
+    }
+    if (visible) {
+      visible.checked = this.collectVisibleIds().has(dataset.id);
+      visible.disabled = isDepthOnlyWell(dataset);
+      visible.dispatchEvent(new Event("ugsci-sync"));
+    }
+  }
+
+  private updateReadoutHud() {
+    if (!this.readoutEl) return;
+    const selected = viewerStore.getState().selected;
+    const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+    updateReadout(this.readoutEl, {
+      hover: this.hoverCoords,
+      selectedLabel: dataset
+        ? (isSpatialWell(dataset) || isDepthOnlyWell(dataset) ? wellDisplayName(dataset) : dataset.name)
+        : "—",
+      selectedMeta: selected?.type === "cell"
+        ? "Cell " + selected.id
+        : (dataset?.source || ""),
+      pickKind: selected?.type || "",
+    });
+  }
+
+  private highlightSelection() {
+    if (this.highlightedOverlayId) {
+      const previous = this.objectForId(this.highlightedOverlayId);
+      this.setObjectHighlight(previous, false);
+      this.highlightedOverlayId = null;
+    }
+    const selected = viewerStore.getState().selected;
+    if (!selected || selected.type === "cell" || !this.selectedObjectId) return;
+    const object = this.objectForId(this.selectedObjectId);
+    if (!object) return;
+    this.setObjectHighlight(object, true);
+    this.highlightedOverlayId = this.selectedObjectId;
+  }
+
+  private objectForId(id: string): THREE.Object3D | null {
+    if (this.overlayMeshes.has(id)) return this.overlayMeshes.get(id) || null;
+    if (this.currentDataset?.id === id) return this.mesh;
+    return null;
+  }
+
+  private setObjectHighlight(object: THREE.Object3D | null, on: boolean) {
+    this.visitObjectMaterials(object, (material) => {
+      const colored = material as THREE.MeshPhongMaterial;
+      if (!colored.color) return;
+      if (on) {
+        if (colored.userData._baseColor == null) colored.userData._baseColor = colored.color.getHex();
+        colored.color.setHex(0xffd166);
+        if (colored.emissive) colored.emissive.setHex(0x3a2a00);
+      } else if (colored.userData._baseColor != null) {
+        colored.color.setHex(colored.userData._baseColor);
+        if (colored.emissive) colored.emissive.setHex(0x000000);
+      }
+    });
+  }
+
+  private recordWellPlan(dataset: DatasetInfo, localPositions: Float32Array) {
+    const points = uniquePolyline(localPositions);
+    if (!points.length) return;
+    const origin = this.origin;
+    const step = Math.max(1, Math.floor(points.length / 48));
+    const path: Array<[number, number]> = [];
+    for (let index = 0; index < points.length; index += step) {
+      path.push([points[index][0] + origin[0], points[index][1] + origin[1]]);
+    }
+    const last = points[points.length - 1];
+    const lastWorld: [number, number] = [last[0] + origin[0], last[1] + origin[1]];
+    if (!path.length || path[path.length - 1][0] !== lastWorld[0] || path[path.length - 1][1] !== lastWorld[1]) {
+      path.push(lastWorld);
+    }
+    const head = points[0];
+    this.wellPlanPoints.set(dataset.id, {
+      id: dataset.id,
+      name: wellDisplayName(dataset),
+      x: head[0] + origin[0],
+      y: head[1] + origin[1],
+      z: head[2] + origin[2],
+      path,
+    });
+    this.refreshWellMap();
+  }
+
+  private refreshWellMap() {
+    if (!this.wellMapCanvas) return;
+    drawWellMap(
+      this.wellMapCanvas,
+      Array.from(this.wellPlanPoints.values()),
+      this.selectedObjectId,
+      this.gridMapBounds,
+    );
+  }
+
+  private updateGridMapBounds() {
+    if (!this.geometry) {
+      this.gridMapBounds = null;
+      return;
+    }
+    this.geometry.computeBoundingBox();
+    const box = this.geometry.boundingBox;
+    if (!box) {
+      this.gridMapBounds = null;
+      return;
+    }
+    this.gridMapBounds = {
+      minX: box.min.x + this.origin[0],
+      minY: box.min.y + this.origin[1],
+      maxX: box.max.x + this.origin[0],
+      maxY: box.max.y + this.origin[1],
+    };
+    this.refreshWellMap();
+  }
+
+  private lastChromeKey = "";
+
+  private syncChromeFromStore() {
+    const state = viewerStore.getState();
+    const key = [
+      state.dataset?.id || "",
+      state.activeView,
+      state.selected?.type || "",
+      state.selected?.id || "",
+      state.property?.name || "",
+    ].join("|");
+    if (key === this.lastChromeKey) return;
+    this.lastChromeKey = key;
+    this.updateReadoutHud();
+    this.updateInspectorObject();
+  }
+
+  private async focusDataset(dataset: DatasetInfo) {
+    await this.selectDatasetFromTree(dataset);
+    const object = this.objectForId(dataset.id);
+    if (object) this.frameObject(object);
+  }
+
+  private onWellMapClick = (event: MouseEvent) => {
+    const points = Array.from(this.wellPlanPoints.values());
+    const bounds = unionBounds(points, this.gridMapBounds);
+    if (!bounds) return;
+    const rect = this.wellMapCanvas.getBoundingClientRect();
+    const scaleX = this.wellMapCanvas.width / Math.max(rect.width, 1);
+    const scaleY = this.wellMapCanvas.height / Math.max(rect.height, 1);
+    const id = hitTestWellMap(
+      points,
+      bounds,
+      this.wellMapCanvas.width,
+      this.wellMapCanvas.height,
+      (event.clientX - rect.left) * scaleX,
+      (event.clientY - rect.top) * scaleY,
+    );
+    if (!id) return;
+    const dataset = this.datasetById(id);
+    if (dataset) void this.focusDataset(dataset);
+  };
+
+  private makeWellLabel(name: string): CSS2DObject {
+    const el = document.createElement("div");
+    el.textContent = name;
+    el.style.cssText = "color:#f0c14b;font:600 11px/1.2 sans-serif;white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:none;user-select:none;";
+    const obj = new CSS2DObject(el);
+    obj.name = "oilgas-well-label";
+    obj.visible = this.wellLabelsVisible;
+    return obj;
+  }
+
+  private buildWellObject(dataset: DatasetInfo, localPositions: Float32Array): THREE.Group | null {
+    const tube = buildWellTubeMesh(localPositions);
+    if (!tube) return null;
+    const group = new THREE.Group();
+    group.name = `oilgas-well-${dataset.id}`;
+    group.add(tube);
+    const head = uniquePolyline(localPositions)[0];
+    const label = this.makeWellLabel(wellDisplayName(dataset));
+    if (head) label.position.set(head[0], head[1], head[2]);
+    group.add(label);
+    return group;
+  }
+
+  private disposeObject3D(object: THREE.Object3D) {
+    object.traverse((node) => {
+      const css = node as CSS2DObject;
+      if ("element" in node && css.element instanceof HTMLElement) css.element.remove();
+      const renderable = node as THREE.Object3D & {
+        geometry?: THREE.BufferGeometry;
+        material?: THREE.Material | THREE.Material[];
+      };
+      renderable.geometry?.dispose();
+      if (Array.isArray(renderable.material)) renderable.material.forEach((material) => material.dispose());
+      else renderable.material?.dispose();
+    });
+    object.parent?.remove(object);
+  }
+
+  private visitMaterials(callback: (material: THREE.Material) => void) {
+    this.mesh?.traverse((node) => {
+      const mesh = node as THREE.Mesh;
+      if (!mesh.material) return;
+      if (Array.isArray(mesh.material)) mesh.material.forEach(callback);
+      else callback(mesh.material);
+    });
+  }
+
+  private frameObject(object: THREE.Object3D) {
+    const box = new THREE.Box3().setFromObject(object);
+    if (!box.isEmpty()) this.frameBox(box);
+  }
+
+  private async selectDatasetFromTree(dataset: DatasetInfo) {
+    if (isDepthOnlyWell(dataset)) {
+      this.viewRouter.switchTo("welllog");
+      await this.loadDataset(dataset.id);
+      this.publishSelection({ type: "well", id: dataset.id });
+      return;
+    }
+    if (isSpatialWell(dataset) && this.currentDataset && isGridDataset(this.currentDataset)) {
+      await this.toggleDatasetVisibility(dataset, true, { quiet: true });
+      const overlay = this.overlayMeshes.get(dataset.id);
+      if (overlay) this.frameObject(overlay);
+      this.infoEl.textContent = `井 ${wellDisplayName(dataset)}`;
+      this.showDetails(`${dataset.name}\n场图叠加（管子）`);
+      this.publishSelection({ type: "well", id: dataset.id });
+      return;
+    }
+    await this.loadDataset(dataset.id);
+    this.publishSelection({ type: this.selectionTypeFor(dataset), id: dataset.id });
   }
 
   private lineRenderIndices(dataset: DatasetInfo, indices: Uint32Array, vertexCount: number): Uint32Array {
@@ -1381,14 +2473,12 @@ class ThreeViewerEngine {
 
   private clearOverlays() {
     for (const overlay of this.overlayMeshes.values()) {
-      this.scene.remove(overlay);
-      const renderable = overlay as THREE.Object3D & { geometry?: THREE.BufferGeometry; material?: THREE.Material | THREE.Material[] };
-      renderable.geometry?.dispose();
-      if (Array.isArray(renderable.material)) renderable.material.forEach((material) => material.dispose());
-      else renderable.material?.dispose();
+      this.disposeObject3D(overlay);
     }
     this.overlayMeshes.clear();
     this.overlayLoading.clear();
+    this.wellPlanPoints.clear();
+    this.highlightedOverlayId = null;
     for (const item of Array.from(this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"))) {
       const checkbox = item.querySelector<HTMLInputElement>('input[type="checkbox"]');
       if (checkbox) checkbox.checked = item.dataset.datasetId === this.currentDataset?.id;
@@ -1402,7 +2492,18 @@ class ThreeViewerEngine {
     if (checkbox) checkbox.checked = visible;
   }
 
-  private async toggleDatasetVisibility(dataset: DatasetInfo, visible: boolean) {
+  private async toggleDatasetVisibility(
+    dataset: DatasetInfo,
+    visible: boolean,
+    options?: { quiet?: boolean },
+  ) {
+    if (isDepthOnlyWell(dataset)) {
+      this.setTreeVisibility(dataset.id, false);
+      if (!options?.quiet) {
+        this.showDetails(`${dataset.name} 是仅深度测井，不在三维场图显示。请打开「测井」页签。`);
+      }
+      return;
+    }
     if (dataset.id === this.currentDataset?.id) {
       if (this.mesh) this.mesh.visible = visible;
       this.setTreeVisibility(dataset.id, visible);
@@ -1426,34 +2527,81 @@ class ThreeViewerEngine {
       if (positions.length < 6 || positions.length % 3 !== 0 || indices.length < 2) {
         throw new Error("几何缓冲区为空或格式无效");
       }
+      const hexCells = isHexCornerMesh(positions.length / 3, dataset.n_cells);
+      if (hexCells) maybeRemapHexPositions(positions, dataset.n_cells);
       const origin = this.origin;
-      const localPositions = new Float32Array(positions.length);
-      for (let index = 0; index < positions.length; index += 3) {
-        localPositions[index] = positions[index] - origin[0];
-        localPositions[index + 1] = positions[index + 1] - origin[1];
-        localPositions[index + 2] = positions[index + 2] - origin[2];
+      const hexCorners = hexCells
+        ? extractHexCorners(positions, dataset.n_cells)
+        : null;
+      const sourcePositions = hexCorners || positions;
+      const localPositions = new Float32Array(sourcePositions.length);
+      for (let index = 0; index < sourcePositions.length; index += 3) {
+        localPositions[index] = sourcePositions[index] - origin[0];
+        localPositions[index + 1] = sourcePositions[index + 1] - origin[1];
+        localPositions[index + 2] = sourcePositions[index + 2] - origin[2];
       }
-      const geometry = new THREE.BufferGeometry();
-      geometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
-      const renderIndices = this.isLineDataset(dataset)
-        ? this.lineRenderIndices(dataset, indices, localPositions.length / 3)
-        : indices;
-      geometry.setIndex(new THREE.BufferAttribute(renderIndices, 1));
-      if (!this.isLineDataset(dataset)) geometry.computeVertexNormals();
-      const material = this.isLineDataset(dataset)
-        ? new THREE.LineBasicMaterial({ color: dataset.source === "network" || dataset.source === "network-tube" ? 0xffb86c : 0xff6b9d, transparent: true, opacity: 0.95 })
-        : new THREE.MeshPhongMaterial({ color: 0x8b949e, transparent: true, opacity: 0.45, side: THREE.DoubleSide, wireframe: true });
-      const overlay = this.isLineDataset(dataset)
-        ? (dataset.source === "network" || dataset.source === "network-tube"
-          ? new THREE.LineSegments(geometry, material as THREE.LineBasicMaterial)
-          : new THREE.Line(geometry, material as THREE.LineBasicMaterial))
-        : new THREE.Mesh(geometry, material as THREE.MeshPhongMaterial);
+      let overlay: THREE.Object3D;
+      if (isSpatialWell(dataset)) {
+        const wellObject = this.buildWellObject(dataset, localPositions);
+        if (!wellObject) throw new Error("井轨迹点数不足，无法生成管子");
+        overlay = wellObject;
+      } else if (hexCorners) {
+        const fan = tessellateHexOpmFan(localPositions, dataset.n_cells);
+        const fillGeometry = new THREE.BufferGeometry();
+        fillGeometry.setAttribute("position", new THREE.BufferAttribute(fan.positions, 3));
+        fillGeometry.setAttribute("normal", new THREE.BufferAttribute(fan.normals, 3));
+        fillGeometry.setIndex(new THREE.BufferAttribute(fan.indices, 1));
+        const fillMaterial = new THREE.MeshPhongMaterial({
+          color: 0x8b949e,
+          transparent: true,
+          opacity: 0.45,
+          side: THREE.DoubleSide,
+        });
+        fillMaterial.forceSinglePass = true;
+        const fill = new THREE.Mesh(fillGeometry, fillMaterial);
+        const edgeGeometry = new THREE.BufferGeometry();
+        edgeGeometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
+        edgeGeometry.setIndex(
+          new THREE.BufferAttribute(
+            buildHexEdgeIndex(Array.from({ length: dataset.n_cells }, (_, cell) => cell)),
+            1,
+          ),
+        );
+        const edges = new THREE.LineSegments(
+          edgeGeometry,
+          new THREE.LineBasicMaterial({ color: 0xd0d7de, transparent: true, opacity: 0.7 }),
+        );
+        overlay = new THREE.Group();
+        overlay.add(fill);
+        overlay.add(edges);
+      } else {
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
+        const lineOverlay = this.isLineDataset(dataset);
+        const renderIndices = lineOverlay
+          ? this.lineRenderIndices(dataset, indices, localPositions.length / 3)
+          : indices;
+        geometry.setIndex(new THREE.BufferAttribute(renderIndices, 1));
+        if (!lineOverlay) geometry.computeVertexNormals();
+        const material = lineOverlay
+          ? new THREE.LineBasicMaterial({ color: dataset.source === "network" || dataset.source === "network-tube" ? 0xffb86c : 0xff6b9d, transparent: true, opacity: 0.95 })
+          : new THREE.MeshPhongMaterial({ color: 0x8b949e, transparent: true, opacity: 0.45, side: THREE.DoubleSide, wireframe: true });
+        overlay = lineOverlay
+          ? (dataset.source === "network" || dataset.source === "network-tube"
+            ? new THREE.LineSegments(geometry, material as THREE.LineBasicMaterial)
+            : new THREE.Line(geometry, material as THREE.LineBasicMaterial))
+          : new THREE.Mesh(geometry, material as THREE.MeshPhongMaterial);
+      }
       overlay.name = `oilgas-overlay-${dataset.id}`;
       overlay.visible = visible;
-      this.scene.add(overlay);
+      this.tagSceneObject(overlay, dataset);
+      if (isSpatialWell(dataset)) this.recordWellPlan(dataset, localPositions);
+      this.modelRoot.add(overlay);
       this.overlayMeshes.set(dataset.id, overlay);
       this.setTreeVisibility(dataset.id, visible);
-      this.showDetails(`已加入场景：${dataset.name}\n对象类型：${dataset.source || "unknown"}`);
+      if (!options?.quiet) {
+        this.showDetails(`已加入场景：${dataset.name}\n对象类型：${dataset.source || "unknown"}`);
+      }
     } catch (error) {
       this.showDetails(`对象加载失败：${error instanceof Error ? error.message : String(error)}`);
     } finally {
@@ -1569,41 +2717,68 @@ class ThreeViewerEngine {
       this.infoEl.textContent = "加载失败：数据集几何缓冲区为空或格式无效";
       return;
     }
+    maybeRemapHexPositions(positions, nextCellIds.length);
+    const hexCorners = isHexCornerMesh(positions.length / 3, nextCellIds.length);
+    this.isHexMesh = hexCorners || isHexCellMesh(positions.length / 3, nextCellIds.length);
+    const hexCornerSource = hexCorners
+      ? extractHexCorners(positions, nextCellIds.length)
+      : null;
 
     // Coordinate origin rebase
+    const originSource = hexCornerSource || positions;
     let cx = 0, cy = 0, cz = 0;
-    const nVerts = positions.length / 3;
-    for (let i = 0; i < positions.length; i += 3) {
-      if (!Number.isFinite(positions[i]) || !Number.isFinite(positions[i + 1]) || !Number.isFinite(positions[i + 2])) {
+    const nVerts = originSource.length / 3;
+    for (let i = 0; i < originSource.length; i += 3) {
+      if (!Number.isFinite(originSource[i]) || !Number.isFinite(originSource[i + 1]) || !Number.isFinite(originSource[i + 2])) {
         this.datasetLoading = false;
         this.infoEl.textContent = "加载失败：坐标数据包含非有限值";
         return;
       }
-      cx += positions[i]; cy += positions[i + 1]; cz += positions[i + 2];
+      cx += originSource[i]; cy += originSource[i + 1]; cz += originSource[i + 2];
     }
     cx /= nVerts; cy /= nVerts; cz /= nVerts;
+    const depthOnly = isDepthOnlyWell(ds);
+    if (depthOnly) {
+      cx = 0;
+      cy = 0;
+      cz = 0;
+    }
 
-    const localPositions = new Float32Array(positions.length);
-    for (let i = 0; i < positions.length; i += 3) {
-      localPositions[i] = positions[i] - cx;
-      localPositions[i + 1] = positions[i + 1] - cy;
-      localPositions[i + 2] = positions[i + 2] - cz;
+    const localPositions = new Float32Array(originSource.length);
+    for (let i = 0; i < originSource.length; i += 3) {
+      localPositions[i] = originSource[i] - cx;
+      localPositions[i + 1] = originSource[i + 1] - cy;
+      localPositions[i + 2] = originSource[i + 2] - cz;
     }
 
     const isLineDataset = this.isLineDataset(ds);
+    let fillPositions: Float32Array<ArrayBufferLike> = localPositions;
+    let fillIndices: Uint32Array<ArrayBufferLike> = indices;
+    let fillNormals: Float32Array<ArrayBufferLike> | null = null;
+    const hexCornerBuffer = hexCornerSource ? localPositions : null;
+    if (hexCornerSource) {
+      const fan = tessellateHexOpmFan(localPositions, nextCellIds.length);
+      fillPositions = fan.positions;
+      fillIndices = fan.indices;
+      fillNormals = fan.normals;
+    }
+
     const nextGeometry = new THREE.BufferGeometry();
-    nextGeometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
+    nextGeometry.setAttribute("position", new THREE.BufferAttribute(fillPositions, 3));
     const renderIndices = isLineDataset
-      ? this.lineRenderIndices(ds, indices, localPositions.length / 3)
-      : indices;
+      ? this.lineRenderIndices(ds, fillIndices, fillPositions.length / 3)
+      : fillIndices;
     nextGeometry.setIndex(new THREE.BufferAttribute(renderIndices, 1));
+    if (fillNormals) {
+      nextGeometry.setAttribute("normal", new THREE.BufferAttribute(fillNormals, 3));
+    }
     nextGeometry.computeBoundingBox();
     nextGeometry.computeBoundingSphere();
-    if (!isLineDataset) nextGeometry.computeVertexNormals();
+    if (!isLineDataset && !fillNormals) nextGeometry.computeVertexNormals();
 
     let hasVertexColors = false;
     try {
-      const colorResult = await this.applyPropertyColors(nextGeometry, ds, indices, generation);
+      const colorResult = await this.applyPropertyColors(nextGeometry, ds, fillIndices, generation);
       if (colorResult === null) {
         if (generation !== this.loadGeneration) {
           nextGeometry.dispose();
@@ -1628,7 +2803,9 @@ class ThreeViewerEngine {
 
     this.disposeCurrentMesh();
     this.cellIds = nextCellIds;
-    this.baseIndices = indices;
+    this.baseIndices = fillIndices;
+    this.hexCornerPositions = hexCornerBuffer;
+    this.isHexMesh = Boolean(hexCornerBuffer);
     this.cellCenters = null;
     this.visibleCellOffsets = Array.from({ length: nextCellIds.length }, (_, index) => index);
     this.origin = [cx, cy, cz];
@@ -1642,21 +2819,26 @@ class ThreeViewerEngine {
     });
     viewerStore.setTimeStep(this.currentTimeStep);
 
-    if (isLineDataset) {
+    if (depthOnly) {
+      this.mesh = null;
+    } else if (isSpatialWell(ds)) {
+      const wellObject = this.buildWellObject(ds, localPositions);
+      this.mesh = wellObject;
+      if (wellObject) this.modelRoot.add(wellObject);
+    } else if (isLineDataset) {
       const material = new THREE.LineBasicMaterial({
         vertexColors: hasVertexColors,
         color: hasVertexColors ? 0xffffff : 0x58a6ff,
         transparent: true,
         opacity: this.opacity,
       });
-      this.mesh = ["network", "wellbore"].includes(ds.source || "")
-        ? new THREE.LineSegments(this.geometry, material)
-        : new THREE.Line(this.geometry, material);
+      this.mesh = new THREE.LineSegments(this.geometry, material);
+      this.modelRoot.add(this.mesh);
     } else {
       const material = new THREE.MeshPhongMaterial({
         vertexColors: hasVertexColors,
         side: THREE.DoubleSide, transparent: true,
-        opacity: this.opacity, wireframe: this.wireframe,
+        opacity: this.opacity, wireframe: this.isHexMesh ? false : this.wireframe,
         clippingPlanes: [],
       });
       // Three.js renders transparent DoubleSide materials in two passes by
@@ -1664,21 +2846,38 @@ class ThreeViewerEngine {
       material.forceSinglePass = true;
       if (!hasVertexColors) material.color = new THREE.Color(0x4488ff);
       this.mesh = new THREE.Mesh(this.geometry, material);
+      this.attachHexEdges(nextCellIds.length);
+      this.modelRoot.add(this.mesh);
     }
-    this.scene.add(this.mesh);
+
+    if (this.mesh) this.tagSceneObject(this.mesh, ds);
+    if (isSpatialWell(ds) && !depthOnly) this.recordWellPlan(ds, localPositions);
+    this.updateGridMapBounds();
 
     const bbox = this.geometry.boundingSphere!;
     const radius = Math.max(bbox.radius, 1);
-    this.camera.near = Math.max(radius / 10_000, 0.1);
-    this.camera.far = Math.max(radius * 20, 20_000);
-    this.camera.updateProjectionMatrix();
-    this.scene.fog = new THREE.Fog(0x0d1117, radius * 4, radius * 10);
-    if (this.geometry.boundingBox) this.frameBox(this.geometry.boundingBox);
-    this.controls.minDistance = radius * 0.01;
-    this.controls.maxDistance = radius * 20;
-    this.controls.update();
+    if (!depthOnly) {
+      const near = Math.max(radius / 10_000, 0.1);
+      const far = Math.max(radius * 20, 20_000);
+      this.perspectiveCamera.near = near;
+      this.perspectiveCamera.far = far;
+      this.orthoCamera.near = near;
+      this.orthoCamera.far = far;
+      this.applyCameraProjection();
+      const bg = this.scene.background instanceof THREE.Color ? this.scene.background.clone() : new THREE.Color(0x0d1117);
+      this.scene.fog = new THREE.Fog(bg, radius * 4, radius * 10);
+      if (this.mesh && isSpatialWell(ds)) this.frameObject(this.mesh);
+      else if (this.geometry.boundingBox) this.frameBox(this.geometry.boundingBox);
+      this.controls.minDistance = radius * 0.01;
+      this.controls.maxDistance = radius * 20;
+      this.controls.update();
+    }
+    this.slicePlayer.setDims(ds.grid_dims);
+    this.setWellLabelsVisible(this.wellLabelsVisible);
 
-    this.infoEl.textContent = `${ds.name} — ${ds.n_cells.toLocaleString()} cells | 原点: (${cx.toFixed(0)}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
+    this.infoEl.textContent = depthOnly
+      ? `${ds.name} — 仅深度测井，不在三维场图显示`
+      : `${ds.name} — ${ds.n_cells.toLocaleString()} cells | 原点: (${cx.toFixed(0)}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
     const kSlider = this.sidebar.querySelector("#vis-k-layer") as HTMLInputElement | null;
     if (kSlider && ds.grid_dims?.[2]) {
       kSlider.max = String(ds.grid_dims[2]);
@@ -1686,7 +2885,30 @@ class ThreeViewerEngine {
     }
     const sliceIndex = this.sidebar.querySelector("#vis-slice-index") as HTMLInputElement | null;
     if (sliceIndex && ds.grid_dims?.[2]) sliceIndex.max = String(ds.grid_dims[2]);
+    if (isGridDataset(ds)) {
+      await this.attachSpatialWellOverlays(generation);
+    }
+    this.updateObjectTree();
+    this.updateInspectorObject();
+    this.updateReadoutHud();
+    this.refreshWellMap();
+    if (generation === this.loadGeneration) {
+      this.publishSelection({ type: this.selectionTypeFor(ds), id: ds.id });
+    }
     if (this.viewRouter.getActiveView() === "welllog") this.renderWellLog();
+  }
+
+  private async attachSpatialWellOverlays(generation: number) {
+    if (!this.manifest) return;
+    const wells = this.manifest.datasets.filter(isSpatialWell);
+    for (const well of wells) {
+      if (generation !== this.loadGeneration) return;
+      if (well.id === this.currentDataset?.id) continue;
+      await this.toggleDatasetVisibility(well, true, { quiet: true });
+    }
+    if (wells.length && generation === this.loadGeneration) {
+      this.infoEl.textContent = `${this.infoEl.textContent} · 已叠加 ${wells.length} 口井`;
+    }
   }
 
   private resetFilters() {
@@ -1701,6 +2923,12 @@ class ThreeViewerEngine {
     this.filterJ = [0, Infinity];
     this.filterK = [0, Infinity];
     this.filterPropertyRange = [-Infinity, Infinity];
+    this.filterPropertyExclude = false;
+    const exclude = this.sidebar.querySelector("#vis-filter-prop-exclude") as HTMLInputElement | null;
+    if (exclude) {
+      exclude.checked = false;
+      exclude.dispatchEvent(new Event("ugsci-sync"));
+    }
     this.filterBounds = null;
     this.filterUndoStack = [];
     this.filterRedoStack = [];
@@ -1850,10 +3078,13 @@ class ThreeViewerEngine {
       this.showDetails(`属性加载失败：${err instanceof Error ? err.message : String(err)}`);
       return;
     }
-    const mat = this.mesh.material as THREE.MeshPhongMaterial | THREE.LineBasicMaterial;
-    mat.vertexColors = hasVertexColors;
-    if (!hasVertexColors) mat.color.set(0x4488ff);
-    mat.needsUpdate = true;
+    this.visitMaterials((material) => {
+      const mat = material as THREE.MeshPhongMaterial | THREE.LineBasicMaterial;
+      if (!("vertexColors" in mat)) return;
+      mat.vertexColors = hasVertexColors;
+      if (!hasVertexColors && "color" in mat) mat.color.set(0x4488ff);
+      mat.needsUpdate = true;
+    });
     this.applyFilters();
   }
 
@@ -1956,7 +3187,7 @@ class ThreeViewerEngine {
       const passesProperty = scalar === undefined || (
         scalar >= this.filterPropertyRange[0] &&
         scalar <= this.filterPropertyRange[1]
-      );
+      ) !== this.filterPropertyExclude;
       let passesBounds = true;
       if (this.filterBounds && centers) {
         const cx = centers[offset * 3];
@@ -1975,6 +3206,7 @@ class ThreeViewerEngine {
     this.visibleCellOffsets = visible;
     this.geometry.setIndex(filteredIndices);
     this.geometry.index!.needsUpdate = true;
+    this.updateHexEdges();
     this.infoEl.textContent = `过滤结果: ${visible.length.toLocaleString()} / ${this.cellIds.length.toLocaleString()} cells`;
   }
 
@@ -2086,13 +3318,18 @@ class ThreeViewerEngine {
       this.animationId = requestAnimationFrame(animate);
       this.controls.update();
       this.renderer.render(this.scene, this.camera);
+      this.labelRenderer.render(this.scene, this.camera);
       if (this.lastFrameTime > 0) {
         const dt = time - this.lastFrameTime;
         this.frameTimes.push(dt);
         if (this.frameTimes.length > 60) this.frameTimes.shift();
       }
       this.lastFrameTime = time;
-      if (++this.fpsInterval >= 30) { this.fpsInterval = 0; this.updateHud(); }
+      if (++this.fpsInterval >= 30) {
+        this.fpsInterval = 0;
+        this.updateHud();
+        this.updateCompassHud();
+      }
     };
     animate(0);
   }
@@ -2124,67 +3361,134 @@ class ThreeViewerEngine {
 
   // ─── Picking with cross-view selection sync ─────────────────────────
 
-  private onCanvasClick = async (event: MouseEvent) => {
-    if (this.datasetLoading || !this.mesh || !this.geometry) return;
+  private canvasNdc(event: MouseEvent) {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
-    this.mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const intersects = this.raycaster.intersectObject(this.mesh);
-    if (intersects.length > 0) {
-      if (this.measureMode) {
-        this.measurePoints.push(intersects[0].point.clone());
-        if (this.measurePoints.length === 2) {
-          const distance = this.measurePoints[0].distanceTo(this.measurePoints[1]);
-          this.infoEl.textContent = `测距结果: ${distance.toFixed(3)} | 再点击可重新测量`;
-          this.measurePoints = [];
-        } else {
-          this.infoEl.textContent = "已选择第一个点，请选择第二个点";
-        }
-        return;
-      }
-      const primitiveIndex = intersects[0].faceIndex ?? intersects[0].index ?? 0;
-      const primitivesPerCell = Math.max(
-        1,
-        (this.geometry.getIndex()?.count || 0) / Math.max(this.visibleCellOffsets.length, 1) /
-          (this.mesh instanceof THREE.Mesh ? 3 : 1),
-      );
-      const visibleOffset = Math.floor(primitiveIndex / primitivesPerCell);
-      const cellOffset = this.visibleCellOffsets[visibleOffset] ?? visibleOffset;
-      const cellId = this.cellIds?.[cellOffset] ?? cellOffset;
-      const pt = intersects[0].point;
-      const realX = pt.x + this.origin[0];
-      const realY = pt.y + this.origin[1];
-      const realZ = pt.z + this.origin[2];
-      this.infoEl.textContent = `Cell ID: ${cellId} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
-      if (this.currentDataset) {
-        try {
-          const details = await this.fetchJson(
-            `/datasets/${encodeURIComponent(this.currentDataset.id)}/cells/${cellId}`,
-          );
-          this.showDetails([
-            `Cell ${details.cell_id}`,
-            details.ijk ? `I/J/K: ${details.ijk.join(" / ")}` : "I/J/K: —",
-            details.center ? `中心: ${details.center.map((v: number) => Number(v).toFixed(2)).join(", ")}` : "中心: —",
-            ...Object.entries(details.properties || {}).map(([name, value]) => `${name}: ${Number(value).toPrecision(6)}`),
-          ].join("\n"));
-        } catch {
-          // Picking remains useful even if the detail request is unavailable.
-        }
-      }
+    this.mouse.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+    this.mouse.y = -((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1;
+  }
 
-      // Cross-view selection sync
-      if (this.onSelectionCallback) {
-        this.onSelectionCallback({
-          type: "cell", id: String(cellId),
-          coords: [realX, realY, realZ],
-        });
+  private pickables(): THREE.Object3D[] {
+    const targets: THREE.Object3D[] = [];
+    if (this.mesh?.visible) targets.push(this.mesh);
+    for (const overlay of this.overlayMeshes.values()) {
+      if (overlay.visible) targets.push(overlay);
+    }
+    return targets;
+  }
+
+  private datasetFromHit(object: THREE.Object3D): DatasetInfo | null {
+    let node: THREE.Object3D | null = object;
+    while (node) {
+      const id = node.userData?.datasetId as string | undefined;
+      if (id) return this.datasetById(id) || null;
+      node = node.parent;
+    }
+    return this.currentDataset;
+  }
+
+  private onCanvasPointerMove = (event: PointerEvent) => {
+    if (this.datasetLoading) return;
+    this.canvasNdc(event);
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
+    if (!hit) {
+      if (this.hoverCoords) {
+        this.hoverCoords = null;
+        this.updateReadoutHud();
       }
-      viewerStore.setSelection({
-        type: "cell", id: String(cellId),
+      return;
+    }
+    const local = this.hitToModelPoint(hit.point);
+    this.hoverCoords = [
+      local.x + this.origin[0],
+      local.y + this.origin[1],
+      local.z + this.origin[2],
+    ];
+    this.updateReadoutHud();
+  };
+
+  private onCanvasPointerLeave = () => {
+    this.hoverCoords = null;
+    this.updateReadoutHud();
+  };
+
+  private onCanvasDblClick = (event: MouseEvent) => {
+    this.canvasNdc(event);
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
+    if (!hit) return;
+    const dataset = this.datasetFromHit(hit.object);
+    if (dataset) void this.focusDataset(dataset);
+  };
+
+  private onCanvasClick = async (event: MouseEvent) => {
+    if (this.datasetLoading) return;
+    this.canvasNdc(event);
+    this.raycaster.setFromCamera(this.mouse, this.camera);
+    const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
+    if (!hit) return;
+    const dataset = this.datasetFromHit(hit.object);
+    const local = this.hitToModelPoint(hit.point);
+    const realX = local.x + this.origin[0];
+    const realY = local.y + this.origin[1];
+    const realZ = local.z + this.origin[2];
+    this.hoverCoords = [realX, realY, realZ];
+
+    if (this.measureMode) {
+      this.measurePoints.push(local.clone());
+      if (this.measurePoints.length === 2) {
+        const distance = this.measurePoints[0].distanceTo(this.measurePoints[1]);
+        this.infoEl.textContent = `测距结果: ${distance.toFixed(3)} | 再点击可重新测量`;
+        this.measurePoints = [];
+      } else {
+        this.infoEl.textContent = "已选择第一个点，请选择第二个点";
+      }
+      this.updateReadoutHud();
+      return;
+    }
+
+    if (dataset && (isSpatialWell(dataset) || this.isLineDataset(dataset) || dataset.id !== this.currentDataset?.id)) {
+      this.infoEl.textContent = `${dataset.name} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
+      this.publishSelection({
+        type: this.selectionTypeFor(dataset),
+        id: dataset.id,
         coordinates: [realX, realY, realZ],
       });
+      return;
     }
+
+    if (!this.mesh || !this.geometry) return;
+    const primitiveIndex = hit.faceIndex ?? hit.index ?? 0;
+    const primitivesPerCell = Math.max(
+      1,
+      (this.geometry.getIndex()?.count || 0) / Math.max(this.visibleCellOffsets.length, 1) /
+        (this.mesh instanceof THREE.Mesh ? 3 : 1),
+    );
+    const visibleOffset = Math.floor(primitiveIndex / primitivesPerCell);
+    const cellOffset = this.visibleCellOffsets[visibleOffset] ?? visibleOffset;
+    const cellId = this.cellIds?.[cellOffset] ?? cellOffset;
+    this.infoEl.textContent = `Cell ID: ${cellId} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
+    if (this.currentDataset) {
+      try {
+        const details = await this.fetchJson(
+          `/datasets/${encodeURIComponent(this.currentDataset.id)}/cells/${cellId}`,
+        );
+        this.showDetails([
+          `Cell ${details.cell_id}`,
+          details.ijk ? `I/J/K: ${details.ijk.join(" / ")}` : "I/J/K: —",
+          details.center ? `中心: ${details.center.map((v: number) => Number(v).toFixed(2)).join(", ")}` : "中心: —",
+          ...Object.entries(details.properties || {}).map(([name, value]) => `${name}: ${Number(value).toPrecision(6)}`),
+        ].join("\n"));
+      } catch {
+        // Picking remains useful even if the detail request is unavailable.
+      }
+    }
+
+    this.publishSelection({
+      type: "cell",
+      id: String(cellId),
+      coordinates: [realX, realY, realZ],
+    });
   };
 
   setOnSelection(cb: (sel: { type: string; id: string; coords?: [number, number, number] }) => void) {
@@ -2200,7 +3504,25 @@ class ThreeViewerEngine {
     const cellOffset = this.cellIds.indexOf(requested);
     if (cellOffset < 0) return false;
     const positions = this.geometry.getAttribute("position") as THREE.BufferAttribute;
-    const firstVertex = cellOffset * 8;
+    const corners = this.hexCornerPositions;
+    if (corners && corners.length >= (cellOffset + 1) * 24) {
+      const center = new THREE.Vector3();
+      const first = cellOffset * 24;
+      for (let index = 0; index < 8; index++) {
+        center.x += corners[first + index * 3];
+        center.y += corners[first + index * 3 + 1];
+        center.z += corners[first + index * 3 + 2];
+      }
+      center.multiplyScalar(1 / 8);
+      const radius = Math.max(this.geometry.boundingSphere?.radius || 1, 1);
+      this.controls.target.copy(center);
+      this.camera.position.copy(center).addScalar(radius * 0.08);
+      this.controls.update();
+      this.infoEl.textContent = `已聚焦 Cell ID: ${requested}`;
+      return true;
+    }
+    const vertsPerCell = this.cellIds.length ? Math.floor(positions.count / this.cellIds.length) : 0;
+    const firstVertex = cellOffset * Math.min(8, Math.max(1, vertsPerCell));
     if (firstVertex + 7 >= positions.count) return false;
     const center = new THREE.Vector3();
     for (let index = firstVertex; index < firstVertex + 8; index++) {
@@ -2226,12 +3548,37 @@ class ThreeViewerEngine {
     const candidates = this.manifest.datasets.filter((dataset) => {
       if (!sources.has(dataset.source || "")) return false;
       if (!needle) return true;
-      return [dataset.id, dataset.name].some((value) => value.toLowerCase() === needle);
+      const wellName = typeof dataset.metadata?.well_name === "string" ? dataset.metadata.well_name : "";
+      return [dataset.id, dataset.name, wellName].some((value) => value.toLowerCase() === needle);
     });
     if (candidates.length > 1) return false;
     const dataset = candidates[0];
-    if (dataset && dataset.id !== this.currentDataset?.id) {
+    if (!dataset) return false;
+
+    if (objectType === "well" && isDepthOnlyWell(dataset)) {
+      this.viewRouter.switchTo("welllog");
+      if (dataset.id !== this.currentDataset?.id) await this.loadDataset(dataset.id);
+      this.infoEl.textContent = `已打开测井: ${wellDisplayName(dataset)}`;
+      return true;
+    }
+
+    if (objectType === "well" && isSpatialWell(dataset) && this.currentDataset && isGridDataset(this.currentDataset)) {
+      await this.toggleDatasetVisibility(dataset, true, { quiet: true });
+      const overlay = this.overlayMeshes.get(dataset.id);
+      if (!overlay) return false;
+      this.frameObject(overlay);
+      this.infoEl.textContent = `已聚焦井: ${wellDisplayName(dataset)}`;
+      this.publishSelection({ type: "well", id: dataset.id });
+      return true;
+    }
+
+    if (dataset.id !== this.currentDataset?.id) {
       await this.loadDataset(dataset.id);
+    }
+    if (objectType === "well" && this.mesh && isSpatialWell(this.currentDataset || dataset)) {
+      this.frameObject(this.mesh);
+      this.infoEl.textContent = `已聚焦井: ${objectId}`;
+      return true;
     }
     if (!this.currentDataset || !sources.has(this.currentDataset.source || "") || !this.geometry || !this.cellIds || !this.baseIndices) return false;
 
@@ -2324,20 +3671,12 @@ class ThreeViewerEngine {
       case "set-opacity": {
         const opacity = Number(args.opacity);
         if (!Number.isFinite(opacity)) break;
-        this.opacity = Math.max(0.1, Math.min(1, opacity > 1 ? opacity / 100 : opacity));
-        if (this.mesh) {
-          const material = this.mesh.material as THREE.Material & { opacity: number; needsUpdate: boolean };
-          material.opacity = this.opacity;
-          material.needsUpdate = true;
-        }
+        this.applyOpacity(Math.max(0.1, Math.min(1, opacity > 1 ? opacity / 100 : opacity)));
         break;
       }
       case "set-wireframe": {
         this.wireframe = Boolean(args.enabled);
-        if (this.mesh?.material instanceof THREE.MeshPhongMaterial) {
-          this.mesh.material.wireframe = this.wireframe;
-          this.mesh.material.needsUpdate = true;
-        }
+        this.applyWireframeMode();
         break;
       }
       case "set-view":
@@ -2483,10 +3822,70 @@ class ThreeViewerEngine {
     const h = this.container.clientHeight;
     if (w <= 0 || h <= 0) return;
     this.renderer.setSize(w, h);
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.labelRenderer.setSize(w, h);
+    this.applyCameraProjection();
     this.updatePanelOffsets();
   };
+
+  private applyWireframeMode() {
+    if (this.hexEdgeLines) {
+      this.hexEdgeLines.visible = this.wireframe;
+      this.visitMaterials((material) => {
+        if (material instanceof THREE.MeshPhongMaterial) {
+          material.wireframe = false;
+          material.needsUpdate = true;
+        }
+      });
+      return;
+    }
+    this.visitMaterials((material) => {
+      if (material instanceof THREE.MeshPhongMaterial) {
+        material.wireframe = this.wireframe;
+        material.needsUpdate = true;
+      }
+    });
+  }
+
+  private attachHexEdges(cellCount: number) {
+    this.disposeHexEdges();
+    const corners = this.hexCornerPositions;
+    if (!corners || corners.length !== cellCount * 24) {
+      this.isHexMesh = false;
+      return;
+    }
+    this.isHexMesh = true;
+    const edgeGeometry = new THREE.BufferGeometry();
+    edgeGeometry.setAttribute("position", new THREE.BufferAttribute(corners, 3));
+    const offsets = this.visibleCellOffsets.length
+      ? this.visibleCellOffsets
+      : Array.from({ length: cellCount }, (_, cell) => cell);
+    edgeGeometry.setIndex(new THREE.BufferAttribute(buildHexEdgeIndex(offsets), 1));
+    this.hexEdgeLines = new THREE.LineSegments(
+      edgeGeometry,
+      new THREE.LineBasicMaterial({ color: 0xd0d7de, transparent: true, opacity: 0.85 }),
+    );
+    this.hexEdgeLines.name = "oilgas-hex-edges";
+    this.hexEdgeLines.visible = this.wireframe;
+    if (this.mesh) this.mesh.add(this.hexEdgeLines);
+    else this.modelRoot.add(this.hexEdgeLines);
+  }
+
+  private updateHexEdges() {
+    if (!this.hexEdgeLines) return;
+    this.hexEdgeLines.geometry.setIndex(
+      new THREE.BufferAttribute(buildHexEdgeIndex(this.visibleCellOffsets), 1),
+    );
+  }
+
+  private disposeHexEdges() {
+    if (!this.hexEdgeLines) return;
+    this.hexEdgeLines.parent?.remove(this.hexEdgeLines);
+    this.hexEdgeLines.geometry.dispose();
+    const material = this.hexEdgeLines.material;
+    if (Array.isArray(material)) material.forEach((item) => item.dispose());
+    else material.dispose();
+    this.hexEdgeLines = null;
+  }
 
   // ─── Dispose ──────────────────────────────────────────────────────
 
@@ -2506,13 +3905,14 @@ class ThreeViewerEngine {
   }
 
   private disposeCurrentMesh() {
-    if (this.mesh) {
-      this.scene.remove(this.mesh);
-      this.mesh.geometry.dispose();
-      const material = this.mesh.material;
-      if (Array.isArray(material)) material.forEach((item) => item.dispose());
-      else material.dispose();
-    }
+    this.disposeHexEdges();
+    const mesh = this.mesh;
+    const geometry = this.geometry;
+    if (mesh) this.disposeObject3D(mesh);
+    const meshGeometry = mesh instanceof THREE.Mesh || mesh instanceof THREE.Line || mesh instanceof THREE.LineSegments
+      ? mesh.geometry
+      : null;
+    if (geometry && geometry !== meshGeometry) geometry.dispose();
     this.mesh = null;
     this.geometry = null;
     this.cellIds = null;
@@ -2520,6 +3920,8 @@ class ThreeViewerEngine {
     this.currentScalarValues = null;
     this.cellCenters = null;
     this.visibleCellOffsets = [];
+    this.isHexMesh = false;
+    this.hexCornerPositions = null;
     this.renderer.renderLists.dispose();
   }
 
@@ -2530,9 +3932,22 @@ class ThreeViewerEngine {
       window.clearInterval(this.timestepTimer);
       this.timestepTimer = null;
     }
+    if (this.sliceTimer !== null) {
+      window.clearInterval(this.sliceTimer);
+      this.sliceTimer = null;
+    }
     if (this.animationId) cancelAnimationFrame(this.animationId);
     if (this.abortController) this.abortController.abort();
     this.renderer.domElement.removeEventListener("click", this.onCanvasClick);
+    this.renderer.domElement.removeEventListener("pointermove", this.onCanvasPointerMove);
+    this.renderer.domElement.removeEventListener("pointerleave", this.onCanvasPointerLeave);
+    this.renderer.domElement.removeEventListener("dblclick", this.onCanvasDblClick);
+    this.renderer.domElement.removeEventListener("contextmenu", this.onCanvasContextMenu);
+    this.wellMapCanvas?.removeEventListener("click", this.onWellMapClick);
+    this.container.removeEventListener("keydown", this.onViewerKeyDown);
+    this.dropUnbind?.();
+    this.dropUnbind = null;
+    this.storeUnsubscribe?.();
     window.removeEventListener("resize", this.onResize);
     this.workerManager.dispose();
     this.disposeCurrentMesh();
@@ -2591,7 +4006,7 @@ registerEngineFactory("three-reservoir", (options) => {
 });
 
 const OilGasViewerRuntime = {
-  version: "0.3.0",
+  version: "0.3.6",
   mount(element: HTMLElement, options: ViewerMountOptions): ViewerHandle {
     return mountViewer(element, options);
   },

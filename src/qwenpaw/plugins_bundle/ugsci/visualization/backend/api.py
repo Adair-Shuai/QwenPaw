@@ -4,7 +4,9 @@
 Provides 15 endpoints:
 - GET  /health                    — Health + capabilities + datasets
 - GET  /capabilities               — Available parsers/formats
-- GET  /manifest                   — Dataset catalog
+- GET  /manifest                   — Dataset catalog (hidden examples omitted)
+- POST /catalog/restore-examples   — Unhide built-in examples
+- DELETE /datasets/{id}            — Remove from catalog (hide built-ins, delete imports)
 - GET  /resource/{filename}        — Binary data (with Range support)
 - POST /imports                    — Create async import job
 - GET  /imports/{job_id}           — Job status
@@ -13,7 +15,7 @@ Provides 15 endpoints:
 - GET  /datasets                   — List datasets
 - GET  /datasets/{id}/manifest     — Per-dataset manifest
 - GET  /datasets/{id}/resources/{rid} — Per-dataset resource (Range)
-- DELETE /datasets/{id}/cache     — Clear dataset cache
+- DELETE /datasets/{id}/cache     — Same as DELETE /datasets/{id}
 - POST /datasets/{id}/intersections — Generate intersection
 - GET  /benchmarks                 — List benchmark results
 - POST /benchmarks                 — Save benchmark result
@@ -125,18 +127,90 @@ def build_router(plugin_dir: Path) -> APIRouter:
     from .cache.layout import CacheLayout
     from .cache.manifest_store import ManifestStore
     from .cache.resource_store import ResourceStore
+    from .cache.catalog_state import CatalogState
     from .tools import command_bus
 
     cache_layout = CacheLayout(data_dir)
     manifest_store = ManifestStore(bin_dir, cache_layout)
     resource_store = ResourceStore(bin_dir)
+    catalog_state = CatalogState(data_dir)
+
+    def _is_managed(ds: dict) -> bool:
+        return bool((ds.get("metadata") or {}).get("managed"))
+
+    def _collect_cascade(dataset_id: str) -> list[dict]:
+        datasets = list(manifest_store.read().get("datasets") or [])
+        by_parent: dict[str, list[dict]] = {}
+        for item in datasets:
+            parent = str((item.get("metadata") or {}).get("parent_dataset") or "")
+            if parent:
+                by_parent.setdefault(parent, []).append(item)
+        target = next((item for item in datasets if item.get("id") == dataset_id), None)
+        if not target:
+            return []
+        ordered = [target]
+        queue = [dataset_id]
+        seen = {dataset_id}
+        while queue:
+            current = queue.pop(0)
+            for child in by_parent.get(current, []):
+                child_id = str(child.get("id") or "")
+                if not child_id or child_id in seen:
+                    continue
+                seen.add(child_id)
+                ordered.append(child)
+                queue.append(child_id)
+        return ordered
+
+    def _public_datasets(include_hidden: bool = False) -> list[dict]:
+        hidden = set() if include_hidden else catalog_state.hidden_ids()
+        return [
+            ds for ds in manifest_store.read().get("datasets", [])
+            if ds.get("id") not in hidden
+        ]
+
+    def _remove_dataset_files(ds: dict) -> int:
+        deleted = 0
+        for filename in set(_get_all_files(ds).values()):
+            try:
+                deleted += int(resource_store.delete(filename))
+            except ValueError:
+                logger.warning("Skipped unsafe resource during cleanup: %s", filename)
+        return deleted
+
+    def _delete_or_hide_dataset(dataset_id: str) -> dict[str, Any]:
+        ds = manifest_store.get_dataset(dataset_id)
+        if not ds:
+            raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        hidden: list[str] = []
+        removed: list[str] = []
+        deleted_files = 0
+        for item in _collect_cascade(dataset_id):
+            item_id = str(item.get("id") or "")
+            if not item_id:
+                continue
+            if _is_managed(item):
+                deleted_files += _remove_dataset_files(item)
+                manifest_store.remove(item_id)
+                removed.append(item_id)
+            else:
+                hidden.append(item_id)
+        if hidden:
+            catalog_state.hide(hidden)
+        return {
+            "dataset_id": dataset_id,
+            "hidden": hidden,
+            "removed": removed,
+            "deleted_files": deleted_files,
+            "status": "removed" if dataset_id in removed else "hidden",
+        }
 
     # ─── Health ─────────────────────────────────────────────────────────
 
     @router.get("/health")
     async def health():
         datasets = []
-        for ds in manifest_store.read().get("datasets", []):
+        for ds in _public_datasets():
             datasets.append({
                 "id": ds["id"], "name": ds["name"],
                 "cells": ds["n_cells"], "vertices": ds["n_vertices"],
@@ -157,12 +231,30 @@ def build_router(plugin_dir: Path) -> APIRouter:
     # ─── Manifest ──────────────────────────────────────────────────────
 
     @router.get("/manifest")
-    async def get_manifest():
+    async def get_manifest(include_hidden: bool = Query(False)):
+        hidden = catalog_state.hidden_ids()
         manifest = manifest_store.read()
-        # Enrich with ResourceDescriptors
+        datasets = []
         for ds in manifest.get("datasets", []):
+            if not include_hidden and ds.get("id") in hidden:
+                continue
             ds["resources"] = _build_resource_descriptors(ds, resource_store)
+            datasets.append(ds)
+        manifest["datasets"] = datasets
+        manifest["catalog"] = {
+            "hidden_count": len(hidden),
+            "hidden_ids": sorted(hidden) if include_hidden else [],
+        }
         return JSONResponse(manifest)
+
+    @router.post("/catalog/restore-examples")
+    async def restore_examples():
+        restored = catalog_state.restore_all()
+        return JSONResponse({
+            "status": "restored",
+            "restored": restored,
+            "count": len(restored),
+        })
 
     # ─── Binary Resource (with Range support) ──────────────────────────
 
@@ -426,12 +518,11 @@ def build_router(plugin_dir: Path) -> APIRouter:
 
     @router.get("/datasets")
     async def list_datasets():
-        manifest = manifest_store.read()
         return JSONResponse({
             "datasets": [
                 {"id": d["id"], "name": d["name"], "n_cells": d["n_cells"],
                  "n_vertices": d["n_vertices"], "source": d.get("source", "")}
-                for d in manifest.get("datasets", [])
+                for d in _public_datasets()
             ]
         })
 
@@ -542,8 +633,11 @@ def build_router(plugin_dir: Path) -> APIRouter:
             try:
                 raw = resource_store.get_path(positions_file).read_bytes()
                 positions = struct.unpack(f"<{len(raw) // 4}f", raw)
-                if len(positions) >= (cell_offset + 1) * 24:
-                    points = [positions[(cell_offset * 8 + i) * 3:(cell_offset * 8 + i + 1) * 3] for i in range(8)]
+                n_cells = int(ds.get("n_cells", 0)) or 1
+                verts_per_cell = (len(positions) // 3) // n_cells
+                if verts_per_cell >= 8 and len(positions) >= (cell_offset + 1) * verts_per_cell * 3:
+                    base = cell_offset * verts_per_cell
+                    points = [positions[(base + i) * 3:(base + i + 1) * 3] for i in range(8)]
                     center = [sum(point[axis] for point in points) / 8 for axis in range(3)]
             except (ValueError, OSError, struct.error):
                 center = None
@@ -623,28 +717,19 @@ def build_router(plugin_dir: Path) -> APIRouter:
             },
         )
 
+    @router.delete("/datasets/{dataset_id}")
+    async def delete_dataset(dataset_id: str):
+        """Remove a dataset from the viewer catalog.
+
+        Built-in examples are hidden (package files stay on disk so Restore
+        can bring them back). Managed imports delete their cache files.
+        Derived children (slices/intersections) follow the parent.
+        """
+        return JSONResponse(_delete_or_hide_dataset(dataset_id))
+
     @router.delete("/datasets/{dataset_id}/cache")
     async def clear_dataset_cache(dataset_id: str):
-        ds = manifest_store.get_dataset(dataset_id)
-        if not ds:
-            raise HTTPException(404, f"Dataset not found: {dataset_id}")
-
-        if not ds.get("metadata", {}).get("managed", False):
-            raise HTTPException(409, "Built-in datasets cannot be deleted through cache cleanup")
-
-        deleted = 0
-        for filename in set(_get_all_files(ds).values()):
-            try:
-                deleted += int(resource_store.delete(filename))
-            except ValueError:
-                logger.warning("Skipped unsafe resource during cleanup: %s", filename)
-        # Remove from manifest
-        manifest_store.remove(dataset_id)
-        return JSONResponse({
-            "dataset_id": dataset_id,
-            "deleted_files": deleted,
-            "status": "cache-cleared",
-        })
+        return JSONResponse(_delete_or_hide_dataset(dataset_id))
 
     @router.post("/datasets/{dataset_id}/intersections")
     async def create_intersection(
@@ -841,6 +926,8 @@ def build_router(plugin_dir: Path) -> APIRouter:
             "  GET  /health                         — Health + capabilities\n"
             "  GET  /capabilities                    — Parsers/formats\n"
             "  GET  /manifest                        — Dataset catalog\n"
+            "  POST /catalog/restore-examples        — Unhide built-in examples\n"
+            "  DELETE /datasets/{id}                 — Hide built-in or delete import\n"
             "  GET  /resource/{name}                 — Binary data (Range)\n"
             "  POST /imports                         — Async import\n"
             "  GET  /imports/{id}                    — Job status\n"

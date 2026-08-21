@@ -6,7 +6,6 @@ import importlib.util
 import zipfile
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 INSTALLER = (
     REPO_ROOT
@@ -56,17 +55,13 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
     assert "string search = ToExtendedPath(directory.TrimEnd" in source
-    assert "string fullPath = PathForIo(canonicalPath);" in source
-    assert "if (!Path.IsPathRooted(path))" in source
-    assert "path = Path.GetFullPath(path);" in source
-    assert "return path.Length < 248 ? path : ToExtendedPath(path);" in source
-    path_for_io = source.split(
-        "private static string PathForIo(string path)",
-        1,
-    )[1].split("private static string SafeRelativePath", 1)[0]
-    assert path_for_io.index("Path.IsPathRooted(path)") < path_for_io.index(
-        "Path.GetFullPath(path)",
-    )
+    assert "FileExistsLongPath(canonicalPath)" in source
+    assert "GetFileAttributesW" in source
+    assert "CreateFileW" in source
+    assert "ToExtendedPath(path)" in source
+    assert "PathForIo" not in source
+    assert "if (!File.Exists(fullPath))" not in source
+    assert "File.OpenRead(path)" not in source
     assert (
         'string manifest = Path.Combine(root, "checksums.sha256");' in source
     )
@@ -85,16 +80,39 @@ def test_bootstrap_supports_long_paths_and_rejects_escape_segments() -> None:
     assert 'return @"\\\\?\\" + path;' in source
 
 
-def test_installer_retains_webview2_bootstrapper_in_staging() -> None:
+def test_installer_bundles_offline_webview2_and_continues_if_missing() -> None:
     script = _script()
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+    lib_rs = (
+        REPO_ROOT / "console" / "src-tauri" / "src" / "lib.rs"
+    ).read_text(
+        encoding="utf-8",
+    )
 
-    assert "function Ensure-WebView2 {" in script
-    assert "param([string]$DestinationDir)" in script
-    assert (
-        "Copy-Item -LiteralPath $bootstrapper -Destination "
-        '(Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe") -Force'
-    ) in script
+    assert "MicrosoftEdgeWebView2RuntimeInstallerX64.exe" in script
+    assert "https://go.microsoft.com/fwlink/?linkid=2124701" in script
+    assert "Assert-PackedWebView2Installer" in script
+    assert "function Test-WebView2RuntimeInstalled {" in script
+    assert "function Install-WebView2Runtime([string]$Installer)" in script
+    assert "Write-WebView2MissingMarker $DestinationDir" in script
+    assert "throw (Get-WebView2MissingMessage)" not in script
+    assert "UGSci Desktop Setup will continue." in script
+    assert "desktop window and visualization stay unavailable" in script
+    assert "webview2-missing.txt" in script
     assert "Ensure-WebView2 -DestinationDir $stagingDir" in script
+    assert (
+        'Path.Combine("payload", '
+        '"MicrosoftEdgeWebView2RuntimeInstallerX64.exe")' in source
+    )
+    assert "an internet connection is not required for that step" in source
+    assert "If WebView2 still cannot be installed, Setup continues." in source
+    assert "webview2-missing.txt" in source
+    assert "GetInstallCompleteMessage" in source
+    assert '"type": "offlineInstaller"' in (
+        REPO_ROOT / "console" / "src-tauri" / "tauri.conf.json"
+    ).read_text(encoding="utf-8")
+    assert "try_install_bundled_webview2" in lib_rs
+    assert "notify_desktop_window_unavailable" in lib_rs
 
 
 def test_windows_verifier_accepts_registered_webview2() -> None:
@@ -209,10 +227,21 @@ def test_installer_forces_utf8_when_capturing_localized_errors() -> None:
     assert "$OutputEncoding = $utf8Encoding" in script
 
 
-def test_protected_install_location_requests_administrator_access() -> None:
+def test_setup_requires_administrator_by_default() -> None:
     script = _script()
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+    manifest = (
+        REPO_ROOT
+        / "scripts"
+        / "pack-tauri"
+        / "windows_portable_setup.manifest"
+    ).read_text(encoding="utf-8")
 
-    assert "function Test-DirectoryWriteRequiresElevation" in script
+    assert 'level="requireAdministrator"' in manifest
+    assert "/win32manifest:$setupManifest" in script
+    assert "windows_portable_setup.manifest" in script
+    assert 'Join-Path $env:ProgramFiles "UGSci Desktop"' in script
+    assert 'Join-Path $env:LOCALAPPDATA "UGSci Desktop"' not in script
     assert "function Invoke-ElevatedInstaller" in script
     assert 'Verb = "RunAs"' in script
     assert '"-Elevated"' in script
@@ -220,7 +249,16 @@ def test_protected_install_location_requests_administrator_access() -> None:
         '"-InstallDir", (Quote-ProcessArgument $ResolvedInstallDir)' in script
     )
     assert "Administrator approval was cancelled" in script
+    assert "-not $Elevated -and -not (Test-CurrentProcessElevated)" in script
     assert "$Elevated -and -not (Test-CurrentProcessElevated)" in script
+    assert "$installRequiresElevation" not in script
+    assert "function Test-DirectoryWriteRequiresElevation" not in script
+    assert "Administrator approval is required to install UGSci Desktop." in (
+        script
+    )
+    assert 'SpecialFolder.ProgramFiles), "UGSci Desktop"' in source
+    assert "Setup requires administrator permission." in source
+    assert "The default location is Program Files." in source
 
 
 def test_installer_stages_at_short_same_volume_path() -> None:
@@ -271,6 +309,32 @@ def test_verified_zip_builder_preserves_nested_manifest_members(
         assert archive.read(relative) == b"payload"
 
 
+def test_prepare_portable_tree_rejects_windows_breaking_paths(
+    tmp_path: Path,
+) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "prepare_windows_portable_tree",
+        TREE_PREPARER,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    root = tmp_path / "portable"
+    nested = root / "payload" / "deep"
+    nested.mkdir(parents=True)
+    (nested / "file.py").write_text("x", encoding="utf-8")
+    manifest = root / "checksums.sha256"
+
+    try:
+        module.prepare(root, manifest, max_relative_path=10)
+    except ValueError as error:
+        assert "over 10 characters" in str(error)
+        assert "Windows Explorer extraction will drop them" in str(error)
+    else:
+        raise AssertionError("overlong portable path was accepted")
+
+
 def test_bootstrap_prefills_only_trusted_canonical_or_legacy_install() -> None:
     source = BOOTSTRAP.read_text(encoding="utf-8")
 
@@ -285,6 +349,117 @@ def test_bootstrap_prefills_only_trusted_canonical_or_legacy_install() -> None:
         'Path.Combine(location, "binaries", "state", "active.json")' in source
     )
     assert 'Path.Combine(location, "version.json")' in source
+
+
+def test_bootstrap_explains_install_folder_failures_before_copy() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "TryAcceptInstallLocation()" in source
+    assert "FindRegisteredInstallLocation()" in source
+    assert "IsExistingUGSciInstall(normalized)" in source
+    assert "GetUnrelatedInstallEntries(normalized)" in source
+    assert "UnrecognizedNonEmptyFolderMessage()" in source
+    assert "UnrelatedInstallEntriesMessage(PreviewEntryNames(unrelated))" in (
+        source
+    )
+    assert "AlreadyInstalledElsewhereMessage(registered)" in source
+    assert "locationStatus.Text = FirstLine(validationError)" in source
+    assert "Click Next to check this folder before installing." in source
+    assert (
+        "not empty and is not a recognized UGSci Desktop installation"
+        in source
+    )
+    assert "or the legacy name qwenpaw-desktop.exe" in source
+    assert "binaries\\\\state\\\\active.json" in source
+    assert "desktop.ini in this folder" in source
+    assert "Setup will not delete" in source
+    assert "cannot install to a second location" in source
+    assert "if (!TryAcceptInstallLocation())" in source
+
+
+def test_bootstrap_prompts_to_close_running_ugsci() -> None:
+    source = BOOTSTRAP.read_text(encoding="utf-8")
+
+    assert "ConfirmCloseRunningApplications()" in source
+    assert "FindBlockingSetupProcesses(BlockingProcessRoots())" in source
+    assert "QueryFullProcessImageNameW" in source
+    assert "KillBlockingSetupProcesses(running)" in source
+    assert "/PID " in source and " /T /F" in source
+    assert "Close these processes now?" in source
+    assert "including copies started from the extracted package" in source
+    assert (
+        "If UGSci Desktop is still running — including a copy started "
+        "from this extracted folder"
+    ) in source
+    assert "Setup could not close the following processes." in source
+
+
+def test_installer_stops_package_processes_without_killing_setup() -> None:
+    script = _script()
+
+    assert "[string[]]$Root" in script
+    assert "[int[]]$ExcludePids" in script
+    assert "Stop-ScopedApplication -Root @($installDir, $sourceRoot)" in (
+        script
+    )
+    assert "System32\\taskkill.exe" in script
+    assert '"/PID", [string]$process.ProcessId, "/T", "/F"' in script
+    assert "$installerParentPid" in script
+    assert "Stop-ScopedApplication -Root $installDir\n" not in script
+
+
+def test_installer_script_matches_bootstrap_folder_failure_copy() -> None:
+    script = _script()
+
+    assert "function Get-UnrecognizedNonEmptyFolderMessage {" in script
+    assert "function Get-UnrelatedInstallEntriesMessage([string]$Preview)" in (
+        script
+    )
+    assert (
+        "function Get-AlreadyInstalledElsewhereMessage([string]$ExistingDir)"
+        in (script)
+    )
+    assert "throw (Get-UnrecognizedNonEmptyFolderMessage)" in script
+    assert (
+        "throw (Get-UnrelatedInstallEntriesMessage -Preview $preview)"
+        in script
+    )
+    assert (
+        "throw (Get-AlreadyInstalledElsewhereMessage "
+        "-ExistingDir $existingInstallDir)"
+    ) in script
+    assert "or the legacy name qwenpaw-desktop.exe" in script
+    assert "desktop.ini in this folder" in script
+    assert "cannot install to a second location" in script
+    assert (
+        "The selected installation folder is not empty and is not a "
+        "recognized UGSci Desktop installation. Choose an empty folder."
+    ) not in script
+    assert ("Uninstall it before choosing a different location.") not in script
+
+
+def test_installer_preflights_aggregated_disk_space_before_mutation() -> None:
+    script = _script()
+
+    assert "function Get-DirectorySizeBytes" in script
+    assert "[IO.DriveInfo]::new($root).AvailableFreeSpace" in script
+    assert "function Assert-SufficientDiskSpace" in script
+    assert "$contentBytes * 0.05" in script
+    assert "[Math]::Max(512MB" in script
+    assert "Insufficient disk space on" in script
+    assert "user-data rollback backup" in script
+    assert "application staging and preserved install data" in script
+    assert "$installBytes += [int64]$backupPlan.InstallLocalBytes" in script
+    assert "Requirements sharing a volume are summed" in script
+    preflight = script.index(
+        "Assert-SufficientDiskSpace -Requirement $spaceRequirements",
+    )
+    stop_apps = script.index("Stop-ScopedApplication -Root")
+    create_staging = script.index(
+        "New-Item -ItemType Directory -Path $stagingDir",
+    )
+    backup = script.index("New-UpdateDataBackup -ReleaseVersion")
+    assert preflight < stop_apps < create_staging < backup
 
 
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:

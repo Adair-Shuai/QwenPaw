@@ -38,9 +38,9 @@ export function loadViewerRuntime(): Promise<ViewerRuntime> {
     // The viewer runtime is served by the plugin's static file handler.
     // In production, this is a content-hashed filename written by the build.
     // In development, we use a fixed name.
-    const url = host.getApiUrl(
+    const url = `${host.getApiUrl(
       "frontend_plugin/ugsci/files/ui/dist/viewer-runtime.js",
-    );
+    )}?v=0.3.6`;
 
     console.info("[oilgas-vis] Loading viewer runtime from", url);
 

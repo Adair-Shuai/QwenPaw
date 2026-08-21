@@ -59,6 +59,11 @@ def test_assistant_covers_visible_handoff_and_safe_install_stages() -> None:
         'Arguments = "--silent --deferred-commit --transaction-file "'
         in source
     )
+    assert 'Verb = "runas"' in source
+    assert "UseShellExecute = true" in source
+    assert "Administrator approval was cancelled or could not be started." in (
+        source
+    )
     assert "ReadTransaction(transactionFile)" in source
     assert "RecoverInterruptedTransactions(stateRoot, options)" in source
     assert (
@@ -167,3 +172,18 @@ def test_assistant_extracts_with_long_path_safe_io() -> None:
     assert 'segment == ".." || segment == "."' in source
     assert "Path.GetFullPath(Path.Combine(destination, name))" not in source
     assert '"UGSci", "u"' in source
+
+
+def test_assistant_checks_expanded_package_space_before_extraction() -> None:
+    source = SOURCE.read_text(encoding="utf-8")
+
+    assert "GetArchiveExpandedLength(options.PackagePath)" in source
+    assert "EnsureFreeSpace(stagingRoot, expandedBytes" in source
+    assert "new DriveInfo(root).AvailableFreeSpace" in source
+    assert "Math.Max(512L * 1024L * 1024L" in source
+    assert "contentBytes * 0.05d" in source
+    assert "Insufficient disk space on" in source
+    check = source.index("EnsureFreeSpace(stagingRoot, expandedBytes")
+    create = source.index("Directory.CreateDirectory(stagingRoot)")
+    extract = source.index("ExtractSafely(options.PackagePath")
+    assert check < create < extract

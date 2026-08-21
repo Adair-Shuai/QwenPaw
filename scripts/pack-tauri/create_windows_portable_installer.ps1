@@ -112,31 +112,6 @@ function Test-CurrentProcessElevated {
   )
 }
 
-function Test-DirectoryWriteRequiresElevation([string]$Path) {
-  if (Test-CurrentProcessElevated) { return $false }
-  $candidate = [IO.Path]::GetFullPath($Path)
-  while (-not (Test-Path -LiteralPath $candidate -PathType Container)) {
-    $parent = Split-Path -Parent $candidate
-    if (-not $parent -or $parent -eq $candidate) { return $true }
-    $candidate = $parent
-  }
-  $probe = Join-Path $candidate (
-    ".ugsci-write-probe-" + [Guid]::NewGuid().ToString("N")
-  )
-  try {
-    [IO.Directory]::CreateDirectory($probe) | Out-Null
-    return $false
-  } catch {
-    return $true
-  } finally {
-    try {
-      if ([IO.Directory]::Exists($probe)) {
-        [IO.Directory]::Delete($probe, $true)
-      }
-    } catch { }
-  }
-}
-
 function Quote-ProcessArgument([string]$Value) {
   return '"' + $Value.Replace('"', '\"') + '"'
 }
@@ -165,9 +140,7 @@ function Invoke-ElevatedInstaller([string]$ResolvedInstallDir) {
     $arguments += "-TransactionFile"
     $arguments += Quote-ProcessArgument $TransactionFile
   }
-  Write-Host (
-    "Administrator approval is required for the selected installation folder."
-  )
+  Write-Host "Administrator approval is required to install UGSci Desktop."
   $start = @{
     FilePath = $powershell
     ArgumentList = ($arguments -join " ")
@@ -342,7 +315,9 @@ function Get-UnrelatedInstallEntries {
   $ownedFiles = @(
     "UGSci.exe", "qwenpaw-desktop.exe", "qwenpaw-desktop-debug.cmd", "qwenpaw-desktop-debug.ps1",
     "version.json", "Setup.exe", "Uninstall.exe", "uninstall.ps1", "uninstall-cleanup.ps1",
-    "update-qwenpaw-path.ps1", "cli-path.txt"
+    "update-qwenpaw-path.ps1", "cli-path.txt",
+    "MicrosoftEdgeWebView2RuntimeInstallerX64.exe", "MicrosoftEdgeWebview2Setup.exe",
+    "webview2-missing.txt"
   )
   $ownedDirectories = @(
     "binaries", "execution-runtime", "optional-components", "engines", "data", "state",
@@ -359,7 +334,34 @@ function Get-UnrelatedInstallEntries {
   return @($unrelated)
 }
 
-$defaultInstallDir = Join-Path $env:LOCALAPPDATA "UGSci Desktop"
+function Get-UnrecognizedNonEmptyFolderMessage {
+  return @"
+The selected folder is not empty and is not a recognized UGSci Desktop installation.
+
+A recognized install has UGSci.exe (or the legacy name qwenpaw-desktop.exe) plus binaries\state\active.json or a legacy backend; or version.json with product "UGSci Desktop" plus one of those program markers.
+
+Choose an empty folder, or remove extra files and retry. Windows Explorer may have created desktop.ini in this folder, which also counts as extra content.
+"@
+}
+
+function Get-UnrelatedInstallEntriesMessage([string]$Preview) {
+  return @"
+The existing UGSci Desktop folder also contains unrelated files or folders that Setup will not delete: $Preview.
+
+Move or remove those items (including desktop.ini or other files you added), then retry, or choose a different empty folder.
+"@
+}
+
+function Get-AlreadyInstalledElsewhereMessage([string]$ExistingDir) {
+  return @"
+UGSci Desktop is already installed at:
+$ExistingDir
+
+Setup cannot install to a second location. Uninstall the existing copy from Windows Settings first, or go back and keep the folder above to upgrade in place.
+"@
+}
+
+$defaultInstallDir = Join-Path $env:ProgramFiles "UGSci Desktop"
 $existingInstallDir = $null
 $legacyUninstallKey = $null
 $legacyUninstallKeyPath = $null
@@ -389,7 +391,7 @@ if ($DeferredCommit -and (-not $TransactionFile -or -not [IO.Path]::IsPathRooted
 }
 if ($existingInstallDir -and $requestedInstallDir -and
     -not $requestedInstallDir.Equals($existingInstallDir, [StringComparison]::OrdinalIgnoreCase)) {
-  throw "UGSci Desktop is already installed at $existingInstallDir. Uninstall it before choosing a different location."
+  throw (Get-AlreadyInstalledElsewhereMessage -ExistingDir $existingInstallDir)
 }
 $installDir = if ($requestedInstallDir) { $requestedInstallDir } elseif ($existingInstallDir) { $existingInstallDir } else { $defaultInstallDir }
 $installDir = Get-NormalizedDirectoryPath -Path $installDir
@@ -401,8 +403,7 @@ $installParent = Split-Path -Parent $installDir
 if (-not $installParent -or -not [IO.Path]::IsPathRooted($installParent)) {
   throw "The installation folder has an invalid parent path"
 }
-$installRequiresElevation = Test-DirectoryWriteRequiresElevation -Path $installParent
-if (-not $Elevated -and $installRequiresElevation) {
+if (-not $Elevated -and -not (Test-CurrentProcessElevated)) {
   Invoke-ElevatedInstaller -ResolvedInstallDir $installDir
 }
 if ($Elevated -and -not (Test-CurrentProcessElevated)) {
@@ -429,13 +430,13 @@ if (Test-Path -LiteralPath $installDir -PathType Leaf) {
 if ((Test-Path -LiteralPath $installDir -PathType Container) -and
     @(Get-ChildItem -LiteralPath $installDir -Force -ErrorAction Stop).Count -gt 0) {
   if (-not (Test-ExistingUGSciInstall -Root $installDir)) {
-    throw "The selected installation folder is not empty and is not a recognized UGSci Desktop installation. Choose an empty folder."
+    throw (Get-UnrecognizedNonEmptyFolderMessage)
   }
   $unrelatedEntries = @(Get-UnrelatedInstallEntries -Root $installDir)
   if ($unrelatedEntries.Count -gt 0) {
     $preview = ($unrelatedEntries | Select-Object -First 5) -join ", "
     if ($unrelatedEntries.Count -gt 5) { $preview += ", ..." }
-    throw "The existing UGSci Desktop folder also contains unrelated files or folders ($preview). Setup will not delete them; choose another folder."
+    throw (Get-UnrelatedInstallEntriesMessage -Preview $preview)
   }
   if (-not $existingInstallDir) { $existingInstallDir = $installDir }
 }
@@ -510,15 +511,46 @@ function Write-InstallTransaction {
 }
 
 function Stop-ScopedApplication {
-  param([string]$Root)
-  $prefix = [IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
-  $processes = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-    $_.ExecutablePath -and $_.ExecutablePath.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+  param(
+    [Parameter(Mandatory = $true)] [string[]]$Root,
+    [int[]]$ExcludePids
+  )
+  $prefixes = New-Object 'System.Collections.Generic.List[string]'
+  foreach ($item in @($Root)) {
+    if (-not $item) { continue }
+    try {
+      $prefixes.Add(([IO.Path]::GetFullPath($item).TrimEnd('\') + '\'))
+    } catch { }
   }
+  if ($prefixes.Count -eq 0) { return }
+  $excluded = @($PID)
+  foreach ($pidValue in @($ExcludePids)) {
+    if ($pidValue -gt 0) { $excluded += [int]$pidValue }
+  }
+  $processes = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
+    if (-not $_.ExecutablePath) { return $false }
+    if ($excluded -contains [int]$_.ProcessId) { return $false }
+    $executable = [string]$_.ExecutablePath
+    foreach ($prefix in $prefixes) {
+      if ($executable.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
+        return $true
+      }
+    }
+    return $false
+  })
+  $taskkill = Join-Path $env:SystemRoot "System32\taskkill.exe"
   foreach ($process in $processes) {
+    if (Test-Path -LiteralPath $taskkill) {
+      Start-Process -FilePath $taskkill -ArgumentList @(
+        "/PID", [string]$process.ProcessId, "/T", "/F"
+      ) -WindowStyle Hidden -Wait -ErrorAction SilentlyContinue | Out-Null
+    }
     Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
   }
-  if ($processes) { Wait-Process -Id @($processes.ProcessId) -Timeout 8 -ErrorAction SilentlyContinue }
+  $waitIds = @($processes | ForEach-Object { [int]$_.ProcessId })
+  if ($waitIds.Count -gt 0) {
+    Wait-Process -Id $waitIds -Timeout 8 -ErrorAction SilentlyContinue
+  }
 }
 
 function Resolve-UserPath {
@@ -532,7 +564,115 @@ function Resolve-UserPath {
   return [IO.Path]::GetFullPath($expanded)
 }
 
-function New-UpdateDataBackup {
+function ConvertTo-LongIoPath {
+  param([Parameter(Mandatory = $true)] [string]$Path)
+  $full = [IO.Path]::GetFullPath($Path)
+  if ($full.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $full }
+  if ($full.StartsWith('\\', [StringComparison]::Ordinal)) {
+    return '\\?\UNC\' + $full.Substring(2)
+  }
+  return '\\?\' + $full
+}
+
+function Get-DirectorySizeBytes {
+  param([string]$Path)
+  if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) {
+    return [int64]0
+  }
+  $total = [int64]0
+  $pending = New-Object 'Collections.Generic.Stack[string]'
+  $pending.Push((ConvertTo-LongIoPath -Path $Path))
+  while ($pending.Count -gt 0) {
+    $directory = $pending.Pop()
+    foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($directory)) {
+      $attributes = [IO.File]::GetAttributes($entry)
+      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+        continue
+      }
+      if (($attributes -band [IO.FileAttributes]::Directory) -ne 0) {
+        $pending.Push($entry)
+      } else {
+        $total += [int64]([IO.FileInfo]::new($entry).Length)
+      }
+    }
+  }
+  return $total
+}
+
+function Format-InstallerByteCount([int64]$Bytes) {
+  if ($Bytes -ge 1GB) { return ('{0:N2} GB' -f ($Bytes / 1GB)) }
+  if ($Bytes -ge 1MB) { return ('{0:N1} MB' -f ($Bytes / 1MB)) }
+  return ('{0:N0} KB' -f ([Math]::Ceiling($Bytes / 1KB)))
+}
+
+function Get-AvailableFreeSpaceBytes([string]$Path) {
+  $full = [IO.Path]::GetFullPath($Path)
+  $root = [IO.Path]::GetPathRoot($full)
+  if (-not $root) {
+    throw "Cannot determine the volume for disk-space preflight: $Path"
+  }
+  try {
+    return [int64]([IO.DriveInfo]::new($root).AvailableFreeSpace)
+  } catch {
+    throw "Cannot determine available disk space for $root. $($_.Exception.Message)"
+  }
+}
+
+function Assert-SufficientDiskSpace {
+  param([Parameter(Mandatory = $true)] [object[]]$Requirement)
+  $volumes = @{}
+  foreach ($item in @($Requirement)) {
+    if (-not $item -or [int64]$item.Bytes -le 0) { continue }
+    $full = [IO.Path]::GetFullPath([string]$item.Path)
+    $root = [IO.Path]::GetPathRoot($full)
+    if (-not $root) {
+      throw "Cannot determine the volume for disk-space preflight: $($item.Path)"
+    }
+    $key = $root.ToUpperInvariant()
+    if (-not $volumes.ContainsKey($key)) {
+      $volumes[$key] = @{
+        Path = $full
+        Root = $root
+        Bytes = [int64]0
+        Purposes = New-Object 'Collections.Generic.List[string]'
+      }
+    }
+    $volumes[$key].Bytes += [int64]$item.Bytes
+    if ($item.Purpose) { $volumes[$key].Purposes.Add([string]$item.Purpose) }
+  }
+  foreach ($volume in $volumes.Values) {
+    $contentBytes = [int64]$volume.Bytes
+    $headroom = [int64][Math]::Max(512MB, [Math]::Ceiling($contentBytes * 0.05))
+    $requiredBytes = $contentBytes + $headroom
+    $availableBytes = Get-AvailableFreeSpaceBytes -Path $volume.Path
+    $purpose = ($volume.Purposes | Select-Object -Unique) -join ', '
+    if ($availableBytes -lt $requiredBytes) {
+      throw (
+        "Insufficient disk space on $($volume.Root) for $purpose. " +
+        "Setup needs at least $(Format-InstallerByteCount $requiredBytes) free " +
+        "($(Format-InstallerByteCount $contentBytes) data plus " +
+        "$(Format-InstallerByteCount $headroom) safety headroom), but only " +
+        "$(Format-InstallerByteCount $availableBytes) is available. " +
+        "Free disk space or choose an installation location on another drive, then retry."
+      )
+    }
+    Write-Host (
+      "Disk-space preflight passed for $($volume.Root): " +
+      "$(Format-InstallerByteCount $availableBytes) available, " +
+      "$(Format-InstallerByteCount $requiredBytes) required for $purpose."
+    )
+  }
+}
+
+function Test-BackupPathInside([string]$Candidate, [string]$Parent) {
+  if (-not $Parent) { return $false }
+  $candidateFull = [IO.Path]::GetFullPath($Candidate).TrimEnd('\')
+  $parentFull = [IO.Path]::GetFullPath($Parent).TrimEnd('\')
+  return $candidateFull.Equals($parentFull, [StringComparison]::OrdinalIgnoreCase) -or
+    $candidateFull.StartsWith($parentFull + '\', [StringComparison]::OrdinalIgnoreCase)
+}
+
+function Get-UpdateDataBackupPlan {
   param([string]$ReleaseVersion, [string]$InstallDir)
   $configuredWorkingDir = if ($env:QWENPAW_WORKING_DIR) {
     $env:QWENPAW_WORKING_DIR
@@ -551,14 +691,6 @@ function New-UpdateDataBackup {
   } elseif ($env:COPAW_SECRET_DIR) {
     Resolve-UserPath $env:COPAW_SECRET_DIR
   } else { "$workingDir.secret" }
-
-  function Test-BackupPathInside([string]$Candidate, [string]$Parent) {
-    if (-not $Parent) { return $false }
-    $candidateFull = [IO.Path]::GetFullPath($Candidate).TrimEnd('\')
-    $parentFull = [IO.Path]::GetFullPath($Parent).TrimEnd('\')
-    return $candidateFull.Equals($parentFull, [StringComparison]::OrdinalIgnoreCase) -or
-      $candidateFull.StartsWith($parentFull + '\', [StringComparison]::OrdinalIgnoreCase)
-  }
 
   $stamp = Get-Date -Format "yyyyMMdd-HHmmss-fff"
   $safeReleaseVersion = [regex]::Replace([string]$ReleaseVersion, '[^0-9A-Za-z._-]', '_')
@@ -581,6 +713,32 @@ function New-UpdateDataBackup {
   if (-not $backupRoot) {
     throw "No safe update backup location is available outside the installation and user data directories"
   }
+
+  $installLocalNames = @(
+    "execution-runtime", "optional-components", "engines", "data", "state",
+    "user-data", "workspace", "models"
+  )
+  $workingBytes = Get-DirectorySizeBytes -Path $workingDir
+  $secretBytes = Get-DirectorySizeBytes -Path $secretDir
+  $installLocalBytes = [int64]0
+  foreach ($preserved in $installLocalNames) {
+    $installLocalBytes += Get-DirectorySizeBytes -Path (Join-Path $InstallDir $preserved)
+  }
+  return [pscustomobject]@{
+    Root = $backupRoot
+    WorkingDir = $workingDir
+    SecretDir = $secretDir
+    InstallLocalNames = $installLocalNames
+    InstallLocalBytes = $installLocalBytes
+    TotalBytes = [int64]($workingBytes + $secretBytes + $installLocalBytes)
+  }
+}
+
+function New-UpdateDataBackup {
+  param([string]$ReleaseVersion, [string]$InstallDir, [Parameter(Mandatory = $true)] [object]$Plan)
+  $workingDir = [string]$Plan.WorkingDir
+  $secretDir = [string]$Plan.SecretDir
+  $backupRoot = [string]$Plan.Root
   New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
   $backedUpAnything = $false
   if ($workingDir -and (Test-Path -LiteralPath $workingDir -PathType Container)) {
@@ -594,7 +752,7 @@ function New-UpdateDataBackup {
     $backedUpAnything = $true
   }
   $installLocalRoot = Join-Path $backupRoot "install-local"
-  foreach ($preserved in @("execution-runtime", "optional-components", "engines", "data", "state", "user-data", "workspace", "models")) {
+  foreach ($preserved in @($Plan.InstallLocalNames)) {
     $oldPath = Join-Path $InstallDir $preserved
     if (Test-Path -LiteralPath $oldPath -PathType Container) {
       & robocopy.exe $oldPath (Join-Path $installLocalRoot $preserved) /E /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:1 /NFL /NDL /NP | Out-Null
@@ -608,15 +766,14 @@ function New-UpdateDataBackup {
     working_dir = $workingDir
     secret_dir = $secretDir
     install_dir = $InstallDir
-    install_local = @("execution-runtime", "optional-components", "engines", "data", "state", "user-data", "workspace", "models")
+    install_local = @($Plan.InstallLocalNames)
   } | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $backupRoot "backup.json") -Encoding UTF8
   if ($backedUpAnything) { return $backupRoot }
   Remove-Item -LiteralPath $backupRoot -Recurse -Force -ErrorAction SilentlyContinue
   return $null
 }
 
-function Ensure-WebView2 {
-  param([string]$DestinationDir)
+function Test-WebView2RuntimeInstalled {
   $clients = @(
     "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
     "HKLM:\SOFTWARE\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -624,25 +781,107 @@ function Ensure-WebView2 {
   )
   foreach ($client in $clients) {
     $version = (Get-ItemProperty -LiteralPath $client -Name pv -ErrorAction SilentlyContinue).pv
-    if ($version -and $version -ne "0.0.0.0") { return }
+    if ($version -and $version -ne "0.0.0.0") { return $true }
   }
-  $bootstrapper = Join-Path $env:TEMP "MicrosoftEdgeWebview2Setup-$PID.exe"
-  Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $bootstrapper -UseBasicParsing -TimeoutSec 120
-  $signature = Get-AuthenticodeSignature -FilePath $bootstrapper
+  return $false
+}
+
+function Assert-MicrosoftSignedWebView2Installer([string]$Path) {
+  $signature = Get-AuthenticodeSignature -FilePath $Path
   if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
-    Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
-    throw "Downloaded WebView2 bootstrapper does not have a valid Microsoft signature"
+    throw "WebView2 installer does not have a valid Microsoft signature: $Path"
   }
-  $process = Start-Process -FilePath $bootstrapper -ArgumentList "/silent", "/install" -PassThru
+}
+
+function Install-WebView2Runtime([string]$Installer) {
+  Assert-MicrosoftSignedWebView2Installer -Path $Installer
+  $process = Start-Process -FilePath $Installer -ArgumentList "/silent", "/install" -PassThru
   if (-not $process.WaitForExit(300000)) {
     Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
     throw "WebView2 installation timed out"
   }
-  if ($process.ExitCode -ne 0) { throw "WebView2 installation failed (exit $($process.ExitCode))" }
-  if ($DestinationDir -and (Test-Path -LiteralPath $DestinationDir -PathType Container)) {
-    Copy-Item -LiteralPath $bootstrapper -Destination (Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe") -Force
+  if ($process.ExitCode -ne 0) {
+    throw "WebView2 installation failed (exit $($process.ExitCode))"
   }
-  Remove-Item -LiteralPath $bootstrapper -Force -ErrorAction SilentlyContinue
+  for ($attempt = 0; $attempt -lt 15; $attempt++) {
+    if (Test-WebView2RuntimeInstalled) { return }
+    Start-Sleep -Seconds 2
+  }
+  throw "WebView2 installer finished but the runtime is not registered"
+}
+
+function Get-WebView2MissingMessage {
+  return @"
+Microsoft WebView2 Runtime could not be installed. UGSci Desktop Setup will continue.
+
+The desktop window and visualization stay unavailable until WebView2 is installed. The QwenPaw CLI and backend are still installed and can be used. Install WebView2 from Microsoft, or rerun the bundled installer in the application folder, then start UGSci Desktop again.
+"@
+}
+
+function Clear-WebView2MissingMarker([string]$DestinationDir) {
+  if (-not $DestinationDir) { return }
+  Remove-Item -LiteralPath (Join-Path $DestinationDir "webview2-missing.txt") -Force -ErrorAction SilentlyContinue
+}
+
+function Write-WebView2MissingMarker([string]$DestinationDir) {
+  Write-Host (Get-WebView2MissingMessage)
+  if (-not $DestinationDir -or -not (Test-Path -LiteralPath $DestinationDir -PathType Container)) { return }
+  Set-Content -LiteralPath (Join-Path $DestinationDir "webview2-missing.txt") -Value (Get-WebView2MissingMessage) -Encoding UTF8
+}
+
+function Ensure-WebView2 {
+  param([string]$DestinationDir)
+  $bundledStandalone = Join-Path $payloadRoot "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+  $bundledBootstrapper = Join-Path $payloadRoot "MicrosoftEdgeWebview2Setup.exe"
+  $destinationStandalone = if ($DestinationDir) {
+    Join-Path $DestinationDir "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+  } else { $null }
+  $destinationBootstrapper = if ($DestinationDir) {
+    Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe"
+  } else { $null }
+
+  foreach ($source in @($bundledStandalone, $bundledBootstrapper)) {
+    if ($source -and (Test-Path -LiteralPath $source -PathType Leaf) -and $DestinationDir -and
+        (Test-Path -LiteralPath $DestinationDir -PathType Container)) {
+      $targetName = Split-Path -Leaf $source
+      Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDir $targetName) -Force
+    }
+  }
+
+  if (Test-WebView2RuntimeInstalled) {
+    Clear-WebView2MissingMarker $DestinationDir
+    return
+  }
+
+  $candidates = @(
+    $destinationStandalone,
+    $bundledStandalone,
+    $destinationBootstrapper,
+    $bundledBootstrapper
+  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
+  foreach ($candidate in $candidates) {
+    try {
+      Install-WebView2Runtime -Installer $candidate
+      Clear-WebView2MissingMarker $DestinationDir
+      return
+    } catch { }
+  }
+
+  $downloaded = Join-Path $env:TEMP "MicrosoftEdgeWebview2Setup-$PID.exe"
+  try {
+    Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $downloaded -UseBasicParsing -TimeoutSec 120
+    if ($destinationBootstrapper) {
+      Copy-Item -LiteralPath $downloaded -Destination $destinationBootstrapper -Force
+    }
+    Install-WebView2Runtime -Installer $downloaded
+    Clear-WebView2MissingMarker $DestinationDir
+    return
+  } catch {
+    Write-WebView2MissingMarker $DestinationDir
+    return
+  } finally {
+    Remove-Item -LiteralPath $downloaded -Force -ErrorAction SilentlyContinue
+  }
 }
 
 if (-not (Test-Path $payloadRoot)) { throw "Portable package payload directory not found" }
@@ -675,16 +914,6 @@ function Move-DirectoryWithRetry {
   throw "Cannot move the existing UGSci Desktop installation after $Attempts attempts. A process is still using its files. $lastError"
 }
 
-function ConvertTo-LongIoPath {
-  param([Parameter(Mandatory = $true)] [string]$Path)
-  $full = [IO.Path]::GetFullPath($Path)
-  if ($full.StartsWith('\\?\', [StringComparison]::Ordinal)) { return $full }
-  if ($full.StartsWith('\\', [StringComparison]::Ordinal)) {
-    return '\\?\UNC\' + $full.Substring(2)
-  }
-  return '\\?\' + $full
-}
-
 function Copy-DirectoryLongPathSafe {
   param(
     [Parameter(Mandatory = $true)] [string]$Source,
@@ -713,7 +942,49 @@ function Remove-DirectoryLongPathSafe {
 if (-not (Test-Path -LiteralPath (Join-Path $payloadPython "python\python.exe") -PathType Leaf)) {
   throw "Portable package is missing the layered Python runtime"
 }
-Stop-ScopedApplication -Root $installDir
+$releaseVersion = [string]$packageVersion.version
+$hasExistingUserData = $env:QWENPAW_WORKING_DIR -or $env:COPAW_WORKING_DIR -or
+  (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".copaw")) -or
+  (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".qwenpaw"))
+$backupPlan = if ($existingInstallDir -or $hasExistingUserData) {
+  Get-UpdateDataBackupPlan -ReleaseVersion $releaseVersion -InstallDir $installDir
+} else { $null }
+$payloadBytes = Get-DirectorySizeBytes -Path $payloadRoot
+$versionBytes = [int64](Get-Item -LiteralPath $versionManifest).Length
+$installBytes = $payloadBytes + $versionBytes
+if ($backupPlan) {
+  # Preserved install-local directories are copied from the renamed old tree
+  # into the new tree before the old tree can be deleted, so they require
+  # temporary capacity on the installation volume as well as in the backup.
+  $installBytes += [int64]$backupPlan.InstallLocalBytes
+}
+$spaceRequirements = @(
+  [pscustomobject]@{
+    Path = $transactionParent
+    Bytes = $installBytes
+    Purpose = "application staging and preserved install data"
+  }
+)
+if ($backupPlan -and [int64]$backupPlan.TotalBytes -gt 0) {
+  $spaceRequirements += [pscustomobject]@{
+    Path = [string]$backupPlan.Root
+    Bytes = [int64]$backupPlan.TotalBytes
+    Purpose = "user-data rollback backup"
+  }
+}
+# This is deliberately before process shutdown, staging creation, backup, or
+# any installation-tree mutation. Requirements sharing a volume are summed so
+# two individually valid copies cannot overcommit the same disk.
+Assert-SufficientDiskSpace -Requirement $spaceRequirements
+
+$installerParentPid = 0
+$installerProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction SilentlyContinue
+if ($installerProcess -and $installerProcess.ParentProcessId) {
+  $installerParentPid = [int]$installerProcess.ParentProcessId
+}
+Stop-ScopedApplication -Root @($installDir, $sourceRoot) -ExcludePids @(
+  $PID, $installerParentPid
+)
 Start-Sleep -Milliseconds 500
 
 # GUID-scoped transaction directories are never pre-deleted.  An existing path
@@ -726,12 +997,8 @@ New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 Copy-DirectoryLongPathSafe -Source $payloadRoot -Destination $stagingDir
 Copy-Item -LiteralPath $versionManifest -Destination (Join-Path $stagingDir "version.json") -Force
 
-$releaseVersion = [string]$packageVersion.version
-$hasExistingUserData = $env:QWENPAW_WORKING_DIR -or $env:COPAW_WORKING_DIR -or
-  (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".copaw")) -or
-  (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".qwenpaw"))
-$dataBackup = if ($existingInstallDir -or $hasExistingUserData) {
-  New-UpdateDataBackup -ReleaseVersion $releaseVersion -InstallDir $installDir
+$dataBackup = if ($backupPlan -and [int64]$backupPlan.TotalBytes -gt 0) {
+  New-UpdateDataBackup -ReleaseVersion $releaseVersion -InstallDir $installDir -Plan $backupPlan
 } else { $null }
 if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
 Ensure-WebView2 -DestinationDir $stagingDir
@@ -1056,8 +1323,13 @@ $iconPath = Join-Path $PSScriptRoot "..\pack\assets\icon.ico"
 if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
   throw "Setup icon was not found: $iconPath"
 }
+$setupManifest = Join-Path $PSScriptRoot "windows_portable_setup.manifest"
+if (-not (Test-Path -LiteralPath $setupManifest -PathType Leaf)) {
+  throw "Portable Setup elevation manifest was not found: $setupManifest"
+}
 & $csc /nologo /target:winexe /optimize+ "/out:$setupExe" `
   "/win32icon:$iconPath" `
+  "/win32manifest:$setupManifest" `
   /reference:System.dll /reference:System.Core.dll /reference:System.Drawing.dll /reference:System.Windows.Forms.dll `
   $bootstrapSource
 if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $setupExe -PathType Leaf)) {
@@ -1099,13 +1371,45 @@ internal static class PortableUninstallBootstrap
 '@ | Set-Content -LiteralPath $uninstallLauncherSource -Encoding UTF8
 try {
   & $csc /nologo /target:winexe /optimize+ "/out:$uninstallLauncher" `
-    "/win32icon:$iconPath" /reference:System.dll /reference:System.Core.dll `
+    "/win32icon:$iconPath" "/win32manifest:$setupManifest" `
+    /reference:System.dll /reference:System.Core.dll `
     $uninstallLauncherSource
   if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath $uninstallLauncher -PathType Leaf)) {
     throw "Portable uninstall bootstrap compilation failed (exit $LASTEXITCODE)"
   }
 } finally {
   Remove-Item -LiteralPath $uninstallLauncherSource -Force -ErrorAction SilentlyContinue
+}
+
+# Bundle the Evergreen Standalone installer so Setup can install WebView2
+# offline. The small bootstrapper still requires the internet.
+$webviewStandaloneName = "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
+$webviewStandalonePath = Join-Path $PayloadRoot $webviewStandaloneName
+$webviewStandaloneUrl = "https://go.microsoft.com/fwlink/?linkid=2124701"
+function Assert-PackedWebView2Installer([string]$Path) {
+  if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+    throw "WebView2 standalone installer is missing: $Path"
+  }
+  if ((Get-Item -LiteralPath $Path).Length -lt 10MB) {
+    throw "WebView2 standalone installer is too small to be the offline package: $Path"
+  }
+  $signature = Get-AuthenticodeSignature -FilePath $Path
+  if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft Corporation") {
+    throw "WebView2 standalone installer does not have a valid Microsoft signature: $Path"
+  }
+}
+if (Test-Path -LiteralPath $webviewStandalonePath -PathType Leaf) {
+  Assert-PackedWebView2Installer -Path $webviewStandalonePath
+} else {
+  Write-Host "Downloading Microsoft WebView2 Evergreen Standalone installer for offline Setup..."
+  $tempInstaller = Join-Path $env:TEMP ("ugsci-webview2-" + [Guid]::NewGuid().ToString("N") + ".exe")
+  try {
+    Invoke-WebRequest -Uri $webviewStandaloneUrl -OutFile $tempInstaller -UseBasicParsing -TimeoutSec 300
+    Assert-PackedWebView2Installer -Path $tempInstaller
+    Copy-Item -LiteralPath $tempInstaller -Destination $webviewStandalonePath -Force
+  } finally {
+    Remove-Item -LiteralPath $tempInstaller -Force -ErrorAction SilentlyContinue
+  }
 }
 
 # Python bytecode caches are machine-local, reproducible and unnecessary in

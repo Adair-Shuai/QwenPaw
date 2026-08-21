@@ -220,7 +220,7 @@ async def configure_visualization_view(
     """Configure visual appearance and the active professional view."""
     commands: list[dict[str, Any]] = []
     if colormap:
-        if colormap not in {"viridis", "plasma", "turbo", "gray"}:
+        if colormap not in {"viridis", "plasma", "turbo", "rainbow", "gray"}:
             return {"kind": "error", "error": f"Unsupported colormap: {colormap}"}
         commands.append(_viewer_result("set-colormap", {"colormap": colormap}))
     if opacity is not None:
@@ -611,7 +611,7 @@ def get_tool_definitions() -> list[dict[str, Any]]:
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "colormap": {"type": "string", "enum": ["viridis", "plasma", "turbo", "gray"]},
+                    "colormap": {"type": "string", "enum": ["viridis", "plasma", "turbo", "rainbow", "gray"]},
                     "opacity": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
                     "wireframe": {"type": ["boolean", "null"]},
                     "view": {"type": "string", "enum": ["reservoir", "wellbore", "intersection", "welllog", "network", "benchmark"]},

@@ -16,18 +16,58 @@ from pathlib import Path
 from typing import Any
 
 from .base import BaseReader, write_f32, write_u32, register_reader
+from ..converters.wellbore import trajectory_placement
 
 _DEPTH_MNEMONICS = ("DEPT", "DEPTH", "MD")
+_XY_X_MNEMONICS = ("XWELL", "XCOORD", "EASTING", "UTMX", "XLOC")
+_XY_Y_MNEMONICS = ("YWELL", "YCOORD", "NORTHING", "UTMY", "YLOC")
 
 
-def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float]]], str]:
+def _header_number(remainder: str) -> float | None:
+    text = remainder.strip() if remainder[:1].isspace() else (
+        remainder.split(None, 1)[1] if len(remainder.split(None, 1)) > 1 else ""
+    )
+    try:
+        value = float(text.split()[0])
+    except (ValueError, IndexError):
+        return None
+    if value != value:
+        return None
+    return value
+
+
+def _lasio_xy(well: Any) -> tuple[float | None, float | None]:
+    def grab(names: tuple[str, ...]) -> float | None:
+        for name in names:
+            item = None
+            try:
+                item = well[name]
+            except Exception:
+                item = getattr(well, name, None)
+            if item is None:
+                continue
+            raw = getattr(item, "value", item)
+            try:
+                value = float(raw)
+            except (TypeError, ValueError):
+                continue
+            if value == value:
+                return value
+        return None
+
+    return grab(_XY_X_MNEMONICS), grab(_XY_Y_MNEMONICS)
+
+
+def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float]]], str, float | None, float | None]:
     """Parse a LAS 2.0 text file without lasio.
 
-    Returns (depths, [(mnemonic, values), ...] excluding depth, well name).
+    Returns (depths, curves, well name, x_east, y_north).
     """
     mnemonics: list[str] = []
     null_value = -999.25
     well_name = ""
+    x_east: float | None = None
+    y_north: float | None = None
     section = ""
     rows: list[float] = []
 
@@ -48,7 +88,6 @@ def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float
                 continue
             if section not in ("W", "C"):
                 continue
-            # Header line: MNEM.UNIT   DATA : DESCRIPTION
             head, _, _ = line.partition(":")
             mnemonic, dot, remainder = head.partition(".")
             if not dot:
@@ -62,12 +101,18 @@ def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float
                 except (ValueError, IndexError):
                     pass
             elif mnemonic == "WELL":
-                # The unit hugs the dot (e.g. "STRT.M"); if whitespace
-                # follows the dot the whole remainder is the value.
                 value = remainder if remainder[:1].isspace() else (
                     remainder.split(None, 1)[1] if len(remainder.split(None, 1)) > 1 else ""
                 )
                 well_name = value.strip() or well_name
+            elif mnemonic in _XY_X_MNEMONICS:
+                parsed = _header_number(remainder)
+                if parsed is not None:
+                    x_east = parsed
+            elif mnemonic in _XY_Y_MNEMONICS:
+                parsed = _header_number(remainder)
+                if parsed is not None:
+                    y_north = parsed
 
     if not mnemonics:
         raise ValueError("LAS file has no ~Curve section")
@@ -94,7 +139,7 @@ def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float
         for index in range(n_curves)
         if index != depth_index
     ]
-    return depths, curves, well_name
+    return depths, curves, well_name, x_east, y_north
 
 
 class LasReader(BaseReader):
@@ -110,8 +155,6 @@ class LasReader(BaseReader):
 
     @property
     def requires(self) -> tuple[str, ...]:
-        # lasio is preferred but the builtin LAS 2.0 parser keeps this
-        # reader available without it.
         return ()
 
     def read(
@@ -125,9 +168,10 @@ class LasReader(BaseReader):
         try:
             import lasio
         except ImportError:
-            depths, curves, well_name = _parse_las_text(Path(file_path))
+            depths, curves, well_name, x_east, y_north = _parse_las_text(Path(file_path))
             return self._build_dataset(
                 name, bin_dir, depths, curves, well_name or name, "builtin-las",
+                x_east, y_north,
             )
 
         las = lasio.read(file_path)
@@ -148,8 +192,10 @@ class LasReader(BaseReader):
         ]
         well_info = las.well
         well_name = str(well_info.WELL.value) if hasattr(well_info, "WELL") else name
+        x_east, y_north = _lasio_xy(well_info)
         return self._build_dataset(
             name, bin_dir, [float(d) for d in depths], curves, well_name, "lasio",
+            x_east, y_north,
         )
 
     @staticmethod
@@ -160,6 +206,8 @@ class LasReader(BaseReader):
         curves: list[tuple[str, list[float]]],
         well_name: str,
         reader: str,
+        x_east: float | None = None,
+        y_north: float | None = None,
     ) -> dict[str, Any]:
         from ..security import sanitize_identifier
 
@@ -167,9 +215,16 @@ class LasReader(BaseReader):
         if n_samples == 0:
             raise ValueError("LAS file contains no depth samples")
 
+        easts = [float(x_east)] * n_samples if x_east is not None else [0.0] * n_samples
+        norths = [float(y_north)] * n_samples if y_north is not None else [0.0] * n_samples
+        placement = trajectory_placement(easts, norths)
+        if not placement["spatial"]:
+            easts = [0.0] * n_samples
+            norths = [0.0] * n_samples
+
         positions: list[float] = []
-        for depth in depths:
-            positions.extend([0.0, 0.0, -float(depth)])  # depth-down
+        for index, depth in enumerate(depths):
+            positions.extend([easts[index], norths[index], -float(depth)])
 
         prefix = f"las_{name}"
         write_f32(bin_dir / f"{prefix}_positions.f32", positions)
@@ -204,6 +259,7 @@ class LasReader(BaseReader):
                 "n_curves": len(scalars_files),
                 "depth_range": [float(depths[0]), float(depths[-1])],
                 "reader": reader,
+                **placement,
             },
         }
 

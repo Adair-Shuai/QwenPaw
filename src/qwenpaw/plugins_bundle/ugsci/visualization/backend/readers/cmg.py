@@ -261,16 +261,8 @@ def _cartesian_cell_points(
 
 
 def _build_hex_indices(n_cells: int) -> array:
-    indices = array("I")
-    faces = (
-        (0, 1, 2, 3), (4, 7, 6, 5), (0, 1, 5, 4),
-        (3, 2, 6, 7), (0, 3, 7, 4), (1, 2, 6, 5),
-    )
-    for cell_index in range(n_cells):
-        base = cell_index * 8
-        for a, b, c, d in faces:
-            indices.extend((base + a, base + b, base + c, base + a, base + c, base + d))
-    return indices
+    from ..converters.hex import build_hex_centroid_fan_indices
+    return build_hex_centroid_fan_indices(n_cells)
 
 
 def _write_array(path: Path, typecode: str, values: array) -> None:
@@ -452,7 +444,9 @@ class CmgReader(BaseReader):
                 positions.extend((float(x), float(y), float(-z)))
 
         n_active = len(active_ids)
-        indices = _build_hex_indices(n_active)
+        from ..converters.hex import compact_hex_centroid_mesh
+        packed_positions, indices = compact_hex_centroid_mesh(positions)
+        positions = array("f", packed_positions)
         prefix = name
         positions_name = f"{prefix}_positions.f32"
         indices_name = f"{prefix}_indices.u32"
@@ -517,7 +511,7 @@ class CmgReader(BaseReader):
         result = {
             "id": prefix,
             "name": f"CMG {simulator}: {prefix} ({ncol}x{nrow}x{nlay}, {n_active:,} active)",
-            "n_vertices": n_active * 8,
+            "n_vertices": len(positions) // 3,
             "n_cells": n_active,
             "n_indices": len(indices),
             "grid_dims": [ncol, nrow, nlay],

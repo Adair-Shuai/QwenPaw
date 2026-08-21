@@ -59,6 +59,77 @@ def _dependency_version(lock_hash: str) -> str:
     return f"0+sha.{lock_hash[:16]}"
 
 
+# Windows Explorer extraction is capped at MAX_PATH (~260). The portable
+# ZIP is commonly unpacked under Downloads\\<archive-name>\\, which already
+# consumes ~80 characters. Keep payload-relative paths under this budget so
+# Setup.exe does not report "Package file is missing" for files Explorer
+# silently dropped.
+MAX_PORTABLE_RELATIVE_PATH = 180
+_PYTHON_PACKAGES_PAYLOAD_PREFIX = "payload/binaries/runtimes/python-packages"
+
+# UGSci only uses modelscope.hub for snapshot downloads. The dataset class
+# tree ships nested names such as
+# image_quality_assessment_degradation_dataset.py that break Windows
+# extraction when the ZIP is unpacked to a typical Downloads folder.
+_UNUSED_DEPENDENCY_TREES = (("modelscope", "msdatasets"),)
+
+
+def prune_python_packages(root: Path) -> list[str]:
+    """Remove unused dependency trees that are unsafe on Windows MAX_PATH."""
+    removed: list[str] = []
+    for parts in _UNUSED_DEPENDENCY_TREES:
+        target = root.joinpath(*parts)
+        if target.is_dir():
+            remove_tree(target)
+            removed.append("/".join(parts))
+    return removed
+
+
+def assert_portable_relative_paths(
+    root: Path,
+    *,
+    packaged_prefix: str,
+    limit: int = MAX_PORTABLE_RELATIVE_PATH,
+) -> None:
+    """Fail the desktop build if any packaged relative path exceeds *limit*."""
+    prefix = packaged_prefix.replace("\\", "/").strip("/")
+    native_root = os.path.abspath(os.fspath(root))
+    if os.name == "nt":
+        if native_root.startswith("\\\\"):
+            native_root = (
+                native_root
+                if native_root.startswith("\\\\?\\")
+                else "\\\\?\\UNC\\" + native_root[2:]
+            )
+        else:
+            native_root = (
+                native_root
+                if native_root.startswith("\\\\?\\")
+                else "\\\\?\\" + native_root
+            )
+    offenders: list[str] = []
+    walk_errors: list[OSError] = []
+    for current, _directories, names in os.walk(
+        native_root,
+        onerror=walk_errors.append,
+    ):
+        for name in names:
+            source = os.path.join(current, name)
+            relative = os.path.relpath(source, native_root).replace("\\", "/")
+            packaged = f"{prefix}/{relative}"
+            if len(packaged) > limit:
+                offenders.append(f"{len(packaged)}:{packaged}")
+    if walk_errors:
+        raise walk_errors[0]
+    if offenders:
+        preview = "; ".join(sorted(offenders, reverse=True)[:8])
+        raise RuntimeError(
+            f"python-packages contains paths over {limit} characters; "
+            f"Windows Explorer will drop them during Setup extraction: "
+            f"{preview}",
+        )
+
+
 def _safe_empty(path: Path, parent: Path) -> None:
     resolved = path.resolve()
     root = parent.resolve()
@@ -160,6 +231,13 @@ def build_layers(
             ],
             cwd=repo,
         )
+        prune_python_packages(dependencies)
+        assert_portable_relative_paths(
+            dependencies,
+            packaged_prefix=(
+                f"{_PYTHON_PACKAGES_PAYLOAD_PREFIX}/{dependency_version}"
+            ),
+        )
         with _staged_console(repo):
             _run(
                 [
@@ -210,7 +288,8 @@ def build_layers(
                 str(runtime_python),
                 "-c",
                 (
-                    "import qwenpaw, qwenpaw.tauri.entry; "
+                    "import importlib, qwenpaw, qwenpaw.tauri.entry; "
+                    "importlib.import_module('modelscope.hub.api'); "
                     "print(qwenpaw.__file__)"
                 ),
             ],

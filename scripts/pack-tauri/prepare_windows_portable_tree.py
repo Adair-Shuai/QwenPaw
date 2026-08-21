@@ -10,6 +10,9 @@ import shutil
 from pathlib import Path
 
 
+MAX_PORTABLE_RELATIVE_PATH = 180
+
+
 def _filesystem_path(path: Path) -> str:
     native = os.path.abspath(os.fspath(path))
     if os.name != "nt" or native.startswith("\\\\?\\"):
@@ -30,6 +33,8 @@ def _stream_chunks(stream):
 def prepare(  # pylint: disable=too-many-branches
     root: Path,
     manifest: Path,
+    *,
+    max_relative_path: int = MAX_PORTABLE_RELATIVE_PATH,
 ) -> None:
     native_root = _filesystem_path(root.resolve(strict=True))
     native_manifest = _filesystem_path(manifest.resolve(strict=False))
@@ -65,6 +70,21 @@ def prepare(  # pylint: disable=too-many-branches
             files.append((relative, source))
     if walk_errors:
         raise walk_errors[0]
+    too_long = [
+        relative
+        for relative, _source in files
+        if len(relative) > max_relative_path
+    ]
+    if too_long:
+        preview = ", ".join(
+            f"{len(item)}:{item}"
+            for item in sorted(too_long, key=len, reverse=True)[:8]
+        )
+        raise ValueError(
+            "portable package contains paths over "
+            f"{max_relative_path} characters; Windows Explorer "
+            f"extraction will drop them: {preview}",
+        )
     for source in bytecode:
         os.unlink(source)
     for directory in sorted(caches, key=len, reverse=True):

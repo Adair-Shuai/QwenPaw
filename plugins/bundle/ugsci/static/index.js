@@ -13979,9 +13979,9 @@ function nl() {
     const e = (r = window.QwenPaw) == null ? void 0 : r.host;
     if (!(e != null && e.getApiUrl))
       throw new Error("[oilgas-vis] QwenPaw.host.getApiUrl not available");
-    const t = e.getApiUrl(
+    const t = `${e.getApiUrl(
       "frontend_plugin/ugsci/files/ui/dist/viewer-runtime.js"
-    );
+    )}?v=0.3.6`;
     console.info("[oilgas-vis] Loading viewer runtime from", t), await new Promise((a, l) => {
       const o = document.createElement("script");
       o.dataset.plugin = "ugsci", o.src = t, o.onload = () => a(), o.onerror = () => l(new Error("Viewer runtime failed to load")), document.head.appendChild(o);

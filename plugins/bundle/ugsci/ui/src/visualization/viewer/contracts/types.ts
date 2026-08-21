@@ -13,6 +13,10 @@
 export interface DatasetManifest {
   version: number;
   datasets: DatasetInfo[];
+  catalog?: {
+    hidden_count: number;
+    hidden_ids?: string[];
+  };
 }
 
 export interface DatasetInfo {

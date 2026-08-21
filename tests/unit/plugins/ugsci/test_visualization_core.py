@@ -16,7 +16,6 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 import pytest
 
-
 ROOT = Path(__file__).parents[4]
 PLUGIN_DIR = ROOT / "plugins" / "bundle" / "ugsci" / "visualization"
 
@@ -56,7 +55,7 @@ def test_router_uses_package_relative_imports_despite_global_api_collision(
     assert len(build_router(PLUGIN_DIR).routes) >= 16
 
 
-def test_health_range_and_protected_builtin_cache():
+def test_health_range_and_cell_details():
     from ugsci_visualization_test_plugin.backend.api import build_router
 
     app = FastAPI()
@@ -87,9 +86,6 @@ def test_health_range_and_protected_builtin_cache():
     )
     assert per_dataset.status_code == 206
     assert len(per_dataset.content) == 16
-
-    protected = client.delete("/api/datasets/egrid_test/cache")
-    assert protected.status_code == 409
 
     stats = client.get("/api/datasets/roff_eclgrid/stats?property=porosity")
     assert stats.status_code == 200
@@ -157,6 +153,132 @@ def test_cell_details_and_export_use_original_noncontiguous_cell_ids(tmp_path):
     assert exported.status_code == 200
     assert "3,0.1" in exported.text
     assert "10,0.899" in exported.text
+
+
+def _write_tiny_grid_plugin(
+    root: Path,
+    *,
+    managed: bool = False,
+    extra: dict | None = None,
+) -> None:
+    bin_dir = root / "data" / "bin"
+    bin_dir.mkdir(parents=True)
+    positions = []
+    for base in (0.0, 10.0):
+        for index in range(8):
+            positions.extend([base + index, 0.0, 0.0])
+    (bin_dir / "grid_positions.f32").write_bytes(
+        struct.pack(f"<{len(positions)}f", *positions),
+    )
+    (bin_dir / "grid_indices.u32").write_bytes(struct.pack("<48I", *range(48)))
+    (bin_dir / "grid_cell_ids.u32").write_bytes(struct.pack("<2I", 3, 10))
+    (bin_dir / "grid_scalars.f32").write_bytes(struct.pack("<2f", 0.1, 0.9))
+    dataset = {
+        "id": "grid",
+        "name": "grid",
+        "n_vertices": 16,
+        "n_cells": 2,
+        "n_indices": 48,
+        "grid_dims": [2, 1, 1],
+        "files": {
+            "positions": "grid_positions.f32",
+            "indices": "grid_indices.u32",
+            "cell_ids": "grid_cell_ids.u32",
+            "scalars": {"porosity": "grid_scalars.f32"},
+        },
+    }
+    if managed:
+        dataset["metadata"] = {"managed": True}
+    if extra:
+        dataset.update(extra)
+    (bin_dir / "manifest.json").write_text(
+        json.dumps({"version": 1, "datasets": [dataset]}),
+        encoding="utf-8",
+    )
+
+
+def test_builtin_delete_hides_example_and_restore_brings_it_back(tmp_path):
+    from ugsci_visualization_test_plugin.backend.api import build_router
+
+    _write_tiny_grid_plugin(tmp_path)
+    app = FastAPI()
+    app.include_router(build_router(tmp_path), prefix="/api")
+    client = TestClient(app)
+
+    hidden = client.delete("/api/datasets/grid")
+    assert hidden.status_code == 200
+    payload = hidden.json()
+    assert payload["status"] == "hidden"
+    assert payload["hidden"] == ["grid"]
+    assert (tmp_path / "data" / "bin" / "grid_positions.f32").exists()
+
+    catalog = client.get("/api/manifest")
+    assert catalog.status_code == 200
+    assert catalog.json()["datasets"] == []
+    assert catalog.json()["catalog"]["hidden_count"] == 1
+
+    listed = client.get("/api/datasets")
+    assert listed.json()["datasets"] == []
+
+    details = client.get("/api/datasets/grid/cells/10")
+    assert details.status_code == 200
+
+    restored = client.post("/api/catalog/restore-examples")
+    assert restored.status_code == 200
+    assert restored.json()["count"] == 1
+    assert client.get("/api/manifest").json()["datasets"][0]["id"] == "grid"
+
+
+def test_managed_delete_removes_cache_files_and_cascades_children(tmp_path):
+    from ugsci_visualization_test_plugin.backend.api import build_router
+
+    _write_tiny_grid_plugin(tmp_path, managed=True)
+    bin_dir = tmp_path / "data" / "bin"
+    (bin_dir / "slice_positions.f32").write_bytes(
+        struct.pack("<24f", *([0.0] * 24)),
+    )
+    (bin_dir / "slice_indices.u32").write_bytes(
+        struct.pack("<36I", *range(36)),
+    )
+    (bin_dir / "slice_cell_ids.u32").write_bytes(struct.pack("<I", 1))
+    manifest = json.loads(
+        (bin_dir / "manifest.json").read_text(encoding="utf-8"),
+    )
+    manifest["datasets"].append(
+        {
+            "id": "grid_slice",
+            "name": "grid slice",
+            "n_vertices": 8,
+            "n_cells": 1,
+            "n_indices": 36,
+            "source": "slice",
+            "metadata": {"managed": True, "parent_dataset": "grid"},
+            "files": {
+                "positions": "slice_positions.f32",
+                "indices": "slice_indices.u32",
+                "cell_ids": "slice_cell_ids.u32",
+                "scalars": {},
+            },
+        },
+    )
+    (bin_dir / "manifest.json").write_text(
+        json.dumps(manifest),
+        encoding="utf-8",
+    )
+
+    app = FastAPI()
+    app.include_router(build_router(tmp_path), prefix="/api")
+    client = TestClient(app)
+
+    deleted = client.delete("/api/datasets/grid/cache")
+    assert deleted.status_code == 200
+    payload = deleted.json()
+    assert payload["status"] == "removed"
+    assert set(payload["removed"]) == {"grid", "grid_slice"}
+    assert not (bin_dir / "grid_positions.f32").exists()
+    assert not (bin_dir / "slice_positions.f32").exists()
+    assert client.get("/api/manifest").json()["datasets"] == []
+    assert client.get("/api/datasets/grid/cells/10").status_code == 404
 
 
 def test_security_and_resource_store_reject_traversal(tmp_path):
@@ -349,7 +471,7 @@ def test_grdecl_builtin_reader_without_xtgeo(tmp_path, monkeypatch):
     assert result["metadata"]["reader"] == "builtin-grdecl"
     assert result["grid_dims"] == [2, 2, 1]
     assert result["n_cells"] == 3  # ACTNUM removes the fourth cell
-    assert result["n_vertices"] == 24
+    assert result["n_vertices"] == 42
 
     raw = (tmp_path / result["files"]["scalars"]["porosity"]).read_bytes()
     porosity = struct.unpack(f"<{len(raw) // 4}f", raw)
@@ -363,6 +485,178 @@ def test_grdecl_builtin_reader_without_xtgeo(tmp_path, monkeypatch):
     xs = positions[0::3]
     ys = positions[1::3]
     assert max(xs) == 200.0 and max(ys) == 200.0
+
+
+def test_eclipse_pairing_remaps_to_structured_vtk_hex():
+    from ugsci_visualization_test_plugin.backend.converters.hex import (
+        eclipse_pairing_to_vtk,
+        hex_quad_normal_agreement,
+        uses_eclipse_pairing,
+    )
+
+    # One cartesian cell in Eclipse pairing: (SW,SE,NW,NE) per layer.
+    pairing = [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+    ]
+    assert uses_eclipse_pairing(pairing)
+    assert hex_quad_normal_agreement(pairing, 0, (0, 1, 2, 3)) < 0
+    remapped = eclipse_pairing_to_vtk(pairing)
+    assert not uses_eclipse_pairing(remapped)
+    assert hex_quad_normal_agreement(remapped, 0, (0, 1, 2, 3)) > 0.99
+    # VTK corner 2 is NE (1,1,0), not NW.
+    assert remapped[6:9] == [1.0, 1.0, 0.0]
+
+
+def test_opm_centroid_fan_avoids_diagonal_fold_on_nonplanar_quad():
+    from ugsci_visualization_test_plugin.backend.converters.hex import (
+        HEX_FILL_INDICES_PER_CELL,
+        HEX_FILL_VERTS_PER_CELL,
+        opm_quad_normal,
+        tessellate_hex_opm_fan,
+        hex_quad_normal_agreement,
+    )
+
+    # VTK hex with the top-NE corner lifted so the top face is non-planar.
+    corners = [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.4,
+        0.0,
+        1.0,
+        1.0,
+    ]
+    # Top face (4, 7, 6, 5) splits along a diagonal into two triangles whose
+    # normals disagree — the origami crease in the screenshot.
+    assert hex_quad_normal_agreement(corners, 0, (4, 7, 6, 5)) < 0.95
+
+    positions, indices, normals = tessellate_hex_opm_fan(corners)
+    assert len(positions) == HEX_FILL_VERTS_PER_CELL * 3
+    assert len(indices) == HEX_FILL_INDICES_PER_CELL
+    assert len(normals) == len(positions)
+
+    top_a = (0.0, 0.0, 1.0)
+    top_b = (0.0, 1.0, 1.0)
+    top_c = (1.0, 1.0, 1.4)
+    top_d = (1.0, 0.0, 1.0)
+    expected = opm_quad_normal(top_a, top_b, top_c, top_d)
+    # Face 1 is VTK top (4, 7, 6, 5); all five duplicated verts share
+    # one normal.
+    top_base = 1 * 5
+    for vertex in range(5):
+        offset = (top_base + vertex) * 3
+        assert normals[offset : offset + 3] == pytest.approx(
+            expected,
+            abs=1e-6,
+        )
+
+    # Fan triangles are centroid → each edge, not a single diagonal split.
+    midpoint = top_base + 4
+    fan = [
+        tuple(indices[start : start + 3]) for start in range(1 * 12, 2 * 12, 3)
+    ]
+    assert fan == [
+        (midpoint, top_base, top_base + 1),
+        (midpoint, top_base + 1, top_base + 2),
+        (midpoint, top_base + 2, top_base + 3),
+        (midpoint, top_base + 3, top_base),
+    ]
+
+
+def test_compact_disk_mesh_is_opm_centroid_fan():
+    from ugsci_visualization_test_plugin.backend.converters.hex import (
+        HEX_COMPACT_VERTS_PER_CELL,
+        HEX_FILL_INDICES_PER_CELL,
+        compact_hex_centroid_mesh,
+        eclipse_pairing_to_vtk,
+        extract_hex_corners,
+        tessellate_hex_opm_fan,
+    )
+
+    pairing = [
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        0.0,
+        0.0,
+        1.0,
+        1.0,
+        0.0,
+        1.0,
+        0.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+    ]
+    corners = eclipse_pairing_to_vtk(pairing)
+    positions, indices = compact_hex_centroid_mesh(corners)
+    assert len(positions) == HEX_COMPACT_VERTS_PER_CELL * 3
+    assert len(indices) == HEX_FILL_INDICES_PER_CELL
+    assert positions[:24] == corners
+    # Top-face centroid is the average of VTK corners 4,7,6,5.
+    top = positions[9 * 3 : 10 * 3]
+    assert top == pytest.approx([0.5, 0.5, 1.0])
+    for start in range(0, len(indices), 3):
+        local = list(indices[start : start + 3])
+        assert max(local) >= 8
+        assert min(local) < 8
+
+    extracted = extract_hex_corners(positions, 1)
+    assert extracted == corners
+    fill_positions, fill_indices, _normals = tessellate_hex_opm_fan(extracted)
+    assert len(fill_indices) == HEX_FILL_INDICES_PER_CELL
+    assert fill_positions[12:15] == pytest.approx([0.5, 0.5, 0.0])
 
 
 def test_cmg_reader_parses_component_major_grid_and_repeat_values(tmp_path):
@@ -396,7 +690,7 @@ def test_cmg_reader_parses_component_major_grid_and_repeat_values(tmp_path):
     assert result["source"] == "cmg"
     assert result["grid_dims"] == [2, 1, 1]
     assert result["n_cells"] == 1
-    assert result["n_vertices"] == 8
+    assert result["n_vertices"] == 14
     assert set(result["files"]["scalars"]) == {
         "netgross",
         "porosity",
@@ -408,8 +702,8 @@ def test_cmg_reader_parses_component_major_grid_and_repeat_values(tmp_path):
     assert result["metadata"]["has_dynamic_results"] is False
     assert (
         tmp_path / result["files"]["positions"]
-    ).stat().st_size == 8 * 3 * 4
-    assert (tmp_path / result["files"]["indices"]).stat().st_size == 36 * 4
+    ).stat().st_size == 14 * 3 * 4
+    assert (tmp_path / result["files"]["indices"]).stat().st_size == 72 * 4
 
     positions = array("f")
     with (tmp_path / result["files"]["positions"]).open("rb") as handle:
@@ -438,9 +732,11 @@ def test_cmg_reader_maps_refined_corner_lattice_to_hexahedral_cells(tmp_path):
         for j in range(2 * nj)
         for i in range(2 * ni)
         for coordinate in (
-            x_nodes[i]
-            if axis == "x"
-            else (20.0 * j if axis == "y" else 100.0 + 5.0 * k),
+            (
+                x_nodes[i]
+                if axis == "x"
+                else (20.0 * j if axis == "y" else 100.0 + 5.0 * k)
+            ),
         )
     ]
     fixture = tmp_path / "refined-lattice.dat"
@@ -459,17 +755,22 @@ def test_cmg_reader_maps_refined_corner_lattice_to_hexahedral_cells(tmp_path):
     )
 
     result = CmgReader().read(str(fixture), "refined", tmp_path)
+    from ugsci_visualization_test_plugin.backend.converters.hex import (
+        HEX_COMPACT_VERTS_PER_CELL,
+    )
+
     positions_path = tmp_path / result["files"]["positions"]
     positions = struct.unpack(
         f"<{positions_path.stat().st_size // 4}f",
         positions_path.read_bytes(),
     )
+    stride = HEX_COMPACT_VERTS_PER_CELL * 3
     cells = [
         [
             tuple(positions[offset : offset + 3])
             for offset in range(start, start + 24, 3)
         ]
-        for start in range(0, len(positions), 24)
+        for start in range(0, len(positions), stride)
     ]
 
     assert len(cells) == 2

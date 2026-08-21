@@ -55,6 +55,7 @@ export class ApiClient {
     file: File,
     name: string,
     propertyFile?: File,
+    companionFile?: File,
   ): Promise<{ job_id: string; status: string }> {
     const formData = new FormData();
     formData.append("file", file);
@@ -62,12 +63,55 @@ export class ApiClient {
     if (propertyFile) {
       formData.append("property_file", propertyFile);
     }
+    if (companionFile) {
+      formData.append("companion_file", companionFile);
+    }
     const resp = await fetch(`${this.apiBase}/imports`, {
       method: "POST",
       headers: this.authToken
         ? { Authorization: `Bearer ${this.authToken}` }
         : {},
       body: formData,
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
+
+  async createWorkspaceImport(
+    path: string,
+    root: "project" | "workspace" = "project",
+    name = "",
+  ): Promise<{ job_id: string; status: string }> {
+    const resp = await fetch(`${this.apiBase}/imports/workspace`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...this.headers(),
+      },
+      body: JSON.stringify({ path, root, name }),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
+
+  async deleteDataset(datasetId: string): Promise<{
+    dataset_id: string;
+    status: string;
+    hidden: string[];
+    removed: string[];
+  }> {
+    const resp = await fetch(`${this.apiBase}/datasets/${encodeURIComponent(datasetId)}`, {
+      method: "DELETE",
+      headers: this.headers(),
+    });
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    return resp.json();
+  }
+
+  async restoreExamples(): Promise<{ count: number; restored: string[] }> {
+    const resp = await fetch(`${this.apiBase}/catalog/restore-examples`, {
+      method: "POST",
+      headers: this.headers(),
     });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     return resp.json();
