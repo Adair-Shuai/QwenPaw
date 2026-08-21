@@ -71,7 +71,12 @@ _PYTHON_PACKAGES_PAYLOAD_PREFIX = "payload/binaries/runtimes/python-packages"
 # tree ships nested names such as
 # image_quality_assessment_degradation_dataset.py that break Windows
 # extraction when the ZIP is unpacked to a typical Downloads folder.
-_UNUSED_DEPENDENCY_TREES = (("modelscope", "msdatasets"),)
+_UNUSED_DEPENDENCY_TREES = (
+    ("jedi", "third_party", "typeshed", "stubs", "oauthlib"),
+    ("lark_oapi", "api", "security_and_compliance"),
+    ("modelscope", "msdatasets"),
+    ("twilio", "rest", "api", "v2010", "account", "sip"),
+)
 _GENERATED_DEPENDENCY_DIRECTORIES = {"__pycache__"}
 _GENERATED_DEPENDENCY_SUFFIXES = (".dSYM",)
 

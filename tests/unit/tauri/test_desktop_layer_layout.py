@@ -45,16 +45,28 @@ def test_python_layer_prunes_modelscope_dataset_trees(tmp_path):
     debug_symbols = root / "PyObjCTest" / "extension.so.dSYM" / "Contents"
     debug_symbols.mkdir(parents=True)
     (debug_symbols / "debug.yml").write_text("debug", encoding="utf-8")
+    unused_trees = [
+        root / "jedi/third_party/typeshed/stubs/oauthlib/oauth2.pyi",
+        root / "lark_oapi/api/security_and_compliance/v2/model.py",
+        root / "twilio/rest/api/v2010/account/sip/domain.py",
+    ]
+    for unused in unused_trees:
+        unused.parent.mkdir(parents=True)
+        unused.write_text("unused", encoding="utf-8")
 
     removed = helper.prune_python_packages(root)
     assert removed == [
+        "jedi/third_party/typeshed/stubs/oauthlib",
+        "lark_oapi/api/security_and_compliance",
         "modelscope/msdatasets",
+        "twilio/rest/api/v2010/account/sip",
         "PyObjCTest/extension.so.dSYM",
         "modelscope/hub/__pycache__",
     ]
     assert not (root / "modelscope" / "msdatasets").exists()
     assert not bytecode.exists()
     assert not debug_symbols.parent.exists()
+    assert all(not unused.exists() for unused in unused_trees)
     assert (hub / "api.py").is_file()
 
     helper.assert_portable_relative_paths(
