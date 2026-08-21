@@ -72,16 +72,30 @@ _PYTHON_PACKAGES_PAYLOAD_PREFIX = "payload/binaries/runtimes/python-packages"
 # image_quality_assessment_degradation_dataset.py that break Windows
 # extraction when the ZIP is unpacked to a typical Downloads folder.
 _UNUSED_DEPENDENCY_TREES = (("modelscope", "msdatasets"),)
+_GENERATED_DEPENDENCY_DIRECTORIES = {"__pycache__"}
+_GENERATED_DEPENDENCY_SUFFIXES = (".dSYM",)
 
 
 def prune_python_packages(root: Path) -> list[str]:
-    """Remove unused dependency trees that are unsafe on Windows MAX_PATH."""
+    """Remove unused or reproducible generated trees from the runtime layer."""
     removed: list[str] = []
     for parts in _UNUSED_DEPENDENCY_TREES:
         target = root.joinpath(*parts)
         if target.is_dir():
             remove_tree(target)
             removed.append("/".join(parts))
+    for current, directories, _names in os.walk(root, topdown=True):
+        directories.sort()
+        for name in list(directories):
+            if (
+                name not in _GENERATED_DEPENDENCY_DIRECTORIES
+                and not name.endswith(_GENERATED_DEPENDENCY_SUFFIXES)
+            ):
+                continue
+            target = Path(current) / name
+            remove_tree(target)
+            directories.remove(name)
+            removed.append(target.relative_to(root).as_posix())
     return removed
 
 

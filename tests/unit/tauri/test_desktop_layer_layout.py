@@ -39,10 +39,22 @@ def test_python_layer_prunes_modelscope_dataset_trees(tmp_path):
     hub = root / "modelscope" / "hub"
     hub.mkdir(parents=True)
     (hub / "api.py").write_text("ok", encoding="utf-8")
+    bytecode = hub / "__pycache__"
+    bytecode.mkdir()
+    (bytecode / "api.cpython-311.pyc").write_bytes(b"cache")
+    debug_symbols = root / "PyObjCTest" / "extension.so.dSYM" / "Contents"
+    debug_symbols.mkdir(parents=True)
+    (debug_symbols / "debug.yml").write_text("debug", encoding="utf-8")
 
     removed = helper.prune_python_packages(root)
-    assert removed == ["modelscope/msdatasets"]
+    assert removed == [
+        "modelscope/msdatasets",
+        "PyObjCTest/extension.so.dSYM",
+        "modelscope/hub/__pycache__",
+    ]
     assert not (root / "modelscope" / "msdatasets").exists()
+    assert not bytecode.exists()
+    assert not debug_symbols.parent.exists()
     assert (hub / "api.py").is_file()
 
     helper.assert_portable_relative_paths(
