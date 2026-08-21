@@ -52,6 +52,39 @@ def test_prune_runtime_keeps_executables_and_package_managers(tmp_path):
     assert not (tmp_path / "README.md").exists()
 
 
+def test_prune_runtime_removes_nested_npm_trees_that_break_explorer_paths(
+    tmp_path,
+):
+    helper = _load_helper()
+    nested = (
+        tmp_path
+        / "lib/node_modules/npm/node_modules/@npmcli/metavuln-calculator"
+        / "node_modules/pacote/lib/util"
+    )
+    nested.mkdir(parents=True)
+    (nested / "tar-create-options.js").write_bytes(b"unused")
+    license_nested = (
+        tmp_path
+        / "lib/node_modules/npm/node_modules/validate-npm-package-license"
+        / "node_modules/spdx-expression-parse"
+    )
+    license_nested.mkdir(parents=True)
+    (license_nested / "package.json").write_bytes(b"unused")
+
+    helper.prune_runtime(tmp_path)
+
+    assert not (
+        tmp_path
+        / "lib/node_modules/npm/node_modules/@npmcli/metavuln-calculator"
+        / "node_modules"
+    ).exists()
+    assert not (
+        tmp_path
+        / "lib/node_modules/npm/node_modules/validate-npm-package-license"
+        / "node_modules"
+    ).exists()
+
+
 def test_atomic_install_tree_uses_same_volume_for_final_renames(
     tmp_path,
     monkeypatch,

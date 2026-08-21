@@ -21,6 +21,12 @@ DEFAULT_NODE_VERSION = "v22.20.0"
 NODE_DIST_URL = "https://nodejs.org/dist"
 _DEVELOPMENT_DIRS = ("include", "share")
 _DEVELOPMENT_FILES = ("CHANGELOG.md", "README.md")
+_UNUSED_NPM_NESTED_DEPENDENCIES = (
+    "node_modules/npm/node_modules/@npmcli/metavuln-calculator/node_modules",
+    "node_modules/npm/node_modules/validate-npm-package-license/node_modules",
+    "lib/node_modules/npm/node_modules/@npmcli/metavuln-calculator/node_modules",
+    "lib/node_modules/npm/node_modules/validate-npm-package-license/node_modules",
+)
 
 
 def _target() -> tuple[str, str, str]:
@@ -205,6 +211,15 @@ def prune_runtime(dest: Path) -> int:
         if path.is_file():
             removed += path.stat().st_size
             path.unlink()
+    for relative in _UNUSED_NPM_NESTED_DEPENDENCIES:
+        path = dest / Path(relative)
+        if path.is_dir():
+            removed += sum(
+                item.stat().st_size
+                for item in path.rglob("*")
+                if item.is_file()
+            )
+            shutil.rmtree(path)
     return removed
 
 
