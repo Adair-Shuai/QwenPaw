@@ -592,11 +592,73 @@ jobs:
       macos_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
     secrets: inherit
 
+  # Failed draft retries may leave immutable objects behind before the final
+  # publish transaction completes. They are not reachable from a published
+  # pointer, so remove only the exact version being retried before republishing.
+  cleanup-draft-immutable-artifacts:
+    needs: [resolve]
+    if: ${{ !inputs.dry_run && needs.resolve.outputs.was_draft == 'true' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    concurrency:
+      group: release-draft-cleanup
+      cancel-in-progress: false
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Install ossutil
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+
+      - name: Configure ossutil
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Remove unpublished draft-version immutable objects
+        env:
+          RELEASE_ID: ${{ needs.resolve.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --jq '.draft')" = true
+          VERSION="$(python -c 'import re; from pathlib import Path; text=Path("src/qwenpaw/__version__.py").read_text(encoding="utf-8"); print(re.search(r"__version__\s*=\s*\"([^\"]+)\"", text).group(1))')"
+          echo "Cleaning unpublished immutable objects for ${VERSION}"
+
+          for object in \
+            "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip" \
+            "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe" \
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip" \
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz" \
+            "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip.json" \
+            "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe.json" \
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip.json" \
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json"; do
+            ossutil rm "oss://${OSS_BUCKET}/${object}" --force || true
+          done
+
+          for target in windows-x86_64 macos-aarch64; do
+            ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/" \
+              --include "*${VERSION}*" --recursive --force || true
+            ossutil rm "oss://${OSS_BUCKET}/metadata/components/stable/" \
+              --include "*${VERSION}*" --recursive --force || true
+          done
+
   # ── Gate: publish jobs below run only if every prepare job above is green ──
 
   publish-desktop:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
-    if: ${{ always() && needs.resolve.result == 'success' && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts]
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -609,8 +671,8 @@ jobs:
     secrets: inherit
 
   publish-plugins:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
-    if: ${{ always() && needs.resolve.result == 'success' && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts]
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     concurrency:
       group: release-plugins-index
@@ -745,8 +807,8 @@ jobs:
 
   # ── Finalize: flip the draft to published LAST (pinned to the built SHA) ────
   publish-components:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components]
-    if: ${{ always() && needs.resolve.result == 'success' && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts]
+    if: ${{ always() && needs.resolve.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
