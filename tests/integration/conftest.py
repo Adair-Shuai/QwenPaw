@@ -601,3 +601,4 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
     finally:
         client.close()
         _shutdown_app(process, log_thread)
+        shutil.rmtree(tmp_path, ignore_errors=True)

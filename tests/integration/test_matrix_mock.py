@@ -377,7 +377,10 @@ def test_matrix_dm_disabled_drops_message(
     srv, mock_url = mock_llm
     srv.force_tool_call = False
     unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
+    reload_mark = len(app_server.logs)
     provider_id = register_mock_provider(app_server, mock_url)
+    wait_for_agent_reload(app_server, reload_mark)
+    reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
         "/api/config/channels/matrix",
@@ -392,7 +395,6 @@ def test_matrix_dm_disabled_drops_message(
         timeout=_HTTP_TIMEOUT,
     )
     assert put.status_code == 200, app_server.logs_tail()
-    reload_mark = len(app_server.logs)
     wait_for_agent_reload(app_server, reload_mark)
     try:
         before = len(matrix_channel_up.sent_events)
@@ -405,7 +407,7 @@ def test_matrix_dm_disabled_drops_message(
             len(matrix_channel_up.sent_events) == before
         ), matrix_channel_up.sent_events[before:]
     finally:
-        unregister_mock_provider(app_server, provider_id)
+        reload_mark = len(app_server.logs)
         restore = app_server.api_request(
             "PUT",
             "/api/config/channels/matrix",
@@ -420,5 +422,5 @@ def test_matrix_dm_disabled_drops_message(
             timeout=_HTTP_TIMEOUT,
         )
         assert restore.status_code == 200, app_server.logs_tail()
-        reload_mark = len(app_server.logs)
         wait_for_agent_reload(app_server, reload_mark)
+        unregister_mock_provider(app_server, provider_id)

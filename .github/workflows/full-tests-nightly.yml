@@ -284,6 +284,14 @@ jobs:
           mkdir -p src/qwenpaw/console
           cp -R console/dist/* src/qwenpaw/console/
 
+      - name: Reclaim frontend build space
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          rm -rf console/node_modules
+          pnpm store prune
+          df -h .
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
