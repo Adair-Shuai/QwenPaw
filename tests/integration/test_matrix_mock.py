@@ -362,7 +362,6 @@ def test_matrix_bot_own_message_ignored(
 def test_matrix_dm_disabled_drops_message(
     app_server,
     matrix_channel_up,  # pylint: disable=redefined-outer-name
-    mock_llm,  # pylint: disable=redefined-outer-name
 ):
     """With dm_disabled, DM messages are dropped without a reply.
 
@@ -374,12 +373,6 @@ def test_matrix_dm_disabled_drops_message(
       2. Push a DM text event; assert no new room send appears.
       3. Restore the config.
     """
-    srv, mock_url = mock_llm
-    srv.force_tool_call = False
-    unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
-    reload_mark = len(app_server.logs)
-    provider_id = register_mock_provider(app_server, mock_url)
-    wait_for_agent_reload(app_server, reload_mark)
     reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
@@ -423,4 +416,3 @@ def test_matrix_dm_disabled_drops_message(
         )
         assert restore.status_code == 200, app_server.logs_tail()
         wait_for_agent_reload(app_server, reload_mark)
-        unregister_mock_provider(app_server, provider_id)
