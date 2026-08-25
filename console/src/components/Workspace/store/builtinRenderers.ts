@@ -21,28 +21,65 @@
  *   4. 可执行类：React 组件、Sandpack
  *   5. 科学数据类（预留）：测井曲线、三维网格
  */
+import {
+  createElement,
+  lazy,
+  Suspense,
+  type ComponentType,
+  type LazyExoticComponent,
+} from "react";
 import type { Disposable } from "../../../plugins/registry/types";
 import { rendererRegistry } from "./rendererRegistry";
 import { MimeTypes } from "./rendererRegistry";
-import type { RendererRegistration } from "../types";
+import type {
+  RendererComponent,
+  RendererContext,
+  RendererRegistration,
+} from "../types";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 渲染器组件（延迟加载，按需 import）
 // ─────────────────────────────────────────────────────────────────────────────
 
-import MarkdownRenderer from "../renderers/MarkdownRenderer";
-import HtmlRenderer from "../renderers/HtmlRenderer";
-import CodeRenderer from "../renderers/CodeRenderer";
-import JsonRenderer from "../renderers/JsonRenderer";
-import CsvRenderer from "../renderers/CsvRenderer";
-import ImageRenderer from "../renderers/ImageRenderer";
-import PdfRenderer from "../renderers/PdfRenderer";
-import OfficeDocRenderer from "../renderers/OfficeDocRenderer";
-import OfficeScreenshotRenderer from "../renderers/OfficeScreenshotRenderer";
-import MediaRenderer from "../renderers/MediaRenderer";
-import SandpackRenderer from "../renderers/SandpackRenderer";
-import MermaidRenderer from "../renderers/MermaidRenderer";
-import FallbackRenderer from "../renderers/FallbackRenderer";
+function lazyRenderer(
+  loader: () => Promise<{ default: ComponentType<RendererContext> }>,
+): RendererComponent {
+  const Component: LazyExoticComponent<ComponentType<RendererContext>> =
+    lazy(loader);
+  return function DeferredRenderer(props: RendererContext) {
+    return createElement(
+      Suspense,
+      { fallback: null },
+      createElement(Component, props),
+    );
+  };
+}
+
+const MarkdownRenderer = lazyRenderer(
+  () => import("../renderers/MarkdownRenderer"),
+);
+const HtmlRenderer = lazyRenderer(() => import("../renderers/HtmlRenderer"));
+const CodeRenderer = lazyRenderer(() => import("../renderers/CodeRenderer"));
+const JsonRenderer = lazyRenderer(() => import("../renderers/JsonRenderer"));
+const CsvRenderer = lazyRenderer(() => import("../renderers/CsvRenderer"));
+const ImageRenderer = lazyRenderer(() => import("../renderers/ImageRenderer"));
+const PdfRenderer = lazyRenderer(() => import("../renderers/PdfRenderer"));
+const OfficeDocRenderer = lazyRenderer(
+  () => import("../renderers/OfficeDocRenderer"),
+);
+const OfficeScreenshotRenderer = lazyRenderer(
+  () => import("../renderers/OfficeScreenshotRenderer"),
+);
+const MediaRenderer = lazyRenderer(() => import("../renderers/MediaRenderer"));
+const SandpackRenderer = lazyRenderer(
+  () => import("../renderers/SandpackRenderer"),
+);
+const MermaidRenderer = lazyRenderer(
+  () => import("../renderers/MermaidRenderer"),
+);
+const FallbackRenderer = lazyRenderer(
+  () => import("../renderers/FallbackRenderer"),
+);
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 内置渲染器注册表

@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useAgentStore } from "../stores/agentStore";
 
 // 顶层 mock（Vitest 会提升这些），使用 doMock 以兼容 resetModules
 vi.mock("../api/modules/workspace", () => ({
@@ -36,6 +35,7 @@ function makeSseMock() {
 
 describe("useWorkspaceWatch — message handling", () => {
   let useWorkspaceWatch: typeof import("./useWorkspaceWatch").useWorkspaceWatch;
+  let useAgentStore: typeof import("../stores/agentStore").useAgentStore;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -51,6 +51,7 @@ describe("useWorkspaceWatch — message handling", () => {
     }));
 
     ({ useWorkspaceWatch } = await import("./useWorkspaceWatch"));
+    ({ useAgentStore } = await import("../stores/agentStore"));
   });
 
   afterEach(() => {

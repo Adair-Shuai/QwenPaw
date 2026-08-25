@@ -103,3 +103,22 @@ def test_managed_mode_with_runtime_is_valid(backend, monkeypatch) -> None:
     )
 
     assert backend._context_runtime_issue() is None
+
+
+@pytest.mark.asyncio
+async def test_source_discovery_skips_unavailable_context(
+    backend,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(backend._context_service, "_base_url", None)
+
+    async def fail_reconcile(*, force: bool = False) -> None:
+        raise AssertionError(f"unexpected reconcile: force={force}")
+
+    monkeypatch.setattr(
+        backend,
+        "_reconcile_source_dependencies",
+        fail_reconcile,
+    )
+
+    await backend._register_data_source_dependencies()

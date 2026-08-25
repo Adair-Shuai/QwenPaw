@@ -893,7 +893,7 @@ class PawApp:
         for service in self._services:
             api.register_startup_hook(
                 hook_name=f"pawapp_{self.app_id}_service_{service.spec.name}",
-                callback=service.start,
+                callback=service.start_if_available,
                 priority=70,
             )
             api.register_shutdown_hook(

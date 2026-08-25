@@ -151,8 +151,6 @@ describe("useOsAppMarket", () => {
     await act(() => result.current.handleInstall(entry));
 
     expect(onInstalled).toHaveBeenCalledWith(installResult);
-    expect(hoisted.installPlugin).toHaveBeenCalledWith(expect.any(String), {
-      force: true,
-    });
+    expect(hoisted.installPlugin).toHaveBeenCalledWith(expect.any(String));
   });
 });

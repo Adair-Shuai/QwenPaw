@@ -352,7 +352,7 @@ def _well_radius_bounds(well_id: str, radius: float) -> list[float]:
     manifest_path = _plugin_dir / "data" / "bin" / "manifest.json"
     if not manifest_path.is_file():
         raise ValueError("Visualization manifest is not available")
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     needle = well_id.strip().lower()
     candidates = []
     for item in manifest.get("datasets", []):
@@ -436,7 +436,7 @@ def _local_dataset_report(dataset_id: str, property_name: str = "") -> dict[str,
     if _plugin_dir is None:
         raise RuntimeError("Plugin tools are not configured")
     manifest_path = _plugin_dir / "data" / "bin" / "manifest.json"
-    manifest = json.loads(manifest_path.read_text())
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     dataset = next((item for item in manifest.get("datasets", []) if item.get("id") == dataset_id), None)
     if not dataset:
         raise ValueError(f"Dataset not found: {dataset_id}")

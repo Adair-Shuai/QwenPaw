@@ -38,7 +38,22 @@ function buildPlugin() {
   }
 
   const React = getHost().React;
-  const PLUGIN_ID = "ugsci";
+const PLUGIN_ID = "ugsci";
+
+function EmbeddedMarketplacePage() {
+  const React = getHost().React;
+  return React.createElement(MarketplacePage as any, { embedded: true });
+}
+
+function LegacyMarketplaceRedirect() {
+  const React = getHost().React;
+  React.useEffect(() => {
+    const target = "/market?tab=ugsci";
+    window.history.replaceState({}, "", target);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }, []);
+  return null;
+}
 
   // ── Register Welcome Prompts Injector ────────────────────────────────
   // Register a hidden component in the rightHeader slot so it stays mounted
@@ -62,7 +77,6 @@ function buildPlugin() {
   const antdIcons = getHost().antdIcons || {};
   const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
   const ToolOutlined = antdIcons.ToolOutlined;
-  const ShopOutlined = antdIcons.ShopOutlined;
   const AppstoreOutlined = antdIcons.AppstoreOutlined;
 
   // Expert Center
@@ -134,23 +148,19 @@ function buildPlugin() {
     component: LegacySkillsCenterPage,
   });
 
-  // Marketplace
+  // Marketplace compatibility route. The visible entry now lives inside the
+  // host's official marketplace as the UGSci section.
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.market",
     path: "/ugsci-market",
-    component: MarketplacePage,
+    component: LegacyMarketplaceRedirect,
   });
 
-  QP.menu.add(PLUGIN_ID, {
-    id: "ugsci.market",
-    location: "primary.agentScoped",
-    label: () => "市场",
-    icon: ShopOutlined
-      ? React.createElement(ShopOutlined, { style: { fontSize: 16 } })
-      : undefined,
-    route: "ugsci.market",
-    order: 7,
-    visible: () => isSimpleMode(),
+  QP.marketplace?.add(PLUGIN_ID, {
+    id: "ugsci",
+    label: "UGSci",
+    component: EmbeddedMarketplacePage,
+    order: 30,
   });
 
   // ── Register for Simple Mode ─────────────────────────────────────────
@@ -160,9 +170,8 @@ function buildPlugin() {
     QP.sidebar.registerSimpleModeItems([
       "ugsci.experts",
       "ugsci.tools-skills",
-      "ugsci.market",
     ]);
-    console.info("[ugsci] Registered 3 items for simple-mode visibility");
+    console.info("[ugsci] Registered 2 items for simple-mode visibility");
   } else {
     console.warn(
       "[ugsci] window.QwenPaw.sidebar.registerSimpleModeItems not available — items will not appear in simple mode",

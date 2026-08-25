@@ -14,6 +14,7 @@ import { useEffect, useRef } from "react";
 import { workspaceApi } from "../api/modules/workspace";
 import { buildWorkspaceScopeHeaders } from "../api/authHeaders";
 import type { WorkspaceRoot } from "../features/files-workspace/types";
+import { useAgentStore } from "../stores/agentStore";
 
 export interface FileChangeEvent {
   change: "added" | "modified" | "deleted";
@@ -175,12 +176,13 @@ export function useWorkspaceWatch(
   const isLegacyScope = typeof chatOrScope === "object" && chatOrScope !== null;
   const legacyAgentId = isLegacyScope ? chatOrScope.agentId : undefined;
   const legacyProjectRoot = isLegacyScope ? chatOrScope.projectRoot : undefined;
-  const agentId = legacyAgentId;
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
+  const agentId = legacyAgentId ?? selectedAgent;
   const chatId = typeof chatOrScope === "string" ? chatOrScope : undefined;
   const effectiveProjectDir = isLegacyScope ? undefined : projectDirOverride;
   const scopeKey = isLegacyScope
     ? `legacy:${legacyAgentId}:${legacyProjectRoot ?? ""}`
-    : `${chatId ?? ""}:${effectiveProjectDir ?? ""}:${root}`;
+    : `${agentId}:${chatId ?? ""}:${effectiveProjectDir ?? ""}:${root}`;
   // Stable ref so callers don't need to memoize the callback.
   const callbackRef = useRef<FileChangeCallback>(onFileChange);
   callbackRef.current = onFileChange;

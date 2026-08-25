@@ -9,6 +9,8 @@ mod version;
 
 use serde::Serialize;
 use tauri::AppHandle;
+#[cfg(target_os = "macos")]
+use tauri::Manager;
 
 use crate::backend;
 
@@ -16,7 +18,9 @@ use cache::{
     cached_artifact_path, cached_update_dir, ensure_current_platform, has_cached_update_meta,
     persist_cached_update, read_cached_update_meta, remove_cached_update, supports_cached_updates,
 };
-use events::{emit, emit_error, emit_updater_error};
+use events::{
+    classify_updater_error, emit, emit_error, emit_updater_error, emit_updater_error_message,
+};
 use guard::begin_update;
 use remote::{check_and_download, check_installable_update};
 use signature::verify_cached_update;
@@ -72,19 +76,31 @@ async fn run_install(app: AppHandle) {
     );
     emit(&app, "update:install-start", &serde_json::json!({}));
 
+    if let Err(err) = ensure_macos_update_location(&app) {
+        return emit_error(&app, "install", &err);
+    }
+
     if let Err(err) = backend::stop_and_wait(&app).await {
         return emit_error(&app, "install", &err);
     }
 
     if cfg!(windows) {
         let Some(cache_dir) = cached_update_dir(&app) else {
-            return emit_error(&app, "install", &"cannot determine app data directory");
+            return emit_install_error_with_backend_recovery(
+                &app,
+                "cannot determine app data directory".to_string(),
+            )
+            .await;
         };
         if let Err(err) = persist_cached_update(&app, &update, &bytes) {
-            return emit_error(&app, "install", &err);
+            return emit_install_error_with_backend_recovery(&app, err).await;
         }
         let Ok(meta) = read_cached_update_meta(&cache_dir) else {
-            return emit_error(&app, "install", &"cannot prepare portable Windows update");
+            return emit_install_error_with_backend_recovery(
+                &app,
+                "cannot prepare portable Windows update".to_string(),
+            )
+            .await;
         };
         let artifact_path = cached_artifact_path(&cache_dir, &meta);
         if let Err(err) = install_cached_windows(&app, &artifact_path, &meta) {
@@ -93,9 +109,38 @@ async fn run_install(app: AppHandle) {
         }
     } else {
         if let Err(err) = update.install(bytes) {
-            return emit_updater_error(&app, "install", &err);
+            let install_error = err.to_string();
+            let install_kind = classify_updater_error(&err);
+            let recovery_error = backend::restart_backend(app.clone()).await.err();
+            if let Some(recovery_error) = recovery_error {
+                emit_error(
+                    &app,
+                    "install",
+                    &format!("{install_error}; backend recovery failed: {recovery_error}"),
+                );
+            } else {
+                emit_updater_error_message(&app, "install", install_kind, &install_error);
+            }
+            return;
         }
         app.restart();
+    }
+}
+
+/// Installation is attempted only after the sidecar has been stopped. Every
+/// failure after that point must restart it, otherwise the WebView remains on
+/// the startup gate and eventually reports `Load failed` even though the
+/// original app is still intact.
+async fn emit_install_error_with_backend_recovery(app: &AppHandle, err: String) {
+    let recovery_error = backend::restart_backend(app.clone()).await.err();
+    if let Some(recovery_error) = recovery_error {
+        emit_error(
+            app,
+            "install",
+            &format!("{err}; backend recovery failed: {recovery_error}"),
+        );
+    } else {
+        emit_error(app, "install", &err);
     }
 }
 
@@ -201,6 +246,10 @@ async fn run_cached_install(app: AppHandle) {
     );
     emit(&app, "update:install-start", &serde_json::json!({}));
 
+    if let Err(err) = ensure_macos_update_location(&app) {
+        return emit_error(&app, "install", &err);
+    }
+
     match meta.platform.as_str() {
         "windows" => {
             if let Err(err) = backend::stop_and_wait(&app).await {
@@ -217,6 +266,49 @@ async fn run_cached_install(app: AppHandle) {
             emit_error(&app, "install", &"cached update platform is unsupported");
         }
     }
+}
+
+/// The macOS updater replaces the running `.app` by renaming it and moving a
+/// staged bundle into its place. When the app is launched directly from a DMG
+/// or another read-only mount, that operation can only fail with errno 30.
+/// Check the bundle's parent before stopping the backend so a failed update
+/// does not strand the current app in the startup gate.
+fn ensure_macos_update_location(app: &AppHandle) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        let resource_dir = app
+            .path()
+            .resource_dir()
+            .map_err(|err| format!("cannot determine macOS app location: {err}"))?;
+        let app_bundle = resource_dir
+            .parent()
+            .and_then(std::path::Path::parent)
+            .ok_or("cannot determine macOS app bundle location")?;
+        let install_parent = app_bundle
+            .parent()
+            .ok_or("cannot determine macOS app install location")?;
+
+        let probe = match tempfile::Builder::new()
+            .prefix(".qwenpaw-update-probe-")
+            .tempfile_in(install_parent)
+        {
+            Ok(file) => file,
+            Err(err) if err.raw_os_error() == Some(30) => {
+                return Err(format!(
+                    "QwenPaw is running from a read-only macOS location ({err}). Move QwenPaw.app to the Applications folder, launch it from there, then try updating again."
+                ));
+            }
+            // PermissionDenied can be recoverable by the updater's existing
+            // administrator authorization flow, so do not reject it here.
+            Err(_) => return Ok(()),
+        };
+        drop(probe);
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    let _ = app;
+
+    Ok(())
 }
 
 fn install_cached_windows(
@@ -365,7 +457,19 @@ async fn install_cached_macos(
     }
 
     if let Err(err) = update.install(bytes) {
-        return emit_updater_error(app, "install", &err);
+        let install_error = err.to_string();
+        let install_kind = classify_updater_error(&err);
+        let recovery_error = backend::restart_backend(app.clone()).await.err();
+        if let Some(recovery_error) = recovery_error {
+            emit_error(
+                app,
+                "install",
+                &format!("{install_error}; backend recovery failed: {recovery_error}"),
+            );
+        } else {
+            emit_updater_error_message(app, "install", install_kind, &install_error);
+        }
+        return;
     }
     app.restart();
 }

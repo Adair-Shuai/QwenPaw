@@ -889,7 +889,7 @@ def build_router(plugin_dir: Path) -> APIRouter:
         if benchmark_dir.exists():
             for f in sorted(benchmark_dir.glob("*.json"), reverse=True):
                 try:
-                    results.append(json.loads(f.read_text()))
+                    results.append(json.loads(f.read_text(encoding="utf-8")))
                 except Exception:
                     pass
         return JSONResponse({"benchmarks": results})

@@ -5,6 +5,7 @@ import { pluginSystem } from "./hostExternals";
 import { removePluginRuntime } from "./pluginRuntimeCleanup";
 import { chatExtensions } from "./registry/chatExtensions";
 import { menuRegistry, routeRegistry, slotRegistry } from "./registry/store";
+import { marketplaceExtensionRegistry } from "../pages/Market/marketplaceRegistry";
 
 const PLUGIN_ID = "cleanup-test";
 
@@ -14,6 +15,7 @@ beforeEach(() => {
   routeRegistry.__resetForTests();
   slotRegistry.__resetForTests();
   chatExtensions.__resetForTests();
+  marketplaceExtensionRegistry.removeBySource(PLUGIN_ID);
 });
 
 function registerEverySurface(): void {
@@ -28,6 +30,11 @@ function registerEverySurface(): void {
     { path: "/legacy", component: () => null, label: "Legacy" },
   ]);
   chatExtensions.setScalar(PLUGIN_ID, "sender.placeholder", "Plugin input");
+  marketplaceExtensionRegistry.add(PLUGIN_ID, {
+    id: "plugin.marketplace",
+    label: "Plugin Market",
+    component: () => null,
+  });
 }
 
 function expectPluginRegistrationCount(expected: number): void {
@@ -47,6 +54,15 @@ function expectPluginRegistrationCount(expected: number): void {
     chatExtensions.getScalarSnapshot()["sender.placeholder"]?.pluginId;
   if (expected === 1) expect(chatPluginId).toBe(PLUGIN_ID);
   else expect(chatPluginId).toBeUndefined();
+  if (expected === 1) {
+    expect(
+      marketplaceExtensionRegistry.get("plugin.marketplace"),
+    ).toBeDefined();
+  } else {
+    expect(
+      marketplaceExtensionRegistry.get("plugin.marketplace"),
+    ).toBeUndefined();
+  }
 }
 
 describe("plugin runtime cleanup", () => {

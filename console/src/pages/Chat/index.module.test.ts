@@ -61,7 +61,7 @@ describe("Chat attachment preview styles", () => {
     expect(rule).toMatch(/overflow-y:\s*auto/);
     expect(rule).toMatch(/overflow-x:\s*hidden/);
     expect(rule).not.toContain(".qwenpaw-attachment-list-card-type-overview");
-    expect(rule).toMatch(/@media\s*\(max-width:\s*600px\)/);
+    expect(rule).toMatch(/@media\s*\(max-width:\s*640px\)/);
     expect(rule).toMatch(/column-gap:\s*8px/);
     expect(rule).toMatch(/padding-inline:\s*6px/);
   });

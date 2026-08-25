@@ -1,4 +1,12 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  lazy,
+  Suspense,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import type { ComponentProps } from "@ant-design/x-markdown";
 import katex from "katex";
 import "katex/dist/katex.min.css";
@@ -10,8 +18,13 @@ import {
 } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { useTranslation } from "react-i18next";
 import { useTheme } from "../../contexts/ThemeContext";
-import { MermaidCodeBlock } from "../MermaidCodeBlock";
 import styles from "./index.module.less";
+
+const MermaidCodeBlock = lazy(() =>
+  import("../MermaidCodeBlock").then((module) => ({
+    default: module.MermaidCodeBlock,
+  })),
+);
 
 type ViewMode = "preview" | "raw";
 type RenderableLanguage = "latex" | "mermaid";
@@ -318,7 +331,11 @@ function RenderableBlock({
       >
         {view === "preview" ? (
           language === "mermaid" ? (
-            <MermaidCodeBlock chart={source} />
+            <Suspense
+              fallback={<SourceCode language={language} source={source} />}
+            >
+              <MermaidCodeBlock chart={source} />
+            </Suspense>
           ) : (
             <LatexPreview source={source} />
           )

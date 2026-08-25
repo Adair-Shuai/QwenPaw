@@ -336,6 +336,8 @@ async def _reconcile_source_dependencies(*, force: bool = False) -> None:
 @app.hook("startup", priority=100)
 async def _register_data_source_dependencies() -> None:
     """Discover configured sources after the context service is ready."""
+    if not _context_service.is_ready:
+        return
     await _reconcile_source_dependencies(force=True)
 
 

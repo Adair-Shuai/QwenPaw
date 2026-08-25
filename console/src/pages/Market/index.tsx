@@ -1,5 +1,7 @@
 import { useSearchParams } from "react-router-dom";
+import { useSyncExternalStore } from "react";
 import { MarketplaceHeader } from "./components/MarketplaceHeader";
+import { marketplaceExtensionRegistry } from "./marketplaceRegistry";
 import AppCenterPage from "../AppCenter";
 import PluginManagerPage from "../Settings/PluginManager";
 import { InstallQueuePanel, MarketPanel } from "../Settings/Market/MarketPanel";
@@ -33,8 +35,14 @@ function SkillMarketplace({
 export default function MarketplacePage() {
   const [searchParams] = useSearchParams();
   const tab = searchParams.get("tab");
+  const extensions = useSyncExternalStore(
+    (listener) => marketplaceExtensionRegistry.subscribe(listener),
+    () => marketplaceExtensionRegistry.snapshot(),
+    () => marketplaceExtensionRegistry.snapshot(),
+  );
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const install = useMarketInstall({ selectedAgent });
+  const extension = extensions.find((item) => item.id === tab);
 
   let content = <AppCenterPage />;
   if (tab === "plugins") {
@@ -45,6 +53,14 @@ export default function MarketplacePage() {
         installTarget={getSkillMarketTarget(searchParams.get("target"))}
         install={install}
       />
+    );
+  } else if (extension) {
+    const ExtensionComponent = extension.component;
+    content = (
+      <>
+        <MarketplaceHeader activeSection={extension.id} />
+        <ExtensionComponent />
+      </>
     );
   }
 

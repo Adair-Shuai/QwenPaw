@@ -91,7 +91,7 @@ class CacheLayout:
             return False
         try:
             import json
-            data = json.loads(manifest.read_text())
+            data = json.loads(manifest.read_text(encoding="utf-8"))
             return bool(data.get("files"))
         except Exception:
             return False

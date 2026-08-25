@@ -242,8 +242,23 @@ function contentToRequestParts(
 }
 function normalizeOutputMessageContent(content: unknown): unknown {
   if (typeof content === "string") return content;
-  if (!Array.isArray(content)) return content;
-  return (content as ContentItem[]).map((c) => {
+  if (!Array.isArray(content)) {
+    if (content && typeof content === "object") {
+      const item = content as Record<string, unknown>;
+      if (typeof item.type === "string") return [item];
+      try {
+        return [{ type: "text", text: JSON.stringify(content) }];
+      } catch {
+        return [{ type: "text", text: String(content) }];
+      }
+    }
+    return [{ type: "text", text: String(content ?? "") }];
+  }
+  return (content as unknown[]).map((raw) => {
+    if (!raw || typeof raw !== "object") {
+      return { type: "text", text: String(raw ?? "") };
+    }
+    const c = raw as Record<string, unknown>;
     if (c.type === "file") {
       return {
         ...c,

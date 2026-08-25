@@ -28,6 +28,8 @@ import {
   LoadingOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
+import { SparkCopyLine, SparkReplaceLine } from "@agentscope-ai/icons";
+import { Tooltip } from "@agentscope-ai/design";
 import { Bubble, Markdown } from "@agentscope-ai/chat";
 import { useTranslation } from "react-i18next";
 import VendorRequestCardOriginal from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
@@ -35,8 +37,9 @@ import AgentScopeRuntimeResponseBuilder from "@agentscope-ai/chat/lib/AgentScope
 import VendorTool from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Tool";
 import VendorReasoning from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Reasoning";
 import VendorError from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Error";
-import VendorActions from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Actions";
 import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
+import { copy } from "@agentscope-ai/chat/lib/Util/copy";
+import { emit } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/useChatAnywhereEventEmitter";
 import {
   AgentScopeRuntimeContentType,
   AgentScopeRuntimeMessageType,
@@ -69,6 +72,11 @@ import { resolveWorkspaceSessionScope } from "../../features/files-workspace/wor
 import { useAgentStore } from "../../stores/agentStore";
 import { DownloadableAudios } from "../../components/Chat/MediaDownload";
 import ResponseArtifactList from "../../features/files-workspace/ResponseArtifactList";
+import {
+  isRenderableActionNode,
+  normalizeChatActions,
+  type SafeChatAction,
+} from "./chatActionSafety";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -78,6 +86,107 @@ function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCardProps = any;
+
+function SafeResponseActions(props: {
+  data: ChatResponseData;
+  isLast?: boolean;
+}) {
+  const { t } = useTranslation();
+  const rawActions = useChatAnywhereOptions(
+    (options) => options.actions?.list,
+  );
+  const actions = normalizeChatActions(rawActions);
+  const actionItems =
+    rawActions == null
+      ? [
+          {
+            icon: <SparkCopyLine />,
+            onClick: () => void copy(JSON.stringify(props.data)),
+          },
+        ]
+      : actions;
+  const replace = useChatAnywhereOptions(
+    (options) => options.actions?.replace,
+  );
+  const rightOption = useChatAnywhereOptions(
+    (options) => options.actions?.right,
+  );
+
+  const buildAction = (item: SafeChatAction, context: unknown) => {
+    const action = { ...item } as Record<string, unknown>;
+    delete action.render;
+    if (!isRenderableActionNode(action.icon)) delete action.icon;
+    if (item.render) {
+      try {
+        const rendered = item.render({ data: context });
+        action.children = isRenderableActionNode(rendered)
+          ? rendered
+          : undefined;
+      } catch (error) {
+        console.error("[chat] action render failed:", error);
+        action.children = null;
+      }
+    }
+    action.onClick = () => {
+      try {
+        item.onClick?.({ data: context });
+      } catch (error) {
+        console.error("[chat] action click failed:", error);
+      }
+    };
+    return action;
+  };
+
+  const actionData = [
+    ...actionItems.map((item) => buildAction(item, props)),
+    ...(replace && props.isLast
+      ? [
+          {
+            icon: (
+              <Tooltip
+                title={t("actions.regenerate", "重新生成")}
+                children={<SparkReplaceLine />}
+              />
+            ),
+            onClick: () => emit({ type: "handleReplace", data: props }),
+          },
+        ]
+      : []),
+  ];
+
+  let rightNode: React.ReactElement | undefined;
+  if (rightOption === false || (Array.isArray(rightOption) && rightOption.length === 0)) {
+    rightNode = undefined;
+  } else if (Array.isArray(rightOption)) {
+    rightNode = (
+      <Bubble.Footer.Actions
+        data={normalizeChatActions(rightOption).map((item) =>
+          buildAction(item, props.data),
+        ) as any}
+      />
+    );
+  } else {
+    const usage = props.data as AnyCardProps;
+    rightNode = usage.usage?.input_tokens && usage.usage?.output_tokens ? (
+      <Bubble.Footer.Count
+        data={[
+          ["Input", usage.usage.input_tokens],
+          ["Output", usage.usage.output_tokens],
+        ]}
+      />
+    ) : undefined;
+  }
+
+  if (!AgentScopeRuntimeResponseBuilder.maybeDone(props.data as AnyCardProps)) {
+    return null;
+  }
+  return (
+    <Bubble.Footer
+      left={<Bubble.Footer.Actions data={actionData as any} />}
+      right={rightNode}
+    />
+  );
+}
 
 function DeferredMarkdown({
   content,
@@ -118,7 +227,11 @@ const HostMessage = React.memo(function HostMessage({
 
   return (
     <>
-      {data.content.map((item, index) => {
+      {(Array.isArray(data.content) ? data.content : [data.content]).map(
+        (item, index) => {
+          if (!item || typeof item !== "object") {
+            return <span key={index}>{String(item ?? "")}</span>;
+          }
         switch (item.type) {
           case AgentScopeRuntimeContentType.TEXT:
             return (
@@ -175,7 +288,8 @@ const HostMessage = React.memo(function HostMessage({
           default:
             return <div key={index}>{JSON.stringify(item)}</div>;
         }
-      })}
+        },
+      )}
     </>
   );
 });
@@ -309,7 +423,7 @@ function HostDefaultResponseCard(props: {
       {AgentScopeRuntimeResponseBuilder.maybeDone(props.data as AnyCardProps) ? (
         <ResponseArtifactList messages={messages} />
       ) : null}
-      <VendorActions data={props.data as AnyCardProps} isLast={props.isLast} />
+      <SafeResponseActions data={props.data} isLast={props.isLast} />
     </>
   );
 }

@@ -3,6 +3,7 @@ import { extname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { brotliCompress, constants, gzip } from "node:zlib";
+import { minimumPrecompressedAssetBytes } from "./asset-compression-config.mjs";
 
 const compressBrotli = promisify(brotliCompress);
 const compressGzip = promisify(gzip);
@@ -16,7 +17,6 @@ const compressibleExtensions = new Set([
   ".txt",
   ".wasm",
 ]);
-const minimumSize = 1024;
 
 async function walk(directory) {
   const entries = await readdir(directory, { withFileTypes: true });
@@ -31,7 +31,7 @@ async function walk(directory) {
 
 async function compress(path) {
   if (!compressibleExtensions.has(extname(path))) return false;
-  if ((await stat(path)).size < minimumSize) return false;
+  if ((await stat(path)).size < minimumPrecompressedAssetBytes) return false;
   const source = await readFile(path);
   const [brotli, gzipped] = await Promise.all([
     compressBrotli(source, {

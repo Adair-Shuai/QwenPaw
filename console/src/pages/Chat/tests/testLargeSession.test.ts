@@ -589,6 +589,18 @@ describe("buildUserCard / buildResponseCard helpers", () => {
     expect((out as any[])[0].file_name).toBe("file");
     expect((out as any[])[1]).toEqual({ type: "text", text: "y" });
   });
+
+  it("normalizes upstream single-object and primitive content", () => {
+    expect(normalizeOutputMessageContent({ type: "text", text: "hello" })).toEqual([
+      { type: "text", text: "hello" },
+    ]);
+    expect(normalizeOutputMessageContent({ unexpected: true })).toEqual([
+      { type: "text", text: '{"unexpected":true}' },
+    ]);
+    expect(normalizeOutputMessageContent(42)).toEqual([
+      { type: "text", text: "42" },
+    ]);
+  });
 });
 
 // ---------------------------------------------------------------------------

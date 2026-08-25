@@ -107,7 +107,9 @@ pub fn run() {
                     #[cfg(windows)]
                     if code.is_none() && webview_recovery::is_active() {
                         api.prevent_exit();
-                        log::warn!("[webview] keeping the app alive while the main window recovers");
+                        log::warn!(
+                            "[webview] keeping the app alive while the main window recovers"
+                        );
                         return;
                     }
                     #[cfg(target_os = "macos")]

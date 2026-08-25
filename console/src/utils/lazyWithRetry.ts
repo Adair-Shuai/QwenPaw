@@ -15,8 +15,8 @@ const RETRY_DELAY_MS = 1000;
  *   "../../pages/Settings/Debug"         →  "Settings/Debug/index"
  *   "../../pages/AppCenter"              →  "AppCenter/index"
  *
- * The dynamic module registry (dynamicModuleRegistry.ts) registers every
- * file as "<relative-path-without-extension>", so a directory import like
+ * The optional module registry uses "<relative-path-without-extension>" keys,
+ * so a directory import like
  * `pages/AppCenter` is registered as `"AppCenter/index"` (from the file
  * `AppCenter/index.tsx`).  The key must therefore end with `/index` when
  * the caller's path has no file extension.
@@ -97,9 +97,8 @@ export function lazyWithRetry<T extends ComponentType<unknown>>(
       const key = moduleKeyOrPath.startsWith(".")
         ? pathToModuleKey(moduleKeyOrPath)
         : moduleKeyOrPath;
-      // Use getModule (silent) instead of get (warns) — a miss is the
-      // normal case when no plugin has patched this module, especially
-      // before registerHostModulesDynamic finishes warming the registry.
+      // Use getModule (silent) instead of get (warns) because a miss is the
+      // normal case when no plugin has patched this module.
       const patched = moduleRegistry.getModule(key)?.["default"];
       if (patched) return { default: patched as T };
       return mod;
@@ -150,9 +149,8 @@ export function lazyImportWithRetry(
       () => factory().then((comp) => ({ default: comp })),
       MAX_RETRIES,
     ).then((mod) => {
-      // Use getModule (silent) instead of get (warns) — a miss is the
-      // normal case when no plugin has patched this module, especially
-      // before registerHostModulesDynamic finishes warming the registry.
+      // Use getModule (silent) instead of get (warns) because a miss is the
+      // normal case when no plugin has patched this module.
       const patched = moduleRegistry.getModule(key)?.["default"];
       if (patched) return { default: patched as ComponentType<unknown> };
       return mod;

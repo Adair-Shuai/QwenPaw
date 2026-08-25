@@ -19,10 +19,12 @@ import { useAgentStore } from "../stores/agentStore";
 import {
   buildAuditNamespace,
   buildMenuNamespace,
+  buildMarketplaceNamespace,
   buildRouteNamespace,
   buildSlotNamespace,
   type QwenPawAuditNamespace,
   type QwenPawMenuNamespace,
+  type QwenPawMarketplaceNamespace,
   type QwenPawRouteNamespace,
   type QwenPawSlotNamespace,
 } from "./registry/sdk";
@@ -248,6 +250,8 @@ export interface WindowNamespace {
   route?: QwenPawRouteNamespace;
   /** Console-wide plugin Slot API (header.left, sider.bottom, …). */
   slot?: QwenPawSlotNamespace;
+  /** Marketplace sections contributed by plugins. */
+  marketplace?: QwenPawMarketplaceNamespace;
   /** Chat-surface customization API. Attached by installHostSdk(). */
   chat?: QwenPawChatNamespace;
   /** Override audit log (debug). Attached by installHostExternals(). */
@@ -357,6 +361,9 @@ export function installHostExternals(): void {
   if (!window.QwenPaw.menu) window.QwenPaw.menu = buildMenuNamespace();
   if (!window.QwenPaw.route) window.QwenPaw.route = buildRouteNamespace();
   if (!window.QwenPaw.slot) window.QwenPaw.slot = buildSlotNamespace();
+  if (!window.QwenPaw.marketplace) {
+    window.QwenPaw.marketplace = buildMarketplaceNamespace();
+  }
   if (!window.QwenPaw.audit) window.QwenPaw.audit = buildAuditNamespace();
   if (!window.QwenPaw.paw) window.QwenPaw.paw = pawSdkFactory;
 

@@ -1,11 +1,7 @@
 import { createRoot } from "react-dom/client";
 import App from "./App.tsx";
 import "./i18n";
-// Keep Monaco fully local (workers + stylesheet) for both Coding Mode and
-// compact workspace previews. This must run before any editor mounts.
-import "./monacoSetup";
 import { installHostExternals } from "./plugins/hostExternals";
-import { registerHostModulesDynamic } from "./plugins/dynamicModuleRegistry";
 // Bare side-effect imports: each file self-registers its data into
 // menuRegistry / routeRegistry so consumers' first render sees them.
 import "./layouts/registry/builtinMenu";
@@ -18,20 +14,6 @@ installHostExternals();
 // window.QwenPaw.chat/host/audit SDK and built-in tool cards are installed
 // by PluginProvider before the first plugin bundle executes (see
 // plugins/PluginContext.tsx), so first paint stays fast.
-
-// Dynamic module registration — fire-and-forget. Pages register into
-// `moduleRegistry` as they are lazy-loaded; this background pass pre-warms
-// the registry so `window.QwenPaw.modules.<page>` is populated soon after
-// startup without blocking the first paint (eager mode used to synchronously
-// pull all 233 page modules + transitive deps into the main thread).
-if (import.meta.env.DEV) {
-  const warmModules = () => void registerHostModulesDynamic();
-  if ("requestIdleCallback" in window) {
-    window.requestIdleCallback(warmModules, { timeout: 5000 });
-  } else {
-    globalThis.setTimeout(warmModules, 1500);
-  }
-}
 
 if (typeof window !== "undefined") {
   // Prevent the browser/WebView from navigating away (replacing the whole

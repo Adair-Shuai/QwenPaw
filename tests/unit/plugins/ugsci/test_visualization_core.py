@@ -387,6 +387,39 @@ def test_manifest_concurrent_upserts_are_not_lost(tmp_path):
     }
 
 
+def test_manifest_store_preserves_unicode_and_repairs_legacy_names(tmp_path):
+    from ugsci_visualization_test_plugin.backend.cache.layout import (
+        CacheLayout,
+    )
+    from ugsci_visualization_test_plugin.backend.cache.manifest_store import (
+        ManifestStore,
+    )
+
+    store = ManifestStore(tmp_path / "bin", CacheLayout(tmp_path))
+    store.manifest_path.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "datasets": [
+                    {"id": "legacy", "name": "ROFF Grid (46脳73脳30)"},
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = store.read()
+    assert manifest["datasets"][0]["name"] == "ROFF Grid (46×73×30)"
+
+    store.upsert({"id": "unicode", "name": "地层模型 10×15×8"})
+    persisted = json.loads(store.manifest_path.read_text(encoding="utf-8"))
+    assert {item["name"] for item in persisted["datasets"]} == {
+        "ROFF Grid (46×73×30)",
+        "地层模型 10×15×8",
+    }
+
+
 def test_las_reader_converts_fixture(tmp_path):
     # Works with lasio when installed, otherwise via the builtin LAS parser.
     from ugsci_visualization_test_plugin.backend.readers.las import LasReader

@@ -28,7 +28,6 @@ import {
   Search,
   RefreshCw,
   Info,
-  RotateCcw,
   Sparkles,
   Store,
   X,
@@ -134,7 +133,11 @@ export default function AppCenterPage() {
     }
   };
 
-  const handleMarketInstalled = async (result: InstallPluginResult) => {
+  const handleMarketInstalled = async (result?: InstallPluginResult) => {
+    if (!result) {
+      await fetchApps();
+      return;
+    }
     if (apps.some((app) => app.id === result.id)) {
       window.location.reload();
       return;

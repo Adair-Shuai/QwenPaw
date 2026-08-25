@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useAgentStore } from "../stores/agentStore";
 
 // 顶层 mock（Vitest 会提升这些），使用 doMock 以兼容 resetModules
 vi.mock("../api/modules/workspace", () => ({
@@ -29,6 +28,7 @@ function makePendingFetchMock() {
 
 describe("useWorkspaceWatch — connection lifecycle", () => {
   let useWorkspaceWatch: typeof import("./useWorkspaceWatch").useWorkspaceWatch;
+  let useAgentStore: typeof import("../stores/agentStore").useAgentStore;
 
   beforeEach(async () => {
     vi.clearAllMocks();
@@ -56,6 +56,7 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
     }));
 
     ({ useWorkspaceWatch } = await import("./useWorkspaceWatch"));
+    ({ useAgentStore } = await import("../stores/agentStore"));
   });
 
   afterEach(() => {
@@ -133,9 +134,9 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
       expect(mockFetch).toHaveBeenCalledWith(
         "http://test/watch",
         expect.objectContaining({
-          headers: {
+          headers: expect.objectContaining({
             "X-Session-Project-Dir": "/projects/session",
-          },
+          }),
         }),
       );
     });
@@ -231,7 +232,7 @@ describe("useWorkspaceWatch — connection lifecycle", () => {
     expect(abortSpy).toHaveBeenCalled();
     expect(mockFetch.mock.calls[1][1]).toEqual(
       expect.objectContaining({
-        headers: { "X-Agent-Id": "agent-b" },
+        headers: expect.objectContaining({ "X-Agent-Id": "agent-b" }),
       }),
     );
     unmount();

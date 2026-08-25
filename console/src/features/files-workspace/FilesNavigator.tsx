@@ -18,9 +18,6 @@ import {
   ArrowLeftRight,
   ChevronDown,
   ChevronRight,
-  File,
-  FileCode2,
-  FileText,
   Folder,
   FolderOpen,
   GripVertical,
@@ -78,34 +75,6 @@ interface ProfileFileRowProps {
 }
 
 type NavigatorSource = "workspace" | "profile" | "daily" | "digest";
-
-function FileGlyph({ name }: { name: string }) {
-  const extension = name.split(".").pop()?.toLowerCase();
-  if (
-    ["md", "mdx", "markdown", "mmd", "mermaid", "txt", "log", "csv"].includes(
-      extension ?? "",
-    )
-  ) {
-    return <FileText size={15} />;
-  }
-  if (
-    [
-      "py",
-      "ts",
-      "tsx",
-      "js",
-      "jsx",
-      "go",
-      "rs",
-      "java",
-      "html",
-      "css",
-    ].includes(extension ?? "")
-  ) {
-    return <FileCode2 size={15} />;
-  }
-  return <File size={15} />;
-}
 
 function ProfileFileRow({
   entry,

@@ -27,7 +27,10 @@ vi.mock("@/utils/openExternalLink", () => ({
   openExternalLink: (href: string) => openExternalLink(href),
 }));
 
+import "../../components/Workspace/renderers/MarkdownRenderer";
 import FilePreview from "./FilePreview";
+
+const LAZY_RENDER_TIMEOUT = 12_000;
 
 describe("FilePreview Markdown workspace resources", () => {
   beforeEach(() => {
@@ -35,7 +38,7 @@ describe("FilePreview Markdown workspace resources", () => {
     openExternalLink.mockClear();
   });
 
-  it("loads relative images from the Markdown file directory", () => {
+  it("loads relative images from the Markdown file directory", async () => {
     render(
       <FilePreview
         filePath="reports/report.md"
@@ -43,7 +46,13 @@ describe("FilePreview Markdown workspace resources", () => {
       />,
     );
 
-    expect(screen.getByAltText("result")).toHaveAttribute(
+    expect(
+      await screen.findByAltText(
+        "result",
+        {},
+        { timeout: LAZY_RENDER_TIMEOUT },
+      ),
+    ).toHaveAttribute(
       "src",
       "blob:workspace-image",
     );
@@ -53,7 +62,7 @@ describe("FilePreview Markdown workspace resources", () => {
     );
   });
 
-  it("opens relative files through the workspace callback", () => {
+  it("opens relative files through the workspace callback", async () => {
     const onOpenWorkspaceFile = vi.fn();
     render(
       <FilePreview
@@ -63,11 +72,13 @@ describe("FilePreview Markdown workspace resources", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("data"));
+    fireEvent.click(
+      await screen.findByText("data", {}, { timeout: LAZY_RENDER_TIMEOUT }),
+    );
     expect(onOpenWorkspaceFile).toHaveBeenCalledWith("data/result.csv");
   });
 
-  it("keeps external links on the safe external-link path", () => {
+  it("keeps external links on the safe external-link path", async () => {
     render(
       <FilePreview
         filePath="reports/report.md"
@@ -75,11 +86,13 @@ describe("FilePreview Markdown workspace resources", () => {
       />,
     );
 
-    fireEvent.click(screen.getByText("source"));
+    fireEvent.click(
+      await screen.findByText("source", {}, { timeout: LAZY_RENDER_TIMEOUT }),
+    );
     expect(openExternalLink).toHaveBeenCalledWith("https://example.com/source");
   });
 
-  it("renders escaping paths as inert text", () => {
+  it("renders escaping paths as inert text", async () => {
     const onOpenWorkspaceFile = vi.fn();
     render(
       <FilePreview
@@ -89,8 +102,13 @@ describe("FilePreview Markdown workspace resources", () => {
       />,
     );
 
-    expect(screen.getByText("secret").tagName).toBe("SPAN");
-    fireEvent.click(screen.getByText("secret"));
+    const secret = await screen.findByText(
+      "secret",
+      {},
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
+    expect(secret.tagName).toBe("SPAN");
+    fireEvent.click(secret);
     expect(onOpenWorkspaceFile).not.toHaveBeenCalled();
   });
 });

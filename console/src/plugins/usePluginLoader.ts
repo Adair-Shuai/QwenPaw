@@ -87,15 +87,28 @@ async function executePluginScript(
     : entryUrl;
 
   // Strategy 1: Fetch + Blob URL import (most reliable in Tauri WebView).
+  let response: Response;
   try {
-    const response = await fetch(versionedUrl, {
+    response = await fetch(versionedUrl, {
       headers: authHeaders(),
       cache: "default",
     });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status} for ${entryUrl}`);
-    }
+  } catch (fetchError) {
+    console.warn(
+      `[PluginLoader] Failed to fetch ${entryUrl}, trying direct import:`,
+      fetchError,
+    );
+    await import(/* @vite-ignore */ versionedUrl);
+    return;
+  }
 
+  // An HTTP error is authoritative. A direct import would request the same
+  // resource again and can mask the useful status with a module-loader error.
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} for ${entryUrl}`);
+  }
+
+  try {
     const jsText = await response.text();
     const blobUrl = URL.createObjectURL(
       new Blob([jsText], { type: "text/javascript" }),
@@ -139,11 +152,12 @@ export async function loadAllPlugins(): Promise<PluginLoadSummary> {
   const results = await Promise.allSettled(
     loadable.map(async (p) => {
       const revision = p.frontend_revision || p.version || "0";
-      if (loadedPluginRevisions.get(p.id) === revision) return;
-      await executePluginScript(
-        resolveUrl(p.id, p.frontend_entry!),
-        revision,
-      );
+      const previousRevision = loadedPluginRevisions.get(p.id);
+      if (previousRevision === revision) return;
+      if (previousRevision !== undefined) {
+        removePluginRuntime(p.id);
+      }
+      await executePluginScript(resolveUrl(p.id, p.frontend_entry!), revision);
       loadedPluginRevisions.set(p.id, revision);
       console.info(`[PluginLoader] ✓ ${p.id}`);
     }),

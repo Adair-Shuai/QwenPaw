@@ -268,6 +268,22 @@ async def test_managed_start_fails_actionably_without_runtime(
     assert service.is_ready is False
 
 
+@pytest.mark.asyncio
+async def test_automatic_start_skips_missing_runtime(
+    tmp_path: Path,
+) -> None:
+    service = ManagedService(
+        ManagedServiceSpec(
+            name="fixture",
+            command=(str(tmp_path / "missing-python"), "-m", "fixture"),
+        ),
+    )
+
+    await service.start_if_available()
+
+    assert service.is_ready is False
+
+
 def test_runtime_available_trusts_external_configuration(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -357,7 +373,7 @@ def test_pawapp_delegates_extensions_through_plugin_api(
     assert api.register_http_router.call_count == 1
     api.register_startup_hook.assert_any_call(
         hook_name="pawapp_fixture_service_context",
-        callback=service.start,
+        callback=service.start_if_available,
         priority=70,
     )
     api.register_shutdown_hook.assert_any_call(

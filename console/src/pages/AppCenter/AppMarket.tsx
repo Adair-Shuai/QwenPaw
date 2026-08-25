@@ -38,6 +38,7 @@ import {
   replaceInstalledPlugin,
   upgradeInstalledUGSciPlugin,
   type OfficialPluginCatalogEntry,
+  type InstallPluginResult,
 } from "@/api/modules/plugin";
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
@@ -160,7 +161,7 @@ function toAppCatalogEntry(
 }
 
 interface AppMarketProps {
-  onInstalled: () => void | Promise<void>;
+  onInstalled: (result?: InstallPluginResult) => void | Promise<void>;
   channel?: AppCatalogChannel;
 }
 
@@ -380,7 +381,7 @@ export function AppMarket({
           }`,
           key: loadingKey,
         });
-        await onInstalled();
+        await onInstalled(result);
       } catch (err) {
         message.error({
           content:

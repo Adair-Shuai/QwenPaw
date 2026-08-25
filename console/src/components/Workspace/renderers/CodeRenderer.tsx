@@ -5,6 +5,7 @@
  * for compact file previews and JSON raw mode.
  */
 import React, { useCallback } from "react";
+import "../../../monacoSetup";
 import Editor, { type BeforeMount } from "@monaco-editor/react";
 import { getLanguage } from "../../../pages/Coding/getLanguage";
 import type { RendererContext } from "../types";

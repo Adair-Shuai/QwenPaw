@@ -151,7 +151,7 @@ export async function importSkillToPool(
   });
 }
 
-export function MarketplacePage() {
+export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {}) {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo, useRef } = React;
   const {
@@ -1942,30 +1942,37 @@ template.iconUrl
   return React.createElement(
     "div",
     { style: { padding: 24 } },
-    React.createElement(PageHeader, {
-      title: "市场",
-      subtitle: "浏览技能市场 · 选择 MCP 服务器 · 人才市场 · 随时更新能力和专家",
-      extra: React.createElement(
-        "div",
-        { style: { display: "flex", gap: 8 } },
-        React.createElement(
-          Button,
-          {
-            type: "primary",
-            icon: ReloadOutlined
-              ? React.createElement(ReloadOutlined)
-              : undefined,
-            onClick: () => {
-              doSearch(searchText, selectedCategory, {});
-              loadGithubSkills();
-              loadOssMarketData();
-            },
-            loading: loading || githubLoading || ossMcpLoading || ossAgentLoading,
-          },
-          "刷新",
-        ),
-      ),
-    }),
+    embedded
+      ? null
+      : React.createElement(PageHeader, {
+          title: "市场",
+          subtitle:
+            "浏览技能市场 · 选择 MCP 服务器 · 人才市场 · 随时更新能力和专家",
+          extra: React.createElement(
+            "div",
+            { style: { display: "flex", gap: 8 } },
+            React.createElement(
+              Button,
+              {
+                type: "primary",
+                icon: ReloadOutlined
+                  ? React.createElement(ReloadOutlined)
+                  : undefined,
+                onClick: () => {
+                  doSearch(searchText, selectedCategory, {});
+                  loadGithubSkills();
+                  loadOssMarketData();
+                },
+                loading:
+                  loading ||
+                  githubLoading ||
+                  ossMcpLoading ||
+                  ossAgentLoading,
+              },
+              "刷新",
+            ),
+          ),
+        }),
     React.createElement(Tabs, {
       items: tabItems,
       activeKey: activeTab,

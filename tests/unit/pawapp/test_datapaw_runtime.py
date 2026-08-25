@@ -5,6 +5,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 RUNTIME_FILE = (
@@ -32,7 +34,12 @@ def test_context_python_preserves_virtualenv_launcher_symlink(
     base_python.write_text("", encoding="utf-8")
     launcher = tmp_path / ".venv-datapaw" / "bin" / "python"
     launcher.parent.mkdir(parents=True)
-    launcher.symlink_to(base_python)
+    try:
+        launcher.symlink_to(base_python)
+    except OSError as exc:
+        pytest.skip(
+            f"symbolic links are unavailable in this environment: {exc}",
+        )
     runtime.PLUGIN_DIR = tmp_path
 
     selected = runtime.context_python()

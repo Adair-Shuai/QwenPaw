@@ -198,7 +198,7 @@ describe("AppCenterPage", () => {
     );
 
     expect(screen.getByTestId("location")).toHaveTextContent(
-      "/apps?view=official",
+      "/market?view=official",
     );
     expect(await screen.findByText("Agent Kanban")).toBeInTheDocument();
     await waitFor(() =>

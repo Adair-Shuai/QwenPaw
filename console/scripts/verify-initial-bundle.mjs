@@ -1,6 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { minimumPrecompressedAssetBytes } from "./asset-compression-config.mjs";
 
 const scriptDirectory = dirname(fileURLToPath(import.meta.url));
 const outputDirectory = join(scriptDirectory, "..", "dist");
@@ -68,14 +69,21 @@ let rawBytes = 0;
 let brotliBytes = 0;
 for (const asset of assets) {
   const path = join(outputDirectory, asset);
-  rawBytes += (await stat(path)).size;
-  brotliBytes += (await stat(`${path}.br`)).size;
+  const rawSize = (await stat(path)).size;
+  rawBytes += rawSize;
+  if (rawSize < minimumPrecompressedAssetBytes) {
+    // The precompress step deliberately skips tiny files where a separate
+    // encoded response is not worthwhile. Count their raw transfer size.
+    brotliBytes += rawSize;
+  } else {
+    brotliBytes += (await stat(`${path}.br`)).size;
+  }
 }
 
 const toMiB = (bytes) => (bytes / 1024 / 1024).toFixed(2);
 console.log(
   `Initial bundle: ${toMiB(rawBytes)} MiB raw, ` +
-    `${toMiB(brotliBytes)} MiB Brotli across ${assets.size} assets.`,
+    `${toMiB(brotliBytes)} MiB compressed transfer across ${assets.size} assets.`,
 );
 
 if (rawBytes > maximumRawBytes) {

@@ -211,7 +211,7 @@ describe("getMediaInfo", () => {
     );
 
     expect(media).toEqual({
-      url: `/api/files/preview${screenshotPath}`,
+      url: `/api/files/preview/%2FUsers/zz/.copaw/workspaces/Yn8ymB/desktop_screenshot_1786592092.png`,
       name: "desktop_screenshot_1786592092.png",
       type: "image",
     });

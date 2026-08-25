@@ -295,10 +295,7 @@ pub(crate) async fn read_workspace_binary_file(
 ///
 /// If `agent_id` is provided, uses that agent's config; otherwise falls back to
 /// the active agent in config.json.
-fn resolve_workspace_file_path(
-    file_path: &str,
-    agent_id: Option<&str>,
-) -> Result<PathBuf, String> {
+fn resolve_workspace_file_path(file_path: &str, agent_id: Option<&str>) -> Result<PathBuf, String> {
     if file_path.trim().is_empty() {
         return Err("file path is empty".into());
     }
@@ -315,9 +312,9 @@ fn resolve_workspace_file_path(
         coding_dir.join(file_path)
     };
 
-    let canonical_target = target.canonicalize().map_err(|err| {
-        format!("failed to resolve file path '{}': {err}", target.display())
-    })?;
+    let canonical_target = target
+        .canonicalize()
+        .map_err(|err| format!("failed to resolve file path '{}': {err}", target.display()))?;
 
     let canonical_coding_dir = coding_dir.canonicalize().map_err(|err| {
         format!(
@@ -438,7 +435,9 @@ fn get_coding_directory(agent_id: Option<&str>) -> Result<PathBuf, String> {
     let agent_config_path = workspace_dir.join("agent.json");
     if agent_config_path.is_file() {
         if let Ok(agent_config_content) = std::fs::read_to_string(&agent_config_path) {
-            if let Ok(agent_config) = serde_json::from_str::<serde_json::Value>(&agent_config_content) {
+            if let Ok(agent_config) =
+                serde_json::from_str::<serde_json::Value>(&agent_config_content)
+            {
                 if let Some(project_dir) = agent_config
                     .get("coding_mode")
                     .and_then(|cm| cm.get("project_dir"))

@@ -197,7 +197,7 @@ describe("WindowFrame drag", () => {
       clientX: 150,
       clientY: 300,
     });
-    vi.advanceTimersByTime(32);
+    _rafCb?.(0);
     expect(frame.style.top).toBe("290px");
 
     fireEvent.pointerMove(title, {
@@ -235,7 +235,7 @@ describe("WindowFrame drag", () => {
       clientX: 150,
       clientY: 1070,
     });
-    vi.advanceTimersByTime(32);
+    _rafCb?.(0);
 
     const maxY = window.innerHeight - filesWin.h;
     expect(frame.style.top).toBe(`${maxY}px`);
@@ -277,7 +277,7 @@ describe("WindowFrame drag", () => {
         clientX: targetX,
         clientY: targetY,
       });
-      vi.advanceTimersByTime(32);
+      _rafCb?.(0);
       fireEvent.pointerUp(title, {
         pointerId,
         clientX: targetX,

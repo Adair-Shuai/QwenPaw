@@ -21,6 +21,10 @@ import type {
 } from "./types";
 import { menuRegistry, routeRegistry, slotRegistry } from "./store";
 import { auditStore } from "./audit";
+import {
+  marketplaceExtensionRegistry,
+  type MarketplaceExtension,
+} from "../../pages/Market/marketplaceRegistry";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plugin-facing namespaces
@@ -59,6 +63,14 @@ export interface QwenPawSlotNamespace {
     opts?: SlotOpts,
   ): Disposable;
   snapshot(): SlotInfo[];
+}
+
+export interface QwenPawMarketplaceNamespace {
+  add(
+    pluginId: string,
+    extension: MarketplaceExtension,
+  ): Disposable;
+  snapshot(): MarketplaceExtension[];
 }
 
 export interface QwenPawAuditNamespace {
@@ -115,6 +127,14 @@ export function buildSlotNamespace(): QwenPawSlotNamespace {
     replace: (pluginId, name, render, opts) =>
       slotRegistry.replace(pluginId, name, render, opts),
     snapshot: () => slotRegistry.snapshotAll(),
+  };
+}
+
+export function buildMarketplaceNamespace(): QwenPawMarketplaceNamespace {
+  return {
+    add: (pluginId, extension) =>
+      marketplaceExtensionRegistry.add(pluginId, extension),
+    snapshot: () => marketplaceExtensionRegistry.snapshot(),
   };
 }
 

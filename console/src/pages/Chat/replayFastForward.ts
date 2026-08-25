@@ -33,7 +33,10 @@ const isMarker = (event: string): boolean => event.trim() === REPLAY_END_EVENT;
 
 /** Split buffered text into complete SSE events and the partial tail. */
 function splitEvents(buf: string): { events: string[]; rest: string } {
-  const parts = buf.split("\n\n");
+  // SSE permits CRLF. Normalizing here also keeps captured Windows fixtures
+  // and proxies that preserve CRLF from collapsing the whole stream into one
+  // payload at EOF.
+  const parts = buf.replace(/\r\n/g, "\n").split("\n\n");
   const rest = parts.pop() ?? "";
   return { events: parts.filter((e) => e.length > 0), rest };
 }

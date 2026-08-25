@@ -501,6 +501,14 @@ export default defineConfig(({ command, mode }) => {
     server: {
       host: "0.0.0.0",
       port: 5173,
+      watch: {
+        ignored: [
+          "**/src-tauri/target/**",
+          "**/src-tauri/binaries/**",
+          "**/src-tauri/gen/**",
+          "**/coverage/**",
+        ],
+      },
       proxy: {
         "/api": {
           target: "http://127.0.0.1:8088",
@@ -555,6 +563,7 @@ export default defineConfig(({ command, mode }) => {
       exclude: [
         "**/node_modules/**",
         "**/dist/**",
+        "**/src-tauri/**",
         // 旧测试用 node:test，与 vitest 不兼容，待迁移
         "**/testConnectionMessage.test.ts",
         // ChatPage test causes worker crash - pre-existing issue, needs more mock setup
@@ -748,19 +757,13 @@ export default defineConfig(({ command, mode }) => {
         external: ["react-pdf", "@codesandbox/sandpack-react", /@tiptap\//],
         output: {
           manualChunks(id) {
-            // Only isolate large, leaf-like feature runtimes. Grouping React,
-            // Ant Design and shared utilities by hand created circular chunks
-            // because those packages depend on each other. Rollup can split
-            // the application graph more safely when shared UI code is left
-            // to its default chunking algorithm.
             if (
-              id.includes("node_modules/monaco-editor/") ||
-              id.includes("node_modules/@monaco-editor/")
+              id.includes("node_modules/react/") ||
+              id.includes("node_modules/react-dom/") ||
+              id.includes("node_modules/react-router-dom/") ||
+              id.includes("node_modules/scheduler/")
             ) {
-              return "monaco-vendor";
-            }
-            if (id.includes("node_modules/mermaid/")) {
-              return "diagram-vendor";
+              return "react-vendor";
             }
             if (
               id.includes("node_modules/@ant-design/plots/") ||
@@ -768,17 +771,40 @@ export default defineConfig(({ command, mode }) => {
             ) {
               return "charts-vendor";
             }
-            if (id.includes("node_modules/pdfjs-dist/")) {
-              return "pdf-vendor";
+            if (
+              id.includes("node_modules/monaco-editor/") ||
+              id.includes("node_modules/@monaco-editor/")
+            ) {
+              return "editor-vendor";
+            }
+            // Keep Ant Design and AgentScope together because they re-export
+            // and consume each other's providers throughout the chat surface.
+            if (
+              id.includes("node_modules/antd/") ||
+              id.includes("node_modules/antd-style/") ||
+              id.includes("node_modules/@ant-design/") ||
+              id.includes("node_modules/@agentscope-ai/")
+            ) {
+              return "ui-vendor";
             }
             if (
-              id.includes("node_modules/mammoth/") ||
-              id.includes("node_modules/read-excel-file/") ||
-              id.includes("node_modules/jszip/")
+              id.includes("node_modules/i18next/") ||
+              id.includes("node_modules/react-i18next/")
             ) {
-              return "document-vendor";
+              return "i18n-vendor";
             }
-            // Drag and drop
+            if (
+              id.includes("node_modules/react-markdown/") ||
+              id.includes("node_modules/remark-gfm/") ||
+              id.includes("node_modules/rehype") ||
+              id.includes("node_modules/remark") ||
+              id.includes("node_modules/unified/") ||
+              id.includes("node_modules/mdast") ||
+              id.includes("node_modules/hast") ||
+              id.includes("node_modules/micromark")
+            ) {
+              return "markdown-vendor";
+            }
             if (id.includes("node_modules/@dnd-kit/")) {
               return "dnd-vendor";
             }

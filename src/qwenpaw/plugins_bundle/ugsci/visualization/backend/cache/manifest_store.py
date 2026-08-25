@@ -20,6 +20,14 @@ from .layout import CacheLayout
 logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.cache.manifest")
 
 
+def _repair_legacy_dataset_names(manifest: dict[str, Any]) -> None:
+    """Repair names persisted by locale-decoding UTF-8 multiplication signs."""
+    for dataset in manifest.get("datasets", []):
+        name = dataset.get("name")
+        if isinstance(name, str) and "脳" in name:
+            dataset["name"] = name.replace("脳", "×")
+
+
 class ManifestStore:
     """Manages manifest.json with atomic writes and cache integration."""
 
@@ -35,7 +43,11 @@ class ManifestStore:
         with self._lock:
             try:
                 if self.manifest_path.exists():
-                    return json.loads(self.manifest_path.read_text())
+                    manifest = json.loads(
+                        self.manifest_path.read_text(encoding="utf-8"),
+                    )
+                    _repair_legacy_dataset_names(manifest)
+                    return manifest
             except (json.JSONDecodeError, OSError):
                 logger.warning("Manifest unreadable or corrupted, starting fresh")
             return {"version": 1, "datasets": []}
@@ -81,6 +93,8 @@ class ManifestStore:
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w",
+                encoding="utf-8",
+                newline="\n",
                 dir=self.bin_dir,
                 prefix=".manifest_",
                 suffix=".tmp",

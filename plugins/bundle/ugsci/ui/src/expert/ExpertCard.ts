@@ -86,13 +86,19 @@ export function ExpertCard({
 
   const { agent, skills, mcps, loading } = expert;
   const isEnabled = agent.enabled;
-  const skillNames = skills
+  const enabledSkills = skills
     .filter((s) => s.enabled !== false)
-    .map((s) => s.name);
-  const mcpNames = mcps.map((m) => m.name || m.key);
-  const modelText = agent.active_model
-    ? `${agent.active_model.provider_id}/${agent.active_model.model}`
-    : null;
+  const bundle = EXPERT_BUNDLES.find(
+    (item) => item.id === agent.id || item.name === agent.name,
+  );
+  const coreAbilityTags = Array.from(
+    new Set(
+      bundle?.tags?.length
+        ? bundle.tags
+        : enabledSkills.flatMap((skill) => skill.tags || []),
+    ),
+  ).slice(0, 3);
+  const specialty = bundle?.category || "UGSci 专业专家";
 
   return React.createElement(
     Card,
@@ -145,12 +151,12 @@ export function ExpertCard({
             "div",
             {
               style: {
-                fontSize: 11,
-                color: "var(--ant-color-text-quaternary, #bfbfbf)",
-                fontFamily: "monospace",
+                fontSize: 12,
+                color: "var(--ant-color-text-secondary, #595959)",
+                marginTop: 2,
               },
             },
-            agent.id,
+            specialty,
           ),
         ),
       ),
@@ -159,78 +165,44 @@ export function ExpertCard({
         text: isEnabled ? "启用" : "停用",
       }),
     ),
-    // Description (rendered as markdown)
-    agent.description
-      ? React.createElement(
-          "div",
-          {
-            style: {
-              fontSize: 12,
-              color: "#595959",
-              marginBottom: 10,
-              lineHeight: 1.5,
-              display: "-webkit-box",
-              WebkitLineClamp: 3,
-              WebkitBoxOrient: "vertical",
-              overflow: "hidden",
-              minHeight: 54,
-              flex: "1 0 auto",
+    // Keep the card scannable: only surface a few stable capability tags.
+    React.createElement(
+      "div",
+      { style: { minHeight: 30, marginBottom: 10 } },
+      coreAbilityTags.length > 0
+        ? React.createElement(TagList, {
+            items: coreAbilityTags,
+            max: 3,
+            color: "blue",
+          })
+        : React.createElement(
+            "span",
+            {
+              style: {
+                fontSize: 12,
+                color: "var(--ant-color-text-quaternary, #bfbfbf)",
+              },
             },
-          },
-          renderMarkdown(agent.description, React),
-        )
-      : React.createElement(
-          "div",
-          { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #bfbfbf)", marginBottom: 10, minHeight: 54, flex: "1 0 auto" } },
-          "暂无描述",
-        ),
-    // Model info
-    modelText
-      ? React.createElement(
-          "div",
-          { style: { marginBottom: 8 } },
-          React.createElement(
-            Tag,
-            { color: "geekblue", style: { fontSize: 11 } },
-            `🤖 ${modelText}`,
+            "核心能力待配置",
           ),
-        )
-      : null,
-    // Skills
+    ),
+    // Keep counts visible; full skill and MCP lists belong in the drawer.
     loading
       ? React.createElement(Spin, { size: "small" })
       : React.createElement(
           "div",
-          { style: { marginBottom: 6 } },
-          React.createElement(
-            "div",
-            { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginBottom: 4 } },
-            `技能 (${skillNames.length})`,
-          ),
-          React.createElement(TagList, {
-            items: skillNames,
-            max: 4,
-            color: "cyan",
-            emptyText: "未配置技能",
-          }),
+          {
+            display: "flex",
+            gap: 12,
+            alignItems: "center",
+            marginTop: "auto",
+            marginBottom: 4,
+            fontSize: 12,
+            color: "var(--ant-color-text-tertiary, #8c8c8c)",
+          },
+          `技能 ${enabledSkills.length}`,
+          `MCP ${mcps.length}`,
         ),
-    // MCP
-    !loading && mcpNames.length > 0
-      ? React.createElement(
-          "div",
-          { style: { marginTop: "auto" } },
-          React.createElement(
-            "div",
-            { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)", marginBottom: 4 } },
-            `MCP (${mcpNames.length})`,
-          ),
-          React.createElement(TagList, {
-            items: mcpNames,
-            max: 3,
-            color: "purple",
-          }),
-        )
-      : null,
     // Bottom bar: gear icon (left) + summon button (right)
     React.createElement(
       "div",

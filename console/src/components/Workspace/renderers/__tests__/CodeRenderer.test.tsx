@@ -5,6 +5,8 @@ import type { RendererContext, WorkspaceArtifact } from "../../types";
 
 const editorSpy = vi.fn();
 
+vi.mock("../../../../monacoSetup", () => ({}));
+
 vi.mock("@monaco-editor/react", () => ({
   default: (props: Record<string, unknown>) => {
     editorSpy(props);

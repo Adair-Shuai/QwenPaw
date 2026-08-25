@@ -34,7 +34,16 @@ fn emit_error_kind(app: &AppHandle, stage: &'static str, kind: &'static str, mes
     );
 }
 
-fn classify_updater_error(err: &tauri_plugin_updater::Error) -> &'static str {
+pub(super) fn emit_updater_error_message(
+    app: &AppHandle,
+    stage: &'static str,
+    kind: &'static str,
+    message: &str,
+) {
+    emit_error_kind(app, stage, kind, message);
+}
+
+pub(super) fn classify_updater_error(err: &tauri_plugin_updater::Error) -> &'static str {
     use tauri_plugin_updater::Error as E;
     match err {
         E::Reqwest(_)

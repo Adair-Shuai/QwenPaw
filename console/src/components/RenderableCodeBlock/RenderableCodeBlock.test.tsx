@@ -99,7 +99,7 @@ describe("RenderableCodeBlock", () => {
     expect(container.querySelector(".katex")).toBeInTheDocument();
   });
 
-  it("renders Mermaid preview and keeps its source available", () => {
+  it("renders Mermaid preview and keeps its source available", async () => {
     const source = "graph TD; A-->B";
     render(
       <RenderableCodeBlock block lang="mermaid">
@@ -107,7 +107,9 @@ describe("RenderableCodeBlock", () => {
       </RenderableCodeBlock>,
     );
 
-    expect(screen.getByTestId("mermaid-preview")).toHaveTextContent(source);
+    expect(await screen.findByTestId("mermaid-preview")).toHaveTextContent(
+      source,
+    );
     fireEvent.click(screen.getByText("Raw"));
     expect(screen.getByRole("tabpanel")).toHaveTextContent(source);
   });

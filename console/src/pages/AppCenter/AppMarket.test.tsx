@@ -1,6 +1,5 @@
 // @vitest-environment jsdom
 import {
-  act,
   fireEvent,
   render,
   screen,
@@ -121,9 +120,9 @@ describe("AppMarket", () => {
     expect(await screen.findByText("official-app")).toBeInTheDocument();
     expect(hoisted.fetchMarketPlugins).toHaveBeenCalledWith(
       expect.objectContaining({
+        category: "app",
         page_number: 1,
-        page_size: 20,
-        is_featured: true,
+        page_size: 100,
       }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
@@ -136,10 +135,13 @@ describe("AppMarket", () => {
     expect(hoisted.fetchMarketPlugins.mock.calls[0][0]).not.toHaveProperty(
       "sort_by",
     );
+    expect(hoisted.fetchMarketPlugins.mock.calls[0][0]).not.toHaveProperty(
+      "is_featured",
+    );
     expect(screen.getByText("appCenter.featured")).toBeInTheDocument();
   });
 
-  it("shows all apps in the unfiltered app market", async () => {
+  it("shows community apps and excludes featured entries", async () => {
     hoisted.fetchMarketPlugins.mockResolvedValue({
       plugins: [
         makeEntry("agent-kanban", { is_featured: true }),
@@ -153,8 +155,8 @@ describe("AppMarket", () => {
 
     expect(await screen.findByText("zalo-channel")).toBeInTheDocument();
     expect(screen.getByText("mahjong4")).toBeInTheDocument();
-    expect(screen.getByText("agent-kanban")).toBeInTheDocument();
-    expect(screen.getAllByText("appCenter.featured")).toHaveLength(2);
+    expect(screen.queryByText("agent-kanban")).not.toBeInTheDocument();
+    expect(screen.queryByText("appCenter.featured")).not.toBeInTheDocument();
 
     const initialParams = hoisted.fetchMarketPlugins.mock.calls[0][0];
     expect(initialParams).not.toHaveProperty("sort_by");
@@ -162,74 +164,39 @@ describe("AppMarket", () => {
     expect(initialParams).not.toHaveProperty("is_trending");
   });
 
-  it("passes the selected featured and trending filters to the API", async () => {
+  it("does not expose the removed community filter controls", async () => {
     render(<AppMarket onInstalled={vi.fn()} />);
     await screen.findByText("appCenter.marketEmpty");
 
-    fireEvent.click(screen.getByRole("button", { name: "appCenter.featured" }));
-    await waitFor(() =>
-      expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(2),
-    );
-    expect(hoisted.fetchMarketPlugins.mock.calls[1][0]).toEqual(
-      expect.objectContaining({ is_featured: true, page_number: 1 }),
-    );
-
-    const trendingButton = screen.getByRole("button", {
-      name: "appCenter.trending",
-    });
-    await waitFor(() => expect(trendingButton).toBeEnabled());
-    fireEvent.click(trendingButton);
-    await waitFor(() =>
-      expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(3),
-    );
-    expect(hoisted.fetchMarketPlugins.mock.calls[2][0]).toEqual(
-      expect.objectContaining({ is_trending: true, page_number: 1 }),
-    );
-    expect(hoisted.fetchMarketPlugins.mock.calls[2][0]).not.toHaveProperty(
-      "is_featured",
-    );
+    expect(
+      screen.queryByRole("button", { name: "appCenter.featured" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "appCenter.trending" }),
+    ).not.toBeInTheDocument();
   });
 
-  it("refreshes page one with the current market filter", async () => {
+  it("does not expose the removed manual refresh control", async () => {
     render(<AppMarket onInstalled={vi.fn()} />);
     await screen.findByText("appCenter.marketEmpty");
 
-    fireEvent.click(screen.getByRole("button", { name: "appCenter.featured" }));
-    await waitFor(() =>
-      expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(2),
-    );
-
-    const refreshButton = screen.getByRole("button", {
-      name: "common.refresh",
-    });
-    await waitFor(() => expect(refreshButton).toBeEnabled());
-    fireEvent.click(refreshButton);
-
-    await waitFor(() =>
-      expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(3),
-    );
-    expect(hoisted.fetchMarketPlugins.mock.calls[2][0]).toEqual(
-      expect.objectContaining({
-        page_number: 1,
-        is_featured: true,
-      }),
-    );
-    expect(hoisted.fetchMarketPlugins.mock.calls[2][0]).not.toHaveProperty(
-      "sort_by",
-    );
+    expect(
+      screen.queryByRole("button", { name: "common.refresh" }),
+    ).not.toBeInTheDocument();
+    expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(1);
   });
 
-  it("loads and appends the next market page when the sentinel is visible", async () => {
-    const firstPage = Array.from({ length: 20 }, (_, index) =>
+  it("loads all server pages before rendering the community catalog", async () => {
+    const firstPage = Array.from({ length: 100 }, (_, index) =>
       makeEntry(`community-${index}`),
     );
     hoisted.fetchMarketPlugins.mockImplementation(({ page_number }) =>
       Promise.resolve(
         page_number === 1
-          ? { plugins: firstPage, total: 21 }
+          ? { plugins: firstPage, total: 101 }
           : {
               plugins: [makeEntry("community-page-two")],
-              total: 21,
+              total: 101,
             },
       ),
     );
@@ -237,35 +204,19 @@ describe("AppMarket", () => {
     render(<AppMarket onInstalled={vi.fn()} />);
 
     expect(await screen.findByText("community-0")).toBeInTheDocument();
-    expect(screen.queryByText("community-page-two")).not.toBeInTheDocument();
-    expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(1);
-
-    const sentinel = await screen.findByText("common.loading");
-    const sentinelObserver = intersectionObservers.find((observer) =>
-      observer.elements.includes(sentinel),
-    );
-    expect(sentinelObserver).toBeDefined();
-    act(() => {
-      sentinelObserver!.callback(
-        [{ isIntersecting: true } as IntersectionObserverEntry],
-        {} as IntersectionObserver,
-      );
-    });
-
     expect(await screen.findByText("community-page-two")).toBeInTheDocument();
     expect(screen.getByText("community-0")).toBeInTheDocument();
     expect(hoisted.fetchMarketPlugins).toHaveBeenCalledTimes(2);
     expect(hoisted.fetchMarketPlugins).toHaveBeenLastCalledWith(
       expect.objectContaining({
         page_number: 2,
-        page_size: 20,
+        page_size: 100,
       }),
       expect.objectContaining({ signal: expect.any(AbortSignal) }),
     );
     expect(hoisted.fetchMarketPlugins.mock.calls[1][0]).not.toHaveProperty(
       "sort_by",
     );
-    expect(screen.getByText("appCenter.noMoreApps")).toBeInTheDocument();
   });
 
   it("aborts an obsolete request when a new search starts", async () => {

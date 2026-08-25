@@ -297,6 +297,17 @@ class ManagedService:
             self.spec.name,
         )
 
+    async def start_if_available(self) -> None:
+        """Start during host startup only when the runtime is provisioned."""
+        if not self.runtime_available():
+            logger.warning(
+                "PawApp service '%s' runtime is not provisioned; "
+                "skipping automatic startup",
+                self.spec.name,
+            )
+            return
+        await self.start()
+
     async def stop(self) -> None:
         process = self._process
         self._base_url = None

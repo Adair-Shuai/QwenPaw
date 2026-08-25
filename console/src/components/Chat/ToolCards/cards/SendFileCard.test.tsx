@@ -67,7 +67,7 @@ describe("SendFileCard", () => {
     const event = listener.mock.calls[0][0] as CustomEvent;
     expect(event.detail.target).toEqual({
       source: "attachment",
-      path: "/hello.txt",
+      path: "hello.txt",
       artifactUrl: "/api/files/preview/hello.txt",
     });
 
