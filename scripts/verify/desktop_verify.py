@@ -61,9 +61,8 @@ USER_ID = "release-verify-user"
 REQUIRED_UI_MENUS = {
     "ugsci.experts",
     "ugsci.tools-skills",
-    "ugsci.market",
 }
-REQUIRED_UI_ROUTE = "/flowforge"
+REQUIRED_UI_ROUTE = "/ugsci-market"
 REQUIRED_UI_SLOT_SOURCE = "ugsci_research"
 REQUIRED_UI_SLOT_ID = "research-mode-toggle"
 
@@ -283,7 +282,7 @@ def verify_native_ui_report(
             ):
                 print(
                     "PASS  native Tauri webview plugin registration -> "
-                    "menus, /flowforge, research-mode-toggle",
+                    "menus, /ugsci-market, research-mode-toggle",
                 )
                 return
             last_detail = (
@@ -529,7 +528,7 @@ class PlaywrightDriver(UIDriver):
                 (item) => item.source === 'ugsci_research'
                   && item.id === 'research-mode-toggle'
               );
-              return ['ugsci.experts', 'ugsci.tools-skills', 'ugsci.market']
+              return ['ugsci.experts', 'ugsci.tools-skills']
                 .every((id) => menuIds.has(id)) && researchRegistered;
             }""",
             timeout=timeout_ms,

@@ -71,8 +71,7 @@ export const BUILTIN_MENU: MenuItem[] = [
     label: navLabel("nav.marketplace", "Marketplace"),
     icon: SparkMyApplicationLine,
     route: "core.marketplace",
-    // order 7 ties with ugsci.market; builtin items are registered before
-    // plugin items, so stable sort places "Marketplace" just above "Market".
+    // UGSci contributes its domain section inside this host marketplace.
     order: 7,
   },
 

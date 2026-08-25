@@ -12,8 +12,8 @@ use std::{
 
 const NONCE_ENV: &str = "QWENPAW_UI_VERIFY_NONCE";
 const REPORT_PATH_ENV: &str = "QWENPAW_UI_VERIFY_REPORT_PATH";
-const REQUIRED_MENUS: [&str; 3] = ["ugsci.experts", "ugsci.tools-skills", "ugsci.market"];
-const REQUIRED_ROUTE: &str = "/flowforge";
+const REQUIRED_MENUS: [&str; 2] = ["ugsci.experts", "ugsci.tools-skills"];
+const REQUIRED_ROUTE: &str = "/ugsci-market";
 const REQUIRED_SLOT_SOURCE: &str = "ugsci_research";
 const REQUIRED_SLOT_ID: &str = "research-mode-toggle";
 

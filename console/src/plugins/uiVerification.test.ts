@@ -32,12 +32,12 @@ describe("native plugin UI verification report", () => {
 
   it("reports serialisable menu, route, and slot registrations", async () => {
     mocks.isTauriRuntime.mockReturnValue(true);
-    for (const id of ["ugsci.experts", "ugsci.tools-skills", "ugsci.market"]) {
+    for (const id of ["ugsci.experts", "ugsci.tools-skills"]) {
       menuRegistry.add("ugsci", { id, label: id });
     }
-    routeRegistry.add("flowforge", {
-      id: "flowforge",
-      path: "/flowforge",
+    routeRegistry.add("ugsci", {
+      id: "ugsci.market",
+      path: "/ugsci-market",
       component: () => null,
     });
     slotRegistry.fill("ugsci_research", "header.left", () => null, {
@@ -52,9 +52,10 @@ describe("native plugin UI verification report", () => {
         menus: [
           { id: "ugsci.experts" },
           { id: "ugsci.tools-skills" },
-          { id: "ugsci.market" },
         ],
-        routes: [{ id: "flowforge", path: "/flowforge", source: "flowforge" }],
+        routes: [
+          { id: "ugsci.market", path: "/ugsci-market", source: "ugsci" },
+        ],
         slots: [
           {
             name: "header.left",

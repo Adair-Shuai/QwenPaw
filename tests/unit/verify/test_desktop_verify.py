@@ -26,13 +26,12 @@ def _write_report(path: Path, *, nonce: str, complete: bool = True) -> None:
                 "menus": [
                     {"id": "ugsci.experts"},
                     {"id": "ugsci.tools-skills"},
-                    {"id": "ugsci.market"},
                 ],
                 "routes": [
                     {
-                        "id": "flowforge",
-                        "path": "/flowforge",
-                        "source": "flowforge",
+                        "id": "ugsci.market",
+                        "path": "/ugsci-market",
+                        "source": "ugsci",
                     },
                 ],
                 "slots": [
