@@ -87,7 +87,7 @@ async function executePluginScript(
     : entryUrl;
 
   // Strategy 1: Fetch + Blob URL import (most reliable in Tauri WebView).
-  let response: Response;
+  let response: Response | undefined;
   try {
     response = await fetch(versionedUrl, {
       headers: authHeaders(),
@@ -95,35 +95,35 @@ async function executePluginScript(
     });
   } catch (fetchError) {
     console.warn(
-      `[PluginLoader] Failed to fetch ${entryUrl}, trying direct import:`,
+      `[PluginLoader] Failed to fetch ${entryUrl}, will try direct import fallback:`,
       fetchError,
     );
-    await import(/* @vite-ignore */ versionedUrl);
-    return;
   }
 
   // An HTTP error is authoritative. A direct import would request the same
   // resource again and can mask the useful status with a module-loader error.
-  if (!response.ok) {
+  if (response && !response.ok) {
     throw new Error(`HTTP ${response.status} for ${entryUrl}`);
   }
 
-  try {
-    const jsText = await response.text();
-    const blobUrl = URL.createObjectURL(
-      new Blob([jsText], { type: "text/javascript" }),
-    );
+  if (response) {
     try {
-      await import(/* @vite-ignore */ blobUrl);
-      return;
-    } finally {
-      URL.revokeObjectURL(blobUrl);
+      const jsText = await response.text();
+      const blobUrl = URL.createObjectURL(
+        new Blob([jsText], { type: "text/javascript" }),
+      );
+      try {
+        await import(/* @vite-ignore */ blobUrl);
+        return;
+      } finally {
+        URL.revokeObjectURL(blobUrl);
+      }
+    } catch (blobErr) {
+      console.warn(
+        `[PluginLoader] Blob URL import failed for ${entryUrl}, trying direct import:`,
+        blobErr,
+      );
     }
-  } catch (blobErr) {
-    console.warn(
-      `[PluginLoader] Blob URL import failed for ${entryUrl}, trying direct import:`,
-      blobErr,
-    );
   }
 
   // Strategy 2: Direct same-origin dynamic import (fallback).
