@@ -648,11 +648,22 @@ jobs:
           done
 
           for target in windows-x86_64 macos-aarch64; do
+            for component in officecli backend python-packages python-runtime tools; do
+              ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/${component}/${VERSION}/" \
+                --recursive --force || true
+            done
             ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/" \
               --include "*${VERSION}*" --recursive --force || true
             ossutil rm "oss://${OSS_BUCKET}/metadata/components/stable/" \
               --include "*${VERSION}*" --recursive --force || true
           done
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq '.[] | select(.name | contains("2.1.1b15")) | .id' |
+            while IFS= read -r asset_id; do
+              [ -n "$asset_id" ] && gh api -X DELETE \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            done
 
   # ── Gate: publish jobs below run only if every prepare job above is green ──
 
@@ -707,7 +718,8 @@ jobs:
             --metadata-out dist/plugins/index.json \
             --cdn-prefix /files/plugins \
             --exclude qwenpaw-creator \
-            --exclude uproject
+            --exclude uproject \
+            --exclude datapaw
 
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
