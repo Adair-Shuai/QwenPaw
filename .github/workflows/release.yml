@@ -600,7 +600,7 @@ jobs:
     if: ${{ !inputs.dry_run && needs.resolve.outputs.was_draft == 'true' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write
     concurrency:
       group: release-draft-cleanup
       cancel-in-progress: false
