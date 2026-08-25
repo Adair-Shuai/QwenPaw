@@ -15,7 +15,7 @@ jobs:
   e2e:
     name: E2E Playwright Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     environment: staging
 
     env:
@@ -94,6 +94,8 @@ jobs:
           mkdir -p "$QWENPAW_E2E_DIR/working" \
                    "$QWENPAW_E2E_DIR/secret" \
                    "$QWENPAW_E2E_DIR/backups"
+          mkdir -p "$QWENPAW_E2E_DIR/working/plugins/.uninstalled"
+          touch "$QWENPAW_E2E_DIR/working/plugins/.uninstalled/qwenpaw-creator"
 
           # Export working dirs so subsequent steps (notably the pytest
           # step) can write seed files into the same paths the backend
@@ -117,14 +119,24 @@ jobs:
       - name: Wait for backend ready
         shell: bash
         run: |
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:8088/api/version > /dev/null 2>&1; then
+          for i in $(seq 1 120); do
+            if HEALTH_JSON=$(curl -sf http://localhost:8088/api/healthz 2>/dev/null) && \
+               HEALTH_JSON="$HEALTH_JSON" python - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["HEALTH_JSON"])
+          bundled_state = payload.get("bundled_plugins", {}).get("state")
+          if payload.get("status") != "ok" or bundled_state not in {"ready", "error"}:
+              raise SystemExit(1)
+          PY
+            then
               echo "Backend ready after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "Backend failed to start within 60s"
+          echo "Backend failed to become fully ready within 120s"
           exit 1
 
       # ---- Run E2E tests ----

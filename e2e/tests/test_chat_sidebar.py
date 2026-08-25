@@ -78,25 +78,13 @@ class TestSidebarDateGroups:
             chat.get_sidebar_session_by_name(sidebar_sessions.WEEK_NAME)
         ).to_be_visible(timeout=chat.timeout)
 
-        log_test_step("4. 'Within 30 days' and 'Earlier' start collapsed")
+        log_test_step("4. Remaining date groups show their sessions")
         expect(
             chat.get_sidebar_session_by_name(sidebar_sessions.MONTH_NAME)
-        ).not_to_be_visible(timeout=5000)
-        expect(
-            chat.get_sidebar_session_by_name(sidebar_sessions.OLDER_NAME)
-        ).not_to_be_visible(timeout=5000)
-
-        log_test_step("5. Clicking 'Earlier' header expands its sessions")
-        chat.toggle_sidebar_group("older")
+        ).to_be_visible(timeout=chat.timeout)
         expect(
             chat.get_sidebar_session_by_name(sidebar_sessions.OLDER_NAME)
         ).to_be_visible(timeout=chat.timeout)
-
-        log_test_step("6. Clicking again collapses it back")
-        chat.toggle_sidebar_group("older")
-        expect(
-            chat.get_sidebar_session_by_name(sidebar_sessions.OLDER_NAME)
-        ).not_to_be_visible(timeout=5000)
 
         log_test_result(test_name, True, 0)
         logger.info(f"Test {test_name} passed")

@@ -41,6 +41,7 @@ jobs:
   unit-tests:
     name: Unit Tests - py${{ matrix.python-version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:

@@ -3,8 +3,8 @@
 QwenPaw file management module P0 end-to-end test cases.
 
 Combined test cases:
-- FILE-001: Page load + file list hard-assert + click file to open editor + editor content verification
-- FILE-002: Toggle switch hard-assert + drag reorder + reload restore
+- FILE-001: Page load + file list + Preview/Edit mode verification
+- FILE-002: Multi-tab open, switch, close, and reload verification
 
 Run with: pytest tests/test_files_p0.py -v
 """
@@ -19,12 +19,10 @@ from utils.helpers import log_test_step, log_test_result
 
 logger = logging.getLogger(__name__)
 
-WORKSPACE_URL = f"{config.base_url}/workspace"
-FILE_ITEM_SELECTOR = 'div[class*="fileItem"]'
-FILE_NAME_SELECTOR = 'div[class*="fileItemName"]'
-FILE_META_SELECTOR = 'div[class*="fileItemMeta"]'
-SWITCH_SELECTOR = 'button.qwenpaw-switch[role="switch"]'
-DRAG_HANDLE_SELECTOR = 'div[class*="dragHandle"]'
+WORKSPACE_URL = f"{config.base_url}/files"
+FILE_ITEM_SELECTOR = 'button[class*="treeRow"]:not([aria-expanded])'
+FILE_NAME_SELECTOR = "span"
+FILE_META_SELECTOR = "span"
 
 def navigate_to_workspace(page: Page):
     """Navigate to the workspace page and wait for it to load."""
@@ -48,14 +46,14 @@ def get_file_items(page: Page):
 @pytest.mark.files
 class TestFileListEditSave:
     """
-    FILE-001: Page load + file list hard-assert + click file to open editor + editor content verification.
+    FILE-001: Page load + file list + Preview/Edit mode verification.
 
     Coverage:
     1. Hard-assert breadcrumb / core files heading
     2. Hard-assert file list count > 0
     3. Hard-assert first file name / meta non-empty
     4. Click file -> editor panel visible + content non-empty hard-assert
-    5. Hard-assert toggle switch exists
+    5. Switch from Preview to Edit and verify Monaco + Save controls
     """
 
     @pytest.mark.test_id("FILE-001")
@@ -126,20 +124,26 @@ class TestFileListEditSave:
         assert len(editor_content.strip()) > 0, "Editor/preview content is empty"
         logger.info(f"Editor opened; content length: {len(editor_content)} chars")
 
-        # Step 7: Verify the toggle switch exists
-        log_test_step("7. Verify the file enable switch exists")
-        switches = page.locator(SWITCH_SELECTOR).all()
-        assert len(switches) >= 1, "There should be at least 1 enable switch"
-        first_switch = switches[0]
-        checked = first_switch.get_attribute('aria-checked')
-        assert checked in ['true', 'false'], f"Unexpected switch aria-checked value: {checked}"
-        logger.info(f"Switch exists, current state: {checked}")
+        # Step 7: The new workspace opens every file Preview-first and exposes
+        # an explicit Edit mode backed by Monaco.
+        log_test_step("7. Verify Preview/Edit controls and enter Edit mode")
+        preview_btn = page.get_by_role("button", name="Preview", exact=True)
+        edit_btn = page.get_by_role("button", name="Edit", exact=True)
+        expect(preview_btn).to_be_visible(timeout=5000)
+        expect(edit_btn).to_be_visible(timeout=5000)
+        edit_btn.click()
+        expect(page.locator(".monaco-editor").first).to_be_visible(timeout=10000)
+
+        save_btn = page.get_by_role("button", name="Save", exact=True)
+        expect(save_btn).to_be_visible(timeout=5000)
+        expect(save_btn).to_be_disabled(timeout=5000)
+        logger.info("Preview/Edit mode switch and clean editor state verified")
 
         log_test_result(test_name, True, 0)
         logger.info(f"Test {test_name} passed - file list display and opening editor OK")
 
 # ============================================================================
-# FILE-002: Toggle switch + drag reorder + reload restore
+# FILE-002: Multi-tab open, switch, close, and reload
 # ============================================================================
 
 @pytest.mark.integration
@@ -147,146 +151,55 @@ class TestFileListEditSave:
 @pytest.mark.files
 class TestFileToggleReorderMemory:
     """
-    FILE-002: Toggle switch hard-assert + drag reorder + reload restore.
+    FILE-002: Verify the new workspace's multi-file tab lifecycle.
 
     Coverage:
-    1. Toggle switch -> assert state flipped
-    2. Restore -> assert state back to initial
-    3. Record the initial file order
-    4. Drag-reorder (no try/except)
-    5. Verify the order changed
-    6. Reload the page and verify the file list still exists
+    1. Open two files from the tree
+    2. Verify both editor tabs exist and the second is active
+    3. Switch back to the first tab
+    4. Close the second tab
+    5. Reload and verify the file tree still exists
     """
 
     @pytest.mark.test_id("FILE-002")
     def test_file_toggle_reorder_memory(self, page: Page, request: pytest.FixtureRequest):
-        """Verify file toggle, drag reorder, and reload restore."""
+        """Verify multi-file tab open, switch, close, and reload behavior."""
         test_name = request.node.name
 
         # Step 1: Visit the workspace page
         log_test_step("1. Visit the workspace page")
         navigate_to_workspace(page)
 
-        # Step 2: Get the file list and switch
-        log_test_step("2. Get file list and switch")
+        # Step 2: Open the first two files
+        log_test_step("2. Open two files from the tree")
         file_items = get_file_items(page)
         logger.info(f"File count: {len(file_items)}")
-
-        first_file = file_items[0]
-        toggle = first_file.locator(SWITCH_SELECTOR).first
-        if not toggle.is_visible():
-            pytest.skip("Enable/disable switch not found")
-
-        # Step 3: Record the initial state
-        log_test_step("3. Record initial enabled state")
-        initial_checked = toggle.get_attribute('aria-checked')
-        initial_enabled = initial_checked == 'true'
-        logger.info(f"Initial state: aria-checked={initial_checked}")
-
-        # Step 4: Toggle the switch and hard-assert
-        log_test_step("4. Toggle the switch and verify")
-        # Scroll the switch into view
-        toggle.scroll_into_view_if_needed()
+        if len(file_items) < 2:
+            pytest.skip("Need at least two files for multi-tab verification")
+        first_name = file_items[0].inner_text().strip()
+        second_name = file_items[1].inner_text().strip()
+        file_items[0].click()
         page.wait_for_timeout(500)
-        # Use a normal click (force=True may bypass React events)
-        toggle.click()
-        page.wait_for_timeout(1500)
-
-        # Handle a possible confirm dialog (Ant Popconfirm or Modal)
-        popconfirm = page.locator(
-            '.qwenpaw-popconfirm-buttons button.qwenpaw-btn-primary, '
-            '.qwenpaw-modal-footer button.qwenpaw-btn-primary, '
-            '.ant-popconfirm-buttons button.ant-btn-primary, '
-            '.ant-modal-footer button.ant-btn-primary, '
-            '.qwenpaw-popover button:has-text("OK"), '
-            '.qwenpaw-popover button:has-text("Yes"), '
-            '.ant-popover button:has-text("OK"), '
-            '.ant-popover button:has-text("Yes")'
-        )
-        if popconfirm.count() > 0 and popconfirm.first.is_visible(timeout=3000):
-            popconfirm.first.click()
-            logger.info("Confirmed toggle dialog")
-            page.wait_for_timeout(2000)
-        else:
-            page.wait_for_timeout(1500)
-
-        # Re-fetch the switch reference (DOM may have updated)
-        file_items = get_file_items(page)
-        toggle = file_items[0].locator(SWITCH_SELECTOR).first
-        new_checked = toggle.get_attribute('aria-checked')
-        new_enabled = new_checked == 'true'
-        assert new_enabled != initial_enabled, (
-            f"Switch did not flip after toggle: {initial_checked} -> {new_checked}"
-        )
-        logger.info(f"Switch toggled: {initial_checked} -> {new_checked}")
-
-        # Step 5: Restore the initial state and hard-assert
-        log_test_step("5. Restore initial state")
-        toggle.scroll_into_view_if_needed()
-        page.wait_for_timeout(500)
-        toggle.click()
+        file_items[1].click()
         page.wait_for_timeout(1000)
 
-        # Handle a possible confirm dialog
-        if popconfirm.count() > 0 and popconfirm.first.is_visible(timeout=2000):
-            popconfirm.first.click()
-            logger.info("Confirmed restore dialog")
-            page.wait_for_timeout(1500)
-        else:
-            page.wait_for_timeout(1000)
+        first_tab = page.get_by_role("tab").filter(has_text=first_name).first
+        second_tab = page.get_by_role("tab").filter(has_text=second_name).first
+        expect(first_tab).to_be_visible(timeout=5000)
+        expect(second_tab).to_be_visible(timeout=5000)
+        expect(second_tab).to_have_attribute("aria-selected", "true")
 
-        # Re-fetch the switch reference
-        file_items = get_file_items(page)
-        toggle = file_items[0].locator(SWITCH_SELECTOR).first
-        restored_checked = toggle.get_attribute('aria-checked')
-        assert restored_checked == initial_checked, (
-            f"Switch not restored: expected {initial_checked}, got {restored_checked}"
-        )
-        logger.info("Switch state restored")
+        log_test_step("3. Switch back to the first file tab")
+        first_tab.click()
+        expect(first_tab).to_have_attribute("aria-selected", "true")
 
-        # Step 6: Drag reorder (requires at least 2 files)
-        log_test_step("6. Drag reorder")
-        file_items = page.locator(FILE_ITEM_SELECTOR).all()
+        log_test_step("4. Close the second file tab")
+        page.get_by_role(
+            "button", name=f"Close tab: {second_name}", exact=True
+        ).click()
+        expect(second_tab).to_be_hidden(timeout=5000)
 
-        try:
-            if len(file_items) < 2:
-                logger.info("Fewer than 2 files; skipping drag test")
-            else:
-                initial_order = []
-                for item in file_items[:2]:
-                    name_el = item.locator(FILE_NAME_SELECTOR).first
-                    name = name_el.inner_text()
-                    initial_order.append(name)
-                logger.info(f"Initial order: {initial_order}")
-
-                first_item = file_items[0]
-                second_item = file_items[1]
-                drag_handle = first_item.locator(DRAG_HANDLE_SELECTOR).first
-
-                if drag_handle.is_visible():
-                    drag_handle.drag_to(second_item)
-                else:
-                    first_item.drag_to(second_item)
-                page.wait_for_timeout(1500)
-
-                new_file_items = page.locator(FILE_ITEM_SELECTOR).all()
-                new_order = []
-                for item in new_file_items[:2]:
-                    name_el = item.locator(FILE_NAME_SELECTOR).first
-                    name = name_el.inner_text()
-                    new_order.append(name)
-                logger.info(f"Order after drag: {new_order}")
-
-                if initial_order != new_order:
-                    logger.info("File order updated")
-                else:
-                    logger.info("File order unchanged (drag may not have taken effect; does not affect test pass)")
-        finally:
-            # Try to restore after drag; since the target position is uncertain, only warn
-            logger.warning("Drag reorder executed; file order may have changed and was not auto-restored")
-
-        # Step 7: Reload the page and verify the file list still exists
-        log_test_step("7. Reload and verify file list")
+        log_test_step("5. Reload and verify file tree")
         page.reload()
         page.wait_for_load_state("domcontentloaded")
         page.wait_for_timeout(3000)
@@ -296,7 +209,7 @@ class TestFileToggleReorderMemory:
         logger.info(f"File list still present after reload, count: {len(refreshed_items)}")
 
         log_test_result(test_name, True, 0)
-        logger.info(f"Test {test_name} passed - toggle, drag reorder and reload restore OK")
+        logger.info(f"Test {test_name} passed - multi-tab lifecycle OK")
 
 # ============================================================================
 # FILE-003: File content edit, save and reset
@@ -323,141 +236,100 @@ class TestFileContentEditAndSave:
     """
 
     @pytest.mark.test_id("FILE-003")
-    def test_file_content_edit_save_reset(self, page: Page, request: pytest.FixtureRequest):
+    def test_file_content_edit_save_reset(
+        self,
+        page: Page,
+        api_context,
+        request: pytest.FixtureRequest,
+    ):
         """Verify file content edit, save and reset."""
         test_name = request.node.name
-        test_marker = "\n# E2E Test Marker"
-        original_content = None
+        file_name = "e2e-files-edit.md"
+        original_content = "# Files E2E\n\nOriginal content.\n"
+        marker = "\n\n## Saved through Monaco"
+        updated_content = original_content + marker
+
+        reset_resp = api_context.put(
+            "/api/workspace/project-directory", data={"path": None}
+        )
+        assert reset_resp.ok
+        seed_resp = api_context.put(
+            f"/api/workspace/files/{file_name}",
+            data={"content": original_content},
+        )
+        assert seed_resp.ok, (
+            f"Seed file failed [{seed_resp.status}]: {seed_resp.text()}"
+        )
 
         log_test_step("1. Visit the workspace page")
         navigate_to_workspace(page)
 
-        log_test_step("2. Get the file list, click the first .md file")
-        file_items = get_file_items(page)
-        first_file = file_items[0]
-        file_name_el = first_file.locator(FILE_NAME_SELECTOR).first
-        file_name = file_name_el.inner_text()
-        logger.info(f"Selected file: {file_name}")
-        first_file.click()
+        log_test_step("2. Open the seeded Markdown file")
+        file_item = page.get_by_role("button", name=file_name, exact=True)
+        expect(file_item).to_be_visible(timeout=5000)
+        file_item.click()
         page.wait_for_timeout(2000)
 
-        log_test_step("3. Wait for the editor area to load")
-        editor_card = page.locator('[class*="editorCard"]').first
-        expect(editor_card).to_be_visible(timeout=5000)
-        logger.info("Editor card loaded")
-
-        log_test_step("4. Turn off Markdown preview to enter edit mode")
-        # Source: Preview Switch is in the contentLabel area
-        preview_switch = editor_card.locator('button.qwenpaw-switch[role="switch"]').first
-        if preview_switch.is_visible():
-            # If preview is on (aria-checked=true), click to turn it off
-            is_preview_on = preview_switch.get_attribute('aria-checked') == 'true'
-            if is_preview_on:
-                preview_switch.click()
-                page.wait_for_timeout(1000)
-                logger.info("Turned off Markdown preview; entered edit mode")
-            else:
-                logger.info("Preview is already off; currently in edit mode")
-        else:
-            logger.info("Preview switch not found; may not be a .md file")
-
-        log_test_step("5. Locate textarea and record original content")
-        textarea = editor_card.locator('textarea').first
-        if not textarea.is_visible():
-            # If no textarea, may not be an md file; skip
-            logger.info("Textarea editor not found; skipping edit test")
-            log_test_result(test_name, True, 0)
-            return
-
-        original_content = textarea.input_value()
-        original_preview = original_content[:50] if len(original_content) > 50 else original_content
-        logger.info(f"Original content preview: {original_preview}")
+        log_test_step("3. Enter Edit mode and wait for Monaco")
+        edit_btn = page.get_by_role("button", name="Edit", exact=True)
+        expect(edit_btn).to_be_visible(timeout=5000)
+        edit_btn.click()
+        monaco = page.locator(".monaco-editor").first
+        expect(monaco).to_be_visible(timeout=10000)
 
         try:
-            log_test_step("6. Append test text to the textarea")
-            textarea.fill(original_content + test_marker)
-            page.wait_for_timeout(500)
-            logger.info("Appended test text")
+            log_test_step("4. Append a Markdown section in Monaco")
+            monaco.click(position={"x": 200, "y": 60})
+            page.keyboard.type(marker)
 
-            log_test_step("7. Verify save button becomes enabled and click it")
-            # Source: save button has SaveOutlined icon; text is t("common.save")
-            save_btn = editor_card.locator('button:has-text("Save")').first
-            expect(save_btn).to_be_visible(timeout=3000)
-            expect(save_btn).to_be_enabled(timeout=3000)
-            save_btn.click()
-            page.wait_for_timeout(2000)
-            logger.info("Clicked save button")
+            log_test_step("5. Save through the workspace toolbar")
+            save_btn = page.get_by_role("button", name="Save", exact=True)
+            expect(save_btn).to_be_enabled(timeout=5000)
+            with page.expect_response(
+                lambda response: (
+                    "/api/workspace/file-content" in response.url
+                    and response.request.method == "PUT"
+                ),
+                timeout=10000,
+            ) as save_info:
+                save_btn.click()
+            assert save_info.value.ok, (
+                f"Workspace save failed [{save_info.value.status}]"
+            )
 
-            log_test_step("8. Reload and reopen the file")
+            log_test_step("6. Verify the saved content through the workspace API")
+            read_resp = api_context.get(
+                f"/api/workspace/file-content?path={file_name}&root=project"
+            )
+            assert read_resp.ok, (
+                f"Saved file read failed [{read_resp.status}]: {read_resp.text()}"
+            )
+            saved_content = read_resp.json()["content"].replace("\r\n", "\n")
+            assert saved_content == updated_content
+
+            log_test_step("7. Reload, reopen, and verify Edit mode remains usable")
             page.reload()
             page.wait_for_load_state("domcontentloaded")
             page.wait_for_timeout(3000)
-
-            file_items = page.locator(FILE_ITEM_SELECTOR).all()
-            if len(file_items) == 0:
-                pytest.skip("File list is empty after reload")
-            file_items[0].click()
-            page.wait_for_timeout(2000)
-
-            # Turn off preview again
-            editor_card = page.locator('[class*="editorCard"]').first
-            expect(editor_card).to_be_visible(timeout=5000)
-            preview_switch = editor_card.locator('button.qwenpaw-switch[role="switch"]').first
-            if preview_switch.is_visible() and preview_switch.get_attribute('aria-checked') == 'true':
-                preview_switch.click()
-                page.wait_for_timeout(1000)
-
-            log_test_step("9. Verify the appended content was persisted")
-            textarea = editor_card.locator('textarea').first
-            expect(textarea).to_be_visible(timeout=5000)
-            updated_content = textarea.input_value()
-            assert test_marker.strip() in updated_content, \
-                f"Appended marker not found; content tail: {updated_content[-80:]}"
-            logger.info("Appended content saved and verified")
-
-            log_test_step("10. Use the reset button to restore original content")
-            # Modify content first to make hasChanges=true, then click reset
-            textarea.fill(original_content)
-            page.wait_for_timeout(500)
-
-            reset_btn = editor_card.locator('button:has-text("Reset")').first
-            if reset_btn.is_visible() and reset_btn.is_enabled():
-                reset_btn.click()
-                page.wait_for_timeout(1000)
-                logger.info("Clicked reset button")
-            else:
-                logger.info("Reset button unavailable (content may already be restored)")
-
-            log_test_step("11. Save the restored content")
-            # Manually re-fill original content and save
-            textarea = editor_card.locator('textarea').first
-            if textarea.is_visible():
-                textarea.fill(original_content)
-                page.wait_for_timeout(500)
-                save_btn = editor_card.locator('button:has-text("Save")').first
-                if save_btn.is_visible() and save_btn.is_enabled():
-                    save_btn.click()
-                    page.wait_for_timeout(2000)
-                    logger.info("Saved restored content")
+            file_item = page.get_by_role("button", name=file_name, exact=True)
+            expect(file_item).to_be_visible(timeout=5000)
+            file_item.click()
+            page.get_by_role("button", name="Edit", exact=True).click()
+            expect(page.locator(".monaco-editor").first).to_be_visible(
+                timeout=10000
+            )
 
             log_test_result(test_name, True, 0)
-            logger.info(f"Test {test_name} passed - file content edit, save and reset OK")
+            logger.info(f"Test {test_name} passed - Monaco edit and save OK")
         finally:
-            # Ensure the file content is restored to original
-            if original_content is not None:
-                try:
-                    editor_card = page.locator('[class*="editorCard"]').first
-                    textarea = editor_card.locator('textarea').first
-                    if textarea.is_visible():
-                        textarea.fill(original_content)
-                        page.wait_for_timeout(500)
-                        save_btn = editor_card.locator('button:has-text("Save")').first
-                        if save_btn.is_visible() and save_btn.is_enabled():
-                            save_btn.click()
-                            page.wait_for_timeout(2000)
-                            logger.info("Cleanup: file content restored to original")
-                except Exception:
-                    logger.warning("Cleanup failed: could not restore original file content")
+            restore_resp = api_context.put(
+                f"/api/workspace/files/{file_name}",
+                data={"content": original_content},
+            )
+            assert restore_resp.ok, (
+                f"File cleanup failed [{restore_resp.status}]: "
+                f"{restore_resp.text()}"
+            )
 
 # ============================================================================
 # FILE-004: Workspace upload and download
@@ -491,43 +363,21 @@ class TestWorkspaceUploadDownload:
         log_test_step("1. Visit the workspace page")
         navigate_to_workspace(page)
 
-        log_test_step("2. Find the download-workspace button")
-        # Source: Button size="small" onClick={handleDownload} icon={<DownloadOutlined />}
-        # Button lives in PageHeader extra area inside actionButtons div
-        download_btn = page.locator(
-            '[class*="actionButtons"] button:has-text("Download")'
-        ).first
-        if not download_btn.is_visible():
-            # Fallback: locate by DownloadOutlined icon
-            download_btn = page.locator('button .anticon-download').first
-            if download_btn.is_visible():
-                download_btn = download_btn.locator('..')
-
-        log_test_step("3. Verify download button is visible and enabled")
-        expect(download_btn).to_be_visible(timeout=5000)
-        assert download_btn.is_enabled(), "Download button should be enabled"
-        logger.info("Download button visible and enabled")
-
-        log_test_step("4. Find the upload-workspace button")
-        # Source: Button size="small" onClick={handleUploadClick} icon={<UploadOutlined />}
+        log_test_step("2. Find the file upload button")
         upload_btn = page.locator(
-            '[class*="actionButtons"] button:has-text("Upload")'
+            'button[aria-label="Upload files"], '
+            'button[aria-label="上传文件"]'
         ).first
-        if not upload_btn.is_visible():
-            upload_btn = page.locator('button .anticon-upload').first
-            if upload_btn.is_visible():
-                upload_btn = upload_btn.locator('..')
 
-        log_test_step("5. Verify upload button is visible and enabled")
+        log_test_step("3. Verify upload button is visible and enabled")
         expect(upload_btn).to_be_visible(timeout=5000)
         assert upload_btn.is_enabled(), "Upload button should be enabled"
         logger.info("Upload button visible and enabled")
 
-        log_test_step("6. Verify the hidden file input exists (accept=.zip)")
-        # Source has a hidden <input type="file" accept=".zip">
-        file_input = page.locator('input[type="file"][accept=".zip"]').first
-        assert file_input.count() > 0, "A hidden file upload input should exist"
-        logger.info("Hidden file input exists, accept=.zip")
+        log_test_step("4. Verify the multi-file input exists")
+        file_input = page.locator('input[type="file"][multiple]').first
+        assert file_input.count() > 0, "A hidden multi-file upload input should exist"
+        logger.info("Hidden multi-file input exists")
 
         log_test_result(test_name, True, 0)
         logger.info(f"Test {test_name} passed - workspace upload/download buttons OK")
@@ -556,7 +406,7 @@ class TestDailyMemoryView:
         test_name = request.node.name
 
         log_test_step("Navigate to the workspace page")
-        page.goto(f"{config.base_url}/workspace")
+        page.goto(f"{config.base_url}/files")
         page.wait_for_load_state("domcontentloaded")
         page.wait_for_timeout(3000)
 
@@ -643,7 +493,7 @@ class TestMarkdownPreview:
         test_name = request.node.name
 
         log_test_step("Navigate to the workspace page")
-        page.goto(f"{config.base_url}/workspace")
+        page.goto(f"{config.base_url}/files")
         page.wait_for_load_state("domcontentloaded")
         page.wait_for_timeout(3000)
 
@@ -724,21 +574,21 @@ class TestWorkspaceZipUpload:
         test_name = request.node.name
 
         log_test_step("Navigate to the workspace page")
-        page.goto(f"{config.base_url}/workspace")
+        page.goto(f"{config.base_url}/files")
         page.wait_for_load_state("domcontentloaded")
         page.wait_for_timeout(3000)
 
         log_test_step("Find the upload button")
         upload_btn = page.locator(
-            'button:has-text("Upload"), '
-            'button:has(.anticon-upload)'
+            'button[aria-label="Upload files"], '
+            'button[aria-label="上传文件"]'
         ).first
         assert upload_btn.count() > 0, "Workspace page should have an upload button"
         expect(upload_btn).to_be_visible(timeout=5000)
         logger.info("Upload button exists and visible")
 
-        log_test_step("Verify the hidden ZIP file input")
-        file_input = page.locator('input[type="file"][accept=".zip"], input[type="file"]').first
+        log_test_step("Verify the hidden multi-file input")
+        file_input = page.locator('input[type="file"][multiple]').first
         if file_input.count() > 0:
             logger.info("ZIP file input exists")
         else:
@@ -755,7 +605,7 @@ class TestWorkspaceZipUpload:
 @pytest.mark.p2
 @pytest.mark.files
 class TestWorkspaceZipDownload:
-    """FILE-P2-002: Download workspace as ZIP."""
+    """FILE-P2-002: Download an opened workspace file."""
 
     @pytest.mark.test_id("FILE-P2-002")
     def test_workspace_zip_download(self, page: Page, request: pytest.FixtureRequest):
@@ -763,17 +613,21 @@ class TestWorkspaceZipDownload:
         test_name = request.node.name
 
         log_test_step("Navigate to the workspace page")
-        page.goto(f"{config.base_url}/workspace")
+        page.goto(f"{config.base_url}/files")
         page.wait_for_load_state("domcontentloaded")
         page.wait_for_timeout(3000)
 
-        log_test_step("Find the download button")
+        log_test_step("Open the first file in the active project directory")
+        file_node = page.locator(FILE_ITEM_SELECTOR).first
+        expect(file_node).to_be_visible(timeout=10000)
+        file_node.click()
+
+        log_test_step("Find the file download button")
         download_btn = page.locator(
-            'button:has-text("Download"), '
-            'button:has(.anticon-download)'
+            'button[aria-label="Download"], '
+            'button[aria-label="下载"]'
         ).first
-        assert download_btn.count() > 0, "Workspace page should have a download button"
-        expect(download_btn).to_be_visible(timeout=5000)
+        expect(download_btn).to_be_visible(timeout=15000)
         assert download_btn.is_enabled(), "Download button should be enabled"
         logger.info("Download button exists and enabled")
 

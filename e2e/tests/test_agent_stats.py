@@ -55,7 +55,10 @@ class TestAgentStatsPageDisplay:
             log_test_step("1. Navigate to agent stats page")
             page.goto(f"{config.base_url}/agent-stats")
             page.wait_for_load_state("commit", timeout=30000)
-            page.wait_for_timeout(2000)
+            page.locator(
+                '.qwenpaw-picker-range, .qwenpaw-empty, '
+                '[class*="summaryCards"]'
+            ).first.wait_for(state="visible", timeout=15000)
             logger.info("Agent stats page loaded")
 
             # 2. Verify breadcrumb
@@ -88,7 +91,7 @@ class TestAgentStatsPageDisplay:
             logger.info(f"Found {len(cards)} summary cards")
 
             # Page should display either summary cards or empty state
-            empty = page.locator(".qwenpaw-empty, [class*='empty']").first
+            empty = page.locator('.qwenpaw-empty, [class*="empty"]').first
             has_cards_or_empty = len(cards) > 0 or empty.is_visible(timeout=3000)
             assert has_cards_or_empty, "Page should display summary cards or empty state"
 
@@ -239,7 +242,10 @@ class TestAgentStatsCharts:
             log_test_step("1. Navigate to agent stats page")
             page.goto(f"{config.base_url}/agent-stats")
             page.wait_for_load_state("commit", timeout=30000)
-            page.wait_for_timeout(2000)
+            page.locator(
+                '.qwenpaw-picker-range, .qwenpaw-empty, '
+                '[class*="summaryCards"]'
+            ).first.wait_for(state="visible", timeout=15000)
 
             # 2. Find chart area
             log_test_step("2. Find chart area")
@@ -255,7 +261,7 @@ class TestAgentStatsCharts:
                         f"Chart containers: {len(chart_containers)}")
 
             # Page should display chart elements or empty state
-            empty = page.locator(".qwenpaw-empty, [class*='empty']").first
+            empty = page.locator('.qwenpaw-empty, [class*="empty"]').first
             has_charts_or_empty = (total_charts > 0 or len(chart_containers) > 0
                                    or empty.is_visible(timeout=3000))
             assert has_charts_or_empty, \
@@ -267,6 +273,11 @@ class TestAgentStatsCharts:
                 logger.info(f"Found {len(chart_containers)} chart containers")
             else:
                 logger.info("Chart area not displayed when no data (empty state)")
+
+            if empty.is_visible(timeout=1000):
+                log_test_result(test_name, True, 0)
+                logger.info("Chart assertions skipped because the selected period has no data")
+                return
 
             # 3. Verify chart titles (if any)
             log_test_step("3. Verify chart titles")

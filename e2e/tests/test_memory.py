@@ -92,9 +92,18 @@ class TestWorkspaceMemoryMd:
     ) -> None:
         test_name = request.node.name
 
-        log_test_step("1. Seed MEMORY.md via the workspace files API")
+        log_test_step("1. Restore the default workspace and seed MEMORY.md")
         # Isolated test backends start empty — MEMORY.md does not exist
-        # by default. Seed one so the file panel has it to render.
+        # by default. A previous Coding test may also have selected a custom
+        # project, so clear that binding before seeding and opening /files.
+        reset_resp = api_context.put(
+            "/api/workspace/project-directory",
+            data={"path": None},
+            headers=memory_page._agent_headers(),
+        )
+        assert reset_resp.ok, (
+            f"Workspace reset failed [{reset_resp.status}]: {reset_resp.text()}"
+        )
         seed_resp = api_context.put(
             "/api/workspace/files/MEMORY.md",
             data={"content": "# Memory\n\ne2e seed\n"},
@@ -104,14 +113,14 @@ class TestWorkspaceMemoryMd:
             f"Seed MEMORY.md failed [{seed_resp.status}]: {seed_resp.text()}"
         )
 
-        log_test_step("2. Open /workspace")
+        log_test_step("2. Open /files")
         memory_page.open_workspace()
 
         log_test_step("3. MEMORY.md row is visible")
         # The file list renders each entry as a div with class
         # *fileItemName* — text-based locator is enough.
         expect(
-            memory_page.page.locator('text="MEMORY.md"').first
+            memory_page.page.get_by_role("button", name="MEMORY.md", exact=True)
         ).to_be_visible(timeout=memory_page.timeout)
 
         log_test_result(test_name, True, 0)
@@ -416,15 +425,12 @@ class TestAutoMemorySearchControls:
             page.locator(memory_page.DREAM_CRON_INPUT).first
         ).to_be_visible(timeout=memory_page.timeout)
 
-        log_test_step("2. Expand the 'Auto Memory Search' collapse panel")
-        header = page.locator(
-            memory_page.AUTO_SEARCH_COLLAPSE_HEADER
-        ).first
-        expect(header).to_be_visible(timeout=memory_page.timeout)
-        switch = page.locator(memory_page.AUTO_SEARCH_SWITCH).first
-        if not switch.is_visible():
-            header.click()
-            page.wait_for_timeout(500)
+        log_test_step("2. Locate the automatic memory search controls")
+        auto_search_label = page.get_by_text(
+            "Enable automatic memory search (Beta)", exact=True
+        )
+        expect(auto_search_label).to_be_visible(timeout=memory_page.timeout)
+        switch = page.get_by_role("switch").last
         expect(switch).to_be_visible(timeout=memory_page.timeout)
 
         log_test_step("3. Toggle the switch and assert aria-checked flips")
@@ -437,10 +443,9 @@ class TestAutoMemorySearchControls:
         )
 
         log_test_step("4. max_results is editable (fill 5, value sticks)")
-        max_results = page.locator(
-            memory_page.AUTO_SEARCH_MAX_RESULTS_INPUT
-        ).first
+        max_results = page.get_by_role("spinbutton").last
         expect(max_results).to_be_visible(timeout=memory_page.timeout)
+        expect(max_results).to_be_enabled(timeout=memory_page.timeout)
         max_results.fill("5")
         assert max_results.input_value() == "5"
 

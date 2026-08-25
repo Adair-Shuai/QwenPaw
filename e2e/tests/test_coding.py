@@ -53,31 +53,24 @@ class TestEnterAndExitCodingMode:
         log_test_step("0. Reset agent to Chat mode (defensive)")
         coding_page.api_set_coding_mode(api_context, False)
 
-        log_test_step("1. Open /chat and verify the Code toggle is visible")
-        coding_page.open_chat()
-        expect(
-            coding_page.page.locator(coding_page.TOGGLE_ENTER).first
-        ).to_be_visible(timeout=coding_page.timeout)
+        log_test_step("1. Open /files with enhanced code capabilities disabled")
+        coding_page.open_workspace()
+        assert not coding_page.is_in_coding_mode()
 
-        log_test_step("2. Enter Coding Mode (workspace default)")
+        log_test_step("2. Enable enhanced code capabilities and reopen /files")
+        coding_page.api_set_coding_mode(api_context, True)
         coding_page.enter_coding_mode_with_workspace_default()
-        assert coding_page.is_in_coding_mode(), (
-            f"Expected URL to contain /coding, got {coding_page.page.url}"
-        )
+        assert coding_page.is_in_coding_mode()
 
         log_test_step("3. Verify IDE shell rendered")
         assert coding_page.verify_ide_layout_visible(), (
             "Coding Mode IDE shell did not render the Chat panel"
         )
 
-        log_test_step("4. Exit Coding Mode and verify route back to /chat")
-        coding_page.exit_coding_mode()
-        assert not coding_page.is_in_coding_mode(), (
-            f"Expected URL to leave /coding, got {coding_page.page.url}"
-        )
-        expect(
-            coding_page.page.locator(coding_page.TOGGLE_ENTER).first
-        ).to_be_visible(timeout=coding_page.timeout)
+        log_test_step("4. Disable enhanced code capabilities and verify tools disappear")
+        coding_page.api_set_coding_mode(api_context, False)
+        coding_page.open_workspace()
+        assert not coding_page.is_in_coding_mode()
 
         log_test_result(test_name, True, 0)
         logger.info(f"Test {test_name} passed")
@@ -113,17 +106,8 @@ class TestCreateEmptyProjectAndOpen:
         coding_page.api_set_coding_mode(api_context, True)
 
         try:
-            log_test_step("2. Navigate directly to /coding and verify IDE")
-            coding_page.open_chat()
-            coding_page.page.goto(
-                coding_page.CODING_URL,
-                wait_until="commit",
-                timeout=coding_page.timeout,
-            )
-            coding_page.page.wait_for_url(
-                "**/coding",
-                timeout=coding_page.timeout,
-            )
+            log_test_step("2. Open the full Files workspace")
+            coding_page.enter_coding_mode_with_workspace_default()
             assert coding_page.verify_ide_layout_visible(), (
                 "IDE shell did not render after creating project"
             )
@@ -134,6 +118,7 @@ class TestCreateEmptyProjectAndOpen:
             )
         finally:
             coding_page.api_set_coding_mode(api_context, False)
+            coding_page.api_reset_project(api_context)
 
 
 # ============================================================================
@@ -181,16 +166,7 @@ class TestOpenExistingDirectory:
         log_test_step("2. Enable Coding Mode and assert IDE renders")
         coding_page.api_set_coding_mode(api_context, True)
         try:
-            coding_page.open_chat()
-            coding_page.page.goto(
-                coding_page.CODING_URL,
-                wait_until="commit",
-                timeout=coding_page.timeout,
-            )
-            coding_page.page.wait_for_url(
-                "**/coding",
-                timeout=coding_page.timeout,
-            )
+            coding_page.enter_coding_mode_with_workspace_default()
             assert coding_page.verify_ide_layout_visible(), (
                 "IDE shell did not render after opening existing directory"
             )
@@ -198,6 +174,7 @@ class TestOpenExistingDirectory:
             logger.info(f"Test {test_name} passed (path: {active_path})")
         finally:
             coding_page.api_set_coding_mode(api_context, False)
+            coding_page.api_reset_project(api_context)
 
 
 # ============================================================================
@@ -239,20 +216,8 @@ class TestChatInCodingMode:
         coding_page.api_set_coding_mode(api_context, True)
 
         try:
-            log_test_step("2. Open IDE and locate the embedded chat input")
+            log_test_step("2. Open Chat with enhanced code capabilities enabled")
             coding_page.open_chat()
-            coding_page.page.goto(
-                coding_page.CODING_URL,
-                wait_until="commit",
-                timeout=coding_page.timeout,
-            )
-            coding_page.page.wait_for_url(
-                "**/coding",
-                timeout=coding_page.timeout,
-            )
-            assert coding_page.verify_ide_layout_visible(), (
-                "IDE shell did not render"
-            )
 
             log_test_step("3. Send a question that mentions README.md")
             chat_input = coding_page.page.locator(
@@ -278,6 +243,7 @@ class TestChatInCodingMode:
             logger.info(f"Test {test_name} passed")
         finally:
             coding_page.api_set_coding_mode(api_context, False)
+            coding_page.api_reset_project(api_context)
 
 
 # ============================================================================
@@ -317,17 +283,8 @@ class TestFileTreeOpenTab:
         coding_page.api_set_coding_mode(api_context, True)
 
         try:
-            log_test_step("2. Open IDE")
-            coding_page.open_chat()
-            coding_page.page.goto(
-                coding_page.CODING_URL,
-                wait_until="commit",
-                timeout=coding_page.timeout,
-            )
-            coding_page.page.wait_for_url(
-                "**/coding",
-                timeout=coding_page.timeout,
-            )
+            log_test_step("2. Open the full Files workspace")
+            coding_page.enter_coding_mode_with_workspace_default()
             assert coding_page.verify_ide_layout_visible(), (
                 "IDE shell did not render"
             )
@@ -348,7 +305,7 @@ class TestFileTreeOpenTab:
                 f"4. Click '{seed_filename}' in the file tree"
             )
             tree_node = coding_page.page.locator(
-                f'div[role="button"]:has(span:text-is("{seed_filename}"))'
+                f'button[class*="treeRow"]:has-text("{seed_filename}")'
             ).first
             expect(tree_node).to_be_visible(timeout=15000)
             tree_node.click()
@@ -363,3 +320,4 @@ class TestFileTreeOpenTab:
             logger.info(f"Test {test_name} passed")
         finally:
             coding_page.api_set_coding_mode(api_context, False)
+            coding_page.api_reset_project(api_context)

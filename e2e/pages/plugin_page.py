@@ -3,7 +3,7 @@
 QwenPaw Plugin Manager page object.
 
 Wraps:
-- Navigation to ``/plugin-manager``
+- Navigation to the Plugins section in the unified Marketplace
 - Tab and selector anchors for the installed / official plugin lists
 
 API-only contract testing for /api/plugins/* endpoints lives in
@@ -29,9 +29,9 @@ logger = logging.getLogger(__name__)
 
 
 class PluginPage(BasePage):
-    """Page object for the Plugin Manager (``/plugin-manager``)."""
+    """Page object for the Plugin Manager in the unified Marketplace."""
 
-    PAGE_URL = f"{config.base_url}/plugin-manager"
+    PAGE_URL = f"{config.base_url}/market?tab=plugins"
 
     # ========== Selectors (bilingual where copy is i18n-driven) ==========
 
@@ -50,25 +50,32 @@ class PluginPage(BasePage):
     )
     TAB_INSTALLED = (
         '.qwenpaw-tabs-tab:has-text("Installed"), '
-        '.qwenpaw-tabs-tab:has-text("已安装")'
+        '.qwenpaw-tabs-tab:has-text("已安装"), '
+        '[role="tab"]:has-text("Installed"), '
+        '[role="tab"]:has-text("已安装")'
     )
     TAB_OFFICIAL = (
         '.qwenpaw-tabs-tab:has-text("Official"), '
-        '.qwenpaw-tabs-tab:has-text("官方")'
+        '.qwenpaw-tabs-tab:has-text("官方"), '
+        '[role="tab"]:has-text("Official"), '
+        '[role="tab"]:has-text("官方")'
     )
     TAB_MARKET = (
         '.qwenpaw-tabs-tab:has-text("Plugin Market"), '
-        '.qwenpaw-tabs-tab:has-text("插件市场")'
+        '.qwenpaw-tabs-tab:has-text("插件市场"), '
+        '[role="tab"]:has-text("Plugin Market"), '
+        '[role="tab"]:has-text("插件市场")'
     )
 
     # ----- Plugin Market compatibility (upstream #5661) -----
-    # Catalog rows share CSS-module classes with the Official list
-    # (OfficialPluginList.module.less), matched by basename substring.
-    MARKET_ROW = '[class*="catalogRow"]'
+    # The market defaults to cards on desktop/mobile but still supports list view.
+    MARKET_ROW = 'article[class*="pluginCard"], [class*="catalogRow"]'
     # antd Tag with prefixCls=qwenpaw; text is "QwenPaw <labels>"
     COMPAT_TAG_GREEN = '.qwenpaw-tag-green:has-text("QwenPaw")'
     COMPAT_TAG_ORANGE = '.qwenpaw-tag-orange:has-text("QwenPaw")'
     MARKET_INSTALL_BTN = (
+        '[class*="cardActions"] button:has-text("Install"), '
+        '[class*="cardActions"] button:has-text("安装"), '
         '[class*="catalogActions"] button:has-text("Install"), '
         '[class*="catalogActions"] button:has-text("安装")'
     )

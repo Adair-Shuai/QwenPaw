@@ -94,8 +94,18 @@ class TestMCPListAndOperations:
         assert card_count >= 1, "Should have at least 1 MCP client"
         logger.info(f"MCP client count: {card_count}")
 
-        # Verify info on the first card
-        first_card = mcp_cards[0]
+        # OAuth clients expose Authorize instead of an enable/disable toggle.
+        first_card = next(
+            (
+                card for card in mcp_cards
+                if card.locator(TOGGLE_BTN_SELECTOR).count() > 0
+                and card.locator(TOGGLE_BTN_SELECTOR).first.inner_text().strip()
+                in {"Enable", "Disable", "启用", "禁用"}
+            ),
+            None,
+        )
+        if first_card is None:
+            pytest.skip("No MCP client with an enable/disable toggle")
         title_el = first_card.locator('h3[class*="mcpTitle"]').first
         expect(title_el).to_be_visible(timeout=5000)
         title_text = title_el.inner_text()

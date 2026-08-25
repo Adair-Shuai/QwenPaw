@@ -810,7 +810,7 @@ class TestAgentDragReorder:
     4. Refresh the page to verify persistence
     """
 
-    def test_agent_drag_reorder(self, page: Page):
+    def test_agent_drag_reorder(self, page: Page, api_context):
         """Test agent drag-and-drop reordering."""
         log_test_step("Navigate to the Agents management page")
         navigate_to_agents(page)
@@ -821,76 +821,133 @@ class TestAgentDragReorder:
         if len(agent_rows) < 2:
             pytest.skip(f"Not enough agents ({len(agent_rows)}); cannot run drag test")
 
-        # Post-#6198 the default agent is pinned at the top and its drag handle
-        # is disabled (aria-disabled="true"); only rows with an enabled
-        # MenuOutlined handle can be reordered.
-        draggable_rows = [
-            r for r in agent_rows
-            if r.locator(
-                "button:has(.anticon-menu):not([aria-disabled='true'])"
-            ).count() > 0
-        ]
-        if len(draggable_rows) < 2:
+        original_order = [r.get_attribute("data-row-key") for r in agent_rows]
+        original_order = [key for key in original_order if key]
+        agents_resp = api_context.get("/api/agents")
+        assert agents_resp.ok, (
+            f"Agent list API failed [{agents_resp.status}]: {agents_resp.text()}"
+        )
+        agent_summaries = agents_resp.json().get("agents", [])
+        reorderable = [a for a in agent_summaries if a.get("id") != "default"]
+        if len(reorderable) < 2:
             pytest.skip(
-                f"Need >=2 reorderable (non-default) agents; got {len(draggable_rows)}"
+                f"Need >=2 reorderable (non-default) agents; got {len(reorderable)}"
             )
 
+        # The new agent architecture keeps pinned and regular agents in
+        # separate sortable groups. Prefer two existing peers. Minimal E2E
+        # fixtures have one in each group, so temporarily align the second
+        # agent's pin state and restore it in the finally block below.
+        peers = next(
+            (
+                group
+                for pinned in (True, False)
+                if len(
+                    group := [
+                        a for a in reorderable
+                        if bool(a.get("pinned")) is pinned
+                    ]
+                ) >= 2
+            ),
+            None,
+        )
+        changed_pin = None
+        if peers is None:
+            peers = reorderable[:2]
+            changed_pin = (peers[1]["id"], bool(peers[1].get("pinned")))
+            pin_resp = api_context.patch(
+                f"/api/agents/{peers[1]['id']}/pin",
+                data={"pinned": bool(peers[0].get("pinned"))},
+            )
+            assert pin_resp.ok, (
+                f"Pin alignment failed [{pin_resp.status}]: {pin_resp.text()}"
+            )
+            navigate_to_agents(page)
+
+        first_id, second_id = peers[0]["id"], peers[1]["id"]
+        first_row = page.locator(f'tr[data-row-key="{first_id}"]').first
+        second_row = page.locator(f'tr[data-row-key="{second_id}"]').first
+        expect(first_row).to_be_visible(timeout=10000)
+        expect(second_row).to_be_visible(timeout=10000)
+
         log_test_step(
-            f"Found {len(agent_rows)} agent(s), {len(draggable_rows)} reorderable"
+            f"Found {len(agent_rows)} agent(s); reordering {first_id} and {second_id}"
         )
 
-        first_row = draggable_rows[0]
-        second_row = draggable_rows[1]
-
         log_test_step("Capture agent order before drag")
-        before_order = [r.get_attribute("data-row-key") for r in agent_rows]
+        before_order = [
+            r.get_attribute("data-row-key")
+            for r in page.locator("tr[data-row-key]").all()
+        ]
         assert len([k for k in before_order if k]) >= 2, "Could not read >=2 agent keys"
         logger.info(f"Order before drag: {before_order}")
 
-        log_test_step("Find the drag handle (enabled, non-default row)")
-        drag_handle = first_row.locator("button:has(.anticon-menu)").first
-        if drag_handle.count() == 0:
-            pytest.skip("Drag handle not found; this page may not support drag reordering")
+        try:
+            log_test_step("Find the drag handle (enabled, non-default row)")
+            drag_handle = first_row.locator("button:has(.anticon-menu)").first
+            expect(drag_handle).to_be_enabled(timeout=10000)
 
-        log_test_step("Drag handle found; starting drag operation")
-        drag_handle.hover()
-        time.sleep(0.5)
+            log_test_step("Drag handle found; starting drag operation")
+            handle_box = drag_handle.bounding_box()
+            assert handle_box is not None, "Could not read the drag handle position"
+            start_x = handle_box["x"] + handle_box["width"] / 2
+            start_y = handle_box["y"] + handle_box["height"] / 2
 
-        page.mouse.down()
-        time.sleep(0.3)
+            page.mouse.move(start_x, start_y)
+            page.mouse.down()
 
-        second_row_center = second_row.bounding_box()
-        assert second_row_center is not None, "Could not read the position of the second row"
+            # dnd-kit's PointerSensor requires six pixels of movement before it
+            # activates. Cross that threshold first, then stay on the handle's
+            # vertical axis so closestCenter can unambiguously select row two.
+            page.mouse.move(start_x, start_y + 10, steps=5)
+            time.sleep(0.2)
 
-        target_y = second_row_center["y"] + second_row_center["height"] / 2
-        target_x = second_row_center["x"] + second_row_center["width"] / 2
+            second_row_center = second_row.bounding_box()
+            assert second_row_center is not None, "Could not read the position of the second row"
+            target_y = second_row_center["y"] + second_row_center["height"] / 2
 
-        page.mouse.move(target_x, target_y, steps=10)
-        time.sleep(0.5)
+            page.mouse.move(start_x, target_y, steps=15)
+            time.sleep(0.5)
+            page.mouse.up()
+            time.sleep(2)
 
-        page.mouse.up()
-        time.sleep(2)
+            log_test_step("Drag finished; verifying the new order")
+            refreshed_rows = page.locator("tr[data-row-key]").all()
+            after_order = [r.get_attribute("data-row-key") for r in refreshed_rows]
 
-        log_test_step("Drag finished; verifying the new order")
-        refreshed_rows = page.locator("tr[data-row-key]").all()
-        after_order = [r.get_attribute("data-row-key") for r in refreshed_rows]
+            logger.info(f"Order after drag: {after_order}")
+            assert before_order != after_order, "Agent order did not change after drag; reorder did not take effect"
+            logger.info("Agent order changed; drag reorder succeeded")
 
-        logger.info(f"Order after drag: {after_order}")
-        assert before_order != after_order, "Agent order did not change after drag; reorder did not take effect"
-        logger.info("Agent order changed; drag reorder succeeded")
+            log_test_step("Refresh page to verify persistence")
+            page.reload()
+            page.wait_for_load_state("domcontentloaded")
+            time.sleep(2)
 
-        log_test_step("Refresh page to verify persistence")
-        page.reload()
-        page.wait_for_load_state("domcontentloaded")
-        time.sleep(2)
+            persisted_rows = page.locator("tr[data-row-key]").all()
+            persisted_order = [r.get_attribute("data-row-key") for r in persisted_rows]
 
-        persisted_rows = page.locator("tr[data-row-key]").all()
-        persisted_order = [r.get_attribute("data-row-key") for r in persisted_rows]
-
-        logger.info(f"Order after refresh: {persisted_order}")
-        assert after_order == persisted_order, \
-            f"Drag reorder did not persist: after drag {after_order}, after refresh {persisted_order}"
-        logger.info("Drag reorder persisted; test passed")
+            logger.info(f"Order after refresh: {persisted_order}")
+            assert after_order == persisted_order, \
+                f"Drag reorder did not persist: after drag {after_order}, after refresh {persisted_order}"
+            logger.info("Agent drag reorder persisted")
+        finally:
+            if changed_pin is not None:
+                agent_id, was_pinned = changed_pin
+                restore_pin = api_context.patch(
+                    f"/api/agents/{agent_id}/pin",
+                    data={"pinned": was_pinned},
+                )
+                assert restore_pin.ok, (
+                    f"Pin restore failed [{restore_pin.status}]: {restore_pin.text()}"
+                )
+            restore_order = api_context.put(
+                "/api/agents/order",
+                data={"agent_ids": original_order},
+            )
+            assert restore_order.ok, (
+                f"Order restore failed [{restore_order.status}]: {restore_order.text()}"
+            )
 
         logger.info("Agent drag reorder test complete")
 

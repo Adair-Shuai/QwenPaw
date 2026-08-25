@@ -86,9 +86,8 @@ class TestACPPageDisplay:
             # 4. Verify create button
             log_test_step("4. Verify create button")
             create_btn = page.locator(
-                'button:has-text("Create"), button:has-text("创建"), '
-                'button:has-text("Add"), button:has-text("添加"), '
-                'button:has-text("新增"), button:has-text("New")'
+                'button:has-text("Add Custom Agent"), '
+                'button:has-text("新增 Custom Agent")'
             ).first
             assert create_btn.is_visible(timeout=5000), "Create button should be visible"
             logger.info("Create button visible")
@@ -153,9 +152,8 @@ class TestCreateACPDrawerForm:
             # 2. Click create button
             log_test_step("2. Click create button")
             create_btn = page.locator(
-                'button:has-text("Create"), button:has-text("创建"), '
-                'button:has-text("Add"), button:has-text("添加"), '
-                'button:has-text("新增"), button:has-text("New")'
+                'button:has-text("Add Custom Agent"), '
+                'button:has-text("新增 Custom Agent")'
             ).first
 
             assert create_btn.is_visible(timeout=5000), "Create button not visible, cannot continue"
@@ -608,9 +606,8 @@ class TestCreateAndDeleteCustomACP:
             # 2. Click create button
             log_test_step("2. Open create drawer")
             create_btn = page.locator(
-                'button:has-text("Create"), button:has-text("创建"), '
-                'button:has-text("Add"), button:has-text("添加"), '
-                'button:has-text("新增"), button:has-text("New")'
+                'button:has-text("Add Custom Agent"), '
+                'button:has-text("新增 Custom Agent")'
             ).first
 
             assert create_btn.is_visible(timeout=5000), "Create button not visible, cannot continue"

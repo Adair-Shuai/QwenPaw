@@ -44,7 +44,7 @@ class CodingPage(BasePage):
 
     PAGE_TITLE = "QwenPaw Console"
     PAGE_URL = f"{config.base_url}/chat"
-    CODING_URL = f"{config.base_url}/coding"
+    CODING_URL = f"{config.base_url}/files"
 
     # ========== Selectors ==========
 
@@ -59,6 +59,22 @@ class CodingPage(BasePage):
     TOGGLE_EXIT = (
         'button[aria-label="Exit Coding Mode"], '
         'button[aria-label="退出编程模式"]'
+    )
+    OPEN_WORKSPACE = (
+        'button[aria-label="Open workspace"], '
+        'button[aria-label="打开工作区"]'
+    )
+    CLOSE_WORKSPACE = (
+        'button[aria-label="Close workspace"], '
+        'button[aria-label="关闭工作区"]'
+    )
+    FILES_NAVIGATOR = (
+        '[aria-label="Files navigator"], '
+        '[aria-label="文件导航器"]'
+    )
+    SOURCE_CONTROL = (
+        'button[aria-label="Source control"], '
+        'button[aria-label="源码管理"]'
     )
 
     # Experimental confirmation modal (first activation only)
@@ -184,8 +200,22 @@ class CodingPage(BasePage):
     # ========== Toggle ==========
 
     def is_in_coding_mode(self) -> bool:
-        """Return True iff the URL is currently on /coding."""
-        return "/coding" in self.page.url
+        """Return True when the embedded workspace exposes coding tools."""
+        source_control = self.page.locator(self.SOURCE_CONTROL).first
+        try:
+            return source_control.is_visible(timeout=1000)
+        except TimeoutError:
+            return False
+
+    def open_workspace(self) -> None:
+        """Open the full Files workspace used by enhanced code capabilities."""
+        self.page.goto(
+            self.CODING_URL,
+            wait_until="domcontentloaded",
+            timeout=self.timeout,
+        )
+        files_navigator = self.page.locator(self.FILES_NAVIGATOR).first
+        expect(files_navigator).to_be_visible(timeout=self.timeout)
 
     def click_enter_toggle(self) -> None:
         """Click the "Code" button to start entering Coding Mode."""
@@ -250,41 +280,13 @@ class CodingPage(BasePage):
         self,
         timeout_ms: Optional[int] = None,
     ) -> None:
-        """Enter Coding Mode using the default workspace project.
-
-        Skips both the experimental warning (via localStorage prime) and
-        the project-select modal (by dismissing it, which the toggle
-        treats as 'use workspace default' per the toggle source).
-        """
+        """Open the Files workspace and wait for coding tools to appear."""
         timeout = timeout_ms or self.timeout
 
-        if self.is_in_coding_mode():
-            logger.info("Already in Coding Mode; nothing to do")
-            return
-
-        self.prime_experimental_confirmed()
-        self.click_enter_toggle()
-
-        # If the project-select modal pops up (project_dir undefined),
-        # close it — the toggle then activates with workspace default.
-        try:
-            self.page.locator(self.PROJECT_MODAL_TITLE).wait_for(
-                state="visible",
-                timeout=3000,
-            )
-            self.close_project_modal_if_open()
-        except TimeoutError:
-            # No modal — already activated directly.
-            pass
-
-        # Entering via the toggle navigates to ``/coding/<sessionId>``
-        # (buildSessionPath in console/src/utils/sessionRoute.ts), so a
-        # ``**/coding`` glob never matches the session-suffixed URL. Assert
-        # the Exit toggle appears instead — a reliable signal the IDE shell
-        # mounted, and independent of whether a session id is appended.
-        expect(
-            self.page.locator(self.TOGGLE_EXIT).first
-        ).to_be_visible(timeout=timeout)
+        self.open_workspace()
+        expect(self.page.locator(self.SOURCE_CONTROL).first).to_be_visible(
+            timeout=timeout,
+        )
 
     def exit_coding_mode(self, timeout_ms: Optional[int] = None) -> None:
         """Exit Coding Mode and wait until the Chat toggle returns."""
@@ -302,13 +304,9 @@ class CodingPage(BasePage):
     # ========== Assertions ==========
 
     def verify_ide_layout_visible(self) -> bool:
-        """Soft-check that the IDE three-column layout has rendered.
-
-        We look for the always-on "Chat" panel header. Returns True on
-        match within ~5s, False otherwise.
-        """
+        """Soft-check that the embedded file workspace has rendered."""
         try:
-            expect(self.page.locator(self.IDE_CHAT_HEADER_TEXT).first).to_be_visible(
+            expect(self.page.locator(self.FILES_NAVIGATOR).first).to_be_visible(
                 timeout=5000,
             )
             return True
@@ -337,7 +335,7 @@ class CodingPage(BasePage):
         assert "path" in body, f"Unexpected create response: {body}"
         return body
 
-    def api_activate_project(self, api_context, path: str) -> dict:
+    def api_activate_project(self, api_context, path: str | None) -> dict:
         """PUT /api/workspace/project-directory — set the active project."""
         resp = api_context.put(
             "/api/workspace/project-directory",
@@ -348,6 +346,10 @@ class CodingPage(BasePage):
             f"Project activate failed [{resp.status}]: {resp.text()}"
         )
         return resp.json()
+
+    def api_reset_project(self, api_context) -> dict:
+        """Restore the agent to its default workspace directory."""
+        return self.api_activate_project(api_context, None)
 
     def api_set_coding_mode(self, api_context, enabled: bool) -> dict:
         """POST /api/coding-mode — toggle Coding Mode on/off."""

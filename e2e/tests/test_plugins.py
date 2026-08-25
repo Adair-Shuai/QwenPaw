@@ -82,7 +82,9 @@ class TestPluginCompatibility:
         plugin_market.register(plugin_page.page)
         plugin_page.open()
         plugin_page.page.locator(plugin_page.TAB_MARKET).first.click()
-        plugin_page.page.locator(plugin_page.MARKET_ROW).first.wait_for(
+        plugin_page.page.locator(plugin_page.MARKET_ROW).filter(
+            has_text=plugin_market.COMPATIBLE_PLUGIN_NAME
+        ).first.wait_for(
             state="visible", timeout=plugin_page.timeout
         )
 
@@ -140,7 +142,10 @@ class TestPluginCompatibility:
             has_text=plugin_market.INCOMPATIBLE_PLUGIN_NAME
         ).first
         expect(legacy_row).to_be_visible(timeout=plugin_page.timeout)
-        legacy_row.locator(plugin_page.MARKET_INSTALL_BTN).first.click()
+        legacy_row.hover()
+        install_button = legacy_row.locator(plugin_page.MARKET_INSTALL_BTN).first
+        expect(install_button).to_be_visible(timeout=plugin_page.timeout)
+        install_button.click()
 
         log_test_step("3. 'Compatibility Warning' Modal.confirm appears")
         modal = page.locator(plugin_page.COMPAT_MODAL).first

@@ -47,7 +47,10 @@ class ACPPage(BasePage):
     TAB_CUSTOM = '[class*="tab"]:has-text("Custom"), [class*="tab"]:has-text("自定义"), .qwenpaw-segmented-item:has-text("Custom")'
 
     # Create button
-    CREATE_BUTTON = 'button:has-text("Create"), button:has-text("创建"), button:has-text("Add"), button:has-text("添加")'
+    CREATE_BUTTON = (
+        'button:has-text("Add Custom Agent"), '
+        'button:has-text("新增 Custom Agent")'
+    )
 
     # ACP card list
     ACP_CARD = '[class*="acpCard"], [class*="ACPCard"], .qwenpaw-card'

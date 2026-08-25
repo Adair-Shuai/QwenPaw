@@ -159,7 +159,7 @@ class ChatPage(BasePage):
     # SidebarSessionList renders one <button class={styles.groupLabel}> per
     # non-empty bucket (Pinned / Today / Within 7 days / Within 30 days /
     # Earlier); clicking toggles collapse. "month" + "older" start collapsed.
-    SIDEBAR_GROUP_LABEL = 'button[class*="groupLabel"]'
+    SIDEBAR_GROUP_LABEL = '[class*="groupHeader"]'
     SIDEBAR_GROUP_CHEVRON = 'span[class*="groupChevron"]'
     SIDEBAR_GROUP_TEXTS = {
         "pinned": ("Pinned", "置顶"),
@@ -1189,9 +1189,8 @@ class ChatPage(BasePage):
             group: bucket key — pinned / today / week / month / older.
         """
         en, zh = self.SIDEBAR_GROUP_TEXTS[group]
-        return self.page.locator(
-            f'{self.SIDEBAR_GROUP_LABEL}:has-text("{en}"), '
-            f'{self.SIDEBAR_GROUP_LABEL}:has-text("{zh}")'
+        return self.page.get_by_text(en, exact=True).or_(
+            self.page.get_by_text(zh, exact=True)
         ).first
 
     def toggle_sidebar_group(self, group: str) -> "ChatPage":

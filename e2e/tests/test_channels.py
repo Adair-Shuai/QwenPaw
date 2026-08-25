@@ -69,7 +69,9 @@ class TestChannelListAndFilter:
         log_test_step("1. Open the Channels page and verify the page title")
         channels_page.open()
         page_title = channels_page.page.title()
-        assert "QwenPaw" in page_title or "Channels" in page_title, f"Unexpected page title: {page_title}"
+        assert any(name in page_title for name in ("QwenPaw", "UGSci", "Channels")), (
+            f"Unexpected page title: {page_title}"
+        )
 
         log_test_step("2. Verify the filter buttons are visible")
         assert channels_page.page.locator(channels_page.FILTER_ALL_BTN).first.is_visible(), "All filter button not shown"

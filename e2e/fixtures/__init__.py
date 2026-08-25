@@ -199,7 +199,14 @@ def page(browser_context: BrowserContext, request: pytest.FixtureRequest) -> Gen
     # any switch/button in automated tests. Same key as console's
     # desktopModeHint.ts (dismissDesktopModeHint).
     page.add_init_script(
-        "window.localStorage.setItem('qwenpaw.desktop-mode-hint.dismissed', '1');",
+        """
+        try {
+            window.localStorage.setItem(
+                'qwenpaw.desktop-mode-hint.dismissed',
+                '1',
+            );
+        } catch (e) {}
+        """,
     )
 
     # Inject test name + step counter, used by BasePage.step_shot for auto-archiving
