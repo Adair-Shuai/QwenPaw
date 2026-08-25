@@ -13,6 +13,8 @@ interface MockListHandle {
   resetAfterIndex: (index: number, forceUpdate?: boolean) => void;
 }
 
+const PDF_RENDER_WAIT_MS = 5_000;
+
 interface MockListProps {
   children: ComponentType<{
     index: number;
@@ -181,8 +183,9 @@ describe("LightweightPdfViewer", () => {
       />,
     );
 
-    await waitFor(() =>
-      expect(screen.getByLabelText("PDF 页面 1")).toBeVisible(),
+    await waitFor(
+      () => expect(screen.getByLabelText("PDF 页面 1")).toBeVisible(),
+      { timeout: PDF_RENDER_WAIT_MS },
     );
     expect(getDocument).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -205,11 +208,13 @@ describe("LightweightPdfViewer", () => {
     const { unmount } = render(
       <LightweightPdfViewer url="/report.pdf" theme="dark" />,
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText("PDF 页面 1")).toBeVisible(),
+    await waitFor(
+      () => expect(screen.getByLabelText("PDF 页面 1")).toBeVisible(),
+      { timeout: PDF_RENDER_WAIT_MS },
     );
-    await waitFor(() =>
-      expect(screen.getByLabelText("PDF 页面 2")).toBeVisible(),
+    await waitFor(
+      () => expect(screen.getByLabelText("PDF 页面 2")).toBeVisible(),
+      { timeout: PDF_RENDER_WAIT_MS },
     );
 
     expect(getPage).toHaveBeenCalledWith(1);

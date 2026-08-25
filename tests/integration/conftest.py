@@ -311,6 +311,53 @@ class AppServer:
         return response
 
 
+def _agents_are_ready(
+    client: httpx.Client,
+    base_url: str,
+) -> tuple[bool, str]:
+    """Return whether the app's agents have finished their startup work."""
+    response = client.get(f"{base_url}/api/agents")
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {}
+
+    agents = payload.get("agents", [])
+    unsettled = [
+        (
+            item.get("id", "unknown"),
+            item.get("startup_status", "missing"),
+        )
+        for item in agents
+        if item.get("startup_status") in {"pending", "starting"}
+    ]
+    ready = response.status_code == 200 and bool(agents) and not unsettled
+    detail = (
+        f"app health is ready but agents are still starting: {unsettled!r}"
+    )
+    return ready, detail
+
+
+def _app_readiness(
+    client: httpx.Client,
+    base_url: str,
+) -> tuple[bool, str | None]:
+    """Check both the health endpoint identity and agent startup state."""
+    response = client.get(f"{base_url}/api/healthz")
+    if response.status_code != 200:
+        return False, None
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+
+    if not isinstance(payload, dict) or payload.get("status") != "ok":
+        return False, f"port answered by a foreign server: {payload!r}"
+
+    return _agents_are_ready(client, base_url)
+
+
 @pytest.fixture(scope="module")
 def app_server(  # pylint: disable=too-many-statements,too-many-branches
     request: pytest.FixtureRequest,
@@ -337,6 +384,19 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
     working_dir.mkdir(parents=True, exist_ok=True)
     secret_dir.mkdir(parents=True, exist_ok=True)
     backups_dir.mkdir(parents=True, exist_ok=True)
+
+    # Creator has a dedicated test workflow. Its optional media/document
+    # dependencies are intentionally not installed by the shared integration
+    # suite: doing so delays core-agent readiness for many minutes on a fresh
+    # runner and causes unrelated API tests to fail with connection refused.
+    creator_uninstall_marker = (
+        working_dir / "plugins" / ".uninstalled" / "qwenpaw-creator"
+    )
+    creator_uninstall_marker.parent.mkdir(parents=True, exist_ok=True)
+    creator_uninstall_marker.write_text(
+        "Disabled for the shared integration test subprocess.\n",
+        encoding="utf-8",
+    )
 
     env = os.environ.copy()
     for key in _SENSITIVE_ENV_VARS:
@@ -492,26 +552,12 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
             if process.poll() is not None:
                 break
             try:
-                resp = client.get(f"http://{host}:{port}/api/healthz")
-                if resp.status_code == 200:
-                    try:
-                        payload = resp.json()
-                    except ValueError:
-                        payload = None
-                    # Identity check: only the real app answers
-                    # {"status": "ok", ...}. A foreign process that
-                    # grabbed the port would otherwise fool the
-                    # readiness loop with any 200 response.
-                    if (
-                        isinstance(payload, dict)
-                        and payload.get("status") == "ok"
-                    ):
-                        ready = True
-                        break
-                    last_error = (
-                        f"port {port} answered by a foreign server: "
-                        f"{payload!r}"
-                    )
+                ready, last_error = _app_readiness(
+                    client,
+                    f"http://{host}:{port}",
+                )
+                if ready:
+                    break
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
                 last_error = str(exc)
             time.sleep(0.5)

@@ -149,9 +149,16 @@ def assemble(
         desktop_version,
         java_destination,
     )
+    # The layer can be assembled for a target platform from a different host
+    # (for example, contract tests assemble a Windows tree on Linux). Prefer
+    # the explicit target when available and fall back to the host only for
+    # local callers that do not provide one.
+    target_is_windows = (
+        target.startswith("windows-") if target else sys.platform == "win32"
+    )
     helper_name = (
         "qwenpaw-computer-use-helper.exe"
-        if sys.platform == "win32"
+        if target_is_windows
         else "qwenpaw-computer-use-helper"
     )
     if not (computer_use_destination / helper_name).is_file():

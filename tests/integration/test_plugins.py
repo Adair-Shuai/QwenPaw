@@ -575,20 +575,18 @@ def test_plugins_upload_sample_plugin_lifecycle(app_server) -> None:
 
 @pytest.mark.integration
 @pytest.mark.p1
-def test_plugins_upload_force_replaces_existing(app_server) -> None:
+def test_plugins_upload_force_rejects_managed_update(app_server) -> None:
     """Test purpose:
-    - Verify the upload force-replace flow: re-uploading the same
-      plugin_id without ``force=true`` is rejected with a conflict
-      (409), but passing ``force=true`` unloads the existing record
-      and installs the new version. Console's "reinstall" button is
-      this exact flow.
+    - Verify installed plugins cannot bypass the signed component updater.
+      Re-uploading the same plugin is rejected both with and without
+      ``force=true``; the existing version remains active.
 
     Test flow:
     1. Upload v0.0.1 (success); confirm via status.version == 0.0.1.
     2. Upload v0.0.1 again without force — assert 409 (conflict
        surfaced as ValueError → 409 in install handler).
-    3. Upload v0.0.2 with ``?force=true``; assert 200.
-    4. GET status; assert version == 0.0.2.
+    3. Upload v0.0.2 with ``?force=true``; assert the managed-update 409.
+    4. GET status; assert version remains 0.0.1.
     5. finally — best-effort delete.
 
     API endpoints:
@@ -608,13 +606,14 @@ def test_plugins_upload_force_replaces_existing(app_server) -> None:
         conflict = _upload_plugin_zip(app_server, plugin_id, zip_v1)
         assert conflict.status_code == 409, app_server.logs_tail()
 
-        replace = _upload_plugin_zip(
+        forced = _upload_plugin_zip(
             app_server,
             plugin_id,
             zip_v2,
             force=True,
         )
-        assert replace.status_code == 200, app_server.logs_tail()
+        assert forced.status_code == 409, app_server.logs_tail()
+        assert "update button" in forced.json().get("detail", "")
 
         status_resp = app_server.api_request(
             "GET",
@@ -622,6 +621,6 @@ def test_plugins_upload_force_replaces_existing(app_server) -> None:
             timeout=PLUGIN_HTTP_TIMEOUT,
         )
         assert status_resp.status_code == 200, app_server.logs_tail()
-        assert status_resp.json().get("version") == "0.0.2"
+        assert status_resp.json().get("version") == "0.0.1"
     finally:
         _delete_plugin_quietly(app_server, plugin_id)
