@@ -4,9 +4,9 @@ agent-client-protocol==0.10.1 \
     --hash=sha256:355c65ca19f0568344aafc2c1552b7066a8fc491df23ab28e7e253c6c9a85a25 \
     --hash=sha256:a03d3198f4d772f2e0ec012c00ac1cce131b4710220a3dc9fae3c991d047c750
     # via qwenpaw
-agentscope==2.0.4.post1 \
-    --hash=sha256:b789b3f358341299e13548b644d44a24848e8fe51c684564bb454e7bcd54790f \
-    --hash=sha256:ec4fe650e0e666687bf44343cead524ac8a1b1d871061bb3bf06d148f463ecf8
+agentscope==2.0.6 \
+    --hash=sha256:091e7f214eff7fd6f4934d98a7d7c4bb8707a5d4b33d335def7fc31255e7ccb8 \
+    --hash=sha256:5fcf2be7b56dabc2ebb616c8999f8ba299355ba4cbae9ac0d4f777ad04e7e3f6
     # via qwenpaw
 aiofile==3.12.3 \
     --hash=sha256:5c1bcc9e929c50834608e8cc1a4cc1d7503eb60c15a535b779fd39e2f372c017 \
@@ -1666,6 +1666,7 @@ httpx==0.28.1 \
     #   huggingface-hub
     #   lark-oapi
     #   mcp
+    #   ollama
     #   openai
     #   python-telegram-bot
     #   qwenpaw
@@ -1700,6 +1701,10 @@ idna==3.18 \
     #   httpx
     #   requests
     #   yarl
+imap-tools==1.15.0 \
+    --hash=sha256:7bb0003c8bf124b80968c7bef786e4577d8365e9afb6551dc15b13161b688bdc \
+    --hash=sha256:a90f948549ab000d96caf17c90e63b114f8788ba4a0d3f9274a96c0e108c3805
+    # via qwenpaw
 importlib-metadata==9.0.0 \
     --hash=sha256:2d21d1cc5a017bd0559e36150c21c830ab1dc304dedd1b7ea85d20f45ef3edd7 \
     --hash=sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc
@@ -2648,6 +2653,10 @@ numpy==2.4.6 \
     #   welly
     #   xtgeo
     #   xtgeoviz
+ollama==0.6.2 \
+    --hash=sha256:3ad7daab28e5a973445c36a73882a3ef698c2ebb00e21e308652741577509f7d \
+    --hash=sha256:936d55daa684f474364c098611c933626f8d6c7d67065c5b7ae0c477b508b07f
+    # via agentscope
 onnxruntime==1.23.2 \
     --hash=sha256:0be6a37a45e6719db5120e9986fcd30ea205ac8103fd1fb74b6c33348327a0cc \
     --hash=sha256:0f9b4ae77f8e3c9bee50c27bc1beede83f786fe1d52e99ac85aa8d65a01e9b77 \
@@ -3325,6 +3334,7 @@ pydantic==2.13.4 \
     #   fastmcp-slim
     #   google-genai
     #   mcp
+    #   ollama
     #   openai
     #   openapi-pydantic
     #   pydantic-settings
@@ -4576,6 +4586,7 @@ tzdata==2026.3 \
     --hash=sha256:4a1518b8993086a7982523e071643f3c0e5f213e75b21318e78bcabfff9d1415 \
     --hash=sha256:dc096730c87af6cab1b171c9d532be840741ff5d459015e7f6947bd7d7e54931
     # via
+    #   agentscope
     #   pandas
     #   qwenpaw
     #   tzlocal

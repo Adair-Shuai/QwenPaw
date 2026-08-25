@@ -3,6 +3,11 @@ from __future__ import annotations
 
 import ast
 from pathlib import Path
+import re
+import tomllib
+
+from packaging.requirements import Requirement
+from packaging.utils import canonicalize_name
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SPEC_PATH = REPO_ROOT / "scripts" / "pack-tauri" / "qwenpaw.spec"
@@ -112,6 +117,36 @@ def test_layered_builds_skip_pyinstaller_and_use_locked_dependency_layer():
     assert '"wheel>=0.46,<1"' in windows_build
     assert '"wheel>=0.46,<1"' in unix_build
     assert 'repo / "uv.lock"' not in layer_builder
+
+
+def test_desktop_lock_matches_exact_runtime_dependency_pins():
+    project = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    )
+    exact_pins: dict[str, str] = {}
+    for dependency in project["project"]["dependencies"]:
+        requirement = Requirement(dependency)
+        versions = [
+            specifier.version
+            for specifier in requirement.specifier
+            if specifier.operator == "=="
+        ]
+        if len(versions) == 1:
+            exact_pins[canonicalize_name(requirement.name)] = versions[0]
+
+    lock_text = (REPO_ROOT / "requirements-desktop.lock").read_text(
+        encoding="utf-8",
+    )
+    lock_versions = {
+        canonicalize_name(name): version
+        for name, version in re.findall(
+            r"(?m)^([A-Za-z0-9_.-]+)==([^\s\\]+)",
+            lock_text,
+        )
+    }
+
+    assert exact_pins
+    assert {name: lock_versions.get(name) for name in exact_pins} == exact_pins
 
 
 def test_layered_builds_do_not_install_domain_packages_into_interpreter():
