@@ -41,14 +41,34 @@ def default_http_timeout(default: float = 15.0) -> float:
 
 def app_startup_wait_timeout() -> float:
     """Return the maximum wait for the integration app to become ready."""
-    return default_http_timeout(60.0)
+    return default_http_timeout(120.0)
 
 
-PLUGIN_HTTP_TIMEOUT = default_http_timeout(60.0)
+PLUGIN_HTTP_TIMEOUT = default_http_timeout(120.0)
 LOADER_READY_TIMEOUT = default_http_timeout(20.0)
 AGENT_SCOPED_PREFIX = "/api/agents"
 REPO_ROOT = Path(__file__).resolve().parents[2]
 OFFICIAL_PLUGINS_DIR = REPO_ROOT / "plugins"
+
+
+def wait_for_agent_reload(
+    app_server,
+    log_start: int,
+    *,
+    agent_id: str = "default",
+    timeout: float | None = None,
+) -> None:
+    """Wait until a scheduled zero-downtime reload has fully swapped in."""
+    deadline = time.time() + (timeout or default_http_timeout(60.0))
+    while time.time() < deadline:
+        for line in app_server.logs[log_start:]:
+            if agent_id in line and "Zero-downtime reload completed" in line:
+                return
+        time.sleep(0.1)
+    raise AssertionError(
+        f"Agent '{agent_id}' reload did not complete in time.\n"
+        f"{app_server.logs_tail()}",
+    )
 
 
 # ------------------------------------------------------------------ #

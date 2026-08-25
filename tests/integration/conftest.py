@@ -355,6 +355,11 @@ def _app_readiness(
     if not isinstance(payload, dict) or payload.get("status") != "ok":
         return False, f"port answered by a foreign server: {payload!r}"
 
+    bundled_plugins = payload.get("bundled_plugins", {})
+    bundled_state = bundled_plugins.get("state")
+    if bundled_state not in {"ready", "error"}:
+        return False, f"bundled plugins are still starting: {bundled_state!r}"
+
     return _agents_are_ready(client, base_url)
 
 

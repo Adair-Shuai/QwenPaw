@@ -26,6 +26,7 @@ from helpers import (
     default_http_timeout,
     register_mock_provider,
     unregister_mock_provider,
+    wait_for_agent_reload,
 )
 from mock_matrix_hs import BOT_USER_ID, MockMatrixHomeserver
 
@@ -51,6 +52,7 @@ def mock_llm():
 def matrix_channel_up(app_server):
     """Enable the Matrix channel against the mock homeserver."""
     _MOCK_HS.start()
+    reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
         "/api/config/channels/matrix",
@@ -64,6 +66,7 @@ def matrix_channel_up(app_server):
         timeout=_HTTP_TIMEOUT,
     )
     assert put.status_code == 200, app_server.logs_tail()
+    wait_for_agent_reload(app_server, reload_mark)
     yield _MOCK_HS
     app_server.api_request(
         "PUT",
@@ -373,6 +376,7 @@ def test_matrix_dm_disabled_drops_message(
     """
     srv, mock_url = mock_llm
     srv.force_tool_call = False
+    reload_mark = len(app_server.logs)
     unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
     provider_id = register_mock_provider(app_server, mock_url)
     put = app_server.api_request(
@@ -389,6 +393,7 @@ def test_matrix_dm_disabled_drops_message(
         timeout=_HTTP_TIMEOUT,
     )
     assert put.status_code == 200, app_server.logs_tail()
+    wait_for_agent_reload(app_server, reload_mark)
     try:
         before = len(matrix_channel_up.sent_events)
         matrix_channel_up.push_text_event(
@@ -401,6 +406,7 @@ def test_matrix_dm_disabled_drops_message(
         ), matrix_channel_up.sent_events[before:]
     finally:
         unregister_mock_provider(app_server, provider_id)
+        reload_mark = len(app_server.logs)
         app_server.api_request(
             "PUT",
             "/api/config/channels/matrix",
@@ -414,3 +420,4 @@ def test_matrix_dm_disabled_drops_message(
             },
             timeout=_HTTP_TIMEOUT,
         )
+        wait_for_agent_reload(app_server, reload_mark)

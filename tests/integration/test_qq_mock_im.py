@@ -39,6 +39,7 @@ from helpers import (
     default_http_timeout,
     register_mock_provider,
     unregister_mock_provider,
+    wait_for_agent_reload,
 )
 from mock_qq_im import MockQQIM
 
@@ -85,6 +86,7 @@ def qq_channel_up(app_server):
     endpoint only applies to already-running channels (404 otherwise),
     so we simply wait for the mock gateway to observe IDENTIFY.
     """
+    reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
         "/api/config/channels/qq",
@@ -96,6 +98,7 @@ def qq_channel_up(app_server):
         timeout=_HTTP_TIMEOUT,
     )
     assert put.status_code == 200, app_server.logs_tail()
+    wait_for_agent_reload(app_server, reload_mark)
     assert _MOCK_IM.wait_identified(timeout=60.0), (
         "QQ channel never completed IDENTIFY against mock gateway: "
         + app_server.logs_tail()[-3000:]

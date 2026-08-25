@@ -23,4 +23,4 @@ def test_app_startup_wait_timeout_ignores_invalid_value(
     """Invalid timeout configuration must retain the safe default."""
     monkeypatch.setenv(_TIMEOUT_ENV, f"{'invalid'}")
 
-    assert app_startup_wait_timeout() == 60.0
+    assert app_startup_wait_timeout() == 120.0
