@@ -299,31 +299,57 @@ def _write_tool_config(
     description: str,
     icon: str,
 ) -> None:
-    """Persist BuiltinToolConfig entry to the agent config file."""
+    """Best-effort persistence of a plugin tool's agent preference."""
     from ..config.config import (
         BuiltinToolConfig,
-        load_agent_config,
-        save_agent_config,
+        ToolsConfig,
+        mutate_agent_config,
     )
     from ..app.agent_context import get_current_agent_id
+    from ..config.utils import load_config
 
-    agent_id = get_current_agent_id()
-    if not agent_id:
+    requested_agent_id = get_current_agent_id()
+    root_config = load_config()
+    profiles = root_config.agents.profiles
+
+    agent_id = None
+    candidates = [
+        requested_agent_id,
+        root_config.agents.active_agent,
+        "default",
+        *root_config.agents.agent_order,
+        *profiles,
+    ]
+    for candidate in candidates:
+        if candidate and candidate in profiles:
+            agent_id = candidate
+            break
+
+    if agent_id is None:
         logger.warning(
-            "No current agent ID; tool '%s' "
-            "will be available after restart",
+            "No configured agent profile is available to persist tool '%s'; "
+            "runtime registration remains active",
             tool_name,
         )
         return
 
-    agent_config = load_agent_config(agent_id)
+    if requested_agent_id != agent_id:
+        logger.warning(
+            "Agent '%s' is unavailable; persisting tool '%s' preference to "
+            "existing agent '%s' without changing active_agent",
+            requested_agent_id,
+            tool_name,
+            agent_id,
+        )
 
-    if not agent_config.tools:
-        from ..config.config import ToolsConfig
+    added = False
 
-        agent_config.tools = ToolsConfig()
-
-    if tool_name not in agent_config.tools.builtin_tools:
+    def _add_tool(agent_config) -> None:
+        nonlocal added
+        if not agent_config.tools:
+            agent_config.tools = ToolsConfig()
+        if tool_name in agent_config.tools.builtin_tools:
+            return
         agent_config.tools.builtin_tools[tool_name] = BuiltinToolConfig(
             name=tool_name,
             enabled=enabled,
@@ -332,6 +358,11 @@ def _write_tool_config(
             async_execution=False,
             icon=icon,
         )
+        added = True
+
+    mutate_agent_config(agent_id, _add_tool)
+
+    if added:
         logger.info(
             "Added tool '%s' to agent '%s' config (enabled=%s)",
             tool_name,
@@ -344,8 +375,6 @@ def _write_tool_config(
             tool_name,
             agent_id,
         )
-
-    save_agent_config(agent_id, agent_config)
 
 
 # -------------------------------------------------------------------
@@ -940,12 +969,26 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                     }
                     or None,
                 )
-                _write_tool_config(
-                    tool_name,
-                    enabled,
-                    description,
-                    icon,
-                )
+
+                # Preference persistence is not part of the security
+                # boundary. Governance and runtime registration have already
+                # succeeded, so a stale agent reference or transient config
+                # write failure must not remove a usable, governed tool.
+                try:
+                    _write_tool_config(
+                        tool_name,
+                        enabled,
+                        description,
+                        icon,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Tool '%s' remains registered, but its default agent "
+                        "preference could not be persisted: %s",
+                        tool_name,
+                        exc,
+                        exc_info=True,
+                    )
 
             except Exception as exc:
                 if tools_module is not None:
