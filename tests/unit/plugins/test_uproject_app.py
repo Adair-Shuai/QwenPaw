@@ -6,16 +6,12 @@ import asyncio
 import sys
 from pathlib import Path
 
-REPO = Path(__file__).resolve().parents[3]
-PLUGIN_ROOT = REPO / "plugins" / "apps" / "uproject"
-sys.path.insert(0, str(PLUGIN_ROOT))
-
-from backend.ai import (  # noqa: E402
+from plugins.apps.uproject.backend.ai import (
     extract_items_from_notes,
     fallback_agenda,
     fallback_weekly,
 )
-from backend.store import (  # noqa: E402
+from plugins.apps.uproject.backend.store import (
     annotate_project,
     build_demo_state,
     create_project,
@@ -24,6 +20,9 @@ from backend.store import (  # noqa: E402
     list_projects,
     reset_demo,
 )
+
+REPO = Path(__file__).resolve().parents[3]
+PLUGIN_ROOT = REPO / "plugins" / "apps" / "uproject"
 
 
 class _MemStore:
@@ -195,7 +194,7 @@ def test_store_import_ignores_cached_uideas_store(monkeypatch):
     import importlib
     import types
 
-    import backend.store as uproject_store
+    import plugins.apps.uproject.backend.store as uproject_store
 
     fake = types.ModuleType("store")
     monkeypatch.setitem(sys.modules, "store", fake)

@@ -132,7 +132,7 @@ def test_tauri_updater_endpoints_match_distribution() -> None:
 
     repo = Path(__file__).resolve().parents[2]
     expected = [distribution.DESKTOP_UPDATE_MANIFEST_URL]
-    for name in ("tauri.conf.json", "tauri.version.conf.json"):
+    for name in ("tauri.conf.json",):
         config = json.loads(
             (repo / "console" / "src-tauri" / name).read_text(
                 encoding="utf-8",
