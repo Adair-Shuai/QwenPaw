@@ -404,8 +404,11 @@ def _clean_party(raw: Optional[Dict[str, Any]]) -> Dict[str, str]:
 
 
 async def create_project(ctx: Any, body: Dict[str, Any]) -> Dict[str, Any]:
+    # Seed before entering the write transaction. ensure_seeded() owns the
+    # same non-reentrant lock, so calling it inside transaction() deadlocks.
+    await ensure_seeded(ctx)
     async with transaction():
-        state = await ensure_seeded(ctx)
+        state = await get_state(ctx)
         now = now_iso()
         project = {
             "id": new_id("proj"),

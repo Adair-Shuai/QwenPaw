@@ -76,20 +76,23 @@ def test_seed_once_then_create_project():
         assert seeded["seeded"] is True
         again = await ensure_seeded(ctx)
         assert len(again["projects"]) == 2
-        created = await create_project(
-            ctx,
-            {
-                "name": "\u5ba4\u5185\u5ca9\u5fc3\u9a71\u66ff\u4e13\u9898",
-                "client": {
-                    "org": "\u6cb9\u7530\u7814\u7a76\u9662",
-                    "contact": "Zhou",
+        created = await asyncio.wait_for(
+            create_project(
+                ctx,
+                {
+                    "name": "\u5ba4\u5185\u5ca9\u5fc3\u9a71\u66ff\u4e13\u9898",
+                    "client": {
+                        "org": "\u6cb9\u7530\u7814\u7a76\u9662",
+                        "contact": "Zhou",
+                    },
+                    "vendor": {
+                        "org": "\u6211\u65b9\u5b9e\u9a8c\u5ba4",
+                        "contact": "Wu",
+                    },
+                    "sow": "SOW",
                 },
-                "vendor": {
-                    "org": "\u6211\u65b9\u5b9e\u9a8c\u5ba4",
-                    "contact": "Wu",
-                },
-                "sow": "SOW",
-            },
+            ),
+            timeout=1,
         )
         assert created["id"].startswith("proj_")
         projects = await list_projects(ctx)
@@ -100,6 +103,20 @@ def test_seed_once_then_create_project():
             bundle["project"]["client"]["org"]
             == "\u6cb9\u7530\u7814\u7a76\u9662"
         )
+
+    asyncio.run(_run())
+
+
+def test_create_project_seeds_empty_store_without_deadlock():
+    async def _run():
+        ctx = _Ctx()
+        created = await asyncio.wait_for(
+            create_project(ctx, {"name": "first"}),
+            timeout=1,
+        )
+        projects = await list_projects(ctx)
+        assert created["name"] == "first"
+        assert len(projects) == 3
 
     asyncio.run(_run())
 
