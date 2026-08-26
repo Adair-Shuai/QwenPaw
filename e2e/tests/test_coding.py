@@ -24,6 +24,7 @@ import time
 import pytest
 from playwright.sync_api import expect
 
+from pages.chat_page import ChatPage
 from pages.coding_page import CodingPage
 from utils.helpers import log_test_step, log_test_result
 
@@ -221,7 +222,7 @@ class TestChatInCodingMode:
 
             log_test_step("3. Send a question that mentions README.md")
             chat_input = coding_page.page.locator(
-                '.qwenpaw-sender [role="textbox"][contenteditable="true"]:visible'
+                ChatPage.CHAT_INPUT
             ).first
             expect(chat_input).to_be_visible(timeout=coding_page.timeout)
             chat_input.fill(
@@ -229,7 +230,7 @@ class TestChatInCodingMode:
                 "Reply in one short sentence."
             )
             send_btn = coding_page.page.locator(
-                "button.qwenpaw-sender-actions-btn.qwenpaw-btn-primary"
+                ChatPage.SEND_BTN
             ).first
             send_btn.click()
 

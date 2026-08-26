@@ -5,7 +5,7 @@ QwenPaw Voice Transcription module P0 end-to-end tests
 Combined test design:
 - VOICE-001: Voice page load + config display + help info
 - VOICE-002: Voice service enable/disable
-- VOICE-003: Voice service config (Twilio, etc.) + input validation
+- VOICE-003: Transcription provider config + input validation
 - VOICE-004: Voice channel status monitoring
 - VOICE-005: API operation validation
 
@@ -22,7 +22,7 @@ from utils.helpers import log_test_step, log_test_result
 
 logger = logging.getLogger(__name__)
 
-VOICE_URL = f"{config.base_url}/settings/voice"
+VOICE_URL = f"{config.base_url}/voice-transcription"
 
 
 def navigate_to_voice(page: Page):
@@ -47,7 +47,7 @@ class TestVoiceConfigDisplay:
     1. Voice transcription page access and load
     2. Breadcrumb navigation validation
     3. Voice service toggle display
-    4. Config form display (Twilio, etc.)
+    4. Audio mode and transcription provider form display
     5. Service status display
     6. Help info and hints display
     """
@@ -301,40 +301,31 @@ class TestVoiceToggle:
 @pytest.mark.voice_config
 class TestVoiceServiceConfig:
     """
-    VOICE-003: Voice service config (Twilio, etc.) + input validation
+    VOICE-003: Current transcription provider config + input validation
 
     Functional coverage:
-    1. Twilio config form
-    2. Account SID config
-    3. Auth Token config
-    4. Phone Number config
-    5. Webhook URL display
-    6. Config save
-    7. Input validation and required-field markers
+    1. Audio mode config
+    2. Transcription provider type config
+    3. Whisper provider selector when available
+    4. Config save/reset actions
     """
 
     @pytest.mark.test_id("VOICE-003")
     def test_twilio_config_form(self, page: Page, request: pytest.FixtureRequest):
-        """Verify Twilio config form, including input validation and required-field markers."""
+        """Verify the current audio and Whisper provider configuration UI."""
         test_name = request.node.name
 
         # Step 1: Navigate to voice transcription page
         log_test_step("1. Navigate to voice transcription page")
         navigate_to_voice(page)
 
-        # Step 2: Verify Twilio or voice config area
-        log_test_step("2. Verify voice service config area")
-        twilio_section = page.locator('[class*=twilio], .qwenpaw-card:has-text("Twilio"), .qwenpaw-collapse:has-text("Twilio")').first
+        # Step 2: Verify current audio/provider config areas
+        log_test_step("2. Verify audio mode and transcription provider areas")
         page_content = page.locator('body').inner_text()
-        has_twilio_content = any(keyword in page_content for keyword in ['Twilio', 'Account SID', 'Auth Token', 'Phone', 'Webhook'])
-        # Also accept generic voice config keywords (Twilio may not be enabled in some environments)
-        has_voice_content = any(keyword in page_content for keyword in ['Voice', '语音', 'Transcription', 'STT', 'TTS', 'Whisper', 'Audio', '转写'])
-        assert has_twilio_content or twilio_section.count() > 0 or has_voice_content, \
-            "Voice config page should contain Twilio or voice-related content"
-        if has_twilio_content:
-            logger.info("Page contains Twilio config content")
-        else:
-            logger.info("Page lacks Twilio content but has generic voice config content")
+        assert any(label in page_content for label in ['Audio Mode', '音频模式']), \
+            "Audio mode section not found"
+        assert any(label in page_content for label in ['Transcription Provider', '转写提供商']), \
+            "Transcription provider section not found"
 
         # Step 3: Verify config fields and test input
         log_test_step("3. Verify config fields and test input")
@@ -380,15 +371,12 @@ class TestVoiceServiceConfig:
         else:
             logger.info("No standalone save button found (may auto-save)")
 
-        # Step 5: Verify Webhook URL display
-        log_test_step("5. Verify Webhook URL display")
-        webhook_url = page.locator('[class*=webhook], .qwenpaw-paragraph:has-text("/voice/")').or_(page.get_by_text("Webhook", exact=False)).first
-        if webhook_url.count() > 0 and webhook_url.is_visible(timeout=3000):
-            webhook_text = webhook_url.inner_text()
-            assert len(webhook_text) > 0, "Webhook URL should not be empty"
-            logger.info(f"Webhook URL: {webhook_text[:100]}")
-        else:
-            logger.info("No Webhook URL display found")
+        # Step 5: Verify the provider choices from the current contract
+        log_test_step("5. Verify transcription provider choices")
+        provider_choices = page.locator('.qwenpaw-radio-wrapper').all()
+        provider_text = " ".join(choice.inner_text() for choice in provider_choices)
+        assert any(label in provider_text for label in ['Whisper API', 'Local Whisper', '本地 Whisper']), \
+            f"Whisper provider choices not found: {provider_text[:200]}"
 
 
 # ============================================================================
@@ -407,7 +395,7 @@ class TestVoiceModeSwitch:
         test_name = request.node.name
 
         log_test_step("Navigate to voice config page")
-        page.goto(f"{config.base_url}/voice")
+        page.goto(VOICE_URL)
         page.wait_for_load_state("domcontentloaded")
         page.wait_for_timeout(3000)
 

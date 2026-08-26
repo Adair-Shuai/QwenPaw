@@ -27,7 +27,7 @@ class VoicePage(BasePage):
     """
 
     PAGE_TITLE = "QwenPaw Console"
-    PAGE_URL = f"{config.base_url}/settings/voice"
+    PAGE_URL = f"{config.base_url}/voice-transcription"
 
     # ========== Selector definitions ==========
 

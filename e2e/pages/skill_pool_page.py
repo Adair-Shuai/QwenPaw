@@ -38,6 +38,11 @@ class SkillPoolPage(BasePage):
     SKILL_GRID = '[class*="skillsGrid"]'
     SKILL_CARD = '[class*="skillCard"]'
     SKILL_TITLE = '[class*="skillTitle"]'
+    SEARCH_INPUT = (
+        'main input[placeholder*="Filter by name"], '
+        'main input[placeholder*="按名称筛选"], '
+        '[class*="skillsPage"] [class*="searchContainer"] input'
+    )
     # Sync status badge (rendered for every card) + its colored dot.
     STATUS_BADGE = '[class*="statusBadge"]'
     STATUS_DOT = '[class*="statusDot"]'
@@ -99,6 +104,19 @@ class SkillPoolPage(BasePage):
         """Return all skill cards currently rendered in the grid."""
         return self.page.locator(self.SKILL_CARD).all()
 
+    def search_skill(self, name: str) -> "SkillPoolPage":
+        """Filter by name so a skill outside the progressive-render window mounts."""
+        search = self.page.locator(self.SEARCH_INPUT).first
+        search.wait_for(state="visible", timeout=self.timeout)
+        search.fill(name)
+        self.page.locator(
+            f'{self.SKILL_CARD}:has-text("{name}")'
+        ).first.wait_for(
+            state="visible", timeout=self.timeout
+        )
+        self.wait(300)
+        return self
+
     def find_card_by_name(self, name: str) -> Optional[Locator]:
         """Return the skill card whose text contains ``name`` (or None)."""
         card = self.page.locator(
@@ -147,9 +165,9 @@ class SkillPoolPage(BasePage):
         """Create a pool skill via ``POST /api/skills/pool/create``.
 
         A freshly-created pool skill has ``auto_update=false`` (the create
-        schema has no auto_update field). Returns True on success; a 4xx
+        schema has no auto_update field). Returns True on success; HTTP 409
         (already exists) is treated as a soft success so re-runs don't break
-        setup.
+        setup. Other client errors indicate malformed fixture data.
         """
         body = content or (
             f"---\nname: {name}\n"
@@ -160,7 +178,7 @@ class SkillPoolPage(BasePage):
             "/api/skills/pool/create",
             data={"name": name, "content": body, "enable": True},
         )
-        ok = resp.ok or resp.status in (400, 409)
+        ok = resp.ok or resp.status == 409
         logger.info("seed_pool_skill(%s) -> HTTP %s (ok=%s)", name, resp.status, ok)
         return ok
 

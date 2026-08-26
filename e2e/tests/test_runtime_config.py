@@ -810,13 +810,14 @@ class TestMemorySummaryConfig:
         active_panel = page.locator('.qwenpaw-tabs-tabpane-active').first
         expect(active_panel).to_be_visible(timeout=5000)
 
-        # Verify the card title
-        card_title = active_panel.locator('.qwenpaw-spark-title').first
-        expect(card_title).to_be_visible()
-        title_text = card_title.inner_text()
-        assert "Memory" in title_text or "Summary" in title_text, \
-            f"Card title does not contain expected keywords: {title_text}"
-        logger.info(f"Card title verified: {title_text}")
+        # The redesigned memory page uses semantic headings inside a regular
+        # antd Card; the old Spark title class no longer exists.
+        panel_text = active_panel.inner_text()
+        assert any(keyword in panel_text for keyword in ["Memory", "记忆"]), \
+            f"Memory panel content not found: {panel_text[:200]}"
+        heading = active_panel.locator('h3').first
+        expect(heading).to_be_visible()
+        logger.info(f"Memory heading verified: {heading.inner_text()}")
 
         log_test_step("Verify the memory summary switch exists")
         switches = active_panel.locator('.qwenpaw-switch').all()

@@ -145,47 +145,30 @@ class TestSkillListAndFilter:
 
         # -- Step 5: Search filter --
         log_test_step("5. Search filter")
-        search_container = page.locator('div[class*="searchContainer"]').first
-        if search_container.is_visible():
-            keyword = title_text.split()[0] if title_text else "browser"
-            logger.info(f"Search keyword: {keyword}")
+        search_input = page.locator(
+            'main input[placeholder*="Filter by name"], '
+            'main input[placeholder*="按名称筛选"], '
+            'div[class*="skillsPage"] div[class*="searchContainer"] input'
+        ).first
+        expect(search_input).to_be_visible(timeout=5000)
+        keyword = title_text.split()[0] if title_text else "browser"
+        logger.info(f"Search keyword: {keyword}")
 
-            search_select = search_container.locator('.qwenpaw-select').first
-            search_select.click()
-            page.wait_for_timeout(500)
+        search_input.fill(keyword)
+        page.wait_for_timeout(1000)
+        filtered_count = len(get_skill_cards(page))
+        assert 1 <= filtered_count <= original_count, (
+            f"Unexpected filtered count: original={original_count}, filtered={filtered_count}"
+        )
+        logger.info(f"Skill count after filter: {filtered_count}")
 
-            page.keyboard.type(keyword, delay=50)
-            page.wait_for_timeout(1500)
-
-            dropdown = page.locator('.qwenpaw-select-dropdown').first
-            if dropdown.is_visible():
-                options = dropdown.locator('.qwenpaw-select-item').all()
-                logger.info(f"Dropdown option count: {len(options)}")
-
-                if len(options) > 0:
-                    options[0].click()
-                    page.wait_for_timeout(1500)
-
-                    filtered_count = len(get_skill_cards(page))
-                    assert filtered_count <= original_count, "Filtered count should not increase"
-                    assert filtered_count >= 1, "Filtered result should have at least 1"
-                    logger.info(f"Skill count after filter: {filtered_count}")
-
-                    # Clear filter
-                    clear_btn = search_container.locator('.qwenpaw-select-clear').first
-                    if clear_btn.is_visible():
-                        clear_btn.click()
-                        page.wait_for_timeout(1000)
-                        restored_count = len(get_skill_cards(page))
-                        assert restored_count == original_count, (
-                            f"Count not restored after clearing filter: expected {original_count}, got {restored_count}"
-                        )
-                        logger.info(f"Restored count after clearing filter: {restored_count}")
-
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(500)
-        else:
-            logger.info("Search container not found, skipping search verification")
+        search_input.fill("")
+        page.wait_for_timeout(1000)
+        restored_count = len(get_skill_cards(page))
+        assert restored_count == original_count, (
+            f"Count not restored after clearing filter: expected {original_count}, got {restored_count}"
+        )
+        logger.info(f"Restored count after clearing filter: {restored_count}")
 
         log_test_result(test_name, True, 0)
         logger.info(f"Test {test_name} passed - list display + card details + search filter verified")
@@ -772,19 +755,11 @@ class TestSkillImportFromHub:
         log_test_step("Navigate to skills management page")
         navigate_to_skills(page)
 
-        log_test_step("Find the Hub import button")
-        import_btn = page.locator(
-            'button:has-text("Import"), button:has-text("导入"), '
-            'button:has-text("Hub"), '
-            'button:has(.anticon-import)'
-        ).first
-        assert import_btn.count() > 0, "Hub import button not found"
-        expect(import_btn).to_be_visible(timeout=5000)
-        logger.info("Hub import button exists")
-
-        log_test_step("Click the Hub import button")
-        import_btn.click()
-        page.wait_for_timeout(1500)
+        log_test_step("Open Add Skill and choose Upload via URL")
+        click_add_skill_menu_item(
+            page,
+            ("Upload via URL", "通过 URL 上传", "通过URL上传"),
+        )
 
         log_test_step("Verify import modal opens")
         page.wait_for_timeout(2000)

@@ -39,8 +39,17 @@ class ChatPage(BasePage):
     # Page components use the qwenpaw- CSS prefix
 
     # Navigation and new chat (compatible with both spark-icon and anticon icon sets)
-    NEW_CHAT_BTN = 'button:has(.spark-icon-spark-newChat-fill), button:has(.anticon-plus), button:has([class*="newChat"])'
-    SESSION_LIST_BTN = 'button:has(.spark-icon-spark-history-line), button:has(.anticon-history), button:has([class*="history"])'
+    NEW_CHAT_BTN = (
+        'button:has(.spark-icon-spark-newChat-fill), '
+        'button:has(.anticon-plus), button:has([class*="newChat"]), '
+        'button:has-text("New chat"), button:has-text("新建聊天")'
+    )
+    SESSION_LIST_BTN = (
+        'button:has(.spark-icon-spark-history-line), '
+        'button:has(.anticon-history), button:has([class*="history"]), '
+        'button:has-text("Conversation History"), '
+        'button:has-text("历史对话")'
+    )
 
     # Input area
     CHAT_INPUT = (
@@ -61,20 +70,20 @@ class ChatPage(BasePage):
     WELCOME_TEXT = CHAT_INPUT
     QUICK_ACTIONS = '.quick-action'
 
-    # Session management (right-side "All Chats" drawer).
-    # Post v2.0.0 redesign the SessionItem container is a hashed CSS-Module
-    # class (``styles.item``) carrying ``role="button"``; the legacy
-    # ``chatSessionItem`` class is gone. Anchor on the drawer list wrapper +
-    # role, keeping the old class as a fallback for older builds.
+    # Session management supports both the current persistent sidebar and the
+    # older right-side "All Chats" drawer.
     SESSION_ITEM = (
+        '[class*="sessionItem-module__item"][role="button"], '
         '[class*=listWrapper] div[role="button"], '
         '[class*=chatSessionItem]'
     )
     SESSION_ACTIVE = (
+        '[class*="sessionItem-module__item"][role="button"][class*=active], '
         '[class*=listWrapper] div[role="button"][class*=active], '
         '[class*=chatSessionItem][class*=active]'
     )
     SESSION_NAME = (
+        '[class*="sessionItem-module__item"] [class*=name], '
         '[class*=listWrapper] div[role="button"] [class*=name], '
         '[class*=chatSessionItem] [class*=name]'
     )
@@ -100,8 +109,12 @@ class ChatPage(BasePage):
     )
     # Inline rename input rendered when a SessionItem enters edit mode.
     SESSION_RENAME_INPUT = 'input[class*=renameInput]'
-    # Conversation search box inside the drawer (filters sessions by title).
-    SESSION_SEARCH_INPUT = '[class*=searchContainer] input'
+    # Conversation search box in the sidebar or drawer.
+    SESSION_SEARCH_INPUT = (
+        '[class*=searchContainer] input, '
+        'input[placeholder*="Search conversations"], '
+        'input[placeholder*="搜索对话"]'
+    )
     # Legacy hover-button selectors (kept for older builds / fallbacks).
     SESSION_PIN_BTN = 'button:has(.spark-icon-spark-mark-line), button:has(.anticon-pushpin)'
     SESSION_EDIT_BTN = 'button:has(.spark-icon-spark-edit-line), button:has(.anticon-edit)'

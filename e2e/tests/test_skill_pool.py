@@ -679,6 +679,7 @@ class TestSkillAutoSyncCard:
 
             log_test_step("2. Open the Skill Pool page (card view is default)")
             pool.open()
+            pool.search_skill(self.SKILL_NAME)
 
             log_test_step("3. Locate the seeded skill card")
             card = pool.find_card_by_name(self.SKILL_NAME)
@@ -738,6 +739,7 @@ class TestSkillAutoSyncDrawer:
 
             log_test_step("2. Open the Skill Pool page and the skill's edit drawer")
             pool.open()
+            pool.search_skill(self.SKILL_NAME)
             pool.open_edit_drawer(self.SKILL_NAME)
 
             log_test_step("3. Auto Sync switch visible; target select hidden")
