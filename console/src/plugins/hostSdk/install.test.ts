@@ -167,6 +167,14 @@ describe("window.QwenPaw.host.* hooks attached", () => {
   });
 });
 
+describe("window.QwenPaw.workspace", () => {
+  it("is attached synchronously during host SDK installation", () => {
+    expect(window.QwenPaw.workspace).toBeDefined();
+    expect(typeof window.QwenPaw.workspace!.openArtifact).toBe("function");
+    expect(typeof window.QwenPaw.workspace!.registerRenderer).toBe("function");
+  });
+});
+
 describe("window.QwenPaw.audit", () => {
   it("overrides() returns the audit ring buffer", () => {
     window.QwenPaw.chat!.welcome.set("p1", { greeting: "Hi" });

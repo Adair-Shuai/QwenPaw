@@ -14,6 +14,7 @@ import { chatExtensions } from "../registry/chatExtensions";
 import { auditStore } from "../registry/audit";
 import { pluginSystem } from "../hostExternals";
 import { useAgentStore } from "../../stores/agentStore";
+import { createWorkspaceNamespace } from "../../components/Workspace/workspaceSdk";
 import { combineDisposables } from "../registry/types";
 import { ChatScalar } from "../registry/slotKeys";
 import type {
@@ -431,13 +432,6 @@ export function installHostSdk(): void {
   // Attach workspace namespace so plugins can register custom renderers
   // and open artifacts in the workspace panel.
   if (!ns.workspace) {
-    // Lazy import to avoid circular dependency at module load time.
-    import("../../components/Workspace/workspaceSdk").then(
-      ({ createWorkspaceNamespace }) => {
-        if (!ns.workspace) {
-          ns.workspace = createWorkspaceNamespace();
-        }
-      },
-    );
+    ns.workspace = createWorkspaceNamespace();
   }
 }
