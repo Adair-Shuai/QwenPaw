@@ -765,6 +765,9 @@ class TestSkillAutoSyncDrawer:
             ).to_be_hidden(timeout=pool.timeout)
 
             log_test_step("6. The card now shows the Auto Sync tag (persisted)")
+            # Saving refreshes the pool list. Re-apply the name filter so the
+            # seeded skill is mounted again after progressive rendering.
+            pool.search_skill(self.SKILL_NAME)
             card = pool.find_card_by_name(self.SKILL_NAME)
             assert card is not None, "Card missing after save"
             expect(
