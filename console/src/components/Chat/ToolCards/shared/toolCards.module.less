@@ -247,6 +247,30 @@
   }
 }
 
+.filePreviewActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.filePreviewMenu {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-grid;
+  place-items: center;
+  color: var(--ant-color-text-tertiary, #8c8c8c);
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--ant-color-link, #1677ff);
+    background: var(--ant-color-fill-tertiary, rgba(0, 0, 0, 0.04));
+  }
+}
+
 :global(.dark-mode) {
   .filePreviewLink {
     color: var(--ant-blue-4, #69b1ff);

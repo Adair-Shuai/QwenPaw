@@ -17,6 +17,97 @@ import {
   type ViewerMountOptions,
 } from "./viewerLoader";
 
+type RequestedWorkspaceFile = {
+  path: string;
+  root: string;
+  name: string;
+  agentId?: string;
+  chatId?: string;
+  projectDirOverride?: string;
+};
+
+function requestedWorkspaceFile(): RequestedWorkspaceFile | null {
+  const search = new URLSearchParams(window.location.search);
+  const path = search.get("path")?.trim();
+  if (!path) return null;
+  return {
+    path,
+    root: search.get("root") || "project",
+    name: search.get("name") || path.replace(/\\/g, "/").split("/").pop() || path,
+    agentId: search.get("agentId") || undefined,
+    chatId: search.get("chatId") || undefined,
+    projectDirOverride: search.get("projectDirOverride") || undefined,
+  };
+}
+
+function workspaceHeaders(host: any, file: RequestedWorkspaceFile) {
+  const token = host.getApiToken?.() || "";
+  const headers: Record<string, string> = typeof host.buildAuthHeaders === "function"
+    ? { ...host.buildAuthHeaders(file.agentId) }
+    : (token ? { Authorization: `Bearer ${token}` } : {});
+  if (file.agentId) headers["X-Agent-Id"] = file.agentId;
+  if (file.chatId) headers["X-Chat-Id"] = file.chatId;
+  if (!file.chatId && file.projectDirOverride) {
+    headers["X-Session-Project-Dir"] = file.projectDirOverride;
+  }
+  return headers;
+}
+
+async function pluginFetch(host: any, path: string, init: RequestInit) {
+  if (typeof host.fetch === "function") return host.fetch(path, init);
+  const relative = path.replace(/^\/ugsci\/visualization/, "");
+  return fetch(`${host.getApiUrl("ugsci/visualization")}${relative}`, init);
+}
+
+async function importWorkspaceFile(host: any, file: RequestedWorkspaceFile) {
+  const response = await pluginFetch(host, "/ugsci/visualization/imports/workspace", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...workspaceHeaders(host, file),
+    },
+    body: JSON.stringify({
+      path: file.path,
+      root: file.root,
+      name: file.name.replace(/\.[^.]+$/, ""),
+    }),
+  });
+  if (!response.ok) throw new Error(`导入失败: HTTP ${response.status}`);
+  const submitted = await response.json();
+  for (let attempt = 0; attempt < 240; attempt += 1) {
+    const statusResponse = await pluginFetch(
+      host,
+      `/ugsci/visualization/imports/${submitted.job_id}`,
+      { headers: workspaceHeaders(host, file) },
+    );
+    if (!statusResponse.ok) throw new Error(`状态查询失败: HTTP ${statusResponse.status}`);
+    const status = await statusResponse.json();
+    if (status.status === "completed") {
+      if (!status.result?.id) throw new Error("导入完成但未返回数据集 ID");
+      return status.result.id as string;
+    }
+    if (status.status === "failed" || status.status === "cancelled") {
+      throw new Error(status.error || "导入任务未完成");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  throw new Error("导入超时，请稍后重试");
+}
+
+async function openImportedDataset(handle: ViewerHandle, datasetId: string) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    try {
+      await handle.executeCommand?.("open", { datasetId });
+      return;
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
+  if (lastError) throw lastError;
+}
+
 export function OilGasPluginPage() {
   const React = getHost().React;
   const { useEffect, useRef, useState } = React;
@@ -27,6 +118,7 @@ export function OilGasPluginPage() {
   const handleRef = useRef<ViewerHandle | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [loadingText, setLoadingText] = useState("正在加载三维可视化引擎...");
 
   useEffect(() => {
     let cancelled = false;
@@ -51,6 +143,16 @@ export function OilGasPluginPage() {
         };
 
         handleRef.current = runtime.mount(mountRef.current, mountOptions);
+
+        const requestedFile = requestedWorkspaceFile();
+        if (requestedFile) {
+          setLoadingText(`正在导入 ${requestedFile.name}...`);
+          const datasetId = await importWorkspaceFile(host, requestedFile);
+          if (cancelled || !handleRef.current) return;
+          setLoadingText("正在打开三维网格...");
+          await openImportedDataset(handleRef.current, datasetId);
+          if (cancelled) return;
+        }
 
         if (!cancelled) setLoading(false);
       } catch (err) {
@@ -142,7 +244,7 @@ export function OilGasPluginPage() {
         React.createElement(
           "div",
           { style: { marginTop: 16, color: "#8b949e" } },
-          "正在加载三维可视化引擎...",
+          loadingText,
         ),
       ),
   );

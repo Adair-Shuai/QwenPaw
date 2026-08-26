@@ -1,10 +1,39 @@
 import { create } from "zustand";
 
-export type BackgroundTaskStatus = "running" | "done" | "cancelled";
+export type BackgroundTaskStatus = "running" | "done" | "cancelled" | "error";
+
+export type BackgroundTaskKind = "background-tool" | "agent";
+
+export type AgentProcessEventType =
+  | "consultation"
+  | "delegation"
+  | "background"
+  | "handoff"
+  | "retry";
 
 export interface BackgroundTask {
   toolCallId: string;
   toolName: string;
+  /** Distinguishes ordinary offloaded tools from inter-agent execution. */
+  kind: BackgroundTaskKind;
+  /** Target agent id when kind is `agent`. */
+  agentId?: string;
+  /** Agent tool that created the process record. */
+  sourceTool?: string;
+  /** Short user-facing description of the delegated work. */
+  taskSummary?: string;
+  /** Explicit or inferred collaboration event represented by this task. */
+  eventType?: AgentProcessEventType;
+  /** Sibling tasks dispatched as one parallel batch share this id. */
+  groupId?: string;
+  /** Explicit parent task when the backend provides a nested relationship. */
+  parentTaskId?: string;
+  /** Upstream task ids whose result is required before this task. */
+  dependsOn?: string[];
+  /** Earlier task that this task retries or replaces. */
+  retryOf?: string;
+  /** True when the relationship was reconstructed from execution order. */
+  relationInferred?: boolean;
   sessionId: string;
   startTime: number;
   /** Frozen when status becomes done/cancelled; used for stable duration display. */
@@ -23,8 +52,9 @@ interface BackgroundTasksState {
   addTask: (
     task: Omit<
       BackgroundTask,
-      "status" | "liveOutput" | "result" | "hintVisible" | "endTime"
+      "status" | "liveOutput" | "result" | "hintVisible" | "endTime" | "kind"
     >,
+    defaults?: Pick<BackgroundTask, "kind">,
   ) => void;
   updateTask: (
     toolCallId: string,
@@ -37,6 +67,15 @@ interface BackgroundTasksState {
         | "hintVisible"
         | "toolName"
         | "endTime"
+        | "agentId"
+        | "sourceTool"
+        | "taskSummary"
+        | "eventType"
+        | "groupId"
+        | "parentTaskId"
+        | "dependsOn"
+        | "retryOf"
+        | "relationInferred"
       >
     >,
   ) => void;
@@ -49,8 +88,14 @@ interface BackgroundTasksState {
     toolCallId: string,
     updates: Parameters<BackgroundTasksState["updateTask"]>[1],
   ) => void;
-  appendLiveOutputForSession: (sessionId: string, toolCallId: string, chunk: string) => void;
-  removeTasksForSession: (tasks: Array<{ sessionId: string; toolCallId: string }>) => void;
+  appendLiveOutputForSession: (
+    sessionId: string,
+    toolCallId: string,
+    chunk: string,
+  ) => void;
+  removeTasksForSession: (
+    tasks: Array<{ sessionId: string; toolCallId: string }>,
+  ) => void;
 }
 
 const LIVE_OUTPUT_MAX = 80_000;
@@ -63,9 +108,14 @@ function truncateLive(text: string): string {
 export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
   tasks: [],
 
-  addTask: (task) =>
+  addTask: (task, defaults) =>
     set((state) => {
-      if (state.tasks.some((t) => t.sessionId === task.sessionId && t.toolCallId === task.toolCallId)) {
+      if (
+        state.tasks.some(
+          (t) =>
+            t.sessionId === task.sessionId && t.toolCallId === task.toolCallId,
+        )
+      ) {
         return state;
       }
       return {
@@ -73,6 +123,7 @@ export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
           ...state.tasks,
           {
             ...task,
+            kind: defaults?.kind ?? "background-tool",
             status: "running",
             endTime: null,
             liveOutput: "",
@@ -89,7 +140,9 @@ export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
         if (t.toolCallId !== toolCallId) return t;
         const next = { ...t, ...updates };
         const becomingTerminal =
-          (updates.status === "done" || updates.status === "cancelled") &&
+          (updates.status === "done" ||
+            updates.status === "cancelled" ||
+            updates.status === "error") &&
           t.endTime == null &&
           next.endTime == null;
         if (becomingTerminal) {
@@ -136,10 +189,13 @@ export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
           ? (() => {
               const next = { ...t, ...updates };
               if (
-                (updates.status === "done" || updates.status === "cancelled") &&
+                (updates.status === "done" ||
+                  updates.status === "cancelled" ||
+                  updates.status === "error") &&
                 t.endTime == null &&
                 next.endTime == null
-              ) next.endTime = Date.now();
+              )
+                next.endTime = Date.now();
               return next;
             })()
           : t,
@@ -158,8 +214,14 @@ export const useBackgroundTasksStore = create<BackgroundTasksState>((set) => ({
   removeTasksForSession: (items) =>
     set((state) => {
       if (items.length === 0) return state;
-      const drop = new Set(items.map((item) => `${item.sessionId}\u0000${item.toolCallId}`));
-      return { tasks: state.tasks.filter((t) => !drop.has(`${t.sessionId}\u0000${t.toolCallId}`)) };
+      const drop = new Set(
+        items.map((item) => `${item.sessionId}\u0000${item.toolCallId}`),
+      );
+      return {
+        tasks: state.tasks.filter(
+          (t) => !drop.has(`${t.sessionId}\u0000${t.toolCallId}`),
+        ),
+      };
     }),
 }));
 

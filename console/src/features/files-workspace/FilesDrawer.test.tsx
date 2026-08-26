@@ -39,7 +39,10 @@ vi.mock("./FilesWorkspace", () => ({
 }));
 
 describe("FilesDrawer", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    workspaceProps.current = null;
+    vi.unstubAllGlobals();
+  });
 
   it("does not repeat the Workspace label in the expanded header", async () => {
     renderWithProviders(
@@ -201,5 +204,32 @@ describe("FilesDrawer", () => {
         path: "reports/report.md",
       },
     });
+  });
+
+  it("routes an explicit visualization target into the GenUI workbench", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "preview",
+          target: {
+            source: "workspace",
+            path: "models/SMOKE.DATA",
+            root: "project",
+            preferredView: "visualization",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={{
+          kind: "session",
+          agentId: "default",
+          sessionId: "session-1",
+          chatId: "chat-1",
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("三维网格预览")).toBeInTheDocument();
+    expect(screen.getByText("SMOKE.DATA")).toBeInTheDocument();
   });
 });

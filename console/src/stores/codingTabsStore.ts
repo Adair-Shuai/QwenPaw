@@ -40,6 +40,7 @@ export interface EditorTab {
   workspaceRoot?: WorkspaceRoot;
   artifactUrl?: string;
   previewKind?: "text" | "image" | "pdf" | "csv" | "binary";
+  preferredView?: "text" | "visualization";
   readOnly?: boolean;
   /** Current disk version. Kept in memory only and refreshed after loading. */
   etag?: string;
@@ -421,6 +422,7 @@ export const useCodingTabsStore = create<CodingTabsState>()(
                 workspaceRoot: t.workspaceRoot,
                 artifactUrl: t.artifactUrl,
                 previewKind: t.previewKind,
+                preferredView: t.preferredView,
                 readOnly: t.readOnly,
               })),
           ]),

@@ -4468,6 +4468,7 @@
         "running": "运行中",
         "done": "已完成",
         "doneLabel": "任务已完成",
+        "failed": "执行失败",
         "cancelled": "已取消",
         "totalDuration": "总耗时",
         "cancel": "取消",

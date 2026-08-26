@@ -177,6 +177,22 @@ def test_mermaid_files_are_workspace_text(
     assert chunk["content"] == "graph TD\n  A --> B"
 
 
+@pytest.mark.parametrize("filename", ["FIELD.DATA", "GRID.GRDECL", "ROCK.INC"])
+def test_eclipse_decks_are_workspace_text(
+    filename: str,
+    tmp_path: Path,
+) -> None:
+    """Eclipse input decks stay readable before optional 3D visualization."""
+    target = tmp_path / filename
+    target.write_bytes(b"RUNSPEC\n/\n")
+
+    metadata = get_file_metadata(tmp_path, filename)
+    chunk = read_file_chunk(tmp_path, filename, 0, 1024)
+
+    assert metadata["preview_kind"] == "text"
+    assert chunk["content"] == "RUNSPEC\n/\n"
+
+
 def test_chunk_skips_utf8_continuation_byte(tmp_path: Path) -> None:
     """A range beginning inside a character advances to a valid boundary."""
     (tmp_path / "message.txt").write_text("A你B", encoding="utf-8")

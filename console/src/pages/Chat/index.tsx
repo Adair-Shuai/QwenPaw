@@ -4013,6 +4013,7 @@ export default function ChatPage() {
             state={filesDrawerState}
             dispatch={dispatchFilesDrawer}
             scope={sessionScope}
+            runtimeSessionId={bgBackendSessionId}
           />
         ) : null}
       </AnimatePresence>

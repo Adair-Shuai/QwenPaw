@@ -20,6 +20,7 @@ import DefaultBlock from "./DefaultBlock";
 import { stringifyResult } from "./utils";
 import { useToolCallSessionId } from "./ToolCallSessionContext";
 import { useToolCallControl } from "../../../../hooks/useToolCallControl";
+import { useAgentProcessTracking } from "../../../../hooks/useAgentProcessTracking";
 import { OffloadBanner } from "./ToolCallControlPopover";
 import styles from "./toolCards.module.less";
 import bannerStyles from "./offloadBanner.module.less";
@@ -94,6 +95,8 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
     isExecuting,
     content.name || title,
   );
+  useAgentProcessTracking(sessionId, content);
+  const hasKillRemaining = control.killRemaining !== null;
 
   const gearDotClass = useMemo(() => {
     if (!control.bannerVisible) return "";
@@ -119,7 +122,7 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
     content.id,
     content.name,
     content.params,
-    control.killRemaining !== null,
+    hasKillRemaining,
   ]);
 
   const dynamicMetadata = useMemo(() => {

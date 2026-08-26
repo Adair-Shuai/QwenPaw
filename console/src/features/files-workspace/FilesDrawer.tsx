@@ -6,27 +6,38 @@ import {
   useRef,
   useState,
 } from "react";
+import { Blocks, FileText, Globe2, Network } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { FilesDrawerEvent, FilesDrawerState } from "./types";
+import type { FileTarget } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import styles from "./FilesWorkspace.module.less";
+import {
+  WorkbenchBrowserPanel,
+  WorkbenchAgentPanel,
+  WorkbenchGenUiPanel,
+  type WorkbenchMode,
+} from "./WorkbenchPanels";
 
 const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
 const MIN_DRAWER_WIDTH = 420;
 const MIN_CHAT_WIDTH = 420;
+const WORKBENCH_MODE_STORAGE_KEY = "qwenpaw-workbench-mode";
 const FilesWorkspace = lazy(() => import("./FilesWorkspace"));
 
 interface FilesDrawerProps {
   state: Exclude<FilesDrawerState, { kind: "closed" }>;
   dispatch: (event: FilesDrawerEvent) => void;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
+  runtimeSessionId?: string;
 }
 
 export default function FilesDrawer({
   state,
   dispatch,
   scope,
+  runtimeSessionId,
 }: FilesDrawerProps) {
   const { t } = useTranslation();
   const drawerRef = useRef<HTMLElement>(null);
@@ -34,11 +45,33 @@ export default function FilesDrawer({
   const prefersReducedMotion = useReducedMotion();
   const widthStorageKey = PREVIEW_WIDTH_STORAGE_KEY;
   const [width, setWidth] = useState(0);
+  const [mode, setMode] = useState<WorkbenchMode>(() => {
+    const stored = localStorage.getItem(WORKBENCH_MODE_STORAGE_KEY);
+    return stored === "browser" || stored === "agents" || stored === "genui"
+      ? stored
+      : "files";
+  });
+  const [genUiTarget, setGenUiTarget] = useState<FileTarget | undefined>();
 
   useEffect(() => {
     const stored = Number(localStorage.getItem(widthStorageKey));
     setWidth(Number.isFinite(stored) && stored > 0 ? stored : 0);
   }, [widthStorageKey]);
+
+  useEffect(() => {
+    localStorage.setItem(WORKBENCH_MODE_STORAGE_KEY, mode);
+  }, [mode]);
+
+  useEffect(() => {
+    if (!state.target) return;
+    if (state.target.preferredView === "visualization") {
+      setGenUiTarget(state.target);
+      setMode("genui");
+      return;
+    }
+    setGenUiTarget(undefined);
+    setMode("files");
+  }, [state.target]);
 
   const close = useCallback(() => {
     const trigger = state.trigger;
@@ -143,16 +176,85 @@ export default function FilesDrawer({
         }}
       />
 
-      <Suspense
-        fallback={<div className={styles.empty}>{t("common.loading")}</div>}
-      >
-        <FilesWorkspace
-          initialTarget={state.target}
-          scope={scope}
-          compact
-          onClose={close}
-        />
-      </Suspense>
+      <header className={styles.drawerHeader}>
+        <div className={styles.drawerTitle}>
+          <strong>工作台</strong>
+          <span>
+            {mode === "files"
+              ? "文件与预览"
+              : mode === "browser"
+              ? "浏览器"
+              : mode === "agents"
+              ? "智能体进程"
+              : "GenUI"}
+          </span>
+        </div>
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label={t("files.close", "关闭")}
+          onClick={close}
+        >
+          ×
+        </button>
+      </header>
+
+      <div className={styles.workspace}>
+        <nav className={styles.activityRail} aria-label="工作台活动">
+          {(
+            [
+              ["files", FileText, "文件与预览"],
+              ["browser", Globe2, "浏览器"],
+              ["agents", Network, "智能体进程"],
+              ["genui", Blocks, "GenUI"],
+            ] as const
+          ).map(([nextMode, Icon, label]) => (
+            <button
+              key={nextMode}
+              type="button"
+              className={mode === nextMode ? styles.activityActive : undefined}
+              aria-label={label}
+              aria-pressed={mode === nextMode}
+              onClick={() => setMode(nextMode)}
+            >
+              <Icon size={17} />
+            </button>
+          ))}
+        </nav>
+
+        <div className={styles.drawerContent}>
+          {mode === "browser" && <WorkbenchBrowserPanel active />}
+          {mode === "agents" && (
+            <WorkbenchAgentPanel
+              scope={scope}
+              runtimeSessionId={runtimeSessionId}
+            />
+          )}
+          {mode === "genui" && (
+            <WorkbenchGenUiPanel
+              target={genUiTarget}
+              scope={scope}
+              onClearTarget={() => setGenUiTarget(undefined)}
+              onOpenFiles={() => setMode("files")}
+            />
+          )}
+
+          {mode === "files" && (
+            <Suspense
+              fallback={
+                <div className={styles.empty}>{t("common.loading")}</div>
+              }
+            >
+              <FilesWorkspace
+                initialTarget={state.target}
+                scope={scope}
+                compact
+                onClose={close}
+              />
+            </Suspense>
+          )}
+        </div>
+      </div>
     </motion.aside>
   );
 }

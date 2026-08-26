@@ -253,7 +253,7 @@ Conversations that predate scroll — or any chats already stored as `sessions/*
 - **When**: on app startup, for every agent whose `strategy` is `"scroll"`.
 - **Source**: `{working_dir}/sessions/*.json` (including channel subdirectories). The original session files are never modified or deleted.
 - **One-time per file**: a `sessions/.synced.json` manifest records what was imported, so later startups skip unchanged files. Re-imports are no-ops — a `UNIQUE` index deduplicates rows.
-- **Retention-aware**: messages older than `scroll_config.history_retention_days` (default `30`) are skipped during import, matching the same-boot purge that trims `history.db` to the retention window. Set `history_retention_days` to `0` to keep — and import — everything.
+- **Kept forever by default**: `scroll_config.history_retention_days` defaults to `0`, so history is not deleted automatically. Only an explicitly configured positive value skips messages outside the window and purges matching `history.db` rows on startup/teardown. Returning a finite window to `0` re-imports messages that were previously skipped but still exist in session JSON.
 - **Non-blocking**: if the backfill fails, startup continues; that agent simply won't have its old chats imported, while scroll keeps recording new turns normally.
 
 > On the first startup, a one-time notice is logged while session files are imported, since a large backlog can take a moment. Later startups have a manifest and pass straight through.
@@ -278,14 +278,14 @@ The Console's **Workspace → Running Config → ReAct Agent** section exposes o
       "scroll_config": {
         "db_filename": "history.db",
         "repl_timeout_s": 300,
-        "history_retention_days": 30,
+        "history_retention_days": 0,
         "allow_unsandboxed": false,
         "offload_dialog": false
       },
       "tool_result_pruning_config": {
         "enabled": true,
         "pruning_recent_msg_max_bytes": 50000,
-        "offload_retention_days": 30,
+        "offload_retention_days": 0,
         "tool_results_cache": "tool_results"
       }
     }
@@ -305,7 +305,7 @@ Important fields:
 | `scroll_config.db_filename`                      | `"history.db"` | SQLite filename relative to the workspace.                                                                        |
 | `scroll_config.tool_output_token_cap`            | `3000`         | Deprecated and ignored; explicit values log a warning. Use `pruning_recent_msg_max_bytes`.                        |
 | `scroll_config.repl_timeout_s`                   | `300`          | Per-call timeout for `recall_history_python`.                                                                     |
-| `scroll_config.history_retention_days`           | `30`           | Auto-purge rows older than this many days. Set `0` to keep forever.                                               |
+| `scroll_config.history_retention_days`           | `0`            | Keep forever by default; auto-purge only when explicitly set to a positive number of days.                       |
 | `scroll_config.offload_dialog`                   | `false`        | Also write legacy `dialog/*.jsonl` archive. `history.db` remains the source of truth.                             |
 
 ## Manual Compaction

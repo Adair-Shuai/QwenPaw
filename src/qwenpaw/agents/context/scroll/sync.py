@@ -594,9 +594,10 @@ def sync_sessions_to_history(
     skipped via the manifest and the DB's UNIQUE index makes re-appends no-ops.
     Never deletes or rewrites the source session files.
 
-    ``retention_days`` (0 = keep forever) skips messages older than the window,
-    so we don't import rows the same-boot purge would delete. A fully aged-out
-    session imports 0 rows, and its manifest entry lets later boots skip it.
+    ``retention_days`` (default 0 = keep forever) skips messages older than an
+    explicitly configured positive window, so we don't import rows the
+    same-boot purge would delete. If retention is later expanded, unchanged
+    files with previously aged-out messages are replayed from session JSON.
     ``chats_path`` is the authoritative registry: only session files with an
     exact chat mapping are imported. Unreferenced files are reported as
     orphans and left untouched. A missing or invalid registry blocks the whole
@@ -660,7 +661,25 @@ def sync_sessions_to_history(
         should_skip = False
         if manifest_matches and canonical_matches:
             assert prior is not None
-            should_skip = _skip_is_safe(history, prior)
+            prior_retention = prior.get("retention_days")
+            retention_expanded = bool(
+                int(prior.get("aged_out", 0)) > 0
+                and (
+                    retention_days == 0
+                    or (
+                        isinstance(prior_retention, int)
+                        and retention_days > prior_retention
+                    )
+                ),
+            )
+            # Legacy manifests did not record the window. The only expansion
+            # we can prove safely is switching to keep-forever.
+            if prior_retention is None and retention_days == 0:
+                retention_expanded = int(prior.get("aged_out", 0)) > 0
+            should_skip = not retention_expanded and _skip_is_safe(
+                history,
+                prior,
+            )
         if should_skip:
             assert prior is not None
             report.files.append(
@@ -713,6 +732,7 @@ def sync_sessions_to_history(
                 "session_id": res.session_id,
                 "messages": res.messages,
                 "aged_out": res.aged_out,
+                "retention_days": retention_days,
                 "rows_processed": res.rows_processed,
                 "rows_inserted": res.rows_inserted,
                 "legacy_session_ids_checked": res.legacy_session_ids,

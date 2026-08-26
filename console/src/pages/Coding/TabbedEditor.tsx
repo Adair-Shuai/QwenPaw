@@ -282,6 +282,10 @@ export default function TabbedEditor({
       if (userToggledPathsRef.current.has(tab.path)) {
         continue;
       }
+      if (tab.preferredView === "text") {
+        if (newPreviewPaths.delete(tab.path)) hasChanges = true;
+        continue;
+      }
       if (!newPreviewPaths.has(tab.path)) {
         newPreviewPaths.add(tab.path);
         hasChanges = true;

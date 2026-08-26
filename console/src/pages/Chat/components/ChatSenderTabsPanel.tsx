@@ -78,7 +78,10 @@ export default function ChatSenderTabsPanel({
   const finishedTasks = useMemo(
     () =>
       sessionTasks.filter(
-        (task) => task.status === "done" || task.status === "cancelled",
+        (task) =>
+          task.status === "done" ||
+          task.status === "cancelled" ||
+          task.status === "error",
       ),
     [sessionTasks],
   );

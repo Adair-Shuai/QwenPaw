@@ -71,7 +71,7 @@ function inferPreviewKind(
   if (/\.csv$/i.test(path)) return "csv";
   if (
     contentType.startsWith("text/") ||
-    /\.(?:md|mdx|markdown|mmd|mermaid|txt|log|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
+    /\.(?:md|mdx|markdown|mmd|mermaid|txt|log|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh|data|dat|inc|grdecl)$/i.test(
       path,
     ) ||
     !path.split("/").pop()?.includes(".")
@@ -258,7 +258,9 @@ export default function FilesWorkspace({
           projectDirOverride,
         );
         const isText =
-          metadata.preview_kind === "text" || metadata.preview_kind === "csv";
+          target.preferredView === "text" ||
+          metadata.preview_kind === "text" ||
+          metadata.preview_kind === "csv";
         const loaded = isText
           ? await workspaceApi.loadFileText(
               target.path,
@@ -366,17 +368,24 @@ export default function FilesWorkspace({
       const existing = tabsRef.current.find((tab) => tab.path === tabPath);
       if (existing) {
         setLoadError("");
-        const inlineText = resolvedTarget.artifact?.textContent;
-        if (inlineText !== undefined && !existing.readOnly) {
-          setTabContent(scopeKey, tabPath, inlineText);
-          setActiveTab(scopeKey, tabPath);
-          return;
+        if (
+          resolvedTarget.preferredView &&
+          existing.preferredView !== resolvedTarget.preferredView
+        ) {
+          closeTab(scopeKey, tabPath);
+        } else {
+          const inlineText = resolvedTarget.artifact?.textContent;
+          if (inlineText !== undefined && !existing.readOnly) {
+            setTabContent(scopeKey, tabPath, inlineText);
+            setActiveTab(scopeKey, tabPath);
+            return;
+          }
+          if (inlineText === undefined) {
+            setActiveTab(scopeKey, tabPath);
+            return;
+          }
+          closeTab(scopeKey, tabPath);
         }
-        if (inlineText === undefined) {
-          setActiveTab(scopeKey, tabPath);
-          return;
-        }
-        closeTab(scopeKey, tabPath);
       }
       try {
         const loaded = await loadTarget(resolvedTarget);
@@ -390,6 +399,7 @@ export default function FilesWorkspace({
           workspaceRoot: resolvedTarget.root,
           artifactUrl: resolvedTarget.artifactUrl,
           previewKind: loaded.previewKind,
+          preferredView: resolvedTarget.preferredView,
           readOnly: loaded.readOnly,
           etag: loaded.etag,
         });

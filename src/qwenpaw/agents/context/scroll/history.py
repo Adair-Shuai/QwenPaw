@@ -676,8 +676,9 @@ class HistoryStore:
         turns. The FTS index is kept in sync (each purged row is removed from
         it first). Rows with a NULL/empty ``created_at`` are never matched, so
         they are retained. This is the retention/clear path — driven on
-        startup and teardown by ``history_retention_days`` (default 30; set 0
-        to keep history forever, which calls nothing here).
+        startup and teardown by ``history_retention_days`` only when explicitly
+        set to a positive value (the default 0 keeps history forever and calls
+        nothing here).
 
         Note: this DELETEs but does not ``VACUUM``, so freed pages are reused
         but the file does not shrink on disk until a separate vacuum.

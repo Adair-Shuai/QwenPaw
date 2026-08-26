@@ -28,12 +28,20 @@ import {
   LoadingOutlined,
   DownOutlined,
   RightOutlined,
+  AppstoreOutlined,
+  ExportOutlined,
 } from "@ant-design/icons";
-import { Tooltip, message } from "antd";
+import { Dropdown, Tooltip, message } from "antd";
 import { workspaceApi } from "@/api/modules/workspace";
 import { buildAuthHeaders } from "@/api/authHeaders";
 import { useAgentStore } from "@/stores/agentStore";
 import { openFilePreview } from "@/features/files-workspace/openFilePreview";
+import {
+  openVisualizationCenter,
+  resolveVisualizationTarget,
+  supportsOilGasVisualization,
+} from "@/features/files-workspace/fileOpenModes";
+import type { FileTarget } from "@/features/files-workspace/types";
 import { revealWorkspacePath } from "@/features/files-workspace/workspaceReveal";
 import {
   DownloadCancelledError,
@@ -869,8 +877,7 @@ const FileSummaryCards: React.FC<{
 
   if (deliverables.length === 0 && generatedFiles.length === 0) return null;
 
-  /** 点击卡片/列表项：在工作区打开文件内容预览 */
-  const handleOpenInWorkspace = (info: FileInfo) => {
+  const targetForInfo = (info: FileInfo): FileTarget => {
     const ext = info.extension || "";
     const mimeType = getMimeType(ext);
     const artifactId = `filecard-${info.toolCallId}`;
@@ -881,7 +888,7 @@ const FileSummaryCards: React.FC<{
       info.content &&
       !info.isBinary
     ) {
-      openFilePreview({
+      return {
         source: "artifact",
         path: info.filePath || info.fileName,
         artifact: {
@@ -896,17 +903,103 @@ const FileSummaryCards: React.FC<{
           agentId: useAgentStore.getState().selectedAgent,
           size: info.fileSize,
         },
-      });
-      return;
+      };
     }
 
     const artifactUrl = info.fileUrl || info.binaryUrl;
-    openFilePreview({
+    // Files emitted through send_file_to_user are stored in the agent
+    // workspace when the tool only returns a relative filename. Resolving
+    // those names against the bound project makes the preview silently miss
+    // (this was especially visible for generated XLSX deliverables).
+    const isAbsolutePath = /^\/?(?:[A-Za-z]:[\\/]|\\\\|\/)/.test(info.filePath);
+    const previewRoot =
+      artifactUrl || isAbsolutePath
+        ? undefined
+        : info.operation === "send"
+        ? "workspace"
+        : "project";
+    return {
       source: artifactUrl ? "attachment" : "workspace",
       path: info.filePath || info.fileName,
-      root: artifactUrl ? undefined : "project",
+      root: previewRoot,
       artifactUrl,
-    });
+    };
+  };
+
+  /** 点击卡片/列表项：Eclipse deck 默认按文本方式打开。 */
+  const handleOpenInWorkspace = (info: FileInfo) => {
+    openFilePreview(targetForInfo(info));
+  };
+
+  const renderVisualizationMenu = (info: FileInfo, iconSize = 13) => {
+    if (!supportsOilGasVisualization(info.filePath || info.fileName))
+      return null;
+    return (
+      <Dropdown
+        trigger={["click"]}
+        menu={{
+          items: [
+            {
+              key: "workbench",
+              icon: <AppstoreOutlined />,
+              label: "在工作台预览三维网格",
+            },
+            {
+              key: "visualization",
+              icon: <ExportOutlined />,
+              label: "在可视化中心打开",
+            },
+          ],
+          onClick: async ({ key, domEvent }) => {
+            domEvent.preventDefault();
+            domEvent.stopPropagation();
+            const target = targetForInfo(info);
+            const context = {
+              agentId: useAgentStore.getState().selectedAgent,
+              chatId,
+              projectDirOverride,
+            };
+            const visualizationTarget = await resolveVisualizationTarget(
+              target,
+              context,
+            );
+            if (key === "workbench") {
+              openFilePreview({
+                ...visualizationTarget,
+                preferredView: "visualization",
+              });
+            } else {
+              openVisualizationCenter(visualizationTarget, context, null);
+            }
+          },
+        }}
+      >
+        <button
+          type="button"
+          aria-label={`打开方式 ${info.fileName}`}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+          style={{
+            border: "none",
+            background: "transparent",
+            cursor: "pointer",
+            width: 26,
+            height: 26,
+            padding: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            flexShrink: 0,
+            borderRadius: 4,
+            color: c.textQuaternary,
+          }}
+        >
+          <DownOutlined style={{ fontSize: iconSize }} />
+        </button>
+      </Dropdown>
+    );
   };
 
   /** 点击文件夹图标：在系统文件资源管理器中定位文件 */
@@ -1111,6 +1204,7 @@ const FileSummaryCards: React.FC<{
               <EyeOutlined style={{ fontSize: 14 }} />
             </button>
           </Tooltip>
+          {renderVisualizationMenu(info)}
           <Tooltip title="下载">
             <button
               aria-label={`下载 ${info.fileName}`}
@@ -1227,6 +1321,7 @@ const FileSummaryCards: React.FC<{
         >
           {info.fileName}
         </span>
+        {renderVisualizationMenu(info, 11)}
         <Tooltip title="在文件管理器中显示">
           <button
             onClick={(e) => {

@@ -6,6 +6,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type ReactNode,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { ChevronDown, ChevronUp } from "lucide-react";
@@ -14,6 +15,7 @@ import {
   selectTasksForSession,
   useBackgroundTasksStore,
   type BackgroundTask,
+  type BackgroundTaskKind,
 } from "../../../stores/backgroundTasksStore";
 import {
   cancelBackgroundTask,
@@ -42,10 +44,28 @@ interface BackgroundTaskPanelProps {
   embedded?: boolean;
   /** When set (embedded), parent owns the finished-task filter. */
   showFinished?: boolean;
+  /** Initial collapsed state for hosts that dedicate a full-height panel. */
+  defaultCollapsed?: boolean;
+  /** Override the task list max height; use `none` for a full-height host. */
+  listMaxHeight?: number | "none";
+  /** Custom empty state rendered when this session has no background tasks. */
+  emptyState?: ReactNode;
+  /** Host-specific title for the task timeline. */
+  title?: ReactNode;
+  /** Limit the panel to ordinary tools or inter-agent processes. */
+  kindFilter?: BackgroundTaskKind;
+  /** Shared selection callback used by the Agent collaboration views. */
+  onTaskSelect?: (task: BackgroundTask) => void;
+  /** Task selected by a sibling view (flow/timeline/logs). */
+  selectedTaskId?: string | null;
 }
 
 function isFinished(task: BackgroundTask): boolean {
-  return task.status === "done" || task.status === "cancelled";
+  return (
+    task.status === "done" ||
+    task.status === "cancelled" ||
+    task.status === "error"
+  );
 }
 
 function formatDuration(startTime: number, endTime: number | null): string {
@@ -61,6 +81,13 @@ export default function BackgroundTaskPanel({
   sessionId,
   embedded = false,
   showFinished: showFinishedProp,
+  defaultCollapsed = true,
+  listMaxHeight = LIST_MAX_HEIGHT_PX,
+  emptyState,
+  title,
+  kindFilter,
+  onTaskSelect,
+  selectedTaskId,
 }: BackgroundTaskPanelProps) {
   const { t } = useTranslation();
   const { isDark } = useTheme();
@@ -69,11 +96,14 @@ export default function BackgroundTaskPanel({
   const removeTasks = useBackgroundTasksStore((s) => s.removeTasks);
 
   const sessionTasks = useMemo(
-    () => selectTasksForSession(tasks, sessionId),
-    [tasks, sessionId],
+    () =>
+      selectTasksForSession(tasks, sessionId).filter(
+        (task) => !kindFilter || task.kind === kindFilter,
+      ),
+    [tasks, sessionId, kindFilter],
   );
 
-  const [collapsed, setCollapsed] = useState(true);
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [batchBusy, setBatchBusy] = useState(false);
   const [localShowFinished, setLocalShowFinished] = useState(false);
@@ -184,7 +214,7 @@ export default function BackgroundTaskPanel({
     );
   }, [finishedTasks, batchBusy, removeTasks, t]);
 
-  if (sessionTasks.length === 0) return null;
+  if (sessionTasks.length === 0) return emptyState ?? null;
 
   const hasRunning = runningTasks.length > 0;
   const borderColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
@@ -248,7 +278,7 @@ export default function BackgroundTaskPanel({
     <div
       style={{ display: "flex", gap: 6, flexShrink: 0, alignItems: "center" }}
     >
-      {showFinishedToggle}
+      {showFinishedProp === undefined && showFinishedToggle}
       <button
         type="button"
         disabled={batchBusy || runningTasks.length === 0}
@@ -327,7 +357,9 @@ export default function BackgroundTaskPanel({
               minWidth: 0,
             }}
           >
-            <span>{t("tool.control.bgQueue.title", "Background tasks")}</span>
+            <span>
+              {title ?? t("tool.control.bgQueue.title", "Background tasks")}
+            </span>
             {badgeCount > 0 && (
               <span
                 style={{
@@ -370,7 +402,7 @@ export default function BackgroundTaskPanel({
                 display: "flex",
                 flexDirection: "column",
                 gap: 6,
-                maxHeight: LIST_MAX_HEIGHT_PX,
+                maxHeight: listMaxHeight === "none" ? undefined : listMaxHeight,
                 overflowY: "auto",
                 WebkitMaskImage: listMask,
                 maskImage: listMask,
@@ -397,6 +429,7 @@ export default function BackgroundTaskPanel({
               )}
               {visibleTasks.map((task) => {
                 const isExpanded = expandedId === task.toolCallId;
+                const isSelected = selectedTaskId === task.toolCallId;
                 const isRunning = task.status === "running";
                 const duration = formatDuration(task.startTime, task.endTime);
                 const statusText = isRunning
@@ -406,6 +439,11 @@ export default function BackgroundTaskPanel({
                     )} ${duration}`
                   : task.status === "cancelled"
                   ? `${t("tool.control.bgQueue.cancelled", "Cancelled")} · ${t(
+                      "tool.control.bgQueue.totalDuration",
+                      "Total",
+                    )} ${duration}`
+                  : task.status === "error"
+                  ? `${t("tool.control.bgQueue.failed", "Failed")} · ${t(
                       "tool.control.bgQueue.totalDuration",
                       "Total",
                     )} ${duration}`
@@ -422,9 +460,12 @@ export default function BackgroundTaskPanel({
                     role="button"
                     tabIndex={0}
                     onClick={() =>
-                      setExpandedId((id) =>
-                        id === task.toolCallId ? null : task.toolCallId,
-                      )
+                      (() => {
+                        onTaskSelect?.(task);
+                        setExpandedId((id) =>
+                          id === task.toolCallId ? null : task.toolCallId,
+                        );
+                      })()
                     }
                     onKeyDown={(e) => {
                       if (e.key === "Enter" || e.key === " ") {
@@ -432,6 +473,7 @@ export default function BackgroundTaskPanel({
                         setExpandedId((id) =>
                           id === task.toolCallId ? null : task.toolCallId,
                         );
+                        onTaskSelect?.(task);
                       }
                     }}
                     style={{
@@ -441,13 +483,21 @@ export default function BackgroundTaskPanel({
                       padding: "6px 8px",
                       borderRadius: 6,
                       border: `2px solid ${
-                        isExpanded
+                        isSelected
                           ? isDark
                             ? "rgba(179,127,235,0.7)"
                             : "rgba(179,127,235,0.85)"
+                          : isExpanded
+                          ? isDark
+                            ? "rgba(179,127,235,0.42)"
+                            : "rgba(179,127,235,0.55)"
                           : "transparent"
                       }`,
-                      background: isExpanded
+                      background: isSelected
+                        ? isDark
+                          ? "rgba(114,46,209,0.23)"
+                          : "rgba(114,46,209,0.1)"
+                        : isExpanded
                         ? isDark
                           ? "rgba(114,46,209,0.16)"
                           : "rgba(114,46,209,0.06)"
@@ -467,6 +517,8 @@ export default function BackgroundTaskPanel({
                           ? "#722ed1"
                           : task.status === "cancelled"
                           ? "#8c8c8c"
+                          : task.status === "error"
+                          ? "#ff4d4f"
                           : "#52c41a",
                         flexShrink: 0,
                       }}

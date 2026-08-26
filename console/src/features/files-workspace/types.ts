@@ -22,6 +22,8 @@ export interface FileTarget {
   source: FileSource;
   path: string;
   root?: WorkspaceRoot;
+  /** Explicit rendering intent for formats that support both text and GenUI. */
+  preferredView?: "text" | "visualization";
   /** Stable URL emitted by a chat tool result for a historical artifact. */
   artifactUrl?: string;
   /** Inline or generated content that is not necessarily backed by a file. */

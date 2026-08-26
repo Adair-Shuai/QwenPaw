@@ -4450,6 +4450,7 @@
         "running": "Running",
         "done": "Done",
         "doneLabel": "Task completed",
+        "failed": "Failed",
         "cancelled": "Cancelled",
         "totalDuration": "Total",
         "cancel": "Cancel",

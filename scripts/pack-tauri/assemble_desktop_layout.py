@@ -71,7 +71,7 @@ def _move(source: Path, destination: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_root = source.resolve()
     links = [path for path in source.rglob("*") if path.is_symlink()]
-    if links and sys.platform == "darwin":
+    if links:
         for link in links:
             target = link.resolve()
             if source_root not in target.parents:

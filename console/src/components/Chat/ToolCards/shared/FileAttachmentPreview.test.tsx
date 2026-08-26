@@ -31,7 +31,7 @@ describe("FilePreviewLink", () => {
     );
 
     const event = listener.mock.calls[0][0] as CustomEvent;
-    expect(event.detail.target).toEqual({
+    expect(event.detail.target).toMatchObject({
       source: "workspace",
       path: "src/result.txt",
       root: "project",
@@ -113,6 +113,39 @@ describe("FilePreviewLink", () => {
       source: "attachment",
       path: "reports/report.md",
       artifactUrl: "/api/files/preview/reports/report.md",
+    });
+    window.removeEventListener("qwenpaw:open-file-preview", listener);
+  });
+
+  it("opens Eclipse DATA decks as text and exposes visualization choices", () => {
+    const listener = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", listener);
+
+    render(
+      <FilePreviewLink
+        content={{
+          type: "tool_call",
+          id: "read-deck-1",
+          name: "read_file",
+          status: "done",
+          params: { file_path: "models/SMOKE.DATA" },
+        }}
+      />,
+    );
+
+    expect(
+      screen.getByRole("button", { name: /SMOKE\.DATA.*打开方式/i }),
+    ).toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /SMOKE\.DATA.*files\.preview/i }),
+    );
+
+    const event = listener.mock.calls[0][0] as CustomEvent;
+    expect(event.detail.target).toMatchObject({
+      source: "workspace",
+      path: "models/SMOKE.DATA",
+      root: "project",
+      preferredView: "text",
     });
     window.removeEventListener("qwenpaw:open-file-preview", listener);
   });

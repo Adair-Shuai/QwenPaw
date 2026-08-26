@@ -493,7 +493,7 @@ Controls agent runtime behavior, retry strategies, context management, and memor
 | `pruning_recent_n`             | int  | `2`     | Number of recent tool-result-bearing messages kept at the recent preview threshold before scroll compaction |
 | `pruning_old_msg_max_bytes`    | int  | `3000`  | Compact preview byte threshold for tool results retained in live context after scroll compaction            |
 | `pruning_recent_msg_max_bytes` | int  | `50000` | Recent/execution preview byte threshold for tool results before and shortly after entering context          |
-| `offload_retention_days`       | int  | `5`     | Number of days to retain tool result files                                                                  |
+| `offload_retention_days`       | int  | `0`     | Keep complete tool result files forever by default; set a positive number of days to opt into cleanup       |
 
 **ReMeLight Memory Configuration (`reme_light_memory_config` object):**
 

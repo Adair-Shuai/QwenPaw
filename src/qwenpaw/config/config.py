@@ -1072,14 +1072,15 @@ class ToolResultPruningConfig(BaseModel):
     )
 
     offload_retention_days: int = Field(
-        default=30,
-        ge=1,
+        default=0,
+        ge=0,
         le=365,
         description=(
             "Number of days to retain complete archived tool result files. "
-            "This lifetime is independent of Scroll history retention; after "
-            "expiry, history may still contain the bounded preview but not "
-            "the complete artifact."
+            "Set 0 (the default) to keep them forever. This lifetime is "
+            "independent of Scroll history retention; when an explicit "
+            "positive limit expires, history may still contain the bounded "
+            "preview but not the complete artifact."
         ),
     )
 
@@ -1144,13 +1145,14 @@ class ScrollContextConfig(BaseModel):
     )
 
     history_retention_days: int = Field(
-        default=30,
+        default=0,
         ge=0,
         description=(
             "Days of durable history to keep; rows older than this are "
-            "purged automatically on startup and on agent teardown. Default "
-            "30 keeps roughly the last month. Set 0 to keep history forever "
-            "(unbounded growth — only the capacity warning fires)."
+            "purged automatically on startup and on agent teardown only when "
+            "this is explicitly set to a positive value. The default 0 keeps "
+            "history forever (unbounded growth — only the capacity warning "
+            "fires)."
         ),
     )
 

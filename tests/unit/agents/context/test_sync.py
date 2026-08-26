@@ -895,6 +895,18 @@ def test_fully_aged_session_imports_nothing_and_skips_on_rerun(
     assert all(f.skipped for f in r2.files)
     assert r2.rows_inserted == 0
 
+    # Expanding retention to keep-forever must replay the unchanged source
+    # file instead of trusting the old aged-out manifest entry.
+    r3 = _sync_registered(
+        store,
+        sessions,
+        [_chat("sid")],
+        retention_days=0,
+    )
+    assert not any(f.skipped for f in r3.files)
+    assert r3.aged_out == 0
+    assert store.count("sid") > 0
+
 
 def _stub_config_loaders(
     monkeypatch,

@@ -92,7 +92,6 @@
 
 .sidebar {
   align-items: center;
-  gap: 6px;
   padding: 8px 10px;
   border-radius: 8px;
   margin-bottom: 2px;
@@ -105,8 +104,21 @@
       pointer-events: auto;
     }
 
-    .statusSlot {
+    .sidebarMeta {
       opacity: 0;
+      pointer-events: none;
+    }
+  }
+
+  &:focus-within {
+    .moreBtn {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .sidebarMeta {
+      opacity: 0;
+      pointer-events: none;
     }
   }
 
@@ -129,8 +141,9 @@
       pointer-events: auto;
     }
 
-    .statusSlot {
+    .sidebarMeta {
       opacity: 0;
+      pointer-events: none;
     }
   }
 }
@@ -222,12 +235,8 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  transition: opacity 0.15s;
-
-  .sidebar & {
-    width: 14px;
-    height: 14px;
-  }
+  width: 14px;
+  height: 14px;
 }
 
 .statusDot {
@@ -269,15 +278,6 @@
   border-radius: 50%;
   background: #52c41a;
   box-shadow: 0 0 5px 1px rgba(82, 196, 26, 0.25);
-  pointer-events: none;
-}
-
-.idleDot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--colorTextQuaternary, rgba(26, 23, 22, 0.25));
   pointer-events: none;
 }
 
@@ -352,6 +352,15 @@
   flex-shrink: 0;
   align-items: center;
   color: var(--colorPrimary, #ff7f16);
+}
+
+.sidebarMeta {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 5px;
+  margin-left: 6px;
+  transition: opacity 0.15s;
 }
 
 .dragHint {

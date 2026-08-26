@@ -2,6 +2,7 @@ import type { WorkspaceArtifact } from "../../components/Workspace/types";
 import { chatApi } from "../../api/modules/chat";
 import { isAbsoluteLocalFilePath } from "./internalFileLinks";
 import type { FileTarget } from "./types";
+import { withDefaultFileView } from "./fileOpenModes";
 
 export const OPEN_FILE_PREVIEW_EVENT = "qwenpaw:open-file-preview";
 export const UPDATE_FILE_PREVIEW_EVENT = "qwenpaw:update-file-preview";
@@ -26,7 +27,7 @@ export function normalizeArtifactUrl(url?: string): string | undefined {
 }
 
 function normalizeTarget(target: FileTarget): FileTarget {
-  return {
+  return withDefaultFileView({
     ...target,
     artifactUrl: normalizeArtifactUrl(target.artifactUrl),
     artifact: target.artifact
@@ -35,7 +36,7 @@ function normalizeTarget(target: FileTarget): FileTarget {
           binaryUrl: normalizeArtifactUrl(target.artifact.binaryUrl),
         }
       : undefined,
-  };
+  });
 }
 
 export function openFilePreview(
@@ -52,10 +53,7 @@ export function openFilePreview(
 function previewPathForArtifact(artifact: WorkspaceArtifact): string {
   const raw = artifact.workspacePath || artifact.title;
   const extension = artifact.extension?.replace(/^\./, "");
-  if (
-    extension &&
-    !raw.toLowerCase().endsWith(`.${extension.toLowerCase()}`)
-  ) {
+  if (extension && !raw.toLowerCase().endsWith(`.${extension.toLowerCase()}`)) {
     return `${raw}.${extension}`;
   }
   return raw;

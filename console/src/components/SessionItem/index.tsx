@@ -204,15 +204,6 @@ const SessionItem: React.FC<SessionItemProps> = ({
       {/* Drawer variant: timeline indicator */}
       {variant === "drawer" && <div className={styles.iconPlaceholder} />}
 
-      {/* Status slot — leftmost for sidebar variant only */}
-      {!editing && variant === "sidebar" && (
-        <span className={styles.statusSlot}>
-          {inProgress && <span className={styles.runningDot} />}
-          {hasUnseenResult && <span className={styles.unseenDot} />}
-          {isIdle && !hasUnseenResult && <span className={styles.idleDot} />}
-        </span>
-      )}
-
       {/* Content area */}
       <div className={styles.content}>
         {editing ? (
@@ -303,20 +294,50 @@ const SessionItem: React.FC<SessionItemProps> = ({
         )}
       </div>
 
-      {/* Sidebar variant: channel icon */}
-      {!editing && variant === "sidebar" && channelKey && (
-        <span className={styles.channelTag} title={channelLabel || channelKey}>
-          <ChannelIcon channelKey={channelKey} size={14} />
-        </span>
-      )}
+      {!editing &&
+        variant === "sidebar" &&
+        (inProgress ||
+          hasUnseenResult ||
+          channelKey ||
+          isSubagent ||
+          isCron ||
+          pinned) && (
+          <span className={styles.sidebarMeta}>
+            {(inProgress || hasUnseenResult) && (
+              <span
+                className={styles.statusSlot}
+                role="img"
+                aria-label={statusAriaLabel}
+              >
+                {inProgress && <span className={styles.runningDot} />}
+                {hasUnseenResult && <span className={styles.unseenDot} />}
+              </span>
+            )}
+            {channelKey && (
+              <span
+                className={styles.channelTag}
+                title={channelLabel || channelKey}
+              >
+                <ChannelIcon channelKey={channelKey} size={14} />
+              </span>
+            )}
+            {(isSubagent || isCron) && (
+              <span className={styles.sourceIcon} title={sourceLabel}>
+                {isCron ? <Clock3 size={13} /> : <Bot size={13} />}
+              </span>
+            )}
+            {pinned && (
+              <span
+                className={styles.pinMark}
+                title={t("chat.group.pinned", "Pinned")}
+              >
+                <Pin size={11} />
+              </span>
+            )}
+          </span>
+        )}
 
-      {!editing && variant === "sidebar" && (isSubagent || isCron) && (
-        <span className={styles.sourceIcon} title={sourceLabel}>
-          {isCron ? <Clock3 size={13} /> : <Bot size={13} />}
-        </span>
-      )}
-
-      {!editing && pinned && (
+      {!editing && variant === "drawer" && pinned && (
         <span
           className={styles.pinMark}
           title={t("chat.group.pinned", "Pinned")}
@@ -325,7 +346,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
         </span>
       )}
 
-      {!editing && (
+      {!editing && variant === "drawer" && (
         <span
           className={styles.dragHint}
           title={t(
