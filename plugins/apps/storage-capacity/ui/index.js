@@ -23,6 +23,7 @@
   var Select = antd.Select;
   var Tag = antd.Tag;
   var Tooltip = antd.Tooltip;
+  var Upload = antd.Upload;
   var message = antd.message;
   var Spin = antd.Spin;
 
@@ -73,6 +74,14 @@
       ".sc-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}",
       ".sc-card{background:#fffefb;border:1px solid rgba(21,42,45,.09);border-radius:18px;padding:20px;box-shadow:0 7px 22px rgba(31,59,61,.045)}",
       ".sc-card.wide{grid-column:1/-1}",
+      ".sc-import-layout{display:grid;grid-template-columns:minmax(320px,.82fr) 1.18fr;gap:18px;align-items:stretch}",
+      ".sc-drop .ant-upload-drag{height:100%;min-height:188px;border:1px dashed rgba(10,110,112,.38);background:#f4f8f4;border-radius:15px}",
+      ".sc-drop-icon{width:48px;height:48px;border-radius:15px;background:#dff2e9;color:#0a6e70;display:grid;place-items:center;margin:0 auto 12px;font-size:22px;font-weight:800}",
+      ".sc-drop-title{font-size:14px;font-weight:800;color:#213b3e}.sc-drop-sub{font-size:11px;color:#748588;margin-top:6px;line-height:1.6}",
+      ".sc-import-status{border:1px solid rgba(21,42,45,.09);background:#f8f9f5;border-radius:15px;padding:16px;min-height:188px;display:flex;flex-direction:column}",
+      ".sc-import-title{font-size:13px;font-weight:800}.sc-import-copy{font-size:11px;color:#718184;line-height:1.65;margin-top:6px}",
+      ".sc-import-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:13px 0}.sc-import-stat{background:white;border-radius:11px;padding:10px;border:1px solid rgba(21,42,45,.07)}.sc-import-stat b{font-size:17px;display:block}.sc-import-stat span{font-size:9px;color:#849294}",
+      ".sc-missing{font-size:10px;color:#8a6425;background:#fff5df;border-radius:9px;padding:8px 10px;line-height:1.55;margin-bottom:10px}",
       ".sc-card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:15px;margin-bottom:17px}",
       ".sc-card-title{font-size:16px;font-weight:820;letter-spacing:-.015em}.sc-card-desc{font-size:12px;color:#718184;margin-top:4px;line-height:1.55}",
       ".sc-kicker{font-size:10px;font-weight:800;color:#0a6e70;letter-spacing:.12em;text-transform:uppercase;margin-bottom:5px}",
@@ -99,21 +108,26 @@
       ".sc-warning{display:flex;gap:9px;align-items:flex-start;padding:10px 12px;border-radius:11px;background:#fff7e7;color:#7a5a21;font-size:10px;line-height:1.55;margin-top:8px}",
       ".sc-edit-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:13px}.sc-field label{display:block;font-size:11px;font-weight:650;color:#536568;margin-bottom:6px}.sc-layer-edit{border:1px solid rgba(21,42,45,.1);border-radius:13px;padding:13px;margin-top:13px}.sc-layer-edit-title{font-size:12px;font-weight:800;margin-bottom:10px}",
       ".sc-empty{padding:80px 20px;text-align:center;color:#728285}",
-      "@media(max-width:1100px){.sc-hero-grid,.sc-calc-layout,.sc-quant,.sc-verdict{grid-template-columns:1fr}.sc-hero-score{justify-content:flex-start}.sc-trace{grid-template-columns:repeat(2,1fr)}.sc-trace:before{display:none}.sc-results{grid-template-columns:repeat(2,1fr)}}",
-      "@media(max-width:760px){.sc-shell{padding:14px 12px 34px}.sc-topbar{flex-direction:column;align-items:stretch;gap:10px}.sc-brand{white-space:nowrap}.sc-actions{display:grid;grid-template-columns:repeat(3,1fr)}.sc-actions .ant-btn{padding-inline:6px}.sc-hero{padding:24px 20px}.sc-title{font-size:24px}.sc-grid{grid-template-columns:1fr}.sc-card.wide{grid-column:auto}.sc-steps{grid-template-columns:1fr 1fr}.sc-trace,.sc-results,.sc-compliance,.sc-edit-grid{grid-template-columns:1fr}.sc-param{grid-template-columns:1fr .65fr}.sc-param-unit,.sc-source{display:none}}"
+      "@media(max-width:1100px){.sc-hero-grid,.sc-calc-layout,.sc-quant,.sc-verdict,.sc-import-layout{grid-template-columns:1fr}.sc-hero-score{justify-content:flex-start}.sc-trace{grid-template-columns:repeat(2,1fr)}.sc-trace:before{display:none}.sc-results{grid-template-columns:repeat(2,1fr)}}",
+      "@media(max-width:760px){.sc-shell{padding:14px 12px 34px}.sc-topbar{flex-direction:column;align-items:stretch;gap:10px}.sc-brand{white-space:nowrap}.sc-actions{display:grid;grid-template-columns:repeat(2,1fr)}.sc-actions .ant-btn{padding-inline:6px}.sc-hero{padding:24px 20px}.sc-title{font-size:24px}.sc-grid{grid-template-columns:1fr}.sc-card.wide{grid-column:auto}.sc-steps{grid-template-columns:1fr 1fr}.sc-trace,.sc-results,.sc-compliance,.sc-edit-grid{grid-template-columns:1fr}.sc-param{grid-template-columns:1fr .65fr}.sc-param-unit,.sc-source{display:none}}"
     ].join("");
     document.head.appendChild(style);
   }
 
   function apiFetch(path, options) {
     options = options || {};
-    var headers = { "Content-Type": "application/json" };
+    var headers = {};
     var token = host.getApiToken ? host.getApiToken() : "";
     if (token) headers.Authorization = "Bearer " + token;
+    var body = options.body;
+    if (body && !(body instanceof FormData)) {
+      headers["Content-Type"] = "application/json";
+      body = JSON.stringify(body);
+    }
     return fetch(host.getApiUrl(path), {
       method: options.method || "GET",
       headers: headers,
-      body: options.body ? JSON.stringify(options.body) : undefined,
+      body: body || undefined,
     }).then(function (res) {
       if (!res.ok) return res.text().then(function (text) { throw new Error(text || "HTTP " + res.status); });
       return res.json();
@@ -150,11 +164,12 @@
 
   function Header(props) {
     return h("div", { className: "sc-topbar" },
-      h("div", { className: "sc-brand" }, h("div", { className: "sc-mark" }, "∿"), h("div", null, "库容评估工作台"), h(Tag, { color: "cyan", style: { marginLeft: 2 } }, "UGSci Expert")),
+      h("div", { className: "sc-brand" }, h("div", { className: "sc-mark" }, "∿"), h("div", null, "储气库库容评估场景"), h(Tag, { color: "cyan", style: { marginLeft: 2 } }, "UGSci Expert")),
       h("div", { className: "sc-actions" },
-        h(Button, { onClick: props.onEdit }, "调整参数"),
+        h(Button, { onClick: props.onDemo }, "加载示例"),
+        h(Button, { onClick: props.onEdit }, "配置参数"),
         h(Button, { onClick: function () { props.result && downloadReport(props.result); }, disabled: !props.result }, "导出审计包"),
-        h(Button, { type: "primary", loading: props.loading, onClick: props.onRun, style: { background: COLORS.teal, borderColor: COLORS.teal } }, props.loading ? "专家评估中" : "重新评估")
+        h(Button, { type: "primary", loading: props.loading, onClick: props.onRun, style: { background: COLORS.teal, borderColor: COLORS.teal } }, props.loading ? "专家评估中" : props.result ? "重新评估" : "开始评估")
       )
     );
   }
@@ -167,7 +182,7 @@
       h("div", null,
         h("div", { className: "sc-eyebrow" }, "Underground gas storage · deterministic assessment"),
         h("h1", { className: "sc-title" }, caseInfo.case_name || "地下储气库库容评估"),
-        h("div", { className: "sc-desc" }, "把评估资料、关键参数、专家判断、确定性工具调用与计算结论放在同一条证据链上。所有定量结果均可追溯到输入来源和计算指纹。"),
+        h("div", { className: "sc-desc" }, "面向任意地下储气库场景。上传本库的报告、压力/PVT、注采计量与设计资料，完成参数映射后即可启动专家评估；所有定量结果均可追溯到输入来源和计算指纹。"),
         h("div", { className: "sc-hero-meta" },
           h("span", { className: "sc-pill" }, "周期 · " + (caseInfo.cycle_id || "—")),
           h("span", { className: "sc-pill" }, "压力口径 · " + (caseInfo.pressure_basis === "apparent_formation" ? "视地层压力" : caseInfo.pressure_basis || "—")),
@@ -176,16 +191,50 @@
       ),
       h("div", { className: "sc-hero-score" },
         h("div", { className: "sc-score-ring", style: { "--score": score + "%" } }, h("div", { className: "sc-score-inner" }, h("div", { className: "sc-score-number" }, n(score, 1)), h("div", { className: "sc-score-label" }, "资料可信度"))),
-        h("div", { className: "sc-score-copy" }, h("strong", null, score >= 90 ? "资料基础满足评估门槛" : "资料基础需要补强"), h("div", null, data ? data.documents.length + " 份资料 · " + data.parameters.length + " 项参数 · 全链路留痕" : "正在装载评估上下文…"))
+        h("div", { className: "sc-score-copy" }, h("strong", null, data ? (score >= 90 ? "资料基础满足评估门槛" : "资料基础需要补强") : "等待导入储气库资料"), h("div", null, data ? data.documents.length + " 份资料 · " + data.parameters.length + " 项参数 · 全链路留痕" : "支持 JSON、CSV、PDF、Word、Excel 与图片等资料。"))
       )
     ));
   }
 
   function StepRail() {
-    var steps = [["资料基础", "4 类证据"], ["参数提取", "来源 + 置信度"], ["专家调用", "口径 + 路由"], ["确定性计算", "逐层 p/Z"], ["量化结论", "指标 + 审计"]];
+    var steps = [["资料导入", "任意储气库"], ["参数提取", "来源 + 置信度"], ["专家调用", "口径 + 路由"], ["确定性计算", "逐层 p/Z"], ["量化结论", "指标 + 审计"]];
     return h("div", { className: "sc-steps" }, steps.map(function (step, idx) {
       return h("div", { className: "sc-step", key: step[0] }, h("div", { className: "sc-step-num" }, String(idx + 1).padStart(2, "0")), h("div", { style: { minWidth: 0 } }, h("div", { className: "sc-step-title" }, step[0]), h("div", { className: "sc-step-sub" }, step[1])));
     }));
+  }
+
+  function ImportCard(props) {
+    var ingest = props.ingest;
+    var extraction = ingest && ingest.extraction ? ingest.extraction : {};
+    var missing = ingest && ingest.missing_fields ? ingest.missing_fields : [];
+    return h("section", { className: "sc-card wide" },
+      h(CardHead, { kicker: "Scenario intake", title: "上传储气库评估资料", desc: "每次评估都以当前上传资料为边界，不绑定任何固定储气库或固定周期。结构化 JSON/CSV 可自动映射，其他资料进入证据链后由用户复核参数。", extra: ingest ? h(Tag, { color: ingest.ready_for_evaluation ? "green" : "gold" }, ingest.ready_for_evaluation ? "参数已就绪" : "待补齐参数") : h(Tag, null, "新场景") }),
+      h("div", { className: "sc-import-layout" },
+        h("div", { className: "sc-drop" }, h(Upload.Dragger, {
+          multiple: true,
+          fileList: props.fileList,
+          beforeUpload: function () { return false; },
+          onChange: function (info) { props.onFilesChange(info.fileList.slice(-12)); },
+          accept: ".json,.csv,.tsv,.txt,.md,.pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg",
+          showUploadList: { showRemoveIcon: true },
+        }, h("div", { className: "sc-drop-icon" }, "⇧"), h("div", { className: "sc-drop-title" }, "拖放或选择本储气库资料"), h("div", { className: "sc-drop-sub" }, "最多 12 份、单次合计 50 MB。建议包含设计指标、周期注采、分层压力与 Z 因子。"))),
+        h("div", { className: "sc-import-status" },
+          h("div", { className: "sc-import-title" }, ingest ? "资料识别结果" : "创建一个新的评估场景"),
+          h("div", { className: "sc-import-copy" }, ingest ? ((props.caseInfo && props.caseInfo.case_name ? props.caseInfo.case_name : "当前场景") + " 已建立资料边界，可继续补充资料或配置参数。") : "选择资料后先执行识别，应用不会自动套用呼图壁或其他储气库的数值。"),
+          h("div", { className: "sc-import-stats" },
+            h("div", { className: "sc-import-stat" }, h("b", null, extraction.file_count || 0), h("span", null, "上传资料")),
+            h("div", { className: "sc-import-stat" }, h("b", null, extraction.extracted_field_count || 0), h("span", null, "识别字段")),
+            h("div", { className: "sc-import-stat" }, h("b", null, extraction.layer_count || 0), h("span", null, "识别层系"))
+          ),
+          missing.length ? h("div", { className: "sc-missing" }, "还需补齐：" + missing.slice(0, 6).join("、") + (missing.length > 6 ? " 等 " + missing.length + " 项" : "")) : null,
+          h("div", { style: { marginTop: "auto", display: "flex", gap: 8, flexWrap: "wrap" } },
+            h(Button, { type: "primary", loading: props.uploading, disabled: !props.fileList.length, onClick: props.onUpload, style: { background: COLORS.teal, borderColor: COLORS.teal } }, props.uploading ? "正在识别" : "识别上传资料"),
+            ingest ? h(Button, { onClick: props.onConfigure }, ingest.ready_for_evaluation ? "检查参数" : "补齐参数") : null,
+            ingest && ingest.ready_for_evaluation ? h(Button, { onClick: props.onEvaluate }, "开始专家评估") : null
+          )
+        )
+      )
+    );
   }
 
   function CardHead(props) {
@@ -335,20 +384,40 @@
       var layers = value.layers.map(function (layer, idx) { if (idx !== index) return layer; var copy = Object.assign({}, layer); copy[key] = next; return copy; });
       setKey("layers", layers);
     }
+    function addLayer() {
+      var next = (value.layers || []).concat([{
+        name: "层系-" + ((value.layers || []).length + 1),
+        produced_gas: null,
+        injection_end_pressure: null,
+        injection_end_z: null,
+        evaluation_pressure: null,
+        evaluation_z: null,
+        source: "用户配置 / 上传资料",
+        confidence: 0.9,
+      }]);
+      setKey("layers", next);
+    }
+    function removeLayer(index) {
+      setKey("layers", (value.layers || []).filter(function (_, idx) { return idx !== index; }));
+    }
     var numeric = [["design_capacity", "设计库容（亿方）"], ["book_inventory", "账面库存（亿方）"], ["working_gas", "工作气量（亿方）"], ["design_working_gas", "设计工作气（亿方）"], ["peak_daily_rate", "实际冲峰（万方/日）"], ["design_peak_daily_rate", "设计冲峰（万方/日）"]];
-    return h(Modal, { open: props.open, title: "调整评估参数", width: 900, onCancel: props.onCancel, onOk: props.onSubmit, okText: "保存并重新评估", confirmLoading: props.loading, destroyOnClose: true },
+    return h(Modal, { open: props.open, title: "配置储气库评估场景", width: 960, onCancel: props.onCancel, onOk: props.onSubmit, okText: "保存并开始评估", confirmLoading: props.loading, destroyOnClose: true },
       h("div", { className: "sc-edit-grid" },
+        h(Field, { label: "场景编号" }, h(Input, { value: value.case_id, onChange: function (e) { setKey("case_id", e.target.value); } })),
         h(Field, { label: "评估名称" }, h(Input, { value: value.case_name, onChange: function (e) { setKey("case_name", e.target.value); } })),
         h(Field, { label: "评价周期" }, h(Input, { value: value.cycle_id, onChange: function (e) { setKey("cycle_id", e.target.value); } })),
+        h(Field, { label: "注气末状态 / 日期" }, h(Input, { value: value.injection_end_state_id, onChange: function (e) { setKey("injection_end_state_id", e.target.value); } })),
+        h(Field, { label: "评价期状态 / 日期" }, h(Input, { value: value.evaluation_state_id, onChange: function (e) { setKey("evaluation_state_id", e.target.value); } })),
         h(Field, { label: "压力口径" }, h(Select, { value: value.pressure_basis, style: { width: "100%" }, options: [{ value: "apparent_formation", label: "视地层压力" }, { value: "absolute", label: "绝对压力" }, { value: "report_defined", label: "报告定义压力" }], onChange: function (next) { setKey("pressure_basis", next); } })),
         numeric.map(function (item) { return h(Field, { label: item[1], key: item[0] }, h(InputNumber, { value: value[item[0]], min: .001, precision: 3, style: { width: "100%" }, onChange: function (next) { setKey(item[0], next); } })); })
       ),
-      value.layers.map(function (layer, idx) {
-        return h("div", { className: "sc-layer-edit", key: idx }, h("div", { className: "sc-layer-edit-title" }, "层系 " + (idx + 1) + " · " + layer.name), h("div", { className: "sc-edit-grid" },
+      h("div", { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18 } }, h("div", { style: { fontSize: 13, fontWeight: 800 } }, "分层 p/Z 参数"), h(Button, { size: "small", onClick: addLayer }, "+ 新增层系")),
+      (value.layers || []).length ? value.layers.map(function (layer, idx) {
+        return h("div", { className: "sc-layer-edit", key: idx }, h("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 } }, h("div", { className: "sc-layer-edit-title", style: { marginBottom: 0 } }, "层系 " + (idx + 1) + " · " + layer.name), h(Button, { size: "small", danger: true, onClick: function () { removeLayer(idx); } }, "删除")), h("div", { className: "sc-edit-grid" },
           h(Field, { label: "层系名称" }, h(Input, { value: layer.name, onChange: function (e) { setLayer(idx, "name", e.target.value); } })),
           [["produced_gas", "阶段采气量 Qp"], ["injection_end_pressure", "注气末压力 Pin"], ["injection_end_z", "注气末 Z 因子"], ["evaluation_pressure", "评价期压力 P"], ["evaluation_z", "评价期 Z 因子"]].map(function (item) { return h(Field, { label: item[1], key: item[0] }, h(InputNumber, { value: layer[item[0]], min: .001, precision: 4, style: { width: "100%" }, onChange: function (next) { setLayer(idx, item[0], next); } })); })
         ));
-      })
+      }) : h("div", { className: "sc-missing", style: { marginTop: 12 } }, "尚未识别到分层数据，请点击“新增层系”后填写阶段采气量、注气末/评价期压力与 Z 因子。")
     );
   }
 
@@ -356,39 +425,72 @@
     var _case = useState(null), caseInfo = _case[0], setCaseInfo = _case[1];
     var _draft = useState(null), draft = _draft[0], setDraft = _draft[1];
     var _data = useState(null), data = _data[0], setData = _data[1];
-    var _loading = useState(true), loading = _loading[0], setLoading = _loading[1];
+    var _loading = useState(false), loading = _loading[0], setLoading = _loading[1];
     var _edit = useState(false), editOpen = _edit[0], setEditOpen = _edit[1];
     var _error = useState(""), error = _error[0], setError = _error[1];
+    var _files = useState([]), fileList = _files[0], setFileList = _files[1];
+    var _ingest = useState(null), ingest = _ingest[0], setIngest = _ingest[1];
+    var _uploading = useState(false), uploading = _uploading[0], setUploading = _uploading[1];
 
     function run(nextCase) {
       var payload = nextCase || caseInfo;
-      if (!payload) return Promise.resolve();
+      if (!payload) { message.warning("请先上传资料并配置评估参数"); return Promise.resolve(false); }
       setLoading(true); setError("");
       return apiFetch("/storage-capacity/evaluate", { method: "POST", body: payload }).then(function (result) {
-        setData(result); setCaseInfo(payload); setDraft(JSON.parse(JSON.stringify(payload)));
+        setData(result); setCaseInfo(payload); setDraft(JSON.parse(JSON.stringify(payload))); return true;
       }).catch(function (err) {
-        setError(errorText(err)); message.error(errorText(err));
+        setError(errorText(err)); message.error(errorText(err)); return false;
       }).finally(function () { setLoading(false); });
     }
 
+    function loadDemo() {
+      setLoading(true); setError("");
+      apiFetch("/storage-capacity/demo").then(function (res) {
+        var demoIngest = { ready_for_evaluation: true, missing_fields: [], extraction: { file_count: (res.case.documents || []).length, parsed_file_count: (res.case.documents || []).length, extracted_field_count: 16, layer_count: (res.case.layers || []).length, warnings: [] } };
+        setCaseInfo(res.case); setDraft(JSON.parse(JSON.stringify(res.case))); setIngest(demoIngest); setFileList([]); return run(res.case);
+      }).catch(function (err) { setError(errorText(err)); message.error(errorText(err)); setLoading(false); });
+    }
+
+    function uploadSelected() {
+      var originals = fileList.map(function (item) { return item.originFileObj || item; }).filter(Boolean);
+      if (!originals.length) { message.warning("请先选择储气库资料"); return; }
+      var fd = new FormData();
+      originals.forEach(function (file) { fd.append("files", file); });
+      if (caseInfo && caseInfo.case_name && caseInfo.case_name.indexOf("待识别") < 0) fd.append("case_name", caseInfo.case_name);
+      setUploading(true); setError("");
+      apiFetch("/storage-capacity/ingest", { method: "POST", body: fd }).then(function (res) {
+        setIngest(res); setCaseInfo(res.case); setDraft(JSON.parse(JSON.stringify(res.case))); setData(null);
+        if (res.ready_for_evaluation) message.success("资料识别完成，评估参数已就绪");
+        else message.info("资料已导入，请补齐缺失参数后开始评估");
+      }).catch(function (err) { setError(errorText(err)); message.error(errorText(err)); }).finally(function () { setUploading(false); });
+    }
+
+    function openEditor() {
+      if (!caseInfo) { message.warning("请先创建或上传一个评估场景"); return; }
+      setDraft(JSON.parse(JSON.stringify(caseInfo))); setEditOpen(true);
+    }
+
     useEffect(function () {
-      apiFetch("/storage-capacity/demo").then(function (res) { setCaseInfo(res.case); setDraft(JSON.parse(JSON.stringify(res.case))); return run(res.case); }).catch(function (err) { setError(errorText(err)); setLoading(false); });
+      apiFetch("/storage-capacity/blank").then(function (res) { setCaseInfo(res.case); setDraft(JSON.parse(JSON.stringify(res.case))); }).catch(function (err) { setError(errorText(err)); });
     }, []);
 
     var displayData = useMemo(function () { return data; }, [data]);
     return h("div", { className: "sc-app" }, h("main", { className: "sc-shell" },
-      h(Header, { loading: loading, result: data, onRun: function () { run(); }, onEdit: function () { if (caseInfo) { setDraft(JSON.parse(JSON.stringify(caseInfo))); setEditOpen(true); } } }),
+      h(Header, { loading: loading, result: data, onDemo: loadDemo, onRun: function () { if (data || (ingest && ingest.ready_for_evaluation)) run(); else openEditor(); }, onEdit: openEditor }),
       h(Hero, { data: displayData, caseInfo: caseInfo }),
       h(StepRail),
       error ? h("div", { className: "sc-warning", style: { marginBottom: 16 } }, "评估失败：" + error) : null,
-      !displayData ? h("div", { className: "sc-card sc-empty" }, loading ? h(Spin, { size: "large", tip: "正在调用油藏工程师与确定性计算内核…" }) : "暂无评估结果") : h("div", { className: "sc-grid" },
-        h(EvidenceCard, { data: displayData }),
-        h(ParametersCard, { data: displayData, onEdit: function () { setDraft(JSON.parse(JSON.stringify(caseInfo))); setEditOpen(true); } }),
-        h(TraceCard, { data: displayData, loading: loading }),
-        h(CalculationCard, { data: displayData }),
-        h(ResultsCard, { data: displayData })
+      h("div", { className: "sc-grid" },
+        h(ImportCard, { ingest: ingest, caseInfo: caseInfo, fileList: fileList, uploading: uploading, onFilesChange: setFileList, onUpload: uploadSelected, onConfigure: openEditor, onEvaluate: function () { run(); } }),
+        !displayData ? h("div", { className: "sc-card wide sc-empty" }, loading ? h(Spin, { size: "large", tip: "正在调用油藏工程师与确定性计算内核…" }) : "上传当前储气库资料并完成参数配置后，评估资料、计算过程和量化结论将在这里展开。") : [
+          h(EvidenceCard, { data: displayData, key: "evidence" }),
+          h(ParametersCard, { data: displayData, onEdit: openEditor, key: "params" }),
+          h(TraceCard, { data: displayData, loading: loading, key: "trace" }),
+          h(CalculationCard, { data: displayData, key: "calc" }),
+          h(ResultsCard, { data: displayData, key: "results" })
+        ]
       ),
-      h(EditModal, { open: editOpen, value: draft, loading: loading, onChange: setDraft, onCancel: function () { setEditOpen(false); }, onSubmit: function () { run(draft).then(function () { setEditOpen(false); }); } })
+      h(EditModal, { open: editOpen, value: draft, loading: loading, onChange: setDraft, onCancel: function () { setEditOpen(false); }, onSubmit: function () { run(draft).then(function (ok) { if (ok) { setEditOpen(false); setIngest(Object.assign({}, ingest || {}, { ready_for_evaluation: true, missing_fields: [] })); } }); } })
     ));
   }
 
