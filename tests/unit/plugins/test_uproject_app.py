@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from pathlib import Path
 
 from plugins.apps.uproject.backend.ai import (
     extract_items_from_notes,
@@ -19,6 +20,9 @@ from plugins.apps.uproject.backend.store import (
     list_projects,
     reset_demo,
 )
+
+REPO = Path(__file__).resolve().parents[3]
+PLUGIN_ROOT = REPO / "plugins" / "apps" / "uproject"
 
 
 class _MemStore:
