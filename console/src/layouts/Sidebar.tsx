@@ -10,9 +10,7 @@ import {
   Popover,
   Popconfirm,
   Divider,
-  Tour,
 } from "antd";
-import type { TourProps } from "antd";
 import { useState, useEffect, useMemo, useCallback, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
@@ -58,14 +56,23 @@ import {
 import type { FlatMenuEntry } from "./registry/adapter";
 import { filterMenuForAgentCapabilities } from "./registry/capabilities";
 import type { MenuItem } from "../plugins/registry/types";
-import type { ReactNode } from "react";
+import type {
+  KeyboardEvent as ReactKeyboardEvent,
+  PointerEvent as ReactPointerEvent,
+  ReactNode,
+} from "react";
 import { ShieldCheck } from "lucide-react";
 import { hubApi } from "../api/modules/hub";
-import {
-  dismissDesktopModeHint,
-  shouldShowDesktopModeHint,
-} from "../utils/desktopModeHint";
 import { simpleModeWhitelist } from "./registry/simpleModeWhitelist";
+import {
+  SIDEBAR_MAX_WIDTH,
+  SIDEBAR_MIN_WIDTH,
+  SIDEBAR_RESIZE_STEP,
+  clampSidebarWidth,
+  clearStoredSidebarWidth,
+  readStoredSidebarWidth,
+  writeStoredSidebarWidth,
+} from "./sidebarSizing";
 
 // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -142,9 +149,19 @@ export default function Sidebar({
   // the main content on narrow viewports.
   const [collapsed, setCollapsed] = useState(isMobileSidebarViewport);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const settingsButtonRef = useRef<HTMLButtonElement>(null);
-  const [desktopModeHintOpen, setDesktopModeHintOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(isMobileSidebarViewport);
+  const [customSidebarWidth, setCustomSidebarWidth] = useState<number | null>(
+    () =>
+      readStoredSidebarWidth(
+        typeof window === "undefined" ? undefined : window.localStorage,
+      ),
+  );
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const resizeSessionRef = useRef<{
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const currentSidebarWidthRef = useRef<number | null>(customSidebarWidth);
   const [simpleAgentFunctionsExpanded, setSimpleAgentFunctionsExpanded] =
     useState(false);
   const prefersReducedMotion = useReducedMotion();
@@ -228,35 +245,6 @@ export default function Sidebar({
   }, []);
 
   useEffect(() => {
-    if (!isMobile && shouldShowDesktopModeHint(window.localStorage)) {
-      setDesktopModeHintOpen(true);
-    }
-  }, [isMobile]);
-
-  const dismissDesktopHint = useCallback(() => {
-    dismissDesktopModeHint(window.localStorage);
-    setDesktopModeHintOpen(false);
-  }, []);
-
-  const desktopModeHintSteps = useMemo<TourProps["steps"]>(
-    () => [
-      {
-        title: t("sidebar.desktopModeHint.title", "Try Desktop Mode"),
-        description: t(
-          "sidebar.desktopModeHint.description",
-          "Open quick settings here, then choose Desktop Mode for a window-based workspace.",
-        ),
-        target: () => settingsButtonRef.current as HTMLButtonElement,
-        placement: "rightBottom",
-        nextButtonProps: {
-          children: t("sidebar.desktopModeHint.gotIt", "Got it"),
-        },
-      },
-    ],
-    [t],
-  );
-
-  useEffect(() => {
     if (
       typeof window === "undefined" ||
       typeof window.matchMedia !== "function"
@@ -279,6 +267,50 @@ export default function Sidebar({
       mediaQuery.removeEventListener("change", syncMobileSidebar);
     };
   }, []);
+
+  const finishSidebarResize = useCallback(() => {
+    resizeSessionRef.current = null;
+    setIsResizingSidebar(false);
+    if (currentSidebarWidthRef.current !== null) {
+      writeStoredSidebarWidth(
+        typeof window === "undefined" ? undefined : window.localStorage,
+        currentSidebarWidthRef.current,
+      );
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    const previousCursor = document.body.style.cursor;
+    const previousUserSelect = document.body.style.userSelect;
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const session = resizeSessionRef.current;
+      if (!session) return;
+
+      const nextWidth = clampSidebarWidth(
+        session.startWidth + event.clientX - session.startX,
+      );
+      currentSidebarWidthRef.current = nextWidth;
+      setCustomSidebarWidth(nextWidth);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", finishSidebarResize);
+    window.addEventListener("pointercancel", finishSidebarResize);
+
+    return () => {
+      document.body.style.cursor = previousCursor;
+      document.body.style.userSelect = previousUserSelect;
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", finishSidebarResize);
+      window.removeEventListener("pointercancel", finishSidebarResize);
+    };
+  }, [finishSidebarResize, isResizingSidebar]);
+
   useEffect(() => {
     const loadUnreadState = async () => {
       try {
@@ -577,6 +609,63 @@ export default function Sidebar({
     }
   };
 
+  const defaultExpandedSidebarWidth = sidebarMode === "simple" ? 280 : 240;
+  const expandedSidebarWidth =
+    customSidebarWidth ?? defaultExpandedSidebarWidth;
+  currentSidebarWidthRef.current = expandedSidebarWidth;
+
+  const updateSidebarWidth = (width: number, persist = false) => {
+    const nextWidth = clampSidebarWidth(width);
+    currentSidebarWidthRef.current = nextWidth;
+    setCustomSidebarWidth(nextWidth);
+    if (persist) {
+      writeStoredSidebarWidth(
+        typeof window === "undefined" ? undefined : window.localStorage,
+        nextWidth,
+      );
+    }
+  };
+
+  const handleSidebarResizePointerDown = (
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    resizeSessionRef.current = {
+      startX: event.clientX,
+      startWidth: expandedSidebarWidth,
+    };
+    setIsResizingSidebar(true);
+  };
+
+  const handleSidebarResizeKeyDown = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+  ) => {
+    let nextWidth: number | null = null;
+    if (event.key === "ArrowLeft") {
+      nextWidth = expandedSidebarWidth - SIDEBAR_RESIZE_STEP;
+    } else if (event.key === "ArrowRight") {
+      nextWidth = expandedSidebarWidth + SIDEBAR_RESIZE_STEP;
+    } else if (event.key === "Home") {
+      nextWidth = SIDEBAR_MIN_WIDTH;
+    } else if (event.key === "End") {
+      nextWidth = SIDEBAR_MAX_WIDTH;
+    }
+
+    if (nextWidth !== null) {
+      event.preventDefault();
+      updateSidebarWidth(nextWidth, true);
+    }
+  };
+
+  const resetSidebarWidth = () => {
+    currentSidebarWidthRef.current = defaultExpandedSidebarWidth;
+    setCustomSidebarWidth(null);
+    clearStoredSidebarWidth(
+      typeof window === "undefined" ? undefined : window.localStorage,
+    );
+  };
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   const isChatActive = selectedKey === "core.chat";
@@ -590,9 +679,9 @@ export default function Sidebar({
     ? isMobile
       ? 56
       : 72
-    : sidebarMode === "simple" && !isMobile
-    ? 280
-    : 240;
+    : isMobile
+    ? 240
+    : expandedSidebarWidth;
 
   return (
     <Sider
@@ -601,7 +690,7 @@ export default function Sidebar({
         collapsed ? ` ${styles.siderCollapsed}` : ""
       }${isDark ? ` ${styles.siderDark}` : ""}${
         isSimpleExpanded ? ` ${styles.siderSimple}` : ""
-      }`}
+      }${isResizingSidebar ? ` ${styles.siderResizing}` : ""}`}
     >
       {collapsed ? (
         <nav className={styles.collapsedNav}>
@@ -882,7 +971,6 @@ export default function Sidebar({
           }
         >
           <Button
-            ref={settingsButtonRef}
             type="text"
             icon={<SparkSettingLine size={18} />}
             className={styles.collapseToggle}
@@ -902,13 +990,25 @@ export default function Sidebar({
         />
       </div>
 
-      <Tour
-        open={desktopModeHintOpen}
-        steps={desktopModeHintSteps}
-        onClose={dismissDesktopHint}
-        onFinish={dismissDesktopHint}
-        mask={{ color: "rgba(9, 9, 11, 0.2)" }}
-      />
+      {!collapsed && !isMobile && (
+        <div
+          className={styles.sidebarResizeHandle}
+          role="separator"
+          aria-orientation="vertical"
+          aria-valuemin={SIDEBAR_MIN_WIDTH}
+          aria-valuemax={SIDEBAR_MAX_WIDTH}
+          aria-valuenow={expandedSidebarWidth}
+          aria-label={t("sidebar.resize", "Resize sidebar")}
+          title={t(
+            "sidebar.resizeHint",
+            "Drag to resize. Double-click to restore the default width.",
+          )}
+          tabIndex={0}
+          onPointerDown={handleSidebarResizePointerDown}
+          onKeyDown={handleSidebarResizeKeyDown}
+          onDoubleClick={resetSidebarWidth}
+        />
+      )}
 
       <Modal
         open={accountModalOpen}

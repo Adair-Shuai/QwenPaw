@@ -82,7 +82,7 @@ export interface WorkspaceArtifact {
   /** Coding project root that owns the workspace file. */
   projectRoot?: string | null;
   /** Backend file root used by the unified files workspace. */
-  workspaceRoot?: "project" | "workspace";
+  workspaceRoot?: "project" | "workspace" | `project:${string}`;
   /** Persisted backend chat id used to resolve a session project directory. */
   chatId?: string;
   /** Pending project directory for a not-yet-persisted chat session. */

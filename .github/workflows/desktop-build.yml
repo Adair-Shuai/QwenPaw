@@ -196,12 +196,16 @@ jobs:
             throw 'Portable Windows version.json does not match the build target'
           }
           Copy-Item -LiteralPath $portable.FullName -Destination "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-portable.zip" -Force
-          python scripts/pack-tauri/generate_update_manifest.py stage `
-            --bundle-dir $bundle `
-            --pattern 'UGSci-Desktop-migration.exe' `
-            --target windows-x86_64 `
-            --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-updater.exe" `
-            --pubkey-config console/src-tauri/tauri.version.conf.json
+          if (Test-Path -LiteralPath $bridgeSig -PathType Leaf) {
+            python scripts/pack-tauri/generate_update_manifest.py stage `
+              --bundle-dir $bundle `
+              --pattern 'UGSci-Desktop-migration.exe' `
+              --target windows-x86_64 `
+              --output "dist/UGSci-Tauri-${{ steps.version.outputs.version }}-Windows-updater.exe" `
+              --pubkey-config console/src-tauri/tauri.version.conf.json
+          } else {
+            Write-Host 'Skipping Windows updater metadata: updater signing key is not configured'
+          }
           if ('${{ inputs.require_updater_assets }}' -eq 'true' -and -not (Test-Path 'dist/tauri-windows-x86_64-updater.json')) {
             throw 'Production Windows migration bridge updater metadata is missing'
           }

@@ -23,7 +23,7 @@ export interface AuthenticatedWorkspaceBlobResource {
 export interface AuthenticatedWorkspaceBlobScope {
   agentId?: string;
   chatId?: string;
-  root?: "project" | "workspace";
+  root?: "project" | "workspace" | `project:${string}`;
   projectDirOverride?: string;
   url?: string;
 }

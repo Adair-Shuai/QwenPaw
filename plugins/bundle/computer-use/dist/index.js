@@ -72,7 +72,7 @@ function a(t, n) {
   }
   return I[t][n];
 }
-const B = "1.0.3", D = {
+const B = "1.0.4", D = {
   version: B
 }, i = window.QwenPaw.host, e = i.React, {
   Badge: J,

@@ -42,6 +42,7 @@ import {
 } from "@/api/modules/plugin";
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
+import { getMarketAppState } from "@/utils/marketAppState";
 import styles from "./index.module.less";
 
 const { Text, Paragraph } = Typography;
@@ -162,11 +163,15 @@ function toAppCatalogEntry(
 
 interface AppMarketProps {
   onInstalled: (result?: InstallPluginResult) => void | Promise<void>;
+  installedAppVersions?: ReadonlyMap<string, string>;
   channel?: AppCatalogChannel;
 }
 
+const EMPTY_INSTALLED_APP_VERSIONS: ReadonlyMap<string, string> = new Map();
+
 export function AppMarket({
   onInstalled,
+  installedAppVersions = EMPTY_INSTALLED_APP_VERSIONS,
   channel = "community",
 }: AppMarketProps) {
   const { t, i18n } = useTranslation();
@@ -233,11 +238,10 @@ export function AppMarket({
         } while (entries.length < total);
 
         if (signal.aborted) return;
-        const channelEntries = entries.filter((entry) =>
+        const channelEntries =
           channel === "official"
-            ? entry.is_featured === true
-            : entry.is_featured !== true,
-        );
+            ? entries
+            : entries.filter((entry) => entry.is_featured !== true);
         if (channel === "official") {
           channelEntries.sort(
             (a, b) => catalogRank(a, channel) - catalogRank(b, channel),
@@ -372,8 +376,15 @@ export function AppMarket({
           });
           return;
         }
+        const installOptions =
+          channel === "community" &&
+          getMarketAppState(entry, installedAppVersions, "community") ===
+            "update"
+            ? { force: true }
+            : undefined;
         const result = await installPlugin(
           entry.install_url || buildMarketDownloadUrl(entry),
+          installOptions,
         );
         message.success({
           content: `${tRef.current("appCenter.installSuccess", "安装成功")}: ${
@@ -395,7 +406,7 @@ export function AppMarket({
         setInstallingId(null);
       }
     },
-    [message, onInstalled],
+    [channel, installedAppVersions, message, onInstalled],
   );
 
   const requestInstall = useCallback(
@@ -501,6 +512,19 @@ export function AppMarket({
               // Official landscape cards have room for the full text; the
               // compact community cards keep the truncated layout.
               const noTruncate = usesRemoteCatalog;
+              const marketState = usesRemoteCatalog
+                ? entry.installed
+                  ? entry.upgrade_available
+                    ? "update"
+                    : "installed"
+                  : "available"
+                : getMarketAppState(
+                    entry,
+                    installedAppVersions,
+                    channel === "official" ? "official" : "community",
+                  );
+              const isInstalled = marketState === "installed";
+              const canUpdate = marketState === "update";
               return (
                 <Card
                   key={entry.id}
@@ -567,18 +591,18 @@ export function AppMarket({
                         icon={<Download size={14} />}
                         loading={installingId === entry.id}
                         disabled={
-                          (entry.installed &&
-                            (channel === "community" ||
-                              !entry.upgrade_available)) ||
+                          isInstalled ||
                           !versionChecked ||
                           (installingId !== null && installingId !== entry.id)
                         }
                         onClick={() => requestInstall(entry)}
                       >
-                        {entry.installed
-                          ? entry.upgrade_available
+                        {isInstalled
+                          ? t("appCenter.installedStatus", "Installed")
+                          : canUpdate
+                          ? usesRemoteCatalog
                             ? t("pluginManager.catalogUpgradeBtn")
-                            : t("pluginManager.catalogLatest")
+                            : t("appCenter.update", "Update")
                           : installingId === entry.id
                           ? t("appCenter.installing", "安装中...")
                           : t("appCenter.install", "安装")}
