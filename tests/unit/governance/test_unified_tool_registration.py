@@ -46,6 +46,7 @@ from qwenpaw.plugins.api import (
     _claim_tool_ownership,
     _register_to_governance,
     _unbridge_from_runtime,
+    _write_tool_config,
     release_tool_ownership_for_plugin,
 )
 from qwenpaw.runtime.tool_registry import ToolRegistry as RuntimeToolRegistry
@@ -655,8 +656,8 @@ class TestRegisterToolRollback:
             DEFAULT_REGISTRY.unregister_python_tool(tool_name)
             PluginRegistry._instance = old
 
-    def test_write_config_failure_unbridges_runtime(self):
-        """Bridge-then-write failure must not leave runtime-visible tools."""
+    def test_write_config_failure_keeps_governed_runtime_tool(self):
+        """Preference persistence cannot roll back a governed runtime tool."""
         plugin_id = "__ut_rollback_write_fail__"
         tool_name = "__ut_rollback_write_tool__"
         policy = "UtRollbackWriteTool"
@@ -705,14 +706,62 @@ class TestRegisterToolRollback:
                 )
                 self._run_startup_hooks(preg)
 
-            assert tool_name not in runtime_tr
-            assert not bootstrap["builtin_tool_funcs"]
-            assert tool_name not in _TOOL_PLUGIN_OWNERS
-            assert DEFAULT_REGISTRY.get_type(policy) == "unknown"
+            assert tool_name in runtime_tr
+            assert _tool in bootstrap["builtin_tool_funcs"]
+            assert _TOOL_PLUGIN_OWNERS[tool_name] == plugin_id
+            assert DEFAULT_REGISTRY.get_type(policy) == "network"
         finally:
+            from qwenpaw.agents import tools as tools_module
+
+            if hasattr(tools_module, tool_name):
+                delattr(tools_module, tool_name)
+            if tool_name in tools_module.__all__:
+                tools_module.__all__.remove(tool_name)
+            _unbridge_from_runtime(tool_name, _tool, preg)
             release_tool_ownership_for_plugin(plugin_id)
             DEFAULT_REGISTRY.unregister_python_tool(tool_name)
             PluginRegistry._instance = old
+
+    def test_missing_active_agent_uses_existing_profile_without_mutation(self):
+        """A stale active_agent must not break GenUI preference seeding."""
+        from types import SimpleNamespace
+
+        root_config = SimpleNamespace(
+            agents=SimpleNamespace(
+                active_agent="cloud-orchestrator",
+                agent_order=["default"],
+                profiles={"default": SimpleNamespace(enabled=True)},
+            ),
+        )
+        agent_config = SimpleNamespace(tools=ToolsConfig())
+        observed: dict[str, str] = {}
+
+        def _mutate(agent_id, mutator):
+            observed["agent_id"] = agent_id
+            mutator(agent_config)
+            return agent_config
+
+        with (
+            patch(
+                "qwenpaw.app.agent_context.get_current_agent_id",
+                return_value="cloud-orchestrator",
+            ),
+            patch(
+                "qwenpaw.config.utils.load_config",
+                return_value=root_config,
+            ),
+            patch("qwenpaw.config.config.mutate_agent_config", _mutate),
+        ):
+            _write_tool_config(
+                "get_genui_guide",
+                True,
+                "Get the GenUI guide",
+                "",
+            )
+
+        assert observed["agent_id"] == "default"
+        assert "get_genui_guide" in agent_config.tools.builtin_tools
+        assert root_config.agents.active_agent == "cloud-orchestrator"
 
     def test_unbridge_removes_registry_and_bootstrap_funcs(self):
         runtime_tr = RuntimeToolRegistry()
