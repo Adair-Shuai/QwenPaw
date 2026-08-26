@@ -38,6 +38,8 @@ _evaluation = _load_evaluation_module()
 demo_case = _evaluation.demo_case
 evaluate_case = _evaluation.evaluate_case
 fallback_expert_summary = _evaluation.fallback_expert_summary
+blank_case = _evaluation.blank_case
+ingest_uploaded_documents = _evaluation.ingest_uploaded_documents
 
 
 def test_demo_evaluation_matches_report_acceptance_values():
@@ -102,9 +104,76 @@ def test_manifest_and_frontend_contract():
     frontend = (PLUGIN_DIR / "ui" / "index.js").read_text(encoding="utf-8")
 
     assert manifest["id"] == "storage-capacity"
+    assert manifest["version"] == "0.1.4"
     assert manifest["type"] == "app"
     assert manifest["dependencies"] == ["ugsci"]
     assert manifest["entry"]["backend"] == "backend/main.py"
     assert manifest["entry"]["frontend"] == "ui/index.js"
     assert "/apps/storage-capacity" in frontend
     assert "/storage-capacity/evaluate" in frontend
+    assert "/storage-capacity/ingest" in frontend
+    assert "ready_for_evaluation" in frontend
+
+
+def test_blank_case_is_storage_agnostic_and_does_not_use_demo_values():
+    case = blank_case()
+
+    assert case["case_name"] == "待识别储气库 · 库容评估"
+    assert case["design_capacity"] is None
+    assert case["layers"] == []
+    assert case["documents"] == []
+
+
+def test_ingest_complete_json_case_is_ready_for_any_storage_site():
+    payload = {
+        "case_name": "示例之外的任意储气库",
+        "cycle_id": "2025-cycle",
+        "injection_end_state_id": "2025-10-31",
+        "evaluation_state_id": "2026-03-31",
+        "pressure_basis": "absolute",
+        "design_capacity": 80,
+        "book_inventory": 76,
+        "working_gas": 32,
+        "design_working_gas": 34,
+        "peak_daily_rate": 2800,
+        "design_peak_daily_rate": 3000,
+        "layers": [
+            {
+                "name": "Layer-A",
+                "produced_gas": 12,
+                "injection_end_pressure": 20,
+                "injection_end_z": 0.9,
+                "evaluation_pressure": 15,
+                "evaluation_z": 0.88,
+            },
+        ],
+    }
+    result = ingest_uploaded_documents(
+        [
+            {
+                "filename": "any-storage.json",
+                "content": json.dumps(payload).encode("utf-8"),
+            },
+        ],
+    )
+
+    assert result["ready_for_evaluation"] is True
+    assert result["case"]["case_name"] == "示例之外的任意储气库"
+    assert result["case"]["layers"][0]["name"] == "Layer-A"
+    assert result["extraction"]["parsed_file_count"] == 1
+
+
+def test_ingest_unstructured_evidence_does_not_fake_values():
+    result = ingest_uploaded_documents(
+        [
+            {
+                "filename": "pressure-report.pdf",
+                "content": b"unstructured pressure report",
+            },
+        ],
+    )
+
+    assert result["ready_for_evaluation"] is False
+    assert "设计库容" in result["missing_fields"]
+    assert result["case"]["documents"][0]["name"] == "pressure-report.pdf"
+    assert result["case"]["design_capacity"] is None

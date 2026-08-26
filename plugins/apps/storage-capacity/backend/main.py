@@ -6,17 +6,19 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
 from qwenpaw.pawapp import PawApp
 from qwenpaw.pawapp.deps import get_ctx
 
 from .backend.evaluation import (
+    blank_case,
     build_expert_prompt,
     demo_case,
     evaluate_case,
     fallback_expert_summary,
+    ingest_uploaded_documents,
 )
 
 
@@ -92,6 +94,44 @@ async def _expert_summary(ctx: Any, evaluation: Dict[str, Any]) -> tuple[List[st
 @router.get("/demo")
 async def api_demo() -> Dict[str, Any]:
     return {"case": demo_case()}
+
+
+@router.get("/blank")
+async def api_blank() -> Dict[str, Any]:
+    """Return a storage-agnostic draft; the demo is never loaded implicitly."""
+    return {"case": blank_case()}
+
+
+@router.post("/ingest")
+async def api_ingest(
+    files: List[UploadFile] = File(...),
+    case_name: str = Form(default=""),
+    case_id: str = Form(default=""),
+) -> Dict[str, Any]:
+    """Ingest evidence for any underground gas storage evaluation scenario.
+
+    JSON and CSV/TSV inputs are mapped into the deterministic evaluation
+    schema when possible. PDF, Word, spreadsheet and image files remain in
+    the evidence list and can be supplemented through the parameter editor.
+    """
+    if not files:
+        raise HTTPException(status_code=400, detail="请至少上传一份评估资料")
+    uploaded: List[Dict[str, Any]] = []
+    total_size = 0
+    for item in files:
+        content = await item.read()
+        total_size += len(content)
+        if total_size > 50 * 1024 * 1024:
+            raise HTTPException(status_code=413, detail="单次上传资料总量不能超过 50 MB")
+        uploaded.append(
+            {
+                "filename": item.filename or "未命名资料",
+                "content_type": item.content_type or "application/octet-stream",
+                "size_bytes": len(content),
+                "content": content,
+            }
+        )
+    return ingest_uploaded_documents(uploaded, case_id=case_id, case_name=case_name)
 
 
 @router.post("/evaluate")
