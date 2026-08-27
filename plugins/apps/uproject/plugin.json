@@ -1,7 +1,7 @@
 {
   "id": "uproject",
   "name": "UProject 科研项目",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "type": "app",
   "description": "企业科研项目对接对齐台：甲方/乙方、对齐项、对齐会与一键周报。",
   "description_i18n": {
