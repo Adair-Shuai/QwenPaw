@@ -599,6 +599,9 @@ jobs:
     needs: [resolve]
     if: ${{ !inputs.dry_run && needs.resolve.outputs.was_draft == 'true' }}
     runs-on: ubuntu-latest
+    # Cleanup is deliberately best-effort; a failed delete must not block a
+    # release whose build and verification gates are otherwise healthy.
+    continue-on-error: true
     permissions:
       contents: write
     concurrency:
