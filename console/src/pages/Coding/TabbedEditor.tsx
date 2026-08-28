@@ -31,6 +31,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Code2,
+  Copy,
   Download,
   Eye,
   FileCode,
@@ -50,6 +51,8 @@ import FilePreview, { isPreviewable } from "./FilePreview";
 import { workspaceApi } from "../../api/modules/workspace";
 import { useWorkspaceWatch } from "../../hooks/useWorkspaceWatch";
 import { useTheme } from "../../contexts/ThemeContext";
+import { useAppMessage } from "../../hooks/useAppMessage";
+import { copyText } from "../../utils/clipboard";
 import { setTextareaValue } from "../Chat/utils";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { clearLastEditorCopy, setLastEditorCopy } from "./lastEditorCopy";
@@ -212,6 +215,7 @@ export default function TabbedEditor({
   navigation,
 }: TabbedEditorProps) {
   const { t } = useTranslation();
+  const { message } = useAppMessage();
   const { isDark } = useTheme();
   useSyncExternalStore(
     subscribeRendererRegistry,
@@ -389,6 +393,17 @@ export default function TabbedEditor({
     activeDiffRaw && activeDiffRaw.modified !== null
       ? { original: activeDiffRaw.original, modified: activeDiffRaw.modified }
       : undefined;
+  const activeRenderedContent =
+    activeDiff?.modified ?? activeTab?.content ?? "";
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await copyText(activeRenderedContent);
+      message.success(t("common.copied"));
+    } catch {
+      message.error(t("common.copyFailed"));
+    }
+  }, [activeRenderedContent, message, t]);
 
   // Hydrate the `modified` side of any persisted diff by re-reading the
   // current disk content. Drop diffs whose file no longer exists.
@@ -1052,8 +1067,9 @@ export default function TabbedEditor({
     Boolean(activeTab) &&
     !activeTab?.readOnly &&
     !["image", "pdf", "binary"].includes(activeTab?.previewKind ?? "text");
-  const activeRenderedContent =
-    activeDiff?.modified ?? activeTab?.content ?? "";
+  const activeCanCopy =
+    Boolean(activeTab) &&
+    !["image", "pdf", "binary"].includes(activeTab?.previewKind ?? "text");
 
   return (
     <div className={styles.wrap} onKeyDown={handleKeyDown}>

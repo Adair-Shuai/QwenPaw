@@ -12,6 +12,7 @@ API endpoints:
   - PUT /api/config/channels/matrix
   - GET /api/config/channels/matrix
 """
+
 from __future__ import annotations
 
 import threading
@@ -390,15 +391,22 @@ def test_matrix_dm_disabled_drops_message(
     assert put.status_code == 200, app_server.logs_tail()
     wait_for_agent_reload(app_server, reload_mark)
     try:
-        before = len(matrix_channel_up.sent_events)
-        matrix_channel_up.push_text_event(
+        target_room = "!integmockroom:mock.local"
+        baseline = len(matrix_channel_up.sent_events)
+        event_id = matrix_channel_up.push_text_event(
             text="dm while disabled",
-            room_id="!integmockdmdisabled:mock.local",
+            room_id=target_room,
         )
-        time.sleep(15.0)
-        assert (
-            len(matrix_channel_up.sent_events) == before
-        ), matrix_channel_up.sent_events[before:]
+        assert matrix_channel_up.wait_for_followup_sync_after(
+            event_id,
+            timeout=30.0,
+        )
+        new_events = [
+            event
+            for event in matrix_channel_up.sent_events[baseline:]
+            if event.get("room_id") == target_room
+        ]
+        assert not new_events, new_events
     finally:
         reload_mark = len(app_server.logs)
         restore = app_server.api_request(

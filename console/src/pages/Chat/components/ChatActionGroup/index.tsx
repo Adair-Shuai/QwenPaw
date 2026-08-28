@@ -85,7 +85,7 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
   }
 
   return (
-    <Flex gap={8} align="center">
+    <Flex className={styles.actionGroup} gap={8} align="center">
       {/* Essential actions always visible */}
       <Tooltip title={t("chat.newChatTooltip")} mouseEnterDelay={0.5}>
         <span style={{ display: "inline-flex" }}>

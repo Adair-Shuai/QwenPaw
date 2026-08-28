@@ -341,21 +341,51 @@ FunctionEnd
   ; exits non-zero while a scoped backend is still running; if that persists we
   ; surface a friendly retry prompt rather than the raw OS dialog.
   Push $0
-  InitPluginsDir
-  File /oname=$PLUGINSDIR\qwenpaw-stop-backend-sidecar.ps1 "..\..\..\..\nsis\stop-backend-sidecar.ps1"
-  ${Do}
-    nsExec::Exec `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-stop-backend-sidecar.ps1" -InstallDir "$INSTDIR"`
-    Pop $0
-    ${If} $0 == 0
-      ${ExitDo}
-    ${EndIf}
-    ; Still running (or could not be stopped). Ask the user; default to Cancel
-    ; for silent installs.
-    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(qwenpawStopBackendPrompt)" /SD IDCANCEL IDRETRY +2
-    Quit
-  ${Loop}
+  Push $1
+  IfFileExists "$PLUGINSDIR\qwenpaw-manage-install-processes.ps1" 0 qwenpaw_restore_done
+  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-manage-install-processes.ps1" -InstallDir "$INSTDIR" -Action Restore`
   Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint "$(qwenpawRestoreInstallStateFailed)"
+    DetailPrint "$1"
+  ${EndIf}
+  qwenpaw_restore_done:
+  Pop $1
+  Pop $0
+FunctionEnd
+
+Function ${PREFIX}QWENPAW_PREPARE_INSTALL
+  Push $0
+  Push $1
+  Push $2
+  InitPluginsDir
+  File /oname=$PLUGINSDIR\qwenpaw-manage-install-processes.ps1 "..\..\..\..\nsis\manage-install-processes.ps1"
+  System::Call 'kernel32::GetCurrentProcessId() i .r2'
+
+  qwenpaw_prepare_retry:
+  nsExec::ExecToStack `powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$PLUGINSDIR\qwenpaw-manage-install-processes.ps1" -InstallDir "$INSTDIR" -NsisProcessId $2`
+  Pop $0
+  Pop $1
+  ${If} $0 == 0
+    Goto qwenpaw_prepare_done
+  ${Else}
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "$(qwenpawStopProcessesPrompt)$\n$\n$1" /SD IDCANCEL IDRETRY qwenpaw_prepare_retry IDCANCEL qwenpaw_prepare_cancel
+  ${EndIf}
+
+  qwenpaw_prepare_cancel:
+  Call ${PREFIX}QWENPAW_RESTORE_INSTALL_STATE
+  Quit
+
+  qwenpaw_prepare_done:
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
 !macroend
+
+!insertmacro QWENPAW_DEFINE_INSTALL_FUNCTIONS ""
+!insertmacro QWENPAW_DEFINE_INSTALL_FUNCTIONS "un."
 
 !macro NSIS_HOOK_PREINSTALL
   !insertmacro QWENPAW_STOP_BACKEND_SIDECAR
@@ -377,8 +407,12 @@ FunctionEnd
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
-  !insertmacro QWENPAW_STOP_BACKEND_SIDECAR
+  Call un.QWENPAW_PREPARE_INSTALL
   !insertmacro QWENPAW_REMOVE_DEBUG_LAUNCHER
   !insertmacro QWENPAW_REMOVE_CLI_PATH
   !insertmacro QWENPAW_REMOVE_LEGACY_CLI_PATH
+!macroend
+
+!macro NSIS_HOOK_POSTUNINSTALL
+  Call un.QWENPAW_RESTORE_INSTALL_STATE
 !macroend

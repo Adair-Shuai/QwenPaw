@@ -28,6 +28,12 @@ vi.mock("../../api/modules/workspace", () => ({
       content: "hello",
       etag: "etag",
     }),
+    getFileDownloadUrl: vi.fn(
+      (path: string, _root: string) => `/api/files/download/${path}`,
+    ),
+    loadFile: vi.fn().mockResolvedValue({
+      content: "profile content",
+    }),
   },
 }));
 
@@ -36,6 +42,10 @@ vi.mock("./FilesWorkspace", () => ({
     workspaceProps.current = props;
     return <div data-testid="files-workspace" />;
   },
+}));
+
+vi.mock("../../utils/downloadFileFromUrl", () => ({
+  downloadFileFromUrl: vi.fn(),
 }));
 
 describe("FilesDrawer", () => {
