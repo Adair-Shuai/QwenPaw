@@ -30,7 +30,12 @@ import styles from "./FilesWorkspace.module.less";
 
 const BROWSER_URL_STORAGE_KEY = "qwenpaw-workbench-browser-url";
 
-export type WorkbenchMode = "files" | "browser" | "agents" | "genui";
+export type WorkbenchMode =
+  | "files"
+  | "browser"
+  | "agents"
+  | "genui"
+  | "compute";
 
 const subscribeRendererRegistry = (listener: () => void) =>
   rendererRegistry.subscribe(listener);
@@ -439,6 +444,18 @@ export function WorkbenchGenUiPanel({
           </p>
         </Slot>
       </section>
+    </div>
+  );
+}
+
+export function WorkbenchComputePanel() {
+  return (
+    <div className={`${styles.workbenchPanel} ${styles.genUiPanel}`}>
+      <Slot name="chat.workbench.compute" kind="fill">
+        <div className={styles.empty}>
+          暂无推导记录。运行 UGSci 公式后可在此查看。
+        </div>
+      </Slot>
     </div>
   );
 }

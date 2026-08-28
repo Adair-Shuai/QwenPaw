@@ -163,6 +163,8 @@ class UGSciPlugin:
         )
         self._register_simulation_tools(api)
         self._register_domain_tools(api)
+        self._register_derivation_tools(api)
+        self._register_freeform_tools(api)
         self._register_visualization_tools(api)
         self._register_genui(api)
 
@@ -435,8 +437,73 @@ class UGSciPlugin:
             )
 
     @classmethod
+    def _register_derivation_tools(cls, api) -> None:
+        """Register observable, step-traceable derivation tools."""
+        try:
+            from .domain.trace.tools import (
+                ugsci_list_derivation_formulas,
+                ugsci_replay_calculation,
+                ugsci_trace_calculation,
+            )
+
+            bindings = {
+                "ugsci_trace_calculation": ugsci_trace_calculation,
+                "ugsci_list_derivation_formulas": ugsci_list_derivation_formulas,
+                "ugsci_replay_calculation": ugsci_replay_calculation,
+            }
+            registered = cls._register_tool_group(api, "derivation", bindings)
+            logger.info(
+                "[%s] Derivation tools registered (%d tools)",
+                PLUGIN_ID,
+                registered,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register derivation tools: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+    @classmethod
+    def _register_freeform_tools(cls, api) -> None:
+        """Register freeform (agent-authored) symbolic derivation tools.
+
+        Freeform tools are opt-in (disabled by default).  When the master
+        switch ``ugsci.trace.freeform_enabled`` is off, the tools still
+        register so the agent can discover them, but every call returns a
+        ``feature_unavailable`` response.
+        """
+        try:
+            from .domain.trace.freeform.tools import (
+                ugsci_derive_formula,
+                ugsci_evaluate_formula,
+                ugsci_formula_preview,
+                ugsci_transform_formula,
+            )
+
+            bindings = {
+                "ugsci_derive_formula": ugsci_derive_formula,
+                "ugsci_evaluate_formula": ugsci_evaluate_formula,
+                "ugsci_transform_formula": ugsci_transform_formula,
+                "ugsci_formula_preview": ugsci_formula_preview,
+            }
+            registered = cls._register_tool_group(api, "freeform", bindings)
+            logger.info(
+                "[%s] Freeform tools registered (%d tools)",
+                PLUGIN_ID,
+                registered,
+            )
+        except Exception as exc:
+            logger.error(
+                "[%s] Failed to register freeform tools: %s",
+                PLUGIN_ID,
+                exc,
+                exc_info=True,
+            )
+
+    @classmethod
     def _register_visualization_tools(cls, api) -> None:
-        """Register visualization tools under the UGSci manifest."""
         try:
             bindings = get_visualization_tool_bindings()
             registered = cls._register_tool_group(api, "visualization", bindings)

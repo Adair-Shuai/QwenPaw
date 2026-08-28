@@ -232,4 +232,42 @@ describe("FilesDrawer", () => {
     expect(await screen.findByText("三维网格预览")).toBeInTheDocument();
     expect(screen.getByText("SMOKE.DATA")).toBeInTheDocument();
   });
+
+  it("opens the dedicated computation track from its activity button", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={{ kind: "session", agentId: "default", sessionId: "session-1" }}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "计算轨道" }));
+    expect(
+      screen.getByText("暂无推导记录。运行 UGSci 公式后可在此查看。"),
+    ).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "计算轨道" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("accepts the plugin event that selects the computation track", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={{ kind: "session", agentId: "default", sessionId: "session-1" }}
+      />,
+    );
+
+    window.dispatchEvent(
+      new CustomEvent("qwenpaw:select-workbench-mode", {
+        detail: { mode: "compute" },
+      }),
+    );
+    expect(
+      await screen.findByText("暂无推导记录。运行 UGSci 公式后可在此查看。"),
+    ).toBeInTheDocument();
+  });
 });

@@ -16,11 +16,11 @@ export interface QwenPawHost {
   setSelectedAgent?: (agentId: string) => void;
   refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   useSelectedAgent?: () => { id: string };
+  getCurrentSessionId?: () => string;
+  getSelectedAgentId?: () => string;
   ReactMarkdown?: ReactTypes.ComponentType<any>;
   remarkGfm?: unknown;
-  loadBuiltinPage?: (
-    page: BuiltinPageId,
-  ) => Promise<any>;
+  loadBuiltinPage?: (page: BuiltinPageId) => Promise<any>;
 }
 
 export function getHost(): QwenPawHost {
@@ -70,10 +70,7 @@ function headersToRecord(headers?: HeadersInit): Record<string, string> {
  * only for older hosts that predate host.fetch; current hosts therefore remain
  * the single owner of URL resolution, authentication, and Agent headers.
  */
-export function hostFetch(
-  path: string,
-  init?: RequestInit,
-): Promise<Response> {
+export function hostFetch(path: string, init?: RequestInit): Promise<Response> {
   const host = getHost();
   const callerHeaders = headersToRecord(init?.headers);
   if (host.fetch) {
@@ -96,9 +93,7 @@ const apiCache = new Map<string, CacheEntry>();
 const API_CACHE_TTL = 15_000;
 
 /** Extract X-Agent-Id from request headers (case-insensitive lookup). */
-function extractAgentId(
-  headers?: Record<string, string> | Headers,
-): string {
+function extractAgentId(headers?: Record<string, string> | Headers): string {
   if (!headers) return "";
   if (headers instanceof Headers) {
     return headers.get("X-Agent-Id") || headers.get("x-agent-id") || "";
@@ -110,11 +105,7 @@ function extractAgentId(
 /** Build a cache key that includes method, path, and agent scope.
  *  This prevents data cross-contamination between agents that access
  *  the same API path with different X-Agent-Id headers. */
-function buildCacheKey(
-  method: string,
-  path: string,
-  agentId: string,
-): string {
+function buildCacheKey(method: string, path: string, agentId: string): string {
   return `${method}:${path}:${agentId}`;
 }
 

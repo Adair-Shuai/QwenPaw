@@ -6,7 +6,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { Blocks, FileText, Globe2, Network } from "lucide-react";
+import { Blocks, Calculator, FileText, Globe2, Network } from "lucide-react";
 import { motion, useReducedMotion } from "motion/react";
 import { useTranslation } from "react-i18next";
 import type { FilesDrawerEvent, FilesDrawerState } from "./types";
@@ -17,6 +17,7 @@ import {
   WorkbenchBrowserPanel,
   WorkbenchAgentPanel,
   WorkbenchGenUiPanel,
+  WorkbenchComputePanel,
   type WorkbenchMode,
 } from "./WorkbenchPanels";
 
@@ -47,7 +48,10 @@ export default function FilesDrawer({
   const [width, setWidth] = useState(0);
   const [mode, setMode] = useState<WorkbenchMode>(() => {
     const stored = localStorage.getItem(WORKBENCH_MODE_STORAGE_KEY);
-    return stored === "browser" || stored === "agents" || stored === "genui"
+    return stored === "browser" ||
+      stored === "agents" ||
+      stored === "genui" ||
+      stored === "compute"
       ? stored
       : "files";
   });
@@ -61,6 +65,16 @@ export default function FilesDrawer({
   useEffect(() => {
     localStorage.setItem(WORKBENCH_MODE_STORAGE_KEY, mode);
   }, [mode]);
+
+  useEffect(() => {
+    const selectMode = (event: Event) => {
+      const requested = (event as CustomEvent<{ mode?: string }>).detail?.mode;
+      if (requested === "compute") setMode("compute");
+    };
+    window.addEventListener("qwenpaw:select-workbench-mode", selectMode);
+    return () =>
+      window.removeEventListener("qwenpaw:select-workbench-mode", selectMode);
+  }, []);
 
   useEffect(() => {
     if (!state.target) return;
@@ -186,6 +200,8 @@ export default function FilesDrawer({
               ? "浏览器"
               : mode === "agents"
               ? "智能体进程"
+              : mode === "compute"
+              ? "计算轨道"
               : "GenUI"}
           </span>
         </div>
@@ -207,6 +223,7 @@ export default function FilesDrawer({
               ["browser", Globe2, "浏览器"],
               ["agents", Network, "智能体进程"],
               ["genui", Blocks, "GenUI"],
+              ["compute", Calculator, "计算轨道"],
             ] as const
           ).map(([nextMode, Icon, label]) => (
             <button
@@ -238,6 +255,7 @@ export default function FilesDrawer({
               onOpenFiles={() => setMode("files")}
             />
           )}
+          {mode === "compute" && <WorkbenchComputePanel />}
 
           {mode === "files" && (
             <Suspense

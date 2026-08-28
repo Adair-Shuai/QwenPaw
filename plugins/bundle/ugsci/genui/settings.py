@@ -11,7 +11,12 @@ from qwenpaw.constant import WORKING_DIR
 
 _PATH = Path(WORKING_DIR) / "ugsci" / "genui.json"
 _LOCK = threading.RLock()
-_DEFAULTS: dict[str, Any] = {"enabled": True}
+_DEFAULTS: dict[str, Any] = {
+    "enabled": True,
+    "freeform_enabled": False,  # freeform mode is off by default (§12)
+    "freeform_max_steps": 25,
+    "freeform_simplify": False,
+}
 
 
 def load_settings() -> dict[str, Any]:
@@ -26,8 +31,9 @@ def load_settings() -> dict[str, Any]:
 
 def save_settings(*, enabled: bool) -> dict[str, Any]:
     """Atomically persist the global GenUI switch."""
-    value = {"enabled": bool(enabled)}
     with _LOCK:
+        value = load_settings()
+        value["enabled"] = bool(enabled)
         _PATH.parent.mkdir(parents=True, exist_ok=True)
         temporary = _PATH.with_suffix(".tmp")
         temporary.write_text(
@@ -38,4 +44,35 @@ def save_settings(*, enabled: bool) -> dict[str, Any]:
     return value
 
 
-__all__ = ["load_settings", "save_settings"]
+def save_freeform_settings(
+    *,
+    freeform_enabled: bool | None = None,
+    freeform_max_steps: int | None = None,
+    freeform_simplify: bool | None = None,
+) -> dict[str, Any]:
+    """Atomically persist freeform-mode settings (§12).
+
+    Only the provided keys are updated; the rest are preserved.
+    """
+    if freeform_max_steps is not None and not 1 <= int(freeform_max_steps) <= 100:
+        raise ValueError("freeform_max_steps must be between 1 and 100")
+    with _LOCK:
+        current = load_settings()
+        current.update({
+            k: v for k, v in {
+                "freeform_enabled": freeform_enabled,
+                "freeform_max_steps": freeform_max_steps,
+                "freeform_simplify": freeform_simplify,
+            }.items() if v is not None
+        })
+        _PATH.parent.mkdir(parents=True, exist_ok=True)
+        temporary = _PATH.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps(current, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        temporary.replace(_PATH)
+        return current
+
+
+__all__ = ["load_settings", "save_settings", "save_freeform_settings"]

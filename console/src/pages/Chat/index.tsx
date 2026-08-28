@@ -1256,6 +1256,31 @@ export default function ChatPage() {
       window.removeEventListener(OPEN_FILE_PREVIEW_EVENT, openPreview);
   }, [dispatchFilesDrawer]);
 
+  useEffect(() => {
+    const openCompute = () => {
+      useWorkspaceStore.getState().setPanelOpen(false);
+      localStorage.setItem("qwenpaw-workbench-mode", "compute");
+      useFilesSurfaceStore
+        .getState()
+        .dispatchSession(currentSessionFilesScopeKey, {
+          type: "OPEN_WORKSPACE",
+          trigger: null,
+        });
+      window.setTimeout(
+        () =>
+          window.dispatchEvent(
+            new CustomEvent("qwenpaw:select-workbench-mode", {
+              detail: { mode: "compute" },
+            }),
+          ),
+        50,
+      );
+    };
+    window.addEventListener("qwenpaw:open-compute-workbench", openCompute);
+    return () =>
+      window.removeEventListener("qwenpaw:open-compute-workbench", openCompute);
+  }, [currentSessionFilesScopeKey]);
+
   const handleInternalFileLink = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const element = event.target;

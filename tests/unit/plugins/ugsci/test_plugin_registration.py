@@ -156,6 +156,11 @@ def test_plugin_registers_team_mode_router_and_simulation_tools(
         "ugsci_neqsim_process_simulate",
         "ugsci_neqsim_pipeline_flow",
     } <= set(api.tools)
+    # Derivation (traceable) tools
+    assert {
+        "ugsci_trace_calculation",
+        "ugsci_list_derivation_formulas",
+    } <= set(api.tools)
     assert {
         "ugsci_sync_skills_to_pool",
         "ugsci_sync_manifest_tools",

@@ -17,6 +17,8 @@ _VALID_GROUPS = frozenset({
     "simulation",
     "domain",
     "visualization",
+    "derivation",
+    "freeform",
 })
 _VALID_TOOL_TYPES = frozenset({"file", "internal", "network", "shell"})
 

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -65,18 +66,18 @@ def test_health_endpoint_returns_complete_capability_snapshot(
 
     assert response.status_code == 200
     data = response.json()
+    manifest_tools = json.loads(
+        (plugin_dir / "plugin.json").read_text(encoding="utf-8"),
+    )["meta"]["tools"]
     assert data["plugin"]["id"] == "ugsci"
     assert data["plugin"]["version"]
     assert data["plugin"]["status"] == "degraded"
-    assert data["summary"]["tool_count"] == 55
+    assert data["summary"]["tool_count"] == len(manifest_tools)
     assert data["summary"]["route_count"] >= 8
     assert data["summary"]["detected_simulation_engine_count"] == 1
     assert data["dependencies"][0]["install_hint"]
     assert {tool["group"] for tool in data["tools"]} == {
-        "domain",
-        "genui",
-        "simulation",
-        "visualization",
+        tool["group"] for tool in manifest_tools
     }
     assert not any(
         key in str(data)
