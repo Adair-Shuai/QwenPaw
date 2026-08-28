@@ -17,6 +17,8 @@ import { describe, it, expect, beforeEach } from "vitest";
 import {
   useLoopStore,
   DEFAULT_LOOP_MODE,
+  beginLoopModeSubmission,
+  markLoopModeRunning,
   type LoopModeInfo,
 } from "./loopStore";
 
@@ -27,6 +29,8 @@ const goalMode: LoopModeInfo = {
   description: "Run until goal is met",
   source: "builtin",
 };
+
+const goal = goalMode;
 
 const customMode: LoopModeInfo = {
   id: "custom:review",
@@ -94,7 +98,7 @@ describe("loopStore state transitions (A#85096690)", () => {
     // Start
     useLoopStore.getState().setStartingMode(customMode);
     expect(useLoopStore.getState().sessionState).toBe("starting");
-    expect(useLoopStore.getState().activeMode).toEqual(goal);
+    expect(useLoopStore.getState().activeMode).toEqual(customMode);
   });
 
   it("recognizes a manually submitted mode command without duplicating it", () => {

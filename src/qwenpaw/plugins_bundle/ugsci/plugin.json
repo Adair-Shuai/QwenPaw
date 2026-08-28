@@ -1,7 +1,7 @@
 {
   "id": "ugsci",
   "name": "UGSci",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "type": "general",
   "description": "UGSci —— 面向石油领域的 QwenPaw 增强插件。以 OMP 工作流为底座重构专家团：5 阶段状态机（规划→分派→验证→综合→完成）、角色工具隔离、fork 并行执行、结构化交接、自动重试。将 Agent 转化为领域专家，以能力、技能、专家三大模块重新组织界面。",
   "description_i18n": {

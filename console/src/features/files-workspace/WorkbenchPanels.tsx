@@ -451,7 +451,11 @@ export function WorkbenchGenUiPanel({
 export function WorkbenchComputePanel() {
   return (
     <div className={`${styles.workbenchPanel} ${styles.genUiPanel}`}>
-      <Slot name="chat.workbench.compute" kind="fill">
+      <Slot
+        name="chat.workbench.compute"
+        kind="fill"
+        suppressChildrenWhenFilled
+      >
         <div className={styles.empty}>
           暂无推导记录。运行 UGSci 公式后可在此查看。
         </div>

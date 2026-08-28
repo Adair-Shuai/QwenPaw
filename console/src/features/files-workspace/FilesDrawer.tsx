@@ -41,7 +41,6 @@ export default function FilesDrawer({
   runtimeSessionId,
 }: FilesDrawerProps) {
   const { t } = useTranslation();
-  const { message } = useAppMessage();
   const drawerRef = useRef<HTMLElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const prefersReducedMotion = useReducedMotion();

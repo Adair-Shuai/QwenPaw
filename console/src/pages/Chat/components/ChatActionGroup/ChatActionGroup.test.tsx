@@ -1,6 +1,13 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
 
+const { mockUseIsMobile } = vi.hoisted(() => ({
+  mockUseIsMobile: vi.fn(() => false),
+}));
+vi.mock("../../../../hooks/useIsMobile", () => ({
+  useIsMobile: mockUseIsMobile,
+}));
+
 // Mock react-window to avoid import errors in mocked ChatSessionDrawer
 const { MockVariableSizeList } = vi.hoisted(() => {
   const React = require("react");
@@ -80,6 +87,7 @@ describe("ChatActionGroup", () => {
       value: 500,
     });
     try {
+      mockUseIsMobile.mockReturnValue(true);
       renderWithProviders(
         <ChatActionGroup
           onToggleHistory={vi.fn()}
@@ -94,6 +102,7 @@ describe("ChatActionGroup", () => {
         configurable: true,
         value: originalWidth,
       });
+      mockUseIsMobile.mockReturnValue(false);
     }
   });
 });

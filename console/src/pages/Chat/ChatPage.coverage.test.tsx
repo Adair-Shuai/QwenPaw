@@ -423,6 +423,7 @@ vi.mock("../../api/modules/projectDirectory", () => ({
 vi.mock("./turnUsage", () => ({
   patchContextMaxInputLength: vi.fn((body: any) => body),
   wrapChatResponseUsageStream: vi.fn((stream: any) => stream),
+  useStreamingTokens: vi.fn(() => ({ estimatedTokens: 0, isStreaming: false })),
 }));
 
 vi.mock("./turnUsageStore", () => ({
@@ -743,7 +744,7 @@ describe("ChatPage coverage", () => {
       const parsed = capturedOptions.api.responseParser(
         JSON.stringify({ type: "turn_usage", tokens: 1234 }),
       );
-      expect(parsed).toBeNull();
+      expect(parsed).toMatchObject({ object: "message", type: "heartbeat" });
     }
   });
 
@@ -784,7 +785,7 @@ describe("ChatPage coverage", () => {
           ],
         }),
       );
-      expect(parsed).toBeNull();
+      expect(parsed).toMatchObject({ object: "message", type: "heartbeat" });
     }
   });
 
@@ -1895,7 +1896,7 @@ describe("ChatPage coverage", () => {
       // null payload causes parseModelFallbackEvents to throw (accessing .metadata on null)
       expect(() => {
         capturedOptions.api.responseParser(JSON.stringify(null));
-      }).toThrow();
+      }).not.toThrow();
     }
   });
 

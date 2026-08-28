@@ -17,17 +17,10 @@
  */
 import React, {
   useDeferredValue,
-  useEffect,
   useMemo,
-  useState,
 } from "react";
 import { useLocation } from "react-router-dom";
 import { Avatar, Flex } from "antd";
-import {
-  CheckCircleOutlined,
-  LoadingOutlined,
-  ToolOutlined,
-} from "@ant-design/icons";
 import { SparkCopyLine, SparkReplaceLine } from "@agentscope-ai/icons";
 import { Tooltip } from "@agentscope-ai/design";
 import { Bubble, Markdown } from "@agentscope-ai/chat";
@@ -66,17 +59,28 @@ import type {
   ChatRequestData,
   ChatResponseData,
 } from "../../plugins/registry/types";
-import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
-import { groupResponseMessages } from "./responseMessageGrouping";
 import { resolveWorkspaceSessionScope } from "../../features/files-workspace/workspaceSessionScope";
 import { useAgentStore } from "../../stores/agentStore";
 import { DownloadableAudios } from "../../components/Chat/MediaDownload";
 import ResponseArtifactList from "../../features/files-workspace/ResponseArtifactList";
+import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
 import {
   isRenderableActionNode,
   normalizeChatActions,
   type SafeChatAction,
 } from "./chatActionSafety";
+import {
+  countCollapsedSteps,
+  findActiveStepBlockIndex,
+  findLastStepBlockIndex,
+  getCollapsedGroupStatus,
+  getCollapsedStepPresentation,
+  getCollapsedStepRenderKey,
+  getResponseMessageDisplayMode,
+  groupResponseMessages,
+} from "./messageDisplay";
+import styles from "./HostBubbles.module.less";
+import LazyAccordion from "./LazyAccordion";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -294,75 +298,6 @@ const HostMessage = React.memo(function HostMessage({
   );
 });
 
-function ToolExecutionGroup({ items }: { items: IAgentScopeRuntimeMessage[] }) {
-  const { t } = useTranslation();
-  const hasRunningTool = items.some(
-    (item) => item.status === AgentScopeRuntimeRunStatus.InProgress,
-  );
-  const [open, setOpen] = useState(hasRunningTool);
-
-  useEffect(() => {
-    if (hasRunningTool) {
-      setOpen(true);
-      return;
-    }
-    const timer = window.setTimeout(() => setOpen(false), 600);
-    return () => window.clearTimeout(timer);
-  }, [hasRunningTool]);
-
-  return (
-    <details
-      open={open}
-      onToggle={(event) => setOpen(event.currentTarget.open)}
-      style={{
-        margin: "4px 0",
-        borderRadius: 6,
-        background: open
-          ? "var(--ant-color-fill-quaternary, rgba(0,0,0,0.02))"
-          : "transparent",
-      }}
-    >
-      <summary
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          minHeight: 28,
-          padding: "0 8px",
-          borderRadius: 6,
-          cursor: "pointer",
-          listStyle: "none",
-          color: "var(--ant-color-text-secondary, rgba(0,0,0,0.65))",
-          fontSize: 12,
-          userSelect: "none",
-        }}
-      >
-        {hasRunningTool ? (
-          <LoadingOutlined spin style={{ color: "#1677ff" }} />
-        ) : (
-          <CheckCircleOutlined style={{ color: "#52c41a" }} />
-        )}
-        <span style={{ flex: 1, minWidth: 0 }}>
-          {hasRunningTool
-            ? t("tool.executionRunning", "正在执行工具")
-            : t("tool.executionHistory", "工具执行记录")}
-          （{items.length}）
-        </span>
-        <ToolOutlined
-          style={{
-            color: "var(--ant-color-text-quaternary, rgba(0,0,0,0.25))",
-          }}
-        />
-      </summary>
-      <div style={{ padding: "2px 8px 6px 8px" }}>
-        {items.map((item) => (
-          <VendorTool key={item.id} data={item} />
-        ))}
-      </div>
-    </details>
-  );
-}
-
 function HostDefaultResponseCard(props: {
   data: ChatResponseData;
   isLast?: boolean;
@@ -379,7 +314,33 @@ function HostDefaultResponseCard(props: {
       ),
     [props.data.output],
   );
-  const groups = useMemo(() => groupResponseMessages(messages), [messages]);
+  const messageDisplayMode = getResponseMessageDisplayMode(
+    props.data.status as AgentScopeRuntimeRunStatus,
+  );
+  const blocks = useMemo(
+    () => groupResponseMessages(messages, messageDisplayMode),
+    [messageDisplayMode, messages],
+  );
+  const statusStepBlockIndex =
+    messageDisplayMode === "text-only"
+      ? findActiveStepBlockIndex(blocks)
+      : findLastStepBlockIndex(blocks);
+  const renderResponseMessage = (item: IAgentScopeRuntimeMessage) => {
+    switch (item.type) {
+      case AgentScopeRuntimeMessageType.MESSAGE:
+        return <HostMessage key={item.id} data={item} />;
+      case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
+        return <VendorTool key={item.id} data={item} isApproval />;
+      case AgentScopeRuntimeMessageType.REASONING:
+        return <VendorReasoning key={item.id} data={item} />;
+      case AgentScopeRuntimeMessageType.ERROR:
+        return <VendorError key={item.id} data={item} />;
+      case AgentScopeRuntimeMessageType.HEARTBEAT:
+        return null;
+      default:
+        return null;
+    }
+  };
 
   if (
     messages.length === 0 &&
@@ -397,28 +358,10 @@ function HostDefaultResponseCard(props: {
         </Flex>
       ) : null}
       {props.contentPrepend}
-      {groups.map((group) => {
-        if (group.kind === "tools") {
-          return <ToolExecutionGroup key={group.key} items={group.items} />;
-        }
-        const item = group.item;
-        switch (item.type) {
-          case AgentScopeRuntimeMessageType.MESSAGE:
-            return <HostMessage key={item.id} data={item} />;
-          case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
-            return <VendorTool key={item.id} data={item} isApproval />;
-          case AgentScopeRuntimeMessageType.REASONING:
-            return <VendorReasoning key={item.id} data={item} />;
-          case AgentScopeRuntimeMessageType.ERROR:
-            return <VendorError key={item.id} data={item} />;
-          case AgentScopeRuntimeMessageType.HEARTBEAT:
-            return null;
-          default:
-            return null;
-        }
-
+      {blocks.map((block, index) => {
+        if (block.kind === "message") return renderResponseMessage(block.message);
         const groupStatus = getCollapsedGroupStatus(
-          data.status,
+          props.data.status as AgentScopeRuntimeRunStatus,
           index === statusStepBlockIndex,
         );
         const presentation = getCollapsedStepPresentation(groupStatus);

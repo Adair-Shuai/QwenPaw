@@ -43,6 +43,17 @@ describe("<Slot kind='fill'>", () => {
     expect(texts).toEqual(["D", "P1", "P2"]);
   });
 
+  it("can use children as a fallback only", () => {
+    slotRegistry.fill("p1", "x", () => <span data-testid="p1">P1</span>);
+    const { getByTestId, queryByTestId } = render(
+      <Slot name="x" kind="fill" suppressChildrenWhenFilled>
+        <span data-testid="default">D</span>
+      </Slot>,
+    );
+    expect(getByTestId("p1")).toBeInTheDocument();
+    expect(queryByTestId("default")).not.toBeInTheDocument();
+  });
+
   it("re-renders when a fill is added after mount", () => {
     const { container } = render(<Slot name="x" kind="fill" />);
     expect(container.textContent).toBe("");

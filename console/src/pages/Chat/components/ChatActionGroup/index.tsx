@@ -13,6 +13,7 @@ import { Dropdown, Flex, Tooltip } from "antd";
 import type { MenuProps } from "antd";
 import { useCreateNewSession } from "../../hooks/useCreateNewSession";
 import { useIsMobile } from "../../../../hooks/useIsMobile";
+import styles from "./ChatActionGroup.module.less";
 
 interface ChatActionGroupProps {
   /** Callback to toggle the right-side history panel */

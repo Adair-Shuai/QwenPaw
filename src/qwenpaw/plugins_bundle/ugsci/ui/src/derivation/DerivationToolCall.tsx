@@ -1,4 +1,5 @@
 import { getHost } from "../core/runtime";
+import { DerivationSummary } from "./DerivationSummary";
 import { addDerivation, selectDerivation } from "./useDerivationStore";
 function unwrap(raw: any): any {
   if (typeof raw === "string") {
@@ -51,25 +52,27 @@ export function DerivationToolCall(props: any) {
     "div",
     {
       style: {
-        border: "1px solid #cbd5e1",
-        borderRadius: 8,
-        padding: 8,
-        margin: "4px 0",
+        border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+        borderRadius: 12,
+        padding: 12,
+        margin: "6px 0",
+        background: "var(--ant-color-bg-container, #fff)",
       },
     },
-    React.createElement(
-      "strong",
-      null,
-      payload?.provenance?.source === "freeform"
-        ? "⚠️ AI-推导 · 未审校"
-        : "✅ UGSci 审定推导",
-    ),
     payload
-      ? React.createElement(
-          "button",
-          { type: "button", onClick: open, style: { marginLeft: 10 } },
-          "在工作台打开",
-        )
-      : React.createElement("span", null, "计算中…"),
+      ? React.createElement(DerivationSummary, {
+          payload,
+          compact: true,
+          onOpenDerivation: open,
+        })
+      : React.createElement(
+          "span",
+          {
+            style: {
+              color: "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
+            },
+          },
+          "计算中…",
+        ),
   );
 }

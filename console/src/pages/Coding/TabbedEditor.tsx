@@ -1070,7 +1070,6 @@ export default function TabbedEditor({
   const activeCanCopy =
     Boolean(activeTab) &&
     !["image", "pdf", "binary"].includes(activeTab?.previewKind ?? "text");
-
   return (
     <div className={styles.wrap} onKeyDown={handleKeyDown}>
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
@@ -1366,6 +1365,18 @@ export default function TabbedEditor({
                     size={13}
                     className={refreshing ? styles.actionSpinning : undefined}
                   />
+                </button>
+              </Tooltip>
+            )}
+            {activeCanCopy && (
+              <Tooltip title={t("files.copyFileToChat", "复制")}>
+                <button
+                  type="button"
+                  className={styles.iconBtn}
+                  aria-label={t("files.copyFileToChat", "复制")}
+                  onClick={() => void handleCopy()}
+                >
+                  <Copy size={13} />
                 </button>
               </Tooltip>
             )}

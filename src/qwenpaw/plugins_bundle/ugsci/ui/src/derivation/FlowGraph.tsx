@@ -52,7 +52,10 @@ export function FlowGraph({ payload }: { payload: any }) {
           refY: 3,
           orient: "auto",
         },
-        React.createElement("path", { d: "M0,0 L0,6 L8,3 z", fill: "#94a3b8" }),
+        React.createElement("path", {
+          d: "M0,0 L0,6 L8,3 z",
+          fill: "var(--ant-color-text-quaternary, #bfbfbf)",
+        }),
       ),
     ),
     ...edges.map((edge, i) => {
@@ -64,7 +67,7 @@ export function FlowGraph({ payload }: { payload: any }) {
         y1: from.y + 16,
         x2: to.x,
         y2: to.y + 16,
-        stroke: "#94a3b8",
+        stroke: "var(--ant-color-border, #d9d9d9)",
         markerEnd: "url(#arrow)",
       });
     }),
@@ -76,12 +79,20 @@ export function FlowGraph({ payload }: { payload: any }) {
           width: 155,
           height: 32,
           rx: 6,
-          fill: node.kind === "variable" ? "#eff6ff" : "#f8fafc",
-          stroke: "#cbd5e1",
+          fill:
+            node.kind === "variable"
+              ? "var(--ant-color-primary-bg, #e6f4ff)"
+              : "var(--ant-color-fill-quaternary, #fafafa)",
+          stroke: "var(--ant-color-border, #d9d9d9)",
         }),
         React.createElement(
           "text",
-          { x: 8, y: 20, fill: "#334155", fontSize: 11 },
+          {
+            x: 8,
+            y: 20,
+            fill: "var(--ant-color-text, rgba(0,0,0,.88))",
+            fontSize: 11,
+          },
           `${node.id} · ${String(node.label).slice(0, 18)}`,
         ),
       ),

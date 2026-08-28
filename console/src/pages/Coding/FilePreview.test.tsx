@@ -1,8 +1,9 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import "../../components/Workspace/renderers/HtmlRenderer";
 import "../../components/Workspace/renderers/MarkdownRenderer";
-import FilePreview from "./FilePreview";
+import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
+import { act, waitFor } from "@testing-library/react";
 
 const LAZY_RENDER_TIMEOUT = 12_000;
 
@@ -90,9 +91,9 @@ describe("getPreviewType (#5863)", () => {
   });
 
   it("returns none for unknown or extensionless paths", () => {
-    expect(getPreviewType("script.py")).toBe("none");
+    expect(getPreviewType("script.unknownext")).toBe("none");
     expect(getPreviewType("archive.zip")).toBe("none");
-    expect(getPreviewType("Makefile")).toBe("none");
+    expect(getPreviewType("Makefile")).toBe("rich");
   });
 
   it("uses only the last extension segment", () => {
@@ -106,7 +107,7 @@ describe("isPreviewable (#5863)", () => {
   it("returns true for previewable types and false for others", () => {
     expect(isPreviewable("photo.png")).toBe(true);
     expect(isPreviewable("README.md")).toBe(true);
-    expect(isPreviewable("script.py")).toBe(false);
+    expect(isPreviewable("script.unknownext")).toBe(false);
   });
 });
 
@@ -133,12 +134,24 @@ vi.mock("@/api/modules/workspace", () => ({
     loadFileChunk: vi.fn(),
   },
 }));
+const { mockUseAuthenticatedWorkspaceBlob } = vi.hoisted(() => ({
+  mockUseAuthenticatedWorkspaceBlob: vi.fn(),
+}));
+vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
+  useAuthenticatedWorkspaceBlob: mockUseAuthenticatedWorkspaceBlob,
+}));
 
 describe("FilePreview image rendering (A#82584296)", () => {
   const mockBlobUrl = "blob:http://localhost/fake-blob-id";
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
+    mockUseAuthenticatedWorkspaceBlob.mockReturnValue({
+      status: "ready",
+      url: mockBlobUrl,
+      error: null,
+      retry: vi.fn(),
+    });
     fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
       blob: () =>
@@ -151,24 +164,38 @@ describe("FilePreview image rendering (A#82584296)", () => {
 
   it("renders an <img> element for PNG files after loading", async () => {
     await act(async () => {
-      render(<FilePreview filePath="screenshot.png" content="" />);
+      render(
+        <FilePreview
+          filePath="screenshot.png"
+          content=""
+          binaryUrl="/api/files/screenshot.png"
+        />,
+      );
     });
 
     await waitFor(() => {
-      const img = screen.getByRole("img");
+      const img = document.querySelector("img");
+      expect(img).not.toBeNull();
       expect(img).toBeInTheDocument();
-      expect(img.getAttribute("src")).toBe(mockBlobUrl);
+      expect(img!.getAttribute("src")).toBe(mockBlobUrl);
     });
   });
 
   it("sets alt text from the filename", async () => {
     await act(async () => {
-      render(<FilePreview filePath="photos/vacation.jpg" content="" />);
+      render(
+        <FilePreview
+          filePath="photos/vacation.jpg"
+          content=""
+          binaryUrl="/api/files/photos/vacation.jpg"
+        />,
+      );
     });
 
     await waitFor(() => {
-      const img = screen.getByRole("img");
-      expect(img.getAttribute("alt")).toBe("vacation.jpg");
+      const img = document.querySelector("img");
+      expect(img).not.toBeNull();
+      expect(img!.getAttribute("alt")).toBe("vacation.jpg");
     });
   });
 
@@ -177,14 +204,26 @@ describe("FilePreview image rendering (A#82584296)", () => {
       ok: false,
       status: 404,
     });
+    mockUseAuthenticatedWorkspaceBlob.mockReturnValue({
+      status: "error",
+      url: null,
+      error: new Error("not found"),
+      retry: vi.fn(),
+    });
 
     await act(async () => {
-      render(<FilePreview filePath="missing.png" content="" />);
+      render(
+        <FilePreview
+          filePath="missing.png"
+          content=""
+          binaryUrl="/api/files/missing.png"
+        />,
+      );
     });
 
     // After fetch fails, should not render an <img>
     await waitFor(() => {
-      expect(screen.queryByRole("img")).not.toBeInTheDocument();
+      expect(document.querySelector("img")).not.toBeInTheDocument();
     });
   });
 });

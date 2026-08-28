@@ -2,7 +2,8 @@
  * registry/Slot.tsx — <Slot name kind children?> layout fill point.
  *
  * - kind="fill": renders `children` (host default) first, then all plugin fills
- *   sorted by topo + order. Multiple plugins compose.
+ *   sorted by topo + order. Callers can opt to use children only as the
+ *   no-fill fallback with `suppressChildrenWhenFilled`.
  * - kind="replace": renders the latest plugin replace if any, else `children`.
  *
  * Every plugin-provided render is wrapped in <SlotErrorBoundary> so a single
@@ -18,11 +19,18 @@ import { auditStore } from "./audit";
 interface SlotProps {
   name: SlotName;
   kind: SlotKind;
-  /** Host's own content for this slot. Always rendered for fill, used as fallback for replace. */
+  /** Host content: composed for fill by default, or used as a fallback. */
   children?: React.ReactNode;
+  /** Hide the host default when at least one fill is registered. */
+  suppressChildrenWhenFilled?: boolean;
 }
 
-export function Slot({ name, kind, children }: SlotProps) {
+export function Slot({
+  name,
+  kind,
+  children,
+  suppressChildrenWhenFilled = false,
+}: SlotProps) {
   const entries = useSyncExternalStore(subscribe, () =>
     slotRegistry.snapshot(name),
   );
@@ -51,7 +59,9 @@ export function Slot({ name, kind, children }: SlotProps) {
   const visibleFills = entries.filter((e) => e.kind === "fill");
   return (
     <>
-      {children}
+      {!suppressChildrenWhenFilled || visibleFills.length === 0
+        ? children
+        : null}
       {visibleFills.map((e) => (
         <SlotErrorBoundary
           key={e.registrationId}
