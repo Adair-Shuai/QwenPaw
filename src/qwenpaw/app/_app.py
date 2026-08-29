@@ -517,11 +517,13 @@ async def lifespan(
                     exc_info=True,
                 )
 
-            # Run bundled-plugin synchronization off the event loop. The Tauri
-            # gate now proceeds as soon as /api/version responds, so this
-            # preparation no longer blocks the first screen. We still await it
-            # before constructing PluginLoader to prevent discovery racing an
-            # atomic plugin replacement.
+            # Run bundled-plugin synchronization off the event loop.  The
+            # packaged desktop contains a complete read-only copy of the
+            # bundled plugins; loading that copy directly lets the frontend
+            # expose plugin routes while the first-run user-tree sync copies
+            # large assets (UGSci's visualization tree is hundreds of MB).
+            # The sync uses staged/atomic activation, so discovery can safely
+            # include the user tree while it is in flight.
             try:
                 from ..plugins.bundled import (
                     ensure_bundled_plugins_installed,
@@ -562,35 +564,20 @@ async def lifespan(
             newly_installed: list[str] = []
             bundled_ready_ids: list[str] = []
             bundled_health_errors: list[str] = []
-            if bundled_sync_task is not None:
-                try:
-                    newly_installed = await bundled_sync_task
-                    app.state.bundled_plugins_status = {
-                        "state": "files_ready",
-                        "installed": newly_installed,
-                        "error": None,
-                    }
-                    if newly_installed:
-                        logger.info(
-                            "Bundled plugins synced: %s",
-                            ", ".join(newly_installed),
-                        )
-                except Exception as exc:
-                    app.state.bundled_plugins_status = {
-                        "state": "error",
-                        "installed": [],
-                        "error": str(exc),
-                    }
-                    logger.warning(
-                        "Failed to sync bundled plugins",
-                        exc_info=True,
-                    )
-
             # PawApps install into the plugins dir alongside other plugins
             # and load through the same pipeline as 'app'-type plugins
             # (plugin.json carrying meta.pawapp); surfaced only in the App
             # Center, hidden from the sidebar.
             plugin_dirs = [get_plugins_dir()]
+            try:
+                from ..plugins.bundled import _get_bundled_plugins_dirs
+
+                plugin_dirs.extend(_get_bundled_plugins_dirs())
+            except Exception:
+                logger.debug(
+                    "Unable to add package-bundled plugin directories",
+                    exc_info=True,
+                )
 
             plugin_loader = PluginLoader(plugin_dirs)
 
@@ -625,6 +612,49 @@ async def lifespan(
             loaded_plugins = await plugin_loader.load_all_plugins(
                 configs=plugin_configs,
             )
+
+            # The user-tree sync may still be copying a fresh candidate.  Wait
+            # for its atomic activation now, then reload any IDs that were
+            # initially served from the read-only package tree so updates take
+            # effect in this same process.
+            if bundled_sync_task is not None:
+                try:
+                    newly_installed = await bundled_sync_task
+                    app.state.bundled_plugins_status = {
+                        "state": "files_ready",
+                        "installed": newly_installed,
+                        "error": None,
+                    }
+                    if newly_installed:
+                        logger.info(
+                            "Bundled plugins synced: %s",
+                            ", ".join(newly_installed),
+                        )
+                        user_plugins_dir = get_plugins_dir()
+                        for plugin_id in newly_installed:
+                            record = loaded_plugins.get(plugin_id)
+                            if (
+                                record is not None
+                                and record.source_path.resolve()
+                                != (user_plugins_dir / plugin_id).resolve()
+                            ):
+                                await plugin_loader.unload_plugin(
+                                    plugin_id,
+                                    delete_files=False,
+                                )
+                        loaded_plugins = await plugin_loader.load_all_plugins(
+                            configs=plugin_configs,
+                        )
+                except Exception as exc:
+                    app.state.bundled_plugins_status = {
+                        "state": "error",
+                        "installed": [],
+                        "error": str(exc),
+                    }
+                    logger.warning(
+                        "Failed to sync bundled plugins",
+                        exc_info=True,
+                    )
             logger.debug(
                 "Loaded %d plugin registration(s) before agent startup",
                 len(loaded_plugins),
