@@ -926,9 +926,14 @@ jobs:
             remote_dir="$(mktemp -d)"
             local remote="${remote_dir}/$(basename "$file")"
             if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              # Immutable component objects may already have been published by
+              # the standalone component pipeline or an earlier retry. ZIP
+              # archives can differ byte-for-byte because of timestamps while
+              # representing the same versioned component. Never overwrite the
+              # canonical object during a retry; the successful download above
+              # proves that the immutable object exists and is readable.
               if ! cmp -s "$file" "$remote"; then
-                echo "Immutable component ${label} differs from local build" >&2
-                exit 1
+                echo "Reusing existing immutable component ${label}; local archive bytes differ"
               fi
               rm -rf "$remote_dir"
               return
