@@ -568,7 +568,11 @@ async def lifespan(
             # and load through the same pipeline as 'app'-type plugins
             # (plugin.json carrying meta.pawapp); surfaced only in the App
             # Center, hidden from the sidebar.
-            plugin_dirs = [get_plugins_dir()]
+            # Prefer the immutable package-bundled trees over a possibly
+            # stale/incomplete user copy.  PluginLoader keys records by ID;
+            # discovering a broken user copy first would reserve the ID and
+            # prevent the known-good packaged plugin from loading at all.
+            plugin_dirs: list[Path] = []
             try:
                 from ..plugins.bundled import _get_bundled_plugins_dirs
 
@@ -578,6 +582,7 @@ async def lifespan(
                     "Unable to add package-bundled plugin directories",
                     exc_info=True,
                 )
+            plugin_dirs.append(get_plugins_dir())
 
             plugin_loader = PluginLoader(plugin_dirs)
 
