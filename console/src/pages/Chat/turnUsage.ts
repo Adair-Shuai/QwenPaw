@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import ReactDOM from "react-dom";
 import type {
   IAgentScopeRuntimeWebUIRef,
   IAgentScopeRuntimeWebUIMessage,
@@ -205,7 +206,7 @@ export function patchLastResponseCardUsage(
   if (snapshot.context_usage) {
     updatedData.context_usage = snapshot.context_usage;
   }
-  queueMicrotask(() => messagesApi.updateMessage(updatedMsg));
+  ReactDOM.flushSync(() => messagesApi.updateMessage(updatedMsg));
   return true;
 }
 
@@ -269,7 +270,7 @@ export function patchContextMaxInputLength(
       context_usage_ratio: newRatio,
     };
     updatedData.context_usage = updatedContext;
-    queueMicrotask(() => messagesApi.updateMessage(updatedMsg));
+    ReactDOM.flushSync(() => messagesApi.updateMessage(updatedMsg));
     useTurnUsageStore.getState().setSnapshot({
       usage: snap.usage,
       context_usage: updatedContext,

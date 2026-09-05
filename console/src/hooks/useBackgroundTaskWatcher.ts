@@ -27,7 +27,7 @@ const FINALIZED_MAX = 2000;
 const OUTPUT_RETRY_DELAYS_MS = [1000, 3000, 10000];
 const OUTPUT_RETRY_COOLDOWN_MS = 30_000;
 const SESSION_RESOLVE_ATTEMPTS = 120;
-const SESSION_RESOLVE_INTERVAL_MS = 500;
+const SESSION_RESOLVE_INTERVAL_MS = 300;
 
 function watcherKey(sessionId: string, toolCallId: string): string {
   return `${sessionId}\u0000${toolCallId}`;
@@ -256,14 +256,18 @@ function startPolling(sessionId: string, toolCallId: string): AbortFn {
       const cancelled =
         info.end_state === "interrupted" || !!info.force_cancelled;
       await finishPoll(cancelled);
-    } catch {
-      transientFailures += 1;
-      schedule(
-        Math.min(
-          POLL_MAX_INTERVAL_MS,
-          POLL_INTERVAL_MS * 2 ** Math.min(transientFailures, 4),
-        ),
-      );
+    } catch (error) {
+      if (isNotFoundError(error)) {
+        await finishPoll(false);
+      } else {
+        transientFailures += 1;
+        schedule(
+          Math.min(
+            POLL_MAX_INTERVAL_MS,
+            POLL_INTERVAL_MS * 2 ** Math.min(transientFailures, 4),
+          ),
+        );
+      }
     } finally {
       polling = false;
     }

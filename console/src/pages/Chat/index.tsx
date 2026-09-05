@@ -2,14 +2,18 @@ import {
   AgentScopeRuntimeWebUI,
   IAgentScopeRuntimeWebUIOptions,
   type IAgentScopeRuntimeWebUIInputData,
-  type IAgentScopeRuntimeWebUISenderBeforeSubmitResult,
   type IAgentScopeRuntimeWebUIRef,
+  type IAgentScopeRuntimeWebUISenderBeforeSubmitResult,
 } from "@agentscope-ai/chat";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Modal, Result, Tooltip } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { useIsMobile } from "../../hooks/useIsMobile";
-import { ExclamationCircleOutlined, SettingOutlined } from "@ant-design/icons";
+import {
+  ExclamationCircleOutlined,
+  FileMarkdownOutlined,
+  SettingOutlined,
+} from "@ant-design/icons";
 import { SparkCopyLine, SparkAttachmentLine } from "@agentscope-ai/icons";
 import { usePlugins } from "../../plugins/PluginContext";
 import { useTranslation } from "react-i18next";
@@ -85,6 +89,12 @@ import {
   useChatListSnapshot,
 } from "../../plugins/registry/useChatExtensions";
 import { PluginSlotBoundary } from "../../plugins/registry/PluginSlotBoundary";
+import { registerChatSubmitter } from "../../plugins/hostSdk/install";
+import { WorkspacePanel } from "../../components/Workspace";
+import {
+  buildWorkspaceSessionKey,
+  useWorkspaceStore,
+} from "../../components/Workspace/store/workspaceStore";
 import {
   resolveLocalized,
   type ChatApprovalRendererItem,
@@ -113,18 +123,27 @@ import {
   parseInternalFileLink,
   rootForFileReference,
 } from "../../features/files-workspace/internalFileLinks";
+import { headerWorkspaceToggleEvent } from "../../features/files-workspace/filesDrawerState";
 import type {
   FilesDrawerEvent,
   FileTarget,
 } from "../../features/files-workspace/types";
+import {
+  OPEN_FILE_PREVIEW_EVENT,
+  openArtifactPreview,
+  type OpenFilePreviewDetail,
+} from "../../features/files-workspace/openFilePreview";
 import { chatProjectDirectoryApi } from "../../api/modules/chatProjectDirectory";
 import { projectDirectoryApi } from "../../api/modules/projectDirectory";
 import {
-  getPendingProjectDirectory,
   migratePendingProjectDirectory,
   setPendingProjectDirectory,
   withPendingProjectDirectory,
 } from "../../features/project-directory/pendingProjectDirectory";
+import {
+  resolveBackendChatId,
+  resolveWorkspaceSessionScope,
+} from "../../features/files-workspace/workspaceSessionScope";
 import {
   useFilesSurfaceStore,
   useSessionFilesDrawer,
@@ -132,6 +151,18 @@ import {
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { RichFileReferenceInputProvider } from "./RichFileReferenceInput";
 import type { ParsedFileReference } from "./fileReferenceFormatting";
+import AgentMentionController from "./components/AgentMentionController";
+import ComposerTokenHighlights from "./components/ComposerTokenHighlights";
+import StreamingTokenBadge from "./components/StreamingTokenBadge";
+import { getAgentDisplayName } from "../../utils/agentDisplayName";
+import { withAgentCoordinationContext } from "./components/agentMentionUtils";
+import {
+  buildAgentMentionDispatch,
+  captureAgentMentionModesForSubmit,
+  consumeAgentMentionModesForSubmit,
+  getAgentMentionModesSnapshot,
+  restoreAgentMentionModes,
+} from "./components/agentMentionModes";
 import { scrollReverseMessageList } from "./messageScroll";
 import { LONG_CHAT_USER_MESSAGE_ANCHORS } from "./longChatPerformance";
 
@@ -158,17 +189,6 @@ interface ApprovalMessageData {
   sourceType: string;
 }
 
-function resolveBackendChatId(chatId?: string | null): string | undefined {
-  if (!chatId) return undefined;
-  const resolved = sessionApi.getRealIdForSession(chatId);
-  if (resolved) return resolved;
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
-    chatId,
-  )
-    ? chatId
-    : undefined;
-}
-
 import WhisperSpeechButton, {
   WhisperSpeechButtonRef,
 } from "./components/WhisperSpeechButton";
@@ -178,6 +198,8 @@ import {
   toStoredName,
   copyText,
   extractCopyableText,
+  buildWorkspaceMarkdown,
+  summarizeReplyFilename,
   buildModelError,
   normalizeContentUrls,
   extractUserMessageText,
@@ -1161,11 +1183,14 @@ export default function ChatPage() {
     () => getSessionIdFromPath(location.pathname),
     [location.pathname],
   );
-  const queueSessionId = chatId ?? sessionApi.lastActiveChatId ?? "new";
-  const backendChatId = resolveBackendChatId(chatId);
-  const pendingProjectDir = backendChatId
-    ? undefined
-    : getPendingProjectDirectory(selectedAgent, queueSessionId) ?? undefined;
+  const {
+    sessionId: queueSessionId,
+    chatId: backendChatId,
+    projectDirOverride: pendingProjectDir,
+  } = resolveWorkspaceSessionScope({
+    selectedAgent,
+    sessionId: chatId,
+  });
   const sessionScope = useMemo<
     Extract<FilesWorkspaceScope, { kind: "session" }>
   >(
@@ -1185,48 +1210,55 @@ export default function ChatPage() {
   const filesDrawerState = useSessionFilesDrawer(currentSessionFilesScopeKey);
   const dispatchFilesDrawer = useCallback(
     (event: FilesDrawerEvent) => {
+      if (event.type !== "CLOSE") {
+        useWorkspaceStore.getState().setPanelOpen(false);
+      }
       useFilesSurfaceStore
         .getState()
         .dispatchSession(currentSessionFilesScopeKey, event);
     },
     [currentSessionFilesScopeKey],
   );
-  const filesWorkspaceOpen = filesDrawerState.kind === "workspace";
-  const toggleFilesWorkspace = useCallback(() => {
-    const current = useFilesSurfaceStore.getState().sessionDrawers[
-      currentSessionFilesScopeKey
-    ] ?? { kind: "closed" as const };
-    if (current.kind === "workspace") {
-      dispatchFilesDrawer({ type: "CLOSE" });
-      return;
-    }
-    if (current.kind === "preview") {
-      dispatchFilesDrawer({ type: "EXPAND_WORKSPACE" });
-      return;
-    }
-    dispatchFilesDrawer({
-      type: "OPEN_WORKSPACE",
-      trigger: null,
-    });
-  }, [currentSessionFilesScopeKey, dispatchFilesDrawer]);
   const loopAvailableModes = useLoopStore((state) => state.availableModes);
 
   useEffect(() => {
     const openPreview = (event: Event) => {
-      const customEvent = event as CustomEvent<{
-        target: FileTarget;
-        trigger?: HTMLElement | null;
-      }>;
+      const customEvent = event as CustomEvent<OpenFilePreviewDetail>;
       dispatchFilesDrawer({
         type: "OPEN_PREVIEW",
         target: customEvent.detail.target,
         trigger: customEvent.detail.trigger ?? null,
       });
     };
-    window.addEventListener("qwenpaw:open-file-preview", openPreview);
+    window.addEventListener(OPEN_FILE_PREVIEW_EVENT, openPreview);
     return () =>
-      window.removeEventListener("qwenpaw:open-file-preview", openPreview);
+      window.removeEventListener(OPEN_FILE_PREVIEW_EVENT, openPreview);
   }, [dispatchFilesDrawer]);
+
+  useEffect(() => {
+    const openCompute = () => {
+      useWorkspaceStore.getState().setPanelOpen(false);
+      localStorage.setItem("qwenpaw-workbench-mode", "compute");
+      useFilesSurfaceStore
+        .getState()
+        .dispatchSession(currentSessionFilesScopeKey, {
+          type: "OPEN_WORKSPACE",
+          trigger: null,
+        });
+      window.setTimeout(
+        () =>
+          window.dispatchEvent(
+            new CustomEvent("qwenpaw:select-workbench-mode", {
+              detail: { mode: "compute" },
+            }),
+          ),
+        50,
+      );
+    };
+    window.addEventListener("qwenpaw:open-compute-workbench", openCompute);
+    return () =>
+      window.removeEventListener("qwenpaw:open-compute-workbench", openCompute);
+  }, [currentSessionFilesScopeKey]);
 
   const handleInternalFileLink = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -1569,6 +1601,10 @@ export default function ChatPage() {
       return false;
     }
   });
+  const filesWorkspaceOpen = filesDrawerState.kind !== "closed";
+  const toggleFilesWorkspace = useCallback(() => {
+    dispatchFilesDrawer(headerWorkspaceToggleEvent(filesDrawerState));
+  }, [dispatchFilesDrawer, filesDrawerState]);
   const toggleHistoryPanel = useCallback(() => {
     setHistoryPanelOpen((prev) => {
       const next = !prev;
@@ -1847,6 +1883,12 @@ export default function ChatPage() {
   const chatIdRef = useRef(chatId);
   const navigateRef = useRef(navigate);
   const chatRef = useRef<IAgentScopeRuntimeWebUIRef>(null);
+  useEffect(() => {
+    registerChatSubmitter((content) => {
+      chatRef.current?.input.submit({ query: content });
+    });
+    return () => registerChatSubmitter(null);
+  }, []);
   const pendingSenderClearRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -1861,6 +1903,23 @@ export default function ChatPage() {
     window.addEventListener("model-switched", handler);
     return () => window.removeEventListener("model-switched", handler);
   }, [fetchMultimodalCaps]);
+
+  const buildQueuedAgentMetadata = useCallback(
+    (text: string) => {
+      const tFn = i18n.getFixedT(i18n.language);
+      const modeSnapshot = getAgentMentionModesSnapshot();
+      return {
+        agentMentionModes: { ...modeSnapshot },
+        agentDispatch: buildAgentMentionDispatch(
+          text,
+          agents ?? [],
+          (agent) => getAgentDisplayName(agent, tFn),
+          modeSnapshot,
+        ),
+      };
+    },
+    [agents, i18n],
+  );
 
   const pendingClearHistoryRef = useRef(false);
   const whisperSpeechRef = useRef<WhisperSpeechButtonRef>(null);
@@ -2000,9 +2059,11 @@ export default function ChatPage() {
         return;
       }
       const queueText = prepareLoopModeMessage(val);
+      const agentMetadata = buildQueuedAgentMetadata(queueText);
       const enqueueIdentity = sessionApi.getSessionIdentity();
       useMessageQueueStore.getState().enqueue(queueSessionId, {
         text: queueText,
+        ...agentMetadata,
         attachments:
           pendingFileListRef.current.length > 0
             ? pendingFileListRef.current.map((f) => ({
@@ -2037,9 +2098,18 @@ export default function ChatPage() {
 
   const handleQueueEdit = useCallback(
     (id: string, text: string) => {
-      useMessageQueueStore.getState().edit(queueSessionId, id, text);
+      const metadata = buildQueuedAgentMetadata(text);
+      useMessageQueueStore
+        .getState()
+        .edit(
+          queueSessionId,
+          id,
+          text,
+          metadata.agentMentionModes,
+          metadata.agentDispatch,
+        );
     },
-    [queueSessionId],
+    [buildQueuedAgentMetadata, queueSessionId],
   );
 
   const handleQueueReorder = useCallback(
@@ -2064,6 +2134,7 @@ export default function ChatPage() {
       setTimeout(() => {
         void withSendLock(queueSessionId, () => {
           useMessageQueueStore.getState().setCurrentSendingId(item.id);
+          restoreAgentMentionModes(item.agentMentionModes);
           chatRef.current?.input.submit({
             query: beginLoopModeSubmission(item.text),
             fileList: buildFileList(item),
@@ -2115,6 +2186,7 @@ export default function ChatPage() {
           if (!target) return;
           useMessageQueueStore.getState().setCurrentSendingId(id);
           useMessageQueueStore.getState().remove(queueSessionId, id);
+          restoreAgentMentionModes(target.agentMentionModes);
           chatRef.current?.input.submit({
             query: beginLoopModeSubmission(target.text),
             fileList: buildFileList(target),
@@ -2153,7 +2225,7 @@ export default function ChatPage() {
       const target: FileTarget = {
         source: "attachment",
         path:
-          filePathFromPreviewUrl(fileInfo.url) ||
+          filePathFromPreviewUrl(fileInfo.url, fileInfo.name) ||
           fileInfo.name ||
           fileInfo.url.split("?")[0].split("/").pop() ||
           t("files.title"),
@@ -2263,6 +2335,13 @@ export default function ChatPage() {
     ? null
     : getLastChatId(selectedAgent);
   const effectiveChatId = chatId || safeLastActive || safeLastStored;
+  const workspaceSessionKey = buildWorkspaceSessionKey(
+    selectedAgent,
+    effectiveChatId,
+  );
+  useEffect(() => {
+    useWorkspaceStore.getState().setSession(workspaceSessionKey);
+  }, [workspaceSessionKey]);
   if (effectiveChatId && sessionApi.preferredChatId !== effectiveChatId) {
     sessionApi.preferredChatId = effectiveChatId;
   }
@@ -2278,6 +2357,22 @@ export default function ChatPage() {
     sessionApi.onSessionIdResolved = (tempId, realId) => {
       if (!isChatActiveRef.current) return;
       const agentId = selectedAgentRef.current;
+      const resolvedWorkspaceSession = buildWorkspaceSessionKey(
+        agentId,
+        realId,
+      );
+      useWorkspaceStore
+        .getState()
+        .moveSession(
+          buildWorkspaceSessionKey(agentId, tempId),
+          resolvedWorkspaceSession,
+        );
+      useWorkspaceStore
+        .getState()
+        .moveSession(
+          buildWorkspaceSessionKey(agentId, null),
+          resolvedWorkspaceSession,
+        );
       migratePendingProjectDirectory(agentId, tempId, realId);
       const fromScopeKey = sessionFilesScopeKey(agentId, tempId);
       const toScopeKey = sessionFilesScopeKey(agentId, realId);
@@ -2302,6 +2397,9 @@ export default function ChatPage() {
       // at the removed session, so agent-switch restore doesn't resurrect a
       // deleted conversation.
       const agentId = selectedAgentRef.current;
+      useWorkspaceStore
+        .getState()
+        .clearSession(buildWorkspaceSessionKey(agentId, removedId));
       if (getLastChatIdRef.current(agentId) === removedId) {
         removeLastChatIdRef.current(agentId);
       }
@@ -2334,6 +2432,15 @@ export default function ChatPage() {
       );
       useCodingTabsStore.getState().removeScope(removedScopeKey);
       useFilesSurfaceStore.getState().removeSession(removedScopeKey);
+      try {
+        (
+          window as {
+            QwenPaw?: { genui?: { clearSession?: (id: string) => void } };
+          }
+        ).QwenPaw?.genui?.clearSession?.(removedId);
+      } catch {
+        // GenUI is optional; session delete must still succeed.
+      }
     };
 
     sessionApi.onSessionSelected = (
@@ -2507,17 +2614,39 @@ export default function ChatPage() {
 
   const copyResponse = useCallback(
     async (response: CopyableResponse) => {
-      const text = extractCopyableText(response);
-      if (!text) return;
-
       try {
-        await copyText(text);
+        await copyText(extractCopyableText(response));
         message.success(t("common.copied"));
       } catch {
         message.error(t("common.copyFailed"));
       }
     },
-    [message, t],
+    [t],
+  );
+
+  const openResponseInWorkspace = useCallback(
+    (response: CopyableResponse) => {
+      const text = buildWorkspaceMarkdown(response);
+      if (!text) return;
+      const title = summarizeReplyFilename(
+        text,
+        t("workspace.assistantResponse", "AI 回复"),
+      );
+      openArtifactPreview({
+        id: `response-${workspaceSessionKey}-${title}`,
+        title,
+        mimeType: "text/markdown",
+        extension: "md",
+        textContent: text,
+        source: "generated",
+        sessionId: workspaceSessionKey,
+        agentId: selectedAgent,
+        projectRoot: pendingProjectDir ?? null,
+        chatId: backendChatId,
+        projectDirOverride: pendingProjectDir,
+      });
+    },
+    [backendChatId, pendingProjectDir, selectedAgent, t, workspaceSessionKey],
   );
 
   const customFetch = useCallback(
@@ -2528,10 +2657,6 @@ export default function ChatPage() {
     }): Promise<Response> => {
       pendingFallbackEventsRef.current = [];
       pendingFallbackEventKeysRef.current.clear();
-      const headers: Record<string, string> = {
-        "Content-Type": "application/json",
-        ...buildAuthHeaders(),
-      };
 
       if (usesQwenPawBackend) {
         try {
@@ -2585,18 +2710,65 @@ export default function ChatPage() {
           : [];
 
       const identity = sessionApi.getSessionIdentity();
+
+      // ── @ Agent mention: extract target_agent_id from user text ──
+      const userTextForMention = rewrittenInput
+        .filter((m) => m.role === "user")
+        .map(extractUserMessageText)
+        .join("\n")
+        .trim();
+      const submittedMentionModes = consumeAgentMentionModesForSubmit();
+      const tFn = i18n.getFixedT(i18n.language);
+      const agentDispatch = buildAgentMentionDispatch(
+        userTextForMention,
+        agents ?? [],
+        (agent) => getAgentDisplayName(agent, tFn),
+        submittedMentionModes,
+      );
+      const isAgentCoordination = agentDispatch.coordinationRequested;
+      const mentionedAgentId = agentDispatch.targetAgentId ?? null;
+      const requestAgentId = mentionedAgentId ?? selectedAgent;
+
+      // Multi-Agent assignments and an explicitly collaborative single @ use
+      // the current Agent as coordinator. Direct single @ keeps target routing.
+      let finalInput = rewrittenInput;
+      if (isAgentCoordination || mentionedAgentId) {
+        let replacedText = false;
+        finalInput = rewrittenInput.map((m) => {
+          if (m.role !== "user" || !Array.isArray(m.content)) return m;
+          const newContent = (m.content as Array<Record<string, unknown>>).map(
+            (part) => {
+              if (part.type !== "text" || typeof part.text !== "string") {
+                return part;
+              }
+              if (replacedText) return { ...part, text: "" };
+              replacedText = true;
+              return { ...part, text: agentDispatch.requestText };
+            },
+          );
+          return { ...m, content: newContent };
+        });
+      }
+
+      const headers: Record<string, string> = {
+        "Content-Type": "application/json",
+        ...buildAuthHeaders(requestAgentId),
+      };
+
+      // Per-turn usage tracking (token spend shown after the response ends).
       const usageTurn = useTurnUsageStore
         .getState()
         .beginTurn(
-          selectedAgent,
+          requestAgentId,
           identity.sessionId || session?.session_id || "",
         );
       let requestBody: Record<string, unknown> = {
-        input: rewrittenInput,
+        input: finalInput,
         session_id: identity.sessionId || session?.session_id || "",
         user_id: identity.userId || session?.user_id || DEFAULT_USER_ID,
         channel: identity.channel || session?.channel || DEFAULT_CHANNEL,
         stream: true,
+        ...(mentionedAgentId ? { target_agent_id: mentionedAgentId } : {}),
         ...biz_params,
       };
 
@@ -2615,6 +2787,12 @@ export default function ChatPage() {
 
       let projectSessionId: string | null = null;
       let appliedProjectDir: string | null = null;
+
+      if (isAgentCoordination) {
+        requestBody.request_context = withAgentCoordinationContext(
+          requestBody.request_context,
+        );
+      }
 
       if (clientMessageId && Array.isArray(requestBody.input)) {
         const requestInput = [...requestBody.input] as Array<
@@ -2771,7 +2949,6 @@ export default function ChatPage() {
     [multimodalCaps, t, usesQwenPawBackend],
   );
 
-  const compactSender = filesDrawerState.kind === "workspace";
   const chatMessagesAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -2871,6 +3048,7 @@ export default function ChatPage() {
       // abort the actual SDK send. The owner tab will pick the item up via
       // cross-tab broadcast and send it.
       if (!isOwnerRef.current) {
+        const textarea = getActiveSenderTextarea();
         const val = inputData.query.trim();
         if (!val) return false;
         const currentQ = useMessageQueueStore
@@ -2883,9 +3061,11 @@ export default function ChatPage() {
         const queueText = usesQwenPawBackend
           ? prepareLoopModeMessage(val)
           : val;
+        const agentMetadata = buildQueuedAgentMetadata(queueText);
         const enqueueIdentity = sessionApi.getSessionIdentity();
         useMessageQueueStore.getState().enqueue(queueSessionId, {
           text: queueText,
+          ...agentMetadata,
           attachments:
             pendingFileListRef.current.length > 0
               ? pendingFileListRef.current.map((f) => ({
@@ -2899,7 +3079,6 @@ export default function ChatPage() {
           channel: enqueueIdentity.channel,
         });
         pendingFileListRef.current = [];
-        const textarea = getActiveSenderTextarea();
         if (textarea) setTextareaValue(textarea, "");
         // Clear sender attachment preview (deferred to next tick)
         clearSenderAttachments();
@@ -2924,6 +3103,7 @@ export default function ChatPage() {
         }
       }
 
+      captureAgentMentionModesForSubmit();
       return { proceed: true, query: prepared };
     };
 
@@ -3157,7 +3337,7 @@ export default function ChatPage() {
       },
       welcome: {
         ...i18nConfig.welcome,
-        nick: extNick ?? "QwenPaw",
+        nick: extNick ?? "UGSci",
         avatar: extAvatar ?? "/qwenpaw.png",
         ...(extGreeting !== undefined ? { greeting: extGreeting } : {}),
         ...(extDescription !== undefined
@@ -3171,30 +3351,46 @@ export default function ChatPage() {
         ...(i18nConfig as any)?.sender,
         beforeSubmit: handleBeforeSubmit,
         allowSpeech: whisperChecked && !whisperEnabled,
-        beforeUI: showSenderBeforeUI ? (
+        beforeUI: (
           <>
-            {isQueueOnlyTab && (
-              <Alert
-                type="info"
-                showIcon
-                banner
-                message={t("chat.queue.otherTabOwner")}
-              />
-            )}
-            <ChatSenderTabsPanel
-              bgSessionId={bgBackendSessionId}
-              queueSessionId={queueSessionId}
-              onRemove={handleQueueRemove}
-              onEdit={handleQueueEdit}
-              onReorder={handleQueueReorder}
-              onInterruptAndSend={handleQueueInterruptAndSend}
-              onClear={handleQueueClear}
-              onPauseResume={handleQueuePauseResume}
-              onRetry={handleQueueRetry}
-              onSkip={handleQueueSkip}
+            <ComposerTokenHighlights
+              agents={agents ?? []}
+              selectedAgentId={selectedAgent}
+              skillNames={consoleSkills.map((skill) => skill.name)}
+              commandNames={[
+                ...commandSuggestions.map((item) => item.value),
+                ...loopAvailableModes
+                  .map((mode) => mode.slash_command)
+                  .filter(Boolean),
+                ...activePluginSuggestions.map((item) => item.value),
+              ]}
             />
+            {showSenderBeforeUI && (
+              <>
+                {isQueueOnlyTab && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    banner
+                    message={t("chat.queue.otherTabOwner")}
+                  />
+                )}
+                <ChatSenderTabsPanel
+                  bgSessionId={bgBackendSessionId}
+                  queueSessionId={queueSessionId}
+                  onRemove={handleQueueRemove}
+                  onEdit={handleQueueEdit}
+                  onReorder={handleQueueReorder}
+                  onInterruptAndSend={handleQueueInterruptAndSend}
+                  onClear={handleQueueClear}
+                  onPauseResume={handleQueuePauseResume}
+                  onRetry={handleQueueRetry}
+                  onSkip={handleQueueSkip}
+                />
+              </>
+            )}
           </>
-        ) : undefined,
+        ),
         prefix: (
           <>
             {whisperEnabled ? (
@@ -3213,11 +3409,7 @@ export default function ChatPage() {
           </>
         ),
         actionAffix: (
-          <span
-            className={`${styles.senderActionAffix} ${
-              compactSender ? styles.compactSenderAffix : ""
-            }`}
-          >
+          <span className={styles.senderActionAffix}>
             {(usesQwenPawBackend || backendCapabilities?.context_usage) && (
               <span className={styles.senderContextAffix}>
                 <ContextUsageIndicator
@@ -3227,26 +3419,12 @@ export default function ChatPage() {
               </span>
             )}
             {usesQwenPawBackend && (
-              <SessionProjectDirectory
-                scope={sessionScope}
-                compact={isMobile || compactSender}
-                className={
-                  isMobile || compactSender
-                    ? styles.mobileComposerControl
-                    : undefined
-                }
-              />
+              <SessionProjectDirectory scope={sessionScope} />
             )}
             {usesQwenPawBackend ? (
               <ApprovalLevelToggle
                 sessionId={queueSessionId}
                 runningConfigApprovalLevel={runningConfigApprovalLevel}
-                compact={isMobile || compactSender}
-                className={
-                  isMobile || compactSender
-                    ? styles.mobileComposerControl
-                    : undefined
-                }
                 onChange={(sessionOverride) => {
                   sessionApprovalLevelRef.current = sessionOverride;
                 }}
@@ -3289,11 +3467,13 @@ export default function ChatPage() {
                       : t(tooltipKey);
                   return (
                     <Tooltip title={tooltipTitle}>
-                      <IconButton
-                        disabled={props?.disabled}
-                        icon={<SparkAttachmentLine />}
-                        bordered={false}
-                      />
+                      <span style={{ display: "inline-flex" }}>
+                        <IconButton
+                          disabled={props?.disabled}
+                          icon={<SparkAttachmentLine />}
+                          bordered={false}
+                        />
+                      </span>
                     </Tooltip>
                   );
                 },
@@ -3323,7 +3503,15 @@ export default function ChatPage() {
         ...defaultConfig.api,
         fetch: customFetch,
         responseParser: (chunk: string) => {
-          const payload = JSON.parse(chunk) as Record<string, unknown>;
+          const parsed = JSON.parse(chunk);
+          // JSON.parse can return null (chunk === "null") or primitives.
+          // The SDK's response builder accesses payload.object, so a null
+          // return would crash with "Cannot read properties of null
+          // (reading 'object')".  Guard early and return a heartbeat no-op.
+          if (!parsed || typeof parsed !== "object") {
+            return { object: "message", type: "heartbeat" } as any;
+          }
+          const payload = parsed as Record<string, unknown>;
           markLoopModeRunning();
           sanitizeHeadlinePayload(payload, headlineStreamFilterRef.current);
 
@@ -3379,7 +3567,10 @@ export default function ChatPage() {
           }
 
           if (payload.type === "turn_usage") {
-            return null;
+            // Returning null crashes the SDK's response builder which
+            // accesses .object on the result.  Use a heartbeat no-op
+            // instead (same pattern as replay_end below).
+            return { object: "message", type: "heartbeat" } as any;
           }
 
           // Replay boundary marker from the reconnect stream. The
@@ -3396,7 +3587,9 @@ export default function ChatPage() {
               (payload.alternatives as typeof rateLimitAlternatives) || [];
             setRateLimitAlternatives(alts);
             message.warning(t("chat.rateLimitHit"));
-            return null;
+            // Returning null crashes the SDK's response builder which
+            // accesses .object on the result.  Use a heartbeat no-op.
+            return { object: "message", type: "heartbeat" } as any;
           }
 
           if (payloadRequestsHistoryClear(payload)) {
@@ -3476,6 +3669,16 @@ export default function ChatPage() {
             ),
             onClick: ({ data }: { data: CopyableResponse }) => {
               void copyResponse(data);
+            },
+          },
+          {
+            icon: (
+              <span title={t("workspace.openInWorkspace", "在工作区打开")}>
+                <FileMarkdownOutlined />
+              </span>
+            ),
+            onClick: ({ data }: { data: CopyableResponse }) => {
+              openResponseInWorkspace(data);
             },
           },
           {
@@ -3572,11 +3775,10 @@ export default function ChatPage() {
     toggleHistoryPanel,
     handleCompactCommand,
     handleNewCommand,
-    isMobile,
-    compactSender,
     sessionScope,
     filesWorkspaceOpen,
     toggleFilesWorkspace,
+    openResponseInWorkspace,
     isOwner,
     bgTaskCount,
     bgBackendSessionId,
@@ -3584,27 +3786,13 @@ export default function ChatPage() {
   ]);
 
   const filesDrawerClass =
-    filesDrawerState.kind === "closed"
-      ? ""
-      : filesDrawerState.kind === "preview"
-      ? styles.filesPreviewOpen
-      : styles.filesWorkspaceOpen;
+    filesDrawerState.kind === "closed" ? "" : styles.filesPreviewOpen;
 
   return (
     <div
       className={`${styles.chatPageRoot} ${filesDrawerClass}`}
       onClickCapture={handleInternalFileLink}
     >
-      <AnimatePresence initial={false} mode="popLayout">
-        {filesDrawerState.kind !== "closed" ? (
-          <FilesDrawer
-            key="session-files-drawer"
-            state={filesDrawerState}
-            dispatch={dispatchFilesDrawer}
-            scope={sessionScope}
-          />
-        ) : null}
-      </AnimatePresence>
       {/* Main chat area */}
       <motion.div
         className={styles.chatMainArea}
@@ -3639,6 +3827,13 @@ export default function ChatPage() {
               ref={chatRef}
               key={refreshKey}
               options={options}
+            />
+            <StreamingTokenBadge />
+            <AgentMentionController
+              active={isChatActive()}
+              theme={isDark ? "dark" : "light"}
+              agents={agents ?? []}
+              selectedAgent={selectedAgent}
             />
           </RichFileReferenceInputProvider>
         </div>
@@ -3825,6 +4020,22 @@ export default function ChatPage() {
         </Modal>
       </motion.div>
       {/* End of main chat area */}
+
+      {/* Chat previews live on the right; /files keeps its full workspace layout. */}
+      <AnimatePresence initial={false} mode="sync">
+        {filesDrawerState.kind !== "closed" ? (
+          <FilesDrawer
+            key="session-files-drawer"
+            state={filesDrawerState}
+            dispatch={dispatchFilesDrawer}
+            scope={sessionScope}
+            runtimeSessionId={bgBackendSessionId}
+          />
+        ) : null}
+      </AnimatePresence>
+
+      {/* Response workspace — generated Markdown and other in-memory artifacts. */}
+      <WorkspacePanel />
 
       {/* Right-side history panel (full mode only) */}
       {effectiveIsFullMode && historyPanelOpen && (

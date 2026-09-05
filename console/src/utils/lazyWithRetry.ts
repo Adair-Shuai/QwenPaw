@@ -99,7 +99,7 @@ export function lazyWithRetry<T extends ComponentType<unknown>>(
         : moduleKeyOrPath;
       // Use getModule (silent) instead of get (warns) because a miss is the
       // normal case when no plugin has patched this module.
-      const patched = moduleRegistry.getModule(key)?.["default"];
+      const patched = moduleRegistry.get(key, "default");
       if (patched) return { default: patched as T };
       return mod;
     }),
@@ -144,16 +144,15 @@ export function lazyImportWithRetry(
     );
   }
   const key = pathToModuleKey(path);
-  return lazy(() =>
-    retryImport(
+  return lazy(async () => {
+    // Resolve a plugin override before importing the built-in page. Besides
+    // avoiding unnecessary work, this lets a plugin fully replace a page
+    // whose original chunk is unavailable or expensive to initialize.
+    const patched = moduleRegistry.get(key, "default");
+    if (patched) return { default: patched as ComponentType<unknown> };
+    return retryImport(
       () => factory().then((comp) => ({ default: comp })),
       MAX_RETRIES,
-    ).then((mod) => {
-      // Use getModule (silent) instead of get (warns) because a miss is the
-      // normal case when no plugin has patched this module.
-      const patched = moduleRegistry.getModule(key)?.["default"];
-      if (patched) return { default: patched as ComponentType<unknown> };
-      return mod;
-    }),
-  );
+    );
+  });
 }

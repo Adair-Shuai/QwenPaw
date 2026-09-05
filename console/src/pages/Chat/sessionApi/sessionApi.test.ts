@@ -229,7 +229,9 @@ describe("normalizeOutputMessageContent", () => {
     expect(T.normalizeOutputMessageContent("x")).toBe("x");
   });
 
-  it("keeps non-array content unchanged", () => {
-    expect(T.normalizeOutputMessageContent(42)).toBe(42);
+  it("normalizes primitive content for the response-card SDK", () => {
+    expect(T.normalizeOutputMessageContent(42)).toEqual([
+      { type: "text", text: "42" },
+    ]);
   });
 });
