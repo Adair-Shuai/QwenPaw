@@ -28,6 +28,8 @@ jobs:
     env:
       OS: ubuntu-latest
       PYTHON: "3.11"
+      GOPROXY: "https://proxy.golang.org,direct"
+      GOSUMDB: off
     steps:
       # Draft PRs defer the real run: this job still reports a green
       # placeholder so the required-check context stays present (GitHub
@@ -68,6 +70,13 @@ jobs:
         run: |
           pre-commit install
 
+      - name: Cache pre-commit
+        if: steps.draft.outputs.value != 'true'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pre-commit
+          key: pre-commit-${{ runner.os }}-python-3.11-${{ hashFiles('.pre-commit-config.yaml') }}
+
       - name: Run pre-commit
         if: steps.draft.outputs.value != 'true'
         run: |
@@ -77,6 +86,10 @@ jobs:
             exit 1
           fi
           echo -e "\e[46m  ********************************Passed******************************** \e[0m"
+
+      - name: Verify UGSci packaging mirror
+        if: steps.draft.outputs.value != 'true'
+        run: python scripts/sync_ugsci_bundle.py --check
 
       - name: Report draft placeholder
         if: steps.draft.outputs.value == 'true'
