@@ -202,8 +202,8 @@
   overflow: hidden;
 
   &:focus-within {
-    border-color: #0072f5;
-    box-shadow: 0 0 0 2px rgba(0, 114, 245, 0.2);
+    border-color: #ff7f16;
+    box-shadow: 0 0 0 2px rgba(97, 92, 237, 0.2);
     transform: translateY(-1px);
   }
 }
@@ -232,7 +232,7 @@
   text-align: center;
 
   .inputGroup:focus-within & {
-    color: #0072f5;
+    color: #ff7f16;
     background: #f0f0ff;
   }
 }
@@ -244,15 +244,7 @@
   border: none !important;
   box-shadow: none !important;
   outline: none !important;
-  font-family: var(
-    --ant-font-family-code,
-    ui-monospace,
-    SFMono-Regular,
-    Menlo,
-    Monaco,
-    Consolas,
-    monospace
-  );
+  font-family: "SF Mono", "Menlo", "Consolas", monospace;
   font-size: 14px;
   background: transparent;
   padding-left: 12px;
@@ -267,15 +259,7 @@
     height: 40px !important;
     border: none !important;
     box-shadow: none !important;
-    font-family: var(
-      --ant-font-family-code,
-      ui-monospace,
-      SFMono-Regular,
-      Menlo,
-      Monaco,
-      Consolas,
-      monospace
-    );
+    font-family: "SF Mono", "Menlo", "Consolas", monospace;
     font-size: 14px;
     padding-left: 12px;
 
@@ -299,7 +283,7 @@
   border-radius: 4px;
 
   &:hover {
-    color: #0072f5;
+    color: #ff7f16;
     background: #f0f0ff;
   }
 }
@@ -327,10 +311,10 @@
   color: #c0c0c0;
 
   &:hover {
-    color: #0072f5;
+    color: #ff7f16;
     background: #f0f0ff;
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 114, 245, 0.15);
+    box-shadow: 0 2px 8px rgba(97, 92, 237, 0.15);
   }
 }
 
@@ -380,11 +364,11 @@
   color: #999;
 
   &:hover {
-    color: #0072f5;
-    border-color: #0072f5;
+    color: #ff7f16;
+    border-color: #ff7f16;
     background: #f0f0ff;
     transform: translateY(-1px);
-    box-shadow: 0 2px 8px rgba(0, 114, 245, 0.15);
+    box-shadow: 0 2px 8px rgba(97, 92, 237, 0.15);
   }
 
   svg {
@@ -437,7 +421,7 @@
 
   /* Main card */
   .tableCard {
-    background: #1c1b1e;
+    background: #1f1f1f;
     border-color: rgba(255, 255, 255, 0.1);
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 
@@ -482,11 +466,11 @@
   /* Input group (Key / Value 外框) */
   .inputGroup {
     border-color: rgba(255, 255, 255, 0.12);
-    background: #252528;
+    background: #2a2a2a;
 
     &:focus-within {
-      border-color: #0072f5;
-      box-shadow: 0 0 0 2px rgba(0, 114, 245, 0.2);
+      border-color: #ff7f16;
+      box-shadow: 0 0 0 2px rgba(97, 92, 237, 0.2);
     }
   }
 
@@ -495,11 +479,11 @@
     color: rgba(255, 255, 255, 0.4);
     border-right-color: rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.04);
+  }
 
-    .inputGroup:focus-within & {
-      color: #0072f5;
-      background: rgba(0, 114, 245, 0.1);
-    }
+  .inputGroup:focus-within .inputLabel {
+    color: #ff7f16;
+    background: rgba(97, 92, 237, 0.1);
   }
 
   /* Input field inside group */
@@ -526,8 +510,8 @@
     color: rgba(255, 255, 255, 0.3);
 
     &:hover {
-      color: #0072f5;
-      background: rgba(0, 114, 245, 0.12);
+      color: #ff7f16;
+      background: rgba(97, 92, 237, 0.12);
     }
   }
 
@@ -536,8 +520,8 @@
     color: rgba(255, 255, 255, 0.2);
 
     &:hover {
-      color: #0072f5;
-      background: rgba(0, 114, 245, 0.12);
+      color: #ff7f16;
+      background: rgba(97, 92, 237, 0.12);
     }
   }
 
@@ -563,9 +547,9 @@
     color: rgba(255, 255, 255, 0.35);
 
     &:hover {
-      color: #0072f5;
-      border-color: #0072f5;
-      background: rgba(0, 114, 245, 0.1);
+      color: #ff7f16;
+      border-color: #ff7f16;
+      background: rgba(97, 92, 237, 0.1);
     }
   }
 
@@ -581,8 +565,8 @@
       background: transparent;
 
       &:hover {
-        color: #0072f5;
-        background: rgba(0, 114, 245, 0.12);
+        color: #ff7f16;
+        background: rgba(97, 92, 237, 0.12);
       }
     }
 

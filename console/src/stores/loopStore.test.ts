@@ -18,7 +18,7 @@ import {
   useLoopStore,
   DEFAULT_LOOP_MODE,
   beginLoopModeSubmission,
-  markLoopModeRunning,
+  prepareLoopModeMessage,
   type LoopModeInfo,
 } from "./loopStore";
 
@@ -30,8 +30,6 @@ const goalMode: LoopModeInfo = {
   source: "builtin",
 };
 
-const goal = goalMode;
-
 const customMode: LoopModeInfo = {
   id: "custom:review",
   name: "Code Review",
@@ -40,11 +38,19 @@ const customMode: LoopModeInfo = {
   source: "custom",
 };
 
+const missionMode: LoopModeInfo = {
+  id: "mission",
+  name: "Mission Mode",
+  slash_command: "mission",
+  description: "Run a structured mission",
+  source: "builtin",
+};
+
 describe("loopStore state transitions (A#85096690)", () => {
   beforeEach(() => {
     useLoopStore.setState({
       selectedModeId: "default",
-      availableModes: [DEFAULT_LOOP_MODE, goalMode, customMode],
+      availableModes: [DEFAULT_LOOP_MODE, goalMode, missionMode, customMode],
       sessionState: "idle",
       activeMode: null,
       catalogLoading: false,
@@ -98,50 +104,6 @@ describe("loopStore state transitions (A#85096690)", () => {
     // Start
     useLoopStore.getState().setStartingMode(customMode);
     expect(useLoopStore.getState().sessionState).toBe("starting");
-    expect(useLoopStore.getState().activeMode).toEqual(customMode);
-  });
-
-  it("recognizes a manually submitted mode command without duplicating it", () => {
-    useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);
-
-    expect(beginLoopModeSubmission("/goal fix the tests")).toBe(
-      "/goal fix the tests",
-    );
-    expect(useLoopStore.getState().activeMode).toEqual(goal);
-  });
-
-  it("does not wrap another slash command in the selected mode", () => {
-    useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);
-    useLoopStore.getState().setSelectedMode("goal");
-
-    expect(beginLoopModeSubmission("/clear")).toBe("/clear");
-    expect(useLoopStore.getState().sessionState).toBe("idle");
-  });
-
-  it("normalizes Chinese dunhao commands before mode dispatch", () => {
-    useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);
-
-    expect(beginLoopModeSubmission("、goal fix the tests")).toBe(
-      "/goal fix the tests",
-    );
-    expect(useLoopStore.getState().activeMode).toEqual(goal);
-  });
-
-  it("does not prefix Default or messages in an active session", () => {
-    expect(beginLoopModeSubmission("hello")).toBe("hello");
-    useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);
-    useLoopStore.getState().setSessionMode(goal, "awaiting_user");
-    useLoopStore.getState().setSelectedMode("goal");
-    expect(beginLoopModeSubmission("continue")).toBe("continue");
-    expect(useLoopStore.getState().sessionState).toBe("starting");
-  });
-
-  it("moves from starting to running on the first event", () => {
-    useLoopStore.getState().setAvailableModes([DEFAULT_LOOP_MODE, goal]);
-    useLoopStore.getState().setSelectedMode("goal");
-    beginLoopModeSubmission("fix the tests");
-
-    markLoopModeRunning();
 
     // First response → running
     useLoopStore.getState().setSessionMode(customMode, "running");
@@ -178,5 +140,39 @@ describe("loopStore state transitions (A#85096690)", () => {
     const state = useLoopStore.getState();
     expect(state.sessionState).toBe("running");
     expect(state.activeMode).toEqual(customMode);
+  });
+
+  it.each([
+    ["goal", goalMode, "do the task", "/goal do the task"],
+    ["mission", missionMode, "build it", "/mission build it"],
+    ["custom", customMode, "review it", "/review review it"],
+  ])("prepares a selected %s mode command", (_label, mode, text, expected) => {
+    useLoopStore.getState().setSelectedMode(mode.id);
+
+    expect(prepareLoopModeMessage(text)).toBe(expected);
+  });
+
+  it("leaves default mode messages unchanged", () => {
+    expect(prepareLoopModeMessage("hello")).toBe("hello");
+  });
+
+  it("does not duplicate a manually entered loop command", () => {
+    useLoopStore.getState().setSelectedMode(goalMode.id);
+
+    expect(beginLoopModeSubmission("/goal do the task")).toBe(
+      "/goal do the task",
+    );
+  });
+
+  it("leaves unrelated slash commands unchanged", () => {
+    useLoopStore.getState().setSelectedMode(goalMode.id);
+
+    expect(beginLoopModeSubmission("/clear")).toBe("/clear");
+  });
+
+  it("leaves follow-up text unchanged while a loop is active", () => {
+    useLoopStore.getState().setSessionMode(goalMode, "running");
+
+    expect(beginLoopModeSubmission("continue")).toBe("continue");
   });
 });

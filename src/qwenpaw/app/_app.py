@@ -376,12 +376,6 @@ async def lifespan(
         get_default_kernel_manager(),
         max(0.1, browser_config.idle_ttl_seconds),
     )
-    if browser_config.experimental:
-        from ..browser.runtime.managed_playwright import (
-            start_managed_chromium_download,
-        )
-
-        start_managed_chromium_download()
     try:
         from ..browser.control_link.chrome.ws_handler import prime_bridge_token
 
@@ -859,9 +853,7 @@ async def lifespan(
                 startup_display.mark_finalizing()
 
             provider_manager.start_local_model_resume(local_model_manager)
-            startup_provider_ids = (
-                provider_manager.prepare_startup_provider_model_sync()
-            )
+            startup_provider_ids = provider_manager.startup_sync_provider_ids()
             asyncio.create_task(
                 provider_manager.sync_startup_provider_models(
                     startup_provider_ids,

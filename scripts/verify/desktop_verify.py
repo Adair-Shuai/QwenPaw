@@ -6,13 +6,15 @@ tauri-win / tauri-mac) end-to-end:
 
 1. ``GET /api/version`` — health + version match.
 2. ``GET /``           — frontend HTML served.
-3. ``PUT /api/models/<provider>/config``            — install API key.
-4. ``POST /api/models/<provider>/models``           — register the chat model
+3. ``POST /api/agents/default/memory/reindex?scope=bm25`` — prove the packaged
+   ReMe runtime starts.
+4. ``PUT /api/models/<provider>/config``            — install API key.
+5. ``POST /api/models/<provider>/models``           — register the chat model
                                                        (newer aliases like
                                                        qwen3.6-plus aren't in
                                                        the built-in catalogue).
-5. ``PUT /api/models/active``                       — mark it active globally.
-6. **UI single-round factual Q&A**                  — drive the real SPA:
+6. ``PUT /api/models/active``                       — mark it active globally.
+7. **UI single-round factual Q&A**                  — drive the real SPA:
    - Open the page and wait for the chat input to render.
    - Send "What is the tallest mountain in the world?" via the
      input box.
@@ -22,10 +24,10 @@ tauri-win / tauri-mac) end-to-end:
    send message via input box -> receive bubble back with correct answer.
 
 UI flavours:
-- ``--ui-mode tauri-macos``    Native report from the embedded WKWebView plus
-                               supplemental Playwright WebKit compatibility.
-- ``--ui-mode tauri-windows``  Native report plus Playwright connected to the
-                               real embedded WebView2 over CDP.
+- ``--ui-mode tauri-macos``    Playwright + headless WebKit (same engine as
+                               the Tauri webview on macOS).
+- ``--ui-mode tauri-windows``  Playwright + headless Chromium (same engine
+                               family as Tauri's WebView2 on Windows).
 
 Designed to be invoked by ``.github/workflows/desktop-release.yml`` after the
 desktop server has been booted on ``--base-url``. The API layer uses only
@@ -49,22 +51,13 @@ import os
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
-from pathlib import Path
 
 DEFAULT_MODEL = "qwen3.6-plus"
 DEFAULT_PROVIDER = "dashscope"
 DEFAULT_TIMEOUT = 120
 SESSION_ID = "release-verify-session"
 USER_ID = "release-verify-user"
-REQUIRED_UI_MENUS = {
-    "ugsci.experts",
-    "ugsci.tools-skills",
-}
-REQUIRED_UI_ROUTE = "/ugsci-market"
-REQUIRED_UI_SLOT_SOURCE = "ugsci_research"
-REQUIRED_UI_SLOT_ID = "research-mode-toggle"
 
 # The verify step runs under timeout-minutes: 10 in desktop-build.yml, so
 # self-report at 540s: a hung driver dumps every thread's stack and exits
@@ -162,148 +155,38 @@ def verify_frontend(base_url: str) -> None:
             f"Frontend root did not return HTML (first 200 chars): "
             f"{body[:200]}",
         )
-    if "qwenpaw" not in lower and "ugsci" not in lower:
+    if "qwenpaw" not in lower:
         raise RuntimeError(
-            "Frontend HTML does not mention QwenPaw or UGSci — wrong bundle?",
+            "Frontend HTML does not mention QwenPaw — wrong bundle?",
         )
     print("PASS  GET / -> frontend HTML served")
 
 
-def verify_bundled_plugins(base_url: str) -> None:
-    """Require critical plugins and their declared frontend bundles."""
-    deadline = time.monotonic() + DEFAULT_TIMEOUT
-    last_body = ""
-    required = {"flowforge", "ugsci", "ugsci_research"}
-    forbidden = {"cloudpaw", "qwenpaw-pet"}
-    while time.monotonic() < deadline:
-        last_body = _http("GET", f"{base_url}/api/frontend_plugin")
-        try:
-            payload = json.loads(last_body)
-        except json.JSONDecodeError:
-            payload = None
-        if isinstance(payload, list):
-            loaded = {
-                str(item.get("id")): item
-                for item in payload
-                if isinstance(item, dict) and item.get("loaded")
-            }
-            contaminated = forbidden & set(loaded)
-            if contaminated:
-                raise RuntimeError(
-                    "Packaged desktop loaded source-only/denied plugins: "
-                    + ", ".join(sorted(contaminated)),
-                )
-            if required <= set(loaded):
-                for plugin_id in sorted(required):
-                    frontend_entry = str(
-                        loaded[plugin_id].get("frontend_entry") or "",
-                    ).strip()
-                    if not frontend_entry:
-                        raise RuntimeError(
-                            f"Bundled plugin {plugin_id} has no frontend entry",
-                        )
-                    body = _http(
-                        "GET",
-                        f"{base_url}/api/frontend_plugin/{plugin_id}/files/"
-                        f"{urllib.parse.quote(frontend_entry, safe='/')}",
-                    )
-                    if not body.strip():
-                        raise RuntimeError(
-                            f"Bundled plugin {plugin_id} frontend is empty",
-                        )
-                print(
-                    "PASS  bundled plugins and frontend bundles loaded -> "
-                    + ", ".join(sorted(required)),
-                )
-                return
-        time.sleep(2)
-    raise RuntimeError(
-        "Critical bundled plugins did not load before timeout: "
-        f"{sorted(required)}; last response={last_body[:500]}",
+def verify_reme_runtime(base_url: str) -> None:
+    """Run a provider-free job against the packaged ReMe runtime."""
+    body = _http(
+        "POST",
+        f"{base_url}/api/agents/default/memory/reindex?scope=bm25",
+        timeout=120,
     )
-
-
-def verify_native_ui_report(
-    report_path: str,
-    nonce: str,
-    timeout: int,
-) -> None:
-    """Require plugin capabilities reported by the real Tauri webview."""
-    if not report_path or not nonce:
+    try:
+        payload = json.loads(body)
+    except json.JSONDecodeError as exc:
         raise RuntimeError(
-            "Native Tauri UI verification requires both report path and nonce",
+            f"Memory reindex returned non-JSON: {body[:200]}",
+        ) from exc
+    if payload.get("status") != "completed" or payload.get("scope") != "bm25":
+        raise RuntimeError(
+            f"Memory reindex returned an unexpected response: {body[:300]}",
         )
+    print("PASS  packaged ReMe runtime completed BM25 reindex")
 
-    path = Path(report_path)
-    deadline = time.monotonic() + timeout
-    last_detail = "report file has not been created"
-    while time.monotonic() < deadline:
-        try:
-            payload = json.loads(path.read_text(encoding="utf-8"))
-            if not isinstance(payload, dict):
-                last_detail = (
-                    f"report is not an object: {type(payload).__name__}"
-                )
-                time.sleep(0.5)
-                continue
-            if payload.get("nonce") != nonce:
-                last_detail = "report nonce does not match this Tauri launch"
-                time.sleep(0.5)
-                continue
 
-            menus = {
-                str(item.get("id"))
-                for item in payload.get("menus", [])
-                if isinstance(item, dict) and item.get("id")
-            }
-            route_paths = {
-                str(item.get("path"))
-                for item in payload.get("routes", [])
-                if isinstance(item, dict) and item.get("path")
-            }
-            slots = [
-                item
-                for item in payload.get("slots", [])
-                if isinstance(item, dict)
-            ]
-            missing_menus = sorted(REQUIRED_UI_MENUS - menus)
-            missing_route = REQUIRED_UI_ROUTE not in route_paths
-            missing_slot = not any(
-                item.get("source") == REQUIRED_UI_SLOT_SOURCE
-                and item.get("id") == REQUIRED_UI_SLOT_ID
-                for item in slots
-            )
-            if (
-                payload.get("schema_version") == 1
-                and payload.get("complete") is True
-                and not missing_menus
-                and not missing_route
-                and not missing_slot
-            ):
-                print(
-                    "PASS  native Tauri webview plugin registration -> "
-                    "menus, /ugsci-market, research-mode-toggle",
-                )
-                return
-            last_detail = (
-                f"complete={payload.get('complete')!r}; "
-                f"missing_menus={missing_menus}; "
-                f"missing_route={missing_route}; missing_slot={missing_slot}; "
-                f"native_missing={payload.get('missing_menus')}, "
-                f"{payload.get('missing_route')}, {payload.get('missing_slot')}"
-            )
-        except FileNotFoundError:
-            last_detail = f"report file not found: {path}"
-        except (OSError, json.JSONDecodeError) as exc:
-            # The native side writes through a temporary file, but Windows
-            # replacement can briefly expose no/partial content. Retry it.
-            last_detail = f"report not readable yet: {exc}"
-        time.sleep(0.5)
-
-    raise RuntimeError(
-        "Real Tauri webview did not register required bundled plugin UI "
-        f"before timeout; {last_detail}",
-    )
+def verify_packaged_api(base_url: str) -> None:
+    """Verify the desktop's basic API, frontend, and embedded ReMe runtime."""
+    health_check(base_url)
+    verify_frontend(base_url)
+    verify_reme_runtime(base_url)
 
 
 def configure_provider(
@@ -393,16 +276,8 @@ class UIDriver(abc.ABC):
         """Navigate to ``url`` and wait until the chat input is visible."""
 
     @abc.abstractmethod
-    def wait_for_input(self) -> None:
-        """Wait for the existing desktop webview chat input to be visible."""
-
-    @abc.abstractmethod
     def chat_one_round(self, message: str, timeout: int) -> str:
         """Send ``message`` and return the resulting AI bubble's full text."""
-
-    @abc.abstractmethod
-    def verify_bundled_plugin_ui(self, base_url: str, timeout: int) -> None:
-        """Assert critical plugin bundles executed and registered their UI."""
 
     @abc.abstractmethod
     def close(self) -> None:
@@ -511,49 +386,6 @@ class PlaywrightDriver(UIDriver):
             timeout=self.INPUT_VISIBLE_TIMEOUT_MS,
         )
         self._screenshot("01-page-loaded")
-
-    def verify_bundled_plugin_ui(self, base_url: str, timeout: int) -> None:
-        """Verify registration inside the running WebView, not just HTTP files."""
-        timeout_ms = timeout * 1000
-        self._page.wait_for_function(
-            """() => {
-              const qp = window.QwenPaw;
-              if (!qp?.menu?.snapshot || !qp?.slot?.snapshot) return false;
-              const menuIds = new Set([
-                ...qp.menu.snapshot('primary.agentScoped'),
-                ...qp.menu.snapshot('primary.settings'),
-              ].map((item) => item.id));
-              const slots = qp.slot.snapshot();
-              const researchRegistered = slots.some(
-                (item) => item.source === 'ugsci_research'
-                  && item.id === 'research-mode-toggle'
-              );
-              return ['ugsci.experts', 'ugsci.tools-skills']
-                .every((id) => menuIds.has(id)) && researchRegistered;
-            }""",
-            timeout=timeout_ms,
-        )
-
-        # FlowForge intentionally has no top-level menu item, so exercise its
-        # registered route directly. This catches the exact release failure
-        # where the API served plugin JS successfully but the bundle never
-        # executed in WebView2/WKWebView.
-        self._page.goto(
-            f"{base_url.rstrip('/')}/flowforge",
-            timeout=self.NAVIGATE_TIMEOUT_MS,
-        )
-        self._page.get_by_text("新建工作流", exact=True).first.wait_for(
-            state="visible",
-            timeout=timeout_ms,
-        )
-        self._screenshot("02-bundled-plugins-loaded")
-
-        # Restore the chat surface for the optional LLM verification below.
-        self._page.goto(base_url, timeout=self.NAVIGATE_TIMEOUT_MS)
-        self._page.locator(SEL_INPUT).first.wait_for(
-            state="visible",
-            timeout=self.INPUT_VISIBLE_TIMEOUT_MS,
-        )
 
     # Same 4-channel disabled detection as e2e/pages/chat_page.py:
     #   1. button.disabled property
@@ -926,19 +758,6 @@ def verify_ui_loaded(
     print("PASS  UI loaded, chat input visible")
 
 
-def verify_ui_plugins(
-    driver: UIDriver,
-    base_url: str,
-    timeout: int,
-) -> None:
-    """Require critical bundled plugins to register inside the webview."""
-    driver.verify_bundled_plugin_ui(base_url, timeout)
-    print(
-        "PASS  bundled plugin UI registered -> "
-        + "flowforge, ugsci, ugsci_research",
-    )
-
-
 def verify_ui_chat(
     driver: UIDriver,
     timeout: int,
@@ -1019,7 +838,7 @@ def _run_llm_with_retry(
 # =============================================================================
 
 
-def main() -> int:  # pylint: disable=too-many-statements
+def main() -> int:
     parser = argparse.ArgumentParser(
         description=(
             "Verify a running QwenPaw desktop backend end-to-end: API "
@@ -1095,16 +914,6 @@ def main() -> int:  # pylint: disable=too-many-statements
         "instead of launching a new Playwright browser.",
     )
     parser.add_argument(
-        "--native-ui-report",
-        default=os.environ.get("QWENPAW_UI_VERIFY_REPORT_PATH", ""),
-        help="Path written by the real Tauri webview plugin registry report.",
-    )
-    parser.add_argument(
-        "--native-ui-nonce",
-        default=os.environ.get("QWENPAW_UI_VERIFY_NONCE", ""),
-        help="Per-launch nonce required in the native Tauri UI report.",
-    )
-    parser.add_argument(
         "--llm-retries",
         type=int,
         default=3,
@@ -1129,9 +938,7 @@ def main() -> int:  # pylint: disable=too-many-statements
     driver: UIDriver | None = None
     try:
         # ---- API-level checks (always run, no key needed) ----
-        health_check(base_url)
-        verify_frontend(base_url)
-        verify_bundled_plugins(base_url)
+        verify_packaged_api(base_url)
 
         # ---- UI load (always run unless --skip-ui, no key needed) ----
         # This catches broken Vite bundles, missing assets, CSP issues,
@@ -1139,11 +946,6 @@ def main() -> int:  # pylint: disable=too-many-statements
         if args.skip_ui:
             print("SKIP  UI verification (--skip-ui)")
         else:
-            verify_native_ui_report(
-                args.native_ui_report,
-                args.native_ui_nonce,
-                args.timeout,
-            )
             try:
                 ss_dir = (
                     os.path.join(
@@ -1167,7 +969,6 @@ def main() -> int:  # pylint: disable=too-many-statements
                 base_url,
                 skip_navigate=bool(args.cdp_url),
             )
-            verify_ui_plugins(driver, base_url, args.timeout)
 
         # ---- LLM chat round (only when key is available) ----
         if skip_chat:

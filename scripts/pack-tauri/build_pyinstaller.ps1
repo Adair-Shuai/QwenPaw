@@ -5,7 +5,7 @@
 #   powershell ./scripts/pack-tauri/build_pyinstaller.ps1
 #
 # Prerequisites:
-#   - Python 3.10+ with virtual environment
+#   - Python 3.10+ on PATH (used only to bootstrap the bundled runtime)
 #   - PyInstaller 6.0+ (will be installed if not present)
 
 param()
@@ -18,8 +18,13 @@ $DIST = if ($env:DIST) { $env:DIST } else { "dist" }
 if (-not [System.IO.Path]::IsPathRooted($DIST)) {
     $DIST = Join-Path $REPO_ROOT $DIST
 }
+$BINARIES_DIR = Join-Path $REPO_ROOT "console\src-tauri\binaries"
+$PYTHON_RUNTIME_DIR = Join-Path $BINARIES_DIR "python-runtime"
+$RUNTIME_PYTHON_DIR = Join-Path $PYTHON_RUNTIME_DIR "python"
+$NATIVE_HOST_PYTHON = Join-Path $RUNTIME_PYTHON_DIR "python.exe"
+$BUILD_VENV = Join-Path $DIST "pyinstaller-venv"
+$PYTHON_BIN = Join-Path $BUILD_VENV "Scripts\python.exe"
 $VERSION_FILE = "src\qwenpaw\__version__.py"
-$LAYERED_DESKTOP = $env:QWENPAW_LAYERED_DESKTOP -match "^(1|true|yes)$"
 
 # Extract version
 if (Test-Path $VERSION_FILE) {
@@ -43,28 +48,38 @@ Write-Host ""
 # Check prerequisites
 Write-Host "== Checking prerequisites ==" -ForegroundColor Yellow
 
-$UV_BIN = (Get-Command uv -ErrorAction SilentlyContinue).Source
-$PYTHON_BIN = Join-Path $REPO_ROOT ".venv\Scripts\python.exe"
-if (-not (Test-Path $PYTHON_BIN)) {
-    if ($UV_BIN) {
-        Write-Host ".venv not found, creating virtual environment with uv" -ForegroundColor Yellow
-        & $UV_BIN venv "$REPO_ROOT\.venv"
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create virtual environment with uv"
-        }
-    } else {
-        Write-Host ".venv not found, using system Python" -ForegroundColor Yellow
-        $PYTHON_BIN = (Get-Command python -ErrorAction SilentlyContinue).Source
-    }
-    if (-not $PYTHON_BIN -or -not (Test-Path $PYTHON_BIN)) {
-        Write-Host "ERROR: Python not found in .venv or PATH" -ForegroundColor Red
-        Write-Host "Please create virtual environment first: python -m venv .venv"
-        exit 1
-    }
+function Assert-LastExit {
+    param([string]$Message)
+    if ($LASTEXITCODE -ne 0) { throw $Message }
 }
+
+$UV_BIN = (Get-Command uv -ErrorAction SilentlyContinue).Source
+$BOOTSTRAP_PYTHON = (Get-Command python -ErrorAction SilentlyContinue).Source
+if (-not $BOOTSTRAP_PYTHON -or -not (Test-Path $BOOTSTRAP_PYTHON)) {
+    throw "Python not found on PATH; it is required to stage the bundled runtime"
+}
+
+New-Item -ItemType Directory -Force -Path $BINARIES_DIR | Out-Null
+
+# The staged python-build-standalone runtime is the canonical source for both
+# the helper interpreter and the PyInstaller build environment. The PATH
+# Python only selects the X.Y version to download and runs the staging script.
+Write-Host "== Staging canonical Python runtime ==" -ForegroundColor Yellow
+& $BOOTSTRAP_PYTHON `
+    (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_python_runtime.py") `
+    --dest $PYTHON_RUNTIME_DIR
+Assert-LastExit "Failed to stage bundled Python runtime"
+if (-not (Test-Path $NATIVE_HOST_PYTHON -PathType Leaf)) {
+    throw "Bundled Python interpreter not found at $NATIVE_HOST_PYTHON"
+}
+
+Write-Host "== Creating PyInstaller build environment ==" -ForegroundColor Yellow
+& $NATIVE_HOST_PYTHON -m venv --clear $BUILD_VENV
+Assert-LastExit "Failed to create PyInstaller environment from bundled Python"
 
 $pythonVersion = & $PYTHON_BIN --version
 Write-Host "Python: $pythonVersion" -ForegroundColor Green
+Write-Host ""
 
 function Test-PythonImport {
     param([string]$Statement)
@@ -76,11 +91,6 @@ function Test-PythonImport {
     } finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
-}
-
-function Assert-LastExit {
-    param([string]$Message)
-    if ($LASTEXITCODE -ne 0) { throw $Message }
 }
 
 function Install-PythonPackages {
@@ -108,7 +118,6 @@ function Uninstall-PythonPackage {
     }
 }
 
-if (-not $LAYERED_DESKTOP) {
 # Install PyInstaller if not present
 Write-Host "== Installing PyInstaller ==" -ForegroundColor Yellow
 if (Test-PythonImport "import PyInstaller") {
@@ -130,9 +139,7 @@ if (Test-PythonImport "import dotenv") {
 
 Write-Host ""
 
-# Install the default desktop dependency set. Whisper/Torch is an optional
-# component and is installed into the user-writable runtime on demand. Set
-# QWENPAW_INCLUDE_WHISPER=1 for an offline/full build.
+# Install project dependencies (ensures ALL runtime deps are importable)
 Write-Host "== Installing project dependencies ==" -ForegroundColor Yellow
 # Pin setuptools <82: lark-oapi still calls pkg_resources.declare_namespace
 # at import time. A *fresh* install of setuptools >= 82 removes pkg_resources
@@ -143,13 +150,8 @@ Write-Host "== Installing project dependencies ==" -ForegroundColor Yellow
 # half-removed pkg_resources (module present, declare_namespace gone), which
 # raises an AttributeError the fallback does not catch — crashing the Feishu
 # channel. The pin keeps every environment in the known-good state.
-if ($env:QWENPAW_INCLUDE_WHISPER -match "^(1|true|yes)$") {
-    Install-PythonPackages -Packages @("-e", ".[full]", "setuptools<82")
-    Write-Host "Project dependencies installed with Whisper/Torch" -ForegroundColor Green
-} else {
-    Install-PythonPackages -Packages @("-e", ".[local,codex,qoder]", "setuptools<82")
-    Write-Host "Project dependencies installed without optional Whisper/Torch" -ForegroundColor Green
-}
+Install-PythonPackages -Packages @("-e", ".[full]", "setuptools<82")
+Write-Host "Project dependencies installed with full extras" -ForegroundColor Green
 
 # Fix agent-client-protocol namespace collision
 # PyPI has an empty 'acp' stub that shadows the real package
@@ -207,13 +209,6 @@ if (-not (Test-Path $MODEL_CATALOG)) {
     exit 1
 }
 
-Write-Host "== Pruning build-only files from backend bundle ==" -ForegroundColor Yellow
-$MAX_BACKEND_MB = if ($env:QWENPAW_MAX_BACKEND_MB) { $env:QWENPAW_MAX_BACKEND_MB } else { "1800" }
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\prune_desktop_bundle.py") `
-    $BACKEND_DIR `
-    --max-size-mb $MAX_BACKEND_MB
-Assert-LastExit "Failed to prune or validate backend bundle"
-
 Write-Host "Backend bundle created: $BACKEND_DIR" -ForegroundColor Green
 
 # Get size
@@ -223,122 +218,34 @@ Write-Host ""
 
 # Copy to Tauri resources directory
 Write-Host "== Copying to Tauri binaries directory ==" -ForegroundColor Yellow
-$BINARIES_DIR = Join-Path $REPO_ROOT "console\src-tauri\binaries"
-New-Item -ItemType Directory -Force -Path $BINARIES_DIR | Out-Null
-
 $DEST = Join-Path $BINARIES_DIR "qwenpaw-backend"
 New-Item -ItemType Directory -Force -Path $DEST | Out-Null
 Get-ChildItem -LiteralPath $DEST -Force | Remove-Item -Recurse -Force
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
-    --source $BACKEND_DIR --destination $DEST
-Assert-LastExit "Failed to copy layered backend into Tauri resources"
+Copy-Item -Recurse -Force (Join-Path $BACKEND_DIR "*") $DEST
 Write-Host "Copied to: $DEST" -ForegroundColor Green
 Write-Host ""
-} else {
-    Write-Host "== Layered desktop mode: skipping PyInstaller and legacy dependency install ==" -ForegroundColor Yellow
-    $BINARIES_DIR = Join-Path $REPO_ROOT "console\src-tauri\binaries"
-    $DEST = Join-Path $BINARIES_DIR "qwenpaw-backend"
-    New-Item -ItemType Directory -Force -Path $BINARIES_DIR | Out-Null
-}
-
-# Stage a standalone CPython (same X.Y/arch as this build's interpreter) so the
-# frozen backend can install third-party plugin dependencies at runtime.
-Write-Host "== Staging bundled Python runtime ==" -ForegroundColor Yellow
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_python_runtime.py") `
-    --dest (Join-Path $BINARIES_DIR "python-runtime")
-Assert-LastExit "Failed to stage bundled Python runtime"
 
 # The Chrome Native Messaging host runs under this standalone interpreter,
 # outside the PyInstaller backend, so its dependencies must be installed here.
-$NATIVE_HOST_PYTHON = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
-if (-not $LAYERED_DESKTOP) {
-    $NATIVE_HOST_REQUIREMENTS = Join-Path $REPO_ROOT "scripts\pack-tauri\native-host-requirements.txt"
-    & $NATIVE_HOST_PYTHON -m pip install `
-        --disable-pip-version-check `
-        --no-input `
-        --no-deps `
-        --only-binary=:all: `
-        -r $NATIVE_HOST_REQUIREMENTS
-    Assert-LastExit "Failed to install Chrome Native Messaging host dependencies"
-    & $NATIVE_HOST_PYTHON `
-        (Join-Path $REPO_ROOT "plugins\bundle\chrome\assets\scripts\nm_host.py") `
-        --check-runtime
-    Assert-LastExit "Bundled Python runtime cannot run the Native Messaging host"
-}
-Write-Host ""
-
-# Pre-install common + petroleum domain Python libraries into the bundled
-# runtime so users without Python can handle files and domain calculations
-# without waiting for a pip download on first use.
-$PY_RUNTIME_BIN = Join-Path $BINARIES_DIR "python-runtime\python\python.exe"
-if (-not $LAYERED_DESKTOP) {
-    Write-Host "== Installing common + petroleum domain packages into bundled runtime ==" -ForegroundColor Yellow
-    & $PY_RUNTIME_BIN -m pip install `
-        --disable-pip-version-check `
-        --no-input `
-        numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow `
-        lasio welly bruges simpeg dlisio xtgeo pvtlib
-    Assert-LastExit "Failed to install common + petroleum domain packages"
-    Write-Host "Common + petroleum domain packages installed" -ForegroundColor Green
-}
+Write-Host "== Installing bundled Python helper dependencies ==" -ForegroundColor Yellow
+$NATIVE_HOST_REQUIREMENTS = Join-Path $REPO_ROOT "scripts\pack-tauri\native-host-requirements.txt"
+& $NATIVE_HOST_PYTHON -m pip install `
+    --disable-pip-version-check `
+    --no-input `
+    --no-deps `
+    --only-binary=:all: `
+    -r $NATIVE_HOST_REQUIREMENTS
+Assert-LastExit "Failed to install Chrome Native Messaging host dependencies"
+& $NATIVE_HOST_PYTHON `
+    (Join-Path $REPO_ROOT "plugins\bundle\chrome\assets\scripts\nm_host.py") `
+    --check-runtime
+Assert-LastExit "Bundled Python runtime cannot run the Native Messaging host"
 Write-Host ""
 
 Write-Host "== Staging bundled Node runtime ==" -ForegroundColor Yellow
-$NODE_RUNTIME_ARGS = @(
-    "--dest", (Join-Path $BINARIES_DIR "node-runtime")
-)
-if ($env:QWENPAW_NODE_SHA256) {
-    $NODE_RUNTIME_ARGS += @("--sha256", $env:QWENPAW_NODE_SHA256)
-}
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_node_runtime.py") `
-    @NODE_RUNTIME_ARGS
+    --dest (Join-Path $BINARIES_DIR "node-runtime")
 Assert-LastExit "Failed to stage bundled Node runtime"
-Write-Host ""
-
-Write-Host "== Staging bundled OfficeCLI ==" -ForegroundColor Yellow
-$OFFICECLI_DOC_PLUGIN_ARG = @()
-if ($env:QWENPAW_OFFICECLI_DOC_PLUGIN) {
-    $OFFICECLI_DOC_PLUGIN_ARG = @("--doc-plugin", $env:QWENPAW_OFFICECLI_DOC_PLUGIN)
-}
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_officecli.py") `
-    --dest (Join-Path $BINARIES_DIR "officecli") `
-    @OFFICECLI_DOC_PLUGIN_ARG
-Assert-LastExit "Failed to stage bundled OfficeCLI"
-Write-Host ""
-
-Write-Host "== Staging bundled Java runtime (NeqSim MCP Server) ==" -ForegroundColor Yellow
-$JRE_ARGS = @(
-    "--dest", (Join-Path $BINARIES_DIR "java-runtime")
-)
-if ($env:QWENPAW_JRE_SHA256) {
-    $JRE_ARGS += @("--sha256", $env:QWENPAW_JRE_SHA256)
-}
-if ($env:QWENPAW_JAVA_RELEASE) {
-    $JRE_ARGS += @("--java-release", $env:QWENPAW_JAVA_RELEASE)
-}
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_jre.py") `
-    @JRE_ARGS
-Assert-LastExit "Failed to stage bundled Java runtime"
-Write-Host ""
-
-Write-Host "== Staging bundled NeqSim MCP Server JAR ==" -ForegroundColor Yellow
-$NEQSIM_ARGS = @(
-    "--dest", (Join-Path $BINARIES_DIR "neqsim")
-)
-if ($env:QWENPAW_NEQSIM_SHA256) {
-    $NEQSIM_ARGS += @("--sha256", $env:QWENPAW_NEQSIM_SHA256)
-}
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\stage_neqsim.py") `
-    @NEQSIM_ARGS
-Assert-LastExit "Failed to stage NeqSim MCP Server JAR"
-Write-Host ""
-
-Write-Host "== Verifying bundled NeqSim MCP Server ==" -ForegroundColor Yellow
-& $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\smoke_neqsim.py") `
-    --resource-dir $BINARIES_DIR
-Assert-LastExit "Bundled NeqSim MCP Server smoke test failed"
-Write-Host ""
-
 Write-Host "== Building Computer Use helper ==" -ForegroundColor Yellow
 $CARGO_BIN = (Get-Command cargo -ErrorAction SilentlyContinue).Source
 if (-not $CARGO_BIN) {
@@ -360,79 +267,15 @@ $COMPUTER_USE_HELPER_EXE = Join-Path $TARGET_DIR "release\qwenpaw-computer-use-h
 if (-not (Test-Path $COMPUTER_USE_HELPER_EXE)) {
     throw "Computer Use helper executable not found at $COMPUTER_USE_HELPER_EXE"
 }
-$COMPUTER_USE_HELPER_DEST = if ($LAYERED_DESKTOP) {
-    $computerUseLayer = Join-Path $BINARIES_DIR "tools\computer-use\$VERSION"
-    New-Item -ItemType Directory -Path $computerUseLayer -Force | Out-Null
-    Join-Path $computerUseLayer "qwenpaw-computer-use-helper.exe"
-} else {
-    Join-Path $DEST "qwenpaw-computer-use-helper.exe"
-}
+$COMPUTER_USE_HELPER_DEST = Join-Path $DEST "qwenpaw-computer-use-helper.exe"
 Copy-Item -Force $COMPUTER_USE_HELPER_EXE $COMPUTER_USE_HELPER_DEST
 Write-Host "Computer Use helper staged: $COMPUTER_USE_HELPER_DEST" -ForegroundColor Green
 Write-Host ""
 
-if ($LAYERED_DESKTOP) {
-    Write-Host "== Building versioned Python backend and dependency layers ==" -ForegroundColor Yellow
-    Install-PythonPackages -Packages @(
-        "build>=1.2,<2",
-        "setuptools>=42",
-        "wheel>=0.46,<1"
-    )
-    & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\build_python_layers.py") `
-        --repo $REPO_ROOT `
-        --host-python $PYTHON_BIN `
-        --runtime-python $PY_RUNTIME_BIN `
-        --output $BINARIES_DIR `
-        --version $VERSION
-    Assert-LastExit "Failed to build layered Python backend"
-
-    # Layered builds never create the legacy frozen backend. Remove a stale
-    # tree left by an earlier local build so it cannot leak into the package.
-    if (Test-Path -LiteralPath $DEST) {
-        Remove-Item -LiteralPath $DEST -Recurse -Force
-    }
-    & (Join-Path $REPO_ROOT "scripts\pack-tauri\build_windows_cli_launcher.ps1") `
-        -BinariesDir $BINARIES_DIR
-    Assert-LastExit "Failed to build QwenPaw CLI launchers"
-    & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\assemble_desktop_layout.py") `
-        --binaries $BINARIES_DIR `
-        --version $VERSION `
-        --target windows-x86_64
-    Assert-LastExit "Failed to assemble versioned desktop runtime layout"
-    $previousPythonPath = $env:PYTHONPATH
-    try {
-        $activeLayout = Get-Content (Join-Path $BINARIES_DIR 'state\active.json') -Raw | ConvertFrom-Json
-        $dependencyRelativePath = $activeLayout.components.'python-packages'.path
-        $runtimeRelativePath = $activeLayout.components.'python-runtime'.path
-        foreach ($relativePath in @($dependencyRelativePath, $runtimeRelativePath)) {
-            if (-not $relativePath -or [System.IO.Path]::IsPathRooted($relativePath)) {
-                throw "Layered Python component path is invalid: $relativePath"
-            }
-        }
-        $tauriResourceRoot = Join-Path $REPO_ROOT 'console\src-tauri'
-        $env:PYTHONPATH = Join-Path $tauriResourceRoot $dependencyRelativePath
-        $layeredPython = Join-Path `
-            (Join-Path $tauriResourceRoot $runtimeRelativePath) `
-            'python\python.exe'
-        & $layeredPython `
-            (Join-Path $REPO_ROOT "plugins\bundle\chrome\assets\scripts\nm_host.py") `
-            --check-runtime
-        Assert-LastExit "Layered Python dependencies cannot run the Native Messaging host"
-    } finally {
-        $env:PYTHONPATH = $previousPythonPath
-    }
-    Write-Host "Layered desktop runtime assembled; frozen backend removed from shipping resources" -ForegroundColor Green
-    Write-Host ""
-}
-
 Write-Host "=========================================" -ForegroundColor Cyan
-Write-Host "Desktop Backend Build Complete!" -ForegroundColor Green
+Write-Host "PyInstaller Build Complete!" -ForegroundColor Green
 Write-Host "=========================================" -ForegroundColor Cyan
 Write-Host "Output:"
-if ($LAYERED_DESKTOP) {
-    Write-Host "  Layered resources: $BINARIES_DIR"
-} else {
-    Write-Host "  Bundle: $BACKEND_DIR"
-    Write-Host "  Tauri resource: $DEST"
-}
+Write-Host "  Bundle: $BACKEND_DIR"
+Write-Host "  Tauri resource: $DEST"
 Write-Host ""

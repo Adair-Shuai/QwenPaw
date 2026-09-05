@@ -1,4 +1,3 @@
 *.bat text eol=crlf
-
-# Python quality hooks validate UTF-8 files with LF line endings.
-*.py text eol=lf
+scripts/check-channels.sh text eol=lf
+.github/workflows/tests.yml text eol=lf
