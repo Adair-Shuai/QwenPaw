@@ -327,11 +327,35 @@ _STORAGE_INVENTORY_ENGINE = DomainEngineDefinition(
             description="分离账面库存、有效库存、工作气量和冲峰能力并计算符合率",
             tool_names=("ugsci_storage_inventory_evaluate",),
         ),
+        DomainOperation(
+            id="storage.capacity.evaluate",
+            name="库容边界评估",
+            description="按分层孔隙体积、压力/Z 边界和标准状态筛选总库容、垫底气和工作气量",
+            tool_names=("ugsci_storage_capacity_evaluate",),
+        ),
+        DomainOperation(
+            id="storage.injection_allocation.optimize",
+            name="配注方案优化",
+            description="按井组上下限和优先级权重生成透明的配注候选方案并报告短缺量",
+            tool_names=("ugsci_storage_injection_allocation_optimize",),
+        ),
+        DomainOperation(
+            id="storage.production_allocation.optimize",
+            name="配产方案优化",
+            description="按井组产能边界和优先级权重生成透明的配产候选方案并报告缺口",
+            tool_names=("ugsci_storage_production_allocation_optimize",),
+        ),
+        DomainOperation(
+            id="storage.scenario.optimize",
+            name="储气库方案比较与优化",
+            description="按约束、目标方向和权重执行方案筛选、排序和 Pareto 前沿识别",
+            tool_names=("ugsci_storage_scenario_optimize",),
+        ),
     ),
     dependencies=(),
     tags=("gas-storage", "inventory", "p-over-z", "deterministic", "audit"),
     execution_class="deterministic",
-    engine_version="1.2.0",
+    engine_version="1.3.0",
 )
 
 

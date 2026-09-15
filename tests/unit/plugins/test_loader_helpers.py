@@ -102,7 +102,15 @@ class TestResolvedPluginManifestPath:
         outside = tmp_path / "outside" / "plugin.json"
         outside.parent.mkdir()
         outside.write_text("{}")
-        (src / "plugin.json").symlink_to(outside)
+        try:
+            (src / "plugin.json").symlink_to(outside)
+        except OSError as exc:
+            # Windows requires Developer Mode or SeCreateSymbolicLink
+            # privilege. Keep the security assertion active where symlinks
+            # are available, but do not fail the suite for a host policy.
+            if getattr(exc, "winerror", None) == 1314:
+                pytest.skip("symbolic links are not permitted on this host")
+            raise
         with pytest.raises(ValueError, match="escapes"):
             pl.resolved_plugin_manifest_path(src)
 

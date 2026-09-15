@@ -38,7 +38,12 @@ def _plugin_tree(tmp_path: Path) -> Path:
         / "qwenpaw"
         / "plugins_bundle"
     )
-    for plugin_id in ("flowforge", "ugsci", "ugsci_research"):
+    for plugin_id in (
+        "flowforge",
+        "qwenpaw-run-center",
+        "ugsci",
+        "ugsci_research",
+    ):
         plugin = root / plugin_id
         (plugin / "ui").mkdir(parents=True)
         (plugin / "plugin.py").write_text("VALUE = 1\n", encoding="utf-8")
@@ -160,7 +165,12 @@ def test_verifies_layered_windows_portable_archive(tmp_path: Path) -> None:
         / "qwenpaw"
         / "plugins_bundle"
     )
-    for plugin_id in ("flowforge", "ugsci", "ugsci_research"):
+    for plugin_id in (
+        "flowforge",
+        "qwenpaw-run-center",
+        "ugsci",
+        "ugsci_research",
+    ):
         plugin = plugin_root / plugin_id
         (plugin / "ui").mkdir(parents=True)
         (plugin / "plugin.py").write_text("VALUE = 1\n", encoding="utf-8")

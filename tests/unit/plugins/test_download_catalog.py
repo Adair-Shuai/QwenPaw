@@ -3,18 +3,30 @@
 
 from __future__ import annotations
 
+from packaging.version import Version
+
+from qwenpaw.__version__ import __version__
 from qwenpaw.plugins.download_catalog import (
     _catalog_channel,
     _is_entry_compatible,
 )
 
 
+_CURRENT = Version(__version__)
+_CURRENT_MINOR_FLOOR = f"{_CURRENT.major}.{_CURRENT.minor}.0"
+_NEXT_MINOR_BOUNDARY = f"{_CURRENT.major}.{_CURRENT.minor + 1}.0"
+
+
 def test_entry_with_qwenpaw_version_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        # Exclusive upper bound: current 2.1.0b1 is treated as 2.1.0.
-        "qwenpaw_version": {"min": "1.1.6", "max": "2.2.0"},
+        # Keep the bound tied to the running minor so a release bump does not
+        # leave this compatibility smoke test stale.
+        "qwenpaw_version": {
+            "min": "1.1.6",
+            "max": _NEXT_MINOR_BOUNDARY,
+        },
     }
     assert _is_entry_compatible(entry) is True
 
@@ -33,8 +45,8 @@ def test_entry_with_only_min_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        # Derived exclusive max is 2.2.0 for min 2.1.0.
-        "qwenpaw_version": {"min": "2.1.0"},
+        # Derived exclusive max is the next minor for the running version.
+        "qwenpaw_version": {"min": _CURRENT_MINOR_FLOOR},
     }
     assert _is_entry_compatible(entry) is True
 
@@ -63,7 +75,7 @@ def test_entry_with_malformed_qwenpaw_version_falls_to_legacy() -> None:
         "version": "1.0.0",
         "qwenpaw_version": "not-a-dict",
         "min_version": "1.0.0",
-        "max_version": "2.2.0",
+        "max_version": _NEXT_MINOR_BOUNDARY,
     }
     assert _is_entry_compatible(entry) is True
 
@@ -83,7 +95,7 @@ def test_legacy_min_version_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        "min_version": "2.1.0",
+        "min_version": _CURRENT_MINOR_FLOOR,
     }
     assert _is_entry_compatible(entry) is True
 
@@ -99,12 +111,12 @@ def test_legacy_min_version_incompatible() -> None:
 
 
 def test_legacy_min_max_version_compatible() -> None:
-    """Legacy min+max still loads when min is satisfied (max ignored)."""
+    """Legacy min+max still loads when both bounds include the core."""
     entry = {
         "id": "demo",
         "version": "1.0.0",
         "min_version": "1.0.0",
-        "max_version": "2.2.0",
+        "max_version": _NEXT_MINOR_BOUNDARY,
     }
     assert _is_entry_compatible(entry) is True
 

@@ -19,9 +19,13 @@ def get_domain_tool_bindings() -> dict[str, Callable[..., Any]]:
     )
     from .stochastic.tools import ugsci_bayesian_normal_estimate, ugsci_multiobjective_quadratic
     from .storage_inventory.tools import (
+        ugsci_storage_capacity_evaluate,
         ugsci_storage_effective_inventory,
+        ugsci_storage_injection_allocation_optimize,
         ugsci_storage_inventory_accounting,
         ugsci_storage_inventory_evaluate,
+        ugsci_storage_production_allocation_optimize,
+        ugsci_storage_scenario_optimize,
     )
     from .well_log.tools import ugsci_welllog_export, ugsci_welllog_read, ugsci_welllog_validate
     from .neqsim.tools import (
@@ -47,6 +51,10 @@ def get_domain_tool_bindings() -> dict[str, Callable[..., Any]]:
         "ugsci_storage_inventory_accounting": ugsci_storage_inventory_accounting,
         "ugsci_storage_effective_inventory": ugsci_storage_effective_inventory,
         "ugsci_storage_inventory_evaluate": ugsci_storage_inventory_evaluate,
+        "ugsci_storage_capacity_evaluate": ugsci_storage_capacity_evaluate,
+        "ugsci_storage_injection_allocation_optimize": ugsci_storage_injection_allocation_optimize,
+        "ugsci_storage_production_allocation_optimize": ugsci_storage_production_allocation_optimize,
+        "ugsci_storage_scenario_optimize": ugsci_storage_scenario_optimize,
         "ugsci_symbolic_polynomial_roots": ugsci_symbolic_polynomial_roots,
         "ugsci_bayesian_normal_estimate": ugsci_bayesian_normal_estimate,
         "ugsci_multiobjective_quadratic": ugsci_multiobjective_quadratic,

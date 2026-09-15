@@ -502,6 +502,42 @@
         "target_param": ""
       },
       {
+        "name": "ugsci_storage_capacity_evaluate",
+        "group": "domain",
+        "description": "按分层孔隙体积、压力/Z 边界和标准状态筛选总库容、垫底气和工作气量",
+        "icon": "🏗️",
+        "enabled_by_default": true,
+        "tool_type": "internal",
+        "target_param": ""
+      },
+      {
+        "name": "ugsci_storage_injection_allocation_optimize",
+        "group": "domain",
+        "description": "按井组上下限和优先级权重生成透明的配注候选方案并报告短缺量",
+        "icon": "⬆️",
+        "enabled_by_default": true,
+        "tool_type": "internal",
+        "target_param": ""
+      },
+      {
+        "name": "ugsci_storage_production_allocation_optimize",
+        "group": "domain",
+        "description": "按井组产能边界和优先级权重生成透明的配产候选方案并报告缺口",
+        "icon": "⬇️",
+        "enabled_by_default": true,
+        "tool_type": "internal",
+        "target_param": ""
+      },
+      {
+        "name": "ugsci_storage_scenario_optimize",
+        "group": "domain",
+        "description": "按约束、目标方向和权重执行储气库方案筛选、排序和 Pareto 前沿识别",
+        "icon": "🎯",
+        "enabled_by_default": true,
+        "tool_type": "internal",
+        "target_param": ""
+      },
+      {
         "name": "ugsci_neqsim_flash",
         "group": "domain",
         "description": "NeqSim 闪蒸与相平衡计算",

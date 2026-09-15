@@ -22,6 +22,10 @@ NATIVE_HOST_PYTHON="${RUNTIME_PYTHON_DIR}/bin/python3"
 BUILD_VENV="${DIST}/pyinstaller-venv"
 PYTHON_BIN="${BUILD_VENV}/bin/python"
 VERSION=$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)
+LAYERED_DESKTOP=false
+if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
+    LAYERED_DESKTOP=true
+fi
 
 echo "========================================="
 echo "QwenPaw PyInstaller Build"
@@ -77,6 +81,7 @@ uninstall_python_package() {
     fi
 }
 
+if [ "$LAYERED_DESKTOP" = false ]; then
 # Install PyInstaller if not present
 echo "== Installing PyInstaller =="
 if ! "$PYTHON_BIN" -c "import PyInstaller" 2> /dev/null; then
@@ -149,6 +154,11 @@ if [ ! -f "${MODEL_CATALOG}" ]; then
     exit 1
 fi
 
+echo "== Pruning build-only files from backend bundle =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/prune_desktop_bundle.py" \
+    "${BACKEND_DIR}" \
+    --max-size-mb "${QWENPAW_MAX_BACKEND_MB:-1800}"
+
 echo "Backend bundle created: ${BACKEND_DIR}"
 
 # Get size
@@ -166,10 +176,15 @@ chmod +x "${DEST}/qwenpaw-backend"
 chmod +x "${DEST}/qwenpaw"
 echo "Copied to: ${DEST}"
 echo ""
+else
+    echo "== Layered desktop mode: skipping PyInstaller and legacy dependency install =="
+    DEST="${BINARIES_DIR}/qwenpaw-backend"
+fi
 
 # The Chrome Native Messaging host runs under this standalone interpreter,
 # outside the PyInstaller backend, so its dependencies must be installed here.
 echo "== Installing bundled Python helper dependencies =="
+if [ "$LAYERED_DESKTOP" = false ]; then
 "$NATIVE_HOST_PYTHON" -m pip install \
     --disable-pip-version-check \
     --no-input \
@@ -179,17 +194,136 @@ echo "== Installing bundled Python helper dependencies =="
 "$NATIVE_HOST_PYTHON" \
     "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
     --check-runtime
+fi
+echo ""
+
+if [ "$LAYERED_DESKTOP" = false ]; then
+    echo "== Installing common + petroleum domain packages into bundled runtime =="
+    PIP_INDEX_URL="${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple/}"
+    PIP_EXTRA_INDEX_URL="${PIP_EXTRA_INDEX_URL:-https://pypi.org/simple/}"
+    "$NATIVE_HOST_PYTHON" -m pip install \
+        --disable-pip-version-check \
+        --no-input \
+        --index-url "$PIP_INDEX_URL" \
+        --extra-index-url "$PIP_EXTRA_INDEX_URL" \
+        numpy pandas scipy matplotlib requests openpyxl python-docx python-pptx Pillow \
+        lasio welly bruges simpeg dlisio xtgeo pvtlib
+fi
 echo ""
 
 echo "== Staging bundled Node runtime =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_node_runtime.py" \
-    --dest "${BINARIES_DIR}/node-runtime"
+    --dest "${BINARIES_DIR}/node-runtime" \
+    --sha256 "${QWENPAW_NODE_SHA256:-}"
 echo ""
 
+echo "== Staging bundled OfficeCLI =="
+OFFICECLI_DOC_PLUGIN_ARGS=()
+if [ -n "${QWENPAW_OFFICECLI_DOC_PLUGIN:-}" ]; then
+    OFFICECLI_DOC_PLUGIN_ARGS=(--doc-plugin "$QWENPAW_OFFICECLI_DOC_PLUGIN")
+fi
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_officecli.py" \
+    --dest "${BINARIES_DIR}/officecli" \
+    "${OFFICECLI_DOC_PLUGIN_ARGS[@]}"
+echo ""
+
+echo "== Staging bundled Java runtime (NeqSim MCP Server) =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_jre.py" \
+    --dest "${BINARIES_DIR}/java-runtime" \
+    --sha256 "${QWENPAW_JRE_SHA256:-}" \
+    --java-release "${QWENPAW_JAVA_RELEASE:-}"
+echo ""
+
+echo "== Staging bundled NeqSim MCP Server JAR =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_neqsim.py" \
+    --dest "${BINARIES_DIR}/neqsim" \
+    --sha256 "${QWENPAW_NEQSIM_SHA256:-}"
+echo ""
+
+echo "== Verifying bundled NeqSim MCP Server =="
+"$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/smoke_neqsim.py" \
+    --resource-dir "${BINARIES_DIR}"
+echo ""
+
+echo "== Building Computer Use helper =="
+if ! command -v cargo >/dev/null 2>&1 || ! command -v rustc >/dev/null 2>&1; then
+    echo "ERROR: Rust toolchain is required to build qwenpaw-computer-use-helper" >&2
+    exit 1
+fi
+cargo build --manifest-path "${REPO_ROOT}/console/src-tauri/Cargo.toml" \
+    --release --bin qwenpaw-computer-use-helper
+CARGO_TARGET_ROOT="${CARGO_TARGET_DIR:-${REPO_ROOT}/console/src-tauri/target}"
+if [[ "${CARGO_TARGET_ROOT}" != /* ]]; then
+    CARGO_TARGET_ROOT="${REPO_ROOT}/${CARGO_TARGET_ROOT}"
+fi
+COMPUTER_USE_HELPER="${CARGO_TARGET_ROOT}/release/qwenpaw-computer-use-helper"
+if [ ! -x "${COMPUTER_USE_HELPER}" ]; then
+    echo "ERROR: Computer Use helper executable not found at ${COMPUTER_USE_HELPER}" >&2
+    exit 1
+fi
+if [ "$LAYERED_DESKTOP" = true ]; then
+    COMPUTER_USE_DEST="${BINARIES_DIR}/tools/computer-use/${VERSION}/qwenpaw-computer-use-helper"
+else
+    RUST_TARGET_TRIPLE=$(rustc --print host-tuple)
+    case "${RUST_TARGET_TRIPLE}" in
+        *-apple-darwin)
+            COMPUTER_USE_DEST="${BINARIES_DIR}/qwenpaw-computer-use-helper-${RUST_TARGET_TRIPLE}"
+            ;;
+        *-windows-*)
+            COMPUTER_USE_DEST="${BINARIES_DIR}/qwenpaw-computer-use-helper-${RUST_TARGET_TRIPLE}.exe"
+            ;;
+        *)
+            echo "ERROR: unsupported desktop helper target ${RUST_TARGET_TRIPLE}" >&2
+            exit 1
+            ;;
+    esac
+    # Tauri's externalBin convention consumes the target-suffixed source and
+    # installs it next to the desktop executable without the suffix.
+fi
+mkdir -p "$(dirname "${COMPUTER_USE_DEST}")"
+cp "${COMPUTER_USE_HELPER}" "${COMPUTER_USE_DEST}"
+chmod +x "${COMPUTER_USE_DEST}"
+echo "Computer Use helper staged: ${COMPUTER_USE_DEST}"
+echo ""
+
+if [ "$LAYERED_DESKTOP" = true ]; then
+    echo "== Assembling independently versioned desktop layers =="
+    install_python_packages \
+        "build>=1.2,<2" "setuptools>=42" "wheel>=0.46,<1"
+    "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/build_python_layers.py" \
+        --repo "${REPO_ROOT}" \
+        --host-python "${PYTHON_BIN}" \
+        --runtime-python "${NATIVE_HOST_PYTHON}" \
+        --output "${BINARIES_DIR}" \
+        --version "${VERSION}"
+
+    rm -rf "${BINARIES_DIR}/qwenpaw-backend"
+    "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/assemble_desktop_layout.py" \
+        --binaries "${BINARIES_DIR}" \
+        --version "${VERSION}" \
+        --target macos-aarch64
+    DEPENDENCY_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-packages"]["path"])' "${BINARIES_DIR}/state/active.json")
+    RUNTIME_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-runtime"]["path"])' "${BINARIES_DIR}/state/active.json")
+    case "$DEPENDENCY_PATH:$RUNTIME_PATH" in
+        binaries/*:binaries/*) ;;
+        *) echo "ERROR: invalid layered Python component paths" >&2; exit 1 ;;
+    esac
+    PYTHONPATH="${REPO_ROOT}/console/src-tauri/${DEPENDENCY_PATH}" \
+        "${REPO_ROOT}/console/src-tauri/${RUNTIME_PATH}/python/bin/python3" \
+        "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
+        --check-runtime
+    echo "Layered desktop layout assembled"
+    echo ""
+fi
+
 echo "========================================="
-echo "PyInstaller Build Complete!"
+echo "Desktop Backend Build Complete!"
 echo "========================================="
 echo "Output:"
-echo "  Bundle: ${BACKEND_DIR}"
-echo "  Tauri resource: ${DEST}"
+if [ "$LAYERED_DESKTOP" = true ]; then
+    echo "  Layered resources: ${BINARIES_DIR}"
+else
+    echo "  Bundle: ${BACKEND_DIR}"
+    echo "  Tauri resource: ${DEST}"
+fi
 echo ""

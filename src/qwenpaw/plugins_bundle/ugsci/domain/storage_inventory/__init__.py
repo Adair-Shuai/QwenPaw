@@ -4,11 +4,19 @@
 from .adapters import (
     EffectiveInventoryAdapter,
     InventoryAccountingAdapter,
+    StorageCapacityEvaluationAdapter,
+    StorageInjectionAllocationAdapter,
+    StorageProductionAllocationAdapter,
+    StorageScenarioOptimizationAdapter,
     StorageInventoryEvaluationAdapter,
 )
 
 __all__ = [
     "EffectiveInventoryAdapter",
     "InventoryAccountingAdapter",
+    "StorageCapacityEvaluationAdapter",
+    "StorageInjectionAllocationAdapter",
+    "StorageProductionAllocationAdapter",
+    "StorageScenarioOptimizationAdapter",
     "StorageInventoryEvaluationAdapter",
 ]

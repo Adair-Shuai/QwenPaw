@@ -39,6 +39,7 @@
       "../../scripts/pack/assets/icon.icns",
       "../../scripts/pack/assets/icon.ico"
     ],
+    "externalBin": ["binaries/qwenpaw-computer-use-helper"],
     "resources": ["binaries"],
     "windows": {
       "webviewInstallMode": {

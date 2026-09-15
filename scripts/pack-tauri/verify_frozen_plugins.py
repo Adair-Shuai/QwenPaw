@@ -14,7 +14,9 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
-CRITICAL_PLUGINS = frozenset({"flowforge", "ugsci", "ugsci_research"})
+CRITICAL_PLUGINS = frozenset(
+    {"flowforge", "qwenpaw-run-center", "ugsci", "ugsci_research"},
+)
 LEGACY_MACOS_PLUGIN_SUFFIX = PurePosixPath(
     "Contents/Resources/binaries/qwenpaw-backend/_internal/qwenpaw/plugins_bundle",
 )

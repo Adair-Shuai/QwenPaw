@@ -31,7 +31,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
+from fastapi.responses import FileResponse, PlainTextResponse
 import uvicorn
 
 # ─── Paths ──────────────────────────────────────────────────────────────────
@@ -110,20 +110,10 @@ async def get_manifest():
             404,
             "manifest.json not found — run prepare_data.py first",
         )
-    return (
-        JSONResponse(
-            (
-                json.loads(manifest_path.read_text())
-                if False  # use FileResponse for correct content-type
-                else None
-            ),
-        )
-        if False
-        else FileResponse(
-            manifest_path,
-            media_type="application/json",
-            headers={"Cache-Control": "no-cache"},
-        )
+    return FileResponse(
+        manifest_path,
+        media_type="application/json",
+        headers={"Cache-Control": "no-cache"},
     )
 
 

@@ -10,6 +10,7 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -24,9 +25,36 @@ from qwenpaw.plugins_bundle.flowforge.execution_repository import (
     ExecutionRepository,
 )
 from qwenpaw.plugins_bundle.flowforge.service import (
+    RUN_SUMMARY_EVENT_LIMIT,
     WorkflowService,
     _materialize_edge_dependencies,
 )
+
+
+def test_compat_node_runner_reports_unknown_node_with_stable_error() -> None:
+    from qwenpaw.plugins_bundle.flowforge.engine.errors import (
+        NodeExecutionError,
+    )
+    from qwenpaw.plugins_bundle.flowforge.engine.io import HiddenHolder
+    from qwenpaw.plugins_bundle.flowforge.engine.nodes.compat import (
+        NodeRegistry,
+        NodeRunner,
+    )
+
+    runner = NodeRunner(registry=NodeRegistry())
+    with pytest.raises(
+        NodeExecutionError, match="node-1: unknown node"
+    ) as exc:
+        asyncio.run(
+            runner.run(
+                "node-1",
+                {"class_type": "MissingNode"},
+                {},
+                HiddenHolder(),
+            ),
+        )
+
+    assert exc.value.node_id == "node-1"
 
 
 def test_canvas_edge_materializes_order_and_target_socket() -> None:
@@ -294,6 +322,36 @@ def test_completed_run_and_events_survive_service_restart(
     assert record["execution_history"]
     assert record["events"]
     assert restarted.list_runs()[0]["run_id"] == handle.run_id
+
+
+def test_live_run_records_include_bounded_event_snapshots(
+    tmp_path: Path,
+) -> None:
+    service = WorkflowService(flows_dir=tmp_path)
+    service.save_flow(
+        "live-events",
+        {
+            "id": "live-events",
+            "nodes": {
+                "output": {
+                    "class_type": "OutputNode",
+                    "inputs": {"value": "live"},
+                },
+            },
+            "outputs": ["output"],
+        },
+    )
+
+    handle = service.start_run("live-events", {})
+    deadline = time.monotonic() + 3
+    while not handle.is_done and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    record = service.get_run_record(handle.run_id)
+    assert record is not None
+    assert record["events"]
+    assert len(record["events"]) <= RUN_SUMMARY_EVENT_LIMIT
+    assert record["events"][-1]["type"] == "execution_success"
 
 
 def test_tool_failure_is_a_failed_workflow() -> None:

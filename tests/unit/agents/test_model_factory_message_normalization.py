@@ -1080,6 +1080,34 @@ async def test_openai_local_pdf_uses_file_uri_without_http_download(
 
 
 @pytest.mark.asyncio
+async def test_openai_unnamed_base64_pdf_uses_bounded_default_filename() -> None:
+    """Inline PDF data must never be copied into the filename field."""
+    formatter_class = model_factory._create_file_block_support_formatter(
+        _CappingOpenAIFormatter,
+    )
+    formatter = formatter_class()
+    msg = Msg(
+        name="user",
+        role="user",
+        content=[
+            DataBlock(
+                source=Base64Source(
+                    data="QUJD",
+                    media_type="application/pdf",
+                ),
+            ),
+        ],
+    )
+
+    formatted = await formatter.format([msg])
+
+    assert formatted[0]["content"][0]["file"] == {
+        "filename": "document.pdf",
+        "file_data": "data:application/pdf;base64,QUJD",
+    }
+
+
+@pytest.mark.asyncio
 async def test_local_video_preparation_does_not_block_event_loop(
     tmp_path,
     monkeypatch,

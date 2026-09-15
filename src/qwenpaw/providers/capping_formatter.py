@@ -22,7 +22,7 @@ model via the ``formatter=`` constructor kwarg.
 
 from __future__ import annotations
 
-from typing import Any, ClassVar
+from typing import Any, Callable, ClassVar, cast
 
 # The capping formatters below override agentscope's ``_format_*_source``
 # methods, which are ``@staticmethod`` on the base classes, with instance
@@ -173,18 +173,66 @@ class _CappingAnthropicFormatter(
 ):
     """Anthropic formatter that caps oversized image and PDF media."""
 
+    def _format_image_source(
+        self,
+        source: URLSource | Base64Source,
+    ) -> dict[str, Any]:
+        """Cap images through the current AgentScope formatter hook."""
+        capped = self._maybe_cap(source, "image")
+        if capped is not None:
+            return capped
+        unprepared = self._unprepared_local_placeholder(source, "image")
+        if unprepared is not None:
+            return unprepared
+        return super()._format_image_source(source)
+
+    @staticmethod
+    def _format_document_source(
+        source: URLSource | Base64Source,
+    ) -> dict[str, Any]:
+        """Format a PDF without relying on a removed AgentScope helper."""
+        if isinstance(source, Base64Source):
+            payload: dict[str, Any] = {
+                "type": "base64",
+                "media_type": source.media_type,
+                "data": source.data,
+            }
+        elif isinstance(source, URLSource):
+            payload = {"type": "url", "url": str(source.url)}
+        else:  # pragma: no cover - Pydantic constrains the source union
+            raise ValueError(f"Unsupported source type: {type(source)}")
+        return {"type": "document", "source": payload}
+
     def _format_source(
         self,
         source: URLSource | Base64Source,
         block_type: str,
     ) -> dict[str, Any]:
+        """Bridge AgentScope's old generic and current split hooks."""
         capped = self._maybe_cap(source, block_type)
         if capped is not None:
             return capped
         unprepared = self._unprepared_local_placeholder(source, block_type)
         if unprepared is not None:
             return unprepared
-        return super()._format_source(source, block_type)
+        if block_type == "image":
+            return super()._format_image_source(source)
+        if block_type == "document":
+            return self._format_document_source(source)
+        legacy_formatter = cast(
+            Callable[[URLSource | Base64Source, str], dict[str, Any]] | None,
+            getattr(super(), "_format_source", None),
+        )
+        if legacy_formatter is not None:
+            return legacy_formatter(source, block_type)
+        raise ValueError(f"Unsupported Anthropic block type: {block_type}")
+
+    def _format_anthropic_data_block(self, block):  # type: ignore[no-untyped-def]
+        """Retain PDF support after AgentScope narrowed its base formatter."""
+        media_type = str(getattr(block.source, "media_type", "") or "")
+        if media_type == "application/pdf":
+            return self._format_source(block.source, "document")
+        return super()._format_anthropic_data_block(block)
 
 
 class _CappingGeminiFormatter(GeminiChatFormatter, CappingFormatterMixin):

@@ -345,6 +345,7 @@ class TestClientLifecycle:
 
     def test_aclose_hub_client_drain_timeout_warns(self, monkeypatch):
         async def _wait_for(fut, timeout=None):
+            fut.close()
             raise asyncio.TimeoutError
 
         monkeypatch.setattr(hub.asyncio, "wait_for", _wait_for)

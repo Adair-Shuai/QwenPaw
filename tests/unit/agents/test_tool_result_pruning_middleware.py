@@ -698,13 +698,15 @@ def test_context_config_disables_agentscope_duplicate_context_limits():
     context_config = AgentBuilder._build_context_config(agent_config)
 
     assert context_config.tool_result_limit == 2**63 - 1
-    assert context_config.max_image_num == 2**63 - 1
+    if "max_image_num" in type(context_config).model_fields:
+        assert context_config.max_image_num == 2**63 - 1
 
 
 def test_context_config_fallback_keeps_image_limit_non_binding():
     context_config = AgentBuilder._build_context_config(object())
 
-    assert context_config.max_image_num == 2**63 - 1
+    if "max_image_num" in type(context_config).model_fields:
+        assert context_config.max_image_num == 2**63 - 1
 
 
 @pytest.mark.asyncio

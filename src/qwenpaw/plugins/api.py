@@ -459,6 +459,120 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                 f"'{provider_id}'",
             )
 
+    def register_operation(
+        self,
+        operation: str,
+        descriptor: Dict[str, Any],
+        *,
+        provider_id: Optional[str] = None,
+        contract_version: str = "1.0",
+    ) -> None:
+        """Publish a Run Center operation descriptor.
+
+        Operation metadata is registered in the host ``PluginRegistry`` so
+        domain plugins do not need to import or depend on the optional Run
+        Center package.  If Run Center is installed, its startup hook can
+        persist these JSON descriptors for discovery through
+        ``/api/run-center/operations``.
+
+        Args:
+            operation: Stable business operation id, e.g.
+                ``"storage.inventory.evaluate"``.
+            descriptor: JSON-safe metadata (input/output schema, execution
+                and resource capabilities, risk level, etc.).
+            provider_id: Optional implementation/provider identifier.  The
+                pair ``(operation, provider_id)`` is the registration key,
+                allowing multiple providers for one business operation.
+            contract_version: Operation descriptor contract version.
+        """
+        if not self._registry:
+            logger.warning(
+                "Plugin '%s' cannot register operation '%s': registry unavailable",
+                self.plugin_id,
+                operation,
+            )
+            return
+        self._registry.register_operation(
+            plugin_id=self.plugin_id,
+            operation=operation,
+            descriptor=descriptor,
+            provider_id=provider_id,
+            contract_version=contract_version,
+        )
+        logger.info(
+            "Plugin '%s' registered operation '%s' (provider=%s)",
+            self.plugin_id,
+            operation,
+            provider_id or "",
+        )
+
+    def get_operations(
+        self,
+        *,
+        operation: Optional[str] = None,
+        provider_id: Optional[str] = None,
+        plugin_id: Optional[str] = None,
+    ) -> List[Any]:
+        """Read operation descriptors registered with the host.
+
+        This is intentionally a read-only view used by infrastructure
+        plugins (for example Run Center startup persistence).  Returned
+        registrations are copies of the host metadata and may safely be
+        inspected without mutating the registry.
+        """
+        if not self._registry:
+            return []
+        return self._registry.get_operations(
+            operation=operation,
+            provider_id=provider_id,
+            plugin_id=plugin_id,
+        )
+
+    def register_run_executor(
+        self,
+        operation: str,
+        handler: Callable[..., Any],
+        *,
+        provider_id: Optional[str] = None,
+        executor: Optional[Any] = None,
+    ) -> None:
+        """Publish a process-local execution adapter for Run Center.
+
+        ``handler`` remains owned by the contributing plugin. Run Center
+        supplies its execution context and durable lifecycle; the optional
+        ``executor`` selects a custom execution strategy.
+        """
+        if not self._registry:
+            logger.warning(
+                "Plugin '%s' cannot register run executor '%s': registry unavailable",
+                self.plugin_id,
+                operation,
+            )
+            return
+        self._registry.register_run_executor(
+            plugin_id=self.plugin_id,
+            operation=operation,
+            handler=handler,
+            provider_id=provider_id,
+            executor=executor,
+        )
+
+    def get_run_executors(
+        self,
+        *,
+        operation: Optional[str] = None,
+        provider_id: Optional[str] = None,
+        plugin_id: Optional[str] = None,
+    ) -> List[Any]:
+        """Read Run Center execution adapters registered with the host."""
+        if not self._registry:
+            return []
+        return self._registry.get_run_executors(
+            operation=operation,
+            provider_id=provider_id,
+            plugin_id=plugin_id,
+        )
+
     def register_startup_hook(
         self,
         hook_name: str,

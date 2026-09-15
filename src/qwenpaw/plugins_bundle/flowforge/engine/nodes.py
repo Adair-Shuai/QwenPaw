@@ -28,6 +28,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
 
+from .errors import NodeExecutionError
 from .progress import NodeStatus, ProgressRegistry
 from .types import (
     ConditionExpression,

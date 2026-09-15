@@ -276,6 +276,24 @@ def test_desktop_build_pins_and_smoke_tests_neqsim() -> None:
     assert "smoke_neqsim.py" in macos
 
 
+def test_macos_helper_is_staged_for_legacy_and_layered_layouts() -> None:
+    build = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.sh"
+    ).read_text(encoding="utf-8")
+    config = (
+        REPO_ROOT / "console" / "src-tauri" / "tauri.conf.json"
+    ).read_text(encoding="utf-8")
+
+    assert "cargo build --manifest-path" in build
+    assert "qwenpaw-computer-use-helper-${RUST_TARGET_TRIPLE}" in build
+    assert "tools/computer-use/${VERSION}/qwenpaw-computer-use-helper" in build
+    assert '"externalBin": ["binaries/qwenpaw-computer-use-helper"]' in config
+    sync = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "sync_tauri_version.mjs"
+    ).read_text(encoding="utf-8")
+    assert "externalBin: []" in sync
+
+
 def test_windows_layered_build_allows_discovered_runtime_hashes() -> None:
     windows = (
         REPO_ROOT / "scripts" / "pack-tauri" / "build_pyinstaller.ps1"
@@ -360,7 +378,7 @@ def test_workflow_bash_blocks_have_no_dangling_merge_residue() -> None:
     # ``2>``), separators (``;``, ``&``) and comments (``#``) are legitimate.
     # ``then``/``else``/``do`` may legally be followed by a command, so they
     # are intentionally not checked.
-    pattern = re.compile(r"^\s*(?:fi|done)\s+[^;#<>&\s]")
+    pattern = re.compile(r"^\s*(?:fi|done)\s+[^;#<>&|\s]")
     for workflow in sorted(
         (REPO_ROOT / ".github" / "workflows").glob("*.yml"),
     ):

@@ -511,7 +511,11 @@ export default defineConfig(({ command, mode }) => {
       },
       proxy: {
         "/api": {
-          target: "http://127.0.0.1:8088",
+          // Keep browser development same-origin while allowing a test or
+          // multi-instance backend to run on a non-default port.
+          target:
+            env.QWENPAW_DEV_API_TARGET ||
+            "http://127.0.0.1:8088",
           changeOrigin: false,
         },
       },

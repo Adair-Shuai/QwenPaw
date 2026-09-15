@@ -654,13 +654,18 @@ async def _http_get(
     timeout: float | None = None,
     extra_headers: dict[str, str] | None = None,
 ) -> str:
-    payload = await _http_fetch(
-        url,
-        params=params,
-        accept=accept,
-        timeout=timeout,
-        extra_headers=extra_headers,
-    )
+    fetch_kwargs: dict[str, Any] = {
+        "params": params,
+        "accept": accept,
+        "timeout": timeout,
+    }
+    # Keep the long-standing wrapper contract compatible with callers and
+    # test doubles that implement the pre-authentication _http_fetch shape.
+    # The new header path is only needed when a provider actually supplies
+    # credentials.
+    if extra_headers is not None:
+        fetch_kwargs["extra_headers"] = extra_headers
+    payload = await _http_fetch(url, **fetch_kwargs)
     return payload.decode("utf-8", errors="replace")
 
 
@@ -2746,11 +2751,16 @@ async def _prepare_install_payload(
             message="bundle_url must be a valid http(s) URL",
         )
     _ensure_not_cancelled()
-    data, source_url = await _resolve_bundle_from_url(
-        bundle_url,
-        version,
-        access_token,
-    )
+    if access_token:
+        data, source_url = await _resolve_bundle_from_url(
+            bundle_url,
+            version,
+            access_token,
+        )
+    else:
+        # Preserve compatibility with custom resolvers written against the
+        # original two-argument extension point.
+        data, source_url = await _resolve_bundle_from_url(bundle_url, version)
     installed_from = _classify_install_origin(bundle_url)
     name, content, references, scripts, extra_files = _normalize_bundle(data)
     if not name:
@@ -2783,12 +2793,19 @@ async def install_skill_from_hub(
     access_token: str = "",
 ) -> HubInstallResult:
     with _with_cancel_checker(cancel_checker):
-        payload = await _prepare_install_payload(
-            bundle_url,
-            version,
-            target_name,
-            access_token,
-        )
+        if access_token:
+            payload = await _prepare_install_payload(
+                bundle_url,
+                version,
+                target_name,
+                access_token,
+            )
+        else:
+            payload = await _prepare_install_payload(
+                bundle_url,
+                version,
+                target_name,
+            )
         _ensure_not_cancelled()
         skill_service = SkillService(workspace_dir)
         # SkillService writes to disk synchronously; off-load so the
@@ -2836,12 +2853,19 @@ async def import_pool_skill_from_hub(
     access_token: str = "",
 ) -> HubInstallResult:
     with _with_cancel_checker(cancel_checker):
-        payload = await _prepare_install_payload(
-            bundle_url,
-            version,
-            target_name,
-            access_token,
-        )
+        if access_token:
+            payload = await _prepare_install_payload(
+                bundle_url,
+                version,
+                target_name,
+                access_token,
+            )
+        else:
+            payload = await _prepare_install_payload(
+                bundle_url,
+                version,
+                target_name,
+            )
         _ensure_not_cancelled()
         pool_service = SkillPoolService()
         created = await asyncio.to_thread(

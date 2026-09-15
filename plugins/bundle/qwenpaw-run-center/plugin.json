@@ -1,0 +1,35 @@
+{
+  "id": "qwenpaw-run-center",
+  "name": "运行中心",
+  "version": "0.2.0",
+  "type": "general",
+  "description": "QwenPaw 的统一长任务运行中心：持久化运行、事件回放、模型研究和领域插件协作基础设施。",
+  "description_i18n": {
+    "zh-CN": "QwenPaw 的统一长任务运行中心：持久化运行、事件回放、模型研究和领域插件协作基础设施。",
+    "en-US": "QwenPaw run center for durable long-running jobs, event replay, model studies, and domain-plugin integration."
+  },
+  "author": "QwenPaw Team",
+  "entry": {
+    "frontend": "ui/dist/index.js",
+    "backend": "plugin.py"
+  },
+  "dependencies": [],
+  "qwenpaw_version": {
+    "min": "2.1.0",
+    "max": "2.3.0"
+  },
+  "meta": {
+    "category": "platform-infrastructure",
+    "features": [
+      "durable-runs",
+      "event-replay",
+      "model-version-registry",
+      "study-and-doe",
+      "uncertainty-sensitivity-comparison",
+      "run-center-menu",
+      "simple-mode-visible",
+      "domain-plugin-provider-contract"
+    ],
+    "contract_version": "1.0"
+  }
+}

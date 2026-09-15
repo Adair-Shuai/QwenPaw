@@ -190,6 +190,8 @@ def _media_kind(block: Any) -> str | None:
         else getattr(block, "source", None)
     )
     media_type = str(_media_source_value(source, "media_type", "") or "")
+    if media_type == "application/pdf":
+        return "document"
     kind = media_type.split("/", 1)[0]
     return kind if kind in _MEDIA_BLOCK_TYPES else None
 
@@ -255,6 +257,8 @@ def _remote_media_requires_download(
     base_formatter_class: Type[FormatterBase],
 ) -> bool:
     """Whether the upstream formatter would synchronously download a URL."""
+    if kind == "document":
+        return True
     if AnthropicChatFormatter is not None and issubclass(
         base_formatter_class,
         AnthropicChatFormatter,
@@ -662,6 +666,7 @@ def _anthropic_media_dedup_key(
 _WIRE_MEDIA_BLOCK_TYPES = frozenset(
     {
         "audio",
+        "document",
         "image",
         "image_url",
         "input_audio",
@@ -1204,7 +1209,7 @@ def _fix_image_mime_types(messages: list[dict]) -> None:
                         block["image_url"] = fixed
 
 
-_MEDIA_BLOCK_TYPES = ("image", "audio", "video")
+_MEDIA_BLOCK_TYPES = ("image", "audio", "video", "document")
 
 # Block types that the base OpenAI / Gemini formatter processes into
 # ``content_blocks`` or ``tool_calls``, guaranteeing the assistant
@@ -1486,8 +1491,37 @@ def _create_file_block_support_formatter(
                     "text/plain",
                     "image/*",
                     "video/*",
+                    "application/pdf",
                 ]
             super().__init__(**kwargs)
+
+        def _format_openai_data_block(self, block):
+            """Preserve OpenAI PDF inputs across AgentScope updates."""
+            source = getattr(block, "source", None)
+            media_type = str(getattr(source, "media_type", "") or "")
+            if media_type == "application/pdf":
+                if isinstance(source, Base64Source):
+                    file_data = f"data:{media_type};base64,{source.data}"
+                    default_filename = "document.pdf"
+                else:
+                    file_data = str(getattr(source, "url", "") or "")
+                    if not file_data:
+                        return None
+                    raw_path = urlparse(file_data).path
+                    default_filename = (
+                        raw_path.rsplit("/", 1)[-1] or "document.pdf"
+                    )
+                filename = str(getattr(block, "name", "") or "").strip()
+                if not filename:
+                    filename = default_filename
+                return {
+                    "type": "file",
+                    "file": {
+                        "filename": filename,
+                        "file_data": file_data,
+                    },
+                }
+            return super()._format_openai_data_block(block)
 
         def _format_anthropic_data_block(self, block):
             """Route video ``DataBlock``s to our local helper; defer

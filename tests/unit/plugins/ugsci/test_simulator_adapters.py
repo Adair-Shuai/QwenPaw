@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import json
 import os
+import struct
 import time
+from pathlib import Path
 from types import SimpleNamespace
 import zipfile
 
@@ -266,6 +268,164 @@ def test_adapter_completion_markers_are_not_generic_substrings(
     assert CMGAdapter().parse_progress(tmp_path).status == "running"
     log.write_text("NORMAL TERMINATION\n", encoding="utf-8")
     assert CMGAdapter().parse_progress(tmp_path).status == "completed"
+
+
+@pytest.mark.parametrize(
+    "counts",
+    [
+        "Errors: 2\nProblems: 1",
+        "Errors 2\nProblems 1",
+    ],
+)
+def test_eclipse_terminal_error_counts_override_completion_marker(
+    tmp_path,
+    counts: str,
+) -> None:
+    log = tmp_path / "case.PRT"
+    log.write_text(
+        f"END OF SIMULATION\nFINAL CPU 12.0\n{counts}\n",
+        encoding="utf-8",
+    )
+    assert EclipseAdapter().parse_progress(tmp_path).status == "failed"
+
+
+def test_eclipse_final_cpu_is_terminal_and_decorated_errors_fail(
+    tmp_path,
+) -> None:
+    log = tmp_path / "case.PRT"
+    log.write_text(
+        "Final cpu 12.0\nErrors 2\nProblems 0\n",
+        encoding="utf-8",
+    )
+    assert EclipseAdapter().parse_progress(tmp_path).status == "failed"
+
+    log.write_text(
+        "**** ERROR 1 **** Newton convergence failed\n", encoding="utf-8"
+    )
+    assert EclipseAdapter().parse_progress(tmp_path).status == "failed"
+
+
+def test_eclipse_nonterminal_error_summary_does_not_finish_run(
+    tmp_path,
+) -> None:
+    log = tmp_path / "case.PRT"
+    log.write_text(
+        "Error summary\nErrors 0\nProblems 0\n\nREPORT STEP 1 TIME = 1 DAYS\n",
+        encoding="utf-8",
+    )
+    assert EclipseAdapter().parse_progress(tmp_path).status == "running"
+
+
+def test_eclipse_binary_summary_reads_smspec_unsmry_fixture() -> None:
+    fixture_dir = Path(__file__).parents[4] / "eclipse_test"
+
+    summary = EclipseAdapter().read_summary(
+        fixture_dir,
+        variables=["FOPR"],
+        case_stem="SMOKE",
+    )
+
+    assert summary.metadata["format"] == "Eclipse SMSPEC/UNSMRY"
+    assert "FOPR" in summary.vectors
+    assert len(summary.vectors["FOPR"]) == len(summary.dates) == 9
+
+
+def test_eclipse_corrupt_text_summary_falls_back_to_binary(
+    tmp_path: Path,
+) -> None:
+    fixture_dir = Path(__file__).parents[4] / "eclipse_test"
+    for suffix in (".SMSPEC", ".UNSMRY"):
+        (tmp_path / f"SMOKE{suffix}").write_bytes(
+            (fixture_dir / f"SMOKE{suffix}").read_bytes(),
+        )
+    # Keep a recognizable table header but no valid data rows.
+    (tmp_path / "SMOKE.RSM").write_text(
+        "DATE FOPR FPR\nnot-a-number\n",
+        encoding="utf-8",
+    )
+
+    summary = EclipseAdapter().read_summary(
+        tmp_path,
+        variables=["FOPR"],
+        case_stem="SMOKE",
+    )
+
+    assert summary.metadata["format"] == "Eclipse SMSPEC/UNSMRY"
+    assert len(summary.vectors["FOPR"]) == len(summary.dates) == 9
+
+
+def test_eclipse_builtin_summary_joins_chunks_and_preserves_well_alignment(
+    tmp_path: Path,
+) -> None:
+    from plugins.bundle.ugsci.engine.adapters.eclipse_summary import (
+        _fallback_read,
+    )
+
+    def record(payload: bytes) -> bytes:
+        marker = struct.pack(">i", len(payload))
+        return marker + payload + marker
+
+    def header(keyword: str, count: int, kind: str) -> bytes:
+        payload = (
+            keyword.ljust(8).encode("ascii")
+            + struct.pack(">i", count)
+            + kind.encode("ascii")
+        )
+        return record(payload)
+
+    def chars(values: list[str]) -> bytes:
+        return b"".join(value.ljust(8).encode("ascii") for value in values)
+
+    spec = tmp_path / "CASE.SMSPEC"
+    spec.write_bytes(
+        b"".join(
+            [
+                header("KEYWORDS", 3, "CHAR"),
+                record(chars(["TIME"])),
+                record(chars(["WOPR", "FOPR"])),
+                header("WGNAMES", 3, "CHAR"),
+                record(chars(["", "WELL-1", ""])),
+                header("NUMS", 3, "INTE"),
+                record(struct.pack(">iii", 0, 1, 1)),
+                header("UNITS", 3, "CHAR"),
+                record(chars(["DAYS", "SM3/DAY", "SM3/DAY"])),
+                header("STARTDAT", 3, "INTE"),
+                record(struct.pack(">iii", 1, 1, 2026)),
+            ],
+        ),
+    )
+    unsmry = tmp_path / "CASE.UNSMRY"
+    rows = [
+        (0.0, 10.0, 100.0),
+        (1.0, float("nan"), 110.0),
+        (2.0, 30.0, 120.0),
+    ]
+    unsmry.write_bytes(
+        b"".join(
+            header("PARAMS", 3, "REAL")
+            + record(struct.pack(">f", values[0]))
+            + record(struct.pack(">ff", *values[1:]))
+            for values in rows
+        ),
+    )
+
+    summary = _fallback_read(
+        spec,
+        unsmry,
+        variables=["WOPR", "FOPR"],
+        wells=["WELL-1"],
+    )
+
+    assert summary.dates == [
+        "2026-01-01T00:00:00",
+        "2026-01-02T00:00:00",
+        "2026-01-03T00:00:00",
+    ]
+    assert summary.well_vectors["WOPR:WELL-1"] == [
+        (0.0, 10.0),
+        (2.0, 30.0),
+    ]
+    assert summary.vectors["FOPR"][-1] == (2.0, 120.0)
 
 
 def test_cmg_parses_real_imex_timestep_summary_shape(tmp_path) -> None:

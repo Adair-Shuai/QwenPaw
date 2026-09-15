@@ -5,11 +5,50 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 from pathlib import Path
 from typing import Any
 
 import logging
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
+
+
+def _parse_error_summary(adapter, working_dir: str | Path) -> dict[str, int] | None:
+    """Parse Eclipse's final ``Error summary`` table by numeric value."""
+    if str(getattr(adapter, "simulator_id", "")).lower() not in {
+        "eclipse",
+        "intersect",
+    }:
+        return None
+    log_file = adapter.find_log_file(working_dir)
+    if not log_file:
+        return None
+    text = adapter._read_log_full(log_file)
+    final_cpu = list(re.finditer(r"(?im)^\s*Final cpu\b", text))
+    end_marker = re.search(r"(?im)^\s*End of simulation\b", text)
+    # A count table in the middle of a long-running PRT is diagnostic output,
+    # not terminal evidence.  Only consume it when Eclipse has also emitted a
+    # final CPU line or an explicit end marker.
+    if not final_cpu and end_marker is None:
+        return None
+
+    headings = list(re.finditer(r"(?im)^\s*Error summary\s*:?\s*$", text))
+    if headings:
+        block = text[headings[-1].end() :]
+    elif final_cpu:
+        # Some versions omit the heading and leave only final CPU/count lines.
+        block = text[final_cpu[-1].start() :]
+    else:
+        block = text[end_marker.start() :] if end_marker else ""
+
+    result: dict[str, int] = {}
+    count_pattern = re.compile(
+        r"^\s*(Comments|Warnings|Problems|Errors|Bugs)\s*:?[ \t]*([0-9]+)\b",
+        re.IGNORECASE | re.MULTILINE,
+    )
+    for item in count_pattern.finditer(block[:8192]):
+        result[item.group(1).lower()] = int(item.group(2))
+    return result or None
 
 
 async def analyze_simulation(
@@ -90,6 +129,18 @@ async def analyze_simulation(
         lines.append("=== Convergence Analysis ===")
         lines.append("")
 
+        # Eclipse's error summary is authoritative; warning-line matching can
+        # otherwise mistake headings such as ``Errors 0`` for real errors.
+        error_summary = _parse_error_summary(adapter, job.working_dir)
+        if error_summary is not None:
+            warning_count = error_summary.get("warnings", 0)
+            error_count = error_summary.get("errors", 0)
+            problem_count = error_summary.get("problems", 0)
+            if error_count or problem_count:
+                progress.status = "failed"
+            elif progress.status != "running":
+                progress.status = "completed"
+
         # Overall assessment
         if progress.status == "completed":
             lines.append("✅ Simulation completed successfully.")
@@ -125,11 +176,15 @@ async def analyze_simulation(
             lines.append(f"  CFL number: {progress.cfl_number:.2f} — Exceeds 1.0 (time step may be too large)")
 
         # Warnings summary
-        warning_count = sum(1 for w in warnings if w.level == "warning")
-        error_count = sum(1 for w in warnings if w.level == "error")
+        if error_summary is None:
+            warning_count = sum(1 for w in warnings if w.level == "warning")
+            error_count = sum(1 for w in warnings if w.level == "error")
+            problem_count = 0
         lines.append("")
         lines.append(f"  Warnings: {warning_count}")
         lines.append(f"  Errors:   {error_count}")
+        if problem_count:
+            lines.append(f"  Problems: {problem_count}")
 
         if error_count > 0:
             lines.append("")

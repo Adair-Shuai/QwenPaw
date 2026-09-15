@@ -24,10 +24,21 @@ def _write_report(path: Path, *, nonce: str, complete: bool = True) -> None:
                 "nonce": nonce,
                 "complete": complete,
                 "menus": [
+                    {"id": "core.run-center"},
                     {"id": "ugsci.experts"},
                     {"id": "ugsci.tools-skills"},
                 ],
                 "routes": [
+                    {
+                        "id": "flowforge.editor",
+                        "path": "/flowforge",
+                        "source": "flowforge",
+                    },
+                    {
+                        "id": "qwenpaw-run-center.run-center",
+                        "path": "/run-center",
+                        "source": "qwenpaw-run-center",
+                    },
                     {
                         "id": "ugsci.market",
                         "path": "/ugsci-market",

@@ -410,7 +410,11 @@ def main():
     # Filter visuals if --only specified
     if args.only:
         pattern = args.only.lower()
-        visuals_to_generate = [v for v in VISUALS if pattern in v[0].lower() or pattern in v[2].lower()]
+        visuals_to_generate = [
+            visual
+            for visual in visuals_to_generate
+            if pattern in visual[0].lower() or pattern in visual[2].lower()
+        ]
         print(f"Filtered to {len(visuals_to_generate)} visuals matching '{args.only}'\n")
 
     if args.dry_run:

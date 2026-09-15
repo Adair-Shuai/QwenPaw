@@ -4,7 +4,10 @@
 
 from typing import Any, Callable, Dict, List, Optional, Type
 from dataclasses import dataclass, field
+import copy
+import json
 import logging
+import threading
 
 from fastapi import APIRouter
 
@@ -127,6 +130,39 @@ class PromptSectionRegistration:
     provider: Callable[[Any], str]
 
 
+@dataclass
+class OperationRegistration:
+    """A domain operation descriptor contributed by a plugin.
+
+    ``operation`` is the stable business identifier (for example
+    ``storage.inventory.evaluate``).  Multiple providers may implement the
+    same operation, therefore the in-memory registry is keyed by the pair
+    ``(operation, provider_id)`` rather than by operation alone.
+    """
+
+    plugin_id: str
+    operation: str
+    descriptor: Dict[str, Any] = field(default_factory=dict)
+    provider_id: Optional[str] = None
+    contract_version: str = "1.0"
+
+
+@dataclass
+class RunExecutorRegistration:
+    """Executable adapter for one Run Center operation/provider pair.
+
+    Handlers and executor objects are process-local runtime capabilities. They
+    are intentionally kept out of the durable descriptor catalog and are not
+    deep-copied because callable identity and executor state are meaningful.
+    """
+
+    plugin_id: str
+    operation: str
+    handler: Callable[..., Any]
+    provider_id: Optional[str] = None
+    executor: Optional[Any] = None
+
+
 class PluginRegistry:  # pylint:disable=too-many-public-methods
     """Central plugin registry (Singleton).
 
@@ -166,8 +202,301 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
         self._prompt_sections: List[PromptSectionRegistration] = []
         self._prompt_section_names: set = set()
         self._workspace_manager: Optional[Any] = None
+        # Operation descriptors are platform metadata.  Keep registrations
+        # in memory so domain plugins can publish them during ``register``
+        # regardless of whether the optional Run Center plugin is loaded yet.
+        # The Run Center plugin may persist the same descriptors at startup.
+        self._operations: Dict[
+            tuple[str, Optional[str]], OperationRegistration
+        ] = {}
+        self._operations_lock = threading.RLock()
+        self._run_executors: Dict[
+            tuple[str, Optional[str]],
+            RunExecutorRegistration,
+        ] = {}
+        self._run_executors_lock = threading.RLock()
 
         self._initialized = True
+
+    def register_operation(
+        self,
+        plugin_id: str,
+        operation: str,
+        descriptor: Dict[str, Any],
+        *,
+        provider_id: Optional[str] = None,
+        contract_version: str = "1.0",
+    ) -> OperationRegistration:
+        """Register a JSON-safe domain operation descriptor.
+
+        The operation identifier is intentionally not globally unique: two
+        providers can offer alternate implementations of the same business
+        operation.  Re-registering the same ``(operation, provider_id)`` key
+        by the owning plugin is idempotent and updates metadata, while a
+        different plugin claiming that key fails closed.
+        """
+        if not isinstance(plugin_id, str) or not plugin_id.strip():
+            raise ValueError("plugin_id is required")
+        if not isinstance(operation, str) or not operation.strip():
+            raise ValueError("operation is required")
+        if not isinstance(descriptor, dict):
+            raise ValueError("descriptor must be a dictionary")
+        try:
+            # Use the same deterministic encoding constraint as the durable
+            # Run Center snapshot.  In particular, mixed key types must be
+            # rejected here instead of registering successfully and then
+            # preventing the whole catalog from being persisted.
+            json.dumps(
+                descriptor,
+                ensure_ascii=False,
+                allow_nan=False,
+                sort_keys=True,
+            )
+        except (TypeError, ValueError) as exc:
+            raise ValueError("descriptor must be JSON-safe") from exc
+        if (
+            not isinstance(contract_version, str)
+            or not contract_version.strip()
+        ):
+            raise ValueError("contract_version is required")
+        if provider_id is not None and not isinstance(provider_id, str):
+            raise ValueError("provider_id must be a string")
+        normalized_plugin_id = plugin_id.strip()
+        normalized_provider = provider_id.strip() if provider_id else None
+        key = (operation.strip(), normalized_provider or None)
+        registration = OperationRegistration(
+            plugin_id=normalized_plugin_id,
+            operation=key[0],
+            descriptor=copy.deepcopy(descriptor),
+            provider_id=key[1],
+            contract_version=contract_version.strip(),
+        )
+        with self._operations_lock:
+            existing = self._operations.get(key)
+            if (
+                existing is not None
+                and existing.plugin_id != normalized_plugin_id
+            ):
+                raise ValueError(
+                    f"Operation '{key[0]}' provider '{key[1] or ''}' is "
+                    f"already registered by plugin '{existing.plugin_id}'",
+                )
+            self._operations[key] = registration
+        logger.info(
+            "Registered operation '%s' provider '%s' from plugin '%s'",
+            registration.operation,
+            registration.provider_id or "",
+            normalized_plugin_id,
+        )
+        return copy.deepcopy(registration)
+
+    def get_operation(
+        self,
+        operation: str,
+        provider_id: Optional[str] = None,
+    ) -> Optional[OperationRegistration]:
+        """Return one operation registration, if present.
+
+        When *provider_id* is omitted and multiple providers exist, the
+        lexicographically first provider is returned for deterministic
+        compatibility with callers that only need a default descriptor.
+        """
+        normalized = operation.strip() if isinstance(operation, str) else ""
+        if not normalized:
+            return None
+        provider = (
+            provider_id.strip()
+            if isinstance(provider_id, str) and provider_id.strip()
+            else None
+        )
+        with self._operations_lock:
+            if provider is not None:
+                registration = self._operations.get((normalized, provider))
+            else:
+                matches = [
+                    registration
+                    for (op, _), registration in self._operations.items()
+                    if op == normalized
+                ]
+                registration = (
+                    sorted(matches, key=lambda item: item.provider_id or "")[0]
+                    if matches
+                    else None
+                )
+            return copy.deepcopy(registration)
+
+    def get_operations(
+        self,
+        *,
+        operation: Optional[str] = None,
+        provider_id: Optional[str] = None,
+        plugin_id: Optional[str] = None,
+    ) -> List[OperationRegistration]:
+        """Return operation registrations in stable key order."""
+        op_filter = (
+            operation.strip()
+            if isinstance(operation, str) and operation.strip()
+            else None
+        )
+        provider_filter = (
+            provider_id.strip()
+            if isinstance(provider_id, str) and provider_id.strip()
+            else None
+        )
+        plugin_filter = (
+            plugin_id.strip()
+            if isinstance(plugin_id, str) and plugin_id.strip()
+            else None
+        )
+        with self._operations_lock:
+            values = [
+                registration
+                for registration in self._operations.values()
+                if (op_filter is None or registration.operation == op_filter)
+                and (
+                    provider_filter is None
+                    or registration.provider_id == provider_filter
+                )
+                and (
+                    plugin_filter is None
+                    or registration.plugin_id == plugin_filter
+                )
+            ]
+            ordered = sorted(
+                values,
+                key=lambda item: (
+                    item.operation,
+                    item.provider_id or "",
+                    item.plugin_id,
+                ),
+            )
+            return copy.deepcopy(ordered)
+
+    def unregister_operations(self, plugin_id: str) -> None:
+        """Remove all operation descriptors contributed by *plugin_id*."""
+        with self._operations_lock:
+            stale = [
+                key
+                for key, registration in self._operations.items()
+                if registration.plugin_id == plugin_id
+            ]
+            for key in stale:
+                self._operations.pop(key, None)
+        if stale:
+            logger.info(
+                "Unregistered %d operation(s) for plugin '%s'",
+                len(stale),
+                plugin_id,
+            )
+
+    def register_run_executor(
+        self,
+        plugin_id: str,
+        operation: str,
+        handler: Callable[..., Any],
+        *,
+        provider_id: Optional[str] = None,
+        executor: Optional[Any] = None,
+    ) -> RunExecutorRegistration:
+        """Register a process-local execution adapter for Run Center."""
+        normalized_plugin = str(plugin_id or "").strip()
+        normalized_operation = str(operation or "").strip()
+        if not normalized_plugin:
+            raise ValueError("plugin_id is required")
+        if not normalized_operation:
+            raise ValueError("operation is required")
+        if not callable(handler):
+            raise ValueError("handler must be callable")
+        if provider_id is not None and not isinstance(provider_id, str):
+            raise ValueError("provider_id must be a string")
+        normalized_provider = provider_id.strip() if provider_id else None
+        key = (normalized_operation, normalized_provider)
+        registration = RunExecutorRegistration(
+            plugin_id=normalized_plugin,
+            operation=normalized_operation,
+            handler=handler,
+            provider_id=normalized_provider,
+            executor=executor,
+        )
+        with self._run_executors_lock:
+            existing = self._run_executors.get(key)
+            if (
+                existing is not None
+                and existing.plugin_id != normalized_plugin
+            ):
+                raise ValueError(
+                    f"Run executor '{normalized_operation}' provider "
+                    f"'{normalized_provider or ''}' is already registered by "
+                    f"plugin '{existing.plugin_id}'",
+                )
+            self._run_executors[key] = registration
+        return RunExecutorRegistration(**registration.__dict__)
+
+    def get_run_executors(
+        self,
+        *,
+        operation: Optional[str] = None,
+        provider_id: Optional[str] = None,
+        plugin_id: Optional[str] = None,
+    ) -> List[RunExecutorRegistration]:
+        """Return stable snapshots while preserving callable identity."""
+        op_filter = (
+            operation.strip()
+            if isinstance(operation, str) and operation.strip()
+            else None
+        )
+        provider_filter = (
+            provider_id.strip()
+            if isinstance(provider_id, str) and provider_id.strip()
+            else None
+        )
+        plugin_filter = (
+            plugin_id.strip()
+            if isinstance(plugin_id, str) and plugin_id.strip()
+            else None
+        )
+        with self._run_executors_lock:
+            values = [
+                registration
+                for registration in self._run_executors.values()
+                if (op_filter is None or registration.operation == op_filter)
+                and (
+                    provider_filter is None
+                    or registration.provider_id == provider_filter
+                )
+                and (
+                    plugin_filter is None
+                    or registration.plugin_id == plugin_filter
+                )
+            ]
+            ordered = sorted(
+                values,
+                key=lambda item: (
+                    item.operation,
+                    item.provider_id or "",
+                    item.plugin_id,
+                ),
+            )
+            return [
+                RunExecutorRegistration(**item.__dict__) for item in ordered
+            ]
+
+    def unregister_run_executors(self, plugin_id: str) -> None:
+        """Remove executable adapters owned by an unloaded plugin."""
+        with self._run_executors_lock:
+            stale = [
+                key
+                for key, registration in self._run_executors.items()
+                if registration.plugin_id == plugin_id
+            ]
+            for key in stale:
+                self._run_executors.pop(key, None)
+        if stale:
+            logger.info(
+                "Unregistered %d run executor(s) for plugin '%s'",
+                len(stale),
+                plugin_id,
+            )
 
     def register_middleware(
         self,
@@ -968,6 +1297,8 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
             )
 
         self._plugin_manifests.pop(plugin_id, None)
+        self.unregister_operations(plugin_id)
+        self.unregister_run_executors(plugin_id)
 
         providers_to_remove = [
             pid

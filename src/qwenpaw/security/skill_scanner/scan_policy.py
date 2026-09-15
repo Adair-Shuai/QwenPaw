@@ -284,7 +284,10 @@ class ScanPolicy:
         """Dump the full policy to a YAML file for editing."""
         data = self._to_dict()
         with open(path, "w", encoding="utf-8") as fh:
-            fh.write("# QwenPaw Skill Scanner – Scan Policy\n")
+            # Keep the generated header ASCII so callers that use the Windows
+            # locale default can still inspect the file; YAML values remain
+            # UTF-8/escaped as handled by PyYAML.
+            fh.write("# QwenPaw Skill Scanner - Scan Policy\n")
             fh.write(
                 "# Customise this file to match your"
                 " organisation's security bar.\n",

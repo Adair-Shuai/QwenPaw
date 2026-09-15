@@ -14,6 +14,7 @@ import inspect
 import time
 from typing import Any
 
+from ..errors import NodeExecutionError
 from ..io import HiddenHolder, NodeOutput
 from ..progress import NodeStatus, ProgressRegistry
 
@@ -373,7 +374,10 @@ class NodeRunner:
         ct = node_def.get("class_type", "ToolNode")
         node = self.registry.get(ct)
         if node is None:
-            raise NodeExecutionError(ct, f"unknown node class_type '{ct}'") from None
+            raise NodeExecutionError(
+                node_id,
+                f"unknown node class_type '{ct}'",
+            ) from None
         if self.progress:
             self.progress.set_status(node_id, NodeStatus.RUNNING)
         start = time.monotonic()
@@ -394,8 +398,7 @@ class NodeRunner:
         except Exception as exc:
             if self.progress:
                 self.progress.set_status(node_id, NodeStatus.FAILED, error=str(exc))
-            from ..errors import NodeExecutionError
-            raise NodeExecutionError(str(exc), node_id=node_id) from exc
+            raise NodeExecutionError(node_id, str(exc)) from exc
         duration_ms = int((time.monotonic() - start) * 1000)
         if not isinstance(output, NodeOutput):
             output = NodeOutput(values=output)

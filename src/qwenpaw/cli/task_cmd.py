@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
@@ -17,6 +19,35 @@ logger = logging.getLogger(__name__)
 
 
 _SKILL_FS_NAMES = {"skills", "skill", "skill.json", ".skill.json.lock"}
+
+
+def _link_overlay_entry(source: Path, target: Path) -> None:
+    """Link an overlay entry, with a no-admin Windows fallback."""
+    try:
+        target.symlink_to(source, target_is_directory=source.is_dir())
+        return
+    except OSError as exc:
+        if sys.platform != "win32" or getattr(exc, "winerror", None) != 1314:
+            raise
+
+    if source.is_dir():
+        # Directory junctions do not require Developer Mode or symlink
+        # privilege. Keep the copy fallback for unusual filesystems where
+        # junction creation is unavailable.
+        completed = subprocess.run(
+            ["cmd.exe", "/d", "/c", "mklink", "/J", str(target), str(source)],
+            check=False,
+            capture_output=True,
+            text=True,
+        )
+        if completed.returncode == 0:
+            return
+        shutil.copytree(source, target)
+        return
+
+    # Prompt/bootstrap files are small. Copying avoids a hard-link write in
+    # the temporary overlay from mutating the user's real workspace.
+    shutil.copy2(source, target)
 
 
 @contextmanager
@@ -39,7 +70,7 @@ def _isolated_skills_workspace(
     with tempfile.TemporaryDirectory(prefix="qwenpaw_headless_") as tmp:
         tmp_path = Path(tmp)
         resolved = Path(skills_dir).resolve()
-        (tmp_path / "skills").symlink_to(resolved)
+        _link_overlay_entry(resolved, tmp_path / "skills")
 
         skill_entries: dict = {}
         if resolved.is_dir():
@@ -71,7 +102,7 @@ def _isolated_skills_workspace(
                     continue
                 target = tmp_path / item.name
                 if not target.exists():
-                    target.symlink_to(item)
+                    _link_overlay_entry(item, target)
 
         yield tmp_path
 

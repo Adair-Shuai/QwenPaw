@@ -51,13 +51,27 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+from pathlib import Path
 
 DEFAULT_MODEL = "qwen3.6-plus"
 DEFAULT_PROVIDER = "dashscope"
 DEFAULT_TIMEOUT = 120
 SESSION_ID = "release-verify-session"
 USER_ID = "release-verify-user"
+REQUIRED_UI_MENUS = {
+    "core.run-center",
+    "ugsci.experts",
+    "ugsci.tools-skills",
+}
+REQUIRED_UI_ROUTES = {
+    "/flowforge": "flowforge",
+    "/run-center": "qwenpaw-run-center",
+    "/ugsci-market": "ugsci",
+}
+REQUIRED_UI_SLOT_SOURCE = "ugsci_research"
+REQUIRED_UI_SLOT_ID = "research-mode-toggle"
 
 # The verify step runs under timeout-minutes: 10 in desktop-build.yml, so
 # self-report at 540s: a hung driver dumps every thread's stack and exits
@@ -180,6 +194,156 @@ def verify_reme_runtime(base_url: str) -> None:
             f"Memory reindex returned an unexpected response: {body[:300]}",
         )
     print("PASS  packaged ReMe runtime completed BM25 reindex")
+
+
+def verify_bundled_plugins(base_url: str) -> None:
+    """Require fork-critical plugins and their frontend bundles."""
+    deadline = time.monotonic() + DEFAULT_TIMEOUT
+    last_body = ""
+    required = {
+        "flowforge",
+        "qwenpaw-run-center",
+        "ugsci",
+        "ugsci_research",
+    }
+    forbidden = {"cloudpaw", "qwenpaw-pet"}
+    while time.monotonic() < deadline:
+        last_body = _http("GET", f"{base_url}/api/frontend_plugin")
+        try:
+            payload = json.loads(last_body)
+        except json.JSONDecodeError:
+            payload = None
+        if isinstance(payload, list):
+            loaded = {
+                str(item.get("id")): item
+                for item in payload
+                if isinstance(item, dict) and item.get("loaded")
+            }
+            contaminated = forbidden & set(loaded)
+            if contaminated:
+                raise RuntimeError(
+                    "Packaged desktop loaded source-only/denied plugins: "
+                    + ", ".join(sorted(contaminated)),
+                )
+            if required <= set(loaded):
+                for plugin_id in sorted(required):
+                    frontend_entry = str(
+                        loaded[plugin_id].get("frontend_entry") or "",
+                    ).strip()
+                    if not frontend_entry:
+                        raise RuntimeError(
+                            f"Bundled plugin {plugin_id} has no frontend entry",
+                        )
+                    encoded_entry = urllib.parse.quote(
+                        frontend_entry,
+                        safe="/",
+                    )
+                    body = _http(
+                        "GET",
+                        f"{base_url}/api/frontend_plugin/{plugin_id}/files/"
+                        f"{encoded_entry}",
+                    )
+                    if not body.strip():
+                        raise RuntimeError(
+                            f"Bundled plugin {plugin_id} frontend is empty",
+                        )
+                print(
+                    "PASS  bundled plugins and frontend bundles loaded -> "
+                    + ", ".join(sorted(required)),
+                )
+                return
+        time.sleep(2)
+    raise RuntimeError(
+        "Critical bundled plugins did not load before timeout: "
+        f"{sorted(required)}; last response={last_body[:500]}",
+    )
+
+
+def verify_native_ui_report(
+    report_path: str,
+    nonce: str,
+    timeout: int,
+) -> None:
+    """Require plugin capabilities reported by the real Tauri webview."""
+    if not report_path or not nonce:
+        raise RuntimeError(
+            "Native Tauri UI verification requires both report path and nonce",
+        )
+
+    path = Path(report_path)
+    deadline = time.monotonic() + timeout
+    last_detail = "report file has not been created"
+    while time.monotonic() < deadline:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                last_detail = (
+                    f"report is not an object: {type(payload).__name__}"
+                )
+                time.sleep(0.5)
+                continue
+            if payload.get("nonce") != nonce:
+                last_detail = "report nonce does not match this Tauri launch"
+                time.sleep(0.5)
+                continue
+
+            menus = {
+                str(item.get("id"))
+                for item in payload.get("menus", [])
+                if isinstance(item, dict) and item.get("id")
+            }
+            routes = {
+                str(item.get("path")): str(item.get("source"))
+                for item in payload.get("routes", [])
+                if isinstance(item, dict) and item.get("path")
+            }
+            slots = [
+                item
+                for item in payload.get("slots", [])
+                if isinstance(item, dict)
+            ]
+            missing_menus = sorted(REQUIRED_UI_MENUS - menus)
+            missing_routes = sorted(
+                f"{source}:{path}"
+                for path, source in REQUIRED_UI_ROUTES.items()
+                if routes.get(path) != source
+            )
+            missing_slot = not any(
+                item.get("source") == REQUIRED_UI_SLOT_SOURCE
+                and item.get("id") == REQUIRED_UI_SLOT_ID
+                for item in slots
+            )
+            if (
+                payload.get("schema_version") == 1
+                and payload.get("complete") is True
+                and not missing_menus
+                and not missing_routes
+                and not missing_slot
+            ):
+                print(
+                    "PASS  native Tauri webview plugin registration -> "
+                    "Run Center, FlowForge, UGSci, research-mode-toggle",
+                )
+                return
+            last_detail = (
+                f"complete={payload.get('complete')!r}; "
+                f"missing_menus={missing_menus}; "
+                f"missing_routes={missing_routes}; "
+                f"missing_slot={missing_slot}; "
+                f"native_missing={payload.get('missing_menus')}, "
+                f"{payload.get('missing_routes')}, "
+                f"{payload.get('missing_slot')}"
+            )
+        except FileNotFoundError:
+            last_detail = f"report file not found: {path}"
+        except (OSError, json.JSONDecodeError) as exc:
+            last_detail = f"report not readable yet: {exc}"
+        time.sleep(0.5)
+
+    raise RuntimeError(
+        "Real Tauri webview did not register required bundled plugin UI "
+        f"before timeout; {last_detail}",
+    )
 
 
 def verify_packaged_api(base_url: str) -> None:
@@ -914,6 +1078,16 @@ def main() -> int:
         "instead of launching a new Playwright browser.",
     )
     parser.add_argument(
+        "--native-ui-report",
+        default=os.environ.get("QWENPAW_UI_VERIFY_REPORT_PATH", ""),
+        help="Path written by the real Tauri webview plugin registry report.",
+    )
+    parser.add_argument(
+        "--native-ui-nonce",
+        default=os.environ.get("QWENPAW_UI_VERIFY_NONCE", ""),
+        help="Per-launch nonce required in the native Tauri UI report.",
+    )
+    parser.add_argument(
         "--llm-retries",
         type=int,
         default=3,
@@ -939,6 +1113,7 @@ def main() -> int:
     try:
         # ---- API-level checks (always run, no key needed) ----
         verify_packaged_api(base_url)
+        verify_bundled_plugins(base_url)
 
         # ---- UI load (always run unless --skip-ui, no key needed) ----
         # This catches broken Vite bundles, missing assets, CSP issues,
@@ -946,6 +1121,11 @@ def main() -> int:
         if args.skip_ui:
             print("SKIP  UI verification (--skip-ui)")
         else:
+            verify_native_ui_report(
+                args.native_ui_report,
+                args.native_ui_nonce,
+                args.timeout,
+            )
             try:
                 ss_dir = (
                     os.path.join(

@@ -16,6 +16,9 @@ const tauriVersionConfigFile = path.join(
   repoRoot,
   "console/src-tauri/tauri.version.conf.json",
 );
+const layeredDesktop = /^(1|true|yes)$/i.test(
+  process.env.QWENPAW_LAYERED_DESKTOP?.trim() ?? "",
+);
 
 function readPythonVersion() {
   const text = fs.readFileSync(versionFile, "utf8");
@@ -101,6 +104,11 @@ function writeTauriVersionConfig(file, version) {
           compression: "zlib",
         },
       },
+      // Layered packages carry the helper in the versioned resource tree.
+      // Legacy packages use Tauri externalBin so macOS places the helper next
+      // to the desktop executable (the location used to seed its TCC-stable
+      // helper app). An explicit empty array overrides the base config.
+      ...(layeredDesktop ? { externalBin: [] } : {}),
       ...(createUpdaterArtifacts ? { createUpdaterArtifacts: true } : {}),
     },
     plugins: {

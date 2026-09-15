@@ -12,8 +12,12 @@ use std::{
 
 const NONCE_ENV: &str = "QWENPAW_UI_VERIFY_NONCE";
 const REPORT_PATH_ENV: &str = "QWENPAW_UI_VERIFY_REPORT_PATH";
-const REQUIRED_MENUS: [&str; 2] = ["ugsci.experts", "ugsci.tools-skills"];
-const REQUIRED_ROUTE: &str = "/ugsci-market";
+const REQUIRED_MENUS: [&str; 3] = ["core.run-center", "ugsci.experts", "ugsci.tools-skills"];
+const REQUIRED_ROUTES: [(&str, &str); 3] = [
+    ("/flowforge", "flowforge"),
+    ("/run-center", "qwenpaw-run-center"),
+    ("/ugsci-market", "ugsci"),
+];
 const REQUIRED_SLOT_SOURCE: &str = "ugsci_research";
 const REQUIRED_SLOT_ID: &str = "research-mode-toggle";
 
@@ -52,7 +56,7 @@ struct UiVerificationReport<'a> {
     pid: u32,
     complete: bool,
     missing_menus: Vec<&'static str>,
-    missing_route: Option<&'static str>,
+    missing_routes: Vec<String>,
     missing_slot: Option<String>,
     menus: &'a [UiMenuSnapshot],
     routes: &'a [UiRouteSnapshot],
@@ -81,16 +85,21 @@ fn write_report(path: &Path, nonce: &str, snapshot: &UiVerificationSnapshot) -> 
         .copied()
         .filter(|required| !snapshot.menus.iter().any(|menu| menu.id == *required))
         .collect::<Vec<_>>();
-    let missing_route = (!snapshot
-        .routes
+    let missing_routes = REQUIRED_ROUTES
         .iter()
-        .any(|route| route.path == REQUIRED_ROUTE))
-    .then_some(REQUIRED_ROUTE);
+        .filter(|(path, source)| {
+            !snapshot
+                .routes
+                .iter()
+                .any(|route| route.path == *path && route.source == *source)
+        })
+        .map(|(path, source)| format!("{source}:{path}"))
+        .collect::<Vec<_>>();
     let missing_slot = (!snapshot.slots.iter().any(|slot| {
         slot.source == REQUIRED_SLOT_SOURCE && slot.id.as_deref() == Some(REQUIRED_SLOT_ID)
     }))
     .then(|| format!("{REQUIRED_SLOT_SOURCE}:{REQUIRED_SLOT_ID}"));
-    let complete = missing_menus.is_empty() && missing_route.is_none() && missing_slot.is_none();
+    let complete = missing_menus.is_empty() && missing_routes.is_empty() && missing_slot.is_none();
 
     let report = UiVerificationReport {
         schema_version: 1,
@@ -98,7 +107,7 @@ fn write_report(path: &Path, nonce: &str, snapshot: &UiVerificationSnapshot) -> 
         pid: std::process::id(),
         complete,
         missing_menus,
-        missing_route,
+        missing_routes,
         missing_slot,
         menus: &snapshot.menus,
         routes: &snapshot.routes,
@@ -188,11 +197,14 @@ mod tests {
                 .iter()
                 .map(|id| UiMenuSnapshot { id: id.to_string() })
                 .collect(),
-            routes: vec![UiRouteSnapshot {
-                id: "flowforge".to_string(),
-                path: REQUIRED_ROUTE.to_string(),
-                source: "flowforge".to_string(),
-            }],
+            routes: REQUIRED_ROUTES
+                .iter()
+                .map(|(path, source)| UiRouteSnapshot {
+                    id: format!("{source}.route"),
+                    path: path.to_string(),
+                    source: source.to_string(),
+                })
+                .collect(),
             slots: vec![UiSlotSnapshot {
                 name: "header.left".to_string(),
                 kind: "fill".to_string(),
@@ -230,7 +242,14 @@ mod tests {
             serde_json::from_slice(&fs::read(report_path).expect("read report"))
                 .expect("parse report");
         assert_eq!(payload["complete"], false);
-        assert_eq!(payload["missing_route"], REQUIRED_ROUTE);
+        assert_eq!(
+            payload["missing_routes"],
+            serde_json::json!([
+                "flowforge:/flowforge",
+                "qwenpaw-run-center:/run-center",
+                "ugsci:/ugsci-market"
+            ])
+        );
         assert_eq!(
             payload["missing_slot"],
             "ugsci_research:research-mode-toggle"

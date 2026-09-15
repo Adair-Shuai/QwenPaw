@@ -21,6 +21,7 @@ _VALID_GROUPS = frozenset({
     "freeform",
 })
 _VALID_TOOL_TYPES = frozenset({"file", "internal", "network", "shell"})
+_DEFAULT_MIGRATION_MARKER = "_ugsci_manifest_default_applied"
 
 
 class ToolManifestError(ValueError):
@@ -64,7 +65,12 @@ def load_tool_manifest(
     except (OSError, json.JSONDecodeError) as exc:
         raise ToolManifestError("cannot read UGSci tool manifest") from exc
 
-    raw_tools = manifest.get("meta", {}).get("tools")
+    if not isinstance(manifest, dict):
+        raise ToolManifestError("plugin manifest must be an object")
+    meta = manifest.get("meta", {})
+    if not isinstance(meta, dict):
+        raise ToolManifestError("plugin manifest meta must be an object")
+    raw_tools = meta.get("tools")
     if not isinstance(raw_tools, list):
         raise ToolManifestError("plugin meta.tools must be a list")
 
@@ -163,7 +169,13 @@ def sync_manifest_tools_to_all_agents(
     *,
     groups: Iterable[str] | None = None,
 ) -> int:
-    """Persist missing manifest tools without overwriting user preferences."""
+    """Persist manifest tools without overwriting user preferences.
+
+    Entries created by the older plugin-router sync path had no metadata and
+    were always disabled.  Those unambiguous legacy stubs are repaired once;
+    a user-configured disabled tool (which carries manifest metadata or a
+    custom config) is left untouched.
+    """
     from qwenpaw.config.config import (
         BuiltinToolConfig,
         ToolsConfig,
@@ -182,17 +194,41 @@ def sync_manifest_tools_to_all_agents(
                 agent_config.tools = ToolsConfig()
             changed = False
             for spec in specs:
-                if spec.name in agent_config.tools.builtin_tools:
+                existing = agent_config.tools.builtin_tools.get(spec.name)
+                if existing is None:
+                    config = (
+                        {_DEFAULT_MIGRATION_MARKER: True}
+                        if spec.group == "simulation"
+                        and spec.enabled_by_default
+                        else {}
+                    )
+                    agent_config.tools.builtin_tools[spec.name] = BuiltinToolConfig(
+                        name=spec.name,
+                        enabled=spec.enabled_by_default,
+                        description=spec.description,
+                        display_to_user=True,
+                        async_execution=False,
+                        icon=spec.icon,
+                        config=config,
+                    )
+                    changed = True
                     continue
-                agent_config.tools.builtin_tools[spec.name] = BuiltinToolConfig(
-                    name=spec.name,
-                    enabled=spec.enabled_by_default,
-                    description=spec.description,
-                    display_to_user=True,
-                    async_execution=False,
-                    icon=spec.icon,
+                legacy_stub = (
+                    existing.enabled is False
+                    and not existing.description
+                    and existing.display_to_user is True
+                    and existing.async_execution is False
+                    and isinstance(existing.config, dict)
+                    and not existing.config
                 )
-                changed = True
+                if (
+                    spec.group == "simulation"
+                    and spec.enabled_by_default
+                    and legacy_stub
+                ):
+                    existing.enabled = True
+                    existing.config[_DEFAULT_MIGRATION_MARKER] = True
+                    changed = True
             if changed:
                 save_agent_config(agent_id, agent_config)
                 changed_agents += 1

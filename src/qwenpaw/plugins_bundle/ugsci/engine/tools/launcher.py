@@ -353,6 +353,81 @@ async def launch_simulation(
     output_file = str(deck_path.with_suffix(adapter.log_extension))
     command = adapter.build_command(executable, str(deck_path), output_file)
 
+    agent_id = "default"
+    session_id = ""
+    user_id = ""
+    channel = ""
+    try:
+        from qwenpaw.app.agent_context import (
+            get_current_agent_id,
+            get_current_channel,
+            get_current_session_id,
+            get_current_user_id,
+        )
+        agent_id = get_current_agent_id()
+        session_id = get_current_session_id() or ""
+        user_id = get_current_user_id() or ""
+        channel = get_current_channel() or ""
+    except Exception:
+        pass
+
+    # Delegate the process to the optional independent Run Center.  The bridge
+    # writes the historical job record as a projection, so legacy callers keep
+    # receiving and using the same job_id contract.
+    try:
+        from .run_center_bridge import create_and_submit
+
+        native_run_id = f"sim_{uuid.uuid4().hex[:8]}"
+        native = create_and_submit(
+            run_id=native_run_id,
+            simulator=simulator.lower().strip(),
+            deck_file=str(deck_path),
+            working_dir=str(work_path),
+            output_dir=str(output_path),
+            command=list(command),
+            log_path=str(output_path / f"{deck_path.stem}.sim.log"),
+            timeout=timeout,
+            input_inspection=input_inspection,
+            agent_metadata={
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "user_id": user_id,
+                "channel": channel,
+            },
+        )
+        if native is not None:
+            return ToolChunk(
+                is_last=True,
+                state=ToolResultState.SUCCESS,
+                content=[
+                    TextBlock(
+                        type="text",
+                        text=(
+                            "Simulation queued in Run Center.\n"
+                            f"  Job ID:      {native_run_id}\n"
+                            f"  Run ID:      {native_run_id}\n"
+                            f"  Simulator:   {simulator}\n"
+                            f"  Input file:  {deck_path}\n"
+                            f"  Output dir:  {output_path}\n"
+                            f"  Process cwd: {work_path}\n"
+                            f"  Timeout:     {timeout:.0f}s ({timeout/3600:.1f}h)\n\n"
+                            f"Use check_simulation_status(job_id=\"{native_run_id}\") "
+                            "to monitor progress."
+                            + (
+                                "\n\nPreflight warnings:\n  - "
+                                + "\n  - ".join(input_inspection.get("warnings", [])[:20])
+                                if input_inspection.get("warnings")
+                                else ""
+                            )
+                        ),
+                    ),
+                ],
+            )
+    except Exception as exc:
+        # Run Center is optional for older hosts; retain the proven launcher
+        # path if its runtime or registration is unavailable.
+        logger.warning("Falling back to legacy simulation launcher: %s", exc)
+
     # ── Prepare log file for stdout/stderr ───────────────────────────
     # BUG-002: Using PIPE without draining causes deadlock on high
     # simulator output.  Redirect to log files in the working directory
@@ -398,26 +473,8 @@ async def launch_simulation(
             ],
         )
 
-    # ── Register job ─────────────────────────────────────────────────
+    # ── Register legacy in-process job ──────────────────────────────
     job_id = f"sim_{uuid.uuid4().hex[:8]}"
-    agent_id = "default"
-    session_id = ""
-    user_id = ""
-    channel = ""
-    try:
-        from qwenpaw.app.agent_context import (
-            get_current_agent_id,
-            get_current_channel,
-            get_current_session_id,
-            get_current_user_id,
-        )
-        agent_id = get_current_agent_id()
-        session_id = get_current_session_id() or ""
-        user_id = get_current_user_id() or ""
-        channel = get_current_channel() or ""
-    except Exception:
-        pass
-
     job = SimJob(
         job_id=job_id,
         simulator=simulator.lower().strip(),
@@ -603,6 +660,8 @@ def _recover_job(job_id: str) -> SimJob | None:
                 "session_id",
                 "user_id",
                 "channel",
+                "source_run_id",
+                "native_run_id",
                 "terminal_notified",
                 "wake_status",
                 "wake_attempts",
@@ -737,6 +796,31 @@ def _get_job(job_id: str) -> SimJob | None:
     """
     job = _sim_jobs.get(job_id)
     if job is not None:
+        # Native Run Center jobs keep a compatibility projection in the old
+        # store. Refresh the lightweight SimJob snapshot so callers that keep
+        # polling the same object observe queued→running→terminal changes.
+        if job.extra.get("native_run_id") or job.extra.get("source_run_id"):
+            try:
+                from . import job_store
+
+                latest = job_store.load_job(job_id)
+                if isinstance(latest, dict):
+                    job.status = str(latest.get("status") or job.status)
+                    try:
+                        job.pid = int(latest.get("pid") or job.pid or 0)
+                    except (TypeError, ValueError):
+                        pass
+                    if latest.get("returncode") is not None:
+                        job.returncode = latest.get("returncode")
+                    if latest.get("error") is not None:
+                        job.error = str(latest.get("error"))
+                    if latest.get("end_ts") is not None:
+                        try:
+                            job.end_ts = float(latest.get("end_ts"))
+                        except (TypeError, ValueError):
+                            pass
+            except Exception:
+                pass
         return job
     # Try recovery from persistent store
     return _recover_job(job_id)

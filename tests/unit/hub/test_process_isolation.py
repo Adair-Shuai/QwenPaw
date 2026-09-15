@@ -209,7 +209,12 @@ def test_linux_command_mounts_python_base_prefix(
     base_bin.mkdir(parents=True)
     base_executable = base_bin / "python3.13"
     base_executable.touch()
-    (base_bin / "python").symlink_to(base_executable.name)
+    try:
+        (base_bin / "python").symlink_to(base_executable.name)
+    except OSError as exc:
+        if getattr(exc, "winerror", None) == 1314:
+            pytest.skip("symbolic links are not permitted on this host")
+        raise
     venv = tmp_path / "venv"
     venv_bin = venv / "bin"
     venv_bin.mkdir(parents=True)

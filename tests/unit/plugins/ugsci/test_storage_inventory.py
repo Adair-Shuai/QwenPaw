@@ -14,17 +14,34 @@ from plugins.bundle.ugsci.domain.computation.service import ComputationService
 from plugins.bundle.ugsci.domain.storage_inventory.adapters import (
     EffectiveInventoryAdapter,
     InventoryAccountingAdapter,
+    StorageCapacityEvaluationAdapter,
+    StorageInjectionAllocationAdapter,
+    StorageProductionAllocationAdapter,
+    StorageScenarioOptimizationAdapter,
     StorageInventoryEvaluationAdapter,
 )
 from plugins.bundle.ugsci.domain.storage_inventory.models import (
     EffectiveInventoryLayerRequest,
     EffectiveInventoryRequest,
     InventoryAccountingRequest,
+    StorageCapacityEvaluationRequest,
+    StorageCapacityLayerRequest,
+    StorageAllocationWellRequest,
+    StorageInjectionAllocationRequest,
+    StorageProductionAllocationRequest,
+    StorageScenarioConstraint,
+    StorageScenarioObjective,
+    StorageScenarioOptimizationRequest,
+    StorageScenarioRequest,
     StorageInventoryEvaluationRequest,
 )
 from plugins.bundle.ugsci.domain_engine.catalog import get_engine
 from plugins.bundle.ugsci.domain.storage_inventory.tools import (
+    ugsci_storage_capacity_evaluate,
     ugsci_storage_effective_inventory,
+    ugsci_storage_injection_allocation_optimize,
+    ugsci_storage_production_allocation_optimize,
+    ugsci_storage_scenario_optimize,
     ugsci_storage_inventory_evaluate,
 )
 
@@ -610,17 +627,291 @@ def test_catalog_exposes_storage_inventory_engine() -> None:
     engine = get_engine("storage-inventory-evaluation")
     assert engine is not None
     assert engine.execution_class == "deterministic"
-    assert engine.engine_version == "1.2.0"
+    assert engine.engine_version == "1.3.0"
     assert {operation.id for operation in engine.operations} == {
         "storage.inventory.accounting",
         "storage.inventory.effective_controlled",
         "storage.inventory.evaluate",
+        "storage.capacity.evaluate",
+        "storage.injection_allocation.optimize",
+        "storage.production_allocation.optimize",
+        "storage.scenario.optimize",
+        "storage.injection_allocation.optimize",
+        "storage.production_allocation.optimize",
+        "storage.scenario.optimize",
+    }
+
+
+def test_capacity_pressure_envelope_returns_layered_working_and_cushion_gas() -> (
+    None
+):
+    result = ComputationService().execute(
+        "storage-capacity-evaluation",
+        StorageCapacityEvaluationAdapter(),
+        StorageCapacityEvaluationRequest(
+            layers=(
+                StorageCapacityLayerRequest(
+                    name="layer-a",
+                    pore_volume=100_000_000.0,
+                    maximum_pressure=20.0,
+                    maximum_z=1.0,
+                    minimum_pressure=10.0,
+                    minimum_z=1.0,
+                    temperature=300.0,
+                ),
+            ),
+        ),
+        method="pressure_envelope_ideal_gas_scaling",
+    )
+    assert result.result["total_capacity"] == pytest.approx(189.58795953614606)
+    assert result.result["cushion_gas"] == pytest.approx(94.79397976807303)
+    assert result.result["working_gas"] == pytest.approx(94.79397976807303)
+    assert (
+        result.result["review_status"]
+        == "calculated_recommendation_pending_review"
+    )
+    assert result.provenance["operation"] == "storage.capacity.evaluate"
+
+
+def test_capacity_rejects_non_depleting_pressure_z_window() -> None:
+    with pytest.raises(DomainError, match="maximum_pressure/maximum_z"):
+        StorageCapacityEvaluationAdapter().compute(
+            StorageCapacityEvaluationRequest(
+                layers=(
+                    StorageCapacityLayerRequest(
+                        name="layer-a",
+                        pore_volume=1_000.0,
+                        maximum_pressure=10.0,
+                        maximum_z=1.0,
+                        minimum_pressure=12.0,
+                        minimum_z=1.0,
+                        temperature=300.0,
+                    ),
+                ),
+            ),
+        )
+
+
+def test_injection_allocation_weighted_filling_is_bounded_and_deterministic() -> (
+    None
+):
+    request = StorageInjectionAllocationRequest(
+        wells=(
+            StorageAllocationWellRequest("W1", maximum_rate=10.0, weight=1.0),
+            StorageAllocationWellRequest("W2", maximum_rate=20.0, weight=3.0),
+        ),
+        target_rate=15.0,
+    )
+    adapter = StorageInjectionAllocationAdapter()
+    first = adapter.compute(request)
+    second = adapter.compute(request)
+    assert first.result == second.result
+    assert adapter.operation == "storage.injection_allocation.optimize"
+    assert first.result["feasible"] is True
+    assert first.result["allocated_rate"] == pytest.approx(15.0)
+    rows = first.result["wells"]
+    assert [row["allocated_rate"] for row in rows] == pytest.approx(
+        [3.75, 11.25]
+    )
+    assert all(
+        0.0 <= row["allocated_rate"] <= row["maximum_rate"] for row in rows
+    )
+    assert (
+        first.result["review_status"]
+        == "calculated_recommendation_pending_review"
+    )
+
+
+def test_injection_allocation_reports_shortfall_or_raises_in_strict_mode() -> (
+    None
+):
+    request = StorageInjectionAllocationRequest(
+        wells=(StorageAllocationWellRequest("W1", maximum_rate=10.0),),
+        target_rate=11.0,
+    )
+    result = StorageInjectionAllocationAdapter().compute(request)
+    assert result.result["feasible"] is False
+    assert result.result["unmet_rate"] == pytest.approx(1.0)
+    with pytest.raises(DomainError, match="aggregate minimum and maximum"):
+        StorageInjectionAllocationAdapter().compute(
+            StorageInjectionAllocationRequest(
+                wells=request.wells,
+                target_rate=11.0,
+                require_feasible=True,
+            ),
+        )
+
+
+def test_injection_allocation_rejects_duplicate_and_non_boolean_availability() -> (
+    None
+):
+    with pytest.raises(DomainError, match="well names must be unique"):
+        StorageInjectionAllocationAdapter().compute(
+            StorageInjectionAllocationRequest(
+                wells=(
+                    StorageAllocationWellRequest("W1", maximum_rate=10.0),
+                    StorageAllocationWellRequest(" w1 ", maximum_rate=10.0),
+                ),
+                target_rate=1.0,
+            ),
+        )
+
+
+def test_injection_allocation_unit_aliases_share_reproducibility_fingerprint() -> (
+    None
+):
+    service = ComputationService()
+    wells = (StorageAllocationWellRequest("W1", maximum_rate=10.0),)
+    first = service.execute(
+        "storage-injection-allocation",
+        StorageInjectionAllocationAdapter(),
+        StorageInjectionAllocationRequest(
+            wells=wells, target_rate=4.0, rate_unit="1e4_sm3/d"
+        ),
+        method="bounded_weighted_water_filling",
+    ).to_dict()
+    second = service.execute(
+        "storage-injection-allocation",
+        StorageInjectionAllocationAdapter(),
+        StorageInjectionAllocationRequest(
+            wells=wells, target_rate=4.0, rate_unit="万方/日"
+        ),
+        method="bounded_weighted_water_filling",
+    ).to_dict()
+    assert (
+        first["provenance"]["input_fingerprint"]
+        == second["provenance"]["input_fingerprint"]
+    )
+    with pytest.raises(DomainError, match="available must be a boolean"):
+        StorageInjectionAllocationAdapter().compute(
+            StorageInjectionAllocationRequest(
+                wells=(StorageAllocationWellRequest("W1", maximum_rate=10.0, available="false"),),  # type: ignore[arg-type]
+                target_rate=1.0,
+            ),
+        )
+
+
+def test_injection_allocation_tool_schema_requires_well_name_and_capacity() -> (
+    None
+):
+    hints = get_type_hints(ugsci_storage_injection_allocation_optimize)
+    well_schema = get_args(hints["wells"])[0]
+    assert well_schema.__required_keys__ == {"name", "maximum_rate"}
+    assert {
+        "minimum_rate",
+        "weight",
+        "available",
+    } <= well_schema.__optional_keys__
+
+
+def test_production_allocation_reports_demand_and_unavailable_wells() -> None:
+    adapter = StorageProductionAllocationAdapter()
+    result = adapter.compute(
+        StorageProductionAllocationRequest(
+            wells=(
+                StorageAllocationWellRequest(
+                    "W1", maximum_rate=10.0, weight=1.0
+                ),
+                StorageAllocationWellRequest(
+                    "W2", maximum_rate=30.0, available=False
+                ),
+            ),
+            demand_rate=15.0,
+        ),
+    )
+    assert adapter.operation == "storage.production_allocation.optimize"
+    assert result.result["demand_rate"] == pytest.approx(15.0)
+    assert result.result["target_rate"] == pytest.approx(15.0)
+    assert result.result["allocated_rate"] == pytest.approx(10.0)
+    assert result.result["unmet_rate"] == pytest.approx(5.0)
+    assert result.result["feasible"] is False
+    assert result.result["wells"][1]["constraint_status"] == "unavailable"
+
+
+def test_scenario_optimizer_applies_constraints_and_pareto_order() -> None:
+    request = StorageScenarioOptimizationRequest(
+        scenarios=(
+            StorageScenarioRequest(
+                "base", {"working_gas": 80.0, "risk": 2.0, "pressure": 18.0}
+            ),
+            StorageScenarioRequest(
+                "high", {"working_gas": 100.0, "risk": 4.0, "pressure": 21.0}
+            ),
+            StorageScenarioRequest(
+                "balanced",
+                {"working_gas": 92.0, "risk": 2.5, "pressure": 19.0},
+            ),
+        ),
+        objectives=(
+            StorageScenarioObjective("working_gas", "maximize", 2.0),
+            StorageScenarioObjective("risk", "minimize", 1.0),
+        ),
+        constraints=(StorageScenarioConstraint("pressure", "<=", 20.0),),
+    )
+    adapter = StorageScenarioOptimizationAdapter()
+    result = adapter.compute(request)
+    assert adapter.operation == "storage.scenario.optimize"
+    assert result.result["recommended_scenario"] in {"base", "balanced"}
+    assert result.result["scenarios"][0]["feasible"] is True
+    high = next(
+        row for row in result.result["scenarios"] if row["name"] == "high"
+    )
+    assert high["feasible"] is False
+    assert high["constraints"]["pressure"] is False
+    assert set(result.result["pareto_front"]) <= {"base", "balanced"}
+
+
+def test_scenario_optimizer_rejects_missing_metric_and_invalid_direction() -> (
+    None
+):
+    with pytest.raises(DomainError, match="missing metric"):
+        StorageScenarioOptimizationAdapter().compute(
+            StorageScenarioOptimizationRequest(
+                scenarios=(
+                    StorageScenarioRequest("base", {"working_gas": 80.0}),
+                ),
+                objectives=(StorageScenarioObjective("risk"),),
+            ),
+        )
+    with pytest.raises(DomainError, match="direction"):
+        StorageScenarioOptimizationAdapter().compute(
+            StorageScenarioOptimizationRequest(
+                scenarios=(
+                    StorageScenarioRequest("base", {"working_gas": 80.0}),
+                ),
+                objectives=(StorageScenarioObjective("working_gas", "sideways"),),  # type: ignore[arg-type]
+            ),
+        )
+
+
+def test_scenario_tool_schema_exposes_typed_inputs() -> None:
+    hints = get_type_hints(ugsci_storage_scenario_optimize)
+    scenario_schema = get_args(hints["scenarios"])[0]
+    objective_schema = get_args(hints["objectives"])[0]
+    assert scenario_schema.__required_keys__ == {"name", "metrics"}
+    assert objective_schema.__required_keys__ == {"key"}
+
+
+def test_capacity_tool_schema_exposes_pressure_envelope_fields() -> None:
+    hints = get_type_hints(ugsci_storage_capacity_evaluate)
+    layer_schema = get_args(hints["layers"])[0]
+    assert layer_schema.__required_keys__ == {
+        "name",
+        "pore_volume",
+        "maximum_pressure",
+        "maximum_z",
+        "minimum_pressure",
+        "minimum_z",
+        "temperature",
     }
 
 
 @pytest.mark.parametrize(
     "tool",
-    [ugsci_storage_effective_inventory, ugsci_storage_inventory_evaluate],
+    [
+        ugsci_storage_effective_inventory,
+        ugsci_storage_inventory_evaluate,
+    ],
 )
 def test_tool_schema_exposes_all_nested_layer_fields(tool) -> None:
     hints = get_type_hints(tool)

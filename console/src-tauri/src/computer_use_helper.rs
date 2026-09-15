@@ -48,8 +48,8 @@ const HELPER_INFO_PLIST: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
 </plist>
 "#;
 
-pub(crate) fn installed_bundle(_app: &AppHandle) -> Result<PathBuf, String> {
-    let seed = seed_executable()?;
+pub(crate) fn installed_bundle(app: &AppHandle) -> Result<PathBuf, String> {
+    let seed = seed_executable(app)?;
     let bundle = installed_bundle_path()?;
     let parent = bundle
         .parent()
@@ -88,7 +88,19 @@ pub(crate) fn installed_bundle(_app: &AppHandle) -> Result<PathBuf, String> {
         })
 }
 
-fn seed_executable() -> Result<PathBuf, String> {
+fn seed_executable(app: &AppHandle) -> Result<PathBuf, String> {
+    // Layered macOS releases keep the helper in the versioned resource tree;
+    // the desktop executable itself is not a sibling of that component.
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        if let Some(component) =
+            crate::runtime_layout::resolve_component(&resource_dir, "computer-use-helper")
+        {
+            let candidate = component.root.join(HELPER_EXECUTABLE_NAME);
+            if candidate.is_file() {
+                return Ok(candidate);
+            }
+        }
+    }
     let desktop = std::env::current_exe()
         .map_err(|error| format!("failed to resolve desktop executable: {error}"))?;
     let directory = desktop.parent().ok_or_else(|| {

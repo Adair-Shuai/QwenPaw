@@ -319,6 +319,9 @@ def _tool_names_from_meta(meta: dict) -> list[str]:
     Malformed ``meta.tools`` (``null``, non-list, non-dict entries) must
     never raise — callers run this after the plugin is already loaded.
     """
+    if not isinstance(meta, dict):
+        return []
+
     tool_names: list[str] = []
     seen: set[str] = set()
 
@@ -368,6 +371,21 @@ def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
             save_agent_config,
         )
 
+        raw_meta = record.manifest.meta
+        meta = raw_meta if isinstance(raw_meta, dict) else {}
+        raw_manifest_tools = meta.get("tools", [])
+        if not isinstance(raw_manifest_tools, list):
+            raw_manifest_tools = []
+        manifest_tools = {
+            item["name"].strip(): item
+            for item in raw_manifest_tools
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get("name"), str)
+                and item["name"].strip()
+            )
+        }
+
         config = load_config()
         if not config.agents or not config.agents.profiles:
             return
@@ -379,11 +397,25 @@ def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
                 for tool_name in tool_names:
                     if tool_name in agent_cfg.tools.builtin_tools:
                         continue
+                    declaration = manifest_tools.get(tool_name, {})
+                    raw_enabled = declaration.get("enabled_by_default")
+                    raw_description = declaration.get("description")
+                    raw_icon = declaration.get("icon")
                     agent_cfg.tools.builtin_tools[
                         tool_name
                     ] = BuiltinToolConfig(
                         name=tool_name,
-                        enabled=False,
+                        enabled=raw_enabled
+                        if isinstance(raw_enabled, bool)
+                        else False,
+                        description=(
+                            raw_description
+                            if isinstance(raw_description, str)
+                            else ""
+                        ),
+                        display_to_user=True,
+                        async_execution=False,
+                        icon=raw_icon if isinstance(raw_icon, str) else None,
                         config={},
                     )
                     changed = True

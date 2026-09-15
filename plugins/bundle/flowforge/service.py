@@ -41,6 +41,9 @@ from .engine import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_FLOWS_DIR_NAME = "flows"
+# Keep the run-list response useful for the run center without allowing a
+# verbose progress stream to make every polling response unbounded.
+RUN_SUMMARY_EVENT_LIMIT = 100
 
 
 def _materialize_edge_dependencies(payload: dict[str, Any]) -> dict[str, Any]:
@@ -63,6 +66,11 @@ class RunHandle:
     cancel_requested: bool = False
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
+    # A future can become done just before its callback persists the terminal
+    # record.  Keep the public handle non-terminal until that write finishes,
+    # so callers that observe ``is_done`` can safely restart and read the
+    # durable state immediately.
+    finalized: bool = False
 
     @property
     def status(self) -> WorkflowStatus:
@@ -72,24 +80,14 @@ class RunHandle:
             return WorkflowStatus.CANCELLED
         if self.error is not None:
             return WorkflowStatus.FAILED
-        if self.future is not None and self.future.done():
-            # Exception path handled by _on_done; if no result yet, treat as failed.
-            return WorkflowStatus.FAILED
-        if self.task is not None and self.task.done():
-            return WorkflowStatus.FAILED
         return WorkflowStatus.RUNNING
 
     @property
     def is_done(self) -> bool:
-        if self.result is not None or self.error is not None:
-            return True
-        if self.future is not None:
-            return self.future.done()
-        if self.task is not None:
-            return self.task.done()
-        return False
+        return self.finalized
 
     def to_dict(self) -> dict[str, Any]:
+        history = self.progress.history()
         return {
             "run_id": self.run_id,
             "flow_id": self.flow_id,
@@ -102,6 +100,10 @@ class RunHandle:
             "outputs": self.result.outputs if self.result else {},
             "errors": self.result.errors if self.result else [],
             "duration_ms": self.result.duration_ms if self.result else 0,
+            "events": [
+                event.to_dict()
+                for event in history[-RUN_SUMMARY_EVENT_LIMIT:]
+            ],
         }
 
 
@@ -397,6 +399,8 @@ class WorkflowService:
                     finished_at=handle.finished_at,
                     node_statuses=handle.progress.node_statuses(),
                 )
+            finally:
+                handle.finalized = True
 
         future.add_done_callback(_on_done)
         return handle
@@ -503,6 +507,8 @@ class WorkflowService:
                     finished_at=new_handle.finished_at,
                     node_statuses=new_handle.progress.node_statuses(),
                 )
+            finally:
+                new_handle.finalized = True
 
         future.add_done_callback(_on_done)
         return new_handle

@@ -1021,6 +1021,13 @@ class AgentBuilder:
         from agentscope.agent import ContextConfig
 
         non_binding_limit = 2**63 - 1
+        raw_context_fields = getattr(ContextConfig, "model_fields", {}) or {}
+        context_fields: dict[str, Any] = (
+            dict(raw_context_fields)
+            if isinstance(raw_context_fields, dict)
+            else {}
+        )
+        supports_image_limit = "max_image_num" in context_fields
         try:
             lcc = agent_config.running.light_context_config
             ccc = lcc.context_compact_config
@@ -1035,7 +1042,11 @@ class AgentBuilder:
             tool_result_limit = (
                 non_binding_limit
                 if trc.enabled
-                else ContextConfig.model_fields["tool_result_limit"].default
+                else getattr(
+                    context_fields.get("tool_result_limit"),
+                    "default",
+                    50_000,
+                )
             )
             trigger_ratio = ccc.compact_threshold_ratio
             reserve_ratio = min(
@@ -1049,17 +1060,26 @@ class AgentBuilder:
                     f"trigger ratio {trigger_ratio}; using "
                     f"{reserve_ratio}.",
                 )
+            context_kwargs = {
+                "trigger_ratio": trigger_ratio,
+                "reserve_ratio": reserve_ratio,
+                "tool_result_limit": tool_result_limit,
+            }
+            if supports_image_limit:
+                # Older AgentScope releases had their own five-image cap.
+                # QwenPaw visual compression owns that budget, so make the
+                # duplicate cap non-binding when the field still exists.
+                context_kwargs["max_image_num"] = non_binding_limit
             return ContextConfig(
-                trigger_ratio=trigger_ratio,
-                reserve_ratio=reserve_ratio,
-                tool_result_limit=tool_result_limit,
-                # QwenPaw's visual compression owns the image budget and
-                # preserves native media. AgentScope 2.0.7 otherwise removes
-                # canonical images beyond its default limit of five.
-                max_image_num=non_binding_limit,
+                **context_kwargs,
             )
         except Exception:
-            return ContextConfig(max_image_num=non_binding_limit)
+            fallback_kwargs = (
+                {"max_image_num": non_binding_limit}
+                if supports_image_limit
+                else {}
+            )
+            return ContextConfig(**fallback_kwargs)
 
     @staticmethod
     async def _build_scroll_components(

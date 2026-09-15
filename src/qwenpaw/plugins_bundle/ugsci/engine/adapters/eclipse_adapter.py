@@ -6,9 +6,8 @@ Parses:
 - ``.SMS``  — summary file (field/well vectors, text format)
 - ``.RSM``  — summary report (formatted table, fallback)
 
-Note: Binary formats (``.SMSPE``, ``.UNRST``, ``.EGRID``) require the
-``ecl`` / ``resdata`` library.  This adapter focuses on text-parsable
-output for now; binary parsing can be added later.
+Binary ``.SMSPEC/.UNSMRY`` files are read through the optional OPM
+``resdata`` reader, with a dependency-free fortio fallback.
 """
 from __future__ import annotations
 
@@ -84,6 +83,16 @@ class EclipseAdapter(BaseSimAdapter):
     _RE_CFL = re.compile(
         r"CFL\s*=\s*([0-9.eE+\-]+)", re.IGNORECASE,
     )
+    _RE_TOTAL_STEPS = re.compile(
+        r"TOTAL\s+REPORT\s+STEPS\s*:\s*\d+\s+TOTAL\s+TIME\s+STEPS\s*:\s*(\d+)",
+        re.IGNORECASE,
+    )
+    _RE_FINAL_CPU = re.compile(
+        r"^\s*FINAL\s+CPU\b", re.IGNORECASE | re.MULTILINE,
+    )
+    _RE_ERROR_SUMMARY = re.compile(
+        r"^\s*ERROR\s+SUMMARY\s*:?\s*$", re.IGNORECASE | re.MULTILINE,
+    )
 
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
         progress = SimProgress()
@@ -93,13 +102,45 @@ class EclipseAdapter(BaseSimAdapter):
 
         log_tail = self._read_log_tail(log_file, 1000)
 
-        # Status: check for completion or failure
-        if "END OF SIMULATION" in log_tail.upper():
+        # Status: check for completion or failure.  Eclipse writes either an
+        # explicit end marker or a final CPU line; both are terminal evidence.
+        final_cpu_matches = list(self._RE_FINAL_CPU.finditer(log_tail))
+        has_end_marker = "END OF SIMULATION" in log_tail.upper()
+        if has_end_marker or final_cpu_matches:
             progress.status = "completed"
-        elif "ERROR" in log_tail[-200:].upper():
+        elif any(
+            re.match(r"^\s*(?:[*#]+\s*)?(?:ERROR|FATAL|ABORT)\b", line, re.IGNORECASE)
+            and not re.match(
+                r"^\s*(?:[*#]+\s*)?ERROR\s+SUMMARY\b", line, re.IGNORECASE,
+            )
+            for line in log_tail.splitlines()[-40:]
+        ):
             progress.status = "failed"
         else:
             progress.status = "running"
+
+        # The terminal count table is emitted in a few spelling variants,
+        # including ``Errors: 2`` and ``Problems 1``.  It is authoritative
+        # when Eclipse has reached its terminal marker, so do not report a
+        # run as completed merely because ``END OF SIMULATION`` is present.
+        summary_matches = list(self._RE_ERROR_SUMMARY.finditer(log_tail))
+        if summary_matches:
+            summary_body = log_tail[summary_matches[-1].end() :]
+        elif final_cpu_matches:
+            summary_body = log_tail[final_cpu_matches[-1].start() :]
+        else:
+            summary_body = ""
+        if (has_end_marker or final_cpu_matches) and summary_body:
+            error_match = re.search(
+                r"(?im)^\s*Errors?\s*:?\s*(\d+)\b", summary_body,
+            )
+            problem_match = re.search(
+                r"(?im)^\s*Problems?\s*:?\s*(\d+)\b", summary_body,
+            )
+            errors = int(error_match.group(1)) if error_match else 0
+            problems = int(problem_match.group(1)) if problem_match else 0
+            if error_match or problem_match:
+                progress.status = "failed" if errors or problems else "completed"
 
         # Time / progress
         for line in log_tail.splitlines():
@@ -125,6 +166,13 @@ class EclipseAdapter(BaseSimAdapter):
                     progress.cfl_number = float(m_cfl.group(1))
                 except ValueError:
                     pass
+
+        # Eclipse wraps this line in some versions, so normalize whitespace
+        # before parsing the authoritative cumulative time-step count.
+        normalized = re.sub(r"\s+", " ", log_tail)
+        step_matches = [int(m.group(1)) for m in self._RE_TOTAL_STEPS.finditer(normalized)]
+        if step_matches:
+            progress.current_step = max(step_matches)
 
         return progress
 
@@ -168,6 +216,20 @@ class EclipseAdapter(BaseSimAdapter):
                 return matches[0]
         return None
 
+    def find_binary_summary_files(
+        self, working_dir: str | Path, case_stem: str = "",
+    ) -> tuple[Optional[Path], Optional[Path]]:
+        directory = Path(working_dir)
+        stem = case_stem
+        if not stem:
+            specs = sorted(directory.glob("*.SMSPEC"))
+            stem = specs[0].stem if specs else ""
+        if not stem:
+            return None, None
+        spec = directory / f"{stem}.SMSPEC"
+        unsmry = directory / f"{stem}.UNSMRY"
+        return (spec if spec.is_file() else None, unsmry if unsmry.is_file() else None)
+
     def read_summary(
         self,
         working_dir: str | Path,
@@ -183,12 +245,14 @@ class EclipseAdapter(BaseSimAdapter):
         summary = SimSummary()
         rsm_file = self.find_summary_file(working_dir, case_stem=case_stem)
         if not rsm_file or not rsm_file.is_file():
-            return summary
+            from .eclipse_summary import read_binary_summary
+            return read_binary_summary(working_dir, case_stem, variables, wells)
 
         try:
             content = rsm_file.read_text(encoding="utf-8", errors="replace")
         except Exception:
-            return summary
+            from .eclipse_summary import read_binary_summary
+            return read_binary_summary(working_dir, case_stem, variables, wells)
 
         lines = content.splitlines()
         # Parse RSM format: find header line, then data lines
@@ -206,7 +270,8 @@ class EclipseAdapter(BaseSimAdapter):
                 break
 
         if header_idx is None:
-            return summary
+            from .eclipse_summary import read_binary_summary
+            return read_binary_summary(working_dir, case_stem, variables, wells)
 
         # Identify column indices
         date_col = None
@@ -256,5 +321,13 @@ class EclipseAdapter(BaseSimAdapter):
                     )
                 except (ValueError, IndexError):
                     pass
+
+        # A partially written/corrupt text report can still contain a valid
+        # header while yielding no usable rows. Prefer the native binary
+        # summary in that case instead of silently returning an empty result.
+        if not summary.dates and not summary.vectors and not summary.well_vectors:
+            from .eclipse_summary import read_binary_summary
+
+            return read_binary_summary(working_dir, case_stem, variables, wells)
 
         return summary

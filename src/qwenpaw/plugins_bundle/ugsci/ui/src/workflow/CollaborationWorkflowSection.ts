@@ -21,6 +21,8 @@ interface FlowRun {
   error?: string | null;
   node_statuses?: Record<string, string> | null;
   duration_ms?: number;
+  /** Optional execution events emitted by FlowForge for richer run inspection. */
+  events?: Array<Record<string, unknown>> | null;
 }
 
 const DOMAIN_TEMPLATES = [
@@ -120,6 +122,51 @@ function summarizeNodeProgress(
   return `${done}/${total} 节点完成`;
 }
 
+function nodeStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    success: "已完成", completed: "已完成", skipped: "已跳过", cached: "已缓存",
+    running: "执行中", queued: "排队中", waiting: "等待中", pending: "待执行",
+    error: "失败", failed: "失败", cancelled: "已取消",
+  };
+  return labels[status] || status;
+}
+
+function nodeStatusColor(status: string): string {
+  if (["success", "completed", "skipped", "cached"].includes(status)) return "green";
+  if (["error", "failed"].includes(status)) return "red";
+  if (["running"].includes(status)) return "blue";
+  if (["queued", "pending"].includes(status)) return "cyan";
+  return "gold";
+}
+
+function formatFlowEvent(event: Record<string, unknown>, index: number): string {
+  const type = typeof event.type === "string" ? event.type : "事件";
+  const node = typeof event.node_id === "string" ? ` · ${event.node_id}` : "";
+  const state = event.state && typeof event.state === "object"
+    ? event.state as Record<string, unknown>
+    : {};
+  const data = event.data && typeof event.data === "object"
+    ? event.data as Record<string, unknown>
+    : {};
+  const message = [event.message, state.message, state.error, data.message, data.error]
+    .find((value): value is string => typeof value === "string" && value.length > 0) || "";
+  if (message) return `${type}${node}: ${message}`;
+  const rawStatus = typeof event.status === "string"
+    ? event.status
+    : typeof state.status === "string"
+      ? state.status
+      : "";
+  const status = rawStatus ? ` · ${nodeStatusLabel(rawStatus)}` : "";
+  if (status) return `${type}${node}${status}`;
+  try {
+    const serialized = JSON.stringify(Object.keys(data).length > 0 ? data : event) || "{}";
+    const bounded = serialized.length > 240 ? `${serialized.slice(0, 237)}...` : serialized;
+    return `${type}${node}: ${bounded}`;
+  } catch {
+    return `${type}${node} #${index + 1}`;
+  }
+}
+
 const ACTIVE_RUN_STATUSES = new Set(["running", "queued", "paused", "waiting_human"]);
 
 export function CollaborationWorkflowSection() {
@@ -137,6 +184,7 @@ export function CollaborationWorkflowSection() {
     Space,
     Spin,
     Tabs,
+    Progress,
     Tag,
     Tooltip,
     Typography,
@@ -167,6 +215,7 @@ export function CollaborationWorkflowSection() {
   const [naturalPrompt, setNaturalPrompt] = useState("");
   const [activeTab, setActiveTab] = useState<string>("templates");
   const [cancellingRuns, setCancellingRuns] = useState<Set<string>>(new Set());
+  const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
   const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const hasActiveRuns = runs.some((r) => ACTIVE_RUN_STATUSES.has(r.status));
@@ -622,6 +671,25 @@ export function CollaborationWorkflowSection() {
             const flowName = flowNameMap[run.flow_id] || run.flow_id;
             const isActive = ACTIVE_RUN_STATUSES.has(run.status);
             const nodeProgress = summarizeNodeProgress(run.node_statuses);
+            const nodeEntries = Object.entries(run.node_statuses || {});
+            const doneNodes = nodeEntries.filter(([, s]) => ["success", "completed", "skipped", "cached"].includes(s)).length;
+            const failedNodes = nodeEntries.filter(([, s]) => ["error", "failed"].includes(s)).length;
+            const hasNodeProgress = nodeEntries.length > 0;
+            const terminalSuccess = run.status === "completed" || run.status === "success";
+            const progressPercent = hasNodeProgress
+              ? Math.round((doneNodes / nodeEntries.length) * 100)
+              : isActive
+                ? 18
+                : terminalSuccess
+                  ? 100
+                  : 0;
+            const eventEntries = Array.isArray(run.events)
+              ? run.events.filter(
+                  (event): event is Record<string, unknown> =>
+                    Boolean(event) && typeof event === "object",
+                ).slice(-100)
+              : [];
+            const expanded = expandedRuns.has(run.run_id);
             const duration =
               run.duration_ms && run.duration_ms > 0
                 ? run.duration_ms
@@ -632,7 +700,14 @@ export function CollaborationWorkflowSection() {
                     : 0;
             return React.createElement(
               Card,
-              { key: run.run_id, size: "small" },
+              {
+                key: run.run_id,
+                size: "small",
+                style: {
+                  borderLeft: `3px solid ${STATUS_COLORS[run.status] === "green" ? "#52c41a" : STATUS_COLORS[run.status] === "red" ? "#ff4d4f" : "#1677ff"}`,
+                  transition: "box-shadow .2s ease",
+                },
+              },
               React.createElement(
                 "div",
                 { style: { display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" } },
@@ -696,11 +771,71 @@ export function CollaborationWorkflowSection() {
                     : null,
                   React.createElement(
                     Button,
-                    { size: "small", type: "link", onClick: () => openFlowForge(undefined, run.run_id) },
+                    {
+                      size: "small",
+                      type: "link",
+                      onClick: () => setExpandedRuns((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(run.run_id)) next.delete(run.run_id); else next.add(run.run_id);
+                        return next;
+                      }),
+                    },
+                    expanded ? "收起过程" : "查看过程",
+                  ),
+                  React.createElement(
+                    Button,
+                    {
+                      size: "small",
+                      type: "link",
+                      onClick: () => openFlowForge(undefined, run.run_id),
+                    },
                     "查看详情",
                   ),
                 ),
               ),
+              React.createElement(
+                "div",
+                { style: { marginTop: 10, display: "flex", alignItems: "center", gap: 10 } },
+                React.createElement(Progress, { percent: progressPercent, size: "small", status: failedNodes || run.status === "failed" || run.status === "error" ? "exception" : isActive ? "active" : "success", showInfo: false, style: { flex: 1, margin: 0 } }),
+                React.createElement(Text, { type: "secondary", style: { fontSize: 12, minWidth: 90, textAlign: "right" } }, hasNodeProgress ? `${progressPercent}%` : "暂无节点进度"),
+              ),
+              expanded && (nodeEntries.length > 0 || eventEntries.length > 0 || Boolean(run.error))
+                ? React.createElement(
+                    "div",
+                    { style: { marginTop: 12, padding: "10px 12px", borderRadius: 8, background: "var(--ant-color-fill-quaternary, #fafafa)" } },
+                    React.createElement(
+                      "div",
+                      { style: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 } },
+                      React.createElement(Text, { strong: true }, "协作过程"),
+                      React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, nodeEntries.length > 0 ? `${doneNodes}/${nodeEntries.length} 个 Agent 节点完成${failedNodes ? ` · ${failedNodes} 个失败` : ""}` : "暂无节点状态"),
+                    ),
+                    nodeEntries.length > 0
+                      ? React.createElement(
+                          "div",
+                          { style: { display: "grid", gap: 7 } },
+                          ...nodeEntries.map(([nodeId, status], index) =>
+                            React.createElement(
+                              "div",
+                              { key: nodeId, style: { display: "flex", alignItems: "center", gap: 8 } },
+                              React.createElement("span", { style: { width: 22, height: 22, borderRadius: "50%", display: "inline-flex", alignItems: "center", justifyContent: "center", background: nodeStatusColor(status) === "green" ? "#f6ffed" : nodeStatusColor(status) === "red" ? "#fff2f0" : "#e6f4ff", color: nodeStatusColor(status) === "green" ? "#389e0d" : nodeStatusColor(status) === "red" ? "#cf1322" : "#1677ff", fontSize: 11, fontWeight: 600 } }, index + 1),
+                              React.createElement(Text, { style: { flex: 1, fontSize: 12 } }, nodeId.replace(/^step[_-]?\d+[_-]?/, "") || `Agent ${index + 1}`),
+                              index < nodeEntries.length - 1 ? React.createElement(Text, { type: "secondary", style: { fontSize: 11 } }, "→") : null,
+                              React.createElement(Tag, { color: nodeStatusColor(status), style: { margin: 0, fontSize: 11 } }, nodeStatusLabel(status)),
+                            ),
+                          ),
+                        )
+                      : null,
+                    eventEntries.length > 0
+                      ? React.createElement(
+                          "div",
+                          { style: { display: "grid", gap: 5, marginTop: nodeEntries.length > 0 ? 10 : 0 } },
+                          React.createElement(Text, { strong: true, style: { fontSize: 12 } }, "执行事件"),
+                          ...eventEntries.map((event, index) => React.createElement(Text, { key: `event-${index}`, type: "secondary", style: { fontSize: 12 } }, formatFlowEvent(event, index))),
+                        )
+                      : null,
+                    run.error ? React.createElement(Alert, { type: "error", showIcon: true, message: "运行错误", description: run.error, style: { marginTop: 10 } }) : null,
+                  )
+                : null,
             );
           }),
         );

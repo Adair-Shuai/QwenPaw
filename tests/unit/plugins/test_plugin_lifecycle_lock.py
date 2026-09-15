@@ -71,6 +71,52 @@ def test_tool_names_from_meta_tolerates_malformed_tools():
     ) == ["legacy", "a", "b"]
 
 
+def test_sync_plugin_tools_ignores_malformed_manifest_tools(
+    monkeypatch,
+) -> None:
+    """Malformed tool metadata must not skip legacy or valid tool entries."""
+    from types import SimpleNamespace
+
+    from qwenpaw.app.routers import plugins as plugins_router
+    from qwenpaw.config import config as config_module
+    from qwenpaw.config import utils as config_utils
+
+    record = MagicMock()
+    record.manifest.meta = {
+        "tool_name": "legacy_tool",
+        "tools": [{"name": "malformed_tool", "icon": {"not": "text"}}],
+    }
+    loader = MagicMock()
+    loader.get_loaded_plugin.return_value = record
+    agent_config = SimpleNamespace(
+        tools=config_module.ToolsConfig(builtin_tools={}),
+    )
+    saved: list[tuple[str, object]] = []
+
+    monkeypatch.setattr(
+        config_utils,
+        "load_config",
+        lambda: SimpleNamespace(
+            agents=SimpleNamespace(profiles={"agent-a": {}}),
+        ),
+    )
+    monkeypatch.setattr(
+        config_module, "load_agent_config", lambda _: agent_config
+    )
+    monkeypatch.setattr(
+        config_module,
+        "save_agent_config",
+        lambda agent_id, value: saved.append((agent_id, value)),
+    )
+
+    plugins_router._sync_plugin_tools_to_agents(loader, "demo")
+
+    assert "legacy_tool" in agent_config.tools.builtin_tools
+    assert agent_config.tools.builtin_tools["malformed_tool"].enabled is False
+    assert agent_config.tools.builtin_tools["malformed_tool"].icon is None
+    assert saved and saved[0][0] == "agent-a"
+
+
 def test_force_reinstall_removed_tools_are_old_minus_new():
     """Only tools dropped by the new manifest should be cleaned up."""
     old_tools = set(

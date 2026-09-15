@@ -365,8 +365,11 @@ def test_isolated_workspace_creates_overlay(tmp_path):
         assert overlay is not None
         assert overlay != base_ws
 
-        assert (overlay / "skills").is_symlink()
-        assert (overlay / "skills").resolve() == skills_dir.resolve()
+        skills_overlay = overlay / "skills"
+        assert skills_overlay.is_dir()
+        assert (skills_overlay / "alpha" / "SKILL.md").is_file()
+        if skills_overlay.is_symlink():
+            assert skills_overlay.resolve() == skills_dir.resolve()
 
         manifest_path = overlay / "skill.json"
         assert manifest_path.exists()
@@ -376,7 +379,7 @@ def test_isolated_workspace_creates_overlay(tmp_path):
         assert "not-a-skill" not in manifest["skills"]
         assert manifest["skills"]["alpha"]["enabled"] is True
 
-        assert (overlay / "AGENTS.md").is_symlink()
+        assert (overlay / "AGENTS.md").is_file()
         assert (overlay / "AGENTS.md").read_text() == "agent prompt"
 
         resolved = resolve_effective_skills(overlay, "console")
