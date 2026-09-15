@@ -173,16 +173,14 @@ export default function LoginPage() {
           maxWidth: "100%",
           padding: 32,
           borderRadius: 12,
-          background: isDark ? "#1c1b1e" : "#fff",
-          boxShadow: isDark
-            ? "0 4px 24px rgba(0,0,0,0.4)"
-            : "0 4px 24px rgba(0,0,0,0.1)",
+          background: "var(--app-surface)",
+          boxShadow: "var(--app-shadow-md)",
         }}
       >
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <img
             src={isDark ? "/logo-dark.svg" : "/logo-light.svg"}
-            alt="UGSci"
+            alt="QwenPaw"
             style={{ height: 48, marginBottom: 12 }}
           />
           <h2 style={{ margin: 0, fontWeight: 600, fontSize: 20 }}>
@@ -192,7 +190,7 @@ export default function LoginPage() {
             <p
               style={{
                 margin: "8px 0 0",
-                color: isDark ? "rgba(255,255,255,0.45)" : "#666",
+                color: "var(--app-text-tertiary)",
                 fontSize: 13,
               }}
             >
@@ -216,7 +214,7 @@ export default function LoginPage() {
                 <UserRound
                   size={16}
                   style={{
-                    color: isDark ? "rgba(255,255,255,0.45)" : undefined,
+                    color: "var(--app-text-tertiary)",
                   }}
                 />
               }
@@ -234,7 +232,7 @@ export default function LoginPage() {
                 <LockKeyhole
                   size={16}
                   style={{
-                    color: isDark ? "rgba(255,255,255,0.45)" : undefined,
+                    color: "var(--app-text-tertiary)",
                   }}
                 />
               }

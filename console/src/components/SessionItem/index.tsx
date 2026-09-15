@@ -7,7 +7,6 @@ import {
   Bot,
   Clock3,
   FolderInput,
-  GripVertical,
   MoreHorizontal,
   Pencil,
   Pin,
@@ -33,16 +32,12 @@ export interface SessionItemProps {
   source?: "chat" | "cron" | "subagent";
   groupId?: string | null;
   groups?: ChatGroup[];
-  time?: string; // Only used by the drawer variant
 
   // -- State --
   active?: boolean;
   disabled?: boolean;
   editing?: boolean;
   editValue?: string;
-
-  // -- Variant --
-  variant: "drawer" | "sidebar";
 
   // -- Events --
   onClick?: (sessionId: string) => void;
@@ -69,12 +64,10 @@ const SessionItem: React.FC<SessionItemProps> = ({
   source,
   groupId,
   groups = [],
-  time,
   active,
   disabled,
   editing,
   editValue,
-  variant,
   onClick,
   onEdit,
   onDelete,
@@ -184,7 +177,7 @@ const SessionItem: React.FC<SessionItemProps> = ({
 
   const cls = [
     styles.item,
-    styles[variant],
+    styles.sidebar,
     active ? styles.active : "",
     disabled ? styles.disabled : "",
     editing ? styles.editing : "",
@@ -194,15 +187,18 @@ const SessionItem: React.FC<SessionItemProps> = ({
     .join(" ");
 
   const itemContent = (
-    <div
-      className={cls}
-      data-pinned={pinned}
-      onClick={handleClick}
-      role="button"
-      tabIndex={0}
-    >
-      {/* Drawer variant: timeline indicator */}
-      {variant === "drawer" && <div className={styles.iconPlaceholder} />}
+    <div className={cls} onClick={handleClick} role="button" tabIndex={0}>
+      {!editing && (
+        <span
+          className={styles.statusSlot}
+          role="img"
+          aria-label={statusAriaLabel}
+        >
+          {inProgress && <span className={styles.runningDot} />}
+          {hasUnseenResult && <span className={styles.unseenDot} />}
+          {isIdle && !hasUnseenResult && <span className={styles.idleDot} />}
+        </span>
+      )}
 
       {/* Content area */}
       <div className={styles.content}>
@@ -241,103 +237,23 @@ const SessionItem: React.FC<SessionItemProps> = ({
             onClick={(e) => e.stopPropagation()}
           />
         ) : (
-          <>
-            {variant === "drawer" ? (
-              <div className={styles.titleRow}>
-                <span
-                  className={styles.statusWrap}
-                  role="img"
-                  aria-label={statusAriaLabel}
-                >
-                  <span
-                    className={`${styles.statusDot} ${
-                      inProgress
-                        ? styles.statusDotActive
-                        : hasUnseenResult
-                        ? styles.statusDotUnseen
-                        : styles.statusDotIdle
-                    }`}
-                    aria-hidden
-                  />
-                </span>
-                <div className={styles.name}>{name || "New Chat"}</div>
-              </div>
-            ) : (
-              <div className={styles.name}>{name || "New Chat"}</div>
-            )}
-          </>
-        )}
-        {/* Drawer variant: show time and channel in meta row */}
-        {variant === "drawer" && (
-          <div className={styles.metaRow}>
-            {time && <span className={styles.time}>{time}</span>}
-            {(isSubagent || isCron) && (
-              <span className={styles.sourceTag}>
-                {isCron ? <Clock3 size={11} /> : <Bot size={11} />}
-                <span>{sourceLabel}</span>
-              </span>
-            )}
-            {(channelKey || channelLabel) && (
-              <span
-                className={styles.channelTag}
-                title={channelLabel || channelKey}
-              >
-                {channelKey ? (
-                  <ChannelIcon channelKey={channelKey} size={14} />
-                ) : null}
-                {channelLabel ? (
-                  <span className={styles.channelTagText}>{channelLabel}</span>
-                ) : null}
-              </span>
-            )}
-          </div>
+          <div className={styles.name}>{name || "New Chat"}</div>
         )}
       </div>
 
-      {!editing &&
-        variant === "sidebar" &&
-        (inProgress ||
-          hasUnseenResult ||
-          channelKey ||
-          isSubagent ||
-          isCron ||
-          pinned) && (
-          <span className={styles.sidebarMeta}>
-            {(inProgress || hasUnseenResult) && (
-              <span
-                className={styles.statusSlot}
-                role="img"
-                aria-label={statusAriaLabel}
-              >
-                {inProgress && <span className={styles.runningDot} />}
-                {hasUnseenResult && <span className={styles.unseenDot} />}
-              </span>
-            )}
-            {channelKey && (
-              <span
-                className={styles.channelTag}
-                title={channelLabel || channelKey}
-              >
-                <ChannelIcon channelKey={channelKey} size={14} />
-              </span>
-            )}
-            {(isSubagent || isCron) && (
-              <span className={styles.sourceIcon} title={sourceLabel}>
-                {isCron ? <Clock3 size={13} /> : <Bot size={13} />}
-              </span>
-            )}
-            {pinned && (
-              <span
-                className={styles.pinMark}
-                title={t("chat.group.pinned", "Pinned")}
-              >
-                <Pin size={11} />
-              </span>
-            )}
-          </span>
-        )}
+      {!editing && channelKey && (
+        <span className={styles.channelTag} title={channelLabel || channelKey}>
+          <ChannelIcon channelKey={channelKey} size={14} />
+        </span>
+      )}
 
-      {!editing && variant === "drawer" && pinned && (
+      {!editing && (isSubagent || isCron) && (
+        <span className={styles.sourceIcon} title={sourceLabel}>
+          {isCron ? <Clock3 size={13} /> : <Bot size={13} />}
+        </span>
+      )}
+
+      {!editing && pinned && (
         <span
           className={styles.pinMark}
           title={t("chat.group.pinned", "Pinned")}
@@ -346,20 +262,6 @@ const SessionItem: React.FC<SessionItemProps> = ({
         </span>
       )}
 
-      {!editing && variant === "drawer" && (
-        <span
-          className={styles.dragHint}
-          title={t(
-            "chat.groups.dragSessionHint",
-            "Press and hold to move this conversation",
-          )}
-          aria-hidden
-        >
-          <GripVertical size={12} />
-        </span>
-      )}
-
-      {/* More button — unified for both variants */}
       {!editing && (
         <Dropdown
           menu={{ items: dropdownItems }}
@@ -367,9 +269,14 @@ const SessionItem: React.FC<SessionItemProps> = ({
           placement="bottomRight"
           onOpenChange={setDropdownOpen}
         >
-          <span className={styles.moreBtn} onClick={(e) => e.stopPropagation()}>
+          <button
+            type="button"
+            aria-label={t("appCenter.moreActions", "More actions")}
+            className={styles.moreBtn}
+            onClick={(e) => e.stopPropagation()}
+          >
             <MoreHorizontal size={14} />
-          </span>
+          </button>
         </Dropdown>
       )}
     </div>

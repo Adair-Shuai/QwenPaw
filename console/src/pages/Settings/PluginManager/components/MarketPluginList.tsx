@@ -16,12 +16,12 @@ import type {
   MarketPluginEntry,
   MarketPluginSortBy,
 } from "@/api/modules/pluginMarket";
+import type { InstallPluginResult, PluginInfo } from "@/api/modules/plugin";
+import { marketPluginMatches } from "@/utils/marketPluginIdentity";
+import { compareVersions } from "@/layouts/constants";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { openExternalLink } from "@/utils/openExternalLink";
-import {
-  isMarketUpgradeAvailable,
-  useMarketPlugins,
-} from "../hooks/useMarketPlugins";
+import { useMarketPlugins } from "../hooks/useMarketPlugins";
 import { PluginViewToggle } from "./PluginViewToggle";
 import styles from "./OfficialPluginList.module.less";
 import marketStyles from "./MarketPluginList.module.less";
@@ -100,10 +100,14 @@ function pickLocalizedDescription(
 }
 
 interface MarketPluginListProps {
-  onInstalled: () => void;
+  onInstalled: (result: InstallPluginResult) => void | Promise<void>;
+  installedPlugins?: PluginInfo[];
 }
 
-export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
+export function MarketPluginList({
+  onInstalled,
+  installedPlugins = [],
+}: MarketPluginListProps) {
   const { t, i18n } = useTranslation();
   const [searchInput, setSearchInput] = useState("");
   const [activeSearch, setActiveSearch] = useState("");
@@ -135,6 +139,10 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
   } = useMarketPlugins({ onInstalled });
 
   const lang = i18n.language.split("-")[0].toLowerCase();
+  const getInstalledVersion = (entry: MarketPluginEntry) => {
+    return installedPlugins.find((plugin) => marketPluginMatches(plugin, entry))
+      ?.version;
+  };
 
   const onSearch = (val: string) => {
     setActiveSearch(val);
@@ -177,19 +185,25 @@ export function MarketPluginList({ onInstalled }: MarketPluginListProps) {
       }
     >
       <Button
-        type="primary"
+        type={
+          getInstalledVersion(entry) &&
+          compareVersions(entry.version, getInstalledVersion(entry)!) <= 0
+            ? "default"
+            : "primary"
+        }
         icon={<Download size={14} />}
         loading={installingId === entry.id}
         disabled={
-          (entry.installed && !isMarketUpgradeAvailable(entry)) ||
+          (Boolean(getInstalledVersion(entry)) &&
+            compareVersions(entry.version, getInstalledVersion(entry)!) <= 0) ||
           (installingId !== null && installingId !== entry.id)
         }
         onClick={() => requestInstall(entry)}
       >
-        {entry.installed
-          ? isMarketUpgradeAvailable(entry)
-            ? t("pluginManager.catalogUpgradeBtn")
-            : t("pluginManager.catalogLatest")
+        {getInstalledVersion(entry)
+          ? compareVersions(entry.version, getInstalledVersion(entry)!) > 0
+            ? t("pluginManager.update")
+            : t("pluginManager.catalogInstalled")
           : t("pluginManager.catalogInstall")}
       </Button>
     </Tooltip>

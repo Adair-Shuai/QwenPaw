@@ -15,6 +15,7 @@ const hoisted = vi.hoisted(() => ({
   fetchUGSciPluginCatalog: vi.fn(),
   installPlugin: vi.fn(),
   loadPawApp: vi.fn(),
+  reloadPawApp: vi.fn(),
   routeSnapshot: vi.fn(),
   removePluginAppState: vi.fn(),
 }));
@@ -51,6 +52,7 @@ vi.mock("@/plugins/registry/hooks", () => ({
 
 vi.mock("@/plugins/usePluginLoader", () => ({
   loadPawApp: hoisted.loadPawApp,
+  reloadPawApp: hoisted.reloadPawApp,
 }));
 
 vi.mock("@/os/osCleanup", () => ({
@@ -137,10 +139,12 @@ describe("AppCenterPage", () => {
     hoisted.fetchUGSciPluginCatalog.mockReset();
     hoisted.installPlugin.mockReset();
     hoisted.loadPawApp.mockReset();
+    hoisted.reloadPawApp.mockReset();
     hoisted.routeSnapshot.mockReset();
     hoisted.removePluginAppState.mockReset();
     hoisted.routeSnapshot.mockReturnValue([]);
     hoisted.loadPawApp.mockResolvedValue(undefined);
+    hoisted.reloadPawApp.mockResolvedValue(undefined);
     hoisted.listApps.mockResolvedValue({
       apps: [makeApp("alpha-app"), makeApp("beta-app", { category: "games" })],
       total: 2,
@@ -324,7 +328,10 @@ describe("AppCenterPage", () => {
     expect(updateButton).toBeEnabled();
     fireEvent.click(updateButton);
     await waitFor(() => expect(hoisted.installPlugin).toHaveBeenCalledTimes(1));
-    expect(hoisted.loadPawApp).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(hoisted.reloadPawApp).toHaveBeenCalledWith("alpha-app"),
+    );
+    expect(hoisted.listApps).toHaveBeenCalledTimes(2);
   });
 
   it("returns to installed apps and preserves unrelated query params", async () => {

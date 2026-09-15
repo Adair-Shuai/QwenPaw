@@ -31,7 +31,10 @@ from ...runtime.tool_registry import tool_descriptor
 from ...sandbox import ExecutionResult
 from ...sandbox.config import SandboxConfig
 from ...utils.io_utils import run_sync_io
-from ...utils.shell_normalization import normalize_posix_line_continuations
+from ...utils.shell_normalization import (
+    normalize_posix_line_continuations,
+    shell_execution_path,
+)
 
 _logger = logging.getLogger(__name__)
 
@@ -496,11 +499,6 @@ _PS_CMD_RE = re.compile(
     r"\s+-Command\s+",
     re.IGNORECASE,
 )
-_PYTHON_COMMAND_RE = re.compile(
-    r"(?i)(?:^|[\s;&|()])['\"]?"
-    r"(?:python(?:3(?:\.\d+)?)?|pip(?:3(?:\.\d+)?)?|py)"
-    r"(?:\.exe)?['\"]?(?=\s|$)",
-)
 
 
 def _extract_powershell_command(cmd: str) -> tuple[str | None, str]:
@@ -659,6 +657,7 @@ def _execute_subprocess_sync(
         proc = subprocess.Popen(  # pylint: disable=consider-using-with
             wrapped,
             shell=False,
+            stdin=subprocess.DEVNULL,
             stdout=stdout_file,
             stderr=stderr_file,
             text=False,
@@ -950,20 +949,14 @@ async def _execute_in_sandbox(
     )
 
     # Sandbox backends rebuild their environment from os.environ. Carry over
-    # the task-runtime routing variables unless policy set them itself.
+    # the PATH adjusted by the shell entrypoint unless policy set one itself.
     sandbox_env = dict(sandbox_config.env_vars)
-    routed_keys = {
-        "PATH",
-        "PIP_TARGET",
-        "PYTHONPATH",
-        "PYTHONNOUSERSITE",
-        "QWENPAW_EXECUTION_PYTHON",
-        "QWENPAW_EXECUTION_PYTHON_MODE",
-    }
-    configured_keys = {key.upper() for key in sandbox_env}
-    for key, value in env.items():
-        if key.upper() in routed_keys and key.upper() not in configured_keys:
-            sandbox_env[key] = value
+    if not any(key.upper() == "PATH" for key in sandbox_env):
+        path_key = next(
+            (key for key in env if key.upper() == "PATH"),
+            "PATH",
+        )
+        sandbox_env[path_key] = env[path_key]
 
     ctx = get_call_context()
     # Under ToolCallContext the coordinator owns kill via cancellable_wait /
@@ -1149,6 +1142,7 @@ async def _execute_posix_host(
             shell_executable or "/bin/sh",
             "-c",
             cmd,
+            stdin=asyncio.subprocess.DEVNULL,
             stdout=outputs.stdout_file,
             stderr=outputs.stderr_file,
             bufsize=0,
@@ -1240,7 +1234,7 @@ async def _execute_posix_host(
 #  buffers, allow callers to poll new output and stop sessions explicitly,
 #  limit active sessions, and terminate the entire process tree when a
 #  session  stops or expires, or when the application shuts down.
-# pylint: disable=too-many-branches, too-many-statements, too-many-return-statements
+# pylint: disable=too-many-branches, too-many-statements
 @tool_descriptor(
     requires_sandbox=("shell_exec",),
     async_execution=True,
@@ -1301,24 +1295,6 @@ async def execute_shell_command(
         shell_executable=shell_executable,
     )
 
-    if os.environ.get(
-        "QWENPAW_EXECUTION_PYTHON_MODE",
-    ) == "external-invalid" and _PYTHON_COMMAND_RE.search(cmd):
-        return ToolChunk(
-            is_last=True,
-            state=ToolResultState.ERROR,
-            content=[
-                TextBlock(
-                    type="text",
-                    text=(
-                        "The selected external Python is unavailable or "
-                        "unsupported. Reinstall QwenPaw or select a valid "
-                        "64-bit Python 3.11, 3.12, or 3.13."
-                    ),
-                ),
-            ],
-        )
-
     if _is_dangerous_self_kill(cmd):
         return ToolChunk(
             is_last=True,
@@ -1365,22 +1341,9 @@ async def execute_shell_command(
     else:
         working_dir = get_tool_base_dir()
 
-    # Route task-level python and pip commands independently from the Python
-    # interpreter that keeps the QwenPaw backend running.
+    # Ensure the venv Python is on PATH for subprocesses
     env = os.environ.copy()
-    if os.environ.get("QWENPAW_DESKTOP_APP") == "1":
-        from ...tauri.execution_runtime import prepare_execution_env
-
-        prepare_execution_env(env)
-        python_bin_dir = ""
-    else:
-        python_bin_dir = str(Path(sys.executable).parent)
-
-    existing_path = env.get("PATH", "")
-    if python_bin_dir and existing_path:
-        env["PATH"] = python_bin_dir + os.pathsep + existing_path
-    elif python_bin_dir:
-        env["PATH"] = python_bin_dir
+    env["PATH"] = shell_execution_path(env.get("PATH"))
 
     if sandbox_config is not None and not isinstance(
         sandbox_config,

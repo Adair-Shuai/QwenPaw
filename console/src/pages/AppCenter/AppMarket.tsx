@@ -1,9 +1,9 @@
 /**
- * AppMarket.tsx — QwenPaw, UGSci, and community app catalogs.
+ * AppMarket.tsx — App market view for the App Center.
  *
- * QwenPaw apps come from the upstream official download catalog. UGSci apps
- * come from the separately signed UGSci OSS catalog. Community apps continue
- * to use the AgentScope plugin market and its original download URLs.
+ * Reuses the existing plugin-market proxy (`/plugins/market/search`) and the
+ * `installPlugin` flow, filtered to UI extensions (category "app") so the
+ * market surfaces installable PawApps.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -19,8 +19,10 @@ import {
 } from "antd";
 import {
   AppWindow,
+  BadgeCheck,
   Download,
   ExternalLink,
+  RefreshCw,
   Search,
   Sparkles,
 } from "lucide-react";
@@ -42,14 +44,18 @@ import {
 } from "@/api/modules/plugin";
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
-import { getMarketAppState } from "@/utils/marketAppState";
+import { getMarketAppState, type MarketAppState } from "@/utils/marketAppState";
+import type { InstalledPluginIdentity } from "@/utils/marketPluginIdentity";
 import styles from "./index.module.less";
 
 const { Text, Paragraph } = Typography;
 
 const APP_CATEGORY = "app";
-const MARKET_PAGE_SIZE = 100;
+const MARKET_PAGE_SIZE = 20;
+const QWENPAW_APP_PRIORITY = ["qwenpaw-creator", "agent-kanban"];
+const UGSCI_APP_PRIORITY = ["uideas", "ulit"];
 
+type AppMarketFilter = "all" | "featured" | "trending";
 type AppCatalogChannel = "qwenpaw" | "official" | "ugsci" | "community";
 
 interface AppCatalogEntry extends MarketPluginEntry {
@@ -58,73 +64,6 @@ interface AppCatalogEntry extends MarketPluginEntry {
   sha256?: string;
   upgrade_available?: boolean;
   catalog_channel?: "qwenpaw" | "ugsci";
-}
-
-const OFFICIAL_APP_PRIORITY = ["qwenpaw-creator", "agent-kanban"];
-const UGSCI_APP_PRIORITY = ["uideas", "ulit"];
-const OFFICIAL_APP_ICONS: Record<string, string> = {
-  "@agentscope/qwenpaw-creator": "/creator-logo.png",
-  "qwenpaw-creator": "/creator-logo.png",
-};
-// Emoji icons from the plugins' own plugin.json (the market API carries no
-// icon field), so uninstalled cards match what the installed view shows.
-const OFFICIAL_APP_EMOJIS: Record<string, string> = {
-  "@zhijianma/agent-kanban": "📋",
-  "agent-kanban": "📋",
-  uideas: "💡",
-  ulit: "📚",
-};
-// The upstream market entry ships the same English text under every locale
-// key, so curated apps carry their real translations here (keyed by language
-// prefix). Falls back to the upstream locales for everything else.
-const OFFICIAL_APP_DESCRIPTIONS: Record<string, Record<string, string>> = {
-  "qwenpaw-creator": {
-    zh: "Agentic 视频创作平台。从一句创意生成短剧，或将已有素材剪成成片：编剧、导演、视觉、动效、剪辑等 Agent 协同完成策划、生成、剪辑与合成；项目中所见皆可选中交给 Agent 精准修改，每个关键决定都由你确认。",
-    en: "An agentic video creation platform. Start from an idea or existing footage: an Agent team of screenwriting, directing, visual, motion, and editing Specialists handles planning, generation, editing, and composition; select anything in the project and hand it to the Agent for a precise change, with every key decision staying in your hands.",
-  },
-  "@agentscope/qwenpaw-creator": {
-    zh: "Agentic 视频创作平台。从一句创意生成短剧，或将已有素材剪成成片：编剧、导演、视觉、动效、剪辑等 Agent 协同完成策划、生成、剪辑与合成；项目中所见皆可选中交给 Agent 精准修改，每个关键决定都由你确认。",
-    en: "An agentic video creation platform. Start from an idea or existing footage: an Agent team of screenwriting, directing, visual, motion, and editing Specialists handles planning, generation, editing, and composition; select anything in the project and hand it to the Agent for a precise change, with every key decision staying in your hands.",
-  },
-  "@zhijianma/agent-kanban": {
-    zh: "一个看板应用：创建任务并分配给智能体，由指定智能体自动执行，并实时查看其输出流。",
-    en: "A Kanban board to create issues, assign them to agents, auto-run them via the assigned agent, and watch their output stream in real time.",
-  },
-  "agent-kanban": {
-    zh: "一个看板应用：创建任务并分配给智能体，由指定智能体自动执行，并实时查看其输出流。",
-    en: "A Kanban board to create issues, assign them to agents, auto-run them via the assigned agent, and watch their output stream in real time.",
-  },
-};
-
-function catalogRank(
-  entry: AppCatalogEntry,
-  channel: AppCatalogChannel,
-): number {
-  const id = entry.plugin_id || entry.id;
-  const priority =
-    channel === "ugsci" ? UGSCI_APP_PRIORITY : OFFICIAL_APP_PRIORITY;
-  const index = priority.indexOf(id);
-  return index === -1 ? priority.length : index;
-}
-
-function pickDescription(entry: AppCatalogEntry, language: string): string {
-  const curated =
-    OFFICIAL_APP_DESCRIPTIONS[entry.plugin_id || ""] ||
-    OFFICIAL_APP_DESCRIPTIONS[entry.id];
-  if (curated) {
-    const prefix = language.split("-")[0].toLowerCase();
-    if (curated[prefix]) return curated[prefix];
-    if (curated.en) return curated.en;
-  }
-  const locales = entry.locales;
-  if (!locales || Object.keys(locales).length === 0) return "";
-  if (locales[language]) return locales[language].description;
-  const prefix = language.split("-")[0].toLowerCase();
-  for (const key of Object.keys(locales)) {
-    if (key.toLowerCase().startsWith(prefix)) return locales[key].description;
-  }
-  if (locales.en) return locales.en.description;
-  return Object.values(locales)[0]?.description ?? "";
 }
 
 function toAppCatalogEntry(
@@ -161,9 +100,90 @@ function toAppCatalogEntry(
   };
 }
 
+function catalogPriority(
+  entry: AppCatalogEntry,
+  channel: "qwenpaw" | "ugsci",
+): number {
+  const priorities =
+    channel === "ugsci" ? UGSCI_APP_PRIORITY : QWENPAW_APP_PRIORITY;
+  const index = priorities.indexOf(entry.plugin_id || entry.id);
+  return index === -1 ? priorities.length : index;
+}
+
+function LoadMoreSentinel({ onVisible }: { onVisible: () => void }) {
+  const { t } = useTranslation();
+  const nodeRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const node = nodeRef.current;
+    if (!node) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) onVisible();
+      },
+      { rootMargin: "200px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [onVisible]);
+
+  return (
+    <div ref={nodeRef} className={styles.sentinel}>
+      {t("common.loading", "加载中...")}
+    </div>
+  );
+}
+
+// Curated featured apps use pinned artwork because the market API may not
+// provide an icon for them.
+const FEATURED_APP_ICONS: Record<string, string> = {
+  "@agentscope/qwenpaw-creator": "/creator-logo.png",
+  "qwenpaw-creator": "/creator-logo.png",
+};
+// Emoji icons from the plugins' own plugin.json (the market API carries no
+// icon field), so uninstalled cards match what the installed view shows.
+const FEATURED_APP_EMOJIS: Record<string, string> = {
+  "@zhijianma/agent-kanban": "📋",
+  "agent-kanban": "📋",
+  uideas: "💡",
+  ulit: "📚",
+};
+// The upstream market entry ships the same English text under every locale
+// key, so curated apps carry their real translations here (keyed by language
+// prefix). Falls back to the upstream locales for everything else.
+const FEATURED_APP_DESCRIPTIONS: Record<string, Record<string, string>> = {
+  "@agentscope/qwenpaw-creator": {
+    zh: "Agentic 视频创作平台。从一句创意生成短剧，或将已有素材剪成成片：编剧、导演、视觉、动效、剪辑等 Agent 协同完成策划、生成、剪辑与合成；项目中所见皆可选中交给 Agent 精准修改，每个关键决定都由你确认。",
+    en: "An agentic video creation platform. Start from an idea or existing footage: an Agent team of screenwriting, directing, visual, motion, and editing Specialists handles planning, generation, editing, and composition; select anything in the project and hand it to the Agent for a precise change, with every key decision staying in your hands.",
+  },
+  "@zhijianma/agent-kanban": {
+    zh: "一个看板应用：创建任务并分配给智能体，由指定智能体自动执行，并实时查看其输出流。",
+    en: "A Kanban board to create issues, assign them to agents, auto-run them via the assigned agent, and watch their output stream in real time.",
+  },
+};
+
+function pickDescription(entry: MarketPluginEntry, language: string): string {
+  const curated = FEATURED_APP_DESCRIPTIONS[entry.id];
+  if (curated) {
+    const prefix = language.split("-")[0].toLowerCase();
+    if (curated[prefix]) return curated[prefix];
+    if (curated.en) return curated.en;
+  }
+  const locales = entry.locales;
+  if (!locales || Object.keys(locales).length === 0) return "";
+  if (locales[language]) return locales[language].description;
+  const prefix = language.split("-")[0].toLowerCase();
+  for (const key of Object.keys(locales)) {
+    if (key.toLowerCase().startsWith(prefix)) return locales[key].description;
+  }
+  if (locales.en) return locales.en.description;
+  return Object.values(locales)[0]?.description ?? "";
+}
+
 interface AppMarketProps {
   onInstalled: (result?: InstallPluginResult) => void | Promise<void>;
   installedAppVersions?: ReadonlyMap<string, string>;
+  installedApps?: readonly InstalledPluginIdentity[];
   channel?: AppCatalogChannel;
 }
 
@@ -172,6 +192,7 @@ const EMPTY_INSTALLED_APP_VERSIONS: ReadonlyMap<string, string> = new Map();
 export function AppMarket({
   onInstalled,
   installedAppVersions = EMPTY_INSTALLED_APP_VERSIONS,
+  installedApps = [],
   channel = "community",
 }: AppMarketProps) {
   const { t, i18n } = useTranslation();
@@ -182,72 +203,95 @@ export function AppMarket({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [plugins, setPlugins] = useState<AppCatalogEntry[]>([]);
+  const [filter, setFilter] = useState<AppMarketFilter>("all");
+  const [refreshKey, setRefreshKey] = useState(0);
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
+  const [pageNumber, setPageNumber] = useState(1);
+  const [total, setTotal] = useState(0);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [autoLoadBlocked, setAutoLoadBlocked] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
   const [qwenpawVersion, setQwenpawVersion] = useState<string | null>(null);
   const [versionChecked, setVersionChecked] = useState(false);
   const installingIdRef = useRef<string | null>(null);
+  const loadingMoreRef = useRef(false);
+  const loadMoreControllerRef = useRef<AbortController | null>(null);
 
   const load = useCallback(
-    async (keyword: string, signal: AbortSignal) => {
-      setLoading(true);
+    async (
+      nextPage: number,
+      keyword: string,
+      selectedFilter: AppMarketFilter,
+      signal: AbortSignal,
+      append: boolean,
+    ) => {
+      if (append) {
+        loadingMoreRef.current = true;
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
       setError(null);
       try {
-        const entries: AppCatalogEntry[] = [];
         if (channel === "qwenpaw" || channel === "ugsci") {
-          const catalogChannel = channel === "ugsci" ? "ugsci" : "qwenpaw";
           const catalog =
-            catalogChannel === "ugsci"
+            channel === "ugsci"
               ? await fetchUGSciPluginCatalog()
               : await fetchQwenPawPluginCatalog();
           if (signal.aborted) return;
-          const appEntries = (catalog.plugins ?? [])
+          const keywordLower = keyword.toLowerCase();
+          const entries = (catalog.plugins ?? [])
             .filter((entry) => entry.kind.toLowerCase() === "apps")
-            .filter((entry) => {
-              const haystack =
-                `${entry.name} ${entry.description}`.toLowerCase();
-              return !keyword || haystack.includes(keyword.toLowerCase());
-            })
-            .map((entry) => toAppCatalogEntry(entry, catalogChannel));
-          appEntries.sort(
-            (a, b) =>
-              catalogRank(a, catalogChannel) - catalogRank(b, catalogChannel),
-          );
-          setPlugins(appEntries);
+            .filter(
+              (entry) =>
+                !keywordLower ||
+                `${entry.name} ${entry.description}`
+                  .toLowerCase()
+                  .includes(keywordLower),
+            )
+            .map((entry) =>
+              toAppCatalogEntry(
+                entry,
+                channel === "ugsci" ? "ugsci" : "qwenpaw",
+              ),
+            )
+            .sort(
+              (left, right) =>
+                catalogPriority(left, channel) -
+                  catalogPriority(right, channel) ||
+                left.display_name.localeCompare(right.display_name),
+            );
+          setPlugins(entries);
+          setPageNumber(1);
+          setTotal(entries.length);
           return;
         }
-        let pageNumber = 1;
-        let total = 0;
-
-        do {
-          const data = await fetchMarketPlugins(
-            {
-              page_number: pageNumber,
-              page_size: MARKET_PAGE_SIZE,
-              search: keyword || undefined,
-              category: APP_CATEGORY,
-            },
-            { signal },
-          );
-          const pageEntries = data.plugins ?? [];
-          entries.push(...pageEntries);
-          total = data.total;
-          pageNumber += 1;
-          if (pageEntries.length === 0) break;
-        } while (entries.length < total);
+        const requestFilter =
+          channel === "official" || selectedFilter === "featured"
+            ? { is_featured: true as const }
+            : selectedFilter === "trending"
+            ? { is_trending: true as const }
+            : {};
+        const data = await fetchMarketPlugins(
+          {
+            page_number: nextPage,
+            page_size: MARKET_PAGE_SIZE,
+            search: keyword || undefined,
+            category: APP_CATEGORY,
+            ...requestFilter,
+          },
+          { signal },
+        );
 
         if (signal.aborted) return;
-        const channelEntries =
-          channel === "official"
-            ? entries
-            : entries.filter((entry) => entry.is_featured !== true);
-        if (channel === "official") {
-          channelEntries.sort(
-            (a, b) => catalogRank(a, channel) - catalogRank(b, channel),
-          );
-        }
-        setPlugins(channelEntries);
+        const pageEntries = data.plugins ?? [];
+        setPlugins((current) =>
+          append ? [...current, ...pageEntries] : pageEntries,
+        );
+        setPageNumber(nextPage);
+        setTotal(data.total);
+        if (append) setAutoLoadBlocked(false);
       } catch (err) {
         if (
           signal.aborted ||
@@ -261,19 +305,43 @@ export function AppMarket({
             "App market is currently unavailable.",
           ),
         );
-        setPlugins([]);
+        if (!append) {
+          setPlugins([]);
+          setPageNumber(1);
+          setTotal(0);
+        } else {
+          setAutoLoadBlocked(true);
+        }
       } finally {
-        if (!signal.aborted) setLoading(false);
+        if (!signal.aborted) {
+          if (append) {
+            loadingMoreRef.current = false;
+            setLoadingMore(false);
+          } else {
+            setLoading(false);
+          }
+        }
       }
     },
     [channel],
   );
 
   useEffect(() => {
+    loadMoreControllerRef.current?.abort();
+    loadingMoreRef.current = false;
+    setLoadingMore(false);
+    setAutoLoadBlocked(false);
     const controller = new AbortController();
-    void load(search, controller.signal);
+    void load(1, search, filter, controller.signal, false);
     return () => controller.abort();
-  }, [search, load]);
+  }, [filter, refreshKey, search, load]);
+
+  useEffect(
+    () => () => {
+      loadMoreControllerRef.current?.abort();
+    },
+    [],
+  );
 
   useEffect(() => {
     const controller = new AbortController();
@@ -308,83 +376,84 @@ export function AppMarket({
       });
 
       try {
-        if (entry.installed) {
-          if (entry.catalog_channel === "ugsci" && entry.plugin_id) {
-            const result = await upgradeInstalledUGSciPlugin({
-              plugin_id: entry.plugin_id,
-              version: entry.version,
-              install_url: entry.install_url,
-              sha256: entry.sha256,
-              upgrade_available: entry.upgrade_available,
+        if (
+          entry.installed &&
+          entry.catalog_channel === "ugsci" &&
+          entry.plugin_id
+        ) {
+          const upgrade = await upgradeInstalledUGSciPlugin({
+            plugin_id: entry.plugin_id,
+            version: entry.version,
+            install_url: entry.install_url,
+            sha256: entry.sha256,
+            upgrade_available: entry.upgrade_available,
+          });
+          if (upgrade.method === "queued") {
+            message.success({
+              content: tRef.current("pluginManager.ugsciUpgradeQueued"),
+              key: loadingKey,
             });
-            if (result.method === "queued") {
-              message.success({
-                content: tRef.current("pluginManager.ugsciUpgradeQueued"),
-                key: loadingKey,
-              });
-            } else if (result.method === "replaced") {
-              message.success({
-                content: tRef.current("pluginManager.externalUpgradeReady", {
-                  version: result.version,
-                }),
-                key: loadingKey,
-              });
-              await onInstalled();
-            } else if (result.method === "core-update-required") {
-              message.warning({
-                content: tRef.current("pluginManager.coreUpdateRequired"),
-                key: loadingKey,
-              });
-            } else {
-              message.info({
-                content: tRef.current("pluginManager.catalogLatest"),
-                key: loadingKey,
-              });
-            }
-            return;
-          }
-          if (
-            entry.catalog_channel === "qwenpaw" &&
-            entry.install_url &&
-            entry.plugin_id
-          ) {
-            if (!entry.upgrade_available) {
-              message.info({
-                content: tRef.current("pluginManager.catalogLatest"),
-                key: loadingKey,
-              });
-              return;
-            }
-            const result = await replaceInstalledPlugin({
-              source: entry.install_url,
-              pluginId: entry.plugin_id,
-              version: entry.version,
-              sha256: entry.sha256,
-            });
+          } else if (upgrade.method === "replaced") {
             message.success({
               content: tRef.current("pluginManager.externalUpgradeReady", {
-                version: result.version,
+                version: upgrade.version,
               }),
               key: loadingKey,
             });
             await onInstalled();
+          } else if (upgrade.method === "core-update-required") {
+            message.warning({
+              content: tRef.current("pluginManager.coreUpdateRequired"),
+              key: loadingKey,
+            });
+          } else {
+            message.info({
+              content: tRef.current("pluginManager.catalogLatest"),
+              key: loadingKey,
+            });
+          }
+          return;
+        }
+        if (
+          entry.installed &&
+          entry.catalog_channel === "qwenpaw" &&
+          entry.plugin_id
+        ) {
+          if (!entry.upgrade_available || !entry.install_url) {
+            message.info({
+              content: tRef.current("pluginManager.catalogLatest"),
+              key: loadingKey,
+            });
             return;
           }
-          message.info({
-            content: tRef.current("pluginManager.catalogLatest"),
+          const replacement = await replaceInstalledPlugin({
+            source: entry.install_url,
+            pluginId: entry.plugin_id,
+            version: entry.version,
+            sha256: entry.sha256,
+          });
+          await onInstalled();
+          message.success({
+            content: tRef.current("pluginManager.externalUpgradeReady", {
+              version: replacement.version,
+            }),
             key: loadingKey,
           });
           return;
         }
-        const installOptions =
-          channel === "community" &&
-          getMarketAppState(entry, installedAppVersions, "community") ===
-            "update"
-            ? { force: true }
-            : undefined;
+        if (entry.catalog_channel && entry.install_url) {
+          const result = await installPlugin(entry.install_url);
+          message.success({
+            content: `${tRef.current("appCenter.installSuccess")}: ${
+              result.name
+            }`,
+            key: loadingKey,
+          });
+          await onInstalled(result);
+          return;
+        }
         const result = await installPlugin(
           entry.install_url || buildMarketDownloadUrl(entry),
-          installOptions,
         );
         message.success({
           content: `${tRef.current("appCenter.installSuccess", "安装成功")}: ${
@@ -406,7 +475,7 @@ export function AppMarket({
         setInstallingId(null);
       }
     },
-    [channel, installedAppVersions, message, onInstalled],
+    [message, onInstalled],
   );
 
   const requestInstall = useCallback(
@@ -439,20 +508,61 @@ export function AppMarket({
     [handleInstall, qwenpawVersion],
   );
 
+  const loadNextPage = useCallback(() => {
+    if (loading || loadingMoreRef.current || plugins.length >= total) return;
+    loadingMoreRef.current = true;
+    const controller = new AbortController();
+    loadMoreControllerRef.current = controller;
+    void load(pageNumber + 1, search, filter, controller.signal, true).finally(
+      () => {
+        if (loadMoreControllerRef.current === controller) {
+          loadMoreControllerRef.current = null;
+        }
+      },
+    );
+  }, [filter, load, loading, pageNumber, plugins.length, search, total]);
+
+  const handleAutoLoadMore = useCallback(() => {
+    if (autoLoadBlocked) return;
+    loadNextPage();
+  }, [autoLoadBlocked, loadNextPage]);
+
+  const handleRetryLoadMore = useCallback(() => {
+    setAutoLoadBlocked(false);
+    loadNextPage();
+  }, [loadNextPage]);
+
   const lang = i18n.language;
 
-  const isOfficial = channel === "qwenpaw" || channel === "official";
-  const usesRemoteCatalog = channel === "qwenpaw" || channel === "ugsci";
+  const isOfficial =
+    channel === "qwenpaw" || channel === "official" || channel === "ugsci";
+  const usesSignedCatalog = channel === "qwenpaw" || channel === "ugsci";
   const searchLabel =
     channel === "ugsci"
       ? t("appCenter.searchUGSci", "搜索 UGSci 应用...")
       : isOfficial
       ? t("appCenter.searchOfficial", "Search official apps...")
       : t("appCenter.searchMarket", "Search app market...");
+  const hasMore = plugins.length < total;
+  const searchControl = (
+    <Input
+      prefix={<Search size={14} />}
+      placeholder={searchLabel}
+      aria-label={searchLabel}
+      value={searchInput}
+      onChange={(event) => {
+        setSearchInput(event.target.value);
+        if (!event.target.value) setSearch("");
+      }}
+      onPressEnter={() => setSearch(searchInput)}
+      className={styles.searchInput}
+      allowClear
+    />
+  );
 
   return (
     <div>
-      {channel !== "community" && (
+      {usesSignedCatalog && (
         <Alert
           type="info"
           showIcon
@@ -464,21 +574,50 @@ export function AppMarket({
           style={{ marginBottom: 16 }}
         />
       )}
-      <div className={styles.toolbar}>
-        <Input
-          prefix={<Search size={14} />}
-          placeholder={searchLabel}
-          aria-label={searchLabel}
-          value={searchInput}
-          onChange={(e) => {
-            setSearchInput(e.target.value);
-            if (!e.target.value) setSearch("");
-          }}
-          onPressEnter={() => setSearch(searchInput)}
-          className={styles.searchInput}
-          allowClear
-        />
-      </div>
+      {isOfficial ? (
+        <div className={styles.toolbar}>{searchControl}</div>
+      ) : (
+        <div className={styles.marketFilterBar}>
+          {searchControl}
+          <div
+            className={styles.marketFilterOptions}
+            role="group"
+            aria-label={t("appCenter.marketFilters", "应用市场筛选")}
+          >
+            {(
+              [
+                ["all", t("appCenter.filterAll", "全部")],
+                ["featured", t("appCenter.featured", "精选")],
+                ["trending", t("appCenter.trending", "热门")],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`${styles.marketFilter} ${
+                  filter === value ? styles.marketFilterActive : ""
+                }`}
+                aria-pressed={filter === value}
+                disabled={loading || loadingMore}
+                onClick={() => setFilter(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className={styles.marketFilterActions}>
+            <Button
+              type="default"
+              className={styles.refreshBtn}
+              icon={<RefreshCw size={14} />}
+              onClick={() => setRefreshKey((current) => current + 1)}
+              disabled={loading || loadingMore}
+              aria-label={t("common.refresh", "Refresh")}
+              title={t("common.refresh", "Refresh")}
+            />
+          </div>
+        </div>
+      )}
 
       {error && (
         <Alert
@@ -494,134 +633,172 @@ export function AppMarket({
           <Empty
             image={<AppWindow size={44} strokeWidth={1} />}
             description={
-              channel === "ugsci"
-                ? t("appCenter.ugsciAppsEmpty", "暂无 UGSci 应用")
-                : isOfficial
-                ? t("appCenter.officialAppsEmpty", "No official apps found")
+              isOfficial
+                ? channel === "ugsci"
+                  ? t("appCenter.ugsciAppsEmpty", "暂无 UGSci 应用")
+                  : t("appCenter.officialAppsEmpty", "No official apps found")
                 : t("appCenter.marketEmpty", "No apps found")
             }
             className={styles.stateBlock}
           />
         ) : (
-          <div className={usesRemoteCatalog ? styles.gridLarge : styles.grid}>
-            {plugins.map((entry) => {
-              const iconSrc =
-                entry.logo_url ||
-                OFFICIAL_APP_ICONS[entry.id] ||
-                OFFICIAL_APP_ICONS[entry.plugin_id || ""];
-              // Official landscape cards have room for the full text; the
-              // compact community cards keep the truncated layout.
-              const noTruncate = usesRemoteCatalog;
-              const marketState = usesRemoteCatalog
-                ? entry.installed
-                  ? entry.upgrade_available
-                    ? "update"
-                    : "installed"
-                  : "available"
-                : getMarketAppState(
-                    entry,
-                    installedAppVersions,
-                    channel === "official" ? "official" : "community",
-                  );
-              const isInstalled = marketState === "installed";
-              const canUpdate = marketState === "update";
-              return (
-                <Card
-                  key={entry.id}
-                  className={
-                    usesRemoteCatalog
-                      ? `${styles.appCard} ${styles.appCardLarge}`
-                      : styles.appCard
-                  }
-                >
-                  <div className={styles.cardIcon}>
-                    {iconSrc ? (
-                      <img src={iconSrc} alt="" className={styles.marketLogo} />
-                    ) : OFFICIAL_APP_EMOJIS[entry.plugin_id || entry.id] ? (
-                      <span className={styles.cardIconEmoji} aria-hidden>
-                        {OFFICIAL_APP_EMOJIS[entry.plugin_id || entry.id]}
-                      </span>
-                    ) : (
-                      <AppWindow
-                        size={usesRemoteCatalog ? 32 : 22}
-                        strokeWidth={1.75}
-                      />
-                    )}
-                  </div>
-                  <div className={styles.cardBody}>
-                    <div className={styles.cardHeader}>
-                      <Text
-                        strong
-                        className={styles.cardTitle}
-                        ellipsis={!noTruncate}
-                      >
-                        {entry.display_name}
-                      </Text>
-                      {channel !== "community" && (
-                        <span className={styles.featuredTag}>
-                          <Sparkles size={11} strokeWidth={2} />
-                          {channel === "ugsci"
-                            ? t("appCenter.ugsciBadge", "UGSci")
-                            : t("appCenter.featured", "精选")}
+          <>
+            <div className={usesSignedCatalog ? styles.gridLarge : styles.grid}>
+              {plugins.map((entry) => {
+                const iconSrc =
+                  entry.logo_url ||
+                  FEATURED_APP_ICONS[entry.id] ||
+                  FEATURED_APP_ICONS[entry.plugin_id || ""];
+                const resolvedMarketState: MarketAppState = usesSignedCatalog
+                  ? entry.installed
+                    ? entry.upgrade_available
+                      ? "update"
+                      : "installed"
+                    : "available"
+                  : getMarketAppState(
+                      entry,
+                      installedAppVersions,
+                      isOfficial ? "official" : "app",
+                      installedApps,
+                    );
+                // Marketplace packages are not signed and the backend
+                // deliberately rejects force-overwriting an installed plugin.
+                // Keep discovery/install while routing upgrades through the
+                // signed component updater exposed beside the app version.
+                const marketState: MarketAppState =
+                  !usesSignedCatalog &&
+                  entry.installed === true &&
+                  resolvedMarketState === "update"
+                    ? "installed"
+                    : resolvedMarketState;
+                const isInstalled = marketState === "installed";
+                const canUpdate = marketState === "update";
+                return (
+                  <Card
+                    key={entry.id}
+                    className={
+                      usesSignedCatalog
+                        ? `${styles.appCard} ${styles.appCardLarge}`
+                        : styles.appCard
+                    }
+                  >
+                    <div className={styles.cardIcon}>
+                      {iconSrc ? (
+                        <img
+                          src={iconSrc}
+                          alt=""
+                          className={styles.marketLogo}
+                        />
+                      ) : FEATURED_APP_EMOJIS[entry.plugin_id || entry.id] ? (
+                        <span className={styles.cardIconEmoji} aria-hidden>
+                          {FEATURED_APP_EMOJIS[entry.plugin_id || entry.id]}
                         </span>
+                      ) : (
+                        <AppWindow size={24} strokeWidth={1.75} />
                       )}
                     </div>
-                    <Paragraph
-                      type="secondary"
-                      className={styles.cardDesc}
-                      ellipsis={noTruncate ? false : { rows: 2 }}
-                    >
-                      {pickDescription(entry, lang) ||
-                        t("appCenter.noDescription", "No description")}
-                    </Paragraph>
-                    <span className={styles.cardMeta}>
-                      v{entry.version}
-                      {entry.developer ? ` · ${entry.developer}` : ""}
-                      {entry.downloads > 0 && (
-                        <span className={styles.metaDownloads}>
-                          <Download size={12} strokeWidth={2} />
-                          {entry.downloads}
+                    <div className={styles.cardBody}>
+                      <div className={styles.cardHeader}>
+                        <Text strong className={styles.cardTitle} ellipsis>
+                          {entry.display_name}
+                        </Text>
+                        <span className={styles.versionBadge}>
+                          v{entry.version}
                         </span>
-                      )}
-                    </span>
-                    <div className={styles.cardActions}>
-                      <Button
-                        type="primary"
-                        size={usesRemoteCatalog ? "middle" : "small"}
-                        icon={<Download size={14} />}
-                        loading={installingId === entry.id}
-                        disabled={
-                          isInstalled ||
-                          !versionChecked ||
-                          (installingId !== null && installingId !== entry.id)
-                        }
-                        onClick={() => requestInstall(entry)}
+                        {(entry.is_featured === true || usesSignedCatalog) && (
+                          <span className={styles.featuredTag}>
+                            <Sparkles size={11} strokeWidth={2} />
+                            {channel === "ugsci"
+                              ? t("appCenter.ugsciBadge", "UGSci")
+                              : t("appCenter.featured", "精选")}
+                          </span>
+                        )}
+                      </div>
+                      <Paragraph
+                        type="secondary"
+                        className={styles.cardDesc}
+                        ellipsis={{ rows: 2 }}
                       >
-                        {isInstalled
-                          ? t("appCenter.installedStatus", "Installed")
-                          : canUpdate
-                          ? usesRemoteCatalog
-                            ? t("pluginManager.catalogUpgradeBtn")
-                            : t("appCenter.update", "Update")
-                          : installingId === entry.id
-                          ? t("appCenter.installing", "安装中...")
-                          : t("appCenter.install", "安装")}
-                      </Button>
-                      {entry.details_url && (
+                        {pickDescription(entry, lang) ||
+                          t("appCenter.noDescription", "No description")}
+                      </Paragraph>
+                      <div className={styles.cardFooter}>
+                        <span className={styles.cardMeta}>
+                          {entry.developer || entry.owner || ""}
+                        </span>
+                        {entry.downloads != null && (
+                          <span className={styles.metaDownloads}>
+                            <Download size={12} strokeWidth={2} />
+                            {entry.downloads}
+                          </span>
+                        )}
+                      </div>
+                      <div
+                        className={`${styles.cardActions} ${styles.cardHoverActions}`}
+                      >
                         <Button
-                          size={usesRemoteCatalog ? "middle" : "small"}
+                          type={isInstalled ? "default" : "primary"}
+                          icon={
+                            isInstalled ? (
+                              <BadgeCheck size={14} />
+                            ) : canUpdate ? (
+                              <RefreshCw size={14} />
+                            ) : (
+                              <Download size={14} />
+                            )
+                          }
+                          loading={!isInstalled && installingId === entry.id}
+                          disabled={
+                            isInstalled ||
+                            !versionChecked ||
+                            (installingId !== null && installingId !== entry.id)
+                          }
+                          onClick={() => requestInstall(entry)}
+                        >
+                          {isInstalled
+                            ? t("appCenter.installedStatus", "Installed")
+                            : canUpdate
+                            ? t("appCenter.update", "Update")
+                            : installingId === entry.id
+                            ? t("appCenter.installing", "安装中...")
+                            : t("appCenter.install", "安装")}
+                        </Button>
+                        <Button
                           icon={<ExternalLink size={14} />}
-                          onClick={() => openExternalLink(entry.details_url!)}
+                          disabled={!entry.details_url}
+                          onClick={() => {
+                            if (entry.details_url) {
+                              void openExternalLink(entry.details_url);
+                            }
+                          }}
                         >
                           {t("appCenter.details", "详情")}
                         </Button>
-                      )}
+                      </div>
                     </div>
-                  </div>
-                </Card>
-              );
-            })}
-          </div>
+                  </Card>
+                );
+              })}
+            </div>
+            {!loading && plugins.length > 0 && (
+              <div className={styles.loadMoreRow}>
+                {hasMore && autoLoadBlocked ? (
+                  <Button onClick={handleRetryLoadMore} loading={loadingMore}>
+                    {t("appCenter.loadMore", "加载更多")}
+                  </Button>
+                ) : hasMore ? (
+                  <LoadMoreSentinel
+                    key={plugins.length}
+                    onVisible={handleAutoLoadMore}
+                  />
+                ) : (
+                  <span className={styles.noMoreText}>
+                    {t("appCenter.noMoreApps", "没有更多应用了")}
+                  </span>
+                )}
+              </div>
+            )}
+          </>
         )}
       </Spin>
     </div>

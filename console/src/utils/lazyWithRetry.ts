@@ -13,24 +13,11 @@ const RETRY_DELAY_MS = 1000;
  * Derive the module-registry key from an import path, e.g.
  *   "../pages/Settings/Debug/index.tsx"  →  "Settings/Debug/index"
  *   "../../pages/Settings/Debug"         →  "Settings/Debug/index"
- *   "../../pages/AppCenter"              →  "AppCenter/index"
- *
- * The optional module registry uses "<relative-path-without-extension>" keys,
- * so a directory import like
- * `pages/AppCenter` is registered as `"AppCenter/index"` (from the file
- * `AppCenter/index.tsx`).  The key must therefore end with `/index` when
- * the caller's path has no file extension.
  */
 function pathToModuleKey(importPath: string): string {
-  const stripped = importPath.replace(/^.*\/pages\//, "");
-  const hasExtension = /\.\w+$/.test(stripped);
-  const key = stripped.replace(/\.\w+$/, "");
-  // Bare-directory imports (no file extension) are registered as
-  // "<Dir>/index" in the dynamic module registry.
-  if (!hasExtension && !/\/index$/.test(key)) {
-    return `${key}/index`;
-  }
-  return key;
+  const key = importPath.replace(/^.*\/pages\//, "").replace(/\.[^.]+$/, "");
+  // Bare-directory imports are registered as "<Dir>/index" in registerHostModules
+  return key.includes("/") && !/\/index$/.test(key) ? `${key}/index` : key;
 }
 
 function retryImport<T extends ComponentType<unknown>>(
@@ -91,19 +78,16 @@ export function lazyWithRetry<T extends ComponentType<unknown>>(
   factory: () => Promise<{ default: T }>,
   moduleKeyOrPath?: string,
 ) {
-  return lazy(() =>
-    retryImport(factory, MAX_RETRIES).then((mod) => {
-      if (!moduleKeyOrPath) return mod;
+  return lazy(() => {
+    if (moduleKeyOrPath) {
       const key = moduleKeyOrPath.startsWith(".")
         ? pathToModuleKey(moduleKeyOrPath)
         : moduleKeyOrPath;
-      // Use getModule (silent) instead of get (warns) because a miss is the
-      // normal case when no plugin has patched this module.
       const patched = moduleRegistry.get(key, "default");
-      if (patched) return { default: patched as T };
-      return mod;
-    }),
-  );
+      if (patched) return Promise.resolve({ default: patched as T });
+    }
+    return retryImport(factory, MAX_RETRIES);
+  });
 }
 
 /**
@@ -144,12 +128,13 @@ export function lazyImportWithRetry(
     );
   }
   const key = pathToModuleKey(path);
-  return lazy(async () => {
-    // Resolve a plugin override before importing the built-in page. Besides
-    // avoiding unnecessary work, this lets a plugin fully replace a page
-    // whose original chunk is unavailable or expensive to initialize.
+  return lazy(() => {
     const patched = moduleRegistry.get(key, "default");
-    if (patched) return { default: patched as ComponentType<unknown> };
+    if (patched) {
+      return Promise.resolve({
+        default: patched as ComponentType<unknown>,
+      });
+    }
     return retryImport(
       () => factory().then((comp) => ({ default: comp })),
       MAX_RETRIES,

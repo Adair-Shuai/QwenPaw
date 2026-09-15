@@ -67,6 +67,7 @@ on:
         default: ""
 
 permissions:
+  actions: read
   contents: read
 
 jobs:
@@ -79,11 +80,20 @@ jobs:
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
       OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/apps/desktop' }}
+      RELEASE_INFRA: ${{ github.workspace }}/.release-infra
     steps:
-      - name: Checkout (for scripts)
+      - name: Checkout release target
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+
+      - name: Checkout release infrastructure
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-infra
+          sparse-checkout: scripts
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -98,18 +108,17 @@ jobs:
         uses: ./.github/actions/get-version
 
       - name: Download desktop application artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: UGSci-Desktop-Tauri-*
-          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash "$RELEASE_INFRA/scripts/pack/download_desktop_artifacts.sh" \
+            --attempts 2 \
+            --brand ugsci \
+            --run-id "${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}" \
+            --include-updater-metadata
 
       - name: Download desktop updater metadata
-        uses: actions/download-artifact@v4
-        with:
-          pattern: tauri-updater-meta-*
-          run-id: ${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "Updater metadata was downloaded and checksum-verified with the application artifacts."
 
       - name: Overlay replacement Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' || github.event.inputs.windows_artifacts_run_id != '' }}
@@ -165,6 +174,15 @@ jobs:
           rm -rf UGSci-Desktop-Tauri-macOS-* tauri-updater-meta-macos
           cp -a replacement-macos/UGSci-Desktop-Tauri-macOS-* .
           cp -a replacement-macos/tauri-updater-meta-macos .
+
+      - name: Verify final desktop checksums after replacement overlays
+        run: |
+          python "$RELEASE_INFRA/scripts/pack/verify_desktop_artifacts.py" \
+            --brand ugsci \
+            --require windows \
+            --require macos \
+            --require windows-updater \
+            --require macos-updater
 
       - name: Re-verify final macOS archives before pointer promotion
         shell: bash
@@ -379,7 +397,7 @@ jobs:
             exit 0
           fi
           NOTES="${RELEASE_BODY:-UGSci Desktop ${VERSION}}"
-          python scripts/pack-tauri/generate_update_manifest.py manifest \
+          python "$RELEASE_INFRA/scripts/pack-tauri/generate_update_manifest.py" manifest \
             --version "$VERSION" \
             --base-url "$OSS_BASE" \
             --target-base "windows-x86_64=${OSS_BASE}/win-tauri" \
@@ -420,7 +438,7 @@ jobs:
             if [ -z "${artifact}" ]; then
               return 0
             fi
-            python scripts/pack/generate_oss_metadata.py \
+            python "$RELEASE_INFRA/scripts/pack/generate_oss_metadata.py" \
               --file "${artifact}" \
               --product desktop \
               --platform "${platform}" \

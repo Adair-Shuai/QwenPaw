@@ -10,6 +10,8 @@ Layout produced under ``--dist``::
     dist/plugins/
         bundle/<plugin_id>/<id>-<version>.zip
         tool/<plugin_id>/<id>-<version>.zip
+        memory/<plugin_id>/<id>-<version>.zip
+        apps/<plugin_id>/<id>-<version>.zip
         index.json
 
 Each plugin is stored under its own directory on the CDN
@@ -60,7 +62,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-KIND_DIRS = ("bundle", "tool", "apps")
+KIND_DIRS = ("bundle", "tool", "memory", "apps")
 _RELEASE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 EXCLUDE_PATTERNS = (

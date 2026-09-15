@@ -12,6 +12,7 @@ export type PluginType =
   | "command"
   | "frontend"
   | "channel"
+  | "memory"
   | "app"
   | "general";
 
@@ -83,6 +84,12 @@ export interface OfficialPluginCatalogEntry {
   installed_version?: string;
   upgrade_available: boolean;
   channel?: string;
+}
+
+export interface PluginUpdateInfo {
+  version: string;
+  source: string;
+  name: string;
 }
 
 export interface OfficialPluginCatalog {

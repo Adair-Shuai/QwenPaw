@@ -7,15 +7,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-
-  // Local design tokens: prefer theme variables, warm-neutral fallbacks.
-  --app-surface: var(--color-bg-container, #ffffff);
-  --app-surface-subtle: var(--color-bg-layout, #f8f8f8);
-  --app-border: var(--color-border-secondary, #eae8e7);
-  --app-border-strong: var(--color-border, #d8d4cf);
-  --app-text: var(--color-text, rgba(20, 20, 19, 0.88));
-  --app-text-secondary: var(--color-text-secondary, rgba(20, 20, 19, 0.58));
-  --app-accent: var(--color-primary, #ff7a00);
+  background: var(--app-surface);
 }
 
 .pageBody {
@@ -24,11 +16,11 @@
   overflow-y: auto;
   padding: 16px;
 
-  @media (max-width: 1024px) {
+  @media (max-width: 1023px) {
     padding: 24px;
   }
 
-  @media (max-width: 640px) {
+  @media (max-width: 639px) {
     padding: 16px;
   }
 }
@@ -64,7 +56,7 @@
   :global(.qwenpaw-tabs-tab) {
     padding: 8px 4px;
 
-    @media (max-width: 640px) {
+    @media (max-width: 639px) {
       padding: 10px 4px;
     }
   }
@@ -80,7 +72,7 @@
   min-width: 18px;
   padding: 0 6px;
   border-radius: 999px;
-  background: var(--color-fill-quaternary, #f2f0ee);
+  background: var(--app-fill);
   font-size: 11px;
   line-height: 18px;
   font-weight: 500;
@@ -134,7 +126,7 @@
 
   &:hover:not(:disabled) {
     color: var(--app-text);
-    border-color: var(--app-border-strong);
+    border-color: var(--app-border-hover);
   }
 
   &:focus-visible {
@@ -149,9 +141,9 @@
 }
 
 .marketFilterActive {
-  border-color: var(--color-fill-secondary, #e8e6e3);
-  background: var(--color-fill-secondary, #e8e6e3);
-  color: var(--app-text);
+  border-color: var(--app-accent-border);
+  background: var(--app-accent-soft);
+  color: var(--app-accent-text);
   font-weight: 500;
 }
 
@@ -171,7 +163,7 @@
   width: 320px;
   max-width: 320px;
 
-  @media (max-width: 640px) {
+  @media (max-width: 639px) {
     max-width: none;
     flex-basis: 100%;
   }
@@ -215,13 +207,12 @@
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 16px;
 
-  @media (max-width: 640px) {
+  @media (max-width: 639px) {
     grid-template-columns: 1fr;
+    gap: 12px;
   }
 }
 
-// Larger grid for the official-apps channel: wide, landscape cards (usually
-// two per row) so full descriptions fit without truncation.
 .gridLarge {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(460px, 1fr));
@@ -247,7 +238,7 @@
 
   &:hover {
     border-color: var(--app-border-strong);
-    box-shadow: 0 2px 8px rgba(20, 20, 19, 0.06);
+    box-shadow: var(--app-shadow-sm);
     transform: translateY(-2px);
   }
 
@@ -283,14 +274,6 @@
   }
 }
 
-.appCardClickable {
-  cursor: pointer;
-}
-
-// Official-channel market cards: landscape layout (icon left, content right)
-// with enlarged icon and typography. Text is never truncated — cards in the
-// same grid row share their height and the actions row is pinned to the
-// bottom so install buttons stay aligned across cards.
 .appCardLarge {
   border-radius: 16px;
 
@@ -323,20 +306,6 @@
     line-height: 1.6;
   }
 
-  .cardMeta {
-    font-size: 13px;
-  }
-
-  .featuredTag {
-    font-size: 12px;
-    line-height: 20px;
-    padding: 2px 10px;
-  }
-
-  .cardActions {
-    padding-top: 12px;
-  }
-
   @media (max-width: 640px) {
     :global(.ant-card-body),
     :global(.qwenpaw-card-body) {
@@ -349,80 +318,11 @@
       height: 56px;
       border-radius: 12px;
     }
-
-    .marketLogo {
-      border-radius: 12px;
-    }
   }
 }
 
-// Installed apps share the official-channel landscape card look: icon left,
-// content right, enlarged typography, no text truncation. The layout lives on
-// .cardOpenButton because the card body's only flow child is that wrapper.
-.appCardInstalled {
-  border-radius: 16px;
-
-  :global(.ant-card-body),
-  :global(.qwenpaw-card-body) {
-    padding: 24px;
-  }
-
-  .cardOpenButton {
-    flex-direction: row;
-    gap: 20px;
-  }
-
-  .cardIcon {
-    width: 72px;
-    height: 72px;
-    border-radius: 18px;
-    align-self: flex-start;
-  }
-
-  .cardIconImage {
-    border-radius: 18px;
-  }
-
-  .cardBody {
-    gap: 8px;
-  }
-
-  .cardTitle {
-    font-size: 18px;
-    // Keep the title clear of the absolutely-positioned more-actions button.
-    padding-right: 28px;
-  }
-
-  .cardMeta {
-    font-size: 13px;
-  }
-
-  .cardDesc {
-    font-size: 14px;
-    line-height: 1.6;
-  }
-
-  .moreBtn {
-    top: 16px;
-    right: 16px;
-  }
-
-  @media (max-width: 640px) {
-    .cardOpenButton {
-      flex-direction: column;
-      gap: 14px;
-    }
-
-    .cardIcon {
-      width: 56px;
-      height: 56px;
-      border-radius: 12px;
-    }
-
-    .cardIconImage {
-      border-radius: 12px;
-    }
-  }
+.appCardClickable {
+  cursor: pointer;
 }
 
 .cardOpenButton {
@@ -449,7 +349,7 @@
   flex-shrink: 0;
   border-radius: 8px;
   color: var(--app-accent);
-  background: var(--color-fill-quaternary, #f5f3f1);
+  background: var(--app-fill-subtle);
 }
 
 /* Image icons carry their own artwork; keep the slot neutral. */
@@ -501,7 +401,7 @@
   flex-shrink: 0;
   padding: 1px 5px;
   border-radius: 4px;
-  background: var(--color-mauve-bg, rgba(239, 240, 243, 0.8));
+  background: var(--app-fill);
   color: var(--app-text-secondary);
   font-size: 10px;
   line-height: 16px;
@@ -558,7 +458,7 @@
   line-height: 18px;
   font-weight: 500;
   color: var(--app-accent);
-  background: var(--color-fill-quaternary, #f5f3f1);
+  background: var(--app-fill-subtle);
 }
 
 .emptyActions {
@@ -662,52 +562,23 @@
   }
 }
 
+/* Dark-only exception: tabs need an explicit contrast adjustment for antd. */
 :global(.dark-mode) {
-  .page {
-    background: #141414;
-  }
-
-  .marketFilter {
-    border-color: rgba(255, 255, 255, 0.16);
-    background: #1f1f1f;
-    color: rgba(255, 255, 255, 0.65);
-
-    &:hover:not(:disabled):not(.marketFilterActive) {
-      border-color: rgba(255, 255, 255, 0.3);
-      color: rgba(255, 255, 255, 0.88);
-    }
-  }
-
-  .marketFilterActive {
-    border-color: rgba(255, 127, 22, 0.5);
-    background: rgba(255, 127, 22, 0.18);
-    color: #ffad66;
-  }
-
   .viewTabs {
-    :global(.ant-tabs-nav::before),
-    :global(.qwenpaw-tabs-nav::before) {
-      border-bottom-color: rgba(255, 255, 255, 0.12);
-    }
-
     :global(.ant-tabs-tab),
     :global(.qwenpaw-tabs-tab) {
-      color: rgba(255, 255, 255, 0.55);
+      color: var(--app-text-secondary);
     }
 
     :global(.ant-tabs-tab-active .ant-tabs-tab-btn),
     :global(.qwenpaw-tabs-tab-active .qwenpaw-tabs-tab-btn) {
-      color: rgba(255, 255, 255, 0.88);
+      color: var(--app-text);
     }
 
     :global(.ant-tabs-ink-bar),
     :global(.qwenpaw-tabs-ink-bar) {
-      background: #ff7f16;
+      background: var(--app-accent);
     }
-  }
-
-  .appCard:hover {
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
   }
 }
 
@@ -722,7 +593,7 @@
   z-index: 1000;
   display: flex;
   flex-direction: column;
-  background: var(--color-bg-container, #fff);
+  background: var(--app-surface);
   animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   // Safe area CSS variables for PawApp developers
@@ -894,7 +765,7 @@
   width: 100%;
   height: 100%;
   overflow: auto;
-  background: var(--color-bg-layout, #fafafa);
+  background: var(--app-surface-subtle);
   position: relative;
 
   // ═══ 框架自动处理安全区域 ═══

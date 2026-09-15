@@ -38,7 +38,7 @@ import { useAppMessage } from "@/hooks/useAppMessage";
 import { pawappApi } from "../../api/modules/pawapp";
 import type { InstallPluginResult } from "../../api/modules/plugin";
 import { useRoutes } from "../../plugins/registry/hooks";
-import { loadPawApp } from "../../plugins/usePluginLoader";
+import { loadPawApp, reloadPawApp } from "../../plugins/usePluginLoader";
 import { removePluginAppState } from "../../os/osCleanup";
 import {
   getPawAppIdFromPath,
@@ -66,7 +66,6 @@ const { Option } = Select;
 
 /** URL-persisted App Center views; unknown values fall back to installed. */
 type AppCenterView = "installed" | "official" | "ugsci" | "market";
-
 // Featured installed apps (e.g. Creator) are pinned to the top of the grid.
 // Lower index = higher placement.
 const FEATURED_APP_IDS = ["qwenpaw-creator"];
@@ -114,6 +113,7 @@ export default function AppCenterPage() {
         data.apps.map((app) => ({
           id: app.id,
           name: app.name,
+          author: app.author,
           version: app.version,
           description: app.description,
           description_i18n: app.description_i18n ?? {},
@@ -138,12 +138,13 @@ export default function AppCenterPage() {
       await fetchApps();
       return;
     }
-    if (apps.some((app) => app.id === result.id)) {
-      window.location.reload();
-      return;
-    }
-    await loadPawApp(result.id);
-    await fetchApps();
+    const wasInstalled = apps.some((app) => app.id === result.id);
+    const appLoad = wasInstalled
+      ? reloadPawApp(result.id)
+      : loadPawApp(result.id);
+    const appsRefresh = fetchApps();
+    await appLoad;
+    await appsRefresh;
   };
 
   useEffect(() => {
@@ -622,6 +623,7 @@ export default function AppCenterPage() {
               <AppMarket
                 channel="qwenpaw"
                 installedAppVersions={installedAppVersions}
+                installedApps={apps}
                 onInstalled={handleMarketInstalled}
               />
             </Suspense>
@@ -633,7 +635,12 @@ export default function AppCenterPage() {
                 </div>
               }
             >
-              <AppMarket channel="ugsci" onInstalled={fetchApps} />
+              <AppMarket
+                channel="ugsci"
+                installedAppVersions={installedAppVersions}
+                installedApps={apps}
+                onInstalled={handleMarketInstalled}
+              />
             </Suspense>
           ) : view === "market" ? (
             <Suspense
@@ -645,6 +652,7 @@ export default function AppCenterPage() {
             >
               <AppMarket
                 installedAppVersions={installedAppVersions}
+                installedApps={apps}
                 onInstalled={handleMarketInstalled}
               />
             </Suspense>

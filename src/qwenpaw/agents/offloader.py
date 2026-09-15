@@ -138,10 +138,11 @@ class QwenPawOffloader:
         logger.info("Offloaded tool result to %s", filepath)
         return filepath
 
-    def cleanup_expired(self, retention_days: int = 0) -> int:
+    def cleanup_expired(self, retention_days: int = 5) -> int:
         """Delete tool-result files older than *retention_days*.
 
-        ``0`` keeps files forever and performs no cleanup.
+        ``0`` keeps files forever and performs no cleanup; the default keeps
+        the established five-day retention policy.
 
         Returns the number of files deleted.
         """

@@ -41,6 +41,10 @@ import type {
 } from "./types/qwenpaw";
 import { pawSdkFactory } from "./pawapp-sdk";
 import type { PawSdkFactory } from "./pawapp-sdk/types";
+import {
+  memoryBackendNamespace,
+  type MemoryBackendNamespace,
+} from "./memoryBackends";
 
 declare const VITE_API_BASE_URL: string;
 
@@ -262,6 +266,8 @@ export interface WindowNamespace {
   workspace?: import("../components/Workspace/workspaceSdk").QwenPawWorkspaceNamespace;
   /** App-scoped PawApp SDK. */
   paw?: PawSdkFactory;
+  /** Memory backend configuration UI contributed by memory plugins. */
+  memoryBackends?: MemoryBackendNamespace;
 }
 
 /** Sidebar-related plugin API (simple-mode whitelist, etc.). */
@@ -366,6 +372,9 @@ export function installHostExternals(): void {
   }
   if (!window.QwenPaw.audit) window.QwenPaw.audit = buildAuditNamespace();
   if (!window.QwenPaw.paw) window.QwenPaw.paw = pawSdkFactory;
+  if (!window.QwenPaw.memoryBackends) {
+    window.QwenPaw.memoryBackends = memoryBackendNamespace;
+  }
 
   // ── Sidebar simple-mode whitelist API ──────────────────────────────────
   if (!window.QwenPaw.sidebar) {

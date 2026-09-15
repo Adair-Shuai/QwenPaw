@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Skills hub client and install helpers."""
+
 from __future__ import annotations
 
 import asyncio
@@ -18,7 +19,7 @@ from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Awaitable, Callable, Literal
-from urllib.parse import quote, urlparse, unquote
+from urllib.parse import quote, urljoin, urlparse, unquote
 
 import frontmatter
 import httpx
@@ -578,6 +579,18 @@ async def _http_fetch(
         except httpx.HTTPStatusError as e:
             last_error = e
             status = e.response.status_code
+            if status == 409:
+                try:
+                    conflict = e.response.json()
+                except ValueError:
+                    conflict = None
+                if (
+                    isinstance(conflict, dict)
+                    and conflict.get("code") == "AMBIGUOUS_SKILL_SLUG"
+                ):
+                    raise SkillsError(
+                        message=e.response.text,
+                    ) from e
             if status == 403 and "api.github.com" in host:
                 body_text = ""
                 try:
@@ -2476,6 +2489,7 @@ async def _hydrate_clawhub_payload(
     *,
     slug: str,
     requested_version: str,
+    owner: str = "",
 ) -> Any:
     """Convert ClawHub metadata responses into a bundle with file contents."""
     if _bundle_has_content(data):
@@ -2504,7 +2518,10 @@ async def _hydrate_clawhub_payload(
             base,
             _hub_version_path().format(slug=skill_slug, version=version_hint),
         )
-        version_data = await _http_json_get(version_url)
+        version_data = await _http_json_get(
+            version_url,
+            params={"owner": owner} if owner else None,
+        )
         version_obj = (
             version_data.get("version")
             if isinstance(version_data, dict)
@@ -2531,6 +2548,8 @@ async def _hydrate_clawhub_payload(
         if not isinstance(path, str) or not path:
             continue
         params = {"path": path}
+        if owner:
+            params["owner"] = owner
         if version_str:
             params["version"] = version_str
         try:
@@ -2556,6 +2575,7 @@ async def _hydrate_clawhub_payload(
 async def _fetch_bundle_from_clawhub_slug(
     slug: str,
     version: str,
+    owner: str = "",
 ) -> tuple[Any, str]:
     if not slug:
         raise ConfigurationException(
@@ -2570,6 +2590,10 @@ async def _fetch_bundle_from_clawhub_slug(
     data: Any | None = None
     source_url = ""
     for candidate in candidates:
+        if owner:
+            candidate = str(
+                httpx.URL(candidate).copy_merge_params({"owner": owner}),
+            )
         try:
             data = await _http_json_get(candidate)
             source_url = candidate
@@ -2584,6 +2608,7 @@ async def _fetch_bundle_from_clawhub_slug(
         data,
         slug=slug,
         requested_version=version,
+        owner=owner,
     )
     return hydrated, source_url
 
@@ -2599,7 +2624,19 @@ async def _fetch_bundle_from_clawhub_url(
             config_key="skills_hub.bundle_url",
             message="Invalid ClawHub URL format",
         )
-    return await _fetch_bundle_from_clawhub_slug(slug, requested_version)
+    # Accept both /owner/skills/slug and legacy /owner/slug pages.
+    # /slug and /skills/slug remain valid for globally unique slugs.
+    parts = [unquote(p) for p in urlparse(bundle_url).path.split("/") if p]
+    owner = ""
+    if (len(parts) == 2 and parts[0] != "skills") or (
+        len(parts) == 3 and parts[1] == "skills"
+    ):
+        owner = parts[0]
+    return await _fetch_bundle_from_clawhub_slug(
+        slug,
+        requested_version,
+        owner=owner,
+    )
 
 
 # ---------- Public search API ----------------------------------------------
@@ -2643,7 +2680,15 @@ async def search_hub_skills(
                     item.get("description") or item.get("summary") or "",
                 ),
                 version=str(item.get("version") or ""),
-                source_url=str(item.get("url") or ""),
+                source_url=urljoin(
+                    base,
+                    str(item.get("canonicalUrl") or item.get("url") or "")
+                    or (
+                        f"/{owner_handle}/skills/{slug}"
+                        if owner_handle
+                        else f"/{slug}"
+                    ),
+                ),
                 author=owner_display or owner_handle,
                 icon_url=owner_image,
             ),

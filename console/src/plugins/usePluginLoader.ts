@@ -34,7 +34,7 @@ interface FrontendPluginInfo {
 // plugin revision while still allowing an upgraded bundle to run.
 const loadedPluginRevisions = new Map<string, string>();
 
-const loadingApps = new Map<string, Promise<void>>();
+const loadingPlugins = new Map<string, Promise<void>>();
 
 function authHeaders(): Record<string, string> {
   const token = getApiToken();
@@ -148,6 +148,12 @@ export async function loadAllPlugins(): Promise<PluginLoadSummary> {
   const loadable = plugins.filter(
     (p) => p.frontend_entry && p.enabled !== false,
   );
+  const loadableIds = new Set(loadable.map((plugin) => plugin.id));
+  for (const pluginId of loadedPluginRevisions.keys()) {
+    if (loadableIds.has(pluginId)) continue;
+    removePluginRuntime(pluginId);
+    loadedPluginRevisions.delete(pluginId);
+  }
 
   const results = await Promise.allSettled(
     loadable.map(async (p) => {
@@ -171,46 +177,116 @@ export async function loadAllPlugins(): Promise<PluginLoadSummary> {
 }
 
 /** Load one newly installed PawApp without reloading the page. */
-export function loadPawApp(appId: string, entryPage?: string): Promise<void> {
+interface LoadPluginOptions {
+  force?: boolean;
+  expectedType?: "app";
+  entryPage?: string;
+}
+
+function loadFrontendPlugin(
+  pluginId: string,
+  options: LoadPluginOptions = {},
+): Promise<void> {
   const registered = () =>
     routeRegistry
       .snapshot()
       .some(
         (route) =>
-          route.source === appId &&
+          route.source === pluginId &&
           route.path.startsWith("/apps/") &&
-          (!entryPage || route.path === entryPage),
+          (!options.entryPage || route.path === options.entryPage),
       );
-  if (registered()) return Promise.resolve();
-
-  const pending = loadingApps.get(appId);
-  if (pending) return pending;
+  if (!options.force && options.expectedType === "app" && registered()) {
+    return Promise.resolve();
+  }
 
   const promise = (async () => {
     const plugins = await fetchFrontendPlugins();
-    const plugin = plugins.find((item) => item.id === appId);
-    if (!plugin?.frontend_entry || plugin.plugin_type !== "app") {
-      throw new Error(`PawApp frontend plugin not found: ${appId}`);
+    const plugin = plugins.find((item) => item.id === pluginId);
+    if (!plugin?.frontend_entry || plugin.enabled === false) {
+      if (options.expectedType === "app") {
+        throw new Error(`PawApp frontend plugin not found: ${pluginId}`);
+      }
+      return;
+    }
+    if (options.expectedType && plugin.plugin_type !== options.expectedType) {
+      throw new Error(`PawApp frontend plugin not found: ${pluginId}`);
     }
 
     try {
-      await executePluginScript(resolveUrl(plugin.id, plugin.frontend_entry));
-      if (!registered()) {
-        throw new Error(`PawApp ${appId} did not register its app route`);
+      if (options.force) {
+        removePluginRuntime(pluginId);
+        loadedPluginRevisions.delete(pluginId);
+      }
+      const revision = plugin.frontend_revision || plugin.version || "0";
+      await executePluginScript(
+        resolveUrl(plugin.id, plugin.frontend_entry),
+        revision,
+      );
+      loadedPluginRevisions.set(plugin.id, revision);
+      if (options.expectedType === "app" && !registered()) {
+        throw new Error(`PawApp ${pluginId} did not register its app route`);
       }
     } catch (error) {
-      removePluginRuntime(appId);
+      removePluginRuntime(pluginId);
+      loadedPluginRevisions.delete(pluginId);
       throw error;
     }
   })().finally(() => {
-    loadingApps.delete(appId);
+    loadingPlugins.delete(pluginId);
   });
 
-  loadingApps.set(appId, promise);
+  loadingPlugins.set(pluginId, promise);
   return promise;
+}
+
+/** Load one newly installed PawApp without reloading the page. */
+export function loadPawApp(
+  appId: string,
+  entryPage?: string,
+  options: { force?: boolean } = {},
+): Promise<void> {
+  if (options.force) return reloadPawApp(appId, entryPage);
+  const pending = loadingPlugins.get(appId);
+  if (pending) return pending;
+  return loadFrontendPlugin(appId, {
+    expectedType: "app",
+    entryPage,
+  });
+}
+
+/** Force reload an installed PawApp after an update. */
+export function reloadPawApp(appId: string, entryPage?: string): Promise<void> {
+  const pending = loadingPlugins.get(appId);
+  if (pending) {
+    return pending.then(() =>
+      loadFrontendPlugin(appId, {
+        expectedType: "app",
+        entryPage,
+        force: true,
+      }),
+    );
+  }
+  return loadFrontendPlugin(appId, {
+    expectedType: "app",
+    entryPage,
+    force: true,
+  });
+}
+
+/** Reload a frontend plugin after installation or update. */
+export function reloadFrontendPlugin(pluginId: string): Promise<boolean> {
+  const pending = loadingPlugins.get(pluginId);
+  if (pending) {
+    return pending.then(() =>
+      loadFrontendPlugin(pluginId, { force: true }).then(() => true),
+    );
+  }
+  return loadFrontendPlugin(pluginId, { force: true }).then(() => true);
 }
 
 /** Reset pending loads between unit tests. */
 export function resetPawAppLoaderForTests(): void {
-  loadingApps.clear();
+  loadingPlugins.clear();
+  loadedPluginRevisions.clear();
 }

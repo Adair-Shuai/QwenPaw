@@ -1,37 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
 
-const { mockUseIsMobile } = vi.hoisted(() => ({
-  mockUseIsMobile: vi.fn(() => false),
-}));
-vi.mock("../../../../hooks/useIsMobile", () => ({
-  useIsMobile: mockUseIsMobile,
-}));
-
-// Mock react-window to avoid import errors in mocked ChatSessionDrawer
-const { MockVariableSizeList } = vi.hoisted(() => {
-  const React = require("react");
-  const MockVariableSizeList = React.forwardRef((props: any, ref: any) => {
-    React.useImperativeHandle(ref, () => ({
-      resetAfterIndex: () => {},
-    }));
-    const Row = props.children;
-    return (
-      <>
-        {Array.from({ length: props.itemCount }, (_: any, i: number) => (
-          <Row key={i} index={i} style={{}} data={props.itemData} />
-        ))}
-      </>
-    );
-  });
-  return { MockVariableSizeList };
-});
-vi.mock("react-window", () => ({
-  VariableSizeList: MockVariableSizeList,
-}));
-
-vi.mock("../../ChatSessionDrawer", () => ({ default: () => null }));
-
 import ChatActionGroup from "./index";
 
 describe("ChatActionGroup", () => {
@@ -39,25 +8,19 @@ describe("ChatActionGroup", () => {
     expect(() => renderWithProviders(<ChatActionGroup />)).not.toThrow();
   });
 
-  it("renders history icon button when onToggleHistory is provided", () => {
-    renderWithProviders(<ChatActionGroup onToggleHistory={() => {}} />);
-    expect(
-      document.querySelector('[data-icon="SparkHistoryLine"]'),
-    ).toBeInTheDocument();
-  });
-
-  it("does not render history icon button in simple mode (no onToggleHistory)", () => {
+  it("does not render the former history or overflow actions", () => {
     renderWithProviders(<ChatActionGroup />);
     expect(
       document.querySelector('[data-icon="SparkHistoryLine"]'),
     ).not.toBeInTheDocument();
+    expect(document.querySelector(".anticon-more")).not.toBeInTheDocument();
   });
 
-  it("renders new chat icon button", () => {
+  it("renders the shared new task icon button", () => {
     renderWithProviders(<ChatActionGroup />);
-    const icon = document.querySelector('[data-icon="SparkNewChatFill"]');
-    expect(icon).toBeInTheDocument();
-    expect(icon?.closest("button")?.parentElement?.tagName).toBe("SPAN");
+    expect(
+      document.querySelector('[data-icon="SparkNewChatLine"]'),
+    ).toBeInTheDocument();
   });
 
   it("renders the Session workspace toggle next to essential actions", () => {
@@ -75,34 +38,13 @@ describe("ChatActionGroup", () => {
       height: "32px",
       padding: "0px",
     });
-    expect(button?.querySelector(".anticon-appstore")).toBeInTheDocument();
+    expect(button?.querySelector("svg")).toHaveAttribute("width", "16");
+    expect(button?.querySelector("svg")).toHaveAttribute("height", "16");
+    expect(button?.querySelector("svg")).toHaveStyle({
+      width: "16px",
+      height: "16px",
+    });
     button?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
     expect(onToggleWorkspace).toHaveBeenCalledOnce();
-  });
-
-  it("uses a DOM trigger for the compact more dropdown", () => {
-    const originalWidth = window.innerWidth;
-    Object.defineProperty(window, "innerWidth", {
-      configurable: true,
-      value: 500,
-    });
-    try {
-      mockUseIsMobile.mockReturnValue(true);
-      renderWithProviders(
-        <ChatActionGroup
-          onToggleHistory={vi.fn()}
-          onToggleWideMode={vi.fn()}
-        />,
-      );
-      const moreIcon = document.querySelector(".anticon-more");
-      expect(moreIcon).toBeInTheDocument();
-      expect(moreIcon?.closest("button")?.parentElement?.tagName).toBe("SPAN");
-    } finally {
-      Object.defineProperty(window, "innerWidth", {
-        configurable: true,
-        value: originalWidth,
-      });
-      mockUseIsMobile.mockReturnValue(false);
-    }
   });
 });

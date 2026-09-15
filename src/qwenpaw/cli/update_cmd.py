@@ -19,15 +19,16 @@ import httpx
 from packaging.version import InvalidVersion, Version
 
 from ..__version__ import __version__
+from .. import distribution as _distribution
 from ..constant import WORKING_DIR
 from ..config.utils import read_last_api
-from .. import distribution as _distribution
 from ..distribution import (
     CORE_UPDATE_MANIFEST_URL,
     PIP_INDEX_URL,
     PYPI_JSON_URL,
     PYPI_PACKAGE_NAME,
 )
+from ..utils.runtime_api import api_client
 from .process_utils import (
     _base_url,
     _candidate_hosts,
@@ -167,11 +168,11 @@ def _fetch_core_manifest_version() -> str:
         data = resp.json()
     except httpx.HTTPError as exc:
         raise click.ClickException(
-            "Failed to fetch the latest UGSci core version: " f"{exc}",
+            f"Failed to fetch the latest UGSci core version: {exc}",
         ) from exc
     except json.JSONDecodeError as exc:
         raise click.ClickException(
-            "Received an invalid UGSci core version manifest: " f"{exc}",
+            f"Received an invalid UGSci core version manifest: {exc}",
         ) from exc
     if not isinstance(data, dict):
         raise click.ClickException(
@@ -186,11 +187,7 @@ def _fetch_core_manifest_version() -> str:
 
 
 def _fetch_latest_version(*, include_prerelease: bool = False) -> str:
-    """Fetch the latest published core version.
-
-    Self-hosted indexes use their JSON API.  The default path reads the
-    UGSci core OSS manifest and never falls back to public PyPI ``qwenpaw``.
-    """
+    """Fetch the latest published core version without using upstream PyPI."""
     if PYPI_JSON_URL and not _distribution.is_unsafe_upstream_core_update():
         data = _fetch_pypi_release_data()
         return _select_latest_version(
@@ -267,14 +264,13 @@ def _detect_installation() -> InstallInfo:
 def _probe_service(base_url: str) -> RunningServiceInfo:
     """Probe a possible running QwenPaw HTTP service."""
     try:
-        resp = httpx.get(
-            f"{base_url.rstrip('/')}/api/version",
-            timeout=2.0,
-            headers={"Accept": "application/json"},
-            trust_env=False,
-        )
-        resp.raise_for_status()
-        payload = resp.json()
+        with api_client(base_url, timeout=2.0, trust_env=False) as client:
+            resp = client.get(
+                f"{base_url.rstrip('/')}/api/version",
+                headers={"Accept": "application/json"},
+            )
+            resp.raise_for_status()
+            payload = resp.json()
     except (httpx.HTTPError, ValueError):
         return RunningServiceInfo(is_running=False)
 

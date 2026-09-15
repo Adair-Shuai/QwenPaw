@@ -1,9 +1,26 @@
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Empty, Input, Spin, Table, Tag, Typography } from "antd";
-import { CheckCircle, Package, RefreshCw, Trash2, XCircle } from "lucide-react";
+import {
+  Alert,
+  Badge,
+  Button,
+  Empty,
+  Input,
+  Spin,
+  Table,
+  Tag,
+  Typography,
+} from "antd";
+import {
+  CheckCircle,
+  Package,
+  RefreshCw,
+  Trash2,
+  Upload,
+  XCircle,
+} from "lucide-react";
 import { useIsMobile } from "@/hooks/useIsMobile";
-import type { BundledPluginState, PluginInfo } from "@/api/modules/plugin";
+import type { PluginInfo, PluginUpdateInfo } from "@/api/modules/plugin";
 import { usePluginColumns } from "../hooks/usePluginColumns";
 import { PluginTypeTag } from "./PluginTypeTag";
 import { PluginViewToggle, type PluginViewMode } from "./PluginViewToggle";
@@ -18,30 +35,35 @@ interface InstalledPluginListProps {
   plugins?: PluginInfo[];
   loading: boolean;
   uninstallingId: string | null;
-  /** Bundled-plugin repair status — keeps "repairing" tags during startup. */
-  bundleState?: BundledPluginState;
   onRefresh: () => void;
   onUninstall: (plugin: PluginInfo) => void;
+  updates: ReadonlyMap<string, PluginUpdateInfo>;
+  updatesLoading: boolean;
+  updatingId: string | null;
+  updatingAll: boolean;
+  onUpdate: (plugin: PluginInfo) => void;
+  onUpdateAll: () => void;
 }
 
 export function InstalledPluginList({
   plugins = [],
   loading,
   uninstallingId,
-  bundleState,
   onRefresh,
   onUninstall,
+  updates,
+  updatesLoading,
+  updatingId,
+  updatingAll,
+  onUpdate,
+  onUpdateAll,
 }: InstalledPluginListProps) {
   const { t } = useTranslation();
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<PluginViewMode>("card");
   const isMobile = useIsMobile();
 
-  const columns = usePluginColumns({
-    uninstallingId,
-    bundleState,
-    onUninstall,
-  });
+  const columns = usePluginColumns({ uninstallingId, onUninstall });
 
   const filteredPlugins = useMemo(() => {
     const keyword = search.trim().toLocaleLowerCase();
@@ -50,23 +72,8 @@ export function InstalledPluginList({
     );
   }, [plugins, search]);
 
-  const renderStatus = (plugin: PluginInfo) => {
-    // During the bundled-plugin repair window an unloaded plugin may simply
-    // not be synced yet — show a repairing tag instead of "unloaded".
-    if (
-      !plugin.loaded &&
-      bundleState !== "ready" &&
-      bundleState !== "error"
-    ) {
-      return (
-        <Tag
-          style={{ display: "inline-flex", alignItems: "center", gap: 4, margin: 0 }}
-        >
-          <Spin size="small" /> {t("common.loading")}
-        </Tag>
-      );
-    }
-    return plugin.loaded ? (
+  const renderStatus = (plugin: PluginInfo) =>
+    plugin.loaded ? (
       <Tag
         icon={<CheckCircle size={12} />}
         color="success"
@@ -93,6 +100,23 @@ export function InstalledPluginList({
         {t("pluginManager.statusUnloaded")}
       </Tag>
     );
+
+  const renderUpdateAction = (plugin: PluginInfo) => {
+    const update = updates.get(plugin.id);
+    if (!update) return null;
+    return (
+      <Button
+        type="primary"
+        icon={<Upload size={14} />}
+        loading={updatingId === plugin.id}
+        disabled={
+          updatingAll || (updatingId !== null && updatingId !== plugin.id)
+        }
+        onClick={() => onUpdate(plugin)}
+      >
+        {t("pluginManager.update")}
+      </Button>
+    );
   };
 
   return (
@@ -106,6 +130,18 @@ export function InstalledPluginList({
           onChange={(event) => setSearch(event.target.value)}
         />
         <div className={toolbarStyles.controlActions}>
+          {updates.size > 0 && (
+            <Button
+              type="primary"
+              icon={<Upload size={14} />}
+              loading={updatingAll}
+              disabled={updatesLoading || updatingId !== null}
+              onClick={onUpdateAll}
+            >
+              {t("pluginManager.updateAll")}
+              <Badge count={updates.size} style={{ marginLeft: 6 }} />
+            </Button>
+          )}
           <Button
             type="default"
             className={toolbarStyles.iconButton}
@@ -120,6 +156,15 @@ export function InstalledPluginList({
           )}
         </div>
       </div>
+
+      {updatesLoading && (
+        <Alert
+          type="info"
+          showIcon
+          message={t("pluginManager.checkingUpdates")}
+          style={{ marginBottom: 12 }}
+        />
+      )}
 
       <Spin spinning={loading}>
         {!loading && filteredPlugins.length === 0 ? (
@@ -166,6 +211,7 @@ export function InstalledPluginList({
                   </span>
                 </div>
                 <div className={cardStyles.cardActions}>
+                  {renderUpdateAction(plugin)}
                   <Button
                     danger
                     icon={<Trash2 size={14} />}
@@ -217,6 +263,7 @@ export function InstalledPluginList({
                     </div>
                   </div>
                   <div className={rowStyles.catalogActions}>
+                    {renderUpdateAction(plugin)}
                     <Button
                       danger
                       icon={<Trash2 size={14} />}

@@ -58,28 +58,34 @@ jobs:
   # ── Attach installers to the (draft) GitHub Release ────────────────────────
   upload-release:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_INFRA: ${{ github.workspace }}/.release-infra
     permissions:
       actions: read
       contents: write
     steps:
-      - name: Checkout (for artifact verification)
+      - name: Checkout release target
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
 
-      - name: Download desktop installer artifacts
-        uses: actions/download-artifact@v4
+      - name: Checkout release infrastructure
+        uses: actions/checkout@v4
         with:
-          pattern: UGSci-Desktop-Tauri-*
-          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+          ref: ${{ github.workflow_sha }}
+          path: .release-infra
+          sparse-checkout: scripts
+          persist-credentials: false
 
-      - name: Download desktop updater artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: tauri-updater-meta-*
-          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download and verify desktop artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash "$RELEASE_INFRA/scripts/pack/download_desktop_artifacts.sh" \
+            --attempts 2 \
+            --brand ugsci \
+            --run-id "${{ inputs.artifacts_run_id || github.run_id }}" \
+            --include-updater-metadata
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
@@ -191,6 +197,15 @@ jobs:
             fi
           fi
 
+      - name: Verify final desktop checksums after replacement overlays
+        run: |
+          python "$RELEASE_INFRA/scripts/pack/verify_desktop_artifacts.py" \
+            --brand ugsci \
+            --require windows \
+            --require macos \
+            --require windows-updater \
+            --require macos-updater
+
       - name: Re-verify final macOS archives before GitHub release upload
         shell: bash
         run: |
@@ -263,11 +278,20 @@ jobs:
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
       OSS_PUBLIC_BASE_URL: ${{ vars.OSS_PUBLIC_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/apps/desktop' }}
+      RELEASE_INFRA: ${{ github.workspace }}/.release-infra
     steps:
-      - name: Checkout (for scripts)
+      - name: Checkout release target
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.ref || github.ref }}
+
+      - name: Checkout release infrastructure
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.workflow_sha }}
+          path: .release-infra
+          sparse-checkout: scripts
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -281,19 +305,15 @@ jobs:
         id: version
         uses: ./.github/actions/get-version
 
-      - name: Download desktop installer artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: UGSci-Desktop-Tauri-*
-          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Download desktop updater artifacts
-        uses: actions/download-artifact@v4
-        with:
-          pattern: tauri-updater-meta-*
-          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download and verify desktop artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash "$RELEASE_INFRA/scripts/pack/download_desktop_artifacts.sh" \
+            --attempts 2 \
+            --brand ugsci \
+            --run-id "${{ inputs.artifacts_run_id || github.run_id }}" \
+            --include-updater-metadata
 
       - name: Overlay newer Windows artifacts
         if: ${{ inputs.windows_artifacts_run_id != '' }}
@@ -336,6 +356,15 @@ jobs:
           path: tauri-updater-meta-macos
           run-id: ${{ inputs.macos_artifacts_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify final desktop checksums after replacement overlays
+        run: |
+          python "$RELEASE_INFRA/scripts/pack/verify_desktop_artifacts.py" \
+            --brand ugsci \
+            --require windows \
+            --require macos \
+            --require windows-updater \
+            --require macos-updater
 
       - name: Re-verify final macOS archives before OSS upload
         shell: bash
@@ -407,7 +436,7 @@ jobs:
             fi
 
             echo "Processing ${platform} Tauri artifact: ${artifact}"
-            python scripts/pack/generate_oss_metadata.py \
+            python "$RELEASE_INFRA/scripts/pack/generate_oss_metadata.py" \
               --file "${artifact}" \
               --product desktop \
               --platform "${platform}" \
@@ -501,7 +530,7 @@ jobs:
             echo "No macOS .app.tar.gz found, skipping"
             exit 0
           fi
-          python scripts/pack/generate_oss_metadata.py \
+          python "$RELEASE_INFRA/scripts/pack/generate_oss_metadata.py" \
             --file "$APP_TAR_GZ" \
             --product desktop \
             --platform mac-tauri \

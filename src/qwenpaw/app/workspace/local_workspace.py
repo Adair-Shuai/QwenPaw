@@ -25,6 +25,19 @@ if TYPE_CHECKING:
     from ...runtime.tool_registry import ToolRegistry
 
 
+def _is_builtin_self_authorizing_tool(name: str, descriptor: Any) -> bool:
+    """Check the callable and descriptor identities of a migration tool."""
+    from ...agents.tools import migration_compatibility
+
+    expected = getattr(migration_compatibility, name, None)
+    return bool(
+        descriptor
+        and descriptor.func is expected
+        and getattr(expected, "_tool_descriptor", None) is descriptor
+        and descriptor.metadata.get("self_authorizing_request_opt_in") is True,
+    )
+
+
 class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
     """LocalWorkspace whose ``list_tools`` delegates to ToolRegistry."""
 
@@ -82,20 +95,19 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             # Empty list means deny-all workspace tools (unlike
             # ToolRegistry.filter, where empty allowed == unrestricted).
             if not subagent_whitelist:
-                if not (request_context or {}).get(
-                    "agent_coordination_requested",
-                ):
-                    return []
-                allowed = set()
-            else:
-                sa_set = set(subagent_whitelist)
-                allowed = (allowed & sa_set) if allowed is not None else sa_set
-
-        allowed, denied = self._apply_coordination_tool_gates(
-            allowed,
-            denied,
-            request_context,
-        )
+                return []
+            sa_set = set(subagent_whitelist)
+            allowed = (allowed & sa_set) if allowed is not None else sa_set
+            # Private migration tools also enforce an in-memory capability.
+            self_authorizing = {
+                name
+                for name in sa_set
+                if _is_builtin_self_authorizing_tool(
+                    name,
+                    self._tool_registry.get(name),
+                )
+            }
+            denied -= self_authorizing
 
         descs = self._tool_registry.filter(
             active_modes=set(active_modes),
@@ -103,7 +115,6 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             enabled_features=set(enabled_features),
             allowed=allowed,
             denied=denied,
-            request_context=request_context,
         )
 
         return [
@@ -116,27 +127,6 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
         ]
 
     # -------------------------------------------------------------- internal
-
-    @staticmethod
-    def _apply_coordination_tool_gates(
-        allowed: set[str] | None,
-        denied: set[str],
-        request_context: dict[str, Any] | None,
-    ) -> tuple[set[str] | None, set[str]]:
-        """Enable only inter-Agent tools for an explicit coordination turn.
-
-        The override is request-scoped and does not persist changes to the
-        Agent's configured tool permissions.
-        """
-        if (request_context or {}).get(
-            "agent_coordination_requested",
-        ) is not True:
-            return allowed, denied
-        required = {"list_agents", "chat_with_agent"}
-        next_allowed = (
-            (set(allowed) | required) if allowed is not None else None
-        )
-        return next_allowed, set(denied) - required
 
     def _resolve_config_gates(
         self,

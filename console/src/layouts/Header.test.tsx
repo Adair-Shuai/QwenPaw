@@ -103,7 +103,7 @@ vi.mock("@agentscope-ai/design", async (importOriginal) => {
   };
 });
 
-import Header from "./Header";
+import AppBrand from "./AppBrand";
 import {
   clearResumeComponentUpdatesAfterCore,
   RESUME_COMPONENT_UPDATES_AFTER_CORE_KEY,
@@ -158,7 +158,7 @@ describe("Header update entry", () => {
   });
 
   it("always renders the unified update button next to the version", async () => {
-    render(<Header />);
+    render(<AppBrand />);
 
     const button = screen.getByRole("button", {
       name: "sidebar.updateModal.checkUpdates",
@@ -168,7 +168,9 @@ describe("Header update entry", () => {
     expect(button).toBeVisible();
     expect(button.querySelector(".anticon-cloud-download")).toBeInTheDocument();
     expect(version).toBeVisible();
-    expect(version.nextElementSibling).toContainElement(button);
+    expect(version.closest("[class*='appBrandVersionArea']")).toContainElement(
+      button,
+    );
   });
 
   it("installs the desktop core without queuing components first", async () => {
@@ -176,7 +178,7 @@ describe("Header update entry", () => {
     mocks.desktop.hasCoreUpdate = true;
     mocks.desktop.version = "2.1.1-beta.12";
 
-    render(<Header />);
+    render(<AppBrand />);
 
     fireEvent.click(updateEntryButton());
     fireEvent.click(
@@ -201,7 +203,7 @@ describe("Header update entry", () => {
     mocks.desktop.componentUpdateCount = 1;
     mocks.desktop.queueComponentUpdates.mockResolvedValue(true);
 
-    render(<Header />);
+    render(<AppBrand />);
 
     fireEvent.click(updateEntryButton());
     fireEvent.click(
@@ -222,7 +224,7 @@ describe("Header update entry", () => {
     window.localStorage.setItem(RESUME_COMPONENT_UPDATES_AFTER_CORE_KEY, "1");
     mocks.desktop.refreshUpdates.mockResolvedValue(componentRefreshResult(1));
 
-    render(<Header />);
+    render(<AppBrand />);
 
     await waitFor(() =>
       expect(mocks.desktop.refreshUpdates).toHaveBeenCalledWith("components"),
@@ -246,7 +248,7 @@ describe("Header update entry", () => {
       new Error("Desktop backend is not ready"),
     );
 
-    render(<Header />);
+    render(<AppBrand />);
 
     await waitFor(() =>
       expect(mocks.desktop.refreshUpdates).toHaveBeenCalledWith("components"),
@@ -266,7 +268,7 @@ describe("Header update entry", () => {
       .mockResolvedValueOnce(componentRefreshResult(1));
 
     try {
-      render(<Header />);
+      render(<AppBrand />);
       await act(async () => {
         await Promise.resolve();
       });
@@ -305,7 +307,7 @@ describe("Header update entry", () => {
       body: "desktop core",
     });
 
-    render(<Header />);
+    render(<AppBrand />);
 
     await waitFor(() =>
       expect(mocks.desktop.refreshUpdates).toHaveBeenCalledWith("components"),
@@ -321,7 +323,7 @@ describe("Header update entry", () => {
     window.localStorage.setItem(RESUME_COMPONENT_UPDATES_AFTER_CORE_KEY, "1");
     mocks.desktop.refreshUpdates.mockResolvedValue(componentRefreshResult(0));
 
-    render(<Header />);
+    render(<AppBrand />);
 
     await waitFor(() =>
       expect(
@@ -335,7 +337,7 @@ describe("Header update entry", () => {
     mocks.isDesktop = true;
     mocks.desktop.refreshUpdates.mockResolvedValue(emptyRefreshResult());
 
-    render(<Header />);
+    render(<AppBrand />);
     fireEvent.click(updateEntryButton());
 
     await waitFor(() =>

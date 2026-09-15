@@ -1,9 +1,12 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import SessionItem from ".";
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ t: (key: string) => key }),
+  useTranslation: () => ({
+    t: (key: string) =>
+      key === "appCenter.moreActions" ? "More actions" : key,
+  }),
 }));
 
 describe("SessionItem status indicator", () => {
@@ -24,50 +27,27 @@ describe("SessionItem status indicator", () => {
       label: "chat.statusIdle",
     },
   ])("renders $name", ({ props, label }) => {
-    render(
-      <SessionItem
-        variant="drawer"
-        sessionId="chat-1"
-        name="Chat"
-        {...props}
-      />,
-    );
+    render(<SessionItem sessionId="chat-1" name="Chat" {...props} />);
 
     expect(screen.getByRole("img", { name: label })).toBeInTheDocument();
   });
 
-  it("keeps an idle sidebar title flush without a leading status dot", () => {
-    render(
-      <SessionItem
-        variant="sidebar"
-        sessionId="chat-1"
-        name="Chat"
-        chatStatus="idle"
-      />,
-    );
+});
+
+describe("SessionItem actions", () => {
+  it("hides the drag hint while keeping the more actions menu", async () => {
+    render(<SessionItem sessionId="chat-1" name="Chat" />);
+
+    expect(document.querySelector("svg.lucide-grip-vertical")).toBeNull();
+
+    const moreButton = screen.getByRole("button", { name: "More actions" });
+    expect(moreButton).toBeInTheDocument();
+    fireEvent.click(moreButton);
 
     expect(
-      screen.queryByRole("img", { name: "chat.statusIdle" }),
-    ).not.toBeInTheDocument();
-  });
-
-  it("keeps active sidebar status after the title", () => {
-    render(
-      <SessionItem
-        variant="sidebar"
-        sessionId="chat-1"
-        name="Chat"
-        chatStatus="running"
-      />,
-    );
-
-    const item = screen.getByRole("button", { name: /Chat/ });
-    const title = screen.getByText("Chat");
-    const status = screen.getByRole("img", {
-      name: "chat.statusInProgress",
-    });
-
-    expect(item.firstElementChild).toBe(title.parentElement);
-    expect(title.parentElement?.nextElementSibling).toContainElement(status);
+      await screen.findByRole("menuitem", {
+        name: "chat.contextMenu.rename",
+      }),
+    ).toBeInTheDocument();
   });
 });

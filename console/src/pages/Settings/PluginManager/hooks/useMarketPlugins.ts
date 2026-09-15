@@ -7,37 +7,13 @@ import {
   type MarketPluginEntry,
   type MarketPluginSortBy,
 } from "@/api/modules/pluginMarket";
-import { installPlugin, replaceInstalledPlugin } from "@/api/modules/plugin";
+import { installPlugin, type InstallPluginResult } from "@/api/modules/plugin";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 
 export { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 
 interface UseMarketPluginsOptions {
-  onInstalled: () => void;
-}
-
-function isNewerVersion(candidate: string, installed: string): boolean {
-  const toParts = (value: string) =>
-    value
-      .replace(/^v/i, "")
-      .split(/[.-]/)
-      .map((part) => Number(part) || 0);
-  const left = toParts(candidate);
-  const right = toParts(installed);
-  const length = Math.max(left.length, right.length);
-  for (let index = 0; index < length; index += 1) {
-    const difference = (left[index] ?? 0) - (right[index] ?? 0);
-    if (difference !== 0) return difference > 0;
-  }
-  return false;
-}
-
-export function isMarketUpgradeAvailable(entry: MarketPluginEntry): boolean {
-  return Boolean(
-    entry.installed &&
-      entry.installed_version &&
-      isNewerVersion(entry.version, entry.installed_version),
-  );
+  onInstalled: (result: InstallPluginResult) => void | Promise<void>;
 }
 
 const MARKET_PAGE_SIZE = 20;
@@ -277,33 +253,11 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
       setInstallingId(entry.id);
       try {
         const downloadUrl = buildMarketDownloadUrl(entry);
-        if (entry.installed) {
-          if (!isMarketUpgradeAvailable(entry)) {
-            message.info(tRef.current("pluginManager.catalogLatest"));
-            return;
-          }
-          const pluginId = entry.id.startsWith("@")
-            ? entry.id.slice(1).split("/").pop() || entry.id.slice(1)
-            : entry.id.split("/").pop() || entry.id;
-          const result = await replaceInstalledPlugin({
-            source: downloadUrl,
-            pluginId,
-            version: entry.version,
-          });
-          message.success(
-            tRef.current("pluginManager.externalUpgradeReady", {
-              version: result.version,
-            }),
-          );
-          onInstalled();
-          return;
-        }
-        const result = await installPlugin(downloadUrl);
+        const result = await installPlugin(downloadUrl, { force: true });
         message.success(
           `${tRef.current("pluginManager.installSuccess")}: ${result.name}`,
         );
-        onInstalled();
-        setTimeout(() => window.location.reload(), 800);
+        await onInstalled(result);
       } catch (err) {
         const msg =
           err instanceof Error

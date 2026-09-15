@@ -234,6 +234,26 @@ jobs:
             Stop-Process -Force -ErrorAction SilentlyContinue
           exit 0
 
+      - name: Generate desktop artifact checksums (Tauri Windows)
+        shell: pwsh
+        run: |
+          $patterns = @(
+            'dist/UGSci-Tauri-*-Windows-portable.zip',
+            'dist/UGSci-Tauri-*-Windows-updater.exe',
+            'dist/UGSci-Tauri-*-Windows-updater.exe.sig',
+            'dist/tauri-windows-*-updater.json'
+          )
+          foreach ($pattern in $patterns) {
+            $files = @(Get-ChildItem $pattern -ErrorAction SilentlyContinue)
+            if ($files.Count -gt 1) {
+              throw "Expected at most one artifact for $pattern, found $($files.Count)"
+            }
+            foreach ($file in $files) {
+              $hash = (Get-FileHash -Algorithm SHA256 $file.FullName).Hash.ToLowerInvariant()
+              "$hash  $($file.Name)" | Set-Content -Encoding ascii "$($file.FullName).sha256"
+            }
+          }
+
       - name: Stage desktop verify logs (Tauri Windows)
         if: failure()
         shell: pwsh
@@ -306,7 +326,9 @@ jobs:
           name: UGSci-Desktop-Tauri-Windows-${{ steps.version.outputs.version }}
           path: |
             dist/UGSci-Tauri-*-Windows-portable.zip
+            dist/UGSci-Tauri-*-Windows-portable.zip.sha256
             dist/UGSci-Tauri-*-Windows-updater.exe
+            dist/UGSci-Tauri-*-Windows-updater.exe.sha256
           compression-level: 0
           retention-days: 14
 
@@ -332,7 +354,9 @@ jobs:
           name: tauri-updater-meta-windows
           path: |
             dist/UGSci-Tauri-*-Windows-updater.exe.sig
+            dist/UGSci-Tauri-*-Windows-updater.exe.sig.sha256
             dist/tauri-windows-x86_64-updater.json
+            dist/tauri-windows-x86_64-updater.json.sha256
           compression-level: 0
           retention-days: 14
 
@@ -451,6 +475,23 @@ jobs:
             PORT="${BASE_URL##*:}"
             lsof -ti:"$PORT" | xargs kill 2>/dev/null || true
           fi
+
+      - name: Generate desktop artifact checksums (Tauri macOS)
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          artifacts=(
+            dist/UGSci-Tauri-*-macOS.zip
+            dist/UGSci-Tauri-*-macOS.app.tar.gz
+            dist/UGSci-Tauri-*-macOS.app.tar.gz.sig
+            dist/tauri-darwin-*-updater.json
+          )
+          for artifact in "${artifacts[@]}"; do
+            (
+              cd "$(dirname "$artifact")"
+              shasum -a 256 "$(basename "$artifact")" > "$(basename "$artifact").sha256"
+            )
+          done
           if [ -n "${TAURI_VERIFY_ROOT:-}" ] && [[ "$TAURI_VERIFY_ROOT" == "${RUNNER_TEMP:-/tmp}"/qwenpaw-verify-tauri.* ]]; then
             rm -rf -- "$TAURI_VERIFY_ROOT"
           fi
@@ -482,7 +523,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: UGSci-Desktop-Tauri-macOS-${{ steps.version.outputs.version }}
-          path: dist/UGSci-Tauri-*-macOS.zip
+          path: |
+            dist/UGSci-Tauri-*-macOS.zip
+            dist/UGSci-Tauri-*-macOS.zip.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
@@ -508,8 +551,11 @@ jobs:
           name: tauri-updater-meta-macos
           path: |
             dist/UGSci-Tauri-*-macOS.app.tar.gz
+            dist/UGSci-Tauri-*-macOS.app.tar.gz.sha256
             dist/UGSci-Tauri-*-macOS.app.tar.gz.sig
+            dist/UGSci-Tauri-*-macOS.app.tar.gz.sig.sha256
             dist/tauri-darwin-*-updater.json
+            dist/tauri-darwin-*-updater.json.sha256
           if-no-files-found: error
           compression-level: 0
           retention-days: 14

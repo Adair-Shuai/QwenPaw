@@ -50,6 +50,7 @@ const BackupsPage = lazyImportWithRetry("../../pages/Settings/Backups");
 const AppCenterPage = lazyImportWithRetry("../../pages/AppCenter");
 const MarketplacePage = lazyImportWithRetry("../../pages/Market");
 const FilesPage = lazyImportWithRetry("../../pages/Files");
+const ImportPage = lazyImportWithRetry("../../pages/Import");
 
 /**
  * "/" always lands on the canonical Chat workspace.
@@ -107,6 +108,7 @@ export const BUILTIN_ROUTES: Route[] = [
   { id: "core.debug", path: "/debug", component: DebugPage },
   { id: "core.backups", path: "/backups", component: BackupsPage },
   { id: "core.marketplace", path: "/market", component: MarketplacePage },
+  { id: "core.import", path: "/imports", component: ImportPage },
   // Legacy App Center entry kept for bookmarks and the UGSci plugin menu
   // that links straight to the app grid.
   { id: "core.app-center", path: "/apps", component: AppCenterPage },

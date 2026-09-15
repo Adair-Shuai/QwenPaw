@@ -68,6 +68,16 @@ jobs:
             fi
           done
 
+      - name: Build memory plugin frontends
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for frontend_dir in plugins/memory/*/frontend; do
+            echo "Building ${frontend_dir}"
+            npm --prefix "$frontend_dir" ci
+            npm --prefix "$frontend_dir" run build
+          done
+
       - name: Pack plugins and build index
         # qwenpaw-creator and qwenpaw-data are released through their own
         # version-driven pipelines (creator-release.yml,
@@ -103,7 +113,7 @@ jobs:
         run: |
           # nullglob ensures empty globs expand to nothing in this bash session
           shopt -s nullglob
-          for kind in bundle tool apps; do
+          for kind in bundle tool memory apps; do
             while IFS= read -r -d '' f; do
               rel="${f#dist/plugins/}"
               echo "Uploading $f -> files/plugins/${rel}"
@@ -116,7 +126,7 @@ jobs:
           done
           # One-time cleanup: remove legacy flat zips (pre per-plugin directory layout).
           # This only targets {kind}/*.zip (flat files), not {kind}/{plugin_id}/*.zip (versioned).
-          for kind in bundle tool apps; do
+          for kind in bundle tool memory apps; do
             remote_flat=$(ossutil ls "oss://${OSS_BUCKET}/files/plugins/${kind}/" -s 2>/dev/null \
               | grep -E "^oss://${OSS_BUCKET}/files/plugins/${kind}/[^/]+\.zip$" \
               | sed 's|.*/||' \

@@ -11,42 +11,32 @@
  *   so it re-renders when plugins register/dispose — no need to rebuild the
  *   parent useMemo (and avoid re-mounting bubbles on every plugin change).
  *
- * Vendor response primitives are deep-imported because they're not in the
- * package's top-level exports. If the SDK reorganizes its internal paths,
- * update the imports below.
+ * Vendor response primitives are deep-imported because the SDK does not expose
+ * a message-renderer seam. If their paths change, update the imports below.
  */
-import React, {
-  useDeferredValue,
-  useMemo,
-} from "react";
-import { useLocation } from "react-router-dom";
-import { Avatar, Flex } from "antd";
-import { SparkCopyLine, SparkReplaceLine } from "@agentscope-ai/icons";
-import { Tooltip } from "@agentscope-ai/design";
-import { Bubble, Markdown } from "@agentscope-ai/chat";
-import { useTranslation } from "react-i18next";
+import React, { useDeferredValue, useMemo, useSyncExternalStore } from "react";
 import VendorRequestCardOriginal from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Card";
 import AgentScopeRuntimeResponseBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Builder";
-import VendorTool from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Tool";
-import VendorReasoning from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Reasoning";
-import VendorError from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Error";
-import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
-import { copy } from "@agentscope-ai/chat/lib/Util/copy";
-import { emit } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/useChatAnywhereEventEmitter";
+import ResponseActions from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Actions";
+import ResponseError from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Error";
+import ResponseReasoning from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Reasoning";
+import ResponseTool from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Response/Tool";
 import {
   AgentScopeRuntimeContentType,
   AgentScopeRuntimeMessageType,
   AgentScopeRuntimeRunStatus,
   type IAgentScopeRuntimeMessage,
+  type IAgentScopeRuntimeResponse,
 } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/types";
+import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
 import Images from "@agentscope-ai/chat/lib/DefaultCards/Images";
 import Videos from "@agentscope-ai/chat/lib/DefaultCards/Videos";
 import Files from "@agentscope-ai/chat/lib/DefaultCards/Files";
+import { Bubble, Markdown } from "@agentscope-ai/chat";
+import { Avatar, Flex } from "antd";
+import { useTranslation } from "react-i18next";
 import { renderableCodeComponents } from "../../components/RenderableCodeBlock";
-// Vendor `.d.ts` doesn't yet describe the contentPrepend/contentAppend
-// slots we added in the patched .js (Response/Card.js + Request/Card.js).
-// Loosen the prop type so TS doesn't reject the passthrough; runtime
-// behaviour is unchanged.
+// Vendor `.d.ts` doesn't yet describe the request content slots.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const VendorRequestCard = VendorRequestCardOriginal as React.ComponentType<any>;
 import {
@@ -59,18 +49,11 @@ import type {
   ChatRequestData,
   ChatResponseData,
 } from "../../plugins/registry/types";
-import { resolveWorkspaceSessionScope } from "../../features/files-workspace/workspaceSessionScope";
-import { useAgentStore } from "../../stores/agentStore";
 import { DownloadableAudios } from "../../components/Chat/MediaDownload";
 import ResponseArtifactList from "../../features/files-workspace/ResponseArtifactList";
-import { FileSummaryCards } from "../../components/Chat/ToolCards/shared";
-import {
-  isRenderableActionNode,
-  normalizeChatActions,
-  type SafeChatAction,
-} from "./chatActionSafety";
 import {
   countCollapsedSteps,
+  filterThinkingMessages,
   findActiveStepBlockIndex,
   findLastStepBlockIndex,
   getCollapsedGroupStatus,
@@ -81,6 +64,12 @@ import {
 } from "./messageDisplay";
 import styles from "./HostBubbles.module.less";
 import LazyAccordion from "./LazyAccordion";
+import {
+  getAssistantMessageDisplayPreference,
+  getShowThinkingPreference,
+  subscribeChatDisplayPreference,
+  type AssistantMessageDisplayPreference,
+} from "../../utils/chatDisplayPreference";
 
 function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
   return arr
@@ -90,107 +79,6 @@ function sortByOrder<T extends { item: { order?: number } }>(arr: T[]): T[] {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyCardProps = any;
-
-function SafeResponseActions(props: {
-  data: ChatResponseData;
-  isLast?: boolean;
-}) {
-  const { t } = useTranslation();
-  const rawActions = useChatAnywhereOptions(
-    (options) => options.actions?.list,
-  );
-  const actions = normalizeChatActions(rawActions);
-  const actionItems =
-    rawActions == null
-      ? [
-          {
-            icon: <SparkCopyLine />,
-            onClick: () => void copy(JSON.stringify(props.data)),
-          },
-        ]
-      : actions;
-  const replace = useChatAnywhereOptions(
-    (options) => options.actions?.replace,
-  );
-  const rightOption = useChatAnywhereOptions(
-    (options) => options.actions?.right,
-  );
-
-  const buildAction = (item: SafeChatAction, context: unknown) => {
-    const action = { ...item } as Record<string, unknown>;
-    delete action.render;
-    if (!isRenderableActionNode(action.icon)) delete action.icon;
-    if (item.render) {
-      try {
-        const rendered = item.render({ data: context });
-        action.children = isRenderableActionNode(rendered)
-          ? rendered
-          : undefined;
-      } catch (error) {
-        console.error("[chat] action render failed:", error);
-        action.children = null;
-      }
-    }
-    action.onClick = () => {
-      try {
-        item.onClick?.({ data: context });
-      } catch (error) {
-        console.error("[chat] action click failed:", error);
-      }
-    };
-    return action;
-  };
-
-  const actionData = [
-    ...actionItems.map((item) => buildAction(item, props)),
-    ...(replace && props.isLast
-      ? [
-          {
-            icon: (
-              <Tooltip
-                title={t("actions.regenerate", "重新生成")}
-                children={<SparkReplaceLine />}
-              />
-            ),
-            onClick: () => emit({ type: "handleReplace", data: props }),
-          },
-        ]
-      : []),
-  ];
-
-  let rightNode: React.ReactElement | undefined;
-  if (rightOption === false || (Array.isArray(rightOption) && rightOption.length === 0)) {
-    rightNode = undefined;
-  } else if (Array.isArray(rightOption)) {
-    rightNode = (
-      <Bubble.Footer.Actions
-        data={normalizeChatActions(rightOption).map((item) =>
-          buildAction(item, props.data),
-        ) as any}
-      />
-    );
-  } else {
-    const usage = props.data as AnyCardProps;
-    rightNode = usage.usage?.input_tokens && usage.usage?.output_tokens ? (
-      <Bubble.Footer.Count
-        data={[
-          ["Input", usage.usage.input_tokens],
-          ["Output", usage.usage.output_tokens],
-        ]}
-      />
-    ) : undefined;
-  }
-
-  if (!AgentScopeRuntimeResponseBuilder.maybeDone(props.data as AnyCardProps)) {
-    return null;
-  }
-  return (
-    <Bubble.Footer
-      left={<Bubble.Footer.Actions data={actionData as any} />}
-      right={rightNode}
-    />
-  );
-}
 
 function DeferredMarkdown({
   content,
@@ -231,11 +119,7 @@ const HostMessage = React.memo(function HostMessage({
 
   return (
     <>
-      {(Array.isArray(data.content) ? data.content : [data.content]).map(
-        (item, index) => {
-          if (!item || typeof item !== "object") {
-            return <span key={index}>{String(item ?? "")}</span>;
-          }
+      {data.content.map((item, index) => {
         switch (item.type) {
           case AgentScopeRuntimeContentType.TEXT:
             return (
@@ -292,14 +176,43 @@ const HostMessage = React.memo(function HostMessage({
           default:
             return <div key={index}>{JSON.stringify(item)}</div>;
         }
-        },
-      )}
+      })}
     </>
   );
 });
 
-function HostDefaultResponseCard(props: {
-  data: ChatResponseData;
+function renderResponseMessage(item: IAgentScopeRuntimeMessage) {
+  switch (item.type) {
+    case AgentScopeRuntimeMessageType.MESSAGE:
+      return <HostMessage key={item.id} data={item} />;
+    case AgentScopeRuntimeMessageType.PLUGIN_CALL:
+    case AgentScopeRuntimeMessageType.PLUGIN_CALL_OUTPUT:
+    case AgentScopeRuntimeMessageType.TOOL_CALL:
+    case AgentScopeRuntimeMessageType.TOOL_CALL_OUTPUT:
+    case AgentScopeRuntimeMessageType.MCP_CALL:
+    case AgentScopeRuntimeMessageType.MCP_CALL_OUTPUT:
+      return <ResponseTool key={item.id} data={item} />;
+    case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
+      return <ResponseTool key={item.id} data={item} isApproval />;
+    case AgentScopeRuntimeMessageType.REASONING:
+      return <ResponseReasoning key={item.id} data={item} />;
+    case AgentScopeRuntimeMessageType.ERROR:
+      return <ResponseError key={item.id} data={item} />;
+    case AgentScopeRuntimeMessageType.HEARTBEAT:
+      return null;
+    default:
+      console.warn(`[WIP] Unknown message type: ${item.type}`);
+      return null;
+  }
+}
+
+function DefaultHostResponseCard({
+  data,
+  isLast,
+  contentPrepend,
+  contentAppend,
+}: {
+  data: IAgentScopeRuntimeResponse;
   isLast?: boolean;
   contentPrepend?: React.ReactNode;
   contentAppend?: React.ReactNode;
@@ -307,44 +220,42 @@ function HostDefaultResponseCard(props: {
   const { t } = useTranslation();
   const avatar = useChatAnywhereOptions((options) => options.welcome?.avatar);
   const nick = useChatAnywhereOptions((options) => options.welcome?.nick);
+  const mergedMessages = useMemo(
+    () => AgentScopeRuntimeResponseBuilder.mergeToolMessages(data.output),
+    [data.output],
+  );
+  const showThinking = useSyncExternalStore(
+    subscribeChatDisplayPreference,
+    getShowThinkingPreference,
+    () => true,
+  );
   const messages = useMemo(
-    () =>
-      AgentScopeRuntimeResponseBuilder.mergeToolMessages(
-        props.data.output as IAgentScopeRuntimeMessage[],
-      ),
-    [props.data.output],
+    () => filterThinkingMessages(mergedMessages, showThinking),
+    [mergedMessages, showThinking],
   );
+  const assistantDisplayPreference =
+    useSyncExternalStore<AssistantMessageDisplayPreference>(
+      subscribeChatDisplayPreference,
+      getAssistantMessageDisplayPreference,
+      () => "result-collapsed",
+    );
   const messageDisplayMode = getResponseMessageDisplayMode(
-    props.data.status as AgentScopeRuntimeRunStatus,
+    data.status,
+    assistantDisplayPreference,
   );
-  const blocks = useMemo(
+  const messageBlocks = useMemo(
     () => groupResponseMessages(messages, messageDisplayMode),
     [messageDisplayMode, messages],
   );
+  const activeStepBlockIndex = findActiveStepBlockIndex(messageBlocks);
   const statusStepBlockIndex =
     messageDisplayMode === "text-only"
-      ? findActiveStepBlockIndex(blocks)
-      : findLastStepBlockIndex(blocks);
-  const renderResponseMessage = (item: IAgentScopeRuntimeMessage) => {
-    switch (item.type) {
-      case AgentScopeRuntimeMessageType.MESSAGE:
-        return <HostMessage key={item.id} data={item} />;
-      case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
-        return <VendorTool key={item.id} data={item} isApproval />;
-      case AgentScopeRuntimeMessageType.REASONING:
-        return <VendorReasoning key={item.id} data={item} />;
-      case AgentScopeRuntimeMessageType.ERROR:
-        return <VendorError key={item.id} data={item} />;
-      case AgentScopeRuntimeMessageType.HEARTBEAT:
-        return null;
-      default:
-        return null;
-    }
-  };
+      ? activeStepBlockIndex
+      : findLastStepBlockIndex(messageBlocks);
 
   if (
-    messages.length === 0 &&
-    AgentScopeRuntimeResponseBuilder.maybeGenerating(props.data as AnyCardProps)
+    !messages.length &&
+    AgentScopeRuntimeResponseBuilder.maybeGenerating(data)
   ) {
     return <Bubble.Spin />;
   }
@@ -357,11 +268,14 @@ function HostDefaultResponseCard(props: {
           {nick ? <span>{nick}</span> : null}
         </Flex>
       ) : null}
-      {props.contentPrepend}
-      {blocks.map((block, index) => {
-        if (block.kind === "message") return renderResponseMessage(block.message);
+      {contentPrepend}
+      {messageBlocks.map((block, index) => {
+        if (block.kind === "message") {
+          return renderResponseMessage(block.message);
+        }
+
         const groupStatus = getCollapsedGroupStatus(
-          props.data.status as AgentScopeRuntimeRunStatus,
+          data.status,
           index === statusStepBlockIndex,
         );
         const presentation = getCollapsedStepPresentation(groupStatus);
@@ -393,14 +307,12 @@ function HostDefaultResponseCard(props: {
           />
         );
       })}
-      {props.data.error ? (
-        <VendorError data={props.data.error as IAgentScopeRuntimeMessage} />
-      ) : null}
-      {props.contentAppend}
-      {AgentScopeRuntimeResponseBuilder.maybeDone(props.data as AnyCardProps) ? (
+      {data.error ? <ResponseError data={data.error} /> : null}
+      {contentAppend}
+      {AgentScopeRuntimeResponseBuilder.maybeDone(data) ? (
         <ResponseArtifactList messages={messages} />
       ) : null}
-      <SafeResponseActions data={props.data} isLast={props.isLast} />
+      <ResponseActions data={data} isLast={isLast} />
     </>
   );
 }
@@ -477,12 +389,6 @@ function HostResponseCardContent(props: {
   data: ChatResponseData;
   isLast?: boolean;
 }) {
-  const location = useLocation();
-  const selectedAgent = useAgentStore((state) => state.selectedAgent);
-  const { chatId, projectDirOverride } = resolveWorkspaceSessionScope({
-    pathname: location.pathname,
-    selectedAgent,
-  });
   const extScalar = useChatScalarSnapshot();
   const extLists = useChatListSnapshot();
 
@@ -509,24 +415,9 @@ function HostResponseCardContent(props: {
         ))}
       </>
     );
-  // Host-side file summary cards: scan output for file-related tool calls
-  // and render small cards at the end of the response.
-  // FileSummaryCards returns null when no file-related tools are found, so
-  // it's safe to always include it in contentAppend.
-  const fileSummary = (
-    <FileSummaryCards
-      data={props.data as Record<string, unknown>}
-      chatId={chatId}
-      projectDirOverride={projectDirOverride}
-    />
-  );
-
   const contentAppend =
-    appendList.length === 0 ? (
-      fileSummary
-    ) : (
+    appendList.length === 0 ? null : (
       <>
-        {fileSummary}
         {appendList.map((e) => (
           <PluginSlotBoundary
             key={e.item.id}
@@ -540,8 +431,8 @@ function HostResponseCardContent(props: {
     );
 
   const fallback = () => (
-    <HostDefaultResponseCard
-      data={props.data}
+    <DefaultHostResponseCard
+      data={props.data as unknown as IAgentScopeRuntimeResponse}
       isLast={props.isLast}
       contentPrepend={contentPrepend}
       contentAppend={contentAppend}

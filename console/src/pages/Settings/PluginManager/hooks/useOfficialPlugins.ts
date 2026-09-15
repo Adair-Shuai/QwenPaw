@@ -2,24 +2,17 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "@/hooks/useAppMessage";
 import {
-  fetchQwenPawPluginCatalog,
-  fetchUGSciPluginCatalog,
+  fetchPluginCatalog,
   installPlugin,
-  replaceInstalledPlugin,
-  upgradeInstalledUGSciPlugin,
+  type InstallPluginResult,
   type OfficialPluginCatalogEntry,
-  type PluginCatalogSource,
 } from "@/api/modules/plugin";
 
 interface UseOfficialPluginsOptions {
-  onInstalled: () => void;
-  source: PluginCatalogSource;
+  onInstalled: (result: InstallPluginResult) => void | Promise<void>;
 }
 
-export function useOfficialPlugins({
-  onInstalled,
-  source,
-}: UseOfficialPluginsOptions) {
+export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
   const [loading, setLoading] = useState(true);
@@ -31,10 +24,7 @@ export function useOfficialPlugins({
     setLoading(true);
     setCatalogError(null);
     try {
-      const data =
-        source === "ugsci"
-          ? await fetchUGSciPluginCatalog()
-          : await fetchQwenPawPluginCatalog();
+      const data = await fetchPluginCatalog();
       if (data.error) {
         setCatalogError(data.error);
         setPlugins([]);
@@ -51,7 +41,7 @@ export function useOfficialPlugins({
     } finally {
       setLoading(false);
     }
-  }, [source, t]);
+  }, [t]);
 
   useEffect(() => {
     void loadCatalog();
@@ -61,45 +51,12 @@ export function useOfficialPlugins({
     async (entry: OfficialPluginCatalogEntry) => {
       setInstallingId(entry.id);
       try {
-        if (source === "ugsci" && entry.installed) {
-          const result = await upgradeInstalledUGSciPlugin(entry);
-          if (result.method === "queued") {
-            message.success(t("pluginManager.ugsciUpgradeQueued"));
-          } else if (result.method === "replaced") {
-            message.success(
-              t("pluginManager.externalUpgradeReady", {
-                version: result.version,
-              }),
-            );
-            onInstalled();
-          } else if (result.method === "core-update-required") {
-            message.warning(t("pluginManager.coreUpdateRequired"));
-          } else {
-            message.info(t("pluginManager.catalogLatest"));
-          }
-          return;
-        }
-        if (source === "qwenpaw" && entry.installed) {
-          const result = await replaceInstalledPlugin({
-            source: entry.install_url,
-            pluginId: entry.plugin_id,
-            version: entry.version,
-            sha256: entry.sha256,
-          });
-          message.success(
-            t("pluginManager.externalUpgradeReady", {
-              version: result.version,
-            }),
-          );
-          onInstalled();
-          return;
-        }
         const result = await installPlugin(entry.install_url, {
-          force: false,
+          force: entry.installed || entry.upgrade_available,
         });
         message.success(`${t("pluginManager.installSuccess")}: ${result.name}`);
-        onInstalled();
-        setTimeout(() => window.location.reload(), 800);
+        await onInstalled(result);
+        await loadCatalog();
       } catch (err) {
         const msg =
           err instanceof Error ? err.message : t("pluginManager.installFailed");
@@ -108,7 +65,7 @@ export function useOfficialPlugins({
         setInstallingId(null);
       }
     },
-    [message, onInstalled, source, t],
+    [loadCatalog, message, onInstalled, t],
   );
 
   return {

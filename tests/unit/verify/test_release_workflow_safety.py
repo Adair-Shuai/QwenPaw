@@ -113,8 +113,9 @@ def test_replacement_desktop_runs_overlay_pair() -> None:
     promote = _workflow("desktop-promote.yml")
 
     assert "UGSci-Desktop-Tauri-*|tauri-updater-meta-*" not in promote
-    assert "pattern: UGSci-Desktop-Tauri-*" in promote
-    assert "pattern: tauri-updater-meta-*" in promote
+    assert "download_desktop_artifacts.sh" in promote
+    assert "--brand ugsci" in promote
+    assert "--include-updater-metadata" in promote
 
     # desktop-publish has separate GitHub Release and OSS jobs.
     assert publish.count("Download replacement Windows updater metadata") == 2
@@ -354,8 +355,9 @@ def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     # Promotion downloads only desktop artifacts instead of the whole run.
     assert "- name: Download desktop application artifacts" in promote
     assert "- name: Download desktop updater metadata" in promote
-    assert "pattern: UGSci-Desktop-Tauri-*" in promote
-    assert "pattern: tauri-updater-meta-*" in promote
+    assert "download_desktop_artifacts.sh" in promote
+    assert "--brand ugsci" in promote
+    assert "--include-updater-metadata" in promote
 
     # Prerelease detection covers PEP 440 short tags and the dead no-op block
     # is gone.

@@ -1,18 +1,27 @@
 import { renderWithProviders } from "@/test/common_setup";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
+import type { FileTarget } from "./types";
 
-interface CapturedWorkspaceProps {
-  compact?: boolean;
-  initialTarget?: { path: string; source?: string };
-  scope?: { agentId: string; chatId?: string; sessionId: string };
-  onExpand?: () => void;
-  onClose?: () => void;
-}
+const clipboardMocks = vi.hoisted(() => ({
+  copyText: vi.fn().mockResolvedValue(undefined),
+  error: vi.fn(),
+  success: vi.fn(),
+}));
 
-const workspaceProps = vi.hoisted(() => ({
-  current: null as CapturedWorkspaceProps | null,
+vi.mock("../../utils/clipboard", () => ({
+  copyText: clipboardMocks.copyText,
+}));
+
+vi.mock("../../hooks/useAppMessage", () => ({
+  useAppMessage: () => ({
+    message: {
+      error: clipboardMocks.error,
+      success: clipboardMocks.success,
+    },
+  }),
 }));
 
 vi.mock("../../api/modules/workspace", () => ({
@@ -38,10 +47,7 @@ vi.mock("../../api/modules/workspace", () => ({
 }));
 
 vi.mock("./FilesWorkspace", () => ({
-  default: (props: CapturedWorkspaceProps) => {
-    workspaceProps.current = props;
-    return <div data-testid="files-workspace" />;
-  },
+  default: () => <div data-testid="files-workspace" />,
 }));
 
 vi.mock("../../utils/downloadFileFromUrl", () => ({
@@ -50,8 +56,52 @@ vi.mock("../../utils/downloadFileFromUrl", () => ({
 
 describe("FilesDrawer", () => {
   afterEach(() => {
-    workspaceProps.current = null;
-    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+    localStorage.clear();
+  });
+
+  it("copies the complete text file content", async () => {
+    clipboardMocks.copyText.mockClear();
+    clipboardMocks.success.mockClear();
+    const user = userEvent.setup();
+
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "preview",
+          target: {
+            source: "workspace",
+            path: "hello.txt",
+            root: "project",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={{
+          kind: "session",
+          agentId: "default",
+          sessionId: "session-1",
+        }}
+      />,
+    );
+
+    const copyButton = await screen.findByRole("button", {
+      name: /copy|复制/i,
+    });
+    const downloadButton = screen.getByRole("button", {
+      name: /download|下载/i,
+    });
+
+    expect(
+      copyButton.compareDocumentPosition(downloadButton) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    await user.click(copyButton);
+
+    await waitFor(() => {
+      expect(clipboardMocks.copyText).toHaveBeenCalledWith("hello");
+      expect(clipboardMocks.success).toHaveBeenCalled();
+    });
   });
 
   it("does not repeat the Workspace label in the expanded header", async () => {
@@ -83,8 +133,9 @@ describe("FilesDrawer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("renders Preview as the compact shared workspace", async () => {
+  it("keeps Preview open after inserting a file reference", async () => {
     const dispatch = vi.fn();
+    const user = userEvent.setup();
     renderWithProviders(
       <>
         <div className="sender">
@@ -110,45 +161,21 @@ describe("FilesDrawer", () => {
       </>,
     );
 
-    await screen.findByTestId("files-workspace");
-    expect(workspaceProps.current).toMatchObject({
-      compact: true,
-      initialTarget: { path: "hello.txt" },
-    });
-    expect(workspaceProps.current?.onExpand).toBeUndefined();
-    expect(typeof workspaceProps.current?.onClose).toBe("function");
-    expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
-    expect(screen.getByRole("textbox")).toBeInTheDocument();
-  });
-
-  it("keeps an opened workspace as the same preview-only Chat pane", async () => {
-    renderWithProviders(
-      <FilesDrawer
-        state={{
-          kind: "workspace",
-          target: {
-            source: "workspace",
-            path: "hello.txt",
-            root: "project",
-          },
-          trigger: null,
-        }}
-        dispatch={vi.fn()}
-        scope={{
-          kind: "session",
-          agentId: "default",
-          sessionId: "session-1",
-        }}
-      />,
+    await user.click(
+      await screen.findByRole("button", {
+        name: /mentionInChat|Mention in Chat|在聊天中引用/i,
+      }),
     );
 
-    await screen.findByTestId("files-workspace");
-    expect(workspaceProps.current).toMatchObject({
-      compact: true,
-      initialTarget: { path: "hello.txt" },
+    await waitFor(() => {
+      expect(screen.getByRole("textbox")).toHaveValue("@ hello.txt ");
     });
-    expect(workspaceProps.current?.onExpand).toBeUndefined();
-    expect(screen.getByRole("region").className).toContain("drawerPreview");
+    expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
+    expect(
+      screen.getByRole("button", {
+        name: /mentionInChat|Mention in Chat|在聊天中引用/i,
+      }),
+    ).toBeInTheDocument();
   });
 
   it("keeps pointer resizing direct until the gesture ends", async () => {
@@ -169,63 +196,111 @@ describe("FilesDrawer", () => {
 
     const drawer = screen.getByRole("region");
     const separator = screen.getByRole("separator");
+    vi.spyOn(drawer, "getBoundingClientRect")
+      .mockReturnValueOnce({ width: 500 } as DOMRect)
+      .mockReturnValue({ width: 600 } as DOMRect);
+    vi.spyOn(drawer.parentElement!, "getBoundingClientRect").mockReturnValue({
+      width: 1200,
+    } as DOMRect);
     fireEvent.pointerDown(separator, { clientX: 420 });
     expect(drawer.className).toContain("drawerResizing");
 
-    fireEvent.pointerMove(window, { clientX: 520 });
+    fireEvent.pointerMove(window, { clientX: 320 });
     fireEvent.pointerUp(window);
     await waitFor(() => {
       expect(drawer.className).not.toContain("drawerResizing");
     });
+    expect(drawer).toHaveStyle({ width: "600px" });
+    expect(localStorage.getItem("qwenpaw-files-workspace-width")).toBe("600");
   });
 
-  it("delegates attachment loading to the shared Session workspace", async () => {
+  it("uses left and right arrow keys from the right-side resize edge", async () => {
     renderWithProviders(
       <FilesDrawer
         state={{
-          kind: "preview",
-          target: {
-            source: "attachment",
-            path: "reports/report.md",
-            artifactUrl: "/api/files/preview/reports/report.md",
-          },
+          kind: "workspace",
           trigger: null,
         }}
         dispatch={vi.fn()}
         scope={{
           kind: "session",
-          agentId: "agent-a",
-          sessionId: "session-a",
-          chatId: "chat-a",
+          agentId: "default",
+          sessionId: "session-1",
         }}
       />,
     );
 
-    await screen.findByTestId("files-workspace");
-    expect(workspaceProps.current).toMatchObject({
-      compact: true,
-      scope: {
-        agentId: "agent-a",
-        chatId: "chat-a",
-        sessionId: "session-a",
-      },
-      initialTarget: {
-        source: "attachment",
-        path: "reports/report.md",
-      },
+    const drawer = screen.getByRole("region");
+    const separator = screen.getByRole("separator");
+    vi.spyOn(drawer.parentElement!, "getBoundingClientRect").mockReturnValue({
+      width: 1200,
+    } as DOMRect);
+
+    fireEvent.keyDown(separator, { key: "ArrowLeft" });
+    await waitFor(() => {
+      expect(drawer).toHaveStyle({ width: "664px" });
+    });
+
+    fireEvent.keyDown(separator, { key: "ArrowRight" });
+    await waitFor(() => {
+      expect(drawer).toHaveStyle({ width: "640px" });
     });
   });
 
-  it("routes an explicit visualization target into the GenUI workbench", async () => {
+  it("applies persisted widths when the drawer mode changes", () => {
+    localStorage.setItem("qwenpaw-files-preview-width", "480");
+    localStorage.setItem("qwenpaw-files-workspace-width", "720");
+    const dispatch = vi.fn();
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "session-1",
+    };
+    const target = {
+      source: "workspace",
+      path: "hello.txt",
+      root: "project",
+    } satisfies FileTarget;
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "preview", target, trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+
+    expect(screen.getByRole("region")).toHaveStyle({ width: "480px" });
+
+    rerender(
+      <FilesDrawer
+        state={{ kind: "workspace", target, trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+
+    expect(screen.getByRole("region")).toHaveStyle({ width: "720px" });
+  });
+
+  // -------------------------------------------------------------------------
+  // Download button — regression for #4670
+  // Clicking the download button in the preview header must trigger the
+  // downloadFileFromUrl helper with the correct URL and filename.
+  // -------------------------------------------------------------------------
+  it("download button triggers downloadFileFromUrl on click (#4670)", async () => {
+    const { downloadFileFromUrl } = await import(
+      "../../utils/downloadFileFromUrl"
+    );
+    const user = userEvent.setup();
+
     renderWithProviders(
       <FilesDrawer
         state={{
           kind: "preview",
           target: {
             source: "workspace",
-            path: "models/SMOKE.DATA",
+            path: "docs/readme.md",
             root: "project",
-            preferredView: "visualization",
           },
           trigger: null,
         }}
@@ -234,50 +309,55 @@ describe("FilesDrawer", () => {
           kind: "session",
           agentId: "default",
           sessionId: "session-1",
-          chatId: "chat-1",
         }}
       />,
     );
 
-    expect(await screen.findByText("三维网格预览")).toBeInTheDocument();
-    expect(screen.getByText("SMOKE.DATA")).toBeInTheDocument();
-  });
+    const downloadBtn = await screen.findByRole("button", {
+      name: /files\.download|Download|下载/i,
+    });
+    expect(downloadBtn).toBeInTheDocument();
 
-  it("opens the dedicated computation track from its activity button", async () => {
-    renderWithProviders(
-      <FilesDrawer
-        state={{ kind: "workspace", trigger: null }}
-        dispatch={vi.fn()}
-        scope={{ kind: "session", agentId: "default", sessionId: "session-1" }}
-      />,
-    );
+    await user.click(downloadBtn);
 
-    fireEvent.click(screen.getByRole("button", { name: "计算轨道" }));
-    expect(
-      screen.getByText("暂无推导记录。运行 UGSci 公式后可在此查看。"),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "计算轨道" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
-  });
-
-  it("accepts the plugin event that selects the computation track", async () => {
-    renderWithProviders(
-      <FilesDrawer
-        state={{ kind: "workspace", trigger: null }}
-        dispatch={vi.fn()}
-        scope={{ kind: "session", agentId: "default", sessionId: "session-1" }}
-      />,
-    );
-
-    window.dispatchEvent(
-      new CustomEvent("qwenpaw:select-workbench-mode", {
-        detail: { mode: "compute" },
+    await waitFor(() => {
+      expect(downloadFileFromUrl).toHaveBeenCalledOnce();
+    });
+    // Verify the URL and filename passed to the download helper
+    expect(downloadFileFromUrl).toHaveBeenCalledWith(
+      expect.stringContaining("readme.md"),
+      "readme.md",
+      expect.objectContaining({
+        headers: expect.any(Object),
       }),
     );
+  });
+
+  it("does not show download button for profile source (#4670)", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "preview",
+          target: {
+            source: "profile",
+            path: "config.yaml",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={{
+          kind: "session",
+          agentId: "default",
+          sessionId: "session-1",
+        }}
+      />,
+    );
+
+    // Profile source should not have a download button
     expect(
-      await screen.findByText("暂无推导记录。运行 UGSci 公式后可在此查看。"),
-    ).toBeInTheDocument();
+      screen.queryByRole("button", {
+        name: /files\.download|Download|下载/i,
+      }),
+    ).not.toBeInTheDocument();
   });
 });
