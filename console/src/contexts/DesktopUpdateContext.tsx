@@ -45,6 +45,8 @@ interface ContextValue {
   phase: UpdatePhase;
   isBackground: boolean;
   hasCoreUpdate: boolean;
+  /** Backwards-compatible alias used by existing desktop update consumers. */
+  hasUpdate: boolean;
   componentUpdateCount: number;
   supportsLaterInstall: boolean;
   version: string;
@@ -363,6 +365,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       phase,
       isBackground,
       hasCoreUpdate: hasUpdate || phase === "downloaded",
+      hasUpdate: hasUpdate || phase === "downloaded",
       componentUpdateCount,
       supportsLaterInstall,
       version,

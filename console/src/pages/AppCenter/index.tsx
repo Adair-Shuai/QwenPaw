@@ -38,6 +38,7 @@ import { useAppMessage } from "@/hooks/useAppMessage";
 import { pawappApi } from "../../api/modules/pawapp";
 import type { InstallPluginResult } from "../../api/modules/plugin";
 import { useRoutes } from "../../plugins/registry/hooks";
+import { PawAppAccessGate } from "../../plugins/PawAppAccessGate";
 import { loadPawApp, reloadPawApp } from "../../plugins/usePluginLoader";
 import { removePluginAppState } from "../../os/osCleanup";
 import {
@@ -396,20 +397,22 @@ export default function AppCenterPage() {
         </div>
 
         <div className={styles.embedFrame}>
-          {AppComponent ? (
-            <ChunkErrorBoundary resetKey={activeApp.id}>
-              <AppComponent />
-            </ChunkErrorBoundary>
-          ) : (
-            <Empty
-              image={<AppWindow size={48} strokeWidth={1} />}
-              description={t(
-                "appCenter.appNotLoaded",
-                "This app is not loaded yet.",
-              )}
-              style={{ marginTop: 48 }}
-            />
-          )}
+          <PawAppAccessGate appId={activeApp.id} loadEntry>
+            {AppComponent ? (
+              <ChunkErrorBoundary resetKey={activeApp.id}>
+                <AppComponent />
+              </ChunkErrorBoundary>
+            ) : (
+              <Empty
+                image={<AppWindow size={48} strokeWidth={1} />}
+                description={t(
+                  "appCenter.appNotLoaded",
+                  "This app is not loaded yet.",
+                )}
+                style={{ marginTop: 48 }}
+              />
+            )}
+          </PawAppAccessGate>
         </div>
       </div>
     );

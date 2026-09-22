@@ -1,44 +1,35 @@
 repos:
-  - repo: local
-    hooks:
-      - id: ugsci-python-quality
-        name: UGSci hand-written Python quality
-        entry: python scripts/check_ugsci_quality.py
-        language: python
-        types: [python]
-        files: ^plugins/bundle/ugsci/.*\.py$
-        exclude: (^|/)(__pycache__|node_modules|skills|ui/dist|static)(/|$)
-
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v4.3.0
     hooks:
       - id: check-ast
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
       - id: sort-simple-yaml
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
       - id: check-yaml
         exclude: |
           (?x)^(
               meta.yaml
           )$
       - id: check-xml
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
       - id: check-toml
-        exclude: '(?x)(^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/)'
       - id: check-docstring-first
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
       - id: check-json
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
       - id: fix-encoding-pragma
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
       - id: detect-private-key
       - id: trailing-whitespace
-        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/|^console/|^website/)'
+        # Preserve unified-diff context markers and checksummed patch bytes.
+        exclude_types: [diff]
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
   - repo: https://github.com/asottile/add-trailing-comma
     rev: v3.1.0
     hooks:
       - id: add-trailing-comma
-        exclude: '(?x)(^\.codex-tmp/|.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/|^scripts/check_ci_jobs.py|^scripts/check_upstream_ci.py|^scripts/check_latest_ci.py)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
   - repo: https://github.com/pre-commit/mirrors-mypy
     rev: v1.7.0
     hooks:
@@ -52,11 +43,6 @@ repos:
           | .*/skills/.*
           | ^e2e/
           | ^plugins/
-          | ^src/qwenpaw/plugins_bundle/
-          | ^COMSOL_Multiphysics_MCP/
-          | ^simulator_detector.py
-          | ^test_engines.py
-          | ^eclipse_test/
           )
         args: [
           --ignore-missing-imports,
@@ -73,23 +59,21 @@ repos:
     rev: 23.3.0
     hooks:
       - id: black
-        language_version: python3.11
-        args: [ --line-length=79, --target-version=py311 ]
-        exclude: '(?x)(^\.codex-tmp/|.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/|^scripts/check_ci_jobs.py|^scripts/check_upstream_ci.py|^scripts/check_latest_ci.py)'
+        args: [ --line-length=79 ]
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
   - repo: https://github.com/PyCQA/flake8
     rev: 6.1.0
     hooks:
       - id: flake8
         args: [ "--extend-ignore=E203"]
-        exclude: '(?x)(^\.codex-tmp/|.*/skills/.*|^scripts/pack/|^e2e/|^plugins/|^src/qwenpaw/plugins_bundle/|^COMSOL_Multiphysics_MCP/|^simulator_detector.py|^test_engines.py|^eclipse_test/|^scripts/check_ci_jobs.py|^scripts/check_upstream_ci.py|^scripts/check_latest_ci.py)'
+        exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
   - repo: https://github.com/pylint-dev/pylint
     rev: v3.0.2
     hooks:
       - id: pylint
         exclude:
           (?x)(
-          ^\.codex-tmp/
-          | ^docs
+          ^docs
           | pb2\.py$
           | grpc\.py$
           | \.demo$
@@ -98,15 +82,6 @@ repos:
           | .*/skills/.*
           | ^e2e/
           | ^plugins/apps/qwenpaw-creator/e2e/
-          | ^plugins/
-          | ^src/qwenpaw/plugins_bundle/
-          | ^COMSOL_Multiphysics_MCP/
-          | ^simulator_detector.py
-          | ^test_engines.py
-          | ^eclipse_test/
-          | ^scripts/check_ci_jobs.py
-          | ^scripts/check_upstream_ci.py
-          | ^scripts/check_latest_ci.py
           )
         args: [
           --disable=W0511,
@@ -137,6 +112,7 @@ repos:
           --disable=W0201,
           --disable=C0302,
           --disable=W1203,
+          --disable=W1309,  # AGENTS.md requires f-strings, including literals.
           --disable=C2801,
           --disable=C0114,  # Disable missing module docstring for quick dev
           --disable=C0115,  # Disable missing class docstring for quick dev
@@ -148,4 +124,9 @@ repos:
       - id: prettier
         additional_dependencies: [ 'prettier@3.0.0' ]
         files: \.(tsx?)$
-        exclude: '(?x)(^web/|^console/|/dist/|.*/skills/.*|^scripts/pack/|^plugins/|^src/qwenpaw/plugins_bundle/)'
+        exclude: '(?x)(^web/|^console/|/dist/|.*/skills/.*|^scripts/pack/)'
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+        args: ['-shellcheck=']

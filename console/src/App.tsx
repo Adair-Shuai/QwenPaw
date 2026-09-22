@@ -4,8 +4,13 @@ import {
   bailianDarkTheme,
   bailianTheme,
 } from "@agentscope-ai/design";
-import { App as AntdApp, Spin, theme as antdTheme } from "antd";
-import type { ThemeConfig } from "antd";
+import {
+  App as AntdApp,
+  ConfigProvider as AntdConfigProvider,
+  theme as antdTheme,
+} from "antd";
+import designI18n from "@agentscope-ai/design/lib/i18n";
+import type { ThemeConfig as AntThemeConfig } from "antd";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -24,7 +29,7 @@ import "dayjs/locale/id";
 dayjs.extend(relativeTime);
 import MainLayout from "./layouts/MainLayout";
 import { ThemeProvider, useTheme } from "./contexts/ThemeContext";
-import { PluginProvider, usePlugins } from "./plugins/PluginContext";
+import { PluginProvider } from "./plugins/PluginContext";
 import { ApprovalProvider } from "./contexts/ApprovalContext";
 import { DesktopUpdateProvider } from "./contexts/DesktopUpdateContext";
 import { UpdateTakeoverGate } from "./components/UpdateTakeoverPage";
@@ -57,10 +62,12 @@ import { hubApi, type HubHealth } from "./api/modules/hub";
 import { isTauri } from "@tauri-apps/api/core";
 import { isDesktopTauriRuntime } from "./utils/openExternalLink";
 import { interceptBlankLinkClicks } from "./utils/interceptBlankLinkClicks";
+import { isSafeCssColor } from "./utils/chatThemeColor";
+import type { ThemeConfig } from "./api/modules/theme";
 import "./styles/tokens.css";
 import "./styles/layout.css";
 import "./styles/form-override.css";
-import "./styles/lobehub-override.css";
+import "katex/dist/katex.min.css";
 
 const antdLocaleMap: Record<string, Locale> = {
   zh: zhCN,
@@ -69,6 +76,21 @@ const antdLocaleMap: Record<string, Locale> = {
   ru: ruRU,
   id: idID,
 };
+
+export function getAppThemeToken(
+  userTheme: ThemeConfig,
+  isDark: boolean,
+): NonNullable<AntThemeConfig["token"]> {
+  return {
+    colorPrimary:
+      userTheme.dark?.accent && isDark
+        ? userTheme.dark.accent
+        : userTheme.accent ?? "#FF7F16",
+    ...(userTheme.radius
+      ? { borderRadius: Number.parseFloat(userTheme.radius) }
+      : {}),
+  };
+}
 
 const dayjsLocaleMap: Record<string, string> = {
   zh: "zh-cn",
@@ -84,26 +106,6 @@ const GlobalStyle = createGlobalStyle`
   box-sizing: border-box;
 }
 `;
-
-function FullPagePreparing({ message }: { message: string }) {
-  return (
-    <div
-      style={{
-        minHeight: "100vh",
-        display: "flex",
-        flexDirection: "column",
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 16,
-        background: "var(--ant-color-bg-layout, #f8f8f8)",
-        color: "var(--ant-color-text-secondary, #666)",
-      }}
-    >
-      <Spin size="large" />
-      <span>{message}</span>
-    </div>
-  );
-}
 
 function AuthGuard({
   children,
@@ -331,13 +333,15 @@ function AppInner({ backendInfo }: { backendInfo: BackendInfo }) {
   const hubMode = backendInfo.mode === "hub";
   const basename = getRouterBasename(window.location.pathname);
   const { i18n } = useTranslation();
-  const { isDark } = useTheme();
-  const { loading: pluginsLoading } = usePlugins();
+  const { isDark, previewTheme: userTheme } = useTheme();
   const selectedTheme = isDark ? bailianDarkTheme : bailianTheme;
   const lang = i18n.resolvedLanguage || i18n.language || "en";
   const [antdLocale, setAntdLocale] = useState<Locale>(
     antdLocaleMap[lang] ?? enUS,
   );
+  useEffect(() => {
+    designI18n.updateLocale(antdLocale.locale);
+  }, [antdLocale]);
 
   useEffect(() => {
     if (!localStorage.getItem("language")) {
@@ -355,6 +359,32 @@ function AppInner({ backendInfo }: { backendInfo: BackendInfo }) {
     }
     useUploadLimitStore.getState().fetch();
   }, []);
+
+  useEffect(() => {
+    const darkTheme = isDark ? userTheme.dark : undefined;
+    const accent = darkTheme?.accent ?? userTheme.accent;
+    const accentHover = userTheme.accent_hover;
+    const accentBg = darkTheme?.accent_bg ?? userTheme.accent_bg;
+    const root = document.documentElement;
+    const setOrRemove = (
+      name: string,
+      value: string | undefined,
+      validateColor = false,
+    ) => {
+      if (value === undefined) {
+        root.style.removeProperty(name);
+      } else if (!validateColor || isSafeCssColor(value)) {
+        root.style.setProperty(name, value);
+      }
+    };
+
+    setOrRemove("--app-accent", accent);
+    setOrRemove("--app-accent-hover", accentHover);
+    setOrRemove("--app-accent-soft", accentBg, true);
+    setOrRemove("--app-surface", darkTheme?.surface, true);
+    setOrRemove("--app-radius", userTheme.radius);
+    setOrRemove("--border-radius", userTheme.radius);
+  }, [isDark, userTheme]);
 
   useEffect(() => {
     const handleLanguageChanged = (lng: string) => {
@@ -389,11 +419,6 @@ function AppInner({ backendInfo }: { backendInfo: BackendInfo }) {
     if (!isDesktopTauriRuntime()) return;
     return interceptBlankLinkClicks();
   }, []);
-
-  // Wait for plugins to load before rendering routes that might be patched
-  if (pluginsLoading) {
-    return <FullPagePreparing message="正在加载功能模块…" />;
-  }
 
   const osActive = isOsPath(window.location.pathname);
 
@@ -454,78 +479,27 @@ function AppInner({ backendInfo }: { backendInfo: BackendInfo }) {
         {...selectedTheme}
         prefix="qwenpaw"
         prefixCls="qwenpaw"
-        locale={antdLocale}
+        // Spark keys its App by locale. Keep that boundary stable and update
+        // Ant Design's context below it so unsent attachments survive.
+        locale={enUS}
         theme={{
-          ...(selectedTheme as { theme?: ThemeConfig }).theme,
+          ...(selectedTheme as { theme?: AntThemeConfig }).theme,
           algorithm: isDark
             ? antdTheme.darkAlgorithm
             : antdTheme.defaultAlgorithm,
-          token: {
-            // ── LobeHub design system tokens ──────────────────────────
-            // Primary: UGSci brand blue (overrides LobeHub default monochrome)
-            colorPrimary: "#2563EB",
-            colorSuccess: isDark ? "#c4f042" : "#379d4a",
-            colorWarning: isDark ? "#ffb224" : "#ee9e0b",
-            colorError: isDark ? "#f4416c" : "#ec5e41",
-            colorInfo: isDark ? "#60b1ff" : "#0072f5",
-            // Text — solid neutrals
-            colorText: isDark ? "#ffffff" : "#080808",
-            colorTextSecondary: isDark ? "#aaaaaa" : "#666666",
-            colorTextTertiary: isDark ? "#6f6f6f" : "#999999",
-            colorTextQuaternary: isDark ? "#555555" : "#bbbbbb",
-            // Surfaces
-            colorBgLayout: isDark ? "#000000" : "#f8f8f8",
-            colorBgContainer: isDark ? "#0d0d0d" : "#ffffff",
-            colorBgElevated: isDark ? "#1a1a1a" : "#ffffff",
-            colorBgSpotlight: isDark ? "#2d2d2d" : "#dddddd",
-            // Borders & fills
-            colorBorder: isDark ? "#202020" : "#e3e3e3",
-            colorBorderSecondary: isDark ? "#1a1a1a" : "#eeeeee",
-            colorFill: isDark
-              ? "rgba(255, 255, 255, 0.16)"
-              : "rgba(0, 0, 0, 0.12)",
-            colorFillSecondary: isDark
-              ? "rgba(255, 255, 255, 0.1)"
-              : "rgba(0, 0, 0, 0.06)",
-            colorFillTertiary: isDark
-              ? "rgba(255, 255, 255, 0.06)"
-              : "rgba(0, 0, 0, 0.03)",
-            colorFillQuaternary: isDark
-              ? "rgba(255, 255, 255, 0.02)"
-              : "rgba(0, 0, 0, 0.015)",
-            // Typography — Geist font family (LobeHub design system)
-            fontFamily:
-              'Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", ui-sans-serif, system-ui, sans-serif',
-            fontFamilyCode:
-              '"Geist Mono", ui-monospace, SFMono-Regular, "SF Mono", Menlo, "Cascadia Code", Consolas, "HarmonyOS Sans SC", monospace',
-            fontSize: 14,
-            fontSizeSM: 12,
-            fontSizeLG: 16,
-            lineHeight: 1.5714,
-            // Radius — soft but tight (LobeHub)
-            borderRadiusXS: 4,
-            borderRadiusSM: 6,
-            borderRadius: 8,
-            borderRadiusLG: 12,
-            // Controls
-            controlHeightSM: 28,
-            controlHeight: 36,
-            controlHeightLG: 40,
-            // Shadows — shared across light & dark
-            boxShadowTertiary: "0 3px 1px -1px rgba(26, 26, 26, 0.06)",
-            boxShadowSecondary: "0 8px 16px -4px rgba(0, 0, 0, 0.2)",
-            boxShadow: "0 20px 20px -8px rgba(0, 0, 0, 0.24)",
-          },
+          token: getAppThemeToken(userTheme, isDark),
         }}
       >
-        <AntdApp>
-          <CloseWindowPrompt />
-          <DesktopUpdateProvider>
-            <UpdateTakeoverGate>
-              <ApprovalProvider>{routedContent}</ApprovalProvider>
-            </UpdateTakeoverGate>
-          </DesktopUpdateProvider>
-        </AntdApp>
+        <AntdConfigProvider locale={antdLocale}>
+          <AntdApp>
+            <CloseWindowPrompt />
+            <DesktopUpdateProvider>
+              <UpdateTakeoverGate>
+                <ApprovalProvider>{routedContent}</ApprovalProvider>
+              </UpdateTakeoverGate>
+            </DesktopUpdateProvider>
+          </AntdApp>
+        </AntdConfigProvider>
       </ConfigProvider>
     </>
   );

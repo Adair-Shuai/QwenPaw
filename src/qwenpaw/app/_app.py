@@ -2,20 +2,17 @@
 # pylint: disable=redefined-outer-name,unused-argument
 import asyncio
 import hmac
-import json
+import inspect
 import mimetypes
 import os
-import re
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException, Request
+from fastapi import FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +20,7 @@ from fastapi.staticfiles import StaticFiles
 from ..__version__ import __version__
 from ..backup import BackupManager
 from ..backup._utils.safe_swap import cleanup_startup_restore_artifacts
+from ..cli.windows_shutdown import install_shutdown_handlers
 from ..config import load_config  # pylint: disable=no-name-in-module
 from ..config.utils import get_config_path, read_last_api
 from ..constant import (
@@ -32,11 +30,10 @@ from ..constant import (
     PROJECT_NAME,
     WORKING_DIR,
 )
-from .. import distribution as _distribution
 from ..envs import load_envs_into_environ
 from ..local_models.manager import LocalModelManager
 from ..providers.provider_manager import ProviderManager
-from ..plugins.runtime import invoke_plugin_callback
+from ..utils.daily_telemetry import start_daily_telemetry
 from ..utils.io_utils import run_sync_io
 from ..utils.logging import (
     LOG_FILE_PATH,
@@ -52,6 +49,7 @@ from .auth import (
     check_proxy_config_sanity,
 )
 from .exception_handlers import register_exception_handlers
+from .response_compression import ResponseCompressionMiddleware
 from .migration import (
     ensure_default_agent_exists,
     ensure_qa_agent_exists,
@@ -67,25 +65,15 @@ from .routers.healthz import router as healthz_router
 from .routers.loops import router as loops_router
 from .routers.tool_calls import router as tool_calls_router
 from .routers.voice import voice_router
-from .startup_state import startup_state
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
+_WORKSPACE_SHUTDOWN_DEADLINE_SECONDS = 12.0
 
-DESKTOP_UPDATE_MANIFEST_URL = _distribution.DESKTOP_UPDATE_MANIFEST_URL
-CORE_UPDATE_MANIFEST_URL = _distribution.CORE_UPDATE_MANIFEST_URL
-_DESKTOP_VERSION_CACHE_TTL_SECONDS = 60.0
-_DESKTOP_VERSION_STALE_TTL_SECONDS = 600.0
-_DESKTOP_VERSION_MAX_BYTES = 64 * 1024
-_DESKTOP_VERSION_PATTERN = re.compile(
-    r"^\d+\.\d+\.\d+(?:(?:[-.]?(?:a|alpha|b|beta|rc)[.-]?\d+)"
-    r"|(?:\.post\d+))?$",
-    re.IGNORECASE,
-)
-_desktop_version_cache: tuple[str, float] | None = None
-_desktop_version_lock = threading.Lock()
-_core_version_cache: tuple[str, float] | None = None
-_core_version_lock = threading.Lock()
+# Uvicorn imports this module inside the serving process. Under ``--reload``
+# that is a spawned child, distinct from the CLI/reloader process, so it must
+# expose its own PID-scoped graceful-shutdown event.
+install_shutdown_handlers()
 
 # Ensure static assets are served with browser-compatible MIME types across
 # platforms (notably Windows may miss .js/.mjs mappings).
@@ -132,6 +120,78 @@ def _start_browser_runtime(app: FastAPI, kernel: Any, interval: float) -> None:
     )
 
 
+async def _stop_workspaces_after_dependents(
+    app: FastAPI,
+    import_jobs: Any,
+    *,
+    deadline_sec: float = _WORKSPACE_SHUTDOWN_DEADLINE_SECONDS,
+) -> None:
+    """Stop workspace dependents, hard-exiting if they cannot quiesce."""
+    completed = threading.Event()
+
+    def enforce_deadline() -> None:
+        if not completed.wait(deadline_sec):
+            # Teardown cannot safely continue while a worker still uses its
+            # workspace. Exit the whole process even for direct SIGTERM or
+            # Ctrl+C, which have no external CLI force-kill watchdog.
+            os._exit(1)  # pylint: disable=protected-access
+
+    threading.Thread(target=enforce_deadline, daemon=True).start()
+    try:
+        await _stop_workspaces_after_dependents_impl(app, import_jobs)
+    finally:
+        completed.set()
+
+
+async def _stop_workspaces_after_dependents_impl(
+    app: FastAPI,
+    import_jobs: Any,
+) -> None:
+    """Quiesce imports and plugin hooks before destroying workspaces."""
+    imports_quiesced = await import_jobs.shutdown()
+    while not imports_quiesced:
+        # A bounded cancellation attempt is not proof that a worker has
+        # released its workspace. The process watchdog is the cutoff.
+        imports_quiesced = await import_jobs.drain()
+
+    plugin_registry = getattr(app.state, "plugin_registry", None)
+    if plugin_registry is not None:
+        logger.info("Executing plugin shutdown hooks...")
+        for hook in plugin_registry.get_shutdown_hooks():
+            try:
+                logger.info(
+                    f"Executing shutdown hook '{hook.hook_name}' "
+                    f"from plugin '{hook.plugin_id}' (priority"
+                    f"={hook.priority})",
+                )
+                result = hook.callback()
+                if inspect.iscoroutine(result) or inspect.isawaitable(result):
+                    await result
+                logger.info(
+                    f"✓ Completed shutdown hook '{hook.hook_name}' "
+                    f"from plugin '{hook.plugin_id}'",
+                )
+            except Exception as exc:
+                logger.error(
+                    "✗ Failed to execute shutdown hook '%s' "
+                    "from plugin '%s': %s",
+                    hook.hook_name,
+                    hook.plugin_id,
+                    exc,
+                    exc_info=True,
+                )
+
+    # Hooks may access live workspaces. Stop them before unrelated cleanup
+    # delays the memory drain, but only after their dependents have finished.
+    multi_agent_mgr = getattr(app.state, "multi_agent_manager", None)
+    if multi_agent_mgr is not None:
+        logger.info("Stopping MultiAgentManager...")
+        try:
+            await multi_agent_mgr.stop_all()
+        except Exception as exc:
+            logger.error("Error stopping MultiAgentManager: %s", exc)
+
+
 async def _stop_browser_runtime(app: FastAPI) -> None:
     """Cancel browser housekeeping and reclaim all browser workers."""
     browser_watchdog = getattr(app.state, "browser_watchdog", None)
@@ -153,13 +213,10 @@ async def _stop_browser_runtime(app: FastAPI) -> None:
 
 
 @asynccontextmanager
-async def lifespan(
-    # pylint: disable=too-many-statements
-    # pylint: disable=too-many-branches,too-many-nested-blocks
+async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app: FastAPI,
 ):
     startup_start_time = time.time()
-    startup_state.reset()
     add_project_file_handler(LOG_FILE_PATH)
 
     # ================================================================
@@ -182,21 +239,23 @@ async def lifespan(
     auto_register_from_env()
     check_proxy_config_sanity()
 
-    # [PROXY-BYPASS] Apply network proxy configuration at startup so all
-    # subsequent outbound HTTP requests (LLM providers, skill hub, etc.)
-    # honour the user's proxy_mode / custom_proxy_url / no_proxy_hosts.
-    # See: src/qwenpaw/docs/proxy-bypass-design.md
     try:
-        from ..utils.http import apply_network_config
+        from ..utils.telemetry import (
+            collect_and_upload_telemetry,
+            has_telemetry_been_collected,
+            is_telemetry_opted_out,
+        )
 
-        apply_network_config(load_config().network)
-    except Exception:  # pylint: disable=broad-except
-        logger.warning(
-            "Failed to apply network config at startup",
+        if not is_telemetry_opted_out(
+            WORKING_DIR,
+        ) and not has_telemetry_been_collected(WORKING_DIR):
+            collect_and_upload_telemetry(WORKING_DIR)
+    except Exception:
+        logger.debug(
+            "Telemetry collection skipped due to error",
             exc_info=True,
         )
 
-    startup_state.update("migration", "正在检查本地资料…", 8)
     logger.debug("Checking for legacy config migration...")
     migrate_legacy_workspace_to_default_agent()
     ensure_default_agent_exists()
@@ -230,8 +289,7 @@ async def lifespan(
     #
     # Note: being pure backfill, this could later run asynchronously (off the
     # boot path) to speed up startup.
-    # The legacy Scroll backfill runs once in background maintenance below.
-    # Keeping it off the request-ready path avoids duplicate startup disk I/O.
+    await _sync_scroll_history_on_startup()
 
     # Provider initialization scans and may migrate persisted configuration.
     provider_manager = await asyncio.to_thread(ProviderManager.get_instance)
@@ -352,9 +410,6 @@ async def lifespan(
             exc_info=True,
         )
 
-    if workspace_registry is None:
-        raise RuntimeError("Workspace registry failed to initialize")
-
     backup_manager = BackupManager()
 
     # Start token usage manager background tasks
@@ -373,9 +428,8 @@ async def lifespan(
     app.state.backup_manager = backup_manager
     app.state.plugin_loader = None
     app.state.plugin_registry = None
-    app.state.noncritical_maintenance_task = None
 
-    async def _get_agent_by_id(agent_id: str | None = None):
+    async def _get_agent_by_id(agent_id: str = None):
         """Get agent instance by ID, or active agent if not specified."""
         if agent_id is None:
             config = load_config(get_config_path())
@@ -415,194 +469,26 @@ async def lifespan(
     # ================================================================
 
     startup_display = AgentStartupDisplay(read_last_api()).start()
-    app.state.bundled_plugins_status = {
-        "state": "pending",
-        "installed": [],
-        "error": None,
-    }
 
     async def _background_startup():  # pylint: disable=too-many-statements
         try:
-            startup_state.update("maintenance", "正在整理本地资料…", 14)
-
-            def _run_noncritical_maintenance() -> None:
-                try:
-                    from ..utils.telemetry import (
-                        collect_and_upload_telemetry,
-                        has_telemetry_been_collected,
-                        is_telemetry_opted_out,
-                    )
-
-                    if not is_telemetry_opted_out(
-                        WORKING_DIR,
-                    ) and not has_telemetry_been_collected(WORKING_DIR):
-                        collect_and_upload_telemetry(WORKING_DIR)
-                except Exception:
-                    logger.debug(
-                        "Telemetry collection skipped due to error",
-                        exc_info=True,
-                    )
-                try:
-                    from ..agents.context.scroll.sync import (
-                        sync_all_scroll_agents,
-                    )
-
-                    sync_all_scroll_agents()
-                except Exception:
-                    logger.warning(
-                        "session-sync: import/launch failed",
-                        exc_info=True,
-                    )
-
-            # Telemetry upload + legacy scroll-history backfill are pure
-            # maintenance with no bearing on plugin discovery, yet awaiting
-            # them here previously sat in front of component updates, bundled
-            # sync and PluginLoader — delaying when plugins become visible in
-            # the desktop UI. Run them in a concurrent worker thread instead
-            # so they never gate the plugin pipeline; the lifespan shutdown
-            # cancels/awaits the task if it is still running.
-            app.state.noncritical_maintenance_task = asyncio.create_task(
-                asyncio.to_thread(_run_noncritical_maintenance),
-                name="noncritical-maintenance",
-            )
-
             # ---- Plugin System (phase 1: startup-critical plugins) ----
             # Channel and memory plugins must register before agents start.
             logger.debug("Initializing plugin system...")
-
-            # Component updates are strictly opt-in.  When enabled they must
-            # finish before bundled sync / PluginLoader discovery so no live
-            # plugin directory is replaced while Python modules are loaded.
-            # Every failure is non-fatal and falls through to the existing
-            # bundled-plugin installation path.
-            try:
-                from ..components.service import run_startup_updates
-
-                app.state.component_updates_status = await asyncio.to_thread(
-                    run_startup_updates,
-                )
-            except Exception as exc:
-                app.state.component_updates_status = {
-                    "enabled": True,
-                    "updated": [],
-                    "errors": [{"component": "startup", "error": str(exc)}],
-                }
-                logger.warning(
-                    "Component startup updates skipped",
-                    exc_info=True,
-                )
-
-            component_updated_ids: set[str] = set()
-            component_status = getattr(
-                app.state,
-                "component_updates_status",
-                {},
-            )
-            if isinstance(component_status, dict):
-                for result in component_status.get("updated", []):
-                    if (
-                        isinstance(result, dict)
-                        and result.get("updated")
-                        and result.get("component")
-                    ):
-                        component_updated_ids.add(str(result["component"]))
-            # A previous process may have exited after atomic activation but
-            # before PluginLoader health confirmation. Include those marker
-            # backed candidates in the same health-check/rollback pass.
-            try:
-                from ..components.service import configured_service
-                from ..config.utils import get_plugins_dir
-
-                pending_service = configured_service()
-                if pending_service is not None:
-                    component_updated_ids.update(
-                        pending_service.updater.pending_activation_components(
-                            get_plugins_dir(),
-                        ),
-                    )
-                    pending_service.client.close()
-            except Exception:
-                logger.debug(
-                    "Unable to inspect pending component activations",
-                    exc_info=True,
-                )
-
-            # Run bundled-plugin synchronization off the event loop.  The
-            # packaged desktop contains a complete read-only copy of the
-            # bundled plugins; loading that copy directly lets the frontend
-            # expose plugin routes while the first-run user-tree sync copies
-            # large assets (UGSci's visualization tree is hundreds of MB).
-            # The sync uses staged/atomic activation, so discovery can safely
-            # include the user tree while it is in flight.
-            try:
-                from ..plugins.bundled import (
-                    ensure_bundled_plugins_installed,
-                    finalize_bundled_plugin_activation,
-                    rollback_bundled_plugin_activation,
-                )
-
-                app.state.bundled_plugins_status = {
-                    "state": "running",
-                    "installed": [],
-                    "error": None,
-                }
-                bundled_sync_task = asyncio.create_task(
-                    asyncio.to_thread(
-                        ensure_bundled_plugins_installed,
-                        skip_ids=component_updated_ids,
-                        defer_activation_cleanup=True,
-                    ),
-                    name="bundled-plugin-sync",
-                )
-                app.state.bundled_plugins_task = bundled_sync_task
-            except Exception as exc:
-                bundled_sync_task = None
-                app.state.bundled_plugins_status = {
-                    "state": "error",
-                    "installed": [],
-                    "error": str(exc),
-                }
-                logger.warning(
-                    "Failed to sync bundled plugins",
-                    exc_info=True,
-                )
 
             from ..config.utils import get_plugins_dir
             from ..plugins.loader import PluginLoader
             from ..plugins.runtime import RuntimeHelpers
 
-            newly_installed: list[str] = []
-            bundled_ready_ids: list[str] = []
-            bundled_health_errors: list[str] = []
             # PawApps install into the plugins dir alongside other plugins
             # and load through the same pipeline as 'app'-type plugins
             # (plugin.json carrying meta.pawapp); surfaced only in the App
             # Center, hidden from the sidebar.
-            # Prefer the immutable package-bundled trees over a possibly
-            # stale/incomplete user copy.  PluginLoader keys records by ID;
-            # discovering a broken user copy first would reserve the ID and
-            # prevent the known-good packaged plugin from loading at all.
-            plugin_dirs: list[Path] = []
-            try:
-                from ..plugins.bundled import _get_bundled_plugins_dirs
-
-                plugin_dirs.extend(_get_bundled_plugins_dirs())
-            except Exception:
-                logger.debug(
-                    "Unable to add package-bundled plugin directories",
-                    exc_info=True,
-                )
-            plugin_dirs.append(get_plugins_dir())
+            plugin_dirs = [get_plugins_dir()]
 
             plugin_loader = PluginLoader(plugin_dirs)
 
             plugin_loader.registry.set_plugin_http_app(app)
-            # Publish the loader before incremental registration starts. The
-            # public frontend manifest can then expose each successfully
-            # loaded plugin immediately instead of waiting for a later,
-            # dependency-heavy optional plugin to finish downloading.
-            app.state.plugin_loader = plugin_loader
-            app.state.plugin_registry = plugin_loader.registry
 
             config = load_config(get_config_path())
             plugin_configs = (
@@ -619,240 +505,11 @@ async def lifespan(
             )
             logger.debug("Phase 1: channel and memory plugins loaded")
 
-            # Publish all plugin registrations before starting agents and
-            # their external MCP runtimes. A missing or slow MCP process can
-            # otherwise delay this point for minutes while the desktop UI is
-            # already reachable, causing both Windows WebView2 and macOS
-            # WKWebView clients to observe an empty frontend-plugin manifest.
-            loaded_plugins = await plugin_loader.load_all_plugins(
-                configs=plugin_configs,
-            )
-
-            # The user-tree sync may still be copying a fresh candidate.  Wait
-            # for its atomic activation now, then reload any IDs that were
-            # initially served from the read-only package tree so updates take
-            # effect in this same process.
-            if bundled_sync_task is not None:
-                try:
-                    newly_installed = await bundled_sync_task
-                    app.state.bundled_plugins_status = {
-                        "state": "files_ready",
-                        "installed": newly_installed,
-                        "error": None,
-                    }
-                    if newly_installed:
-                        logger.info(
-                            "Bundled plugins synced: %s",
-                            ", ".join(newly_installed),
-                        )
-                        user_plugins_dir = get_plugins_dir()
-                        for plugin_id in newly_installed:
-                            record = loaded_plugins.get(plugin_id)
-                            if (
-                                record is not None
-                                and record.source_path.resolve()
-                                != (user_plugins_dir / plugin_id).resolve()
-                            ):
-                                await plugin_loader.unload_plugin(
-                                    plugin_id,
-                                    delete_files=False,
-                                )
-                        loaded_plugins = await plugin_loader.load_all_plugins(
-                            configs=plugin_configs,
-                        )
-                except Exception as exc:
-                    app.state.bundled_plugins_status = {
-                        "state": "error",
-                        "installed": [],
-                        "error": str(exc),
-                    }
-                    logger.warning(
-                        "Failed to sync bundled plugins",
-                        exc_info=True,
-                    )
-            logger.debug(
-                "Loaded %d plugin registration(s) before agent startup",
-                len(loaded_plugins),
-            )
-
-            # Bundled software upgrades use the same last-known-good boundary
-            # as signed component updates. The sync step keeps the previous
-            # tree until the new candidate has actually imported and
-            # registered. A broken new bundle is rolled back before agents or
-            # the frontend consume its registrations.
-            for plugin_id in newly_installed:
-                record = loaded_plugins.get(plugin_id)
-                healthy = bool(record and record.enabled)
-                if healthy:
-                    try:
-                        finalize_bundled_plugin_activation(
-                            plugin_id,
-                            plugins_dir=get_plugins_dir(),
-                        )
-                        bundled_ready_ids.append(plugin_id)
-                        continue
-                    except Exception as exc:
-                        logger.error(
-                            "Could not finalize bundled plugin %s; "
-                            "rolling back: %s",
-                            plugin_id,
-                            exc,
-                            exc_info=True,
-                        )
-                else:
-                    logger.error(
-                        "Bundled plugin %s failed its load health check; "
-                        "rolling back",
-                        plugin_id,
-                    )
-
-                bundled_health_errors.append(plugin_id)
-                if plugin_loader.get_loaded_plugin(plugin_id) is not None:
-                    try:
-                        await plugin_loader.unload_plugin(
-                            plugin_id,
-                            delete_files=False,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Failed to unload unhealthy bundled plugin %s",
-                            plugin_id,
-                            exc_info=True,
-                        )
-                        # Ensure a stale in-memory record cannot be exposed as
-                        # the restored version below.
-                        # pylint: disable-next=protected-access
-                        plugin_loader._loaded_plugins.pop(
-                            plugin_id,
-                            None,
-                        )
-                        plugin_loader.registry.unregister_plugin(plugin_id)
-                try:
-                    restored = rollback_bundled_plugin_activation(
-                        plugin_id,
-                        plugins_dir=get_plugins_dir(),
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to roll back bundled plugin %s",
-                        plugin_id,
-                    )
-                    continue
-                if not restored:
-                    continue
-                try:
-                    discovered = {
-                        manifest.id: (manifest, path)
-                        for manifest, path in plugin_loader.discover_plugins()
-                    }
-                    previous = discovered.get(plugin_id)
-                    if previous is not None:
-                        await plugin_loader.load_plugin(
-                            previous[0],
-                            previous[1],
-                            plugin_configs.get(plugin_id),
-                        )
-                except Exception:
-                    logger.exception(
-                        "Restored bundled plugin %s also failed to load",
-                        plugin_id,
-                    )
-
-            # Reconcile managed component activations before publishing the
-            # frontend manifest. This keeps rollback atomic from the UI's
-            # perspective and does not depend on slow agent/MCP startup.
-            if component_updated_ids:
-                try:
-                    from ..components.service import (
-                        configured_service,
-                        resolve_component_destination,
-                    )
-
-                    recovery_service = configured_service()
-                    if recovery_service is not None:
-                        plugins_root = get_plugins_dir()
-                        for component_id in sorted(component_updated_ids):
-                            if recovery_service.updater.is_directory_component(
-                                component_id,
-                            ):
-                                # Directory components (backend, runtimes)
-                                # are not plugins: they finalize inline in
-                                # _install_component and must never enter the
-                                # plugin health-check/rollback path -- a
-                                # rollback here would find no previous tree
-                                # and delete the freshly committed active
-                                # record, permanently breaking their updates.
-                                continue
-                            record = loaded_plugins.get(component_id)
-                            healthy = bool(record and record.enabled)
-                            destination = resolve_component_destination(
-                                plugins_root,
-                                component_id,
-                            )
-                            if healthy:
-                                recovery_service.updater.finalize_activation(
-                                    component_id,
-                                    destination,
-                                )
-                                continue
-                            logger.error(
-                                "Updated component %s failed plugin "
-                                "health check; rolling back",
-                                component_id,
-                            )
-                            # pylint: disable=protected-access
-                            plugin_loader._loaded_plugins.pop(
-                                component_id,
-                                None,
-                            )
-                            recovery_service.updater.rollback_activation(
-                                component_id,
-                                destination,
-                            )
-                            if destination.is_dir():
-                                discovered = {
-                                    manifest.id: (manifest, path)
-                                    for manifest, path in (
-                                        plugin_loader.discover_plugins()
-                                    )
-                                }
-                                item = discovered.get(component_id)
-                                if item is not None:
-                                    await plugin_loader.load_plugin(
-                                        item[0],
-                                        item[1],
-                                        plugin_configs.get(component_id),
-                                    )
-                        recovery_service.client.close()
-                except Exception:
-                    logger.warning(
-                        "Component activation health recovery failed",
-                        exc_info=True,
-                    )
-
-            app.state.bundled_plugins_status = {
-                "state": "registry_ready",
-                "installed": bundled_ready_ids,
-                "error": (
-                    "Bundled plugin load failed: "
-                    + ", ".join(bundled_health_errors)
-                    if bundled_health_errors
-                    else None
-                ),
-            }
-            logger.debug(
-                "Published %d plugin registration(s) before agent startup",
-                len(loaded_plugins),
-            )
-
-            startup_state.update("agents", "正在启动专家服务…", 42)
-
             def _mark_core_agents_ready(_results: dict[str, bool]) -> None:
                 """Publish readiness after the core agent phase."""
                 core_elapsed = time.time() - startup_start_time
                 startup_display.mark_core_ready(core_elapsed)
                 app.state.startup_ready.set()
-                startup_state.mark_core_ready()
 
             startup_results = (
                 await workspace_registry.start_all_configured_agents(
@@ -864,8 +521,7 @@ async def lifespan(
                 startup_display.mark_failed(
                     "Default agent failed to start",
                 )
-                raise RuntimeError("Default agent failed to start")
-            if app.state.startup_ready.is_set():
+            elif app.state.startup_ready.is_set():
                 startup_display.mark_finalizing()
 
             provider_manager.start_local_model_resume(local_model_manager)
@@ -881,13 +537,12 @@ async def lifespan(
                 name="qwenpaw-provider-catalog-sync",
             )
 
-            startup_state.update(
-                "plugins",
-                "正在加载功能模块…",
-                62,
-                current=len(loaded_plugins),
-                total=len(loaded_plugins),
+            # Phase 2: load remaining plugins (channel plugins already
+            # loaded — load_plugin skips them automatically)
+            loaded_plugins = await plugin_loader.load_all_plugins(
+                configs=plugin_configs,
             )
+            logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
 
             runtime_helpers = RuntimeHelpers(
                 provider_manager=provider_manager,
@@ -911,6 +566,9 @@ async def lifespan(
                 logger.debug(
                     f"Registered plugin provider: {provider_id}",
                 )
+
+            app.state.plugin_loader = plugin_loader
+            app.state.plugin_registry = plugin_loader.registry
 
             # ---- Plugin Control Commands ----
             logger.debug("Registering plugin control commands...")
@@ -947,24 +605,19 @@ async def lifespan(
             # ---- Startup Hooks ----
             logger.debug("Executing plugin startup hooks...")
             startup_hooks = plugin_loader.registry.get_startup_hooks()
-            hook_total = len(startup_hooks)
-            for hook_index, hook in enumerate(startup_hooks, start=1):
+            for hook in startup_hooks:
                 try:
-                    startup_state.update(
-                        "resources",
-                        "正在准备专家资料与图像…",
-                        64 + round(18 * hook_index / max(1, hook_total)),
-                        current=hook_index,
-                        total=hook_total,
-                        detail=hook.plugin_id,
-                    )
                     logger.debug(
                         f"Executing startup hook '{hook.hook_name}' "
                         f"from plugin '{hook.plugin_id}' "
                         f"(priority={hook.priority})",
                     )
 
-                    await invoke_plugin_callback(hook.callback)
+                    result = hook.callback()
+                    if inspect.iscoroutine(
+                        result,
+                    ) or inspect.isawaitable(result):
+                        await result
 
                     logger.debug(
                         f"Completed startup hook '{hook.hook_name}' "
@@ -992,25 +645,8 @@ async def lifespan(
             except Exception as e:
                 logger.warning(f"Approval service setup skipped: {e}")
 
-            # Runtime helpers, core agents, control commands, startup hooks,
-            # and approval wiring are now usable. Static plugin menus/routes
-            # were exposed earlier as registry_ready; only now publish full
-            # readiness so agent-dependent plugin pages stop showing their
-            # initialization state.
-            app.state.bundled_plugins_status = {
-                "state": "ready",
-                "installed": bundled_ready_ids,
-                "error": (
-                    "Bundled plugin load failed: "
-                    + ", ".join(bundled_health_errors)
-                    if bundled_health_errors
-                    else None
-                ),
-            }
-
             # ---- Skill Pool builtin update + workspace auto-sync ----
             try:
-                startup_state.update("skills", "正在更新技能资料…", 84)
                 from ..agents.skill_system import run_pool_automation_pipeline
                 from .routers.skills import post_pool_automation_inbox
 
@@ -1024,94 +660,38 @@ async def lifespan(
                     exc_info=True,
                 )
 
-            try:
-                startup_state.update("market", "正在缓存市场资料与图标…", 88)
-                from ..plugins.oss_cache import prewarm_oss_market
-
-                market_cache = await prewarm_oss_market()
-                logger.info("Market cache prepared: %s", market_cache)
-            except Exception:
-                logger.warning(
-                    "Market cache warm-up skipped",
-                    exc_info=True,
-                )
-
-            try:
-                startup_state.update(
-                    "components",
-                    "正在检查 Windows 功能组件…",
-                    91,
-                )
-                from ..tauri.optional_components import (
-                    install_pending_components,
-                )
-
-                await asyncio.to_thread(install_pending_components)
-            except Exception:
-                logger.warning(
-                    "Optional component preparation skipped",
-                    exc_info=True,
-                )
-
             startup_elapsed = time.time() - startup_start_time
             logger.info(
-                "Background startup completed in %.3f seconds",
-                startup_elapsed,
+                "Background startup completed in "
+                f"{startup_elapsed:.3f} seconds",
             )
             if app.state.startup_ready.is_set():
                 startup_display.complete(startup_elapsed)
-            startup_state.mark_ready()
 
-        except Exception as exc:
+        except Exception:
             logger.error(
                 "Background startup encountered an error",
                 exc_info=True,
             )
-            if (
-                getattr(
-                    app.state,
-                    "bundled_plugins_status",
-                    {},
-                ).get("state")
-                != "ready"
-            ):
-                app.state.bundled_plugins_status = {
-                    "state": "error",
-                    "installed": [],
-                    "error": str(exc),
-                }
-            startup_state.mark_error(str(exc))
 
     _bg_task = asyncio.create_task(_background_startup())
+    daily_telemetry = start_daily_telemetry()
 
     try:
         yield
     finally:
+        await daily_telemetry.close()
         # Cancel background startup if still in progress
         if not _bg_task.done():
             _bg_task.cancel()
             with suppress(asyncio.CancelledError):
                 await _bg_task
-        bundled_task = getattr(app.state, "bundled_plugins_task", None)
-        if bundled_task is not None and not bundled_task.done():
-            bundled_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await bundled_task
-        maintenance_task = getattr(
-            app.state,
-            "noncritical_maintenance_task",
-            None,
-        )
-        if maintenance_task is not None and not maintenance_task.done():
-            maintenance_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await maintenance_task
 
         # Import jobs can write workspaces and install plugins. Stop them
         # before closing the services they depend on.
         from .routers.portability_imports import PORTABILITY_IMPORT_JOBS
 
-        await PORTABILITY_IMPORT_JOBS.shutdown()
+        await _stop_workspaces_after_dependents(app, PORTABILITY_IMPORT_JOBS)
 
         logger.info("Stopping BackupManager...")
         await backup_manager.shutdown()
@@ -1120,33 +700,6 @@ async def lifespan(
         from ..agents.tools import shutdown_browser_runtime
 
         await shutdown_browser_runtime()
-
-        # ==================== Execute Shutdown Hooks ====================
-        plugin_registry = getattr(app.state, "plugin_registry", None)
-        if plugin_registry is not None:
-            logger.info("Executing plugin shutdown hooks...")
-            shutdown_hooks = plugin_registry.get_shutdown_hooks()
-            for hook in shutdown_hooks:
-                try:
-                    logger.info(
-                        f"Executing shutdown hook '{hook.hook_name}' "
-                        f"from plugin '{hook.plugin_id}' (priority"
-                        f"={hook.priority})",
-                    )
-
-                    await invoke_plugin_callback(hook.callback)
-
-                    logger.info(
-                        f"✓ Completed shutdown hook '{hook.hook_name}' "
-                        f"from plugin '{hook.plugin_id}'",
-                    )
-                except Exception as e:
-                    logger.error(
-                        f"✗ Failed to execute shutdown hook "
-                        f"'{hook.hook_name}' "
-                        f"from plugin '{hook.plugin_id}': {e}",
-                        exc_info=True,
-                    )
 
         local_model_mgr = getattr(app.state, "local_model_manager", None)
         if local_model_mgr is not None:
@@ -1168,17 +721,6 @@ async def lifespan(
                 await _app_svc.stop()
             except Exception as e:
                 logger.error(f"Error stopping AppServiceManager: {e}")
-
-        # Stop multi-agent manager (stops all agents and their components)
-        multi_agent_mgr = getattr(app.state, "multi_agent_manager", None)
-        if multi_agent_mgr is not None:
-            logger.info("Stopping MultiAgentManager...")
-            try:
-                await multi_agent_mgr.stop_all()
-            except Exception as e:
-                logger.error(f"Error stopping MultiAgentManager: {e}")
-
-        await PORTABILITY_IMPORT_JOBS.drain()
 
         # These three cleanup tasks are independent; run in parallel.
         from ..agents.skill_system.hub import aclose_hub_client
@@ -1229,6 +771,9 @@ app = FastAPI(
     openapi_url="/openapi.json" if DOCS_ENABLED else None,
 )
 register_exception_handlers(app)
+
+# Compress large JSON responses such as skill and workspace listings.
+app.add_middleware(ResponseCompressionMiddleware, minimum_size=1000)
 
 # Add agent context middleware for agent-scoped routes
 app.add_middleware(AgentContextMiddleware)
@@ -1324,160 +869,7 @@ def get_version():
     """Return the current application version (public-safe payload)."""
     return {
         "version": __version__,
-        "download_base_url": _distribution.DOWNLOAD_BASE_URL,
     }
-
-
-def _fetch_latest_desktop_version() -> str:
-    global _desktop_version_cache  # pylint: disable=global-statement
-    now = time.monotonic()
-    cached = _desktop_version_cache
-    if cached is not None and now - cached[1] <= (
-        _DESKTOP_VERSION_CACHE_TTL_SECONDS
-    ):
-        return cached[0]
-
-    with _desktop_version_lock:
-        now = time.monotonic()
-        cached = _desktop_version_cache
-        if cached is not None and now - cached[1] <= (
-            _DESKTOP_VERSION_CACHE_TTL_SECONDS
-        ):
-            return cached[0]
-        try:
-            request = urllib.request.Request(
-                DESKTOP_UPDATE_MANIFEST_URL,
-                headers={"User-Agent": f"UGSci/{__version__}"},
-            )
-            with urllib.request.urlopen(request, timeout=10) as response:
-                raw = response.read(_DESKTOP_VERSION_MAX_BYTES + 1)
-            if len(raw) > _DESKTOP_VERSION_MAX_BYTES:
-                raise ValueError("desktop update manifest is too large")
-            payload = json.loads(raw.decode("utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("desktop update manifest must be an object")
-            version = str(payload.get("version") or "").strip()
-            if not _DESKTOP_VERSION_PATTERN.fullmatch(version):
-                raise ValueError("desktop update manifest version is invalid")
-        except (OSError, UnicodeDecodeError, ValueError):
-            if cached is not None and now - cached[1] <= (
-                _DESKTOP_VERSION_STALE_TTL_SECONDS
-            ):
-                logger.warning("Using stale desktop update version cache")
-                return cached[0]
-            raise
-        _desktop_version_cache = (version, now)
-        return version
-
-
-@app.get("/api/version/latest")
-def get_latest_desktop_version():
-    """Proxy the fixed production OSS manifest without exposing CORS."""
-    try:
-        return {"version": _fetch_latest_desktop_version()}
-    except (
-        OSError,
-        UnicodeDecodeError,
-        ValueError,
-        urllib.error.URLError,
-    ) as exc:
-        logger.warning("Desktop update manifest lookup failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail="Desktop update manifest is unavailable",
-        ) from exc
-
-
-def _fetch_latest_core_version() -> str:
-    global _core_version_cache  # pylint: disable=global-statement
-    now = time.monotonic()
-    cached = _core_version_cache
-    if cached is not None and now - cached[1] <= (
-        _DESKTOP_VERSION_CACHE_TTL_SECONDS
-    ):
-        return cached[0]
-
-    with _core_version_lock:
-        now = time.monotonic()
-        cached = _core_version_cache
-        if cached is not None and now - cached[1] <= (
-            _DESKTOP_VERSION_CACHE_TTL_SECONDS
-        ):
-            return cached[0]
-        try:
-            request = urllib.request.Request(
-                CORE_UPDATE_MANIFEST_URL,
-                headers={"User-Agent": f"UGSci/{__version__}"},
-            )
-            with urllib.request.urlopen(request, timeout=10) as response:
-                raw = response.read(_DESKTOP_VERSION_MAX_BYTES + 1)
-            if len(raw) > _DESKTOP_VERSION_MAX_BYTES:
-                raise ValueError("core update manifest is too large")
-            payload = json.loads(raw.decode("utf-8"))
-            if not isinstance(payload, dict):
-                raise ValueError("core update manifest must be an object")
-            version = str(payload.get("version") or "").strip()
-            if not version or not _DESKTOP_VERSION_PATTERN.fullmatch(version):
-                raise ValueError("core update manifest version is invalid")
-        except urllib.error.HTTPError as exc:
-            if exc.code == 404:
-                return ""
-            if cached is not None and now - cached[1] <= (
-                _DESKTOP_VERSION_STALE_TTL_SECONDS
-            ):
-                logger.warning("Using stale core update version cache")
-                return cached[0]
-            raise
-        except (OSError, UnicodeDecodeError, ValueError):
-            if cached is not None and now - cached[1] <= (
-                _DESKTOP_VERSION_STALE_TTL_SECONDS
-            ):
-                logger.warning("Using stale core update version cache")
-                return cached[0]
-            raise
-        _core_version_cache = (version, now)
-        return version
-
-
-@app.get("/api/version/latest-core")
-def get_latest_core_version():
-    """Proxy the UGSci core version manifest without exposing CORS."""
-    try:
-        return {"version": _fetch_latest_core_version()}
-    except (
-        OSError,
-        UnicodeDecodeError,
-        ValueError,
-        urllib.error.URLError,
-    ) as exc:
-        logger.warning("Core update manifest lookup failed: %s", exc)
-        raise HTTPException(
-            status_code=502,
-            detail="Core update manifest is unavailable",
-        ) from exc
-
-
-@app.get("/api/startup/status")
-def get_startup_status():
-    """Return real preparation progress for the desktop splash screen."""
-    return startup_state.snapshot()
-
-
-@app.get("/api/plugins/bundled/status")
-def get_bundled_plugins_status(request: Request):
-    """Return non-blocking bundled-plugin synchronization status."""
-    status = dict(
-        getattr(
-            request.app.state,
-            "bundled_plugins_status",
-            {"state": "pending", "installed": [], "error": None},
-        ),
-    )
-    loader = getattr(request.app.state, "plugin_loader", None)
-    status["loaded_count"] = (
-        len(loader.get_all_loaded_plugins()) if loader is not None else 0
-    )
-    return status
 
 
 @app.get("/api/doctor/runtime")

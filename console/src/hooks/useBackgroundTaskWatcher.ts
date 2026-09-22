@@ -1,5 +1,5 @@
 /**
- * Watches offloaded tool calls via ToolStream SSE (+ polling fallback).
+ * Tracks offloaded tool calls with polling and opens output SSE on demand.
  * Updates backgroundTasksStore with liveOutput and final status/result.
  */
 
@@ -14,49 +14,13 @@ import { useBackgroundTasksStore } from "../stores/backgroundTasksStore";
 import { resolveBackendSessionId } from "../utils/resolveBackendSessionId";
 
 const POLL_INTERVAL_MS = 3000;
-const POLL_MAX_INTERVAL_MS = 30_000;
-const MISSING_CONFIRMATIONS = 3;
 const LIVE_OUTPUT_MAX = 80_000;
 
 type AbortFn = () => void;
 
-const activeWatchers = new Map<string, AbortFn>();
-const finalizedIds = new Map<string, number>();
-const FINALIZED_TTL_MS = 60 * 60 * 1000;
-const FINALIZED_MAX = 2000;
-const OUTPUT_RETRY_DELAYS_MS = [1000, 3000, 10000];
-const OUTPUT_RETRY_COOLDOWN_MS = 30_000;
-const SESSION_RESOLVE_ATTEMPTS = 120;
-const SESSION_RESOLVE_INTERVAL_MS = 300;
-
-function watcherKey(sessionId: string, toolCallId: string): string {
-  return `${sessionId}\u0000${toolCallId}`;
-}
-
-function markFinalized(sessionId: string, toolCallId: string): void {
-  const now = Date.now();
-  for (const [id, at] of finalizedIds) {
-    if (now - at > FINALIZED_TTL_MS) finalizedIds.delete(id);
-  }
-  finalizedIds.set(watcherKey(sessionId, toolCallId), now);
-  while (finalizedIds.size > FINALIZED_MAX) {
-    const oldest = finalizedIds.keys().next().value;
-    if (!oldest) break;
-    finalizedIds.delete(oldest);
-  }
-}
-function isFinalized(sessionId: string, toolCallId: string): boolean {
-  const key = watcherKey(sessionId, toolCallId);
-  const at = finalizedIds.get(key);
-  if (!at) return false;
-  if (Date.now() - at > FINALIZED_TTL_MS) { finalizedIds.delete(key); return false; }
-  return true;
-}
-
-function isNotFoundError(error: unknown): boolean {
-  const status = (error as { status?: unknown })?.status;
-  return status === 404 || (error instanceof Error && /\b404\b/.test(error.message));
-}
+const activeStatusWatchers = new Map<string, AbortFn>();
+const activeOutputStreams = new Map<string, AbortFn>();
+const finalizedIds = new Set<string>();
 
 function chunkToText(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
@@ -95,9 +59,9 @@ async function finalizeFromOutput(
   toolCallId: string,
   fallbackLive: string,
   cancelled: boolean,
-  attempt = 0,
 ): Promise<void> {
-  if (isFinalized(sessionId, toolCallId)) return;
+  if (finalizedIds.has(toolCallId)) return;
+  finalizedIds.add(toolCallId);
 
   const store = useBackgroundTasksStore.getState();
   let resultText = fallbackLive;
@@ -113,52 +77,20 @@ async function finalizeFromOutput(
     ) {
       status = "cancelled";
     }
-  } catch (error) {
-    if (!isNotFoundError(error) && attempt < OUTPUT_RETRY_DELAYS_MS.length) {
-      await new Promise((resolve) =>
-        setTimeout(resolve, OUTPUT_RETRY_DELAYS_MS[attempt]),
-      );
-      return finalizeFromOutput(
-        sessionId,
-        toolCallId,
-        fallbackLive,
-        cancelled,
-        attempt + 1,
-      );
-    }
-    if (!isNotFoundError(error)) {
-      console.error(
-        "[backgroundTaskWatcher] final output unavailable after retries:",
-        sessionId,
-        toolCallId,
-        error,
-      );
-      setTimeout(() => {
-        const task = useBackgroundTasksStore
-          .getState()
-          .tasks.find((item) => item.sessionId === sessionId && item.toolCallId === toolCallId);
-        if (task?.status === "running") {
-          startBackgroundTaskWatcher(sessionId, toolCallId);
-        }
-      }, OUTPUT_RETRY_COOLDOWN_MS);
-      return;
-    }
-    resultText = fallbackLive;
+  } catch {
+    // Cache miss / race — keep liveOutput
   }
-  markFinalized(sessionId, toolCallId);
 
   if (resultText.length > LIVE_OUTPUT_MAX) {
     resultText = resultText.slice(resultText.length - LIVE_OUTPUT_MAX);
   }
 
-  const task = store.tasks.find(
-    (t) => t.sessionId === sessionId && t.toolCallId === toolCallId,
-  );
+  const task = store.tasks.find((t) => t.toolCallId === toolCallId);
   // Skip toast if already terminal (e.g. user cancelled from panel)
   const alreadyTerminal =
     task?.status === "done" || task?.status === "cancelled";
 
-  store.updateTaskForSession(sessionId, toolCallId, {
+  store.updateTask(toolCallId, {
     status,
     result: resultText || null,
   });
@@ -183,106 +115,65 @@ async function finalizeFromOutput(
   }
 }
 
+async function finishBackgroundTask(
+  sessionId: string,
+  toolCallId: string,
+  cancelled: boolean,
+): Promise<void> {
+  stopBackgroundTaskWatcher(toolCallId);
+  const liveOutput =
+    useBackgroundTasksStore
+      .getState()
+      .tasks.find((task) => task.toolCallId === toolCallId)?.liveOutput || "";
+  await finalizeFromOutput(sessionId, toolCallId, liveOutput, cancelled);
+}
+
 function startPolling(sessionId: string, toolCallId: string): AbortFn {
   let stopped = false;
-  let timer: ReturnType<typeof setTimeout> | null = null;
-  let transientFailures = 0;
-  let missingCount = 0;
-  let polling = false;
-
-  const schedule = (delay: number) => {
-    if (stopped) return;
-    timer = setTimeout(() => void poll(), delay);
-  };
-
-  const poll = async () => {
-    if (stopped) return;
-    if (polling) return;
-    polling = true;
+  let inFlight = false;
+  const timer = setInterval(async () => {
+    if (stopped || inFlight) return;
+    inFlight = true;
     const finishPoll = async (cancelled: boolean) => {
       if (stopped) return;
-      stopped = true;
-      if (timer) clearTimeout(timer);
-      const key = watcherKey(sessionId, toolCallId);
-      const abort = activeWatchers.get(key);
-      activeWatchers.delete(key);
-      // Abort stream leg only; poll already stopped
-      abort?.();
-      const live =
-        useBackgroundTasksStore
-          .getState()
-          .tasks.find((t) => t.sessionId === sessionId && t.toolCallId === toolCallId)?.liveOutput || "";
-      await finalizeFromOutput(sessionId, toolCallId, live, cancelled);
+      await finishBackgroundTask(sessionId, toolCallId, cancelled);
     };
     try {
       const info = await toolCallsApi.getInfo(sessionId, toolCallId);
-      if (!info) {
-        missingCount += 1;
-        transientFailures = 0;
-        if (missingCount < MISSING_CONFIRMATIONS) {
-          schedule(POLL_INTERVAL_MS);
-          return;
-        }
-        // A task that was observed/offloaded and then disappears is normally
-        // backend GC after terminal completion. Confirm via /output first;
-        // finalize from the captured live stream only when output was GC'd too.
-        try {
-          const output = await toolCallsApi.getOutput(sessionId, toolCallId);
-          const cancelled =
-            output.final_state === "interrupted" ||
-            output.final_state === "cancelled";
-          await finishPoll(cancelled);
-        } catch (err) {
-          if (isNotFoundError(err)) {
-            await finishPoll(false);
-          } else {
-            transientFailures += 1;
-            schedule(
-              Math.min(
-                POLL_MAX_INTERVAL_MS,
-                POLL_INTERVAL_MS * 2 ** Math.min(transientFailures, 4),
-              ),
-            );
-          }
-        }
-        return;
-      }
-      missingCount = 0;
-      transientFailures = 0;
+      if (!info) return;
       if (info.status === "running" || info.status === "offloaded") {
-        schedule(POLL_INTERVAL_MS);
         return;
       }
       const cancelled =
         info.end_state === "interrupted" || !!info.force_cancelled;
       await finishPoll(cancelled);
-    } catch (error) {
-      if (isNotFoundError(error)) {
-        await finishPoll(false);
-      } else {
-        transientFailures += 1;
-        schedule(
-          Math.min(
-            POLL_MAX_INTERVAL_MS,
-            POLL_INTERVAL_MS * 2 ** Math.min(transientFailures, 4),
-          ),
+    } catch {
+      // A transient getInfo failure must not orphan a running task. Confirm
+      // absence through the session list before treating it as completed.
+      try {
+        const { items } = await toolCallsApi.list(sessionId);
+        const stillActive = items.some(
+          (item) => item.tool_call_id === toolCallId,
         );
+        if (!stillActive) {
+          await finishPoll(false);
+        }
+      } catch {
+        // Keep polling while the backend is temporarily unavailable.
       }
     } finally {
-      polling = false;
+      inFlight = false;
     }
-  };
-
-  schedule(POLL_INTERVAL_MS);
+  }, POLL_INTERVAL_MS);
 
   return () => {
     stopped = true;
-    if (timer) clearTimeout(timer);
+    clearInterval(timer);
   };
 }
 
 /**
- * Register a task in the background queue and start the SSE/poll watcher.
+ * Register a task in the background queue and start status polling.
  * Idempotent: safe for both manual offload and system auto-offload.
  *
  * sessionId may be empty on the first turn before the local session resolves.
@@ -293,7 +184,7 @@ export function registerBackgroundTask(opts: {
   toolCallId: string;
   toolName: string;
   startTime?: number;
-  /** When true, skip SSE and hydrate /output immediately (fast bg finish). */
+  /** When true, skip polling and hydrate /output immediately. */
   alreadyCompleted?: boolean;
 }): void {
   const {
@@ -332,13 +223,13 @@ export function registerBackgroundTask(opts: {
     };
     if (!hydrate(resolvedSessionId)) {
       let attempts = 0;
-      const retry = () => {
+      const timer = setInterval(() => {
         attempts += 1;
         const sid = resolveBackendSessionId();
-        if (hydrate(sid) || attempts >= SESSION_RESOLVE_ATTEMPTS) return;
-        setTimeout(retry, SESSION_RESOLVE_INTERVAL_MS);
-      };
-      setTimeout(retry, SESSION_RESOLVE_INTERVAL_MS);
+        if (hydrate(sid) || attempts >= 20) {
+          clearInterval(timer);
+        }
+      }, 250);
     }
     return;
   }
@@ -354,73 +245,84 @@ export function registerBackgroundTask(opts: {
 
   if (!startWatcher(resolvedSessionId)) {
     let attempts = 0;
-    const retry = () => {
+    const timer = setInterval(() => {
       attempts += 1;
       const sid = resolveBackendSessionId();
-      if (startWatcher(sid) || attempts >= SESSION_RESOLVE_ATTEMPTS) return;
-      setTimeout(retry, SESSION_RESOLVE_INTERVAL_MS);
-    };
-    setTimeout(retry, SESSION_RESOLVE_INTERVAL_MS);
+      if (startWatcher(sid) || attempts >= 20) {
+        clearInterval(timer);
+      }
+    }, 250);
   }
 }
 
 /**
- * Start watching an offloaded tool call. Idempotent per toolCallId.
+ * Start polling an offloaded tool call status. Idempotent per toolCallId.
  */
 export function startBackgroundTaskWatcher(
   sessionId: string,
   toolCallId: string,
 ): void {
-  const key = watcherKey(sessionId, toolCallId);
-  if (activeWatchers.has(key) || isFinalized(sessionId, toolCallId)) return;
+  if (activeStatusWatchers.has(toolCallId) || finalizedIds.has(toolCallId)) {
+    return;
+  }
+  activeStatusWatchers.set(toolCallId, startPolling(sessionId, toolCallId));
+}
 
-  let settled = false;
-  let pollAbort: AbortFn | null = null;
-  let streamAbort: AbortFn = () => {};
+/** Open live output for a visible task. Idempotent per toolCallId. */
+export function startBackgroundTaskStream(
+  sessionId: string,
+  toolCallId: string,
+): void {
+  if (activeOutputStreams.has(toolCallId) || finalizedIds.has(toolCallId)) {
+    return;
+  }
 
-  const abortAll = () => {
-    streamAbort();
-    pollAbort?.();
+  let active = true;
+  let transportAbort: AbortFn = () => {};
+  const stop = () => {
+    active = false;
+    transportAbort();
   };
 
-  const settle = async (cancelled: boolean) => {
-    if (settled) return;
-    settled = true;
-    activeWatchers.delete(key);
-    abortAll();
-    const live =
-      useBackgroundTasksStore
-        .getState()
-        .tasks.find((t) => t.sessionId === sessionId && t.toolCallId === toolCallId)?.liveOutput || "";
-    await finalizeFromOutput(sessionId, toolCallId, live, cancelled);
-  };
-
-  streamAbort = subscribeToolCallStream(sessionId, toolCallId, {
+  transportAbort = subscribeToolCallStream(sessionId, toolCallId, {
     onChunk: (payload) => {
+      if (!active) return;
       const text = chunkToText(payload);
       if (text) {
-        useBackgroundTasksStore.getState().appendLiveOutputForSession(sessionId, toolCallId, text);
+        useBackgroundTasksStore.getState().appendLiveOutput(toolCallId, text);
       }
     },
     onDone: () => {
-      void settle(false);
+      if (!active) return;
+      active = false;
+      activeOutputStreams.delete(toolCallId);
+      void finishBackgroundTask(sessionId, toolCallId, false);
     },
     onError: () => {
-      if (settled || pollAbort) return;
-      pollAbort = startPolling(sessionId, toolCallId);
+      if (!active) return;
+      active = false;
+      activeOutputStreams.delete(toolCallId);
     },
   });
-
-  activeWatchers.set(key, abortAll);
+  activeOutputStreams.set(toolCallId, stop);
 }
 
-/** Stop watcher without changing task status (e.g. user removed row). */
+/** Stop live output without changing the task or its status polling. */
+export function stopBackgroundTaskStream(toolCallId: string): void {
+  const abort = activeOutputStreams.get(toolCallId);
+  if (!abort) return;
+  activeOutputStreams.delete(toolCallId);
+  abort();
+}
+
+/** Stop all tracking without changing task status (e.g. row removal). */
 export function stopBackgroundTaskWatcher(toolCallId: string): void {
-  for (const [key, abort] of activeWatchers) {
-    if (!key.endsWith(`\u0000${toolCallId}`)) continue;
+  const abort = activeStatusWatchers.get(toolCallId);
+  if (abort) {
     abort();
-    activeWatchers.delete(key);
+    activeStatusWatchers.delete(toolCallId);
   }
+  stopBackgroundTaskStream(toolCallId);
 }
 
 /**
@@ -441,14 +343,16 @@ export async function cancelBackgroundTask(
     );
     throw new Error("Missing backend session id for cancel");
   }
+  const hadOutputStream = activeOutputStreams.has(toolCallId);
   stopBackgroundTaskWatcher(toolCallId);
   try {
     await toolCallsApi.cancel(sid, toolCallId);
   } catch (err) {
-    for (const key of finalizedIds.keys()) {
-      if (key.endsWith(`\u0000${toolCallId}`)) finalizedIds.delete(key);
-    }
+    finalizedIds.delete(toolCallId);
     startBackgroundTaskWatcher(sid, toolCallId);
+    if (hadOutputStream) {
+      startBackgroundTaskStream(sid, toolCallId);
+    }
     message.error(
       i18n.t(
         "chat.backgroundTasks.cancelFailed",
@@ -457,12 +361,12 @@ export async function cancelBackgroundTask(
     );
     throw err;
   }
-  markFinalized(sid, toolCallId);
+  finalizedIds.add(toolCallId);
   const live =
     useBackgroundTasksStore
       .getState()
-      .tasks.find((t) => t.sessionId === sid && t.toolCallId === toolCallId)?.liveOutput || "";
-  useBackgroundTasksStore.getState().updateTaskForSession(sid, toolCallId, {
+      .tasks.find((t) => t.toolCallId === toolCallId)?.liveOutput || "";
+  useBackgroundTasksStore.getState().updateTask(toolCallId, {
     status: "cancelled",
     result: live || null,
   });
@@ -478,16 +382,16 @@ export function stopBackgroundWatchersNotInSession(
   backendSessionId: string,
 ): void {
   const store = useBackgroundTasksStore.getState();
-  const staleTasks = !backendSessionId
-    ? store.tasks.map((t) => ({ sessionId: t.sessionId, toolCallId: t.toolCallId }))
+  const staleIds = !backendSessionId
+    ? store.tasks.map((t) => t.toolCallId)
     : store.tasks
         .filter((t) => !t.sessionId || t.sessionId !== backendSessionId)
-        .map((t) => ({ sessionId: t.sessionId, toolCallId: t.toolCallId }));
-  for (const { toolCallId } of staleTasks) {
-    stopBackgroundTaskWatcher(toolCallId);
+        .map((t) => t.toolCallId);
+  for (const id of staleIds) {
+    stopBackgroundTaskWatcher(id);
   }
-  if (staleTasks.length > 0) {
-    store.removeTasksForSession(staleTasks);
+  if (staleIds.length > 0) {
+    store.removeTasks(staleIds);
   }
 }
 
@@ -502,7 +406,7 @@ export async function hydrateBackgroundTasksForSession(
   try {
     const { items } = await toolCallsApi.list(backendSessionId);
     for (const item of items) {
-      if (item.status !== "offloaded" && item.status !== "running") continue;
+      if (item.status !== "offloaded") continue;
       const elapsedMs = Math.max(0, Math.round((item.elapsed || 0) * 1000));
       registerBackgroundTask({
         sessionId: item.session_id || backendSessionId,

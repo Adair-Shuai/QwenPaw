@@ -1,15 +1,7 @@
-import {
-  ArrowLeft,
-  Expand,
-  FileWarning,
-  Files,
-  GitBranch,
-  X,
-} from "lucide-react";
+import { FileWarning, Files, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Input, Modal, message } from "antd";
 import { useTranslation } from "react-i18next";
-import { buildWorkspaceScopeHeaders } from "../../api/authHeaders";
+import { buildAuthHeaders } from "../../api/authHeaders";
 import { projectDirectoryApi } from "../../api/modules/projectDirectory";
 import { getPendingProjectDirectory } from "../project-directory/pendingProjectDirectory";
 import { loadSessionProjectDirs } from "../project-directory/loadSessionProjectDirs";
@@ -21,6 +13,8 @@ import {
   useCodingTabsStore,
   useActiveTabPathForScope,
   useTabsForScope,
+  type EditorTab,
+  type PendingDiff,
 } from "../../stores/codingTabsStore";
 import { useCodingMode } from "../../stores/codingModeStore";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
@@ -38,28 +32,11 @@ import type {
   MemoryGraphRoot,
   WorkspaceRoot,
 } from "./types";
-import {
-  isInlineGeneratedTab,
-  sanitizeWorkspaceSavePath,
-} from "./workspaceSavePath";
-import {
-  revealTargetFromEditorTab,
-  revealWorkspacePath,
-  stripEditorTabPath,
-} from "./workspaceReveal";
-import {
-  UPDATE_FILE_PREVIEW_EVENT,
-  type UpdateFilePreviewDetail,
-} from "./openFilePreview";
 import styles from "./FilesWorkspace.module.less";
 
 interface FilesWorkspaceProps {
   initialTarget?: FileTarget;
   scope: FilesWorkspaceScope;
-  compact?: boolean;
-  onExpand?: () => void;
-  onCollapse?: () => void;
-  onClose?: () => void;
 }
 
 function inferPreviewKind(
@@ -71,7 +48,7 @@ function inferPreviewKind(
   if (/\.csv$/i.test(path)) return "csv";
   if (
     contentType.startsWith("text/") ||
-    /\.(?:md|mdx|markdown|mmd|mermaid|txt|log|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh|data|dat|inc|grdecl)$/i.test(
+    /\.(?:md|mdx|txt|log|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
       path,
     ) ||
     !path.split("/").pop()?.includes(".")
@@ -84,10 +61,6 @@ function inferPreviewKind(
 export default function FilesWorkspace({
   initialTarget,
   scope,
-  compact = false,
-  onExpand,
-  onCollapse,
-  onClose,
 }: FilesWorkspaceProps) {
   const { t } = useTranslation();
   const { codingMode } = useCodingMode();
@@ -113,12 +86,18 @@ export default function FilesWorkspace({
     clearProjectTabs,
     closeTab,
     openTab,
+    refreshTab,
     setActiveTab,
     setTabContent,
     setTabDirty,
     setTabEtag,
   } = useCodingTabsStore();
   const hydratedTabs = useRef(new Set<string>());
+  const revalidatedScope = useRef("");
+  const revalidationSequence = useRef(new Map<string, number>());
+  const mountedRef = useRef(false);
+  const scopeKeyRef = useRef(scopeKey);
+  scopeKeyRef.current = scopeKey;
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const targetsByTab = useRef(new Map<string, FileTarget>());
@@ -135,6 +114,13 @@ export default function FilesWorkspace({
     column?: number;
     sequence: number;
   } | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   useEffect(
     () =>
@@ -258,9 +244,7 @@ export default function FilesWorkspace({
           projectDirOverride,
         );
         const isText =
-          target.preferredView === "text" ||
-          metadata.preview_kind === "text" ||
-          metadata.preview_kind === "csv";
+          metadata.preview_kind === "text" || metadata.preview_kind === "csv";
         const loaded = isText
           ? await workspaceApi.loadFileText(
               target.path,
@@ -276,27 +260,11 @@ export default function FilesWorkspace({
           etag: loaded?.etag ?? metadata.etag,
         };
       }
-      if (target.artifact?.textContent !== undefined) {
-        const previewKind = inferPreviewKind(
-          target.path,
-          target.artifact.mimeType ?? "",
-        );
-        return {
-          content: target.artifact.textContent,
-          previewKind,
-          readOnly: previewKind !== "text" && previewKind !== "csv",
-          etag: "",
-        };
-      }
       if (!target.artifactUrl) {
         throw new Error(`Missing artifact URL for ${target.source}`);
       }
       const response = await fetch(target.artifactUrl, {
-        headers: buildWorkspaceScopeHeaders({
-          agentId: scope.agentId,
-          chatId,
-          projectDirOverride,
-        }),
+        headers: buildAuthHeaders(),
       });
       if (!response.ok) throw new Error(`${response.status}`);
       const previewKind = inferPreviewKind(
@@ -313,10 +281,10 @@ export default function FilesWorkspace({
         etag: response.headers.get("ETag") ?? "",
       };
     },
-    [chatId, projectDirOverride, scope.agentId],
+    [chatId, projectDirOverride],
   );
 
-  const loadTabContent = useCallback(
+  const loadTab = useCallback(
     async (tabPath: string) => {
       const tab = tabsRef.current.find((item) => item.path === tabPath);
       const separator = tabPath.indexOf("::");
@@ -332,11 +300,105 @@ export default function FilesWorkspace({
           root: tab?.workspaceRoot,
           artifactUrl: tab?.artifactUrl,
         } satisfies FileTarget);
-      const loaded = await loadTarget(target);
-      setTabEtag(scopeKey, tabPath, loaded.etag);
+      return loadTarget(target);
+    },
+    [loadTarget],
+  );
+
+  const getLiveTab = useCallback(
+    (tabPath: string) =>
+      useCodingTabsStore
+        .getState()
+        .tabsByAgent[scopeKey]?.find((item) => item.path === tabPath),
+    [scopeKey],
+  );
+
+  const isTabSnapshotCurrent = useCallback(
+    (
+      tabPath: string,
+      snapshot: EditorTab | undefined,
+      diffSnapshot: PendingDiff | undefined,
+    ) => {
+      if (!mountedRef.current || !snapshot) return false;
+      const currentTab = getLiveTab(tabPath);
+      const currentDiff =
+        useCodingTabsStore.getState().diffsByAgent[scopeKey]?.[tabPath];
+      // Diffs can change independently, including individual hunk decisions.
+      return (
+        scopeKeyRef.current === scopeKey &&
+        currentTab === snapshot &&
+        !currentTab.dirty &&
+        currentDiff === diffSnapshot
+      );
+    },
+    [getLiveTab, scopeKey],
+  );
+
+  const loadTabContent = useCallback(
+    async (tabPath: string) => {
+      const snapshot = getLiveTab(tabPath);
+      const diffSnapshot =
+        useCodingTabsStore.getState().diffsByAgent[scopeKey]?.[tabPath];
+      const loaded = await loadTab(tabPath);
+      if (!isTabSnapshotCurrent(tabPath, snapshot, diffSnapshot)) {
+        throw new Error("File state changed while loading");
+      }
+      refreshTab(scopeKey, tabPath, loaded.content, loaded.etag);
       return loaded.content;
     },
-    [loadTarget, scopeKey, setTabEtag],
+    [getLiveTab, isTabSnapshotCurrent, loadTab, refreshTab, scopeKey],
+  );
+
+  const revalidateTab = useCallback(
+    async (tabPath: string) => {
+      const tab = getLiveTab(tabPath);
+      const diffSnapshot =
+        useCodingTabsStore.getState().diffsByAgent[scopeKey]?.[tabPath];
+      const previewKind =
+        tab?.previewKind ??
+        inferPreviewKind(tab?.displayPath ?? tab?.path ?? tabPath);
+      if (
+        !tab ||
+        tab.dirty ||
+        (previewKind !== "text" && previewKind !== "csv")
+      ) {
+        return;
+      }
+
+      const sequence = (revalidationSequence.current.get(tabPath) ?? 0) + 1;
+      revalidationSequence.current.set(tabPath, sequence);
+      try {
+        const loaded = await loadTab(tabPath);
+        if (
+          scopeKeyRef.current !== scopeKey ||
+          revalidationSequence.current.get(tabPath) !== sequence ||
+          !isTabSnapshotCurrent(tabPath, tab, diffSnapshot)
+        ) {
+          return;
+        }
+        refreshTab(scopeKey, tabPath, loaded.content, loaded.etag);
+      } catch {
+        if (
+          mountedRef.current &&
+          scopeKeyRef.current === scopeKey &&
+          revalidationSequence.current.get(tabPath) === sequence &&
+          isTabSnapshotCurrent(tabPath, tab, diffSnapshot)
+        ) {
+          setLoadError(t("files.loadFailed"));
+        }
+      }
+    },
+    [getLiveTab, isTabSnapshotCurrent, loadTab, refreshTab, scopeKey, t],
+  );
+
+  const activateTab = useCallback(
+    (tabPath: string) => {
+      revalidatedScope.current = scopeKey;
+      setLoadError("");
+      setActiveTab(scopeKey, tabPath);
+      void revalidateTab(tabPath);
+    },
+    [revalidateTab, scopeKey, setActiveTab],
   );
 
   const openTarget = useCallback(
@@ -367,25 +429,8 @@ export default function FilesWorkspace({
       }
       const existing = tabsRef.current.find((tab) => tab.path === tabPath);
       if (existing) {
-        setLoadError("");
-        if (
-          resolvedTarget.preferredView &&
-          existing.preferredView !== resolvedTarget.preferredView
-        ) {
-          closeTab(scopeKey, tabPath);
-        } else {
-          const inlineText = resolvedTarget.artifact?.textContent;
-          if (inlineText !== undefined && !existing.readOnly) {
-            setTabContent(scopeKey, tabPath, inlineText);
-            setActiveTab(scopeKey, tabPath);
-            return;
-          }
-          if (inlineText === undefined) {
-            setActiveTab(scopeKey, tabPath);
-            return;
-          }
-          closeTab(scopeKey, tabPath);
-        }
+        activateTab(tabPath);
+        return;
       }
       try {
         const loaded = await loadTarget(resolvedTarget);
@@ -399,51 +444,29 @@ export default function FilesWorkspace({
           workspaceRoot: resolvedTarget.root,
           artifactUrl: resolvedTarget.artifactUrl,
           previewKind: loaded.previewKind,
-          preferredView: resolvedTarget.preferredView,
           readOnly: loaded.readOnly,
           etag: loaded.etag,
         });
+        revalidatedScope.current = scopeKey;
         setActiveTab(scopeKey, tabPath);
       } catch {
         setLoadError(t("files.loadFailed"));
       }
     },
     [
-      closeTab,
+      activateTab,
       loadTarget,
       openTab,
       resolveEditableTarget,
       scopeKey,
       setActiveTab,
-      setTabContent,
       t,
     ],
   );
 
   useEffect(() => {
-    const applyPreviewUpdate = (event: Event) => {
-      const detail = (event as CustomEvent<UpdateFilePreviewDetail>).detail;
-      if (!detail?.id) return;
-      for (const [tabPath, target] of targetsByTab.current) {
-        if (target.artifact?.id !== detail.id) continue;
-        targetsByTab.current.set(tabPath, {
-          ...target,
-          artifact: target.artifact
-            ? { ...target.artifact, ...detail.patch }
-            : target.artifact,
-        });
-        if (detail.patch.textContent !== undefined) {
-          setTabContent(scopeKey, tabPath, detail.patch.textContent);
-        }
-      }
-    };
-    window.addEventListener(UPDATE_FILE_PREVIEW_EVENT, applyPreviewUpdate);
-    return () =>
-      window.removeEventListener(UPDATE_FILE_PREVIEW_EVENT, applyPreviewUpdate);
-  }, [scopeKey, setTabContent]);
-
-  useEffect(() => {
     hydratedTabs.current.clear();
+    revalidationSequence.current.clear();
   }, [scopeKey]);
 
   useEffect(() => {
@@ -452,131 +475,46 @@ export default function FilesWorkspace({
     }
   }, [chatId, projectDirOverride]);
 
-  const promptWorkspaceSavePath = useCallback(
-    (defaultPath: string) =>
-      new Promise<string | null>((resolve) => {
-        let draft = defaultPath;
-        Modal.confirm({
-          title: t("files.saveToWorkspace"),
-          content: (
-            <Input
-              defaultValue={defaultPath}
-              placeholder={t("files.savePathPlaceholder")}
-              onChange={(event) => {
-                draft = event.target.value;
-              }}
-            />
-          ),
-          okText: t("common.save"),
-          cancelText: t("common.cancel"),
-          onOk: () => {
-            const path = sanitizeWorkspaceSavePath(draft);
-            if (!path) {
-              message.error(t("files.invalidSavePath"));
-              return Promise.reject();
-            }
-            resolve(path);
-          },
-          onCancel: () => resolve(null),
-        });
-      }),
-    [t],
-  );
-
-  const saveGeneratedArtifact = useCallback(
-    async (tabPath: string, content: string) => {
-      const tab = tabsRef.current.find((item) => item.path === tabPath);
-      const suggested =
-        tab?.displayPath?.split("/").pop() ||
-        tabPath.split("::").pop() ||
-        "note.md";
-      const dest = await promptWorkspaceSavePath(suggested);
-      if (!dest) return;
-
-      const saved = await workspaceApi.saveFileContent(
-        dest,
-        content,
-        undefined,
-        chatId,
-        "project",
-        projectDirOverride,
-      );
-      closeTab(scopeKey, tabPath);
-      targetsByTab.current.delete(tabPath);
-      const existing = tabsRef.current.find((item) => item.path === dest);
-      if (existing) {
-        setTabContent(scopeKey, dest, content);
-        setTabEtag(scopeKey, dest, saved.etag);
-      } else {
-        openTab(scopeKey, {
-          path: dest,
-          displayPath: dest,
-          content,
-          dirty: false,
-          source: "workspace",
-          workspaceRoot: "project",
-          previewKind: inferPreviewKind(dest),
-          readOnly: false,
-          etag: saved.etag,
-        });
-      }
-      targetsByTab.current.set(dest, {
-        source: "workspace",
-        path: dest,
-        root: "project",
-      });
-      setActiveTab(scopeKey, dest);
-      setDirectoryRevision((current) => current + 1);
-      message.success(t("files.savedToWorkspace", { path: dest }));
-    },
-    [
-      chatId,
-      closeTab,
-      openTab,
-      projectDirOverride,
-      promptWorkspaceSavePath,
-      scopeKey,
-      setActiveTab,
-      setTabContent,
-      setTabEtag,
-      t,
-    ],
-  );
-
   useEffect(() => {
     tabs.forEach((tab) => {
-      if (
-        tab.content ||
-        tab.dirty ||
-        hydratedTabs.current.has(tab.path) ||
-        isInlineGeneratedTab(tab)
-      ) {
+      if (tab.content || tab.dirty || hydratedTabs.current.has(tab.path)) {
         return;
       }
       hydratedTabs.current.add(tab.path);
-      void loadTabContent(tab.path)
-        .then((content) => setTabContent(scopeKey, tab.path, content))
+      const diffSnapshot =
+        useCodingTabsStore.getState().diffsByAgent[scopeKey]?.[tab.path];
+      void loadTab(tab.path)
+        .then((loaded) => {
+          if (!isTabSnapshotCurrent(tab.path, tab, diffSnapshot)) return;
+          refreshTab(scopeKey, tab.path, loaded.content, loaded.etag);
+        })
         .catch(() => {
+          if (!isTabSnapshotCurrent(tab.path, tab, diffSnapshot)) return;
           closeTab(scopeKey, tab.path);
           setLoadError(t("files.loadFailed"));
         });
     });
-  }, [closeTab, loadTabContent, scopeKey, setTabContent, t, tabs]);
+  }, [closeTab, isTabSnapshotCurrent, loadTab, refreshTab, scopeKey, t, tabs]);
 
   useEffect(() => {
     if (initialTarget) void openTarget(initialTarget);
   }, [initialTarget, openTarget]);
 
+  useEffect(() => {
+    if (!activeTabPath || revalidatedScope.current === scopeKey) return;
+    revalidatedScope.current = scopeKey;
+    const activeTab = tabsRef.current.find((tab) => tab.path === activeTabPath);
+    // Empty restored tabs are already handled by the hydration effect above.
+    if (activeTab?.content) void revalidateTab(activeTabPath);
+  }, [activeTabPath, revalidateTab, scopeKey]);
+
   const handleClose = (path: string) => {
-    const remaining = tabsRef.current.filter((tab) => tab.path !== path);
-    tabsRef.current = remaining;
+    const index = tabs.findIndex((tab) => tab.path === path);
     closeTab(scopeKey, path);
-    if (remaining.length === 0) {
-      onClose?.();
-      return;
-    }
     if (activeTabPath === path) {
-      setActiveTab(scopeKey, remaining[0]?.path ?? "");
+      const nextPath = tabs[index + 1]?.path ?? tabs[index - 1]?.path ?? "";
+      if (nextPath) activateTab(nextPath);
+      else setActiveTab(scopeKey, "");
     }
   };
 
@@ -584,7 +522,7 @@ export default function FilesWorkspace({
     tabs.forEach((tab) => {
       if (tab.path !== path) closeTab(scopeKey, tab.path);
     });
-    setActiveTab(scopeKey, path);
+    activateTab(path);
   };
 
   return (
@@ -593,7 +531,7 @@ export default function FilesWorkspace({
         tabs.length === 0 && !memoryGraphRoot ? styles.workspaceEmpty : ""
       }`}
     >
-      {!compact && codingMode && (
+      {codingMode && (
         <nav className={styles.activityRail} aria-label={t("files.workspace")}>
           <button
             type="button"
@@ -615,7 +553,7 @@ export default function FilesWorkspace({
           ) : null}
         </nav>
       )}
-      {!compact && (activity === "files" || !codingMode) ? (
+      {activity === "files" || !codingMode ? (
         <FilesNavigator
           key={`${scopeKey}:${projectDirOverride ?? ""}:${directoryRevision}`}
           scope={effectiveScope}
@@ -631,7 +569,7 @@ export default function FilesWorkspace({
           onShowMemoryGraph={(root) => setMemoryGraphRoot(root)}
           onShowFiles={() => setMemoryGraphRoot(null)}
         />
-      ) : !compact ? (
+      ) : (
         <aside className={styles.sourcePanel}>
           <header>
             <GitBranch size={15} />
@@ -639,7 +577,7 @@ export default function FilesWorkspace({
           </header>
           <GitPanel chatId={chatId} />
         </aside>
-      ) : null}
+      )}
       <main className={styles.documentSurface}>
         {loadError && (
           <div className={styles.loadError} role="alert">
@@ -662,7 +600,7 @@ export default function FilesWorkspace({
             tabs={tabs}
             activeTabPath={activeTabPath}
             scopeKey={scopeKey}
-            onTabSelect={(path) => setActiveTab(scopeKey, path)}
+            onTabSelect={activateTab}
             onTabClose={handleClose}
             onCloseOtherTabs={handleCloseOthers}
             onTabDirtyChange={(path, dirty) =>
@@ -671,57 +609,20 @@ export default function FilesWorkspace({
             onTabContentChange={(path, content) =>
               setTabContent(scopeKey, path, content)
             }
-            headerActions={
-              <>
-                {compact && onExpand ? (
-                  <button
-                    type="button"
-                    className={styles.workspaceChromeButton}
-                    aria-label={t("files.expandWorkspace")}
-                    title={t("files.expandWorkspace")}
-                    onClick={onExpand}
-                  >
-                    <Expand size={14} />
-                  </button>
-                ) : onCollapse ? (
-                  <button
-                    type="button"
-                    className={styles.workspaceChromeButton}
-                    aria-label={t("files.backToPreview")}
-                    title={t("files.backToPreview")}
-                    onClick={onCollapse}
-                  >
-                    <ArrowLeft size={14} />
-                  </button>
-                ) : null}
-                {onClose && (
-                  <button
-                    type="button"
-                    className={styles.workspaceChromeButton}
-                    aria-label={t("common.close")}
-                    title={t("common.close")}
-                    onClick={onClose}
-                  >
-                    <X size={15} />
-                  </button>
-                )}
-              </>
-            }
             onLoadFile={loadTabContent}
             chatId={chatId}
             projectDirOverride={projectDirOverride}
             navigation={editorNavigation}
             onDownloadFile={async (path) => {
               const tab = tabsRef.current.find((item) => item.path === path);
-              const sourcePath = tab?.displayPath ?? stripEditorTabPath(path);
+              const separator = path.indexOf("::");
+              const sourcePath =
+                tab?.displayPath ??
+                (separator < 0 ? path : path.slice(separator + 2));
               const filename = sourcePath.split("/").pop() ?? sourcePath;
               if (tab?.artifactUrl) {
                 await downloadFileFromUrl(tab.artifactUrl, filename, {
-                  headers: buildWorkspaceScopeHeaders({
-                    agentId: scope.agentId,
-                    chatId,
-                    projectDirOverride,
-                  }),
+                  headers: buildAuthHeaders(),
                   errorMessage: t("files.downloadFailed"),
                 });
                 return;
@@ -734,11 +635,15 @@ export default function FilesWorkspace({
                   ),
                   filename,
                   {
-                    headers: buildWorkspaceScopeHeaders({
-                      agentId: scope.agentId,
-                      chatId,
-                      projectDirOverride,
-                    }),
+                    headers: {
+                      ...buildAuthHeaders(),
+                      ...(chatId ? { "X-Chat-Id": chatId } : {}),
+                      ...(!chatId && projectDirOverride
+                        ? {
+                            "X-Session-Project-Dir": projectDirOverride,
+                          }
+                        : {}),
+                    },
                     errorMessage: t("files.downloadFailed"),
                   },
                 );
@@ -754,38 +659,8 @@ export default function FilesWorkspace({
               anchor.click();
               URL.revokeObjectURL(url);
             }}
-            onRevealFile={async (path) => {
-              const tab = tabsRef.current.find((item) => item.path === path);
-              const target = revealTargetFromEditorTab(tab, path);
-              if (!target) {
-                message.warning(
-                  t("workspace.revealUnavailable", "无法定位该文件的磁盘位置"),
-                );
-                return;
-              }
-              try {
-                await revealWorkspacePath({
-                  path: target.path,
-                  root: target.root,
-                  chatId,
-                  projectDirOverride,
-                });
-              } catch {
-                message.error(
-                  t("workspace.revealFailed", "无法在文件管理器中打开"),
-                );
-              }
-            }}
             onSaveFile={async (path, content) => {
               const tab = tabsRef.current.find((item) => item.path === path);
-              if (isInlineGeneratedTab(tab)) {
-                try {
-                  await saveGeneratedArtifact(path, content);
-                } catch {
-                  message.error(t("files.saveFailed"));
-                }
-                return;
-              }
               const separator = path.indexOf("::");
               if ((tab?.source ?? "workspace") === "workspace") {
                 const saved = await workspaceApi.saveFileContent(

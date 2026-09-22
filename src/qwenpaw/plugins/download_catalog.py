@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import asyncio
 import gzip
+import http.client
 import json
 import logging
 import urllib.error
@@ -226,7 +227,13 @@ def build_plugin_catalog() -> dict[str, Any]:
 
     try:
         main_index = _fetch_json(f"{base}/metadata/index.json")
-    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+    except (
+        urllib.error.URLError,
+        json.JSONDecodeError,
+        TimeoutError,
+        OSError,
+        http.client.HTTPException,
+    ) as exc:
         logger.warning("Plugin catalog: main index fetch failed: %s", exc)
         result["error"] = "Failed to fetch plugin catalog index"
         return result
@@ -243,7 +250,13 @@ def build_plugin_catalog() -> dict[str, Any]:
 
     try:
         plugins_index = _fetch_json(f"{base}{index_path}")
-    except (urllib.error.URLError, json.JSONDecodeError, TimeoutError) as exc:
+    except (
+        urllib.error.URLError,
+        json.JSONDecodeError,
+        TimeoutError,
+        OSError,
+        http.client.HTTPException,
+    ) as exc:
         logger.warning("Plugin catalog: plugins index fetch failed: %s", exc)
         result["error"] = "Failed to fetch plugins metadata"
         return result

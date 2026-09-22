@@ -28,12 +28,17 @@ import re
 import secrets
 import time
 from typing import Optional
+from urllib.parse import unquote
 
 from fastapi import Request, Response
 from starlette.types import ASGIApp, Receive, Scope, Send
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from ..constant import SECRET_DIR, EnvVarLoader
+from ..plugins.browser_access import (
+    PAWAPP_SCOPE_HEADER,
+    browser_read_allowed,
+)
 from ..security.secret_store import (
     AUTH_SECRET_FIELDS,
     decrypt_dict_fields,
@@ -746,6 +751,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return True
 
         path = request.url.path
+        if path == "/api/config/theme" and request.method == "GET":
+            return True
         if (
             request.method == "OPTIONS"
             or path in _PUBLIC_PATHS
@@ -809,7 +816,10 @@ class RuntimeBoundaryMiddleware:
             for key, value in scope.get("headers", [])
         }
         supplied = headers.get(_RUNTIME_TOKEN_HEADER, "")
-        if hmac.compare_digest(runtime_token, supplied):
+        app_id = headers.get(PAWAPP_SCOPE_HEADER.lower())
+        if hmac.compare_digest(runtime_token, supplied) and (
+            app_id is None or browser_read_allowed(scope, unquote(app_id))
+        ):
             await self.app(scope, receive, send)
             return
         if scope["type"] == "websocket":

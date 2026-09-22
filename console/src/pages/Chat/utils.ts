@@ -28,6 +28,7 @@ export type CopyableResponse = {
 export type RuntimeLoadingBridgeApi = {
   getLoading?: () => boolean | string;
   setLoading?: (loading: boolean | string) => void;
+  setSessionLoading?: (sessionId: string, loading: boolean | string) => void;
 };
 
 // ---------------------------------------------------------------------------

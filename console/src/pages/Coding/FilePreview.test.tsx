@@ -1,27 +1,28 @@
-import { render, screen, within } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
-import "../../components/Workspace/renderers/HtmlRenderer";
-import "../../components/Workspace/renderers/MarkdownRenderer";
+import { render, screen, within, waitFor, act } from "@testing-library/react";
+import { describe, expect, it, vi, beforeEach } from "vitest";
 import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
-import { act, waitFor } from "@testing-library/react";
-
-const LAZY_RENDER_TIMEOUT = 12_000;
 
 describe("FilePreview", () => {
-  it("leaves shared preview controls to the files workspace host", async () => {
-    const { container } = render(
-      <FilePreview filePath="index.html" content="<h1>Preview</h1>" />,
+  it("keeps math code blocks in the renderable code block controls", () => {
+    render(
+      <FilePreview
+        filePath="formula.md"
+        content={["```math", "x^2 + y^2 = z^2", "```"].join("\n")}
+      />,
     );
 
-    expect(
-      await screen.findByTitle("index.html", {}, { timeout: LAZY_RENDER_TIMEOUT }),
-    ).toBeInTheDocument();
-    expect(container.querySelector("iframe")).toBeInTheDocument();
-    expect(container.querySelector(".ant-segmented")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button")).not.toBeInTheDocument();
+    const tabs = screen.getAllByRole("tab", { hidden: true });
+    expect(tabs).toHaveLength(2);
+    expect(screen.getByLabelText("common.copy")).toBeInTheDocument();
+    expect(screen.getByLabelText("common.download")).toBeInTheDocument();
+
+    (tabs[1] as HTMLButtonElement).click();
+    expect(screen.getByRole("tabpanel", { hidden: true })).toHaveTextContent(
+      "x^2 + y^2 = z^2",
+    );
   });
 
-  it("shows YAML frontmatter as metadata while preserving the body", async () => {
+  it("shows YAML frontmatter as metadata while preserving the body", () => {
     render(
       <FilePreview
         filePath="memory-search.md"
@@ -38,13 +39,7 @@ describe("FilePreview", () => {
       />,
     );
 
-    const frontmatter = within(
-      await screen.findByLabelText(
-        "Front matter",
-        {},
-        { timeout: LAZY_RENDER_TIMEOUT },
-      ),
-    );
+    const frontmatter = within(screen.getByLabelText("Front matter"));
     expect(frontmatter.getByText("description")).toBeInTheDocument();
     expect(
       frontmatter.getByText("Memory Search query guidance"),
@@ -91,9 +86,9 @@ describe("getPreviewType (#5863)", () => {
   });
 
   it("returns none for unknown or extensionless paths", () => {
-    expect(getPreviewType("script.unknownext")).toBe("none");
+    expect(getPreviewType("script.py")).toBe("none");
     expect(getPreviewType("archive.zip")).toBe("none");
-    expect(getPreviewType("Makefile")).toBe("rich");
+    expect(getPreviewType("Makefile")).toBe("none");
   });
 
   it("uses only the last extension segment", () => {
@@ -107,7 +102,7 @@ describe("isPreviewable (#5863)", () => {
   it("returns true for previewable types and false for others", () => {
     expect(isPreviewable("photo.png")).toBe(true);
     expect(isPreviewable("README.md")).toBe(true);
-    expect(isPreviewable("script.unknownext")).toBe(false);
+    expect(isPreviewable("script.py")).toBe(false);
   });
 });
 
@@ -134,24 +129,12 @@ vi.mock("@/api/modules/workspace", () => ({
     loadFileChunk: vi.fn(),
   },
 }));
-const { mockUseAuthenticatedWorkspaceBlob } = vi.hoisted(() => ({
-  mockUseAuthenticatedWorkspaceBlob: vi.fn(),
-}));
-vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
-  useAuthenticatedWorkspaceBlob: mockUseAuthenticatedWorkspaceBlob,
-}));
 
 describe("FilePreview image rendering (A#82584296)", () => {
   const mockBlobUrl = "blob:http://localhost/fake-blob-id";
   let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    mockUseAuthenticatedWorkspaceBlob.mockReturnValue({
-      status: "ready",
-      url: mockBlobUrl,
-      error: null,
-      retry: vi.fn(),
-    });
     fetchSpy = vi.fn().mockResolvedValue({
       ok: true,
       blob: () =>
@@ -164,38 +147,24 @@ describe("FilePreview image rendering (A#82584296)", () => {
 
   it("renders an <img> element for PNG files after loading", async () => {
     await act(async () => {
-      render(
-        <FilePreview
-          filePath="screenshot.png"
-          content=""
-          binaryUrl="/api/files/screenshot.png"
-        />,
-      );
+      render(<FilePreview filePath="screenshot.png" content="" />);
     });
 
     await waitFor(() => {
-      const img = document.querySelector("img");
-      expect(img).not.toBeNull();
+      const img = screen.getByRole("img");
       expect(img).toBeInTheDocument();
-      expect(img!.getAttribute("src")).toBe(mockBlobUrl);
+      expect(img.getAttribute("src")).toBe(mockBlobUrl);
     });
   });
 
   it("sets alt text from the filename", async () => {
     await act(async () => {
-      render(
-        <FilePreview
-          filePath="photos/vacation.jpg"
-          content=""
-          binaryUrl="/api/files/photos/vacation.jpg"
-        />,
-      );
+      render(<FilePreview filePath="photos/vacation.jpg" content="" />);
     });
 
     await waitFor(() => {
-      const img = document.querySelector("img");
-      expect(img).not.toBeNull();
-      expect(img!.getAttribute("alt")).toBe("vacation.jpg");
+      const img = screen.getByRole("img");
+      expect(img.getAttribute("alt")).toBe("vacation.jpg");
     });
   });
 
@@ -204,26 +173,14 @@ describe("FilePreview image rendering (A#82584296)", () => {
       ok: false,
       status: 404,
     });
-    mockUseAuthenticatedWorkspaceBlob.mockReturnValue({
-      status: "error",
-      url: null,
-      error: new Error("not found"),
-      retry: vi.fn(),
-    });
 
     await act(async () => {
-      render(
-        <FilePreview
-          filePath="missing.png"
-          content=""
-          binaryUrl="/api/files/missing.png"
-        />,
-      );
+      render(<FilePreview filePath="missing.png" content="" />);
     });
 
     // After fetch fails, should not render an <img>
     await waitFor(() => {
-      expect(document.querySelector("img")).not.toBeInTheDocument();
+      expect(screen.queryByRole("img")).not.toBeInTheDocument();
     });
   });
 });

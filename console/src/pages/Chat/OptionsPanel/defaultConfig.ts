@@ -2,12 +2,14 @@ import type { TFunction } from "i18next";
 
 const defaultConfig = {
   theme: {
-    colorPrimary: "#0072f5",
+    // The upstream chat theme generator parses this value as a HEX color.
+    // Runtime theme colors are normalized before they are passed to it.
+    colorPrimary: "#FF7F16",
     darkMode: false,
     prefix: "qwenpaw",
     leftHeader: {
       logo: "",
-      title: "Work with UGSci",
+      title: "Work with QwenPaw",
     },
     bubbleList: {
       userMessageAnchors: {
@@ -26,11 +28,14 @@ const defaultConfig = {
   welcome: {
     greeting: "Hello, how can I help you today?",
     description:
-      "UGSci AI assistant is online. From reservoir analysis to numerical simulation and engineering decisions — describe your scenario and I'll deliver results.",
+      "I am a helpful assistant that can help you with your questions.",
     avatar: "/online.svg",
     prompts: [
       {
-        value: "Can you tell me what you can do?",
+        value: "Let's start a new journey!",
+      },
+      {
+        value: "Can you tell me what skills you have?",
       },
     ],
   },
@@ -50,7 +55,7 @@ class ChatConfigProvider {
   }
 
   getPrompts(t: TFunction): Array<{ value: string }> {
-    return [{ value: t("chat.prompt1") }];
+    return [{ value: t("chat.prompt1") }, { value: t("chat.prompt2") }];
   }
 
   getConfig(t: TFunction) {
