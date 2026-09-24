@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from typing import ClassVar, Any, List, Optional
 
+import httpx
 from agentscope.model import ChatModelBase
 from openai import APIError, AsyncOpenAI
 from pydantic import Field
@@ -15,6 +16,10 @@ from qwenpaw.providers.provider import (
     ModelConnectionResult,
     ExtendedModelInfo,
     ModelInfo,
+)
+from ..utils.http import (
+    build_httpx_proxy_kwargs,
+    should_use_custom_http_client,
 )
 from .model_billing import classify_pricing, normalize_pricing
 from .model_info import release_date
@@ -71,12 +76,17 @@ class OpenRouterProvider(Provider):
         return {**self._DEFAULT_HEADERS, **self.custom_headers}
 
     def _client(self, timeout: float = 30) -> AsyncOpenAI:
-        return AsyncOpenAI(
-            base_url=self.base_url,
-            api_key=self.api_key,
-            timeout=timeout,
-            default_headers=self._build_default_headers(),
-        )
+        kwargs: dict[str, Any] = {
+            "base_url": self.base_url,
+            "api_key": self.api_key,
+            "timeout": timeout,
+            "default_headers": self._build_default_headers(),
+        }
+        if should_use_custom_http_client():
+            kwargs["http_client"] = httpx.AsyncClient(
+                **build_httpx_proxy_kwargs(self.base_url),
+            )
+        return AsyncOpenAI(**kwargs)
 
     @staticmethod
     async def _close_client(client: AsyncOpenAI) -> None:
@@ -471,6 +481,13 @@ class OpenRouterProvider(Provider):
             base_url=self.base_url,
         )
         gen_kwargs = self.get_effective_generate_kwargs(model_id)
+        client_kwargs = None
+        if should_use_custom_http_client():
+            client_kwargs = {
+                "http_client": httpx.AsyncClient(
+                    **build_httpx_proxy_kwargs(self.base_url),
+                ),
+            }
         return OpenAIChatModelCompat(
             credential=credential,
             provider_id=self.id,
@@ -478,6 +495,7 @@ class OpenRouterProvider(Provider):
             request_policy=self.prepare_request,
             model=model_id,
             stream=True,
+            client_kwargs=client_kwargs,
             extra_generate_kwargs=gen_kwargs,
             default_headers=self._build_default_headers() or None,
             context_size=self._get_context_size(model_id),

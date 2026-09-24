@@ -5,6 +5,7 @@ GeminiChatModel."""
 from __future__ import annotations
 
 import copy
+import httpx
 import logging
 import time
 from typing import Any, List
@@ -27,6 +28,10 @@ from qwenpaw.providers.provider import (
     ModelConnectionResult,
     ModelInfo,
     Provider,
+)
+from ..utils.http import (
+    build_httpx_proxy_kwargs,
+    should_use_custom_http_client,
 )
 from ..utils.io_utils import run_sync_io
 from ..utils.logging import sanitize_log_value
@@ -208,12 +213,17 @@ class GeminiProvider(Provider):
 
     def _client(self, timeout: float = 10) -> Any:
         headers = self._build_default_headers() or None
+        http_options_kwargs: dict[str, Any] = {
+            "timeout": int(timeout * 1000),
+            "headers": headers,
+        }
+        if should_use_custom_http_client():
+            http_options_kwargs["httpxAsyncClient"] = httpx.AsyncClient(
+                **build_httpx_proxy_kwargs(self.base_url),
+            )
         return genai.Client(
             api_key=self.api_key,
-            http_options=genai_types.HttpOptions(
-                timeout=int(timeout * 1000),
-                headers=headers,
-            ),
+            http_options=genai_types.HttpOptions(**http_options_kwargs),
         )
 
     @classmethod
@@ -406,6 +416,11 @@ class GeminiProvider(Provider):
         )
 
         headers = self._build_default_headers()
+        http_options_kwargs: dict[str, Any] = {"headers": headers or None}
+        if should_use_custom_http_client():
+            http_options_kwargs["httpxAsyncClient"] = httpx.AsyncClient(
+                **build_httpx_proxy_kwargs(self.base_url),
+            )
 
         return _GeminiChatModelCompat(
             credential=credential,
@@ -413,6 +428,7 @@ class GeminiProvider(Provider):
             parameters=parameters,
             stream=True,
             default_headers=headers or None,
+            http_options_kwargs=http_options_kwargs,
             extra_config_kwargs=gen_kwargs or None,
             context_size=self._get_context_size(model_id),
             formatter=_CappingGeminiFormatter(
@@ -609,10 +625,11 @@ class _GeminiChatModelCompat:
 
         default_headers = kwargs.pop("default_headers", None)
         extra_config_kwargs = kwargs.pop("extra_config_kwargs", None) or {}
-        if default_headers:
+        http_options_kwargs = kwargs.pop("http_options_kwargs", None)
+        if default_headers or http_options_kwargs:
             client_kwargs = dict(kwargs.get("client_kwargs") or {})
             client_kwargs["http_options"] = genai_types.HttpOptions(
-                headers=default_headers,
+                **(http_options_kwargs or {"headers": default_headers}),
             )
             kwargs["client_kwargs"] = client_kwargs
 

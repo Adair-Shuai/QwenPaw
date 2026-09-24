@@ -32,6 +32,10 @@ from .provider import (
 )
 
 from ..utils.logging import sanitize_log_value
+from ..utils.http import (
+    build_httpx_proxy_kwargs,
+    should_use_custom_http_client,
+)
 from .adapters.anthropic import (
     AnthropicModel as _AnthropicChatModelCompat,
     strip_api_key_header,
@@ -93,8 +97,14 @@ class AnthropicProvider(Provider):
     def _get_strip_http_client(self) -> Any:
         """Use the SDK's client type and strip API keys before sending."""
         if self._strip_http_client is None:
+            proxy_kwargs = (
+                build_httpx_proxy_kwargs(self.base_url)
+                if should_use_custom_http_client()
+                else {}
+            )
             self._strip_http_client = anthropic.DefaultAsyncHttpxClient(
                 event_hooks={f"request": [strip_api_key_header]},
+                **proxy_kwargs,
             )
         return self._strip_http_client
 
@@ -108,12 +118,17 @@ class AnthropicProvider(Provider):
                 http_client=self._get_strip_http_client(),
                 timeout=timeout,
             )
-        return anthropic.AsyncAnthropic(
-            api_key=self.api_key,
-            base_url=anthropic_base_url(self.base_url),
-            default_headers=default_headers,
-            timeout=timeout,
-        )
+        kwargs: Dict[str, Any] = {
+            "api_key": self.api_key,
+            "base_url": anthropic_base_url(self.base_url),
+            "default_headers": default_headers,
+            "timeout": timeout,
+        }
+        if should_use_custom_http_client():
+            kwargs["http_client"] = anthropic.DefaultAsyncHttpxClient(
+                **build_httpx_proxy_kwargs(self.base_url),
+            )
+        return anthropic.AsyncAnthropic(**kwargs)
 
     async def _close_client(
         self,

@@ -9,6 +9,10 @@ from agentscope.model import AnthropicChatModel
 
 from .cache_policy import mark_stable_prefix
 from .wire_protocol import anthropic_base_url
+from ...utils.http import (
+    build_httpx_proxy_kwargs,
+    should_use_custom_http_client,
+)
 
 
 def resolve_parameters(
@@ -105,11 +109,24 @@ class AnthropicModel(AnthropicChatModel):
             ] = self.credential.api_key.get_secret_value()
             client_kwargs[f"http_client"] = anthropic.DefaultAsyncHttpxClient(
                 event_hooks={f"request": [strip_api_key_header]},
+                **(
+                    build_httpx_proxy_kwargs(self.credential.base_url)
+                    if should_use_custom_http_client()
+                    else {}
+                ),
             )
         else:
             client_kwargs[
                 "api_key"
             ] = self.credential.api_key.get_secret_value()
+            if should_use_custom_http_client():
+                client_kwargs["http_client"] = (
+                    anthropic.DefaultAsyncHttpxClient(
+                        **build_httpx_proxy_kwargs(
+                            self.credential.base_url,
+                        ),
+                    )
+                )
 
         self._qp_cached_client = anthropic.AsyncAnthropic(
             **client_kwargs,

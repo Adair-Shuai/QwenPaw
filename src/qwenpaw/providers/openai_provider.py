@@ -23,6 +23,10 @@ from qwenpaw.providers.provider import (
     ModelInfo,
     Provider,
 )
+from ..utils.http import (
+    build_httpx_proxy_kwargs,
+    should_use_custom_http_client,
+)
 
 from .model_info import release_date
 from ..utils.io_utils import run_sync_io
@@ -181,6 +185,10 @@ class OpenAIProvider(Provider):
         headers = self._build_default_headers()
         if headers:
             kwargs["default_headers"] = headers
+        if should_use_custom_http_client():
+            kwargs["http_client"] = httpx.AsyncClient(
+                **build_httpx_proxy_kwargs(self.base_url),
+            )
         return AsyncOpenAI(**kwargs)
 
     @staticmethod
@@ -545,6 +553,13 @@ class OpenAIProvider(Provider):
             temperature=gen_kwargs.pop("temperature", None),
             top_p=gen_kwargs.pop("top_p", None),
         )
+        client_kwargs = None
+        if should_use_custom_http_client():
+            client_kwargs = {
+                "http_client": httpx.AsyncClient(
+                    **build_httpx_proxy_kwargs(self.base_url),
+                ),
+            }
 
         return OpenAIChatModelCompat(
             credential=credential,
@@ -555,6 +570,7 @@ class OpenAIProvider(Provider):
             model=model_id,
             parameters=parameters,
             stream=True,
+            client_kwargs=client_kwargs,
             default_headers=merged_headers or None,
             extra_generate_kwargs=gen_kwargs or None,
             output_token_param=(
