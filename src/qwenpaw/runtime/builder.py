@@ -179,7 +179,6 @@ class AgentBuilder:
             effective_skills,
             workspace_dir,
             tools,
-            request_context,
         )
         if ctx is None:
             return Toolkit(tools=tools, skills_or_loaders=skills)
@@ -220,19 +219,6 @@ class AgentBuilder:
         return Toolkit(tools=tools, skills_or_loaders=viewer_skills)
 
     @staticmethod
-    def _resolve_coordination_skill_loader_dir(
-        request_context: dict[str, Any] | None,
-    ) -> str | None:
-        """Load the packaged coordination Skill for an explicit @ turn."""
-        if (request_context or {}).get(
-            "agent_coordination_requested",
-        ) is not True:
-            return None
-        from ..agents.skill_system import resolve_builtin_skill_dir
-
-        return resolve_builtin_skill_dir("chat_with_agent")
-
-    @staticmethod
     def _tool_name(tool: Any) -> str:
         """Return the model-facing name used for sorting and filtering."""
         name = getattr(tool, "name", None)
@@ -259,15 +245,9 @@ class AgentBuilder:
         whitelist = (request_context or {}).get("subagent_allowed_tools")
         if not isinstance(whitelist, list):
             return items
-        coordination_tools = (
-            {"list_agents", "chat_with_agent"}
-            if (request_context or {}).get("agent_coordination_requested")
-            is True
-            else set()
-        )
-        allow = set(whitelist) | coordination_tools
-        if not allow:
+        if not whitelist:
             return []
+        allow = set(whitelist)
         return [t for t in items if cls._tool_name(t) in allow]
 
     @classmethod
@@ -315,7 +295,6 @@ class AgentBuilder:
         effective_skills: Iterable[str] | None,
         workspace_dir: str | None,
         tools: Iterable[Any],
-        request_context: dict[str, Any] | None = None,
     ) -> list[Any]:
         """Load runtime Skills, preferring workspace skills on conflicts."""
         from ..agents.skill_system.runtime_cache import load_runtime_skills
@@ -324,14 +303,6 @@ class AgentBuilder:
             effective_skills,
             workspace_dir,
         )
-        coordination_skill_dir = cls._resolve_coordination_skill_loader_dir(
-            request_context,
-        )
-        if (
-            coordination_skill_dir
-            and coordination_skill_dir not in workspace_skill_dirs
-        ):
-            workspace_skill_dirs.append(coordination_skill_dir)
         workspace_skills = load_runtime_skills(workspace_skill_dirs)
         workspace_skill_names = {skill.name for skill in workspace_skills}
 
@@ -1053,13 +1024,6 @@ class AgentBuilder:
         from agentscope.agent import ContextConfig
 
         non_binding_limit = 2**63 - 1
-        raw_context_fields = getattr(ContextConfig, "model_fields", {}) or {}
-        context_fields: dict[str, Any] = (
-            dict(raw_context_fields)
-            if isinstance(raw_context_fields, dict)
-            else {}
-        )
-        supports_image_limit = "max_image_num" in context_fields
         try:
             lcc = agent_config.running.light_context_config
             ccc = lcc.context_compact_config
@@ -1075,11 +1039,9 @@ class AgentBuilder:
             tool_result_limit = (
                 non_binding_limit
                 if trc.enabled
-                else getattr(
-                    context_fields.get("tool_result_limit"),
-                    "default",
-                    50_000,
-                )
+                else ContextConfig.model_fields[  # pylint: disable=E1136
+                    "tool_result_limit"
+                ].default
             )
             trigger_ratio = ccc.compact_threshold_ratio
             reserve_ratio = min(
@@ -1093,26 +1055,17 @@ class AgentBuilder:
                     f"trigger ratio {trigger_ratio}; using "
                     f"{reserve_ratio}.",
                 )
-            context_kwargs = {
-                "trigger_ratio": trigger_ratio,
-                "reserve_ratio": reserve_ratio,
-                "tool_result_limit": tool_result_limit,
-            }
-            if supports_image_limit:
-                # Older AgentScope releases had their own five-image cap.
-                # QwenPaw visual compression owns that budget, so make the
-                # duplicate cap non-binding when the field still exists.
-                context_kwargs["max_image_num"] = non_binding_limit
             return ContextConfig(
-                **context_kwargs,
+                trigger_ratio=trigger_ratio,
+                reserve_ratio=reserve_ratio,
+                tool_result_limit=tool_result_limit,
+                # QwenPaw's visual compression owns the image budget and
+                # preserves native media. AgentScope 2.0.7 otherwise removes
+                # canonical images beyond its default limit of five.
+                max_image_num=non_binding_limit,
             )
         except Exception:
-            fallback_kwargs = (
-                {"max_image_num": non_binding_limit}
-                if supports_image_limit
-                else {}
-            )
-            return ContextConfig(**fallback_kwargs)
+            return ContextConfig(max_image_num=non_binding_limit)
 
     @staticmethod
     async def _build_scroll_components(

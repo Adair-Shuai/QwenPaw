@@ -15,11 +15,11 @@ from typing import Any
 from packaging.version import InvalidVersion, Version
 
 from .._version_compat import check_plugin_version_compat
-from ..distribution import PLUGIN_DOWNLOAD_CDN, is_ugsci_catalog_plugin
 from ..plugins.architecture import PluginManifest
 
 logger = logging.getLogger(__name__)
 
+PLUGIN_DOWNLOAD_CDN = "https://download.qwenpaw.agentscope.io"
 _FETCH_TIMEOUT = 30
 
 
@@ -196,25 +196,6 @@ def _is_entry_compatible(entry: dict[str, Any]) -> bool:
         return False
 
 
-def _catalog_channel(*, author: str = "", channel: str = "") -> str:
-    """Classify a row from the UGSci OSS catalog.
-
-    This helper only runs on ``PLUGIN_DOWNLOAD_CDN``. A missing channel
-    therefore defaults to ``ugsci`` so a newly published plugin appears
-    without a hardcoded ID list or a console rebuild. Explicit
-    ``community`` stays community.
-    """
-    explicit = str(channel).strip().lower()
-    if explicit == "community":
-        return "community"
-    if is_ugsci_catalog_plugin(
-        author=author,
-        channel=explicit or "ugsci",
-    ):
-        return "ugsci"
-    return "community"
-
-
 def build_plugin_catalog() -> dict[str, Any]:
     """Download main + plugins index from CDN and normalize for the console.
 
@@ -283,11 +264,6 @@ def build_plugin_catalog() -> dict[str, Any]:
         if isinstance(raw_desc, dict):
             description_i18n = {k: str(v) for k, v in raw_desc.items() if v}
 
-        author = str(entry.get("author") or "")
-        channel = _catalog_channel(
-            author=author,
-            channel=str(entry.get("channel") or ""),
-        )
         plugins.append(
             {
                 "id": str(entry.get("id") or _file_id),
@@ -296,8 +272,7 @@ def build_plugin_catalog() -> dict[str, Any]:
                 "description": _pick_en(entry.get("description")),
                 "description_i18n": description_i18n,
                 "version": catalog_version,
-                "author": author,
-                "channel": channel,
+                "author": str(entry.get("author") or ""),
                 "kind": str(entry.get("platform") or ""),
                 "size": str(entry.get("size") or ""),
                 "sha256": str(entry.get("sha256") or ""),

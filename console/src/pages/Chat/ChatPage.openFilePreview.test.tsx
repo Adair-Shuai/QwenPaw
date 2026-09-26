@@ -73,6 +73,23 @@ vi.mock("./RichFileReferenceInput", () => ({
 }));
 
 vi.mock("@agentscope-ai/chat", () => ({
+  AgentScopeRuntimeMessageType: {
+    MESSAGE: "message",
+    REASONING: "reasoning",
+    ERROR: "error",
+    HEARTBEAT: "heartbeat",
+    MCP_APPROVAL_REQUEST: "mcp_approval_request",
+    TOOL_CALL: "tool_call",
+    TOOL_CALL_OUTPUT: "tool_call_output",
+    FUNCTION_CALL: "function_call",
+    FUNCTION_CALL_OUTPUT: "function_call_output",
+    PLUGIN_CALL: "plugin_call",
+    PLUGIN_CALL_OUTPUT: "plugin_call_output",
+    COMPONENT_CALL: "component_call",
+    COMPONENT_CALL_OUTPUT: "component_call_output",
+    MCP_CALL: "mcp_call",
+    MCP_CALL_OUTPUT: "mcp_call_output",
+  },
   AgentScopeRuntimeWebUI: vi.fn((props: any) => {
     capturedOptions = props.options;
     return <div data-testid="chat-ui" />;
@@ -159,12 +176,25 @@ vi.mock("@/contexts/ThemeContext", () => ({
 
 vi.mock("./sessionApi", () => ({
   default: {
+    bindToOwner: vi.fn(() => ({
+      getSession: vi.fn(async (id: string) => ({ id, name: id, messages: [] })),
+      getSessionList: vi.fn(async () => []),
+      createSession: vi.fn(),
+      updateSession: vi.fn(),
+      removeSession: vi.fn(),
+    })),
     onSessionIdResolved: null,
     onSessionRemoved: null,
     onSessionSelected: null,
     onSessionCreated: null,
+    invalidateSessionCreation: vi.fn(),
+    activateCreatedSession: vi.fn(),
     getRealIdForSession: vi.fn(() => null),
+    getBackendSessionId: vi.fn(() => "test-session"),
     setLastUserMessage: vi.fn(),
+    discardLastUserMessage: vi.fn(),
+    setVisibleSession: vi.fn(),
+    getSession: vi.fn(async (id: string) => ({ id, messages: [] })),
     lastActiveChatId: null,
   },
 }));
@@ -221,7 +251,10 @@ describe("ChatPage message Markdown action", () => {
       previews.length = 0;
 
       act(() => {
-        capturedOptions.actions.list[1].onClick({
+        const action = capturedOptions.actions.list.find(
+          (candidate: { onClick?: unknown }) => typeof candidate.onClick === "function",
+        );
+        action.onClick({
           data: {
             output: [{ role: "assistant", content: "hello from reply" }],
           },

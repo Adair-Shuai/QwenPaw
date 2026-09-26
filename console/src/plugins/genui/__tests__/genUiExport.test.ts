@@ -10,7 +10,9 @@ describe("genUiExport", () => {
 
   it("rasterizes PNG through html-to-image", async () => {
     const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
-    const toPng = vi.spyOn(htmlToImage, "toPng");
+    const toPng = vi
+      .spyOn(htmlToImage, "toPng")
+      .mockResolvedValue("data:image/png;base64,AAAA");
     await exportGenUiPng(document.createElement("div"), "card-1");
     expect(toPng).toHaveBeenCalled();
     expect(click).toHaveBeenCalled();

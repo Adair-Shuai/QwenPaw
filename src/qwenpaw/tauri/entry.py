@@ -392,16 +392,6 @@ def main() -> None:
     _install_subprocess_guard()
     _install_desktop_runtime()
 
-    from qwenpaw.tauri.execution_runtime import configure_execution_runtime
-
-    configure_execution_runtime()
-
-    from qwenpaw.tauri.optional_components import (
-        activate_installed_components,
-    )
-
-    activate_installed_components()
-
     from qwenpaw.constant import LOG_LEVEL_ENV, WORKING_DIR
 
     install_sidecar_logging(WORKING_DIR / "desktop.log")

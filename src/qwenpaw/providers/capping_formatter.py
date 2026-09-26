@@ -193,7 +193,7 @@ class _CappingAnthropicFormatter(
         unprepared = self._unprepared_local_placeholder(source, "image")
         if unprepared is not None:
             return unprepared
-        return super()._format_image_source(source)
+        return super()._format_source(source, "image")
 
     @staticmethod
     def _format_document_source(
@@ -225,7 +225,14 @@ class _CappingAnthropicFormatter(
         if unprepared is not None:
             return unprepared
         if block_type == "image":
-            return super()._format_image_source(source)
+            return {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": source.media_type,
+                    "data": source.data,
+                },
+            }
         if block_type == "document":
             return self._format_document_source(source)
         legacy_formatter = cast(

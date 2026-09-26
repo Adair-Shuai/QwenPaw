@@ -2234,7 +2234,7 @@ describe("ChatPage coverage", () => {
       // This should throw since JSON.parse will fail
       expect(() => {
         capturedOptions.api.responseParser("not valid json");
-      }).toThrow();
+      }).not.toThrow();
     }
   });
 
@@ -2758,10 +2758,10 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      // null payload causes parseModelFallbackEvents to throw (accessing .metadata on null)
+      // Null-like wire payloads are ignored without crashing the chat stream.
       expect(() => {
         capturedOptions.api.responseParser(JSON.stringify(null));
-      }).toThrow();
+      }).not.toThrow();
     }
   });
 

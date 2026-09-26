@@ -75,6 +75,23 @@ vi.mock("../../features/files-workspace/FilesDrawer", () => ({
 }));
 
 vi.mock("@agentscope-ai/chat", () => ({
+  AgentScopeRuntimeMessageType: {
+    MESSAGE: "message",
+    REASONING: "reasoning",
+    ERROR: "error",
+    HEARTBEAT: "heartbeat",
+    MCP_APPROVAL_REQUEST: "mcp_approval_request",
+    TOOL_CALL: "tool_call",
+    TOOL_CALL_OUTPUT: "tool_call_output",
+    FUNCTION_CALL: "function_call",
+    FUNCTION_CALL_OUTPUT: "function_call_output",
+    PLUGIN_CALL: "plugin_call",
+    PLUGIN_CALL_OUTPUT: "plugin_call_output",
+    COMPONENT_CALL: "component_call",
+    COMPONENT_CALL_OUTPUT: "component_call_output",
+    MCP_CALL: "mcp_call",
+    MCP_CALL_OUTPUT: "mcp_call_output",
+  },
   // render rightHeader so child components appear in the DOM
   AgentScopeRuntimeWebUI: vi.fn((props: any) => {
     capturedOptions = props.options;

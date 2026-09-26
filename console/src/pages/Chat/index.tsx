@@ -4145,7 +4145,12 @@ export default function ChatPage() {
         ...defaultConfig.api,
         fetch: customFetch,
         responseParser: (chunk: string) => {
-          const payload = JSON.parse(chunk) as Record<string, unknown>;
+          let payload: Record<string, unknown>;
+          try {
+            payload = JSON.parse(chunk) as Record<string, unknown>;
+          } catch {
+            return { object: "message", type: "heartbeat" } as any;
+          }
           if (!payload || typeof payload !== "object") {
             return { object: "message", type: "heartbeat" } as any;
           }

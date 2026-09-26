@@ -18,7 +18,6 @@ import os
 import re
 from contextvars import ContextVar
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import List, Sequence, Tuple, Type, Any, Union, Optional
 from urllib.parse import urlparse
 
@@ -73,6 +72,11 @@ from ..utils.media_paths import (
     file_url_to_path as _file_url_to_path,
     local_media_path as _local_media_path,
 )
+
+
+def _supports_multimodal_for_current_model() -> bool:
+    """Compatibility hook for request normalizers and downstream plugins."""
+    return True
 
 # TODO(AgentScope compatibility): This is a temporary workaround for
 # AgentScope releases that emit random promoted-media identifiers. Remove it
@@ -198,8 +202,6 @@ def _media_kind(block: Any) -> str | None:
         else getattr(block, "source", None)
     )
     media_type = str(_media_source_value(source, "media_type", "") or "")
-    if media_type == "application/pdf":
-        return "document"
     kind = media_type.split("/", 1)[0]
     return kind if kind in _MEDIA_BLOCK_TYPES else None
 
@@ -265,8 +267,6 @@ def _remote_media_requires_download(
     base_formatter_class: Type[FormatterBase],
 ) -> bool:
     """Whether the upstream formatter would synchronously download a URL."""
-    if kind == "document":
-        return True
     if AnthropicChatFormatter is not None and issubclass(
         base_formatter_class,
         AnthropicChatFormatter,
@@ -660,7 +660,6 @@ def _anthropic_media_dedup_key(
 _WIRE_MEDIA_BLOCK_TYPES = frozenset(
     {
         "audio",
-        "document",
         "image",
         "image_url",
         "input_audio",
@@ -1203,7 +1202,7 @@ def _fix_image_mime_types(messages: list[dict]) -> None:
                         block["image_url"] = fixed
 
 
-_MEDIA_BLOCK_TYPES = ("image", "audio", "video", "document")
+_MEDIA_BLOCK_TYPES = ("image", "audio", "video")
 
 # Block types that the base OpenAI / Gemini formatter processes into
 # ``content_blocks`` or ``tool_calls``, guaranteeing the assistant
@@ -1548,56 +1547,8 @@ def _create_file_block_support_formatter(
                     "text/plain",
                     "image/*",
                     "video/*",
-                    "application/pdf",
                 ]
-            elif issubclass(base_formatter_class, OpenAIChatFormatter):
-                # AgentScope's current OpenAI formatter advertises only
-                # image/audio input, so its outer format gate would replace a
-                # PDF before our data-block override can encode it.
-                input_types = list(
-                    kwargs.get(
-                        "input_types",
-                        ["text/plain", "image/*", "audio/*"],
-                    ),
-                )
-                if "application/pdf" not in input_types:
-                    input_types.append("application/pdf")
-                kwargs["input_types"] = input_types
             super().__init__(**kwargs)
-
-        def _format_openai_data_block(self, block):
-            """Preserve OpenAI PDF inputs across AgentScope updates."""
-            source = getattr(block, "source", None)
-            media_type = str(getattr(source, "media_type", "") or "")
-            if media_type == "application/pdf":
-                if isinstance(source, Base64Source):
-                    file_data = f"data:{media_type};base64,{source.data}"
-                    default_filename = "document.pdf"
-                else:
-                    file_data = str(getattr(source, "url", "") or "")
-                    if not file_data:
-                        return None
-                    raw_path = urlparse(file_data).path
-                    if file_data.startswith("file://"):
-                        local_path = _file_url_to_path(file_data)
-                        encoded = base64.b64encode(
-                            Path(local_path).read_bytes(),
-                        ).decode("ascii")
-                        file_data = f"data:{media_type};base64,{encoded}"
-                    default_filename = (
-                        raw_path.rsplit("/", 1)[-1] or "document.pdf"
-                    )
-                filename = str(getattr(block, "name", "") or "").strip()
-                if not filename:
-                    filename = default_filename
-                return {
-                    "type": "file",
-                    "file": {
-                        "filename": filename,
-                        "file_data": file_data,
-                    },
-                }
-            return super()._format_openai_data_block(block)
 
         def set_thinking_omit_ids(self, block_ids: set[str]) -> bool:
             """Set request-time reasoning omissions when wire-compatible.

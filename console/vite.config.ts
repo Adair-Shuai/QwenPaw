@@ -50,6 +50,7 @@ export default defineConfig(({ command, mode }) => {
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
+        "html-to-image": path.resolve(__dirname, "./node_modules/html-to-image"),
       },
     },
     server: {
