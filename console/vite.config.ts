@@ -75,6 +75,13 @@ export default defineConfig(({ command, mode }) => {
         inline: [/@agentscope-ai\/(?!icons|chat|design)/],
       },
       alias: [
+        {
+          find: /^@genui-src\//,
+          replacement: `${path.resolve(
+            __dirname,
+            "../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui",
+          )}/`,
+        },
         // Resolve the beta's real ESM entry for Vitest, without masking SDK subpaths.
         {
           find: /^@agentscope-ai\/chat$/,

@@ -4146,6 +4146,9 @@ export default function ChatPage() {
         fetch: customFetch,
         responseParser: (chunk: string) => {
           const payload = JSON.parse(chunk) as Record<string, unknown>;
+          if (!payload || typeof payload !== "object") {
+            return { object: "message", type: "heartbeat" } as any;
+          }
           // CoPaw's wire enum uses "cancelled"; the SDK uses "canceled".
           // Preserve cancellation instead of fabricating a completed, empty
           // assistant reply, including unfinished tool/content statuses.

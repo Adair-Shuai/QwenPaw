@@ -358,6 +358,14 @@ jobs:
           mkdir -p src/qwenpaw/console
           cp -R console/dist/* src/qwenpaw/console/
 
+      - name: Build bundled Run Center frontend
+        shell: bash
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+          python scripts/sync_run_center_bundle.py --sync
+          test -s src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/index.js
+
       - name: Run install script (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash

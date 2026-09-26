@@ -187,7 +187,13 @@ describe("subscribeToolCallStream", () => {
 
   it("delivers each data payload to onChunk", async () => {
     fetchMock.mockResolvedValue(
-      sseResponse(frame({ type: "chunk", n: 1 }, { type: "chunk", n: 2 })),
+      sseResponse(
+        frame(
+          { type: "chunk", n: 1 },
+          { type: "chunk", n: 2 },
+          { type: "done" },
+        ),
+      ),
     );
     const h = handlers();
 
@@ -200,14 +206,17 @@ describe("subscribeToolCallStream", () => {
     expect(h.onError).not.toHaveBeenCalled();
   });
 
-  it("calls onDone when the stream ends without a done event", async () => {
+  it("reports a stream ending without a terminal event", async () => {
     fetchMock.mockResolvedValue(sseResponse(frame({ type: "chunk" })));
     const h = handlers();
 
     subscribeToolCallStream("sid-1", "tc-1", h);
-    await vi.waitFor(() => expect(h.onDone).toHaveBeenCalled());
+    await vi.waitFor(() => expect(h.onError).toHaveBeenCalled());
 
-    expect(h.onDone).toHaveBeenCalledTimes(1);
+    expect(h.onDone).not.toHaveBeenCalled();
+    expect((h.onError.mock.calls[0][0] as Error).message).toBe(
+      "tool stream ended before terminal event",
+    );
   });
 
   it("stops at a done event and ignores anything after it", async () => {
@@ -232,7 +241,9 @@ describe("subscribeToolCallStream", () => {
 
   it("ignores an event without a data line", async () => {
     fetchMock.mockResolvedValue(
-      sseResponse(`event: ping\n\n${frame({ type: "chunk" })}`),
+      sseResponse(
+        `event: ping\n\n${frame({ type: "chunk" }, { type: "done" })}`,
+      ),
     );
     const h = handlers();
 
@@ -245,7 +256,12 @@ describe("subscribeToolCallStream", () => {
 
   it("ignores a malformed json payload but keeps reading", async () => {
     fetchMock.mockResolvedValue(
-      sseResponse(`data: {not json\n\n${frame({ type: "chunk", ok: true })}`),
+      sseResponse(
+        `data: {not json\n\n${frame(
+          { type: "chunk", ok: true },
+          { type: "done" },
+        )}`,
+      ),
     );
     const h = handlers();
 
@@ -257,14 +273,11 @@ describe("subscribeToolCallStream", () => {
     expect(h.onError).not.toHaveBeenCalled();
   });
 
-  it("parses only the first data line of a multi-line frame", async () => {
-    // One SSE frame carrying two data lines (separated by a single \n, the
-    // frame itself terminated by \n\n). The reader uses .find(), so only the
-    // first data line is parsed. This pins that current behaviour and is what
-    // distinguishes the \n\n frame split from a plain \n split (mutation-tested).
+  it("joins data lines within a multi-line frame", async () => {
     fetchMock.mockResolvedValue(
       sseResponse(
-        'data: {"type":"chunk","first":1}\ndata: {"type":"chunk","second":2}\n\n',
+        'data: {"type":"chunk",\ndata: "first":1}\n\n' +
+          frame({ type: "done" }),
       ),
     );
     const h = handlers();
@@ -278,7 +291,7 @@ describe("subscribeToolCallStream", () => {
 
   it("reassembles a payload split across two network chunks", async () => {
     const encoder = new TextEncoder();
-    const full = frame({ type: "chunk", big: "value" });
+    const full = frame({ type: "chunk", big: "value" }, { type: "done" });
     const cut = Math.floor(full.length / 2);
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {

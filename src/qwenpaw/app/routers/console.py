@@ -342,6 +342,54 @@ def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
     return native_payload
 
 
+def _extract_target_agent_id(
+    request_data: Union[AgentRequest, dict],
+) -> str | None:
+    """Validate the optional single agent targeted by a console chat."""
+    if isinstance(request_data, dict):
+        value = request_data.get("target_agent_id")
+        plural = request_data.get("target_agent_ids")
+    else:
+        value = getattr(request_data, "target_agent_id", None)
+        plural = getattr(request_data, "target_agent_ids", None)
+
+    if plural is not None:
+        if not isinstance(plural, list) or not all(
+            isinstance(item, str) and item.strip() for item in plural
+        ):
+            raise HTTPException(
+                400,
+                "target_agent_ids must be a list of non-empty strings",
+            )
+        distinct = list(dict.fromkeys(item.strip() for item in plural))
+        if len(distinct) > 1:
+            raise HTTPException(
+                400,
+                "Only one target agent is supported per chat request",
+            )
+        plural_value = distinct[0] if distinct else None
+        normalized_value = value.strip() if isinstance(value, str) else value
+        if (
+            normalized_value is not None
+            and plural_value
+            and normalized_value != plural_value
+        ):
+            raise HTTPException(
+                400,
+                "Conflicting target_agent_id and target_agent_ids",
+            )
+        value = normalized_value or plural_value
+
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise HTTPException(
+            400,
+            "target_agent_id must be a non-empty string",
+        )
+    return value.strip()
+
+
 def _is_reconnect_request(request_data: Union[AgentRequest, dict]) -> bool:
     """Return whether the chat request asks to attach to a running stream.
 
@@ -434,7 +482,11 @@ async def post_console_chat(
     """Stream agent response. Run continues in background after disconnect.
     Stop via POST /console/chat/stop. Reconnect with body.reconnect=true.
     """
-    workspace = await get_agent_for_request(request)
+    target_agent_id = _extract_target_agent_id(request_data)
+    workspace = await get_agent_for_request(
+        request,
+        agent_id=target_agent_id,
+    )
     console_channel = await workspace.channel_manager.get_channel("console")
     if console_channel is None:
         raise HTTPException(

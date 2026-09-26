@@ -448,8 +448,42 @@ export function wrapChatResponseUsageStream(
 
   const decoder = new TextDecoder();
   let buffer = "";
-  let pendingUsage: TurnUsageSnapshot | null = null;
   let streamingTokenCount = 0;
+  const sessionBase = useTurnUsageStore.getState().snapshot?.usage;
+
+  const publishUsage = (snapshot: TurnUsageSnapshot) => {
+    const usage = snapshot.usage;
+    const projected =
+      usage && sessionBase
+        ? {
+            ...snapshot,
+            usage: {
+              ...usage,
+              ...(usage.session_cache_read_tokens === undefined &&
+              sessionBase.session_cache_read_tokens !== undefined
+                ? {
+                    session_cache_read_tokens:
+                      sessionBase.session_cache_read_tokens +
+                      (usage.cache_read_tokens ?? 0),
+                  }
+                : {}),
+              ...(usage.session_cache_eligible_input_tokens === undefined &&
+              sessionBase.session_cache_eligible_input_tokens !== undefined
+                ? {
+                    session_cache_eligible_input_tokens:
+                      sessionBase.session_cache_eligible_input_tokens +
+                      (usage.cache_eligible_input_tokens ?? 0),
+                  }
+                : {}),
+            },
+          }
+        : snapshot;
+    const store = useTurnUsageStore.getState();
+    const accepted = turn
+      ? store.setSnapshotForTurn(projected, turn)
+      : (store.setSnapshot(projected), true);
+    if (accepted) schedulePatchLastResponseCardUsage(chatRef, projected, turn);
+  };
 
   // Signal start of streaming
   _state = { estimatedTokens: 0, isStreaming: true };
@@ -466,7 +500,7 @@ export function wrapChatResponseUsageStream(
           // Check for turn_usage SSE
           const snap = snapshotFromSsePayload(raw);
           if (snap) {
-            pendingUsage = snap;
+            publishUsage(snap);
           }
 
           // Estimate streaming tokens from text deltas
@@ -492,7 +526,7 @@ export function wrapChatResponseUsageStream(
         for (const raw of parsed.events) {
           const snap = snapshotFromSsePayload(raw);
           if (snap) {
-            pendingUsage = snap;
+            publishUsage(snap);
           }
 
           try {
@@ -512,20 +546,6 @@ export function wrapChatResponseUsageStream(
           isStreaming: false,
         };
         _notify();
-
-        if (pendingUsage) {
-          let accepted = true;
-          if (turn) {
-            accepted = useTurnUsageStore
-              .getState()
-              .setSnapshotForTurn(pendingUsage, turn);
-          } else {
-            useTurnUsageStore.getState().setSnapshot(pendingUsage);
-          }
-          if (accepted) {
-            schedulePatchLastResponseCardUsage(chatRef, pendingUsage, turn);
-          }
-        }
       },
     }),
   );

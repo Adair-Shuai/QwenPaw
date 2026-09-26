@@ -104,11 +104,11 @@ function writeTauriVersionConfig(file, version) {
           compression: "zlib",
         },
       },
-      // Layered packages carry the helper in the versioned resource tree.
-      // Legacy packages use Tauri externalBin so macOS places the helper next
-      // to the desktop executable (the location used to seed its TCC-stable
-      // helper app). An explicit empty array overrides the base config.
-      ...(layeredDesktop ? { externalBin: [] } : {}),
+      // Tauri merges arrays from the base config. Keep its externalBin empty;
+      // only legacy packages place the helper beside the executable.
+      ...(!layeredDesktop
+        ? { externalBin: ["binaries/qwenpaw-computer-use-helper"] }
+        : {}),
       ...(createUpdaterArtifacts ? { createUpdaterArtifacts: true } : {}),
     },
     plugins: {

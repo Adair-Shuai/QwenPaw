@@ -55,6 +55,13 @@ jobs:
           mkdir -p src/qwenpaw/console
           cp -R console/dist/* src/qwenpaw/console/
 
+      - name: Build bundled Run Center frontend
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+          python scripts/sync_run_center_bundle.py --sync
+          test -s src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/index.js
+
       - name: Bundle docs into package
         run: |
           rm -rf src/qwenpaw/docs

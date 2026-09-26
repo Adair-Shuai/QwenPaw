@@ -8,6 +8,7 @@ ARG UV_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:la
 FROM ${NODE_IMAGE} AS console-builder
 WORKDIR /app
 COPY console /app/console
+COPY plugins/bundle/qwenpaw-run-center/ui /app/run-center-ui
 # The console tests/build resolve shared UGSci sources through aliases and
 # relative imports outside the console directory. Keep those sources in the
 # Docker build context so pnpm build (including typecheck/tests) matches the
@@ -19,7 +20,9 @@ RUN npm install --global --force corepack@0.34.6 \
  && corepack prepare pnpm@9.15.9 --activate \
  && cd /app/console \
  && pnpm install --frozen-lockfile \
- && pnpm run build
+ && pnpm run build \
+ && npm --prefix /app/run-center-ui ci \
+ && npm --prefix /app/run-center-ui run build
 
 # Alias for uv binary so COPY --from can reference a build-arg image.
 FROM ${UV_IMAGE} AS uv-src
@@ -106,10 +109,11 @@ WORKDIR ${WORKSPACE_DIR}
 # Keep Debian's Python for system services; use the desktop runtime for QwenPaw.
 COPY scripts/pack-tauri/stage_python_runtime.py /tmp/stage_python_runtime.py
 COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py
+COPY scripts/pack-tauri/copy_windows_tree.py /tmp/copy_windows_tree.py
 RUN python3 /tmp/stage_python_runtime.py \
     --dest /opt/qwenpaw-python --python-version 3.11 \
   && /opt/qwenpaw-python/python/bin/python3 -m venv /app/venv \
-  && rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py
+  && rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py /tmp/copy_windows_tree.py
 ENV PATH="/app/venv/bin:$PATH"
 
 COPY pyproject.toml setup.py README.md ./
@@ -118,6 +122,7 @@ COPY packages/qwenpawmail-mcp/src/qwenpawmail_mcp ./packages/qwenpawmail-mcp/src
 COPY website/public/docs/ ./src/qwenpaw/docs/
 # Inject console dist from build stage (repo does not commit dist).
 COPY --from=console-builder /app/console/dist/ ./src/qwenpaw/console/
+COPY --from=console-builder /app/run-center-ui/dist/ ./src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/
 # Speed up Python package installation with uv.
 COPY --from=uv-src /uv /bin/uv
 # Pin setuptools <82: lark-oapi still calls pkg_resources.declare_namespace

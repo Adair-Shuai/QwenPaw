@@ -27,7 +27,11 @@ def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
             "Pack plugins and build index"
         )
     assert "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py" in dockerfile
-    assert "rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py" in dockerfile
+    assert "COPY scripts/pack-tauri/copy_windows_tree.py /tmp/copy_windows_tree.py" in dockerfile
+    assert (
+        "rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py "
+        "/tmp/copy_windows_tree.py"
+    ) in dockerfile
     assert "[-.](a|b|rc|dev)" in release
 
 
@@ -43,6 +47,34 @@ def test_resumable_release_publish_waits_for_full_test_gate() -> None:
         )[0]
         assert "cleanup-draft-immutable-artifacts, full-test-gate]" in block
         assert "needs.full-test-gate.result == 'success'" in block
+
+
+def test_distribution_builds_embed_run_center_frontend() -> None:
+    for workflow in (
+        "release.yml",
+        "release-resume.yml",
+        "publish-pypi.yml",
+        "fork-verify.yml",
+        "release-verify.yml",
+    ):
+        text = _workflow(workflow)
+        assert text.index("Build bundled Run Center frontend") < text.index(
+            "python -m build"
+            if workflow != "release-verify.yml"
+            else "Run install script"
+        )
+        assert "python scripts/sync_run_center_bundle.py --sync" in text
+        assert (
+            "test -s src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/index.js"
+            in text
+        )
+
+    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+    assert "npm --prefix /app/run-center-ui run build" in dockerfile
+    assert (
+        "COPY --from=console-builder /app/run-center-ui/dist/ "
+        "./src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/"
+    ) in dockerfile
 
 
 def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
@@ -319,11 +351,11 @@ def test_macos_helper_is_staged_for_legacy_and_layered_layouts() -> None:
     assert "cargo build --manifest-path" in build
     assert "qwenpaw-computer-use-helper-${RUST_TARGET_TRIPLE}" in build
     assert "tools/computer-use/${VERSION}/qwenpaw-computer-use-helper" in build
-    assert '"externalBin": ["binaries/qwenpaw-computer-use-helper"]' in config
+    assert '"externalBin": []' in config
     sync = (
         REPO_ROOT / "scripts" / "pack-tauri" / "sync_tauri_version.mjs"
     ).read_text(encoding="utf-8")
-    assert "externalBin: []" in sync
+    assert 'externalBin: ["binaries/qwenpaw-computer-use-helper"]' in sync
 
 
 def test_windows_layered_build_allows_discovered_runtime_hashes() -> None:

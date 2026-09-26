@@ -161,6 +161,9 @@ describe("DesktopUpdateContext", () => {
     const { result } = renderUpdate();
 
     await flush();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
 
     // setVersion((prev) => prev || info.version): an already-cached version
     // must win over the remote one.
@@ -178,7 +181,7 @@ describe("DesktopUpdateContext", () => {
     expect(result.current.hasUpdate).toBe(false);
   });
 
-  it("swallows a cached-update probe failure without failing the mount", async () => {
+  it("swallows a cached-update probe failure without a remote startup probe", async () => {
     mocks.checkCachedUpdate.mockRejectedValue(new Error("disk gone"));
     const { result } = renderUpdate();
 
@@ -186,8 +189,7 @@ describe("DesktopUpdateContext", () => {
 
     expect(result.current.phase).toBe("idle");
     expect(result.current.error).toBeNull();
-    // The remote probe still ran.
-    expect(mocks.checkDesktopUpdate).toHaveBeenCalledTimes(1);
+    expect(mocks.checkDesktopUpdate).not.toHaveBeenCalled();
   });
 
   // ── mount probe: remote update ──────────────────────────────────────────
@@ -201,6 +203,9 @@ describe("DesktopUpdateContext", () => {
     const { result } = renderUpdate();
 
     await flush();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
 
     expect(result.current.version).toBe("2.4.0");
     expect(result.current.body).toBe("fixed things");
@@ -230,17 +235,15 @@ describe("DesktopUpdateContext", () => {
     expect(result.current.version).toBe("");
   });
 
-  it("warns but keeps working when the remote probe rejects", async () => {
+  it("does not make a remote probe during mount", async () => {
     const failure = new Error("offline");
     mocks.checkDesktopUpdate.mockRejectedValue(failure);
     const { result } = renderUpdate();
 
     await flush();
 
-    expect(console.warn).toHaveBeenCalledWith(
-      "[updates] desktop update check failed",
-      failure,
-    );
+    expect(mocks.checkDesktopUpdate).not.toHaveBeenCalled();
+    expect(console.warn).not.toHaveBeenCalled();
     expect(result.current.hasUpdate).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -500,7 +503,9 @@ describe("DesktopUpdateContext", () => {
 
     await flush();
     await act(async () => {
-      await result.current.startInstall();
+      await expect(result.current.startInstall()).rejects.toThrow(
+        "no space left",
+      );
     });
 
     expect(result.current.phase).toBe("failed");
@@ -517,7 +522,7 @@ describe("DesktopUpdateContext", () => {
 
     await flush();
     await act(async () => {
-      await result.current.startInstall();
+      await expect(result.current.startInstall()).rejects.toBe("rust panic");
     });
 
     expect(result.current.error?.message).toBe("rust panic");
@@ -532,7 +537,10 @@ describe("DesktopUpdateContext", () => {
 
     await flush();
     await act(async () => {
-      await result.current.startInstall();
+      await expect(result.current.startInstall()).rejects.toEqual({
+        code: 42,
+        why: "denied",
+      });
     });
 
     expect(result.current.error?.message).toBe(
@@ -563,7 +571,9 @@ describe("DesktopUpdateContext", () => {
 
     await flush();
     await act(async () => {
-      await result.current.startBackgroundDownload();
+      await expect(result.current.startBackgroundDownload()).rejects.toThrow(
+        "tls handshake",
+      );
     });
 
     expect(result.current.phase).toBe("failed");
@@ -599,7 +609,9 @@ describe("DesktopUpdateContext", () => {
 
     await flush();
     await act(async () => {
-      await result.current.installDownloaded();
+      await expect(result.current.installDownloaded()).rejects.toThrow(
+        "app moved",
+      );
     });
 
     expect(result.current.phase).toBe("failed");

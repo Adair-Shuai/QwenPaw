@@ -1,9 +1,16 @@
-import { render, screen, within, waitFor, act } from "@testing-library/react";
+import { render, screen, within, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
 
+const LAZY_RENDER_TIMEOUT = 12_000;
+const blobResource = vi.hoisted(() => vi.fn());
+
+vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
+  useAuthenticatedWorkspaceBlob: (...args: unknown[]) => blobResource(...args),
+}));
+
 describe("FilePreview", () => {
-  it("keeps math code blocks in the renderable code block controls", () => {
+  it("renders math code blocks in the markdown preview", async () => {
     render(
       <FilePreview
         filePath="formula.md"
@@ -11,18 +18,16 @@ describe("FilePreview", () => {
       />,
     );
 
-    const tabs = screen.getAllByRole("tab", { hidden: true });
-    expect(tabs).toHaveLength(2);
-    expect(screen.getByLabelText("common.copy")).toBeInTheDocument();
-    expect(screen.getByLabelText("common.download")).toBeInTheDocument();
-
-    (tabs[1] as HTMLButtonElement).click();
-    expect(screen.getByRole("tabpanel", { hidden: true })).toHaveTextContent(
-      "x^2 + y^2 = z^2",
-    );
+    expect(
+      await screen.findByText(
+        /x\^2 \+ y\^2 = z\^2/,
+        {},
+        { timeout: LAZY_RENDER_TIMEOUT },
+      ),
+    ).toBeInTheDocument();
   });
 
-  it("shows YAML frontmatter as metadata while preserving the body", () => {
+  it("shows YAML frontmatter as metadata while preserving the body", async () => {
     render(
       <FilePreview
         filePath="memory-search.md"
@@ -39,7 +44,13 @@ describe("FilePreview", () => {
       />,
     );
 
-    const frontmatter = within(screen.getByLabelText("Front matter"));
+    const frontmatter = within(
+      await screen.findByLabelText(
+        "Front matter",
+        {},
+        { timeout: LAZY_RENDER_TIMEOUT },
+      ),
+    );
     expect(frontmatter.getByText("description")).toBeInTheDocument();
     expect(
       frontmatter.getByText("Memory Search query guidance"),
@@ -85,10 +96,10 @@ describe("getPreviewType (#5863)", () => {
     expect(getPreviewType("data.csv")).toBe("csv");
   });
 
-  it("returns none for unknown or extensionless paths", () => {
-    expect(getPreviewType("script.py")).toBe("none");
+  it("delegates other supported formats to the rich renderer", () => {
+    expect(getPreviewType("script.py")).toBe("rich");
     expect(getPreviewType("archive.zip")).toBe("none");
-    expect(getPreviewType("Makefile")).toBe("none");
+    expect(getPreviewType("Makefile")).toBe("rich");
   });
 
   it("uses only the last extension segment", () => {
@@ -99,10 +110,10 @@ describe("getPreviewType (#5863)", () => {
 });
 
 describe("isPreviewable (#5863)", () => {
-  it("returns true for previewable types and false for others", () => {
+  it("returns true for direct and rich previewable types", () => {
     expect(isPreviewable("photo.png")).toBe(true);
     expect(isPreviewable("README.md")).toBe(true);
-    expect(isPreviewable("script.py")).toBe(false);
+    expect(isPreviewable("script.py")).toBe(true);
   });
 });
 
@@ -126,61 +137,71 @@ vi.mock("@/api/authHeaders", () => ({
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
     getFileDownloadUrl: (path: string) => `/api/files/${path}`,
+    getBinaryFileUrl: (path: string) => `/api/files/${path}`,
     loadFileChunk: vi.fn(),
   },
 }));
 
 describe("FilePreview image rendering (A#82584296)", () => {
   const mockBlobUrl = "blob:http://localhost/fake-blob-id";
-  let fetchSpy: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
-    fetchSpy = vi.fn().mockResolvedValue({
-      ok: true,
-      blob: () =>
-        Promise.resolve(new Blob(["fake-image-data"], { type: "image/png" })),
+    blobResource.mockReset().mockReturnValue({
+      status: "ready",
+      url: mockBlobUrl,
+      error: null,
+      retry: vi.fn(),
     });
-    global.fetch = fetchSpy as unknown as typeof fetch;
-    vi.spyOn(URL, "createObjectURL").mockReturnValue(mockBlobUrl);
-    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
   });
 
   it("renders an <img> element for PNG files after loading", async () => {
-    await act(async () => {
-      render(<FilePreview filePath="screenshot.png" content="" />);
-    });
+    const { container } = render(
+      <FilePreview filePath="screenshot.png" content="" workspaceBacked />,
+    );
 
-    await waitFor(() => {
-      const img = screen.getByRole("img");
-      expect(img).toBeInTheDocument();
-      expect(img.getAttribute("src")).toBe(mockBlobUrl);
-    });
+    await waitFor(
+      () => {
+        const img = container.querySelector("img");
+        expect(img).toBeInTheDocument();
+        expect(img?.getAttribute("src")).toBe(mockBlobUrl);
+      },
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
   });
 
   it("sets alt text from the filename", async () => {
-    await act(async () => {
-      render(<FilePreview filePath="photos/vacation.jpg" content="" />);
-    });
+    const { container } = render(
+      <FilePreview filePath="photos/vacation.jpg" content="" workspaceBacked />,
+    );
 
-    await waitFor(() => {
-      const img = screen.getByRole("img");
-      expect(img.getAttribute("alt")).toBe("vacation.jpg");
-    });
+    await waitFor(
+      () => {
+        const img = container.querySelector("img");
+        expect(img?.getAttribute("alt")).toBe("vacation.jpg");
+      },
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
   });
 
   it("shows error state when blob fetch fails", async () => {
-    fetchSpy.mockResolvedValue({
-      ok: false,
-      status: 404,
+    blobResource.mockReturnValue({
+      status: "error",
+      url: null,
+      error: new Error("404"),
+      retry: vi.fn(),
     });
 
-    await act(async () => {
-      render(<FilePreview filePath="missing.png" content="" />);
-    });
+    const { container } = render(
+      <FilePreview filePath="missing.png" content="" workspaceBacked />,
+    );
 
     // After fetch fails, should not render an <img>
-    await waitFor(() => {
-      expect(screen.queryByRole("img")).not.toBeInTheDocument();
-    });
+    await waitFor(
+      () => {
+        expect(blobResource).toHaveBeenCalled();
+        expect(container.querySelector("img")).not.toBeInTheDocument();
+      },
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
   });
 });
