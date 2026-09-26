@@ -14,13 +14,44 @@ def _workflow(name: str) -> str:
     )
 
 
-def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
+def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
     release = _workflow("release.yml")
+    resumable = _workflow("release-resume.yml")
+    standalone = _workflow("plugins-release.yml")
+    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+
+    for workflow in (release, resumable, standalone):
+        assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in workflow
+        assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build" in workflow
+        assert workflow.index("Build Run Center frontend") < workflow.index(
+            "Pack plugins and build index"
+        )
+    assert "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py" in dockerfile
+    assert "rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py" in dockerfile
+    assert "[-.](a|b|rc|dev)" in release
+
+
+def test_resumable_release_publish_waits_for_full_test_gate() -> None:
+    release = _workflow("release-resume.yml")
+    for job, following in (
+        ("publish-desktop", "publish-plugins"),
+        ("publish-plugins", "publish-components"),
+        ("publish-components", "full-test-gate"),
+    ):
+        block = release.split(f"  {job}:\n", 1)[1].split(
+            f"  {following}:\n", 1
+        )[0]
+        assert "cleanup-draft-immutable-artifacts, full-test-gate]" in block
+        assert "needs.full-test-gate.result == 'success'" in block
+
+
+def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
+    release = _workflow("release-resume.yml")
     components = _workflow("component-release.yml")
 
     assert 'source_path="$(jq -r .path' in release
     assert (
-        'if [ "$source_path" != ".github/workflows/release.yml" ]' in release
+        'if [ "$source_path" != ".github/workflows/release-resume.yml" ]' in release
     )
     assert 'if [ "$source_sha" != "$sha" ]' in release
     assert "validate_artifact_reuse_diff" in release
@@ -79,7 +110,7 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
 
 
 def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
-    release = _workflow("release.yml")
+    release = _workflow("release-resume.yml")
 
     assert "allow_published_resume:" in release
     assert (
@@ -192,7 +223,7 @@ def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
     assert "expected_job='build-tauri-windows'" in component_release
     assert "expected_job='build-tauri-macos'" in component_release
 
-    release = _workflow("release.yml")
+    release = _workflow("release-resume.yml")
     assert (
         "windows_desktop_artifacts_run_id: "
         "${{ format('{0}', github.run_id) }}" in release
@@ -204,7 +235,7 @@ def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
 
 
 def test_mutable_release_metadata_is_promoted_only_after_finalize() -> None:
-    release = _workflow("release.yml")
+    release = _workflow("release-resume.yml")
     publish_plugins = release.index("  publish-plugins:")
     publish_components = release.index("  publish-components:")
     finalize = release.index("  finalize:")
@@ -333,7 +364,7 @@ def test_windows_release_avoids_legacy_long_path_archive_commands() -> None:
 def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     publish = _workflow("desktop-publish.yml")
     promote = _workflow("desktop-promote.yml")
-    release = _workflow("release.yml")
+    release = _workflow("release-resume.yml")
 
     # macOS updater archive gets a versioned metadata JSON next to its binary.
     assert "mac-tauri-updater-metadata.json" in publish

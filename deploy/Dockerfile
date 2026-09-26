@@ -105,10 +105,11 @@ WORKDIR ${WORKSPACE_DIR}
 
 # Keep Debian's Python for system services; use the desktop runtime for QwenPaw.
 COPY scripts/pack-tauri/stage_python_runtime.py /tmp/stage_python_runtime.py
+COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py
 RUN python3 /tmp/stage_python_runtime.py \
     --dest /opt/qwenpaw-python --python-version 3.11 \
   && /opt/qwenpaw-python/python/bin/python3 -m venv /app/venv \
-  && rm /tmp/stage_python_runtime.py
+  && rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py
 ENV PATH="/app/venv/bin:$PATH"
 
 COPY pyproject.toml setup.py README.md ./

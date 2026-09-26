@@ -1,7 +1,7 @@
 {
   "id": "qwenpaw-run-center",
   "name": "运行中心",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "general",
   "description": "QwenPaw 的统一长任务运行中心：持久化运行、事件回放、模型研究和领域插件协作基础设施。",
   "description_i18n": {

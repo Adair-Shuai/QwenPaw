@@ -78,6 +78,11 @@ jobs:
             npm --prefix "$frontend_dir" run build
           done
 
+      - name: Build Run Center frontend
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+
       - name: Pack plugins and build index
         # qwenpaw-creator and qwenpaw-data are released through their own
         # version-driven pipelines (creator-release.yml,

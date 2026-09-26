@@ -261,7 +261,7 @@ jobs:
           target="$(gh release view "$TAG" --repo "$REPO" --json targetCommitish --jq '.targetCommitish')"
           sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
           echo "Target commitish '$target' resolved to SHA $sha"
-          if [[ "$TAG" =~ (beta|alpha|rc|dev) ]]; then
+          if [[ "$TAG" =~ ([-.](a|b|rc|dev)|alpha|beta)[0-9]*($|[.+-]) ]]; then
             is_prerelease=true
           else
             is_prerelease=false
@@ -424,6 +424,11 @@ jobs:
             npm --prefix "$frontend_dir" ci
             npm --prefix "$frontend_dir" run build
           done
+
+      - name: Build Run Center frontend
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
 
       - name: Pack plugins and build index
         # qwenpaw-creator and qwenpaw-data are released through their own
