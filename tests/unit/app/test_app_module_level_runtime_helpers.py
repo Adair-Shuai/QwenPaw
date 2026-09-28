@@ -419,7 +419,8 @@ def test_version_endpoint_does_not_leak_the_environment(
     monkeypatch.setenv("VIRTUAL_ENV", "/tmp/some-venv")
     payload = app_module.get_version()
 
-    assert set(payload) == {"version"}
+    assert set(payload) == {"version", "download_base_url"}
+    assert payload["download_base_url"].startswith("https://")
     assert "/tmp/some-venv" not in str(payload)
 
 
