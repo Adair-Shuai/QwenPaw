@@ -9,6 +9,7 @@ from unittest.mock import patch
 import pytest
 
 from qwenpaw.plugins.download_catalog import (
+    PLUGIN_DOWNLOAD_CDN,
     _is_entry_compatible,
     build_plugin_catalog,
 )
@@ -94,13 +95,11 @@ def test_build_plugin_catalog_returns_normalized_plugins() -> None:
             "description_i18n": {"en-US": "A demo plugin"},
             "version": "1.0.0",
             "author": "",
+            "channel": "ugsci",
             "kind": "python",
             "size": "",
             "sha256": "",
-            "install_url": (
-                "https://download.qwenpaw.agentscope.io"
-                "/plugins/demo-1.0.0.zip"
-            ),
+            "install_url": f"{PLUGIN_DOWNLOAD_CDN}/plugins/demo-1.0.0.zip",
             "installed": False,
             "installed_version": None,
             "upgrade_available": False,
@@ -112,28 +111,27 @@ def test_entry_with_qwenpaw_version_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        # Exclusive upper bound: current 2.1.0b1 is treated as 2.1.0.
-        "qwenpaw_version": {"min": "1.1.6", "max": "2.2.0"},
+        "qwenpaw_version": {"min": "2.2.0", "max": "2.3.0"},
     }
     assert _is_entry_compatible(entry) is True
 
 
-def test_entry_with_qwenpaw_version_max_ignored() -> None:
-    """Declared max must not exclude a newer running QwenPaw."""
+def test_entry_with_qwenpaw_version_max_enforced() -> None:
+    """Declared max excludes a newer running QwenPaw."""
     entry = {
         "id": "demo",
         "version": "1.0.0",
         "qwenpaw_version": {"min": "0.1.0", "max": "1.1.0"},
     }
-    assert _is_entry_compatible(entry) is True
+    assert _is_entry_compatible(entry) is False
 
 
 def test_entry_with_only_min_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        # Derived exclusive max is 2.2.0 for min 2.1.0.
-        "qwenpaw_version": {"min": "2.1.0"},
+        # Derived exclusive max is 2.3.0 for min 2.2.0.
+        "qwenpaw_version": {"min": "2.2.0"},
     }
     assert _is_entry_compatible(entry) is True
 
@@ -162,7 +160,7 @@ def test_entry_with_malformed_qwenpaw_version_falls_to_legacy() -> None:
         "version": "1.0.0",
         "qwenpaw_version": "not-a-dict",
         "min_version": "1.0.0",
-        "max_version": "2.2.0",
+        "max_version": "2.3.0",
     }
     assert _is_entry_compatible(entry) is True
 
@@ -182,7 +180,7 @@ def test_legacy_min_version_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        "min_version": "2.1.0",
+        "min_version": "2.2.0",
     }
     assert _is_entry_compatible(entry) is True
 
@@ -202,21 +200,21 @@ def test_legacy_min_max_version_compatible() -> None:
     entry = {
         "id": "demo",
         "version": "1.0.0",
-        "min_version": "1.0.0",
-        "max_version": "2.2.0",
+        "min_version": "2.2.0",
+        "max_version": "2.3.0",
     }
     assert _is_entry_compatible(entry) is True
 
 
-def test_legacy_max_version_ignored() -> None:
-    """Legacy max_version alone must not make an entry incompatible."""
+def test_legacy_max_version_enforced() -> None:
+    """Legacy max_version excludes a newer running QwenPaw."""
     entry = {
         "id": "demo",
         "version": "1.0.0",
         "min_version": "0.1.0",
         "max_version": "1.0.0",
     }
-    assert _is_entry_compatible(entry) is True
+    assert _is_entry_compatible(entry) is False
 
 
 def test_entry_with_empty_dict_qwenpaw_version() -> None:

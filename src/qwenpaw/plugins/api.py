@@ -144,11 +144,16 @@ def _bridge_to_runtime(
     enabled: bool,
     description: str,
     registry,
+    metadata: dict[str, Any] | None = None,
 ) -> None:
     """Attach ToolDescriptor and inject into runtime ToolRegistries.
 
     Replaces any existing descriptor / bootstrap entry for *tool_name*
     so hot-reload does not keep a stale callable.
+
+    Also registers the tool in the governance ToolRegistry so the
+    policy engine recognises it.  Without this, plugin tools are
+    rejected as "unknown tool" in Phase 0 of policy evaluation.
     """
     import inspect
 
@@ -163,12 +168,47 @@ def _bridge_to_runtime(
             enabled_by_default=enabled,
             async_execution=is_async,
             description=description,
+            metadata=dict(metadata or {}),
         )
         # pylint: disable-next=protected-access
         tool_func._tool_descriptor = desc  # type: ignore[attr-defined]
         logger.info(
             "Attached ToolDescriptor to '%s'",
             tool_name,
+        )
+
+    # ── Register in governance ToolRegistry ────────────────────────
+    # Plugin tools must be registered as "internal" type so the
+    # governance policy engine does not reject them as "unknown tool"
+    # in Phase 0.  "internal" tools are allowed by default (they are
+    # framework-managed, not raw shell/file/network operations).
+    #
+    # We register BOTH the raw tool_name and the PascalCase policy
+    # name because governance uses python_to_policy_name() to convert
+    # snake_case function names to PascalCase (e.g. "launch_simulation"
+    # → "LaunchSimulation"), then looks up the type by that name.
+    try:
+        from ..governance.tool_registry import (
+            DEFAULT_REGISTRY as _GOV_REGISTRY,
+        )
+
+        policy_name = _GOV_REGISTRY.python_to_policy_name(tool_name)
+        for name in (tool_name, policy_name):
+            if _GOV_REGISTRY.get_type(name) == "unknown":
+                _GOV_REGISTRY.register(
+                    name,
+                    "internal",
+                    "",  # no target_param — internal tools don't need one
+                )
+        logger.info(
+            "Registered '%s' in governance ToolRegistry as internal",
+            tool_name,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Failed to register '%s' in governance ToolRegistry: %s",
+            tool_name,
+            exc,
         )
 
     if registry is None:
@@ -259,31 +299,57 @@ def _write_tool_config(
     description: str,
     icon: str,
 ) -> None:
-    """Persist BuiltinToolConfig entry to the agent config file."""
+    """Best-effort persistence of a plugin tool's agent preference."""
     from ..config.config import (
         BuiltinToolConfig,
-        load_agent_config,
-        save_agent_config,
+        ToolsConfig,
+        mutate_agent_config,
     )
     from ..app.agent_context import get_current_agent_id
+    from ..config.utils import load_config
 
-    agent_id = get_current_agent_id()
-    if not agent_id:
+    requested_agent_id = get_current_agent_id()
+    root_config = load_config()
+    profiles = root_config.agents.profiles
+
+    agent_id = None
+    candidates = [
+        requested_agent_id,
+        root_config.agents.active_agent,
+        "default",
+        *root_config.agents.agent_order,
+        *profiles,
+    ]
+    for candidate in candidates:
+        if candidate and candidate in profiles:
+            agent_id = candidate
+            break
+
+    if agent_id is None:
         logger.warning(
-            "No current agent ID; tool '%s' "
-            "will be available after restart",
+            "No configured agent profile is available to persist tool '%s'; "
+            "runtime registration remains active",
             tool_name,
         )
         return
 
-    agent_config = load_agent_config(agent_id)
+    if requested_agent_id != agent_id:
+        logger.warning(
+            "Agent '%s' is unavailable; persisting tool '%s' preference to "
+            "existing agent '%s' without changing active_agent",
+            requested_agent_id,
+            tool_name,
+            agent_id,
+        )
 
-    if not agent_config.tools:
-        from ..config.config import ToolsConfig
+    added = False
 
-        agent_config.tools = ToolsConfig()
-
-    if tool_name not in agent_config.tools.builtin_tools:
+    def _add_tool(agent_config) -> None:
+        nonlocal added
+        if not agent_config.tools:
+            agent_config.tools = ToolsConfig()
+        if tool_name in agent_config.tools.builtin_tools:
+            return
         agent_config.tools.builtin_tools[tool_name] = BuiltinToolConfig(
             name=tool_name,
             enabled=enabled,
@@ -292,6 +358,11 @@ def _write_tool_config(
             async_execution=False,
             icon=icon,
         )
+        added = True
+
+    mutate_agent_config(agent_id, _add_tool)
+
+    if added:
         logger.info(
             "Added tool '%s' to agent '%s' config (enabled=%s)",
             tool_name,
@@ -304,8 +375,6 @@ def _write_tool_config(
             tool_name,
             agent_id,
         )
-
-    save_agent_config(agent_id, agent_config)
 
 
 # -------------------------------------------------------------------
@@ -437,6 +506,122 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                 f"Plugin '{self.plugin_id}' registered provider "
                 f"'{provider_id}'",
             )
+
+    def register_operation(
+        self,
+        operation: str,
+        descriptor: Dict[str, Any],
+        *,
+        provider_id: Optional[str] = None,
+        contract_version: str = "1.0",
+    ) -> None:
+        """Publish a Run Center operation descriptor.
+
+        Operation metadata is registered in the host ``PluginRegistry`` so
+        domain plugins do not need to import or depend on the optional Run
+        Center package.  If Run Center is installed, its startup hook can
+        persist these JSON descriptors for discovery through
+        ``/api/run-center/operations``.
+
+        Args:
+            operation: Stable business operation id, e.g.
+                ``"storage.inventory.evaluate"``.
+            descriptor: JSON-safe metadata (input/output schema, execution
+                and resource capabilities, risk level, etc.).
+            provider_id: Optional implementation/provider identifier.  The
+                pair ``(operation, provider_id)`` is the registration key,
+                allowing multiple providers for one business operation.
+            contract_version: Operation descriptor contract version.
+        """
+        if not self._registry:
+            logger.warning(
+                "Plugin '%s' cannot register operation '%s': "
+                "registry unavailable",
+                self.plugin_id,
+                operation,
+            )
+            return
+        self._registry.register_operation(
+            plugin_id=self.plugin_id,
+            operation=operation,
+            descriptor=descriptor,
+            provider_id=provider_id,
+            contract_version=contract_version,
+        )
+        logger.info(
+            "Plugin '%s' registered operation '%s' (provider=%s)",
+            self.plugin_id,
+            operation,
+            provider_id or "",
+        )
+
+    def get_operations(
+        self,
+        *,
+        operation: Optional[str] = None,
+        provider_id: Optional[str] = None,
+        plugin_id: Optional[str] = None,
+    ) -> List[Any]:
+        """Read operation descriptors registered with the host.
+
+        This is intentionally a read-only view used by infrastructure
+        plugins (for example Run Center startup persistence).  Returned
+        registrations are copies of the host metadata and may safely be
+        inspected without mutating the registry.
+        """
+        if not self._registry:
+            return []
+        return self._registry.get_operations(
+            operation=operation,
+            provider_id=provider_id,
+            plugin_id=plugin_id,
+        )
+
+    def register_run_executor(
+        self,
+        operation: str,
+        handler: Callable[..., Any],
+        *,
+        provider_id: Optional[str] = None,
+        executor: Optional[Any] = None,
+    ) -> None:
+        """Publish a process-local execution adapter for Run Center.
+
+        ``handler`` remains owned by the contributing plugin. Run Center
+        supplies its execution context and durable lifecycle; the optional
+        ``executor`` selects a custom execution strategy.
+        """
+        if not self._registry:
+            logger.warning(
+                "Plugin '%s' cannot register run executor '%s': "
+                "registry unavailable",
+                self.plugin_id,
+                operation,
+            )
+            return
+        self._registry.register_run_executor(
+            plugin_id=self.plugin_id,
+            operation=operation,
+            handler=handler,
+            provider_id=provider_id,
+            executor=executor,
+        )
+
+    def get_run_executors(
+        self,
+        *,
+        operation: Optional[str] = None,
+        provider_id: Optional[str] = None,
+        plugin_id: Optional[str] = None,
+    ) -> List[Any]:
+        """Read Run Center execution adapters registered with the host."""
+        if not self._registry:
+            return []
+        return self._registry.get_run_executors(
+            operation=operation,
+            provider_id=provider_id,
+            plugin_id=plugin_id,
+        )
 
     def register_startup_hook(
         self,
@@ -816,6 +1001,9 @@ class PluginApi:  # pylint: disable=too-many-public-methods
         enabled: bool = False,
         tool_type: str = "network",
         target_param: str = "",
+        allowed_channels: tuple[str, ...] = (),
+        availability_check: Optional[Callable[[dict[str, Any]], bool]] = None,
+        startup_priority: int = 50,
     ) -> None:
         """Register a tool function into the Agent's toolkit.
 
@@ -849,6 +1037,15 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                 semantics for plugin tools while still running Phase 1
                 deep scans.
             target_param: Optional governance target parameter name.
+            allowed_channels: Optional request channels on which the tool is
+                exposed. Empty means all channels. A gated tool fails closed
+                when request context has no explicit channel.
+            availability_check: Optional request-time predicate. Returning
+                ``False`` (or raising) hides the tool for that request without
+                mutating the Agent's persisted tool preference.
+            startup_priority: Startup ordering for registration. Plugins that
+                must run after another plugin persists agent definitions can
+                choose a larger value. Default: 50.
 
         Example:
             >>> from .tool import my_tool_func
@@ -872,6 +1069,20 @@ class PluginApi:  # pylint: disable=too-many-public-methods
             tools_module = None
             appended_to_all = False
             try:
+                # Never shadow a native/upstream callable. Hot reload by the
+                # same plugin remains allowed through the ownership record.
+                from ..agents import tools as current_tools
+
+                existing = getattr(current_tools, tool_name, None)
+                with _TOOL_PLUGIN_OWNERS_LOCK:
+                    current_owner = _TOOL_PLUGIN_OWNERS.get(tool_name)
+                if existing is not None and current_owner != self.plugin_id:
+                    logger.info(
+                        "Skipping plugin tool '%s': upstream/native "
+                        "callable already exists",
+                        tool_name,
+                    )
+                    return
                 _claim_tool_ownership(tool_name, self.plugin_id)
                 claimed = True
                 _register_to_governance(
@@ -908,13 +1119,40 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                     enabled,
                     description,
                     self._registry,
+                    {
+                        **(
+                            {"allowed_channels": tuple(allowed_channels)}
+                            if allowed_channels
+                            else {}
+                        ),
+                        **(
+                            {"availability_check": availability_check}
+                            if availability_check is not None
+                            else {}
+                        ),
+                    }
+                    or None,
                 )
-                _write_tool_config(
-                    tool_name,
-                    enabled,
-                    description,
-                    icon,
-                )
+
+                # Preference persistence is not part of the security
+                # boundary. Governance and runtime registration have already
+                # succeeded, so a stale agent reference or transient config
+                # write failure must not remove a usable, governed tool.
+                try:
+                    _write_tool_config(
+                        tool_name,
+                        enabled,
+                        description,
+                        icon,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    logger.warning(
+                        "Tool '%s' remains registered, but its default agent "
+                        "preference could not be persisted: %s",
+                        tool_name,
+                        exc,
+                        exc_info=True,
+                    )
 
             except Exception as exc:
                 if tools_module is not None:
@@ -944,7 +1182,7 @@ class PluginApi:  # pylint: disable=too-many-public-methods
         self.register_startup_hook(
             hook_name=(f"register_tool_{self.plugin_id}_{tool_name}"),
             callback=_startup_register,
-            priority=50,
+            priority=startup_priority,
         )
         logger.info(
             f"Plugin '{self.plugin_id}' scheduled tool "

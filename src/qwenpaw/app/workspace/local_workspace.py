@@ -92,10 +92,12 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             "subagent_allowed_tools",
         )
         if isinstance(subagent_whitelist, list):
-            # Empty list means deny-all workspace tools (unlike
-            # ToolRegistry.filter, where empty allowed == unrestricted).
+            # Empty means deny workspace tools, except the two explicitly
+            # requested coordination tools added below.
             if not subagent_whitelist:
-                return []
+                if not (request_context or {}).get("agent_coordination_requested"):
+                    return []
+                allowed = set()
             sa_set = set(subagent_whitelist)
             allowed = (allowed & sa_set) if allowed is not None else sa_set
             # Private migration tools also enforce an in-memory capability.
@@ -109,12 +111,17 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             }
             denied -= self_authorizing
 
+        allowed, denied = self._apply_coordination_tool_gates(
+            allowed, denied, request_context,
+        )
+
         descs = self._tool_registry.filter(
             active_modes=set(active_modes),
             active_skills=set(active_skills),
             enabled_features=set(enabled_features),
             allowed=allowed,
             denied=denied,
+            request_context=request_context,
         )
 
         return [
@@ -127,6 +134,20 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
         ]
 
     # -------------------------------------------------------------- internal
+
+    @staticmethod
+    def _apply_coordination_tool_gates(
+        allowed: set[str] | None,
+        denied: set[str],
+        request_context: dict[str, Any] | None,
+    ) -> tuple[set[str] | None, set[str]]:
+        """Allow inter-Agent tools for this explicit coordination request."""
+        if (request_context or {}).get("agent_coordination_requested") is not True:
+            return allowed, denied
+        required = {"list_agents", "chat_with_agent"}
+        next_allowed = (set(allowed) | required) if allowed is not None else None
+        return next_allowed, set(denied) - required
+
 
     def _resolve_config_gates(
         self,

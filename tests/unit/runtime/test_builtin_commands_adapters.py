@@ -11,6 +11,7 @@ truncation.  Spec collection itself is covered by
 # pylint: disable=use-implicit-booleaness-not-comparison
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 from typing import Any, Optional
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -837,8 +838,8 @@ class TestConversationAdapter:
             await spec.handler(ctx, "")
         assert double.call_args.kwargs["offloader"] is offloader.return_value
         assert offloader.call_args.kwargs == {
-            "dialog_path": "/tmp/wsdir/dialog.db",
-            "tool_results_dir": "/tmp/wsdir/tool_cache",
+            "dialog_path": os.path.join("/tmp/wsdir", "dialog.db"),
+            "tool_results_dir": os.path.join("/tmp/wsdir", "tool_cache"),
         }
 
     async def test_scroll_strategy_skips_the_offloader_by_default(self):
