@@ -93,7 +93,7 @@ def test_media_source_key_normalises_local_file_url(tmp_path) -> None:
     block = {"source": {"type": "url", "url": "file://" + real}}
     # file:// is resolved to a path, then normpath'ed (dots and duplicate
     # separators collapsed) so the same file yields the same dedup key.
-    assert mf._media_source_key(block) == real
+    assert mf._media_source_key(block) == real.replace("\\", "/")
 
     doubled = {"source": {"type": "url", "url": "file:///tmp//a/../b.png"}}
     assert mf._media_source_key(doubled) == "/tmp/b.png"
@@ -599,7 +599,7 @@ def test_fixup_keeps_data_block_whose_file_exists(tmp_path) -> None:
     items: list = [block]
     mf._fixup_media_list(items)
     assert items[0] is block
-    assert block.source.url == "file://" + real
+    assert block.source.url == "file://" + real.replace("\\", "/")
 
 
 @pytest.mark.parametrize(

@@ -98,7 +98,7 @@ def test_markdown_files_collects_md_recursively_and_sorts(
 
     out = es._markdown_files(root)
 
-    rels = [str(item.relative_path) for item in out]
+    rels = [item.relative_path.as_posix() for item in out]
     assert rels == ["A.MD", "b.md", "sub/d.md"]  # sorted by str(relative)
     assert all(item.source_path.is_absolute() for item in out)
 
@@ -623,7 +623,7 @@ def test_qoder_memory_cwd_map_hit() -> None:
 
 def test_qoder_memory_cwd_home_key_returns_home() -> None:
     home = Path.home().resolve()
-    home_key = str(home).lstrip("/\\").replace("/", "-").replace("\\", "-")
+    home_key = es._encode_qoder_cwd(str(home))
     assert es._qoder_memory_cwd(home_key, {}) == str(home)
 
 
@@ -637,7 +637,7 @@ def test_qoder_memory_cwd_prefix_without_child_returns_empty(
     fake_home = tmp_path / "home"
     fake_home.mkdir()
     with patch.object(Path, "home", staticmethod(lambda: fake_home)):
-        key = str(fake_home).lstrip("/\\").replace("/", "-").replace("\\", "-")
+        key = es._encode_qoder_cwd(str(fake_home))
         assert es._qoder_memory_cwd(f"{key}-missing_child", {}) == ""
 
 
@@ -646,7 +646,7 @@ def test_qoder_memory_cwd_resolves_real_child(tmp_path: Path) -> None:
     child = fake_home / "child_x"
     child.mkdir(parents=True)
     with patch.object(Path, "home", staticmethod(lambda: fake_home)):
-        key = str(fake_home).lstrip("/\\").replace("/", "-").replace("\\", "-")
+        key = es._encode_qoder_cwd(str(fake_home))
         assert es._qoder_memory_cwd(f"{key}-child_x", {}) == str(
             child.resolve(),
         )
@@ -667,7 +667,7 @@ def test_discover_qoder_memory_falls_back_to_project_memory(
 
 def test_discover_qoder_memory_v2_layout(tmp_path: Path) -> None:
     home = Path.home().resolve()
-    home_key = str(home).lstrip("/\\").replace("/", "-").replace("\\", "-")
+    home_key = es._encode_qoder_cwd(str(home))
     acct = tmp_path / "memories" / "acct1"
     _md(acct / "global" / "g.md")
     _md(acct / "projects" / home_key / "s.md")  # resolvable to HOME
@@ -722,7 +722,7 @@ def test_discover_qoder_memory_cwd_from_transcript_map(tmp_path: Path) -> None:
         json.dumps({"cwd": str(real_cwd)}) + "\n",
         encoding="utf-8",
     )
-    encoded = str(real_cwd).lstrip("/\\").replace("/", "-").replace("\\", "-")
+    encoded = es._encode_qoder_cwd(str(real_cwd))
     _md(tmp_path / "memories" / "acct" / "projects" / encoded / "s.md")
 
     projects = es.discover_qoder_memory(tmp_path)

@@ -733,7 +733,7 @@ def test_fallback_profile_is_derived_from_the_root_config() -> None:
     assert profile.id == "helper"
     assert profile.name == "Helper"
     assert profile.description == "helper agent"
-    assert profile.workspace_dir == "/tmp/ws-helper"
+    assert Path(profile.workspace_dir) == Path("/tmp/ws-helper")
 
 
 def test_fallback_profile_rejects_an_unknown_agent_id() -> None:

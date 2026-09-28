@@ -924,7 +924,7 @@ def _media_source_key(block: dict) -> str | None:
         return None
     raw = _file_url_to_path(url)
     if os.path.isabs(raw):
-        return os.path.normpath(raw)
+        return os.path.normpath(raw).replace("\\", "/")
     return url
 
 
@@ -1440,7 +1440,10 @@ def _fixup_media_list(items: list) -> None:
             )
             filename = (
                 fname_hint
-                or (readable_path.rsplit("/", 1)[-1] if readable_path else "")
+                or (
+                    readable_path.replace("\\", "/").rsplit("/", 1)[-1]
+                    if readable_path else ""
+                )
                 or "file"
             )
             items[i] = TextBlock(

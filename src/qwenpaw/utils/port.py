@@ -78,6 +78,14 @@ def try_bind_port(host: str, port: int) -> socket.socket | None:
     """
     sock: socket.socket | None = None
     try:
+        if sys.platform == "win32" and port:
+            # Some Windows runners permit a second bind even with the
+            # exclusive option. A successful connection proves that a
+            # listener already owns the requested port.
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+                probe.settimeout(0.1)
+                if probe.connect_ex((host, port)) == 0:
+                    return None
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         if sys.platform == "win32":
             sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)

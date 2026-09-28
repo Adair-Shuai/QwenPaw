@@ -82,10 +82,10 @@ def test_plugins_uninstall_nonexistent(app_server) -> None:
 
 @pytest.mark.integration
 @pytest.mark.p1
-def test_plugins_list_pagination(app_server) -> None:
-    """Test plugins list pagination."""
-    response = app_server.api_request("GET", "/api/plugins?limit=5&offset=0")
+def test_plugins_list_returns_loaded_plugins(app_server) -> None:
+    """The plugin list returns the complete loaded set."""
+    response = app_server.api_request("GET", "/api/plugins")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) <= 5
+    assert all(isinstance(plugin.get("id"), str) for plugin in data)

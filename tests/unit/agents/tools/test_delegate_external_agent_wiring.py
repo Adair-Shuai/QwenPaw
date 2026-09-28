@@ -1083,7 +1083,7 @@ class TestStreamActionResponses:
         texts = [_chunk_text(chunk) for chunk in chunks]
         assert texts[0] == "[assistant]\nhello"
         # The closing event repeats streamed text, so only the header stays.
-        assert texts[-1] == "runner: codex working directory: /tmp/work"
+        assert texts[-1] == f"runner: codex working directory: {Path('/tmp/work')}"
         assert chunks[-1].is_last is True
 
     async def test_non_text_event_ends_the_assistant_message(self):
@@ -1102,7 +1102,7 @@ class TestStreamActionResponses:
         assert texts[0] == ("[assistant]\nthinking[tool_call] read (/tmp/a)")
         # The last text delta was already streamed, so the tail keeps its
         # header only instead of repeating the assistant text.
-        assert texts[-1] == "runner: codex working directory: /tmp/work"
+        assert texts[-1] == f"runner: codex working directory: {Path('/tmp/work')}"
 
     async def test_turn_without_any_event_says_so(self):
         async def run(**kwargs):

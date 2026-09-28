@@ -571,7 +571,10 @@ def test_previous_base_restores_signed_file_modes(tmp_path, monkeypatch):
     ).stat().st_mode & 0o777 == expected_mode
 
 
-def test_previous_base_skips_missing_full_artifact(tmp_path, monkeypatch):
+@pytest.mark.parametrize("mode", ["missing", "bad-size"])
+def test_previous_base_skips_unusable_full_artifact(
+    tmp_path, monkeypatch, mode,
+):
     release_module = _load()
     prepare_spec = importlib.util.spec_from_file_location(
         "prepare_component_base_missing_artifact",
@@ -629,6 +632,8 @@ def test_previous_base_skips_missing_full_artifact(tmp_path, monkeypatch):
 
     def get(url):
         if url == artifact_url:
+            if mode == "bad-size":
+                return b"truncated"
             raise prepare.urllib.error.HTTPError(
                 url,
                 404,

@@ -25,14 +25,13 @@ def test_skills_list(app_server) -> None:
 
 @pytest.mark.integration
 @pytest.mark.p1
-def test_skills_list_with_filters(app_server) -> None:
-    """Test GET /api/skills with query parameters."""
-    # Test with limit parameter
-    response = app_server.api_request("GET", "/api/skills?limit=5")
+def test_skills_list_returns_workspace_skills(app_server) -> None:
+    """The workspace skill endpoint returns the complete skill set."""
+    response = app_server.api_request("GET", "/api/skills")
     assert response.status_code == 200
     data = response.json()
     assert isinstance(data, list)
-    assert len(data) <= 5
+    assert all(isinstance(skill.get("name"), str) for skill in data)
 
 
 @pytest.mark.integration

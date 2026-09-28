@@ -309,31 +309,43 @@ def prepare_base(
                     )
                     return False
                 raise
-            if len(artifact) != int(full["size"]):
-                raise ValueError(
-                    f"previous full artifact size mismatch for {component}",
+            try:
+                if len(artifact) != int(full["size"]):
+                    raise ValueError(
+                        "previous full artifact size mismatch "
+                        f"for {component}",
+                    )
+                artifact_path = temporary / f"{component}.zip"
+                artifact_path.write_bytes(artifact)
+                if (
+                    sha256_file(artifact_path).lower()
+                    != str(full["sha256"]).lower()
+                ):
+                    raise ValueError(
+                        "previous full artifact hash mismatch "
+                        f"for {component}",
+                    )
+                _verify(artifact, str(full["signature"]), private)
+                # Keep the source directory name because build_component_release
+                # resolves bases by source.name, while still validating the
+                # manifest/plugin ID independently.
+                component_base = temporary / "tree" / source.name
+                component_base.mkdir(parents=True)
+                _safe_extract(
+                    artifact,
+                    component_base,
+                    component=component,
                 )
-            artifact_path = temporary / f"{component}.zip"
-            artifact_path.write_bytes(artifact)
-            if (
-                sha256_file(artifact_path).lower()
-                != str(full["sha256"]).lower()
-            ):
-                raise ValueError(
-                    f"previous full artifact hash mismatch for {component}",
+                _restore_inventory_modes(component_base, entry.get("files"))
+            except (ValueError, zipfile.BadZipFile) as exc:
+                if not allow_missing:
+                    raise
+                print(
+                    "warning: unusable previous full artifact for "
+                    f"{component}; skipping delta base {manifest_url}: {exc}",
+                    file=sys.stderr,
                 )
-            _verify(artifact, str(full["signature"]), private)
-            # Keep the source directory name because build_component_release
-            # resolves bases by source.name, while still validating the
-            # manifest/plugin ID independently.
-            component_base = temporary / "tree" / source.name
-            component_base.mkdir(parents=True)
-            _safe_extract(
-                artifact,
-                component_base,
-                component=component,
-            )
-            _restore_inventory_modes(component_base, entry.get("files"))
+                return False
             installed_id, installed_version, _ = read_component_metadata(
                 component_base,
             )

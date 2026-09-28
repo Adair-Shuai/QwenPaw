@@ -708,11 +708,11 @@ def _parse_aware_datetime(value: Any) -> datetime | None:
 
 
 def _load_timezone(value: str) -> ZoneInfo | None:
-    if not value:
+    if not value or not value.strip():
         return None
     try:
         return ZoneInfo(value)
-    except (ValueError, ZoneInfoNotFoundError):
+    except (OSError, ValueError, ZoneInfoNotFoundError):
         return None
 
 
@@ -760,7 +760,7 @@ def _workspace_status(
         # A local existence check says nothing about an SSH/WSL/container path.
         return "remote_unverified", None, "remote_workspace_unverified"
     candidate = Path(cwd).expanduser()
-    if not candidate.is_absolute():
+    if not candidate.is_absolute() and not cwd.startswith("/"):
         return "not_absolute", False, "workspace_path_not_absolute"
     try:
         exists = candidate.exists()

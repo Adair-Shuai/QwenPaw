@@ -220,6 +220,10 @@ def discover_codex_memory(codex_home: Path) -> list[SourceMemoryProject]:
 def _absolute_cwd(value: Any) -> str:
     if not isinstance(value, str) or not value.strip():
         return ""
+    # Imported transcripts may come from a Unix host even when the current
+    # process runs on Windows. Keep their original absolute path spelling.
+    if value.startswith("/"):
+        return value
     path = Path(value).expanduser()
     return str(path) if path.is_absolute() else ""
 
@@ -307,9 +311,19 @@ def _qoder_project_cwds(qoder_home: Path) -> dict[str, str]:
         cwd = _project_cwd_from_transcripts(project_root)
         if not cwd:
             continue
-        encoded = cwd.lstrip("/\\").replace("/", "-").replace("\\", "-")
+        encoded = _encode_qoder_cwd(cwd)
         mapping[encoded] = cwd
     return mapping
+
+
+def _encode_qoder_cwd(cwd: str) -> str:
+    """Encode a CWD as a portable Qoder project directory name."""
+    return (
+        cwd.lstrip("/\\")
+        .replace(":", "")
+        .replace("/", "-")
+        .replace("\\", "-")
+    )
 
 
 def _match_qoder_path(base: Path, encoded: str, depth: int = 0) -> str:
@@ -346,7 +360,7 @@ def _qoder_memory_cwd(project_key: str, cwd_map: dict[str, str]) -> str:
     if cwd:
         return cwd
     home = Path.home().resolve()
-    home_key = str(home).lstrip("/\\").replace("/", "-").replace("\\", "-")
+    home_key = _encode_qoder_cwd(str(home))
     if project_key == home_key:
         return str(home)
     prefix = f"{home_key}-"

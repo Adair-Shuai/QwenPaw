@@ -546,6 +546,7 @@ class TestOtherAgentOwnsWorkspace:
 
     def test_tilde_is_expanded_on_both_sides(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         target = tmp_path / "ws"
         profiles = {"eve": _ref("eve", Path.home() / "ws")}
         assert _owner_of(profiles, target) == "eve"
