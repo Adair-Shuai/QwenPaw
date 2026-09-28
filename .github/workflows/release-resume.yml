@@ -1,0 +1,1294 @@
+# QwenPaw unified release orchestrator (draft-driven, all-or-nothing).
+#
+# Flow (方案二 · 草稿变体):
+#   1. A maintainer creates a DRAFT GitHub Release (tag + notes), does NOT publish.
+#   2. They run this workflow (Actions ▸ Run workflow). It resolves the draft,
+#      pins every job to the draft's target commit, then builds + verifies ALL
+#      products in parallel (wheel verification / desktop win+mac / plugins).
+#   3. Only if EVERY prepare job is green does the publish phase run: desktop
+#      (GitHub assets + OSS), components and plugins. The draft is flipped to
+#      published LAST. Post-publish (inline): promote the desktop latest/updater,
+#      deploy the website (stable/post only — skipped for betas), and open the
+#      Release Duty issue.
+#   4. Failed build phases can be resumed with artifacts_run_id. Versioned OSS
+#      objects are immutable and idempotent; mutable indexes are promoted last.
+#
+# dry_run=true stubs OSS publishing so fork CI can exercise the
+# gating without touching prod.
+# Draft-asset upload, the draft→published flip and the duty issue still run for
+# real because on a fork they only affect the fork's own resources.
+
+name: Release (resumable fork)
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Draft release tag to publish (empty = auto-detect the single draft)"
+        required: false
+        type: string
+        default: ""
+      release_id:
+        description: "Draft release ID (use when GitHub hides draft releases from list endpoints)"
+        required: false
+        type: string
+        default: ""
+      dry_run:
+        description: "Stub production OSS publishing; use on forks"
+        required: false
+        type: boolean
+        default: false
+      artifacts_run_id:
+        description: "Reuse artifacts from a completed Release run ID and skip all builds"
+        required: false
+        type: string
+        default: ""
+      allow_published_resume:
+        description: "Allow an artifact-only retry after the GitHub Release was already published"
+        required: false
+        type: boolean
+        default: false
+      windows_artifacts_run_id:
+        description: "Optional Desktop Build run ID containing a replacement Windows artifact"
+        required: false
+        type: string
+        default: ""
+      macos_artifacts_run_id:
+        description: "Optional macOS Apple Silicon Desktop Build run ID"
+        required: false
+        type: string
+        default: ""
+      components_artifacts_run_id:
+        description: "Optional Component Release run ID"
+        required: false
+        type: string
+        default: ""
+      components_promotion_run_id:
+        description: "Optional prior Release run containing prepared component promotion metadata"
+        required: false
+        type: string
+        default: ""
+      plugins_artifacts_run_id:
+        description: "Optional Plugins Build run ID containing replacement plugin artifacts"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  # A release tag is a single production transaction. Never allow two commits
+  # for the same tag to race GitHub assets or mutable OSS pointers.
+  group: release-${{ inputs.tag || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ── Resolve the draft, pin the commit, fail fast on missing secrets ─────────
+  resolve:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      release_id: ${{ steps.pick.outputs.release_id }}
+      sha: ${{ steps.pick.outputs.sha }}
+      is_prerelease: ${{ steps.pick.outputs.is_prerelease }}
+      artifacts_run_id: ${{ steps.pick.outputs.artifacts_run_id }}
+      windows_artifacts_run_id: ${{ steps.pick.outputs.windows_artifacts_run_id }}
+      plugins_artifacts_run_id: ${{ steps.pick.outputs.plugins_artifacts_run_id }}
+      macos_artifacts_run_id: ${{ steps.pick.outputs.macos_artifacts_run_id }}
+      components_artifacts_run_id: ${{ steps.pick.outputs.components_artifacts_run_id }}
+      was_draft: ${{ steps.pick.outputs.was_draft }}
+    steps:
+      - name: Resolve target draft release and commit
+        id: pick
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_RELEASE_ID: ${{ inputs.release_id }}
+          ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
+          ALLOW_PUBLISHED_RESUME: ${{ inputs.allow_published_resume }}
+          WINDOWS_ARTIFACTS_RUN_ID: ${{ inputs.windows_artifacts_run_id }}
+          PLUGINS_ARTIFACTS_RUN_ID: ${{ inputs.plugins_artifacts_run_id }}
+          MACOS_ARTIFACTS_RUN_ID: ${{ inputs.macos_artifacts_run_id }}
+          COMPONENTS_ARTIFACTS_RUN_ID: ${{ inputs.components_artifacts_run_id }}
+        run: |
+          set -euo pipefail
+          validate_artifact_reuse_diff() {
+            local base_sha="$1" head_sha="$2"
+            local comparison status file
+            comparison="$(gh api "repos/$REPO/compare/${base_sha}...${head_sha}")"
+            status="$(jq -r .status <<<"$comparison")"
+            if [ "$status" != "ahead" ] && [ "$status" != "identical" ]; then
+              echo "::error::Artifact source $base_sha is not an ancestor of release commit $head_sha"
+              exit 1
+            fi
+            while IFS= read -r file; do
+              case "$file" in
+                .github/workflows/release.yml|\
+                .github/workflows/release-resume.yml|\
+                .github/workflows/component-release.yml|\
+                scripts/pack-tauri/build_python_layers.py|\
+                scripts/pack-tauri/stage_node_runtime.py|\
+                tests/unit/tauri/test_stage_node_runtime.py|\
+                scripts/pack-tauri/stage_desktop_components.py|\
+                tests/unit/tauri/test_stage_desktop_components.py|\
+                tests/unit/verify/test_release_workflow_safety.py)
+                  ;;
+                scripts/pack-tauri/assemble_desktop_layout.py|\
+                tests/unit/tauri/test_desktop_layer_layout.py)
+                  if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || \
+                     [ -z "$MACOS_ARTIFACTS_RUN_ID" ] || \
+                     [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
+                    echo "::error::Desktop layout changes require Windows, macOS, and component replacement artifacts"
+                    exit 1
+                  fi
+                  ;;
+                *)
+                  echo "::error::Cannot reuse artifacts across product change: $file"
+                  exit 1
+                  ;;
+              esac
+            done < <(jq -r '.files[]?.filename' <<<"$comparison")
+            echo "Reusing product artifacts across release-tooling-only changes"
+          }
+          verify_cleanup_only_failure() {
+            local run_id="$1" job_name="$2" job_id job_json unexpected
+            job_id="$(gh api --paginate "repos/$REPO/actions/runs/$run_id/jobs?per_page=100" \
+              --jq ".jobs[] | select(.name == \"$job_name\") | .id" | head -n 1)"
+            [ -n "$job_id" ] || return 1
+            job_json="$(gh api "repos/$REPO/actions/jobs/$job_id")"
+            for required in \
+              "Install wheel in clean venv" \
+              "Verify CLI version" \
+              "Verify Python import" \
+              "Wait for /api/version" \
+              "Verify server version"; do
+              jq -e --arg step "$required" \
+                '.steps[] | select(.name == $step and .conclusion == "success")' \
+                >/dev/null <<<"$job_json" || return 1
+            done
+            unexpected="$(jq -r '
+              .steps[]
+              | select((.conclusion // "") != "success")
+              | select(.name != "Stop server")
+              | select((.name | startswith("Post ")) | not)
+              | .name
+            ' <<<"$job_json")"
+            [ -z "$unexpected" ] || return 1
+            jq -e '.steps[] | select(.name == "Stop server" and .conclusion != "success")' \
+              >/dev/null <<<"$job_json" || return 1
+            echo "::notice::Accepting $job_name: functional verification passed; only Stop server cleanup was incomplete"
+          }
+          TAG="$INPUT_TAG"
+          if [ -z "$TAG" ]; then
+            drafts="$(gh release list --repo "$REPO" --limit 100 \
+              --json tagName,isDraft --jq '[.[] | select(.isDraft) | .tagName]')"
+            count="$(echo "$drafts" | jq 'length')"
+            if [ "$count" -eq 0 ]; then
+              echo "::error::No draft release found. Create a draft first or pass an explicit tag."
+              exit 1
+            fi
+            if [ "$count" -gt 1 ]; then
+              echo "::error::Multiple draft releases found: $(echo "$drafts" | jq -r 'join(", ")'). Pass an explicit tag to disambiguate."
+              exit 1
+            fi
+            TAG="$(echo "$drafts" | jq -r '.[0]')"
+          fi
+          echo "Target tag: $TAG"
+          if [ -n "$INPUT_RELEASE_ID" ]; then
+            release="$(gh api "repos/$REPO/releases/$INPUT_RELEASE_ID")"
+          else
+            release="$(gh api --paginate "repos/$REPO/releases?per_page=100" \
+              | jq -s --arg tag "$TAG" \
+                'add | map(select((.tag_name == $tag or .name == $tag))) | .[0]')"
+          fi
+          if [ -z "$release" ] || [ "$release" = "null" ]; then
+            echo "::error::Release $TAG was not found in the repository release list"
+            exit 1
+          fi
+          release_id="$(jq -r '.id' <<<"$release")"
+          isDraft="$(jq -r '.draft' <<<"$release")"
+          if [ "$isDraft" != "true" ]; then
+            if [ "$ALLOW_PUBLISHED_RESUME" != "true" ] || [ -z "$ARTIFACTS_RUN_ID" ]; then
+              echo "::error::Release $TAG is not a draft; pass allow_published_resume=true with artifacts_run_id for an idempotent retry."
+              exit 1
+            fi
+            echo "::notice::Resuming already-published release $TAG from attested artifacts $ARTIFACTS_RUN_ID"
+          fi
+          target="$(jq -r '.target_commitish' <<<"$release")"
+          sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
+          echo "Target commitish '$target' resolved to SHA $sha"
+          if [ -z "$ARTIFACTS_RUN_ID" ] && {
+               [ -n "$WINDOWS_ARTIFACTS_RUN_ID" ] ||
+               [ -n "$MACOS_ARTIFACTS_RUN_ID" ] ||
+               [ -n "$COMPONENTS_ARTIFACTS_RUN_ID" ] ||
+               [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ];
+             }; then
+            echo "::error::Replacement artifact run IDs require artifacts_run_id from the base unified release run"
+            exit 1
+          fi
+          if [ -n "$ARTIFACTS_RUN_ID" ]; then
+            source_run="$(gh api "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID")"
+            source_status="$(jq -r .status <<<"$source_run")"
+            source_conclusion="$(jq -r .conclusion <<<"$source_run")"
+            source_sha="$(jq -r .head_sha <<<"$source_run")"
+            source_path="$(jq -r .path <<<"$source_run")"
+            if [ "$source_status" != "completed" ]; then
+              echo "::error::Artifact source run $ARTIFACTS_RUN_ID is not complete"
+              exit 1
+            fi
+            if [ "$source_path" != ".github/workflows/release-resume.yml" ]; then
+              echo "::error::Artifact source run $ARTIFACTS_RUN_ID came from $source_path, not the unified release workflow"
+              exit 1
+            fi
+            if [ "$source_sha" != "$sha" ]; then
+              validate_artifact_reuse_diff "$source_sha" "$sha"
+            fi
+            source_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+            require_source_job_success() {
+              local job_name="$1"
+              if ! grep -Fqx "$job_name"$'\t'"success" <<<"$source_jobs"; then
+                echo "::error::Artifact source run does not attest a successful job: $job_name"
+                exit 1
+              fi
+            }
+            require_source_prefix_success() {
+              local prefix="$1"
+              local matches
+              matches="$(awk -F '\t' -v prefix="$prefix" 'index($1, prefix) == 1 { print }' <<<"$source_jobs")"
+              if [ -z "$matches" ]; then
+                echo "::error::Artifact source run has no jobs matching prefix: $prefix"
+                exit 1
+              fi
+              if awk -F '\t' '$2 != "success" { bad = 1 } END { exit !bad }' <<<"$matches"; then
+                echo "::error::Artifact source run has a non-successful job under prefix: $prefix"
+                printf '%s\n' "$matches"
+                exit 1
+              fi
+            }
+            require_source_gate_prefix() {
+              local prefix="$1"
+              local matches job_name job_conclusion
+              matches="$(awk -F '\t' -v prefix="$prefix" 'index($1, prefix) == 1 { print }' <<<"$source_jobs")"
+              if [ -z "$matches" ]; then
+                echo "::error::Artifact source run has no verification jobs matching prefix: $prefix"
+                exit 1
+              fi
+              while IFS=$'\t' read -r job_name job_conclusion; do
+                if [ "$job_conclusion" != "success" ] && [ "$job_conclusion" != "skipped" ]; then
+                  verify_cleanup_only_failure "$ARTIFACTS_RUN_ID" "$job_name" || {
+                    echo "::error::Artifact source run has a failed verification job under prefix: $prefix"
+                    printf '%s\n' "$matches"
+                    exit 1
+                  }
+                fi
+              done <<<"$matches"
+              if ! awk -F '\t' '$2 == "success" { found = 1 } END { exit !found }' <<<"$matches"; then
+                echo "::error::Artifact source run has no successful verification job under prefix: $prefix"
+                exit 1
+              fi
+            }
+            require_source_job_success "resolve"
+            require_source_job_success "build-wheel"
+            require_source_gate_prefix "verify-web / "
+            if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-plugins"
+            fi
+            if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
+              require_source_prefix_success "build-components / build-components ("
+            fi
+            if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-desktop / check-updater-signing"
+            fi
+            if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-desktop / build-tauri-windows"
+            fi
+            if [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
+              require_source_job_success "build-desktop / build-tauri-macos"
+            fi
+            echo "Reusing attested artifacts from run $ARTIFACTS_RUN_ID at $sha (overall conclusion=$source_conclusion)"
+            artifact_names="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
+            required_artifacts=()
+            if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
+              required_artifacts+=(component-release-windows-x86_64 component-release-macos-aarch64)
+            fi
+            if [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
+              required_artifacts+=(UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos)
+            fi
+            if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
+              required_artifacts+=(qwenpaw-plugins-dist)
+            fi
+            # A Windows-only replacement run is intentionally allowed to provide the
+            # Windows desktop artifact when the historical source run predates the
+            # portable ZIP/Setup packaging. Validate that replacement below instead of
+            # incorrectly rejecting the otherwise reusable source run here.
+            if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]; then
+              required_artifacts+=(UGSci-Desktop-Tauri-Windows-)
+            fi
+            for required in "${required_artifacts[@]}"; do
+              if ! grep -q "^${required}" <<<"$artifact_names"; then
+                echo "::error::Artifact source run is missing required artifact prefix: $required"
+                exit 1
+              fi
+            done
+            echo "Artifact source SHA: $source_sha; publishing scripts SHA: $sha"
+          fi
+          if [ -n "$WINDOWS_ARTIFACTS_RUN_ID" ]; then
+            windows_run="$(gh api "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID")"
+            test "$(jq -r .status <<<"$windows_run")" = completed
+            test "$(jq -r .conclusion <<<"$windows_run")" = success
+            windows_sha="$(jq -r .head_sha <<<"$windows_run")"
+            if [ "$windows_sha" != "$sha" ]; then
+              validate_artifact_reuse_diff "$windows_sha" "$sha"
+            fi
+            test "$(jq -r .path <<<"$windows_run")" = '.github/workflows/desktop-build.yml' || { echo "::error::Replacement Windows run must come from desktop-build.yml"; exit 1; }
+            windows_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+            grep -Fqx "build-tauri-windows"$'\t'"success" <<<"$windows_jobs" || { echo "::error::Replacement Windows run has no successful build-tauri-windows job"; exit 1; }
+            windows_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
+            grep -q '^UGSci-Desktop-Tauri-Windows-' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows desktop artifact"; exit 1; }
+            grep -qx 'tauri-updater-meta-windows' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows updater metadata"; exit 1; }
+          fi
+          if [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
+            plugins_run="$(gh api "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID")"
+            test "$(jq -r .status <<<"$plugins_run")" = completed
+            test "$(jq -r .conclusion <<<"$plugins_run")" = success
+            plugins_sha="$(jq -r .head_sha <<<"$plugins_run")"
+            if [ "$plugins_sha" != "$sha" ]; then
+              validate_artifact_reuse_diff "$plugins_sha" "$sha"
+            fi
+            test "$(jq -r .path <<<"$plugins_run")" = '.github/workflows/plugins-build.yml' || { echo "::error::Replacement plugin run must come from plugins-build.yml"; exit 1; }
+            plugins_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+            grep -Fqx "build-plugins"$'\t'"success" <<<"$plugins_jobs" || { echo "::error::Replacement plugin run has no successful build-plugins job"; exit 1; }
+            plugins_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
+            grep -q '^qwenpaw-plugins-dist$' <<<"$plugins_artifacts" || { echo "::error::Replacement run has no qwenpaw-plugins-dist artifact"; exit 1; }
+          fi
+          for pair in "MACOS_ARTIFACTS_RUN_ID:UGSci-Desktop-Tauri-macOS-" "COMPONENTS_ARTIFACTS_RUN_ID:component-release-"; do
+            run_id="${pair%%:*}"; prefix="${pair#*:}"; value="${!run_id}"
+            if [ -n "$value" ]; then
+              run_json="$(gh api "repos/$REPO/actions/runs/$value")"
+              test "$(jq -r .status <<<"$run_json")" = completed
+              test "$(jq -r .conclusion <<<"$run_json")" = success
+              replacement_sha="$(jq -r .head_sha <<<"$run_json")"
+              if [ "$replacement_sha" != "$sha" ]; then
+                validate_artifact_reuse_diff "$replacement_sha" "$sha"
+              fi
+              run_path="$(jq -r .path <<<"$run_json")"
+              names="$(gh api --paginate "repos/$REPO/actions/runs/$value/artifacts?per_page=100" --jq '.artifacts[].name')"
+              grep -q "^${prefix}" <<<"$names" || { echo "::error::Replacement run $value has no artifact prefix $prefix"; exit 1; }
+              if [ "$run_id" = "MACOS_ARTIFACTS_RUN_ID" ]; then
+                test "$run_path" = '.github/workflows/desktop-build.yml' || { echo "::error::Replacement macOS run must come from desktop-build.yml"; exit 1; }
+                jobs="$(gh api --paginate "repos/$REPO/actions/runs/$value/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+                grep -Fqx "build-tauri-macos"$'\t'"success" <<<"$jobs" || { echo "::error::Replacement macOS run has no successful build-tauri-macos job"; exit 1; }
+                grep -qx 'tauri-updater-meta-macos' <<<"$names" || { echo "::error::Replacement macOS run has no updater metadata"; exit 1; }
+              else
+                test "$run_path" = '.github/workflows/component-release.yml' || { echo "::error::Replacement component run must come from component-release.yml"; exit 1; }
+                jobs="$(gh api --paginate "repos/$REPO/actions/runs/$value/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
+                grep -Fqx "build-components (windows-x86_64)"$'\t'"success" <<<"$jobs" || { echo "::error::Replacement component run has no successful Windows component job"; exit 1; }
+                grep -Fqx "build-components (macos-aarch64)"$'\t'"success" <<<"$jobs" || { echo "::error::Replacement component run has no successful macOS component job"; exit 1; }
+                grep -Fqx 'component-release-windows-x86_64' <<<"$names" || { echo "::error::Replacement component run is missing Windows artifacts"; exit 1; }
+                grep -Fqx 'component-release-macos-aarch64' <<<"$names" || { echo "::error::Replacement component run is missing macOS artifacts"; exit 1; }
+              fi
+            fi
+          done
+          if [[ "$TAG" =~ (beta|alpha|rc|dev) ]] || [[ "$TAG" =~ (^|[-.])b[0-9] ]] || [[ "$TAG" =~ (^|[-.])a[0-9] ]]; then
+            is_prerelease=true
+          else
+            is_prerelease=false
+          fi
+          echo "Prerelease (tag-based): $is_prerelease"
+          {
+          echo "tag=$TAG"
+          echo "release_id=$release_id"
+          echo "sha=$sha"
+            echo "is_prerelease=$is_prerelease"
+            echo "artifacts_run_id=$ARTIFACTS_RUN_ID"
+            echo "windows_artifacts_run_id=$WINDOWS_ARTIFACTS_RUN_ID"
+            echo "plugins_artifacts_run_id=$PLUGINS_ARTIFACTS_RUN_ID"
+            echo "macos_artifacts_run_id=$MACOS_ARTIFACTS_RUN_ID"
+            echo "components_artifacts_run_id=$COMPONENTS_ARTIFACTS_RUN_ID"
+            echo "was_draft=$isDraft"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout the resolved commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.pick.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Validate tag matches src/qwenpaw/__version__.py
+        run: |
+          python -m pip install --quiet packaging
+          ver="$(sed -n 's/^__version__[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' src/qwenpaw/__version__.py)"
+          tag="${{ steps.pick.outputs.tag }}"
+          python - "${tag#v}" "$ver" <<'PY'
+          import sys
+          from packaging.version import InvalidVersion, Version
+
+          tag_ver, ver = sys.argv[1], sys.argv[2]
+          try:
+              if Version(tag_ver) != Version(ver):
+                  print(
+                      f"::error::Draft tag '{tag_ver}' does not match "
+                      f"src/qwenpaw/__version__.py '{ver}'. "
+                      f"Fix the tag or bump the version before releasing."
+                  )
+                  sys.exit(1)
+          except InvalidVersion as exc:
+              print(f"::error::Cannot parse versions for comparison ({exc}).")
+              sys.exit(1)
+          print(f"OK: tag normalizes to __version__ ({ver}).")
+          PY
+
+      - name: Report optional desktop verification secret
+        env:
+          QWENPAW_DASHSCOPE_API_KEY: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+        run: |
+          if [ -z "${QWENPAW_DASHSCOPE_API_KEY:-}" ]; then
+            echo "::warning::QWENPAW_DASHSCOPE_API_KEY is not set; desktop verification will skip only the live LLM chat round. Installation, launch, UI, signing, and updater verification remain required."
+          else
+            echo "DashScope key present; desktop verification includes the live LLM chat round."
+          fi
+
+  # ── Prepare phase: build + verify everything, publish nothing ──────────────
+  build-wheel:
+    needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
+      - name: Set up Node (for console build)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "pnpm"
+          cache-dependency-path: console/pnpm-lock.yaml
+
+      - name: Build console frontend
+        run: |
+          cd console && pnpm install --frozen-lockfile && pnpm run build
+
+      - name: Copy console build into package
+        run: |
+          rm -rf src/qwenpaw/console/*
+          mkdir -p src/qwenpaw/console
+          cp -R console/dist/* src/qwenpaw/console/
+
+      - name: Build bundled Run Center frontend
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+          python scripts/sync_run_center_bundle.py --sync
+          test -s src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/index.js
+
+      - name: Bundle docs into package
+        run: |
+          rm -rf src/qwenpaw/docs
+          mkdir -p src/qwenpaw/docs
+          cp website/public/docs/*.md src/qwenpaw/docs/
+
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install setuptools wheel build
+
+      - name: Build package
+        run: python -m build
+
+      - name: Upload dist artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-dist
+          path: dist/
+          retention-days: 7
+
+      - name: Upload version metadata
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-version
+          path: src/qwenpaw/__version__.py
+          retention-days: 7
+
+  verify-web:
+    needs: [resolve, build-wheel]
+    if: ${{ inputs.artifacts_run_id == '' }}
+    uses: ./.github/workflows/release-verify.yml
+    with:
+      verify_pip: true
+      verify_docker: false
+      verify_script_install: true
+      ref: ${{ needs.resolve.outputs.sha }}
+    secrets: inherit
+
+  build-desktop:
+    needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
+    uses: ./.github/workflows/desktop-build.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      require_updater_assets: true
+    secrets: inherit
+
+  build-plugins:
+    needs: [resolve]
+    if: ${{ inputs.artifacts_run_id == '' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node for memory plugin frontends
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build memory plugin frontends
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for frontend_dir in plugins/memory/*/frontend; do
+            echo "Building ${frontend_dir}"
+            npm --prefix "$frontend_dir" ci
+            npm --prefix "$frontend_dir" run build
+          done
+
+      - name: Build Run Center frontend
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+
+      - name: Pack plugins and build index
+        # qwenpaw-creator and datapaw are released through their own
+        # version-driven pipelines; datapaw requires its vendored context
+        # console to be staged before packing and is not a release artifact here.
+        run: |
+          python scripts/pack/generate_plugin_metadata.py \
+            --plugins-root plugins \
+            --dist dist/plugins \
+            --metadata-out dist/plugins/index.json \
+            --cdn-prefix /files/plugins \
+            --exclude qwenpaw-creator \
+            --exclude uproject \
+            --exclude datapaw \
+            --exclude qwenpaw-data
+
+      - name: Upload plugins dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: qwenpaw-plugins-dist
+          path: dist/plugins
+          retention-days: 7
+
+  build-components:
+    needs: [resolve, build-desktop]
+    if: ${{ inputs.artifacts_run_id == '' }}
+    uses: ./.github/workflows/component-release.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      core_min_version: ${{ needs.resolve.outputs.tag }}
+      # Keep immutable object names path-safe and stable across a run retry.
+      # The human release version is carried separately in the signed pointer.
+      release_id: ${{ needs.resolve.outputs.sha }}-${{ github.run_id }}
+      upload_to_oss: false
+      history_count: 10
+      delta_max_ratio: "0.8"
+      include_desktop_components: true
+      windows_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
+      macos_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
+    secrets: inherit
+
+  # Failed draft retries may leave immutable objects behind before the final
+  # publish transaction completes. They are not reachable from a published
+  # pointer, so remove only the exact version being retried before republishing.
+  cleanup-draft-immutable-artifacts:
+    needs: [resolve]
+    if: ${{ !inputs.dry_run && needs.resolve.outputs.was_draft == 'true' }}
+    runs-on: ubuntu-latest
+    # Cleanup is deliberately best-effort; a failed delete must not block a
+    # release whose build and verification gates are otherwise healthy.
+    continue-on-error: true
+    permissions:
+      contents: write
+    concurrency:
+      group: release-draft-cleanup
+      cancel-in-progress: false
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Install ossutil
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+
+      - name: Configure ossutil
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Remove unpublished draft-version immutable objects
+        env:
+          RELEASE_ID: ${{ needs.resolve.outputs.release_id }}
+        run: |
+          set -euo pipefail
+          test "$(gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}" --jq '.draft')" = true
+          VERSION="$(python -c 'import re; from pathlib import Path; text=Path("src/qwenpaw/__version__.py").read_text(encoding="utf-8"); print(re.search(r"__version__\s*=\s*\"([^\"]+)\"", text).group(1))')"
+          echo "Cleaning unpublished immutable objects for ${VERSION}"
+
+          for object in \
+            "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip" \
+            "files/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe" \
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip" \
+            "files/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz" \
+            "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-portable.zip.json" \
+            "metadata/apps/desktop/win-tauri/UGSci-Tauri-${VERSION}-Windows-updater.exe.json" \
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.zip.json" \
+            "metadata/apps/desktop/mac-tauri/UGSci-Tauri-${VERSION}-macOS.app.tar.gz.json"; do
+            ossutil rm "oss://${OSS_BUCKET}/${object}" --force || true
+          done
+
+          for target in windows-x86_64 macos-aarch64; do
+            for component in officecli backend python-packages python-runtime tools; do
+              ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/${component}/${VERSION}/" \
+                --recursive --force || true
+            done
+            ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/" \
+              --include "*${VERSION}*" --recursive --force || true
+            ossutil rm "oss://${OSS_BUCKET}/metadata/components/stable/" \
+              --include "*${VERSION}*" --recursive --force || true
+          done
+
+          gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
+            --jq ".[] | select(.name | contains(\"$VERSION\")) | .id" |
+            while IFS= read -r asset_id; do
+              [ -n "$asset_id" ] && gh api -X DELETE \
+                "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
+            done || true
+
+  # ── Gate: publish jobs below run only if every prepare job above is green ──
+
+  publish-desktop:
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    uses: ./.github/workflows/desktop-publish.yml
+    with:
+      tag: ${{ needs.resolve.outputs.tag }}
+      release_id: ${{ needs.resolve.outputs.release_id }}
+      ref: ${{ needs.resolve.outputs.sha }}
+      dry_run: ${{ inputs.dry_run }}
+      artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}
+      windows_artifacts_run_id: ${{ needs.resolve.outputs.windows_artifacts_run_id }}
+      macos_artifacts_run_id: ${{ needs.resolve.outputs.macos_artifacts_run_id }}
+    secrets: inherit
+
+  publish-plugins:
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-plugins-index
+      cancel-in-progress: false
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Download plugins dist
+        if: ${{ needs.resolve.outputs.plugins_artifacts_run_id != '' || needs.resolve.outputs.artifacts_run_id == '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: qwenpaw-plugins-dist
+          path: dist/plugins
+          run-id: ${{ needs.resolve.outputs.plugins_artifacts_run_id || needs.resolve.outputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Rebuild plugins metadata for resumed release
+        if: ${{ needs.resolve.outputs.artifacts_run_id != '' && needs.resolve.outputs.plugins_artifacts_run_id == '' }}
+        run: |
+          python scripts/pack/generate_plugin_metadata.py \
+            --plugins-root plugins \
+            --dist dist/plugins \
+            --metadata-out dist/plugins/index.json \
+            --cdn-prefix /files/plugins \
+            --exclude qwenpaw-creator \
+            --exclude uproject \
+            --exclude datapaw \
+            --exclude qwenpaw-data
+
+      - name: Dry-run notice
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "DRY-RUN: would sync $(find dist/plugins -name '*.zip' | wc -l) immutable plugin zips to OSS"
+
+      - name: Install ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil --version
+
+      - name: Configure ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Sync plugin zips to OSS (long-cache, immutable)
+        if: ${{ !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          conflicts=()
+          declare -A existing=()
+          validate_relative_key() {
+            local rel="$1"
+            case "$rel" in
+              ''|/*|../*|*/../*|*\\*)
+                echo "ERROR: unsafe plugin artifact path: $rel" >&2
+                return 1
+                ;;
+            esac
+          }
+          # Preflight every existing immutable object before uploading any new
+          # object. Unchanged versions are byte-identical and are reused;
+          # changed content under the same version must bump plugin.json.
+          while IFS= read -r -d '' f; do
+            rel="${f#dist/plugins/}"
+            validate_relative_key "$rel"
+            uri="oss://${OSS_BUCKET}/files/plugins/${rel}"
+            remote_dir="$(mktemp -d)"
+            remote="${remote_dir}/$(basename "$f")"
+            if stat_output="$(ossutil stat "$uri" 2>&1)"; then
+              ossutil cp "$uri" "$remote"
+              if ! cmp --silent "$f" "$remote"; then
+                conflicts+=("${rel}")
+              fi
+              existing["$rel"]=1
+            elif grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
+              existing["$rel"]=0
+            else
+              echo "$stat_output" >&2
+              echo "ERROR: could not determine immutable plugin state: $uri" >&2
+              rm -rf "$remote_dir"
+              exit 1
+            fi
+            rm -rf "$remote_dir"
+          done < <(find dist/plugins -type f -name '*.zip' -print0)
+          if [ ${#conflicts[@]} -ne 0 ]; then
+            printf 'ERROR: plugin content changed without a version bump: %s\n' \
+              "${conflicts[@]}" >&2
+            exit 1
+          fi
+          for kind in bundle tool memory apps; do
+            while IFS= read -r -d '' f; do
+              rel="${f#dist/plugins/}"
+              validate_relative_key "$rel"
+              if [[ "${existing[$rel]:-0}" == "1" ]]; then
+                echo "Reusing unchanged immutable plugin: files/plugins/${rel}"
+                continue
+              fi
+              echo "Uploading $f -> files/plugins/${rel}"
+              uri="oss://${OSS_BUCKET}/files/plugins/${rel}"
+              remote_dir="$(mktemp -d)"
+              remote="${remote_dir}/$(basename "$f")"
+              ossutil cp "$f" "$uri" --acl public-read \
+                --meta "x-oss-forbid-overwrite:true#Cache-Control:public, max-age=31536000, immutable"
+              ossutil cp "$uri" "$remote"
+              cmp --silent "$f" "$remote" || { echo "ERROR: remote plugin verification failed: $uri"; exit 1; }
+              rm -rf "$remote_dir"
+            done < <(find "dist/plugins/${kind}" -type f -name '*.zip' -print0 2>/dev/null || true)
+          done
+
+      - name: Upload prepared plugin metadata
+        if: ${{ !inputs.dry_run }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: plugin-promotion-metadata
+          path: dist/plugins/index.json
+          if-no-files-found: error
+
+  # ── Finalize: flip the draft to published LAST (pinned to the built SHA) ────
+  publish-components:
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: component-pointer-promotion
+      cancel-in-progress: false
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+    steps:
+      - name: Dry-run notice
+        if: ${{ inputs.dry_run }}
+        run: 'echo "DRY-RUN: component artifacts were built but will not be uploaded"'
+
+      - uses: actions/checkout@v4
+        if: ${{ !inputs.dry_run }}
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+      - uses: actions/setup-python@v5
+        if: ${{ !inputs.dry_run }}
+        with:
+          python-version: '3.11'
+      - name: Install component verification dependencies
+        if: ${{ !inputs.dry_run }}
+        run: python -m pip install --quiet packaging cryptography
+      - uses: actions/download-artifact@v4
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        with:
+          pattern: component-release-*
+          path: component-release
+          merge-multiple: true
+          run-id: ${{ needs.resolve.outputs.components_artifacts_run_id || needs.resolve.outputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Download prepared component promotion metadata from prior release run
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: component-release/metadata/components/stable
+          run-id: ${{ inputs.components_promotion_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Retry prepared component promotion metadata through GitHub API
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          files=(component-release/metadata/components/stable/*)
+          if [ "${#files[@]}" -gt 0 ]; then
+            exit 0
+          fi
+          artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/${{ inputs.components_promotion_run_id }}/artifacts?per_page=100" \
+            | jq -r '.artifacts[] | select(.name == "component-promotion-metadata" and .expired == false) | .id' | head -1)"
+          test -n "$artifact_id" || { echo "::error::Prepared component promotion metadata artifact not found"; exit 1; }
+          archive="$(mktemp)"
+          for attempt in 1 2 3 4 5; do
+            if curl --fail --location --silent --show-error \
+              --retry 3 --retry-all-errors --retry-delay 3 \
+              -H "Authorization: Bearer $GH_TOKEN" \
+              -H 'Accept: application/vnd.github+json' \
+              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
+              -o "$archive"; then
+              mkdir -p component-release/metadata/components/stable
+              unzip -oq "$archive" -d component-release/metadata/components/stable
+              rm -f "$archive"
+              exit 0
+            fi
+            echo "Retrying component promotion metadata download (attempt $attempt)" >&2
+            sleep 5
+          done
+          rm -f "$archive"
+          echo "::error::Unable to download component promotion metadata" >&2
+          exit 1
+      - name: Re-upload prepared component promotion metadata
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: component-release/metadata/components/stable
+          if-no-files-found: error
+      - name: Install and configure ossutil
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
+      - name: Upload immutable component artifacts and manifests
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        run: |
+          set -euo pipefail
+          publish_immutable() {
+            local file="$1" uri="$2" label="$3"
+            local remote_dir
+            remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              # Immutable component objects may already have been published by
+              # the standalone component pipeline or an earlier retry. ZIP
+              # archives can differ byte-for-byte because of timestamps while
+              # representing the same versioned component. Never overwrite the
+              # canonical object during a retry; the successful download above
+              # proves that the immutable object exists and is readable.
+              if ! cmp -s "$file" "$remote"; then
+                echo "Reusing existing immutable component ${label}; local archive bytes differ"
+              fi
+              rm -rf "$remote_dir"
+              return
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "Remote component ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
+          }
+          while IFS= read -r file; do
+            relative="${file#component-release/}"
+            publish_immutable "$file" "oss://${OSS_BUCKET}/${relative}" "artifact ${relative}"
+          done < <(find component-release/artifacts -type f)
+          while IFS= read -r manifest; do
+            base="$(basename "$manifest")"
+            manifest_uri="oss://${OSS_BUCKET}/metadata/components/stable/${base}"
+            manifest_sig_uri="${manifest_uri}.sig"
+            publish_immutable "$manifest" "$manifest_uri" "manifest ${base}"
+            publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${base}.sig"
+          done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' ! -name '*.history.json' -print)
+      - name: Upload prepared component promotion metadata
+        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: |
+            component-release/metadata/components/stable/*.current.json
+            component-release/metadata/components/stable/*.history.json
+            component-release/metadata/components/stable/*.history.json.sig
+          if-no-files-found: error
+
+  # Release-time full regression gate against the exact release workflow SHA.
+  # Mutable release metadata remains blocked until this reusable matrix passes.
+  full-test-gate:
+    needs: [resolve]
+    uses: ./.github/workflows/full-tests-nightly.yml
+    with:
+      form: release
+      coverage_platforms: all
+    secrets: inherit
+
+  finalize:
+    needs: [resolve, publish-desktop, publish-plugins, publish-components, full-test-gate]
+    if: ${{ always() && !inputs.dry_run && !failure() && !cancelled() }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.resolve.outputs.tag }}
+          RELEASE_ID: ${{ needs.resolve.outputs.release_id }}
+          SHA: ${{ needs.resolve.outputs.sha }}
+        run: |
+          set -euo pipefail
+          release="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
+          is_draft="$(jq -r '.draft' <<<"$release")"
+          target="$(jq -r '.target_commitish' <<<"$release")"
+          target_sha="$(gh api "repos/$REPO/commits/$target" --jq '.sha')"
+          test "$target_sha" = "$SHA" || { echo "::error::Release $TAG targets $target_sha, expected $SHA"; exit 1; }
+
+          case "$is_draft" in
+            true)
+              echo "Publishing draft $TAG already pinned to $SHA"
+              # The resolve gate already verified the release target. Publishing
+              # must not also mutate target_commitish: GitHub can reject that
+              # combined PATCH for the Actions integration even with contents:write.
+              gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false >/dev/null
+              ;;
+            false)
+              echo "Release $TAG is already published; verifying instead of mutating it"
+              ;;
+            *)
+              echo "::error::Release $TAG returned invalid isDraft value: $is_draft"
+              exit 1
+              ;;
+          esac
+
+          published="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
+          published_is_draft="$(jq -r '.draft' <<<"$published")"
+          published_target="$(jq -r '.target_commitish' <<<"$published")"
+          published_sha="$(gh api "repos/$REPO/commits/$published_target" --jq '.sha')"
+          test "$published_is_draft" = "false" || { echo "::error::Release $TAG is still a draft after finalize"; exit 1; }
+          test "$published_sha" = "$SHA" || { echo "::error::Finalized release $TAG targets $published_sha, expected $SHA"; exit 1; }
+
+  promote-release-metadata:
+    needs: [resolve, publish-plugins, publish-components, finalize]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.publish-plugins.result == 'success' && needs.publish-components.result == 'success' && needs.finalize.result == 'success' }}
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    concurrency:
+      group: oss-production-metadata
+      cancel-in-progress: false
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      COMPONENT_SIGNING_PUBLIC_KEY: T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw=
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve.outputs.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install metadata verification dependencies
+        run: python -m pip install --quiet packaging cryptography
+
+      - name: Download prepared plugin metadata
+        uses: actions/download-artifact@v4
+        with:
+          name: plugin-promotion-metadata
+          path: promotion/plugins
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Download prepared component pointers
+        uses: actions/download-artifact@v4
+        with:
+          name: component-promotion-metadata
+          path: promotion/components
+          run-id: ${{ github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install and configure ossutil
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
+
+      - name: Promote plugin indexes and component pointers atomically
+        env:
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          plugin_index=$(find promotion/plugins -type f -name 'index.json' -print -quit)
+          test -s "$plugin_index"
+          mapfile -t component_pointers < <(find promotion/components -type f -name '*.current.json' | sort)
+          test "${#component_pointers[@]}" -eq 2
+
+          read_remote_or_default() {
+            local key="$1" output="$2" fallback="$3"
+            local uri="oss://${OSS_BUCKET}/${key}"
+            local stat_output
+            if stat_output="$(ossutil stat "$uri" 2>&1)"; then
+              ossutil cp "$uri" "$output" >/dev/null
+            elif grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
+              printf '%s\n' "$fallback" > "$output"
+            else
+              echo "$stat_output" >&2
+              echo "ERROR: could not read current metadata: $key" >&2
+              exit 1
+            fi
+          }
+
+          read_remote_or_default 'metadata/plugins/index.json' existing-plugin-index.json '{}'
+          python3 scripts/pack/merge_plugin_index.py \
+            --new "$plugin_index" \
+            --old existing-plugin-index.json \
+            --out prepared-plugin-index.json \
+            --retire-plugin-id computer-use-tool
+          read_remote_or_default 'metadata/index.json' main-index.json '{"version":"1.0","updated_at":"","products":{}}'
+          python3 scripts/pack/patch_main_index.py --index main-index.json --out main-index.json
+
+          publish_immutable() {
+            local file="$1" uri="$2" label="$3"
+            local remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              cmp -s "$file" "$remote" || { echo "immutable ${label} differs" >&2; exit 1; }
+              rm -rf "$remote_dir"
+              return
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "remote ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
+          }
+
+          for pointer in "${component_pointers[@]}"; do
+            base="$(basename "$pointer")"
+            target="${base%.current.json}"
+            case "$base" in
+              windows-x86_64.current.json|macos-aarch64.current.json) ;;
+              *) echo "ERROR: unexpected component pointer: $base" >&2; exit 1 ;;
+            esac
+            remote_pointer="${RUNNER_TEMP}/${target}.remote-current.json"
+            pointer_uri="oss://${OSS_BUCKET}/metadata/components/stable/${base}"
+            if pointer_stat="$(ossutil stat "$pointer_uri" 2>&1)"; then
+              ossutil cp "$pointer_uri" "$remote_pointer" >/dev/null
+              remote_exists=true
+              python scripts/pack-tauri/check_component_pointer_promotion.py \
+                --local "$pointer" --remote "$remote_pointer" --target "$target"
+            elif grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$pointer_stat"; then
+              remote_exists=false
+              python scripts/pack-tauri/check_component_pointer_promotion.py \
+                --local "$pointer" --target "$target"
+            else
+              echo "$pointer_stat" >&2
+              echo "ERROR: could not read current component pointer: $base" >&2
+              exit 1
+            fi
+            history=$(find promotion/components -type f -name "${target}-*.history.json" -print -quit)
+            test -s "$history"
+            test -s "${history}.sig"
+            if [[ "$remote_exists" == true ]]; then
+              remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("history_url", ""))' "$remote_pointer")
+              if [[ -n "$remote_history_url" ]]; then
+                remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
+                remote_history="${RUNNER_TEMP}/${target}.remote-history.json"
+                remote_history_sig="${RUNNER_TEMP}/${target}.remote-history.json.sig"
+                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
+                ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
+                python scripts/pack-tauri/merge_component_history.py \
+                  --local-pointer "$pointer" \
+                  --local-history "$history" \
+                  --local-history-signature "${history}.sig" \
+                  --remote-pointer "$remote_pointer" \
+                  --remote-history "$remote_history" \
+                  --remote-history-signature "$remote_history_sig" \
+                  --target "$target" --limit 10
+              fi
+            fi
+            publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
+            publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
+          done
+
+          entries="${RUNNER_TEMP}/release-mutable-entries.tsv"
+          : > "$entries"
+          python -c 'from pathlib import Path; import json,re; text=Path("src/qwenpaw/__version__.py").read_text(encoding="utf-8"); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", text); assert m, "could not read __version__"; Path("ugsci-core-latest.json").write_text(json.dumps({"version": m.group(1)}, indent=2)+"\n", encoding="utf-8")'
+          printf '%s\t%s\t%s\n' 'ugsci-core-latest.json' 'metadata/ugsci-core-latest.json' 'public, max-age=60, must-revalidate' >> "$entries"
+          printf '%s\t%s\t%s\n' 'prepared-plugin-index.json' 'metadata/plugins/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
+          printf '%s\t%s\t%s\n' 'main-index.json' 'metadata/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
+          for pointer in "${component_pointers[@]}"; do
+            base="$(basename "$pointer")"
+            printf '%s\t%s\t%s\n' "$pointer" "metadata/components/stable/$base" 'public, max-age=0, must-revalidate' >> "$entries"
+          done
+
+          backup_dir="${RUNNER_TEMP}/release-mutable-backup"
+          mkdir -p "$backup_dir"
+          : > "$backup_dir/existing.txt"
+          : > "$backup_dir/promoted.txt"
+          while IFS=$'\t' read -r local key cache; do
+            backup="$backup_dir/${key//\//__}"
+            uri="oss://${OSS_BUCKET}/${key}"
+            if stat_output="$(ossutil stat "$uri" 2>&1)"; then
+              ossutil cp "$uri" "$backup" >/dev/null
+              echo "$key" >> "$backup_dir/existing.txt"
+            elif ! grep -Eqi 'StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist' <<<"$stat_output"; then
+              echo "$stat_output" >&2
+              echo "ERROR: could not snapshot mutable metadata: $key" >&2
+              exit 1
+            fi
+          done < "$entries"
+
+          rollback_metadata() {
+            local code=$?
+            if [[ "$code" -ne 0 ]]; then
+              while IFS= read -r key; do
+                [[ -n "$key" ]] || continue
+                uri="oss://${OSS_BUCKET}/${key}"
+                backup="$backup_dir/${key//\//__}"
+                if grep -Fxq "$key" "$backup_dir/existing.txt"; then
+                  ossutil cp "$backup" "$uri" --acl public-read --force >/dev/null || true
+                else
+                  ossutil rm "$uri" --force >/dev/null || true
+                fi
+              done < "$backup_dir/promoted.txt"
+            fi
+            return "$code"
+          }
+          trap 'rollback_metadata' ERR
+
+          while IFS=$'\t' read -r local key cache; do
+            uri="oss://${OSS_BUCKET}/${key}"
+            staging="oss://${OSS_BUCKET}/${key}.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            ossutil cp "$local" "$staging" --acl public-read --meta "Cache-Control:${cache}"
+            staged="${RUNNER_TEMP}/staged-${RANDOM}-$(basename "$key")"
+            ossutil cp "$staging" "$staged"
+            cmp -s "$local" "$staged" || { echo "ERROR: staged metadata verification failed: $key" >&2; exit 1; }
+            echo "$key" >> "$backup_dir/promoted.txt"
+            ossutil cp "$staging" "$uri" --acl public-read --force --meta "Cache-Control:${cache}"
+            ossutil rm "$staging" --force || true
+            promoted="${RUNNER_TEMP}/promoted-${RANDOM}-$(basename "$key")"
+            ossutil cp "$uri" "$promoted"
+            cmp -s "$local" "$promoted" || { echo "ERROR: promoted metadata verification failed: $key" >&2; exit 1; }
+          done < "$entries"
+          trap - ERR
+
+  # Only expose OSS latest/updater pointers after the GitHub Release is public.
+  # A failed promotion can then be retried without ever pointing clients at an
+  # inaccessible draft asset.
+  promote-desktop:
+    needs: [resolve, finalize, promote-release-metadata]
+    # The reusable build jobs are intentionally skipped during artifact-resume
+    # releases. GitHub's implicit success() can propagate those transitive
+    # skips past an always()-gated finalize job and skip promotion even though
+    # resolve + finalize both succeeded. Check the direct dependencies
+    # explicitly so immutable artifacts are promoted after a resumed release.
+    if: ${{ always() && needs.resolve.result == 'success' && needs.finalize.result == 'success' && needs.promote-release-metadata.result == 'success' }}
+    uses: ./.github/workflows/desktop-promote.yml
+    with:
+      tag: ${{ needs.resolve.outputs.tag }}
+      ref: ${{ needs.resolve.outputs.sha }}
+      dry_run: ${{ inputs.dry_run }}
+      artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}
+      windows_artifacts_run_id: ${{ needs.resolve.outputs.windows_artifacts_run_id }}
+      macos_artifacts_run_id: ${{ needs.resolve.outputs.macos_artifacts_run_id }}
+    secrets: inherit
+
+  # ── Post-publish: create the Release Duty verification issue (inline) ───────
+  # ── Post-publish: deploy the public website (stable + post only) ────────────
+  # Skipped for pre-releases (beta/alpha/rc/dev) so the site advertises only
+  # GA/post versions. Invoked inline because the finalize job flips the draft
+  # with GITHUB_TOKEN, which suppresses deploy-website.yml's own release trigger.
+  deploy-website:
+    needs: [resolve, promote-desktop]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.promote-desktop.result == 'success' && needs.resolve.outputs.is_prerelease == 'false' }}
+    uses: ./.github/workflows/deploy-website.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      dry_run: ${{ inputs.dry_run }}
+    secrets: inherit
