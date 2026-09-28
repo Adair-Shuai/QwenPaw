@@ -14,7 +14,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 const HELPER_BUNDLE_NAME: &str = "QwenPaw Computer Use.app";
 const HELPER_BUNDLE_ID: &str = "io.agentscope.qwenpaw.computer-use.v1";

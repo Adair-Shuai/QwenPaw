@@ -329,11 +329,12 @@ class TestVoiceServiceConfig:
 
         # Step 3: Verify config fields and test input
         log_test_step("3. Verify config fields and test input")
-        all_inputs = page.locator('input[type="text"], input[type="password"], .qwenpaw-input input, input').all()
+        all_inputs = page.locator('input[type="text"], input[type="password"], .qwenpaw-input input').all()
         # Filter out readonly and combobox inputs (e.g. select search input)
         visible_inputs = [
             inp for inp in all_inputs
             if inp.is_visible()
+            and inp.get_attribute("type") not in {"radio", "checkbox", "hidden"}
             and not inp.get_attribute("readonly")
             and inp.get_attribute("role") != "combobox"
         ]
