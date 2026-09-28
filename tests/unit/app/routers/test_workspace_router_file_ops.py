@@ -172,7 +172,7 @@ class TestReadBinaryFile:
     def test_oversized_file_returns_413(self, ws_client):
         big = _project(ws_client) / "big.png"
         with open(big, "wb") as fh:
-            fh.seek(workspace_router._BINARY_FILE_MAX_BYTES)
+            fh.seek(workspace_router._IMAGE_FILE_MAX_BYTES)
             fh.write(b"x")  # sparse file, one byte past the cap
         response = ws_client.get("/api/workspace/binary-files/big.png")
         assert response.status_code == 413

@@ -3,21 +3,26 @@
 import asyncio
 import hmac
 import inspect
+import json
 import mimetypes
 import os
+import re
 import sys
 import threading
 import time
+import urllib.error
+import urllib.request
 from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Header, HTTPException
+from fastapi import FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from ..__version__ import __version__
+from .. import distribution as _distribution
 from ..backup import BackupManager
 from ..backup._utils.safe_swap import cleanup_startup_restore_artifacts
 from ..cli.windows_shutdown import install_shutdown_handlers
@@ -68,6 +73,21 @@ from .routers.voice import voice_router
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
+
+DESKTOP_UPDATE_MANIFEST_URL = _distribution.DESKTOP_UPDATE_MANIFEST_URL
+CORE_UPDATE_MANIFEST_URL = _distribution.CORE_UPDATE_MANIFEST_URL
+_DESKTOP_VERSION_CACHE_TTL_SECONDS = 60.0
+_DESKTOP_VERSION_STALE_TTL_SECONDS = 600.0
+_DESKTOP_VERSION_MAX_BYTES = 64 * 1024
+_DESKTOP_VERSION_PATTERN = re.compile(
+    r"^\d+\.\d+\.\d+(?:(?:[-.]?(?:a|alpha|b|beta|rc)[.-]?\d+)"
+    r"|(?:\.post\d+))?$",
+    re.IGNORECASE,
+)
+_desktop_version_cache: tuple[str, float] | None = None
+_core_version_cache: tuple[str, float] | None = None
+_desktop_version_lock = threading.Lock()
+_core_version_lock = threading.Lock()
 _WORKSPACE_SHUTDOWN_DEADLINE_SECONDS = 12.0
 
 # Uvicorn imports this module inside the serving process. Under ``--reload``
@@ -884,7 +904,90 @@ def get_version():
     """Return the current application version (public-safe payload)."""
     return {
         "version": __version__,
+        "download_base_url": _distribution.DOWNLOAD_BASE_URL,
     }
+
+
+def _fetch_update_version(*, desktop: bool) -> str:
+    """Read a bounded OSS manifest, reusing recent values during outages."""
+    global _desktop_version_cache, _core_version_cache  # pylint: disable=global-statement
+    cached = _desktop_version_cache if desktop else _core_version_cache
+    now = time.monotonic()
+    if cached is not None and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS:
+        return cached[0]
+
+    lock = _desktop_version_lock if desktop else _core_version_lock
+    url = DESKTOP_UPDATE_MANIFEST_URL if desktop else CORE_UPDATE_MANIFEST_URL
+    with lock:
+        cached = _desktop_version_cache if desktop else _core_version_cache
+        now = time.monotonic()
+        if cached is not None and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS:
+            return cached[0]
+        try:
+            request = urllib.request.Request(
+                url, headers={"User-Agent": f"UGSci/{__version__}"},
+            )
+            with urllib.request.urlopen(request, timeout=10) as response:
+                raw = response.read(_DESKTOP_VERSION_MAX_BYTES + 1)
+            if len(raw) > _DESKTOP_VERSION_MAX_BYTES:
+                raise ValueError("update manifest is too large")
+            payload = json.loads(raw.decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("update manifest must be an object")
+            version = str(payload.get("version") or "").strip()
+            if not _DESKTOP_VERSION_PATTERN.fullmatch(version):
+                raise ValueError("update manifest version is invalid")
+        except urllib.error.HTTPError as exc:
+            if not desktop and exc.code == 404:
+                return ""
+            if cached is not None and now - cached[1] <= _DESKTOP_VERSION_STALE_TTL_SECONDS:
+                logger.warning("Using stale update version cache for %s", url)
+                return cached[0]
+            raise
+        except (OSError, UnicodeDecodeError, ValueError):
+            if cached is not None and now - cached[1] <= _DESKTOP_VERSION_STALE_TTL_SECONDS:
+                logger.warning("Using stale update version cache for %s", url)
+                return cached[0]
+            raise
+        value = (version, now)
+        if desktop:
+            _desktop_version_cache = value
+        else:
+            _core_version_cache = value
+        return version
+
+
+@app.get("/api/version/latest")
+def get_latest_desktop_version():
+    """Proxy the desktop version manifest through the local backend."""
+    try:
+        return {"version": _fetch_update_version(desktop=True)}
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502, detail="Desktop update manifest is unavailable",
+        ) from exc
+
+
+@app.get("/api/version/latest-core")
+def get_latest_core_version():
+    """Proxy the core version manifest through the local backend."""
+    try:
+        return {"version": _fetch_update_version(desktop=False)}
+    except (OSError, UnicodeDecodeError, ValueError) as exc:
+        raise HTTPException(
+            status_code=502, detail="Core update manifest is unavailable",
+        ) from exc
+
+
+@app.get("/api/plugins/bundled/status")
+def get_bundled_plugins_status(request: Request):
+    """Report plugin startup progress for the desktop UI."""
+    status = dict(request.app.state.bundled_plugins_status)
+    loader = request.app.state.plugin_loader
+    status["loaded_count"] = (
+        len(loader.get_all_loaded_plugins()) if loader is not None else 0
+    )
+    return status
 
 
 @app.get("/api/doctor/runtime")
