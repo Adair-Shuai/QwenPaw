@@ -500,6 +500,73 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # ---- Plugin System (phase 1: startup-critical plugins) ----
             # Channel and memory plugins must register before agents start.
             logger.debug("Initializing plugin system...")
+            from ..config.utils import get_plugins_dir
+
+            # Consume only updates that the user queued before restarting.
+            # This must finish before plugin discovery touches the live trees.
+            try:
+                from ..components.service import run_startup_updates
+
+                app.state.component_updates_status = await asyncio.to_thread(
+                    run_startup_updates,
+                )
+            except Exception as exc:
+                app.state.component_updates_status = {
+                    "enabled": True,
+                    "updated": [],
+                    "errors": [{"component": "startup", "error": str(exc)}],
+                }
+                logger.warning("Component startup updates skipped", exc_info=True)
+
+            component_updated_ids = {
+                str(result["component"])
+                for result in app.state.component_updates_status.get("updated", [])
+                if isinstance(result, dict)
+                and result.get("updated")
+                and result.get("component")
+            }
+            try:
+                from ..components.service import configured_service
+
+                pending_service = configured_service()
+                if pending_service is not None:
+                    component_updated_ids.update(
+                        pending_service.updater.pending_activation_components(
+                            get_plugins_dir(),
+                        ),
+                    )
+                    pending_service.client.close()
+            except Exception:
+                logger.debug(
+                    "Unable to inspect pending component activations",
+                    exc_info=True,
+                )
+
+            from ..plugins.bundled import (
+                ensure_bundled_plugins_installed,
+                finalize_bundled_plugin_activation,
+                rollback_bundled_plugin_activation,
+            )
+
+            app.state.bundled_plugins_status = {
+                "state": "running",
+                "installed": [],
+                "error": None,
+            }
+            try:
+                newly_installed = await asyncio.to_thread(
+                    ensure_bundled_plugins_installed,
+                    skip_ids=component_updated_ids,
+                    defer_activation_cleanup=True,
+                )
+            except Exception as exc:
+                newly_installed = []
+                logger.warning("Failed to sync bundled plugins", exc_info=True)
+                app.state.bundled_plugins_status = {
+                    "state": "error",
+                    "installed": [],
+                    "error": str(exc),
+                }
 
             from ..config.utils import get_plugins_dir
             from ..plugins.loader import PluginLoader
@@ -514,6 +581,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             plugin_loader = PluginLoader(plugin_dirs)
 
             plugin_loader.registry.set_plugin_http_app(app)
+            app.state.plugin_loader = plugin_loader
+            app.state.plugin_registry = plugin_loader.registry
 
             config = load_config(get_config_path())
             plugin_configs = (
@@ -529,6 +598,133 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 types=["channel", "memory"],
             )
             logger.debug("Phase 1: channel and memory plugins loaded")
+
+            # Publish frontend registrations and validate newly activated
+            # bundles before agents or the UI depend on them.
+            loaded_plugins = await plugin_loader.load_all_plugins(
+                configs=plugin_configs,
+            )
+            bundled_ready_ids = []
+            bundled_health_errors = []
+            for plugin_id in newly_installed:
+                record = loaded_plugins.get(plugin_id)
+                if record and record.enabled:
+                    try:
+                        finalize_bundled_plugin_activation(
+                            plugin_id,
+                            plugins_dir=get_plugins_dir(),
+                        )
+                        bundled_ready_ids.append(plugin_id)
+                        continue
+                    except Exception:
+                        logger.exception(
+                            "Failed to finalize bundled plugin %s", plugin_id,
+                        )
+                bundled_health_errors.append(plugin_id)
+                if plugin_loader.get_loaded_plugin(plugin_id) is not None:
+                    try:
+                        await plugin_loader.unload_plugin(
+                            plugin_id, delete_files=False,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Failed to unload unhealthy bundled plugin %s",
+                            plugin_id,
+                            exc_info=True,
+                        )
+                        plugin_loader._loaded_plugins.pop(plugin_id, None)
+                        plugin_loader.registry.unregister_plugin(plugin_id)
+                try:
+                    restored = rollback_bundled_plugin_activation(
+                        plugin_id,
+                        plugins_dir=get_plugins_dir(),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to roll back bundled plugin %s", plugin_id,
+                    )
+                    continue
+                if restored:
+                    discovered = {
+                        manifest.id: (manifest, path)
+                        for manifest, path in plugin_loader.discover_plugins()
+                    }
+                    previous = discovered.get(plugin_id)
+                    if previous is not None:
+                        try:
+                            await plugin_loader.load_plugin(
+                                previous[0], previous[1],
+                                plugin_configs.get(plugin_id),
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Restored bundled plugin %s failed to load",
+                                plugin_id,
+                            )
+
+            if component_updated_ids:
+                try:
+                    from ..components.service import (
+                        configured_service,
+                        resolve_component_destination,
+                    )
+
+                    recovery_service = configured_service()
+                    if recovery_service is not None:
+                        try:
+                            for component_id in sorted(component_updated_ids):
+                                if recovery_service.updater.is_directory_component(
+                                    component_id,
+                                ):
+                                    continue
+                                destination = resolve_component_destination(
+                                    get_plugins_dir(), component_id,
+                                )
+                                record = loaded_plugins.get(component_id)
+                                if record and record.enabled:
+                                    recovery_service.updater.finalize_activation(
+                                        component_id, destination,
+                                    )
+                                    continue
+                                plugin_loader._loaded_plugins.pop(
+                                    component_id, None,
+                                )
+                                plugin_loader.registry.unregister_plugin(
+                                    component_id,
+                                )
+                                recovery_service.updater.rollback_activation(
+                                    component_id, destination,
+                                )
+                                if destination.is_dir():
+                                    discovered = {
+                                        manifest.id: (manifest, path)
+                                        for manifest, path in (
+                                            plugin_loader.discover_plugins()
+                                        )
+                                    }
+                                    previous = discovered.get(component_id)
+                                    if previous is not None:
+                                        await plugin_loader.load_plugin(
+                                            previous[0], previous[1],
+                                            plugin_configs.get(component_id),
+                                        )
+                        finally:
+                            recovery_service.client.close()
+                except Exception:
+                    logger.warning(
+                        "Component activation health recovery failed",
+                        exc_info=True,
+                    )
+
+            app.state.bundled_plugins_status = {
+                "state": "registry_ready",
+                "installed": bundled_ready_ids,
+                "error": (
+                    "Bundled plugin load failed: "
+                    + ", ".join(bundled_health_errors)
+                    if bundled_health_errors else None
+                ),
+            }
 
             def _mark_core_agents_ready(_results: dict[str, bool]) -> None:
                 """Publish readiness after the core agent phase."""
@@ -562,17 +758,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 name="qwenpaw-provider-catalog-sync",
             )
 
-            # Phase 2: load remaining plugins (channel plugins already
-            # loaded — load_plugin skips them automatically)
-            loaded_plugins = await plugin_loader.load_all_plugins(
-                configs=plugin_configs,
-            )
             logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
-            app.state.bundled_plugins_status = {
-                "state": "ready",
-                "installed": sorted(loaded_plugins),
-                "error": None,
-            }
 
             runtime_helpers = RuntimeHelpers(
                 provider_manager=provider_manager,
@@ -674,6 +860,16 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     )
             except Exception as e:
                 logger.warning(f"Approval service setup skipped: {e}")
+
+            app.state.bundled_plugins_status = {
+                "state": "ready",
+                "installed": bundled_ready_ids,
+                "error": (
+                    "Bundled plugin load failed: "
+                    + ", ".join(bundled_health_errors)
+                    if bundled_health_errors else None
+                ),
+            }
 
             # ---- Skill Pool builtin update + workspace auto-sync ----
             try:

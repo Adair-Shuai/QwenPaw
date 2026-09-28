@@ -1377,6 +1377,23 @@ export default function ChatPage() {
       window.removeEventListener("qwenpaw:open-file-preview", openPreview);
   }, [dispatchFilesDrawer]);
 
+  useEffect(() => {
+    const openCompute = () => {
+      localStorage.setItem("qwenpaw-workbench-mode", "compute");
+      dispatchFilesDrawer({ type: "OPEN_WORKSPACE", trigger: null });
+      window.setTimeout(() => {
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:select-workbench-mode", {
+            detail: { mode: "compute" },
+          }),
+        );
+      }, 50);
+    };
+    window.addEventListener("qwenpaw:open-compute-workbench", openCompute);
+    return () =>
+      window.removeEventListener("qwenpaw:open-compute-workbench", openCompute);
+  }, [dispatchFilesDrawer]);
+
   const handleInternalFileLink = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const element = event.target;

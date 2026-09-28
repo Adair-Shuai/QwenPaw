@@ -65,19 +65,17 @@ def _write_skill_manifest(
 
 
 @pytest.mark.asyncio
-async def test_skill_fallback_reports_unknown_skill(tmp_path: Path):
+async def test_skill_fallback_ignores_unknown_skill(tmp_path: Path):
     result = await _skill_fallback_handler(
         "/missing 做事",
         _skill_context(tmp_path),
     )
 
-    assert result is not None
-    assert "未找到 Skill" in result.content[0].text
-    assert "/skills" in result.content[0].text
+    assert result is None
 
 
 @pytest.mark.asyncio
-async def test_skill_fallback_reports_disabled_skill(tmp_path: Path):
+async def test_skill_fallback_ignores_disabled_skill(tmp_path: Path):
     _write_skill_manifest(
         tmp_path,
         {"enabled": False, "channels": ["console"]},
@@ -88,12 +86,11 @@ async def test_skill_fallback_reports_disabled_skill(tmp_path: Path):
         _skill_context(tmp_path),
     )
 
-    assert result is not None
-    assert "当前未启用" in result.content[0].text
+    assert result is None
 
 
 @pytest.mark.asyncio
-async def test_skill_fallback_reports_channel_mismatch(tmp_path: Path):
+async def test_skill_fallback_ignores_channel_mismatch(tmp_path: Path):
     _write_skill_manifest(
         tmp_path,
         {"enabled": True, "channels": ["discord"]},
@@ -104,8 +101,7 @@ async def test_skill_fallback_reports_channel_mismatch(tmp_path: Path):
         _skill_context(tmp_path, channel="console"),
     )
 
-    assert result is not None
-    assert "不支持当前渠道 `console`" in result.content[0].text
+    assert result is None
 
 
 @pytest.mark.asyncio

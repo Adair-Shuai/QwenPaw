@@ -97,8 +97,10 @@ def test_registry_and_runtime_readiness_are_distinct() -> None:
                 state_lines.setdefault(state, []).append(node.lineno)
         if (
             isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == "invoke_plugin_callback"
+            and isinstance(node.func, ast.Attribute)
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "hook"
+            and node.func.attr == "callback"
         ):
             hook_invoke_lines.append(node.lineno)
 

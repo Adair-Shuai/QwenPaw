@@ -104,7 +104,7 @@ def _app(
 
 
 def _request(app: Any) -> Any:
-    return SimpleNamespace(app=app)
+    return SimpleNamespace(app=app, query_params={})
 
 
 class _LifecycleStub:
@@ -816,7 +816,7 @@ class TestZipExtractionHelpers:
 
     def test_extract_bytes_rejects_zip_slip(self, tmp_path):
         content = _zip_bytes({"../escape.txt": "evil"})
-        with pytest.raises(ValueError, match="Zip Slip"):
+        with pytest.raises(ValueError, match="unsafe archive member"):
             _extract_plugin_zip_bytes(content, tmp_path)
         assert not (tmp_path.parent / "escape.txt").exists()
 
@@ -838,7 +838,7 @@ class TestZipExtractionHelpers:
         zip_path.write_bytes(_zip_bytes({"../escape.txt": "evil"}))
         out_dir = tmp_path / "out"
         out_dir.mkdir()
-        with pytest.raises(ValueError, match="Zip Slip"):
+        with pytest.raises(ValueError, match="unsafe archive member"):
             _extract_downloaded_plugin_zip(zip_path, out_dir)
 
 
@@ -961,6 +961,7 @@ class TestListPluginsRoute:
                 "loaded": False,
                 "plugin_type": "general",
                 "frontend_entry": None,
+                "frontend_revision": "9.9",
             },
         ]
 
@@ -968,7 +969,8 @@ class TestListPluginsRoute:
         record = _record("plug", meta={"tool_name": "alpha"})
         loader = MagicMock()
         loader.get_all_loaded_plugins.return_value = {"plug": record}
-        response = _client(loader).get("/api/plugins")
+        with patch("qwenpaw.app.routers.plugins._list_plugins_from_disk", return_value=[]):
+            response = _client(loader).get("/api/plugins")
         assert response.status_code == 200
         assert response.json() == [
             {
@@ -987,7 +989,8 @@ class TestListPluginsRoute:
     def test_empty_loader_returns_empty_list(self):
         loader = MagicMock()
         loader.get_all_loaded_plugins.return_value = {}
-        assert _client(loader).get("/api/plugins").json() == []
+        with patch("qwenpaw.app.routers.plugins._list_plugins_from_disk", return_value=[]):
+            assert _client(loader).get("/api/plugins").json() == []
 
 
 class TestGetPluginStatusRoute:
@@ -1417,7 +1420,7 @@ class TestInstallPluginRoute:
         ):
             response = _client(loader).post(
                 "/api/plugins/install",
-                json={"source": str(tmp_path), "force": True},
+                json={"source": str(tmp_path)},
             )
         assert response.status_code == 200
         assert response.json() == {
@@ -1484,19 +1487,19 @@ class TestInstallPluginRoute:
             await install_plugin(
                 plugins_module.InstallPluginRequest(
                     source="/tmp/x",
-                    force=True,
+                    force=False,
                 ),
                 _request(app),
             )
         assert seen["source"] == "/tmp/x"
-        assert seen["force"] is True
+        assert seen["force"] is False
         assert seen["app"] is app
         assert sorted(seen) == ["app", "force", "source"]
 
 
 class TestUninstallPluginRoute:
     def test_success_payload(self):
-        loader = _loader_stub([])
+        loader = _loader_stub([], record=_record("plug"))
         with patch(
             "qwenpaw.app.routers.plugins.uninstall_plugin_source",
             new=AsyncMock(return_value=None),
@@ -1521,11 +1524,14 @@ class TestUninstallPluginRoute:
         assert "ghost" in response.json()["detail"]
 
     def test_unexpected_error_is_500(self, caplog):
-        loader = _loader_stub([])
-        with patch(
-            "qwenpaw.app.routers.plugins.uninstall_plugin_source",
-            new=AsyncMock(side_effect=RuntimeError("disk on fire")),
-        ):
+        loader = _loader_stub([], record=_record("plug"))
+        loader.unload_plugin = AsyncMock(side_effect=RuntimeError("disk on fire"))
+        with patch("qwenpaw.plugins.bundled.mark_plugin_uninstalled"), patch(
+            "qwenpaw.plugins.bundled.clear_uninstalled_marker",
+        ), patch(
+            "qwenpaw.components.service.is_component_update_adopted",
+            return_value=False,
+        ), patch("qwenpaw.components.service.set_component_update_adoption"):
             response = _client(loader).delete("/api/plugins/plug")
         assert response.status_code == 500
         assert "disk on fire" in response.json()["detail"]
@@ -1541,7 +1547,7 @@ class TestUploadPluginRoute:
             new=AsyncMock(return_value=_record("plug")),
         ):
             response = _client(loader).post(
-                "/api/plugins/upload?force=true",
+                "/api/plugins/upload",
                 files={"file": ("plug.zip", payload, "application/zip")},
             )
         assert response.status_code == 200

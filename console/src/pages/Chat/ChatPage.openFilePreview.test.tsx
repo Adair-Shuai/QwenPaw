@@ -1,5 +1,5 @@
 /**
- * Chat message Markdown action -> qwenpaw:open-file-preview.
+ * File preview events open the chat page's preview drawer.
  *
  * ChatPage.test.tsx is excluded from vitest (worker crash / stale mocks).
  * This file covers the same user path with a thinner render surface.
@@ -8,13 +8,10 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/common_setup";
 import {
-  OPEN_FILE_PREVIEW_EVENT,
-  type OpenFilePreviewDetail,
+  openFilePreview,
 } from "@/features/files-workspace/openFilePreview";
 import { useFilesSurfaceStore } from "@/stores/filesSurfaceStore";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
-
-let capturedOptions: any = null;
 
 const {
   mockListProviders,
@@ -91,7 +88,7 @@ vi.mock("@agentscope-ai/chat", () => ({
     MCP_CALL_OUTPUT: "mcp_call_output",
   },
   AgentScopeRuntimeWebUI: vi.fn((props: any) => {
-    capturedOptions = props.options;
+    void props;
     return <div data-testid="chat-ui" />;
   }),
   useChatAnywhereSessionsState: vi.fn(() => ({
@@ -222,7 +219,6 @@ import ChatPage from "./index";
 describe("ChatPage message Markdown action", () => {
   beforeEach(() => {
     chatExtensions.__resetForTests();
-    capturedOptions = null;
     mockListProviders.mockResolvedValue([]);
     mockGetActiveModels.mockResolvedValue({
       active_llm: { provider_id: "openai", model: "gpt-4" },
@@ -238,40 +234,34 @@ describe("ChatPage message Markdown action", () => {
     vi.clearAllMocks();
   });
 
-  it("dispatches open-file-preview when the message Markdown action is clicked", async () => {
-    const previews: OpenFilePreviewDetail[] = [];
-    const onPreview = (event: Event) => {
-      previews.push((event as CustomEvent<OpenFilePreviewDetail>).detail);
-    };
-    window.addEventListener(OPEN_FILE_PREVIEW_EVENT, onPreview);
+  it("opens a preview drawer when a file preview event arrives", async () => {
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    await screen.findByTestId("chat-ui");
 
-    try {
-      renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
-      await screen.findByTestId("chat-ui");
-      previews.length = 0;
-
-      act(() => {
-        const action = capturedOptions.actions.list.find(
-          (candidate: { onClick?: unknown }) => typeof candidate.onClick === "function",
-        );
-        action.onClick({
-          data: {
-            output: [{ role: "assistant", content: "hello from reply" }],
-          },
-        });
+    act(() => {
+      openFilePreview({
+        source: "artifact",
+        path: "reply.md",
+        artifact: {
+          id: "reply",
+          title: "reply.md",
+          source: "generated",
+          textContent: "hello from reply",
+          mimeType: "text/markdown",
+          extension: "md",
+        },
       });
+    });
 
-      expect(previews).toHaveLength(1);
-      expect(previews[0].target.source).toBe("artifact");
-      expect(previews[0].target.path).toMatch(/\.md$/i);
-      expect(previews[0].target.artifactUrl).toBeUndefined();
-      expect(previews[0].target.artifact).toMatchObject({
-        textContent: "hello from reply",
-        mimeType: "text/markdown",
-        extension: "md",
-      });
-    } finally {
-      window.removeEventListener(OPEN_FILE_PREVIEW_EVENT, onPreview);
-    }
+    expect(Object.values(useFilesSurfaceStore.getState().sessionDrawers)).toContainEqual(
+      expect.objectContaining({
+        kind: "preview",
+        target: expect.objectContaining({
+          source: "artifact",
+          path: "reply.md",
+          artifact: expect.objectContaining({ textContent: "hello from reply" }),
+        }),
+      }),
+    );
   });
 });

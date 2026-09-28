@@ -123,18 +123,26 @@ class TestGetWorkspaceFromInfo:
 
 
 class TestWriteToolConfig:
-    def test_no_agent_id_skips_write(self, caplog):
+    def test_no_configured_agent_skips_write(self, caplog):
+        root_config = MagicMock()
+        root_config.agents.profiles = {}
+        root_config.agents.active_agent = None
+        root_config.agents.agent_order = []
         with patch(
             "qwenpaw.app.agent_context.get_current_agent_id",
             return_value=None,
-        ):
+        ), patch(
+            "qwenpaw.config.utils.load_config",
+            return_value=root_config,
+        ), patch("qwenpaw.config.config.mutate_agent_config") as mutate:
             plugins_api._write_tool_config(
                 "my_tool",
                 enabled=True,
                 description="desc",
                 icon="icon.png",
             )
-        assert "No current agent ID" in caplog.text
+        assert "No configured agent profile" in caplog.text
+        mutate.assert_not_called()
 
     def test_writes_to_agent_config(self):
         fake_config = MagicMock()

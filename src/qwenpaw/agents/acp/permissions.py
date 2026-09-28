@@ -400,7 +400,7 @@ class ACPPermissionAdapter:
             cwd_path = Path(self.cwd)
             if path.is_absolute():
                 try:
-                    return str(path.resolve().relative_to(cwd_path))
+                    return path.resolve().relative_to(cwd_path).as_posix()
                 except ValueError:
                     return str(path)
             return value

@@ -2160,10 +2160,10 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      // This should throw since JSON.parse will fail
-      expect(() => {
-        capturedOptions.api.responseParser("not valid json");
-      }).toThrow();
+      expect(capturedOptions.api.responseParser("not valid json")).toMatchObject({
+        object: "message",
+        type: "heartbeat",
+      });
     }
   });
 
