@@ -299,8 +299,10 @@ if [ "$LAYERED_DESKTOP" = true ]; then
         --binaries "${BINARIES_DIR}" \
         --version "${VERSION}" \
         --target macos-aarch64
-    DEPENDENCY_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-packages"]["path"])' "${BINARIES_DIR}/state/active.json")
-    RUNTIME_PATH=$("$PYTHON_BIN" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-runtime"]["path"])' "${BINARIES_DIR}/state/active.json")
+    # assemble_desktop_layout moves the runtime backing the venv's Python
+    # symlink, so use the host interpreter for these JSON-only lookups.
+    DEPENDENCY_PATH=$("$BOOTSTRAP_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-packages"]["path"])' "${BINARIES_DIR}/state/active.json")
+    RUNTIME_PATH=$("$BOOTSTRAP_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-runtime"]["path"])' "${BINARIES_DIR}/state/active.json")
     case "$DEPENDENCY_PATH:$RUNTIME_PATH" in
         binaries/*:binaries/*) ;;
         *) echo "ERROR: invalid layered Python component paths" >&2; exit 1 ;;

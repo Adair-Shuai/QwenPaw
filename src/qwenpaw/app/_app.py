@@ -439,6 +439,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app.state.get_agent_by_id = _get_agent_by_id
 
     app.state.startup_ready = asyncio.Event()
+    app.state.bundled_plugins_status = {
+        "state": "pending",
+        "installed": [],
+        "error": None,
+    }
     app.state.startup_time = startup_start_time
     from ..browser.execution.kernel import get_default_kernel_manager
 
@@ -543,6 +548,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 configs=plugin_configs,
             )
             logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
+            app.state.bundled_plugins_status = {
+                "state": "ready",
+                "installed": sorted(loaded_plugins),
+                "error": None,
+            }
 
             runtime_helpers = RuntimeHelpers(
                 provider_manager=provider_manager,
@@ -668,7 +678,12 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             if app.state.startup_ready.is_set():
                 startup_display.complete(startup_elapsed)
 
-        except Exception:
+        except Exception as exc:
+            app.state.bundled_plugins_status = {
+                "state": "error",
+                "installed": [],
+                "error": str(exc),
+            }
             logger.error(
                 "Background startup encountered an error",
                 exc_info=True,
