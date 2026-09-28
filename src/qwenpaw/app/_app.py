@@ -70,6 +70,7 @@ from .routers.healthz import router as healthz_router
 from .routers.loops import router as loops_router
 from .routers.tool_calls import router as tool_calls_router
 from .routers.voice import voice_router
+from .startup_state import startup_state
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
@@ -237,6 +238,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app: FastAPI,
 ):
     startup_start_time = time.time()
+    startup_state.reset()
     add_project_file_handler(LOG_FILE_PATH)
 
     # ================================================================
@@ -500,6 +502,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # ---- Plugin System (phase 1: startup-critical plugins) ----
             # Channel and memory plugins must register before agents start.
             logger.debug("Initializing plugin system...")
+            startup_state.update("components", "正在检查已安排的更新…", 12)
             from ..config.utils import get_plugins_dir
 
             # Consume only updates that the user queued before restarting.
@@ -554,6 +557,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "error": None,
             }
             try:
+                startup_state.update("plugins", "正在准备功能模块…", 18)
                 newly_installed = await asyncio.to_thread(
                     ensure_bundled_plugins_installed,
                     skip_ids=component_updated_ids,
@@ -731,7 +735,9 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 core_elapsed = time.time() - startup_start_time
                 startup_display.mark_core_ready(core_elapsed)
                 app.state.startup_ready.set()
+                startup_state.mark_core_ready()
 
+            startup_state.update("agents", "正在启动专家服务…", 55)
             startup_results = (
                 await workspace_registry.start_all_configured_agents(
                     on_core_ready=_mark_core_agents_ready,
@@ -820,6 +826,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
             # ---- Startup Hooks ----
             logger.debug("Executing plugin startup hooks...")
+            startup_state.update("resources", "正在准备扩展资源…", 82)
             startup_hooks = plugin_loader.registry.get_startup_hooks()
             for hook in startup_hooks:
                 try:
@@ -893,8 +900,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             )
             if app.state.startup_ready.is_set():
                 startup_display.complete(startup_elapsed)
+                startup_state.mark_ready()
 
         except Exception as exc:
+            startup_state.mark_error(str(exc))
             app.state.bundled_plugins_status = {
                 "state": "error",
                 "installed": [],
@@ -1173,6 +1182,12 @@ def get_latest_core_version():
         raise HTTPException(
             status_code=502, detail="Core update manifest is unavailable",
         ) from exc
+
+
+@app.get("/api/startup/status")
+def get_startup_status():
+    """Return public desktop startup progress."""
+    return startup_state.snapshot()
 
 
 @app.get("/api/plugins/bundled/status")

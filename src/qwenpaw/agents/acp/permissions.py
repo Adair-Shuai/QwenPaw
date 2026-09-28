@@ -395,6 +395,8 @@ class ACPPermissionAdapter:
         return self._summary(tool_call)
 
     def _display_path(self, value: str) -> str:
+        if "\x00" in value:
+            return value
         try:
             path = Path(value).expanduser()
             cwd_path = Path(self.cwd)
