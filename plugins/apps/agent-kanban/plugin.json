@@ -1,7 +1,7 @@
 {
   "id": "agent-kanban",
   "name": "Agent Kanban",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "A Kanban board to create issues, assign them to agents, auto-run them via the assigned agent, and watch their output stream in real time.",
   "description_i18n": {
     "zh-CN": "用于创建 Issue、指派 Agent、自动执行任务并实时查看输出的协作看板。",
