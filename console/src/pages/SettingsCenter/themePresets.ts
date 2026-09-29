@@ -8,6 +8,20 @@ export interface ThemePreset {
 
 export const THEME_PRESETS: readonly ThemePreset[] = [
   {
+    id: "lobehub",
+    name: "LobeHub",
+    theme: {
+      accent: "#2563eb",
+      accent_hover: "#1d4ed8",
+      accent_bg: "rgba(37, 99, 235, 0.1)",
+      dark: {
+        accent: "#60a5fa",
+        accent_bg: "rgba(96, 165, 250, 0.16)",
+        surface: "#1c1b1e",
+      },
+    },
+  },
+  {
     id: "qwenpaw",
     name: "QwenPaw",
     theme: {

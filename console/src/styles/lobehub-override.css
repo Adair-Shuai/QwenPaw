@@ -4,9 +4,8 @@
  * This file overrides the default QwenPaw theme (orange/warm) with
  * LobeHub's design system aesthetic (blue/neutral/mauve).
  *
- * Strategy: Only override hardcoded color values from layout.css.
- * This file is loaded AFTER layout.css, so it wins specificity battles.
- * It does NOT modify any upstream files, ensuring zero merge conflicts.
+ * Loaded after the upstream layout and semantic tokens. Keep the palette here
+ * so newly added token-driven modules retain the same look as older screens.
  *
  * Color mapping (QwenPaw → LobeHub):
  *   #FF7F16 / #ff7f16  (orange brand)  → #2563EB / #0072f5  (blue brand)
@@ -17,6 +16,36 @@
  *   #2a2a2a            (dark input)     → #252528            (mauve dark)
  *   rgba(97,92,237,.)  (purple accent)  → rgba(0,114,245,.)  (blue accent)
  */
+
+:root {
+  --app-bg: #f8f8f8;
+  --app-shell-bg: #f8f8f8;
+  --app-surface-subtle: #f8f8f8;
+  --app-surface-sunken: #f8f8f8;
+  --app-border: #eeeeee;
+  --app-border-strong: #d8d8d8;
+  --app-border-hover: #d8d8d8;
+  --app-border-subtle: #f0f0f0;
+  --app-accent: #2563eb;
+  --app-accent-hover: #1d4ed8;
+  --app-nav-selected-bg: rgba(37, 99, 235, 0.08);
+  --app-nav-selected-bg-hover: rgba(37, 99, 235, 0.12);
+  --app-scrollbar-thumb: rgba(0, 0, 0, 0.2);
+  --app-scrollbar-thumb-hover: rgba(0, 0, 0, 0.3);
+}
+
+html.dark-mode {
+  --app-bg: #000000;
+  --app-shell-bg: #000000;
+  --app-surface: #1c1b1e;
+  --app-surface-subtle: #1c1b1e;
+  --app-surface-raised: #252528;
+  --app-surface-sunken: #252528;
+  --app-border: rgba(255, 255, 255, 0.08);
+  --app-border-subtle: rgba(255, 255, 255, 0.06);
+  --app-accent: #60a5fa;
+  --app-accent-hover: #93c5fd;
+}
 
 /* ═══════════════════════════════════════════════════════════════════════════
    1. Light Mode — Backgrounds & Layout
@@ -542,7 +571,7 @@ html.dark-mode .qwenpaw-btn-default {
    ═══════════════════════════════════════════════════════════════════════════ */
 
 * {
-  scrollbar-color: rgba(255, 255, 255, 0.16) transparent;
+  scrollbar-color: var(--app-scrollbar-thumb) transparent;
   scrollbar-width: thin;
 }
 

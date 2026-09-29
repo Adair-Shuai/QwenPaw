@@ -64,9 +64,11 @@ import { isDesktopTauriRuntime } from "./utils/openExternalLink";
 import { interceptBlankLinkClicks } from "./utils/interceptBlankLinkClicks";
 import { isSafeCssColor } from "./utils/chatThemeColor";
 import type { ThemeConfig } from "./api/modules/theme";
+import { DEFAULT_THEME_PRESET } from "./pages/SettingsCenter/themePresets";
 import "./styles/tokens.css";
 import "./styles/layout.css";
 import "./styles/form-override.css";
+import "./styles/lobehub-override.css";
 import "katex/dist/katex.min.css";
 
 const antdLocaleMap: Record<string, Locale> = {
@@ -85,10 +87,26 @@ export function getAppThemeToken(
     colorPrimary:
       userTheme.dark?.accent && isDark
         ? userTheme.dark.accent
-        : userTheme.accent ?? "#FF7F16",
+        : userTheme.accent ??
+          (isDark
+            ? DEFAULT_THEME_PRESET.theme.dark?.accent
+            : DEFAULT_THEME_PRESET.theme.accent),
+    colorBgLayout: isDark ? "#000000" : "#f8f8f8",
+    colorBgContainer: isDark
+      ? userTheme.dark?.surface ?? "#1c1b1e"
+      : "#ffffff",
+    colorBgElevated: isDark ? "#252528" : "#ffffff",
+    colorBorder: isDark ? "#323236" : "#e3e3e3",
+    fontFamily:
+      'Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif',
+    fontFamilyCode:
+      '"Geist Mono", ui-monospace, SFMono-Regular, Menlo, "Cascadia Code", Consolas, monospace',
+    borderRadiusXS: 4,
+    borderRadiusSM: 6,
+    borderRadiusLG: 12,
     ...(userTheme.radius
       ? { borderRadius: Number.parseFloat(userTheme.radius) }
-      : {}),
+      : { borderRadius: 8 }),
   };
 }
 

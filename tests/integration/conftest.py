@@ -32,6 +32,7 @@ process (or single-process mode), not in individual workers.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import shutil
@@ -96,6 +97,36 @@ def _integration_coverage_requested() -> bool:
         "true",
         "yes",
     )
+
+
+def pytest_collection_modifyitems(
+    config: pytest.Config, items: list[pytest.Item]
+) -> None:
+    """Split large Windows integration groups across independent runners."""
+    index_text = os.environ.get("QWENPAW_INTEGRATION_SHARD_INDEX") or None
+    count_text = os.environ.get("QWENPAW_INTEGRATION_SHARD_COUNT") or None
+    if index_text is None and count_text is None:
+        return
+    if index_text is None or count_text is None:
+        raise pytest.UsageError("Both integration shard variables are required")
+    try:
+        index, count = int(index_text), int(count_text)
+    except ValueError as exc:
+        raise pytest.UsageError("Integration shard values must be integers") from exc
+    if count < 1 or index < 0 or index >= count:
+        raise pytest.UsageError("Integration shard index must be within count")
+    selected = []
+    deselected = []
+    for item in items:
+        bucket = (
+            int.from_bytes(
+                hashlib.sha256(item.nodeid.encode("utf-8")).digest()[:8], "big"
+            )
+            % count
+        )
+        (selected if bucket == index else deselected).append(item)
+    items[:] = selected
+    config.hook.pytest_deselected(items=deselected)
 
 
 def pytest_sessionstart(session: pytest.Session) -> None:
@@ -218,17 +249,18 @@ def _find_free_port(host: str = "127.0.0.1") -> int:
 
 
 def _tee_stream(stream, buffer: list[str]) -> None:
-    """Read subprocess output, tag and print live, keep a raw copy."""
-    prefix = "[app server] "
+    """Drain app output without filling pytest's captured stdout in CI."""
+    stream_live = os.environ.get("QWENPAW_INTEGRATION_STREAM_LOGS") == "1"
     try:
         for line in iter(stream.readline, ""):
             buffer.append(line)
-            try:
-                print(f"{prefix}{line}", end="", flush=True)
-            except (OSError, ValueError):
-                # pytest may close captured stdout before this daemon thread
-                # finishes draining; keep the raw copy in `buffer` regardless.
-                pass
+            if stream_live:
+                try:
+                    print(f"[app server] {line}", end="", flush=True)
+                except (OSError, ValueError):
+                    # pytest may close captured stdout before this daemon thread
+                    # finishes draining; keep the raw copy in `buffer` regardless.
+                    pass
     finally:
         stream.close()
 

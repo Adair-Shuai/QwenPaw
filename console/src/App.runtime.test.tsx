@@ -85,11 +85,13 @@ describe("RuntimeAvailabilityGuard", () => {
 });
 
 describe("getAppThemeToken", () => {
-  it("leaves the default radius token to antd when unset", () => {
+  it("uses the restored LobeHub defaults when unset", () => {
     const token = getAppThemeToken({}, false);
 
-    expect(token.colorPrimary).toBe("#FF7F16");
-    expect("borderRadius" in token).toBe(false);
+    expect(token.colorPrimary).toBe("#2563eb");
+    expect(token.colorBgLayout).toBe("#f8f8f8");
+    expect(token.borderRadius).toBe(8);
+    expect(getAppThemeToken({}, true).colorPrimary).toBe("#60a5fa");
   });
 
   it("passes a configured radius through to antd", () => {

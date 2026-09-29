@@ -9,6 +9,7 @@ import {
 describe("theme presets", () => {
   it("offers the reference-inspired color palettes", () => {
     expect(THEME_PRESETS.map((preset) => preset.name)).toEqual([
+      "LobeHub",
       "QwenPaw",
       "Codex",
       "Ayu",
@@ -27,7 +28,7 @@ describe("theme presets", () => {
   });
 
   it("recognizes defaults, presets and custom colors", () => {
-    expect(getThemePresetId({})).toBe("qwenpaw");
+    expect(getThemePresetId({})).toBe("lobehub");
     expect(getThemePresetId(applyThemePreset({}, "dracula"))).toBe("dracula");
     expect(getThemePresetId({ accent: "#123456" })).toBeUndefined();
   });
