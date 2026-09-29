@@ -377,6 +377,12 @@ jobs:
         run: |
           # Nightly always runs the full -m integration sweep (p0 + p1 +
           # p2), unlike tests.yml which gates by GITHUB_EVENT_NAME.
+          # On Windows, xdist's automatic worker count exhausted runner memory
+          # during the full sweep. Keep two workers so the suite can complete.
+          WORKERS=auto
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            WORKERS=2
+          fi
           if [ -n "$QWENPAW_INTEGRATION_COVERAGE" ]; then
             # Subprocess coverage entry. Parent process must not carry
             # --cov, hence --no-cov here.
@@ -389,7 +395,7 @@ jobs:
             # exit code, export, then restore it so failures still fail.
             set +e
             pytest tests/integration -v --no-cov \
-              -n auto --dist=loadscope --timeout=300 -m integration
+              -n "$WORKERS" --dist=loadscope --timeout=300 -m integration
             PYTEST_RC=$?
             set -e
             if [ -f .integration_coverage/integration_subproc ]; then
@@ -422,7 +428,7 @@ jobs:
             exit "$PYTEST_RC"
           else
             pytest tests/integration -v \
-              -n auto --dist=loadscope --timeout=300 -m integration
+              -n "$WORKERS" --dist=loadscope --timeout=300 -m integration
           fi
 
       - name: Upload integration coverage data

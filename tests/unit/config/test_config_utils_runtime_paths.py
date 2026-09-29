@@ -657,9 +657,6 @@ def _write_desktop(tmp_path, monkeypatch, name, body):
     return desktop
 
 
-@pytest.mark.skipif(
-    os.name == "nt", reason="Linux desktop files require POSIX path semantics",
-)
 class TestLinuxDefaultBrowserRemaining:
     def test_nonzero_exit_code_is_treated_as_no_handler(self, monkeypatch):
         _run_xdg(monkeypatch, "chrome.desktop\n", returncode=1)
@@ -674,6 +671,7 @@ class TestLinuxDefaultBrowserRemaining:
 
         assert cu._get_linux_default_browser() == (None, None)
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX executable path")
     def test_absolute_exec_that_exists_is_returned(
         self,
         monkeypatch,
@@ -692,6 +690,7 @@ class TestLinuxDefaultBrowserRemaining:
         assert path == sys.executable
         assert kind == "chromium"  # unknown name falls back to chromium
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX executable path")
     def test_env_wrapper_with_ime_vars_is_unwrapped(
         self,
         monkeypatch,
@@ -780,6 +779,7 @@ class TestLinuxDefaultBrowserRemaining:
 
         assert cu._get_linux_default_browser() == (None, None)
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX desktop search path")
     def test_first_desktop_hit_wins_over_the_usr_share_fallback(
         self,
         monkeypatch,
@@ -808,6 +808,7 @@ class TestLinuxDefaultBrowserRemaining:
         assert path == sys.executable
         assert kind == "chromium"
 
+    @pytest.mark.skipif(os.name == "nt", reason="POSIX desktop search path")
     def test_unreadable_desktop_file_is_skipped_not_fatal(
         self,
         monkeypatch,
