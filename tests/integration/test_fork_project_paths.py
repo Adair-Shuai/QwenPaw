@@ -240,6 +240,10 @@ def test_spawn_subagent_with_fork_worktree(
     """
     srv, _mock_url = mock_llm
     srv.force_tool_call = True
+    # Only the parent turn should spawn. The child uses the same mock server;
+    # forcing another spawn there recurses until the worker runs out of RAM.
+    marker = "INTEG-FORK-SPAWN-PARENT"
+    srv.force_tool_call_user_marker = marker
     srv.tool_call_name = "spawn_subagent"
     srv.tool_call_arguments = json.dumps(
         {"task": "work in a fork", "fork": True, "timeout": 120},
@@ -256,7 +260,7 @@ def test_spawn_subagent_with_fork_worktree(
                     {
                         "role": "user",
                         "type": "message",
-                        "content": [{"type": "text", "text": "fork it"}],
+                        "content": [{"type": "text", "text": f"{marker} fork it"}],
                     },
                 ],
                 "request_context": {"approval_level": "off"},
@@ -285,6 +289,7 @@ def test_spawn_subagent_with_fork_worktree(
         assert body.get("status") in ("finished", "running"), body
     finally:
         srv.force_tool_call = False
+        srv.force_tool_call_user_marker = None
 
 
 @pytest.mark.integration
