@@ -136,7 +136,9 @@ jobs:
                 scripts/pack-tauri/stage_desktop_components.py|\
                 tests/unit/tauri/test_stage_desktop_components.py|\
                 tests/unit/verify/test_release_workflow_safety.py|\
-                tests/unit/config/test_config_utils_runtime_paths.py)
+                tests/unit/config/test_config_utils_runtime_paths.py|\
+                tests/unit/tauri/test_desktop_layer_layout.py|\
+                tests/integration/test_fork_project_paths.py)
                   ;;
                 scripts/pack-tauri/assemble_desktop_layout.py|\
                 tests/unit/tauri/test_desktop_layer_layout.py)
