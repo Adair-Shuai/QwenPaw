@@ -104,7 +104,7 @@ def test_manifest_and_frontend_contract():
     frontend = (PLUGIN_DIR / "ui" / "index.js").read_text(encoding="utf-8")
 
     assert manifest["id"] == "storage-capacity"
-    assert manifest["version"] == "0.1.4"
+    assert manifest["version"] == "0.1.5"
     assert manifest["type"] == "app"
     assert manifest["dependencies"] == ["ugsci"]
     assert manifest["entry"]["backend"] == "backend/main.py"

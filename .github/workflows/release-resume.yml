@@ -139,6 +139,7 @@ jobs:
                 tests/unit/verify/test_release_workflow_safety.py|\
                 tests/unit/config/test_config_utils_runtime_paths.py|\
                 tests/unit/tauri/test_desktop_layer_layout.py|\
+                tests/unit/plugins/test_storage_capacity_app.py|\
                 tests/integration/test_fork_project_paths.py|\
                 tests/integration/test_contract_batch_misc.py|\
                 tests/integration/test_git_router.py|\
