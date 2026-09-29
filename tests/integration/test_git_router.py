@@ -10,6 +10,13 @@ Tests cover:
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def initialized_repo(app_server) -> None:
+    """Each test must work even when CI selects only part of this module."""
+    response = app_server.api_request("GET", "/api/workspace/git/status")
+    assert response.status_code == 200, app_server.logs_tail()
+
+
 @pytest.mark.integration
 @pytest.mark.p1
 def test_git_status(app_server) -> None:

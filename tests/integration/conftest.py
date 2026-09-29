@@ -48,6 +48,7 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+import psutil
 import pytest
 
 from tests.integration.helpers import app_startup_wait_timeout
@@ -488,7 +489,12 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
 
     def _shutdown_app(proc, tee_thread) -> None:
         """Stop a launched app process; SIGINT on POSIX flushes coverage."""
+        descendants = []
         if proc.poll() is None:
+            try:
+                descendants = psutil.Process(proc.pid).children(recursive=True)
+            except psutil.Error:
+                pass
             # On POSIX, SIGINT lets uvicorn shut down cleanly so
             # subprocess coverage data flushes (SIGTERM often skips
             # atexit / data-file write). On Windows, SIGINT is not
@@ -514,6 +520,20 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
                     proc.kill()
                     proc.wait(timeout=5)
         tee_thread.join(timeout=2)
+        # The app can launch agent/tool subprocesses. On Windows terminating
+        # the parent does not terminate those children; without cleanup they
+        # accumulate across the integration modules on a single runner.
+        for child in descendants:
+            try:
+                child.terminate()
+            except psutil.Error:
+                pass
+        _, alive = psutil.wait_procs(descendants, timeout=3)
+        for child in alive:
+            try:
+                child.kill()
+            except psutil.Error:
+                pass
 
     # 15s default lets cold-start endpoints (ACP getter, heartbeat)
     # finish without hiding real deadlocks; 30s in coverage mode

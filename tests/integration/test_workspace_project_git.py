@@ -106,6 +106,11 @@ def test_workspace_git_branches(app_server) -> None:
     API endpoints:
     - GET /api/workspace/git/branches
     """
+    # /status creates the default workspace repository on first access.
+    status = app_server.api_request(
+        "GET", "/api/workspace/git/status", timeout=_WS_TIMEOUT
+    )
+    assert status.status_code == 200, app_server.logs_tail()
     resp = app_server.api_request(
         "GET",
         "/api/workspace/git/branches",
