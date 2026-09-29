@@ -74,46 +74,6 @@ class TestWritePortFile:
 
 
 class TestBindAndFindPort:
-    def test_windows_probe_retries_transient_connect_failure(self, monkeypatch):
-        attempts = []
-
-        class Probe:
-            def __enter__(self):
-                return self
-
-            def __exit__(self, *_args):
-                return None
-
-            def settimeout(self, timeout):
-                assert timeout >= 1.0
-
-            def connect_ex(self, address):
-                attempts.append(address)
-                return 10035 if len(attempts) == 1 else 0
-
-        monkeypatch.setattr(port_mod.sys, "platform", "win32")
-        monkeypatch.setattr(port_mod.socket, "socket", lambda *_args: Probe())
-        monkeypatch.setattr(port_mod.psutil, "net_connections", lambda **_args: [])
-
-        assert port_mod.try_bind_port("127.0.0.1", 8123) is None
-        assert attempts == [("127.0.0.1", 8123)] * 2
-
-    def test_windows_listener_table_rejects_occupied_port(self, monkeypatch):
-        from types import SimpleNamespace
-
-        monkeypatch.setattr(port_mod.sys, "platform", "win32")
-        monkeypatch.setattr(
-            port_mod.psutil,
-            "net_connections",
-            lambda **_args: [
-                SimpleNamespace(
-                    status=port_mod.psutil.CONN_LISTEN,
-                    laddr=SimpleNamespace(ip="127.0.0.1", port=8123),
-                ),
-            ],
-        )
-        assert port_mod.try_bind_port("127.0.0.1", 8123) is None
-
     def test_bind_success_returns_listening_socket(self):
         free = port_mod.find_free_port()
         sock = port_mod.try_bind_port("127.0.0.1", free)

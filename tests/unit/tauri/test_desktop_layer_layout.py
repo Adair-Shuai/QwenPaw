@@ -351,9 +351,9 @@ def test_assemble_requires_exactly_one_dependency_layer(tmp_path):
         raise AssertionError("multiple dependency layers were accepted")
 
 
-def test_assemble_accepts_extensionless_macos_helper(tmp_path):
+def test_assemble_accepts_extensionless_macos_helper(tmp_path, monkeypatch):
     helper = _load()
-    helper.sys.platform = "darwin"
+    monkeypatch.setattr(helper.sys, "platform", "darwin")
     binaries = tmp_path / "src-tauri" / "binaries"
     for name, marker in (
         ("python-runtime", ".python-runtime-version"),
