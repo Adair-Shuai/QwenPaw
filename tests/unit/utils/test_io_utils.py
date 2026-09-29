@@ -60,6 +60,35 @@ def test_write_text_atomic_preserves_destination_on_replace_error(
     assert not list(tmp_path.glob(".state.txt.*.tmp"))
 
 
+def test_write_text_atomic_retries_transient_windows_lock(
+    tmp_path: Path,
+) -> None:
+    path = tmp_path / "state.txt"
+    path.write_text("old", encoding="utf-8")
+    real_replace = os.replace
+    attempts = 0
+
+    def replace_after_lock(source: Path, destination: Path) -> None:
+        nonlocal attempts
+        attempts += 1
+        if attempts < 3:
+            error = PermissionError("temporarily locked")
+            error.winerror = 5
+            raise error
+        real_replace(source, destination)
+
+    with (
+        patch("qwenpaw.utils.io_utils.os.replace", replace_after_lock),
+        patch("qwenpaw.utils.io_utils.time.sleep") as sleep,
+    ):
+        write_text_atomic(path, "new")
+
+    assert attempts == 3
+    assert sleep.call_count == 2
+    assert path.read_text(encoding="utf-8") == "new"
+    assert not list(tmp_path.glob(".state.txt.*.tmp"))
+
+
 @pytest.mark.skipif(
     os.name == "nt",
     reason="Windows does not expose complete POSIX permission bits",

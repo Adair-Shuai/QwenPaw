@@ -32,6 +32,7 @@ import os
 import secrets
 import stat
 import threading
+import time
 import weakref
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -317,7 +318,20 @@ def write_text_atomic(
             handle.flush()
             os.fsync(handle.fileno())
         temp_path.chmod(final_mode)
-        os.replace(temp_path, target)
+        for attempt in range(7):
+            try:
+                os.replace(temp_path, target)
+                break
+            except PermissionError as exc:
+                # Windows readers and scanners may briefly open the target
+                # without FILE_SHARE_DELETE. Keep the complete temp file and
+                # retry the atomic replacement while that handle closes.
+                if (
+                    getattr(exc, "winerror", None) not in (5, 32)
+                    or attempt == 6
+                ):
+                    raise
+                time.sleep(min(0.02 * (2**attempt), 0.32))
         temp_path = None
     finally:
         if temp_path is not None:
