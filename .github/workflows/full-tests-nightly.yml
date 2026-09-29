@@ -264,18 +264,27 @@ jobs:
           include-hidden-files: true
 
   integrated-tests:
-    name: Integrated Tests - py${{ matrix.python-version }} - ${{ matrix.os }}
+    name: Integrated Tests - py${{ matrix.python-version }} - ${{ matrix.os }} - ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.11", "3.13"]
         os: [ubuntu-latest]
+        shard: [all]
         include:
           - os: macos-latest
             python-version: "3.11"
+            shard: all
           - os: windows-latest
             python-version: "3.11"
+            shard: p0
+          - os: windows-latest
+            python-version: "3.11"
+            shard: p1
+          - os: windows-latest
+            python-version: "3.11"
+            shard: p2
 
     steps:
       - uses: actions/checkout@v4
@@ -377,11 +386,14 @@ jobs:
         run: |
           # Nightly always runs the full -m integration sweep (p0 + p1 +
           # p2), unlike tests.yml which gates by GITHUB_EVENT_NAME.
-          # On Windows, xdist's automatic worker count exhausted runner memory
-          # during the full sweep. Keep two workers so the suite can complete.
+          # Windows runners ran out of memory even with two xdist workers.
+          # Run each priority group on its own runner without xdist so the
+          # complete suite is still covered without overlapping app servers.
           WORKERS=auto
+          MARKER=integration
           if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            WORKERS=2
+            WORKERS=0
+            MARKER="integration and ${{ matrix.shard }}"
           fi
           if [ -n "$QWENPAW_INTEGRATION_COVERAGE" ]; then
             # Subprocess coverage entry. Parent process must not carry
@@ -395,7 +407,7 @@ jobs:
             # exit code, export, then restore it so failures still fail.
             set +e
             pytest tests/integration -v --no-cov \
-              -n "$WORKERS" --dist=loadscope --timeout=300 -m integration
+              -n "$WORKERS" --dist=loadscope --timeout=300 -m "$MARKER"
             PYTEST_RC=$?
             set -e
             if [ -f .integration_coverage/integration_subproc ]; then
@@ -428,14 +440,14 @@ jobs:
             exit "$PYTEST_RC"
           else
             pytest tests/integration -v \
-              -n "$WORKERS" --dist=loadscope --timeout=300 -m integration
+              -n "$WORKERS" --dist=loadscope --timeout=300 -m "$MARKER"
           fi
 
       - name: Upload integration coverage data
         if: always() && steps.cov_flag.outputs.enabled == '1'
         uses: actions/upload-artifact@v4
         with:
-          name: coverage-data-integration-${{ matrix.os }}-py${{ matrix.python-version }}
+          name: coverage-data-integration-${{ matrix.os }}-py${{ matrix.python-version }}-${{ matrix.shard }}
           path: |
             .coverage.integration
             coverage.integration.xml
