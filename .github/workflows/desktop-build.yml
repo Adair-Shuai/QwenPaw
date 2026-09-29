@@ -313,6 +313,7 @@ jobs:
 
       - name: Upload verify screenshots (Tauri Windows)
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verify-screenshots-tauri-windows-${{ steps.version.outputs.version }}
@@ -512,6 +513,7 @@ jobs:
 
       - name: Upload verify screenshots (Tauri macOS)
         if: always()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verify-screenshots-tauri-macos-${{ steps.version.outputs.version }}

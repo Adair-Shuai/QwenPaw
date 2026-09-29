@@ -625,17 +625,21 @@ def test_post_api_mail_access_control_remark_26(app_server) -> None:
 def test_post_api_console_chat_27(app_server) -> None:
     """Contract: POST /api/console/chat with empty body is rejected or safely
     handled."""
-    resp = _req(app_server, "POST", "/api/console/chat", json={})
-    assert resp.status_code in (
-        200,
-        400,
-        403,
-        404,
-        409,
-        422,
-        500,
-        503,
-    ), app_server.logs_tail()
+    # Chat may return an open SSE stream. Check the response headers without
+    # waiting for the body to finish, which can emit heartbeats indefinitely.
+    with app_server.client.stream(
+        "POST", f"{app_server.base_url}/api/console/chat", json={}, timeout=_T
+    ) as resp:
+        assert resp.status_code in (
+            200,
+            400,
+            403,
+            404,
+            409,
+            422,
+            500,
+            503,
+        ), app_server.logs_tail()
 
 
 @pytest.mark.integration

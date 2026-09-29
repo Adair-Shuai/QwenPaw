@@ -129,6 +129,7 @@ jobs:
                 .github/workflows/release.yml|\
                 .github/workflows/release-resume.yml|\
                 .github/workflows/full-tests-nightly.yml|\
+                .github/workflows/desktop-build.yml|\
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/build_python_layers.py|\
                 scripts/pack-tauri/stage_node_runtime.py|\
@@ -138,7 +139,8 @@ jobs:
                 tests/unit/verify/test_release_workflow_safety.py|\
                 tests/unit/config/test_config_utils_runtime_paths.py|\
                 tests/unit/tauri/test_desktop_layer_layout.py|\
-                tests/integration/test_fork_project_paths.py)
+                tests/integration/test_fork_project_paths.py|\
+                tests/integration/test_contract_batch_misc.py)
                   ;;
                 scripts/pack-tauri/assemble_desktop_layout.py|\
                 tests/unit/tauri/test_desktop_layer_layout.py)
