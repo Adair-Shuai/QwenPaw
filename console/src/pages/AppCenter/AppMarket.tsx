@@ -5,7 +5,7 @@
  * `installPlugin` flow, filtered to UI extensions (category "app") so the
  * market surfaces installable PawApps.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Alert,
@@ -44,11 +44,13 @@ import {
 } from "@/api/modules/plugin";
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
-import { getMarketAppState, type MarketAppState } from "@/utils/marketAppState";
+import { getMarketAppState } from "@/utils/marketAppState";
 import type { InstalledPluginIdentity } from "@/utils/marketPluginIdentity";
 import styles from "./index.module.less";
+import { InteractiveCard } from "@/components/interaction/InteractiveCard";
+import { SettingsDrawer } from "@/components/interaction/SettingsDrawer";
 
-const { Text, Paragraph } = Typography;
+const { Paragraph } = Typography;
 
 const APP_CATEGORY = "app";
 const MARKET_PAGE_SIZE = 20;
@@ -200,6 +202,9 @@ export function AppMarket({
   const tRef = useRef(t);
   tRef.current = t;
 
+  const surfacePrefix = useId();
+  const [preview, setPreview] = useState<MarketPluginEntry | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [plugins, setPlugins] = useState<AppCatalogEntry[]>([]);
@@ -560,6 +565,55 @@ export function AppMarket({
     />
   );
 
+  const installButton = (entry: AppCatalogEntry) => {
+    const catalogState = getMarketAppState(
+      entry,
+      installedAppVersions,
+      isOfficial ? "official" : "app",
+      installedApps,
+    );
+    const state = usesSignedCatalog
+      ? entry.installed
+        ? entry.upgrade_available
+          ? "update"
+          : "installed"
+        : "available"
+      : entry.installed === true && catalogState === "update"
+        ? "installed"
+        : catalogState;
+    const isInstalled = state === "installed";
+    const canUpdate = state === "update";
+    return (
+      <Button
+        type={isInstalled ? "default" : "primary"}
+        icon={
+          isInstalled ? (
+            <BadgeCheck size={14} />
+          ) : canUpdate ? (
+            <RefreshCw size={14} />
+          ) : (
+            <Download size={14} />
+          )
+        }
+        loading={!isInstalled && installingId === entry.id}
+        disabled={
+          isInstalled ||
+          !versionChecked ||
+          (installingId !== null && installingId !== entry.id)
+        }
+        onClick={() => requestInstall(entry)}
+      >
+        {isInstalled
+          ? t("appCenter.installedStatus", "Installed")
+          : canUpdate
+          ? t("appCenter.update", "Update")
+          : installingId === entry.id
+          ? t("appCenter.installing", "安装中...")
+          : t("appCenter.install", "安装")}
+      </Button>
+    );
+  };
+
   return (
     <div>
       {usesSignedCatalog && (
@@ -649,39 +703,20 @@ export function AppMarket({
                   entry.logo_url ||
                   FEATURED_APP_ICONS[entry.id] ||
                   FEATURED_APP_ICONS[entry.plugin_id || ""];
-                const resolvedMarketState: MarketAppState = usesSignedCatalog
-                  ? entry.installed
-                    ? entry.upgrade_available
-                      ? "update"
-                      : "installed"
-                    : "available"
-                  : getMarketAppState(
-                      entry,
-                      installedAppVersions,
-                      isOfficial ? "official" : "app",
-                      installedApps,
-                    );
-                // Marketplace packages are not signed and the backend
-                // deliberately rejects force-overwriting an installed plugin.
-                // Keep discovery/install while routing upgrades through the
-                // signed component updater exposed beside the app version.
-                const marketState: MarketAppState =
-                  !usesSignedCatalog &&
-                  entry.installed === true &&
-                  resolvedMarketState === "update"
-                    ? "installed"
-                    : resolvedMarketState;
-                const isInstalled = marketState === "installed";
-                const canUpdate = marketState === "update";
                 return (
-                  <Card
+                  <InteractiveCard
                     key={entry.id}
-                    className={
-                      usesSignedCatalog
-                        ? `${styles.appCard} ${styles.appCardLarge}`
-                        : styles.appCard
-                    }
+                    tilt={2}
+                    layoutId={`${surfacePrefix}:${entry.id}`}
+                    style={{ borderRadius: 20, height: "100%" }}
                   >
+                    <Card
+                      className={
+                        usesSignedCatalog
+                          ? `${styles.appCard} ${styles.appCardLarge}`
+                          : styles.appCard
+                      }
+                    >
                     <div className={styles.cardIcon}>
                       {iconSrc ? (
                         <img
@@ -699,84 +734,65 @@ export function AppMarket({
                     </div>
                     <div className={styles.cardBody}>
                       <div className={styles.cardHeader}>
-                        <Text strong className={styles.cardTitle} ellipsis>
-                          {entry.display_name}
-                        </Text>
-                        <span className={styles.versionBadge}>
-                          v{entry.version}
-                        </span>
-                        {(entry.is_featured === true || usesSignedCatalog) && (
-                          <span className={styles.featuredTag}>
-                            <Sparkles size={11} strokeWidth={2} />
-                            {channel === "ugsci"
-                              ? t("appCenter.ugsciBadge", "UGSci")
-                              : t("appCenter.featured", "精选")}
+                          <button
+                            className={`${styles.cardTitle} ${styles.previewTrigger}`}
+                            onClick={() => {
+                              setPreview(entry);
+                              setPreviewOpen(true);
+                            }}
+                          >
+                            {entry.display_name}
+                          </button>
+                          <span className={styles.versionBadge}>
+                            v{entry.version}
                           </span>
-                        )}
-                      </div>
-                      <Paragraph
-                        type="secondary"
-                        className={styles.cardDesc}
-                        ellipsis={{ rows: 2 }}
-                      >
-                        {pickDescription(entry, lang) ||
-                          t("appCenter.noDescription", "No description")}
-                      </Paragraph>
-                      <div className={styles.cardFooter}>
-                        <span className={styles.cardMeta}>
-                          {entry.developer || entry.owner || ""}
-                        </span>
-                        {entry.downloads != null && (
-                          <span className={styles.metaDownloads}>
-                            <Download size={12} strokeWidth={2} />
-                            {entry.downloads}
+                          {(entry.is_featured === true || usesSignedCatalog) && (
+                            <span className={styles.featuredTag}>
+                              <Sparkles size={11} strokeWidth={2} />
+                              {channel === "ugsci"
+                                ? t("appCenter.ugsciBadge", "UGSci")
+                                : t("appCenter.featured", "精选")}
+                            </span>
+                          )}
+                        </div>
+                        <Paragraph
+                          type="secondary"
+                          className={styles.cardDesc}
+                          ellipsis={{ rows: 2 }}
+                        >
+                          {pickDescription(entry, lang) ||
+                            t("appCenter.noDescription", "No description")}
+                        </Paragraph>
+                        <div className={styles.cardFooter}>
+                          <span className={styles.cardMeta}>
+                            {entry.developer || entry.owner || ""}
                           </span>
-                        )}
-                      </div>
-                      <div
-                        className={`${styles.cardActions} ${styles.cardHoverActions}`}
-                      >
-                        <Button
-                          type={isInstalled ? "default" : "primary"}
-                          icon={
-                            isInstalled ? (
-                              <BadgeCheck size={14} />
-                            ) : canUpdate ? (
-                              <RefreshCw size={14} />
-                            ) : (
-                              <Download size={14} />
-                            )
-                          }
-                          loading={!isInstalled && installingId === entry.id}
-                          disabled={
-                            isInstalled ||
-                            !versionChecked ||
-                            (installingId !== null && installingId !== entry.id)
-                          }
-                          onClick={() => requestInstall(entry)}
+                          {entry.downloads != null && (
+                            <span className={styles.metaDownloads}>
+                              <Download size={12} strokeWidth={2} />
+                              {entry.downloads}
+                            </span>
+                          )}
+                        </div>
+                        <div
+                          className={`${styles.cardActions} ${styles.cardHoverActions}`}
                         >
-                          {isInstalled
-                            ? t("appCenter.installedStatus", "Installed")
-                            : canUpdate
-                            ? t("appCenter.update", "Update")
-                            : installingId === entry.id
-                            ? t("appCenter.installing", "安装中...")
-                            : t("appCenter.install", "安装")}
-                        </Button>
-                        <Button
-                          icon={<ExternalLink size={14} />}
-                          disabled={!entry.details_url}
-                          onClick={() => {
-                            if (entry.details_url) {
-                              void openExternalLink(entry.details_url);
-                            }
-                          }}
-                        >
-                          {t("appCenter.details", "详情")}
-                        </Button>
+                          {installButton(entry)}
+                          <Button
+                            icon={<ExternalLink size={14} />}
+                            disabled={!entry.details_url}
+                            onClick={() => {
+                              if (entry.details_url) {
+                                void openExternalLink(entry.details_url);
+                              }
+                            }}
+                          >
+                            {t("appCenter.details", "详情")}
+                          </Button>
+                        </div>
                       </div>
-                    </div>
-                  </Card>
+                    </Card>
+                  </InteractiveCard>
                 );
               })}
             </div>
@@ -801,6 +817,46 @@ export function AppMarket({
           </>
         )}
       </Spin>
+      <SettingsDrawer
+        open={previewOpen}
+        onClose={() => setPreviewOpen(false)}
+        surfaceId={preview ? `${surfacePrefix}:${preview.id}` : undefined}
+        title={preview?.display_name}
+        width={620}
+        footer={
+          preview ? (
+            <div className={styles.previewActions}>
+              {installButton(preview)}
+              {preview.details_url && (
+                <Button
+                  icon={<ExternalLink size={14} />}
+                  onClick={() => void openExternalLink(preview.details_url!)}
+                >
+                  {t("appCenter.details")}
+                </Button>
+              )}
+            </div>
+          ) : undefined
+        }
+      >
+        {preview && (
+          <div className={styles.previewBody}>
+            <div className={styles.cardFooter}>
+              <span className={styles.versionBadge}>v{preview.version}</span>
+              <span>{preview.developer || preview.owner}</span>
+              {preview.downloads != null && (
+                <span className={styles.metaDownloads}>
+                  <Download size={14} />
+                  {preview.downloads}
+                </span>
+              )}
+            </div>
+            <p>
+              {pickDescription(preview, lang) || t("appCenter.noDescription")}
+            </p>
+          </div>
+        )}
+      </SettingsDrawer>
     </div>
   );
 }

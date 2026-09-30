@@ -396,9 +396,7 @@ class TestVoiceModeSwitch:
         test_name = request.node.name
 
         log_test_step("Navigate to voice config page")
-        page.goto(VOICE_URL)
-        page.wait_for_load_state("domcontentloaded")
-        page.wait_for_timeout(3000)
+        navigate_to_voice(page)
 
         log_test_step("Find audio mode selector")
         mode_select = page.locator(

@@ -149,6 +149,19 @@ export default defineConfig(({ command, mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
+            if (id.includes("vite/preload-helper")) {
+              return "ui-vendor";
+            }
+            // Let Rollup place the chart graph with its lazy consumers.
+            // Forcing it into a vendor chunk creates a cycle with UI helpers.
+            if (
+              id.includes("node_modules/d3-") ||
+              id.includes("node_modules/d3/") ||
+              id.includes("node_modules/@ant-design/plots/") ||
+              id.includes("node_modules/@antv/")
+            ) {
+              return;
+            }
             // React core
             if (
               id.includes("node_modules/react/") ||
@@ -157,12 +170,6 @@ export default defineConfig(({ command, mode }) => {
               id.includes("node_modules/scheduler/")
             ) {
               return "react-vendor";
-            }
-            if (
-              id.includes("node_modules/@ant-design/plots/") ||
-              id.includes("node_modules/@antv/")
-            ) {
-              return "charts-vendor";
             }
             if (
               id.includes("node_modules/monaco-editor/") ||

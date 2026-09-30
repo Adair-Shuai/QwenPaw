@@ -294,7 +294,7 @@ describe("workspaceApi.loadFile", () => {
   it("calls /workspace/files/<encoded> with filename", async () => {
     vi.mocked(request).mockResolvedValue({ content: "hello" });
     await workspaceApi.loadFile("my file.md");
-    expect(request).toHaveBeenCalledWith("/workspace/files/my%20file.md");
+    expect(request).toHaveBeenCalledWith("/workspace/files/my%20file.md", {});
   });
 });
 
@@ -596,5 +596,21 @@ describe("workspaceApi scoped code-file cache", () => {
       }),
     );
     expect(cacheInvalidate).toHaveBeenCalledWith(scope, "README.md");
+  });
+});
+
+describe("workspace markdown agent scope", () => {
+  it("keeps a pending heartbeat save bound to its original agent", async () => {
+    vi.mocked(request).mockResolvedValue({ content: "check" });
+    await workspaceApi.loadFile("HEARTBEAT.md", "agent-a");
+    expect(request).toHaveBeenLastCalledWith("/workspace/files/HEARTBEAT.md", {
+      headers: { "X-Agent-Id": "agent-a" },
+    });
+    await workspaceApi.saveFile("HEARTBEAT.md", "updated", "agent-a");
+    expect(request).toHaveBeenLastCalledWith("/workspace/files/HEARTBEAT.md", {
+      method: "PUT",
+      headers: { "X-Agent-Id": "agent-a" },
+      body: JSON.stringify({ content: "updated" }),
+    });
   });
 });

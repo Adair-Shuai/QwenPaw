@@ -49,17 +49,19 @@ class ACPPage(BasePage):
     # Create button
     CREATE_BUTTON = (
         'button:has-text("Add Custom Agent"), '
-        'button:has-text("新增 Custom Agent")'
+        'button:has-text("新增 Custom Agent"), '
+        'button:has-text("Add ACP integration"), '
+        'button:has-text("添加 ACP 接入")'
     )
 
     # ACP card list
-    ACP_CARD = '[class*="acpCard"], [class*="ACPCard"], .qwenpaw-card'
+    ACP_CARD = '[class*="channelsGrid"] [class*="card"]'
     ACP_CARD_TITLE = '[class*="agentKey"], [class*="title"], .qwenpaw-card-meta-title'
     ACP_CARD_TAG = '.qwenpaw-tag'
     ACP_CARD_SWITCH = '.qwenpaw-switch'
 
     # ACP drawer (create/edit)
-    DRAWER = '.qwenpaw-drawer'
+    DRAWER = '[role="dialog"]:visible'
     DRAWER_TITLE = '.qwenpaw-drawer-title'
     DRAWER_CLOSE = '.qwenpaw-drawer-close'
 

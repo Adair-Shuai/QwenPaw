@@ -111,6 +111,7 @@ export default function FilesDrawer({
   const [genUiTarget, setGenUiTarget] = useState<FileTarget | undefined>();
   const prefersReducedMotion = useReducedMotion();
   const isWorkspace = state.kind === "workspace";
+  const agentId = scope.agentId;
   const chatId = scope.chatId;
   const projectDirOverride = scope.projectDirOverride;
   const target = state.target;
@@ -242,7 +243,7 @@ export default function FilesDrawer({
             };
           })
       : target.source === "profile"
-      ? workspaceApi.loadFile(target.path).then((file) => ({
+      ? workspaceApi.loadFile(target.path, agentId).then((file) => ({
           metadata: {
             path: target.path,
             size: new Blob([file.content]).size,
@@ -286,7 +287,7 @@ export default function FilesDrawer({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [chatId, projectDirOverride, target]);
+  }, [agentId, chatId, projectDirOverride, target]);
 
   const resizeFromPointer = (event: React.PointerEvent) => {
     event.preventDefault();

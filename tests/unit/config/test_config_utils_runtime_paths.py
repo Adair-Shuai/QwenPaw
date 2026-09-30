@@ -657,6 +657,7 @@ def _write_desktop(tmp_path, monkeypatch, name, body):
     return desktop
 
 
+@pytest.mark.skipif(os.name == "nt", reason="Desktop Exec uses POSIX paths")
 class TestLinuxDefaultBrowserRemaining:
     def test_nonzero_exit_code_is_treated_as_no_handler(self, monkeypatch):
         _run_xdg(monkeypatch, "chrome.desktop\n", returncode=1)

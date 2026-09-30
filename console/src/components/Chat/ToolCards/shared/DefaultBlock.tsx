@@ -23,6 +23,7 @@ import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 import { copyText } from "@/utils/clipboard";
 import { openFilePreview } from "@/features/files-workspace/openFilePreview";
 import { useAgentStore } from "@/stores/agentStore";
+import { useEffectiveFontSize } from "@/contexts/FontSizeContext";
 import { looksLikeMarkdown } from "./utils";
 import styles from "./toolCards.module.less";
 
@@ -215,6 +216,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
       },
     });
   }, [content, selectedAgent, title, workspaceExtension, workspaceTitle]);
+  const baseFontSize = useEffectiveFontSize();
 
   const renderContent = () => {
     if (largeExcerpt) {
@@ -253,7 +255,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
     if (isMarkdown) {
       return (
         <div className={styles.defaultBlockContentMd}>
-          <Markdown content={head} />
+          <Markdown content={head} baseFontSize={baseFontSize} />
         </div>
       );
     }
@@ -316,6 +318,7 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
             className={styles.defaultBlockCopy}
             onClick={handleCopy}
             title={copyTitle}
+            aria-label={copied ? t("common.copied") : copyTitle || t("common.copy")}
           >
             {copied ? <CheckOutlined /> : <CopyOutlined />}
           </button>

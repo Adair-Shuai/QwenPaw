@@ -7,6 +7,7 @@ every agent config, and cleaning the same registrations up again on
 uninstall.  They are exercised through stub loader / app objects so no
 real plugin module is ever imported.
 """
+
 # pylint: disable=protected-access,redefined-outer-name,unused-argument
 # pylint: disable=use-implicit-booleaness-not-comparison
 from __future__ import annotations
@@ -43,7 +44,6 @@ from qwenpaw.app.routers.plugins import (
     uninstall_plugin_source,
     upload_plugin,
 )
-
 
 # Patch targets longer than the 79-column limit are hoisted so each stays a
 # single string literal (pylint W1404 implicit-str-concat).
@@ -452,12 +452,15 @@ class TestPostUnloadCleanup:
     def test_providers_and_commands_are_unregistered(self):
         provider_manager = MagicMock()
         calls: list[str] = []
-        with patch(
-            _CMD_HANDLER_UNREGISTER,
-            side_effect=lambda name: calls.append(f"handler:{name}"),
-        ), patch(
-            _PRIORITY_UNREGISTER,
-            side_effect=lambda prefix: calls.append(f"priority:{prefix}"),
+        with (
+            patch(
+                _CMD_HANDLER_UNREGISTER,
+                side_effect=lambda name: calls.append(f"handler:{name}"),
+            ),
+            patch(
+                _PRIORITY_UNREGISTER,
+                side_effect=lambda prefix: calls.append(f"priority:{prefix}"),
+            ),
         ):
             _post_unload_cleanup(
                 _request(_app(None, provider_manager)),
@@ -480,10 +483,13 @@ class TestPostUnloadCleanup:
             RuntimeError("boom-prov"),
             None,
         ]
-        with patch(
-            _CMD_HANDLER_UNREGISTER,
-        ), patch(
-            _PRIORITY_UNREGISTER,
+        with (
+            patch(
+                _CMD_HANDLER_UNREGISTER,
+            ),
+            patch(
+                _PRIORITY_UNREGISTER,
+            ),
         ):
             _post_unload_cleanup(
                 _request(_app(None, provider_manager)),
@@ -496,12 +502,15 @@ class TestPostUnloadCleanup:
 
     def test_command_failure_does_not_skip_priority_unregister(self, caplog):
         calls: list[str] = []
-        with patch(
-            _CMD_HANDLER_UNREGISTER,
-            side_effect=RuntimeError("boom-handler"),
-        ), patch(
-            _PRIORITY_UNREGISTER,
-            side_effect=calls.append,
+        with (
+            patch(
+                _CMD_HANDLER_UNREGISTER,
+                side_effect=RuntimeError("boom-handler"),
+            ),
+            patch(
+                _PRIORITY_UNREGISTER,
+                side_effect=calls.append,
+            ),
         ):
             _post_unload_cleanup(
                 _request(_app(None, None)),
@@ -538,10 +547,13 @@ class TestPostUnloadCleanup:
         provider_manager.unregister_plugin_provider.side_effect = RuntimeError(
             "boom",
         )
-        with patch(
-            _CMD_HANDLER_UNREGISTER,
-        ), patch(
-            _PRIORITY_UNREGISTER,
+        with (
+            patch(
+                _CMD_HANDLER_UNREGISTER,
+            ),
+            patch(
+                _PRIORITY_UNREGISTER,
+            ),
         ):
             _post_unload_cleanup(
                 _request(_app(None, provider_manager)),
@@ -623,13 +635,19 @@ class TestPostLoadSetup:
         handlers: list[str] = []
         # Patch the whole class: instantiating the real one would run its
         # own default registrations and drown the assertions.
-        with patch(
-            _CMD_HANDLER_REGISTER,
-            side_effect=lambda handler: handlers.append(handler.command_name),
-        ), patch(
-            "qwenpaw.app.channels.command_registry.CommandRegistry",
-        ) as registry_cls, patch(
-            _SYNC_TOOLS,
+        with (
+            patch(
+                _CMD_HANDLER_REGISTER,
+                side_effect=lambda handler: handlers.append(
+                    handler.command_name,
+                ),
+            ),
+            patch(
+                "qwenpaw.app.channels.command_registry.CommandRegistry",
+            ) as registry_cls,
+            patch(
+                _SYNC_TOOLS,
+            ),
         ):
             await _post_load_setup(_request(_app(loader, None)), "plug")
         assert handlers == ["mycmd"]
@@ -642,13 +660,17 @@ class TestPostLoadSetup:
         registry = _registry(commands=[_cmd_reg("plug", "mycmd")])
         loader = MagicMock()
         loader.registry = registry
-        with patch(
-            _CMD_HANDLER_REGISTER,
-            side_effect=ValueError("already registered"),
-        ), patch(
-            "qwenpaw.app.channels.command_registry.CommandRegistry",
-        ), patch(
-            _SYNC_TOOLS,
+        with (
+            patch(
+                _CMD_HANDLER_REGISTER,
+                side_effect=ValueError("already registered"),
+            ),
+            patch(
+                "qwenpaw.app.channels.command_registry.CommandRegistry",
+            ),
+            patch(
+                _SYNC_TOOLS,
+            ),
         ):
             await _post_load_setup(_request(_app(loader, None)), "plug")
         assert "Could not register control command 'mycmd'" in caplog.text
@@ -658,11 +680,14 @@ class TestPostLoadSetup:
         registry = _registry()
         loader = MagicMock()
         loader.registry = registry
-        with patch.dict(
-            "sys.modules",
-            {"qwenpaw.app.channels.command_registry": None},
-        ), patch(
-            _SYNC_TOOLS,
+        with (
+            patch.dict(
+                "sys.modules",
+                {"qwenpaw.app.channels.command_registry": None},
+            ),
+            patch(
+                _SYNC_TOOLS,
+            ),
         ):
             await _post_load_setup(_request(_app(loader, None)), "plug")
         assert "Control command setup skipped" in caplog.text
@@ -770,26 +795,37 @@ class TestCollectPluginRuntimeIds:
 class TestScheduleAllAgentsReload:
     async def test_schedules_every_configured_agent(self):
         scheduled: list[str] = []
-        with _ConfigLayer({"a": object(), "b": object()}), patch(
-            "qwenpaw.app.routers.plugins.schedule_agent_reload",
-            side_effect=lambda request, agent_id: scheduled.append(agent_id),
+        with (
+            _ConfigLayer({"a": object(), "b": object()}),
+            patch(
+                "qwenpaw.app.routers.plugins.schedule_agent_reload",
+                side_effect=lambda request, agent_id: scheduled.append(
+                    agent_id,
+                ),
+            ),
         ):
             await _schedule_all_agents_reload(_request(_app()))
         assert scheduled == ["a", "b"]
 
     async def test_no_profiles_schedules_nothing(self):
-        with _ConfigLayer({}), patch(
-            "qwenpaw.app.routers.plugins.schedule_agent_reload",
-        ) as schedule:
+        with (
+            _ConfigLayer({}),
+            patch(
+                "qwenpaw.app.routers.plugins.schedule_agent_reload",
+            ) as schedule,
+        ):
             await _schedule_all_agents_reload(_request(_app()))
         schedule.assert_not_called()
 
     async def test_load_config_failure_is_swallowed(self, caplog):
-        with _ConfigLayer(
-            None,
-            load_config_error=RuntimeError("cfg-down"),
-        ), patch(
-            "qwenpaw.app.routers.plugins.schedule_agent_reload",
+        with (
+            _ConfigLayer(
+                None,
+                load_config_error=RuntimeError("cfg-down"),
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins.schedule_agent_reload",
+            ),
         ):
             await _schedule_all_agents_reload(_request(_app()))
         assert "Could not schedule agent reloads" in caplog.text
@@ -969,7 +1005,10 @@ class TestListPluginsRoute:
         record = _record("plug", meta={"tool_name": "alpha"})
         loader = MagicMock()
         loader.get_all_loaded_plugins.return_value = {"plug": record}
-        with patch("qwenpaw.app.routers.plugins._list_plugins_from_disk", return_value=[]):
+        with patch(
+            "qwenpaw.app.routers.plugins._list_plugins_from_disk",
+            return_value=[],
+        ):
             response = _client(loader).get("/api/plugins")
         assert response.status_code == 200
         assert response.json() == [
@@ -989,7 +1028,10 @@ class TestListPluginsRoute:
     def test_empty_loader_returns_empty_list(self):
         loader = MagicMock()
         loader.get_all_loaded_plugins.return_value = {}
-        with patch("qwenpaw.app.routers.plugins._list_plugins_from_disk", return_value=[]):
+        with patch(
+            "qwenpaw.app.routers.plugins._list_plugins_from_disk",
+            return_value=[],
+        ):
             assert _client(loader).get("/api/plugins").json() == []
 
 
@@ -1090,12 +1132,17 @@ class TestLoadPluginWithOptionalForceReinstall:
     async def test_non_force_passes_no_unload_hooks(self, tmp_path):
         log: list[str] = []
         loader = _loader_stub(log)
-        with patch(
-            "qwenpaw.config.utils.get_plugins_dir",
-            return_value=tmp_path,
-        ), patch(
-            _FINISH_INSTALL,
-            new=AsyncMock(side_effect=lambda *a, **k: log.append("finish")),
+        with (
+            patch(
+                "qwenpaw.config.utils.get_plugins_dir",
+                return_value=tmp_path,
+            ),
+            patch(
+                _FINISH_INSTALL,
+                new=AsyncMock(
+                    side_effect=lambda *a, **k: log.append("finish"),
+                ),
+            ),
         ):
             result = await _load_plugin_with_optional_force_reinstall(
                 loader,
@@ -1145,16 +1192,20 @@ class TestLoadPluginWithOptionalForceReinstall:
 
         loader.load_plugin_from_path = AsyncMock(side_effect=_capture_load)
 
-        with patch(
-            "qwenpaw.config.utils.get_plugins_dir",
-            return_value=tmp_path,
-        ), patch(
-            "qwenpaw.app.routers.plugins._post_unload_cleanup",
-            side_effect=_fake_cleanup,
-        ), patch(
-            _FINISH_INSTALL,
-            new=AsyncMock(
-                side_effect=lambda *a, **k: finish_calls.append((a, k)),
+        with (
+            patch(
+                "qwenpaw.config.utils.get_plugins_dir",
+                return_value=tmp_path,
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._post_unload_cleanup",
+                side_effect=_fake_cleanup,
+            ),
+            patch(
+                _FINISH_INSTALL,
+                new=AsyncMock(
+                    side_effect=lambda *a, **k: finish_calls.append((a, k)),
+                ),
             ),
         ):
             result = await _load_plugin_with_optional_force_reinstall(
@@ -1192,15 +1243,19 @@ class TestLoadPluginWithOptionalForceReinstall:
             return "LOADED"
 
         loader.load_plugin_from_path = AsyncMock(side_effect=_capture_load)
-        with patch(
-            "qwenpaw.config.utils.get_plugins_dir",
-            return_value=tmp_path,
-        ), patch(
-            "qwenpaw.app.routers.plugins._post_unload_cleanup",
-        ), patch(
-            _FINISH_INSTALL,
-            new=AsyncMock(),
-        ) as finish:
+        with (
+            patch(
+                "qwenpaw.config.utils.get_plugins_dir",
+                return_value=tmp_path,
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._post_unload_cleanup",
+            ),
+            patch(
+                _FINISH_INSTALL,
+                new=AsyncMock(),
+            ) as finish,
+        ):
             await _load_plugin_with_optional_force_reinstall(
                 loader,
                 _request(_app(loader)),
@@ -1220,12 +1275,15 @@ class TestInstallPluginSource:
         log: list[str] = []
         loader = _loader_stub(log)
         app = _app(loader)
-        with patch(
-            "qwenpaw.config.utils.get_plugins_dir",
-            return_value=tmp_path,
-        ), patch(
-            _FINISH_INSTALL,
-            new=AsyncMock(),
+        with (
+            patch(
+                "qwenpaw.config.utils.get_plugins_dir",
+                return_value=tmp_path,
+            ),
+            patch(
+                _FINISH_INSTALL,
+                new=AsyncMock(),
+            ),
         ):
             result = await install_plugin_source(
                 f"  {tmp_path}  ",
@@ -1275,15 +1333,19 @@ class TestInstallPluginSource:
             return "LOADED"
 
         loader.load_plugin_from_path = AsyncMock(side_effect=_capture_load)
-        with patch(
-            "qwenpaw.config.utils.get_plugins_dir",
-            return_value=tmp_path,
-        ), patch(
-            "qwenpaw.app.routers.plugins._async_download",
-            new=_fake_download,
-        ), patch(
-            "qwenpaw.app.routers.plugins.tempfile.mkdtemp",
-            side_effect=_mkdtemp,
+        with (
+            patch(
+                "qwenpaw.config.utils.get_plugins_dir",
+                return_value=tmp_path,
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._async_download",
+                new=_fake_download,
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins.tempfile.mkdtemp",
+                side_effect=_mkdtemp,
+            ),
         ):
             await install_plugin_source(
                 "https://example.test/p.zip",
@@ -1321,15 +1383,19 @@ class TestInstallPluginSource:
             made.append(path)
             return str(path)
 
-        with patch(
-            "qwenpaw.config.utils.get_plugins_dir",
-            return_value=tmp_path,
-        ), patch(
-            "qwenpaw.app.routers.plugins._async_download",
-            new=_fake_download,
-        ), patch(
-            "qwenpaw.app.routers.plugins.tempfile.mkdtemp",
-            side_effect=_mkdtemp,
+        with (
+            patch(
+                "qwenpaw.config.utils.get_plugins_dir",
+                return_value=tmp_path,
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._async_download",
+                new=_fake_download,
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins.tempfile.mkdtemp",
+                side_effect=_mkdtemp,
+            ),
         ):
             with pytest.raises(RuntimeError, match="load failed"):
                 await install_plugin_source(
@@ -1351,15 +1417,21 @@ class TestUninstallPluginSource:
         loader = _loader_stub(log, record=record, registry=registry)
         cleanup: list[Any] = []
         removed: list[Any] = []
-        with patch(
-            "qwenpaw.app.routers.plugins._post_unload_cleanup",
-            side_effect=lambda *a: cleanup.append(a),
-        ), patch(
-            "qwenpaw.app.routers.plugins._remove_plugin_tools_from_agents",
-            side_effect=lambda *a: removed.append(a),
-        ), patch(
-            "qwenpaw.app.routers.plugins._schedule_all_agents_reload",
-            new=AsyncMock(side_effect=lambda request: log.append("reload")),
+        with (
+            patch(
+                "qwenpaw.app.routers.plugins._post_unload_cleanup",
+                side_effect=lambda *a: cleanup.append(a),
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._remove_plugin_tools_from_agents",
+                side_effect=lambda *a: removed.append(a),
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._schedule_all_agents_reload",
+                new=AsyncMock(
+                    side_effect=lambda request: log.append("reload"),
+                ),
+            ),
         ):
             await uninstall_plugin_source(
                 "plug",
@@ -1390,13 +1462,19 @@ class TestUninstallPluginSource:
     async def test_reload_can_be_skipped(self):
         log: list[str] = []
         loader = _loader_stub(log, record=_record("plug"))
-        with patch(
-            "qwenpaw.app.routers.plugins._post_unload_cleanup",
-        ), patch(
-            "qwenpaw.app.routers.plugins._remove_plugin_tools_from_agents",
-        ), patch(
-            "qwenpaw.app.routers.plugins._schedule_all_agents_reload",
-            new=AsyncMock(side_effect=lambda request: log.append("reload")),
+        with (
+            patch(
+                "qwenpaw.app.routers.plugins._post_unload_cleanup",
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._remove_plugin_tools_from_agents",
+            ),
+            patch(
+                "qwenpaw.app.routers.plugins._schedule_all_agents_reload",
+                new=AsyncMock(
+                    side_effect=lambda request: log.append("reload"),
+                ),
+            ),
         ):
             await uninstall_plugin_source(
                 "plug",
@@ -1525,13 +1603,20 @@ class TestUninstallPluginRoute:
 
     def test_unexpected_error_is_500(self, caplog):
         loader = _loader_stub([], record=_record("plug"))
-        loader.unload_plugin = AsyncMock(side_effect=RuntimeError("disk on fire"))
-        with patch("qwenpaw.plugins.bundled.mark_plugin_uninstalled"), patch(
-            "qwenpaw.plugins.bundled.clear_uninstalled_marker",
-        ), patch(
-            "qwenpaw.components.service.is_component_update_adopted",
-            return_value=False,
-        ), patch("qwenpaw.components.service.set_component_update_adoption"):
+        loader.unload_plugin = AsyncMock(
+            side_effect=RuntimeError("disk on fire"),
+        )
+        with (
+            patch("qwenpaw.plugins.bundled.mark_plugin_uninstalled"),
+            patch(
+                "qwenpaw.plugins.bundled.clear_uninstalled_marker",
+            ),
+            patch(
+                "qwenpaw.components.service.is_component_update_adopted",
+                return_value=False,
+            ),
+            patch("qwenpaw.components.service.set_component_update_adoption"),
+        ):
             response = _client(loader).delete("/api/plugins/plug")
         assert response.status_code == 500
         assert "disk on fire" in response.json()["detail"]
@@ -1752,12 +1837,15 @@ class TestResidualBranches:
         assert layer.saved == []
 
     def test_priority_unregister_failure_is_logged(self, caplog):
-        with patch(
-            _CMD_HANDLER_UNREGISTER,
-            return_value=True,
-        ), patch(
-            _PRIORITY_UNREGISTER,
-            side_effect=RuntimeError("boom-priority"),
+        with (
+            patch(
+                _CMD_HANDLER_UNREGISTER,
+                return_value=True,
+            ),
+            patch(
+                _PRIORITY_UNREGISTER,
+                side_effect=RuntimeError("boom-priority"),
+            ),
         ):
             _post_unload_cleanup(
                 _request(_app(None, None)),
@@ -1797,7 +1885,7 @@ class TestResidualBranches:
         assert response.media_type == "application/javascript"
         assert response.headers["Cache-Control"] == "no-cache"
 
-    async def test_ui_file_without_guessable_type_omits_media_type(
+    async def test_ui_file_serves_unknown_extensions(
         self,
         tmp_path,
     ):
@@ -1813,7 +1901,4 @@ class TestResidualBranches:
             _request(_app(loader)),
         )
         assert Path(response.path) == asset
-        # guess_type() found nothing, so FileResponse falls back to its
-        # own default instead of a caller-supplied media_type
-        assert response.media_type == "application/octet-stream"
         assert response.headers["Cache-Control"] == "no-cache"

@@ -7,6 +7,7 @@ group CRUD through ``TestClient``. This one calls the route functions
 directly, so every dependency-injection seam, every error status code and
 the effective project-directory projection can be asserted on its own.
 """
+
 # pylint: disable=protected-access
 
 from __future__ import annotations

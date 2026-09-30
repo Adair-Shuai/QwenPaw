@@ -18,7 +18,7 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from playwright.sync_api import Page, Locator
+from playwright.sync_api import Page, Locator, TimeoutError
 
 from pages.base_page import BasePage
 from config.settings import config
@@ -36,45 +36,45 @@ class SkillPoolPage(BasePage):
     # Page + card grid (SkillPool/index.module.less, PoolSkillCard.tsx)
     PAGE_CONTAINER = '[class*="skillsPage"]'
     SKILL_GRID = '[class*="skillsGrid"]'
-    SKILL_CARD = '[class*="skillCard"]'
-    SKILL_TITLE = '[class*="skillTitle"]'
+    SKILL_CARD = '[class*="PoolSkillCard-module__card"]'
+    SKILL_TITLE = '[class*="PoolSkillCard-module__title"]'
     SEARCH_INPUT = (
-        'main input[placeholder*="Filter by name"], '
-        'main input[placeholder*="按名称筛选"], '
-        '[class*="skillsPage"] [class*="searchContainer"] input'
+        'input[aria-label="Filter by name"], '
+        'input[aria-label="按名称筛选"]'
     )
-    # Sync status badge (rendered for every card) + its colored dot.
+    # Sync status badge rendered for every card.
     STATUS_BADGE = '[class*="statusBadge"]'
-    STATUS_DOT = '[class*="statusDot"]'
-    # "Auto Sync" chip in the title row — only when skill.auto_update === true.
-    AUTO_UPDATE_TAG = '[class*="autoUpdateTag"]'
+    AUTOMATION_TAG = (
+        'button[data-testid^="skill-automation-"][aria-pressed="true"]'
+    )
     BUILTIN_TAG = '[class*="builtinTag"]'
     CUSTOM_TAG = '[class*="customTag"]'
-    # Card footer is only mounted on hover / batch / mobile; the auto-update
-    # quick-toggle button (SyncOutlined) lives inside it.
-    CARD_FOOTER = '[class*="cardFooter"]'
-    AUTO_UPDATE_BUTTON = '[class*="autoUpdateButton"]'
+    # Card footer is only mounted on hover / batch / mobile; the single
+    # automation quick action (SyncOutlined) lives inside it.
+    CARD_FOOTER = '[class*="PoolSkillCard-module__footer"]'
+    AUTOMATION_BUTTON = 'button[data-testid^="skill-automation-"]'
 
-    # Edit drawer (PoolSkillDrawer.tsx)
-    DRAWER = '.qwenpaw-drawer'
-    DRAWER_TITLE = '.qwenpaw-drawer-title'
-    # The only Switch inside the drawer is the Auto Sync toggle.
-    AUTO_SYNC_SWITCH = '.qwenpaw-drawer button[role="switch"]'
+    # PoolSkillDrawer uses SettingsDrawer, which renders a SharedModal on
+    # desktop. Anchor the editor on its edit-only Auto Sync control so other
+    # dialogs cannot satisfy these selectors.
+    DRAWER = '[role="dialog"]:has([data-testid="auto-sync-switch"])'
+    DRAWER_TITLE = f'{DRAWER} .qwenpaw-modal-title'
+    AUTO_SYNC_SWITCH = f'{DRAWER} [data-testid="auto-sync-switch"]'
     # Target-agent multi-select is rendered ONLY after the switch is ON; anchor
     # on its placeholder text (unique) so we don't match other selects.
     TARGET_SELECT_PLACEHOLDER = (
-        '.qwenpaw-drawer [class*="select-selection-placeholder"]'
+        f'{DRAWER} [class*="select-selection-placeholder"]'
         ':has-text("All agents that have this skill"), '
-        '.qwenpaw-drawer [class*="select-selection-placeholder"]'
+        f'{DRAWER} [class*="select-selection-placeholder"]'
         ':has-text("所有已安装该技能的智能体")'
     )
     SAVE_BTN = (
-        '.qwenpaw-drawer button:has-text("Save"), '
-        '.qwenpaw-drawer button:has-text("保存")'
+        f'{DRAWER} .qwenpaw-modal-footer button.qwenpaw-btn-primary'
     )
     CANCEL_BTN = (
-        '.qwenpaw-drawer button:has-text("Cancel"), '
-        '.qwenpaw-drawer button:has-text("取消")'
+        f'{DRAWER} button:has-text("Cancel"), '
+        f'{DRAWER} button:has-text("取消"), '
+        f'{DRAWER} button:has-text("取 消")'
     )
 
     # ========== Initialization ==========
@@ -122,7 +122,11 @@ class SkillPoolPage(BasePage):
         card = self.page.locator(
             f'{self.SKILL_CARD}:has-text("{name}")'
         ).first
-        return card if card.count() > 0 else None
+        try:
+            card.wait_for(state="visible", timeout=self.timeout)
+        except TimeoutError:
+            return None
+        return card
 
     def hover_card(self, card: Locator) -> "SkillPoolPage":
         """Hover a card so its footer (auto-update button) is mounted."""

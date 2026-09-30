@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Tabs, type TabsProps } from "@agentscope-ai/design";
 import { useSyncExternalStore } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams, useLocation } from "react-router-dom";
 import { PageHeader } from "@/components/PageHeader";
 import { marketplaceExtensionRegistry } from "../../marketplaceRegistry";
 import styles from "./index.module.less";
@@ -26,6 +26,7 @@ export function MarketplaceHeader({
 }: MarketplaceHeaderProps) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { pathname } = useLocation();
   const [searchParams] = useSearchParams();
   const extensions = useSyncExternalStore(
     (listener) => marketplaceExtensionRegistry.subscribe(listener),
@@ -43,9 +44,13 @@ export function MarketplaceHeader({
   ];
 
   const handleChange = (section: string) => {
-    const path =
+    const basePath =
       SECTION_PATHS[section as keyof typeof SECTION_PATHS] ??
       `/market?tab=${encodeURIComponent(section)}`;
+    const path = basePath.replace(
+      "/market",
+      pathname.startsWith("/settings/") ? "/settings/marketplace" : "/market",
+    );
     const target = searchParams.get("target");
     const targetSuffix =
       target === "pool" || target === "workspace"

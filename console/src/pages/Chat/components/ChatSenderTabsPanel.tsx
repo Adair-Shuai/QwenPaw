@@ -2,12 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { message, Tooltip } from "antd";
 import {
-  SparkClearLine,
-  SparkErrorCircleLine,
-  SparkPauseLine,
-  SparkPlayFill,
-  SparkStopCircleLine,
-} from "@agentscope-ai/icons";
+  Eraser as SparkClearLine,
+  CircleAlert as SparkErrorCircleLine,
+  Pause as SparkPauseLine,
+  Play as SparkPlayFill,
+  CircleStop as SparkStopCircleLine,
+} from "lucide-react";
 import { useTheme } from "../../../contexts/ThemeContext";
 import {
   selectTasksForSession,
@@ -275,7 +275,10 @@ export default function ChatSenderTabsPanel({
             cursor: batchBusy || !hasRunningBg ? "not-allowed" : "pointer",
           }}
         >
-          <SparkStopCircleLine style={{ ...chipIconStyle, color: "#ff4d4f" }} />
+          <SparkStopCircleLine
+            size="1em"
+            style={{ ...chipIconStyle, color: "#ff4d4f" }}
+          />
           <span style={chipLabelStyle}>
             {t("tool.control.bgQueue.cancelAll", "Cancel all")}
           </span>
@@ -293,7 +296,10 @@ export default function ChatSenderTabsPanel({
                 : "pointer",
           }}
         >
-          <SparkClearLine style={{ ...chipIconStyle, color: mutedColor }} />
+          <SparkClearLine
+            size="1em"
+            style={{ ...chipIconStyle, color: mutedColor }}
+          />
           <span style={chipLabelStyle}>
             {t("tool.control.bgQueue.clearAll", "Clear completed")}
           </span>
@@ -317,7 +323,10 @@ export default function ChatSenderTabsPanel({
               marginRight: 2,
             }}
           >
-            <SparkErrorCircleLine style={{ fontSize: 11, display: "block" }} />
+            <SparkErrorCircleLine
+              size="1em"
+              style={{ fontSize: 11, display: "block" }}
+            />
             {t("chat.queue.sendFailed")}
           </span>
         )}
@@ -336,9 +345,15 @@ export default function ChatSenderTabsPanel({
             }
           >
             {isPausedOrError ? (
-              <SparkPlayFill style={{ ...chipIconStyle, color: "#52c41a" }} />
+              <SparkPlayFill
+                size="1em"
+                style={{ ...chipIconStyle, color: "#52c41a" }}
+              />
             ) : (
-              <SparkPauseLine style={{ ...chipIconStyle, color: "#faad14" }} />
+              <SparkPauseLine
+                size="1em"
+                style={{ ...chipIconStyle, color: "#faad14" }}
+              />
             )}
             <span style={chipLabelStyle}>
               {isPausedOrError ? t("chat.queue.resume") : t("chat.queue.pause")}
@@ -353,7 +368,10 @@ export default function ChatSenderTabsPanel({
               style={chipBtnStyle}
               aria-label={t("chat.queue.clear")}
             >
-              <SparkClearLine style={{ ...chipIconStyle, color: mutedColor }} />
+              <SparkClearLine
+                size="1em"
+                style={{ ...chipIconStyle, color: mutedColor }}
+              />
               <span style={chipLabelStyle}>{t("chat.queue.clear")}</span>
             </button>
           </Tooltip>
@@ -398,7 +416,7 @@ export default function ChatSenderTabsPanel({
               t("chat.queue.title", "Message queue"),
               queueItems.length,
               isDark ? "rgba(24,144,255,0.2)" : "rgba(24,144,255,0.12)",
-              "#1677ff",
+              "var(--app-accent-text)",
             )}
           {hasBg &&
             renderTab(

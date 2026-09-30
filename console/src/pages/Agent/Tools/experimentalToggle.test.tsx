@@ -108,7 +108,7 @@ describe("BrowserExperimentalToggle", () => {
     expect(screen.queryByTestId("route-page-header")).not.toBeInTheDocument();
     expect(screen.getByText("tools.title")).toBeInTheDocument();
     expect(screen.getByText("tools.description")).toBeInTheDocument();
-    expect(screen.getByRole("switch")).toBeInTheDocument();
+    expect(screen.getAllByRole("switch")).toHaveLength(2);
   });
 
   it("shows the selected unified-browser mode after enabling it", async () => {
