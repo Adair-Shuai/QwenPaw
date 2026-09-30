@@ -19,11 +19,17 @@ it("registers the FlowForge route from the built plugin bundle", () => {
     },
   };
 
-  const bundlePath = path.resolve(
+  const sourceBundlePath = path.resolve(
+    process.cwd(),
+    "../plugins/bundle/flowforge/ui/dist/index.js",
+  );
+  const mirrorBundlePath = path.resolve(
     process.cwd(),
     "../src/qwenpaw/plugins_bundle/flowforge/ui/dist/index.js",
   );
-  new Function(fs.readFileSync(bundlePath, "utf8"))();
+  const source = fs.readFileSync(sourceBundlePath, "utf8");
+  expect(fs.readFileSync(mirrorBundlePath, "utf8")).toBe(source);
+  new Function(source)();
 
   expect(routes).toMatchObject([
     { id: "flowforge.editor", path: "/flowforge" },
