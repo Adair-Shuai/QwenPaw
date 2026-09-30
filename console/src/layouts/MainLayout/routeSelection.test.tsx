@@ -2,10 +2,17 @@
 import { describe, expect, it } from "vitest";
 
 import { pickSelectedKey } from "./routeSelection";
+import { BUILTIN_ROUTES } from "../registry/builtinRoutes";
 
 const EmptyPage = () => null;
 
 describe("pickSelectedKey", () => {
+  it("registers the settings center for the sidebar settings button", () => {
+    expect(pickSelectedKey("/settings/general", BUILTIN_ROUTES)).toBe(
+      "core.settings-center",
+    );
+  });
+
   it("uses React Router precedence for a plugin route under /settings", () => {
     const routes = [
       {
