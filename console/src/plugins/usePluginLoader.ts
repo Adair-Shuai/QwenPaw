@@ -77,6 +77,7 @@ async function fetchFrontendPlugins(): Promise<FrontendPluginInfo[]> {
 async function executePluginScript(
   entryUrl: string,
   version?: string,
+  prefetchedResponse?: Promise<Response | undefined>,
 ): Promise<void> {
   // Versioned URLs re-use the WebView disk cache between launches while still
   // invalidating immediately after a plugin upgrade.
@@ -87,18 +88,8 @@ async function executePluginScript(
     : entryUrl;
 
   // Strategy 1: Fetch + Blob URL import (most reliable in Tauri WebView).
-  let response: Response | undefined;
-  try {
-    response = await fetch(versionedUrl, {
-      headers: authHeaders(),
-      cache: "default",
-    });
-  } catch (fetchError) {
-    console.warn(
-      `[PluginLoader] Failed to fetch ${entryUrl}, will try direct import fallback:`,
-      fetchError,
-    );
-  }
+  const response = await (prefetchedResponse ??
+    fetchPluginScript(versionedUrl));
 
   // An HTTP error is authoritative. A direct import would request the same
   // resource again and can mask the useful status with a module-loader error.
@@ -132,8 +123,25 @@ async function executePluginScript(
   await import(/* @vite-ignore */ versionedUrl);
 }
 
+function fetchPluginScript(
+  versionedUrl: string,
+): Promise<Response | undefined> {
+  return fetch(versionedUrl, {
+    headers: authHeaders(),
+    cache: "default",
+  }).catch((fetchError) => {
+    console.warn(
+      `[PluginLoader] Failed to fetch ${versionedUrl}, will try direct import fallback:`,
+      fetchError,
+    );
+    return undefined;
+  });
+}
+
 /** Load every installed frontend plugin during Console startup. */
-export async function loadAllPlugins(): Promise<PluginLoadSummary> {
+export async function loadAllPlugins(
+  beforeExecute?: Promise<unknown>,
+): Promise<PluginLoadSummary> {
   let plugins: FrontendPluginInfo[];
   try {
     plugins = await fetchFrontendPlugins();
@@ -155,15 +163,32 @@ export async function loadAllPlugins(): Promise<PluginLoadSummary> {
     loadedPluginRevisions.delete(pluginId);
   }
 
+  // Fetch bundles while the host SDK is initializing. Their registration
+  // side effects still run only after the host is ready.
+  const prefetched = loadable.map((plugin) => {
+    const revision = plugin.frontend_revision || plugin.version || "0";
+    if (loadedPluginRevisions.get(plugin.id) === revision) return undefined;
+    const entryUrl = resolveUrl(plugin.id, plugin.frontend_entry!);
+    const versionedUrl = `${entryUrl}${
+      entryUrl.includes("?") ? "&" : "?"
+    }v=${encodeURIComponent(revision)}`;
+    return fetchPluginScript(versionedUrl);
+  });
+  await beforeExecute;
+
   const results = await Promise.allSettled(
-    loadable.map(async (p) => {
+    loadable.map(async (p, index) => {
       const revision = p.frontend_revision || p.version || "0";
       const previousRevision = loadedPluginRevisions.get(p.id);
       if (previousRevision === revision) return;
       if (previousRevision !== undefined) {
         removePluginRuntime(p.id);
       }
-      await executePluginScript(resolveUrl(p.id, p.frontend_entry!), revision);
+      await executePluginScript(
+        resolveUrl(p.id, p.frontend_entry!),
+        revision,
+        prefetched[index],
+      );
       loadedPluginRevisions.set(p.id, revision);
       console.info(`[PluginLoader] ✓ ${p.id}`);
     }),

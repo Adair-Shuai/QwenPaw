@@ -64,6 +64,29 @@ describe("frontend plugin loader", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("prefetches plugin scripts while host setup is pending", async () => {
+    let releaseHost!: () => void;
+    const hostReady = new Promise<void>((resolve) => {
+      releaseHost = resolve;
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
+      .mockResolvedValueOnce(new Response("export default true"));
+
+    const loading = loadAllPlugins(hostReady);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    let completed = false;
+    void loading.then(() => {
+      completed = true;
+    });
+    expect(completed).toBe(false);
+
+    releaseHost();
+    await expect(loading).resolves.toEqual({ loaded: 1, failed: [] });
+    expect(completed).toBe(true);
+  });
+
   it("removes frontend registrations when a plugin is disabled or removed", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock

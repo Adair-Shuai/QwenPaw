@@ -121,14 +121,12 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
     let reloadedAtReady = false;
     const load = () => {
       if (!loadPromise) {
-        loadPromise = ensureHostSdk()
-          .catch(() => undefined) // host SDK install failure is non-fatal
-          .then(() => loadAllPlugins())
-          .then(async ({ failed }) => {
-            setError(failed.length > 0 ? failed.join("; ") : null);
-            await reportPluginUiVerification();
-            setLoading(false);
-          });
+        const hostSdkReady = ensureHostSdk().catch(() => undefined);
+        loadPromise = loadAllPlugins(hostSdkReady).then(async ({ failed }) => {
+          setError(failed.length > 0 ? failed.join("; ") : null);
+          await reportPluginUiVerification();
+          setLoading(false);
+        });
       }
       return loadPromise;
     };
