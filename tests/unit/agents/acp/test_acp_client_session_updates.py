@@ -1153,7 +1153,7 @@ class TestPermissionRoundTrip:
 
         # Same absolute path, new working directory: only the display form
         # changes, the guard still sees the real path.
-        assert after.target == str(target.relative_to(tmp_path))
+        assert after.target == target.relative_to(tmp_path).as_posix()
         assert after.paths == [str(target)]
 
 

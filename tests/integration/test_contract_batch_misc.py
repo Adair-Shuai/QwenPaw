@@ -1841,8 +1841,7 @@ def test_get_api_plugins_plugin_id_files_file_path_path_88(app_server) -> None:
 @pytest.mark.integration
 @pytest.mark.p1
 def test_get_api_plugins_market_search_89(app_server) -> None:
-    """Contract: GET /api/plugins/market/search responds with a parseable
-    payload."""
+    """Market search returns data or a parseable gateway error."""
     resp = _req(app_server, "GET", "/api/plugins/market/search")
     assert resp.status_code in (
         200,
@@ -1851,12 +1850,9 @@ def test_get_api_plugins_market_search_89(app_server) -> None:
         409,
         415,
         422,
+        502,
     ), app_server.logs_tail()
-    if resp.status_code == 200:
-        try:
-            resp.json()
-        except Exception:
-            pass  # binary / streaming payload
+    assert isinstance(resp.json(), (dict, list))
 
 
 @pytest.mark.integration

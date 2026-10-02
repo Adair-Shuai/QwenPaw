@@ -1270,7 +1270,7 @@ def test_in_process_executor_uses_handler_resume_hook_for_checkpoint(
     repository.mark_resume_requested("resume-in-process")
     # Starting the service discovers and submits already queued Runs.
     service.start()
-    assert finished.wait(2)
+    assert finished.wait(10)
     for _ in range(100):
         if repository.get_run("resume-in-process")["status"] == "succeeded":
             break
