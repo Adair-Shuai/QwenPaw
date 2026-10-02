@@ -166,7 +166,9 @@ describe("Header update entry", () => {
     const version = await screen.findByText("v2.1.1b7");
 
     expect(button).toBeVisible();
-    expect(button.querySelector(".anticon-cloud-download")).toBeInTheDocument();
+    expect(
+      button.querySelector("svg.lucide-cloud-download"),
+    ).toBeInTheDocument();
     expect(version).toBeVisible();
     expect(version.closest("[class*='appBrandVersionArea']")).toContainElement(
       button,

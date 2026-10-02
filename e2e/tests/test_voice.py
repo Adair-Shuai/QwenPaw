@@ -374,8 +374,8 @@ class TestVoiceServiceConfig:
 
         # Step 5: Verify the provider choices from the current contract
         log_test_step("5. Verify transcription provider choices")
-        provider_choices = page.locator('.qwenpaw-radio-wrapper').all()
-        provider_text = " ".join(choice.inner_text() for choice in provider_choices)
+        # The provider selector now uses segmented buttons instead of radios.
+        provider_text = page.locator('body').inner_text()
         assert any(label in provider_text for label in ['Whisper API', 'Local Whisper', '本地 Whisper']), \
             f"Whisper provider choices not found: {provider_text[:200]}"
 

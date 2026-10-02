@@ -136,12 +136,12 @@ class ChatPage(BasePage):
     SESSION_MORE_BTN = '[class*=moreBtn]'
     # ``:text-is`` is exact so "Pin" does not also match "Unpin".
     SESSION_MENU_PIN = (
-        'div[role="menu"] button[role="menuitem"]:text-is("Pin"), '
-        'div[role="menu"] button[role="menuitem"]:text-is("置顶")'
+        'div[role="menu"] button[role="menuitem"]:has(> span:text-is("Pin")), '
+        'div[role="menu"] button[role="menuitem"]:has(> span:text-is("置顶"))'
     )
     SESSION_MENU_UNPIN = (
-        'div[role="menu"] button[role="menuitem"]:text-is("Unpin"), '
-        'div[role="menu"] button[role="menuitem"]:text-is("取消置顶")'
+        'div[role="menu"] button[role="menuitem"]:has(> span:text-is("Unpin")), '
+        'div[role="menu"] button[role="menuitem"]:has(> span:text-is("取消置顶"))'
     )
     SESSION_MENU_RENAME = (
         'div[role="menu"] button[role="menuitem"]:has-text("Rename"), '

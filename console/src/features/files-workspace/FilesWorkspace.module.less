@@ -406,7 +406,7 @@
     outline: 0;
     color: inherit;
     background: transparent;
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale));
   }
 }
 
@@ -429,7 +429,7 @@
 
 .browserEmbedHint {
   color: var(--files-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 }
 
 .workbenchEmptyState {
@@ -445,13 +445,13 @@
 
   strong {
     color: var(--files-ink);
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale));
   }
 
   p {
     max-width: 340px;
     margin: 0;
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale));
     line-height: 1.6;
   }
 }
@@ -507,13 +507,13 @@
   }
 
   strong {
-    font-size: 13px;
+    font-size: calc(13px * var(--app-font-scale));
   }
 
   span:not(.agentSummaryIcon) {
     overflow: hidden;
     color: var(--files-muted);
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -561,7 +561,7 @@
     border-radius: 999px;
     color: var(--files-accent);
     background: var(--files-accent-soft);
-    font-size: 9px;
+    font-size: calc(9px * var(--app-font-scale));
   }
 
   span[data-inferred="true"] {
@@ -589,7 +589,7 @@
     border-radius: 6px;
     color: var(--files-muted);
     background: transparent;
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
     cursor: pointer;
   }
 
@@ -623,12 +623,12 @@
   }
 
   strong {
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale));
   }
 
   span:not(.agentCoordinatorIcon) {
     color: var(--files-muted);
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
   }
 }
 
@@ -731,7 +731,7 @@
     margin: 5px 0 0;
     overflow: hidden;
     color: var(--files-muted);
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
     line-height: 1.45;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -753,10 +753,10 @@
   align-items: center;
   gap: 5px;
   color: #6250ad;
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
 
   strong {
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
   }
 
   span {
@@ -781,7 +781,7 @@
     min-width: 0;
     flex: 1;
     overflow: hidden;
-    font-size: 11px;
+    font-size: calc(11px * var(--app-font-scale));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -793,7 +793,7 @@
   align-items: center;
   gap: 3px;
   color: var(--files-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
   white-space: nowrap;
 
   &[data-status="running"] {
@@ -820,7 +820,7 @@
   justify-content: space-between;
   gap: 7px;
   color: var(--files-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
 }
 
 .agentRelationTag {
@@ -849,7 +849,7 @@
   border-radius: 6px;
   color: var(--files-muted);
   background: var(--files-bg);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -871,7 +871,7 @@
   display: flex;
   justify-content: space-between;
   color: var(--files-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
 }
 
 .agentTimelineLane {
@@ -886,7 +886,7 @@
 .agentTimelineLabel {
   overflow: hidden;
   color: var(--files-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -920,7 +920,7 @@
   border-radius: 5px;
   color: var(--files-bg);
   background: var(--files-accent);
-  font-size: 8px;
+  font-size: calc(8px * var(--app-font-scale));
   text-overflow: ellipsis;
   white-space: nowrap;
   cursor: pointer;
@@ -972,7 +972,7 @@
   align-items: center;
   gap: 10px;
   color: var(--files-muted);
-  font-size: 8px;
+  font-size: calc(8px * var(--app-font-scale));
 
   span {
     display: inline-flex;
@@ -1008,7 +1008,7 @@
   align-items: center;
   gap: 5px;
   color: var(--files-muted);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
 }
 
 .agentTaskDetail {
@@ -1033,7 +1033,7 @@
 
   strong {
     overflow: hidden;
-    font-size: 11px;
+    font-size: calc(11px * var(--app-font-scale));
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -1041,7 +1041,7 @@
 
 .agentTaskDetailEyebrow {
   color: var(--files-muted);
-  font-size: 8px;
+  font-size: calc(8px * var(--app-font-scale));
   letter-spacing: 0.08em;
   text-transform: uppercase;
 }
@@ -1051,7 +1051,7 @@
   display: -webkit-box;
   overflow: hidden;
   color: var(--files-muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   line-height: 1.5;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 3;
@@ -1068,7 +1068,7 @@
     border-radius: 999px;
     color: var(--files-muted);
     background: var(--files-bg);
-    font-size: 8px;
+    font-size: calc(8px * var(--app-font-scale));
   }
 
   span[data-inferred="true"] {
@@ -1088,7 +1088,7 @@
   align-items: center;
   gap: 5px;
   color: #6250ad;
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
 }
 
 .agentTaskOutput {
@@ -1101,7 +1101,7 @@
     align-items: center;
     gap: 5px;
     color: var(--files-muted);
-    font-size: 9px;
+    font-size: calc(9px * var(--app-font-scale));
     cursor: pointer;
     list-style: none;
   }
@@ -1143,19 +1143,19 @@
   }
 
   strong {
-    font-size: 14px;
+    font-size: calc(14px * var(--app-font-scale));
   }
 
   p {
     margin: 3px 0 0;
     color: var(--files-muted);
-    font-size: 11px;
+    font-size: calc(11px * var(--app-font-scale));
   }
 }
 
 .genUiCount {
   color: var(--files-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
   white-space: nowrap;
 }
 
@@ -1191,12 +1191,12 @@
   }
 
   strong {
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale));
   }
 
   span {
     color: var(--files-muted);
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
   }
 
   button {
@@ -1254,13 +1254,13 @@
   gap: 3px;
 
   strong {
-    font-size: 12px;
+    font-size: calc(12px * var(--app-font-scale));
   }
 
   small,
   em {
     color: var(--files-muted);
-    font-size: 10px;
+    font-size: calc(10px * var(--app-font-scale));
     font-style: normal;
     line-height: 1.4;
   }
@@ -1268,7 +1268,7 @@
 
 .genUiAvailability {
   color: var(--files-muted);
-  font-size: 10px;
+  font-size: calc(10px * var(--app-font-scale));
   white-space: nowrap;
 }
 
@@ -1281,7 +1281,7 @@
   padding: 10px;
   border-top: 1px solid var(--files-line);
   color: var(--files-muted);
-  font-size: 11px;
+  font-size: calc(11px * var(--app-font-scale));
 
   header {
     display: flex;

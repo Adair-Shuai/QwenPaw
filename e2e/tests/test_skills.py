@@ -220,6 +220,12 @@ class TestSkillImportToggleDeleteBatch:
         # -- Step 3: Enable/disable toggle --
         log_test_step("3. Enable/disable toggle")
         first_skill = skill_cards[0]
+        # The card moves to another section after a toggle. Keep locating the
+        # same skill by name instead of retaining an index-based locator.
+        skill_name = first_skill.locator("h3").inner_text()
+        first_skill = page.locator(SKILL_CARD_SELECTOR).filter(
+            has=page.get_by_role("button", name=skill_name, exact=True)
+        )
         toggle_btn = first_skill.locator(SWITCH_SELECTOR).first
 
         if toggle_btn.is_visible():
