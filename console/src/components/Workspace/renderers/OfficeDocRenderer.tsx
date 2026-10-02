@@ -30,9 +30,9 @@ import { isOfficeOoxmlMime } from "../../../utils/mimeForPreview";
 const API_BASE = "/api/workspace";
 
 /**
- * In-memory cache for officecli conversion results.
+ * In-memory cache for detached Office conversion results.
  * Key: fileUrl, Value: { html, engine, timestamp }
- * Avoids re-converting the same file when switching tabs back and forth.
+ * Workspace files are excluded because their content may change at the same URL.
  * Entries expire after 5 minutes to handle file edits.
  * Capped at 50 entries; stale entries are evicted on read.
  */
@@ -99,89 +99,97 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   const canClientSideParse =
     !artifact.workspaceRoot && isOoxml(artifact.mimeType, artifact.extension);
 
-  const convertDocument = useCallback(async () => {
-    if (!fileUrl) {
-      setError(t("workspace.noFileUrl"));
-      setLoading(false);
-      return;
-    }
-
-    // Check cache first — avoids re-converting when switching tabs.
-    // Eviction runs here so stale entries are cleaned up on every access.
-    _evictConvertCache();
-    const cached = _convertCache.get(cacheKey);
-    if (cached && Date.now() - cached.ts < CACHE_TTL) {
-      setHtmlContent(cached.html);
-      setRendererEngine(cached.engine as "officecli" | "legacy");
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    setError(null);
-    setFallbackStage("none");
-
-    // Always try backend conversion first. The backend runs locally
-    // (both in Tauri desktop and Vite dev mode) and can access local
-    // files, including file:// paths. If the backend is unreachable or
-    // returns 404/405, detached uploads may use the compatibility parser;
-    // workspace-backed files stay on the backend pipeline.
-    try {
-      const res = await fetch(`${API_BASE}/convert-office`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...buildWorkspaceScopeHeaders({
-            agentId: artifact.agentId,
-            chatId: artifact.chatId,
-            projectDirOverride: artifact.projectDirOverride,
-          }),
-        },
-        body: JSON.stringify({
-          url: fileUrl,
-          mime_type: artifact.mimeType,
-        }),
-      });
-      if (!res.ok) {
-        // A detached OOXML upload may use the compatibility parser. Files
-        // owned by /files never silently switch away from the backend.
-        if (res.status === 405 || res.status === 404) {
-          if (canClientSideParse) {
-            setFallbackStage("client-side");
-          } else {
-            setFallbackStage("download-only");
-          }
-          setLoading(false);
-          return;
-        }
-        const body = await res.json().catch(() => null);
-        throw new Error(body?.detail ?? `HTTP ${res.status}`);
+  const convertDocument = useCallback(
+    async (force = false) => {
+      if (!fileUrl) {
+        setError(t("workspace.noFileUrl"));
+        setLoading(false);
+        return;
       }
-      const data = await res.json();
-      const rawHtml = data.html ?? "";
-      const isOfficecli = data.engine === "officecli";
-      setRendererEngine(isOfficecli ? "officecli" : "legacy");
 
-      if (isOfficecli) {
-        // officecli returns a complete standalone HTML document with
-        // its own CSS and JavaScript for high-fidelity rendering.
-        // Do NOT wrap it in our template — use it as-is so scripts
-        // and styles work correctly.
-        setHtmlContent(rawHtml);
-        _convertCache.set(cacheKey, {
-          html: rawHtml,
-          engine: "officecli",
-          ts: Date.now(),
+      // Check cache first — avoids re-converting when switching tabs.
+      // Eviction runs here so stale entries are cleaned up on every access.
+      _evictConvertCache();
+      const cached = _convertCache.get(cacheKey);
+      if (
+        !force &&
+        !artifact.workspaceRoot &&
+        cached &&
+        Date.now() - cached.ts < CACHE_TTL
+      ) {
+        setHtmlContent(cached.html);
+        setRendererEngine(cached.engine as "officecli" | "legacy");
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
+      setError(null);
+      setFallbackStage("none");
+
+      // Always try backend conversion first. The backend runs locally
+      // (both in Tauri desktop and Vite dev mode) and can access local
+      // files, including file:// paths. If the backend is unreachable or
+      // returns 404/405, detached uploads may use the compatibility parser;
+      // workspace-backed files stay on the backend pipeline.
+      try {
+        const res = await fetch(`${API_BASE}/convert-office`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...buildWorkspaceScopeHeaders({
+              agentId: artifact.agentId,
+              chatId: artifact.chatId,
+              projectDirOverride: artifact.projectDirOverride,
+            }),
+          },
+          body: JSON.stringify({
+            url: fileUrl,
+            mime_type: artifact.mimeType,
+          }),
         });
-      } else {
-        // Legacy rendering: wrap in theme-aware styled template
-        const isDark = theme === "dark";
-        const bgColor = isDark ? "#1e1e1e" : "#ffffff";
-        const textColor = isDark ? "#d4d4d4" : "#333333";
-        const borderColor = isDark ? "#444444" : "#e0e0e0";
-        const thBg = isDark ? "#2a2a2a" : "#f5f5f5";
-        const cellBorder = isDark ? "#555555" : "#dddddd";
-        const styledHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        if (!res.ok) {
+          // A detached OOXML upload may use the compatibility parser. Files
+          // owned by /files never silently switch away from the backend.
+          if (res.status === 405 || res.status === 404) {
+            if (canClientSideParse) {
+              setFallbackStage("client-side");
+            } else {
+              setFallbackStage("download-only");
+            }
+            setLoading(false);
+            return;
+          }
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.detail ?? `HTTP ${res.status}`);
+        }
+        const data = await res.json();
+        const rawHtml = data.html ?? "";
+        const isOfficecli = data.engine === "officecli";
+        setRendererEngine(isOfficecli ? "officecli" : "legacy");
+
+        if (isOfficecli) {
+          // officecli returns a complete standalone HTML document with
+          // its own CSS and JavaScript for high-fidelity rendering.
+          // Do NOT wrap it in our template — use it as-is so scripts
+          // and styles work correctly.
+          setHtmlContent(rawHtml);
+          if (!artifact.workspaceRoot) {
+            _convertCache.set(cacheKey, {
+              html: rawHtml,
+              engine: "officecli",
+              ts: Date.now(),
+            });
+          }
+        } else {
+          // Legacy rendering: wrap in theme-aware styled template
+          const isDark = theme === "dark";
+          const bgColor = isDark ? "#1e1e1e" : "#ffffff";
+          const textColor = isDark ? "#d4d4d4" : "#333333";
+          const borderColor = isDark ? "#444444" : "#e0e0e0";
+          const thBg = isDark ? "#2a2a2a" : "#f5f5f5";
+          const cellBorder = isDark ? "#555555" : "#dddddd";
+          const styledHtml = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
           body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; padding: 24px 32px; line-height: 1.7; color: ${textColor}; background: ${bgColor}; max-width: 900px; margin: 0 auto; }
           h1 { font-size: 1.6em; border-bottom: 2px solid ${borderColor}; padding-bottom: 8px; margin-top: 1.5em; }
           h2 { font-size: 1.3em; margin-top: 1.2em; }
@@ -211,37 +219,42 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
             white-space: nowrap;
           }
         </style></head><body>${rawHtml}</body></html>`;
-        setHtmlContent(styledHtml);
-        _convertCache.set(cacheKey, {
-          html: styledHtml,
-          engine: "legacy",
-          ts: Date.now(),
-        });
+          setHtmlContent(styledHtml);
+          if (!artifact.workspaceRoot) {
+            _convertCache.set(cacheKey, {
+              html: styledHtml,
+              engine: "legacy",
+              ts: Date.now(),
+            });
+          }
+        }
+      } catch (err) {
+        // Detached uploads retain the browser fallback. Workspace-backed files
+        // surface the backend error instead of silently changing render engines.
+        if (canClientSideParse) {
+          setFallbackStage("client-side");
+        } else {
+          setError(
+            err instanceof Error ? err.message : t("workspace.convertFailed"),
+          );
+        }
+      } finally {
+        setLoading(false);
       }
-    } catch (err) {
-      // Detached uploads retain the browser fallback. Workspace-backed files
-      // surface the backend error instead of silently changing render engines.
-      if (canClientSideParse) {
-        setFallbackStage("client-side");
-      } else {
-        setError(
-          err instanceof Error ? err.message : t("workspace.convertFailed"),
-        );
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [
-    artifact.agentId,
-    artifact.chatId,
-    artifact.mimeType,
-    artifact.projectDirOverride,
-    cacheKey,
-    canClientSideParse,
-    fileUrl,
-    t,
-    theme,
-  ]);
+    },
+    [
+      artifact.agentId,
+      artifact.chatId,
+      artifact.mimeType,
+      artifact.projectDirOverride,
+      artifact.workspaceRoot,
+      cacheKey,
+      canClientSideParse,
+      fileUrl,
+      t,
+      theme,
+    ],
+  );
 
   useEffect(() => {
     convertDocument();
@@ -337,7 +350,10 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           showIcon
         />
         <Space style={{ marginTop: 16 }}>
-          <Button icon={<ReloadOutlined />} onClick={convertDocument}>
+          <Button
+            icon={<ReloadOutlined />}
+            onClick={() => convertDocument(true)}
+          >
             {t("workspace.retry")}
           </Button>
           <Button
@@ -409,7 +425,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
                 size="small"
                 type="text"
                 icon={<ReloadOutlined />}
-                onClick={convertDocument}
+                onClick={() => convertDocument(true)}
               />
             </Tooltip>
             <Tooltip title={t("workspace.download")}>

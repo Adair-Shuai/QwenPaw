@@ -80,6 +80,50 @@ _SUBPROCESS_FLAGS = (
 )
 
 
+async def _communicate_officecli(
+    cmd: list[str],
+    timeout: float,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run OfficeCLI on both Proactor and Windows Selector event loops."""
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            creationflags=_SUBPROCESS_FLAGS,
+        )
+    except NotImplementedError:
+        # Uvicorn's Windows Selector loop cannot create async subprocesses.
+        return await asyncio.to_thread(_run_officecli_sync, cmd, timeout)
+
+    try:
+        stdout, stderr = await asyncio.wait_for(
+            proc.communicate(),
+            timeout=timeout,
+        )
+    except asyncio.TimeoutError as exc:
+        proc.kill()
+        await proc.wait()
+        raise subprocess.TimeoutExpired(cmd, timeout) from exc
+    returncode = proc.returncode
+    assert returncode is not None
+    return subprocess.CompletedProcess(cmd, returncode, stdout, stderr)
+
+
+def _run_officecli_sync(
+    cmd: list[str],
+    timeout: float,
+) -> subprocess.CompletedProcess[bytes]:
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=timeout,
+        creationflags=_SUBPROCESS_FLAGS,
+        check=False,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
@@ -94,13 +138,24 @@ def _bundled_officecli_path() -> str | None:
 
     Returns the full path to the executable, or ``None`` if not found.
     """
-    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
-    if not oc_dir:
-        return None
     exe_name = "officecli.exe" if sys.platform == "win32" else "officecli"
-    candidate = Path(oc_dir) / exe_name
-    if candidate.is_file():
-        return str(candidate)
+    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
+    if oc_dir:
+        candidate = Path(oc_dir) / exe_name
+        if candidate.is_file():
+            return str(candidate)
+    # Source checkouts launch the Python backend without the Tauri resource
+    # environment. Use the same staged binary that the desktop build bundles.
+    source_bundle = (
+        Path(__file__).resolve().parents[4]
+        / "console"
+        / "src-tauri"
+        / "binaries"
+        / "officecli"
+        / exe_name
+    )
+    if source_bundle.is_file():
+        return str(source_bundle)
     return None
 
 
@@ -245,27 +300,14 @@ async def _run_officecli(  # pylint: disable=too-many-return-statements
     logger.debug("Running officecli: %s", " ".join(cmd))
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            creationflags=_SUBPROCESS_FLAGS,
-        )
+        proc = await _communicate_officecli(cmd, timeout)
     except FileNotFoundError:
         return {"ok": False, "error": "officecli binary not found"}
-
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(),
-            timeout=timeout,
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+    except subprocess.TimeoutExpired:
         return {"ok": False, "error": "officecli command timed out"}
 
-    stdout_text = stdout.decode(errors="replace") if stdout else ""
-    stderr_text = stderr.decode(errors="replace") if stderr else ""
+    stdout_text = proc.stdout.decode(errors="replace") if proc.stdout else ""
+    stderr_text = proc.stderr.decode(errors="replace") if proc.stderr else ""
 
     # OfficeCLI outputs structured JSON on stdout even on non-zero exit.
     # Try to parse stdout JSON first, regardless of return code.
@@ -782,25 +824,13 @@ async def _office_view_html(resolved: str) -> ToolChunk:
     if not _officecli_available():
         return _not_installed_error()
     try:
-        proc = await asyncio.create_subprocess_exec(
-            _officecli_bin(),
-            "view",
-            resolved,
-            "html",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            creationflags=_SUBPROCESS_FLAGS,
+        proc = await _communicate_officecli(
+            [_officecli_bin(), "view", resolved, "html"],
+            _OFFICECLI_TIMEOUT,
         )
     except FileNotFoundError:
         return _not_installed_error()
-    try:
-        stdout, stderr = await asyncio.wait_for(
-            proc.communicate(),
-            timeout=_OFFICECLI_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+    except subprocess.TimeoutExpired:
         return _json_toolchunk(
             {
                 "ok": False,
@@ -808,14 +838,16 @@ async def _office_view_html(resolved: str) -> ToolChunk:
             },
         )
     if proc.returncode != 0:
-        err = stderr.decode(errors="replace").strip() if stderr else ""
+        err = (
+            proc.stderr.decode(errors="replace").strip() if proc.stderr else ""
+        )
         return _json_toolchunk(
             {
                 "ok": False,
                 "error": f"view html failed: {err}",
             },
         )
-    html_content = stdout.decode(errors="replace") if stdout else ""
+    html_content = proc.stdout.decode(errors="replace") if proc.stdout else ""
     return _json_toolchunk(
         {
             "ok": True,
@@ -867,37 +899,35 @@ async def office_view_screenshot(
 
     resolved = _resolve_workspace_path(file_path)
 
-    # Use workspace dir for temp file so it's accessible
+    # Use a unique workspace file: concurrent agents can screenshot the same
+    # page without overwriting each other's image before the model reads it.
     workspace_dir = get_current_workspace_dir() or WORKING_DIR
-    tmp_path = str(
-        workspace_dir / f"office_screenshot_{os.getpid()}_{page}.png",
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        prefix=f"office_screenshot_{page}_",
+        suffix=".png",
+        dir=workspace_dir,
     )
+    os.close(tmp_fd)
 
     try:
-        proc = await asyncio.create_subprocess_exec(
-            _officecli_bin(),
-            "view",
-            resolved,
-            "screenshot",
-            "--page",
-            str(page),
-            "-o",
-            tmp_path,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            creationflags=_SUBPROCESS_FLAGS,
+        proc = await _communicate_officecli(
+            [
+                _officecli_bin(),
+                "view",
+                resolved,
+                "screenshot",
+                "--page",
+                str(page),
+                "-o",
+                tmp_path,
+            ],
+            _OFFICECLI_TIMEOUT,
         )
     except FileNotFoundError:
+        Path(tmp_path).unlink(missing_ok=True)
         return _not_installed_error()
-
-    try:
-        _stdout, stderr = await asyncio.wait_for(
-            proc.communicate(),
-            timeout=_OFFICECLI_TIMEOUT,
-        )
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
+    except subprocess.TimeoutExpired:
+        Path(tmp_path).unlink(missing_ok=True)
         return _json_toolchunk(
             {
                 "ok": False,
@@ -905,8 +935,15 @@ async def office_view_screenshot(
             },
         )
 
-    if proc.returncode != 0 or not Path(tmp_path).exists():
-        err = stderr.decode(errors="replace").strip() if stderr else ""
+    if (
+        proc.returncode != 0
+        or not Path(tmp_path).exists()
+        or Path(tmp_path).stat().st_size == 0
+    ):
+        Path(tmp_path).unlink(missing_ok=True)
+        err = (
+            proc.stderr.decode(errors="replace").strip() if proc.stderr else ""
+        )
         return _json_toolchunk(
             {
                 "ok": False,

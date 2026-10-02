@@ -6,8 +6,9 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 
+const sessionState = vi.hoisted(() => ({ id: "" }));
 vi.mock("./ToolCallSessionContext", () => ({
-  useToolCallSessionId: () => "",
+  useToolCallSessionId: () => sessionState.id,
 }));
 
 const hookState = vi.hoisted(() => ({ lastIsCalling: false }));
@@ -39,6 +40,7 @@ vi.mock("./ToolCallControlPopover", () => ({
 
 import ToolCardShell from "./ToolCardShell";
 import type { ToolCallContent } from "./types";
+import { useBackgroundTasksStore } from "../../../../stores/backgroundTasksStore";
 
 const content: ToolCallContent = {
   type: "tool_call",
@@ -65,8 +67,36 @@ const streamingInputContent: ToolCallContent = {
 
 describe("ToolCardShell lazy body", () => {
   beforeEach(() => {
+    sessionState.id = "";
+    useBackgroundTasksStore.setState({ tasks: [] });
     localStorage.removeItem("qwenpaw_tool_calls_default_expanded");
     localStorage.removeItem("qwenpaw_tool_display_mode");
+  });
+
+  it("records agent calls for the workbench trace", () => {
+    sessionState.id = "session-1";
+    render(
+      <ToolCardShell
+        content={{
+          ...content,
+          id: "agent-call-1",
+          name: "chat_with_agent",
+          params: { to_agent: "research", text: "Inspect files" },
+        }}
+        icon={<span />}
+        title="Agent"
+      />,
+    );
+
+    expect(useBackgroundTasksStore.getState().tasks).toMatchObject([
+      {
+        sessionId: "session-1",
+        toolCallId: "agent-call-1",
+        kind: "agent",
+        agentId: "research",
+        status: "done",
+      },
+    ]);
   });
 
   it("opens file-facing results by default when requested", () => {

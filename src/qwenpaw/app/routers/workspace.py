@@ -1379,13 +1379,24 @@ def _bundled_officecli_path() -> str | None:
 
     Returns the full path to the executable, or ``None`` if not found.
     """
-    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
-    if not oc_dir:
-        return None
     exe_name = "officecli.exe" if sys.platform == "win32" else "officecli"
-    candidate = Path(oc_dir) / exe_name
-    if candidate.is_file():
-        return str(candidate)
+    oc_dir = os.environ.get("QWENPAW_DESKTOP_OFFICECLI_DIR")
+    if oc_dir:
+        candidate = Path(oc_dir) / exe_name
+        if candidate.is_file():
+            return str(candidate)
+    # The development backend is started directly, without the resource
+    # directory supplied by Tauri. Reuse its staged OfficeCLI binary.
+    source_bundle = (
+        Path(__file__).resolve().parents[4]
+        / "console"
+        / "src-tauri"
+        / "binaries"
+        / "officecli"
+        / exe_name
+    )
+    if source_bundle.is_file():
+        return str(source_bundle)
     return None
 
 
@@ -1453,6 +1464,8 @@ def _is_officecli_available() -> bool:
             [resolved, "--help"],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=5,
             check=False,
         )
@@ -1577,6 +1590,8 @@ def _get_officecli_page_count(file_path: str) -> int:
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
         )
@@ -1650,13 +1665,14 @@ def _resolve_file_path_from_url(  # pylint: disable=too-many-branches
     url: str,
     coding_dir: Path,
     workspace_dir: Path | None = None,
+    extra_project_dir: Path | None = None,
 ) -> Path:
     """Resolve a frontend URL to an absolute file path.
 
-    Handles ``/api/workspace/binary-files/<path>``, absolute paths, and
-    ``file://`` URLs.  Raises ``HTTPException(404)`` if the file does
-    not exist, or ``HTTPException(403)`` if the resolved path is outside
-    the allowed workspace roots.
+    Handles ``/api/workspace/binary-files/<path>``, bound-root download URLs,
+    absolute paths, and ``file://`` URLs. Raises ``HTTPException(404)`` if the
+    file does not exist, or ``HTTPException(403)`` if the resolved path is
+    outside the allowed workspace roots.
     """
     parsed_url = urlparse(url)
     if parsed_url.path.endswith("/workspace/file-download"):
@@ -1677,10 +1693,15 @@ def _resolve_file_path_from_url(  # pylint: disable=too-many-branches
             base_dir = workspace_dir
         elif root == "project":
             base_dir = coding_dir
+        elif root.startswith(_EXTRA_PROJECT_ROOT_PREFIX) and extra_project_dir:
+            base_dir = extra_project_dir
         else:
             raise HTTPException(
                 status_code=400,
-                detail="root must be project or workspace",
+                detail=(
+                    "root must be project, a bound project directory, "
+                    "or workspace"
+                ),
             )
         try:
             target = safe_join(base_dir, paths[0])
@@ -1756,6 +1777,31 @@ def _resolve_file_path_from_url(  # pylint: disable=too-many-branches
             detail=f"File not found: {file_path}",
         )
     return target
+
+
+async def _resolve_office_file_path(
+    request: Request,
+    workspace: Any,
+    url: str,
+) -> Path:
+    """Resolve Office URLs with the same bound-root checks as the Files API."""
+    coding_dir = await get_project_dir_for_request(request, workspace)
+    parsed_url = urlparse(url)
+    extra_project_dir = None
+    if parsed_url.path.endswith("/workspace/file-download"):
+        root = parse_qs(parsed_url.query).get("root", ["project"])[0]
+        if root.startswith(_EXTRA_PROJECT_ROOT_PREFIX):
+            extra_project_dir = await _resolve_files_root(
+                request,
+                workspace,
+                root,
+            )
+    return _resolve_file_path_from_url(
+        url,
+        coding_dir,
+        workspace.workspace_dir,
+        extra_project_dir,
+    )
 
 
 def _get_docx_page_info(file_path: str) -> dict:
@@ -2219,12 +2265,10 @@ async def convert_office(
     back to mammoth for DOCX, openpyxl for XLSX, python-pptx for PPTX.
     """
     workspace = await get_agent_for_request(request)
-    coding_dir = await get_project_dir_for_request(request, workspace)
-
-    target = _resolve_file_path_from_url(
+    target = await _resolve_office_file_path(
+        request,
+        workspace,
         body.url or "",
-        coding_dir,
-        workspace.workspace_dir,
     )
 
     def _convert() -> tuple[str, str]:
@@ -2281,12 +2325,7 @@ async def office_screenshot(
         )
 
     workspace = await get_agent_for_request(request)
-    coding_dir = await get_project_dir_for_request(request, workspace)
-    target = _resolve_file_path_from_url(
-        body.url,
-        coding_dir,
-        workspace.workspace_dir,
-    )
+    target = await _resolve_office_file_path(request, workspace, body.url)
 
     # Use mkstemp instead of deprecated mktemp to avoid TOCTOU race.
     # officecli will overwrite the empty file created here.
@@ -2319,7 +2358,11 @@ async def office_screenshot(
             detail="officecli screenshot timed out",
         ) from exc
 
-    if result.returncode != 0 or not Path(tmp_path).exists():
+    if (
+        result.returncode != 0
+        or not Path(tmp_path).exists()
+        or Path(tmp_path).stat().st_size == 0
+    ):
         Path(tmp_path).unlink(missing_ok=True)
         stderr = (
             result.stderr.decode(
@@ -2368,12 +2411,7 @@ async def office_outline(
         )
 
     workspace = await get_agent_for_request(request)
-    coding_dir = await get_project_dir_for_request(request, workspace)
-    target = _resolve_file_path_from_url(
-        body.url,
-        coding_dir,
-        workspace.workspace_dir,
-    )
+    target = await _resolve_office_file_path(request, workspace, body.url)
 
     def _run_outline() -> dict:
         result = subprocess.run(  # noqa: S603
@@ -2386,6 +2424,8 @@ async def office_outline(
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
         )
@@ -2431,12 +2471,7 @@ async def office_issues(
         )
 
     workspace = await get_agent_for_request(request)
-    coding_dir = await get_project_dir_for_request(request, workspace)
-    target = _resolve_file_path_from_url(
-        body.url,
-        coding_dir,
-        workspace.workspace_dir,
-    )
+    target = await _resolve_office_file_path(request, workspace, body.url)
 
     def _run_issues() -> dict:
         result = subprocess.run(  # noqa: S603
@@ -2449,6 +2484,8 @@ async def office_issues(
             ],
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
         )

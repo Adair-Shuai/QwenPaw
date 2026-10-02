@@ -27,6 +27,7 @@ import { formatRawToolValue } from "./rawToolDisplay";
 import { stringifyResult } from "./utils";
 import { useToolCallSessionId } from "./ToolCallSessionContext";
 import { useToolCallControl } from "../../../../hooks/useToolCallControl";
+import { useAgentProcessTracking } from "../../../../hooks/useAgentProcessTracking";
 import {
   getToolDisplayPreference,
   subscribeChatDisplayPreference,
@@ -71,6 +72,7 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
 }) => {
   const { t } = useTranslation();
   const sessionId = useToolCallSessionId();
+  useAgentProcessTracking(sessionId, content);
   const toolDisplayPreference = useSyncExternalStore(
     subscribeChatDisplayPreference,
     getToolDisplayPreference,

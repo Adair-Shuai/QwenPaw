@@ -9,7 +9,13 @@
  * - 认证头注入（buildAuthHeaders）
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, cleanup } from "@testing-library/react";
+import {
+  render,
+  screen,
+  waitFor,
+  cleanup,
+  fireEvent,
+} from "@testing-library/react";
 import type { RendererContext, WorkspaceArtifact } from "../../types";
 
 // Mock buildAuthHeaders
@@ -155,6 +161,64 @@ describe("OfficeDocRenderer", () => {
     // Should contain theme-aware styling
     expect(iframe.getAttribute("srcDoc")).toContain("<style>");
     expect(iframe.getAttribute("srcDoc")).toContain("font-family");
+  });
+
+  it("reconverts a workspace file after reopening its preview", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ html: "<p>Old</p>", engine: "officecli" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ html: "<p>New</p>", engine: "officecli" }),
+      });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    const context = makeContext({
+      artifact: { ...makeContext().artifact, workspaceRoot: "project" },
+    });
+    const first = render(<OfficeDocRenderer {...context} />);
+    await waitFor(() =>
+      expect(
+        first.container.querySelector("iframe")?.getAttribute("srcDoc"),
+      ).toContain("Old"),
+    );
+    first.unmount();
+    const second = render(<OfficeDocRenderer {...context} />);
+    await waitFor(() =>
+      expect(
+        second.container.querySelector("iframe")?.getAttribute("srcDoc"),
+      ).toContain("New"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("reloads a detached file even when a conversion is cached", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ html: "<p>Old</p>", engine: "officecli" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ html: "<p>New</p>", engine: "officecli" }),
+      });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    const { container } = render(<OfficeDocRenderer {...makeContext()} />);
+    await waitFor(() =>
+      expect(
+        container.querySelector("iframe")?.getAttribute("srcDoc"),
+      ).toContain("Old"),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /reload/i }));
+    await waitFor(() =>
+      expect(
+        container.querySelector("iframe")?.getAttribute("srcDoc"),
+      ).toContain("New"),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it("omits the duplicate Office toolbar when hosted by Files", async () => {

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
 import { workspaceApi } from "../../api/modules/workspace";
 import type { FileTarget } from "./types";
+import { useBackgroundTasksStore } from "../../stores/backgroundTasksStore";
 
 const clipboardMocks = vi.hoisted(() => ({
   copyText: vi.fn().mockResolvedValue(undefined),
@@ -27,6 +28,21 @@ vi.mock("../../hooks/useAppMessage", () => ({
 
 vi.mock("../../api/modules/workspace", () => ({
   workspaceApi: {
+    listDirectory: vi.fn().mockResolvedValue({
+      directory: "output",
+      entries: [
+        {
+          name: "report.docx",
+          path: "output/report.docx",
+          kind: "file",
+          size: 42,
+          modified_at: "",
+          preview_kind: "binary",
+        },
+      ],
+      next_cursor: null,
+      has_more: false,
+    }),
     getFileMetadata: vi.fn().mockResolvedValue({
       path: "hello.txt",
       size: 5,
@@ -45,10 +61,6 @@ vi.mock("../../api/modules/workspace", () => ({
   },
 }));
 
-vi.mock("./FilesWorkspace", () => ({
-  default: () => <div data-testid="files-workspace" />,
-}));
-
 vi.mock("../../utils/downloadFileFromUrl", () => ({
   downloadFileFromUrl: vi.fn(),
 }));
@@ -57,6 +69,36 @@ describe("FilesDrawer", () => {
   afterEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
+    useBackgroundTasksStore.setState({ tasks: [] });
+  });
+
+  it("shows the backend session's agent trace in the right workbench", async () => {
+    useBackgroundTasksStore.getState().addTask(
+      {
+        sessionId: "backend-session",
+        toolCallId: "agent-call",
+        toolName: "Agent · research",
+        agentId: "research",
+        taskSummary: "研究报告",
+        startTime: Date.now(),
+      },
+      { kind: "agent" },
+    );
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={{
+          kind: "session",
+          agentId: "default",
+          sessionId: "local-session",
+        }}
+        runtimeSessionId="backend-session"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "智能体进程" }));
+    expect((await screen.findAllByText("研究报告")).length).toBeGreaterThan(0);
   });
 
   it("copies the complete text file content", async () => {
@@ -124,12 +166,40 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(await screen.findByTestId("files-workspace")).toBeInTheDocument();
+    expect(
+      await screen.findByRole("complementary", { name: "Artifact 区域" }),
+    ).toBeInTheDocument();
     expect(
       screen.queryByText((content) =>
         ["工作区", "Workspace", "files.workspace"].includes(content),
       ),
     ).not.toBeInTheDocument();
+  });
+
+  it("shows generated files as Artifacts without a directory tree", async () => {
+    const dispatch = vi.fn();
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={dispatch}
+        scope={{ kind: "session", agentId: "default", sessionId: "session-1" }}
+      />,
+    );
+
+    expect(
+      await screen.findByRole("button", { name: "report.docx" }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "report.docx" }));
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "OPEN_PREVIEW",
+      target: {
+        source: "workspace",
+        path: "output/report.docx",
+        root: "workspace",
+      },
+      trigger: null,
+    });
   });
 
   it("keeps Preview open after inserting a file reference", async () => {
@@ -193,7 +263,7 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    const drawer = screen.getByRole("region");
+    const drawer = screen.getByRole("region", { name: /files|文件/i });
     const separator = screen.getByRole("separator");
     vi.spyOn(drawer, "getBoundingClientRect")
       .mockReturnValueOnce({ width: 500 } as DOMRect)
@@ -229,7 +299,7 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    const drawer = screen.getByRole("region");
+    const drawer = screen.getByRole("region", { name: /files|文件/i });
     const separator = screen.getByRole("separator");
     vi.spyOn(drawer.parentElement!, "getBoundingClientRect").mockReturnValue({
       width: 1200,
@@ -268,7 +338,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(screen.getByRole("region")).toHaveStyle({ width: "480px" });
+    expect(screen.getByRole("region", { name: /files|文件/i })).toHaveStyle({
+      width: "480px",
+    });
 
     rerender(
       <FilesDrawer
@@ -278,7 +350,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(screen.getByRole("region")).toHaveStyle({ width: "720px" });
+    expect(screen.getByRole("region", { name: /files|文件/i })).toHaveStyle({
+      width: "720px",
+    });
   });
 
   // -------------------------------------------------------------------------

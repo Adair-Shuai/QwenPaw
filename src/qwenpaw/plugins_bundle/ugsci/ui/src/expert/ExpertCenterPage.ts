@@ -2,9 +2,19 @@
  * Expert center page with knowledge base tab and preset prompts tab.
  */
 
-import { getHost, clearApiCache, clearAgentCache, apiFetch } from "../core/runtime";
+import {
+  getHost,
+  clearApiCache,
+  clearAgentCache,
+  apiFetch,
+} from "../core/runtime";
 import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
-import type { AgentSummary, SkillSpec, MCPClientInfo, ExpertData } from "../core/types";
+import type {
+  AgentSummary,
+  SkillSpec,
+  MCPClientInfo,
+  ExpertData,
+} from "../core/types";
 import {
   type ExpertBundle,
   type ExpertTemplate,
@@ -101,9 +111,7 @@ function resolveTeamControllerId(
 
 function sectionFromLocation(): "experts" | "teams" | "workflows" {
   const section = new URLSearchParams(window.location.search).get("section");
-  return section === "teams" || section === "workflows"
-    ? section
-    : "experts";
+  return section === "teams" || section === "workflows" ? section : "experts";
 }
 
 // ─── Knowledge Base Tab ──────────────────────────────────────────────────────
@@ -117,8 +125,6 @@ export function ExpertCenterPage() {
     Input,
     Button,
     message: antdMsg,
-    Row,
-    Col,
     Tabs,
     Modal,
     Typography,
@@ -208,9 +214,7 @@ export function ExpertCenterPage() {
   // (skill count, MCP count) stay in sync after edits inside the modal.
   useEffect(() => {
     if (configExpert && configModalOpen) {
-      const updated = experts.find(
-        (e) => e.agent.id === configExpert.agent.id,
-      );
+      const updated = experts.find((e) => e.agent.id === configExpert.agent.id);
       if (updated && updated !== configExpert) {
         setConfigExpert(updated);
       }
@@ -231,7 +235,9 @@ export function ExpertCenterPage() {
         );
         antdMsg.error(
           requested?.bindingMode === "fixed"
-            ? `固定协调者「${coordinatorName || "协调者"}」当前不可用，请修复绑定后再运行`
+            ? `固定协调者「${
+                coordinatorName || "协调者"
+              }」当前不可用，请修复绑定后再运行`
             : "没有可用的 Agent 作为工作流控制器",
         );
         return;
@@ -276,15 +282,9 @@ export function ExpertCenterPage() {
 
         // Send the slash command via console chat API
         // The mode handler will activate the gate and rewrite the message
-        const chatId = await sendTeamMessage(
-          coordinatorId,
-          command,
-          team.name,
-        );
+        const chatId = await sendTeamMessage(coordinatorId, command, team.name);
 
-        antdMsg.success(
-          `OMP 工作流已启动：${team.name}（${team.mode}模式）`,
-        );
+        antdMsg.success(`OMP 工作流已启动：${team.name}（${team.mode}模式）`);
         setTeamLaunchModal(null);
 
         // Navigate to chat page with the specific chat ID so the user
@@ -413,34 +413,38 @@ export function ExpertCenterPage() {
               React.createElement(Spin, { size: "large" }),
             )
           : filteredExperts.length === 0
-            ? React.createElement(Empty, {
-                description: searchText
-                  ? "未找到匹配的专家"
-                  : "暂无专家，点击「创建专家」添加",
-              })
-            : React.createElement(
-                Row,
-                { gutter: [12, 12], align: "stretch" },
-                ...filteredExperts.map((expert) =>
-                  React.createElement(
-                    Col,
-                    {
-                      key: expert.agent.id,
-                      xs: 24,
-                      sm: 12,
-                      md: 8,
-                      lg: 6,
-                      style: { display: "flex" },
-                    },
-                    React.createElement(ExpertCard, {
-                      expert,
-                      onClick: () => handleCardClick(expert),
-                      onSummon: () => handleSummonExpert(expert),
-                      onConfigure: () => handleConfigureExpert(expert),
-                    }),
-                  ),
+          ? React.createElement(Empty, {
+              description: searchText
+                ? "未找到匹配的专家"
+                : "暂无专家，点击「创建专家」添加",
+            })
+          : React.createElement(
+              "div",
+              {
+                style: {
+                  display: "grid",
+                  gridTemplateColumns:
+                    "repeat(auto-fit, minmax(min(100%, 250px), 1fr))",
+                  gap: 14,
+                  alignItems: "stretch",
+                },
+              },
+              ...filteredExperts.map((expert) =>
+                React.createElement(
+                  "div",
+                  {
+                    key: expert.agent.id,
+                    style: { display: "flex", minWidth: 0 },
+                  },
+                  React.createElement(ExpertCard, {
+                    expert,
+                    onClick: () => handleCardClick(expert),
+                    onSummon: () => handleSummonExpert(expert),
+                    onConfigure: () => handleConfigureExpert(expert),
+                  }),
                 ),
               ),
+            ),
       ),
     },
     {
@@ -483,8 +487,8 @@ export function ExpertCenterPage() {
         activeTab === "experts"
           ? `共 ${experts.length} 位专家（${enabledCount} 位启用）· ${totalSkills} 个技能 · ${totalMCPs} 个 MCP 客户端`
           : activeTab === "teams"
-            ? "开放式多专家讨论、联合研判与 OMP 动态协作"
-            : "流程化、可观测、可验证的油气与储气库协作流程",
+          ? "开放式多专家讨论、联合研判与 OMP 动态协作"
+          : "流程化、可观测、可验证的油气与储气库协作流程",
       extra: React.createElement(
         React.Fragment,
         null,
@@ -495,7 +499,10 @@ export function ExpertCenterPage() {
                 icon: ReloadOutlined
                   ? React.createElement(ReloadOutlined)
                   : undefined,
-                onClick: () => { clearApiCache(); loadExperts(); },
+                onClick: () => {
+                  clearApiCache();
+                  loadExperts();
+                },
                 loading,
               },
               "刷新",
@@ -605,7 +612,13 @@ export function ExpertCenterPage() {
             React.createElement(
               Text,
               { style: { fontSize: 12, color: "#0958d9" } },
-              `协调者: ${teamLaunchModal.coordinatorName || teamLaunchModal.members[0]?.name || "—"} · 成员: ${teamLaunchModal.members.map((m) => m.name).join("、")}`,
+              `协调者: ${
+                teamLaunchModal.coordinatorName ||
+                teamLaunchModal.members[0]?.name ||
+                "—"
+              } · 成员: ${teamLaunchModal.members
+                .map((m) => m.name)
+                .join("、")}`,
             ),
           ),
         )

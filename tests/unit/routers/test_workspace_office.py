@@ -8,6 +8,7 @@ Covers:
 - _is_officecli_available
 - _convert_docx_to_html falls back when officecli not available
 """
+
 # pylint: disable=protected-access,unused-argument
 
 import json
@@ -16,7 +17,6 @@ from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # _is_officecli_available
@@ -45,8 +45,10 @@ class TestIsOfficecliAvailable:
         with patch(
             "qwenpaw.app.routers.workspace.subprocess.run",
             return_value=mock_result,
-        ):
+        ) as run_mock:
             assert ws._is_officecli_available() is True
+        assert run_mock.call_args.kwargs["encoding"] == "utf-8"
+        assert run_mock.call_args.kwargs["errors"] == "replace"
 
     @patch("qwenpaw.app.routers.workspace.shutil.which")
     @patch("qwenpaw.app.routers.workspace._bundled_officecli_path")
@@ -60,6 +62,38 @@ class TestIsOfficecliAvailable:
         mock_bundled.return_value = None
         mock_which.return_value = None
         assert ws._is_officecli_available() is False
+
+    def test_source_checkout_uses_staged_binary(self, monkeypatch, tmp_path):
+        import qwenpaw.app.routers.workspace as ws
+
+        binary_name = (
+            "officecli.exe" if ws.sys.platform == "win32" else "officecli"
+        )
+        binary = (
+            tmp_path
+            / "console"
+            / "src-tauri"
+            / "binaries"
+            / "officecli"
+            / binary_name
+        )
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"officecli")
+        monkeypatch.delenv("QWENPAW_DESKTOP_OFFICECLI_DIR", raising=False)
+        monkeypatch.setattr(
+            ws,
+            "__file__",
+            str(
+                tmp_path
+                / "src"
+                / "qwenpaw"
+                / "app"
+                / "routers"
+                / "workspace.py",
+            ),
+        )
+
+        assert ws._bundled_officecli_path() == str(binary)
 
     @patch("qwenpaw.app.routers.workspace._bundled_officecli_path")
     def test_bundled_doc_plugin_is_exported_to_subprocess_environment(
@@ -350,6 +384,65 @@ class TestConvertOfficeEndpoint:
             "html": "<html>OfficeCLI</html>",
             "engine": "officecli",
         }
+        convert_mock.assert_called_once_with(str(target))
+
+    @pytest.mark.asyncio
+    async def test_converts_file_in_extra_bound_project_directory(
+        self,
+        tmp_path,
+    ):
+        from urllib.parse import urlencode
+        from starlette.requests import Request
+        from qwenpaw.app.routers.workspace import (
+            ConvertOfficeRequest,
+            convert_office,
+        )
+
+        project_dir = tmp_path / "primary"
+        extra_dir = tmp_path / "extra"
+        workspace_dir = tmp_path / "workspace"
+        for directory in (project_dir, extra_dir, workspace_dir):
+            directory.mkdir()
+        target = extra_dir / "report.docx"
+        target.write_bytes(b"docx")
+        root = f"project:{extra_dir}"
+        body = ConvertOfficeRequest(
+            url="/api/workspace/file-download?"
+            + urlencode({"path": target.name, "root": root}),
+            mime_type=(
+                "application/vnd.openxmlformats-officedocument"
+                ".wordprocessingml.document"
+            ),
+        )
+        workspace = MagicMock(workspace_dir=workspace_dir)
+        request = Request({"type": "http", "headers": []})
+
+        with (
+            patch(
+                "qwenpaw.app.routers.workspace.get_agent_for_request",
+                return_value=workspace,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace.get_project_dir_for_request",
+                return_value=project_dir,
+            ),
+            patch(
+                "qwenpaw.app.routers.workspace._resolve_files_root",
+                return_value=extra_dir,
+            ) as resolve_root,
+            patch(
+                "qwenpaw.app.routers.workspace._convert_with_officecli",
+                return_value="<html>OfficeCLI</html>",
+            ) as convert_mock,
+            patch(
+                "qwenpaw.app.routers.workspace._is_officecli_available",
+                return_value=True,
+            ),
+        ):
+            result = await convert_office(request, body)
+
+        assert result["engine"] == "officecli"
+        resolve_root.assert_awaited_once_with(request, workspace, root)
         convert_mock.assert_called_once_with(str(target))
 
 

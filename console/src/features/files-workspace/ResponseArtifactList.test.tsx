@@ -16,6 +16,16 @@ vi.mock("react-i18next", () => ({
 }));
 
 import ResponseArtifactList from "./ResponseArtifactList";
+import { useResponseArtifacts } from "./responseArtifactRegistry";
+
+function ArtifactShelfProbe() {
+  const artifacts = useResponseArtifacts();
+  return (
+    <output data-testid="artifact-shelf">
+      {artifacts.map((item) => item.path).join(",")}
+    </output>
+  );
+}
 
 function successfulFileIo(path: string, name = "write_file") {
   return [
@@ -116,6 +126,19 @@ function failedSendFile(path: string, serializedOutput = false) {
 }
 
 describe("ResponseArtifactList", () => {
+  it("shares completed response files with the right Artifact shelf", async () => {
+    const { rerender } = render(
+      <>
+        <ResponseArtifactList messages={successfulFileIo("reports/final.md")} />
+        <ArtifactShelfProbe />
+      </>,
+    );
+    expect(await screen.findByTestId("artifact-shelf")).toHaveTextContent(
+      "reports/final.md",
+    );
+    rerender(<ArtifactShelfProbe />);
+    expect(screen.getByTestId("artifact-shelf")).toHaveTextContent("");
+  });
   it("renders each file as a flat preview entry", () => {
     render(
       <ResponseArtifactList

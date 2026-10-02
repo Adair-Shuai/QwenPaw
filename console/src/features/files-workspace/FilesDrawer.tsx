@@ -14,17 +14,16 @@ import {
 import {
   useCallback,
   useEffect,
-  lazy,
   useLayoutEffect,
   useRef,
   useState,
-  Suspense,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { workspaceApi } from "../../api/modules/workspace";
 import { buildAuthHeaders } from "../../api/authHeaders";
 import FilePreview, { isPreviewable } from "../../pages/Coding/FilePreview";
+import ArtifactsWorkspace from "./ArtifactsWorkspace";
 import { setTextareaValue } from "../../pages/Chat/utils";
 import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import { copyText } from "../../utils/clipboard";
@@ -50,7 +49,6 @@ const WORKSPACE_WIDTH_STORAGE_KEY = "qwenpaw-files-workspace-width";
 const MIN_DRAWER_WIDTH = 420;
 const MIN_CHAT_WIDTH = 420;
 const WORKBENCH_MODE_STORAGE_KEY = "qwenpaw-workbench-mode";
-const FilesWorkspace = lazy(() => import("./FilesWorkspace"));
 
 function readStoredWidth(key: string): number {
   if (typeof window === "undefined") return 0;
@@ -186,90 +184,107 @@ export default function FilesDrawer({
     const controller = new AbortController();
     setLoading(true);
     setLoadFailed(false);
-    const loadMetadata = target.artifactUrl
-      ? fetch(target.artifactUrl, {
-          headers: buildAuthHeaders(),
-          signal: controller.signal,
-        }).then(async (response) => {
-          if (!response.ok) throw new Error(`${response.status}`);
-          const contentType = response.headers.get("Content-Type") ?? "";
-          const isText =
-            contentType.startsWith("text/") ||
-            /\.(?:md|mdx|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
-              target.path,
-            );
-          const previewKind = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(
-            target.path,
-          )
-            ? "image"
-            : /\.pdf$/i.test(target.path)
-            ? "pdf"
-            : /\.csv$/i.test(target.path)
-            ? "csv"
-            : isText
-            ? "text"
-            : "binary";
-          const nextContent = isText ? await response.text() : "";
-          return {
+    const loadMetadata =
+      target.artifact?.textContent !== undefined
+        ? Promise.resolve({
             metadata: {
               path: target.path,
-              size: Number(response.headers.get("Content-Length")) || 0,
-              modified_at: response.headers.get("Last-Modified") ?? "",
-              preview_kind: previewKind,
-              etag: response.headers.get("ETag") ?? "",
-            } as FileMetadata,
-            content: nextContent,
-          };
-        })
-      : target.source === "workspace"
-      ? workspaceApi
-          .getFileMetadata(target.path, chatId, target.root, projectDirOverride)
-          .then(async (nextMetadata) => {
-            const loaded =
-              nextMetadata.preview_kind === "text" ||
-              nextMetadata.preview_kind === "csv"
-                ? await workspaceApi.loadFileText(
-                    target.path,
-                    chatId,
-                    target.root,
-                    projectDirOverride,
-                  )
-                : null;
+              size: new Blob([target.artifact.textContent]).size,
+              modified_at: "",
+              preview_kind: "text" as const,
+              etag: "",
+            },
+            content: target.artifact.textContent,
+          })
+        : target.artifactUrl
+        ? fetch(target.artifactUrl, {
+            headers: buildAuthHeaders(),
+            signal: controller.signal,
+          }).then(async (response) => {
+            if (!response.ok) throw new Error(`${response.status}`);
+            const contentType = response.headers.get("Content-Type") ?? "";
+            const isText =
+              contentType.startsWith("text/") ||
+              /\.(?:md|mdx|txt|csv|json|ya?ml|toml|xml|html?|css|less|scss|js|jsx|ts|tsx|py|java|go|rs|sh)$/i.test(
+                target.path,
+              );
+            const previewKind = /\.(?:png|jpe?g|gif|webp|svg|ico|bmp)$/i.test(
+              target.path,
+            )
+              ? "image"
+              : /\.pdf$/i.test(target.path)
+              ? "pdf"
+              : /\.csv$/i.test(target.path)
+              ? "csv"
+              : isText
+              ? "text"
+              : "binary";
+            const nextContent = isText ? await response.text() : "";
             return {
-              metadata: loaded
-                ? { ...nextMetadata, etag: loaded.etag }
-                : nextMetadata,
-              content: loaded?.content ?? "",
+              metadata: {
+                path: target.path,
+                size: Number(response.headers.get("Content-Length")) || 0,
+                modified_at: response.headers.get("Last-Modified") ?? "",
+                preview_kind: previewKind,
+                etag: response.headers.get("ETag") ?? "",
+              } as FileMetadata,
+              content: nextContent,
             };
           })
-      : target.source === "profile"
-      ? workspaceApi.loadFile(target.path, agentId).then((file) => ({
-          metadata: {
-            path: target.path,
-            size: new Blob([file.content]).size,
-            modified_at: "",
-            preview_kind: "text" as const,
-            etag: "",
-          },
-          content: file.content,
-        }))
-      : target.source === "memory" ||
-        target.source === "daily" ||
-        target.source === "digest"
-      ? (target.source === "daily" || target.source === "digest"
-          ? workspaceApi.loadMemoryFile(target.path, target.source)
-          : workspaceApi.loadDailyMemory(target.path)
-        ).then((file) => ({
-          metadata: {
-            path: target.path,
-            size: new Blob([file.content]).size,
-            modified_at: "",
-            preview_kind: "text" as const,
-            etag: "",
-          },
-          content: file.content,
-        }))
-      : Promise.reject(new Error("Unsupported preview source"));
+        : target.source === "workspace"
+        ? workspaceApi
+            .getFileMetadata(
+              target.path,
+              chatId,
+              target.root,
+              projectDirOverride,
+            )
+            .then(async (nextMetadata) => {
+              const loaded =
+                nextMetadata.preview_kind === "text" ||
+                nextMetadata.preview_kind === "csv"
+                  ? await workspaceApi.loadFileText(
+                      target.path,
+                      chatId,
+                      target.root,
+                      projectDirOverride,
+                    )
+                  : null;
+              return {
+                metadata: loaded
+                  ? { ...nextMetadata, etag: loaded.etag }
+                  : nextMetadata,
+                content: loaded?.content ?? "",
+              };
+            })
+        : target.source === "profile"
+        ? workspaceApi.loadFile(target.path, agentId).then((file) => ({
+            metadata: {
+              path: target.path,
+              size: new Blob([file.content]).size,
+              modified_at: "",
+              preview_kind: "text" as const,
+              etag: "",
+            },
+            content: file.content,
+          }))
+        : target.source === "memory" ||
+          target.source === "daily" ||
+          target.source === "digest"
+        ? (target.source === "daily" || target.source === "digest"
+            ? workspaceApi.loadMemoryFile(target.path, target.source)
+            : workspaceApi.loadDailyMemory(target.path)
+          ).then((file) => ({
+            metadata: {
+              path: target.path,
+              size: new Blob([file.content]).size,
+              modified_at: "",
+              preview_kind: "text" as const,
+              etag: "",
+            },
+            content: file.content,
+          }))
+        : Promise.reject(new Error("Unsupported preview source"));
     void loadMetadata
       .then(({ metadata: nextMetadata, content: nextContent }) => {
         if (controller.signal.aborted) return;
@@ -331,6 +346,35 @@ export default function FilesDrawer({
       message.error(t("common.copyFailed"));
     }
   }, [content, message, t]);
+
+  const previewSurface = (
+    <div className={styles.previewSurface} aria-busy={loading}>
+      {loading ? (
+        <div className={styles.empty}>{t("common.loading")}</div>
+      ) : loadFailed ? (
+        <div className={styles.empty}>{t("files.loadFailed")}</div>
+      ) : target &&
+        metadata &&
+        (isPreviewable(target.path) || target.artifact) ? (
+        <FilePreview
+          filePath={target.path}
+          content={content}
+          chatId={chatId}
+          binaryUrl={target.artifactUrl}
+          root={target.root}
+          projectDirOverride={projectDirOverride}
+          workspaceBacked={target.source === "workspace"}
+          artifact={target.artifact}
+        />
+      ) : metadata?.preview_kind === "text" ? (
+        <pre className={styles.textPreview}>{content}</pre>
+      ) : (
+        <div className={styles.empty}>
+          {target ? t("files.previewUnavailable") : "选择 Artifact 以预览"}
+        </div>
+      )}
+    </div>
+  );
 
   return (
     <motion.aside
@@ -409,7 +453,9 @@ export default function FilesDrawer({
         <div className={styles.drawerTitle}>
           <strong>
             {mode === "files"
-              ? filename
+              ? isWorkspace && !target
+                ? "Artifacts"
+                : filename
               : mode === "browser"
               ? "浏览器"
               : mode === "agents"
@@ -426,7 +472,7 @@ export default function FilesDrawer({
             </span>
           )}
         </div>
-        {isWorkspace && target && (
+        {mode === "files" && isWorkspace && target && (
           <button
             type="button"
             className={styles.secondaryButton}
@@ -436,7 +482,7 @@ export default function FilesDrawer({
             {t("files.backToPreview")}
           </button>
         )}
-        {target && canCopy && (
+        {mode === "files" && target && canCopy && (
           <button
             type="button"
             className={styles.iconButton}
@@ -446,34 +492,36 @@ export default function FilesDrawer({
             <Copy size={16} />
           </button>
         )}
-        {target && (target.source === "workspace" || target.artifactUrl) && (
-          <button
-            type="button"
-            className={styles.iconButton}
-            aria-label={t("files.download")}
-            onClick={() =>
-              void downloadFileFromUrl(
-                target.artifactUrl ??
-                  workspaceApi.getFileDownloadUrl(target.path, target.root),
-                filename,
-                {
-                  headers: {
-                    ...buildAuthHeaders(),
-                    ...(chatId ? { "X-Chat-Id": chatId } : {}),
-                    ...(!chatId && projectDirOverride
-                      ? {
-                          "X-Session-Project-Dir": projectDirOverride,
-                        }
-                      : {}),
+        {mode === "files" &&
+          target &&
+          (target.source === "workspace" || target.artifactUrl) && (
+            <button
+              type="button"
+              className={styles.iconButton}
+              aria-label={t("files.download")}
+              onClick={() =>
+                void downloadFileFromUrl(
+                  target.artifactUrl ??
+                    workspaceApi.getFileDownloadUrl(target.path, target.root),
+                  filename,
+                  {
+                    headers: {
+                      ...buildAuthHeaders(),
+                      ...(chatId ? { "X-Chat-Id": chatId } : {}),
+                      ...(!chatId && projectDirOverride
+                        ? {
+                            "X-Session-Project-Dir": projectDirOverride,
+                          }
+                        : {}),
+                    },
+                    errorMessage: t("files.downloadFailed"),
                   },
-                  errorMessage: t("files.downloadFailed"),
-                },
-              )
-            }
-          >
-            <Download size={16} />
-          </button>
-        )}
+                )
+              }
+            >
+              <Download size={16} />
+            </button>
+          )}
         <button
           type="button"
           className={styles.iconButton}
@@ -525,88 +573,73 @@ export default function FilesDrawer({
         )}
         {mode === "compute" && <WorkbenchComputePanel />}
 
-      {mode === "files" && <AnimatePresence initial={false} mode="popLayout">
-        <motion.div
-          key={isWorkspace ? "workspace" : "preview"}
-          className={styles.drawerContent}
-          initial={
-            prefersReducedMotion
-              ? false
-              : { opacity: 0, x: isWorkspace ? -10 : 10 }
-          }
-          animate={{ opacity: 1, x: 0 }}
-          exit={
-            prefersReducedMotion
-              ? { opacity: 0 }
-              : { opacity: 0, x: isWorkspace ? 8 : -8 }
-          }
-          transition={
-            prefersReducedMotion
-              ? { duration: 0 }
-              : { duration: 0.2, ease: [0.22, 0.78, 0.24, 1] }
-          }
-        >
-          {isWorkspace ? (
-            <Suspense
-              fallback={
-                <div className={styles.empty}>{t("common.loading")}</div>
+        {mode === "files" && (
+          <AnimatePresence initial={false} mode="popLayout">
+            <motion.div
+              key={isWorkspace ? "workspace" : "preview"}
+              className={styles.drawerContent}
+              initial={
+                prefersReducedMotion
+                  ? false
+                  : { opacity: 0, x: isWorkspace ? -10 : 10 }
+              }
+              animate={{ opacity: 1, x: 0 }}
+              exit={
+                prefersReducedMotion
+                  ? { opacity: 0 }
+                  : { opacity: 0, x: isWorkspace ? 8 : -8 }
+              }
+              transition={
+                prefersReducedMotion
+                  ? { duration: 0 }
+                  : { duration: 0.2, ease: [0.22, 0.78, 0.24, 1] }
               }
             >
-              <FilesWorkspace initialTarget={target} scope={scope} />
-            </Suspense>
-          ) : (
-            <>
-              <div className={styles.previewSurface} aria-busy={loading}>
-                {loading ? (
-                  <div className={styles.empty}>{t("common.loading")}</div>
-                ) : loadFailed ? (
-                  <div className={styles.empty}>{t("files.loadFailed")}</div>
-                ) : target && metadata && isPreviewable(target.path) ? (
-                  <FilePreview
-                    filePath={target.path}
-                    content={content}
-                    chatId={chatId}
-                    binaryUrl={target.artifactUrl}
-                    root={target.root}
-                    projectDirOverride={projectDirOverride}
-                    workspaceBacked={target.source === "workspace"}
-                  />
-                ) : metadata?.preview_kind === "text" ? (
-                  <pre className={styles.textPreview}>{content}</pre>
-                ) : (
-                  <div className={styles.empty}>
-                    {t("files.previewUnavailable")}
-                  </div>
-                )}
-              </div>
-              <footer className={styles.drawerFooter}>
-                {target && (
-                  <button
-                    type="button"
-                    className={styles.secondaryButton}
-                    onClick={() => {
-                      insertFileReference(target.path);
-                    }}
-                  >
-                    <MessageSquarePlus size={15} />
-                    {t("files.mentionInChat")}
-                  </button>
-                )}
-                {target && (
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
-                  >
-                    <Expand size={15} />
-                    {t("files.expandWorkspace")}
-                  </button>
-                )}
-              </footer>
-            </>
-          )}
-        </motion.div>
-      </AnimatePresence>}
+              {isWorkspace ? (
+                <ArtifactsWorkspace
+                  scope={scope}
+                  target={target}
+                  onSelect={(nextTarget) =>
+                    dispatch({
+                      type: "OPEN_PREVIEW",
+                      target: nextTarget,
+                      trigger: null,
+                    })
+                  }
+                  preview={previewSurface}
+                />
+              ) : (
+                <>
+                  {previewSurface}
+                  <footer className={styles.drawerFooter}>
+                    {target && (
+                      <button
+                        type="button"
+                        className={styles.secondaryButton}
+                        onClick={() => {
+                          insertFileReference(target.path);
+                        }}
+                      >
+                        <MessageSquarePlus size={15} />
+                        {t("files.mentionInChat")}
+                      </button>
+                    )}
+                    {target && (
+                      <button
+                        type="button"
+                        className={styles.primaryButton}
+                        onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
+                      >
+                        <Expand size={15} />
+                        {t("files.expandWorkspace")}
+                      </button>
+                    )}
+                  </footer>
+                </>
+              )}
+            </motion.div>
+          </AnimatePresence>
+        )}
       </div>
     </motion.aside>
   );

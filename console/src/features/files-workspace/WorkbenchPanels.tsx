@@ -57,6 +57,18 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
   );
   const [reloadKey, setReloadKey] = useState(0);
   const currentUrl = historyIndex >= 0 ? history[historyIndex] : "";
+  const embedsThisConsole = (() => {
+    if (!currentUrl) return false;
+    try {
+      const url = new URL(currentUrl);
+      return (
+        url.origin === window.location.origin &&
+        (url.pathname === "/" || url.pathname.startsWith("/chat"))
+      );
+    } catch {
+      return false;
+    }
+  })();
 
   useEffect(() => {
     if (active) setInput(currentUrl);
@@ -151,7 +163,15 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
         </button>
       </form>
 
-      {currentUrl ? (
+      {embedsThisConsole ? (
+        <div className={styles.workbenchEmptyState}>
+          <span className={styles.workbenchEmptyIcon}>
+            <Globe2 size={28} />
+          </span>
+          <strong>当前控制台不能嵌入自身</strong>
+          <p>请输入其他网页地址，或使用右上角按钮在新窗口打开。</p>
+        </div>
+      ) : currentUrl ? (
         <div className={styles.browserFrameWrap}>
           <iframe
             key={`${currentUrl}:${reloadKey}`}
@@ -208,7 +228,7 @@ export function WorkbenchAgentPanel({
     <div className={`${styles.workbenchPanel} ${styles.agentProcessPanel}`}>
       <div className={styles.reusedAgentPanel}>
         <AgentCollaborationPanel
-          sessionId={runtimeSessionId || scope.sessionId}
+          sessionId={runtimeSessionId ?? scope.sessionId}
           emptyState={
             <div className={styles.workbenchEmptyState}>
               <span className={styles.workbenchEmptyIcon}>

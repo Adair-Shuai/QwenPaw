@@ -2,9 +2,20 @@
  * Expert card, drawer, template modal, and blank expert creation modal.
  */
 
-import { getHost, clearApiCache, clearAgentCache, apiFetch } from "../core/runtime";
+import {
+  getHost,
+  clearApiCache,
+  clearAgentCache,
+  apiFetch,
+} from "../core/runtime";
 import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
-import type { AgentSummary, SkillSpec, PoolSkillSpec, MCPClientInfo, ExpertData } from "../core/types";
+import type {
+  AgentSummary,
+  SkillSpec,
+  PoolSkillSpec,
+  MCPClientInfo,
+  ExpertData,
+} from "../core/types";
 import {
   type ExpertBundle,
   type ExpertTemplate,
@@ -68,6 +79,13 @@ async function selectCreatedAgent(agentId: string): Promise<void> {
 
 // ─── Expert Center Page ───────────────────────────────────────────────────────
 
+function previewNames(names: string[]): string {
+  return (
+    names.slice(0, 2).join("、") +
+    (names.length > 2 ? ` 等 ${names.length} 项` : "")
+  );
+}
+
 export function ExpertCard({
   expert,
   onClick,
@@ -80,14 +98,12 @@ export function ExpertCard({
   onConfigure?: () => void;
 }) {
   const React = getHost().React;
-  const { Card, Tag, Badge, Typography, Spin, Button, Tooltip } = getHost().antd;
-  const { Text } = Typography;
+  const { Card, Badge, Button, Tooltip } = getHost().antd;
   const { ThunderboltOutlined, SettingOutlined } = getHost().antdIcons || {};
 
-  const { agent, skills, mcps, loading } = expert;
+  const { agent, skills } = expert;
   const isEnabled = agent.enabled;
-  const enabledSkills = skills
-    .filter((s) => s.enabled !== false)
+  const enabledSkills = skills.filter((skill) => skill.enabled !== false);
   const bundle = EXPERT_BUNDLES.find(
     (item) => item.id === agent.id || item.name === agent.name,
   );
@@ -98,7 +114,10 @@ export function ExpertCard({
         : enabledSkills.flatMap((skill) => skill.tags || []),
     ),
   ).slice(0, 3);
-  const specialty = bundle?.category || "UGSci 专业专家";
+  const specialty =
+    bundle?.category || (agent.id === "default" ? "通用助手" : "自定义专家");
+  const description = agent.description?.trim() || "";
+  const skillNames = enabledSkills.map((skill) => skill.name);
 
   return React.createElement(
     Card,
@@ -108,7 +127,7 @@ export function ExpertCard({
       size: "small",
       style: {
         cursor: "pointer",
-        transition: "all 0.2s ease",
+        transition: "transform 0.2s ease, box-shadow 0.2s ease",
         borderColor: isEnabled ? undefined : "var(--ant-color-border, #d9d9d9)",
         opacity: isEnabled ? 1 : 0.7,
         height: "100%",
@@ -122,6 +141,7 @@ export function ExpertCard({
           flexDirection: "column",
           height: "100%",
           flex: 1,
+          padding: 18,
         },
       },
     },
@@ -132,19 +152,37 @@ export function ExpertCard({
           display: "flex",
           justifyContent: "space-between",
           alignItems: "flex-start",
-          marginBottom: 8,
+          gap: 8,
+          marginBottom: 14,
         },
       },
       React.createElement(
         "div",
-        { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement(ExpertAvatar, { name: agent.name, size: 36 }),
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 11,
+            minWidth: 0,
+          },
+        },
+        React.createElement(ExpertAvatar, { name: agent.name, size: 42 }),
         React.createElement(
           "div",
-          null,
+          { style: { minWidth: 0 } },
           React.createElement(
-            Text,
-            { strong: true, style: { fontSize: 15 } },
+            "div",
+            {
+              style: {
+                fontSize: 15,
+                fontWeight: 650,
+                lineHeight: 1.4,
+                display: "-webkit-box",
+                WebkitLineClamp: 2,
+                WebkitBoxOrient: "vertical",
+                overflow: "hidden",
+              },
+            },
             agent.name,
           ),
           React.createElement(
@@ -153,22 +191,36 @@ export function ExpertCard({
               style: {
                 fontSize: 12,
                 color: "var(--ant-color-text-secondary, #595959)",
-                marginTop: 2,
+                marginTop: 3,
               },
             },
             specialty,
           ),
         ),
       ),
-      React.createElement(Badge, {
-        status: isEnabled ? "success" : "default",
-        text: isEnabled ? "启用" : "停用",
-      }),
+      React.createElement(
+        "span",
+        { style: { flexShrink: 0, whiteSpace: "nowrap" } },
+        React.createElement(Badge, {
+          status: isEnabled ? "success" : "default",
+          text: isEnabled ? "启用" : "停用",
+        }),
+      ),
     ),
-    // Keep the card scannable: only surface a few stable capability tags.
     React.createElement(
       "div",
-      { style: { minHeight: 30, marginBottom: 10 } },
+      { style: { minHeight: 48, marginBottom: 12 } },
+      React.createElement(
+        "div",
+        {
+          style: {
+            fontSize: 11,
+            color: "var(--ant-color-text-tertiary, #8c8c8c)",
+            marginBottom: 6,
+          },
+        },
+        "能力标签",
+      ),
       coreAbilityTags.length > 0
         ? React.createElement(TagList, {
             items: coreAbilityTags,
@@ -180,64 +232,89 @@ export function ExpertCard({
             {
               style: {
                 fontSize: 12,
-                color: "var(--ant-color-text-quaternary, #bfbfbf)",
+                color: "var(--ant-color-text-secondary, #595959)",
               },
             },
-            "核心能力待配置",
+            skillNames.length
+              ? previewNames(skillNames)
+              : "尚未配置技能，可在专家配置中补充",
           ),
     ),
-    // Keep counts visible; full skill and MCP lists belong in the drawer.
-    loading
-      ? React.createElement(Spin, { size: "small" })
-      : React.createElement(
-          "div",
-          {
-            display: "flex",
-            gap: 12,
-            alignItems: "center",
-            marginTop: "auto",
-            marginBottom: 4,
-            fontSize: 12,
+    React.createElement(
+      "div",
+      { style: { marginTop: "auto", minHeight: 78 } },
+      React.createElement(
+        "div",
+        {
+          style: {
+            fontSize: 11,
             color: "var(--ant-color-text-tertiary, #8c8c8c)",
+            marginBottom: 6,
           },
-          `技能 ${enabledSkills.length}`,
-          `MCP ${mcps.length}`,
-        ),
-    // Bottom bar: gear icon (left) + summon button (right)
+        },
+        "智能体描述",
+      ),
+      React.createElement(
+        "div",
+        {
+          style: {
+            color: "var(--ant-color-text-secondary, #595959)",
+            fontSize: 13,
+            lineHeight: 1.5,
+            maxHeight: 58,
+            overflow: "hidden",
+          },
+          title: description,
+        },
+        description ? renderMarkdown(description, React) : "暂无描述",
+      ),
+    ),
     React.createElement(
       "div",
       {
         style: {
           display: "flex",
-          justifyContent: "space-between",
+          justifyContent: "flex-end",
           alignItems: "center",
-          marginTop: 10,
-          paddingTop: 8,
-          borderTop: "1px solid #f0f0f0",
+          gap: 6,
+          marginTop: 14,
+          paddingTop: 12,
+          borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
         },
       },
-      // Gear icon (bottom-left) — opens configuration modal
       React.createElement(
         Tooltip,
         { title: "配置专家", placement: "top" },
-        React.createElement(
-          Button,
-          {
-            type: "text",
-            size: "small",
-            icon: SettingOutlined
-              ? React.createElement(SettingOutlined, {
-                  style: { fontSize: 16, color: "var(--ant-color-text-tertiary, #8c8c8c)" },
-                })
-              : undefined,
-            onClick: (e: any) => {
-              e.stopPropagation();
-              if (onConfigure) onConfigure();
-            },
+        React.createElement(Button, {
+          type: "text",
+          size: "small",
+          "aria-label": `配置 ${agent.name}`,
+          icon: SettingOutlined
+            ? React.createElement(SettingOutlined, {
+                style: {
+                  fontSize: 16,
+                  color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                },
+              })
+            : undefined,
+          onClick: (e: any) => {
+            e.stopPropagation();
+            if (onConfigure) onConfigure();
           },
-        ),
+        }),
       ),
-      // Summon button (bottom-right)
+      React.createElement(
+        Button,
+        {
+          type: "link",
+          size: "small",
+          onClick: (event: any) => {
+            event.stopPropagation();
+            onClick();
+          },
+        },
+        "查看详情",
+      ),
       React.createElement(
         Button,
         {
@@ -433,7 +510,9 @@ export function ExpertDrawer({
     }
     if (successCount > 0) {
       antdMsg.success(
-        `成功添加 ${successCount} 个技能${failCount > 0 ? `，${failCount} 个失败` : ""}`,
+        `成功添加 ${successCount} 个技能${
+          failCount > 0 ? `，${failCount} 个失败` : ""
+        }`,
       );
       onRefresh();
     } else if (failCount > 0) {
@@ -914,7 +993,8 @@ export function ExpertTemplateModal({
         }),
       });
 
-      const systemPrompt = values.systemPrompt.trim() ||
+      const systemPrompt =
+        values.systemPrompt.trim() ||
         `# ${values.name}\n\n你是${values.name}。${
           values.description ? `\n\n职责：${values.description}` : ""
         }\n`;
@@ -978,7 +1058,11 @@ export function ExpertTemplateModal({
       });
 
       // 2. Write AGENTS.md with template system prompt
-      await writeKnowledgeFile(agentRef.id, "AGENTS.md", template.system_prompt);
+      await writeKnowledgeFile(
+        agentRef.id,
+        "AGENTS.md",
+        template.system_prompt,
+      );
 
       // 3. Update agent config with approval level
       const config = await fetchAgentConfig(agentRef.id);
@@ -1004,57 +1088,129 @@ export function ExpertTemplateModal({
     React.Fragment,
     null,
     React.createElement(
-    Modal,
-    {
-      open,
-      onCancel: onClose,
-      footer: null,
-      title: "选择专家模板",
-      width: 800,
-      maskClosable: true,
-      keyboard: true,
-    },
-    React.createElement(
-      "div",
-      { style: { marginBottom: 16 } },
-      React.createElement(Input, {
-        placeholder: "搜索模板名称或类别...",
-        value: searchText,
-        onChange: (e: any) => setSearchText(e.target.value),
-        allowClear: true,
-      }),
-    ),
-    creating
-      ? React.createElement(
-          "div",
-          { style: { textAlign: "center", padding: 60 } },
-          React.createElement(Spin, { size: "large" }),
-          React.createElement(
+      Modal,
+      {
+        open,
+        onCancel: onClose,
+        footer: null,
+        title: "选择专家模板",
+        width: 800,
+        maskClosable: true,
+        keyboard: true,
+      },
+      React.createElement(
+        "div",
+        { style: { marginBottom: 16 } },
+        React.createElement(Input, {
+          placeholder: "搜索模板名称或类别...",
+          value: searchText,
+          onChange: (e: any) => setSearchText(e.target.value),
+          allowClear: true,
+        }),
+      ),
+      creating
+        ? React.createElement(
             "div",
-            { style: { marginTop: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-            "正在创建专家...",
-          ),
-        )
-      : React.createElement(
-          Row,
-          { gutter: [12, 12] },
-          // ── Blank template card (always first) ──
-          !searchText.trim()
-            ? React.createElement(
+            { style: { textAlign: "center", padding: 60 } },
+            React.createElement(Spin, { size: "large" }),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  marginTop: 12,
+                  color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                },
+              },
+              "正在创建专家...",
+            ),
+          )
+        : React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            // ── Blank template card (always first) ──
+            !searchText.trim()
+              ? React.createElement(
+                  Col,
+                  { xs: 24, sm: 12 },
+                  React.createElement(
+                    Card,
+                    {
+                      hoverable: true,
+                      size: "small",
+                      onClick: () => setBlankModalOpen(true),
+                      style: {
+                        cursor: "pointer",
+                        height: "100%",
+                        border: "2px dashed var(--ant-color-border, #d9d9d9)",
+                        background: "var(--ant-color-fill-quaternary, #fafafa)",
+                      },
+                    },
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          display: "flex",
+                          alignItems: "flex-start",
+                          gap: 10,
+                          marginBottom: 8,
+                        },
+                      },
+                      React.createElement(
+                        "span",
+                        {
+                          style: {
+                            fontSize: 28,
+                            color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                          },
+                        },
+                        FileAddOutlined
+                          ? React.createElement(FileAddOutlined)
+                          : "📝",
+                      ),
+                      React.createElement(
+                        "div",
+                        { style: { flex: 1 } },
+                        React.createElement(
+                          Text,
+                          { strong: true, style: { fontSize: 15 } },
+                          "从空白模版开始创建",
+                        ),
+                        React.createElement(
+                          "div",
+                          null,
+                          React.createElement(
+                            Tag,
+                            { color: "default", style: { fontSize: 10 } },
+                            "空白",
+                          ),
+                        ),
+                      ),
+                    ),
+                    React.createElement(
+                      "div",
+                      {
+                        style: {
+                          fontSize: 12,
+                          color: "#595959",
+                          lineHeight: 1.5,
+                        },
+                      },
+                      "创建一个全新的专家，不使用任何预设模板。创建后可自行配置系统提示词、技能和 MCP 客户端。",
+                    ),
+                  ),
+                )
+              : null,
+            ...filteredTemplates.map((template) =>
+              React.createElement(
                 Col,
-                { xs: 24, sm: 12 },
+                { key: template.id, xs: 24, sm: 12 },
                 React.createElement(
                   Card,
                   {
                     hoverable: true,
                     size: "small",
-                    onClick: () => setBlankModalOpen(true),
-                    style: {
-                      cursor: "pointer",
-                      height: "100%",
-                      border: "2px dashed var(--ant-color-border, #d9d9d9)",
-                      background: "var(--ant-color-fill-quaternary, #fafafa)",
-                    },
+                    onClick: () => handleSelectTemplate(template),
+                    style: { cursor: "pointer", height: "100%" },
                   },
                   React.createElement(
                     "div",
@@ -1066,29 +1222,33 @@ export function ExpertTemplateModal({
                         marginBottom: 8,
                       },
                     },
-                    React.createElement(
-                      "span",
-                      { style: { fontSize: 28, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-                      FileAddOutlined
-                        ? React.createElement(FileAddOutlined)
-                        : "📝",
-                    ),
+                    React.createElement(ExpertAvatar, {
+                      name: template.name,
+                      size: 40,
+                    }),
                     React.createElement(
                       "div",
                       { style: { flex: 1 } },
                       React.createElement(
                         Text,
                         { strong: true, style: { fontSize: 15 } },
-                        "从空白模版开始创建",
+                        template.name,
                       ),
                       React.createElement(
                         "div",
                         null,
                         React.createElement(
                           Tag,
-                          { color: "default", style: { fontSize: 10 } },
-                          "空白",
+                          { color: "blue", style: { fontSize: 10 } },
+                          template.category,
                         ),
+                        template.approval_level === "MANUAL"
+                          ? React.createElement(
+                              Tag,
+                              { color: "orange", style: { fontSize: 10 } },
+                              "需审批",
+                            )
+                          : null,
                       ),
                     ),
                   ),
@@ -1101,78 +1261,12 @@ export function ExpertTemplateModal({
                         lineHeight: 1.5,
                       },
                     },
-                    "创建一个全新的专家，不使用任何预设模板。创建后可自行配置系统提示词、技能和 MCP 客户端。",
+                    renderMarkdown(template.description, React),
                   ),
-                ),
-              )
-            : null,
-          ...filteredTemplates.map((template) =>
-            React.createElement(
-              Col,
-              { key: template.id, xs: 24, sm: 12 },
-              React.createElement(
-                Card,
-                {
-                  hoverable: true,
-                  size: "small",
-                  onClick: () => handleSelectTemplate(template),
-                  style: { cursor: "pointer", height: "100%" },
-                },
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "flex-start",
-                      gap: 10,
-                      marginBottom: 8,
-                    },
-                  },
-                  React.createElement(ExpertAvatar, {
-                    name: template.name,
-                    size: 40,
-                  }),
-                  React.createElement(
-                    "div",
-                    { style: { flex: 1 } },
-                    React.createElement(
-                      Text,
-                      { strong: true, style: { fontSize: 15 } },
-                      template.name,
-                    ),
-                    React.createElement(
-                      "div",
-                      null,
-                      React.createElement(
-                        Tag,
-                        { color: "blue", style: { fontSize: 10 } },
-                        template.category,
-                      ),
-                      template.approval_level === "MANUAL"
-                        ? React.createElement(
-                            Tag,
-                            { color: "orange", style: { fontSize: 10 } },
-                            "需审批",
-                          )
-                        : null,
-                    ),
-                  ),
-                ),
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      fontSize: 12,
-                      color: "#595959",
-                      lineHeight: 1.5,
-                    },
-                  },
-                  renderMarkdown(template.description, React),
                 ),
               ),
             ),
           ),
-        ),
     ),
     // ── Blank template creation modal (sibling, not nested inside Modal) ──
     React.createElement(BlankExpertModal, {
@@ -1234,19 +1328,15 @@ export function parseInitialMCPConfig(value: string): InitialMCPClient[] {
       typeof rawConfig.transport === "string"
         ? rawConfig.transport
         : typeof rawConfig.type === "string"
-          ? rawConfig.type
-          : "";
-    const transport = declaredTransport === "sse"
-      ? "sse"
-      : url
-        ? "streamable_http"
-        : "stdio";
+        ? rawConfig.type
+        : "";
+    const transport =
+      declaredTransport === "sse" ? "sse" : url ? "streamable_http" : "stdio";
 
     return {
       clientKey,
       client: {
-        name:
-          typeof rawConfig.name === "string" ? rawConfig.name : clientKey,
+        name: typeof rawConfig.name === "string" ? rawConfig.name : clientKey,
         description:
           typeof rawConfig.description === "string"
             ? rawConfig.description
@@ -1338,7 +1428,10 @@ export function BlankExpertModal({
     try {
       return { clients: parseInitialMCPConfig(mcpJson), error: "" };
     } catch (err: any) {
-      return { clients: [] as InitialMCPClient[], error: err.message || "MCP 配置无效" };
+      return {
+        clients: [] as InitialMCPClient[],
+        error: err.message || "MCP 配置无效",
+      };
     }
   }, [mcpJson]);
 
@@ -1390,9 +1483,17 @@ export function BlankExpertModal({
           marginBottom: 12,
         },
       },
-      React.createElement(Text, { strong: true, style: { fontSize: 15 } }, title),
+      React.createElement(
+        Text,
+        { strong: true, style: { fontSize: 15 } },
+        title,
+      ),
       detail
-        ? React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, detail)
+        ? React.createElement(
+            Text,
+            { type: "secondary", style: { fontSize: 12 } },
+            detail,
+          )
         : null,
     );
 
@@ -1425,7 +1526,11 @@ export function BlankExpertModal({
             "label",
             { style: { display: "block", fontSize: 13, marginBottom: 6 } },
             "专家名称",
-            React.createElement("span", { style: { color: "#ff4d4f", marginLeft: 4 } }, "*"),
+            React.createElement(
+              "span",
+              { style: { color: "#ff4d4f", marginLeft: 4 } },
+              "*",
+            ),
           ),
           React.createElement(Input, {
             placeholder: "例如：合同审查专家",
@@ -1450,7 +1555,11 @@ export function BlankExpertModal({
             status: agentIdError ? "error" : undefined,
           }),
           agentIdError
-            ? React.createElement("div", { style: { color: "#ff4d4f", fontSize: 12, marginTop: 4 } }, agentIdError)
+            ? React.createElement(
+                "div",
+                { style: { color: "#ff4d4f", fontSize: 12, marginTop: 4 } },
+                agentIdError,
+              )
             : null,
         ),
         React.createElement(
@@ -1477,11 +1586,15 @@ export function BlankExpertModal({
       { style: { borderTop: "1px solid #f0f0f0", padding: "20px 0" } },
       sectionTitle("角色指令", "保存为 AGENTS.md"),
       React.createElement(Input.TextArea, {
-        placeholder: "定义专家的角色、目标、工作方式和输出要求；留空时将根据名称与描述生成基础指令",
+        placeholder:
+          "定义专家的角色、目标、工作方式和输出要求；留空时将根据名称与描述生成基础指令",
         value: systemPrompt,
         onChange: (e: any) => setSystemPrompt(e.target.value),
         rows: 6,
-        style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 },
+        style: {
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: 12,
+        },
       }),
     ),
     React.createElement(
@@ -1496,17 +1609,44 @@ export function BlankExpertModal({
           { xs: 24, md: 12 },
           React.createElement(
             "div",
-            { style: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 } },
+            {
+              style: {
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                marginBottom: 8,
+              },
+            },
             React.createElement(Text, { strong: true }, "初始技能"),
             React.createElement(
               "div",
               { style: { display: "flex", gap: 4 } },
-              React.createElement(Button, { size: "small", onClick: selectBuiltinSkills, disabled: skillsLoading }, "内置"),
-              React.createElement(Button, { size: "small", onClick: () => setSelectedSkills([]), disabled: selectedSkills.length === 0 }, "清空"),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  onClick: selectBuiltinSkills,
+                  disabled: skillsLoading,
+                },
+                "内置",
+              ),
+              React.createElement(
+                Button,
+                {
+                  size: "small",
+                  onClick: () => setSelectedSkills([]),
+                  disabled: selectedSkills.length === 0,
+                },
+                "清空",
+              ),
             ),
           ),
           skillsLoading
-            ? React.createElement("div", { style: { textAlign: "center", padding: 32 } }, React.createElement(Spin, { size: "small" }))
+            ? React.createElement(
+                "div",
+                { style: { textAlign: "center", padding: 32 } },
+                React.createElement(Spin, { size: "small" }),
+              )
             : React.createElement(Select, {
                 mode: "multiple",
                 value: selectedSkills,
@@ -1527,37 +1667,63 @@ export function BlankExpertModal({
             "div",
             { style: { marginTop: 8, minHeight: 22 } },
             selectedSkills.length > 0
-              ? React.createElement(Tag, { color: "blue" }, `已选择 ${selectedSkills.length} 个技能`)
-              : React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, "暂不添加技能"),
+              ? React.createElement(
+                  Tag,
+                  { color: "blue" },
+                  `已选择 ${selectedSkills.length} 个技能`,
+                )
+              : React.createElement(
+                  Text,
+                  { type: "secondary", style: { fontSize: 12 } },
+                  "暂不添加技能",
+                ),
           ),
         ),
         React.createElement(
           Col,
           { xs: 24, md: 12 },
-          React.createElement(Text, { strong: true, style: { display: "block", marginBottom: 8 } }, "初始 MCP"),
+          React.createElement(
+            Text,
+            { strong: true, style: { display: "block", marginBottom: 8 } },
+            "初始 MCP",
+          ),
           React.createElement(Input.TextArea, {
-            placeholder: '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem"]\n    }\n  }\n}',
+            placeholder:
+              '{\n  "mcpServers": {\n    "filesystem": {\n      "command": "npx",\n      "args": ["-y", "@modelcontextprotocol/server-filesystem"]\n    }\n  }\n}',
             value: mcpJson,
             onChange: (e: any) => setMcpJson(e.target.value),
             rows: 8,
             status: mcpPreview.error ? "error" : undefined,
-            style: { fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace", fontSize: 12 },
+            style: {
+              fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+              fontSize: 12,
+            },
           }),
           React.createElement(
             "div",
             { style: { marginTop: 8, minHeight: 22 } },
             mcpPreview.error
-              ? React.createElement(Text, { type: "danger", style: { fontSize: 12 } }, mcpPreview.error)
+              ? React.createElement(
+                  Text,
+                  { type: "danger", style: { fontSize: 12 } },
+                  mcpPreview.error,
+                )
               : mcpPreview.clients.length > 0
-                ? React.createElement(
-                    Tag,
-                    {
-                      color: "green",
-                      icon: CheckCircleOutlined ? React.createElement(CheckCircleOutlined) : undefined,
-                    },
-                    `已识别 ${mcpPreview.clients.length} 个 MCP`,
-                  )
-                : React.createElement(Text, { type: "secondary", style: { fontSize: 12 } }, "暂不添加 MCP"),
+              ? React.createElement(
+                  Tag,
+                  {
+                    color: "green",
+                    icon: CheckCircleOutlined
+                      ? React.createElement(CheckCircleOutlined)
+                      : undefined,
+                  },
+                  `已识别 ${mcpPreview.clients.length} 个 MCP`,
+                )
+              : React.createElement(
+                  Text,
+                  { type: "secondary", style: { fontSize: 12 } },
+                  "暂不添加 MCP",
+                ),
           ),
         ),
       ),

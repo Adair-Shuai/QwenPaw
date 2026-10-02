@@ -15,14 +15,15 @@ Covers:
 - office_view_screenshot when officecli not installed
 - _not_installed_error and _json_toolchunk helpers
 """
+
 # pylint: disable=protected-access,unused-argument
 
 import asyncio
 import json
-from unittest.mock import AsyncMock, patch
+import subprocess
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
 
 # ---------------------------------------------------------------------------
 # _officecli_available / _not_installed_error / _json_toolchunk
@@ -32,19 +33,55 @@ import pytest
 class TestOfficecliAvailable:
     """Tests for _officecli_available."""
 
+    @patch("qwenpaw.agents.tools.office_tools._bundled_officecli_path")
     @patch("qwenpaw.agents.tools.office_tools.shutil.which")
-    def test_available(self, mock_which):
+    def test_available(self, mock_which, mock_bundled):
+        mock_bundled.return_value = None
         mock_which.return_value = "/usr/local/bin/officecli"
         from qwenpaw.agents.tools.office_tools import _officecli_available
 
         assert _officecli_available() is True
 
+    @patch("qwenpaw.agents.tools.office_tools._bundled_officecli_path")
     @patch("qwenpaw.agents.tools.office_tools.shutil.which")
-    def test_not_available(self, mock_which):
+    def test_not_available(self, mock_which, mock_bundled):
+        mock_bundled.return_value = None
         mock_which.return_value = None
         from qwenpaw.agents.tools.office_tools import _officecli_available
 
         assert _officecli_available() is False
+
+    def test_source_checkout_uses_staged_binary(self, monkeypatch, tmp_path):
+        import qwenpaw.agents.tools.office_tools as office
+
+        binary_name = (
+            "officecli.exe" if office.sys.platform == "win32" else "officecli"
+        )
+        binary = (
+            tmp_path
+            / "console"
+            / "src-tauri"
+            / "binaries"
+            / "officecli"
+            / binary_name
+        )
+        binary.parent.mkdir(parents=True)
+        binary.write_bytes(b"officecli")
+        monkeypatch.delenv("QWENPAW_DESKTOP_OFFICECLI_DIR", raising=False)
+        monkeypatch.setattr(
+            office,
+            "__file__",
+            str(
+                tmp_path
+                / "src"
+                / "qwenpaw"
+                / "agents"
+                / "tools"
+                / "office_tools.py",
+            ),
+        )
+
+        assert office._bundled_officecli_path() == str(binary)
 
 
 class TestNotInstalledError:
@@ -257,7 +294,7 @@ class TestRunOfficecli:
         mock_avail.return_value = True
         mock_proc = AsyncMock()
         mock_proc.communicate.side_effect = asyncio.TimeoutError()
-        mock_proc.kill = AsyncMock()
+        mock_proc.kill = MagicMock()
         mock_proc.wait = AsyncMock()
         mock_exec.return_value = mock_proc
 
@@ -301,6 +338,32 @@ class TestRunOfficecli:
         actual_cmd = mock_exec.call_args[0]
         assert "--json" in actual_cmd
         assert actual_cmd[-1] == "--json"
+
+    @pytest.mark.asyncio
+    @patch("qwenpaw.agents.tools.office_tools._officecli_available")
+    @patch("qwenpaw.agents.tools.office_tools.subprocess.run")
+    @patch("qwenpaw.agents.tools.office_tools.asyncio.create_subprocess_exec")
+    async def test_windows_selector_loop_uses_threaded_subprocess(
+        self,
+        mock_exec,
+        mock_run,
+        mock_avail,
+    ):
+        """A Selector event loop cannot start async subprocesses on Windows."""
+        mock_avail.return_value = True
+        mock_exec.side_effect = NotImplementedError()
+        mock_run.return_value = subprocess.CompletedProcess(
+            ["officecli"],
+            0,
+            b'{"success": true}',
+            b"",
+        )
+
+        from qwenpaw.agents.tools.office_tools import _run_officecli
+
+        result = await _run_officecli("create", "test.pptx")
+        assert result["ok"] is True
+        mock_run.assert_called_once()
 
 
 class TestOfficeSafetyContracts:
@@ -633,7 +696,10 @@ class TestOfficeBatchOperations:
                     {
                         "command": "set",
                         "path": "/body/p[1]",
-                        "props": {"font": {"eastAsia": "宋体"}, "size": "12pt"},
+                        "props": {
+                            "font": {"eastAsia": "宋体"},
+                            "size": "12pt",
+                        },
                     },
                 ],
             )

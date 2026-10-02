@@ -1,9 +1,10 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../api/modules/chat";
 import FileGlyph from "./FileGlyph";
 import type { FileTarget } from "./types";
+import { setResponseArtifactGroup } from "./responseArtifactRegistry";
 import styles from "./ResponseArtifactList.module.less";
 
 interface ResponseArtifactListProps {
@@ -268,12 +269,21 @@ export default function ResponseArtifactList({
   messages,
 }: ResponseArtifactListProps) {
   const { t } = useTranslation();
+  const groupId = useId();
   // This bubble re-renders on every streamed token, so keep the extraction
   // (which walks every tool output and parses each call's arguments) bound to
   // message changes rather than to render count.
   const artifacts = useMemo(
     () => extractResponseArtifacts(messages),
     [messages],
+  );
+  useEffect(
+    () =>
+      setResponseArtifactGroup(
+        groupId,
+        artifacts.map((item) => item.target),
+      ),
+    [artifacts, groupId],
   );
   const gridRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
