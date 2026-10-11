@@ -34,10 +34,6 @@ on:
         required: false
         default: 'linux'
         type: string
-  schedule:
-    # 17:17 UTC daily ~= 01:17 Beijing the next day.
-    # Off-the-hour to avoid the global GitHub Actions cron rush at :00 / :30.
-    - cron: '17 17 * * *'
   workflow_dispatch:
     inputs:
       form:
@@ -49,7 +45,7 @@ on:
           - 'nightly'
           - 'release'
       coverage_platforms:
-        description: 'Which platforms collect integration coverage (schedule always uses all)'
+        description: 'Which platforms collect integration coverage'
         required: false
         default: 'linux'
         type: choice
