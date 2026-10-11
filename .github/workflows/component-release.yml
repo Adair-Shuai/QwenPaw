@@ -178,7 +178,7 @@ jobs:
           }
           source_path="$(jq -r .path <<<"$source_run")"
           case "$source_path" in
-            .github/workflows/desktop-build.yml|.github/workflows/release.yml) ;;
+            .github/workflows/desktop-build.yml|.github/workflows/release.yml|.github/workflows/release-resume.yml) ;;
             *)
               echo "::error::Desktop component source must come from desktop-build.yml or release.yml"
               exit 1
@@ -196,7 +196,10 @@ jobs:
             while IFS= read -r file; do
               case "$file" in
                 .github/workflows/release.yml|\
+                .github/workflows/release-resume.yml|\
                 .github/workflows/component-release.yml|\
+                scripts/pack-tauri/build_component_release.py|\
+                tests/unit/tauri/test_component_release.py|\
                 scripts/pack-tauri/build_python_layers.py|\
                 scripts/pack-tauri/stage_desktop_components.py|\
                 tests/unit/tauri/test_desktop_layer_layout.py|\
@@ -215,7 +218,8 @@ jobs:
             macos-aarch64) expected_job='build-tauri-macos' ;;
           esac
           jobs="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$SOURCE_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
-          if [ "$source_path" = '.github/workflows/release.yml' ]; then
+          if [ "$source_path" = '.github/workflows/release.yml' ] || \
+             [ "$source_path" = '.github/workflows/release-resume.yml' ]; then
             expected_job="build-desktop / ${expected_job}"
           fi
           grep -Fqx "$expected_job"$'\t'"success" <<<"$jobs" || {

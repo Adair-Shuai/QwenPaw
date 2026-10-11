@@ -352,10 +352,15 @@ def build_release(
         artifact = component_dir / "full.zip"
         _full_zip(source, artifact)
         _validate_archive(artifact, component=component)
+        # A semantic version alone does not identify archive bytes: rebuilt
+        # frontends, descriptors and signing can change an otherwise unchanged
+        # component. Keep every published object immutable by its full digest.
+        content_dir = component_dir / _sha256(artifact)
+        content_dir.mkdir(parents=True, exist_ok=True)
+        os.replace(artifact, content_dir / artifact.name)
+        artifact = content_dir / artifact.name
         signature = _sign(artifact, private)
-        relative_url = (
-            f"artifacts/components/{target}/{component}/{version}/full.zip"
-        )
+        relative_url = artifact.relative_to(output_root).as_posix()
         deltas: list[dict] = []
         seen_base_versions: set[str] = set()
         for base_source in _base_sources(base_root, source.name):
@@ -412,11 +417,12 @@ def build_release(
                     Path(temp) / "result",
                     preserve_paths=preserve_paths,
                 )
+            delta_content_dir = delta_dir / _sha256(delta_artifact)
+            delta_content_dir.mkdir(parents=True, exist_ok=True)
+            os.replace(delta_artifact, delta_content_dir / delta_artifact.name)
+            delta_artifact = delta_content_dir / delta_artifact.name
             delta_signature = _sign(delta_artifact, private)
-            delta_url = (
-                f"artifacts/components/{target}/{component}/"
-                f"{base_version}-{version}/delta.zip"
-            )
+            delta_url = delta_artifact.relative_to(output_root).as_posix()
             deltas.append(
                 {
                     "from": base_version,

@@ -84,16 +84,56 @@ def test_builds_signed_full_release_and_excludes_user_inventory(tmp_path):
         "engines/default.json" not in manifest["components"]["demo"]["files"]
     )
     assert manifest_path.with_name(manifest_path.name + ".sig").is_file()
-    assert (
-        tmp_path
-        / "release"
-        / "artifacts"
-        / "components"
-        / "windows-x86_64"
-        / "demo"
-        / "1.0.0"
-        / "full.zip"
-    ).is_file()
+    assert list(
+        (
+            tmp_path
+            / "release"
+            / "artifacts"
+            / "components"
+            / "windows-x86_64"
+            / "demo"
+            / "1.0.0"
+        ).glob("*/full.zip")
+    )
+
+
+def test_archive_urls_identify_bytes_across_same_version_rebuilds(tmp_path):
+    module = _load()
+    source = tmp_path / "staged" / "demo"
+    source.mkdir(parents=True)
+    (source / "plugin.json").write_text(
+        json.dumps({"id": "demo", "version": "1.0.0"}), encoding="utf-8"
+    )
+    private = Ed25519PrivateKey.generate()
+    key = base64.b64encode(
+        private.private_bytes(
+            serialization.Encoding.Raw,
+            serialization.PrivateFormat.Raw,
+            serialization.NoEncryption(),
+        )
+    ).decode()
+    urls = []
+    for index, body in enumerate(("old", "new", "new")):
+        (source / "main.py").write_text(body, encoding="utf-8")
+        output = tmp_path / f"release-{index}"
+        manifest = module.build_release(
+            source.parent,
+            output,
+            product="qwenpaw",
+            channel="stable",
+            target="windows-x86_64",
+            core_min_version="1.0.0",
+            base_url="https://oss.example",
+            private_key_b64=key,
+        )
+        full = json.loads(manifest.read_bytes())["components"]["demo"]["full"]
+        urls.append(full["url"])
+        assert f"/{full['sha256']}/full.zip" in full["url"]
+        assert (
+            output / full["url"].removeprefix("https://oss.example/")
+        ).is_file()
+    assert urls[0] != urls[1]
+    assert urls[1] == urls[2]
 
 
 def test_builds_delta_when_previous_base_is_supplied(tmp_path):
@@ -134,16 +174,19 @@ def test_builds_delta_when_previous_base_is_supplied(tmp_path):
     )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["components"]["demo"]["deltas"][0]["from"] == "1.0.0"
-    assert (
-        tmp_path
-        / "release"
-        / "artifacts"
-        / "components"
-        / "windows-x86_64"
-        / "demo"
-        / "1.0.0-1.1.0"
-        / "delta.zip"
-    ).is_file()
+    delta = manifest["components"]["demo"]["deltas"][0]
+    assert f"/{delta['sha256']}/delta.zip" in delta["url"]
+    assert list(
+        (
+            tmp_path
+            / "release"
+            / "artifacts"
+            / "components"
+            / "windows-x86_64"
+            / "demo"
+            / "1.0.0-1.1.0"
+        ).glob("*/delta.zip")
+    )
 
 
 def test_builds_generic_runtime_component_without_plugin_manifest(tmp_path):
@@ -471,10 +514,9 @@ def test_previous_signed_pointer_base_is_downloaded_and_verified(
         (previous_release / "artifacts").rglob("full.zip"),
     ).read_bytes()
     metadata_base = "https://oss.example/metadata/components/stable"
-    artifact_url = (
-        "https://oss.example/artifacts/components/windows-x86_64/"
-        "demo/1.0.0/full.zip"
-    )
+    artifact_url = json.loads(manifest_bytes)["components"]["demo"]["full"][
+        "url"
+    ]
     urls = {
         f"{metadata_base}/windows-x86_64.current.json": pointer.read_bytes(),
         f"{metadata_base}/windows-x86_64-old.json": manifest_bytes,
@@ -551,8 +593,9 @@ def test_previous_base_restores_signed_file_modes(tmp_path, monkeypatch):
         f"{metadata_base}/macos-aarch64-old.json.sig": manifest.with_name(
             manifest.name + ".sig",
         ).read_bytes(),
-        "https://oss.example/artifacts/components/macos-aarch64/"
-        "demo/1.0.0/full.zip": artifact.read_bytes(),
+        json.loads(manifest.read_bytes())["components"]["demo"]["full"][
+            "url"
+        ]: artifact.read_bytes(),
     }
     monkeypatch.setattr(prepare, "_get", lambda url: urls[url])
     base_root = tmp_path / "component-base"
@@ -573,7 +616,9 @@ def test_previous_base_restores_signed_file_modes(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("mode", ["missing", "bad-size"])
 def test_previous_base_skips_unusable_full_artifact(
-    tmp_path, monkeypatch, mode,
+    tmp_path,
+    monkeypatch,
+    mode,
 ):
     release_module = _load()
     prepare_spec = importlib.util.spec_from_file_location(
@@ -618,10 +663,9 @@ def test_previous_base_skips_unusable_full_artifact(
     )
     pointer = manifest.with_name("windows-x86_64.current.json")
     metadata_base = "https://oss.example/metadata/components/stable"
-    artifact_url = (
-        "https://oss.example/artifacts/components/windows-x86_64/"
-        "demo/1.0.0/full.zip"
-    )
+    artifact_url = json.loads(manifest.read_bytes())["components"]["demo"][
+        "full"
+    ]["url"]
     urls = {
         f"{metadata_base}/windows-x86_64.current.json": pointer.read_bytes(),
         f"{metadata_base}/windows-x86_64-old.json": manifest.read_bytes(),
