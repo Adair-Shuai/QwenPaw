@@ -92,7 +92,6 @@ def test_builds_signed_full_release_and_excludes_user_inventory(tmp_path):
             / "components"
             / "windows-x86_64"
             / "demo"
-            / "1.0.0"
         ).glob("*/full.zip")
     )
 
@@ -184,7 +183,6 @@ def test_builds_delta_when_previous_base_is_supplied(tmp_path):
             / "components"
             / "windows-x86_64"
             / "demo"
-            / "1.0.0-1.1.0"
         ).glob("*/delta.zip")
     )
 

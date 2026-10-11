@@ -355,7 +355,7 @@ def build_release(
         # A semantic version alone does not identify archive bytes: rebuilt
         # frontends, descriptors and signing can change an otherwise unchanged
         # component. Keep every published object immutable by its full digest.
-        content_dir = component_dir / _sha256(artifact)
+        content_dir = artifact_root / component / _sha256(artifact)
         content_dir.mkdir(parents=True, exist_ok=True)
         os.replace(artifact, content_dir / artifact.name)
         artifact = content_dir / artifact.name
@@ -417,7 +417,9 @@ def build_release(
                     Path(temp) / "result",
                     preserve_paths=preserve_paths,
                 )
-            delta_content_dir = delta_dir / _sha256(delta_artifact)
+            delta_content_dir = (
+                artifact_root / component / _sha256(delta_artifact)
+            )
             delta_content_dir.mkdir(parents=True, exist_ok=True)
             os.replace(delta_artifact, delta_content_dir / delta_artifact.name)
             delta_artifact = delta_content_dir / delta_artifact.name
