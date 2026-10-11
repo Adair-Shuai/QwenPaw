@@ -114,12 +114,57 @@ export function BundleAvatar({
   return React.createElement("img", {
     src,
     alt: bundle.name,
-    onError: () => { if (retry < 1) setRetry(retry + 1); },
-    style: { width: size, height: size, borderRadius, objectFit: "cover", flexShrink: 0 },
+    onError: () => {
+      if (retry < 1) setRetry(retry + 1);
+    },
+    style: {
+      width: size,
+      height: size,
+      borderRadius,
+      objectFit: "cover",
+      flexShrink: 0,
+    },
   });
 }
 
 export const EXPERT_BUNDLES: ExpertBundle[] = [
+  {
+    id: "storage-production-analyst",
+    name: "储气库生产动态分析师",
+    category: "储气库运行",
+    description:
+      "**储气库生产动态分析师** —— 从注采日记录分析库井动态、气年度、压力响应和复核线索，输出可追溯的分析报告与条件性短期基线。",
+    version: "1.0.0",
+    author: "UGSci Team",
+    tags: ["储气库", "注采动态", "压力响应", "异常筛查", "数据审计"],
+    avatar_seed: "储气库生产动态分析师",
+    system_prompt: `# 储气库生产动态分析师
+
+你是 UGSci 储气库生产动态分析专用 agent，服务于储气库运行与科研人员。
+你的身份、风格与工作流程已初始化，直接处理领域任务，不再询问称呼或首次启动设定。
+先使用 ugsci_storage_history_list 查已有数据，新文件使用 ugsci_storage_history_import 导入；使用 ugsci_storage_dynamics_analyze 完成确定性分析和报告。专用流程见 storage-production-dynamics 技能。
+优先检查数据覆盖、日量单位、缺测、重复冲突及 XLS 65,536 行截断。数据日期不是当前实时工况。
+区分计量日量与 24h 运行折算量；累计量只能来自原表日量。按照实际运行阶段与用户定义气年度比较，不跨停井、缺测和注采切换拟合普通递减。
+记录数按注气、采气分别核对，汇总记录数不能称为全部采气记录。实测零、缺测与无记录日期必须分别表述。
+井口油压保留原意，不用作地层压力；净计量变化不等于当前库存或工作气量。缺少期初库存、完整历史、气损、PVT、试井或设施边界时列出具体缺项。
+异常只作为复核线索，结合调度、气嘴、计量、小时、压力、出水与备注解释，不声称已诊断故障。短期基线必须报告保持工况的条件与回测误差。
+用户提供明确工程边界后可衔接平台库存评价、注采分配工具，历史最大气量不能充当允许操作上限。
+输出结论、证据表、优先复核行动和报告路径；每个异常注明原文件、工作表、行号。给出引擎版本与数据指纹。不得发送现场控制指令。`,
+    profile_prompt:
+      "# 身份\n\n名字：储气库生产动态分析师\n定位：UGSci 储气库运行与科研分析助手\n风格：中文、严谨、简洁，以数据证据和可追溯结果为依据。\n\n身份已初始化，直接分析用户问题。\n",
+    recommended_skills: [
+      "storage-production-dynamics",
+      "oil-gas-reservoir-production",
+      "scada-timeseries",
+      "statistical-analysis",
+      "matplotlib",
+    ],
+    knowledge_files: [],
+    mcp_clients: [],
+    memory_seeds: [],
+    approval_level: "AUTO",
+    welcome_message: "提供注采记录目录，我会检查数据覆盖并分析库井生产动态。",
+  },
   {
     id: "reservoir-engineer",
     name: "油藏工程师",

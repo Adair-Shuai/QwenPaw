@@ -20,6 +20,9 @@ from pathlib import Path
 from typing import Any
 import logging
 import threading
+import httpx
+import zipfile
+import subprocess
 from urllib.parse import urlparse
 
 from ..__version__ import __version__
@@ -618,7 +621,9 @@ def queue_component_update(component: str) -> dict[str, Any]:
                 "queued": False,
                 "reason": "up-to-date",
             }
-        _write_pending_components({component})
+        _write_pending_components(
+            {component} | (set(plans) & DIRECTORY_COMPONENT_IDS)
+        )
         return {
             "component": component,
             "queued": True,
@@ -681,6 +686,10 @@ def configured_service() -> "ComponentUpdateService | None":
         if component in managed
     }
     directory_components = managed & set(DIRECTORY_COMPONENT_IDS)
+    if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") != "2":
+        # pip/docker and older desktop shells cannot restart/roll back a runtime set.
+        managed -= directory_components
+        directory_components = set()
     # A packaged desktop can carry an older active.json whose runtime
     # directory version is not parseable (the b9 macOS JDK case).  Do not let
     # that one malformed local record turn every component check into HTTP
@@ -700,7 +709,8 @@ def configured_service() -> "ComponentUpdateService | None":
     updater = ComponentUpdater(
         public_key_b64=public_key,
         managed_components=managed,
-        core_version=__version__,
+        core_version=os.environ.get("QWENPAW_DESKTOP_VERSION", "").strip()
+        or __version__,
         active_path=WORKING_DIR / "components" / "active.json",
         backup_root=WORKING_DIR / "components" / "backups",
         defer_activation_cleanup=True,
@@ -733,6 +743,7 @@ class ComponentUpdateService:
         # True when the most recent check() deferred because the running
         # core is older than the manifest minimum (see check()).
         self.last_check_deferred = False
+        self.compatible_desktop_version: str | None = None
 
     def _adopt_signed_new_components(
         self,
@@ -751,6 +762,7 @@ class ComponentUpdateService:
                 not component
                 or component in _MANAGED_PLUGIN_DENYLIST
                 or component in self.updater.managed_components
+                or component in DIRECTORY_COMPONENT_IDS
             ):
                 continue
             try:
@@ -806,8 +818,24 @@ class ComponentUpdateService:
         # "updates exist but this core is too old"; an empty plan list alone
         # would let them misreport a deferred check as up-to-date.
         self.last_check_deferred = manifest is None
+        self.compatible_desktop_version = None
         if manifest is None:
             return []
+        if (
+            manifest.get("protocol_version") == 2
+            and os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2"
+            and manifest.get("host_fingerprint")
+            and manifest.get("host_fingerprint")
+            == os.environ.get("QWENPAW_HOST_FINGERPRINT")
+            and {"backend", "python-runtime", "python-packages"}
+            <= self.updater.managed_components
+            and "backend" in manifest.get("components", {})
+            and _version(
+                manifest["components"]["backend"]["version"], "backend version"
+            )
+            == _version(manifest.get("release_version"), "release_version")
+        ):
+            self.compatible_desktop_version = manifest.get("desktop_version")
         plugins = get_plugins_dir()
         self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
@@ -1074,7 +1102,11 @@ class ComponentUpdateService:
                     "version": plan.target_version,
                     "kind": "delta",
                 }
-            except ComponentUpdateError as exc:
+            except (
+                ComponentUpdateError,
+                httpx.HTTPError,
+                zipfile.BadZipFile,
+            ) as exc:
                 if "already in progress" in str(exc):
                     # Download-lease contention is not a delta failure: a peer
                     # process is fetching the same artifact. Falling back to
@@ -1126,12 +1158,101 @@ class ComponentUpdateService:
         }
 
 
+def _validate_runtime_set(updater: ComponentUpdater) -> None:
+    """Probe the exact Python/backend/dependency combination before publishing."""
+    records = (
+        updater._directory_records or {}
+    )  # pylint: disable=protected-access
+    if not set(records) & {"backend", "python-runtime", "python-packages"}:
+        return
+
+    def selected(component: str) -> Path | None:
+        if component in records:
+            return Path(records[component]["path"])
+        return _resolve_installed_directory(updater, component)
+
+    runtime, backend, packages = (
+        selected(key)
+        for key in (
+            "python-runtime",
+            "backend",
+            "python-packages",
+        )
+    )
+    if runtime is None or backend is None or packages is None:
+        raise ComponentUpdateError(
+            "runtime update requires a complete Python component set"
+        )
+    candidates = (
+        [runtime / "python" / "python.exe"]
+        if os.name == "nt"
+        else [
+            runtime / "python" / "bin" / "python3",
+            runtime / "python" / "bin" / "python",
+        ]
+    )
+    executable = next((p for p in candidates if p.is_file()), None)
+    if executable is None:
+        raise ComponentUpdateError(
+            "candidate Python runtime executable is missing"
+        )
+    environment = dict(
+        os.environ,
+        PYTHONNOUSERSITE="1",
+        PYTHONDONTWRITEBYTECODE="1",
+        PYTHONPATH=os.pathsep.join((str(backend), str(packages))),
+    )
+    result = subprocess.run(
+        [
+            str(executable),
+            "-s",
+            "-c",
+            "import qwenpaw.tauri.entry; import qwenpaw.app._app",
+        ],
+        cwd=backend,
+        env=environment,
+        capture_output=True,
+        timeout=120,
+        check=False,
+        creationflags=(subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0),
+    )
+    if result.returncode:
+        raise ComponentUpdateError(
+            "candidate runtime import check failed: "
+            + result.stderr.decode("utf-8", "replace")[-2000:]
+        )
+
+
 def run_startup_updates() -> dict[str, Any]:
     """Activate only updates explicitly queued by the desktop update UI.
 
     Startup must never perform a fresh remote update on its own. The version
     icon owns discovery and consent; restart merely consumes its durable queue.
     """
+    if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2":
+        healthy_service = configured_service()
+        if healthy_service is not None:
+            try:
+                healthy_service.updater.finalize_runtime_activations()
+            except (OSError, ComponentUpdateError):
+                logger.warning(
+                    "Runtime activation cleanup will retry next startup",
+                    exc_info=True,
+                )
+            finally:
+                healthy_service.client.close()
+    if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2":
+        healthy_service = configured_service()
+        if healthy_service is not None:
+            try:
+                healthy_service.updater.finalize_runtime_activations()
+            except (OSError, ComponentUpdateError):
+                logger.warning(
+                    "Runtime activation cleanup will retry next startup",
+                    exc_info=True,
+                )
+            finally:
+                healthy_service.client.close()
     pending_records = {
         component: record
         for component, record in _load_pending_records().items()
@@ -1176,6 +1297,41 @@ def run_startup_updates() -> dict[str, Any]:
         # no longer managed; retaining it would cause an OSS request forever.
         for component in set(pending_components) - available:
             remaining_pending.pop(component, None)
+        runtime_selected = selected & DIRECTORY_COMPONENT_IDS
+        if runtime_selected and manifest is not None:
+            # Include every changed runtime dependency from the same signed
+            # snapshot. No pointer is visible until the complete set validates.
+            runtime_selected = available & DIRECTORY_COMPONENT_IDS
+            for component in runtime_selected:
+                remaining_pending.setdefault(component, _new_pending_record())
+            with plugin_install_lock(
+                _COMPONENT_INSTALL_LOCKS / ".runtime-set.lock",
+                timeout=_COMPONENT_INSTALL_LOCK_TIMEOUT,
+            ) as acquired:
+                if not acquired:
+                    raise ComponentUpdateError(
+                        "runtime installation is already in progress"
+                    )
+                runtime_results = []
+                with service.updater.directory_transaction():
+                    for component in sorted(runtime_selected):
+                        runtime_results.append(
+                            service._install_from_manifest(component, manifest)
+                        )
+                    _validate_runtime_set(service.updater)
+                for component in runtime_selected:
+                    remaining_pending.pop(component, None)
+                updated.extend(runtime_results)
+            if any(result.get("updated") for result in runtime_results):
+                # Plugins stay queued until the NEW backend starts. Never load
+                # new plugins against the interpreter that applied the update.
+                return {
+                    "enabled": True,
+                    "updated": updated,
+                    "errors": errors,
+                    "runtime_restart_required": True,
+                }
+            selected -= runtime_selected
         for component in sorted(selected):
             try:
                 if manifest is not None and hasattr(

@@ -138,6 +138,10 @@ if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
         "${REPO_ROOT}/console/src-tauri/binaries" \
         "${APPLE_SIGNING_IDENTITY}"
     echo "Versioned runtime and tool layers signed"
+    # Signing changes Mach-O bytes, including Python extension modules. Freeze
+    # final identities before Tauri copies and seals the installer bundle.
+    python scripts/pack-tauri/refresh_desktop_descriptors.py \
+        --binaries "${REPO_ROOT}/console/src-tauri/binaries" --version "${VERSION}"
 else
     bash "${SIGN_MACOS_BUNDLE}" \
         "${REPO_ROOT}/console/src-tauri/binaries/qwenpaw-backend" \

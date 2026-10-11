@@ -65,6 +65,8 @@ import LocalAvatarPicker from "./LocalAvatarPicker";
 type ContentWidth = "standard" | "wide";
 
 const QWENPAW_WEBSITE_URL = "https://qwenpaw.agentscope.io/";
+// Temporarily hide help and product links from the workspace menu.
+const SHOW_HELP_AND_ABOUT_LINKS = false;
 
 const LANGUAGES = LANGUAGE_LIST.map(({ key, label }) => ({
   value: key,
@@ -438,59 +440,63 @@ export default function SidebarSettingsPanel({
         <span>{t("sidebar.quickMenu.settings", "Settings")}</span>
       </button>
 
-      <div className={styles.divider} />
+      {SHOW_HELP_AND_ABOUT_LINKS && (
+        <>
+          <div className={styles.divider} />
 
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getDocsUrl(i18n.language))}
-      >
-        <BookOpen size={16} />
-        <span>{t("header.tutorial", "Tutorial")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getReleaseNotesUrl(i18n.language))}
-      >
-        <FileText size={16} />
-        <span>{t("header.changelog", "Changelog")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getFaqUrl(i18n.language))}
-      >
-        <CircleHelp size={16} />
-        <span>{t("header.faq", "FAQ")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(getFeatureDemosUrl(i18n.language))}
-      >
-        <CirclePlay size={16} />
-        <span>{t("header.featureDemos")}</span>
-      </button>
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(GITHUB_URL)}
-      >
-        <Github size={16} />
-        <span>{t("header.github")}</span>
-      </button>
-      <div className={styles.divider} />
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => openLink(getDocsUrl(i18n.language))}
+          >
+            <BookOpen size={16} />
+            <span>{t("header.tutorial", "Tutorial")}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => openLink(getReleaseNotesUrl(i18n.language))}
+          >
+            <FileText size={16} />
+            <span>{t("header.changelog", "Changelog")}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => openLink(getFaqUrl(i18n.language))}
+          >
+            <CircleHelp size={16} />
+            <span>{t("header.faq", "FAQ")}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => openLink(getFeatureDemosUrl(i18n.language))}
+          >
+            <CirclePlay size={16} />
+            <span>{t("header.featureDemos")}</span>
+          </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => openLink(GITHUB_URL)}
+          >
+            <Github size={16} />
+            <span>{t("header.github")}</span>
+          </button>
+          <div className={styles.divider} />
 
-      <button
-        type="button"
-        className={styles.menuItem}
-        onClick={() => openLink(QWENPAW_WEBSITE_URL)}
-      >
-        <Info size={16} />
-        <span>{t("sidebar.quickMenu.about", "About QwenPaw")}</span>
-        {version && <span className={styles.menuMeta}>v{version}</span>}
-      </button>
+          <button
+            type="button"
+            className={styles.menuItem}
+            onClick={() => openLink(QWENPAW_WEBSITE_URL)}
+          >
+            <Info size={16} />
+            <span>{t("sidebar.quickMenu.about", "About QwenPaw")}</span>
+            {version && <span className={styles.menuMeta}>v{version}</span>}
+          </button>
+        </>
+      )}
 
       {authEnabled && (
         <>

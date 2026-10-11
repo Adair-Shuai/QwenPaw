@@ -9,6 +9,8 @@ export interface ComponentUpdateItem {
 export interface ComponentUpdatesResponse {
   enabled: boolean;
   updates: ComponentUpdateItem[];
+  /** Signed release supported by this host's component protocol. */
+  compatible_desktop_version?: string | null;
 }
 
 export interface QueueComponentUpdatesResponse {

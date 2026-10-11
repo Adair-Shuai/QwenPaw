@@ -93,16 +93,20 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
 
   const samplesRef = useRef<{ t: number; downloaded: number }[]>([]);
   const hasCachedUpdateRef = useRef(false);
+  const compatibleDesktopVersionRef = useRef<string | null>(null);
 
   const refreshComponentUpdates = useCallback(async (): Promise<number> => {
     try {
       const result = await api.checkComponentUpdates();
+      compatibleDesktopVersionRef.current =
+        result.compatible_desktop_version ?? null;
       setComponentUpdateCount(result.updates.length);
       return result.updates.length;
     } catch (err) {
       // Never leave a stale badge/action behind after the source could not be
       // checked. The caller still receives the error and can block install.
       setComponentUpdateCount(0);
+      compatibleDesktopVersionRef.current = null;
       throw err;
     }
   }, []);
@@ -172,11 +176,32 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       } catch (err) {
         coreError = err;
       }
-      // Signed component packages for a newer desktop often declare a higher
-      // core_min_version. Checking them on the old core fails closed and used
-      // to abort the whole Header flow. Install the desktop core first; the
-      // next session (or a later button click) checks components.
       if (core.available) {
+        // Only a verified manifest for this exact desktop release can replace
+        // the full updater. Legacy/incompatible/unavailable manifests retain
+        // the bridge installer path; an explicitly cached installer stays usable.
+        if (!hasCachedUpdateRef.current && core.version) {
+          try {
+            const componentCount = await refreshComponentUpdates();
+            if (compatibleDesktopVersionRef.current === core.version) {
+              setHasUpdate(false);
+              setVersion(core.version);
+              return {
+                available: componentCount > 0,
+                hasCoreUpdate: false,
+                componentsChecked: true,
+                componentCount,
+                version: core.version,
+                body: core.body,
+              };
+            }
+          } catch (err) {
+            console.warn(
+              "[updates] component probe failed; desktop installer remains available",
+              err,
+            );
+          }
+        }
         setComponentUpdateCount(0);
         return {
           available: true,

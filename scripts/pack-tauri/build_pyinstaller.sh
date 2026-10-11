@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+export PYTHONDONTWRITEBYTECODE=1
 # Build QwenPaw backend with PyInstaller for Tauri sidecar
 # Creates an onedir backend bundle with embedded Python runtime
 #

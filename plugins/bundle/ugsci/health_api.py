@@ -16,6 +16,7 @@ from .engine.manager import list_engines
 from .tool_manifest import load_tool_manifest
 
 _ROUTES = (
+    "/api/ugsci/storage-dynamics",
     "/api/ugsci/team",
     "/api/ugsci/engines",
     "/api/ugsci/avatar",
@@ -66,7 +67,9 @@ def _dependency_snapshot(
 
 def build_health_snapshot(plugin_dir: Path) -> dict[str, Any]:
     """Build one read-only health response without exposing local paths."""
-    manifest = json.loads((plugin_dir / "plugin.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (plugin_dir / "plugin.json").read_text(encoding="utf-8")
+    )
     tool_specs = load_tool_manifest(plugin_dir)
     domain_engines = list_engines_with_probes()
     dependencies = _dependency_snapshot(domain_engines)
@@ -87,8 +90,7 @@ def build_health_snapshot(plugin_dir: Path) -> dict[str, Any]:
         for dependency in dependencies
     )
     unknown_dependencies = sum(
-        dependency.get("status") == "unknown"
-        for dependency in dependencies
+        dependency.get("status") == "unknown" for dependency in dependencies
     )
     detected_engines = sum(
         engine["status"] == "detected" for engine in simulation_engines

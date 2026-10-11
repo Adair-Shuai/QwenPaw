@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import tempfile
 import zipfile
 from datetime import timedelta
 from datetime import datetime, timezone
@@ -31,6 +32,9 @@ from component_common import (
 )
 from build_component_delta import write_delta
 from component_manifest import validate_manifest
+from verify_component_artifacts import apply_delta
+from generate_update_manifest import to_semver
+from component_host import host_fingerprint
 
 _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 _MAX_ARCHIVE_MEMBERS = 10_000
@@ -296,6 +300,7 @@ def build_release(
     history_input: Path | None = None,
     history_signature_input: Path | None = None,
     history_count: int = 10,
+    protocol_version: int = 1,
 ) -> Path:
     # pylint: disable=too-many-statements
     if not 0 < delta_max_ratio < 1:
@@ -396,6 +401,17 @@ def build_release(
                 delta_artifact.unlink()
                 delta_dir.rmdir()
                 continue
+            # Existence/ZIP validation alone cannot catch structural changes
+            # that the installer cannot apply (e.g. directory -> file).
+            with tempfile.TemporaryDirectory(
+                prefix="component-verify-"
+            ) as temp:
+                apply_delta(
+                    base_source,
+                    delta_artifact,
+                    Path(temp) / "result",
+                    preserve_paths=preserve_paths,
+                )
             delta_signature = _sign(delta_artifact, private)
             delta_url = (
                 f"artifacts/components/{target}/{component}/"
@@ -428,9 +444,15 @@ def build_release(
     manifest = {
         "schema_version": 1,
         "product": product,
+        "protocol_version": protocol_version,
+        "host_fingerprint": host_fingerprint(
+            Path(__file__).resolve().parents[2]
+        ),
         "channel": channel,
         "target": target,
         "core_min_version": core_min_version,
+        "release_version": release_version or core_min_version,
+        "desktop_version": to_semver(release_version or core_min_version),
         "generated_at": os.environ.get(
             "SOURCE_DATE_EPOCH",
             datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
@@ -498,7 +520,7 @@ def main() -> int:
     parser.add_argument("--product", default="qwenpaw")
     parser.add_argument("--channel", default="stable")
     parser.add_argument("--target", required=True)
-    parser.add_argument("--core-min-version", required=True)
+    parser.add_argument("--core-min-version")
     parser.add_argument("--base-url", required=True)
     parser.add_argument(
         "--private-key",
@@ -513,6 +535,24 @@ def main() -> int:
     parser.add_argument("--history-signature-input", type=Path)
     parser.add_argument("--history-count", type=int, default=10)
     args = parser.parse_args()
+    compatibility = json.loads(
+        Path(__file__)
+        .with_name("component_compatibility.json")
+        .read_text(encoding="utf-8")
+    )
+    minimum = args.core_min_version or compatibility["core_min_version"]
+    from packaging.version import Version
+
+    if Version(minimum) < Version(compatibility["core_min_version"]):
+        raise SystemExit(
+            "minimum core version predates the component protocol bridge"
+        )
+    if args.release_version and Version(args.release_version) < Version(
+        minimum
+    ):
+        raise SystemExit(
+            "release version must include the component protocol bridge"
+        )
     if not args.private_key:
         raise SystemExit(
             "COMPONENT_SIGNING_PRIVATE_KEY or --private-key is required",
@@ -523,7 +563,8 @@ def main() -> int:
         product=args.product,
         channel=args.channel,
         target=args.target,
-        core_min_version=args.core_min_version,
+        core_min_version=minimum,
+        protocol_version=compatibility["protocol_version"],
         base_url=args.base_url,
         private_key_b64=args.private_key,
         base_root=args.base_root.resolve() if args.base_root else None,

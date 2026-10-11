@@ -107,7 +107,9 @@ pub(crate) fn active_manifest_path(resource_dir: &Path) -> PathBuf {
 /// of bricking the application because a migration was interrupted.
 pub(crate) fn resolve_component(resource_dir: &Path, id: &str) -> Option<ResolvedComponent> {
     if let Some(selected) = resolve_managed_component(id) {
-        return Some(selected);
+        if managed_matches_bundle(resource_dir, id) {
+            return Some(selected);
+        }
     }
     let manifest_path = active_manifest_path(resource_dir);
     let raw = std::fs::read_to_string(&manifest_path).ok()?;
@@ -174,6 +176,87 @@ fn managed_components_root() -> Option<PathBuf> {
         std::env::current_dir().ok()?.join(working_dir)
     };
     Some(working_dir.join("components"))
+}
+
+fn managed_matches_bundle(resource_dir: &Path, id: &str) -> bool {
+    let read = |path: PathBuf| -> Option<Value> {
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()
+    };
+    let Some(bundle) = read(active_manifest_path(resource_dir)) else {
+        return true;
+    };
+    let Some(bundled_backend) = bundle["components"]["backend"]["version"].as_str() else {
+        return true;
+    };
+    let Some(root) = managed_components_root() else {
+        return false;
+    };
+    let Some(managed) = read(root.join("active.json")) else {
+        return false;
+    };
+    if let Some(anchor) = managed["components"][id]["bundled_backend_version"].as_str() {
+        return anchor == bundled_backend;
+    }
+    // Legacy installations have no explicit bundle anchor. Retain an overlay
+    // only when its backend can be proven newer than the installer backend.
+    if let Some(version) = managed["components"]["backend"]["version"].as_str() {
+        return !crate::updates::component_version_lte(version, bundled_backend);
+    }
+    false
+}
+
+/// Restore a whole previous runtime set in one pointer replacement.
+pub(crate) fn restore_previous_runtime_set() -> Result<bool, String> {
+    let Some(root) = managed_components_root() else {
+        return Ok(false);
+    };
+    let path = root.join("active.json");
+    if !path.is_file() {
+        return Ok(false);
+    }
+    if contains_link(&root, &path) {
+        return Err("unsafe runtime pointer".into());
+    }
+    let mut payload: Value =
+        serde_json::from_str(&std::fs::read_to_string(&path).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    if payload["target"].as_str() != Some(current_target()) {
+        return Err("runtime target mismatch".into());
+    }
+    let Some(previous) = payload
+        .as_object_mut()
+        .and_then(|p| p.remove("previous_runtime_components"))
+    else {
+        return Ok(false);
+    };
+    let previous = previous.as_object().ok_or("invalid previous runtime set")?;
+    let components = payload["components"]
+        .as_object_mut()
+        .ok_or("invalid runtime components")?;
+    const IDS: [&str; 8] = [
+        "backend",
+        "python-runtime",
+        "python-packages",
+        "node-runtime",
+        "java-runtime",
+        "officecli",
+        "neqsim",
+        "computer-use-helper",
+    ];
+    for id in IDS {
+        components.remove(id);
+        if let Some(record) = previous.get(id) {
+            components.insert(id.to_owned(), record.clone());
+        }
+    }
+    let temporary = root.join(format!(".active.{}.rollback", std::process::id()));
+    std::fs::write(
+        &temporary,
+        serde_json::to_vec(&payload).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())?;
+    replace_file(&temporary, &path)?;
+    Ok(true)
 }
 
 fn resolve_managed_component(id: &str) -> Option<ResolvedComponent> {
@@ -471,6 +554,38 @@ mod tests {
         .unwrap();
         let selected = resolve_component(root, "node-runtime").unwrap();
         assert_eq!(selected.root, root.join("binaries/runtimes/node/22.17.0"));
+    }
+
+    #[test]
+    fn runtime_set_rollback_preserves_plugins_and_restores_all_dependencies() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let components = temp.path().join("components");
+        std::fs::create_dir_all(&components).unwrap();
+        let old = serde_json::json!({"backend": {"version": "2.2.2b7", "path": "old"}, "python-packages": {"version": "0+sha.ffff", "path": "old-packages"}});
+        let pointer = components.join("active.json");
+        std::fs::write(&pointer, serde_json::json!({
+            "schema_version": 1, "target": current_target(),
+            "previous_runtime_components": old,
+            "components": {"backend": {"version": "2.2.2b8", "path": "new"}, "node-runtime": {"version": "24.0.0", "path": "new-node"}, "demo": {"version": "1.0.0", "path": "plugin"}}
+        }).to_string()).unwrap();
+        let previous = std::env::var_os("QWENPAW_WORKING_DIR");
+        std::env::set_var("QWENPAW_WORKING_DIR", temp.path());
+        let result = restore_previous_runtime_set();
+        match previous {
+            Some(value) => std::env::set_var("QWENPAW_WORKING_DIR", value),
+            None => std::env::remove_var("QWENPAW_WORKING_DIR"),
+        }
+        assert!(result.unwrap());
+        let payload: Value =
+            serde_json::from_str(&std::fs::read_to_string(pointer).unwrap()).unwrap();
+        assert_eq!(payload["components"]["backend"], old["backend"]);
+        assert_eq!(
+            payload["components"]["python-packages"],
+            old["python-packages"]
+        );
+        assert!(payload["components"].get("node-runtime").is_none());
+        assert_eq!(payload["components"]["demo"]["version"], "1.0.0");
     }
 
     #[test]

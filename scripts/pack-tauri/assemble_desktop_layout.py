@@ -211,13 +211,11 @@ def assemble(
             ),
         },
     }
-    state = root / "state"
-    state.mkdir(parents=True, exist_ok=True)
-    (state / "active.json").write_text(
-        json.dumps(active, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
-    return active
+    # Both distribution paths must contain exactly the same descriptor and
+    # normalized dependency metadata, including on the very first delta.
+    from refresh_desktop_descriptors import refresh
+
+    return refresh(root, desktop_version, active)
 
 
 def main() -> int:

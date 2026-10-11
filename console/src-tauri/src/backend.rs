@@ -456,8 +456,15 @@ fn start_internal(app: &tauri::AppHandle) {
         .env("PYTHONUTF8", "1")
         .env("PYTHONIOENCODING", "utf-8")
         .env("PYTHONUNBUFFERED", "1")
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .env("PYTHONFAULTHANDLER", "1")
         .env("QWENPAW_DESKTOP_APP", "1")
+        .env("QWENPAW_COMPONENT_PROTOCOL", "2")
+        .env("QWENPAW_HOST_FINGERPRINT", env!("QWENPAW_HOST_FINGERPRINT"))
+        .env(
+            "QWENPAW_DESKTOP_VERSION",
+            app.package_info().version.to_string(),
+        )
         .env(DESKTOP_SHUTDOWN_TOKEN_ENV, &shutdown_token);
 
     log::info!(
@@ -557,6 +564,9 @@ fn watch_slow_startup(app: tauri::AppHandle, generation: u64) {
 }
 
 fn rollback_managed_launcher(launcher: command::LauncherSelection) -> Result<(), String> {
+    if crate::runtime_layout::restore_previous_runtime_set()? {
+        return Ok(());
+    }
     let selected = [
         ("backend", launcher.managed_backend),
         ("python-packages", launcher.managed_python_packages),

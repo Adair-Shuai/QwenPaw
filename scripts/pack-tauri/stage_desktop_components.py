@@ -41,7 +41,12 @@ def _safe_relative(value: str) -> PurePosixPath:
 
 def _tree_digest(root: Path) -> str:
     digest = hashlib.sha256()
-    for path in sorted(root.rglob("*")):
+    for path in sorted(
+        root.rglob("*"),
+        key=lambda p: p.relative_to(root).as_posix(),
+    ):
+        if path == root / "component.json":
+            continue  # The descriptor must not hash itself on a repeated build.
         if path.is_symlink():
             raise ValueError(f"component trees cannot contain links: {path}")
         if not path.is_file():
@@ -85,7 +90,39 @@ def _normalize_python_packages_metadata(root: Path) -> None:
     metadata_path.write_text(
         json.dumps(normalized, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
+
+
+def describe_component(
+    source: Path,
+    component_id: str,
+    entry: dict,
+    fallback_version: str,
+) -> dict:
+    """Use identical metadata and identities in installers and update archives."""
+    if component_id == "python-packages":
+        _normalize_python_packages_metadata(source)
+    digest = _tree_digest(source)
+    version = (
+        f"0+sha.{digest[:16]}"
+        if component_id == "python-packages"
+        else _release_version(
+            str(entry.get("version", "")),
+            fallback_version,
+            digest,
+        )
+    )
+    return {
+        "schema_version": 1,
+        "id": component_id,
+        "version": version,
+        "kind": str(entry.get("kind") or "directory"),
+        "install_scope": "desktop-runtime",
+        "active_path": entry["path"],
+        "content_sha256": digest,
+        "preserve": [],
+    }
 
 
 def stage(binaries: Path, output: Path, fallback_version: str) -> list[dict]:
@@ -119,27 +156,12 @@ def stage(binaries: Path, output: Path, fallback_version: str) -> list[dict]:
             copy_tree(source, destination)
         else:
             shutil.copytree(source, destination, symlinks=False)
-        if component_id == "python-packages":
-            _normalize_python_packages_metadata(destination)
-        digest = _tree_digest(destination)
-        if component_id == "python-packages":
-            version = f"0+sha.{digest[:16]}"
-        else:
-            version = _release_version(
-                str(entry.get("version", "")),
-                fallback_version,
-                digest,
-            )
-        descriptor = {
-            "schema_version": 1,
-            "id": component_id,
-            "version": version,
-            "kind": str(entry.get("kind") or "directory"),
-            "install_scope": "desktop-runtime",
-            "active_path": relative.as_posix(),
-            "content_sha256": digest,
-            "preserve": [],
-        }
+        descriptor = describe_component(
+            destination,
+            component_id,
+            entry,
+            fallback_version,
+        )
         (destination / "component.json").write_text(
             json.dumps(
                 descriptor,
@@ -149,6 +171,7 @@ def stage(binaries: Path, output: Path, fallback_version: str) -> list[dict]:
             )
             + "\n",
             encoding="utf-8",
+            newline="\n",
         )
         staged.append(descriptor)
     return staged

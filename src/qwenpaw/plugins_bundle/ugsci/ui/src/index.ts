@@ -25,6 +25,7 @@ import { WelcomePromptsInjector } from "./WelcomePromptsInjector";
 import { registerGenuiFrontend } from "./genui/index";
 import { GenUiSettingsPage } from "./genui/GenUiSettingsPage";
 import { registerVisualizationFrontend } from "./visualization";
+import { StorageDynamicsPage } from "./storage/StorageDynamicsPage";
 
 // ─── Plugin Registration ──────────────────────────────────────────────────────
 
@@ -38,31 +39,35 @@ function buildPlugin() {
   }
 
   const React = getHost().React;
-const PLUGIN_ID = "ugsci";
+  const PLUGIN_ID = "ugsci";
 
-function EmbeddedMarketplacePage() {
-  const React = getHost().React;
-  return React.createElement(MarketplacePage as any, { embedded: true });
-}
+  function EmbeddedMarketplacePage() {
+    const React = getHost().React;
+    return React.createElement(MarketplacePage as any, { embedded: true });
+  }
 
-function LegacyMarketplaceRedirect() {
-  const React = getHost().React;
-  React.useEffect(() => {
-    const target = "/market?tab=ugsci";
-    window.history.replaceState({}, "", target);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  }, []);
-  return null;
-}
+  function LegacyMarketplaceRedirect() {
+    const React = getHost().React;
+    React.useEffect(() => {
+      const target = "/market?tab=ugsci";
+      window.history.replaceState({}, "", target);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }, []);
+    return null;
+  }
 
   // ── Register Welcome Prompts Injector ────────────────────────────────
   // Register a hidden component in the rightHeader slot so it stays mounted
   // for the lifetime of the chat page and can react to agent switches.
   if (QP.chat?.rightHeader?.add) {
-    QP.chat.rightHeader.add(PLUGIN_ID, React.createElement(WelcomePromptsInjector), {
-      id: "ugsci.welcome-injector",
-      order: -1, // render before other right-header items (invisible anyway)
-    });
+    QP.chat.rightHeader.add(
+      PLUGIN_ID,
+      React.createElement(WelcomePromptsInjector),
+      {
+        id: "ugsci.welcome-injector",
+        order: -1, // render before other right-header items (invisible anyway)
+      },
+    );
     console.info("[ugsci] WelcomePromptsInjector registered via rightHeader");
   } else {
     console.warn(
@@ -78,6 +83,24 @@ function LegacyMarketplaceRedirect() {
   const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
   const ToolOutlined = antdIcons.ToolOutlined;
   const AppstoreOutlined = antdIcons.AppstoreOutlined;
+
+  QP.route.add(PLUGIN_ID, {
+    id: "ugsci.storage-dynamics",
+    path: "/ugsci-storage-dynamics",
+    component: StorageDynamicsPage,
+  });
+  QP.menu.add(PLUGIN_ID, {
+    id: "ugsci.storage-dynamics",
+    location: "primary.agentScoped",
+    label: () => "储气库动态",
+    icon: antdIcons.LineChartOutlined
+      ? React.createElement(antdIcons.LineChartOutlined, {
+          style: { fontSize: 16 },
+        })
+      : undefined,
+    route: "ugsci.storage-dynamics",
+    order: 7,
+  });
 
   // Expert Center
   QP.route.add(PLUGIN_ID, {
@@ -170,6 +193,7 @@ function LegacyMarketplaceRedirect() {
     QP.sidebar.registerSimpleModeItems([
       "ugsci.experts",
       "ugsci.tools-skills",
+      "ugsci.storage-dynamics",
     ]);
     console.info("[ugsci] Registered 2 items for simple-mode visibility");
   } else {

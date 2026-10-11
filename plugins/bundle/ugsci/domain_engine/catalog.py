@@ -284,17 +284,65 @@ _PETROLEUM_CORE_ENGINE = DomainEngineDefinition(
     source="builtin",
     provider=ProviderRef(kind="builtin", id="ugsci-petroleum-core"),
     operations=(
-        DomainOperation(id="units.convert", name="工程单位换算", description="显式维度约束的工程单位换算", tool_names=("ugsci_convert_units",)),
-        DomainOperation(id="reservoir.volumetrics.oil_in_place", name="容积法储量", description="计算原始地质储量 OOIP", tool_names=("ugsci_volumetric_oil_in_place",)),
-        DomainOperation(id="reservoir.material_balance.oil", name="油藏物质平衡", description="基于显式 PVT 和水侵项估算 OOIP", tool_names=("ugsci_oil_material_balance",)),
-        DomainOperation(id="reservoir.material_balance.gas_pz", name="气藏 p/z 物质平衡", description="根据 p/z 衰竭估算 OGIP", tool_names=("ugsci_gas_material_balance",)),
-        DomainOperation(id="fluid.pvt.standing_black_oil", name="本地黑油 PVT", description="Standing 泡点、溶解气油比和油体积系数", tool_names=("ugsci_black_oil_pvt",)),
-        DomainOperation(id="production.ipr.vogel", name="Vogel IPR", description="构建油井流入动态关系", tool_names=("ugsci_vogel_ipr",)),
-        DomainOperation(id="production.nodal_analysis", name="节点分析", description="求解 IPR/VLP 工作点", tool_names=("ugsci_nodal_analysis",)),
-        DomainOperation(id="validation.conservation_check", name="质量守恒检查", description="检查库存与流量闭合误差", tool_names=("ugsci_conservation_check",)),
+        DomainOperation(
+            id="units.convert",
+            name="工程单位换算",
+            description="显式维度约束的工程单位换算",
+            tool_names=("ugsci_convert_units",),
+        ),
+        DomainOperation(
+            id="reservoir.volumetrics.oil_in_place",
+            name="容积法储量",
+            description="计算原始地质储量 OOIP",
+            tool_names=("ugsci_volumetric_oil_in_place",),
+        ),
+        DomainOperation(
+            id="reservoir.material_balance.oil",
+            name="油藏物质平衡",
+            description="基于显式 PVT 和水侵项估算 OOIP",
+            tool_names=("ugsci_oil_material_balance",),
+        ),
+        DomainOperation(
+            id="reservoir.material_balance.gas_pz",
+            name="气藏 p/z 物质平衡",
+            description="根据 p/z 衰竭估算 OGIP",
+            tool_names=("ugsci_gas_material_balance",),
+        ),
+        DomainOperation(
+            id="fluid.pvt.standing_black_oil",
+            name="本地黑油 PVT",
+            description="Standing 泡点、溶解气油比和油体积系数",
+            tool_names=("ugsci_black_oil_pvt",),
+        ),
+        DomainOperation(
+            id="production.ipr.vogel",
+            name="Vogel IPR",
+            description="构建油井流入动态关系",
+            tool_names=("ugsci_vogel_ipr",),
+        ),
+        DomainOperation(
+            id="production.nodal_analysis",
+            name="节点分析",
+            description="求解 IPR/VLP 工作点",
+            tool_names=("ugsci_nodal_analysis",),
+        ),
+        DomainOperation(
+            id="validation.conservation_check",
+            name="质量守恒检查",
+            description="检查库存与流量闭合误差",
+            tool_names=("ugsci_conservation_check",),
+        ),
     ),
     dependencies=(),
-    tags=("material-balance", "volumetrics", "pvt", "ipr", "nodal", "units", "audit"),
+    tags=(
+        "material-balance",
+        "volumetrics",
+        "pvt",
+        "ipr",
+        "nodal",
+        "units",
+        "audit",
+    ),
     execution_class="deterministic",
     engine_version="1.1.0",
 )
@@ -395,19 +443,50 @@ _VISUALIZATION_ENGINE = DomainEngineDefinition(
 
 # ─── Catalog registry ─────────────────────────────────────────────────────────
 
+_STORAGE_DYNAMICS_ENGINE = DomainEngineDefinition(
+    schema_version=1,
+    id="storage-production-dynamics",
+    name="储气库生产动态分析",
+    description="注采日记录导入、质量审计、运行阶段、气年度、压力响应、异常筛查与短期基线",
+    domain="gas_storage",
+    source="builtin",
+    provider=ProviderRef(kind="builtin", id="ugsci-storage-dynamics"),
+    operations=(
+        DomainOperation(
+            id="storage.history.import",
+            name="注采数据导入",
+            description="导入 XLS/XLSX/CSV，识别单位、缺测、重复与截断",
+            tool_names=("ugsci_storage_history_import",),
+        ),
+        DomainOperation(
+            id="storage.dynamics.analyze",
+            name="生产动态分析",
+            description="可追溯的库井动态、周期、异常与条件性基线报告",
+            tool_names=("ugsci_storage_dynamics_analyze",),
+        ),
+        DomainOperation(
+            id="storage.history.list",
+            name="历史数据集目录",
+            description="查询已导入的历史数据集与覆盖范围",
+            tool_names=("ugsci_storage_history_list",),
+        ),
+    ),
+    dependencies=("xlrd",),
+    tags=("gas-storage", "injection", "withdrawal", "production", "audit"),
+)
+
 _ENGINES: tuple[DomainEngineDefinition, ...] = (
     _WELL_LOG_ENGINE,
     _DECLINE_ENGINE,
     _PETROLEUM_CORE_ENGINE,
     _STORAGE_INVENTORY_ENGINE,
+    _STORAGE_DYNAMICS_ENGINE,
     _NEQSIM_ENGINE,
     _VISUALIZATION_ENGINE,
     *_SCIENTIFIC_LIBRARY_ENGINES,
 )
 
-_ENGINES_BY_ID: dict[str, DomainEngineDefinition] = {
-    e.id: e for e in _ENGINES
-}
+_ENGINES_BY_ID: dict[str, DomainEngineDefinition] = {e.id: e for e in _ENGINES}
 
 
 def list_engines() -> list[DomainEngineDefinition]:

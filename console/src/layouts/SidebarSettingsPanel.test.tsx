@@ -33,7 +33,7 @@ describe("SidebarSettingsPanel", () => {
     localStorage.removeItem("qwenpaw_chat_wide_mode");
   });
 
-  it("keeps Settings as an action and displays the current version", async () => {
+  it("keeps Settings as an action while the About version is hidden", async () => {
     const onClose = vi.fn();
     const onOpenSettings = vi.fn();
     renderWithProviders(
@@ -47,17 +47,12 @@ describe("SidebarSettingsPanel", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByText("v2.2.0b3")).toBeVisible();
+    expect(screen.queryByText("v2.2.0b3")).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Settings" }));
     expect(onClose).toHaveBeenCalledOnce();
     expect(onOpenSettings).toHaveBeenCalledOnce();
 
-    await userEvent.click(
-      screen.getByRole("button", { name: /About QwenPaw/ }),
-    );
-    expect(mocks.openExternalLink).toHaveBeenCalledWith(
-      "https://qwenpaw.agentscope.io/",
-    );
+    expect(mocks.openExternalLink).not.toHaveBeenCalled();
   });
 
   it("uses cascading appearance controls without dropdowns", async () => {
@@ -190,7 +185,7 @@ describe("SidebarSettingsPanel", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("shows the compact documentation links", () => {
+  it("hides help and about links while keeping settings available", () => {
     renderWithProviders(
       <ThemeProvider>
         <SidebarSettingsPanel
@@ -201,9 +196,21 @@ describe("SidebarSettingsPanel", () => {
       </ThemeProvider>,
     );
 
-    expect(screen.getByRole("button", { name: "Tutorial" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Changelog" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "FAQ" })).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Tutorial" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "Changelog" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "FAQ" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /About QwenPaw/ }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "Settings" }),
+    ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Feature demos" }),
     ).not.toBeInTheDocument();

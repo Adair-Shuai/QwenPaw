@@ -25,12 +25,16 @@ pub(super) fn watch(
 ) {
     tauri::async_runtime::spawn(async move {
         let mut last_stderr = String::new();
+        let mut component_restart = false;
         log::info!("[backend] watching process generation={generation}");
         while let Some(event) = rx.recv().await {
             match event {
                 CommandEvent::Stdout(line) => {
                     let text = String::from_utf8_lossy(&line);
                     log::info!("[backend:{generation}] stdout: {}", text.trim_end());
+                    if text.trim() == "QWENPAW_COMPONENTS_RESTART" {
+                        component_restart = true;
+                    }
                     if let Some(port) = ready_port_from_stdout(&text) {
                         log::info!("[backend:{generation}] ready port={port}");
                         app.state::<BackendState>()
@@ -48,6 +52,7 @@ pub(super) fn watch(
                     );
                 }
                 CommandEvent::Terminated(payload) => {
+                    let clean_exit = payload.code == Some(0);
                     let message = termination_message(payload, &last_stderr);
                     let state = app.state::<BackendState>();
                     let stopping = !state.is_current(generation);
@@ -63,6 +68,14 @@ pub(super) fn watch(
                         log::info!(
                             "[backend:{generation}] process terminated after shutdown request"
                         );
+                    } else if component_restart && clean_exit {
+                        // All runtime candidates were verified and their set
+                        // committed atomically. Re-resolve executable/PYTHONPATH
+                        // before any queued plugin is allowed to load.
+                        state.clear_child_if_current(generation);
+                        // Also reload the WebView so it cannot keep frontend
+                        // assets from the backend that performed the update.
+                        app.restart();
                     } else if retry_bundled {
                         let launcher = state.with_inner(|inner| inner.launcher);
                         match launcher

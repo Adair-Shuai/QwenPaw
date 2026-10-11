@@ -8,7 +8,6 @@ import sys
 
 from packaging.version import Version
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
 PYTHON_LAYERS = REPO_ROOT / "scripts" / "pack-tauri" / "build_python_layers.py"
@@ -239,6 +238,19 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
     )
     written = json.loads((binaries / "state/active.json").read_text())
     assert written == active
+
+    from stage_desktop_components import stage
+    from component_common import file_inventory
+
+    staging = tmp_path / "update-staging"
+    descriptors = stage(binaries, staging, "2.1.1b7")
+    for descriptor in descriptors:
+        record = active["components"][descriptor["id"]]
+        bundled = binaries.parent / record["path"]
+        staged = staging / descriptor["id"]
+        assert descriptor["version"] == record["version"]
+        assert file_inventory(bundled, ()) == file_inventory(staged, ())
+        assert b"\r\n" not in (bundled / "component.json").read_bytes()
 
 
 def test_assemble_materializes_internal_runtime_symlinks(tmp_path):

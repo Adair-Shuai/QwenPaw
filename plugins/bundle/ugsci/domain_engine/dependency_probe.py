@@ -42,6 +42,8 @@ class EngineProbeResult:
 
 
 _PYTHON_PACKAGE_IMPORTS = {
+    "xlrd": "xlrd",
+    "openpyxl": "openpyxl",
     "numpy": "numpy",
     "scipy": "scipy",
     "lasio": "lasio",
@@ -134,17 +136,25 @@ def probe_java_runtime() -> DependencyProbeResult:
         java_home = os.environ.get(java_home_var, "")
         if not java_home:
             continue
-        executable_names = ("java.exe", "java") if os.name == "nt" else ("java",)
+        executable_names = (
+            ("java.exe", "java") if os.name == "nt" else ("java",)
+        )
         candidates = tuple(
             candidate
             for executable_name in executable_names
             for candidate in (
                 Path(java_home) / "bin" / executable_name,
-                Path(java_home) / "Contents" / "Home" / "bin" / executable_name,
+                Path(java_home)
+                / "Contents"
+                / "Home"
+                / "bin"
+                / executable_name,
             )
         )
         if any(candidate.exists() for candidate in candidates):
-            return DependencyProbeResult(name="java-runtime", status="available")
+            return DependencyProbeResult(
+                name="java-runtime", status="available"
+            )
 
     try:
         from qwenpaw.agents.builtin_mcp.neqsim_runtime import discover_runtime
@@ -155,7 +165,9 @@ def probe_java_runtime() -> DependencyProbeResult:
             and status.java_major_version is not None
             and not any("Java" in issue for issue in status.issues)
         ):
-            return DependencyProbeResult(name="java-runtime", status="available")
+            return DependencyProbeResult(
+                name="java-runtime", status="available"
+            )
         runtime_reason = "; ".join(status.issues)
     except Exception as exc:
         runtime_reason = f"runtime discovery failed: {exc}"
@@ -163,7 +175,8 @@ def probe_java_runtime() -> DependencyProbeResult:
     return DependencyProbeResult(
         name="java-runtime",
         status="unavailable",
-        reason=runtime_reason or "java executable not found in the configured runtime or PATH",
+        reason=runtime_reason
+        or "java executable not found in the configured runtime or PATH",
     )
 
 
@@ -177,14 +190,21 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
     # they must be recognized even if aggregate runtime discovery is partial.
     desktop_jar = os.environ.get("QWENPAW_DESKTOP_NEQSIM_JAR", "").strip()
     if desktop_jar and Path(desktop_jar).is_file():
-        return DependencyProbeResult(name="neqsim-mcp-server", status="available")
+        return DependencyProbeResult(
+            name="neqsim-mcp-server", status="available"
+        )
     resource_dir = os.environ.get("QWENPAW_TAURI_RESOURCE_DIR", "").strip()
     if resource_dir:
         bundled_jar = (
-            Path(resource_dir) / "binaries" / "neqsim" / "neqsim-mcp-server.jar"
+            Path(resource_dir)
+            / "binaries"
+            / "neqsim"
+            / "neqsim-mcp-server.jar"
         )
         if bundled_jar.is_file():
-            return DependencyProbeResult(name="neqsim-mcp-server", status="available")
+            return DependencyProbeResult(
+                name="neqsim-mcp-server", status="available"
+            )
 
     try:
         from qwenpaw.agents.builtin_mcp.neqsim_runtime import discover_runtime
@@ -193,9 +213,13 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
         if status.ready or (
             status.jar_path
             and status.detected_neqsim_version == status.neqsim_version
-            and not any("different runtime sources" in issue for issue in status.issues)
+            and not any(
+                "different runtime sources" in issue for issue in status.issues
+            )
         ):
-            return DependencyProbeResult(name="neqsim-mcp-server", status="available")
+            return DependencyProbeResult(
+                name="neqsim-mcp-server", status="available"
+            )
         runtime_reason = "; ".join(status.issues)
     except Exception as exc:
         runtime_reason = f"runtime discovery failed: {exc}"
@@ -204,11 +228,15 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
     # reporting an unavailable aggregate runtime.
     neqsim_home = os.environ.get("NEQSIM_HOME", "")
     if neqsim_home and Path(neqsim_home).exists():
-        return DependencyProbeResult(name="neqsim-mcp-server", status="available")
+        return DependencyProbeResult(
+            name="neqsim-mcp-server", status="available"
+        )
     # Check for JAR path
     neqsim_jar = os.environ.get("NEQSIM_JAR", "")
     if neqsim_jar and Path(neqsim_jar).exists():
-        return DependencyProbeResult(name="neqsim-mcp-server", status="available")
+        return DependencyProbeResult(
+            name="neqsim-mcp-server", status="available"
+        )
     # The MCP server might be configured via QwenPaw Driver even without env vars
     return DependencyProbeResult(
         name="neqsim-mcp-server",
@@ -229,7 +257,9 @@ def probe_dependency(name: str) -> DependencyProbeResult:
         return probe_neqsim_mcp_server()
     # Unknown dependency
     return DependencyProbeResult(
-        name=name, status="unknown", reason="Unknown dependency type"
+        name=name,
+        status="unknown",
+        reason="Unknown dependency type",
     )
 
 
@@ -273,13 +303,13 @@ def _probe_neqsim_runtime_dependencies() -> list[DependencyProbeResult]:
         and runtime.java_path
         and runtime.java_major_version is not None
         and required_java_major is not None
-        and runtime.java_major_version >= required_java_major
+        and runtime.java_major_version >= required_java_major,
     )
     jar_available = bool(
         not cross_source
         and runtime.jar_path
         and runtime.detected_neqsim_version
-        and runtime.detected_neqsim_version == runtime.neqsim_version
+        and runtime.detected_neqsim_version == runtime.neqsim_version,
     )
     return [
         DependencyProbeResult(
@@ -299,12 +329,15 @@ def probe_engine(engine: DomainEngineDefinition) -> EngineProbeResult:
     """Probe all dependencies for an engine."""
     if engine.id == "neqsim" and engine.provider.id == "ugsci-neqsim":
         neqsim_results = {
-            result.name: result for result in _probe_neqsim_runtime_dependencies()
+            result.name: result
+            for result in _probe_neqsim_runtime_dependencies()
         }
         dep_results = [
-            neqsim_results[dependency]
-            if dependency in neqsim_results
-            else probe_dependency(dependency)
+            (
+                neqsim_results[dependency]
+                if dependency in neqsim_results
+                else probe_dependency(dependency)
+            )
             for dependency in engine.dependencies
         ]
     else:

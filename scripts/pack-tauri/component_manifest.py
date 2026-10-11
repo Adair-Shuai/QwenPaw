@@ -185,7 +185,14 @@ def validate_manifest(
                 delta["from"],
                 f"{component_id}.delta.from",
             )
-            if from_version >= target_version:
+            content_addressed = (
+                component_id == "python-packages"
+                and str(from_version).startswith("0+sha.")
+                and str(target_version).startswith("0+sha.")
+            )
+            if from_version == target_version or (
+                not content_addressed and from_version > target_version
+            ):
                 raise ValueError(
                     f"delta from version is not older for {component_id}",
                 )

@@ -13,11 +13,19 @@ on:
         default: ""
       core_min_version:
         type: string
+        required: false
+        default: ""
+      release_version:
+        type: string
         required: true
       release_id:
         type: string
         required: true
       upload_to_oss:
+        type: boolean
+        required: false
+        default: false
+      dry_run:
         type: boolean
         required: false
         default: false
@@ -53,7 +61,10 @@ on:
         required: true
         default: all
       core_min_version:
-        description: Minimum compatible desktop core version
+        description: Optional compatibility floor override
+        required: false
+      release_version:
+        description: Actual release version (must meet component compatibility floor)
         required: true
       upload_to_oss:
         description: Upload signed artifacts and publish manifest
@@ -239,9 +250,10 @@ jobs:
           python scripts/pack-tauri/stage_desktop_components.py \
             --binaries desktop-component-source/binaries \
             --output component-staging \
-            --fallback-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}'
+            --fallback-version '${{ inputs.release_version }}'
 
       - name: Fetch and verify previous component base
+        if: ${{ !inputs.dry_run }}
         env:
           COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
@@ -254,9 +266,25 @@ jobs:
             --history-output component-history/${{ matrix.target }}.history.json \
             --history-signature-output component-history/${{ matrix.target }}.history.json.sig
 
+      - name: Create isolated dry-run signing key
+        if: inputs.dry_run
+        run: |
+          test '${{ inputs.upload_to_oss }}' != 'true'
+          python - <<'PY'
+          import base64, os
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+          key = Ed25519PrivateKey.generate()
+          private = base64.b64encode(key.private_bytes(serialization.Encoding.Raw, serialization.PrivateFormat.Raw, serialization.NoEncryption())).decode()
+          public = base64.b64encode(key.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)).decode()
+          print(f"::add-mask::{private}")
+          with open(os.environ['GITHUB_ENV'], 'a', encoding='utf-8') as out:
+              out.write(f"DRY_RUN_COMPONENT_KEY={private}\nCOMPONENT_SIGNING_PUBLIC_KEY={public}\n")
+          PY
+
       - name: Build and sign component release
         env:
-          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ inputs.dry_run && env.DRY_RUN_COMPONENT_KEY || secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
           export SOURCE_DATE_EPOCH="$(git show -s --format=%cI HEAD)"
           python scripts/pack-tauri/build_component_release.py \
@@ -267,7 +295,7 @@ jobs:
             --base-url "$COMPONENT_BASE_URL" \
             --base-root component-base \
             --release-id "${{ inputs.release_id || format('{0}-{1}', github.run_id, github.run_attempt) }}" \
-            --release-version '${{ inputs.core_min_version || github.event.inputs.core_min_version }}' \
+            --release-version '${{ inputs.release_version }}' \
             --release-sequence '${{ github.run_id }}' \
             --release-attempt '${{ github.run_attempt }}' \
             --history-input component-history/${{ matrix.target }}.history.json \

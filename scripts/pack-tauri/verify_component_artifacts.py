@@ -49,7 +49,13 @@ def _is_preserved(relative: str, preserve_paths: tuple[str, ...]) -> bool:
     )
 
 
-def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
+def apply_delta(
+    base: Path,
+    archive_path: Path,
+    output: Path,
+    *,
+    preserve_paths: tuple[str, ...] | None = None,
+) -> dict:
     # pylint: disable=too-many-branches,too-many-statements
     base = base.resolve()
     output = output.resolve()
@@ -139,7 +145,11 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
             raise ValueError(
                 "delta archive contains unexpected or missing members",
             )
-        raw_preserve = delta.get("preserve", list(DEFAULT_PRESERVE_PATHS))
+        raw_preserve = (
+            list(preserve_paths)
+            if preserve_paths is not None
+            else delta.get("preserve", list(DEFAULT_PRESERVE_PATHS))
+        )
         if not isinstance(raw_preserve, list) or not all(
             isinstance(item, str) for item in raw_preserve
         ):
@@ -164,6 +174,13 @@ def apply_delta(base: Path, archive_path: Path, output: Path) -> dict:
                 candidate.relative_to(staged.resolve())
                 if candidate.exists():
                     candidate.unlink()
+                parent = candidate.parent
+                while parent != staged and parent.is_dir():
+                    try:
+                        parent.rmdir()
+                    except OSError:
+                        break
+                    parent = parent.parent
             for relative in [*operations["add"], *operations["replace"]]:
                 member = f"files/{relative}"
                 if member not in archive.namelist():

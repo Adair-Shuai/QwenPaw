@@ -404,6 +404,19 @@ jobs:
       ref: ${{ needs.resolve.outputs.sha }}
     secrets: inherit
 
+  build-components:
+    needs: [resolve, build-desktop]
+    uses: ./.github/workflows/component-release.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      release_version: ${{ needs.resolve.outputs.tag }}
+      release_id: ${{ needs.resolve.outputs.sha }}-${{ github.run_id }}
+      include_desktop_components: true
+      dry_run: ${{ inputs.dry_run }}
+      windows_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
+      macos_desktop_artifacts_run_id: ${{ format('{0}', github.run_id) }}
+    secrets: inherit
+
   build-plugins:
     needs: [resolve]
     runs-on: ubuntu-latest
@@ -522,7 +535,7 @@ jobs:
   # ── Gate: publish jobs below run only if every prepare job above is green ──
 
   publish-pypi:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, full-test-gate]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, build-components, full-test-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Download dist artifacts
@@ -544,7 +557,7 @@ jobs:
           echo "DRY-RUN: would publish $(ls dist) to PyPI"
 
   push-docker:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, full-test-gate]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, build-components, full-test-gate]
     runs-on: ubuntu-latest
     env:
       ACR_REGISTRY: agentscope-registry.ap-southeast-1.cr.aliyuncs.com
@@ -626,7 +639,7 @@ jobs:
           echo "DRY-RUN: would push the prebuilt Docker image for ${{ needs.resolve.outputs.tag }}"
 
   publish-desktop:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, full-test-gate]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, build-components, full-test-gate]
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -635,7 +648,7 @@ jobs:
     secrets: inherit
 
   publish-plugins:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, full-test-gate]
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-docker, build-components, full-test-gate]
     runs-on: ubuntu-latest
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
@@ -779,8 +792,26 @@ jobs:
       coverage_platforms: all
     secrets: inherit
 
+  publish-components:
+    needs: [resolve, build-components, full-test-gate]
+    uses: ./.github/workflows/component-publish.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      phase: artifacts
+      dry_run: ${{ inputs.dry_run }}
+    secrets: inherit
+
+  promote-components:
+    needs: [resolve, finalize]
+    uses: ./.github/workflows/component-publish.yml
+    with:
+      ref: ${{ needs.resolve.outputs.sha }}
+      phase: promote
+      dry_run: ${{ inputs.dry_run }}
+    secrets: inherit
+
   finalize:
-    needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins, full-test-gate]
+    needs: [resolve, publish-pypi, push-docker, publish-desktop, publish-plugins, publish-components, full-test-gate]
     runs-on: ubuntu-latest
     steps:
       - name: Publish the release
@@ -797,7 +828,7 @@ jobs:
   # Runs only after the release is published, so the auto-updater is pointed at
   # the new version only once the release actually exists.
   promote-desktop:
-    needs: [resolve, finalize]
+    needs: [resolve, finalize, promote-components]
     uses: ./.github/workflows/desktop-promote.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}

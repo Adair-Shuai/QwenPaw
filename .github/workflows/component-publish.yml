@@ -1,0 +1,188 @@
+name: Publish Component Release
+on:
+  workflow_call:
+    inputs:
+      ref:
+        type: string
+        required: true
+      phase:
+        type: string
+        required: true
+      dry_run:
+        type: boolean
+        default: false
+      history_count:
+        type: number
+        default: 10
+permissions:
+  actions: read
+  contents: read
+concurrency:
+  group: ${{ inputs.phase == 'promote' && 'oss-production-metadata' || format('component-upload-{0}', github.run_id) }}
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: ${{ !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [windows-x86_64, macos-aarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet packaging cryptography
+      - name: Validate publication phase
+        env:
+          PHASE: ${{ inputs.phase }}
+        run: '[[ "$PHASE" == artifacts || "$PHASE" == promote ]]'
+      - uses: actions/download-artifact@v4
+        with:
+          name: component-release-${{ matrix.target }}
+          path: component-release
+      - name: Install ossutil
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+
+      - name: Configure OSS
+        run: |
+          ossutil config -e '${{ secrets.OSS_ENDPOINT }}' \
+            -i '${{ secrets.OSS_ACCESS_KEY_ID }}' \
+            -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
+
+      - name: Upload immutable component artifacts first
+        if: inputs.phase == 'artifacts'
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r file; do
+            relative="${file#component-release/}"
+            uri="oss://${OSS_BUCKET}/${relative}"
+            remote="${RUNNER_TEMP}/artifact-${RANDOM}-$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              if ! cmp -s "$file" "$remote"; then
+                echo "Immutable component artifact differs from local build: ${relative}" >&2
+                exit 1
+              fi
+              rm -f "$remote"
+              continue
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+          done < <(find component-release/artifacts -type f)
+
+      - name: Verify artifacts exist on OSS
+        if: inputs.phase == 'artifacts'
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: |
+          while IFS= read -r file; do
+            relative="${file#component-release/}"
+            remote="${RUNNER_TEMP}/$(basename "$file")"
+            ossutil cp "oss://${OSS_BUCKET}/${relative}" "$remote" >/dev/null
+            cmp -s "$file" "$remote"
+          done < <(find component-release/artifacts -type f)
+
+      # The signed manifest is intentionally published last. Clients cannot
+      # observe a release until all referenced immutable artifacts exist.
+      - name: Publish signed component manifest last
+        env:
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+        run: |
+          set -euo pipefail
+          manifest=$(find component-release/metadata/components/stable \
+            -name '${{ matrix.target }}-*.json' \
+            ! -name '*.history.json' -type f -print -quit)
+          test -s "$manifest"
+          manifest_name=$(basename "$manifest")
+          manifest_uri="oss://${OSS_BUCKET}/metadata/components/stable/${manifest_name}"
+          manifest_sig_uri="${manifest_uri}.sig"
+          publish_immutable() {
+            local file="$1" uri="$2" label="$3"
+            local remote_dir
+            remote_dir="$(mktemp -d)"
+            local remote="${remote_dir}/$(basename "$file")"
+            if ossutil cp "$uri" "$remote" >/dev/null 2>&1; then
+              if ! cmp -s "$file" "$remote"; then
+                echo "Immutable component ${label} differs from local build" >&2
+                exit 1
+              fi
+              rm -rf "$remote_dir"
+              return
+            fi
+            ossutil cp "$file" "$uri" --acl public-read \
+              --meta "Cache-Control:public, max-age=31536000, immutable"
+            ossutil cp "$uri" "$remote"
+            cmp -s "$file" "$remote" || { echo "Remote component ${label} verification failed" >&2; exit 1; }
+            rm -rf "$remote_dir"
+          }
+          publish_immutable "$manifest" "$manifest_uri" "manifest ${manifest_name}"
+          publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${manifest_name}.sig"
+          if [[ "${{ inputs.phase }}" == "artifacts" ]]; then exit 0; fi
+          pointer="component-release/metadata/components/stable/${{ matrix.target }}.current.json"
+          remote_pointer="${RUNNER_TEMP}/${{ matrix.target }}.remote-current.json"
+          if ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$remote_pointer" >/dev/null 2>&1; then
+            python scripts/pack-tauri/check_component_pointer_promotion.py \
+              --local "$pointer" --remote "$remote_pointer" --target '${{ matrix.target }}'
+            history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
+            remote_history_url=$(python -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8")).get("history_url", ""))' "$remote_pointer")
+            if [[ -z "$remote_history_url" ]]; then
+              echo "Remote pointer predates signed history; publishing migration history"
+            else
+            remote_history_key=$(python -c 'from urllib.parse import urlparse; import sys; print(urlparse(sys.argv[1]).path.lstrip("/"))' "$remote_history_url")
+            remote_history="${RUNNER_TEMP}/${{ matrix.target }}.remote-history.json"
+            remote_history_sig="${RUNNER_TEMP}/${{ matrix.target }}.remote-history.json.sig"
+            ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}" "$remote_history" >/dev/null
+            ossutil cp "oss://${OSS_BUCKET}/${remote_history_key}.sig" "$remote_history_sig" >/dev/null
+            python scripts/pack-tauri/merge_component_history.py \
+              --local-pointer "$pointer" \
+              --local-history "$history" \
+              --local-history-signature "${history}.sig" \
+              --remote-pointer "$remote_pointer" \
+              --remote-history "$remote_history" \
+              --remote-history-signature "$remote_history_sig" \
+              --target '${{ matrix.target }}' --limit '${{ inputs.history_count || 10 }}'
+            fi
+          else
+            python scripts/pack-tauri/check_component_pointer_promotion.py \
+              --local "$pointer" --target '${{ matrix.target }}'
+          fi
+          history=$(find component-release/metadata/components/stable -name '${{ matrix.target }}-*.history.json' -type f | head -1)
+          publish_immutable "$history" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history")" "history $(basename "$history")"
+          publish_immutable "${history}.sig" "oss://${OSS_BUCKET}/metadata/components/stable/$(basename "$history").sig" "history signature $(basename "$history").sig"
+          pointer_tmp="oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json.staging-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          ossutil cp "$pointer" "$pointer_tmp" --acl public-read
+          ossutil ls "$pointer_tmp" >/dev/null
+          ossutil cp "$pointer_tmp" "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" --acl public-read --force --meta "Cache-Control:public, max-age=0, must-revalidate"
+          ossutil rm "$pointer_tmp" --force || true
+          verify_dir="$(mktemp -d)"
+          verify_file="${verify_dir}/${{ matrix.target }}.current.json"
+          ossutil cp "oss://${OSS_BUCKET}/metadata/components/stable/${{ matrix.target }}.current.json" "$verify_file"
+          # Post-promotion readback, polarity-aware:
+          #   live == ours          -> our promotion is in effect (pass)
+          #   live strictly newer   -> a concurrent NEWER run legitimately won
+          #                            the race; accept with a warning (fail
+          #                            here would be a false alarm)
+          #   live older / collision-> an OLDER run clobbered our pointer;
+          #                            fail loudly so the damage is visible
+          # Note: this narrows but cannot fully close the race (an overwrite
+          # after the readback is invisible); OSS has no CAS writes, so the
+          # oss-production-metadata concurrency group remains the hard guard.
+          if cmp -s "$pointer" "$verify_file"; then
+            :
+          elif python scripts/pack-tauri/check_component_pointer_promotion.py \
+            --local "$verify_file" --remote "$pointer" --target '${{ matrix.target }}'; then
+            echo "::warning::A newer concurrent promotion superseded this run's component pointer; accepting the newer live pointer"
+          else
+            echo "::error::Promoted component pointer lost a race to an OLDER release; re-run the release to re-promote" >&2
+            exit 1
+          fi
+          rm -rf "$verify_dir"

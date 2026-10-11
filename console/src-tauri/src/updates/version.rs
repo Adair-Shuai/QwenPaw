@@ -110,6 +110,28 @@ pub(crate) fn is_remote_update_newer(current: Version, update: RemoteRelease) ->
     }
 }
 
+pub(crate) fn component_version_lte(a: &str, b: &str) -> bool {
+    fn normalize(value: &str) -> String {
+        let value = value.trim().trim_start_matches('v');
+        if Version::parse(value).is_ok() {
+            return value.to_owned();
+        }
+        let value = value.replace(".post", "+post.");
+        let mut value = if value.contains("rc") {
+            value.replace("rc", "-rc.")
+        } else if value.contains('b') {
+            value.replace('b', "-beta.")
+        } else {
+            value.replace('a', "-alpha.")
+        };
+        if !value.contains('-') {
+            value = value.replace(".dev", "-dev.");
+        }
+        value
+    }
+    version_lte(&normalize(a), &normalize(b))
+}
+
 pub(super) fn version_lte(a: &str, b: &str) -> bool {
     let a = a.trim_start_matches('v');
     let b = b.trim_start_matches('v');
@@ -144,6 +166,14 @@ pub(super) fn version_lte(a: &str, b: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn component_versions_accept_python_and_desktop_forms() {
+        assert!(component_version_lte("2.2.2b6", "2.2.2-beta.7"));
+        assert!(!component_version_lte("2.2.2b8", "2.2.2b7"));
+        assert!(component_version_lte("2.2.2.dev1", "2.2.2b1"));
+        assert!(!component_version_lte("2.2.2.post1", "2.2.2"));
+    }
 
     fn version_gt(a: &str, b: &str) -> bool {
         let a = Version::parse(a).unwrap();

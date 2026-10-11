@@ -20,6 +20,7 @@ from .avatar import (
     AvatarService,
 )
 from .domain_engine.api import build_domain_engine_router
+from .domain.storage_dynamics.api import build_storage_dynamics_router
 from .docs_api import build_docs_router
 from .engine.api import EngineRequest, build_engine_router
 from .sim_api import build_sim_router
@@ -163,6 +164,13 @@ class UGSciPlugin:
         )
         self._register_simulation_tools(api)
         self._register_domain_tools(api)
+        self._register_router(
+            api,
+            build_storage_dynamics_router,
+            "/ugsci/storage-dynamics",
+            "ugsci-storage-dynamics",
+            "storage production dynamics",
+        )
         self._register_derivation_tools(api)
         self._register_freeform_tools(api)
         self._register_visualization_tools(api)
@@ -180,7 +188,9 @@ class UGSciPlugin:
         """
         register_operation = getattr(api, "register_operation", None)
         if not callable(register_operation):
-            logger.debug("[%s] Run Center Operation API unavailable", PLUGIN_ID)
+            logger.debug(
+                "[%s] Run Center Operation API unavailable", PLUGIN_ID
+            )
             return
         try:
             from .domain_engine.catalog import list_engines
@@ -205,13 +215,32 @@ class UGSciPlugin:
                         "tags": ["simulation", "eclipse", "cmg", "comsol"],
                         "input_schema": {
                             "type": "object",
-                            "properties": {"model_version_id": {"type": "string"}},
+                            "properties": {
+                                "model_version_id": {"type": "string"}
+                            },
                         },
                         "output_schema": {"type": "object"},
-                        "units": {"system": "SI", "inputs": {}, "outputs": {}, "required": []},
-                        "resources": {"pool": "local", "cpu": 1, "licenses": []},
-                        "risk": {"level": "high", "requires_review": True, "reasons": ["external simulator"]},
-                        "estimate": {"method": "provider", "duration_seconds": None, "confidence": None},
+                        "units": {
+                            "system": "SI",
+                            "inputs": {},
+                            "outputs": {},
+                            "required": [],
+                        },
+                        "resources": {
+                            "pool": "local",
+                            "cpu": 1,
+                            "licenses": [],
+                        },
+                        "risk": {
+                            "level": "high",
+                            "requires_review": True,
+                            "reasons": ["external simulator"],
+                        },
+                        "estimate": {
+                            "method": "provider",
+                            "duration_seconds": None,
+                            "confidence": None,
+                        },
                     },
                     "ugsci-simulation",
                 ),
@@ -228,10 +257,27 @@ class UGSciPlugin:
                         "tags": ["visualization", "import", "grid"],
                         "input_schema": {"type": "object"},
                         "output_schema": {"type": "object"},
-                        "units": {"system": "SI", "inputs": {}, "outputs": {}, "required": []},
-                        "resources": {"pool": "local", "cpu": 1, "licenses": []},
-                        "risk": {"level": "medium", "requires_review": False, "reasons": []},
-                        "estimate": {"method": "provider", "duration_seconds": None, "confidence": None},
+                        "units": {
+                            "system": "SI",
+                            "inputs": {},
+                            "outputs": {},
+                            "required": [],
+                        },
+                        "resources": {
+                            "pool": "local",
+                            "cpu": 1,
+                            "licenses": [],
+                        },
+                        "risk": {
+                            "level": "medium",
+                            "requires_review": False,
+                            "reasons": [],
+                        },
+                        "estimate": {
+                            "method": "provider",
+                            "duration_seconds": None,
+                            "confidence": None,
+                        },
                     },
                     "ugsci.visualization",
                 ),
@@ -276,10 +322,27 @@ class UGSciPlugin:
                                 "supports_pause": False,
                                 "input_schema": {"type": "object"},
                                 "output_schema": {"type": "object"},
-                                "units": {"system": "SI", "inputs": {}, "outputs": {}, "required": []},
-                                "resources": {"pool": "local", "cpu": 1, "licenses": []},
-                                "risk": {"level": "medium", "requires_review": False, "reasons": []},
-                                "estimate": {"method": "provider", "duration_seconds": None, "confidence": None},
+                                "units": {
+                                    "system": "SI",
+                                    "inputs": {},
+                                    "outputs": {},
+                                    "required": [],
+                                },
+                                "resources": {
+                                    "pool": "local",
+                                    "cpu": 1,
+                                    "licenses": [],
+                                },
+                                "risk": {
+                                    "level": "medium",
+                                    "requires_review": False,
+                                    "reasons": [],
+                                },
+                                "estimate": {
+                                    "method": "provider",
+                                    "duration_seconds": None,
+                                    "confidence": None,
+                                },
                                 "deterministic": (
                                     engine.execution_class == "deterministic"
                                 ),
@@ -305,7 +368,11 @@ class UGSciPlugin:
                 rejected,
             )
         except Exception as exc:
-            logger.warning("[%s] Run Center Operation registration skipped: %s", PLUGIN_ID, exc)
+            logger.warning(
+                "[%s] Run Center Operation registration skipped: %s",
+                PLUGIN_ID,
+                exc,
+            )
 
     @staticmethod
     def _register_run_center_executors(api) -> None:
@@ -352,7 +419,9 @@ class UGSciPlugin:
                 execute_simulation,
                 execute_visualization_import,
             )
-        except Exception as exc:  # pragma: no cover - defensive plugin boundary
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive plugin boundary
             logger.warning(
                 "[%s] Run Center executor dependencies unavailable: %s",
                 PLUGIN_ID,
@@ -380,7 +449,9 @@ class UGSciPlugin:
                 merged.update(explicit_parameters)
             return merged
 
-        def effective_request(values: dict[str, Any]) -> EffectiveInventoryRequest:
+        def effective_request(
+            values: dict[str, Any],
+        ) -> EffectiveInventoryRequest:
             raw_layers = values.get("layers")
             if not isinstance(raw_layers, (list, tuple)):
                 raise ValueError("layers must be an array")
@@ -392,7 +463,9 @@ class UGSciPlugin:
             return EffectiveInventoryRequest(
                 layers=tuple(layers),
                 cycle_id=values.get("cycle_id", ""),
-                injection_end_state_id=values.get("injection_end_state_id", ""),
+                injection_end_state_id=values.get(
+                    "injection_end_state_id", ""
+                ),
                 evaluation_state_id=values.get("evaluation_state_id", ""),
                 gas_volume_unit=values.get("gas_volume_unit", "1e8_sm3"),
                 pressure_unit=values.get("pressure_unit", "MPa"),
@@ -422,12 +495,16 @@ class UGSciPlugin:
                 upsert_provenance(
                     context.run_id,
                     {
-                        "input_fingerprint": provenance.get("input_fingerprint"),
+                        "input_fingerprint": provenance.get(
+                            "input_fingerprint"
+                        ),
                         "provider_id": provenance.get("provider_id"),
                         "provider_version": provenance.get("provider_version"),
                         "software_version": provenance.get("engine_version"),
                         "unit_system": provenance.get("unit_system"),
-                        "coordinate_system": provenance.get("coordinate_system"),
+                        "coordinate_system": provenance.get(
+                            "coordinate_system"
+                        ),
                         "metadata": {
                             key: value
                             for key, value in provenance.items()
@@ -455,7 +532,9 @@ class UGSciPlugin:
             if callable(checker):
                 checker()
 
-        def accounting_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def accounting_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             result = service.execute(
@@ -474,7 +553,9 @@ class UGSciPlugin:
             check_cancelled(context)
             return result
 
-        def effective_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def effective_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             result = service.execute(
@@ -488,7 +569,9 @@ class UGSciPlugin:
             check_cancelled(context)
             return result
 
-        def evaluation_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def evaluation_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             effective = effective_request(values)
@@ -505,7 +588,9 @@ class UGSciPlugin:
                     working_gas=values.get("working_gas"),
                     design_working_gas=values.get("design_working_gas"),
                     peak_daily_rate=values.get("peak_daily_rate"),
-                    design_peak_daily_rate=values.get("design_peak_daily_rate"),
+                    design_peak_daily_rate=values.get(
+                        "design_peak_daily_rate"
+                    ),
                     daily_rate_unit=values.get("daily_rate_unit", "1e4_sm3/d"),
                 ),
                 method="separated_inventory_indicator_workflow",
@@ -515,7 +600,9 @@ class UGSciPlugin:
             check_cancelled(context)
             return result
 
-        def capacity_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def capacity_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             raw_layers = values.get("layers")
@@ -534,8 +621,12 @@ class UGSciPlugin:
                     pore_volume_unit=values.get("pore_volume_unit", "m3"),
                     pressure_unit=values.get("pressure_unit", "MPa"),
                     temperature_unit=values.get("temperature_unit", "K"),
-                    standard_pressure=values.get("standard_pressure", 0.101325),
-                    standard_temperature=values.get("standard_temperature", 288.15),
+                    standard_pressure=values.get(
+                        "standard_pressure", 0.101325
+                    ),
+                    standard_temperature=values.get(
+                        "standard_temperature", 288.15
+                    ),
                     gas_volume_unit=values.get("gas_volume_unit", "1e8_sm3"),
                 ),
                 method="pressure_envelope_ideal_gas_scaling",
@@ -545,7 +636,9 @@ class UGSciPlugin:
             check_cancelled(context)
             return result
 
-        def allocation_wells(values: dict[str, Any]) -> tuple[StorageAllocationWellRequest, ...]:
+        def allocation_wells(
+            values: dict[str, Any],
+        ) -> tuple[StorageAllocationWellRequest, ...]:
             raw_wells = values.get("wells")
             if not isinstance(raw_wells, (list, tuple)):
                 raise ValueError("wells must be an array")
@@ -564,7 +657,9 @@ class UGSciPlugin:
                 )
             return tuple(normalized)
 
-        def injection_allocation_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def injection_allocation_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             result = service.execute(
@@ -583,7 +678,9 @@ class UGSciPlugin:
             check_cancelled(context)
             return result
 
-        def production_allocation_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def production_allocation_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             result = service.execute(
@@ -602,7 +699,9 @@ class UGSciPlugin:
             check_cancelled(context)
             return result
 
-        def scenario_handler(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+        def scenario_handler(
+            context: Any, payload: dict[str, Any]
+        ) -> dict[str, Any]:
             values = parameters(payload)
             check_cancelled(context)
             raw_scenarios = values.get("scenarios")
@@ -694,9 +793,11 @@ class UGSciPlugin:
                     provider_id=(
                         simulation_provider_id
                         if operation == "simulation.run"
-                        else "ugsci.visualization"
-                        if operation == "visualization.import"
-                        else provider_id
+                        else (
+                            "ugsci.visualization"
+                            if operation == "visualization.import"
+                            else provider_id
+                        )
                     ),
                 )
                 registered += 1
@@ -1052,7 +1153,9 @@ class UGSciPlugin:
     def _register_visualization_tools(cls, api) -> None:
         try:
             bindings = get_visualization_tool_bindings()
-            registered = cls._register_tool_group(api, "visualization", bindings)
+            registered = cls._register_tool_group(
+                api, "visualization", bindings
+            )
             logger.info(
                 "[%s] Visualization tools registered (%d tools)",
                 PLUGIN_ID,
@@ -1071,6 +1174,7 @@ class UGSciPlugin:
         """Register GenUI tools and prompt section as an isolated UGSci module."""
         try:
             from .genui.registration import register_genui
+
             register_genui(api, plugin_id=PLUGIN_ID)
         except Exception as exc:
             logger.error(
@@ -1088,9 +1192,13 @@ class UGSciPlugin:
 
             recovered = recover_persisted_jobs()
             if recovered:
-                logger.info("[%s] Recovered %d simulation job(s)", PLUGIN_ID, recovered)
+                logger.info(
+                    "[%s] Recovered %d simulation job(s)", PLUGIN_ID, recovered
+                )
         except Exception:
-            logger.exception("[%s] Failed to recover simulation jobs", PLUGIN_ID)
+            logger.exception(
+                "[%s] Failed to recover simulation jobs", PLUGIN_ID
+            )
         await asyncio.to_thread(_prewarm_avatar_cache)
 
     async def _on_startup_sync_skills(self) -> None:
@@ -1202,4 +1310,9 @@ class UGSciPlugin:
 
 plugin = UGSciPlugin()
 
-__all__ = ["EngineRequest", "UGSciPlugin", "plugin", "build_domain_engine_router"]
+__all__ = [
+    "EngineRequest",
+    "UGSciPlugin",
+    "plugin",
+    "build_domain_engine_router",
+]

@@ -21,6 +21,7 @@ const mocks = vi.hoisted(() => ({
   installDownloadedUpdate: vi.fn(),
   onUpdateEvent: vi.fn(),
   isDesktopApp: vi.fn(),
+  checkComponentUpdates: vi.fn(),
 }));
 
 vi.mock("../tauri/desktopUpdate", () => ({
@@ -34,6 +35,10 @@ vi.mock("../tauri/desktopUpdate", () => ({
 
 vi.mock("../tauri/backendRuntime", () => ({
   isDesktopApp: mocks.isDesktopApp,
+}));
+
+vi.mock("../api", () => ({
+  default: { checkComponentUpdates: mocks.checkComponentUpdates },
 }));
 
 import {
@@ -76,6 +81,10 @@ describe("DesktopUpdateContext", () => {
     mocks.isDesktopApp.mockReturnValue(true);
     mocks.checkCachedUpdate.mockResolvedValue(null);
     mocks.checkDesktopUpdate.mockResolvedValue(null);
+    mocks.checkComponentUpdates.mockResolvedValue({
+      enabled: true,
+      updates: [],
+    });
     mocks.downloadDesktopUpdate.mockResolvedValue(undefined);
     mocks.installDesktopUpdate.mockResolvedValue(undefined);
     mocks.installDownloadedUpdate.mockResolvedValue(undefined);
@@ -193,6 +202,38 @@ describe("DesktopUpdateContext", () => {
   });
 
   // ── mount probe: remote update ──────────────────────────────────────────
+
+  it.each(["2.4.0", "2.3.0", null])(
+    "uses components only for the exact compatible desktop release %s",
+    async (compatible) => {
+      mocks.checkDesktopUpdate.mockResolvedValue({
+        version: "2.4.0",
+        body: "notes",
+      });
+      mocks.checkComponentUpdates.mockResolvedValue({
+        enabled: true,
+        compatible_desktop_version: compatible,
+        updates: [{ component: "backend", target_version: "2.4.0" }],
+      });
+      const { result } = renderUpdate();
+      await flush();
+      await act(async () => {
+        const info = await result.current.refreshUpdates();
+        expect(info.hasCoreUpdate).toBe(compatible !== "2.4.0");
+        expect(info.componentCount).toBe(compatible === "2.4.0" ? 1 : 0);
+      });
+    },
+  );
+
+  it("keeps the full update available when component discovery fails", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValue({ version: "2.4.0" });
+    mocks.checkComponentUpdates.mockRejectedValue(new Error("offline"));
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      expect((await result.current.refreshUpdates()).hasCoreUpdate).toBe(true);
+    });
+  });
 
   it("adopts the remote version and trimmed release notes", async () => {
     mocks.checkDesktopUpdate.mockResolvedValue({

@@ -23,9 +23,15 @@ async def check_component_updates():
     if service is None:
         return {"enabled": False, "updates": []}
     try:
+        updates = await asyncio.to_thread(service.check)
         return {
             "enabled": True,
-            "updates": await asyncio.to_thread(service.check),
+            "updates": updates,
+            "compatible_desktop_version": getattr(
+                service,
+                "compatible_desktop_version",
+                None,
+            ),
         }
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(

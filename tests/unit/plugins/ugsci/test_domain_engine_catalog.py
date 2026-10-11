@@ -16,11 +16,12 @@ from plugins.bundle.ugsci.domain_engine.dependency_probe import probe_engine
 class TestCatalog:
     def test_domain_engines_and_scientific_libraries_exist(self) -> None:
         engines = list_engines()
-        assert len(engines) == 14
+        assert len(engines) == 15
 
     def test_engine_ids_unique(self) -> None:
         ids = get_engine_ids()
-        assert len(ids) == 14
+        assert len(ids) == 15
+        assert "storage-production-dynamics" in ids
         assert "well-log-processing" in ids
         assert "decline-analysis" in ids
         assert "neqsim" in ids

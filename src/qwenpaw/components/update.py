@@ -579,6 +579,47 @@ class ComponentUpdater:
                 )
             self.bundled_directory_records[item] = (version, path)
         self._lock = threading.RLock()
+        self._directory_records: dict[str, dict[str, str]] | None = None
+        self.release_version: str | None = None
+
+    @contextlib.contextmanager
+    def directory_transaction(self):
+        """Publish the runtime set once, only after every candidate validates.
+
+        Candidate directories are immutable and remain unreachable on failure.
+        A durable previous set lets the desktop launcher undo a failed boot.
+        """
+        if self._directory_records is not None:
+            raise ComponentUpdateError("nested directory transaction")
+        self._directory_records = {}
+        try:
+            yield
+            records = self._directory_records
+            if records and self.active_path is not None:
+                with _active_file_lock(self.active_path):
+                    payload = self._read_active_payload()
+                    components = payload.setdefault("components", {})
+                    payload["previous_runtime_components"] = {
+                        key: value
+                        for key, value in components.items()
+                        if key in self.directory_components
+                    }
+                    components.update(records)
+                    self._write_active_payload(payload)
+        finally:
+            self._directory_records = None
+
+    def _read_active_payload(self) -> dict[str, Any]:
+        if self.active_path is not None and self.active_path.is_file():
+            payload = json.loads(self.active_path.read_text(encoding="utf-8"))
+            if (
+                isinstance(payload, dict)
+                and payload.get("target") == self.target
+                and isinstance(payload.get("components"), dict)
+            ):
+                return payload
+            raise ComponentUpdateError("invalid active component pointer")
+        return {"schema_version": 1, "target": self.target, "components": {}}
 
     def extend_managed_components(self, components: set[str]) -> None:
         """Trust additional IDs obtained from a verified signed manifest."""
@@ -604,6 +645,22 @@ class ComponentUpdater:
             if payload.get("target") != self.target:
                 return None, None
             record = payload["components"][component]
+            bundled_backend, _ = self.bundled_directory_record("backend")
+            anchor = record.get("bundled_backend_version")
+            if bundled_backend is not None:
+                if anchor is not None and anchor != bundled_backend:
+                    return None, None
+                # Legacy records have no anchor. A newer installer must take
+                # precedence over an older runtime set, including dependencies.
+                previous_backend = (
+                    payload["components"].get("backend", {}).get("version")
+                )
+                if anchor is None and (
+                    previous_backend is None
+                    or _version(previous_backend, "managed backend")
+                    <= _version(bundled_backend, "bundled backend")
+                ):
+                    return None, None
             version = str(record["version"])
             path = Path(str(record["path"]))
             return version, path
@@ -737,6 +794,11 @@ class ComponentUpdater:
     def finalize_activation(self, component: str, destination: Path) -> None:
         """Commit a candidate after PluginLoader health checks succeed."""
         component = _safe_component_id(component)
+        if (
+            component in self.directory_components
+            and self._directory_records is not None
+        ):
+            return  # Retain recovery evidence until the whole set commits.
         plugins_root = destination.parent
         destination = _resolve_plugin_child(
             destination,
@@ -756,6 +818,13 @@ class ComponentUpdater:
         # read again once a new version commits, and runtimes can be GiB each.
         if component in self.directory_components:
             self._gc_managed_versions(component, keep=destination)
+
+    def finalize_runtime_activations(self) -> None:
+        """Clean recovery markers after the selected interpreter has booted."""
+        for component in self.directory_components:
+            _, destination = self.active_directory_record(component)
+            if destination is not None and destination.is_dir():
+                self.finalize_activation(component, destination)
 
     def _gc_managed_versions(
         self,
@@ -782,6 +851,7 @@ class ComponentUpdater:
         if _is_link_like(component_root):
             return
         active_version: str | None = None
+        previous_path: Path | None = None
         if self.active_path is not None and self.active_path.is_file():
             try:
                 payload = json.loads(
@@ -790,6 +860,12 @@ class ComponentUpdater:
                 active_version = str(
                     payload["components"][component]["version"],
                 )
+                previous = payload.get("previous_runtime_components", {}).get(
+                    component,
+                    {},
+                )
+                if previous.get("path"):
+                    previous_path = Path(previous["path"]).resolve()
             except (
                 OSError,
                 KeyError,
@@ -817,6 +893,8 @@ class ComponentUpdater:
             if active_version is not None and child.name == active_version:
                 continue
             if child.resolve() == keep_resolved:
+                continue
+            if previous_path is not None and child.resolve() == previous_path:
                 continue
             candidates.append((parsed, child))
         # Newest first; keep ``retain`` of the newest, delete the rest.
@@ -1190,6 +1268,18 @@ class ComponentUpdater:
     ) -> None:
         if self.active_path is None:
             return
+        record = {"version": version, "path": str(destination)}
+        if component in self.directory_components:
+            if component == "backend":
+                record["kind"] = "python"
+            anchor, _ = self.bundled_directory_record("backend")
+            if anchor is not None:
+                record["bundled_backend_version"] = anchor
+            if self.release_version is not None:
+                record["release_version"] = self.release_version
+            if self._directory_records is not None:
+                self._directory_records[component] = record
+                return
         self.active_path.parent.mkdir(parents=True, exist_ok=True)
         with _active_file_lock(self.active_path):
             payload: dict[str, Any] = {
@@ -1209,13 +1299,9 @@ class ComponentUpdater:
                         and existing.get("target") == self.target
                         and isinstance(existing.get("components"), dict)
                     ):
-                        payload["components"].update(existing["components"])
+                        payload.update(existing)
                 except (OSError, json.JSONDecodeError, TypeError):
                     pass
-            record = {
-                "version": version,
-                "path": str(destination),
-            }
             # Runtime execution type is derived from the fixed client
             # allowlist, never from remote Manifest input.
             if (
@@ -1568,6 +1654,35 @@ class ComponentUpdater:
             raise ComponentUpdateError(
                 "component manifest schema or target mismatch",
             )
+        protocol = manifest.get("protocol_version", 1)
+        if type(protocol) is not int or protocol not in {1, 2}:
+            raise ComponentUpdateError(
+                "unsupported component update protocol",
+                reason="core_below_minimum",
+            )
+        if (
+            protocol == 2
+            and os.environ.get("QWENPAW_TAURI_RESOURCE_DIR")
+            and os.environ.get("QWENPAW_COMPONENT_PROTOCOL") != "2"
+        ):
+            raise ComponentUpdateError(
+                "desktop component protocol requires a host upgrade",
+                reason="core_below_minimum",
+            )
+        self.release_version = None
+        if (
+            protocol == 2
+            and os.environ.get("QWENPAW_TAURI_RESOURCE_DIR")
+            and manifest.get("host_fingerprint")
+            != os.environ.get("QWENPAW_HOST_FINGERPRINT")
+        ):
+            raise ComponentUpdateError(
+                "desktop host changed; full update required",
+                reason="core_below_minimum",
+            )
+        if manifest.get("release_version") is not None:
+            _version(manifest["release_version"], "release_version")
+            self.release_version = str(manifest["release_version"])
         if _version(self.core_version, "core_version") < _version(
             manifest["core_min_version"],
             "core_min_version",
@@ -1721,6 +1836,22 @@ class ComponentUpdater:
             )
         )
         if directory_component:
+            if self.release_version is not None:
+                bundled_release, _ = self.bundled_directory_record("backend")
+                active_record = (
+                    self._read_active_payload()
+                    .get("components", {})
+                    .get(component, {})
+                )
+                for release in (
+                    bundled_release,
+                    active_record.get("release_version"),
+                ):
+                    if release and _version(
+                        release,
+                        "installed release",
+                    ) > _version(self.release_version, "release_version"):
+                        return None
             active_version, active_directory = self.active_directory_record(
                 component,
             )
@@ -1740,10 +1871,23 @@ class ComponentUpdater:
                     and installed.absolute() == bundled_directory.absolute()
                 ):
                     current_version = bundled_version
-            if current_version is not None and _version(
-                current_version,
-                "installed version",
-            ) >= _version(target_version, "target version"):
+            if current_version == target_version:
+                return None
+            content_addressed = (
+                component == "python-packages"
+                and current_version is not None
+                and current_version.startswith("0+sha.")
+                and target_version.startswith("0+sha.")
+            )
+            if (
+                not content_addressed
+                and current_version is not None
+                and _version(
+                    current_version,
+                    "installed version",
+                )
+                >= _version(target_version, "target version")
+            ):
                 return None
         elif installed is not None and (installed / "plugin.json").is_file():
             data = json.loads(
@@ -1857,7 +2001,6 @@ class ComponentUpdater:
         ) as temp:
             staged = Path(temp) / "component"
             base_inventory = _inventory(base, plan.preserve_paths)
-            copy_tree(base, staged)
             with zipfile.ZipFile(archive) as bundle:
                 infos = bundle.infolist()
                 max_members, max_bytes, max_member_bytes = _archive_limits(
@@ -1905,13 +2048,28 @@ class ComponentUpdater:
                     raise ComponentUpdateError(
                         "delta metadata does not match plan",
                     )
-                if not _content_matches(
-                    base_inventory,
-                    delta.get("base_files", {}),
+                expected_base = delta.get("base_files", {})
+                # Older installers predate the distribution-only descriptor.
+                # Permit precisely that missing metadata file on a known
+                # bundled base; every executable/data byte remains verified.
+                _, bundled_base = self.bundled_directory_record(plan.component)
+                if (
+                    directory_component
+                    and bundled_base is not None
+                    and bundled_base.resolve() == base
+                    and "component.json" not in base_inventory
+                    and isinstance(expected_base, dict)
                 ):
+                    expected_base = {
+                        k: v
+                        for k, v in expected_base.items()
+                        if k != "component.json"
+                    }
+                if not _content_matches(base_inventory, expected_base):
                     raise ComponentUpdateError(
                         "delta base inventory does not match base",
                     )
+                copy_tree(base, staged)
                 deletes = delta.get("delete", [])
                 adds = delta.get("add", [])
                 replaces = delta.get("replace", [])
@@ -1944,6 +2102,13 @@ class ComponentUpdater:
                             f"delete target is not a file: {relative}",
                         )
                     candidate.unlink(missing_ok=True)
+                    parent = candidate.parent
+                    while parent != staged and parent.is_dir():
+                        try:
+                            parent.rmdir()
+                        except OSError:
+                            break  # Never remove remaining or preserved files.
+                        parent = parent.parent
                 for relative in [*adds, *replaces]:
                     relative = _safe_path(relative)
                     if _is_preserved(relative, plan.preserve_paths):

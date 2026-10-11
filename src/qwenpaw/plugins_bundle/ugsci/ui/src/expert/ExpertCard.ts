@@ -1063,6 +1063,18 @@ export function ExpertTemplateModal({
         "AGENTS.md",
         template.system_prompt,
       );
+      if (template.profile_prompt) {
+        await writeKnowledgeFile(
+          agentRef.id,
+          "PROFILE.md",
+          template.profile_prompt,
+        );
+        await writeKnowledgeFile(
+          agentRef.id,
+          "BOOTSTRAP.md",
+          "# 初始化已完成\n\n此专家已按 UGSci 模板设置身份、风格与领域技能。直接执行 AGENTS.md 的领域工作流程，无需再次询问称呼、风格或初始化设置。\n",
+        );
+      }
 
       // 3. Update agent config with approval level
       const config = await fetchAgentConfig(agentRef.id);

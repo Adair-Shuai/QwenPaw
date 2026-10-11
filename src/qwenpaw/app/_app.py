@@ -519,11 +519,32 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "updated": [],
                     "errors": [{"component": "startup", "error": str(exc)}],
                 }
-                logger.warning("Component startup updates skipped", exc_info=True)
+                logger.warning(
+                    "Component startup updates skipped",
+                    exc_info=True,
+                )
+
+            if app.state.component_updates_status.get(
+                "runtime_restart_required",
+            ):
+                server = getattr(app.state, "uvicorn_server", None)
+                if (
+                    server is not None
+                    and os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2"
+                ):
+                    print("QWENPAW_COMPONENTS_RESTART", flush=True)
+                    server.should_exit = True
+                    return
+                raise RuntimeError(
+                    "runtime update requires a desktop backend restart",
+                )
 
             component_updated_ids = {
                 str(result["component"])
-                for result in app.state.component_updates_status.get("updated", [])
+                for result in app.state.component_updates_status.get(
+                    "updated",
+                    [],
+                )
                 if isinstance(result, dict)
                 and result.get("updated")
                 and result.get("component")
@@ -622,13 +643,15 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                         continue
                     except Exception:
                         logger.exception(
-                            "Failed to finalize bundled plugin %s", plugin_id,
+                            "Failed to finalize bundled plugin %s",
+                            plugin_id,
                         )
                 bundled_health_errors.append(plugin_id)
                 if plugin_loader.get_loaded_plugin(plugin_id) is not None:
                     try:
                         await plugin_loader.unload_plugin(
-                            plugin_id, delete_files=False,
+                            plugin_id,
+                            delete_files=False,
                         )
                     except Exception:
                         logger.warning(
@@ -645,7 +668,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     )
                 except Exception:
                     logger.exception(
-                        "Failed to roll back bundled plugin %s", plugin_id,
+                        "Failed to roll back bundled plugin %s",
+                        plugin_id,
                     )
                     continue
                 if restored:
@@ -657,7 +681,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     if previous is not None:
                         try:
                             await plugin_loader.load_plugin(
-                                previous[0], previous[1],
+                                previous[0],
+                                previous[1],
                                 plugin_configs.get(plugin_id),
                             )
                         except Exception:
@@ -682,22 +707,26 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                 ):
                                     continue
                                 destination = resolve_component_destination(
-                                    get_plugins_dir(), component_id,
+                                    get_plugins_dir(),
+                                    component_id,
                                 )
                                 record = loaded_plugins.get(component_id)
                                 if record and record.enabled:
                                     recovery_service.updater.finalize_activation(
-                                        component_id, destination,
+                                        component_id,
+                                        destination,
                                     )
                                     continue
                                 plugin_loader._loaded_plugins.pop(
-                                    component_id, None,
+                                    component_id,
+                                    None,
                                 )
                                 plugin_loader.registry.unregister_plugin(
                                     component_id,
                                 )
                                 recovery_service.updater.rollback_activation(
-                                    component_id, destination,
+                                    component_id,
+                                    destination,
                                 )
                                 if destination.is_dir():
                                     discovered = {
@@ -709,7 +738,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                     previous = discovered.get(component_id)
                                     if previous is not None:
                                         await plugin_loader.load_plugin(
-                                            previous[0], previous[1],
+                                            previous[0],
+                                            previous[1],
                                             plugin_configs.get(component_id),
                                         )
                         finally:
@@ -726,7 +756,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "error": (
                     "Bundled plugin load failed: "
                     + ", ".join(bundled_health_errors)
-                    if bundled_health_errors else None
+                    if bundled_health_errors
+                    else None
                 ),
             }
 
@@ -874,7 +905,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "error": (
                     "Bundled plugin load failed: "
                     + ", ".join(bundled_health_errors)
-                    if bundled_health_errors else None
+                    if bundled_health_errors
+                    else None
                 ),
             }
 
@@ -1118,7 +1150,10 @@ def _fetch_update_version(*, desktop: bool) -> str:
     global _desktop_version_cache, _core_version_cache  # pylint: disable=global-statement
     cached = _desktop_version_cache if desktop else _core_version_cache
     now = time.monotonic()
-    if cached is not None and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS:
+    if (
+        cached is not None
+        and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS
+    ):
         return cached[0]
 
     lock = _desktop_version_lock if desktop else _core_version_lock
@@ -1126,11 +1161,15 @@ def _fetch_update_version(*, desktop: bool) -> str:
     with lock:
         cached = _desktop_version_cache if desktop else _core_version_cache
         now = time.monotonic()
-        if cached is not None and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS:
+        if (
+            cached is not None
+            and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS
+        ):
             return cached[0]
         try:
             request = urllib.request.Request(
-                url, headers={"User-Agent": f"UGSci/{__version__}"},
+                url,
+                headers={"User-Agent": f"UGSci/{__version__}"},
             )
             with urllib.request.urlopen(request, timeout=10) as response:
                 raw = response.read(_DESKTOP_VERSION_MAX_BYTES + 1)
@@ -1145,12 +1184,18 @@ def _fetch_update_version(*, desktop: bool) -> str:
         except urllib.error.HTTPError as exc:
             if not desktop and exc.code == 404:
                 return ""
-            if cached is not None and now - cached[1] <= _DESKTOP_VERSION_STALE_TTL_SECONDS:
+            if (
+                cached is not None
+                and now - cached[1] <= _DESKTOP_VERSION_STALE_TTL_SECONDS
+            ):
                 logger.warning("Using stale update version cache for %s", url)
                 return cached[0]
             raise
         except (OSError, UnicodeDecodeError, ValueError):
-            if cached is not None and now - cached[1] <= _DESKTOP_VERSION_STALE_TTL_SECONDS:
+            if (
+                cached is not None
+                and now - cached[1] <= _DESKTOP_VERSION_STALE_TTL_SECONDS
+            ):
                 logger.warning("Using stale update version cache for %s", url)
                 return cached[0]
             raise
@@ -1169,7 +1214,8 @@ def get_latest_desktop_version():
         return {"version": _fetch_update_version(desktop=True)}
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(
-            status_code=502, detail="Desktop update manifest is unavailable",
+            status_code=502,
+            detail="Desktop update manifest is unavailable",
         ) from exc
 
 
@@ -1180,7 +1226,8 @@ def get_latest_core_version():
         return {"version": _fetch_update_version(desktop=False)}
     except (OSError, UnicodeDecodeError, ValueError) as exc:
         raise HTTPException(
-            status_code=502, detail="Core update manifest is unavailable",
+            status_code=502,
+            detail="Core update manifest is unavailable",
         ) from exc
 
 

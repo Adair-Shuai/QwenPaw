@@ -1,4 +1,4 @@
-# The deterministic UGSci core has no mandatory third-party dependency.
-# Optional Providers are listed in requirements-optional.txt and are probed
-# at runtime.  Keeping them out of this file prevents plugin startup from
-# downloading large scientific stacks or failing when the network is offline.
+# Lightweight readers for the built-in storage production data workbench.
+xlrd>=2.0.1,<3
+openpyxl>=3.1,<4
+# Scientific Providers remain optional in requirements-optional.txt.
