@@ -167,7 +167,7 @@ class TestAgentStatsDatePicker:
                 '[class*="dateRange"], [class*="DateRange"]'
             ).first
 
-            assert date_picker.is_visible(timeout=5000), "Date range picker should be visible"
+            expect(date_picker).to_be_visible(timeout=30000)
             logger.info("Date range picker is visible")
 
             # 3. Verify default date (click to view panel)
@@ -181,7 +181,7 @@ class TestAgentStatsDatePicker:
                 '.qwenpaw-picker-panel, '
                 '[class*="pickerPanel"], [class*="calendar"]'
             ).first
-            assert panel.is_visible(timeout=3000), "Calendar panel should pop up after clicking date picker"
+            expect(panel).to_be_visible(timeout=5000)
             logger.info("Calendar panel expanded")
 
             # Verify panel contains date content (prefer date cells, fallback to other rendering)
@@ -508,7 +508,7 @@ class TestAgentStatsDateFilter:
                 '[class*="datePicker"], [class*="DatePicker"]'
             ).first
 
-            assert date_picker.is_visible(timeout=5000), "Date picker should be visible"
+            expect(date_picker).to_be_visible(timeout=30000)
 
             # 3. Record current card data
             log_test_step("3. Record current card data")
