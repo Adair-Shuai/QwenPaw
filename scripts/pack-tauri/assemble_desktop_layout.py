@@ -131,7 +131,15 @@ def assemble(
     )
     _move(python_source, python_destination)
     _move(node_source, node_destination)
-    _move(java_source, java_destination)
+    java_home = java_source / "Contents" / "Home"
+    if (java_home / "bin" / "java").is_file():
+        # Component metadata cannot live beside Contents in a signed bundle.
+        # The launcher already supports a flat JRE home; retain all runtime
+        # files while leaving the vendor's outer bundle shell out of the layer.
+        _move(java_home, java_destination)
+        remove_tree(java_source)
+    else:
+        _move(java_source, java_destination)
     _move(office_source, office_destination)
     _move(neqsim_source, neqsim_destination)
     python_version = _release_version(

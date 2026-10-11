@@ -253,6 +253,42 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
         assert b"\r\n" not in (bundled / "component.json").read_bytes()
 
 
+def test_assemble_flattens_macos_java_home_for_component_signing(tmp_path):
+    helper = _load()
+    binaries = tmp_path / "src-tauri" / "binaries"
+    for name, marker, version in (
+        ("python-runtime", ".python-runtime-version", "python-3.12-sha"),
+        ("node-runtime", ".node-runtime-version", "node-22-sha"),
+        ("java-runtime", ".java-runtime-version", "java-21-sha"),
+    ):
+        source = binaries / name
+        source.mkdir(parents=True)
+        (source / marker).write_text(version, encoding="utf-8")
+    java_home = binaries / "java-runtime/Contents/Home"
+    (java_home / "bin").mkdir(parents=True)
+    (java_home / "bin/java").write_bytes(b"java")
+    (java_home / "lib").mkdir()
+    (java_home / "lib/libjvm.dylib").write_bytes(b"native runtime")
+    (java_home / "legal").mkdir()
+    (java_home / "legal/LICENSE").write_text("license", encoding="utf-8")
+    (binaries / "officecli").mkdir()
+    (binaries / "neqsim").mkdir()
+    (binaries / "app/backend/2.2.2b7/qwenpaw").mkdir(parents=True)
+    (binaries / "runtimes/python-packages/lockhash").mkdir(parents=True)
+    helper_root = binaries / "tools/computer-use/2.2.2b7"
+    helper_root.mkdir(parents=True)
+    (helper_root / "qwenpaw-computer-use-helper").write_bytes(b"helper")
+
+    active = helper.assemble(binaries, "2.2.2b7", "macos-aarch64")
+    java_root = binaries.parent / active["components"]["java-runtime"]["path"]
+    assert (java_root / "bin/java").read_bytes() == b"java"
+    assert (java_root / "lib/libjvm.dylib").read_bytes() == b"native runtime"
+    assert (java_root / "legal/LICENSE").read_text() == "license"
+    assert (java_root / "component.json").is_file()
+    assert not (java_root / "Contents").exists()
+    assert not (binaries / "java-runtime").exists()
+
+
 def test_assemble_materializes_internal_runtime_symlinks(tmp_path):
     if sys.platform == "win32":
         return
