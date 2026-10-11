@@ -1,0 +1,41 @@
+name: Renew Component Metadata
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: oss-production-metadata
+  cancel-in-progress: false
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [windows-x86_64, macos-aarch64]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fbbf8fc9a0bc89615c556e5350c819fd620ea759
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet packaging cryptography
+      - name: Configure OSS
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil config -e "$OSS_ENDPOINT" -i "$OSS_ACCESS_KEY_ID" -k "$OSS_ACCESS_KEY_SECRET" -L CH
+      - name: Verify release and renew signed pointer
+        env:
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+          COMPONENT_SIGNING_PUBLIC_KEY: ${{ secrets.COMPONENT_SIGNING_PUBLIC_KEY }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: python scripts/pack-tauri/renew_component_pointer.py --bucket "$OSS_BUCKET" --target '${{ matrix.target }}'
