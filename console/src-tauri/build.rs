@@ -21,6 +21,8 @@ fn main() {
         "console/src-tauri/capabilities",
         "console/src-tauri/permissions",
         "scripts/pack/assets/icon.svg",
+        "scripts/pack-tauri/windows_update_assistant.cs",
+        "scripts/pack-tauri/build_windows_update_assistant.ps1",
         "console/src-tauri/nsis",
         "console/src-tauri/nsis-hooks.nsh",
         "console/src-tauri/nsis-languages",

@@ -34,6 +34,29 @@ from check_component_pointer_promotion import _load_verified
 from component_host import host_fingerprint
 
 
+def test_windows_update_assistant_changes_require_a_host_upgrade(tmp_path):
+    from component_host import HOST_INPUTS
+
+    inputs = (
+        "scripts/pack-tauri/windows_update_assistant.cs",
+        "scripts/pack-tauri/build_windows_update_assistant.ps1",
+    )
+    rust_build = (ROOT / "console/src-tauri/build.rs").read_text(
+        encoding="utf-8"
+    )
+    for name in inputs:
+        assert name in HOST_INPUTS
+        assert f'"{name}"' in rust_build
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"original\r\n")
+        before = host_fingerprint(tmp_path)
+        path.write_bytes(b"original\n")
+        assert host_fingerprint(tmp_path) == before
+        path.write_bytes(b"updated helper\n")
+        assert host_fingerprint(tmp_path) != before
+
+
 def keys():
     private = Ed25519PrivateKey.generate()
     public = base64.b64encode(
