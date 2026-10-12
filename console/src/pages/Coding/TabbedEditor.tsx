@@ -1488,6 +1488,7 @@ export default function TabbedEditor({
               root={activeTab.workspaceRoot}
               projectDirOverride={projectDirOverride}
               workspaceBacked={activeTab.source === "workspace"}
+              artifact={activeTab.artifact}
             />
           ) : (
             <pre className={styles.textPreview}>{activeRenderedContent}</pre>

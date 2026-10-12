@@ -1,13 +1,7 @@
-import { Layout, message, Tooltip, Dropdown } from "antd";
+import { Layout, message, Dropdown } from "antd";
 import type { MenuProps } from "antd";
 import { Button } from "@agentscope-ai/design";
-import {
-  FileText as FileTextOutlined,
-  Github as GithubOutlined,
-  Info as InfoCircleOutlined,
-  CirclePlay as PlayCircleOutlined,
-  BookOpen as ReadOutlined,
-} from "lucide-react";
+import { Info as InfoCircleOutlined } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import LanguageSwitcher, {
   LANGUAGE_LIST,
@@ -16,15 +10,7 @@ import ThemeToggleButton from "../components/ThemeToggleButton";
 import { useTheme } from "../contexts/ThemeContext";
 import { Slot } from "../plugins/registry/Slot";
 import { applyLanguagePreference } from "../utils/languagePreference";
-import { openExternalLink } from "../utils/openExternalLink";
 import AppBrand from "./AppBrand";
-import {
-  GITHUB_URL,
-  getDocsUrl,
-  getFaqUrl,
-  getFeatureDemosUrl,
-  getReleaseNotesUrl,
-} from "./constants";
 import styles from "./index.module.less";
 
 const { Header: AntHeader } = Layout;
@@ -32,46 +18,6 @@ const { Header: AntHeader } = Layout;
 export default function Header({ showBrand = false }: { showBrand?: boolean }) {
   const { t, i18n } = useTranslation();
   const { setThemeMode } = useTheme();
-
-  const handleNavClick = (url: string) => {
-    openExternalLink(url);
-  };
-
-  const resourcesMenuItems: MenuProps["items"] = [
-    {
-      key: "tutorial",
-      icon: <ReadOutlined size="1em" />,
-      label: t("header.tutorial"),
-      onClick: () => handleNavClick(getDocsUrl(i18n.language)),
-    },
-    {
-      key: "featureDemos",
-      icon: <PlayCircleOutlined size="1em" />,
-      label: t("header.featureDemos"),
-      onClick: () => handleNavClick(getFeatureDemosUrl(i18n.language)),
-    },
-    {
-      key: "changelog",
-      icon: <FileTextOutlined size="1em" />,
-      label: t("header.changelog"),
-      onClick: () => handleNavClick(getReleaseNotesUrl(i18n.language)),
-    },
-    {
-      key: "faq",
-      icon: <InfoCircleOutlined size="1em" />,
-      label: t("header.faq"),
-      onClick: () => handleNavClick(getFaqUrl(i18n.language)),
-    },
-  ];
-
-  const githubMenuItem: MenuProps["items"] = [
-    {
-      key: "github",
-      icon: <GithubOutlined size="1em" />,
-      label: t("header.github"),
-      onClick: () => handleNavClick(GITHUB_URL),
-    },
-  ];
 
   const mobileMenuItems: MenuProps["items"] = [
     {
@@ -109,9 +55,6 @@ export default function Header({ showBrand = false }: { showBrand?: boolean }) {
         },
       ],
     },
-    { type: "divider" },
-    ...resourcesMenuItems,
-    ...githubMenuItem,
   ];
 
   return (
@@ -129,26 +72,6 @@ export default function Header({ showBrand = false }: { showBrand?: boolean }) {
         {showBrand && (
           <>
             <div className={styles.utilityGroup}>
-              {resourcesMenuItems.length > 0 && (
-                <Dropdown menu={{ items: resourcesMenuItems }}>
-                  <Button
-                    type="text"
-                    className={styles.hideOnMobile}
-                    aria-label={t("header.resources")}
-                    icon={<ReadOutlined size={17} />}
-                  />
-                </Dropdown>
-              )}
-              <Tooltip title={t("header.github")}>
-                <Button
-                  type="text"
-                  icon={<GithubOutlined size="1em" />}
-                  onClick={() => handleNavClick(GITHUB_URL)}
-                  className={styles.hideOnMobile}
-                  aria-label={t("header.github")}
-                />
-              </Tooltip>
-              <div className={styles.headerDivider} />
               <span className={styles.hideOnMobile}>
                 <LanguageSwitcher />
               </span>

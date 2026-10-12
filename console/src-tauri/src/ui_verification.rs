@@ -19,7 +19,7 @@ const REQUIRED_ROUTES: [(&str, &str); 3] = [
     ("/ugsci-market", "ugsci"),
 ];
 const REQUIRED_SLOT_SOURCE: &str = "ugsci_research";
-const REQUIRED_SLOT_ID: &str = "research-mode-toggle";
+const REQUIRED_SLOT_ID: &str = "research-artifact-panel";
 
 #[derive(Debug, Deserialize, Serialize)]
 pub struct UiMenuSnapshot {
@@ -252,7 +252,7 @@ mod tests {
         );
         assert_eq!(
             payload["missing_slot"],
-            "ugsci_research:research-mode-toggle"
+            "ugsci_research:research-artifact-panel"
         );
     }
 }

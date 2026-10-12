@@ -17,10 +17,10 @@
   min-width: 0;
   min-height: max(64px, calc(64px * var(--app-font-scale)));
   height: auto;
-  padding: 10px 14px;
+  padding: 0 8px 0 0;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 4px;
   color: inherit;
   border: 1px solid var(--app-border);
   border-radius: 10px;
@@ -37,6 +37,46 @@
     outline: 2px solid var(--app-selected-border);
     outline-offset: 2px;
   }
+}
+
+.previewButton {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  align-self: stretch;
+  padding: 10px 6px 10px 14px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.revealButton {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 6px;
+  color: var(--app-text-secondary);
+  background: transparent;
+  cursor: pointer;
+
+  &:hover {
+    color: var(--app-info-text);
+    background: var(--app-info-bg);
+  }
+}
+
+.previewButton:focus-visible,
+.revealButton:focus-visible {
+  outline: 2px solid var(--app-selected-border);
+  outline-offset: -2px;
 }
 
 .icon {

@@ -50,7 +50,7 @@ def _write_report(path: Path, *, nonce: str, complete: bool = True) -> None:
                         "name": "header.left",
                         "kind": "fill",
                         "source": "ugsci_research",
-                        "id": "research-mode-toggle",
+                        "id": "research-artifact-panel",
                     },
                 ],
             },

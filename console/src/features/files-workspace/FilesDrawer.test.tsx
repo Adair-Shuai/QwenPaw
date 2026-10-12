@@ -1,11 +1,43 @@
 import { renderWithProviders } from "@/test/common_setup";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
 import { workspaceApi } from "../../api/modules/workspace";
 import type { FileTarget } from "./types";
 import { useBackgroundTasksStore } from "../../stores/backgroundTasksStore";
+import { useCodingTabsStore } from "../../stores/codingTabsStore";
+
+vi.mock("../../monacoSetup", () => ({}));
+vi.mock("@monaco-editor/react", () => ({
+  default: ({
+    value,
+    language,
+    options,
+    onChange,
+  }: {
+    value: string;
+    language?: string;
+    options?: { readOnly?: boolean };
+    onChange?: (value: string) => void;
+  }) => (
+    <textarea
+      data-testid="monaco-editor"
+      aria-label="Code editor"
+      data-language={language}
+      readOnly={options?.readOnly}
+      value={value}
+      onChange={(event) => onChange?.(event.target.value)}
+    />
+  ),
+  DiffEditor: () => <div />,
+}));
+vi.mock("../../hooks/useWorkspaceWatch", () => ({
+  useWorkspaceWatch: vi.fn(),
+}));
+vi.mock("./FilesNavigator", () => ({
+  default: () => <div data-testid="file-navigator">File navigator</div>,
+}));
 
 const clipboardMocks = vi.hoisted(() => ({
   copyText: vi.fn().mockResolvedValue(undefined),
@@ -58,6 +90,7 @@ vi.mock("../../api/modules/workspace", () => ({
     loadFile: vi.fn().mockResolvedValue({
       content: "profile content",
     }),
+    revealInFileManager: vi.fn().mockResolvedValue(undefined),
   },
 }));
 
@@ -66,6 +99,141 @@ vi.mock("../../utils/downloadFileFromUrl", () => ({
 }));
 
 describe("FilesDrawer", () => {
+  // Keep this at the drawer boundary: replacing FilesWorkspace with a single
+  // preview must fail even if TabbedEditor's own unit tests still pass.
+  it.each([
+    ["example.py", "python"],
+    ["example.ts", "typescript"],
+    ["example.js", "javascript"],
+  ])(
+    "uses the built-in code surface and preserves edits across preview toggles: %s",
+    async (path, language) => {
+      renderWithProviders(
+        <FilesDrawer
+          state={{
+            kind: "preview",
+            target: { source: "workspace", path, root: "project" },
+            trigger: null,
+          }}
+          dispatch={vi.fn()}
+          scope={{
+            kind: "session",
+            agentId: "default",
+            sessionId: "code-session",
+          }}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("monaco-editor")).toHaveAttribute("readonly"),
+      );
+      const preview = screen.getByTestId("monaco-editor");
+      expect(preview).toHaveAttribute("readonly");
+      expect(preview).toHaveAttribute("data-language", language);
+      expect(preview).toHaveValue("hello");
+      fireEvent.click(
+        screen.getByRole("button", { name: /^(Edit|编辑|files\.edit)$/i }),
+      );
+      const editor = await screen.findByTestId("monaco-editor");
+      expect(editor).not.toHaveAttribute("readonly");
+      fireEvent.change(editor, { target: { value: "updated code" } });
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: /^(Preview|预览|files\.preview)$/i,
+        }),
+      );
+      await waitFor(() =>
+        expect(screen.getByTestId("monaco-editor")).toHaveAttribute("readonly"),
+      );
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("updated code");
+      fireEvent.click(
+        screen.getByRole("button", { name: /^(Edit|编辑|files\.edit)$/i }),
+      );
+      expect(screen.getByTestId("monaco-editor")).toHaveValue("updated code");
+    },
+  );
+
+  it("retains file tabs across preview expansion and reveals the active file", async () => {
+    const dispatch = vi.fn();
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "tabs-session",
+      chatId: "tabs-chat",
+    };
+    const first = {
+      source: "workspace" as const,
+      path: "first.txt",
+      root: "project" as const,
+    };
+    const second = { ...first, path: "second.txt" };
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "preview", target: first, trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /first.txt/ });
+    expect(screen.queryByTestId("file-navigator")).not.toBeInTheDocument();
+    rerender(
+      <FilesDrawer
+        state={{ kind: "preview", target: second, trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /second.txt/ });
+    expect(screen.getByRole("tab", { name: /first.txt/ })).toBeInTheDocument();
+    rerender(
+      <FilesDrawer
+        state={{ kind: "workspace", target: second, trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    fireEvent.click(screen.getByRole("tab", { name: /first.txt/ }));
+    rerender(
+      <FilesDrawer
+        state={{ kind: "preview", target: second, trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: /first.txt/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("tab", { name: /second.txt/ })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+    expect(screen.getByRole("tab", { name: /first.txt/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /在文件夹中打开|Reveal in Folder|revealInFolder/i,
+      }),
+    );
+    await waitFor(() =>
+      expect(workspaceApi.revealInFileManager).toHaveBeenCalledWith(
+        "first.txt",
+        "tabs-chat",
+        "project",
+        undefined,
+      ),
+    );
+  });
+
+  beforeEach(() => {
+    useCodingTabsStore.setState({
+      tabsByAgent: {},
+      activeTabByAgent: {},
+      diffsByAgent: {},
+    });
+    vi.clearAllMocks();
+  });
   afterEach(() => {
     vi.restoreAllMocks();
     localStorage.clear();
@@ -166,9 +334,7 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(
-      await screen.findByRole("complementary", { name: "Artifact 区域" }),
-    ).toBeInTheDocument();
+    expect(await screen.findByTestId("file-navigator")).toBeInTheDocument();
     expect(
       screen.queryByText((content) =>
         ["工作区", "Workspace", "files.workspace"].includes(content),
@@ -176,7 +342,7 @@ describe("FilesDrawer", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("shows generated files as Artifacts without a directory tree", async () => {
+  it("restores the directory navigator in expanded workspace", async () => {
     const dispatch = vi.fn();
     renderWithProviders(
       <FilesDrawer
@@ -186,20 +352,8 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(
-      await screen.findByRole("button", { name: "report.docx" }),
-    ).toBeInTheDocument();
-    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "report.docx" }));
-    expect(dispatch).toHaveBeenCalledWith({
-      type: "OPEN_PREVIEW",
-      target: {
-        source: "workspace",
-        path: "output/report.docx",
-        root: "workspace",
-      },
-      trigger: null,
-    });
+    expect(await screen.findByTestId("file-navigator")).toBeInTheDocument();
+    expect(dispatch).not.toHaveBeenCalled();
   });
 
   it("keeps Preview open after inserting a file reference", async () => {
@@ -237,7 +391,9 @@ describe("FilesDrawer", () => {
     );
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox")).toHaveValue("@ hello.txt ");
+      expect(screen.getByRole("textbox", { name: "" })).toHaveValue(
+        "@ hello.txt ",
+      );
     });
     expect(dispatch).not.toHaveBeenCalledWith({ type: "CLOSE" });
     expect(
@@ -406,7 +562,7 @@ describe("FilesDrawer", () => {
     );
   });
 
-  it("does not show download button for profile source (#4670)", async () => {
+  it("supports exporting a profile tab through the restored editor", async () => {
     renderWithProviders(
       <FilesDrawer
         state={{
@@ -433,11 +589,10 @@ describe("FilesDrawer", () => {
       ),
     );
 
-    // Profile source should not have a download button
     expect(
-      screen.queryByRole("button", {
+      await screen.findByRole("button", {
         name: /files\.download|Download|下载/i,
       }),
-    ).not.toBeInTheDocument();
+    ).toBeInTheDocument();
   });
 });

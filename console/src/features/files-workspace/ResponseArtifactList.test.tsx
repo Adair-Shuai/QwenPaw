@@ -126,6 +126,37 @@ function failedSendFile(path: string, serializedOutput = false) {
 }
 
 describe("ResponseArtifactList", () => {
+  it.each([
+    ["reports/Report #3.pdf", "reports/Report #3.pdf", "workspace"],
+    ["C:\\work\\示例文档.docx", "C:/work/示例文档.docx", "attachment"],
+    ["~/reports/summary.md", "~/reports/summary.md", "attachment"],
+  ])(
+    "reveals the card's file without opening preview: %s",
+    (path, expectedPath, source) => {
+      const reveal = vi.fn();
+      const preview = vi.fn();
+      window.addEventListener("qwenpaw:reveal-file", reveal);
+      window.addEventListener("qwenpaw:open-file-preview", preview);
+      try {
+        const { container } = render(
+          <ResponseArtifactList messages={successfulFileIo(path)} />,
+        );
+        fireEvent.click(
+          screen.getByRole("button", { name: /workspace.revealInFileManager/ }),
+        );
+        expect(reveal).toHaveBeenCalledTimes(1);
+        expect(
+          (reveal.mock.calls[0][0] as CustomEvent).detail.target,
+        ).toMatchObject({ path: expectedPath, source });
+        expect(preview).not.toHaveBeenCalled();
+        expect(container.querySelector("button button")).toBeNull();
+      } finally {
+        window.removeEventListener("qwenpaw:reveal-file", reveal);
+        window.removeEventListener("qwenpaw:open-file-preview", preview);
+      }
+    },
+  );
+
   it("shares completed response files with the right Artifact shelf", async () => {
     const { rerender } = render(
       <>

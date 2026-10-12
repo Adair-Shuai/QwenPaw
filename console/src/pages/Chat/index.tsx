@@ -45,6 +45,7 @@ import { AnimatePresence } from "motion/react";
 import i18n from "../../i18n";
 import { useLocation, useNavigate } from "react-router-dom";
 import sessionApi from "./sessionApi";
+import { revealWorkspacePath } from "../../features/files-workspace/workspaceReveal";
 import {
   getDraftStorageKey,
   parseDraft,
@@ -1404,6 +1405,7 @@ export default function ChatPage() {
     });
   }, [currentSessionFilesScopeKey, dispatchFilesDrawer]);
   const loopAvailableModes = useLoopStore((state) => state.availableModes);
+  const { message } = useAppMessage();
 
   useEffect(() => {
     const openPreview = (event: Event) => {
@@ -1421,6 +1423,27 @@ export default function ChatPage() {
     return () =>
       window.removeEventListener("qwenpaw:open-file-preview", openPreview);
   }, [dispatchFilesDrawer]);
+
+  useEffect(() => {
+    const revealFile = (event: Event) => {
+      const target = (event as CustomEvent<{ target: FileTarget }>).detail
+        ?.target;
+      if (!target || !["workspace", "attachment"].includes(target.source))
+        return;
+      void revealWorkspacePath({
+        path: target.path,
+        root: target.root ?? "project",
+        chatId: backendChatId,
+        projectDirOverride: backendChatId
+          ? undefined
+          : pendingProjectDir ?? undefined,
+      }).catch(() =>
+        message.error(t("workspace.revealFailed", "无法在文件管理器中打开")),
+      );
+    };
+    window.addEventListener("qwenpaw:reveal-file", revealFile);
+    return () => window.removeEventListener("qwenpaw:reveal-file", revealFile);
+  }, [backendChatId, pendingProjectDir, message, t]);
 
   useEffect(() => {
     const openCompute = () => {
@@ -2050,7 +2073,6 @@ export default function ChatPage() {
     scheduleReadyQueue();
     return sdkSessionAdapter.subscribe(scheduleReadyQueue);
   }, [sdkSessionAdapter, scheduleNextSend]);
-  const { message } = useAppMessage();
   const { approvals, setApprovals } = useApprovalContext();
   const [approvalRequests, setApprovalRequests] = useState<
     Map<string, ApprovalMessageData>

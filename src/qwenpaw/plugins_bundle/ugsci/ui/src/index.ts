@@ -13,7 +13,6 @@
  */
 
 import { getHost } from "./core/runtime";
-import { isSimpleMode } from "./core/shared";
 import { ExpertCenterPage } from "./expert/ExpertCenterPage";
 import {
   LegacySkillsCenterPage,
@@ -118,7 +117,6 @@ function buildPlugin() {
       : undefined,
     route: "ugsci.experts",
     order: 5,
-    visible: () => isSimpleMode(),
   });
 
   QP.route.add(PLUGIN_ID, {
@@ -154,7 +152,6 @@ function buildPlugin() {
       : undefined,
     route: "ugsci.tools-skills",
     order: 6,
-    visible: () => isSimpleMode(),
   });
 
   // Compatibility routes: keep old bookmarks and in-plugin links working,
@@ -195,55 +192,18 @@ function buildPlugin() {
       "ugsci.tools-skills",
       "ugsci.storage-dynamics",
     ]);
-    console.info("[ugsci] Registered 2 items for simple-mode visibility");
+    console.info(
+      "[ugsci] Registered 3 entries for legacy simple-mode compatibility",
+    );
   } else {
     console.warn(
       "[ugsci] window.QwenPaw.sidebar.registerSimpleModeItems not available — items will not appear in simple mode",
     );
   }
 
-  // ── Simplify Navigation (Simple Mode only) ────────────────────────────
-  // In simple mode, hide these built-in items because the unified UGSci
-  // centers provide a simpler, domain-focused alternative.
-  // Note: core.mcp is NOT hidden — the native /mcp page is reused for
-  // full MCP management (edit, OAuth, access policy) and is linked from
-  // the UGSci Capability Center's MCP tab.
-  // In full mode, ALL built-in items remain visible (original QwenPaw).
-  // Items are hidden (not removed) via menu.replace with visible callback.
-
-  const hideItems = [
-    "core.skills",
-    "core.tools",
-    "core.acp",
-    "core.agent-config",
-    "core.agent-stats",
-    "core.skill-pool",
-  ];
-
-  for (const itemId of hideItems) {
-    // Try agent-scoped location
-    try {
-      const snapshot = QP.menu.snapshot("primary.agentScoped");
-      const existing = snapshot.find((i: any) => i.id === itemId);
-      if (existing) {
-        QP.menu.replace(PLUGIN_ID, itemId, {
-          ...existing,
-          visible: () => !isSimpleMode(),
-        });
-      }
-    } catch {}
-    // Also try settings location (for skill-pool)
-    try {
-      const snapshot = QP.menu.snapshot("primary.settings");
-      const existing = snapshot.find((i: any) => i.id === itemId);
-      if (existing) {
-        QP.menu.replace(PLUGIN_ID, itemId, {
-          ...existing,
-          visible: () => !isSimpleMode(),
-        });
-      }
-    } catch {}
-  }
+  // The host owns sidebar visibility through its per-entry preferences.
+  // Do not gate plugin entries or override core entries using the retired
+  // qwenpaw_sidebar_mode key: fresh desktop profiles never have that key.
 
   // The standalone oilgas-visualization plugin was removed, but an already
   // running host/HMR session can still retain its old menu registration.
@@ -266,7 +226,7 @@ function buildPlugin() {
   registerVisualizationFrontend(QP, React);
 
   console.info(
-    "[ugsci] Plugin registered: unified Tools & Skills center + compatibility routes, simple-mode navigation active",
+    "[ugsci] Plugin registered: unified Tools & Skills center + compatibility routes, host-managed navigation",
   );
 }
 

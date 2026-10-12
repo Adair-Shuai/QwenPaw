@@ -2,10 +2,8 @@
  * UGSci Research — Frontend plugin for QwenPaw
  *
  * Registers:
- * 1. Research Mode toggle (parallel to Coding Mode toggle)
- * 2. Artifact panel — displays figures, plots, tables from research sessions
- * 3. Custom tool cards for research tools (literature_search, web_search, data_analysis)
- * 4. Research dashboard route
+ * 1. Artifact panel — displays figures, plots, tables from research sessions
+ * 2. Custom tool cards for research tools (literature_search, web_search, data_analysis)
  *
  * Uses window.QwenPaw host API for all registrations.
  */
@@ -53,7 +51,9 @@ function _buildUrl(pathWithoutApi: string): string {
   }
   // Fallback: construct manually
   const base = host?.apiBaseUrl || "";
-  const p = pathWithoutApi.startsWith("/") ? pathWithoutApi : `/${pathWithoutApi}`;
+  const p = pathWithoutApi.startsWith("/")
+    ? pathWithoutApi
+    : `/${pathWithoutApi}`;
   return `${base}/api${p}`;
 }
 
@@ -75,7 +75,9 @@ function _apiFetch(url: string, init?: RequestInit): Promise<Response> {
 
 async function getResearchMode(agentId: string): Promise<ResearchModeConfig> {
   try {
-    const url = _buildUrl(`/ugsci-research/research-mode/${encodeURIComponent(agentId)}`);
+    const url = _buildUrl(
+      `/ugsci-research/research-mode/${encodeURIComponent(agentId)}`,
+    );
     const resp = await _apiFetch(url);
     if (!resp.ok) return { enabled: false, domain: "general" };
     const data = await resp.json();
@@ -99,7 +101,9 @@ async function setResearchMode(
       enabled,
       domain: domain || current.domain || "general",
     };
-    const url = _buildUrl(`/ugsci-research/research-mode/${encodeURIComponent(agentId)}`);
+    const url = _buildUrl(
+      `/ugsci-research/research-mode/${encodeURIComponent(agentId)}`,
+    );
     const resp = await _apiFetch(url, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
@@ -266,7 +270,9 @@ function ResearchModeHeaderToggle() {
     document.documentElement?.classList?.contains("dark-mode");
 
   if (isDark) {
-    buttonStyle.border = enabled ? "1.5px solid #22d3ee" : "1.5px solid rgba(255,255,255,0.15)";
+    buttonStyle.border = enabled
+      ? "1.5px solid #22d3ee"
+      : "1.5px solid rgba(255,255,255,0.15)";
     buttonStyle.color = enabled ? "#22d3ee" : "rgba(255,255,255,0.85)";
     buttonStyle.background = enabled ? "rgba(6,182,212,0.18)" : "transparent";
   }
@@ -289,7 +295,15 @@ function ResearchModeHeaderToggle() {
   // Popover content: domain selector + dashboard link
   const popoverContent = React.createElement(
     "div",
-    { style: { display: "flex", flexDirection: "column", gap: 12, padding: 4, minWidth: 160 } },
+    {
+      style: {
+        display: "flex",
+        flexDirection: "column",
+        gap: 12,
+        padding: 4,
+        minWidth: 160,
+      },
+    },
     React.createElement(
       "div",
       null,
@@ -330,7 +344,9 @@ function ResearchModeHeaderToggle() {
     React.createElement(
       Tooltip,
       {
-        title: enabled ? `研究模式已开启 (${domain}) — 点击关闭` : "研究模式 — 点击启用",
+        title: enabled
+          ? `研究模式已开启 (${domain}) — 点击关闭`
+          : "研究模式 — 点击启用",
         placement: "bottom",
       },
       React.createElement(
@@ -342,8 +358,16 @@ function ResearchModeHeaderToggle() {
           disabled: loading,
           "aria-label": "Toggle Research Mode",
         },
-        React.createElement("span", { style: { display: "flex", alignItems: "center" } }, "🔬"),
-        React.createElement("span", { style: { lineHeight: 1 } }, enabled ? `研究 ${domain}` : "研究"),
+        React.createElement(
+          "span",
+          { style: { display: "flex", alignItems: "center" } },
+          "🔬",
+        ),
+        React.createElement(
+          "span",
+          { style: { lineHeight: 1 } },
+          enabled ? `研究 ${domain}` : "研究",
+        ),
       ),
     ),
     React.createElement(
@@ -351,7 +375,11 @@ function ResearchModeHeaderToggle() {
       { content: popoverContent, placement: "bottomRight", trigger: "click" },
       React.createElement(
         "button",
-        { type: "button", style: settingsBtnStyle, "aria-label": "Research settings" },
+        {
+          type: "button",
+          style: settingsBtnStyle,
+          "aria-label": "Research settings",
+        },
         React.createElement(SettingOutlined, { style: { fontSize: 12 } }),
       ),
     ),
@@ -657,7 +685,10 @@ function ArtifactPanelWrapper() {
         if (mounted) setRmEnabled(rm.enabled);
       });
     }, 3000);
-    return () => { mounted = false; clearInterval(interval); };
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
   }, [agentId]);
 
   if (!rmEnabled) return null;
@@ -673,7 +704,9 @@ function ArtifactPanelWrapper() {
     flexDirection: "column" as const,
   };
 
-  const isDark = typeof document !== "undefined" && document.documentElement?.classList?.contains("dark-mode");
+  const isDark =
+    typeof document !== "undefined" &&
+    document.documentElement?.classList?.contains("dark-mode");
   if (isDark) {
     panelStyle.borderLeft = "1px solid rgba(255,255,255,0.08)";
     (panelStyle as any).background = "#1e1e1e";
@@ -719,7 +752,12 @@ function ArtifactPanelWrapper() {
         { title: "Collapse", placement: "left" },
         React.createElement(
           Button,
-          { type: "text", size: "small", onClick: () => setCollapsed(true), style: { fontSize: 12 } },
+          {
+            type: "text",
+            size: "small",
+            onClick: () => setCollapsed(true),
+            style: { fontSize: 12 },
+          },
           "\u2039",
         ),
       ),
@@ -856,12 +894,23 @@ function ResearchDashboardPage() {
       null,
       React.createElement(
         "div",
-        { style: { display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 } },
+        {
+          style: {
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            flexWrap: "wrap",
+            gap: 12,
+          },
+        },
         React.createElement(
           Space,
           { align: "center", size: 12 },
           React.createElement(ExperimentOutlined, {
-            style: { fontSize: 28, color: rmConfig.enabled ? "#06b6d4" : "#999" },
+            style: {
+              fontSize: 28,
+              color: rmConfig.enabled ? "#06b6d4" : "#999",
+            },
           }),
           React.createElement(
             "div",
@@ -1079,7 +1128,11 @@ function ResearchDashboardPage() {
                   React.createElement(
                     Space,
                     null,
-                    React.createElement("span", { style: { fontSize: 18 } }, tool.icon),
+                    React.createElement(
+                      "span",
+                      { style: { fontSize: 18 } },
+                      tool.icon,
+                    ),
                     React.createElement(
                       "div",
                       null,
@@ -1136,7 +1189,11 @@ function ResearchDashboardPage() {
                   React.createElement(
                     Space,
                     null,
-                    React.createElement("span", { style: { fontSize: 18 } }, skill.icon),
+                    React.createElement(
+                      "span",
+                      { style: { fontSize: 18 } },
+                      skill.icon,
+                    ),
                     React.createElement(
                       "div",
                       null,
@@ -1430,36 +1487,8 @@ function buildPlugin() {
   const React = getHost().React;
   const PLUGIN_ID = "ugsci_research";
 
-  // ── 1. Register Research Dashboard Route (accessible from toggle) ──
-  QP.route.add(PLUGIN_ID, {
-    id: "ugsci_research.dashboard",
-    path: "/ugsci-research-dashboard",
-    component: ResearchDashboardPage,
-  });
-
-  // ── 2. Register Research Mode Toggle in Header (parallel to Coding Mode) ──
-  // The host header renders `header.right`; older builds exposed a separate
-  // `header.toggle` slot, which is no longer mounted and made this control
-  // invisible. Keep the toggle in the live right-side header slot.
-  if (QP.slot?.fill) {
-    QP.slot.fill(
-      PLUGIN_ID,
-      "header.right",
-      () => React.createElement(ResearchModeHeaderToggle),
-      { id: "research-mode-toggle", order: 5 },
-    );
-    console.info("[ugsci-research] Registered header.right toggle");
-  } else {
-    // Fallback: use chat.rightHeader to place the toggle in the chat header
-    if (QP.chat?.rightHeader?.add) {
-      QP.chat.rightHeader.add(
-        PLUGIN_ID,
-        React.createElement(ResearchModeHeaderToggle),
-        { id: "research-mode-toggle", order: 5 },
-      );
-      console.info("[ugsci-research] Registered chat.rightHeader toggle");
-    }
-  }
+  // Research mode and its settings entry are retired. Keep the existing
+  // tool-result renderers and artifact presentation for historical messages.
 
   // ── 3. Register Custom Tool Cards ───────────────────────────────────
   if (QP.registerToolRender) {
@@ -1483,14 +1512,19 @@ function buildPlugin() {
   //    window, parallel to the chat messages, instead of being appended
   //    after each response.
   if (QP.slot?.fill) {
-    QP.slot.fill(PLUGIN_ID, "chat.rightPanel", () =>
-      React.createElement(ArtifactPanelWrapper),
+    QP.slot.fill(
+      PLUGIN_ID,
+      "chat.rightPanel",
+      () => React.createElement(ArtifactPanelWrapper),
+      { id: "research-artifact-panel" },
     );
-    console.info("[ugsci-research] Registered artifact panel in chat.rightPanel slot");
+    console.info(
+      "[ugsci-research] Registered artifact panel in chat.rightPanel slot",
+    );
   }
 
   console.info(
-    "[ugsci-research] Plugin registered: dashboard route + tool cards + toggle + artifact panel",
+    "[ugsci-research] Plugin registered: tool cards + artifact panel",
   );
 }
 

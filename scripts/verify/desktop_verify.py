@@ -71,7 +71,7 @@ REQUIRED_UI_ROUTES = {
     "/ugsci-market": "ugsci",
 }
 REQUIRED_UI_SLOT_SOURCE = "ugsci_research"
-REQUIRED_UI_SLOT_ID = "research-mode-toggle"
+REQUIRED_UI_SLOT_ID = "research-artifact-panel"
 
 # The verify step runs under timeout-minutes: 10 in desktop-build.yml, so
 # self-report at 540s: a hung driver dumps every thread's stack and exits
@@ -322,7 +322,7 @@ def verify_native_ui_report(
             ):
                 print(
                     "PASS  native Tauri webview plugin registration -> "
-                    "Run Center, FlowForge, UGSci, research-mode-toggle",
+                    "Run Center, FlowForge, UGSci, research-artifact-panel",
                 )
                 return
             last_detail = (

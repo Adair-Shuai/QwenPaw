@@ -1,4 +1,4 @@
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../api/modules/chat";
@@ -326,36 +326,58 @@ export default function ResponseArtifactList({
         {visibleArtifacts.map((artifact) => {
           const change = artifactChange(artifact.toolName);
           return (
-            <button
-              key={artifact.id}
-              type="button"
-              className={styles.file}
-              title={artifact.path}
-              aria-label={`${artifact.name} ${artifact.path}`}
-              onClick={(event) => {
-                event.preventDefault();
-                event.stopPropagation();
-                window.dispatchEvent(
-                  new CustomEvent("qwenpaw:open-file-preview", {
-                    detail: {
-                      target: artifact.target,
-                      trigger: event.currentTarget,
-                    },
-                  }),
-                );
-              }}
-            >
-              <i className={styles.icon} aria-hidden="true">
-                <FileGlyph name={artifact.name} size={20} />
-              </i>
-              <span className={styles.details}>
-                <strong>{artifact.name}</strong>
-                <small title={artifact.path}>{artifact.path}</small>
-              </span>
-              <small className={styles.status} data-change={change}>
-                {t(CHANGE_LABEL_KEY[change])}
-              </small>
-            </button>
+            <div key={artifact.id} className={styles.file}>
+              <button
+                key={artifact.id}
+                type="button"
+                className={styles.previewButton}
+                title={artifact.path}
+                aria-label={`${artifact.name} ${artifact.path}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  window.dispatchEvent(
+                    new CustomEvent("qwenpaw:open-file-preview", {
+                      detail: {
+                        target: artifact.target,
+                        trigger: event.currentTarget,
+                      },
+                    }),
+                  );
+                }}
+              >
+                <i className={styles.icon} aria-hidden="true">
+                  <FileGlyph name={artifact.name} size={20} />
+                </i>
+                <span className={styles.details}>
+                  <strong>{artifact.name}</strong>
+                  <small title={artifact.path}>{artifact.path}</small>
+                </span>
+                <small className={styles.status} data-change={change}>
+                  {t(CHANGE_LABEL_KEY[change])}
+                </small>
+              </button>
+              <button
+                type="button"
+                className={styles.revealButton}
+                title={t("workspace.revealInFileManager", "在文件夹中打开")}
+                aria-label={`${t(
+                  "workspace.revealInFileManager",
+                  "在文件夹中打开",
+                )}：${artifact.name}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  window.dispatchEvent(
+                    new CustomEvent("qwenpaw:reveal-file", {
+                      detail: { target: artifact.target },
+                    }),
+                  );
+                }}
+              >
+                <FolderOpen size={16} aria-hidden="true" />
+              </button>
+            </div>
           );
         })}
       </div>

@@ -26,6 +26,10 @@ import {
   type FilesWorkspaceScope,
 } from "./filesWorkspaceScope";
 import { toProjectRelativePath } from "./internalFileLinks";
+import {
+  revealTargetFromEditorTab,
+  revealWorkspacePath,
+} from "./workspaceReveal";
 import type {
   FileMetadata,
   FileTarget,
@@ -37,6 +41,8 @@ import styles from "./FilesWorkspace.module.less";
 interface FilesWorkspaceProps {
   initialTarget?: FileTarget;
   scope: FilesWorkspaceScope;
+  hideNavigator?: boolean;
+  onActiveTargetChange?: (target: FileTarget | undefined) => void;
 }
 
 function inferPreviewKind(
@@ -61,6 +67,8 @@ function inferPreviewKind(
 export default function FilesWorkspace({
   initialTarget,
   scope,
+  hideNavigator = false,
+  onActiveTargetChange,
 }: FilesWorkspaceProps) {
   const { t } = useTranslation();
   const { codingMode } = useCodingMode();
@@ -101,6 +109,20 @@ export default function FilesWorkspace({
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const targetsByTab = useRef(new Map<string, FileTarget>());
+  useEffect(() => {
+    const tab = tabs.find((item) => item.path === activeTabPath);
+    onActiveTargetChange?.(
+      tab
+        ? targetsByTab.current.get(tab.path) ?? {
+            source: tab.source ?? "workspace",
+            path: tab.displayPath ?? tab.path,
+            root: tab.workspaceRoot,
+            artifactUrl: tab.artifactUrl,
+            artifact: tab.artifact,
+          }
+        : undefined,
+    );
+  }, [activeTabPath, tabs, onActiveTargetChange]);
   const navigationSequence = useRef(0);
   const [loadError, setLoadError] = useState("");
   const [memoryGraphRoot, setMemoryGraphRoot] =
@@ -208,6 +230,14 @@ export default function FilesWorkspace({
 
   const loadTarget = useCallback(
     async (target: FileTarget) => {
+      if (target.artifact?.textContent !== undefined) {
+        return {
+          content: target.artifact.textContent,
+          previewKind: "text" as const,
+          readOnly: true,
+          etag: "",
+        };
+      }
       if (target.source === "profile") {
         return {
           content: (await workspaceApi.loadFile(target.path, agentId)).content,
@@ -299,6 +329,7 @@ export default function FilesWorkspace({
           path: separator < 0 ? tabPath : tabPath.slice(separator + 2),
           root: tab?.workspaceRoot,
           artifactUrl: tab?.artifactUrl,
+          artifact: tab?.artifact,
         } satisfies FileTarget);
       return loadTarget(target);
     },
@@ -443,6 +474,7 @@ export default function FilesWorkspace({
           source: resolvedTarget.source,
           workspaceRoot: resolvedTarget.root,
           artifactUrl: resolvedTarget.artifactUrl,
+          artifact: resolvedTarget.artifact,
           previewKind: loaded.previewKind,
           readOnly: loaded.readOnly,
           etag: loaded.etag,
@@ -531,7 +563,7 @@ export default function FilesWorkspace({
         tabs.length === 0 && !memoryGraphRoot ? styles.workspaceEmpty : ""
       }`}
     >
-      {codingMode && (
+      {codingMode && !hideNavigator && (
         <nav className={styles.activityRail} aria-label={t("files.workspace")}>
           <button
             type="button"
@@ -553,31 +585,32 @@ export default function FilesWorkspace({
           ) : null}
         </nav>
       )}
-      {activity === "files" || !codingMode ? (
-        <FilesNavigator
-          key={`${scopeKey}:${projectDirOverride ?? ""}:${directoryRevision}`}
-          scope={effectiveScope}
-          selectedPath={
-            tabs.find((tab) => tab.path === activeTabPath)?.displayPath ??
-            activeTabPath
-          }
-          onSelect={(target) => {
-            setMemoryGraphRoot(null);
-            void openTarget(target);
-          }}
-          activeMemoryGraphRoot={memoryGraphRoot}
-          onShowMemoryGraph={(root) => setMemoryGraphRoot(root)}
-          onShowFiles={() => setMemoryGraphRoot(null)}
-        />
-      ) : (
-        <aside className={styles.sourcePanel}>
-          <header>
-            <GitBranch size={15} />
-            <span>{t("files.sourceControl")}</span>
-          </header>
-          <GitPanel chatId={chatId} />
-        </aside>
-      )}
+      {!hideNavigator &&
+        (activity === "files" || !codingMode ? (
+          <FilesNavigator
+            key={`${scopeKey}:${projectDirOverride ?? ""}:${directoryRevision}`}
+            scope={effectiveScope}
+            selectedPath={
+              tabs.find((tab) => tab.path === activeTabPath)?.displayPath ??
+              activeTabPath
+            }
+            onSelect={(target) => {
+              setMemoryGraphRoot(null);
+              void openTarget(target);
+            }}
+            activeMemoryGraphRoot={memoryGraphRoot}
+            onShowMemoryGraph={(root) => setMemoryGraphRoot(root)}
+            onShowFiles={() => setMemoryGraphRoot(null)}
+          />
+        ) : (
+          <aside className={styles.sourcePanel}>
+            <header>
+              <GitBranch size={15} />
+              <span>{t("files.sourceControl")}</span>
+            </header>
+            <GitPanel chatId={chatId} />
+          </aside>
+        ))}
       <main className={styles.documentSurface}>
         {loadError && (
           <div className={styles.loadError} role="alert">
@@ -613,6 +646,16 @@ export default function FilesWorkspace({
             chatId={chatId}
             projectDirOverride={projectDirOverride}
             navigation={editorNavigation}
+            onRevealFile={async (path) => {
+              const tab = tabsRef.current.find((item) => item.path === path);
+              const target = revealTargetFromEditorTab(tab, path);
+              if (target)
+                await revealWorkspacePath({
+                  ...target,
+                  chatId,
+                  projectDirOverride,
+                });
+            }}
             onDownloadFile={async (path) => {
               const tab = tabsRef.current.find((item) => item.path === path);
               const separator = path.indexOf("::");

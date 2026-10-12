@@ -20,9 +20,12 @@ export interface PluginUiVerificationSnapshot {
 
 export function buildPluginUiVerificationSnapshot(): PluginUiVerificationSnapshot {
   return {
-    // snapshot() without a location includes every current winner, including
-    // entries whose visible() callback is false in the current route.
-    menus: menuRegistry.snapshot().map((menu) => ({ id: menu.id })),
+    // Registration alone is insufficient: a stale visibility predicate can
+    // hide a successfully loaded plugin on a fresh desktop profile.
+    menus: menuRegistry
+      .snapshot()
+      .filter((menu) => menu.visible?.() !== false)
+      .map((menu) => ({ id: menu.id })),
     routes: routeRegistry.snapshot().map((route) => ({
       id: route.id,
       path: route.path,

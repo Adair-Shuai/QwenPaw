@@ -41,7 +41,7 @@ describe("native plugin UI verification report", () => {
       component: () => null,
     });
     slotRegistry.fill("ugsci_research", "header.left", () => null, {
-      id: "research-mode-toggle",
+      id: "research-artifact-panel",
       order: 5,
     });
 
@@ -49,10 +49,7 @@ describe("native plugin UI verification report", () => {
 
     expect(mocks.invoke).toHaveBeenCalledWith("report_ui_verification", {
       snapshot: {
-        menus: [
-          { id: "ugsci.experts" },
-          { id: "ugsci.tools-skills" },
-        ],
+        menus: [{ id: "ugsci.experts" }, { id: "ugsci.tools-skills" }],
         routes: [
           { id: "ugsci.market", path: "/ugsci-market", source: "ugsci" },
         ],
@@ -61,7 +58,7 @@ describe("native plugin UI verification report", () => {
             name: "header.left",
             kind: "fill",
             source: "ugsci_research",
-            id: "research-mode-toggle",
+            id: "research-artifact-panel",
             order: 5,
           },
         ],

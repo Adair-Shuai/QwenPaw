@@ -24,6 +24,7 @@ import type {
   WorkspaceRoot,
 } from "../features/files-workspace/types";
 import { isProjectRoot } from "../features/files-workspace/directorySources";
+import type { WorkspaceArtifact } from "../components/Workspace/types";
 
 export const ORIGINAL_DIFF_SIZE_LIMIT = 256 * 1024;
 export const AGENT_FILES_TABS_STORAGE_KEY = "qwenpaw-agent-files-tabs";
@@ -39,6 +40,7 @@ export interface EditorTab {
   source?: FileSource;
   workspaceRoot?: WorkspaceRoot;
   artifactUrl?: string;
+  artifact?: WorkspaceArtifact;
   previewKind?: "text" | "image" | "pdf" | "csv" | "binary";
   preferredView?: "text" | "visualization";
   readOnly?: boolean;
