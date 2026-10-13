@@ -32,6 +32,11 @@ jobs:
         run: |
           node --check plugins/apps/wellbore-pressure/ui/index.js
           node --test plugins/apps/wellbore-pressure/tests/model.test.mjs
+      - name: Check Python source formatting
+        run: |
+          python -m pip install 'black==23.3.0' 'flake8==6.1.0'
+          black --check --line-length 79 plugins/apps/wellbore-pressure/backend/main.py plugins/apps/wellbore-pressure/tests/make_reference.py scripts/pack/publish_wellbore_pressure.py
+          flake8 plugins/apps/wellbore-pressure/backend/main.py plugins/apps/wellbore-pressure/tests/make_reference.py
       - name: Package only the wellbore application
         run: |
           python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/wellbore-pressure --metadata-out dist/wellbore-pressure/index.json --cdn-prefix /files/plugins --only wellbore-pressure

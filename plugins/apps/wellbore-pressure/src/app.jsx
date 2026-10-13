@@ -58,7 +58,7 @@ function App(){
       {compare&&<div className="wp-note">{comparison.model} 井底压力为 <strong>{fmt(comparison.bottom)} MPa</strong>，与当前模型相差 {fmt(comparison.bottom-result.bottom)} MPa。</div>}
       <div className="wp-panel"><div className="wp-panel-head"><div><h2><span className="wp-index">03</span>计算结果表</h2><div className="wp-sub">每 100 m 插值采样，保留井底终点</div></div><div className="wp-toolbar"><button disabled={stale} onClick={csv}>导出 CSV</button><button disabled={stale||exporting} onClick={excel}>{exporting?'正在导出…':'导出 Excel'}</button></div></div><div className="wp-table-wrap"><table><thead><tr>{['井深 / m','压力 / MPa','温度 / K','密度 / kg·m⁻³','流速 / m·s⁻¹','摩阻 / kPa·m⁻¹','重力 / kPa·m⁻¹'].map(t=><th key={t}>{t}</th>)}</tr></thead><tbody>{result.samples.map((r,i)=><tr key={i}>{r.map((v,j)=><td key={j}>{fmt(v,j===0?1:j===2?2:4)}</td>)}</tr>)}</tbody></table></div></div>
       <div className="wp-panel"><details className="wp-model-details"><summary>计算依据与适用范围</summary><p>本应用移植自提供的井筒压力程序，保留其单气相采气算法、气体常数与自动网格规则。模型名称沿用原程序，均为简化实现。</p><p><code>pᵢ₊₁ = pᵢ + [ρg sinθ + fρv²/(2D)] Δs</code></p><p>温度沿井筒长度按 0.025 K/m 递增；摩尔质量固定为 0.018 kg/mol；压缩因子 Z 为常数。黏度按 1.2×10⁻⁵(T/300)^0.7 Pa·s 计算。网格数为 max(300, round(井筒长度))。</p><p>原代码的 Beggs-Brill 选项仅在摩阻系数上乘以 1 + 0.08 sin²θ，不是完整多相流相关式；Orkiszewski 选项同样仅计算单气相的重力与摩阻。没有液相、加速压降、注气方向或储层耦合求解。</p><p>这里的“井深”指沿井筒长度，角度相对水平面。倾斜井仍保留原程序沿井筒长度的温度梯度定义。极端高速工况需要另行校核这些简化假设。</p></details></div>
-    </section></div><footer className="wp-foot"><span>UGSci / 井筒压力计算 · v1.0.0</span><span>计算和文件导出均在本机完成</span></footer>
+    </section></div><footer className="wp-foot"><span>UGSci / 井筒压力计算 · v1.0.1</span><span>计算和文件导出均在本机完成</span></footer>
   </div></main>;
 }
 Q.registerRoutes('wellbore-pressure',[{path:'/apps/wellbore-pressure',component:App,label:'井筒压力计算',icon:'↧'}]);

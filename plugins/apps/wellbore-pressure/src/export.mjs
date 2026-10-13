@@ -4,7 +4,7 @@ const xml = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>'
 export async function workbook(result, comparison) {
   const zip = new JSZip();
   const sheets = [
-    ['计算说明与参数', [['井筒压力计算', '1.0.0'], ['计算模型', result.model + '（原程序单气相简化版）'], ['计算网格数', result.steps], ...FIELDS.map(([k,l,u]) => [l,result.params[k],u]), ['井底压力',result.bottom,'MPa'], ['重力累计压差',result.gravity,'MPa'], ['摩阻累计压差',result.friction,'MPa'], ['角度定义','水平为0°，垂直为90°'], ['适用范围','单气相采气；不含多相流、注气方向和加速项'], ['温度梯度',0.025,'K/m'], ['气体摩尔质量',0.018,'kg/mol'], ['标况压力',101325,'Pa'], ['标况温度',293.15,'K'], ['计算方法','显式逐段积分；气体黏度=1.2e-5×(T/300)^0.7 Pa·s；常Z'], ['Beggs-Brill差异','原代码仅将摩阻乘以1+0.08×sin²(θ)']]],
+    ['计算说明与参数', [['井筒压力计算', '1.0.1'], ['计算模型', result.model + '（原程序单气相简化版）'], ['计算网格数', result.steps], ...FIELDS.map(([k,l,u]) => [l,result.params[k],u]), ['井底压力',result.bottom,'MPa'], ['重力累计压差',result.gravity,'MPa'], ['摩阻累计压差',result.friction,'MPa'], ['角度定义','水平为0°，垂直为90°'], ['适用范围','单气相采气；不含多相流、注气方向和加速项'], ['温度梯度',0.025,'K/m'], ['气体摩尔质量',0.018,'kg/mol'], ['标况压力',101325,'Pa'], ['标况温度',293.15,'K'], ['计算方法','显式逐段积分；气体黏度=1.2e-5×(T/300)^0.7 Pa·s；常Z'], ['Beggs-Brill差异','原代码仅将摩阻乘以1+0.08×sin²(θ)']]],
     ['100m采样', [COLUMNS, ...result.samples]],
     ['完整剖面', [COLUMNS, ...result.rows]],
     ['模型对比', [['井深_m', `${result.model}_MPa`, `${comparison.model}_MPa`], ...result.samples.map((r,i) => [r[0],r[1],comparison.samples[i][1]])]],

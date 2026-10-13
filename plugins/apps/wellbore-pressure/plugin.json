@@ -1,16 +1,34 @@
 {
   "id": "wellbore-pressure",
   "name": "井筒压力计算",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "app",
   "description": "独立的单气相井筒压力计算工具：两种原程序简化模型、沿井深压力对比、100 m采样及Excel导出。",
   "author": "UGSci Team",
-  "entry": { "backend": "backend/main.py", "frontend": "ui/index.js" },
-  "qwenpaw_version": { "min": "2.1.0", "max": "2.3.0" },
-  "pack_exclude": ["src", "tests", "build.mjs"],
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.1.0",
+    "max": "2.3.0"
+  },
+  "pack_exclude": [
+    "src",
+    "tests",
+    "build.mjs"
+  ],
   "meta": {
-    "pawapp": { "icon": "⛽", "category": "research", "entry_page": "/apps/wellbore-pressure", "launch_scope": "page" },
-    "permissions": { "chat": false, "storage": false },
+    "pawapp": {
+      "icon": "⛽",
+      "category": "research",
+      "entry_page": "/apps/wellbore-pressure",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": false,
+      "storage": false
+    },
     "settings": []
   }
 }
