@@ -1,0 +1,53 @@
+name: Wellbore Pressure App Release
+
+on:
+  push:
+    branches: [codex/wellbore-pressure-app]
+    paths:
+      - 'plugins/apps/wellbore-pressure/**'
+      - '.github/workflows/wellbore-pressure-release.yml'
+      - 'scripts/pack/publish_wellbore_pressure.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oss-production-metadata
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Verify calculations against original Python reference
+        run: |
+          node --check plugins/apps/wellbore-pressure/ui/index.js
+          node --test plugins/apps/wellbore-pressure/tests/model.test.mjs
+      - name: Package only the wellbore application
+        run: |
+          python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/wellbore-pressure --metadata-out dist/wellbore-pressure/index.json --cdn-prefix /files/plugins --only wellbore-pressure
+      - name: Install publication SDK
+        run: python -m pip install 'oss2==2.19.1'
+      - name: Publish immutable app and verify before updating catalog
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: python scripts/pack/publish_wellbore_pressure.py
+      - name: Preserve release evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wellbore-pressure-release
+          path: dist/wellbore-pressure/
+          retention-days: 30
