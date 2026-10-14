@@ -1,6 +1,6 @@
 # 井筒压力计算 · UGSci 小应用
 
-版本 1.0.1。入口：UGSci → 应用 → 井筒压力计算。
+版本 1.1.0。入口：UGSci → 应用 → 井筒压力计算。
 
 独立移植用户提供的 `代码(1).zip` 中井筒压力计算功能，使用 UGSci 宿主 React；无需额外安装科学计算依赖、TensorFlow 或外部服务；Python 入口仅负责向 UGSci 注册应用。
 
@@ -9,7 +9,7 @@
 1. 填写井口绝对压力、温度、沿井筒长度、内径、标况产气量、粗糙度、与水平面夹角及压缩因子。
 2. 选择模型，点击“计算井筒压力”。打开时显示默认示例计算结果。
 3. 查看井底流压、压差、重力与摩阻贡献；可对比两种模型及切换压力、温度、流速曲线。
-4. Excel 导出包括说明与参数、100 m 采样、完整剖面和模型对比四个工作表。CSV 导出当前模型采样结果。方案保存/载入使用 JSON。
+4. Excel 导出包括说明与参数、可调间隔采样、完整剖面、模型对比、计算检查；固定基准后另含工况对比工作表。CSV 导出当前模型采样结果。方案保存/载入使用 JSON。
 
 修改参数后原结果标为待更新，禁止导出，防止新参数与旧结果混淆。无效参数会明确报错。
 
@@ -24,10 +24,19 @@
 ## 构建与核验
 
 在仓库根目录运行 `node plugins/apps/wellbore-pressure/build.mjs`（使用 console 已安装的 esbuild 与 JSZip）。
-`node --test plugins/apps/wellbore-pressure/tests/model.test.mjs` 核对原 Python 算法参考输出、边界、守恒、采样及无效输入。
+`node --test plugins/apps/wellbore-pressure/tests/*.test.mjs` 核对原 Python 算法参考输出、边界、守恒、采样及无效输入。
 
 `ui/index.js` 是可直接安装的编译入口。通过仓库 `scripts/pack/generate_plugin_metadata.py --only wellbore-pressure` 打包。
 
 ## 第三方
 
 Excel 文件使用 JSZip 3.10.1 生成，MIT 许可，Copyright (c) 2009-2016 Stuart Knightley, David Duponchel, Franz Buchinger, António Afonso。许可证保存在 THIRD_PARTY_LICENSES.txt。
+
+## 1.1.0 新增
+
+- 25/50/100/200/500 m采样，井底终点保留；CSV与Excel同步。
+- 井深滑块查询，曲线支持SVG导出。
+- 原程序网格及2倍加密网格，每次计算再用2倍网格核对井底压力。
+- 固定当前工况后修改参数，可查看井底压力、摩阻与参数差异；基准仅保留于当前页面。
+- 参数逐项错误提示、首个错误自动定位，附摄氏温度和毫米内径换算。
+- 新方案记录网格和采样设置，兼容1.0.1方案。
