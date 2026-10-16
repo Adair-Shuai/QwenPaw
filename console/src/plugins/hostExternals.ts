@@ -68,6 +68,7 @@ export interface HostExternals {
   useCurrentSession?: () => HostSessionInfo | null;
   getSelectedAgentId?: () => string;
   getCurrentSessionId?: () => string | null;
+  openExternalLink?: (url: string) => void;
   fetch?: (path: string, init?: RequestInit) => Promise<Response>;
   /** Set the currently selected agent (updates Zustand store + persists). */
   setSelectedAgent?: (agentId: string) => void;

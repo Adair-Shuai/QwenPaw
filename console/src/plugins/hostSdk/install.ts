@@ -34,7 +34,6 @@ import type {
   Disposable,
   OverrideRecord,
   WelcomeRenderFn,
-  WelcomeRenderProps,
 } from "../registry/types";
 import {
   useHostTheme,
@@ -45,6 +44,9 @@ import {
   getCurrentSessionId,
 } from "./hooks";
 import { hostFetch } from "./fetch";
+import { submitChat } from "./chatSubmit";
+import { openExternalLink } from "../../utils/openExternalLink";
+import type { ChatCodeBlockProps, ChatSubmitInput } from "../types/qwenpaw";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Plugin-facing API surface
@@ -82,6 +84,12 @@ interface ResponsePartial {
 export interface QwenPawChatNamespace {
   /** Submit a user message through the host chat runtime. */
   sendMessage(content: string): boolean;
+  codeBlock(
+    pluginId: string,
+    language: string,
+    component: React.ComponentType<ChatCodeBlockProps>,
+  ): Disposable;
+  submit(pluginId: string, input: ChatSubmitInput): Promise<void>;
   welcome: {
     set(pluginId: string, partial: WelcomePartial): Disposable;
     render(pluginId: string, value: WelcomeRenderValue): Disposable;
@@ -228,8 +236,7 @@ function normalizeWelcomeRender(value: WelcomeRenderValue): WelcomeRenderFn {
   }
   // Plain ReactNode → wrap into a fn that ignores SDK props and renders the node verbatim.
   const node = value;
-  return ((_props: WelcomeRenderProps) =>
-    node as unknown as React.ReactElement) as WelcomeRenderFn;
+  return (() => node as unknown as React.ReactElement) as WelcomeRenderFn;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -376,6 +383,9 @@ function makeChatNamespace(): QwenPawChatNamespace {
         return chatExtensions.addResponseAppend(pid, item);
       },
     },
+    codeBlock: (pid, language, component) =>
+      chatExtensions.addCodeBlock(pid, language, component),
+    submit: submitChat,
     toolRender: (pid, toolName, render) => {
       // Mirror to existing pluginSystem.toolRenderers so the old
       // `usePlugins().toolRenderConfig` path keeps producing the same map.
@@ -434,4 +444,5 @@ export function installHostSdk(): void {
   if (!ns.workspace) {
     ns.workspace = createWorkspaceNamespace();
   }
+  if (!host.openExternalLink) host.openExternalLink = openExternalLink;
 }

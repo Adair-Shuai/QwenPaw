@@ -92,14 +92,9 @@ def _frontend_revision(
 
 
 def _list_plugins_from_disk() -> list[dict]:
-    """Read plugin manifests directly from the plugins directory on disk.
-
-    Used as a fallback when the plugin loader has not finished
-    initialising (e.g. the frontend opens before the backend startup
-    coroutine completes).  Returns the same shape as the normal list
-    endpoint so the frontend does not need to handle a different schema.
-    """
+    """List installed plugins, including those that could not be loaded."""
     from ...config.utils import get_plugins_dir
+    from ...plugins.architecture import PluginManifest
 
     plugins_dir: Path = get_plugins_dir()
     if not plugins_dir.exists():
@@ -118,53 +113,34 @@ def _list_plugins_from_disk() -> list[dict]:
             continue
         try:
             with open(manifest_path, encoding="utf-8") as f:
-                manifest = json.load(f)
+                manifest = PluginManifest.from_dict(json.load(f))
         except Exception as exc:
             logger.warning("Failed to read %s: %s", manifest_path, exc)
             continue
 
-        plugin_id = manifest.get("id", item.name)
         from ...plugins.bundled import is_plugin_uninstalled
 
         if is_plugin_uninstalled(
-            plugin_id,
+            manifest.id,
             plugins_dir=plugins_dir,
             plugin_dir=item,
         ):
             continue
-        frontend_entry = manifest.get("entry", {}).get("frontend")
-
-        from ...plugins.architecture import PluginManifest
-
-        try:
-            disk_manifest = PluginManifest.from_dict(manifest)
-        except Exception as exc:
-            logger.warning(
-                "Invalid plugin manifest %s: %s",
-                manifest_path,
-                exc,
-            )
-            continue
-
         result.append(
             {
-                "id": plugin_id,
-                "name": manifest.get("name", plugin_id),
-                "version": manifest.get("version", "0.0.0"),
-                "description": manifest.get("description", ""),
-                "author": manifest.get("author", ""),
-                # Preserve startup fallback behavior: an installed plugin is
-                # enabled unless its directory carries an explicit disable
-                # marker. ``loaded`` still tells callers that backend
-                # registration has not completed yet.
+                "id": manifest.id,
+                "name": manifest.name,
+                "version": manifest.version,
+                "description": manifest.description,
+                "author": manifest.author,
                 "enabled": True,
                 "loaded": False,
-                "plugin_type": disk_manifest.plugin_type,
-                "frontend_entry": frontend_entry,
+                "plugin_type": manifest.plugin_type,
+                "frontend_entry": manifest.entry.frontend,
                 "frontend_revision": _frontend_revision(
                     item,
-                    frontend_entry,
-                    manifest.get("version", "0.0.0"),
+                    manifest.entry.frontend,
+                    manifest.version,
                 ),
             },
         )
@@ -827,54 +803,35 @@ def _sha256_file(path: Path) -> str:
 
 @router.get(
     "",
-    summary="List loaded plugins",
-    description="Return all loaded plugins with optional UI metadata.",
+    summary="List installed plugins",
+    description="Return installed plugins with their runtime state.",
 )
 async def list_plugins(request: Request):
-    """Return every loaded plugin with basic metadata and entry points.
-
-    If the plugin loader has not yet finished initialising (backend
-    still starting up when the frontend first requests the list), the
-    response is built by scanning the plugins directory on disk.
-    """
+    """Keep failed installations visible and removable in the installed UI."""
     loader = getattr(request.app.state, "plugin_loader", None)
-
+    result = {
+        item["id"]: item
+        for item in await asyncio.to_thread(_list_plugins_from_disk)
+    }
     if loader is None:
-        logger.debug(
-            "[plugins] plugin_loader not ready, falling back to disk scan",
-        )
-        return _list_plugins_from_disk()
+        return list(result.values())
 
-    result = []
-    loaded_ids: set[str] = set()
     for _plugin_id, record in loader.get_all_loaded_plugins().items():
         manifest = record.manifest
-        loaded_ids.add(manifest.id)
-        result.append(
-            {
-                "id": manifest.id,
-                "name": manifest.name,
-                "version": manifest.version,
-                "description": manifest.description,
-                "author": manifest.author,
-                "enabled": record.enabled,
-                "loaded": True,
-                "plugin_type": manifest.plugin_type,
-                "frontend_entry": manifest.entry.frontend,
-            },
-        )
+        result[manifest.id] = {
+            **result.get(manifest.id, {}),
+            "id": manifest.id,
+            "name": manifest.name,
+            "version": manifest.version,
+            "description": manifest.description,
+            "author": manifest.author,
+            "enabled": record.enabled,
+            "loaded": record.enabled,
+            "plugin_type": manifest.plugin_type,
+            "frontend_entry": manifest.entry.frontend,
+        }
 
-    # Plugin loading is intentionally incremental. A slow backend startup
-    # hook must not delay publication of another plugin's frontend menus,
-    # routes, or slots. Merge not-yet-loaded manifests from disk while the
-    # loader continues preparing their Python runtime in the background.
-    result.extend(
-        plugin
-        for plugin in _list_plugins_from_disk()
-        if plugin.get("id") not in loaded_ids
-    )
-
-    return result
+    return list(result.values())
 
 
 @router.get(
@@ -970,8 +927,22 @@ async def uninstall_plugin_source(
     async with loader.plugin_lifecycle(plugin_id):
         record = loader.get_loaded_plugin(plugin_id)
         if record is None:
-            raise KeyError(f"Plugin '{plugin_id}' is not loaded.")
-        meta: dict = record.manifest.meta or {}
+            # Failed loads have no runtime record, but their files still
+            # belong to the installed inventory. Use discovery, not a path
+            # constructed from the request's plugin ID.
+            discovered = await asyncio.to_thread(loader.discover_plugins)
+            installed = next(
+                ((m, p) for m, p in discovered if m.id == plugin_id),
+                None,
+            )
+            if installed is None:
+                raise KeyError(f"Plugin '{plugin_id}' is not loaded.")
+            _, source_path = installed
+            await asyncio.to_thread(shutil.rmtree, source_path)
+            # A failed plugin's manifest cannot establish tool ownership.
+            # Preserve agent configs, including those from earlier runs.
+            return
+        meta = record.manifest.meta or {}
         provider_ids, command_names = _collect_plugin_runtime_ids(
             loader.registry,
             plugin_id,

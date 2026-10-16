@@ -24,7 +24,7 @@
   },
   "dependencies": {
     "3d-force-graph": "1.80.0",
-    "@agentscope-ai/chat": "1.2.0-beta.1791860734622",
+    "@agentscope-ai/chat": "^1.2.0-beta.1792133067831",
     "@agentscope-ai/design": "1.0.29",
     "@agentscope-ai/icons": "1.0.67",
     "html-to-image": "^1.11.13",

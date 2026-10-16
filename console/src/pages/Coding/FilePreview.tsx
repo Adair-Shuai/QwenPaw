@@ -1,5 +1,9 @@
 /** Unified read-only preview adapter for the files workspace renderer registry. */
 import { useMemo } from "react";
+import { useTranslation } from "react-i18next";
+import { ExternalLink } from "lucide-react";
+import { openHtmlFile } from "../../utils/openHtmlFile";
+import styles from "./FilePreview.module.less";
 import { chatApi } from "../../api/modules/chat";
 import { workspaceApi } from "../../api/modules/workspace";
 import ArtifactPreview from "../../components/Workspace/ArtifactPreview";
@@ -69,6 +73,7 @@ export default function FilePreview({
   artifact: artifactProp,
   onOpenWorkspaceFile,
 }: FilePreviewProps) {
+  const { t } = useTranslation();
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const artifact = useMemo<WorkspaceArtifact>(() => {
     if (artifactProp) {
@@ -106,8 +111,8 @@ export default function FilePreview({
         ? typeof workspaceApi.getFileDownloadUrl === "function"
           ? workspaceApi.getFileDownloadUrl(filePath, root)
           : typeof workspaceApi.getBinaryFileUrl === "function"
-            ? workspaceApi.getBinaryFileUrl(filePath)
-            : undefined
+          ? workspaceApi.getBinaryFileUrl(filePath)
+          : undefined
         : undefined;
     return {
       id: `file-preview:${chatId ?? "local"}:${root}:${filePath}`,
@@ -115,8 +120,8 @@ export default function FilePreview({
       source: workspaceBacked
         ? "link"
         : binaryUrl
-          ? "file_upload"
-          : "generated",
+        ? "file_upload"
+        : "generated",
       mimeType: resolvedMime,
       extension,
       textContent: content,
@@ -143,7 +148,7 @@ export default function FilePreview({
     workspaceBacked,
   ]);
 
-  return (
+  const preview = (
     <ArtifactPreview
       artifact={artifact}
       hostControls
@@ -156,5 +161,31 @@ export default function FilePreview({
           : undefined
       }
     />
+  );
+
+  if (getPreviewType(filePath) !== "html") return preview;
+  return (
+    <div className={styles.htmlWrap}>
+      <div className={styles.htmlToolbar}>
+        <button
+          type="button"
+          className={styles.htmlOpenButton}
+          onClick={() =>
+            openHtmlFile({
+              content: artifact.textContent ?? content,
+              filePath: artifact.workspacePath ?? filePath,
+              chatId: artifact.chatId,
+              projectDirOverride: artifact.projectDirOverride,
+              root: artifact.workspaceRoot ?? root,
+              workspaceBacked,
+            })
+          }
+        >
+          <ExternalLink size={14} strokeWidth={1.5} aria-hidden="true" />
+          {t("files.openHtmlInBrowser")}
+        </button>
+      </div>
+      <div style={{ flex: 1, minHeight: 0 }}>{preview}</div>
+    </div>
   );
 }

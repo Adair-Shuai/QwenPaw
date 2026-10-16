@@ -1,6 +1,17 @@
-import { render, screen, within, waitFor } from "@testing-library/react";
+import {
+  render,
+  screen,
+  within,
+  waitFor,
+  fireEvent,
+} from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
+import { openHtmlFile } from "../../utils/openHtmlFile";
+
+vi.mock("../../utils/openHtmlFile", () => ({
+  openHtmlFile: vi.fn(),
+}));
 
 const LAZY_RENDER_TIMEOUT = 12_000;
 const blobResource = vi.hoisted(() => vi.fn());
@@ -65,6 +76,61 @@ describe("FilePreview", () => {
     expect(
       screen.getByText("Use this when searching memory."),
     ).toBeInTheDocument();
+  });
+});
+
+// The fork's unified renderer already executes interactive HTML inside an
+// opaque-origin sandbox. Keep it while adding upstream's external opener.
+describe("FilePreview interactive HTML", () => {
+  const dynamicContent = '<div id="root"></div><script>draw()</script>';
+
+  it.each(["scene.html", "scene.htm"])(
+    "preserves script-generated %s in the unified renderer",
+    async (filePath) => {
+      render(<FilePreview filePath={filePath} content={dynamicContent} />);
+      const frame = await screen.findByTitle(filePath);
+      expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+      expect(frame.getAttribute("srcdoc")).toContain("<script>draw()</script>");
+      expect(frame.getAttribute("srcdoc")).toContain("makeStorage");
+      expect(
+        screen.getByRole("button", { name: "files.openHtmlInBrowser" }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it("opens original HTML with the workspace context", async () => {
+    const options = {
+      filePath: "scene.html",
+      content: dynamicContent,
+      chatId: "chat-1",
+      projectDirOverride: "/project",
+      root: "workspace" as const,
+      workspaceBacked: true,
+    };
+    render(<FilePreview {...options} />);
+    fireEvent.click(
+      screen.getByRole("button", { name: "files.openHtmlInBrowser" }),
+    );
+    expect(openHtmlFile).toHaveBeenCalledWith(options);
+  });
+
+  it("updates HTML without losing interactive controls", async () => {
+    const { rerender } = render(
+      <FilePreview filePath="scene.html" content="<h1>Static</h1>" />,
+    );
+    expect(
+      (await screen.findByTitle("scene.html")).getAttribute("srcdoc"),
+    ).toContain("Static");
+    rerender(<FilePreview filePath="scene.html" content={dynamicContent} />);
+    await waitFor(() =>
+      expect(screen.getByTitle("scene.html").getAttribute("srcdoc")).toContain(
+        "draw()",
+      ),
+    );
+    expect(screen.getByTitle("scene.html")).toHaveAttribute(
+      "sandbox",
+      "allow-scripts",
+    );
   });
 });
 
