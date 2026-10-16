@@ -557,7 +557,10 @@ class ProviderManagerPersistenceMixin(
             base_url=base_url,
             api_key="",
             chat_model=metadata.get("chat_model", "OpenAIChatModel"),
-            models=default_models,
+            models=[
+                ModelInfo.model_validate(model).model_copy(deep=True)
+                for model in default_models
+            ],
             is_custom=False,
             require_api_key=metadata.get("require_api_key", True),
             meta=metadata.get("meta", {}),
@@ -572,6 +575,7 @@ class ProviderManagerPersistenceMixin(
                     PROVIDER_SECRET_FIELDS,
                 )
                 for field in (
+                    "enabled",
                     "api_key",
                     "base_url",
                     "generate_kwargs",
@@ -592,6 +596,24 @@ class ProviderManagerPersistenceMixin(
                                 for model in saved_config[field]
                             ],
                         )
+                # Restore mutable settings by ID without replacing the plugin's
+                # current catalog (names, new models and free-tier metadata).
+                stored_models = {
+                    model.id: model
+                    for model in (
+                        ModelInfo.model_validate(data)
+                        for data in saved_config.get("models", [])
+                    )
+                }
+                for model in provider_info.models:
+                    stored = stored_models.get(model.id)
+                    if stored is not None:
+                        is_free = model.is_free
+                        restore_model_state(
+                            model,
+                            serialize_model_state(stored),
+                        )
+                        model.is_free = is_free
                 provider_info.models_last_synced_at = saved_config.get(
                     "models_last_synced_at",
                 )

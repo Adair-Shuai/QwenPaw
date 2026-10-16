@@ -4295,3 +4295,66 @@ async def test_agentscope_platform_configuration_reloads(isolated_secret_dir):
     assert restored.meta[f"api_key_url"] == (
         f"https://platform.agentscope.io/model-calls"
     )
+
+
+@pytest.mark.parametrize("restart_manager", [False, True])
+async def test_plugin_reload_preserves_disabled_state_and_model_settings(
+    isolated_secret_dir,
+    restart_manager,
+):
+    catalog = [ModelInfo(id="demo", name="Demo")]
+
+    class CatalogProvider(OpenAIProvider):
+        @staticmethod
+        def get_default_models():
+            return catalog
+
+    async def register(manager):
+        await manager.register_plugin_provider_async(
+            "reload-settings",
+            CatalogProvider,
+            "Reload Settings",
+            "https://plugin.example/v1",
+            metadata={},
+        )
+
+    manager = ProviderManager()
+    await register(manager)
+    await manager.update_model_config(
+        "reload-settings",
+        "demo",
+        {
+            "model_type": "decision",
+            "max_input_length": 12345,
+            "generate_kwargs": {"temperature": 0.25},
+        },
+    )
+    await manager.update_provider_async("reload-settings", {"enabled": False})
+    before = manager.get_provider("reload-settings").get_model_info("demo")
+    assert before.model_type == "decision"
+    assert before.max_input_length == 12345
+
+    # Plugin releases remain authoritative for names and inventory.
+    catalog[0].name = "Updated Demo"
+    catalog[0].is_free = True
+    catalog.append(ModelInfo(id="new-model", name="New Model"))
+    if restart_manager:
+        manager = ProviderManager()
+    else:
+        assert manager.unregister_plugin_provider("reload-settings")
+    await register(manager)
+
+    restored = manager.get_provider("reload-settings")
+    assert restored.enabled is False
+    model = restored.get_model_info("demo")
+    assert model.model_type == "decision"
+    assert model.max_input_length == 12345
+    assert model.max_input_length_configured is True
+    assert model.generate_kwargs == {"temperature": 0.25}
+    assert model.config_overrides == before.config_overrides
+    assert model.name == "Updated Demo"
+    assert model.is_free is True
+    assert restored.get_model_info("new-model") is not None
+    # Restoring a user's state must not change the plugin's shared defaults.
+    assert catalog[0].model_type == "chat"
+    assert catalog[0].max_input_length != 12345
