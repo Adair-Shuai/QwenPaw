@@ -34,6 +34,9 @@ STATE_TMP_FILE_NAME = ".qwenpaw_restore_state.tmp"
 STATE_EVACUATING_OLD = "evacuating_old"
 STATE_INSTALLING_NEW = "installing_new"
 STATE_COMMITTED = "committed"
+STATE_RETAINED = "retained"
+STATE_DISCARDING_NEW = "discarding_new"
+STATE_RESTORING_OLD = "restoring_old"
 
 RESERVED_NAMES = frozenset(
     {
@@ -48,6 +51,9 @@ _VALID_STATES = frozenset(
         STATE_EVACUATING_OLD,
         STATE_INSTALLING_NEW,
         STATE_COMMITTED,
+        STATE_RETAINED,
+        STATE_DISCARDING_NEW,
+        STATE_RESTORING_OLD,
     },
 )
 
@@ -86,6 +92,8 @@ def prepare_destination_for_swap(
     dst: Path,
     tmp_dst: Path,
     old_dst: Path,
+    *,
+    retain_old: bool = False,
 ) -> SwapPreparation:
     """Prepare *dst* for normal rename swap, or handle mount fallback.
 
@@ -96,7 +104,7 @@ def prepare_destination_for_swap(
         return SwapPreparation.DST_NOT_EXISTS
 
     if is_mount_point(dst):
-        swap_mount_point_contents(dst, tmp_dst)
+        swap_mount_point_contents(dst, tmp_dst, retain_old=retain_old)
         return SwapPreparation.CONTENT_SWAP_COMPLETED
 
     try:
@@ -109,14 +117,19 @@ def prepare_destination_for_swap(
             "Falling back to content swap for non-renamable %s",
             dst,
         )
-        swap_mount_point_contents(dst, tmp_dst)
+        swap_mount_point_contents(dst, tmp_dst, retain_old=retain_old)
         return SwapPreparation.CONTENT_SWAP_COMPLETED
 
 
-def swap_mount_point_contents(dst: Path, tmp_dst: Path) -> None:
+def swap_mount_point_contents(
+    dst: Path,
+    tmp_dst: Path,
+    *,
+    retain_old: bool = False,
+) -> None:
     """Replace mount-point contents without renaming the mount directory."""
     try:
-        _swap_mount_point_contents(dst, tmp_dst)
+        _swap_mount_point_contents(dst, tmp_dst, retain_old=retain_old)
     except Exception:
         logger.exception("Mount-point content swap failed for %s", dst)
         try:
@@ -130,7 +143,12 @@ def swap_mount_point_contents(dst: Path, tmp_dst: Path) -> None:
         raise
 
 
-def _swap_mount_point_contents(dst: Path, tmp_dst: Path) -> None:
+def _swap_mount_point_contents(
+    dst: Path,
+    tmp_dst: Path,
+    *,
+    retain_old: bool = False,
+) -> None:
     """Implementation of mount-point content swap."""
     old_dir = dst / OLD_CONTENT_DIR_NAME
     if old_dir.exists():
@@ -146,8 +164,30 @@ def _swap_mount_point_contents(dst: Path, tmp_dst: Path) -> None:
     _write_state(dst, STATE_INSTALLING_NEW)
     _move_children(tmp_dst, dst, excluded_names=RESERVED_NAMES)
 
-    _write_state(dst, STATE_COMMITTED)
-    _cleanup_artifacts(dst, tmp_dst)
+    _write_state(dst, STATE_RETAINED if retain_old else STATE_COMMITTED)
+    if not retain_old:
+        _cleanup_artifacts(dst, tmp_dst)
+
+
+def finish_mount_point_swap(dst: Path, *, rollback: bool = False) -> bool:
+    """Finish a retained mount swap; return whether it owned this target."""
+    if not (dst / STATE_FILE_NAME).exists():
+        return False
+    tmp_dst = dst.with_name(dst.name + ".restore_tmp")
+    if rollback:
+        _rollback_installing_new(dst, tmp_dst)
+    else:
+        commit_retained_mount_swap(dst)
+        _cleanup_artifacts(dst, tmp_dst)
+    return True
+
+
+def commit_retained_mount_swap(dst: Path) -> None:
+    """Persist the decision before old contents become disposable."""
+    if (dst / STATE_FILE_NAME).exists() and _read_state(
+        dst,
+    ) != STATE_COMMITTED:
+        _write_state(dst, STATE_COMMITTED)
 
 
 def recover_mount_point_swap(dst: Path, tmp_dst: Path) -> None:
@@ -186,7 +226,12 @@ def recover_mount_point_swap(dst: Path, tmp_dst: Path) -> None:
             )
             return
 
-        if state == STATE_INSTALLING_NEW:
+        if state in {
+            STATE_INSTALLING_NEW,
+            STATE_RETAINED,
+            STATE_DISCARDING_NEW,
+            STATE_RESTORING_OLD,
+        }:
             _rollback_installing_new(dst, tmp_dst)
             return
 
@@ -213,21 +258,17 @@ def _rollback_installing_new(
     tmp_dst: Path,
 ) -> None:
     old_dir = dst / OLD_CONTENT_DIR_NAME
-    restored = False
-    if old_dir.exists():
+    if _read_state(dst) != STATE_RESTORING_OLD:
+        if not old_dir.exists():
+            raise RuntimeError(f"Original restore contents missing: {old_dir}")
+        # A retry may repeat deletion, but must never delete old files that
+        # have already been moved back. Persist the phase before moving any.
+        _write_state(dst, STATE_DISCARDING_NEW)
         _remove_children(dst, excluded_names=RESERVED_NAMES)
-        _restore_old_content(dst)
-        restored = True
-    else:
-        logger.error(
-            "Cannot roll back partial restore of %s: %s is missing",
-            dst,
-            old_dir,
-        )
-
+        _write_state(dst, STATE_RESTORING_OLD)
+    _restore_old_content(dst)
     _remove_tmp_and_state_markers(dst, tmp_dst)
-    if restored:
-        logger.warning("Rolled back partial restore of %s", dst)
+    logger.warning("Rolled back partial restore of %s", dst)
 
 
 def _write_state(dst: Path, state: str) -> None:

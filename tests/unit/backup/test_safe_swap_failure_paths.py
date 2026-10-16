@@ -625,7 +625,7 @@ def test_swap_directories_rolls_back_when_commit_rename_fails(
     monkeypatch.setattr(
         mod,
         "prepare_destination_for_swap",
-        lambda *_args: SwapPreparation.ORIGINAL_MOVED_TO_OLD,
+        lambda *_args, **_kwargs: SwapPreparation.ORIGINAL_MOVED_TO_OLD,
     )
     _patch_rename(monkeypatch, [(staging, dst)])
 
@@ -651,7 +651,7 @@ def test_swap_directories_reports_failed_rollback(
     monkeypatch.setattr(
         mod,
         "prepare_destination_for_swap",
-        lambda *_args: SwapPreparation.ORIGINAL_MOVED_TO_OLD,
+        lambda *_args, **_kwargs: SwapPreparation.ORIGINAL_MOVED_TO_OLD,
     )
     _patch_rename(
         monkeypatch,
@@ -677,7 +677,7 @@ def test_swap_directories_propagates_error_without_old_dir(
     monkeypatch.setattr(
         mod,
         "prepare_destination_for_swap",
-        lambda *_args: SwapPreparation.ORIGINAL_MOVED_TO_OLD,
+        lambda *_args, **_kwargs: SwapPreparation.ORIGINAL_MOVED_TO_OLD,
     )
     _patch_rename(monkeypatch, [(staging, dst)])
 
@@ -700,7 +700,7 @@ def test_swap_directories_returns_after_content_swap(
     monkeypatch.setattr(
         mod,
         "prepare_destination_for_swap",
-        lambda *_args: SwapPreparation.CONTENT_SWAP_COMPLETED,
+        lambda *_args, **_kwargs: SwapPreparation.CONTENT_SWAP_COMPLETED,
     )
     real_rename = Path.rename
 

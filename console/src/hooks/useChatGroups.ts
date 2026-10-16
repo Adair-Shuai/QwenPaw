@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ChatGroup } from "../api/types/chat";
 import { chatApi } from "../api/modules/chat";
 import { useAgentStore } from "../stores/agentStore";
@@ -19,30 +19,44 @@ export function useChatGroups(active = true): ChatGroupsState {
   const [groups, setGroups] = useState<ChatGroup[]>([]);
   const [loading, setLoading] = useState(true);
 
+  const scope = useMemo(
+    () => ({ agentId: selectedAgent, active, live: false }),
+    [selectedAgent, active],
+  );
+  const currentScope = useRef(scope);
+  currentScope.current = scope;
+  const revision = useRef(0);
+  const isCurrent = useCallback(
+    () => scope.live && scope.active && currentScope.current === scope,
+    [scope],
+  );
+
   const refreshGroups = useCallback(async () => {
-    const next = await chatApi.listGroups();
-    setGroups(next);
-  }, []);
+    if (!isCurrent()) return;
+    const requestRevision = ++revision.current;
+    setLoading(true);
+    try {
+      const next = await chatApi.listGroups();
+      if (isCurrent() && revision.current === requestRevision) setGroups(next);
+    } finally {
+      if (isCurrent() && revision.current === requestRevision)
+        setLoading(false);
+    }
+  }, [isCurrent]);
 
   useEffect(() => {
-    if (!active) return;
-    let cancelled = false;
-    setLoading(true);
-    chatApi
-      .listGroups()
-      .then((next) => {
-        if (!cancelled) setGroups(next);
-      })
-      .catch((error: unknown) => {
+    scope.live = true;
+    if (active) {
+      setGroups([]);
+      void refreshGroups().catch((error: unknown) => {
         console.error("Failed to load chat groups:", error);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
       });
+    }
     return () => {
-      cancelled = true;
+      scope.live = false;
+      revision.current += 1;
     };
-  }, [active, selectedAgent]);
+  }, [active, scope, refreshGroups]);
 
   const createGroup = useCallback(
     async (name: string) => {
@@ -76,10 +90,21 @@ export function useChatGroups(active = true): ChatGroupsState {
     [refreshGroups],
   );
 
-  const reorderGroups = useCallback(async (groupIds: string[]) => {
-    const next = await chatApi.reorderGroups(groupIds);
-    setGroups(next);
-  }, []);
+  const reorderGroups = useCallback(
+    async (groupIds: string[]) => {
+      if (!isCurrent()) return;
+      const requestRevision = ++revision.current;
+      try {
+        const next = await chatApi.reorderGroups(groupIds);
+        if (isCurrent() && revision.current === requestRevision)
+          setGroups(next);
+      } finally {
+        if (isCurrent() && revision.current === requestRevision)
+          setLoading(false);
+      }
+    },
+    [isCurrent],
+  );
 
   return {
     groups,

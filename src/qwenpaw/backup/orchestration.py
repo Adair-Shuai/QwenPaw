@@ -130,19 +130,20 @@ async def execute_restore(
         agents_to_stop,
     )
 
-    # Stop all agents that may hold open handles before file operations.
-    # On Windows, open handles inside the workspace / secrets / skill-pool
-    # directories prevent the atomic directory rename in the restore logic.
-    if stop_agent_fn is not None:
-        for agent_id in agents_to_stop:
-            logger.info("Stopping agent '%s' before restore", agent_id)
-            await stop_agent_fn(agent_id)
-
-    if affected_agents and stop_browsers_fn is not None:
-        logger.info("Stopping managed browsers before workspace restore")
-        await stop_browsers_fn(_workspace_dirs_for_agents(agents_to_stop))
-
+    stopped_agents: list[str] = []
     try:
+        # Stop all agents that may hold open handles before file operations.
+        # On Windows, open handles inside the workspace / secrets / skill-pool
+        # directories prevent the atomic directory rename in the restore logic.
+        if stop_agent_fn is not None:
+            for agent_id in agents_to_stop:
+                logger.info("Stopping agent '%s' before restore", agent_id)
+                if await stop_agent_fn(agent_id):
+                    stopped_agents.append(agent_id)
+
+        if affected_agents and stop_browsers_fn is not None:
+            logger.info("Stopping managed browsers before workspace restore")
+            await stop_browsers_fn(_workspace_dirs_for_agents(agents_to_stop))
         meta = await restore(backup_id, req)
         logger.info(
             "execute_restore finished successfully: backup_id=%s",
@@ -158,12 +159,12 @@ async def execute_restore(
     finally:
         # Always restart every agent we stopped, even if the restore failed,
         # so the service recovers gracefully.
-        if preload_agent_fn is not None and agents_to_stop:
+        if preload_agent_fn is not None and stopped_agents:
             logger.info(
                 "Scheduling background preload for agents: %s",
-                agents_to_stop,
+                stopped_agents,
             )
-            _preload_agents_background(preload_agent_fn, agents_to_stop)
+            _preload_agents_background(preload_agent_fn, stopped_agents)
 
 
 def _workspace_dirs_for_agents(agent_ids: list[str]) -> list[str]:

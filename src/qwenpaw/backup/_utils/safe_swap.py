@@ -52,6 +52,8 @@ from typing import BinaryIO
 
 from ._mount_swap import (
     SwapPreparation,
+    commit_retained_mount_swap,
+    finish_mount_point_swap,
     prepare_destination_for_swap,
     recover_mount_point_swap,
     should_skip_restore_internal_path,
@@ -62,6 +64,7 @@ logger = logging.getLogger(__name__)
 
 _RESTORE_TMP_SUFFIX = ".restore_tmp"
 _RESTORE_OLD_SUFFIX = ".restore_old"
+_RESTORE_ROLLBACK_SUFFIX = ".restore_rollback"
 _RESTORE_LOCK_FILE = ".qwenpaw_restore.lock"
 _LOCK_REGION_SIZE = 1
 _LOCK_RETRY_INTERVAL_SECONDS = 0.1
@@ -235,6 +238,19 @@ def _cleanup_stale_restore_artifacts_locked(base_dir: Path) -> None:
     tmp = base_dir.with_name(base_dir.name + _RESTORE_TMP_SUFFIX)
     old = base_dir.with_name(base_dir.name + _RESTORE_OLD_SUFFIX)
 
+    rollback_marker = base_dir.with_name(
+        base_dir.name + _RESTORE_ROLLBACK_SUFFIX,
+    )
+    if rollback_marker.exists():
+        try:
+            _rollback_retained_directory(base_dir, old)
+        except Exception:
+            logger.exception(
+                "Retained restore rollback failed for %s",
+                base_dir,
+            )
+            return  # Preserve originals instead of cleaning old data.
+
     # Scenario 1: original data saved in .restore_old; recover it first.
     if old.exists() and not base_dir.exists():
         try:
@@ -324,7 +340,13 @@ def _extract_zip_to(
             shutil.copyfileobj(src, out)
 
 
-def _swap_directories(dst: Path, tmp_dst: Path, old_dst: Path) -> None:
+def _swap_directories(
+    dst: Path,
+    tmp_dst: Path,
+    old_dst: Path,
+    *,
+    retain_old: bool = False,
+) -> None:
     """Phase 2: atomically swap *tmp_dst* into *dst* via two renames.
 
     If the first rename succeeds but the second fails (e.g. permissions,
@@ -340,6 +362,7 @@ def _swap_directories(dst: Path, tmp_dst: Path, old_dst: Path) -> None:
         dst,
         tmp_dst,
         old_dst,
+        retain_old=retain_old,
     )
     if preparation is SwapPreparation.CONTENT_SWAP_COMPLETED:
         return
@@ -504,12 +527,15 @@ def extract_to_tmp(
         return tmp_dst
 
 
-def commit_tmp(dst: Path) -> None:
+def commit_tmp(dst: Path, *, retain_old: bool = False) -> None:
     """Phases 2 + 3: atomically swap the staged ``.restore_tmp`` into *dst*
     and remove the old directory.
 
     Must be called after a successful :func:`extract_to_tmp` for the same
-    *dst*.
+    *dst*. With ``retain_old=True``, keep originals for a multi-target
+    transaction. Mark every target committed before calling
+    ``finish_retained_swap`` to release originals; on error call it with
+    ``rollback=True`` instead.
 
     Raises :class:`RuntimeError` if the staging directory does not exist
     (e.g. called twice for the same *dst*).
@@ -517,8 +543,53 @@ def commit_tmp(dst: Path) -> None:
     with _lock_for(dst):
         tmp_dst = dst.with_name(dst.name + _RESTORE_TMP_SUFFIX)
         old_dst = dst.with_name(dst.name + _RESTORE_OLD_SUFFIX)
-        _swap_directories(dst, tmp_dst, old_dst)
-        _discard_old(old_dst)
+        _swap_directories(dst, tmp_dst, old_dst, retain_old=retain_old)
+        if not retain_old:
+            _discard_old(old_dst)
+
+
+def mark_retained_swap_committed(dst: Path) -> None:
+    """Persist a retained mount's commit decision without deleting old data."""
+    with _lock_for(dst):
+        commit_retained_mount_swap(dst)
+
+
+def finish_retained_swap(dst: Path, *, rollback: bool = False) -> None:
+    """Release a retained directory backup or restore it after a later failure.
+
+    If the original destination did not exist, rollback removes the newly
+    installed directory. The caller must only pass successfully committed
+    destinations while holding the restore process lock.
+    """
+    with _lock_for(dst):
+        if finish_mount_point_swap(dst, rollback=rollback):
+            return
+        old_dst = dst.with_name(dst.name + _RESTORE_OLD_SUFFIX)
+        if rollback:
+            _rollback_retained_directory(dst, old_dst)
+        else:
+            _discard_old(old_dst)
+
+
+def _rollback_retained_directory(dst: Path, old_dst: Path) -> None:
+    """Persist rollback intent so startup cleanup can safely retry it."""
+    marker = dst.with_name(dst.name + _RESTORE_ROLLBACK_SUFFIX)
+    if not marker.exists():
+        with marker.open("w", encoding="utf-8") as handle:
+            handle.write("original" if old_dst.exists() else "new")
+            handle.flush()
+            os.fsync(handle.fileno())
+    original = marker.read_text(encoding="utf-8")
+    if original not in {"original", "new"}:
+        raise RuntimeError(f"Invalid restore rollback marker: {marker}")
+    if original == "new" or old_dst.exists():
+        if dst.exists():
+            shutil.rmtree(dst)
+        if old_dst.exists():
+            old_dst.rename(dst)
+    elif not dst.exists():
+        raise RuntimeError(f"Original restore directory missing: {dst}")
+    marker.unlink()
 
 
 def discard_tmp(dst: Path) -> None:

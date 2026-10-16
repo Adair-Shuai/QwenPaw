@@ -10,6 +10,7 @@ import logging
 import os
 import shutil
 import sqlite3
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -27,6 +28,8 @@ from .._utils.safe_swap import (
     assert_directory_renamable,
     cleanup_stale_restore_artifacts,
     commit_tmp,
+    finish_retained_swap,
+    mark_retained_swap_committed,
     discard_tmp,
     extract_to_tmp,
     find_busy_restore_paths,
@@ -500,32 +503,117 @@ def _commit_and_finalize(
     new_aids: list[str],
     backup_id: str,
 ) -> None:
-    """Phase 2: atomically commit all staged dirs then update config."""
-    _commit_staged_global_config(staged_config_tmp)
-
+    """Retain originals until directory and config updates succeed."""
+    config_path = WORKING_DIR / CONFIG_FILE
+    config_backup = _retain_restore_config(
+        config_path,
+        staged_dirs,
+        staged_config_tmp,
+    )
     committed: list[Path] = []
+    discard_config_backup = False
     try:
-        for d in staged_dirs:
-            commit_tmp(d)
-            committed.append(d)
-            logger.info("Committed restore for %s", d)
-    except Exception:
-        remaining = [d for d in staged_dirs if d not in set(committed)]
-        for d in remaining:
-            discard_tmp(d)
-        logger.exception(
-            "Phase 2 commit failed after committing %d/%d dirs. "
-            "Committed (already live): %s. Discarded (rolled back): %s.",
-            len(committed),
-            len(staged_dirs),
+        for directory in staged_dirs:
+            commit_tmp(directory, retain_old=True)
+            committed.append(directory)
+        _commit_staged_global_config(staged_config_tmp)
+        if SECRET_DIR in committed:
+            reload_master_key_from_disk()
+        _finalize_restored_agents(dst_map, new_aids, backup_id)
+        for directory in committed:
+            mark_retained_swap_committed(directory)
+        discard_config_backup = True
+    except BaseException:
+        rollback_errors = _rollback_restored_targets(
             committed,
-            remaining,
+            staged_dirs,
+            config_backup,
+            config_path,
         )
+        discard_config_backup = not rollback_errors
+        if rollback_errors:
+            raise RuntimeError(
+                "Restore failed and rollback was incomplete; "
+                "retained restore backups require recovery",
+            ) from rollback_errors[0]
         raise
+    finally:
+        if staged_config_tmp is not None:
+            staged_config_tmp.unlink(missing_ok=True)
+        if discard_config_backup and config_backup is not None:
+            config_backup.unlink(missing_ok=True)
+    for directory in committed:
+        try:
+            finish_retained_swap(directory)
+        except OSError:
+            # The restore is complete. Leftover old data can be cleaned later.
+            logger.warning("Could not clean restore backup for %s", directory)
 
-    if SECRET_DIR in committed:
-        reload_master_key_from_disk()
 
+def _retain_restore_config(
+    config_path: Path,
+    staged_dirs: list[Path],
+    staged_config_tmp: Path | None,
+) -> Path | None:
+    """Save an exact config copy before touching any restore destination."""
+    config_backup = None
+    if config_path.exists():
+        fd, name = tempfile.mkstemp(
+            prefix=".config-rollback-",
+            dir=WORKING_DIR,
+        )
+        os.close(fd)
+        config_backup = Path(name)
+        try:
+            shutil.copy2(config_path, config_backup)
+        except BaseException:
+            config_backup.unlink(missing_ok=True)
+            for directory in staged_dirs:
+                discard_tmp(directory)
+            if staged_config_tmp is not None:
+                staged_config_tmp.unlink(missing_ok=True)
+            raise
+    return config_backup
+
+
+def _rollback_restored_targets(
+    committed: list[Path],
+    staged_dirs: list[Path],
+    config_backup: Path | None,
+    config_path: Path,
+) -> list[Exception]:
+    """Attempt every rollback even if another target cannot be recovered."""
+    rollback_errors = []
+    for directory in reversed(committed):
+        try:
+            finish_retained_swap(directory, rollback=True)
+        except Exception as exc:
+            rollback_errors.append(exc)
+            logger.exception(
+                "Could not roll back restore of %s",
+                directory,
+            )
+    for directory in staged_dirs:
+        discard_tmp(directory)
+    try:
+        if config_backup is not None:
+            config_backup.replace(config_path)
+        else:
+            config_path.unlink(missing_ok=True)
+        if SECRET_DIR in committed:
+            reload_master_key_from_disk()
+    except Exception as exc:
+        rollback_errors.append(exc)
+        logger.exception("Could not roll back restore configuration")
+    return rollback_errors
+
+
+def _finalize_restored_agents(
+    dst_map: dict[str, Path],
+    new_aids: list[str],
+    backup_id: str,
+) -> None:
+    """Rewrite restored workspace references before releasing rollback data."""
     for aid, dst in dst_map.items():
         rewrite_agent_workspace_dir(dst, aid)
 

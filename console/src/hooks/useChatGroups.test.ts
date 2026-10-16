@@ -1,3 +1,4 @@
+import { StrictMode } from "react";
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -241,4 +242,185 @@ describe("useChatGroups state surface", () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
     expect(h.listGroups).toHaveBeenCalledTimes(1);
   });
+});
+
+it.each(["refresh", "reorder"])(
+  "ignores a late %s response from the previous agent",
+  async (operation) => {
+    h.selectedAgent = "agent-a";
+    const { result, rerender } = renderHook(() => useChatGroups());
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    let resolveOld!: (groups: typeof GROUPS) => void;
+    const pending = new Promise<typeof GROUPS>((resolve) => {
+      resolveOld = resolve;
+    });
+    if (operation === "refresh") h.listGroups.mockReturnValueOnce(pending);
+    else h.reorderGroups.mockReturnValueOnce(pending);
+    let operationDone!: Promise<void>;
+    act(() => {
+      operationDone =
+        operation === "refresh"
+          ? result.current.refreshGroups()
+          : result.current.reorderGroups(["g2", "g1"]);
+    });
+    const next = [{ id: "agent-b", name: "Agent B" }];
+    h.listGroups.mockResolvedValueOnce(next);
+    h.selectedAgent = "agent-b";
+    rerender();
+    await waitFor(() => expect(result.current.groups).toEqual(next));
+    await act(async () => {
+      resolveOld(GROUPS);
+      await operationDone;
+    });
+    expect(result.current.groups).toEqual(next);
+  },
+);
+
+it("does not refresh the new agent after an old-agent mutation finishes", async () => {
+  h.selectedAgent = "agent-a";
+  let finishCreate!: () => void;
+  h.createGroup.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finishCreate = resolve;
+      }),
+  );
+  const { result, rerender } = renderHook(() => useChatGroups());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let creating!: Promise<void>;
+  act(() => {
+    creating = result.current.createGroup("A group");
+  });
+  h.selectedAgent = "agent-b";
+  rerender();
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  expect(h.listGroups).toHaveBeenCalledTimes(2);
+  await act(async () => {
+    finishCreate();
+    await creating;
+  });
+  expect(h.listGroups).toHaveBeenCalledTimes(2);
+});
+
+it("keeps the newest refresh when responses arrive out of order", async () => {
+  const { result } = renderHook(() => useChatGroups());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let resolveOld!: (groups: typeof GROUPS) => void;
+  h.listGroups.mockImplementationOnce(
+    () =>
+      new Promise<typeof GROUPS>((resolve) => {
+        resolveOld = resolve;
+      }),
+  );
+  let oldRequest!: Promise<void>;
+  act(() => {
+    oldRequest = result.current.refreshGroups();
+  });
+  const next = [{ id: "latest", name: "Latest" }];
+  h.listGroups.mockResolvedValueOnce(next);
+  await act(() => result.current.refreshGroups());
+  await act(async () => {
+    resolveOld(GROUPS);
+    await oldRequest;
+  });
+  expect(result.current.groups).toEqual(next);
+  expect(result.current.loading).toBe(false);
+});
+
+it("does not revive a request after switching A to B and back to A", async () => {
+  h.selectedAgent = "a";
+  const { result, rerender } = renderHook(() => useChatGroups());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let resolveOld!: (groups: typeof GROUPS) => void;
+  h.listGroups.mockImplementationOnce(
+    () =>
+      new Promise<typeof GROUPS>((resolve) => {
+        resolveOld = resolve;
+      }),
+  );
+  let oldRequest!: Promise<void>;
+  act(() => {
+    oldRequest = result.current.refreshGroups();
+  });
+  h.selectedAgent = "b";
+  rerender();
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  const latest = [{ id: "new-a", name: "Latest A" }];
+  h.listGroups.mockResolvedValueOnce(latest);
+  h.selectedAgent = "a";
+  rerender();
+  await waitFor(() => expect(result.current.groups).toEqual(latest));
+  await act(async () => {
+    resolveOld(GROUPS);
+    await oldRequest;
+  });
+  expect(result.current.groups).toEqual(latest);
+});
+
+it("ignores the obsolete initial load under StrictMode", async () => {
+  let resolveOld!: (groups: typeof GROUPS) => void;
+  h.listGroups.mockImplementationOnce(
+    () =>
+      new Promise<typeof GROUPS>((resolve) => {
+        resolveOld = resolve;
+      }),
+  );
+  const latest = [{ id: "strict", name: "Latest" }];
+  h.listGroups.mockResolvedValueOnce(latest);
+  const { result } = renderHook(() => useChatGroups(), { wrapper: StrictMode });
+  await waitFor(() => expect(result.current.groups).toEqual(latest));
+  await act(async () => {
+    resolveOld(GROUPS);
+  });
+  expect(result.current.groups).toEqual(latest);
+});
+
+it("does not fetch again when a mutation finishes after unmount", async () => {
+  let finish!: () => void;
+  h.createGroup.mockImplementationOnce(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { result, unmount } = renderHook(() => useChatGroups());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let creating!: Promise<void>;
+  act(() => {
+    creating = result.current.createGroup("late");
+  });
+  unmount();
+  await act(async () => {
+    finish();
+    await creating;
+  });
+  expect(h.listGroups).toHaveBeenCalledTimes(1);
+});
+
+it("clears loading when a newer reorder fails during refresh", async () => {
+  const { result } = renderHook(() => useChatGroups());
+  await waitFor(() => expect(result.current.loading).toBe(false));
+  let resolveRefresh!: (groups: typeof GROUPS) => void;
+  h.listGroups.mockImplementationOnce(
+    () =>
+      new Promise<typeof GROUPS>((resolve) => {
+        resolveRefresh = resolve;
+      }),
+  );
+  let refreshing!: Promise<void>;
+  act(() => {
+    refreshing = result.current.refreshGroups();
+  });
+  h.reorderGroups.mockRejectedValueOnce(new Error("offline"));
+  await act(async () => {
+    await expect(result.current.reorderGroups(["g2", "g1"])).rejects.toThrow(
+      "offline",
+    );
+  });
+  expect(result.current.loading).toBe(false);
+  await act(async () => {
+    resolveRefresh(GROUPS);
+    await refreshing;
+  });
+  expect(result.current.groups).toEqual(GROUPS);
 });

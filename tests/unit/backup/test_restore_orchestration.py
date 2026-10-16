@@ -154,3 +154,64 @@ def test_restore_without_agents_does_not_stop_browsers(
     )
 
     assert events == ["preflight", "restore"]
+
+
+@pytest.mark.parametrize("failure", ["stop", "browser", "restore"])
+def test_preparation_failure_restarts_only_successfully_stopped_agents(
+    monkeypatch,
+    failure,
+):
+    from unittest.mock import AsyncMock, MagicMock
+
+    detail = BackupDetail(
+        id="review",
+        name="Review",
+        workspace_stats={
+            key: {"files": 1, "size": 1} for key in ("a", "b", "idle")
+        },
+    )
+    stopped = []
+
+    async def stop(agent_id):
+        if agent_id == "b" and failure == "stop":
+            raise RuntimeError("stop failed")
+        if agent_id == "idle":
+            return False
+        stopped.append(agent_id)
+        return True
+
+    scheduled = MagicMock()
+    monkeypatch.setattr(
+        orchestration,
+        "get_backup",
+        AsyncMock(return_value=detail),
+    )
+    monkeypatch.setattr(orchestration, "preflight_restore", lambda *_: None)
+    monkeypatch.setattr(
+        orchestration,
+        "_workspace_dirs_for_agents",
+        lambda _: [],
+    )
+    monkeypatch.setattr(orchestration, "_preload_agents_background", scheduled)
+    restore_call = AsyncMock(side_effect=RuntimeError("restore failed"))
+    monkeypatch.setattr(orchestration, "restore", restore_call)
+    browser = AsyncMock(
+        side_effect=RuntimeError("browser failed")
+        if failure == "browser"
+        else None,
+    )
+    preload = AsyncMock()
+    with pytest.raises(RuntimeError):
+        asyncio.run(
+            orchestration.execute_restore(
+                "review",
+                RestoreBackupRequest(agent_ids=["a", "b", "idle"]),
+                stop_agent_fn=stop,
+                stop_browsers_fn=browser,
+                preload_agent_fn=preload,
+            ),
+        )
+    assert stopped == (["a"] if failure == "stop" else ["a", "b"])
+    scheduled.assert_called_once_with(preload, stopped)
+    if failure != "restore":
+        restore_call.assert_not_called()
