@@ -88,7 +88,11 @@ describe("FilePreview interactive HTML", () => {
     "preserves script-generated %s in the unified renderer",
     async (filePath) => {
       render(<FilePreview filePath={filePath} content={dynamicContent} />);
-      const frame = await screen.findByTitle(filePath);
+      const frame = await screen.findByTitle(
+        filePath,
+        {},
+        { timeout: LAZY_RENDER_TIMEOUT },
+      );
       expect(frame).toHaveAttribute("sandbox", "allow-scripts");
       expect(frame.getAttribute("srcdoc")).toContain("<script>draw()</script>");
       expect(frame.getAttribute("srcdoc")).toContain("makeStorage");

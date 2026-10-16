@@ -938,16 +938,68 @@ async def uninstall_plugin_source(
             if installed is None:
                 raise KeyError(f"Plugin '{plugin_id}' is not loaded.")
             _, source_path = installed
-            await asyncio.to_thread(shutil.rmtree, source_path)
-            # A failed plugin's manifest cannot establish tool ownership.
-            # Preserve agent configs, including those from earlier runs.
-            return
-        meta = record.manifest.meta or {}
-        provider_ids, command_names = _collect_plugin_runtime_ids(
-            loader.registry,
+        else:
+            meta = record.manifest.meta or {}
+            provider_ids, command_names = _collect_plugin_runtime_ids(
+                loader.registry,
+                plugin_id,
+            )
+        # Persist the user's intent before deleting the plugin directory.
+        # The tombstone lives outside that directory, so a successful
+        # unload cannot erase it and startup cannot resurrect the bundle.
+        from ...plugins.bundled import (
+            clear_uninstalled_marker,
+            mark_plugin_uninstalled,
+        )
+        from ...components.service import (
+            is_component_update_adopted,
+            set_component_update_adoption,
+        )
+
+        was_adopted = await asyncio.to_thread(
+            is_component_update_adopted,
             plugin_id,
         )
-        await loader.unload_plugin(plugin_id, delete_files=True)
+        await asyncio.to_thread(
+            set_component_update_adoption,
+            plugin_id,
+            False,
+        )
+        try:
+            await asyncio.to_thread(mark_plugin_uninstalled, plugin_id)
+            if record is None:
+                await asyncio.to_thread(remove_tree, source_path)
+            else:
+                await loader.unload_plugin(plugin_id, delete_files=True)
+        except Exception:
+            if was_adopted:
+                try:
+                    await asyncio.to_thread(
+                        set_component_update_adoption,
+                        plugin_id,
+                        True,
+                    )
+                except Exception:
+                    logger.exception(
+                        "Failed to restore component update adoption "
+                        "after uninstall rollback for '%s'",
+                        plugin_id,
+                    )
+            try:
+                await asyncio.to_thread(
+                    clear_uninstalled_marker,
+                    plugin_id,
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to clear uninstall marker while rolling "
+                    "back plugin '%s'",
+                    plugin_id,
+                )
+            raise
+        if record is None:
+            # Failed manifests cannot establish tool ownership.
+            return
         _post_unload_cleanup(
             request,
             plugin_id,
@@ -1299,78 +1351,7 @@ async def uninstall_plugin(plugin_id: str, request: Request):
         )
 
     try:
-        async with loader.plugin_lifecycle(plugin_id):
-            record = loader.get_loaded_plugin(plugin_id)
-            if record is None:
-                raise KeyError(f"Plugin '{plugin_id}' is not loaded.")
-            meta: dict = record.manifest.meta or {}
-
-            provider_ids, command_names = _collect_plugin_runtime_ids(
-                loader.registry,
-                plugin_id,
-            )
-            # Persist the user's intent before deleting the plugin directory.
-            # The tombstone lives outside that directory, so a successful
-            # unload cannot erase it and startup cannot resurrect the bundle.
-            from ...plugins.bundled import (
-                clear_uninstalled_marker,
-                mark_plugin_uninstalled,
-            )
-            from ...components.service import (
-                is_component_update_adopted,
-                set_component_update_adoption,
-            )
-
-            was_adopted = await asyncio.to_thread(
-                is_component_update_adopted,
-                plugin_id,
-            )
-            await asyncio.to_thread(
-                set_component_update_adoption,
-                plugin_id,
-                False,
-            )
-            try:
-                await asyncio.to_thread(mark_plugin_uninstalled, plugin_id)
-                await loader.unload_plugin(plugin_id, delete_files=True)
-            except Exception:
-                if was_adopted:
-                    try:
-                        await asyncio.to_thread(
-                            set_component_update_adoption,
-                            plugin_id,
-                            True,
-                        )
-                    except Exception:
-                        logger.exception(
-                            "Failed to restore component update adoption "
-                            "after uninstall rollback for '%s'",
-                            plugin_id,
-                        )
-                try:
-                    await asyncio.to_thread(
-                        clear_uninstalled_marker,
-                        plugin_id,
-                    )
-                except Exception:
-                    logger.exception(
-                        "Failed to clear uninstall marker while rolling "
-                        "back plugin '%s'",
-                        plugin_id,
-                    )
-                raise
-            _post_unload_cleanup(
-                request,
-                plugin_id,
-                provider_ids,
-                command_names,
-            )
-            await asyncio.to_thread(
-                _remove_plugin_tools_from_agents,
-                plugin_id,
-                meta,
-            )
-            await _schedule_all_agents_reload(request)
+        await uninstall_plugin_source(plugin_id, app=request.app)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except MarketProviderBusyError as exc:

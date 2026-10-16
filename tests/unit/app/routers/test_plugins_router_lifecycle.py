@@ -1414,6 +1414,21 @@ class TestInstallPluginSource:
 
 
 class TestUninstallPluginSource:
+    @pytest.fixture(autouse=True)
+    def isolate_uninstall_state(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(
+            "qwenpaw.config.utils.get_plugins_dir",
+            lambda: tmp_path / "plugins",
+        )
+        monkeypatch.setattr(
+            "qwenpaw.components.service.is_component_update_adopted",
+            lambda _: False,
+        )
+        monkeypatch.setattr(
+            "qwenpaw.components.service.set_component_update_adoption",
+            lambda *args: None,
+        )
+
     async def test_failed_plugin_removal_preserves_tool_config(
         self,
         tmp_path,

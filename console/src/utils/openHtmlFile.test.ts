@@ -73,6 +73,31 @@ describe("openHtmlFile", () => {
     );
   });
 
+  it("contains untrusted markup only inside an opaque sandbox", async () => {
+    const content =
+      '<script>parent.localStorage.getItem("qwenpaw_auth_token")</script><h1>交互</h1>';
+    openHtmlFile({ ...baseOptions, content });
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+    const html = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blob);
+    });
+    const wrapper = new DOMParser().parseFromString(html, "text/html");
+    expect(wrapper.querySelector("script")).toBeNull();
+    const frame = wrapper.querySelector("iframe")!;
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    const preview = new DOMParser().parseFromString(
+      frame.getAttribute("srcdoc")!,
+      "text/html",
+    );
+    expect(preview.querySelector("h1")?.textContent).toBe("交互");
+    expect(preview.querySelectorAll("script")).toHaveLength(2);
+    expect(preview.querySelector("script")?.textContent).toContain(
+      "makeStorage",
+    );
+  });
+
   it("falls back to a blob URL when workspace backed but no native shell", () => {
     openHtmlFile({ ...baseOptions, workspaceBacked: true });
     expect(URL.createObjectURL).toHaveBeenCalled();

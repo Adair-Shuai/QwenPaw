@@ -284,3 +284,74 @@ async def test_explicit_reinstall_clears_persistent_tombstone(tmp_path):
     assert [manifest.id for manifest, _ in loader.discover_plugins()] == [
         "demo",
     ]
+
+
+@pytest.mark.parametrize("delete_fails", [False, True])
+def test_api_uninstalls_failed_plugin_with_transaction(
+    tmp_path,
+    monkeypatch,
+    delete_fails,
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    plugins = tmp_path / "plugins"
+    source_root = tmp_path / "bundles"
+    installed = plugins / "demo"
+    _write_plugin(installed)
+    _write_plugin(source_root / "demo")
+    monkeypatch.setattr(
+        "qwenpaw.config.utils.get_plugins_dir",
+        lambda: plugins,
+    )
+    adoption = []
+    monkeypatch.setattr(
+        "qwenpaw.components.service.is_component_update_adopted",
+        lambda _: True,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service.set_component_update_adoption",
+        lambda plugin_id, enabled: adoption.append((plugin_id, enabled)),
+    )
+
+    class FailedLoader:
+        @asynccontextmanager
+        async def plugin_lifecycle(self, _plugin_id):
+            yield
+
+        def get_loaded_plugin(self, _plugin_id):
+            return None
+
+        def discover_plugins(self):
+            return [(SimpleNamespace(id="demo"), installed)]
+
+    cleanup = MagicMock()
+    monkeypatch.setattr(
+        plugin_router,
+        "_remove_plugin_tools_from_agents",
+        cleanup,
+    )
+    if delete_fails:
+        monkeypatch.setattr(
+            plugin_router,
+            "remove_tree",
+            MagicMock(side_effect=OSError("locked")),
+        )
+    app = FastAPI()
+    app.state.plugin_loader = FailedLoader()
+    app.include_router(plugin_router.router, prefix="/api")
+    response = TestClient(app).delete("/api/plugins/demo")
+    assert response.status_code == (500 if delete_fails else 200)
+    assert installed.exists() == delete_fails
+    assert (
+        bundled.is_plugin_uninstalled("demo", plugins_dir=plugins)
+        != delete_fails
+    )
+    assert adoption == (
+        [("demo", False), ("demo", True)]
+        if delete_fails
+        else [("demo", False)]
+    )
+    cleanup.assert_not_called()
+    if not delete_fails:
+        _assert_restart_does_not_restore(monkeypatch, plugins, source_root)
