@@ -62,7 +62,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-KIND_DIRS = ("bundle", "tool", "memory", "apps")
+KIND_DIRS = ("bundle", "tool", "memory", "apps", "hub")
 _RELEASE_SEGMENT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._+-]*$")
 
 EXCLUDE_PATTERNS = (

@@ -466,6 +466,8 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         "installed": [],
         "error": None,
     }
+    app.state.market_ready = asyncio.Event()
+    app.state.market_startup_failed = False
     app.state.startup_time = startup_start_time
     from ..browser.execution.kernel import get_default_kernel_manager
 
@@ -481,6 +483,17 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         prime_bridge_token()
     except Exception:
         logger.warning("Bridge token priming failed", exc_info=True)
+
+    # Resolving the process timezone can run subprocess probes (POSIX
+    # `timedatectl`), so warm the cache off the event loop here rather than
+    # letting the first chat-history request pay for it. Best-effort: the
+    # cache is populated lazily anyway.
+    try:
+        from .chats.utils import _process_local_tz
+
+        await asyncio.to_thread(_process_local_tz)
+    except Exception:
+        logger.debug("Timezone prewarm skipped", exc_info=True)
 
     fast_elapsed = time.time() - startup_start_time
     logger.info(
@@ -498,9 +511,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     startup_display = AgentStartupDisplay(read_last_api()).start()
 
     async def _background_startup():  # pylint: disable=too-many-statements
+        # Startup keeps activation rollback inside its owning phase.
+        # pylint: disable=too-many-nested-blocks
         try:
             # ---- Plugin System (phase 1: startup-critical plugins) ----
-            # Channel and memory plugins must register before agents start.
+            # Channels, memory backends and Hubs register before readiness.
             logger.debug("Initializing plugin system...")
             startup_state.update("components", "正在检查已安排的更新…", 12)
             from ..config.utils import get_plugins_dir
@@ -601,6 +616,16 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # and load through the same pipeline as 'app'-type plugins
             # (plugin.json carrying meta.pawapp); surfaced only in the App
             # Center, hidden from the sidebar.
+            from ..market.builtin import seed_builtin_hub_plugins
+
+            try:
+                await asyncio.to_thread(
+                    seed_builtin_hub_plugins,
+                    get_plugins_dir(),
+                )
+            except (OSError, ValueError, TimeoutError):
+                logger.exception("Could not initialize default Hub plugins")
+
             plugin_dirs = [get_plugins_dir()]
 
             plugin_loader = PluginLoader(plugin_dirs)
@@ -620,9 +645,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             # Phase 1: load startup-critical plugins before agents start
             await plugin_loader.load_all_plugins(
                 configs=plugin_configs,
-                types=["channel", "memory"],
+                types=["channel", "memory", "hub"],
             )
-            logger.debug("Phase 1: channel and memory plugins loaded")
+            logger.debug("Phase 1: channel, memory and Hub plugins loaded")
+            app.state.market_ready.set()
 
             # Publish frontend registrations and validate newly activated
             # bundles before agents or the UI depend on them.
@@ -659,6 +685,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                             plugin_id,
                             exc_info=True,
                         )
+                        # pylint: disable-next=protected-access
                         plugin_loader._loaded_plugins.pop(plugin_id, None)
                         plugin_loader.registry.unregister_plugin(plugin_id)
                 try:
@@ -700,9 +727,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
                     recovery_service = configured_service()
                     if recovery_service is not None:
+                        recovery_updater = recovery_service.updater
                         try:
                             for component_id in sorted(component_updated_ids):
-                                if recovery_service.updater.is_directory_component(
+                                if recovery_updater.is_directory_component(
                                     component_id,
                                 ):
                                     continue
@@ -712,11 +740,12 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                 )
                                 record = loaded_plugins.get(component_id)
                                 if record and record.enabled:
-                                    recovery_service.updater.finalize_activation(
+                                    recovery_updater.finalize_activation(
                                         component_id,
                                         destination,
                                     )
                                     continue
+                                # pylint: disable-next=protected-access
                                 plugin_loader._loaded_plugins.pop(
                                     component_id,
                                     None,
@@ -925,6 +954,28 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     exc_info=True,
                 )
 
+            # ---- Orphan skill staging dirs ----
+            # Best-effort housekeeping: a leaked stage dir is harmless, so
+            # cleanup must never gate startup on temp-dir I/O.
+            try:
+                from ..agents.skill_system import (
+                    cleanup_orphan_skill_stages,
+                )
+
+                removed = await asyncio.to_thread(
+                    cleanup_orphan_skill_stages,
+                )
+                if removed:
+                    logger.info(
+                        "Removed %d orphan skill staging dir(s)",
+                        removed,
+                    )
+            except Exception:
+                logger.warning(
+                    "Orphan skill staging cleanup skipped",
+                    exc_info=True,
+                )
+
             startup_elapsed = time.time() - startup_start_time
             logger.info(
                 "Background startup completed in "
@@ -945,6 +996,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "Background startup encountered an error",
                 exc_info=True,
             )
+        finally:
+            if not app.state.market_ready.is_set():
+                app.state.market_startup_failed = True
+                app.state.market_ready.set()
 
     _bg_task = asyncio.create_task(_background_startup())
     daily_telemetry = start_daily_telemetry()
@@ -1147,7 +1202,8 @@ def get_version():
 
 def _fetch_update_version(*, desktop: bool) -> str:
     """Read a bounded OSS manifest, reusing recent values during outages."""
-    global _desktop_version_cache, _core_version_cache  # pylint: disable=global-statement
+    # pylint: disable-next=global-statement
+    global _desktop_version_cache, _core_version_cache
     cached = _desktop_version_cache if desktop else _core_version_cache
     now = time.monotonic()
     if (

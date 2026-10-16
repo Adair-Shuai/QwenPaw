@@ -322,10 +322,7 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
           {createButton}
         </div>
       ) : (
-        <PageHeader
-          items={[{ title: t("nav.agent") }, { title: t("mcp.title") }]}
-          extra={createButton}
-        />
+        <PageHeader current={t("mcp.title")} extra={createButton} />
       )}
 
       <div className={styles.collectionToolbar}>

@@ -470,7 +470,7 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
       ) : (
         <PageHeader
           className={stylesACP.pageHeader}
-          items={[{ title: t("nav.agent") }, { title: t("acp.title") }]}
+          current={t("acp.title")}
           center={filterControls}
           extra={headerActions}
         />

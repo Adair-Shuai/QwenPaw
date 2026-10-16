@@ -183,6 +183,7 @@ import {
 } from "../../stores/terminalSurfaceStore";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { RichFileReferenceInputProvider } from "./RichFileReferenceInput";
+import { LongTextPasteInput, LongTextPasteProvider } from "./LongTextPaste";
 import type { ParsedFileReference } from "./fileReferenceFormatting";
 import { scrollReverseMessageList } from "./messageScroll";
 import { LONG_CHAT_USER_MESSAGE_ANCHORS } from "./longChatPerformance";
@@ -4081,6 +4082,7 @@ export default function ChatPage() {
       },
       sender: {
         ...i18nConfig?.sender,
+        components: { input: LongTextPasteInput },
         beforeSubmit: handleBeforeSubmit,
         allowSpeech: whisperChecked && !whisperEnabled,
         beforeUI: showSenderBeforeUI ? (
@@ -4225,15 +4227,6 @@ export default function ChatPage() {
                   );
                 },
                 customRequest: handleFileUpload,
-              },
-              longTextUpload: {
-                ...(i18nConfig?.sender?.longTextUpload ?? {}),
-                customRequest: handleFileUpload,
-                prompt: () =>
-                  t(
-                    "chat.longTextUploadPrompt",
-                    "Please read the uploaded prompt file and answer it.",
-                  ),
               },
             }
           : {}),
@@ -4522,7 +4515,11 @@ export default function ChatPage() {
             },
           },
           {
-            icon: <Copy />,
+            icon: (
+              <span title={t("common.copy")}>
+                <Copy />
+              </span>
+            ),
             onClick: ({ data }: { data: { input?: unknown[] } }) => {
               const text = (data?.input || [])
                 .map(extractUserMessageText)
@@ -4630,24 +4627,29 @@ export default function ChatPage() {
                 : styles.chatMessagesArea
             }
           >
-            <RichFileReferenceInputProvider
-              onOpenReference={(reference, trigger) =>
-                void openInlineFileReference(reference, trigger)
-              }
+            <LongTextPasteProvider
+              enabled={supportsAttachments}
+              scopeKey={queueKey}
             >
-              {!isAgentTransition && (
-                <ChatSessionTransition
-                  adapter={sdkSessionAdapter}
-                  sessionId={chatId}
-                >
-                  <AgentScopeRuntimeWebUI
-                    ref={chatRef}
-                    key={refreshKey}
-                    options={options}
-                  />
-                </ChatSessionTransition>
-              )}
-            </RichFileReferenceInputProvider>
+              <RichFileReferenceInputProvider
+                onOpenReference={(reference, trigger) =>
+                  void openInlineFileReference(reference, trigger)
+                }
+              >
+                {!isAgentTransition && (
+                  <ChatSessionTransition
+                    adapter={sdkSessionAdapter}
+                    sessionId={chatId}
+                  >
+                    <AgentScopeRuntimeWebUI
+                      ref={chatRef}
+                      key={refreshKey}
+                      options={options}
+                    />
+                  </ChatSessionTransition>
+                )}
+              </RichFileReferenceInputProvider>
+            </LongTextPasteProvider>
           </div>
 
           {/* Rate-limit guidance banner */}

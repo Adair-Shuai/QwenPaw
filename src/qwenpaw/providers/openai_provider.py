@@ -28,6 +28,7 @@ from ..utils.http import (
     should_use_custom_http_client,
 )
 
+from .adapters.request_context import with_session_header
 from .model_info import release_date
 from ..utils.io_utils import run_sync_io
 from .model_catalog import catalog_documents
@@ -118,7 +119,10 @@ def _http_error_detail(resp: httpx.Response) -> str:
 def _uses_max_completion_tokens(model_id: str) -> bool:
     """Return whether an OpenAI model requires max_completion_tokens."""
     model_name = model_id.strip().lower().rsplit("/", maxsplit=1)[-1]
-    return model_name.startswith("gpt-5") or (
+    gpt_version = re.match(r"gpt-([0-9]+)", model_name)
+    if gpt_version and int(gpt_version.group(1)) >= 5:
+        return True
+    return (
         len(model_name) > 1
         and model_name[0] == "o"
         and model_name[1].isdigit()
@@ -174,7 +178,11 @@ class OpenAIProvider(Provider):
         return self._build_default_headers()
 
     def _build_default_headers(self) -> dict:
-        return dict(self.custom_headers) if self.custom_headers else {}
+        return with_session_header(
+            dict(self.custom_headers) if self.custom_headers else {},
+            self.session_header_name,
+            self._request_session,
+        )
 
     def _client(self, timeout: float = 5) -> AsyncOpenAI:
         kwargs: dict = {

@@ -57,7 +57,10 @@ def _all_subclasses(cls: type) -> set[type]:
 def _concrete_handlers() -> list[type[BaseControlCommandHandler]]:
     """Return all non-abstract subclasses of BaseControlCommandHandler."""
     subs = _all_subclasses(BaseControlCommandHandler)
-    return [cls for cls in subs if not inspect.isabstract(cls)]
+    return sorted(
+        (cls for cls in subs if not inspect.isabstract(cls)),
+        key=lambda cls: (cls.__module__, cls.__qualname__),
+    )
 
 
 def test_at_least_six_concrete_handlers_are_discoverable():

@@ -15,10 +15,10 @@ import time
 import xml.etree.ElementTree as ET
 import zipfile
 from collections import OrderedDict
-from contextlib import asynccontextmanager, contextmanager
+from contextlib import asynccontextmanager, contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Literal
+from typing import Any, Awaitable, Callable
 from urllib.parse import quote, urljoin, urlparse, unquote
 
 import frontmatter
@@ -41,21 +41,8 @@ logger = logging.getLogger(__name__)
 
 # ---------- Public types & exceptions --------------------------------------
 
-InstallOrigin = Literal[
-    "",
-    "skills-sh",
-    "github",
-    "gitee",
-    "lobehub",
-    "qwenpaw",
-    "modelscope",
-    "aliyun",
-    "skillsmp",
-    "clawhub",
-    "oss",
-    "url",
-    "zip",
-]
+# Registered hubs may provide their own stable source key.
+InstallOrigin = str
 
 
 @dataclass
@@ -2698,9 +2685,8 @@ async def search_hub_skills(
 
 # ---------- Provider routing -----------------------------------------------
 
-# Single source of truth for provider routing. Each entry pairs a sync,
-# cheap URL matcher (returns truthy on a hit) with the async fetcher to
-# invoke. Order matters — first match wins. Add new providers here.
+# Legacy URL import handlers retain their original matching order.
+# Market hubs register through PluginApi.register_market_provider instead.
 _ProviderMatcher = Callable[[str], Any]
 _ProviderFetcher = Callable[..., Awaitable[tuple[Any, str]]]
 
@@ -2732,6 +2718,16 @@ def _match_provider(
     for name, matcher, fetcher in PROVIDERS:
         if matcher(bundle_url):
             return name, fetcher
+    from ...market.registry import market_registry
+
+    for key, provider in market_registry.snapshot().items():
+        if provider.matches_url(bundle_url):
+
+            async def fetch(url, requested_version, provider_key=key):
+                with market_registry.use(provider_key) as current:
+                    return await current.fetch_bundle(url, requested_version)
+
+            return key, fetch
     return "url", None
 
 
@@ -2783,6 +2779,7 @@ async def _prepare_install_payload(
     version: str,
     target_name: str | None,
     access_token: str = "",
+    provider: Any | None = None,
 ) -> _InstallPayload:
     """Validate, fetch, normalise, resolve final skill name.
 
@@ -2796,17 +2793,29 @@ async def _prepare_install_payload(
             message="bundle_url must be a valid http(s) URL",
         )
     _ensure_not_cancelled()
-    if access_token:
-        data, source_url = await _resolve_bundle_from_url(
-            bundle_url,
-            version,
-            access_token,
-        )
+    if provider is None:
+        if access_token:
+            data, source_url = await _resolve_bundle_from_url(
+                bundle_url,
+                version,
+                access_token,
+            )
+        else:
+            # Preserve compatibility with custom resolvers written against the
+            # original two-argument extension point.
+            data, source_url = await _resolve_bundle_from_url(
+                bundle_url,
+                version,
+            )
+        installed_from = _classify_install_origin(bundle_url)
     else:
-        # Preserve compatibility with custom resolvers written against the
-        # original two-argument extension point.
-        data, source_url = await _resolve_bundle_from_url(bundle_url, version)
-    installed_from = _classify_install_origin(bundle_url)
+        if not provider.matches_url(bundle_url):
+            raise ValueError(f"URL does not belong to Hub {provider.key!r}")
+        data, source_url = await provider.fetch_bundle(
+            bundle_url,
+            requested_version=version,
+        )
+        installed_from = provider.key
     name, content, references, scripts, extra_files = _normalize_bundle(data)
     if not name:
         fallback = urlparse(bundle_url).path.strip("/").split("/")[-1]
@@ -2836,21 +2845,23 @@ async def install_skill_from_hub(
     target_name: str | None = None,
     cancel_checker: Any | None = None,
     access_token: str = "",
+    provider_key: str | None = None,
 ) -> HubInstallResult:
-    with _with_cancel_checker(cancel_checker):
-        if access_token:
-            payload = await _prepare_install_payload(
-                bundle_url,
-                version,
-                target_name,
-                access_token,
-            )
-        else:
-            payload = await _prepare_install_payload(
-                bundle_url,
-                version,
-                target_name,
-            )
+    from ...market.registry import market_registry
+
+    lease = (
+        market_registry.use(provider_key)
+        if provider_key is not None
+        else nullcontext(None)
+    )
+    with _with_cancel_checker(cancel_checker), lease as provider:
+        payload = await _prepare_install_payload(
+            bundle_url,
+            version,
+            target_name,
+            **({"access_token": access_token} if access_token else {}),
+            **({"provider": provider} if provider is not None else {}),
+        )
         _ensure_not_cancelled()
         skill_service = SkillService(workspace_dir)
         # SkillService writes to disk synchronously; off-load so the
@@ -2896,21 +2907,23 @@ async def import_pool_skill_from_hub(
     target_name: str | None = None,
     cancel_checker: Any | None = None,
     access_token: str = "",
+    provider_key: str | None = None,
 ) -> HubInstallResult:
-    with _with_cancel_checker(cancel_checker):
-        if access_token:
-            payload = await _prepare_install_payload(
-                bundle_url,
-                version,
-                target_name,
-                access_token,
-            )
-        else:
-            payload = await _prepare_install_payload(
-                bundle_url,
-                version,
-                target_name,
-            )
+    from ...market.registry import market_registry
+
+    lease = (
+        market_registry.use(provider_key)
+        if provider_key is not None
+        else nullcontext(None)
+    )
+    with _with_cancel_checker(cancel_checker), lease as provider:
+        payload = await _prepare_install_payload(
+            bundle_url,
+            version,
+            target_name,
+            **({"access_token": access_token} if access_token else {}),
+            **({"provider": provider} if provider is not None else {}),
+        )
         _ensure_not_cancelled()
         pool_service = SkillPoolService()
         created = await asyncio.to_thread(

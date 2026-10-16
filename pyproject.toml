@@ -5,7 +5,7 @@ description = "QwenPaw is a self-hosted personal AI assistant with multi-channel
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
-    "agentscope[model-ollama]==2.0.9",
+    "agentscope[model-ollama]==2.0.10",
     "httpx>=0.27.0",
     "websockets>=15.0.1,<16",
     "packaging>=24.0",
@@ -90,13 +90,15 @@ Issues = "https://github.com/agentscope-ai/QwenPaw/issues"  # 上游 issues
 version = {attr = "qwenpaw.__version__.__version__"}
 
 [tool.setuptools]
-packages = { find = { where = ["src", "packages/qwenpawmail-mcp/src"], exclude = [
-    "qwenpaw.plugins_bundle.*.ui.node_modules*",
-    "qwenpaw.*.__pycache__*",
-] } }
 include-package-data = true
 
+[tool.setuptools.package-dir]
+"qwenpaw" = "src/qwenpaw"
+"qwenpawmail_mcp" = "packages/qwenpawmail-mcp/src/qwenpawmail_mcp"
+"qwenpaw.plugins.bundled.hub" = "plugins/hub"
+
 [tool.setuptools.package-data]
+"qwenpaw.plugins.bundled.hub" = ["*/plugin.json"]
 # Dockerfile copies console build output to src/qwenpaw/console/ (no dist subdir).
 "qwenpaw" = [
     "console/**",

@@ -59,5 +59,9 @@ async def test_driver_manager_uses_per_workspace_storage(
     manager_one = await _start_driver_service(workspace_one)
     manager_two = await _start_driver_service(workspace_two)
 
-    assert await _active_driver_names(manager_one) == ["driver-one"]
-    assert await _active_driver_names(manager_two) == ["driver-two"]
+    # Built-in UGSci drivers may be present in both workspaces. Custom
+    # cards must still be isolated to the workspace that owns them.
+    names_one = set(await _active_driver_names(manager_one))
+    names_two = set(await _active_driver_names(manager_two))
+    assert "driver-one" in names_one and "driver-two" not in names_one
+    assert "driver-two" in names_two and "driver-one" not in names_two
