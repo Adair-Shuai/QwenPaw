@@ -51,6 +51,38 @@ export async function workbook(
       ],
     ],
   ];
+  if (result.segments) {
+    let from = 0;
+    sheets.push([
+      "井身结构",
+      [
+        [
+          "井段名称",
+          "起点井深_m",
+          "终点井深_m",
+          "内径_mm",
+          "夹角_deg",
+          "粗糙度_mm",
+        ],
+        ...result.segments.map((s) => {
+          const row = [
+            s.name,
+            from,
+            s.end,
+            s.diameter * 1000,
+            s.angle,
+            s.roughness * 1000,
+          ];
+          from = s.end;
+          return row;
+        }),
+      ],
+    ]);
+    sheets[0][1].push([
+      "井身结构说明",
+      "流动通道内径及井段参数以井身结构表为准；分段计算不含管径突变局部损失",
+    ]);
+  }
   if (quality)
     sheets.push([
       "计算检查",
@@ -83,6 +115,38 @@ export async function workbook(
         ["摩阻压差", baseline.friction, result.friction, "MPa"],
       ],
     ]);
+  if (baseline?.segments) {
+    const rows = [
+      [
+        "工况",
+        "井段名称",
+        "起点井深_m",
+        "终点井深_m",
+        "内径_mm",
+        "夹角_deg",
+        "粗糙度_mm",
+      ],
+    ];
+    for (const [label, segments] of [
+      ["固定基准", baseline.segments],
+      ["当前结果", result.segments],
+    ]) {
+      let from = 0;
+      for (const s of segments) {
+        rows.push([
+          label,
+          s.name,
+          from,
+          s.end,
+          s.diameter * 1000,
+          s.angle,
+          s.roughness * 1000,
+        ]);
+        from = s.end;
+      }
+    }
+    sheets.push(["结构对比", rows]);
+  }
   const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
   const rel =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";

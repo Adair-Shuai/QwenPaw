@@ -1,9 +1,9 @@
 {
   "id": "wellbore-pressure",
   "name": "井筒压力计算",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "type": "app",
-  "description": "独立的单气相井筒压力计算工具：模型与工况对比、可调采样、网格检查、井深查询及Excel与曲线导出。",
+  "description": "井筒参数与分段井身结构编辑导入，联动结构示意和压力曲线，支持图表/数据表切换、工况对比与Excel导出。",
   "author": "UGSci Team",
   "entry": {
     "backend": "backend/main.py",

@@ -1,10 +1,4 @@
-import {
-  DEFAULTS,
-  FIELDS,
-  MODELS,
-  COLUMNS,
-  parameterErrors,
-} from "./model.mjs";
+import { DEFAULTS, FIELDS, MODELS, parameterErrors } from "./model.mjs";
 import { workbook, download } from "./export.mjs";
 import {
   VERSION,
@@ -15,279 +9,249 @@ import {
   decodeScenario,
   changedFields,
 } from "./scenario.mjs";
+import {
+  uniformStructure,
+  normalizeStructure,
+  parseStructure,
+  structureCSV,
+  verticalDepth,
+  sectionAtDepth,
+} from "./structure.mjs";
+import { fmt } from "./ui-utils.mjs";
+import Chart from "./chart.jsx";
+import CSS from "./workbench.css";
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useRef, useMemo } = React;
-const fmt = (n, d = 4) =>
-  n !== 0 && Math.abs(n) < 0.5 * 10 ** -d
-    ? Number(n).toExponential(2)
-    : Number(n).toLocaleString("zh-CN", {
-        maximumFractionDigits: d,
-        minimumFractionDigits: d,
-      });
-const CSS = `
-.wp-app{--ink:#20354a;--muted:#728194;--line:#dfe6ed;--blue:#2365a4;--teal:#278b89;color:var(--ink);background:#f3f6f9;min-height:100%;font:14px/1.6 Inter,'Microsoft YaHei',sans-serif;color-scheme:light}
-.wp-app *{box-sizing:border-box}.wp-shell{max-width:1580px;margin:auto;padding:26px 30px 40px}.wp-top{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-bottom:26px;padding-right:72px}.wp-brand{display:flex;gap:14px;align-items:center}.wp-logo{display:grid;place-items:center;width:44px;height:44px;border:1px solid #ccdae8;border-radius:12px;background:white;color:var(--blue);font-size:25px}.wp-eyebrow{font-size:10px;letter-spacing:2px;color:var(--blue);font-weight:700}.wp-app h1{font-size:24px;letter-spacing:.02em;margin:0;font-weight:700}.wp-sub{color:var(--muted);font-size:12px}.wp-badge{color:#47746b;background:#e7f2ed;border:1px solid #d2e6dd;border-radius:20px;padding:4px 11px;font-size:11px;white-space:nowrap}.wp-layout{display:grid;grid-template-columns:300px minmax(0,1fr);gap:22px;align-items:start}.wp-panel{background:white;border:1px solid var(--line);border-radius:14px;overflow:hidden}.wp-panel-head{padding:18px 20px 14px;border-bottom:1px solid #edf0f4;display:flex;align-items:center;justify-content:space-between;gap:12px}.wp-app h2{font-size:15px;margin:0;font-weight:700}.wp-index{display:inline-block;margin-right:9px;font-size:11px;color:#8b9cad;font-weight:500}.wp-form{padding:18px 20px}.wp-field{display:block;margin-bottom:15px}.wp-field-title{display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px}.wp-unit{color:#8797a9;font-size:11px}.wp-app input[type=number],.wp-app select{font:inherit;font-variant-numeric:tabular-nums;width:100%;border:1px solid #d8e1e9;border-radius:7px;padding:9px 10px;background:#fcfdfe;color:var(--ink);outline:none}.wp-app input:focus,.wp-app select:focus{border-color:#4385bc;box-shadow:0 0 0 3px #e9f2f9}.wp-app button{font:inherit;cursor:pointer;border:1px solid #dbe3ea;border-radius:7px;background:white;color:var(--ink);padding:7px 12px;transition:background .15s}.wp-app button:hover{background:#edf4fa}.wp-app button:disabled{opacity:.45;cursor:not-allowed}.wp-app button:focus-visible{outline:3px solid #86b8e0;outline-offset:2px}.wp-app .wp-primary{background:#2365a4;color:white;border-color:#2365a4;font-weight:600;padding:11px 15px;width:100%}.wp-app .wp-primary:hover{background:#195589}.wp-app .wp-link{border:0;padding:0;color:var(--blue);font-size:12px;background:none}.wp-hint{font-size:11px;color:var(--muted);margin:5px 0 15px;line-height:1.75}.wp-form-footer{padding-top:4px}.wp-right{min-width:0;display:grid;gap:18px}.wp-summary{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.wp-stat{background:white;border:1px solid var(--line);border-radius:12px;padding:17px 20px;position:relative}.wp-stat:first-child{border-top:3px solid var(--blue);padding-top:15px}.wp-stat-label{font-size:12px;color:var(--muted)}.wp-stat-value{font-size:29px;font-weight:650;letter-spacing:-1px;font-variant-numeric:tabular-nums;line-height:1.35;margin:7px 0 4px}.wp-stat-unit{font-size:12px;font-weight:400;color:#8996a7;margin-left:6px;letter-spacing:0}.wp-stat-note{font-size:11px;color:#8794a3}.wp-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap}.wp-chart-body{padding:12px 20px 14px}.wp-chart{display:block;width:100%;height:auto;touch-action:pan-y}.wp-legend{display:flex;gap:20px;flex-wrap:wrap;font-size:11px;color:var(--muted);margin:6px 10px 0}.wp-key{display:inline-block;width:19px;border-top:3px solid var(--blue);margin-right:6px;vertical-align:middle}.wp-key.alt{border-color:var(--teal);border-top-style:dashed}.wp-chart-status{min-height:27px;font-size:11px;color:#5d758c;padding-left:10px;font-variant-numeric:tabular-nums}.wp-check{font-size:12px;display:flex;align-items:center;gap:6px;white-space:nowrap}.wp-table-wrap{overflow:auto;max-height:370px}.wp-app table{border-collapse:collapse;width:100%;font-size:12px;font-variant-numeric:tabular-nums;white-space:nowrap}.wp-app th{text-align:right;background:#f7f9fb;font-weight:500;color:#718195;position:sticky;top:0;z-index:1}.wp-app td,.wp-app th{padding:11px 18px;border-bottom:1px solid #edf1f4}.wp-app td{text-align:right}.wp-app td:first-child,.wp-app th:first-child{text-align:left}.wp-app tbody tr:hover{background:#f4f9fd}.wp-app tbody tr:last-child{background:#eff6fc}.wp-foot{font-size:11px;color:#8b98a7;display:flex;justify-content:space-between;gap:15px;margin-top:18px}.wp-note{border:1px solid #dce5ed;background:#edf3f8;padding:13px 16px;border-radius:10px;font-size:12px;color:#587088}.wp-error{border-color:#ebc6bc;background:#fff2ee;color:#9d4b39}.wp-stale{background:#fff8e8;border-color:#ecdba9;color:#8a6d2a}.wp-model-details{padding:16px 20px;font-size:12px;color:#64788b}.wp-model-details summary{cursor:pointer;color:var(--ink);font-weight:600}.wp-model-details p{margin:10px 0}.wp-model-details code{background:#f1f5f8;padding:3px 6px;color:#3b5e7e}.wp-head-select{width:auto!important;font-size:12px!important;padding:5px 9px!important}.wp-hidden{display:none}.wp-spinner{opacity:.65}.wp-total-bar{display:flex;height:5px;border-radius:5px;overflow:hidden;margin:10px 0 8px;background:#dfeaf3}.wp-small{font-size:11px;color:var(--muted)}
-@media(max-width:1050px){.wp-shell{padding:20px 18px}.wp-layout{grid-template-columns:265px minmax(0,1fr);gap:16px}.wp-stat{padding:14px}.wp-stat-value{font-size:24px}.wp-panel-head{flex-wrap:wrap}.wp-summary{gap:9px}.wp-top{align-items:flex-start}}
-@media(max-width:760px){.wp-shell{padding:15px 12px}.wp-layout{grid-template-columns:1fr}.wp-top{flex-direction:column;gap:10px;margin-bottom:18px}.wp-form{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}.wp-form>.wp-field:first-child,.wp-form-footer,.wp-form>.wp-hint{grid-column:1/-1}.wp-app h1{font-size:22px}.wp-summary{grid-template-columns:1fr}.wp-stat{display:grid;grid-template-columns:1fr auto;align-items:center;column-gap:10px}.wp-stat-value{grid-row:1/3;grid-column:2}.wp-stat-note{grid-column:1}.wp-chart-body{padding:10px 8px}.wp-foot{flex-direction:column;gap:2px}.wp-table-wrap{max-height:300px}}
-.wp-probe{display:flex;gap:14px;align-items:center;padding:9px 10px;font-size:12px;flex-wrap:wrap}.wp-probe label{flex:1;min-width:150px}.wp-probe input{display:block;width:100%;accent-color:#2365a4}.wp-field-error{display:block;color:#a74935;font-size:11px;margin-top:5px}.wp-app [aria-invalid=true]{border-color:#c66b59!important;background:#fff8f5!important}.wp-insights{display:grid;grid-template-columns:repeat(2,1fr);padding:17px 20px;gap:18px}.wp-insights span{display:block;color:#728194;font-size:12px}.wp-insights strong{font-size:18px;font-weight:600}.wp-check-note{font-size:12px;color:#687e91;margin:0;padding:0 20px 18px;line-height:1.8}.wp-panel-head+.wp-check-note{padding-top:16px}.wp-wide{grid-column:1/-1}.wp-form-footer{position:sticky;bottom:0;background:white;padding-top:12px;padding-bottom:8px;z-index:2}.wp-form-footer:before{content:'';position:absolute;height:12px;top:-12px;left:0;right:0;background:linear-gradient(transparent,white)}
-`;
-function Chart({ result, comparison, compare, metric, interval, disabled }) {
-  const [hover, setHover] = useState(0);
-  const chartRef = useRef(null);
-  const index = { pressure: 1, temperature: 2, velocity: 4 }[metric],
-    label = {
-      pressure: "压力 / MPa",
-      temperature: "温度 / K",
-      velocity: "流速 / m·s⁻¹",
-    }[metric];
-  const all = [...result.rows, ...(compare ? comparison.rows : [])].map(
-    (r) => r[index],
-  );
-  const lo = Math.min(...all),
-    hi = Math.max(...all),
-    pad = Math.max((hi - lo) * 0.12, 0.01),
-    min = lo - pad,
-    max = hi + pad;
-  const W = 840,
-    H = 380,
-    L = 78,
-    R = 28,
-    T = 44,
-    B = 38,
-    x = (v) => L + ((v - min) / (max - min)) * (W - L - R),
-    y = (d) => T + (d / result.params.depth) * (H - T - B);
-  const path = (rows) =>
-    rows
-      .filter(
-        (_, i) =>
-          i % Math.max(1, Math.floor(rows.length / 700)) === 0 ||
-          i === rows.length - 1,
-      )
-      .map(
-        (r, i) =>
-          `${i ? "L" : "M"}${x(r[index]).toFixed(3)},${y(r[0]).toFixed(3)}`,
-      )
-      .join(" ");
-  function point(e) {
-    const svg = e.currentTarget;
-    const matrix = svg.getScreenCTM();
-    if (!matrix) return;
-    const p = svg.createSVGPoint();
-    p.x = e.clientX;
-    p.y = e.clientY;
-    const py = p.matrixTransform(matrix.inverse()).y;
-    setHover(
-      Math.max(
-        0,
-        Math.min(
-          result.steps,
-          Math.round(((py - T) / (H - T - B)) * result.steps),
-        ),
-      ),
-    );
-  }
-  function exportChart() {
-    const svg = chartRef.current.cloneNode(true);
-    svg.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-    svg.setAttribute("width", W);
-    svg.setAttribute("height", H);
-    const title = document.createElementNS(
-      "http://www.w3.org/2000/svg",
-      "title",
-    );
-    title.textContent = `${result.model} · ${label} · 井深${result.params.depth}m`;
-    svg.prepend(title);
-    download(
-      new XMLSerializer().serializeToString(svg),
-      `井筒剖面_${metric}_${result.model}.svg`,
-      "image/svg+xml;charset=utf-8",
-    );
-  }
-  const active = hover == null ? null : result.rows[hover];
+const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+
+function Numeric({
+  label,
+  unit,
+  value,
+  onChange,
+  error,
+  name,
+  scale = 1,
+  ...attrs
+}) {
+  const shown =
+    typeof value === "number" && Number.isFinite(value)
+      ? Number((value * scale).toPrecision(12))
+      : value;
   return (
-    <>
+    <label className="wp-field">
+      <span className="wp-field-title">
+        {label}
+        <span className="wp-unit">{unit}</span>
+      </span>
+      <input
+        type="number"
+        step="any"
+        name={name}
+        aria-label={label}
+        aria-invalid={!!error}
+        aria-describedby={error ? `wp-error-${name}` : undefined}
+        value={shown}
+        onChange={(e) =>
+          onChange(e.target.value === "" ? "" : Number(e.target.value) / scale)
+        }
+        {...attrs}
+      />
+      {error && (
+        <span id={`wp-error-${name}`} className="wp-field-error">
+          {error}
+        </span>
+      )}
+    </label>
+  );
+}
+function Schematic({ segments, depth }) {
+  let start = 0;
+  const maxD = Math.max(...segments.map((s) => s.diameter));
+  const colors = ["#377db6", "#278d98", "#7198b7", "#5787a6"];
+  return (
+    <aside className="wp-schematic" aria-label="井身结构示意">
+      <h3>井身结构</h3>
+      <div className="wp-sub">{segments.length} 个井段 · MD</div>
       <svg
-        ref={chartRef}
-        className="wp-chart"
-        data-testid="pressure-chart"
-        viewBox={`0 0 ${W} ${H}`}
+        viewBox="0 0 150 490"
         role="img"
-        aria-label={`${label}与井深曲线，井深向下增加`}
-        onPointerMove={point}
+        aria-label="按内径缩放的井身结构展开图"
       >
-        <rect width={W} height={H} fill="white" />
-        {Array.from({ length: 6 }, (_, i) => {
-          const d = (result.params.depth * i) / 5,
-            v = min + ((max - min) * i) / 5;
+        <rect x="0" y="0" width="150" height="490" fill="#fbfdff" />
+        <line
+          x1="65"
+          x2="65"
+          y1="30"
+          y2="440"
+          stroke="#d9e4ed"
+          strokeDasharray="3 3"
+        />
+        <text x="65" y="17" textAnchor="middle" fill="#8296a8" fontSize="10">
+          井口 · 0 m
+        </text>
+        {segments.map((s, i) => {
+          const from = start;
+          start = s.end;
+          const y = 30 + (from / depth) * 410,
+            h = ((s.end - from) / depth) * 410,
+            w = 28 + (54 * s.diameter) / maxD;
           return (
-            <g
-              key={i}
-              fontFamily="Microsoft YaHei, sans-serif"
-              fontSize="11"
-              fill="#7b8d9f"
-            >
-              <line x1={L} x2={W - R} y1={y(d)} y2={y(d)} stroke="#e9eff4" />
-              <text x={L - 12} y={y(d) + 4} textAnchor="end">
-                {fmt(d, 0)}
+            <g key={i}>
+              <title>
+                {s.name}：{from}～{s.end} m，内径 {s.diameter * 1000} mm，夹角{" "}
+                {s.angle}°
+              </title>
+              <rect
+                x={65 - w / 2}
+                y={y}
+                width={w}
+                height={Math.max(h, 1)}
+                fill={colors[i % 4]}
+                fillOpacity=".13"
+                stroke={colors[i % 4]}
+                strokeWidth="1.7"
+              />
+              <line
+                x1={65 - w / 2 + 4}
+                x2={65 - w / 2 + 4}
+                y1={y}
+                y2={y + h}
+                stroke="white"
+                strokeWidth="2"
+              />
+              <text
+                x="65"
+                y={y + h / 2 - 2}
+                textAnchor="middle"
+                fill={colors[i % 4]}
+                fontSize="11"
+                fontWeight="600"
+              >
+                Ø {fmt(s.diameter * 1000, 0)}
               </text>
-              <line x1={x(v)} x2={x(v)} y1={T} y2={H - B} stroke="#edf2f6" />
-              <text x={x(v)} y={T - 13} textAnchor="middle">
-                {fmt(v, 2)}
+              {h > 55 && (
+                <text
+                  x="65"
+                  y={y + h / 2 + 14}
+                  textAnchor="middle"
+                  fill="#7a93a7"
+                  fontSize="9"
+                >
+                  {fmt(s.angle, 0)}°
+                </text>
+              )}
+              <line x1="110" x2="117" y1={y + h} y2={y + h} stroke="#9bb0c1" />
+              <text x="120" y={y + h + 3} fill="#8ba1b3" fontSize="8">
+                {fmt(s.end, 0)}
               </text>
             </g>
           );
         })}
-        <text
-          x={(L + W - R) / 2}
-          y="13"
-          textAnchor="middle"
-          fontSize="11"
-          fill="#6d8298"
-        >
-          {label}
+        <text x="65" y="463" textAnchor="middle" fill="#61849d" fontSize="10">
+          井底 {fmt(depth, 0)} m
         </text>
-        <text
-          x="18"
-          y="202"
-          transform="rotate(-90 18 202)"
-          textAnchor="middle"
-          fontSize="11"
-          fill="#6d8298"
-        >
-          井深 / m
-        </text>
-        {compare && (
-          <path
-            d={path(comparison.rows)}
-            fill="none"
-            stroke="#278b89"
-            strokeWidth="2.5"
-            strokeDasharray="7 5"
-          />
-        )}
-        <path
-          d={path(result.rows)}
-          fill="none"
-          stroke="#2365a4"
-          strokeWidth="3"
-        />
-        {result.samples.length < 60 &&
-          result.samples.map((r, i) => (
-            <circle
-              key={i}
-              cx={x(r[index])}
-              cy={y(r[0])}
-              r="3"
-              fill="white"
-              stroke="#2365a4"
-              strokeWidth="1.7"
-            />
-          ))}
-        {active && (
-          <g>
-            <line
-              x1={L}
-              x2={W - R}
-              y1={y(active[0])}
-              y2={y(active[0])}
-              stroke="#a8b8c6"
-              strokeDasharray="3 3"
-            />
-            <circle
-              cx={x(active[index])}
-              cy={y(active[0])}
-              r="5"
-              fill="#2365a4"
-              stroke="white"
-              strokeWidth="2"
-            />
-          </g>
-        )}
-        <text x={W - R} y={H - 7} textAnchor="end" fontSize="10" fill="#90a0ad">
-          井深向下增加 · 单气相采气
+        <text x="65" y="480" textAnchor="middle" fill="#91a5b5" fontSize="9">
+          内径 / mm
         </text>
       </svg>
-      <div className="wp-legend">
-        <span>
-          <i className="wp-key" />
-          {result.model}
-        </span>
-        {compare && (
-          <span>
-            <i className="wp-key alt" />
-            {comparison.model}
-          </span>
-        )}
-        <span>○ {interval} m 采样点</span>
+      <div className="wp-schematic-note">
+        沿测深展开，横向放大。
+        <br />
+        垂深约 {fmt(verticalDepth(segments), 1)} m<br />
+        不表示实际井眼轨迹。
       </div>
-      <div className="wp-chart-status">
-        {active
-          ? `井深 ${fmt(active[0], 1)} m · ${label.split(" / ")[0]} ${fmt(
-              active[index],
-            )}${compare ? ` · 对比 ${fmt(comparison.rows[hover][index])}` : ""}`
-          : "选择井深查看计算值"}
-      </div>
-      <div className="wp-probe">
-        <label>
-          查询井深 / m
-          <input
-            aria-label="查询井深"
-            type="range"
-            min="0"
-            max={result.steps}
-            step="1"
-            value={hover ?? 0}
-            onChange={(e) => setHover(Number(e.target.value))}
-          />
-        </label>
-        <span>{fmt(active?.[0] ?? 0, 1)} m</span>
-        <button disabled={disabled} onClick={exportChart}>
-          导出曲线 SVG
-        </button>
-      </div>
-    </>
+    </aside>
+  );
+}
+function Table({ headers, rows }) {
+  return (
+    <div className="wp-table-wrap">
+      <table>
+        <thead>
+          <tr>
+            {headers.map((h, i) => (
+              <th key={i} scope="col">
+                {h}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((v, j) => (
+                <td key={j}>{v}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 function App() {
   const [params, setParams] = useState({ ...DEFAULTS }),
-    [model, setModel] = useState(MODELS[0]);
-  const [gridFactor, setGridFactor] = useState(1),
+    [model, setModel] = useState(MODELS[0]),
+    [gridFactor, setGridFactor] = useState(1),
     [interval, setInterval] = useState(100);
+  const [mode, setMode] = useState("uniform"),
+    [segments, setSegments] = useState(() => uniformStructure(DEFAULTS));
   const [snapshot, setSnapshot] = useState(() =>
     computeScenario(DEFAULTS, MODELS[0]),
   );
-  const [baseline, setBaseline] = useState(null),
-    [showErrors, setShowErrors] = useState(false);
+  const [view, setView] = useState("chart"),
+    [metric, setMetric] = useState("pressure"),
+    [table, setTable] = useState("profile"),
+    [compare, setCompare] = useState(true),
+    [baseline, setBaseline] = useState(null);
   const [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
-    [compare, setCompare] = useState(true),
-    [metric, setMetric] = useState("pressure"),
+    [showErrors, setShowErrors] = useState(false),
     [exporting, setExporting] = useState(false);
-  const fileInput = useRef(null),
+  const fileRef = useRef(null),
+    structureRef = useRef(null),
     formRef = useRef(null);
   const displayed = useMemo(
     () => sampledScenario(snapshot, interval),
     [snapshot, interval],
   );
   const { result, comparison, quality } = displayed;
-  const errors = showErrors ? parameterErrors(params) : {};
+  const structure = mode === "segmented" ? segments : null;
   const stale =
     FIELDS.some(([k]) => params[k] !== result.params[k]) ||
     model !== result.model ||
-    gridFactor !== snapshot.gridFactor;
+    gridFactor !== snapshot.gridFactor ||
+    !equal(structure, snapshot.structure);
+  const errors = showErrors ? parameterErrors(params) : {};
+  const clear = () => {
+    setError("");
+    setNotice("");
+  };
+  function update(k, v) {
+    setParams((p) => ({ ...p, [k]: v }));
+    clear();
+  }
   function run(e) {
     e?.preventDefault();
     setShowErrors(true);
     try {
-      setSnapshot(computeScenario(params, model, gridFactor));
+      const next = computeScenario(params, model, gridFactor, structure);
+      setSnapshot(next);
+      setParams(next.result.params);
+      if (next.structure) setSegments(next.structure);
       setError("");
-      setNotice("计算完成，结果和网格检查已更新。");
+      setNotice("计算完成，井身结构与结果已同步。");
     } catch (e) {
       setError(e.message);
       setNotice("");
-      const key = Object.keys(parameterErrors(params))[0];
-      if (key) formRef.current?.querySelector(`[name="${key}"]`)?.focus();
+      const k = Object.keys(parameterErrors(params))[0];
+      if (k)
+        formRef.current
+          ?.closest(".wp-app")
+          ?.querySelector(`[name="${k}"]`)
+          ?.focus();
     }
   }
   function reset() {
@@ -295,20 +259,155 @@ function App() {
     setModel(MODELS[0]);
     setGridFactor(1);
     setInterval(100);
+    setMode("uniform");
+    setSegments(uniformStructure(DEFAULTS));
     setSnapshot(computeScenario(DEFAULTS, MODELS[0]));
+    setBaseline(null);
     setShowErrors(false);
     setError("");
-    setNotice("已恢复示例参数并重新计算。");
+    setNotice("已恢复单井段示例。");
+  }
+  function switchMode(next) {
+    if (next === mode) return;
+    if (next === "segmented") setSegments(uniformStructure(params));
+    else {
+      const s = segments[0];
+      setParams((p) => ({
+        ...p,
+        diameter: s.diameter,
+        angle: s.angle,
+        roughness: s.roughness,
+      }));
+    }
+    setMode(next);
+    clear();
+  }
+  function editSegment(i, k, v) {
+    setSegments((s) => s.map((row, j) => (j === i ? { ...row, [k]: v } : row)));
+    clear();
+  }
+  function addSegment() {
+    try {
+      const list = normalizeStructure(segments, params.depth),
+        last = list.at(-1),
+        start = list.length > 1 ? list.at(-2).end : 0;
+      if (list.length >= 30) throw new Error("最多支持30个井段。");
+      if (last.end - start < 0.2)
+        throw new Error("最后井段过短，无法继续拆分。");
+      setSegments([
+        ...list.slice(0, -1),
+        { ...last, end: Math.round(((start + last.end) / 2) * 10000) / 10000 },
+        { ...last, name: `井段 ${list.length + 1}` },
+      ]);
+      clear();
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  function removeSegment(i) {
+    if (segments.length === 1) return;
+    setSegments((list) => {
+      const next = list.filter((_, j) => i !== j).map((s) => ({ ...s }));
+      if (i === list.length - 1) next.at(-1).end = params.depth;
+      return next;
+    });
+    clear();
+  }
+  function example() {
+    const d = Number(params.depth);
+    if (!(d >= 1 && d <= 10000)) {
+      setError("请先设置有效的总井深。");
+      return;
+    }
+    setMode("segmented");
+    setSegments([
+      {
+        name: "上部井段",
+        end: d * 0.3,
+        diameter: 0.114,
+        angle: 90,
+        roughness: 1e-5,
+      },
+      {
+        name: "中部井段",
+        end: d * 0.7,
+        diameter: 0.089,
+        angle: 75,
+        roughness: 1e-5,
+      },
+      { name: "下部井段", end: d, diameter: 0.076, angle: 60, roughness: 1e-5 },
+    ]);
+    setNotice("已填入三段示例，点击计算应用新结构。");
+    setError("");
+  }
+  async function load(e) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      if (f.size > 100000) throw new Error("方案文件超过100 KB。");
+      const d = decodeScenario(JSON.parse(await f.text()));
+      const next = computeScenario(
+        d.parameters,
+        d.model,
+        d.gridFactor,
+        d.structure || null,
+      );
+      setParams(d.parameters);
+      setModel(d.model);
+      setGridFactor(d.gridFactor);
+      setInterval(d.interval);
+      setMode(d.structure ? "segmented" : "uniform");
+      setSegments(d.structure || uniformStructure(d.parameters));
+      setSnapshot(next);
+      setError("");
+      setShowErrors(false);
+      setNotice("方案已载入并重新计算。");
+    } catch (e) {
+      setError("载入失败：" + e.message);
+    }
+  }
+  async function importStructure(e) {
+    const f = e.target.files?.[0];
+    e.target.value = "";
+    if (!f) return;
+    try {
+      if (f.size > 100000) throw new Error("结构文件超过100 KB。");
+      const list = parseStructure(await f.text(), params.depth);
+      setSegments(list);
+      setMode("segmented");
+      setError("");
+      setNotice(`已导入 ${list.length} 个井段，点击计算应用结构。`);
+    } catch (e) {
+      setError("结构导入失败：" + e.message);
+    }
+  }
+  function template() {
+    try {
+      const list = normalizeStructure(
+        mode === "segmented" ? segments : uniformStructure(params),
+        params.depth,
+      );
+      download(
+        structureCSV(list),
+        "井身结构模板.csv",
+        "text/csv;charset=utf-8",
+      );
+      setNotice("结构模板已导出：测深m、内径mm、夹角度、粗糙度mm。");
+      setError("");
+    } catch (e) {
+      setError(e.message);
+    }
   }
   async function excel() {
     setExporting(true);
     try {
       download(
         await workbook(result, comparison, { interval, quality, baseline }),
-        `井筒压力_${result.model}.xlsx`,
+        "井筒压力_" + result.model + ".xlsx",
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       );
-      setNotice(`Excel 已导出，包含${interval} m采样、完整剖面及计算检查。`);
+      setNotice("Excel已导出，包含井身结构、完整剖面和计算检查。");
     } catch (e) {
       setError("导出失败：" + e.message);
     } finally {
@@ -316,16 +415,49 @@ function App() {
     }
   }
   function csv() {
-    const rows = [
-      ["模型", ...COLUMNS],
-      ...result.samples.map((r) => [result.model, ...r]),
-    ];
+    if (table === "structure") {
+      download(
+        structureCSV(result.segments),
+        "井身结构.csv",
+        "text/csv;charset=utf-8",
+      );
+      setNotice("井身结构CSV已导出，可重新导入。");
+      return;
+    }
+    if (table === "baseline" && !baseline) return;
+    const rows =
+      table === "baseline"
+        ? [
+            ["比较项目", "固定基准", "当前结果"],
+            ["井底压力_MPa", baseline.bottom, result.bottom],
+            ["摩阻压差_MPa", baseline.friction, result.friction],
+            ["模型", baseline.model, result.model],
+            ["井段数", baseline.segments.length, result.segments.length],
+            ...FIELDS.map(([k, l]) => [
+              l,
+              baseline.params[k],
+              result.params[k],
+            ]),
+          ]
+        : [
+            profileHeaders,
+            ...result.samples.map((r) => [
+              r[0],
+              result.segments[sectionAtDepth(result.segments, r[0])].name,
+              ...r.slice(1),
+            ]),
+          ];
     download(
-      "\uFEFF" + rows.map((r) => r.join(",")).join("\r\n"),
-      `井筒压力_${result.model}_${interval}m.csv`,
+      "\uFEFF" +
+        rows
+          .map((r) =>
+            r.map((v) => `"${String(v).replaceAll('"', '""')}"`).join(","),
+          )
+          .join("\r\n"),
+      table === "baseline" ? "井筒工况对比.csv" : `井筒压力_${interval}m.csv`,
       "text/csv;charset=utf-8",
     );
-    setNotice(`${interval} m 采样 CSV 已导出。`);
+    setNotice("当前数据表CSV已导出。");
   }
   function save() {
     download(
@@ -333,38 +465,44 @@ function App() {
       "井筒压力_计算方案.json",
       "application/json",
     );
-    setNotice("计算方案已保存，包含网格模式与采样间隔。");
-  }
-  async function load(e) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file) return;
-    try {
-      if (file.size > 100000) throw new Error("方案文件超过100 KB。");
-      const data = decodeScenario(JSON.parse(await file.text()));
-      const next = computeScenario(
-        data.parameters,
-        data.model,
-        data.gridFactor,
-      );
-      setParams(data.parameters);
-      setModel(data.model);
-      setGridFactor(data.gridFactor);
-      setInterval(data.interval);
-      setSnapshot(next);
-      setShowErrors(false);
-      setError("");
-      setNotice("方案已载入并重新计算。");
-    } catch (e) {
-      setError("载入失败：" + e.message);
-    }
+    setNotice("方案已保存，含井身结构、网格和采样设置。");
   }
   function pin() {
     setBaseline(result);
-    setNotice("已固定当前计算为对比工况。修改参数并计算后可查看差异。");
+    setNotice("已固定当前结果，修改参数或井身结构并计算后可比较。");
   }
-  const changes = baseline ? changedFields(baseline.params, result.params) : [];
   const delta = result.bottom - result.params.pressure;
+  const changes = baseline ? changedFields(baseline.params, result.params) : [];
+  const structureChanged =
+    baseline && !equal(baseline.segments, result.segments);
+  const geometryFields = [
+    ["diameter", "油管内径", "mm", 1000],
+    ["angle", "与水平面夹角", "°", 1],
+    ["roughness", "管壁粗糙度", "mm", 1000],
+  ];
+  const profileHeaders = [
+    "井深 / m",
+    "井段",
+    "压力 / MPa",
+    "温度 / K",
+    "密度 / kg·m⁻³",
+    "流速 / m·s⁻¹",
+    "摩阻 / kPa·m⁻¹",
+    "重力 / kPa·m⁻¹",
+  ];
+  let from = 0;
+  const sectionRows = result.segments.map((s) => {
+    const r = [
+      s.name,
+      fmt(from, 1),
+      fmt(s.end, 1),
+      fmt(s.diameter * 1000, 2),
+      fmt(s.angle, 1),
+      fmt(s.roughness * 1000, 4),
+    ];
+    from = s.end;
+    return r;
+  });
   return (
     <main className="wp-app">
       <style>{CSS}</style>
@@ -375,140 +513,286 @@ function App() {
               ↧
             </div>
             <div>
-              <div className="wp-eyebrow">UGSCI · WELLBORE HYDRAULICS</div>
+              <div className="wp-eyebrow">UGSCI · WELLBORE WORKBENCH</div>
               <h1>井筒压力计算</h1>
-              <div className="wp-sub">从井口工况，计算沿井深压力与井底流压</div>
+              <div className="wp-sub">
+                配置井筒与井身结构，查看沿井深的流动变化
+              </div>
             </div>
           </div>
           <div className="wp-toolbar">
-            <span className="wp-badge">本地计算 · 无需联网</span>
-            <button onClick={() => fileInput.current.click()}>载入方案</button>
+            <span className="wp-badge">本地计算</span>
+            <button onClick={() => fileRef.current.click()}>载入方案</button>
             <button disabled={stale} onClick={save}>
               保存方案
             </button>
             <input
               className="wp-hidden"
-              ref={fileInput}
               type="file"
+              ref={fileRef}
               accept=".json,application/json"
               onChange={load}
               aria-label="载入计算方案文件"
             />
           </div>
         </header>
+        {(error || notice || stale) && (
+          <div
+            className={`wp-notice ${
+              error ? "wp-error" : stale ? "wp-stale" : ""
+            }`}
+            role={error ? "alert" : "status"}
+          >
+            {error ||
+              (stale
+                ? "参数或结构已修改，右侧保留上次结果。点击计算更新。"
+                : notice)}
+          </div>
+        )}
         <div className="wp-layout">
-          <aside className="wp-panel">
-            <div className="wp-panel-head">
-              <h2>
-                <span className="wp-index">01</span>工况参数
-              </h2>
-              <button className="wp-link" onClick={reset}>
-                恢复示例
-              </button>
-            </div>
-            <form ref={formRef} className="wp-form" onSubmit={run} noValidate>
-              <label className="wp-field">
-                <span className="wp-field-title">
-                  计算模型<span className="wp-unit">单气相简化版</span>
-                </span>
-                <select
-                  aria-label="计算模型"
-                  value={model}
-                  onChange={(e) => setModel(e.target.value)}
-                >
-                  {MODELS.map((m) => (
-                    <option key={m}>{m}</option>
-                  ))}
-                </select>
-              </label>
-              {FIELDS.map(([k, l, u, min, max, step]) => (
-                <label className="wp-field" key={k}>
-                  <span className="wp-field-title">
-                    {l}
-                    <span className="wp-unit">{u}</span>
-                  </span>
-                  <input
+          <aside className="wp-left">
+            <section className="wp-panel" aria-label="井筒参数设置">
+              <div className="wp-panel-head">
+                <h2>
+                  <span className="wp-index">01 / </span>井筒参数
+                </h2>
+                <button className="wp-link" onClick={reset}>
+                  恢复示例
+                </button>
+              </div>
+              <form ref={formRef} className="wp-form" onSubmit={run} noValidate>
+                <label className="wp-field">
+                  <span className="wp-field-title">计算模型</span>
+                  <select
+                    aria-label="计算模型"
+                    value={model}
+                    onChange={(e) => {
+                      setModel(e.target.value);
+                      clear();
+                    }}
+                  >
+                    {MODELS.map((m) => (
+                      <option key={m}>{m}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="wp-field">
+                  <span className="wp-field-title">计算精度</span>
+                  <select
+                    aria-label="网格模式"
+                    value={gridFactor}
+                    onChange={(e) => {
+                      setGridFactor(Number(e.target.value));
+                      clear();
+                    }}
+                  >
+                    <option value="1">标准网格</option>
+                    <option value="2">加密网格（2倍）</option>
+                  </select>
+                </label>
+                {FIELDS.filter(
+                  ([k]) => !["diameter", "roughness", "angle"].includes(k),
+                ).map(([k, l, u, min, max]) => (
+                  <Numeric
+                    key={k}
+                    label={k === "depth" ? "总井深（测深）" : l}
+                    unit={u}
                     name={k}
-                    aria-label={l}
-                    aria-invalid={Boolean(errors[k])}
-                    aria-describedby={errors[k] ? `error-${k}` : undefined}
-                    type="number"
                     value={params[k]}
+                    error={errors[k]}
                     min={min}
                     max={max}
-                    step={step}
-                    onChange={(e) => {
-                      const v = e.target.value;
-                      setParams((p) => ({
-                        ...p,
-                        [k]: v === "" ? "" : Number(v),
-                      }));
-                      setNotice("");
-                      setError("");
-                    }}
+                    onChange={(v) => update(k, v)}
                   />
-                  {errors[k] && (
-                    <span id={`error-${k}`} className="wp-field-error">
-                      {errors[k]}
-                    </span>
-                  )}
-                  {k === "temperature" && Number.isFinite(params[k]) && (
-                    <span className="wp-small">
-                      约 {fmt(params[k] - 273.15, 2)} °C
-                    </span>
-                  )}
-                  {k === "diameter" && Number.isFinite(params[k]) && (
-                    <span className="wp-small">
-                      {fmt(params[k] * 1000, 1)} mm
-                    </span>
-                  )}
-                </label>
-              ))}
-              <label className="wp-field wp-wide">
-                <span className="wp-field-title">网格模式</span>
-                <select
-                  aria-label="网格模式"
-                  value={gridFactor}
-                  onChange={(e) => setGridFactor(Number(e.target.value))}
-                >
-                  <option value="1">原程序网格</option>
-                  <option value="2">加密网格（2 倍）</option>
-                </select>
-              </label>
-              <p className="wp-hint">
-                夹角：水平井 0°，垂直井 90°。
-                <br />
-                压力为绝对压力；标况为 101325 Pa、293.15 K。
-              </p>
-              <div className="wp-form-footer">
-                <button type="submit" className="wp-primary">
-                  计算井筒压力 <span aria-hidden="true">→</span>
+                ))}
+                <div className="wp-field">
+                  <div className="wp-field-title">
+                    温度换算<span className="wp-unit">°C</span>
+                  </div>
+                  <div style={{ padding: "7px 0", color: "#7b91a6" }}>
+                    {Number.isFinite(params.temperature)
+                      ? fmt(params.temperature - 273.15, 2)
+                      : "—"}{" "}
+                    °C
+                  </div>
+                </div>
+                <div className="wp-wide wp-calc-footer">
+                  <span className="wp-hint">
+                    绝对压力 · 单气相采气
+                    <br />
+                    每次计算同时执行网格加密检查
+                  </span>
+                  <button type="submit" className="wp-primary">
+                    计算井筒压力 <span aria-hidden="true">→</span>
+                  </button>
+                </div>
+              </form>
+            </section>
+            <section
+              className="wp-panel wp-structure"
+              aria-label="井身结构设置"
+            >
+              <div className="wp-panel-head">
+                <h2>
+                  <span className="wp-index">02 / </span>井身结构
+                </h2>
+                <span className="wp-sub">
+                  {mode === "segmented" ? segments.length : 1} 个井段
+                </span>
+              </div>
+              <div className="wp-structure-tools">
+                <div className="wp-modes" aria-label="井身结构模式">
+                  <button
+                    aria-pressed={mode === "uniform"}
+                    onClick={() => switchMode("uniform")}
+                  >
+                    统一井筒
+                  </button>
+                  <button
+                    aria-pressed={mode === "segmented"}
+                    onClick={() => switchMode("segmented")}
+                  >
+                    分段结构
+                  </button>
+                </div>
+                <div className="wp-toolbar">
+                  <button
+                    className="wp-import"
+                    onClick={() => structureRef.current.click()}
+                  >
+                    导入结构
+                  </button>
+                  <button className="wp-link" onClick={template}>
+                    CSV模板
+                  </button>
+                </div>
+                <input
+                  className="wp-hidden"
+                  type="file"
+                  ref={structureRef}
+                  accept=".csv,.json,text/csv,application/json"
+                  onChange={importStructure}
+                  aria-label="导入井身结构文件"
+                />
+              </div>
+              <div className="wp-structure-content">
+                {mode === "uniform" ? (
+                  <>
+                    <div className="wp-form">
+                      {geometryFields.map(([k, l, u, scale]) => (
+                        <Numeric
+                          key={k}
+                          label={l}
+                          unit={u}
+                          name={k}
+                          value={params[k]}
+                          scale={scale}
+                          error={errors[k]}
+                          onChange={(v) => update(k, v)}
+                        />
+                      ))}
+                    </div>
+                    <p className="wp-hint" style={{ marginTop: 12 }}>
+                      全井采用相同内径和倾角。夹角相对水平面，垂直井为90°。切换“分段结构”可设置不同井段。
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    {segments.map((s, i) => (
+                      <div className="wp-segment" key={i}>
+                        <div className="wp-segment-head">
+                          <span className="wp-index">
+                            {String(i + 1).padStart(2, "0")}
+                          </span>
+                          <input
+                            aria-label={`第${i + 1}段名称`}
+                            maxLength={30}
+                            value={s.name}
+                            onChange={(e) =>
+                              editSegment(i, "name", e.target.value)
+                            }
+                          />
+                          <span className="wp-unit">
+                            {fmt(i ? segments[i - 1].end : 0, 1)} m 起
+                          </span>
+                          <button
+                            disabled={segments.length === 1}
+                            aria-label={`删除第${i + 1}段`}
+                            onClick={() => removeSegment(i)}
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="wp-segment-grid">
+                          <Numeric
+                            label={`第${i + 1}段终点井深`}
+                            unit="m"
+                            value={s.end}
+                            onChange={(v) => editSegment(i, "end", v)}
+                          />
+                          <Numeric
+                            label={`第${i + 1}段内径`}
+                            unit="mm"
+                            scale={1000}
+                            value={s.diameter}
+                            onChange={(v) => editSegment(i, "diameter", v)}
+                          />
+                          <Numeric
+                            label={`第${i + 1}段夹角`}
+                            unit="°"
+                            value={s.angle}
+                            onChange={(v) => editSegment(i, "angle", v)}
+                          />
+                          <Numeric
+                            label={`第${i + 1}段粗糙度`}
+                            unit="mm"
+                            scale={1000}
+                            value={s.roughness}
+                            onChange={(v) => editSegment(i, "roughness", v)}
+                          />
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      className="wp-add"
+                      onClick={addSegment}
+                      disabled={segments.length >= 30}
+                    >
+                      ＋ 添加井段
+                    </button>
+                    <p className="wp-hint" style={{ marginTop: 9 }}>
+                      按测深从浅到深连续排列，最后终点等于总井深。结构改变后请重新计算。
+                    </p>
+                  </>
+                )}
+              </div>
+              <div className="wp-structure-footer">
+                <span className="wp-small">CSV / JSON · 最多30段</span>
+                <button className="wp-link" onClick={example}>
+                  填入三段示例
                 </button>
-                <div
-                  className="wp-small"
-                  style={{ textAlign: "center", marginTop: 8 }}
-                >
-                  每次计算同时执行一次加密核对
+              </div>
+            </section>
+          </aside>
+          <section className="wp-panel wp-visual" aria-label="井筒可视化视图">
+            <div className="wp-visual-head">
+              <div>
+                <h2>井筒可视化</h2>
+                <div className="wp-sub">
+                  {result.model} · {result.segments.length} 个井段 ·{" "}
+                  {result.steps.toLocaleString()} 个网格
                 </div>
               </div>
-            </form>
-          </aside>
-          <section className="wp-right" aria-label="计算结果">
-            {error && (
-              <div className="wp-note wp-error" role="alert">
-                {error}
+              <div className="wp-toolbar">
+                <span className={`wp-badge ${stale ? "wp-stale" : ""}`}>
+                  <i className="wp-live" />
+                  {stale ? "待更新" : "计算已同步"}
+                </span>
+                <button disabled={stale || exporting} onClick={excel}>
+                  {exporting ? "正在导出…" : "导出 Excel"}
+                </button>
               </div>
-            )}
-            {stale && (
-              <div className="wp-note wp-stale" role="status">
-                参数已修改。下方保留上次计算结果；点击“计算井筒压力”更新后可导出。
-              </div>
-            )}
-            {notice && !stale && (
-              <div className="wp-note" role="status">
-                {notice}
-              </div>
-            )}
+            </div>
             <div className="wp-summary">
               <div className="wp-stat">
                 <div className="wp-stat-label">井底流压</div>
@@ -517,7 +801,7 @@ function App() {
                   <span className="wp-stat-unit">MPa</span>
                 </div>
                 <div className="wp-stat-note">
-                  {fmt(result.params.depth, 0)} m · {result.model}
+                  井底 {fmt(result.params.depth, 0)} m
                 </div>
               </div>
               <div className="wp-stat">
@@ -534,184 +818,208 @@ function App() {
                 <div className="wp-stat-label">摩阻 / 总压差</div>
                 <div className="wp-stat-value">
                   {fmt(
-                    (result.friction / (result.gravity + result.friction)) *
+                    (result.friction / (result.friction + result.gravity)) *
                       100,
                     1,
                   )}
                   <span className="wp-stat-unit">%</span>
                 </div>
                 <div className="wp-stat-note">
-                  重力 {fmt(result.gravity, 3)} · 摩阻 {fmt(result.friction, 3)}{" "}
-                  MPa
+                  摩阻 {fmt(result.friction, 3)} MPa
                 </div>
               </div>
             </div>
-            <div className="wp-panel">
-              <div className="wp-panel-head">
-                <div>
-                  <h2>
-                    <span className="wp-index">02</span>沿井深剖面
-                  </h2>
-                  <div className="wp-sub">
-                    {result.steps.toLocaleString()} 个计算网格 ·{" "}
-                    {result.samples.length} 个采样点
-                  </div>
-                </div>
-                <div className="wp-toolbar">
-                  <label className="wp-check">
-                    <input
-                      type="checkbox"
-                      checked={compare}
-                      onChange={(e) => setCompare(e.target.checked)}
-                    />
-                    对比两种模型
-                  </label>
-                  <select
-                    aria-label="曲线指标"
-                    className="wp-head-select"
-                    value={metric}
-                    onChange={(e) => setMetric(e.target.value)}
-                  >
-                    <option value="pressure">压力</option>
-                    <option value="temperature">温度</option>
-                    <option value="velocity">流速</option>
-                  </select>
-                </div>
-              </div>
-              <div className="wp-chart-body">
-                <Chart
-                  key={
-                    result.model +
-                    JSON.stringify(result.params) +
-                    metric +
-                    result.steps
-                  }
-                  {...{ result, comparison, compare, metric, interval }}
-                  disabled={stale}
-                />
-              </div>
-            </div>
-            {compare && (
-              <div className="wp-note">
-                {comparison.model} 井底压力为{" "}
-                <strong>{fmt(comparison.bottom)} MPa</strong>，与当前模型相差{" "}
-                {fmt(comparison.bottom - result.bottom)} MPa。
-              </div>
-            )}
-            <div className="wp-panel">
-              <div className="wp-panel-head">
-                <div>
-                  <h2>
-                    <span className="wp-index">03</span>计算结果表
-                  </h2>
-                  <div className="wp-sub">
-                    每 {interval} m 插值采样，保留井底终点
-                  </div>
-                </div>
-                <div className="wp-toolbar">
-                  <select
-                    className="wp-head-select"
-                    aria-label="采样间隔"
-                    value={interval}
-                    onChange={(e) => setInterval(Number(e.target.value))}
-                  >
-                    {INTERVALS.map((v) => (
-                      <option key={v} value={v}>
-                        {v} m 采样
-                      </option>
-                    ))}
-                  </select>
-                  <button disabled={stale} onClick={csv}>
-                    导出 CSV
-                  </button>
-                  <button disabled={stale || exporting} onClick={excel}>
-                    {exporting ? "正在导出…" : "导出 Excel"}
-                  </button>
-                </div>
-              </div>
-              <div className="wp-table-wrap">
-                <table>
-                  <thead>
-                    <tr>
-                      {[
-                        "井深 / m",
-                        "压力 / MPa",
-                        "温度 / K",
-                        "密度 / kg·m⁻³",
-                        "流速 / m·s⁻¹",
-                        "摩阻 / kPa·m⁻¹",
-                        "重力 / kPa·m⁻¹",
-                      ].map((t) => (
-                        <th key={t}>{t}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {result.samples.map((r, i) => (
-                      <tr key={i}>
-                        {r.map((v, j) => (
-                          <td key={j}>
-                            {fmt(v, j === 0 ? 1 : j === 2 ? 2 : 4)}
-                          </td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-            <div className="wp-panel">
-              <div className="wp-panel-head">
-                <h2>
-                  <span className="wp-index">04</span>计算检查
-                </h2>
-                <span
-                  className={
-                    quality.relativePercent <= 0.1
-                      ? "wp-badge"
-                      : "wp-badge wp-stale"
-                  }
+            <div className="wp-tabs-row">
+              <div
+                className="wp-tabs"
+                role="tablist"
+                aria-label="可视化视图切换"
+              >
+                <button
+                  id="wp-chart-tab"
+                  className="wp-tab"
+                  role="tab"
+                  aria-selected={view === "chart"}
+                  aria-controls="wp-result-view"
+                  onClick={() => setView("chart")}
                 >
-                  {quality.relativePercent <= 0.1
-                    ? "网格差异较小"
-                    : "建议加密网格"}
-                </span>
+                  图表视图
+                </button>
+                <button
+                  id="wp-table-tab"
+                  className="wp-tab"
+                  role="tab"
+                  aria-selected={view === "table"}
+                  aria-controls="wp-result-view"
+                  onClick={() => setView("table")}
+                >
+                  数据表
+                </button>
               </div>
-              <div className="wp-insights">
-                <div>
-                  <span>
-                    加密至 {quality.refinedSteps.toLocaleString()} 个网格
-                  </span>
-                  <strong>{fmt(quality.refinedBottom)} MPa</strong>
-                </div>
-                <div>
-                  <span>两次井底压力差</span>
-                  <strong>{fmt(quality.difference, 6)} MPa</strong>
-                </div>
-                <div>
-                  <span>相对差异</span>
-                  <strong>{fmt(quality.relativePercent, 4)} %</strong>
-                </div>
-                <div>
-                  <span>最大计算流速</span>
-                  <strong>{fmt(result.maxVelocity, 3)} m/s</strong>
-                </div>
+              <div className="wp-toolbar">
+                {view === "chart" ? (
+                  <>
+                    <label className="wp-check">
+                      <input
+                        type="checkbox"
+                        checked={compare}
+                        onChange={(e) => setCompare(e.target.checked)}
+                      />
+                      模型对比
+                    </label>
+                    <select
+                      className="wp-head-select"
+                      aria-label="曲线指标"
+                      value={metric}
+                      onChange={(e) => setMetric(e.target.value)}
+                    >
+                      <option value="pressure">压力 / MPa</option>
+                      <option value="temperature">温度 / K</option>
+                      <option value="velocity">流速 / m·s⁻¹</option>
+                    </select>
+                  </>
+                ) : (
+                  <>
+                    <select
+                      className="wp-head-select"
+                      aria-label="数据表类型"
+                      value={table}
+                      onChange={(e) => setTable(e.target.value)}
+                    >
+                      <option value="profile">沿井深剖面</option>
+                      <option value="structure">井段参数</option>
+                      <option value="baseline">工况对比</option>
+                    </select>
+                    <button
+                      disabled={stale || (table === "baseline" && !baseline)}
+                      onClick={csv}
+                    >
+                      导出CSV
+                    </button>
+                  </>
+                )}
+                <select
+                  className="wp-head-select"
+                  aria-label="采样间隔"
+                  value={interval}
+                  onChange={(e) => setInterval(Number(e.target.value))}
+                >
+                  {INTERVALS.map((v) => (
+                    <option key={v} value={v}>
+                      {v} m采样
+                    </option>
+                  ))}
+                </select>
               </div>
-              <p className="wp-check-note">
-                相对差异超过 0.1%
-                时建议使用加密网格。该检查衡量数值离散误差，不代表原简化模型的现场精度。
-              </p>
             </div>
-            <div className="wp-panel">
-              <div className="wp-panel-head">
-                <div>
-                  <h2>
-                    <span className="wp-index">05</span>工况对比
-                  </h2>
-                  <div className="wp-sub">
-                    固定一组工况，再调整参数比较计算结果
+            <div
+              id="wp-result-view"
+              className="wp-content"
+              role="tabpanel"
+              aria-labelledby={
+                view === "chart" ? "wp-chart-tab" : "wp-table-tab"
+              }
+            >
+              {view === "chart" ? (
+                <div className="wp-graph">
+                  <Schematic
+                    segments={result.segments}
+                    depth={result.params.depth}
+                  />
+                  <div className="wp-plot">
+                    <Chart
+                      key={
+                        JSON.stringify(result.params) +
+                        JSON.stringify(result.segments) +
+                        result.steps +
+                        metric +
+                        result.model
+                      }
+                      {...{ result, comparison, compare, metric, interval }}
+                      disabled={stale}
+                    />
                   </div>
                 </div>
+              ) : table === "profile" ? (
+                <Table
+                  headers={profileHeaders}
+                  rows={result.samples.map((r) => [
+                    fmt(r[0], 1),
+                    result.segments[sectionAtDepth(result.segments, r[0])].name,
+                    ...r.slice(1).map((v, j) => fmt(v, j === 1 ? 2 : 4)),
+                  ])}
+                />
+              ) : table === "structure" ? (
+                <Table
+                  headers={[
+                    "井段",
+                    "起点 / m",
+                    "终点 / m",
+                    "内径 / mm",
+                    "夹角 / °",
+                    "粗糙度 / mm",
+                  ]}
+                  rows={sectionRows}
+                />
+              ) : baseline ? (
+                <Table
+                  headers={["比较项目", "固定基准", "当前结果", "变化"]}
+                  rows={[
+                    [
+                      "井底压力 / MPa",
+                      fmt(baseline.bottom),
+                      fmt(result.bottom),
+                      fmt(result.bottom - baseline.bottom),
+                    ],
+                    [
+                      "摩阻压差 / MPa",
+                      fmt(baseline.friction),
+                      fmt(result.friction),
+                      fmt(result.friction - baseline.friction),
+                    ],
+                    ["模型", baseline.model, result.model, "—"],
+                    [
+                      "井身结构",
+                      `${baseline.segments.length} 段`,
+                      `${result.segments.length} 段`,
+                      structureChanged ? "已改变" : "相同",
+                    ],
+                    [
+                      "网格数",
+                      baseline.steps,
+                      result.steps,
+                      result.steps - baseline.steps,
+                    ],
+                    ...changes.map((v) => [
+                      v.label + " / " + v.unit,
+                      fmt(v.before),
+                      fmt(v.after),
+                      fmt(v.after - v.before),
+                    ]),
+                  ]}
+                />
+              ) : (
+                <div className="wp-table-empty">
+                  <strong>尚未固定对比工况</strong>
+                  <p>先固定当前结果，再修改参数或井身结构并计算。</p>
+                  <button disabled={stale} onClick={pin}>
+                    固定当前工况
+                  </button>
+                </div>
+              )}
+            </div>
+            <div className="wp-visual-footer">
+              <div className="wp-quality-line">
+                <span>
+                  {quality.relativePercent <= 0.1
+                    ? "✓ 网格差异较小"
+                    : "△ 建议加密网格"}{" "}
+                  · 压力差 {fmt(quality.difference, 6)} MPa{" "}
+                  <span className="wp-unit">
+                    {" "}
+                    / {fmt(quality.relativePercent, 4)}%
+                  </span>
+                </span>
                 <div className="wp-toolbar">
                   <button disabled={stale} onClick={pin}>
                     {baseline ? "替换对比基准" : "固定当前工况"}
@@ -721,88 +1029,22 @@ function App() {
                   )}
                 </div>
               </div>
-              {baseline ? (
-                <>
-                  <div className="wp-table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>比较项目</th>
-                          <th>固定基准</th>
-                          <th>当前结果</th>
-                          <th>变化</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td>井底压力 / MPa</td>
-                          <td>{fmt(baseline.bottom)}</td>
-                          <td>{fmt(result.bottom)}</td>
-                          <td>{fmt(result.bottom - baseline.bottom)}</td>
-                        </tr>
-                        <tr>
-                          <td>摩阻压差 / MPa</td>
-                          <td>{fmt(baseline.friction)}</td>
-                          <td>{fmt(result.friction)}</td>
-                          <td>{fmt(result.friction - baseline.friction)}</td>
-                        </tr>
-                        <tr>
-                          <td>模型</td>
-                          <td>{baseline.model}</td>
-                          <td>{result.model}</td>
-                          <td>—</td>
-                        </tr>
-                        <tr>
-                          <td>网格数</td>
-                          <td>{baseline.steps}</td>
-                          <td>{result.steps}</td>
-                          <td>{result.steps - baseline.steps}</td>
-                        </tr>
-                        {changes.map((v) => (
-                          <tr key={v.key}>
-                            <td>
-                              {v.label} / {v.unit}
-                            </td>
-                            <td>{fmt(v.before)}</td>
-                            <td>{fmt(v.after)}</td>
-                            <td>{fmt(v.after - v.before)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                  <p className="wp-check-note">
-                    基准保留在本次打开的页面中；Excel
-                    导出会附带两组工况的完整参数。
-                  </p>
-                </>
-              ) : (
-                <p className="wp-check-note">
-                  可用于比较气量、管径、井口压力等参数变化带来的影响。
-                </p>
-              )}
-            </div>
-            <div className="wp-panel">
-              <details className="wp-model-details">
-                <summary>计算依据与适用范围</summary>
+              <details className="wp-details">
+                <summary>计算检查与适用范围</summary>
                 <p>
-                  本应用移植自提供的井筒压力程序，保留其单气相采气算法、气体常数与自动网格规则。模型名称沿用原程序，均为简化实现。
+                  加密至{quality.refinedSteps.toLocaleString()}个网格，井底压力
+                  {fmt(quality.refinedBottom)} MPa。最大计算流速
+                  {fmt(result.maxVelocity, 3)}{" "}
+                  m/s。网格检查衡量离散误差，0.1%为加密提示阈值。
+                  {compare &&
+                    `${comparison.model}井底压力${fmt(
+                      comparison.bottom,
+                    )} MPa。`}
                 </p>
                 <p>
-                  <code>pᵢ₊₁ = pᵢ + [ρg sinθ + fρv²/(2D)] Δs</code>
-                </p>
-                <p>
-                  温度沿井筒长度按 0.025 K/m 递增；摩尔质量固定为 0.018
-                  kg/mol；压缩因子 Z 为常数。黏度按 1.2×10⁻⁵(T/300)^0.7 Pa·s
-                  计算。网格数为 max(300, round(井筒长度))。
-                </p>
-                <p>
-                  原代码的 Beggs-Brill 选项仅在摩阻系数上乘以 1 + 0.08
-                  sin²θ，不是完整多相流相关式；Orkiszewski
-                  选项同样仅计算单气相的重力与摩阻。没有液相、加速压降、注气方向或储层耦合求解。
-                </p>
-                <p>
-                  这里的“井深”指沿井筒长度，角度相对水平面。倾斜井仍保留原程序沿井筒长度的温度梯度定义。极端高速工况需要另行校核这些简化假设。
+                  沿用原程序单气相采气简化模型：重力与Darcy摩阻；分段内径、倾角和粗糙度逐段参与积分，井段界面为网格节点。井深为测深，倾角相对水平；温度按测深0.025
+                  K/m递增；摩尔质量0.018 kg/mol，常Z，标况101325 Pa / 293.15
+                  K。Beggs-Brill为原程序的简化摩阻修正。未计多相流、加速项、管径突变局部损失或注气方向。当前井身图展示流动通道内径。基准保留于当前页面，Excel包含两组结构。
                 </p>
               </details>
             </div>
@@ -810,7 +1052,7 @@ function App() {
         </div>
         <footer className="wp-foot">
           <span>UGSci / 井筒压力计算 · v{VERSION}</span>
-          <span>计算和文件导出均在本机完成</span>
+          <span>参数与井身结构 → 分段计算 → 可视化分析 · 全部在本机完成</span>
         </footer>
       </div>
     </main>

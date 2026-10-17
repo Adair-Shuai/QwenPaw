@@ -11,11 +11,11 @@ test('legacy files retain original grid and 100 m sampling', () => {
 test('new files round-trip model, parameters, mesh and sampling', () => {
   const p={...DEFAULTS,depth:357,rate:70000};
   const s=computeScenario(p,'Beggs-Brill',2);
-  assert.deepEqual(decodeScenario(JSON.parse(JSON.stringify(encodeScenario(s,25)))),{parameters:p,model:'Beggs-Brill',gridFactor:2,interval:25});
+  assert.deepEqual(decodeScenario(JSON.parse(JSON.stringify(encodeScenario(s,25)))),{parameters:p,model:'Beggs-Brill',gridFactor:2,interval:25,structure:null});
 });
 test('bad imports reject schema, types and unsupported settings', () => {
   const valid=encodeScenario(computeScenario(DEFAULTS,'Orkiszewski'),100);
-  for (const patch of [{version:3},{model:'other'},{interval:0},{gridFactor:3},{parameters:{...DEFAULTS,pressure:'8'}}]) assert.throws(()=>decodeScenario({...valid,...patch}));
+  for (const patch of [{version:4},{model:'other'},{interval:0},{gridFactor:3},{parameters:{...DEFAULTS,pressure:'8'}}]) assert.throws(()=>decodeScenario({...valid,...patch}));
   assert.throws(()=>decodeScenario(null));
 });
 test('all sample intervals align both models and include exact bottom once', () => {
