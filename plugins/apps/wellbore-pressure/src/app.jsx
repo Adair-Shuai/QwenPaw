@@ -20,6 +20,14 @@ import {
 import { fmt } from "./ui-utils.mjs";
 import Chart from "./chart.jsx";
 import CSS from "./workbench.css";
+import {
+  buildTrajectory,
+  trajectoryAt,
+  EXAMPLE_SURVEY,
+  surveyCSV,
+} from "./survey.mjs";
+import { readSurveyFile } from "./survey-file.mjs";
+import TrajectoryView, { TrajectoryMini } from "./trajectory-view.jsx";
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useRef, useMemo } = React;
@@ -198,6 +206,10 @@ function App() {
     [interval, setInterval] = useState(100);
   const [mode, setMode] = useState("uniform"),
     [segments, setSegments] = useState(() => uniformStructure(DEFAULTS));
+  const [survey, setSurvey] = useState(null),
+    [temperatureBasis, setTemperatureBasis] = useState("tvd"),
+    [readingSurvey, setReadingSurvey] = useState(false);
+  const surveyRef = useRef(null);
   const [snapshot, setSnapshot] = useState(() =>
     computeScenario(DEFAULTS, MODELS[0]),
   );
@@ -218,12 +230,18 @@ function App() {
     [snapshot, interval],
   );
   const { result, comparison, quality } = displayed;
+  const resultGeometry = useMemo(
+    () => (result.survey ? buildTrajectory(result.survey) : null),
+    [result.survey],
+  );
   const structure = mode === "segmented" ? segments : null;
   const stale =
     FIELDS.some(([k]) => params[k] !== result.params[k]) ||
     model !== result.model ||
     gridFactor !== snapshot.gridFactor ||
-    !equal(structure, snapshot.structure);
+    !equal(structure, snapshot.structure) ||
+    !equal(survey, snapshot.survey) ||
+    (survey && temperatureBasis !== snapshot.temperatureBasis);
   const errors = showErrors ? parameterErrors(params) : {};
   const clear = () => {
     setError("");
@@ -237,7 +255,14 @@ function App() {
     e?.preventDefault();
     setShowErrors(true);
     try {
-      const next = computeScenario(params, model, gridFactor, structure);
+      const next = computeScenario(
+        params,
+        model,
+        gridFactor,
+        structure,
+        survey,
+        temperatureBasis,
+      );
       setSnapshot(next);
       setParams(next.result.params);
       if (next.structure) setSegments(next.structure);
@@ -263,6 +288,8 @@ function App() {
     setSegments(uniformStructure(DEFAULTS));
     setSnapshot(computeScenario(DEFAULTS, MODELS[0]));
     setBaseline(null);
+    setSurvey(null);
+    setTemperatureBasis("tvd");
     setShowErrors(false);
     setError("");
     setNotice("已恢复单井段示例。");
@@ -340,6 +367,55 @@ function App() {
     setNotice("已填入三段示例，点击计算应用新结构。");
     setError("");
   }
+  function applySurvey(stations) {
+    const trajectory = buildTrajectory(stations),
+      depth = trajectory.depth;
+    if (mode === "segmented") {
+      const adjusted = segments.map((s, i) =>
+        i === segments.length - 1 ? { ...s, end: depth } : s,
+      );
+      normalizeStructure(adjusted, depth);
+      setSegments(adjusted);
+    }
+    setSurvey(trajectory.survey);
+    setParams((p) => ({ ...p, depth }));
+    setTemperatureBasis("tvd");
+    setError("");
+    setView("trajectory");
+    setNotice(
+      `已导入${stations.length}个测点，总测深同步为${depth} m；点击计算生成轨迹和压力。`,
+    );
+  }
+  async function importSurvey(e) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    setReadingSurvey(true);
+    try {
+      applySurvey(await readSurveyFile(file));
+    } catch (error) {
+      setError("井斜导入失败：" + error.message);
+    } finally {
+      setReadingSurvey(false);
+    }
+  }
+  function surveyExample() {
+    try {
+      applySurvey(EXAMPLE_SURVEY);
+    } catch (e) {
+      setError(e.message);
+    }
+  }
+  function surveyTemplate() {
+    download(
+      surveyCSV(EXAMPLE_SURVEY),
+      "井斜数据模板.csv",
+      "text/csv;charset=utf-8",
+    );
+    setNotice(
+      "模板已下载：MD为米，Inc从垂直向下计，Azi从数据北向顺时针计，角度单位为度。",
+    );
+  }
   async function load(e) {
     const f = e.target.files?.[0];
     e.target.value = "";
@@ -352,8 +428,12 @@ function App() {
         d.model,
         d.gridFactor,
         d.structure || null,
+        d.survey || null,
+        d.temperatureBasis || "md",
       );
-      setParams(d.parameters);
+      setParams(next.result.params);
+      setSurvey(d.survey || null);
+      setTemperatureBasis(d.temperatureBasis || "md");
       setModel(d.model);
       setGridFactor(d.gridFactor);
       setInterval(d.interval);
@@ -422,6 +502,42 @@ function App() {
         "text/csv;charset=utf-8",
       );
       setNotice("井身结构CSV已导出，可重新导入。");
+      return;
+    }
+    if (table === "survey") {
+      if (!result.survey) return;
+      download(
+        surveyCSV(result.survey),
+        "井斜数据.csv",
+        "text/csv;charset=utf-8",
+      );
+      setNotice("原始井斜测点CSV已导出，可重新导入。");
+      return;
+    }
+    if (table === "trajectory") {
+      if (!result.survey) return;
+      const geometry = buildTrajectory(result.survey);
+      const rows = [
+        [
+          "MD_m",
+          "TVD_m",
+          "North_m",
+          "East_m",
+          "Inc_deg",
+          "Azi_deg",
+          "Pressure_MPa",
+        ],
+        ...result.samples.map((r) => {
+          const p = trajectoryAt(geometry, r[0]);
+          return [r[0], p.tvd, p.north, p.east, p.inc, p.azi, r[1]];
+        }),
+      ];
+      download(
+        "\uFEFF" + rows.map((r) => r.join(",")).join("\r\n"),
+        "井轨迹压力剖面.csv",
+        "text/csv;charset=utf-8",
+      );
+      setNotice("井轨迹与压力数据已导出。");
       return;
     }
     if (table === "baseline" && !baseline) return;
@@ -545,7 +661,7 @@ function App() {
           >
             {error ||
               (stale
-                ? "参数或结构已修改，右侧保留上次结果。点击计算更新。"
+                ? "参数、结构或井斜已修改，右侧保留上次结果。点击计算更新。"
                 : notice)}
           </div>
         )}
@@ -605,17 +721,34 @@ function App() {
                     onChange={(v) => update(k, v)}
                   />
                 ))}
-                <div className="wp-field">
-                  <div className="wp-field-title">
-                    温度换算<span className="wp-unit">°C</span>
+                {survey ? (
+                  <label className="wp-field">
+                    <span className="wp-field-title">地温梯度基准</span>
+                    <select
+                      aria-label="地温梯度基准"
+                      value={temperatureBasis}
+                      onChange={(e) => {
+                        setTemperatureBasis(e.target.value);
+                        clear();
+                      }}
+                    >
+                      <option value="tvd">按垂深TVD</option>
+                      <option value="md">按测深MD（旧版）</option>
+                    </select>
+                  </label>
+                ) : (
+                  <div className="wp-field">
+                    <div className="wp-field-title">
+                      温度换算<span className="wp-unit">°C</span>
+                    </div>
+                    <div style={{ padding: "7px 0", color: "#7b91a6" }}>
+                      {Number.isFinite(params.temperature)
+                        ? fmt(params.temperature - 273.15, 2)
+                        : "—"}{" "}
+                      °C
+                    </div>
                   </div>
-                  <div style={{ padding: "7px 0", color: "#7b91a6" }}>
-                    {Number.isFinite(params.temperature)
-                      ? fmt(params.temperature - 273.15, 2)
-                      : "—"}{" "}
-                    °C
-                  </div>
-                </div>
+                )}
                 <div className="wp-wide wp-calc-footer">
                   <span className="wp-hint">
                     绝对压力 · 单气相采气
@@ -675,25 +808,84 @@ function App() {
                   aria-label="导入井身结构文件"
                 />
               </div>
+              <div className="wp-survey-box">
+                <div className="wp-survey-heading">
+                  <strong>井斜数据</strong>
+                  <div className="wp-toolbar">
+                    <button
+                      disabled={readingSurvey}
+                      className="wp-import"
+                      onClick={() => surveyRef.current.click()}
+                    >
+                      {readingSurvey ? "读取中…" : "导入井斜"}
+                    </button>
+                    <button className="wp-link" onClick={surveyTemplate}>
+                      井斜模板
+                    </button>
+                    <button className="wp-link" onClick={surveyExample}>
+                      示例
+                    </button>
+                  </div>
+                </div>
+                <input
+                  ref={surveyRef}
+                  className="wp-hidden"
+                  type="file"
+                  accept=".csv,.tsv,.json,.xlsx,.xls"
+                  onChange={importSurvey}
+                  aria-label="导入井斜数据文件"
+                />
+                {survey ? (
+                  <div className="wp-survey-loaded">
+                    <span>
+                      {survey.length}测点 · MD {fmt(survey.at(-1).md, 0)} m ·
+                      最大Inc {fmt(Math.max(...survey.map((s) => s.inc)), 1)}°
+                    </span>
+                    <button
+                      className="wp-link"
+                      onClick={() => {
+                        setSurvey(null);
+                        clear();
+                      }}
+                    >
+                      清除井斜
+                    </button>
+                  </div>
+                ) : (
+                  <p className="wp-hint">
+                    CSV / JSON / XLSX · MD(m)、Inc(°)、Azi(°)
+                  </p>
+                )}
+                <p className="wp-hint">
+                  {survey
+                    ? "倾角使用井斜数据；下方结构设置内径与粗糙度。"
+                    : "Inc从垂直向下计（0°垂直、90°水平）。"}{" "}
+                  首点MD=0，位置以井口为原点。
+                </p>
+              </div>
               <div className="wp-structure-content">
                 {mode === "uniform" ? (
                   <>
                     <div className="wp-form">
-                      {geometryFields.map(([k, l, u, scale]) => (
-                        <Numeric
-                          key={k}
-                          label={l}
-                          unit={u}
-                          name={k}
-                          value={params[k]}
-                          scale={scale}
-                          error={errors[k]}
-                          onChange={(v) => update(k, v)}
-                        />
-                      ))}
+                      {geometryFields
+                        .filter(([k]) => !(survey && k === "angle"))
+                        .map(([k, l, u, scale]) => (
+                          <Numeric
+                            key={k}
+                            label={l}
+                            unit={u}
+                            name={k}
+                            value={params[k]}
+                            scale={scale}
+                            error={errors[k]}
+                            onChange={(v) => update(k, v)}
+                          />
+                        ))}
                     </div>
                     <p className="wp-hint" style={{ marginTop: 12 }}>
-                      全井采用相同内径和倾角。夹角相对水平面，垂直井为90°。切换“分段结构”可设置不同井段。
+                      {survey
+                        ? "全井采用统一内径与粗糙度；倾角随导入井轨迹变化。"
+                        : "全井采用相同内径和倾角。夹角相对水平面，垂直井为90°。切换“分段结构”可设置不同井段。"}
                     </p>
                   </>
                 ) : (
@@ -737,12 +929,20 @@ function App() {
                             value={s.diameter}
                             onChange={(v) => editSegment(i, "diameter", v)}
                           />
-                          <Numeric
-                            label={`第${i + 1}段夹角`}
-                            unit="°"
-                            value={s.angle}
-                            onChange={(v) => editSegment(i, "angle", v)}
-                          />
+                          {survey ? (
+                            <div className="wp-hint">
+                              井段倾角
+                              <br />
+                              由井斜数据确定
+                            </div>
+                          ) : (
+                            <Numeric
+                              label={`第${i + 1}段夹角`}
+                              unit="°"
+                              value={s.angle}
+                              onChange={(v) => editSegment(i, "angle", v)}
+                            />
+                          )}
                           <Numeric
                             label={`第${i + 1}段粗糙度`}
                             unit="mm"
@@ -801,7 +1001,9 @@ function App() {
                   <span className="wp-stat-unit">MPa</span>
                 </div>
                 <div className="wp-stat-note">
-                  井底 {fmt(result.params.depth, 0)} m
+                  MD {fmt(result.params.depth, 0)} m{" "}
+                  {result.survey &&
+                    ` · TVD ${fmt(result.stations.at(-1).tvd, 1)} m`}
                 </div>
               </div>
               <div className="wp-stat">
@@ -846,6 +1048,16 @@ function App() {
                   图表视图
                 </button>
                 <button
+                  id="wp-trajectory-tab"
+                  className="wp-tab"
+                  role="tab"
+                  aria-selected={view === "trajectory"}
+                  aria-controls="wp-result-view"
+                  onClick={() => setView("trajectory")}
+                >
+                  井轨迹
+                </button>
+                <button
                   id="wp-table-tab"
                   className="wp-tab"
                   role="tab"
@@ -878,7 +1090,7 @@ function App() {
                       <option value="velocity">流速 / m·s⁻¹</option>
                     </select>
                   </>
-                ) : (
+                ) : view === "table" ? (
                   <>
                     <select
                       className="wp-head-select"
@@ -889,6 +1101,12 @@ function App() {
                       <option value="profile">沿井深剖面</option>
                       <option value="structure">井段参数</option>
                       <option value="baseline">工况对比</option>
+                      <option value="survey" disabled={!result.survey}>
+                        井斜测点
+                      </option>
+                      <option value="trajectory" disabled={!result.survey}>
+                        井轨迹与压力
+                      </option>
                     </select>
                     <button
                       disabled={stale || (table === "baseline" && !baseline)}
@@ -897,6 +1115,8 @@ function App() {
                       导出CSV
                     </button>
                   </>
+                ) : (
+                  <span className="wp-small">测斜重建 · 局部坐标</span>
                 )}
                 <select
                   className="wp-head-select"
@@ -917,15 +1137,23 @@ function App() {
               className="wp-content"
               role="tabpanel"
               aria-labelledby={
-                view === "chart" ? "wp-chart-tab" : "wp-table-tab"
+                view === "chart"
+                  ? "wp-chart-tab"
+                  : view === "trajectory"
+                  ? "wp-trajectory-tab"
+                  : "wp-table-tab"
               }
             >
               {view === "chart" ? (
                 <div className="wp-graph">
-                  <Schematic
-                    segments={result.segments}
-                    depth={result.params.depth}
-                  />
+                  {result.survey ? (
+                    <TrajectoryMini result={result} />
+                  ) : (
+                    <Schematic
+                      segments={result.segments}
+                      depth={result.params.depth}
+                    />
+                  )}
                   <div className="wp-plot">
                     <Chart
                       key={
@@ -940,6 +1168,67 @@ function App() {
                     />
                   </div>
                 </div>
+              ) : view === "trajectory" ? (
+                <TrajectoryView
+                  result={result}
+                  disabled={stale}
+                  onImport={() => surveyRef.current.click()}
+                  pending={!!survey}
+                  onCompute={run}
+                />
+              ) : table === "survey" ? (
+                result.survey ? (
+                  <Table
+                    headers={[
+                      "MD / m",
+                      "Inc / °",
+                      "Azi / °",
+                      "TVD / m",
+                      "N / m",
+                      "E / m",
+                      "狗腿度 °/30m",
+                    ]}
+                    rows={result.stations.map((p) => [
+                      fmt(p.md, 1),
+                      fmt(p.inc, 2),
+                      fmt(p.azi, 2),
+                      fmt(p.tvd, 2),
+                      fmt(p.north, 2),
+                      fmt(p.east, 2),
+                      fmt(p.dls, 3),
+                    ])}
+                  />
+                ) : (
+                  <div className="wp-table-empty">请先导入井斜并计算。</div>
+                )
+              ) : table === "trajectory" ? (
+                result.survey ? (
+                  <Table
+                    headers={[
+                      "MD / m",
+                      "TVD / m",
+                      "N / m",
+                      "E / m",
+                      "Inc / °",
+                      "Azi / °",
+                      "压力 / MPa",
+                    ]}
+                    rows={result.samples.map((r) => {
+                      const p = trajectoryAt(resultGeometry, r[0]);
+                      return [
+                        fmt(r[0], 1),
+                        fmt(p.tvd, 2),
+                        fmt(p.north, 2),
+                        fmt(p.east, 2),
+                        fmt(p.inc, 2),
+                        fmt(p.azi, 2),
+                        fmt(r[1]),
+                      ];
+                    })}
+                  />
+                ) : (
+                  <div className="wp-table-empty">请先导入井斜并计算。</div>
+                )
               ) : table === "profile" ? (
                 <Table
                   headers={profileHeaders}
@@ -956,7 +1245,7 @@ function App() {
                     "起点 / m",
                     "终点 / m",
                     "内径 / mm",
-                    "夹角 / °",
+                    result.survey ? "结构夹角（已覆盖）" : "夹角 / °",
                     "粗糙度 / mm",
                   ]}
                   rows={sectionRows}
@@ -978,6 +1267,25 @@ function App() {
                       fmt(result.friction - baseline.friction),
                     ],
                     ["模型", baseline.model, result.model, "—"],
+                    [
+                      "轨迹与温度基准",
+                      baseline.survey
+                        ? `${baseline.survey.length}测点 / ${
+                            baseline.temperatureBasis === "tvd"
+                              ? "垂深"
+                              : "测深"
+                          }`
+                        : "结构角度 / MD",
+                      result.survey
+                        ? `${result.survey.length}测点 / ${
+                            result.temperatureBasis === "tvd" ? "垂深" : "测深"
+                          }`
+                        : "结构角度 / MD",
+                      equal(baseline.survey, result.survey) &&
+                      baseline.temperatureBasis === result.temperatureBasis
+                        ? "相同"
+                        : "已改变",
+                    ],
                     [
                       "井身结构",
                       `${baseline.segments.length} 段`,
@@ -1042,9 +1350,13 @@ function App() {
                     )} MPa。`}
                 </p>
                 <p>
+                  {result.survey &&
+                    `井轨迹采用最小曲率法；井斜角从垂直向下计，方位角沿导入数据北向顺时针。未做磁偏角、井口海拔或地理坐标换算。重力使用实际垂深增量，摩阻使用沿井测深增量，地温梯度按${
+                      result.temperatureBasis === "tvd" ? "垂深" : "测深"
+                    }0.025 K/m。`}
                   沿用原程序单气相采气简化模型：重力与Darcy摩阻；分段内径、倾角和粗糙度逐段参与积分，井段界面为网格节点。井深为测深，倾角相对水平；温度按测深0.025
                   K/m递增；摩尔质量0.018 kg/mol，常Z，标况101325 Pa / 293.15
-                  K。Beggs-Brill为原程序的简化摩阻修正。未计多相流、加速项、管径突变局部损失或注气方向。当前井身图展示流动通道内径。基准保留于当前页面，Excel包含两组结构。
+                  K。Beggs-Brill为原程序的简化摩阻修正。未计多相流、加速项、管径突变局部损失或注气方向。未导入井斜时结构图展示流动通道内径。基准保留于当前页面，Excel包含两组结构。
                 </p>
               </details>
             </div>

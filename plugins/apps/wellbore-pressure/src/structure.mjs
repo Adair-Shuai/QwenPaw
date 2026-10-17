@@ -188,7 +188,7 @@ export const STRUCTURE_HEADERS = [
   "粗糙度_mm",
   "井段名称",
 ];
-function csvRows(text) {
+export function csvRows(text, delimiter = ",") {
   const rows = [];
   let row = [],
     value = "",
@@ -200,7 +200,7 @@ function csvRows(text) {
         value += '"';
         i++;
       } else quoted = !quoted;
-    } else if (!quoted && (c === "," || c === "\n")) {
+    } else if (!quoted && (c === delimiter || c === "\n")) {
       row.push(value.replace(/\r$/, ""));
       value = "";
       if (c === "\n") {

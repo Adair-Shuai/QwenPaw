@@ -51,6 +51,70 @@ export async function workbook(
       ],
     ],
   ];
+  if (result.survey) {
+    sheets[0][1].push(
+      [
+        "井轨迹方法",
+        "最小曲率；井斜角从垂直向下计；方位角按原始数据北向顺时针",
+      ],
+      ["坐标基准", "井口原点，局部N/E/TVD；未做磁偏角或地理坐标转换"],
+      [
+        "地温梯度基准",
+        result.temperatureBasis === "tvd" ? "垂深TVD" : "测深MD",
+      ],
+      ["倾角来源", "井斜数据覆盖结构中手工设置的夹角，结构提供内径与粗糙度"],
+    );
+    sheets.push([
+      "井斜测点",
+      [
+        [
+          "MD_m",
+          "Inc_deg",
+          "Azi_deg",
+          "TVD_m",
+          "North_m",
+          "East_m",
+          "DLS_deg_per_30m",
+        ],
+        ...result.stations.map((p) => [
+          p.md,
+          p.inc,
+          p.azi,
+          p.tvd,
+          p.north,
+          p.east,
+          p.dls,
+        ]),
+      ],
+    ]);
+    sheets.push([
+      "轨迹压力剖面",
+      [
+        [
+          "MD_m",
+          "TVD_m",
+          "North_m",
+          "East_m",
+          "Inc_deg",
+          "Azi_deg",
+          "Pressure_MPa",
+          "Temperature_K",
+          "Velocity_ms",
+        ],
+        ...result.positions.map((p, i) => [
+          p.md,
+          p.tvd,
+          p.north,
+          p.east,
+          p.inc,
+          p.azi,
+          result.rows[i][1],
+          result.rows[i][2],
+          result.rows[i][4],
+        ]),
+      ],
+    ]);
+  }
   if (result.segments) {
     let from = 0;
     sheets.push([
@@ -148,6 +212,21 @@ export async function workbook(
     sheets.push(["结构对比", rows]);
   }
   const main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+  if (baseline && (result.survey || baseline.survey)) {
+    const rows = [
+      ["工况", "MD_m", "Inc_deg", "Azi_deg", "TVD_m", "North_m", "East_m"],
+    ];
+    for (const [label, item] of [
+      ["固定基准", baseline],
+      ["当前结果", result],
+    ]) {
+      if (item.stations)
+        for (const p of item.stations)
+          rows.push([label, p.md, p.inc, p.azi, p.tvd, p.north, p.east]);
+      else rows.push([label, "未使用井斜数据", "", "", "", "", ""]);
+    }
+    sheets.push(["轨迹对比", rows]);
+  }
   const rel =
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
   zip.file(
