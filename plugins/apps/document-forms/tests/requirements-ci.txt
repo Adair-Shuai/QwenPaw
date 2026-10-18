@@ -1,0 +1,25 @@
+# Real PawApp SDK imports; app parsing/generation is never replaced by stubs.
+-r ../requirements.txt
+fastapi>=0.115,<1
+httpx>=0.28,<1
+python-multipart>=0.0.20
+python-dotenv>=1,<2
+pytest>=8,<10
+pytest-asyncio>=0.23,<2
+packaging>=24
+pyyaml>=6
+cryptography>=43
+apscheduler>=3.11,<4
+shortuuid>=1
+tzdata
+click>=8
+json-repair
+chardet
+filelock
+wcmatch
+aiofiles
+agentscope==2.0.10
+pillow>=10
+google-genai
+ollama
+oss2==2.19.1

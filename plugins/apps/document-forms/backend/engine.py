@@ -1,0 +1,642 @@
+# -*- coding: utf-8 -*-
+"""Excel-backed, deterministic document forms. No model service is involved."""
+from __future__ import annotations
+
+import io
+import re
+from datetime import date, datetime
+from zipfile import ZipFile, BadZipFile
+
+from docxtpl import DocxTemplate
+from jinja2 import StrictUndefined, nodes
+from jinja2.sandbox import SandboxedEnvironment
+from openpyxl import Workbook, load_workbook
+from openpyxl.styles import Font, PatternFill
+from lxml import etree
+
+MAX_FILE = 15 * 1024 * 1024
+PATH = re.compile(r"^[^\W\d]\w*(?:\.[^\W\d]\w*)*$", re.UNICODE)
+INVITATION_KEYS = {
+    "invitation.recipient",
+    "events.invitation_time",
+    "invitation.start",
+    "invitation.end",
+}
+GROUPS = {
+    "project": "项目资料",
+    "organization": "单位与联系",
+    "contact": "单位与联系",
+    "purchaser": "单位与联系",
+    "dates": "日期安排",
+    "events": "日期安排",
+    "qualification": "资格要求",
+}
+
+
+def safe_key(value):
+    value = str(value or "").strip()
+    if not PATH.fullmatch(value) or any(
+        p.startswith("_") for p in value.split(".")
+    ):
+        raise ValueError(f"变量名称不合规：{value}。请使用名称或以点分隔的名称。")
+    return value
+
+
+def inspect_zip(content: bytes, required: str):
+    if len(content) > MAX_FILE:
+        raise ValueError("单个文件不能超过 15 MB")
+    try:
+        with ZipFile(io.BytesIO(content)) as archive:
+            items = archive.infolist()
+            if (
+                len(items) > 3000
+                or sum(i.file_size for i in items) > 60 * 1024 * 1024
+            ):
+                raise ValueError("文件解压后过大，请拆分后导入")
+            if required not in archive.namelist():
+                raise ValueError("文件内容与扩展名不一致")
+            if any("vbaproject" in i.filename.lower() for i in items):
+                raise ValueError("请使用不含宏的模板")
+    except BadZipFile as exc:
+        raise ValueError("文件损坏或不是有效的 Office 文件") from exc
+
+
+def text(value):
+    if isinstance(value, datetime):
+        return (
+            value.strftime("%Y-%m-%d %H:%M")
+            if value.time().isoformat() != "00:00:00"
+            else value.strftime("%Y-%m-%d")
+        )
+    if isinstance(value, date):
+        return value.isoformat()
+    return "" if value is None else str(value)
+
+
+def kind_for(key, label, value):
+    if "year" in key or "年份" in label:
+        return "text"
+    if any(
+        x in key + label
+        for x in ("日期", "时间", "deadline", "_time", "dates.", ".start", ".end")
+    ):
+        # Chinese date phrases and ranges are retained as editable text.
+        if not value or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
+            return "date"
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}(?::\d{2})?", value):
+            return "datetime-local"
+        if parsed_date(value):
+            return "datetime-local" if re.search(r"[:时]", value) else "date"
+    return "text"
+
+
+def read_excel(content: bytes):
+    # Several independent workbook sections are validated in one pass.
+    # pylint: disable=too-many-branches,too-many-statements
+    inspect_zip(content, "xl/workbook.xml")
+    book = load_workbook(io.BytesIO(content), data_only=False, read_only=True)
+    try:
+        if "变量配置" not in book.sheetnames:
+            raise ValueError("Excel 缺少“变量配置”工作表，首行为：变量名称、中文名称、值")
+        sheet = book["变量配置"]
+        if sheet.max_row > 1001 or sheet.max_column > 30:
+            raise ValueError("变量配置最多支持 1000 行、30 列")
+        rows = list(sheet.iter_rows())
+        headers = [text(c.value).strip() for c in rows[0]]
+        if len(set(headers) & {"变量名称", "中文名称", "值"}) != 3:
+            raise ValueError("变量配置首行必须包含：变量名称、中文名称、值")
+
+        def cell(row, name, default=""):
+            if name not in headers:
+                return default
+            c = row[headers.index(name)]
+            if c.data_type == "f":
+                raise ValueError(f"{sheet.title}!{c.coordinate} 使用了公式，请改为明确的值")
+            return text(c.value).strip()
+
+        fields = []
+        seen = set()
+        for row in rows[1:]:
+            if not any(c.value is not None for c in row):
+                continue
+            key = safe_key(cell(row, "变量名称"))
+            if key in seen or any(
+                k.startswith(key + ".") or key.startswith(k + ".")
+                for k in seen
+            ):
+                raise ValueError(f"变量重复或层级冲突：{key}")
+            seen.add(key)
+            label, value = cell(row, "中文名称") or key, cell(row, "值")
+            kind = cell(row, "类型") or kind_for(key, label, value)
+            if kind not in {
+                "text",
+                "textarea",
+                "date",
+                "datetime-local",
+                "number",
+            }:
+                raise ValueError(f"{label} 的类型不支持：{kind}")
+            if (
+                value
+                and kind in {"date", "datetime-local"}
+                and parsed_date(value)
+            ):
+                value = parsed_date(value).strftime(
+                    "%Y-%m-%dT%H:%M"
+                    if kind == "datetime-local"
+                    else "%Y-%m-%d",
+                )
+            fields.append(
+                {
+                    "key": key,
+                    "label": label,
+                    "value": value,
+                    "group": cell(row, "分组")
+                    or GROUPS.get(key.split(".", 1)[0], "其他资料"),
+                    "kind": kind,
+                    "required": cell(row, "必填", "是")
+                    not in {"否", "false", "0"},
+                },
+            )
+        if not fields:
+            raise ValueError("变量配置中没有可填写的变量")
+        recipients = []
+        if "受邀单位" in book.sheetnames:
+            sheet = book["受邀单位"]
+            if sheet.max_row > 201 or sheet.max_column > 20:
+                raise ValueError("受邀单位最多支持 200 行")
+            data = list(sheet.iter_rows())
+            headers = [text(c.value).strip() for c in data[0]]
+            aliases = {
+                "name": ["单位名称", "受邀单位", "受邀单位名称", "名称"],
+                "start": [
+                    "领取开始时间",
+                    "邀请函领取开始时间",
+                    "领取起始时间",
+                    "领取起始",
+                    "开始时间",
+                    "领取开始",
+                ],
+                "end": [
+                    "领取结束时间",
+                    "邀请函领取结束时间",
+                    "领取截止时间",
+                    "领取截止",
+                    "结束时间",
+                    "领取结束",
+                ],
+            }
+            if not any(n in headers for n in aliases["name"]):
+                raise ValueError("受邀单位工作表缺少“单位名称”列")
+            for row in data[1:]:
+                if not any(c.value is not None for c in row):
+                    continue
+                record = {}
+                for key, names in aliases.items():
+                    record[key] = next(
+                        (cell(row, n) for n in names if n in headers),
+                        "",
+                    )
+                    if key != "name" and record[key]:
+                        parsed = parsed_date(record[key])
+                        if parsed is None:
+                            raise ValueError(
+                                f"受邀单位第 {row[0].row} 行的领取时间无法识别，请填写明确的日期时间",
+                            )
+                        record[key] = parsed.strftime("%Y-%m-%dT%H:%M")
+                recipients.append(record)
+        rules = []
+        if "校核规则" in book.sheetnames:
+            sheet = book["校核规则"]
+            if sheet.max_row > 201:
+                raise ValueError("校核规则最多支持 200 行")
+            data = list(sheet.iter_rows())
+            headers = [text(c.value).strip() for c in data[0]]
+            if not {"校核项", "开始变量", "结束变量"}.issubset(headers):
+                raise ValueError("校核规则首行需包含：校核项、开始变量、结束变量")
+            for row in data[1:]:
+                if any(c.value is not None for c in row):
+                    rules.append(
+                        {
+                            "label": cell(row, "校核项"),
+                            "start": safe_key(cell(row, "开始变量")),
+                            "end": safe_key(cell(row, "结束变量")),
+                            "equal": cell(row, "允许相同", "是") != "否",
+                        },
+                    )
+        # 日期校核 may contain Excel formulas; the application always recalculates
+        # from editable source values instead of trusting stale cached results.
+        return {"fields": fields, "recipients": recipients, "rules": rules}
+    finally:
+        book.close()
+
+
+class FormEnvironment(SandboxedEnvironment):
+    def getattr(self, obj, attribute):
+        # Excel variables such as project.items are data, not dict methods.
+        if isinstance(obj, dict) and attribute in obj:
+            return obj[attribute]
+        return super().getattr(obj, attribute)
+
+
+def environment():
+    env = FormEnvironment(undefined=StrictUndefined, autoescape=True)
+    env.globals.clear()
+    return env
+
+
+def _visit_template(node, undeclared, paths):
+    if isinstance(node, nodes.Getattr):
+        parts = []
+        cursor = node
+        while isinstance(cursor, nodes.Getattr):
+            parts.insert(0, cursor.attr)
+            cursor = cursor.node
+        if isinstance(cursor, nodes.Name) and cursor.name in undeclared:
+            paths.add(safe_key(".".join([cursor.name] + parts)))
+            return
+    if isinstance(node, nodes.Name) and node.name in undeclared:
+        paths.add(safe_key(node.name))
+    if isinstance(node, (nodes.Call, nodes.Getitem)):
+        raise ValueError("模板请使用名称或点分隔的变量，不支持函数调用和下标取值")
+    for child in node.iter_child_nodes():
+        _visit_template(child, undeclared, paths)
+
+
+def template_info(content: bytes, name: str):
+    inspect_zip(content, "word/document.xml")
+    template = DocxTemplate(io.BytesIO(content))
+    template.init_docx()
+    paths = set()
+    env = environment()
+    with ZipFile(io.BytesIO(content)) as archive:
+        for member in archive.namelist():
+            if not re.fullmatch(
+                r"word/(document|header\d*|footer\d*|footnotes|endnotes)\.xml",
+                member,
+            ):
+                continue
+            xml = template.patch_xml(archive.read(member).decode("utf-8"))
+            tree = env.parse(xml)
+            from jinja2 import meta
+
+            undeclared = meta.find_undeclared_variables(tree)
+            _visit_template(tree, undeclared, paths)
+    if not paths:
+        raise ValueError(
+            f"{name} 没有找到变量，请在 Word 中使用 {{{{ project.name }}}} 这样的占位符",
+        )
+    return {
+        "name": name,
+        "keys": sorted(paths),
+        "per_recipient": bool(paths & INVITATION_KEYS),
+    }
+
+
+def parsed_date(value):
+    value = (
+        str(value)
+        .strip()
+        .replace("年", "-")
+        .replace("月", "-")
+        .replace("日", " ")
+        .replace("时", ":")
+        .replace("分", "")
+        .strip()
+    )
+    value = re.sub(r"\s+", " ", value)
+    match = re.fullmatch(
+        r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})"
+        r"(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?",
+        value,
+    )
+    if match:
+        try:
+            return datetime(*(int(v or 0) for v in match.groups()))
+        except ValueError:
+            return None
+    try:
+        result = datetime.fromisoformat(value)
+        return result if result.tzinfo is None else None
+    except ValueError:
+        return None
+
+
+def date_roles(fields):
+    aliases = {
+        "issue": ["dates.issue", "dates.invitation_issue"],
+        "qa": ["events.qa_deadline", "events.qa_time", "dates.qa_deadline"],
+        "response": ["events.response_deadline", "dates.response_deadline"],
+        "negotiation": ["events.negotiation_time", "dates.negotiation"],
+    }
+    labels = {
+        "issue": ["落款日期", "发文日期", "文件日期", "发文时间"],
+        "qa": ["答疑", "澄清截止"],
+        "response": ["响应截止", "响应文件截止", "响应文件递交截止"],
+        "negotiation": ["谈判时间", "商务谈判日期", "谈判日期"],
+    }
+    result = {}
+    for role, keys in aliases.items():
+        field = next((f for f in fields if f["key"] in keys), None) or next(
+            (f for f in fields if any(x in f["label"] for x in labels[role])),
+            None,
+        )
+        if field:
+            result[role] = field["key"]
+    return result
+
+
+def checks(case):
+    # Required fields, templates, shared dates and recipients each add rules.
+    # pylint: disable=too-many-branches
+    fields, recipients = case["fields"], case["recipients"]
+    values = {f["key"]: f["value"] for f in fields}
+    field_labels = {f["key"]: f["label"] for f in fields}
+    results = []
+
+    def add(label, status, detail, field=""):
+        results.append(
+            {
+                "label": label,
+                "status": status,
+                "detail": detail,
+                "field": field,
+            },
+        )
+
+    for f in fields:
+        if f["required"] and not str(f["value"]).strip():
+            add(f["label"], "missing", "尚未填写", f["key"])
+        elif (
+            f["value"]
+            and f["kind"] in {"date", "datetime-local"}
+            and not parsed_date(f["value"])
+        ):
+            add(f["label"], "error", "日期格式无法识别", f["key"])
+    for key in {k for t in case["templates"] for k in t["keys"]}:
+        if (
+            key not in INVITATION_KEYS
+            and key not in values
+            and not any(k.startswith(key + ".") for k in values)
+        ):
+            add(key, "missing", "Word 模板使用了此变量，Excel 中没有配置", key)
+    if not case["templates"]:
+        add("Word 模板", "missing", "请至少导入一个 Word 模板")
+    count = sum(
+        len(recipients) if t["per_recipient"] else 1 for t in case["templates"]
+    )
+    if count > 200:
+        add("生成数量", "error", "每批最多生成 200 份文书，请减少受邀单位或模板数量")
+    per_recipient = any(t["per_recipient"] for t in case["templates"])
+    if per_recipient and not recipients:
+        add("受邀单位", "missing", "邀请函需要至少一家受邀单位")
+    roles = date_roles(fields)
+    rules = list(case["rules"])
+    chain = [
+        r for r in ("issue", "qa", "response", "negotiation") if r in roles
+    ]
+    for a, b in zip(chain, chain[1:]):
+        rules.append(
+            {
+                "label": (
+                    f"{field_labels[roles[a]]} ≤ {field_labels[roles[b]]}"
+                ),
+                "start": roles[a],
+                "end": roles[b],
+                "equal": True,
+            },
+        )
+
+    def compare(label, a, b, equal=True, field=""):
+        if not a or not b:
+            add(label, "missing", "日期尚未补齐", field)
+        elif not parsed_date(a) or not parsed_date(b):
+            add(label, "error", "请填写明确日期或日期时间，不能使用时间区间", field)
+        elif (
+            parsed_date(a) <= parsed_date(b)
+            if equal
+            else parsed_date(a) < parsed_date(b)
+        ):
+            add(label, "ok", f"{a} → {b}", field)
+        else:
+            add(label, "error", f"时间顺序冲突：{a} → {b}", field)
+
+    for rule in rules:
+        compare(
+            rule["label"],
+            values.get(rule["start"]),
+            values.get(rule["end"]),
+            rule["equal"],
+            rule["end"],
+        )
+    if (
+        "dates.invitation_issue" in values
+        and "issue" in roles
+        and roles["issue"] != "dates.invitation_issue"
+    ):
+        add(
+            "邀请函与谈判文件落款一致",
+            "ok"
+            if values["dates.invitation_issue"] == values[roles["issue"]]
+            else "error",
+            "两份文书应使用同一落款日期",
+            "dates.invitation_issue",
+        )
+    seen = set()
+    if per_recipient:
+        for i, r in enumerate(recipients):
+            title = r["name"].strip() or f"第 {i + 1} 家单位"
+            if not r["name"].strip():
+                add(title, "missing", "请填写单位名称", f"recipient-{i}")
+            elif title in seen:
+                add(title, "error", "单位名称重复，请核对", f"recipient-{i}")
+            seen.add(title)
+            compare(
+                f"{title} · 领取起止",
+                r["start"],
+                r["end"],
+                field=f"recipient-{i}",
+            )
+            if "issue" in roles:
+                compare(
+                    f"{title} · 发文至领取",
+                    values[roles["issue"]],
+                    r["start"],
+                    field=f"recipient-{i}",
+                )
+            for role in ("qa", "response", "negotiation"):
+                if role in roles:
+                    compare(
+                        f"{title} · 领取结束至{field_labels[roles[role]]}",
+                        r["end"],
+                        values[roles[role]],
+                        field=f"recipient-{i}",
+                    )
+    return results
+
+
+def render_template(content, fields, recipient=None):
+    context = {}
+    for f in fields:
+        cursor = context
+        parts = f["key"].split(".")
+        for p in parts[:-1]:
+            cursor = cursor.setdefault(p, {})
+        cursor[parts[-1]] = (
+            f["value"].replace("T", " ")
+            if f.get("kind") == "datetime-local"
+            else f["value"]
+        )
+    if recipient is not None:
+        start, end = recipient["start"].replace("T", " "), recipient[
+            "end"
+        ].replace("T", " ")
+        context.setdefault("invitation", {}).update(
+            recipient=recipient["name"],
+            start=start,
+            end=end,
+        )
+        context.setdefault("events", {})[
+            "invitation_time"
+        ] = f"{start} 至 {end}"
+    template = DocxTemplate(io.BytesIO(content))
+    template.render(context, jinja_env=environment(), autoescape=True)
+    output = io.BytesIO()
+    template.save(output)
+    # Catch placeholders accidentally emitted as values, too. Never label such
+    # an output as confirmed or leave partially generated files on disk.
+    with ZipFile(io.BytesIO(output.getvalue())) as archive:
+        for name in archive.namelist():
+            if name.startswith("word/") and name.endswith(".xml"):
+                # lxml is a C extension; runtime behavior is covered by tests.
+                # pylint: disable-next=c-extension-no-member
+                xml = etree.fromstring(archive.read(name))
+                if re.search(r"{{|{%|{#", "".join(xml.itertext())):
+                    raise ValueError("生成内容仍有模板标记，请检查填写值和 Word 模板")
+    return output.getvalue()
+
+
+def export_excel(case):
+    book = Workbook()
+    sheet = book.active
+    sheet.title = "变量配置"
+    sheet.append(["变量名称", "中文名称", "值", "分组", "类型", "必填"])
+    for f in case["fields"]:
+        sheet.append(
+            [
+                f["key"],
+                f["label"],
+                f["value"],
+                f["group"],
+                f["kind"],
+                "是" if f["required"] else "否",
+            ],
+        )
+    recipients = book.create_sheet("受邀单位")
+    recipients.append(["单位名称", "领取开始时间", "领取结束时间"])
+    for r in case["recipients"]:
+        recipients.append([r["name"], r["start"], r["end"]])
+    rules = book.create_sheet("校核规则")
+    rules.append(["校核项", "开始变量", "结束变量", "允许相同"])
+    for r in case["rules"]:
+        rules.append(
+            [r["label"], r["start"], r["end"], "是" if r["equal"] else "否"],
+        )
+    check = book.create_sheet("日期校核")
+    check.append(["校核项", "结果", "说明"])
+    for r in checks(case):
+        check.append(
+            [
+                r["label"],
+                {"ok": "通过", "missing": "待补充", "error": "冲突"}[r["status"]],
+                r["detail"],
+            ],
+        )
+    for s in book:
+        s.freeze_panes = "A2"
+        s.auto_filter.ref = s.dimensions
+        for cell in s[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="264F52")
+        for col in s.columns:
+            s.column_dimensions[col[0].column_letter].width = min(
+                65,
+                max(20, max(len(text(c.value)) for c in col) + 4),
+            )
+        # Preserve literal values beginning with =,+,-,@; never create formulas
+        # from user-provided content.
+        for row in list(s.rows)[1:]:
+            for cell in row:
+                if isinstance(cell.value, str):
+                    cell.data_type = "s"
+    output = io.BytesIO()
+    book.save(output)
+    return output.getvalue()
+
+
+def starter_files():
+    fields = [
+        ("project.name", "项目名称", "", "项目资料", "text"),
+        ("project.code", "项目编号", "", "项目资料", "text"),
+        ("organization.name", "邀请单位", "", "单位与联系", "text"),
+        ("contact.name", "联系人", "", "单位与联系", "text"),
+        ("contact.phone", "联系电话", "", "单位与联系", "text"),
+        ("dates.issue", "文件落款日期", "", "日期安排", "date"),
+        ("events.qa_deadline", "答疑截止时间", "", "日期安排", "datetime-local"),
+        ("events.response_deadline", "响应截止时间", "", "日期安排", "datetime-local"),
+        ("events.negotiation_time", "谈判时间", "", "日期安排", "datetime-local"),
+        ("events.location", "谈判地点", "", "日期安排", "text"),
+        ("qualification.start_year", "资格资料起始年份", "", "资格要求", "text"),
+    ]
+    case = {
+        "fields": [
+            dict(
+                zip(("key", "label", "value", "group", "kind"), f),
+                required=True,
+            )
+            for f in fields
+        ],
+        "recipients": [{"name": "", "start": "", "end": ""} for _ in range(3)],
+        "rules": [],
+        "templates": [],
+    }
+    from docx import Document
+
+    outputs = {"变量管理表.xlsx": export_excel(case)}
+    for name, paragraphs in {
+        "谈判文件_示例模板.docx": [
+            "商务谈判文件",
+            "项目名称：{{ project.name }}",
+            "项目编号：{{ project.code }}",
+            "邀请单位：{{ organization.name }}",
+            "资格要求：自{{ qualification.start_year }}年至今，类似业绩不少于1个。",
+            "答疑截止：{{ events.qa_deadline }}",
+            "响应截止：{{ events.response_deadline }}",
+            "谈判时间：{{ events.negotiation_time }}",
+            "谈判地点：{{ events.location }}",
+            "联系人：{{ contact.name }}　电话：{{ contact.phone }}",
+            "{{ organization.name }}",
+            "{{ dates.issue }}",
+        ],
+        "邀请函_示例模板.docx": [
+            "谈判邀请函",
+            "{{ invitation.recipient }}：",
+            "邀请贵单位参加“{{ project.name }}”（编号：{{ project.code }}）商务谈判。",
+            "邀请函领取时间：{{ events.invitation_time }}",
+            "答疑截止：{{ events.qa_deadline }}",
+            "响应截止：{{ events.response_deadline }}",
+            "谈判时间：{{ events.negotiation_time }}",
+            "地点：{{ events.location }}",
+            "联系人：{{ contact.name }}　电话：{{ contact.phone }}",
+            "{{ organization.name }}",
+            "{{ dates.issue }}",
+        ],
+    }.items():
+        doc = Document()
+        doc.add_heading(paragraphs[0], 0)
+        for p in paragraphs[1:]:
+            doc.add_paragraph(p)
+        stream = io.BytesIO()
+        doc.save(stream)
+        outputs[name] = stream.getvalue()
+    return outputs
