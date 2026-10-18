@@ -137,6 +137,7 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.unit
         run: |
+          python scripts/verify_update_regressions.py --check
           # Coverage is collected only on the ubuntu/py3.13 entry so the
           # data file can be uploaded for coverage-report. Other matrix
           # entries only verify cross-platform compatibility.
@@ -608,7 +609,9 @@ jobs:
           python scripts/sync_run_center_bundle.py --sync
 
       - name: Run vitest with coverage (ratchet enforced)
-        run: npm run test:coverage
+        run: |
+          node scripts/verify-fork-features.mjs --check
+          npm run test:coverage
 
       - name: Stage frontend coverage xml for report
         if: always()

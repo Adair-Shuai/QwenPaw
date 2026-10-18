@@ -18,7 +18,15 @@ from component_common import (
 
 _SHA256 = re.compile(r"^[0-9a-f]{64}$", re.IGNORECASE)
 _ALLOWED_PRESERVE_PATHS = frozenset(
-    {"engines", "data", "state", "workspace", "models", "user-data"},
+    {
+        "engines",
+        "data",
+        "state",
+        "workspace",
+        "models",
+        "user-data",
+        "visualization/data",
+    },
 )
 
 

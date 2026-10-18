@@ -381,6 +381,30 @@
   margin-left: auto;
 }
 
+.appBrandUpdateButton {
+  flex: 0 0 auto;
+  width: max(28px, calc(28px * var(--app-font-scale))) !important;
+  min-width: max(28px, calc(28px * var(--app-font-scale))) !important;
+  height: max(28px, calc(28px * var(--app-font-scale))) !important;
+  padding: 0 !important;
+  color: var(--app-text-secondary);
+
+  :global(.qwenpaw-btn-icon) {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  svg {
+    width: var(--app-icon-lg);
+    height: var(--app-icon-lg);
+  }
+
+  &:hover {
+    color: var(--app-accent) !important;
+    background: var(--app-accent-faint) !important;
+  }
+}
+
 .brandCollapseToggle {
   width: max(28px, calc(28px * var(--app-font-scale))) !important;
   min-width: max(28px, calc(28px * var(--app-font-scale))) !important;
@@ -1123,15 +1147,12 @@
 }
 
 .updateModalBanner {
-  background: url("/public/qwenpawBack.png") no-repeat center top;
-  background-size: contain;
-  padding: 48px 28px 0px;
+  padding: 24px 24px 0;
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   min-height: 100px;
   position: relative;
-  transform: translateY(-48px);
 }
 
 .updateModalBannerLeft {
@@ -1167,7 +1188,6 @@
   overflow-y: auto;
   padding: 16px 24px 8px;
   min-height: 120px;
-  margin-top: -40px;
 }
 
 .updateModalSpinWrapper {

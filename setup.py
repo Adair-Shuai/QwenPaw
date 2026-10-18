@@ -10,6 +10,8 @@ packages = find_namespace_packages(
         "*.node_modules.*",
         "*.__pycache__",
         "*.__pycache__.*",
+        "qwenpaw.plugins_bundle.ugsci.visualization.data",
+        "qwenpaw.plugins_bundle.ugsci.visualization.data.*",
     ),
 )
 packages += find_namespace_packages("packages/qwenpawmail-mcp/src")

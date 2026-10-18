@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 # Plugins excluded from the desktop bundle. Users install these on demand
 # from the plugin market instead of receiving them in every release.
@@ -83,10 +83,37 @@ def discover_bundled_plugins(
 
 
 def iter_runtime_files(plugin_dir: Path):
-    """Yield plugin files while excluding local build and cache trees."""
+    """Apply manifest exclusions to desktop and component plugin staging too."""
+    manifest = json.loads(
+        (plugin_dir / "plugin.json").read_text(encoding="utf-8"),
+    )
+    excluded = []
+    raw_excluded = manifest.get("pack_exclude", [])
+    if not isinstance(raw_excluded, list):
+        raise ValueError("pack_exclude must be a list of relative paths")
+    for value in raw_excluded:
+        relative = PurePosixPath(str(value).replace("\\", "/"))
+        if (
+            relative.is_absolute()
+            or not relative.parts
+            or ".." in relative.parts
+            or ":" in relative.parts[0]
+        ):
+            raise ValueError(f"unsafe pack_exclude path: {value!r}")
+        excluded.append(relative)
+    protected = {
+        "plugin.json",
+        *(manifest.get("entry") or {}).values(),
+    }
     for path in plugin_dir.rglob("*"):
         relative = path.relative_to(plugin_dir)
         if any(part in _IGNORED_NAMES for part in relative.parts):
+            continue
+        if relative.as_posix() not in protected and any(
+            relative.as_posix() == item.as_posix()
+            or relative.as_posix().startswith(item.as_posix() + "/")
+            for item in excluded
+        ):
             continue
         if path.is_file() and path.suffix not in {".pyc", ".pyo"}:
             yield path

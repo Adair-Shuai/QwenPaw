@@ -17,12 +17,16 @@ import {
   useLayoutEffect,
   useRef,
   useState,
+  forwardRef,
+  useImperativeHandle,
+  type ForwardedRef,
 } from "react";
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { setTextareaValue } from "../../pages/Chat/utils";
 import type { FilesDrawerEvent, FilesDrawerState, FileTarget } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
+import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
 import {
   WorkbenchAgentPanel,
   WorkbenchBrowserPanel,
@@ -72,14 +76,30 @@ function insertFileReference(path: string): void {
   });
 }
 
-export default function FilesDrawer({
+const FilesDrawer = forwardRef<HTMLElement, FilesDrawerProps>(
+  function FilesDrawer(props, ref) {
+    return (
+      <SessionFilesDrawer
+        key={filesWorkspaceScopeKey(props.scope)}
+        {...props}
+        forwardedRef={ref}
+      />
+    );
+  },
+);
+export default FilesDrawer;
+
+function SessionFilesDrawer({
   state,
   dispatch,
   scope,
   runtimeSessionId,
-}: FilesDrawerProps) {
+  forwardedRef,
+}: FilesDrawerProps & { forwardedRef: ForwardedRef<HTMLElement> }) {
   const { t } = useTranslation();
   const drawerRef = useRef<HTMLElement>(null);
+  useImperativeHandle(forwardedRef, () => drawerRef.current!, []);
+  const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [isResizing, setIsResizing] = useState(false);
   const [mode, setMode] = useState<WorkbenchMode>(() => {
     const stored = localStorage.getItem(WORKBENCH_MODE_STORAGE_KEY);
@@ -108,55 +128,56 @@ export default function FilesDrawer({
     localStorage.setItem(WORKBENCH_MODE_STORAGE_KEY, mode);
   }, [mode]);
 
-  useEffect(() => {
-    const selectMode = (event: Event) => {
-      const requested = (event as CustomEvent<{ mode?: WorkbenchMode }>).detail
-        ?.mode;
-      if (
-        requested === "files" ||
-        requested === "browser" ||
-        requested === "agents" ||
-        requested === "genui" ||
-        requested === "compute"
-      ) {
-        setMode(requested);
-      }
-    };
-    window.addEventListener("qwenpaw:select-workbench-mode", selectMode);
-    return () =>
-      window.removeEventListener("qwenpaw:select-workbench-mode", selectMode);
-  }, []);
-
-  useEffect(() => {
-    if (!target) return;
-    if (target.preferredView === "visualization") {
-      setGenUiTarget(target);
+  // Only an explicit open request changes tools. Background file hydration
+  // must not steal the browser/compute view the user has just selected.
+  useLayoutEffect(() => {
+    if (state.kind === "workspace" && state.mode) {
+      setMode(state.mode);
+    } else if (state.target?.preferredView === "visualization") {
+      setGenUiTarget(state.target);
       setMode("genui");
-    } else {
+    } else if (state.target) {
       setGenUiTarget(undefined);
       setMode("files");
     }
-  }, [target]);
+  }, [state]);
 
   const close = useCallback(() => {
     const trigger = state.trigger;
     dispatch({ type: "CLOSE" });
-    requestAnimationFrame(() => trigger?.focus());
+    requestAnimationFrame(() => {
+      if (trigger?.isConnected) trigger.focus();
+    });
   }, [dispatch, state.trigger]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
+      const origin = event.target;
+      if (
+        event.key === "Escape" &&
+        !event.defaultPrevented &&
+        !event.isComposing &&
+        origin instanceof Element &&
+        drawerRef.current?.contains(origin) &&
+        !origin.closest(
+          'input, textarea, [contenteditable="true"], .monaco-editor, [role="dialog"], [role="menu"], [role="listbox"]',
+        )
+      ) {
         event.preventDefault();
         close();
       }
     };
     document.addEventListener("keydown", handleKeyDown);
-    drawerRef.current?.focus();
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [close]);
 
+  useEffect(() => {
+    drawerRef.current?.focus();
+    return () => resizeCleanupRef.current?.();
+  }, []);
+
   const resizeFromPointer = (event: React.PointerEvent) => {
+    resizeCleanupRef.current?.();
     event.preventDefault();
     setIsResizing(true);
     const startX = event.clientX;
@@ -172,21 +193,27 @@ export default function FilesDrawer({
       );
       setWidth(next);
     };
-    const up = () => {
+    const cleanup = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       window.removeEventListener("pointercancel", up);
+      resizeCleanupRef.current = undefined;
+    };
+    const up = () => {
+      cleanup();
       setIsResizing(false);
       const current = drawerRef.current?.getBoundingClientRect().width;
       if (current) localStorage.setItem(widthStorageKey, String(current));
     };
+    resizeCleanupRef.current = cleanup;
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", up);
     window.addEventListener("pointercancel", up);
   };
 
   const drawerStyle = width > 0 ? { width: `${width}px` } : undefined;
-  const filename = target?.path.split("/").pop() ?? t("files.title");
+  const filename =
+    target?.path.replace(/\\/g, "/").split("/").pop() ?? t("files.title");
   return (
     <motion.aside
       ref={drawerRef}
@@ -265,7 +292,7 @@ export default function FilesDrawer({
           <strong>
             {mode === "files"
               ? isWorkspace && !target
-                ? "Artifacts"
+                ? t("files.workspace")
                 : filename
               : mode === "browser"
               ? "浏览器"
@@ -281,7 +308,7 @@ export default function FilesDrawer({
           <button
             type="button"
             className={styles.secondaryButton}
-            onClick={() => dispatch({ type: "COLLAPSE_TO_PREVIEW" })}
+            onClick={() => dispatch({ type: "COLLAPSE_TO_PREVIEW", target })}
           >
             <ArrowLeft size={15} />
             {t("files.backToPreview")}

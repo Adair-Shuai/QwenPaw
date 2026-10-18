@@ -30,12 +30,7 @@ import styles from "./FilesWorkspace.module.less";
 
 const BROWSER_URL_STORAGE_KEY = "qwenpaw-workbench-browser-url";
 
-export type WorkbenchMode =
-  | "files"
-  | "browser"
-  | "agents"
-  | "genui"
-  | "compute";
+export type { WorkbenchMode } from "./types";
 
 const subscribeRendererRegistry = (listener: () => void) =>
   rendererRegistry.subscribe(listener);

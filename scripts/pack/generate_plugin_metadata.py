@@ -276,6 +276,14 @@ def _iter_tree_relpaths(
                 continue
             rels.append(rel)
     rels.sort()
+    if (manifest or {}).get("id") == "ugsci" and any(
+        rel == "visualization/data" or rel.startswith("visualization/data/")
+        for rel in rels
+    ):
+        raise ValueError(
+            "UGSci visualization test data must not be published; "
+            "exclude visualization/data in plugin.json",
+        )
     return rels
 
 
@@ -333,7 +341,9 @@ def _zip_plugin(
             entry.external_attr = 0o100644 << 16
             entry.create_system = 3
             with source.open("rb") as stream:
-                zf.writestr(entry, stream.read(), compress_type=zipfile.ZIP_DEFLATED)
+                zf.writestr(
+                    entry, stream.read(), compress_type=zipfile.ZIP_DEFLATED
+                )
 
 
 def _read_manifest(plugin_dir: Path) -> dict[str, Any] | None:

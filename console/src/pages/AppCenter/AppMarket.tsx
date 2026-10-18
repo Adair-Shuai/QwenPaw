@@ -45,6 +45,7 @@ import {
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 import { getMarketAppState } from "@/utils/marketAppState";
+import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
 import type { InstalledPluginIdentity } from "@/utils/marketPluginIdentity";
 import styles from "./index.module.less";
 import { InteractiveCard } from "@/components/interaction/InteractiveCard";
@@ -203,7 +204,7 @@ export function AppMarket({
   tRef.current = t;
 
   const surfacePrefix = useId();
-  const [preview, setPreview] = useState<MarketPluginEntry | null>(null);
+  const [previewEntry, setPreview] = useState<AppCatalogEntry | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -217,11 +218,26 @@ export function AppMarket({
   const [loadingMore, setLoadingMore] = useState(false);
   const [autoLoadBlocked, setAutoLoadBlocked] = useState(false);
   const [installingId, setInstallingId] = useState<string | null>(null);
+  const [queuedUpdates, setQueuedUpdates] = useState<ReadonlySet<string>>(
+    new Set(),
+  );
   const [qwenpawVersion, setQwenpawVersion] = useState<string | null>(null);
   const [versionChecked, setVersionChecked] = useState(false);
   const installingIdRef = useRef<string | null>(null);
   const loadingMoreRef = useRef(false);
   const loadMoreControllerRef = useRef<AbortController | null>(null);
+  // The drawer must share the refreshed card state, rather than retain a snapshot.
+  const preview =
+    plugins.find((entry) => entry.id === previewEntry?.id) ?? previewEntry;
+
+  useEffect(
+    () =>
+      subscribeToPluginChanges(() => {
+        // This surface refreshes its own mutations once their result is known.
+        if (installingIdRef.current === null) setRefreshKey((key) => key + 1);
+      }),
+    [],
+  );
 
   const load = useCallback(
     async (
@@ -394,11 +410,13 @@ export function AppMarket({
             upgrade_available: entry.upgrade_available,
           });
           if (upgrade.method === "queued") {
+            setQueuedUpdates((current) => new Set([...current, entry.id]));
             message.success({
               content: tRef.current("pluginManager.ugsciUpgradeQueued"),
               key: loadingKey,
             });
           } else if (upgrade.method === "replaced") {
+            setRefreshKey((key) => key + 1);
             message.success({
               content: tRef.current("pluginManager.externalUpgradeReady", {
                 version: upgrade.version,
@@ -437,6 +455,7 @@ export function AppMarket({
             version: entry.version,
             sha256: entry.sha256,
           });
+          setRefreshKey((key) => key + 1);
           await onInstalled();
           message.success({
             content: tRef.current("pluginManager.externalUpgradeReady", {
@@ -448,6 +467,7 @@ export function AppMarket({
         }
         if (entry.catalog_channel && entry.install_url) {
           const result = await installPlugin(entry.install_url);
+          setRefreshKey((key) => key + 1);
           message.success({
             content: `${tRef.current("appCenter.installSuccess")}: ${
               result.name
@@ -460,6 +480,7 @@ export function AppMarket({
         const result = await installPlugin(
           entry.install_url || buildMarketDownloadUrl(entry),
         );
+        setRefreshKey((key) => key + 1);
         message.success({
           content: `${tRef.current("appCenter.installSuccess", "安装成功")}: ${
             result.name
@@ -578,11 +599,12 @@ export function AppMarket({
           ? "update"
           : "installed"
         : "available"
-      : entry.installed === true && catalogState === "update"
-        ? "installed"
-        : catalogState;
+      : entry.installed === true
+      ? "installed"
+      : catalogState;
     const isInstalled = state === "installed";
     const canUpdate = state === "update";
+    const isQueued = !isInstalled && queuedUpdates.has(entry.id);
     return (
       <Button
         type={isInstalled ? "default" : "primary"}
@@ -595,15 +617,18 @@ export function AppMarket({
             <Download size={14} />
           )
         }
-        loading={!isInstalled && installingId === entry.id}
+        loading={!isInstalled && !isQueued && installingId === entry.id}
         disabled={
           isInstalled ||
+          isQueued ||
           !versionChecked ||
           (installingId !== null && installingId !== entry.id)
         }
         onClick={() => requestInstall(entry)}
       >
-        {isInstalled
+        {isQueued
+          ? t("appCenter.updateQueued", "等待重启更新")
+          : isInstalled
           ? t("appCenter.installedStatus", "Installed")
           : canUpdate
           ? t("appCenter.update", "Update")
@@ -717,23 +742,23 @@ export function AppMarket({
                           : styles.appCard
                       }
                     >
-                    <div className={styles.cardIcon}>
-                      {iconSrc ? (
-                        <img
-                          src={iconSrc}
-                          alt=""
-                          className={styles.marketLogo}
-                        />
-                      ) : FEATURED_APP_EMOJIS[entry.plugin_id || entry.id] ? (
-                        <span className={styles.cardIconEmoji} aria-hidden>
-                          {FEATURED_APP_EMOJIS[entry.plugin_id || entry.id]}
-                        </span>
-                      ) : (
-                        <AppWindow size={24} strokeWidth={1.75} />
-                      )}
-                    </div>
-                    <div className={styles.cardBody}>
-                      <div className={styles.cardHeader}>
+                      <div className={styles.cardIcon}>
+                        {iconSrc ? (
+                          <img
+                            src={iconSrc}
+                            alt=""
+                            className={styles.marketLogo}
+                          />
+                        ) : FEATURED_APP_EMOJIS[entry.plugin_id || entry.id] ? (
+                          <span className={styles.cardIconEmoji} aria-hidden>
+                            {FEATURED_APP_EMOJIS[entry.plugin_id || entry.id]}
+                          </span>
+                        ) : (
+                          <AppWindow size={24} strokeWidth={1.75} />
+                        )}
+                      </div>
+                      <div className={styles.cardBody}>
+                        <div className={styles.cardHeader}>
                           <button
                             className={`${styles.cardTitle} ${styles.previewTrigger}`}
                             onClick={() => {
@@ -746,7 +771,8 @@ export function AppMarket({
                           <span className={styles.versionBadge}>
                             v{entry.version}
                           </span>
-                          {(entry.is_featured === true || usesSignedCatalog) && (
+                          {(entry.is_featured === true ||
+                            usesSignedCatalog) && (
                             <span className={styles.featuredTag}>
                               <Sparkles size={11} strokeWidth={2} />
                               {channel === "ugsci"

@@ -86,55 +86,27 @@ export const compareVersions = (a: string, b: string): number => {
 
 // ── Update markdown ───────────────────────────────────────────────────────
 export const UPDATE_MD: Record<string, string> = {
-  zh: `### UGSci如何更新
+  zh: `### UGSci 桌面端更新
 
-请按安装方式选择，不要从公共 PyPI 安装名为 qwenpaw 的上游包。
+1. 打开 UGSci 桌面应用，点击版本号旁的更新按钮。
+2. 如有可用更新，查看目标版本和更新内容，点击“现在更新”。
+3. 按提示完成下载、安装与重启。重启后如有组件更新，请继续按提示完成。
 
-1. 桌面端：点击标题栏版本号旁的更新按钮，按提示安装。
+若提示“当前已是最新版本”，无需更新。`,
 
-2. 源码安装：拉取本仓库最新代码后重新构建控制台并安装。
+  ru: `### Обновление UGSci для компьютера
 
-\`\`\`
-git pull
-cd console && npm ci && npm run build
-cd .. && pip install -e .
-\`\`\`
+1. Откройте настольное приложение UGSci и нажмите кнопку обновления рядом с номером версии.
+2. Если доступно обновление, проверьте новую версию и список изменений, затем нажмите «Обновить сейчас».
+3. Следуйте подсказкам для загрузки, установки и перезапуска. Если после перезапуска доступны обновления компонентов, следуйте дальнейшим подсказкам.
 
-3. pip 安装：只有在已配置自建索引时才能用 CLI 升级。
+Если приложение сообщает, что установлена последняя версия, обновление не требуется.`,
 
-\`\`\`
-set QWENPAW_PYPI_JSON_URL=https://your-index.example/ugsci/json
-set QWENPAW_PIP_INDEX_URL=https://your-index.example/simple
-qwenpaw update
-\`\`\`
+  en: `### Updating UGSci Desktop
 
-未配置自建索引时，\`qwenpaw update\` 会拒绝执行，以免覆盖成上游 QwenPaw。`,
+1. Open the UGSci desktop app and click the update button next to the version number.
+2. If an update is available, review the target version and release notes, then click “Update now”.
+3. Follow the prompts to download, install, and restart. If component updates are available after restarting, follow the remaining prompts.
 
-  ru: `### Как обновить UGSci
-
-Выберите способ по типу установки. Не устанавливайте пакет qwenpaw с публичного PyPI.
-
-1. Десктоп: кнопка обновления рядом с номером версии.
-
-2. Из исходников: git pull, затем пересоберите console и pip install -e .
-
-3. pip: только после настройки своего индекса (QWENPAW_PYPI_JSON_URL и QWENPAW_PIP_INDEX_URL). Без них qwenpaw update будет отказано.`,
-
-  en: `### How to update UGSci
-
-Use the method that matches how you installed UGSci. Do not install the public PyPI package named qwenpaw -- that is upstream QwenPaw.
-
-1. Desktop: use the update button next to the version number.
-
-2. Source install: pull this repository, rebuild the console, then pip install -e .
-
-3. pip install: only after you point CLI at a self-hosted index.
-
-\`\`\`
-set QWENPAW_PYPI_JSON_URL=https://your-index.example/ugsci/json
-set QWENPAW_PIP_INDEX_URL=https://your-index.example/simple
-qwenpaw update
-\`\`\`
-
-Without those variables, \`qwenpaw update\` refuses so it cannot overwrite this fork.`,
+If the app says “You're up to date”, no update is needed.`,
 };

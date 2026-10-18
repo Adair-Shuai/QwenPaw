@@ -3441,10 +3441,12 @@
     },
     "pages": {
       "general": "Geral",
+      "ugsci": "Configurações UGSci",
       "navigation": "Barra lateral"
     },
     "descriptions": {
       "general": "Idioma, tema e comportamento do aplicativo",
+      "ugsci": "GenUI e outras preferências do UGSci",
       "navigation": "Visibilidade da barra lateral",
       "agents": "Perfis do QwenPaw, Codex e Qoder",
       "models": "Provedores, credenciais e catálogo de modelos",

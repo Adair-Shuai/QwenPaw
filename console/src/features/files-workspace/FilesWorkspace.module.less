@@ -1992,6 +1992,16 @@
 }
 
 @media (max-width: 1024px) {
+  .drawer:not(.drawerDirect) {
+    position: absolute;
+    inset: 0;
+    width: 100% !important;
+
+    .resizeHandle {
+      display: none;
+    }
+  }
+
   .drawer,
   .drawerPreview,
   .drawerWorkspace {

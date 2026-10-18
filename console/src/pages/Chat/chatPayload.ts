@@ -1,6 +1,10 @@
 import { chatExtensions } from "../../plugins/registry/chatExtensions";
 import { ChatList } from "../../plugins/registry/slotKeys";
 import { attachClientMessageId } from "../../utils/clientMessageId";
+import {
+  applyAgentMentionSubmission,
+  getSubmittedAgentMention,
+} from "./agentMentionSubmission";
 
 /** Both foreground SDK sends and host background sends use this pipeline. */
 export function applyChatPayloadTransforms(
@@ -50,5 +54,10 @@ export function applyChatPayloadTransforms(
       },
     };
   }
-  return requestBody;
+  return applyAgentMentionSubmission(
+    requestBody,
+    getSubmittedAgentMention(
+      payload.request_context as Record<string, unknown> | undefined,
+    ),
+  );
 }

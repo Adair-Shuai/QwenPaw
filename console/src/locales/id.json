@@ -395,10 +395,12 @@
     },
     "pages": {
       "general": "Umum",
+      "ugsci": "Pengaturan UGSci",
       "navigation": "Bilah samping"
     },
     "descriptions": {
       "general": "Bahasa, tema, dan perilaku aplikasi",
+      "ugsci": "GenUI dan preferensi UGSci lainnya",
       "navigation": "Visibilitas bilah samping",
       "agents": "Profil QwenPaw, Codex, dan Qoder",
       "models": "Penyedia, kredensial, dan katalog model",

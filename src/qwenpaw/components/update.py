@@ -1054,7 +1054,11 @@ class ComponentUpdater:
         try:
             for relative in plan.preserve_paths:
                 candidate = source / relative
-                if _is_link_like(candidate):
+                parts = Path(relative).parts
+                if any(
+                    _is_link_like(source.joinpath(*parts[:length]))
+                    for length in range(1, len(parts) + 1)
+                ):
                     raise ComponentUpdateError(
                         f"preserved data may not be a link: {relative}",
                     )

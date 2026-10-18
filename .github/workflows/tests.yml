@@ -8,6 +8,8 @@ on:
       - 'tests/**'
       - 'scripts/check-channels.sh'
       - 'scripts/check_channel_contracts.py'
+      - 'scripts/pack-tauri/**'
+      - 'scripts/verify_update_regressions.py'
       - '.gitattributes'
       - 'pyproject.toml'
       - 'setup.py'
@@ -64,6 +66,8 @@ jobs:
               - 'tests/**'
               - 'scripts/check-channels.sh'
               - 'scripts/check_channel_contracts.py'
+              - 'scripts/pack-tauri/**'
+              - 'scripts/verify_update_regressions.py'
               - '.gitattributes'
               - 'pyproject.toml'
               - 'setup.py'
@@ -142,6 +146,7 @@ jobs:
       - name: Run unit tests
         shell: bash
         run: |
+          python scripts/verify_update_regressions.py --check
           # Phase-1 simplification (plan v1.6, item 1-4): coverage tracking
           # removed from the PR gate. Coverage is collected and threshold-
           # gated in the nightly full run (full-tests-nightly.yml), per the

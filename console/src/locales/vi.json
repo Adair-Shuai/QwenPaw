@@ -366,10 +366,12 @@
     },
     "pages": {
       "general": "Chung",
+      "ugsci": "Cài đặt UGSci",
       "navigation": "Thanh bên"
     },
     "descriptions": {
       "general": "Ngôn ngữ, giao diện và hành vi ứng dụng",
+      "ugsci": "GenUI và các tùy chọn UGSci khác",
       "navigation": "Khả năng hiển thị của thanh bên",
       "agents": "Hồ sơ QwenPaw, Codex và Qoder",
       "models": "Nhà cung cấp, thông tin xác thực và danh mục mô hình",

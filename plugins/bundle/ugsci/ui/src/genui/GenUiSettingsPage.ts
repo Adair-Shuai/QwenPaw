@@ -26,9 +26,10 @@ function publishConfig(value: GenUiConfig): void {
   if (QP) QP.genui = { ...(QP.genui || {}), config: value };
 }
 
-export function GenUiSettingsPage() {
+export function GenUiSettingsSection() {
   const React = getHost().React;
-  const { Alert, Card, Space, Spin, Switch, Typography, message } = getHost().antd;
+  const { Alert, Card, Space, Spin, Switch, Typography, message } =
+    getHost().antd;
   const { useEffect, useState } = React;
   const [config, setConfig] = useState(null as GenUiConfig | null);
   const [saving, setSaving] = useState(false);
@@ -38,7 +39,12 @@ export function GenUiSettingsPage() {
     let retryTimer: ReturnType<typeof setTimeout> | null = null;
     const load = (notify = false) => {
       apiFetch<GenUiConfig>("/ugsci/genui/config")
-        .then((value) => { if (active) { setConfig(value); publishConfig(value); } })
+        .then((value) => {
+          if (active) {
+            setConfig(value);
+            publishConfig(value);
+          }
+        })
         .catch((error) => {
           if (!active) return;
           setConfig(DEGRADED_CONFIG);
@@ -48,7 +54,10 @@ export function GenUiSettingsPage() {
         });
     };
     load(true);
-    return () => { active = false; if (retryTimer) clearTimeout(retryTimer); };
+    return () => {
+      active = false;
+      if (retryTimer) clearTimeout(retryTimer);
+    };
   }, []);
 
   const update = async (enabled: boolean) => {
@@ -61,9 +70,13 @@ export function GenUiSettingsPage() {
       });
       setConfig(value);
       publishConfig(value);
-      message.success(value.overridden
-        ? "设置已保存，但环境变量或插件配置正在覆盖它"
-        : enabled ? "GenUI 已开启" : "GenUI 已关闭");
+      message.success(
+        value.overridden
+          ? "设置已保存，但环境变量或插件配置正在覆盖它"
+          : enabled
+          ? "GenUI 已开启"
+          : "GenUI 已关闭",
+      );
     } catch (error) {
       message.error(`保存 GenUI 设置失败：${String(error)}`);
     } finally {
@@ -72,9 +85,13 @@ export function GenUiSettingsPage() {
   };
 
   return React.createElement(
-    "div",
-    { style: { padding: 24, maxWidth: 880 } },
-    React.createElement(Typography.Title, { level: 2 }, "GenUI 设置"),
+    "section",
+    { "aria-labelledby": "ugsci-genui-title" },
+    React.createElement(
+      Typography.Title,
+      { level: 3, id: "ugsci-genui-title" },
+      "GenUI",
+    ),
     React.createElement(
       Typography.Paragraph,
       { type: "secondary" },
@@ -94,7 +111,11 @@ export function GenUiSettingsPage() {
               React.createElement(
                 "div",
                 null,
-                React.createElement(Typography.Text, { strong: true }, "启用 GenUI"),
+                React.createElement(
+                  Typography.Text,
+                  { strong: true },
+                  "启用 GenUI",
+                ),
                 React.createElement(
                   Typography.Paragraph,
                   { type: "secondary", style: { margin: "4px 0 0" } },
@@ -102,6 +123,7 @@ export function GenUiSettingsPage() {
                 ),
               ),
               React.createElement(Switch, {
+                "aria-label": "启用 GenUI",
                 checked: config.persisted_enabled,
                 loading: saving,
                 disabled: config.backend_unavailable,
@@ -109,15 +131,19 @@ export function GenUiSettingsPage() {
               }),
             ),
             React.createElement(Alert, {
-              type: config.backend_unavailable ? "error" : config.enabled ? "success" : "warning",
+              type: config.backend_unavailable
+                ? "error"
+                : config.enabled
+                ? "success"
+                : "warning",
               showIcon: true,
               message: config.backend_unavailable
                 ? "UGSci 后端当前不可用，正在使用兼容降级模式；设置不会写入。"
                 : config.enabled
                 ? "GenUI 当前有效；各 Agent 仍可显式关闭自己的 GenUI 工具"
                 : config.overridden
-                  ? "GenUI 当前被环境变量或插件配置关闭；本地设置已保存但暂不生效。"
-                  : "GenUI 已全局关闭；已有界面仍可查看，但 Agent 不会再生成或更新界面。",
+                ? "GenUI 当前被环境变量或插件配置关闭；本地设置已保存但暂不生效。"
+                : "GenUI 已全局关闭；已有界面仍可查看，但 Agent 不会再生成或更新界面。",
             }),
           ),
     ),

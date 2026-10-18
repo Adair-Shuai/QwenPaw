@@ -28,6 +28,7 @@ import {
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
 import { ApiError } from "../request";
+import { subscribeToPluginChanges } from "../../utils/pluginChangeEvents";
 
 interface MockResponseOptions {
   ok: boolean;
@@ -210,6 +211,8 @@ describe("plugin module", () => {
   });
 
   it("replaceInstalledPlugin uses the authenticated backend route", async () => {
+    const onChanged = vi.fn();
+    const unsubscribe = subscribeToPluginChanges(onChanged);
     const res = {
       id: "p1",
       name: "Plugin One",
@@ -228,6 +231,8 @@ describe("plugin module", () => {
         sha256: "a".repeat(64),
       }),
     ).resolves.toEqual(res);
+    expect(onChanged).toHaveBeenCalledTimes(1);
+    unsubscribe();
 
     expect(fetch).toHaveBeenCalledWith("http://test/plugins/replace", {
       method: "POST",

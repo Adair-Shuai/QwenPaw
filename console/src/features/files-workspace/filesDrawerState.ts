@@ -25,6 +25,7 @@ export function filesDrawerReducer(
         kind: "workspace",
         target: event.target,
         trigger: event.trigger,
+        ...(event.mode ? { mode: event.mode } : {}),
       };
     case "EXPAND_WORKSPACE":
       return state.kind === "preview"
@@ -34,25 +35,30 @@ export function filesDrawerReducer(
             trigger: state.trigger,
           }
         : state;
-    case "COLLAPSE_TO_PREVIEW":
-      return state.kind === "workspace" && state.target
+    case "COLLAPSE_TO_PREVIEW": {
+      if (state.kind !== "workspace") return state;
+      const target = event.target ?? state.target;
+      return target
         ? {
             kind: "preview",
-            target: state.target,
+            target,
             trigger: state.trigger,
           }
         : state;
+    }
     case "CLOSE":
       return CLOSED_FILES_DRAWER;
   }
 }
 
-/** Header Appstore control: toggle the Chat file preview pane. */
+/** The header expands a preview, then toggles the complete workspace. */
 export function headerWorkspaceToggleEvent(
   state: FilesDrawerState,
+  trigger: HTMLElement | null = null,
 ): FilesDrawerEvent {
-  if (state.kind !== "closed") {
+  if (state.kind === "workspace") {
     return { type: "CLOSE" };
   }
-  return { type: "OPEN_WORKSPACE", trigger: null };
+  if (state.kind === "preview") return { type: "EXPAND_WORKSPACE" };
+  return { type: "OPEN_WORKSPACE", trigger };
 }

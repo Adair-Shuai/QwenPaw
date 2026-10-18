@@ -3201,10 +3201,12 @@
     },
     "pages": {
       "general": "Общие",
+      "ugsci": "Настройки UGSci",
       "navigation": "Боковая панель"
     },
     "descriptions": {
       "general": "Язык, тема и поведение приложения",
+      "ugsci": "GenUI и другие настройки UGSci",
       "navigation": "Отображение элементов боковой панели",
       "agents": "Профили QwenPaw, Codex и Qoder",
       "models": "Поставщики, учётные данные и каталог моделей",

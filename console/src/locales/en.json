@@ -142,6 +142,7 @@
     "installSuccess": "Installed",
     "installFailed": "Install failed",
     "installedStatus": "Installed",
+    "updateQueued": "Update queued — restart required",
     "update": "Update",
     "searchMarket": "Search app market...",
     "marketFilters": "App market filters",
@@ -370,6 +371,18 @@
     "dock": "Return sidebar to left edge",
     "newVersion": "New version available: v{{version}}, click to upgrade",
     "updateModal": {
+      "checkUpdates": "Check for updates",
+      "guideTitle": "Update instructions",
+      "componentsTitle": "{{count}} component updates available",
+      "componentList": "Pending component updates",
+      "currentVersion": "Current version v{{version}}",
+      "targetVersion": "Target version v{{version}}",
+      "notInstalled": "Not installed",
+      "updateAvailable": "Update available",
+      "upToDate": "You're up to date",
+      "installUpdate": "Update now",
+      "unifiedInstallHint": "Updates will be installed after the app restarts.",
+      "coreFirstInstallHint": "The desktop core {{version}} will be installed first. Component updates will be checked after restart.",
       "title": "New version available: v{{version}}",
       "viewReleases": "View Releases",
       "installDesktopUpdate": "Update Now",
@@ -430,10 +443,12 @@
     },
     "pages": {
       "general": "General",
+      "ugsci": "UGSci settings",
       "navigation": "Sidebar"
     },
     "descriptions": {
       "general": "Language, theme and application behavior",
+      "ugsci": "GenUI and other UGSci preferences",
       "navigation": "Sidebar visibility",
       "agents": "QwenPaw, Codex and Qoder profiles",
       "models": "Providers, credentials and model catalog",
@@ -4064,7 +4079,7 @@
     "description": "I am a helpful assistant that can help you with your questions.",
     "prompt1": "Let's start a new journey!",
     "prompt2": "Can you tell me what skills you have?",
-    "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands",
+    "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands · \"@\" to assign an Agent",
     "emptyOutputError": "The assistant returned an empty response.",
     "commands": {
       "clear": {

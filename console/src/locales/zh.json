@@ -142,6 +142,7 @@
     "installSuccess": "已安装",
     "installFailed": "安装失败",
     "installedStatus": "已安装",
+    "updateQueued": "等待重启更新",
     "update": "更新",
     "searchMarket": "搜索应用市场...",
     "marketFilters": "应用市场筛选",
@@ -370,6 +371,18 @@
     "dock": "侧栏归位",
     "newVersion": "发现新版本 v{{version}}，点击前往升级",
     "updateModal": {
+      "checkUpdates": "检查更新",
+      "guideTitle": "更新说明",
+      "componentsTitle": "有 {{count}} 项组件更新",
+      "componentList": "待更新组件",
+      "currentVersion": "当前版本 v{{version}}",
+      "targetVersion": "目标版本 v{{version}}",
+      "notInstalled": "未安装",
+      "updateAvailable": "有可用更新",
+      "upToDate": "当前已是最新版本",
+      "installUpdate": "现在更新",
+      "unifiedInstallHint": "更新将在应用重启后安装。",
+      "coreFirstInstallHint": "将先安装桌面核心 {{version}}，重启后继续检查组件更新。",
       "title": "发现新版本 v{{version}}",
       "viewReleases": "查看 Releases",
       "installDesktopUpdate": "现在更新",
@@ -430,10 +443,12 @@
     },
     "pages": {
       "general": "通用",
+      "ugsci": "UGSci 设置",
       "navigation": "侧边栏"
     },
     "descriptions": {
       "general": "语言、主题和应用行为",
+      "ugsci": "GenUI 与其他 UGSci 功能偏好",
       "navigation": "侧边栏显示内容",
       "agents": "QwenPaw、Codex 和 Qoder 配置",
       "models": "服务商、凭据和模型目录",
@@ -3923,7 +3938,7 @@
     "description": "我是一个智能助手，可以帮助你解答问题。",
     "prompt1": "让我们开启一段新的旅程吧！",
     "prompt2": "能告诉我你有哪些技能吗？",
-    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令",
+    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令 · \"@\" 指派 Agent",
     "emptyOutputError": "助手返回了空响应。",
     "commands": {
       "clear": {

@@ -22,7 +22,10 @@ import {
 import { MarketplacePage } from "./market/MarketplacePage";
 import { WelcomePromptsInjector } from "./WelcomePromptsInjector";
 import { registerGenuiFrontend } from "./genui/index";
-import { GenUiSettingsPage } from "./genui/GenUiSettingsPage";
+import {
+  UgsciSettingsPage,
+  LegacyGenUiSettingsRedirect,
+} from "./settings/UgsciSettingsPage";
 import { registerVisualizationFrontend } from "./visualization";
 import { StorageDynamicsPage } from "./storage/StorageDynamicsPage";
 
@@ -81,7 +84,6 @@ function buildPlugin() {
   const antdIcons = getHost().antdIcons || {};
   const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
   const ToolOutlined = antdIcons.ToolOutlined;
-  const AppstoreOutlined = antdIcons.AppstoreOutlined;
 
   QP.route.add(PLUGIN_ID, {
     id: "ugsci.storage-dynamics",
@@ -120,20 +122,15 @@ function buildPlugin() {
   });
 
   QP.route.add(PLUGIN_ID, {
+    id: "ugsci.settings",
+    path: "/ugsci-settings",
+    component: UgsciSettingsPage,
+  });
+  // Settings Center embeds ugsci.settings; no separate main-sidebar shortcut.
+  QP.route.add(PLUGIN_ID, {
     id: "ugsci.genui-settings",
     path: "/ugsci-genui-settings",
-    component: GenUiSettingsPage,
-  });
-  QP.menu.add(PLUGIN_ID, {
-    id: "ugsci.genui-settings",
-    location: "primary.settings",
-    parentId: "plugins-group",
-    label: () => "GenUI 设置",
-    icon: AppstoreOutlined
-      ? React.createElement(AppstoreOutlined, { style: { fontSize: 16 } })
-      : undefined,
-    route: "ugsci.genui-settings",
-    order: 30,
+    component: LegacyGenUiSettingsRedirect,
   });
 
   // Unified Tools & Skills Center

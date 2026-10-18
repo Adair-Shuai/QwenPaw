@@ -60,3 +60,7 @@ sessions_mount_dir
 *.log
 logs
 cookbook
+
+# UGSci visualization examples and converted test caches stay local.
+plugins/bundle/ugsci/visualization/data
+src/qwenpaw/plugins_bundle/ugsci/visualization/data

@@ -124,6 +124,7 @@ export default function FilesWorkspace({
     );
   }, [activeTabPath, tabs, onActiveTargetChange]);
   const navigationSequence = useRef(0);
+  const openTargetSequence = useRef(0);
   const [loadError, setLoadError] = useState("");
   const [memoryGraphRoot, setMemoryGraphRoot] =
     useState<MemoryGraphRoot | null>(null);
@@ -424,6 +425,8 @@ export default function FilesWorkspace({
 
   const activateTab = useCallback(
     (tabPath: string) => {
+      // Selecting an existing tab also supersedes a file still being loaded.
+      openTargetSequence.current += 1;
       revalidatedScope.current = scopeKey;
       setLoadError("");
       setActiveTab(scopeKey, tabPath);
@@ -434,7 +437,14 @@ export default function FilesWorkspace({
 
   const openTarget = useCallback(
     async (target: FileTarget) => {
+      const requestSequence = ++openTargetSequence.current;
       const resolvedTarget = await resolveEditableTarget(target);
+      if (
+        !mountedRef.current ||
+        scopeKeyRef.current !== scopeKey ||
+        requestSequence !== openTargetSequence.current
+      )
+        return;
       // Tab identity has to include the root: the same relative path exists in
       // more than one bound directory, and a bare path would make two different
       // files share one tab (and one dirty buffer). The primary keeps its bare
@@ -465,6 +475,12 @@ export default function FilesWorkspace({
       }
       try {
         const loaded = await loadTarget(resolvedTarget);
+        if (
+          !mountedRef.current ||
+          scopeKeyRef.current !== scopeKey ||
+          requestSequence !== openTargetSequence.current
+        )
+          return;
         setLoadError("");
         openTab(scopeKey, {
           path: tabPath,
@@ -482,7 +498,12 @@ export default function FilesWorkspace({
         revalidatedScope.current = scopeKey;
         setActiveTab(scopeKey, tabPath);
       } catch {
-        setLoadError(t("files.loadFailed"));
+        if (
+          mountedRef.current &&
+          scopeKeyRef.current === scopeKey &&
+          requestSequence === openTargetSequence.current
+        )
+          setLoadError(t("files.loadFailed"));
       }
     },
     [

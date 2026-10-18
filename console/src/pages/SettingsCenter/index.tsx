@@ -189,6 +189,15 @@ const SETTINGS_GROUPS: SettingsGroupDefinition[] = [
     fallback: "Global settings",
     pages: [
       {
+        key: "ugsci",
+        labelKey: "settingsCenter.pages.ugsci",
+        fallback: "UGSci settings",
+        descriptionKey: "settingsCenter.descriptions.ugsci",
+        descriptionFallback: "GenUI and other UGSci preferences",
+        routeId: "ugsci.settings",
+        Icon: SlidersHorizontal,
+      },
+      {
         key: "marketplace",
         labelKey: "nav.marketplace",
         fallback: "Extensions",

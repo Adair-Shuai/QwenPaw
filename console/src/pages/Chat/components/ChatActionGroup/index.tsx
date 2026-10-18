@@ -3,7 +3,7 @@ import React from "react";
 import { IconButton } from "@agentscope-ai/design";
 import { useTranslation } from "react-i18next";
 import { Flex, Tooltip, message } from "antd";
-import { Files, Terminal } from "lucide-react";
+import { LayoutGrid, Terminal } from "lucide-react";
 import styles from "./ChatActionGroup.module.less";
 
 interface ChatActionGroupProps {
@@ -11,7 +11,7 @@ interface ChatActionGroupProps {
   terminalOpen?: boolean;
   terminalEnabled?: boolean;
   terminalDisabledReason?: string;
-  onToggleWorkspace?: () => void;
+  onToggleWorkspace?: (trigger: HTMLElement) => void;
   workspaceOpen?: boolean;
 }
 
@@ -80,7 +80,7 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
             )}
             aria-pressed={workspaceOpen}
             icon={
-              <Files
+              <LayoutGrid
                 size={17}
                 strokeWidth={2}
                 style={{ width: 17, height: 17 }}
@@ -92,7 +92,7 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
               padding: 0,
               ...(workspaceOpen ? { color: "var(--app-accent)" } : {}),
             }}
-            onClick={onToggleWorkspace}
+            onClick={(event) => onToggleWorkspace(event.currentTarget)}
           />
         </Tooltip>
       )}

@@ -3186,10 +3186,12 @@
     },
     "pages": {
       "general": "一般",
+      "ugsci": "UGSci 設定",
       "navigation": "サイドバー"
     },
     "descriptions": {
       "general": "言語、テーマ、アプリの動作",
+      "ugsci": "GenUI とその他の UGSci 設定",
       "navigation": "サイドバーの表示項目",
       "agents": "QwenPaw、Codex、Qoder のプロファイル",
       "models": "プロバイダー、認証情報、モデルカタログ",
