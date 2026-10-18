@@ -12,6 +12,12 @@ import oss2
 import pytest
 
 REPO = Path(__file__).resolve().parents[4]
+VERSION = json.loads(
+    (REPO / "plugins/apps/document-forms/plugin.json").read_text(
+        encoding="utf-8",
+    ),
+)["version"]
+FILE_ID = f"document-forms-{VERSION}"
 spec = importlib.util.spec_from_file_location(
     "document_forms_publisher",
     REPO / "scripts/pack/publish_document_forms.py",
@@ -23,7 +29,7 @@ spec.loader.exec_module(publisher)
 @pytest.fixture(name="release")
 def release_fixture(tmp_path, monkeypatch):
     root = tmp_path / "dist/document-forms"
-    key = "files/plugins/apps/document-forms/document-forms-1.0.0.zip"
+    key = f"files/plugins/apps/document-forms/{FILE_ID}.zip"
     archive = root / key.removeprefix("files/plugins/")
     archive.parent.mkdir(parents=True)
     source = REPO / "plugins/apps/document-forms"
@@ -41,14 +47,14 @@ def release_fixture(tmp_path, monkeypatch):
     manifest = json.loads((source / "plugin.json").read_text(encoding="utf-8"))
     entry = {
         "plugin_id": "document-forms",
-        "version": "1.0.0",
+        "version": VERSION,
         "url": "/" + key,
         "sha256": hashlib.sha256(payload).hexdigest(),
         "qwenpaw_version": manifest["qwenpaw_version"],
     }
     (root / "index.json").write_text(
         json.dumps(
-            {"files": {"document-forms-1.0.0": entry}, "updated_at": "now"},
+            {"files": {FILE_ID: entry}, "updated_at": "now"},
         ),
         encoding="utf-8",
     )
@@ -98,7 +104,7 @@ def test_publication_preserves_other_apps_and_verifies_remote_bytes(release):
     assert merged["files"]["other-1.0"] == old["files"]["other-1.0"]
     assert merged["custom"] == "preserved"
     assert merged["platforms"]["apps"]["versions"] == [
-        "document-forms-1.0.0",
+        FILE_ID,
         "other-1.0",
     ]
     assert (
@@ -121,7 +127,7 @@ def test_immutable_package_mismatch_cannot_modify_catalog(release):
 def test_bad_package_digest_cannot_upload(release):
     root, _, _, _, _, writes = release
     index = json.loads((root / "index.json").read_text())
-    index["files"]["document-forms-1.0.0"]["sha256"] = "invalid"
+    index["files"][FILE_ID]["sha256"] = "invalid"
     (root / "index.json").write_text(json.dumps(index))
     with pytest.raises(AssertionError):
         publisher.main()
