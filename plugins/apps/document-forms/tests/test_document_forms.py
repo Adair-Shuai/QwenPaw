@@ -12,7 +12,7 @@ import pytest
 from docx import Document
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from openpyxl import load_workbook
+from openpyxl import Workbook, load_workbook
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = "document_forms_test_plugin"
@@ -455,3 +455,274 @@ def test_failed_batch_is_atomic_and_duplicate_names_are_safe(
     )
     assert client.get(base).json()["generations"] == []
     assert not list(main.ROOT.glob("*/*/staging-*"))
+
+
+def unsized_workbook():
+    """Anonymized version of the reported writer/layout, without dimensions."""
+    book = Workbook(write_only=True)
+    variables = book.create_sheet("变量配置")
+    for row in [
+        ["变量名称", "中文名称", "值"],
+        ["project.name", "项目名称", "回归测试项目"],
+        ["org.name", "邀请单位", "测试单位"],
+        ["dates.issue", "文件落款日期", "2026-10-17"],
+        [
+            "events.invitation_time",
+            "总体邀请函发放时段",
+            "2026-07-02 09:00 ~ 2026-07-02 17:00",
+        ],
+        [
+            "events.questions_time",
+            "商务答疑时间段",
+            "2026-07-03 09:00 ~ 2026-07-03 17:00",
+        ],
+        ["submission.deadline", "响应文件提交截止时间", "2026-07-04 17:00"],
+        [
+            "events.negotiation_time",
+            "商务谈判时间段",
+            "2026-07-05 09:00 ~ 2026-07-05 17:00",
+        ],
+        ["research.contents", "主要研究内容", "第一项\n第二项"],
+    ]:
+        variables.append(row)
+    recipients = book.create_sheet("受邀单位")
+    for row in [
+        [
+            "序号",
+            "受邀单位（invitation.recipient）",
+            "邀请函领取开始（YYYY-MM-DD HH:MM）",
+            "邀请函领取结束（YYYY-MM-DD HH:MM）",
+        ],
+        [1, "甲单位", "2026-07-02 09:00", "2026-07-02 10:00"],
+        [2],
+        [3],
+        [],
+        ["说明：每家单位填写名称与独立领取时间。"],
+    ]:
+        recipients.append(row)
+    audit = book.create_sheet("日期校核")
+    audit.append(["旧结果", "=1+1"])
+    output = io.BytesIO()
+    book.save(output)
+    return output.getvalue()
+
+
+def with_stale_dimensions(content):
+    output = io.BytesIO()
+    with ZipFile(io.BytesIO(content)) as source, ZipFile(
+        output,
+        "w",
+    ) as target:
+        for name in source.namelist():
+            payload = source.read(name)
+            if name.startswith("xl/worksheets/") and name.endswith(".xml"):
+                payload = payload.replace(
+                    b"<sheetPr>",
+                    b'<dimension ref="A1:A1"/><sheetPr>',
+                    1,
+                )
+            target.writestr(name, payload)
+    return output.getvalue()
+
+
+@pytest.mark.parametrize("stale", [False, True])
+def test_missing_or_stale_dimensions_annotated_headers_and_sparse_rows(stale):
+    content = unsized_workbook()
+    if stale:
+        content = with_stale_dimensions(content)
+    data = engine.read_excel(content)
+    assert len(data["fields"]) == 8
+    assert len(data["recipients"]) == 3
+    assert data["recipients"][0] == {
+        "name": "甲单位",
+        "start": "2026-07-02T09:00",
+        "end": "2026-07-02T10:00",
+    }
+    assert data["recipients"][1] == {"name": "", "start": "", "end": ""}
+    checks = engine.checks(dict(data, templates=[]))
+    assert any(
+        r["label"] == "落款日期不晚于总体发放开始" and r["status"] == "error"
+        for r in checks
+    )
+    assert not any("格式" in r["detail"] for r in checks)
+
+
+def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
+    response = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("变量表.xlsx", unsized_workbook())},
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    base = f"/api/document-forms/cases/{case['id']}"
+    templates = []
+    for name, paragraph in [
+        (
+            "谈判文件.docx",
+            "{{ project.name }} {{ events.invitation_time }} "
+            "{{ dates.issue }}",
+        ),
+        (
+            "邀请函.docx",
+            "{{ invitation.recipient }} {{ events.invitation_time }} "
+            "{{ dates.issue }}",
+        ),
+    ]:
+        doc = Document()
+        doc.add_paragraph(paragraph)
+        output = io.BytesIO()
+        doc.save(output)
+        templates.append(("files", (name, output.getvalue())))
+    response = client.post(
+        base + "/templates",
+        data={"revision": case["revision"]},
+        files=templates,
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    assert [t["per_recipient"] for t in case["templates"]] == [False, True]
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert not review["can_generate"]
+    assert any(r["status"] == "error" for r in review["checks"])
+    values = {f["key"]: f["value"] for f in case["fields"]}
+    values["dates.issue"] = "2026-07-01"
+    recipients = [
+        {
+            "name": name,
+            "start": f"2026-07-02T{hour}:00",
+            "end": f"2026-07-02T{hour}:30",
+        }
+        for name, hour in [("甲单位", "09"), ("乙单位", "11"), ("丙单位", "13")]
+    ]
+    case = client.put(
+        base,
+        json={
+            "revision": case["revision"],
+            "name": "复核测试",
+            "values": values,
+            "recipients": recipients,
+        },
+    ).json()
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert review["can_generate"], review
+    response = client.post(
+        base + "/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    generation = response.json()["generations"][0]
+    assert len(generation["files"]) == 4
+    for item in generation["files"]:
+        result = client.get(
+            base + f"/outputs/{generation['id']}/{item['name']}",
+        )
+        paragraph = Document(io.BytesIO(result.content)).paragraphs[0].text
+        if item["recipient"] == "共用文件":
+            assert values["events.invitation_time"] in paragraph
+        else:
+            recipient = next(
+                r for r in recipients if r["name"] == item["recipient"]
+            )
+            assert recipient["start"].replace("T", " ") in paragraph
+        assert "2026-07-01" in paragraph
+    exported = engine.read_excel(client.get(base + "/excel").content)
+    assert exported["fields"] == case["fields"]
+    assert exported["recipients"] == case["recipients"]
+
+
+@pytest.mark.parametrize("limit", ["rows", "columns", "formula"])
+def test_untrusted_dimensions_cannot_hide_limits_or_input_formulas(limit):
+    book = Workbook(write_only=True)
+    sheet = book.create_sheet("变量配置")
+    sheet.append(["变量名称", "中文名称", "值"])
+    sheet.append(
+        ["project.name", "项目名称", "=1+1" if limit == "formula" else "项目"],
+    )
+    if limit == "columns":
+        sheet.append([None] * 30 + ["超出列数"])
+    if limit == "rows":
+        for index in range(1000):
+            sheet.append([f"p{index}", "测试", "值"])
+    output = io.BytesIO()
+    book.save(output)
+    with pytest.raises(
+        ValueError,
+        match="使用了公式" if limit == "formula" else "最多支持",
+    ):
+        engine.read_excel(with_stale_dimensions(output.getvalue()))
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "2026-07-03 17:00 ~ 2026-07-03 09:00",
+        "2026-07-03 09:00 ~ 明天",
+        "2026-07-03 09:00 ~ 2026-07-04 18:00",
+    ],
+)
+def test_time_ranges_reject_reversed_malformed_and_overlapping_events(value):
+    data = engine.read_excel(unsized_workbook())
+    for field in data["fields"]:
+        if field["key"] == "dates.issue":
+            field["value"] = "2026-07-01"
+        if field["key"] == "events.questions_time":
+            field["value"] = value
+    data["recipients"] = data["recipients"][:1]
+    results = engine.checks(
+        dict(
+            data,
+            templates=[{"keys": ["project.name"], "per_recipient": False}],
+        ),
+    )
+    assert any(
+        r["status"] == "error"
+        and r["field"] in {"events.questions_time", "submission.deadline"}
+        for r in results
+    )
+
+
+@pytest.mark.parametrize("sheet_name", ["变量配置", "受邀单位", "校核规则"])
+def test_empty_unsized_input_sections_have_clear_errors(sheet_name):
+    book = Workbook(write_only=True)
+    sheet = book.create_sheet("变量配置")
+    if sheet_name != "变量配置":
+        sheet.append(["变量名称", "中文名称", "值"])
+        sheet.append(["project.name", "项目名称", "测试项目"])
+        book.create_sheet(sheet_name)
+    output = io.BytesIO()
+    book.save(output)
+    with pytest.raises(ValueError, match=sheet_name + "为空"):
+        engine.read_excel(output.getvalue())
+
+
+def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
+    data = engine.read_excel(unsized_workbook())
+    data["recipients"] = data["recipients"][:1]
+    data["recipients"][0]["start"] = "2026-07-02T08:30"
+    data["recipients"][0]["end"] = "2026-07-02T17:30"
+    for field in data["fields"]:
+        if field["key"] == "dates.issue":
+            field["value"] = "2026-07-01"
+        if field["key"] == "submission.deadline":
+            field["value"] = "2026-07-05T09:00"
+    results = engine.checks(dict(data, templates=[]))
+    assert (
+        sum(
+            r["status"] == "error" and "处于总体发放期" in r["label"] for r in results
+        )
+        == 2
+    )
+    assert any(
+        r["status"] == "error" and r["field"] == "events.negotiation_time"
+        for r in results
+    )

@@ -25,11 +25,20 @@ INVITATION_KEYS = {
 GROUPS = {
     "project": "项目资料",
     "organization": "单位与联系",
+    "org": "单位与联系",
     "contact": "单位与联系",
     "purchaser": "单位与联系",
     "dates": "日期安排",
     "events": "日期安排",
     "qualification": "资格要求",
+    "submission": "日期安排",
+    "research": "研究内容",
+    "deliverables": "成果与考核",
+    "metrics": "成果与考核",
+    "workload": "研究内容",
+    "milestones": "进度安排",
+    "place": "地点安排",
+    "budget": "费用信息",
 }
 
 
@@ -96,12 +105,26 @@ def read_excel(content: bytes):
     inspect_zip(content, "xl/workbook.xml")
     book = load_workbook(io.BytesIO(content), data_only=False, read_only=True)
     try:
+
+        def rows_for(sheet, max_rows, max_columns):
+            # Some valid writers omit dimensions; others write stale bounds.
+            # Scan actual rows with hard limits instead of trusting metadata.
+            sheet.reset_dimensions()
+            rows = []
+            for index, row in enumerate(sheet.iter_rows(), 1):
+                if index > max_rows or len(row) > max_columns:
+                    raise ValueError(
+                        f"{sheet.title}最多支持 {max_rows - 1} 行、{max_columns} 列",
+                    )
+                rows.append(row)
+            if not rows:
+                raise ValueError(f"{sheet.title}为空，请添加表头和数据")
+            return rows
+
         if "变量配置" not in book.sheetnames:
             raise ValueError("Excel 缺少“变量配置”工作表，首行为：变量名称、中文名称、值")
         sheet = book["变量配置"]
-        if sheet.max_row > 1001 or sheet.max_column > 30:
-            raise ValueError("变量配置最多支持 1000 行、30 列")
-        rows = list(sheet.iter_rows())
+        rows = rows_for(sheet, 1001, 30)
         headers = [text(c.value).strip() for c in rows[0]]
         if len(set(headers) & {"变量名称", "中文名称", "值"}) != 3:
             raise ValueError("变量配置首行必须包含：变量名称、中文名称、值")
@@ -109,7 +132,10 @@ def read_excel(content: bytes):
         def cell(row, name, default=""):
             if name not in headers:
                 return default
-            c = row[headers.index(name)]
+            index = headers.index(name)
+            if index >= len(row):
+                return ""
+            c = row[index]
             if c.data_type == "f":
                 raise ValueError(f"{sheet.title}!{c.coordinate} 使用了公式，请改为明确的值")
             return text(c.value).strip()
@@ -163,15 +189,18 @@ def read_excel(content: bytes):
         recipients = []
         if "受邀单位" in book.sheetnames:
             sheet = book["受邀单位"]
-            if sheet.max_row > 201 or sheet.max_column > 20:
-                raise ValueError("受邀单位最多支持 200 行")
-            data = list(sheet.iter_rows())
-            headers = [text(c.value).strip() for c in data[0]]
+            data = rows_for(sheet, 201, 20)
+            # Parenthesized variable names and format hints are descriptions.
+            headers = [
+                re.split(r"[（(]", text(c.value), maxsplit=1)[0].strip()
+                for c in data[0]
+            ]
             aliases = {
                 "name": ["单位名称", "受邀单位", "受邀单位名称", "名称"],
                 "start": [
                     "领取开始时间",
                     "邀请函领取开始时间",
+                    "邀请函领取开始",
                     "领取起始时间",
                     "领取起始",
                     "开始时间",
@@ -180,6 +209,7 @@ def read_excel(content: bytes):
                 "end": [
                     "领取结束时间",
                     "邀请函领取结束时间",
+                    "邀请函领取结束",
                     "领取截止时间",
                     "领取截止",
                     "结束时间",
@@ -188,7 +218,7 @@ def read_excel(content: bytes):
             }
             if not any(n in headers for n in aliases["name"]):
                 raise ValueError("受邀单位工作表缺少“单位名称”列")
-            for row in data[1:]:
+            for row_number, row in enumerate(data[1:], 2):
                 if not any(c.value is not None for c in row):
                     continue
                 record = {}
@@ -201,16 +231,19 @@ def read_excel(content: bytes):
                         parsed = parsed_date(record[key])
                         if parsed is None:
                             raise ValueError(
-                                f"受邀单位第 {row[0].row} 行的领取时间无法识别，请填写明确的日期时间",
+                                f"受邀单位第 {row_number} 行的领取时间无法识别，请填写明确的日期时间",
                             )
                         record[key] = parsed.strftime("%Y-%m-%dT%H:%M")
-                recipients.append(record)
+                # Keep numbered empty slots for later completion, but not a
+                # trailing note stored outside the mapped input columns.
+                if any(record.values()) or (
+                    "序号" in headers and cell(row, "序号").isdigit()
+                ):
+                    recipients.append(record)
         rules = []
         if "校核规则" in book.sheetnames:
             sheet = book["校核规则"]
-            if sheet.max_row > 201:
-                raise ValueError("校核规则最多支持 200 行")
-            data = list(sheet.iter_rows())
+            data = rows_for(sheet, 201, 30)
             headers = [text(c.value).strip() for c in data[0]]
             if not {"校核项", "开始变量", "结束变量"}.issubset(headers):
                 raise ValueError("校核规则首行需包含：校核项、开始变量、结束变量")
@@ -263,7 +296,7 @@ def _visit_template(node, undeclared, paths):
         _visit_template(child, undeclared, paths)
 
 
-def template_info(content: bytes, name: str):
+def template_info(content: bytes, name: str, global_keys=()):
     inspect_zip(content, "word/document.xml")
     template = DocxTemplate(io.BytesIO(content))
     template.init_docx()
@@ -289,7 +322,13 @@ def template_info(content: bytes, name: str):
     return {
         "name": name,
         "keys": sorted(paths),
-        "per_recipient": bool(paths & INVITATION_KEYS),
+        "per_recipient": bool(
+            paths & (INVITATION_KEYS - {"events.invitation_time"}),
+        )
+        or (
+            "events.invitation_time" in paths
+            and "events.invitation_time" not in global_keys
+        ),
     }
 
 
@@ -322,17 +361,39 @@ def parsed_date(value):
         return None
 
 
+def parsed_interval(value):
+    """Return explicit endpoints while keeping the original document text."""
+    parts = re.split(r"\s*(?:~|～|至|—|–)\s*", str(value).strip())
+    if len(parts) == 1:
+        point = parsed_date(parts[0])
+        return (point, point) if point else None
+    if len(parts) == 2:
+        start, end = (parsed_date(part) for part in parts)
+        if start and end:
+            return start, end
+    return None
+
+
 def date_roles(fields):
     aliases = {
         "issue": ["dates.issue", "dates.invitation_issue"],
-        "qa": ["events.qa_deadline", "events.qa_time", "dates.qa_deadline"],
-        "response": ["events.response_deadline", "dates.response_deadline"],
+        "qa": [
+            "events.qa_deadline",
+            "events.qa_time",
+            "dates.qa_deadline",
+            "events.questions_time",
+        ],
+        "response": [
+            "events.response_deadline",
+            "dates.response_deadline",
+            "submission.deadline",
+        ],
         "negotiation": ["events.negotiation_time", "dates.negotiation"],
     }
     labels = {
         "issue": ["落款日期", "发文日期", "文件日期", "发文时间"],
         "qa": ["答疑", "澄清截止"],
-        "response": ["响应截止", "响应文件截止", "响应文件递交截止"],
+        "response": ["响应截止", "响应文件截止", "响应文件递交截止", "响应文件提交截止"],
         "negotiation": ["谈判时间", "商务谈判日期", "谈判日期"],
     }
     result = {}
@@ -396,30 +457,54 @@ def checks(case):
         r for r in ("issue", "qa", "response", "negotiation") if r in roles
     ]
     for a, b in zip(chain, chain[1:]):
+        operator = "<" if a == "response" else "≤"
         rules.append(
             {
                 "label": (
-                    f"{field_labels[roles[a]]} ≤ {field_labels[roles[b]]}"
+                    f"{field_labels[roles[a]]} {operator} "
+                    f"{field_labels[roles[b]]}"
                 ),
                 "start": roles[a],
                 "end": roles[b],
-                "equal": True,
+                "equal": a != "response",
             },
         )
 
     def compare(label, a, b, equal=True, field=""):
+        left, right = parsed_interval(a), parsed_interval(b)
         if not a or not b:
             add(label, "missing", "日期尚未补齐", field)
-        elif not parsed_date(a) or not parsed_date(b):
-            add(label, "error", "请填写明确日期或日期时间，不能使用时间区间", field)
-        elif (
-            parsed_date(a) <= parsed_date(b)
-            if equal
-            else parsed_date(a) < parsed_date(b)
-        ):
+        elif not left or not right:
+            add(
+                label,
+                "error",
+                "请填写明确日期或完整时间段，如 2026-07-25 14:30 ~ 2026-07-25 17:30",
+                field,
+            )
+        elif left[1] <= right[0] if equal else left[1] < right[0]:
             add(label, "ok", f"{a} → {b}", field)
         else:
             add(label, "error", f"时间顺序冲突：{a} → {b}", field)
+
+    check_range_order(values, field_labels, roles, add)
+    overall = values.get("events.invitation_time")
+    overall_interval = parsed_interval(overall)
+    if overall is not None:
+        if "issue" in roles:
+            compare(
+                "落款日期不晚于总体发放开始",
+                values[roles["issue"]],
+                overall,
+                field="events.invitation_time",
+            )
+        for role in ("qa", "response", "negotiation"):
+            if role in roles:
+                compare(
+                    f"总体发放结束至{field_labels[roles[role]]}",
+                    overall,
+                    values[roles[role]],
+                    field=roles[role],
+                )
 
     for rule in rules:
         compare(
@@ -442,37 +527,78 @@ def checks(case):
             "两份文书应使用同一落款日期",
             "dates.invitation_issue",
         )
+    if per_recipient or recipients:
+        check_recipients(case, roles, add, compare, overall_interval)
+    return results
+
+
+def check_range_order(values, labels, roles, add):
+    # Verify range order before comparing its end with the next event's start.
+    range_keys = set(roles.values()) | (
+        {"events.invitation_time"} & values.keys()
+    )
+    for key in sorted(range_keys):
+        value = values[key]
+        interval = parsed_interval(value)
+        if value and not interval:
+            add(labels[key], "error", "日期或时间段格式无法识别，请填写完整起止日期时间", key)
+        elif interval and interval[0] != interval[1]:
+            add(
+                labels[key] + " · 起止顺序",
+                "ok" if interval[0] <= interval[1] else "error",
+                value,
+                key,
+            )
+
+
+def check_recipients(case, roles, add, compare, overall_interval):
+    values = {f["key"]: f["value"] for f in case["fields"]}
+    field_labels = {f["key"]: f["label"] for f in case["fields"]}
     seen = set()
-    if per_recipient:
-        for i, r in enumerate(recipients):
-            title = r["name"].strip() or f"第 {i + 1} 家单位"
-            if not r["name"].strip():
-                add(title, "missing", "请填写单位名称", f"recipient-{i}")
-            elif title in seen:
-                add(title, "error", "单位名称重复，请核对", f"recipient-{i}")
-            seen.add(title)
+    for i, r in enumerate(case["recipients"]):
+        title = r["name"].strip() or f"第 {i + 1} 家单位"
+        if not r["name"].strip():
+            add(title, "missing", "请填写单位名称", f"recipient-{i}")
+        elif title in seen:
+            add(title, "error", "单位名称重复，请核对", f"recipient-{i}")
+        seen.add(title)
+        compare(
+            f"{title} · 领取起止",
+            r["start"],
+            r["end"],
+            field=f"recipient-{i}",
+        )
+        if "issue" in roles:
             compare(
-                f"{title} · 领取起止",
+                f"{title} · 发文至领取",
+                values[roles["issue"]],
                 r["start"],
-                r["end"],
                 field=f"recipient-{i}",
             )
-            if "issue" in roles:
+        for role in ("qa", "response", "negotiation"):
+            if role in roles:
+                endpoint = parsed_interval(values[roles[role]])
                 compare(
-                    f"{title} · 发文至领取",
-                    values[roles["issue"]],
-                    r["start"],
+                    f"{title} · 领取结束至{field_labels[roles[role]]}",
+                    r["end"],
+                    endpoint[0].isoformat()
+                    if endpoint
+                    else values[roles[role]],
                     field=f"recipient-{i}",
                 )
-            for role in ("qa", "response", "negotiation"):
-                if role in roles:
-                    compare(
-                        f"{title} · 领取结束至{field_labels[roles[role]]}",
-                        r["end"],
-                        values[roles[role]],
-                        field=f"recipient-{i}",
-                    )
-    return results
+        if overall_interval:
+            compare(
+                f"{title} · 领取开始处于总体发放期",
+                overall_interval[0].isoformat(),
+                r["start"],
+                field=f"recipient-{i}",
+            )
+            compare(
+                f"{title} · 领取结束处于总体发放期",
+                r["end"],
+                overall_interval[1].isoformat(),
+                field=f"recipient-{i}",
+            )
 
 
 def render_template(content, fields, recipient=None):

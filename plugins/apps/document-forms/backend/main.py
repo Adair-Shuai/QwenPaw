@@ -199,11 +199,19 @@ def add_templates(
 ):
     if not 1 <= len(files) <= 20:
         raise HTTPException(422, "一次最多导入 20 个 Word 模板")
+    with _lock:
+        case = load(root, case_id)
+        version(case, revision)
+        global_keys = {f["key"] for f in case["fields"]}
     prepared = []
     try:
         for file in files:
             content = upload(file, ".docx")
-            info = template_info(content, name_only(file.filename))
+            info = template_info(
+                content,
+                name_only(file.filename),
+                global_keys,
+            )
             prepared.append(
                 (
                     dict(
