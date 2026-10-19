@@ -6,6 +6,9 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
 import { createWorkspaceNamespace } from "@/components/Workspace/workspaceSdk";
+// Resolve the renderer during module setup; cold Windows transforms must not
+// consume the form interaction timeout or leave an unfinished act() scope.
+import "@/components/Workspace/renderers/OfficeDocRenderer";
 
 vi.mock("react-i18next", () => {
   const t = (key: string, fallback?: string) => fallback || key;
@@ -162,9 +165,6 @@ describe.each(["embedded", "compatible"])(
         },
       });
       await act(async () => {
-        // Resolve the real renderer before mounting the lazy host boundary;
-        // cold Windows transforms otherwise consume the interaction timeout.
-        await import("@/components/Workspace/renderers/OfficeDocRenderer");
         new Function(
           fs.readFileSync(
             path.resolve(
