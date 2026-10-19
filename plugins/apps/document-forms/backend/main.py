@@ -42,6 +42,7 @@ from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     render_template,
     starter_files,
     template_info,
+    template_metadata,
 )
 
 app = PawApp(name="文书填报", app_id="document-forms")
@@ -74,10 +75,39 @@ def load(root, case_id):
         raise HTTPException(404, "填报记录不存在")
     case = json.loads(path.read_text(encoding="utf-8"))
     case["recipients"] = recipient_defaults(case["recipients"])
+    normalize_templates(case)
     return case
 
 
+def normalize_templates(case):
+    for index, template in enumerate(case["templates"], 1):
+        template.update(template_metadata(template["name"], index))
+
+
+def project_name(case):
+    return name_only(
+        next(
+            (
+                f["value"]
+                for f in case["fields"]
+                if f["key"] == "project.name" and f["value"].strip()
+            ),
+            case["name"],
+        ),
+    )[:40]
+
+
+def output_name(case, template, index, recipient, recipient_index):
+    name = (
+        f"{index:02d}_{name_only(template['title'])[:28]}_{project_name(case)}"
+    )
+    if recipient:
+        name += f"_{recipient_index:02d}_{name_only(recipient['name'])[:40]}"
+    return name + ".docx"
+
+
 def save(root, case):
+    normalize_templates(case)
     path = folder(root, case["id"])
     path.mkdir(parents=True, exist_ok=True)
     case["updated_at"] = datetime.now(timezone.utc).isoformat()
@@ -155,6 +185,7 @@ def attach_default_templates(root, case):
     for info, content in prepared:
         (target / (info["id"] + ".docx")).write_bytes(content)
     case["templates"] = [info for info, _ in prepared]
+    normalize_templates(case)
     return len(prepared)
 
 
@@ -324,6 +355,7 @@ def update_case(case_id: str, body: DraftBody, root=Depends(scope)):
         )
         case["revision"] += 1
         case["review_token"] = None
+        normalize_templates(case)
         save(root, case)
         return public(case)
 
@@ -445,21 +477,20 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                     case["recipients"] if t["per_recipient"] else [None],
                     1,
                 ):
-                    filename = (
-                        f"{n:02d}_{name_only(Path(t['name']).stem)}"
-                        + (
-                            f"_{i:02d}_{name_only(recipient['name'])}"
-                            if recipient
-                            else ""
-                        )
-                        + ".docx"
+                    filename = output_name(case, t, n, recipient, i)
+                    data = render_template(
+                        source,
+                        case["fields"],
+                        recipient,
+                        case["recipients"],
                     )
-                    data = render_template(source, case["fields"], recipient)
                     (staging / filename).write_bytes(data)
                     files.append(
                         {
                             "name": filename,
                             "size": len(data),
+                            "print_copies": t["print_copies"],
+                            "print_note": t["print_note"],
                             "recipient": (
                                 recipient["name"] if recipient else "共用文件"
                             ),
@@ -487,7 +518,12 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
             ) as archive:
                 for path in staging.iterdir():
                     if path.name != "全部文书.zip":
-                        archive.write(path, path.name)
+                        archive.write(
+                            path,
+                            project_name(case) + "_" + path.name
+                            if path.suffix in {".xlsx", ".json"}
+                            else path.name,
+                        )
             target = base / "outputs" / generation_id
             target.parent.mkdir(exist_ok=True)
             staging.replace(target)
@@ -506,6 +542,18 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
             "date_style": "zh-CN",
+            "naming_style": "formal",
+            "data_name": project_name(case) + "_填写数据.xlsx",
+            "bundle_name": (
+                project_name(case)
+                + "_谈判材料_"
+                + datetime.now(timezone.utc)
+                .astimezone()
+                .strftime("%Y%m%d_%H%M%S")
+                + "_"
+                + generation_id[:6]
+                + ".zip"
+            ),
         }
         case["generations"].insert(0, generation)
         case["review_token"] = None
@@ -531,7 +579,12 @@ def download(
         } | {"全部文书.zip", "填写数据.xlsx"}:
             raise HTTPException(404, "文件不存在")
         path = folder(root, case_id) / "outputs" / generation_id / filename
-        return FileResponse(path, filename=filename)
+        download_name = filename
+        if filename == "全部文书.zip":
+            download_name = generation.get("bundle_name", filename)
+        elif filename == "填写数据.xlsx":
+            download_name = generation.get("data_name", filename)
+        return FileResponse(path, filename=download_name)
 
 
 @router.get("/cases/{case_id}/excel")
@@ -546,7 +599,7 @@ def excel(case_id: str, root=Depends(scope)):
             ),
             headers={
                 "Content-Disposition": "attachment; filename*=UTF-8''"
-                + quote(name_only(case["name"]) + ".xlsx"),
+                + quote(project_name(case) + "_填写数据.xlsx"),
             },
         )
 

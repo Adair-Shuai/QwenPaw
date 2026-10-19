@@ -102,16 +102,24 @@ describe.each(["embedded", "compatible"])(
         else if (url.endsWith("/cases") && init?.method === "POST")
           result = state;
         else if (url.endsWith("/templates")) {
-          expect((body as FormData).getAll("files")).toHaveLength(1);
+          expect((body as FormData).getAll("files")).toHaveLength(2);
           state = {
             ...state,
             revision: state.revision + 1,
             templates: [
               {
                 id: "t1",
-                name: "邀请函.docx",
+                name: "01_谈判邀请函_模板.docx",
                 keys: ["project.name", "invitation.recipient"],
                 per_recipient: true,
+              },
+              {
+                id: "t2",
+                name: "02_综合评分表_模板.docx",
+                keys: ["project.name", "participant_groups"],
+                per_recipient: false,
+                print_copies: 7,
+                print_note: "每位专家一份，得分及签字现场填写",
               },
             ],
           };
@@ -147,12 +155,21 @@ describe.each(["embedded", "compatible"])(
                 id: "g1",
                 revision: state.revision,
                 created_at: "2026-10-18T08:05:00Z",
+                bundle_name: "新项目_谈判材料_20261018_160500_abcdef.zip",
                 files: [
                   {
-                    name: "邀请函_甲单位.docx",
+                    name: "01_谈判邀请函_新项目_01_甲单位.docx",
                     recipient: "甲单位",
                     size: 42000,
                     preview_url: "/api/files/preview/output.docx",
+                  },
+                  {
+                    name: "02_综合评分表_新项目.docx",
+                    recipient: "共用文件",
+                    size: 42000,
+                    print_copies: 7,
+                    print_note: "每位专家一份，得分及签字现场填写",
+                    preview_url: "/api/files/preview/score.docx",
                   },
                 ],
               },
@@ -265,13 +282,19 @@ describe.each(["embedded", "compatible"])(
       expect(screen.getByLabelText("第3家领取结束时间")).toHaveValue(
         "2026-11-02T14:00",
       );
-      await user.upload(
-        screen.getByLabelText("导入 Word 模板"),
+      await user.upload(screen.getByLabelText("导入 Word 模板"), [
         new File(["docx"], "邀请函.docx", {
           type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         }),
-      );
+        new File(["docx"], "综合评分打分表.docx", {
+          type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        }),
+      ]);
       await screen.findByText("按受邀单位分别生成");
+      expect(screen.getByText("02_综合评分表_模板.docx")).toBeInTheDocument();
+      expect(
+        screen.getByText(/建议打印 7 份 · 每位专家一份/),
+      ).toBeInTheDocument();
       expect(state.recipients[1].follow_start).toBe(true);
       expect(state.recipients[1].follow_end).toBe(false);
       await user.click(screen.getByRole("button", { name: "设为默认模板" }));
@@ -298,7 +321,7 @@ describe.each(["embedded", "compatible"])(
       await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
       await screen.findByText("资料已齐备，请确认本次内容。");
       expect(
-        screen.getByRole("button", { name: "确认并生成 1 份文书" }),
+        screen.getByRole("button", { name: "确认并生成 2 份文书" }),
       ).toBeDisabled();
       expect(calls.filter((c) => c.url.endsWith("/generate"))).toHaveLength(0);
       expect(state.fields[0].value).toBe("新项目");
@@ -310,12 +333,17 @@ describe.each(["embedded", "compatible"])(
       ).toBeInTheDocument();
       await user.click(screen.getByRole("checkbox"));
       await user.click(
-        screen.getByRole("button", { name: "确认并生成 1 份文书" }),
+        screen.getByRole("button", { name: "确认并生成 2 份文书" }),
       );
-      await screen.findByText("1 份文件已生成");
+      await screen.findByText("2 份文件已生成");
+      expect(
+        screen.getByText(/共用文件 · 41 KB · 建议打印 7 份/),
+      ).toBeInTheDocument();
       await waitFor(
         () =>
-          expect(screen.getByTitle("邀请函_甲单位.docx")).toHaveAttribute(
+          expect(
+            screen.getByTitle("01_谈判邀请函_新项目_01_甲单位.docx"),
+          ).toHaveAttribute(
             "srcdoc",
             expect.stringContaining("新项目 · 甲单位"),
           ),

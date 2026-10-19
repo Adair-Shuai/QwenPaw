@@ -538,7 +538,12 @@ function Workbench() {
                         const data = await saveDraft();
                         await download(
                           `/cases/${data.id}/excel`,
-                          data.name + ".xlsx",
+                          (
+                            data.fields.find((f) => f.key === "project.name")
+                              ?.value || data.name
+                          )
+                            .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+                            .slice(0, 80) + "_填写数据.xlsx",
                         );
                       })
                     }
@@ -599,7 +604,7 @@ function Workbench() {
                         {draft.recipients.length}
                       </span>
                     </h2>
-                    <p>每家单位单独生成邀请函，共用项目与落款信息。</p>
+                    <p>按单位文书分别生成，共用项目与落款信息。</p>
                   </div>
                   <button
                     onClick={() =>
@@ -749,6 +754,11 @@ function Workbench() {
                         ? "按受邀单位分别生成"
                         : "共用文件 · 生成一份"}
                     </span>
+                    {t.print_copies > 1 && (
+                      <small>
+                        建议打印 {t.print_copies} 份 · {t.print_note}
+                      </small>
+                    )}
                     <small>{t.keys.length} 个引用变量</small>
                     <button
                       aria-label={"移除模板" + t.name}
@@ -781,7 +791,7 @@ function Workbench() {
                   <small>
                     {templates.filter((t) => !t.per_recipient).length}{" "}
                     份共用文件 ·{" "}
-                    {templates.filter((t) => t.per_recipient).length} 套邀请函 ×{" "}
+                    {templates.filter((t) => t.per_recipient).length} 类按单位文书 ×{" "}
                     {draft.recipients.length} 家单位
                   </small>
                 </div>
@@ -890,6 +900,8 @@ function Workbench() {
                             .map((r) => r.name || "待填单位")
                             .join("、")
                         : "共用文件"}
+                      {t.print_copies > 1 &&
+                        ` · 建议打印 ${t.print_copies} 份，每位专家一份`}
                     </p>
                   ))}
                 </div>
@@ -947,7 +959,7 @@ function Workbench() {
                     run("下载全部文书", () =>
                       download(
                         filePath(generation, "全部文书.zip"),
-                        draft.name + "_文书.zip",
+                        generation.bundle_name || draft.name + "_文书.zip",
                       ),
                     )
                   }
@@ -960,6 +972,7 @@ function Workbench() {
                     <h3>
                       {time(g.created_at)} · 修订 {g.revision}
                       {g.date_style !== "zh-CN" && " · 原日期格式"}
+                      {g.naming_style !== "formal" && " · 原文件名"}
                     </h3>
                     {g.files.map((f) => (
                       <div
@@ -978,6 +991,8 @@ function Workbench() {
                           <b>{f.name}</b>
                           <small>
                             {f.recipient} · {(f.size / 1024).toFixed(0)} KB
+                            {f.print_copies > 1 &&
+                              ` · 建议打印 ${f.print_copies} 份`}
                           </small>
                         </button>
                         <button

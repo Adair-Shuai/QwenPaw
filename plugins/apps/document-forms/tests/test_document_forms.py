@@ -97,6 +97,167 @@ def create(client, sources):
     return response.json()
 
 
+def supplemental_sources():
+    """Synthetic forms keep private project files out of releases."""
+    result = {}
+    for name in (
+        "7 投标报价一览-打印签字",
+        "5 综合评分打分表（打印7份，每位专家一份）--(2)",
+        "6 综合评分总表-打印签字",
+    ):
+        doc = Document()
+        doc.add_paragraph("{{ project.name }}")
+        if name.startswith("7"):
+            doc.add_paragraph("{{ invitation.recipient }}")
+            table = doc.add_table(rows=3, cols=3)
+            for cell, text in zip(table.rows[0].cells, ("轮次", "报价", "签字")):
+                cell.text = text
+            table.cell(1, 0).text = "第一轮"
+            table.cell(2, 0).text = "第二轮"
+        elif name.startswith("5"):
+            doc.add_paragraph("{%p for group in participant_groups %}")
+            table = doc.add_table(rows=2, cols=3)
+            for cell, key in zip(
+                table.rows[0].cells,
+                ("first", "second", "third"),
+            ):
+                cell.text = "{{ group." + key + " }}"
+            doc.add_paragraph("评委签字：")
+            doc.add_paragraph("{%p endfor %}")
+        else:
+            table = doc.add_table(rows=4, cols=4)
+            for cell, text in zip(
+                table.rows[0].cells,
+                ("序号", "申请单位", "综合得分", "排序"),
+            ):
+                cell.text = text
+            table.cell(1, 0).text = "{%tr for participant in participants %}"
+            table.cell(2, 0).text = "{{ loop.index }}"
+            table.cell(2, 1).text = "{{ participant.name }}"
+            table.cell(3, 0).text = "{%tr endfor %}"
+        stream = io.BytesIO()
+        doc.save(stream)
+        result[name + ".docx"] = stream.getvalue()
+    return result
+
+
+@pytest.mark.parametrize("unit_count", [1, 3, 4])
+def test_shared_score_tables_and_separate_quotes_follow_current_units(
+    client,
+    sources,
+    unit_count,
+):
+    case = create(client, sources)
+    base = f"/api/document-forms/cases/{case['id']}"
+    recipients = [
+        dict(case["recipients"][0], name=f"单位 {i} & <技术>")
+        for i in range(unit_count)
+    ]
+    response = client.put(
+        base,
+        json={
+            "revision": case["revision"],
+            "name": case["name"],
+            "values": {f["key"]: f["value"] for f in case["fields"]},
+            "recipients": recipients,
+        },
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    response = client.post(
+        base + "/templates",
+        data={"revision": case["revision"]},
+        files=[
+            ("files", (name, content))
+            for name, content in supplemental_sources().items()
+        ],
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    assert [t["name"] for t in case["templates"]] == [
+        "01_商务谈判文件_模板.docx",
+        "02_谈判邀请函_模板.docx",
+        "03_投标报价一览表_模板.docx",
+        "04_综合评分表_模板.docx",
+        "05_综合评分汇总表_模板.docx",
+    ]
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert review["can_generate"], review
+    response = client.post(
+        base + "/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    generation = response.json()["generations"][0]
+    assert len(generation["files"]) == 3 + unit_count * 2
+    assert generation["bundle_name"].startswith(
+        main.project_name(case) + "_谈判材料_",
+    )
+    for file in generation["files"]:
+        assert main.project_name(case) in file["name"]
+        assert "模板" not in file["name"] and "打印" not in file["name"]
+        assert all(c not in file["name"] for c in '<>:"/\\|?*')
+        doc = Document(
+            io.BytesIO(
+                client.get(
+                    base + f"/outputs/{generation['id']}/{file['name']}",
+                ).content,
+            ),
+        )
+        if file["name"].startswith("03_"):
+            assert file["recipient"] in "\n".join(
+                p.text for p in doc.paragraphs
+            )
+            assert all(
+                not cell.text
+                for row in doc.tables[0].rows[1:]
+                for cell in row.cells[1:]
+            )
+        elif file["name"].startswith("04_"):
+            assert file["print_copies"] == 7
+            assert len(doc.tables) == (unit_count + 2) // 3
+            names = [
+                c.text for t in doc.tables for c in t.rows[0].cells if c.text
+            ]
+            assert names == [r["name"] for r in recipients]
+        elif file["name"].startswith("05_"):
+            assert len(doc.tables[0].rows) == unit_count + 1
+            assert [r.cells[1].text for r in doc.tables[0].rows[1:]] == [
+                r["name"] for r in recipients
+            ]
+            assert all(
+                not c.text for r in doc.tables[0].rows[1:] for c in r.cells[2:]
+            )
+    # Reopening or renaming templates must not rewrite prior batch names/bytes.
+    reopened = client.get(base).json()
+    assert reopened["generations"][0] == generation
+    assert reopened["fields"] == case["fields"]
+
+
+def test_reserved_unit_context_and_filename_safety(sources):
+    book = load_workbook(io.BytesIO(sources["变量管理表.xlsx"]))
+    book["变量配置"].cell(2, 1, "participants.name")
+    stream = io.BytesIO()
+    book.save(stream)
+    with pytest.raises(ValueError, match="保留变量"):
+        engine.read_excel(stream.getvalue())
+    case = {
+        "name": "备用",
+        "fields": [{"key": "project.name", "value": 'a/b:*?<>|"' * 40}],
+    }
+    template = {"title": "自定义\\文书" * 40}
+    a = main.output_name(case, template, 1, {"name": "相同单位" * 80}, 1)
+    b = main.output_name(case, template, 1, {"name": "相同单位" * 80}, 2)
+    assert a != b and len(a) < 130 and not any(c in a for c in '<>:"/\\|?*')
+
+
 def test_real_excel_form_review_three_invitations_and_office_output(
     client,
     sources,
@@ -146,14 +307,22 @@ def test_real_excel_form_review_three_invitations_and_office_output(
         ),
     ) as archive:
         assert len(archive.namelist()) == 6
-        workbook = load_workbook(io.BytesIO(archive.read("填写数据.xlsx")))
+        workbook = load_workbook(
+            io.BytesIO(
+                archive.read(
+                    main.project_name(case) + "_填写数据.xlsx",
+                ),
+            ),
+        )
         assert workbook.sheetnames == [
             "变量配置",
             "受邀单位",
             "校核规则",
             "日期校核",
         ]
-        audit = json.loads(archive.read("核对记录.json"))
+        audit = json.loads(
+            archive.read(main.project_name(case) + "_核对记录.json"),
+        )
     assert audit["revision"] == case["revision"]
     assert (
         client.post(

@@ -23,6 +23,38 @@ INVITATION_KEYS = {
     "invitation.start",
     "invitation.end",
 }
+PARTICIPANT_KEYS = {"participants", "participant_groups"}
+
+
+def template_metadata(name, index=1):
+    """Separate formal document names from source-file working notes."""
+    titles = (
+        ("商务谈判文件", ("商务谈判文件", "谈判文件")),
+        ("谈判邀请函", ("谈判邀请函", "邀请函")),
+        ("投标报价一览表", ("投标报价一览", "谈判报价一览")),
+        ("综合评分表", ("综合评分打分表", "综合评分表")),
+        ("综合评分汇总表", ("综合评分总表", "综合评分汇总表")),
+    )
+    title = next(
+        (
+            title
+            for title, aliases in titles
+            if any(a in name for a in aliases)
+        ),
+        None,
+    )
+    if title is None:
+        title = re.sub(r"\.docx$", "", name, flags=re.I)
+        title = re.sub(r"^\d+[\s_.、-]+", "", title)
+        title = re.sub(r"[ _-]*(?:示例)?模板$", "", title).strip() or "文书"
+    return {
+        "title": title,
+        "name": f"{index:02d}_{title}_模板.docx",
+        "print_copies": 7 if title == "综合评分表" else 1,
+        "print_note": "每位专家一份，得分及签字现场填写" if title == "综合评分表" else "",
+    }
+
+
 GROUPS = {
     "project": "项目资料",
     "organization": "单位与联系",
@@ -178,6 +210,11 @@ def read_excel(content: bytes):
             if not any(c.value is not None for c in row):
                 continue
             key = safe_key(cell(row, "变量名称"))
+            if key.split(".", maxsplit=1)[0] in PARTICIPANT_KEYS:
+                raise ValueError(
+                    "participants 和 participant_groups 为单位名单保留变量，"
+                    "请勿在 Excel 中配置",
+                )
             if key in seen or any(
                 k.startswith(key + ".") or key.startswith(k + ".")
                 for k in seen
@@ -390,7 +427,7 @@ def template_info(content: bytes, name: str, global_keys=()):
             f"{name} 没有找到变量，请在 Word 中使用 {{{{ project.name }}}} 这样的占位符",
         )
     return {
-        "name": name,
+        **template_metadata(name),
         "keys": sorted(paths),
         "per_recipient": bool(
             paths & (INVITATION_KEYS - {"events.invitation_time"}),
@@ -618,7 +655,7 @@ def checks(case):
             add(f["label"], "error", "日期格式无法识别", f["key"])
     for key in {k for t in case["templates"] for k in t["keys"]}:
         if (
-            key not in INVITATION_KEYS
+            key not in INVITATION_KEYS | PARTICIPANT_KEYS
             and key not in values
             and not any(k.startswith(key + ".") for k in values)
         ):
@@ -635,8 +672,11 @@ def checks(case):
             "每批最多生成 200 份文书，请减少受邀单位或模板数量",
         )
     per_recipient = any(t["per_recipient"] for t in case["templates"])
-    if per_recipient and not recipients:
-        add("受邀单位", "missing", "邀请函需要至少一家受邀单位")
+    needs_participants = any(
+        PARTICIPANT_KEYS & set(t["keys"]) for t in case["templates"]
+    )
+    if (per_recipient or needs_participants) and not recipients:
+        add("受邀单位", "missing", "按单位生成或汇总的文书需要至少一家受邀单位")
     roles = date_roles(fields)
     rules = list(case["rules"])
     chain = [
@@ -803,7 +843,7 @@ def check_recipients(case, roles, add, compare, overall_interval):
             )
 
 
-def render_template(content, fields, recipient=None):
+def render_template(content, fields, recipient=None, participants=()):
     context = {}
     for f in fields:
         cursor = context
@@ -811,6 +851,16 @@ def render_template(content, fields, recipient=None):
         for p in parts[:-1]:
             cursor = cursor.setdefault(p, {})
         cursor[parts[-1]] = document_field_value(f)
+    context["participants"] = [{"name": r["name"]} for r in participants]
+    # Keep the reference scoring sheet's three writing columns readable.
+    # More units receive another complete pair of business/technical sheets.
+    context["participant_groups"] = [
+        dict(
+            zip(("first", "second", "third"), names + [""] * (3 - len(names))),
+        )
+        for offset in range(0, len(participants), 3)
+        for names in [[r["name"] for r in participants[offset : offset + 3]]]
+    ]
     if recipient is not None:
         start, end = document_date(recipient["start"]), document_date(
             recipient["end"],
