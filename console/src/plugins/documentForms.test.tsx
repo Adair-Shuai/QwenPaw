@@ -94,7 +94,7 @@ describe.each(["embedded", "compatible"])(
           typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
         calls.push({ url, body });
         if (url.includes("/print/")) {
-          return new Response(new Blob(["png"], { type: "image/png" }), {
+          return new Response(Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10), {
             headers: { "Content-Type": "image/png", "X-Total-Pages": "2" },
           });
         }
@@ -353,18 +353,27 @@ describe.each(["embedded", "compatible"])(
       expect(
         screen.getByText(/共用文件 · 41 KB · 建议打印 7 份/),
       ).toBeInTheDocument();
-      expect(
-        await screen.findByRole("img", { name: /打印版式/ }),
-      ).toHaveAttribute("src", "blob:print-pages");
+      await waitFor(
+        () => {
+          const feedback = screen.queryByRole("alert")?.textContent;
+          expect(
+            createUrl,
+            feedback || "Native print pages must finish loading",
+          ).toHaveBeenCalled();
+          expect(screen.getByRole("img", { name: /打印版式/ })).toHaveAttribute(
+            "src",
+            "blob:print-pages",
+          );
+        },
+        { timeout: 10000 },
+      );
       expect(screen.getByText("共 2 页")).toBeInTheDocument();
       await user.selectOptions(screen.getByLabelText("预览比例"), "150");
       expect(screen.getByRole("img", { name: /打印版式/ })).toHaveStyle({
         width: "150%",
       });
       expect(calls.some((call) => call.url.includes("/print/g1/"))).toBe(true);
-      await user.click(
-        screen.getByRole("button", { name: "文字预览" }),
-      );
+      await user.click(screen.getByRole("button", { name: "文字预览" }));
       await waitFor(
         () =>
           expect(

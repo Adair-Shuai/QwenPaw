@@ -696,6 +696,7 @@ def print_preview(
         headers={
             "X-Total-Pages": str(count),
             "X-Preview-Engine": "officecli-native",
+            "Cache-Control": "no-store",
         },
     )
 

@@ -309,6 +309,7 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
     assert response.status_code == 200, response.text
     assert response.content == png and response.headers["X-Total-Pages"] == "2"
     assert response.headers["X-Preview-Engine"] == "officecli-native"
+    assert response.headers["Cache-Control"] == "no-store"
     assert len(calls) == 2
     monkeypatch.setattr(
         main,
