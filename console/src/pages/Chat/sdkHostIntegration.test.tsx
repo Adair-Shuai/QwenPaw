@@ -1478,7 +1478,11 @@ describe("ChatPage coverage", () => {
     const utils = await import("./utils");
     const textarea = document.createElement("textarea");
     document.body.appendChild(textarea);
-    vi.mocked(utils.getSenderTextareaFromTarget).mockReturnValueOnce(textarea);
+    // Both the mounted @ picker and the queue handler resolve this event's
+    // sender. Resolving it must not consume a one-shot fixture value.
+    const senderLookup = vi
+      .mocked(utils.getSenderTextareaFromTarget)
+      .mockImplementation((target) => (target === textarea ? textarea : null));
     const event = new KeyboardEvent("keydown", {
       key: "Enter",
       bubbles: true,
@@ -1499,6 +1503,7 @@ describe("ChatPage coverage", () => {
       }),
     );
     textarea.remove();
+    senderLookup.mockImplementation(() => null);
   });
 
   it("does not queue a new Chat's Enter because another Chat has a sending marker", async () => {

@@ -17,6 +17,8 @@ const suites = {
     "src/pages/Chat/components/ComposerTokenHighlights.test.tsx",
   ],
   submission: [
+    "src/pages/Chat/chatRunLifecycle.test.ts",
+    "src/pages/Chat/sdkHostIntegration.test.tsx",
     "src/stores/messageQueueStore.test.ts",
     "src/pages/Chat/sdkRequestSnapshot.test.ts",
     "src/pages/Chat/pluginSubmission.test.ts",
@@ -44,6 +46,26 @@ const files = [...new Set(Object.values(suites).flat())];
 for (const file of files) {
   if (!existsSync(path.join(root, file)))
     throw new Error(`Required fork regression suite missing: ${file}`);
+}
+for (const [file, titles] of [
+  [
+    "src/pages/Chat/chatRunLifecycle.test.ts",
+    [
+      "releases pending headers, keeps unknown receipt sending and cancels a late HTTP %s body",
+      "cancels a silent reader and releases both locks without awaiting its cancellation hook",
+      "retains an actual pre-acceptance HTTP failure as failed",
+    ],
+  ],
+  [
+    "src/pages/Chat/sdkHostIntegration.test.tsx",
+    ["enqueues an uploaded attachment with empty text on busy Enter"],
+  ],
+]) {
+  const source = readFileSync(path.join(root, file), "utf8");
+  for (const title of titles) {
+    if (!source.includes(title))
+      throw new Error(`Required queue integration case missing: ${title}`);
+  }
 }
 const chatTests = readFileSync(path.join(root, suites.mentions[0]), "utf8");
 for (const title of [

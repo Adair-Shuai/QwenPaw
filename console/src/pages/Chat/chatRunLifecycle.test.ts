@@ -5,6 +5,10 @@ import ts from "typescript";
 import { ChatRunLifecycle } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Execution/runLifecycle";
 import { request } from "../../api/request";
 import {
+  getQueuedAgentMentionContext,
+  getSubmittedAgentMention,
+} from "./agentMentionSubmission";
+import {
   useMessageQueueStore,
   withBackgroundSendLock,
   withSendLock,
@@ -147,6 +151,8 @@ function backgroundWorkerFixture() {
     setBackgroundAbort,
     clearBackgroundAbortIfCurrent,
     sessionApi,
+    getQueuedAgentMentionContext,
+    getSubmittedAgentMention,
     i18n: { t: (value: string) => value },
     buildAuthHeaders: () => ({}),
     getApiUrl: (path: string) => `/api${path}`,
