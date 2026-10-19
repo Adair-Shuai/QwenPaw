@@ -38,6 +38,14 @@ describe.each(["embedded", "compatible"])(
             kind: "text",
             required: true,
           },
+          {
+            key: "research.contents",
+            label: "研究内容（整段）",
+            value: "第一项\n第二项",
+            group: "研究内容",
+            kind: "text",
+            required: true,
+          },
         ],
         recipients: [
           {
@@ -176,6 +184,12 @@ describe.each(["embedded", "compatible"])(
         }),
       );
       await screen.findByLabelText("项目名称");
+      const paragraphs = screen.getByRole("textbox", {
+        name: "研究内容（整段）",
+      });
+      expect(paragraphs.tagName).toBe("TEXTAREA");
+      expect(paragraphs).toHaveValue("第一项\n第二项");
+      await user.type(paragraphs, "\n第三项");
       await user.upload(
         screen.getByLabelText("导入 Word 模板"),
         new File(["docx"], "邀请函.docx", {
@@ -192,6 +206,7 @@ describe.each(["embedded", "compatible"])(
       ).toBeDisabled();
       expect(calls.filter((c) => c.url.endsWith("/generate"))).toHaveLength(0);
       expect(state.fields[0].value).toBe("新项目");
+      expect(state.fields[1].value).toBe("第一项\n第二项\n第三项");
       await user.click(screen.getByRole("checkbox"));
       await user.click(
         screen.getByRole("button", { name: "确认并生成 1 份文书" }),

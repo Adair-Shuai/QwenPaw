@@ -54,7 +54,10 @@ function Field({ field, onChange }) {
         {field.label}
         {field.required && <em>必填</em>}
       </span>
-      {field.kind === "textarea" || field.value.length > 100 ? (
+      {field.kind === "textarea" ||
+      field.value.length > 100 ||
+      field.value.includes("\n") ||
+      field.label.includes("整段") ? (
         <textarea
           aria-label={field.label}
           rows={3}
