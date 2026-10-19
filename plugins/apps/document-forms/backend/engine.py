@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Excel-backed, deterministic document forms. No model service is involved."""
+
 from __future__ import annotations
 
 import io
@@ -47,7 +48,9 @@ def safe_key(value):
     if not PATH.fullmatch(value) or any(
         p.startswith("_") for p in value.split(".")
     ):
-        raise ValueError(f"变量名称不合规：{value}。请使用名称或以点分隔的名称。")
+        raise ValueError(
+            f"变量名称不合规：{value}。请使用名称或以点分隔的名称。",
+        )
     return value
 
 
@@ -87,7 +90,15 @@ def kind_for(key, label, value):
         return "text"
     if any(
         x in key + label
-        for x in ("日期", "时间", "deadline", "_time", "dates.", ".start", ".end")
+        for x in (
+            "日期",
+            "时间",
+            "deadline",
+            "_time",
+            "dates.",
+            ".start",
+            ".end",
+        )
     ):
         # Chinese date phrases and ranges are retained as editable text.
         if not value or re.fullmatch(r"\d{4}-\d{2}-\d{2}", value):
@@ -139,7 +150,9 @@ def read_excel(content: bytes):
             return rows
 
         if "变量配置" not in book.sheetnames:
-            raise ValueError("Excel 缺少“变量配置”工作表，首行为：变量名称、中文名称、值")
+            raise ValueError(
+                "Excel 缺少“变量配置”工作表，首行为：变量名称、中文名称、值",
+            )
         sheet = book["变量配置"]
         rows = rows_for(sheet, 1001, 30)
         headers = [text(c.value).strip() for c in rows[0]]
@@ -154,7 +167,9 @@ def read_excel(content: bytes):
                 return ""
             c = row[index]
             if c.data_type == "f":
-                raise ValueError(f"{sheet.title}!{c.coordinate} 使用了公式，请改为明确的值")
+                raise ValueError(
+                    f"{sheet.title}!{c.coordinate} 使用了公式，请改为明确的值",
+                )
             return text(c.value).strip()
 
         fields = []
@@ -185,9 +200,11 @@ def read_excel(content: bytes):
                 and parsed_date(value)
             ):
                 value = parsed_date(value).strftime(
-                    "%Y-%m-%dT%H:%M"
-                    if kind == "datetime-local"
-                    else "%Y-%m-%d",
+                    (
+                        "%Y-%m-%dT%H:%M"
+                        if kind == "datetime-local"
+                        else "%Y-%m-%d"
+                    ),
                 )
             fields.append(
                 {
@@ -291,7 +308,9 @@ def read_excel(content: bytes):
             data = rows_for(sheet, 201, 30)
             headers = [text(c.value).strip() for c in data[0]]
             if not {"校核项", "开始变量", "结束变量"}.issubset(headers):
-                raise ValueError("校核规则首行需包含：校核项、开始变量、结束变量")
+                raise ValueError(
+                    "校核规则首行需包含：校核项、开始变量、结束变量",
+                )
             for row in data[1:]:
                 if any(c.value is not None for c in row):
                     rules.append(
@@ -340,7 +359,9 @@ def _visit_template(node, undeclared, paths):
     if isinstance(node, nodes.Name) and node.name in undeclared:
         paths.add(safe_key(node.name))
     if isinstance(node, (nodes.Call, nodes.Getitem)):
-        raise ValueError("模板请使用名称或点分隔的变量，不支持函数调用和下标取值")
+        raise ValueError(
+            "模板请使用名称或点分隔的变量，不支持函数调用和下标取值",
+        )
     for child in node.iter_child_nodes():
         _visit_template(child, undeclared, paths)
 
@@ -382,9 +403,11 @@ def template_info(content: bytes, name: str, global_keys=()):
 
 
 def parsed_date(value):
+    period = re.search(r"凌晨|早上|上午|中午|下午|晚上|夜间|午夜", str(value))
     value = (
         str(value)
         .strip()
+        .replace("：", ":")
         .replace("年", "-")
         .replace("月", "-")
         .replace("日", " ")
@@ -392,15 +415,28 @@ def parsed_date(value):
         .replace("分", "")
         .strip()
     )
+    if period:
+        value = value.replace(period[0], "")
     value = re.sub(r"\s+", " ", value)
     match = re.fullmatch(
-        r"(\d{4})[-/](\d{1,2})[-/](\d{1,2})"
+        r"(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})"
         r"(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?",
         value,
     )
     if match:
         try:
-            return datetime(*(int(v or 0) for v in match.groups()))
+            parts = [int(v or 0) for v in match.groups()]
+            if period:
+                if match[4] is None:
+                    return None
+                hour = parts[3]
+                if period[0] in {"下午", "晚上", "夜间"} and 1 <= hour < 12:
+                    parts[3] += 12
+                elif period[0] in {"凌晨", "午夜"} and hour == 12:
+                    parts[3] = 0
+                elif period[0] in {"早上", "上午"} and hour >= 12:
+                    return None
+            return datetime(*parts)
         except ValueError:
             return None
     try:
@@ -412,15 +448,107 @@ def parsed_date(value):
 
 def parsed_interval(value):
     """Return explicit endpoints while keeping the original document text."""
-    parts = re.split(r"\s*(?:~|～|至|—|–)\s*", str(value).strip())
+    parts = re.split(r"\s*(?:~|～|至|到|—|–)\s*", str(value).strip())
     if len(parts) == 1:
         point = parsed_date(parts[0])
         return (point, point) if point else None
     if len(parts) == 2:
         start, end = (parsed_date(part) for part in parts)
+        if (
+            start
+            and not end
+            and re.fullmatch(
+                r"(?:凌晨|早上|上午|中午|下午|晚上|夜间|午夜)?\s*"
+                r"\d{1,2}[:：时]\d{1,2}(?:分|[:：]\d{1,2})?",
+                parts[1],
+            )
+        ):
+            end_text = parts[1]
+            period = re.search(r"下午|晚上|夜间", parts[0])
+            if period and re.match(r"\d{1,2}[:：时]", end_text):
+                if int(re.match(r"\d{1,2}", end_text)[0]) < 12:
+                    end_text = period[0] + end_text
+            end = parsed_date(start.strftime("%Y年%m月%d日") + end_text)
         if start and end:
             return start, end
     return None
+
+
+def day_period(hour):
+    if hour < 6:
+        return "凌晨"
+    if hour < 12:
+        return "上午"
+    if hour == 12:
+        return "中午"
+    return "下午" if hour < 18 else "晚上"
+
+
+def document_date(value):
+    """Format document text without rewriting source date-control values."""
+    interval = parsed_interval(value)
+    if not interval:
+        return str(value or "")
+    start, end = interval
+    has_clock = bool(re.search(r"\d[:：时]\d", str(value)))
+
+    def date_text(point):
+        return f"{point.year}年{point.month}月{point.day}日"
+
+    def clock(point):
+        return point.strftime("%H:%M:%S" if point.second else "%H:%M")
+
+    first = date_text(start)
+    if has_clock:
+        first += day_period(start.hour) + clock(start)
+    if start == end:
+        return first
+    if start.date() == end.date() and has_clock:
+        return (
+            first
+            + "至"
+            + (
+                ""
+                if day_period(start.hour) == day_period(end.hour)
+                else day_period(end.hour)
+            )
+            + clock(end)
+        )
+    return (
+        first
+        + "至"
+        + date_text(end)
+        + (day_period(end.hour) + clock(end) if has_clock else "")
+    )
+
+
+def document_field_value(field):
+    value = field["value"]
+    if (
+        field.get("kind") in {"date", "datetime-local"}
+        or re.search(
+            r"(^dates\.|deadline$|_time$|\.start$|\.end$)",
+            field["key"],
+        )
+        or any(word in field.get("label", "") for word in ("日期", "时间", "截止"))
+    ):
+        return document_date(value)
+    if field["key"].startswith("milestones.") or "进度安排" in field.get(
+        "label",
+        "",
+    ):
+        value = re.sub(
+            r"(?<!\d)\d{4}[-/.]\d{1,2}[-/.]\d{1,2}(?!\d)",
+            lambda match: document_date(match[0]),
+            value,
+        )
+        value = re.sub(
+            r"(?<!\d)(\d{4})[-/.](0?[1-9]|1[0-2])(?!\d|[-/.]\d{1,2}(?!\d))",
+            lambda match: f"{int(match[1])}年{int(match[2])}月",
+            value,
+        )
+        value = re.sub(r"月\s*[-~～—–]\s*(?=\d{4}年)", "月至", value)
+    return value
 
 
 def date_roles(fields):
@@ -442,7 +570,12 @@ def date_roles(fields):
     labels = {
         "issue": ["落款日期", "发文日期", "文件日期", "发文时间"],
         "qa": ["答疑", "澄清截止"],
-        "response": ["响应截止", "响应文件截止", "响应文件递交截止", "响应文件提交截止"],
+        "response": [
+            "响应截止",
+            "响应文件截止",
+            "响应文件递交截止",
+            "响应文件提交截止",
+        ],
         "negotiation": ["谈判时间", "商务谈判日期", "谈判日期"],
     }
     result = {}
@@ -496,7 +629,11 @@ def checks(case):
         len(recipients) if t["per_recipient"] else 1 for t in case["templates"]
     )
     if count > 200:
-        add("生成数量", "error", "每批最多生成 200 份文书，请减少受邀单位或模板数量")
+        add(
+            "生成数量",
+            "error",
+            "每批最多生成 200 份文书，请减少受邀单位或模板数量",
+        )
     per_recipient = any(t["per_recipient"] for t in case["templates"])
     if per_recipient and not recipients:
         add("受邀单位", "missing", "邀请函需要至少一家受邀单位")
@@ -527,13 +664,18 @@ def checks(case):
             add(
                 label,
                 "error",
-                "请填写明确日期或完整时间段，如 2026-07-25 14:30 ~ 2026-07-25 17:30",
+                "请填写明确日期或完整时间段，如 2026年7月25日下午14:30至17:30",
                 field,
             )
         elif left[1] <= right[0] if equal else left[1] < right[0]:
-            add(label, "ok", f"{a} → {b}", field)
+            add(label, "ok", f"{document_date(a)} → {document_date(b)}", field)
         else:
-            add(label, "error", f"时间顺序冲突：{a} → {b}", field)
+            add(
+                label,
+                "error",
+                f"时间顺序冲突：{document_date(a)} → {document_date(b)}",
+                field,
+            )
 
     check_range_order(values, field_labels, roles, add)
     overall = values.get("events.invitation_time")
@@ -570,9 +712,13 @@ def checks(case):
     ):
         add(
             "邀请函与谈判文件落款一致",
-            "ok"
-            if values["dates.invitation_issue"] == values[roles["issue"]]
-            else "error",
+            (
+                "ok"
+                if parsed_date(values["dates.invitation_issue"])
+                == parsed_date(values[roles["issue"]])
+                and parsed_date(values["dates.invitation_issue"]) is not None
+                else "error"
+            ),
             "两份文书应使用同一落款日期",
             "dates.invitation_issue",
         )
@@ -590,12 +736,17 @@ def check_range_order(values, labels, roles, add):
         value = values[key]
         interval = parsed_interval(value)
         if value and not interval:
-            add(labels[key], "error", "日期或时间段格式无法识别，请填写完整起止日期时间", key)
+            add(
+                labels[key],
+                "error",
+                "日期或时间段格式无法识别，请填写完整起止日期时间",
+                key,
+            )
         elif interval and interval[0] != interval[1]:
             add(
                 labels[key] + " · 起止顺序",
                 "ok" if interval[0] <= interval[1] else "error",
-                value,
+                document_date(value),
                 key,
             )
 
@@ -630,9 +781,11 @@ def check_recipients(case, roles, add, compare, overall_interval):
                 compare(
                     f"{title} · 领取结束至{field_labels[roles[role]]}",
                     r["end"],
-                    endpoint[0].isoformat()
-                    if endpoint
-                    else values[roles[role]],
+                    (
+                        endpoint[0].isoformat()
+                        if endpoint
+                        else values[roles[role]]
+                    ),
                     field=f"recipient-{i}",
                 )
         if overall_interval:
@@ -657,23 +810,19 @@ def render_template(content, fields, recipient=None):
         parts = f["key"].split(".")
         for p in parts[:-1]:
             cursor = cursor.setdefault(p, {})
-        cursor[parts[-1]] = (
-            f["value"].replace("T", " ")
-            if f.get("kind") == "datetime-local"
-            else f["value"]
-        )
+        cursor[parts[-1]] = document_field_value(f)
     if recipient is not None:
-        start, end = recipient["start"].replace("T", " "), recipient[
-            "end"
-        ].replace("T", " ")
+        start, end = document_date(recipient["start"]), document_date(
+            recipient["end"],
+        )
         context.setdefault("invitation", {}).update(
             recipient=recipient["name"],
             start=start,
             end=end,
         )
-        context.setdefault("events", {})[
-            "invitation_time"
-        ] = f"{start} 至 {end}"
+        context.setdefault("events", {})["invitation_time"] = document_date(
+            recipient["start"] + " 至 " + recipient["end"],
+        )
     template = DocxTemplate(io.BytesIO(content))
     template.render(context, jinja_env=environment(), autoescape=True)
     output = io.BytesIO()
@@ -687,7 +836,9 @@ def render_template(content, fields, recipient=None):
                 # pylint: disable-next=c-extension-no-member
                 xml = etree.fromstring(archive.read(name))
                 if re.search(r"{{|{%|{#", "".join(xml.itertext())):
-                    raise ValueError("生成内容仍有模板标记，请检查填写值和 Word 模板")
+                    raise ValueError(
+                        "生成内容仍有模板标记，请检查填写值和 Word 模板",
+                    )
     return output.getvalue()
 
 
@@ -695,7 +846,9 @@ def export_excel(case):
     book = Workbook()
     sheet = book.active
     sheet.title = "变量配置"
-    sheet.append(["变量名称", "中文名称", "值", "分组", "类型", "必填"])
+    sheet.append(
+        ["变量名称", "中文名称", "值", "分组", "类型", "必填", "文书显示"],
+    )
     for f in case["fields"]:
         sheet.append(
             [
@@ -705,10 +858,20 @@ def export_excel(case):
                 f["group"],
                 f["kind"],
                 "是" if f["required"] else "否",
+                document_field_value(f),
             ],
         )
     recipients = book.create_sheet("受邀单位")
-    recipients.append(["单位名称", "领取开始时间", "领取结束时间", "开始时间跟随首家", "结束时间跟随首家"])
+    recipients.append(
+        [
+            "单位名称",
+            "领取开始时间",
+            "领取结束时间",
+            "开始时间跟随首家",
+            "结束时间跟随首家",
+            "领取时段（文书）",
+        ],
+    )
     for r in recipient_defaults(case["recipients"]):
         recipients.append(
             [
@@ -717,6 +880,7 @@ def export_excel(case):
                 r["end"],
                 "是" if r["follow_start"] else "否",
                 "是" if r["follow_end"] else "否",
+                document_date(r["start"] + " 至 " + r["end"]),
             ],
         )
     rules = book.create_sheet("校核规则")
@@ -765,11 +929,35 @@ def starter_files():
         ("contact.name", "联系人", "", "单位与联系", "text"),
         ("contact.phone", "联系电话", "", "单位与联系", "text"),
         ("dates.issue", "文件落款日期", "", "日期安排", "date"),
-        ("events.qa_deadline", "答疑截止时间", "", "日期安排", "datetime-local"),
-        ("events.response_deadline", "响应截止时间", "", "日期安排", "datetime-local"),
-        ("events.negotiation_time", "谈判时间", "", "日期安排", "datetime-local"),
+        (
+            "events.qa_deadline",
+            "答疑截止时间",
+            "",
+            "日期安排",
+            "datetime-local",
+        ),
+        (
+            "events.response_deadline",
+            "响应截止时间",
+            "",
+            "日期安排",
+            "datetime-local",
+        ),
+        (
+            "events.negotiation_time",
+            "谈判时间",
+            "",
+            "日期安排",
+            "datetime-local",
+        ),
         ("events.location", "谈判地点", "", "日期安排", "text"),
-        ("qualification.start_year", "资格资料起始年份", "", "资格要求", "text"),
+        (
+            "qualification.start_year",
+            "资格资料起始年份",
+            "",
+            "资格要求",
+            "text",
+        ),
     ]
     case = {
         "fields": [

@@ -55,7 +55,27 @@ describe.each(["embedded", "compatible"])(
             kind: "text",
             required: true,
           },
+          {
+            key: "dates.issue",
+            label: "落款日期",
+            value: "2026-09-30",
+            group: "日期安排",
+            kind: "date",
+            required: true,
+          },
+          {
+            key: "events.negotiation_time",
+            label: "谈判时段",
+            value: "2026-10-22 14:30 ~ 2026-10-22 17:30",
+            group: "日期安排",
+            kind: "text",
+            required: true,
+          },
         ],
+        document_values: {
+          "dates.issue": "2026年9月30日",
+          "events.negotiation_time": "2026年10月22日下午14:30至17:30",
+        },
         recipients: [
           {
             name: "甲单位",
@@ -192,6 +212,10 @@ describe.each(["embedded", "compatible"])(
         }),
       );
       await screen.findByLabelText("项目名称");
+      expect(screen.getByLabelText("落款日期")).toHaveValue("2026-09-30");
+      expect(screen.getByLabelText("谈判时段")).toHaveValue(
+        "2026年10月22日下午14:30至17:30",
+      );
       const paragraphs = screen.getByRole("textbox", {
         name: "研究内容（整段）",
       });
@@ -279,6 +303,11 @@ describe.each(["embedded", "compatible"])(
       expect(calls.filter((c) => c.url.endsWith("/generate"))).toHaveLength(0);
       expect(state.fields[0].value).toBe("新项目");
       expect(state.fields[1].value).toBe("第一项\n第二项\n第三项");
+      expect(state.fields[3].value).toBe("2026-10-22 14:30 ~ 2026-10-22 17:30");
+      expect(screen.getByText("2026年9月30日")).toBeInTheDocument();
+      expect(
+        screen.getByText("2026年10月22日下午14:30至17:30"),
+      ).toBeInTheDocument();
       await user.click(screen.getByRole("checkbox"));
       await user.click(
         screen.getByRole("button", { name: "确认并生成 1 份文书" }),

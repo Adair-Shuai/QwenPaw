@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Real Excel/Word and HTTP lifecycle regressions for document forms."""
+
 import importlib.util
 import io
 import json
@@ -131,20 +132,27 @@ def test_real_excel_form_review_three_invitations_and_office_output(
         text = "\n".join(p.text for p in doc.paragraphs)
         assert "{{" not in text and "{%" not in text
         assert "储气库 A & B <参数> 测试" in text
-        assert "2026-11-01" in text
-        assert "2026-11-07 09:00" in text
+        assert "2026年11月1日" in text
+        assert "2026年11月7日上午09:00" in text
         if f["recipient"] != "共用文件":
             assert f["recipient"] in text
             invite_texts.append(text)
     assert len(set(invite_texts)) == 3
     with ZipFile(
         io.BytesIO(
-            client.get(base + f"/outputs/{generation['id']}/全部文书.zip").content,
+            client.get(
+                base + f"/outputs/{generation['id']}/全部文书.zip",
+            ).content,
         ),
     ) as archive:
         assert len(archive.namelist()) == 6
         workbook = load_workbook(io.BytesIO(archive.read("填写数据.xlsx")))
-        assert workbook.sheetnames == ["变量配置", "受邀单位", "校核规则", "日期校核"]
+        assert workbook.sheetnames == [
+            "变量配置",
+            "受邀单位",
+            "校核规则",
+            "日期校核",
+        ]
         audit = json.loads(archive.read("核对记录.json"))
     assert audit["revision"] == case["revision"]
     assert (
@@ -509,10 +517,13 @@ def unsized_workbook():
 
 def with_stale_dimensions(content):
     output = io.BytesIO()
-    with ZipFile(io.BytesIO(content)) as source, ZipFile(
-        output,
-        "w",
-    ) as target:
+    with (
+        ZipFile(io.BytesIO(content)) as source,
+        ZipFile(
+            output,
+            "w",
+        ) as target,
+    ):
         for name in source.namelist():
             payload = source.read(name)
             if name.startswith("xl/worksheets/") and name.endswith(".xml"):
@@ -603,7 +614,11 @@ def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
             "start": f"2026-07-02T{hour}:00",
             "end": f"2026-07-02T{hour}:30",
         }
-        for name, hour in [("甲单位", "09"), ("乙单位", "11"), ("丙单位", "13")]
+        for name, hour in [
+            ("甲单位", "09"),
+            ("乙单位", "11"),
+            ("丙单位", "13"),
+        ]
     ]
     case = client.put(
         base,
@@ -636,13 +651,13 @@ def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
         )
         paragraph = Document(io.BytesIO(result.content)).paragraphs[0].text
         if item["recipient"] == "共用文件":
-            assert values["events.invitation_time"] in paragraph
+            assert "2026年7月2日上午09:00至下午17:00" in paragraph
         else:
             recipient = next(
                 r for r in recipients if r["name"] == item["recipient"]
             )
-            assert recipient["start"].replace("T", " ") in paragraph
-        assert "2026-07-01" in paragraph
+            assert engine.document_date(recipient["start"]) in paragraph
+        assert "2026年7月1日" in paragraph
     exported = engine.read_excel(client.get(base + "/excel").content)
     assert exported["fields"] == case["fields"]
     assert exported["recipients"] == case["recipients"]
@@ -891,3 +906,133 @@ def test_bad_default_files_do_not_break_excel_import_or_existing_draft(
         == 422
     )
     assert client.get(base).json() == before
+
+
+@pytest.mark.parametrize(
+    "source,expected",
+    [
+        ("2026-09-30", "2026年9月30日"),
+        ("2026-10-22T14:30", "2026年10月22日下午14:30"),
+        ("2026-10-22T00:00", "2026年10月22日凌晨00:00"),
+        ("2026-10-22T12:00", "2026年10月22日中午12:00"),
+        ("2026-10-22T19:15:30", "2026年10月22日晚上19:15:30"),
+        (
+            "2026-10-22 14:30 ~ 2026-10-22 17:30",
+            "2026年10月22日下午14:30至17:30",
+        ),
+        (
+            "2026-10-22 09:00 ~ 2026-10-22 14:30",
+            "2026年10月22日上午09:00至下午14:30",
+        ),
+        (
+            "2026-10-22 14:30 ~ 2026-10-23 09:00",
+            "2026年10月22日下午14:30至2026年10月23日上午09:00",
+        ),
+        ("2026年10月22日下午2:30至5:30", "2026年10月22日下午14:30至17:30"),
+    ],
+)
+def test_chinese_date_output_roundtrips_without_changing_instant(
+    source,
+    expected,
+):
+    assert engine.document_date(source) == expected
+    assert engine.parsed_interval(source) == engine.parsed_interval(expected)
+    assert engine.document_date(expected) == expected
+
+
+def test_schedule_year_and_business_identifiers_are_not_confused_with_dates():
+    field = {
+        "key": "milestones.schedule",
+        "label": "进度安排",
+        "kind": "textarea",
+        "value": "（1）2026.11：调研；\n（2）2026.11-2026.12：建模；\n（3）2027-01-05：验收。",
+    }
+    assert (
+        engine.document_field_value(field)
+        == "（1）2026年11月：调研；\n（2）2026年11月至2026年12月：建模；\n（3）2027年1月5日：验收。"
+    )
+    for key, value in [
+        ("qualification.start_year", "2023"),
+        ("project.code", "QW-2026-10-22-A"),
+        ("budget.ceiling_number", "450000"),
+        ("contact.phone", "010-83599530"),
+    ]:
+        assert (
+            engine.document_field_value(
+                {"key": key, "label": key, "value": value, "kind": "text"},
+            )
+            == value
+        )
+    assert engine.parsed_date("2026年10月22日上午14:30") is None
+    assert engine.parsed_interval("2026年2月30日下午14:30至17:30") is None
+
+
+def test_chinese_dates_reach_body_tables_headers_footers_and_keep_run_format():
+    document = Document()
+    run = document.add_paragraph().add_run("{{ dates.issue }}")
+    run.bold = True
+    run.underline = True
+    document.add_table(rows=1, cols=1).cell(
+        0,
+        0,
+    ).text = "{{ submission.deadline }}"
+    document.sections[0].header.paragraphs[0].text = "{{ dates.issue }}"
+    document.sections[0].footer.paragraphs[
+        0
+    ].text = "{{ events.negotiation_time }}"
+    stream = io.BytesIO()
+    document.save(stream)
+    fields = [
+        {"key": "dates.issue", "value": "2026-09-30", "kind": "date"},
+        {
+            "key": "submission.deadline",
+            "value": "2026-10-16T17:30",
+            "kind": "datetime-local",
+        },
+        {
+            "key": "events.negotiation_time",
+            "value": "2026-10-22 14:30 ~ 2026-10-22 17:30",
+            "kind": "text",
+        },
+    ]
+    output = Document(
+        io.BytesIO(engine.render_template(stream.getvalue(), fields)),
+    )
+    assert output.paragraphs[0].text == "2026年9月30日"
+    assert (
+        output.paragraphs[0].runs[0].bold
+        and output.paragraphs[0].runs[0].underline
+    )
+    assert output.tables[0].cell(0, 0).text == "2026年10月16日下午17:30"
+    assert output.sections[0].header.paragraphs[0].text == "2026年9月30日"
+    assert (
+        output.sections[0].footer.paragraphs[0].text
+        == "2026年10月22日下午14:30至17:30"
+    )
+
+
+def test_review_and_excel_share_chinese_dates_and_preserve_source(
+    client,
+    sources,
+):
+    case = create(client, sources)
+    values = {f["key"]: f["value"] for f in case["fields"]}
+    assert case["document_values"]["dates.issue"] == "2026年11月1日"
+    assert case["recipient_document_times"][0] == "2026年11月2日上午09:00至11:00"
+    assert values["dates.issue"] == "2026-11-01"
+    base = f"/api/document-forms/cases/{case['id']}"
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert review["can_generate"]
+    assert any("2026年11月" in r["detail"] for r in review["checks"])
+    assert all("T09:00" not in r["detail"] for r in review["checks"])
+    exported = client.get(base + "/excel").content
+    workbook = load_workbook(io.BytesIO(exported))
+    assert workbook["变量配置"].cell(1, 7).value == "文书显示"
+    assert (
+        workbook["受邀单位"].cell(2, 6).value
+        == case["recipient_document_times"][0]
+    )
+    assert engine.read_excel(exported)["fields"] == case["fields"]

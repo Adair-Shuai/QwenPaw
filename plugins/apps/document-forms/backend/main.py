@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Document routes, isolated by authenticated user and Agent."""
+
 from __future__ import annotations
 
 import hashlib
@@ -33,6 +34,8 @@ from qwenpaw.pawapp import PawApp
 from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     MAX_FILE,
     checks,
+    document_date,
+    document_field_value,
     export_excel,
     read_excel,
     recipient_defaults,
@@ -84,7 +87,15 @@ def save(root, case):
 
 
 def public(case):
-    return {k: v for k, v in case.items() if k != "review_token"}
+    result = {k: v for k, v in case.items() if k != "review_token"}
+    result["document_values"] = {
+        f["key"]: document_field_value(f) for f in case["fields"]
+    }
+    result["recipient_document_times"] = [
+        document_date(r["start"] + " 至 " + r["end"])
+        for r in case["recipients"]
+    ]
+    return result
 
 
 def version(case, expected):
@@ -260,7 +271,10 @@ def set_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
         try:
             count = store_default_templates(root, case)
         except OSError as exc:
-            raise HTTPException(422, "模板文件缺失或无法写入，请重新添加 Word 文件") from exc
+            raise HTTPException(
+                422,
+                "模板文件缺失或无法写入，请重新添加 Word 文件",
+            ) from exc
     return {"count": count}
 
 
@@ -270,13 +284,22 @@ def use_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
         case = load(root, case_id)
         version(case, body.revision)
         if case["templates"]:
-            raise HTTPException(409, "当前已有 Word 模板，请先移除后再载入默认模板")
+            raise HTTPException(
+                409,
+                "当前已有 Word 模板，请先移除后再载入默认模板",
+            )
         try:
             count = attach_default_templates(root, case)
         except (ValueError, KeyError, OSError) as exc:
-            raise HTTPException(422, "默认模板未能载入，请重新选择 Word 文件") from exc
+            raise HTTPException(
+                422,
+                "默认模板未能载入，请重新选择 Word 文件",
+            ) from exc
         if not count:
-            raise HTTPException(404, "尚未设置默认模板。添加 Word 文件后，可将这组模板设为默认。")
+            raise HTTPException(
+                404,
+                "尚未设置默认模板。添加 Word 文件后，可将这组模板设为默认。",
+            )
         case["revision"] += 1
         case["review_token"] = None
         case.pop("template_notice", None)
@@ -437,9 +460,9 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                         {
                             "name": filename,
                             "size": len(data),
-                            "recipient": recipient["name"]
-                            if recipient
-                            else "共用文件",
+                            "recipient": (
+                                recipient["name"] if recipient else "共用文件"
+                            ),
                         },
                     )
             (staging / "填写数据.xlsx").write_bytes(export_excel(case))
@@ -457,7 +480,11 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                 ),
                 encoding="utf-8",
             )
-            with ZipFile(staging / "全部文书.zip", "w", ZIP_DEFLATED) as archive:
+            with ZipFile(
+                staging / "全部文书.zip",
+                "w",
+                ZIP_DEFLATED,
+            ) as archive:
                 for path in staging.iterdir():
                     if path.name != "全部文书.zip":
                         archive.write(path, path.name)
@@ -478,6 +505,7 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
             "revision": case["revision"],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
+            "date_style": "zh-CN",
         }
         case["generations"].insert(0, generation)
         case["review_token"] = None

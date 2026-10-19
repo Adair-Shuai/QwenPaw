@@ -69,9 +69,12 @@ function recipientDefaults(recipients) {
     return result;
   });
 }
-function Field({ field, onChange }) {
+function Field({ field, displayValue, onChange }) {
   const multiline = isParagraph(field);
   const compact = compactParagraph(field);
+  const value = ["date", "datetime-local"].includes(field.kind)
+    ? field.value
+    : displayValue ?? field.value;
   const textarea = useRef(null);
   useLayoutEffect(() => {
     if (!textarea.current) return;
@@ -80,7 +83,7 @@ function Field({ field, onChange }) {
     textarea.current.style.height =
       Math.max(compact ? 104 : 192, textarea.current.scrollHeight) + "px";
     textarea.current.scrollTop = scrollTop;
-  }, [field.value, multiline, compact]);
+  }, [value, multiline, compact]);
   return (
     <label
       className={
@@ -99,7 +102,7 @@ function Field({ field, onChange }) {
           ref={textarea}
           aria-label={field.label}
           rows={compact ? 3 : 8}
-          value={field.value}
+          value={value}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
@@ -107,7 +110,7 @@ function Field({ field, onChange }) {
           aria-label={field.label}
           type={field.kind}
           step={field.kind === "number" ? "any" : undefined}
-          value={field.value}
+          value={value}
           onChange={(e) => onChange(e.target.value)}
         />
       )}
@@ -180,7 +183,13 @@ function Workbench() {
   }
   function receive(data) {
     if (!alive.current) return;
-    setDraft({ ...data, recipients: recipientDefaults(data.recipients) });
+    setDraft({
+      ...data,
+      recipients: recipientDefaults(data.recipients),
+      presentation_sources: Object.fromEntries(
+        data.fields.map((f) => [f.key, f.value]),
+      ),
+    });
     setDirty(false);
     setReview(null);
     setConfirmed(false);
@@ -549,6 +558,11 @@ function Workbench() {
                 {[...new Set(draft.fields.map((f) => f.group))].map((group) => (
                   <section className="df-group" key={group}>
                     <h3>{group}</h3>
+                    {group === "日期安排" && (
+                      <p className="df-muted">
+                        文书统一使用中文日期，例如“2026年10月22日下午14:30”。日期选择器保留原来的填写方式。
+                      </p>
+                    )}
                     <div className="df-fields">
                       {draft.fields
                         .filter((f) => f.group === group)
@@ -556,6 +570,12 @@ function Workbench() {
                           <Field
                             key={field.key}
                             field={field}
+                            displayValue={
+                              draft.presentation_sources?.[field.key] ===
+                              field.value
+                                ? draft.document_values?.[field.key]
+                                : undefined
+                            }
                             onChange={(value) =>
                               edit({
                                 ...draft,
@@ -838,9 +858,8 @@ function Workbench() {
                       >
                         <dt>{f.label}</dt>
                         <dd>
-                          {(f.kind === "datetime-local"
-                            ? f.value.replace("T", " ")
-                            : f.value) || "尚未填写"}
+                          {(draft.document_values?.[f.key] ?? f.value) ||
+                            "尚未填写"}
                         </dd>
                       </div>
                     ))}
@@ -851,8 +870,11 @@ function Workbench() {
                       {draft.recipients.map((r, i) => (
                         <p key={i}>
                           {i + 1}. {r.name || "尚未填写"}　
-                          {r.start.replace("T", " ")} —{" "}
-                          {r.end.replace("T", " ")}
+                          {draft.recipient_document_times?.[i] ??
+                            `${r.start.replace("T", " ")} — ${r.end.replace(
+                              "T",
+                              " ",
+                            )}`}
                         </p>
                       ))}
                     </>
@@ -937,6 +959,7 @@ function Workbench() {
                   <div className="df-generation" key={g.id}>
                     <h3>
                       {time(g.created_at)} · 修订 {g.revision}
+                      {g.date_style !== "zh-CN" && " · 原日期格式"}
                     </h3>
                     {g.files.map((f) => (
                       <div
