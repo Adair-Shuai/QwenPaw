@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import logging
 import re
 import shutil
 import threading
@@ -34,6 +35,7 @@ from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     checks,
     export_excel,
     read_excel,
+    recipient_defaults,
     render_template,
     starter_files,
     template_info,
@@ -43,6 +45,7 @@ app = PawApp(name="文书填报", app_id="document-forms")
 router = APIRouter()
 ROOT = Path(WORKING_DIR) / "apps" / "document-forms"
 _lock = threading.RLock()
+logger = logging.getLogger(__name__)
 
 
 def scope(request: Request):
@@ -66,7 +69,9 @@ def load(root, case_id):
     path = folder(root, case_id) / "draft.json"
     if not path.is_file():
         raise HTTPException(404, "填报记录不存在")
-    return json.loads(path.read_text(encoding="utf-8"))
+    case = json.loads(path.read_text(encoding="utf-8"))
+    case["recipients"] = recipient_defaults(case["recipients"])
+    return case
 
 
 def save(root, case):
@@ -102,10 +107,81 @@ def name_only(name):
     )
 
 
+def attach_default_templates(root, case):
+    library = root / "default-templates"
+    index = library / "index.json"
+    if not index.is_file():
+        return 0
+    entries = json.loads(index.read_text(encoding="utf-8"))
+    if not isinstance(entries, list) or not 1 <= len(entries) <= 20:
+        raise ValueError("默认模板清单不完整，请重新设定")
+    prepared = []
+    for entry in entries:
+        digest = entry["sha256"]
+        if not re.fullmatch(r"[a-f0-9]{64}", digest):
+            raise ValueError("默认模板校验信息无效")
+        content = (library / (digest + ".docx")).read_bytes()
+        if hashlib.sha256(content).hexdigest() != digest:
+            raise ValueError("默认模板内容已改变，请重新选择原文件")
+        info = template_info(
+            content,
+            entry["name"],
+            {f["key"] for f in case["fields"]},
+        )
+        prepared.append(
+            (
+                dict(
+                    info,
+                    id=uuid.uuid4().hex,
+                    sha256=digest,
+                    from_default=True,
+                ),
+                content,
+            ),
+        )
+    target = folder(root, case["id"]) / "templates"
+    target.mkdir(parents=True, exist_ok=True)
+    for info, content in prepared:
+        (target / (info["id"] + ".docx")).write_bytes(content)
+    case["templates"] = [info for info, _ in prepared]
+    return len(prepared)
+
+
+def store_default_templates(root, case):
+    if not case["templates"]:
+        raise HTTPException(422, "请先添加需要作为默认的 Word 模板")
+    library = root / "default-templates"
+    prepared = []
+    for template in case["templates"]:
+        content = (
+            folder(root, case["id"]) / "templates" / (template["id"] + ".docx")
+        ).read_bytes()
+        digest = hashlib.sha256(content).hexdigest()
+        if digest != template["sha256"]:
+            raise HTTPException(422, "模板内容已改变，请重新导入后设为默认")
+        prepared.append(
+            ({"name": template["name"], "sha256": digest}, content),
+        )
+    library.mkdir(parents=True, exist_ok=True)
+    for entry, content in prepared:
+        temp = library / (entry["sha256"] + ".tmp")
+        temp.write_bytes(content)
+        temp.replace(library / (entry["sha256"] + ".docx"))
+    temp = library / "index.tmp"
+    temp.write_text(
+        json.dumps([entry for entry, _ in prepared], ensure_ascii=False),
+        encoding="utf-8",
+    )
+    temp.replace(library / "index.json")
+    return len(prepared)
+
+
 class Recipient(BaseModel):
     name: str = Field(default="", max_length=200)
     start: str = Field(default="", max_length=80)
     end: str = Field(default="", max_length=80)
+    follow_start: bool | None = None
+    follow_end: bool | None = None
 
 
 class DraftBody(BaseModel):
@@ -161,6 +237,11 @@ def create_case(workbook: UploadFile = File(...), root=Depends(scope)):
         review_token=None,
     )
     with _lock:
+        try:
+            attach_default_templates(root, case)
+        except (ValueError, KeyError, OSError) as exc:
+            case["template_notice"] = "默认模板未能载入，请重新选择 Word 文件"
+            logger.warning("Default templates could not be loaded: %s", exc)
         save(root, case)
     return public(case)
 
@@ -169,6 +250,38 @@ def create_case(workbook: UploadFile = File(...), root=Depends(scope)):
 def get_case(case_id: str, root=Depends(scope)):
     with _lock:
         return public(load(root, case_id))
+
+
+@router.post("/cases/{case_id}/defaults")
+def set_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
+    with _lock:
+        case = load(root, case_id)
+        version(case, body.revision)
+        try:
+            count = store_default_templates(root, case)
+        except OSError as exc:
+            raise HTTPException(422, "模板文件缺失或无法写入，请重新添加 Word 文件") from exc
+    return {"count": count}
+
+
+@router.post("/cases/{case_id}/defaults/apply")
+def use_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
+    with _lock:
+        case = load(root, case_id)
+        version(case, body.revision)
+        if case["templates"]:
+            raise HTTPException(409, "当前已有 Word 模板，请先移除后再载入默认模板")
+        try:
+            count = attach_default_templates(root, case)
+        except (ValueError, KeyError, OSError) as exc:
+            raise HTTPException(422, "默认模板未能载入，请重新选择 Word 文件") from exc
+        if not count:
+            raise HTTPException(404, "尚未设置默认模板。添加 Word 文件后，可将这组模板设为默认。")
+        case["revision"] += 1
+        case["review_token"] = None
+        case.pop("template_notice", None)
+        save(root, case)
+        return public(case)
 
 
 @router.put("/cases/{case_id}")
@@ -183,7 +296,9 @@ def update_case(case_id: str, body: DraftBody, root=Depends(scope)):
         case["name"] = body.name
         for field in case["fields"]:
             field["value"] = body.values[field["key"]]
-        case["recipients"] = [r.model_dump() for r in body.recipients]
+        case["recipients"] = recipient_defaults(
+            [r.model_dump(exclude_none=True) for r in body.recipients],
+        )
         case["revision"] += 1
         case["review_token"] = None
         save(root, case)

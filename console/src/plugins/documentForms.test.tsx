@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import React from "react";
-import { act, cleanup, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
@@ -90,7 +96,9 @@ describe.each(["embedded", "compatible"])(
             ],
           };
           result = state;
-        } else if (init?.method === "PUT") {
+        } else if (url.endsWith("/defaults"))
+          result = { count: state.templates.length };
+        else if (init?.method === "PUT") {
           state = {
             ...state,
             name: body.name,
@@ -189,7 +197,50 @@ describe.each(["embedded", "compatible"])(
       });
       expect(paragraphs.tagName).toBe("TEXTAREA");
       expect(paragraphs).toHaveValue("第一项\n第二项");
+      expect(paragraphs).toHaveAttribute("rows", "3");
       await user.type(paragraphs, "\n第三项");
+      await user.click(screen.getByRole("button", { name: "＋ 添加单位" }));
+      await user.click(screen.getByRole("button", { name: "＋ 添加单位" }));
+      expect(screen.getByLabelText("第2家领取开始时间")).toHaveValue(
+        "2026-11-02T09:00",
+      );
+      expect(screen.getByLabelText("第3家领取结束时间")).toHaveValue(
+        "2026-11-02T12:00",
+      );
+      fireEvent.change(screen.getByLabelText("第2家领取开始时间"), {
+        target: { value: "2026-11-02T10:00" },
+      });
+      fireEvent.change(screen.getByLabelText("第1家领取开始时间"), {
+        target: { value: "2026-11-02T09:30" },
+      });
+      fireEvent.change(screen.getByLabelText("第1家领取结束时间"), {
+        target: { value: "2026-11-02T13:00" },
+      });
+      expect(screen.getByLabelText("第2家领取开始时间")).toHaveValue(
+        "2026-11-02T10:00",
+      );
+      expect(screen.getByLabelText("第2家领取结束时间")).toHaveValue(
+        "2026-11-02T13:00",
+      );
+      expect(screen.getByLabelText("第3家领取开始时间")).toHaveValue(
+        "2026-11-02T09:30",
+      );
+      await user.click(
+        screen.getByRole("button", { name: "第2家领取开始时间恢复跟随" }),
+      );
+      expect(screen.getByLabelText("第2家领取开始时间")).toHaveValue(
+        "2026-11-02T09:30",
+      );
+      fireEvent.change(screen.getByLabelText("第2家领取结束时间"), {
+        target: { value: "" },
+      });
+      fireEvent.change(screen.getByLabelText("第1家领取结束时间"), {
+        target: { value: "2026-11-02T14:00" },
+      });
+      expect(screen.getByLabelText("第2家领取结束时间")).toHaveValue("");
+      expect(screen.getByLabelText("第3家领取结束时间")).toHaveValue(
+        "2026-11-02T14:00",
+      );
       await user.upload(
         screen.getByLabelText("导入 Word 模板"),
         new File(["docx"], "邀请函.docx", {
@@ -197,6 +248,12 @@ describe.each(["embedded", "compatible"])(
         }),
       );
       await screen.findByText("按受邀单位分别生成");
+      expect(state.recipients[1].follow_start).toBe(true);
+      expect(state.recipients[1].follow_end).toBe(false);
+      await user.click(screen.getByRole("button", { name: "设为默认模板" }));
+      await screen.findByText("已设为本机默认模板，以后新建填报会自动载入。");
+      await user.click(screen.getByRole("button", { name: "移除第3家单位" }));
+      await user.click(screen.getByRole("button", { name: "移除第2家单位" }));
       const generationFooter = screen.getByRole("region", {
         name: "核对与生成",
       });

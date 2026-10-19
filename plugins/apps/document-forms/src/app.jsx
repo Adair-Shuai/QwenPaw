@@ -52,20 +52,42 @@ const isParagraph = (field) =>
   field.value.length > 100 ||
   field.value.includes("\n") ||
   field.label.includes("整段");
+const compactParagraph = (field) =>
+  /^(research\.contents|deliverables\.|metrics\.|milestones\.)/.test(
+    field.key,
+  ) || /主要研究内容|预期成果|考核指标|进度安排/.test(field.label);
+function recipientDefaults(recipients) {
+  return recipients.map((recipient, index) => {
+    const result = { ...recipient };
+    for (const key of ["start", "end"]) {
+      const flag = "follow_" + key;
+      result[flag] =
+        index > 0 &&
+        (typeof result[flag] === "boolean" ? result[flag] : !result[key]);
+      if (result[flag]) result[key] = recipients[0][key];
+    }
+    return result;
+  });
+}
 function Field({ field, onChange }) {
   const multiline = isParagraph(field);
+  const compact = compactParagraph(field);
   const textarea = useRef(null);
   useLayoutEffect(() => {
     if (!textarea.current) return;
     const scrollTop = textarea.current.scrollTop;
     textarea.current.style.height = "auto";
     textarea.current.style.height =
-      Math.max(192, textarea.current.scrollHeight) + "px";
+      Math.max(compact ? 104 : 192, textarea.current.scrollHeight) + "px";
     textarea.current.scrollTop = scrollTop;
-  }, [field.value, multiline]);
+  }, [field.value, multiline, compact]);
   return (
     <label
-      className={"df-field" + (multiline ? " df-field-paragraph" : "")}
+      className={
+        "df-field" +
+        (multiline ? " df-field-paragraph" : "") +
+        (compact ? " df-field-compact" : "")
+      }
       id={"df-" + field.key}
     >
       <span>
@@ -76,7 +98,7 @@ function Field({ field, onChange }) {
         <textarea
           ref={textarea}
           aria-label={field.label}
-          rows={8}
+          rows={compact ? 3 : 8}
           value={field.value}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -158,7 +180,7 @@ function Workbench() {
   }
   function receive(data) {
     if (!alive.current) return;
-    setDraft(data);
+    setDraft({ ...data, recipients: recipientDefaults(data.recipients) });
     setDirty(false);
     setReview(null);
     setConfirmed(false);
@@ -169,6 +191,18 @@ function Workbench() {
     setReview(null);
     setConfirmed(false);
     setNotice("");
+  }
+  function editRecipient(index, key, value, follow = false) {
+    const recipients = draft.recipients.map((recipient, row) =>
+      row === index
+        ? {
+            ...recipient,
+            [key]: value,
+            ...(key !== "name" ? { ["follow_" + key]: follow } : {}),
+          }
+        : recipient,
+    );
+    edit({ ...draft, recipients: recipientDefaults(recipients) });
   }
   async function saveDraft() {
     if (!dirty) return draft;
@@ -208,11 +242,16 @@ function Workbench() {
     await run("读取 Excel", async () => {
       const form = new FormData();
       form.append("workbook", file);
-      receive(await request("/cases", { method: "POST", body: form }));
+      const data = await request("/cases", { method: "POST", body: form });
+      receive(data);
       setPreview(null);
       setStage("edit");
       await refresh();
-      setNotice("已读取变量配置。请添加对应的 Word 模板。");
+      setNotice(
+        data.templates.length
+          ? "已读取变量配置，并载入默认 Word 模板。"
+          : data.template_notice || "已读取变量配置。请添加对应的 Word 模板。",
+      );
     });
   }
   async function importWord(files) {
@@ -546,10 +585,10 @@ function Workbench() {
                     onClick={() =>
                       edit({
                         ...draft,
-                        recipients: [
+                        recipients: recipientDefaults([
                           ...draft.recipients,
                           { name: "", start: "", end: "" },
-                        ],
+                        ]),
                       })
                     }
                     disabled={draft.recipients.length >= 200}
@@ -570,8 +609,8 @@ function Workbench() {
                         onClick={() =>
                           edit({
                             ...draft,
-                            recipients: draft.recipients.filter(
-                              (_, j) => j !== i,
+                            recipients: recipientDefaults(
+                              draft.recipients.filter((_, j) => j !== i),
                             ),
                           })
                         }
@@ -599,14 +638,31 @@ function Workbench() {
                               key === "name" ? r[key] : r[key].replace(" ", "T")
                             }
                             onChange={(e) =>
-                              edit({
-                                ...draft,
-                                recipients: draft.recipients.map((a, j) =>
-                                  j === i ? { ...a, [key]: e.target.value } : a,
-                                ),
-                              })
+                              editRecipient(i, key, e.target.value)
                             }
                           />
+                          {i > 0 && key !== "name" && (
+                            <small className="df-follow-state">
+                              {r["follow_" + key] ? "跟随第1家" : "已单独设置"}
+                              {!r["follow_" + key] && (
+                                <button
+                                  type="button"
+                                  aria-label={`第${i + 1}家${label}恢复跟随`}
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    editRecipient(
+                                      i,
+                                      key,
+                                      draft.recipients[0][key],
+                                      true,
+                                    );
+                                  }}
+                                >
+                                  恢复跟随
+                                </button>
+                              )}
+                            </small>
+                          )}
                         </label>
                       ))}
                     </div>
@@ -619,9 +675,46 @@ function Workbench() {
               >
                 <div className="df-section-head">
                   <h2>Word 模板</h2>
-                  <button onClick={() => wordInput.current.click()}>
-                    ＋ 添加
-                  </button>
+                  <div className="df-template-actions">
+                    {templates.length > 0 ? (
+                      <button
+                        onClick={() =>
+                          run("保存默认模板", async () => {
+                            const data = await saveDraft();
+                            await request(
+                              `/cases/${data.id}/defaults`,
+                              json({ revision: data.revision }),
+                            );
+                            setNotice(
+                              "已设为本机默认模板，以后新建填报会自动载入。",
+                            );
+                          })
+                        }
+                      >
+                        设为默认模板
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() =>
+                          run("载入默认模板", async () => {
+                            const data = await saveDraft();
+                            receive(
+                              await request(
+                                `/cases/${data.id}/defaults/apply`,
+                                json({ revision: data.revision }),
+                              ),
+                            );
+                            setNotice("已载入默认 Word 模板。");
+                          })
+                        }
+                      >
+                        使用默认模板
+                      </button>
+                    )}
+                    <button onClick={() => wordInput.current.click()}>
+                      ＋ 添加
+                    </button>
+                  </div>
                 </div>
                 {!templates.length && (
                   <p className="df-muted">

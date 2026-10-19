@@ -341,6 +341,23 @@
 .df-field-paragraph + .df-field-paragraph {
   margin-top: 6px;
 }
+.df-field-compact textarea {
+  min-height: 104px;
+}
+.df-follow-state {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+.df-follow-state button {
+  font-size: 11px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--df-accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
 .df-field small {
   opacity: 0.7;
   word-break: break-all;
@@ -355,6 +372,12 @@
   padding: 14px 0;
   border-top: 1px solid var(--df-line);
   position: relative;
+}
+.df-template-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
 }
 .df-template b {
   font-size: 12px;
@@ -801,6 +824,9 @@
     padding: 12px;
     min-height: 180px;
     max-height: 70vh;
+  }
+  .df-field-compact textarea {
+    min-height: 104px;
   }
   .df-footer {
     flex-direction: column;

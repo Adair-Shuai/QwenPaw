@@ -99,6 +99,23 @@ def kind_for(key, label, value):
     return "text"
 
 
+def recipient_defaults(recipients):
+    """Materialize linked times; never infer a link from an explicit value."""
+    result = [dict(recipient) for recipient in recipients]
+    if not result:
+        return result
+    for index, recipient in enumerate(result):
+        for key in ("start", "end"):
+            flag = "follow_" + key
+            follow = recipient.get(flag)
+            if follow is None:
+                follow = not bool(recipient.get(key, "").strip())
+            recipient[flag] = bool(index and follow)
+            if recipient[flag]:
+                recipient[key] = result[0].get(key, "")
+    return result
+
+
 def read_excel(content: bytes):
     # Several independent workbook sections are validated in one pass.
     # pylint: disable=too-many-branches,too-many-statements
@@ -236,10 +253,38 @@ def read_excel(content: bytes):
                         record[key] = parsed.strftime("%Y-%m-%dT%H:%M")
                 # Keep numbered empty slots for later completion, but not a
                 # trailing note stored outside the mapped input columns.
-                if any(record.values()) or (
-                    "序号" in headers and cell(row, "序号").isdigit()
+                if not (
+                    any(record.values())
+                    or ("序号" in headers and cell(row, "序号").isdigit())
+                    or any(
+                        cell(row, column)
+                        for column in ("开始时间跟随首家", "结束时间跟随首家")
+                    )
                 ):
-                    recipients.append(record)
+                    continue
+                for key, column in [
+                    ("start", "开始时间跟随首家"),
+                    ("end", "结束时间跟随首家"),
+                ]:
+                    flag = cell(row, column).lower()
+                    if flag:
+                        if flag not in {
+                            "是",
+                            "否",
+                            "true",
+                            "false",
+                            "1",
+                            "0",
+                        }:
+                            raise ValueError(
+                                f"受邀单位第 {row_number} 行的{column}请填写“是”或“否”",
+                            )
+                        record["follow_" + key] = flag in {
+                            "是",
+                            "true",
+                            "1",
+                        }
+                recipients.append(record)
         rules = []
         if "校核规则" in book.sheetnames:
             sheet = book["校核规则"]
@@ -259,7 +304,11 @@ def read_excel(content: bytes):
                     )
         # 日期校核 may contain Excel formulas; the application always recalculates
         # from editable source values instead of trusting stale cached results.
-        return {"fields": fields, "recipients": recipients, "rules": rules}
+        return {
+            "fields": fields,
+            "recipients": recipient_defaults(recipients),
+            "rules": rules,
+        }
     finally:
         book.close()
 
@@ -659,9 +708,17 @@ def export_excel(case):
             ],
         )
     recipients = book.create_sheet("受邀单位")
-    recipients.append(["单位名称", "领取开始时间", "领取结束时间"])
-    for r in case["recipients"]:
-        recipients.append([r["name"], r["start"], r["end"]])
+    recipients.append(["单位名称", "领取开始时间", "领取结束时间", "开始时间跟随首家", "结束时间跟随首家"])
+    for r in recipient_defaults(case["recipients"]):
+        recipients.append(
+            [
+                r["name"],
+                r["start"],
+                r["end"],
+                "是" if r["follow_start"] else "否",
+                "是" if r["follow_end"] else "否",
+            ],
+        )
     rules = book.create_sheet("校核规则")
     rules.append(["校核项", "开始变量", "结束变量", "允许相同"])
     for r in case["rules"]:

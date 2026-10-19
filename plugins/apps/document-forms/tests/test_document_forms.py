@@ -537,8 +537,16 @@ def test_missing_or_stale_dimensions_annotated_headers_and_sparse_rows(stale):
         "name": "甲单位",
         "start": "2026-07-02T09:00",
         "end": "2026-07-02T10:00",
+        "follow_start": False,
+        "follow_end": False,
     }
-    assert data["recipients"][1] == {"name": "", "start": "", "end": ""}
+    assert data["recipients"][1] == {
+        "name": "",
+        "start": "2026-07-02T09:00",
+        "end": "2026-07-02T10:00",
+        "follow_start": True,
+        "follow_end": True,
+    }
     checks = engine.checks(dict(data, templates=[]))
     assert any(
         r["label"] == "落款日期不晚于总体发放开始" and r["status"] == "error"
@@ -726,3 +734,160 @@ def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
         r["status"] == "error" and r["field"] == "events.negotiation_time"
         for r in results
     )
+
+
+def test_followed_times_manual_override_save_reload_and_excel_roundtrip(
+    client,
+):
+    response = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("变量表.xlsx", unsized_workbook())},
+    )
+    case = response.json()
+    base = f"/api/document-forms/cases/{case['id']}"
+
+    def persist():
+        response = client.put(
+            base,
+            json={
+                "revision": case["revision"],
+                "name": case["name"],
+                "values": {f["key"]: f["value"] for f in case["fields"]},
+                "recipients": case["recipients"],
+            },
+        )
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    assert case["recipients"][1]["follow_start"]
+    assert case["recipients"][2]["start"] == case["recipients"][0]["start"]
+    case["recipients"][1].update(start="2026-07-02T10:00", follow_start=False)
+    case["recipients"][0].update(
+        start="2026-07-02T09:30",
+        end="2026-07-02T11:00",
+    )
+    case = persist()
+    assert case["recipients"][1]["start"] == "2026-07-02T10:00"
+    assert case["recipients"][1]["end"] == "2026-07-02T11:00"
+    assert case["recipients"][2]["start"] == "2026-07-02T09:30"
+    case["recipients"][1].update(end="", follow_end=False)
+    case["recipients"][0]["end"] = "2026-07-02T12:00"
+    case = persist()
+    assert case["recipients"][1]["end"] == ""
+    assert client.get(base).json()["recipients"] == case["recipients"]
+    exported = engine.read_excel(client.get(base + "/excel").content)
+    assert exported["recipients"] == case["recipients"]
+    case["recipients"][1]["follow_start"] = True
+    case = persist()
+    assert case["recipients"][1]["start"] == case["recipients"][0]["start"]
+
+
+def test_legacy_explicit_times_are_preserved_and_empty_slots_can_follow():
+    data = [
+        {"name": "甲", "start": "2026-07-01T09:00", "end": "2026-07-01T17:00"},
+        {"name": "乙", "start": "2026-07-02T10:00", "end": ""},
+        {"name": "丙", "start": "", "end": ""},
+    ]
+    recipients = engine.recipient_defaults(data)
+    assert recipients[1]["start"] == data[1]["start"]
+    assert not recipients[1]["follow_start"]
+    assert recipients[1]["follow_end"]
+    assert recipients[2]["start"] == data[0]["start"]
+    assert data[2]["start"] == "", "Input must not be mutated"
+    recipients.pop(0)
+    adjusted = engine.recipient_defaults(recipients)
+    assert not adjusted[0]["follow_start"]
+    assert adjusted[1]["start"] == adjusted[0]["start"]
+
+
+def test_empty_follow_modes_survive_excel_export_without_unit_names():
+    data = engine.read_excel(unsized_workbook())
+    data["recipients"] = engine.recipient_defaults(
+        [{"name": "", "start": "", "end": ""}] * 3,
+    )
+    result = engine.read_excel(engine.export_excel(dict(data, templates=[])))
+    assert result["recipients"] == data["recipients"]
+
+
+def test_defaults_auto_attach_to_new_cases_and_apply_to_existing_case(
+    client,
+    sources,
+):
+    old = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("旧草稿.xlsx", sources["变量管理表.xlsx"])},
+    ).json()
+    case = create(client, sources)
+    base = f"/api/document-forms/cases/{case['id']}"
+    result = client.post(
+        base + "/defaults",
+        json={"revision": case["revision"]},
+    )
+    assert result.status_code == 200, result.text
+    assert result.json()["count"] == 2
+    fresh = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("新草稿.xlsx", sources["变量管理表.xlsx"])},
+    ).json()
+    assert [t["per_recipient"] for t in fresh["templates"]] == [False, True]
+    assert {t["id"] for t in fresh["templates"]}.isdisjoint(
+        t["id"] for t in case["templates"]
+    )
+    assert [t["sha256"] for t in fresh["templates"]] == [
+        t["sha256"] for t in case["templates"]
+    ]
+    review = client.post(
+        f"/api/document-forms/cases/{fresh['id']}/review",
+        json={"revision": fresh["revision"]},
+    ).json()
+    assert review["can_generate"]
+    applied = client.post(
+        f"/api/document-forms/cases/{old['id']}/defaults/apply",
+        json={"revision": old["revision"]},
+    )
+    assert applied.status_code == 200, applied.text
+    assert len(applied.json()["templates"]) == 2
+    assert applied.json()["revision"] == old["revision"] + 1
+    assert (
+        client.post(
+            base + "/defaults/apply",
+            json={"revision": case["revision"]},
+        ).status_code
+        == 409
+    )
+    other = client.post(
+        "/api/document-forms/cases",
+        headers={"X-Agent-Id": "other"},
+        files={"workbook": ("其他智能体.xlsx", sources["变量管理表.xlsx"])},
+    ).json()
+    assert other["templates"] == []
+
+
+def test_bad_default_files_do_not_break_excel_import_or_existing_draft(
+    client,
+    sources,
+):
+    case = create(client, sources)
+    base = f"/api/document-forms/cases/{case['id']}"
+    client.post(
+        base + "/defaults",
+        json={"revision": case["revision"]},
+    ).raise_for_status()
+    library = next(main.ROOT.glob("*/default-templates/index.json")).parent
+    next(library.glob("*.docx")).write_bytes(b"damaged")
+    response = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("仍可导入.xlsx", sources["变量管理表.xlsx"])},
+    )
+    assert response.status_code == 200, response.text
+    draft = response.json()
+    assert draft["templates"] == [] and draft["template_notice"]
+    before = client.get(base).json()
+    assert (
+        client.post(
+            f"/api/document-forms/cases/{draft['id']}/defaults/apply",
+            json={"revision": draft["revision"]},
+        ).status_code
+        == 422
+    )
+    assert client.get(base).json() == before
