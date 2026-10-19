@@ -7,6 +7,7 @@ import hashlib
 import io
 import json
 import logging
+import os
 import re
 import shutil
 import subprocess
@@ -165,16 +166,25 @@ def print_document(source, cache):
     """Render real Word pages; HTML pagination cannot verify a printed form."""
     with _print_lock:
         cache.mkdir(parents=True, exist_ok=True)
-        stats = cache / "pages.json"
-        if stats.is_file():
+        stats = cache / "pages-v2.json"
+        target = cache / "document-v2.png"
+        if stats.is_file() and target.is_file():
             count = json.loads(stats.read_text(encoding="utf-8"))["pages"]
-        else:
-            binary = office_cli()
+            return target, count
+        binary = office_cli()
+        working = cache / (uuid.uuid4().hex[:8] + ".docx")
+        temp = working.with_suffix(".png")
+        # The resident in older OfficeCLI builds drops page-range arguments.
+        # Use an isolated read copy with auto-resident disabled. Native page
+        # stitching retains full resolution; contact sheets shrink long files.
+        environment = dict(os.environ, OFFICECLI_NO_AUTO_RESIDENT="1")
+        try:
+            shutil.copyfile(source, working)
             result = subprocess.run(
                 [
                     binary,
                     "view",
-                    str(source),
+                    str(working),
                     "stats",
                     "--page-count",
                     "--json",
@@ -182,6 +192,7 @@ def print_document(source, cache):
                 capture_output=True,
                 timeout=90,
                 check=False,
+                env=environment,
             )
             if result.returncode:
                 raise ValueError("无法读取 Word 页数")
@@ -189,38 +200,35 @@ def print_document(source, cache):
             count = data.get("data", data).get("pages", 0)
             if not isinstance(count, int) or not 1 <= count <= 40:
                 raise ValueError("未获得有效的 Word 页数")
+            result = subprocess.run(
+                [
+                    binary,
+                    "view",
+                    str(working),
+                    "screenshot",
+                    "--render",
+                    "native",
+                    "--page",
+                    f"1-{count}",
+                    "-o",
+                    str(temp),
+                ],
+                capture_output=True,
+                timeout=90,
+                check=False,
+                env=environment,
+            )
+            if (
+                result.returncode
+                or not temp.is_file()
+                or not temp.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+            ):
+                raise ValueError("Word 打印页面未能渲染")
+            temp.replace(target)
             stats.write_text(json.dumps({"pages": count}), encoding="utf-8")
-        target = cache / "document.png"
-        if not target.is_file():
-            binary = office_cli()
-            temp = cache / (uuid.uuid4().hex[:8] + ".png")
-            try:
-                result = subprocess.run(
-                    [
-                        binary,
-                        "view",
-                        str(source),
-                        "screenshot",
-                        "--render",
-                        "native",
-                        "--grid",
-                        "1",
-                        "-o",
-                        str(temp),
-                    ],
-                    capture_output=True,
-                    timeout=90,
-                    check=False,
-                )
-                if (
-                    result.returncode
-                    or not temp.is_file()
-                    or not temp.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
-                ):
-                    raise ValueError("Word 打印页面未能渲染")
-                temp.replace(target)
-            finally:
-                temp.unlink(missing_ok=True)
+        finally:
+            temp.unlink(missing_ok=True)
+            working.unlink(missing_ok=True)
         return target, count
 
 

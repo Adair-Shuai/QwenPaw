@@ -289,6 +289,8 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
 
     def run(args, **kwargs):
         assert kwargs["timeout"] == 90
+        assert kwargs["env"]["OFFICECLI_NO_AUTO_RESIDENT"] == "1"
+        assert Path(args[2]).is_file()
         calls.append(args)
         if "stats" in args:
             assert "--page-count" in args
@@ -297,9 +299,9 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
                 stdout=b'{"success":true,"data":{"pages":2}}',
             )
         assert args[args.index("--render") + 1] == "native"
-        # Native page filters are ignored by some installed OfficeCLI builds.
-        # A one-column contact sheet must contain every actual Word page.
-        assert args[args.index("--grid") + 1] == "1" and "--page" not in args
+        # A fresh read copy bypasses old residents that drop page filters.
+        # Full-resolution native stitching keeps long documents readable.
+        assert args[args.index("--page") + 1] == "1-2" and "--grid" not in args
         Path(args[-1]).write_bytes(png)
         return types.SimpleNamespace(returncode=0)
 
