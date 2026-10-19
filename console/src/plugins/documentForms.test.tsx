@@ -225,6 +225,8 @@ describe.each(["embedded", "compatible"])(
       });
       await act(async () => {
         new Function(
+          "window",
+          "URL",
           fs.readFileSync(
             path.resolve(
               process.cwd(),
@@ -232,7 +234,7 @@ describe.each(["embedded", "compatible"])(
             ),
             "utf8",
           ),
-        )();
+        )(window, URL);
       });
       renderWithProviders(<Page />);
       expect(screen.getByText("从 Excel 变量表开始")).toBeInTheDocument();
