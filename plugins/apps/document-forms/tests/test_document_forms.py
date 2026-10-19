@@ -955,7 +955,7 @@ def test_schedule_year_and_business_identifiers_are_not_confused_with_dates():
         ("qualification.start_year", "2023"),
         ("project.code", "QW-2026-10-22-A"),
         ("budget.ceiling_number", "450000"),
-        ("contact.phone", "010-83599530"),
+        ("contact.phone", "010-12345678"),
     ]:
         assert (
             engine.document_field_value(
