@@ -2,7 +2,7 @@ import CSS from "./workbench.css";
 import OfficeServicePreview from "./office-preview.jsx";
 const Q = window.QwenPaw,
   React = Q.host.React;
-const { useState, useEffect, useRef } = React;
+const { useState, useEffect, useLayoutEffect, useRef } = React;
 const API = "/document-forms";
 const MIME =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -47,20 +47,36 @@ const time = (value) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+const isParagraph = (field) =>
+  field.kind === "textarea" ||
+  field.value.length > 100 ||
+  field.value.includes("\n") ||
+  field.label.includes("整段");
 function Field({ field, onChange }) {
+  const multiline = isParagraph(field);
+  const textarea = useRef(null);
+  useLayoutEffect(() => {
+    if (!textarea.current) return;
+    const scrollTop = textarea.current.scrollTop;
+    textarea.current.style.height = "auto";
+    textarea.current.style.height =
+      Math.max(192, textarea.current.scrollHeight) + "px";
+    textarea.current.scrollTop = scrollTop;
+  }, [field.value, multiline]);
   return (
-    <label className="df-field" id={"df-" + field.key}>
+    <label
+      className={"df-field" + (multiline ? " df-field-paragraph" : "")}
+      id={"df-" + field.key}
+    >
       <span>
         {field.label}
         {field.required && <em>必填</em>}
       </span>
-      {field.kind === "textarea" ||
-      field.value.length > 100 ||
-      field.value.includes("\n") ||
-      field.label.includes("整段") ? (
+      {multiline ? (
         <textarea
+          ref={textarea}
           aria-label={field.label}
-          rows={3}
+          rows={8}
           value={field.value}
           onChange={(e) => onChange(e.target.value)}
         />
@@ -465,206 +481,204 @@ function Workbench() {
           )}
           {draft && stage === "edit" && (
             <div className="df-edit-layout">
-              <div>
-                <section className="df-paper">
-                  <div className="df-section-head">
-                    <h2>填写信息</h2>
-                    <button
-                      onClick={() =>
-                        run("导出 Excel", async () => {
-                          const data = await saveDraft();
-                          await download(
-                            `/cases/${data.id}/excel`,
-                            data.name + ".xlsx",
-                          );
-                        })
-                      }
-                    >
-                      导出当前 Excel
-                    </button>
-                  </div>
-                  <label className="df-field df-title-field">
-                    <span>填报名称</span>
-                    <input
-                      aria-label="填报名称"
-                      maxLength={120}
-                      value={draft.name}
-                      onChange={(e) => edit({ ...draft, name: e.target.value })}
-                    />
-                  </label>
-                  {[...new Set(draft.fields.map((f) => f.group))].map(
-                    (group) => (
-                      <section className="df-group" key={group}>
-                        <h3>{group}</h3>
-                        <div className="df-fields">
-                          {draft.fields
-                            .filter((f) => f.group === group)
-                            .map((field) => (
-                              <Field
-                                key={field.key}
-                                field={field}
-                                onChange={(value) =>
-                                  edit({
-                                    ...draft,
-                                    fields: draft.fields.map((f) =>
-                                      f.key === field.key ? { ...f, value } : f,
-                                    ),
-                                  })
-                                }
-                              />
-                            ))}
-                        </div>
-                      </section>
-                    ),
-                  )}
-                </section>
-                <section className="df-paper">
-                  <div className="df-section-head">
-                    <div>
-                      <h2>
-                        受邀单位{" "}
-                        <span className="df-count">
-                          {draft.recipients.length}
-                        </span>
-                      </h2>
-                      <p>每家单位单独生成邀请函，共用项目与落款信息。</p>
-                    </div>
-                    <button
-                      onClick={() =>
-                        edit({
-                          ...draft,
-                          recipients: [
-                            ...draft.recipients,
-                            { name: "", start: "", end: "" },
-                          ],
-                        })
-                      }
-                      disabled={draft.recipients.length >= 200}
-                    >
-                      ＋ 添加单位
-                    </button>
-                  </div>
-                  {draft.recipients.map((r, i) => (
-                    <div
-                      className="df-recipient"
-                      key={i}
-                      id={"df-recipient-" + i}
-                    >
-                      <div className="df-recipient-title">
-                        <b>{String(i + 1).padStart(2, "0")}</b>
-                        <button
-                          aria-label={`移除第${i + 1}家单位`}
-                          onClick={() =>
-                            edit({
-                              ...draft,
-                              recipients: draft.recipients.filter(
-                                (_, j) => j !== i,
-                              ),
-                            })
-                          }
-                        >
-                          移除
-                        </button>
-                      </div>
-                      <div className="df-fields">
-                        {[
-                          ["name", "单位名称"],
-                          ["start", "领取开始时间"],
-                          ["end", "领取结束时间"],
-                        ].map(([key, label]) => (
-                          <label
-                            className={
-                              "df-field " + (key === "name" ? "df-span" : "")
+              <section className="df-paper">
+                <div className="df-section-head">
+                  <h2>填写信息</h2>
+                  <button
+                    onClick={() =>
+                      run("导出 Excel", async () => {
+                        const data = await saveDraft();
+                        await download(
+                          `/cases/${data.id}/excel`,
+                          data.name + ".xlsx",
+                        );
+                      })
+                    }
+                  >
+                    导出当前 Excel
+                  </button>
+                </div>
+                <label className="df-field df-title-field">
+                  <span>填报名称</span>
+                  <input
+                    aria-label="填报名称"
+                    maxLength={120}
+                    value={draft.name}
+                    onChange={(e) => edit({ ...draft, name: e.target.value })}
+                  />
+                </label>
+                {[...new Set(draft.fields.map((f) => f.group))].map((group) => (
+                  <section className="df-group" key={group}>
+                    <h3>{group}</h3>
+                    <div className="df-fields">
+                      {draft.fields
+                        .filter((f) => f.group === group)
+                        .map((field) => (
+                          <Field
+                            key={field.key}
+                            field={field}
+                            onChange={(value) =>
+                              edit({
+                                ...draft,
+                                fields: draft.fields.map((f) =>
+                                  f.key === field.key ? { ...f, value } : f,
+                                ),
+                              })
                             }
-                            key={key}
-                          >
-                            <span>{label}</span>
-                            <input
-                              aria-label={`第${i + 1}家${label}`}
-                              type={key === "name" ? "text" : "datetime-local"}
-                              value={
-                                key === "name"
-                                  ? r[key]
-                                  : r[key].replace(" ", "T")
-                              }
-                              onChange={(e) =>
-                                edit({
-                                  ...draft,
-                                  recipients: draft.recipients.map((a, j) =>
-                                    j === i
-                                      ? { ...a, [key]: e.target.value }
-                                      : a,
-                                  ),
-                                })
-                              }
-                            />
-                          </label>
+                          />
                         ))}
-                      </div>
                     </div>
-                  ))}
-                </section>
-              </div>
-              <aside className="df-context">
-                <section className="df-paper">
-                  <div className="df-section-head">
-                    <h2>Word 模板</h2>
-                    <button onClick={() => wordInput.current.click()}>
-                      ＋ 添加
-                    </button>
-                  </div>
-                  {!templates.length && (
-                    <p className="df-muted">
-                      添加与你的变量表对应的 .docx 模板。
-                    </p>
-                  )}
-                  {templates.map((t) => (
-                    <div className="df-template" key={t.id}>
-                      <b>{t.name}</b>
-                      <span>
-                        {t.per_recipient
-                          ? "按受邀单位分别生成"
-                          : "共用文件 · 生成一份"}
+                  </section>
+                ))}
+              </section>
+              <section className="df-paper">
+                <div className="df-section-head">
+                  <div>
+                    <h2>
+                      受邀单位{" "}
+                      <span className="df-count">
+                        {draft.recipients.length}
                       </span>
-                      <small>{t.keys.length} 个引用变量</small>
+                    </h2>
+                    <p>每家单位单独生成邀请函，共用项目与落款信息。</p>
+                  </div>
+                  <button
+                    onClick={() =>
+                      edit({
+                        ...draft,
+                        recipients: [
+                          ...draft.recipients,
+                          { name: "", start: "", end: "" },
+                        ],
+                      })
+                    }
+                    disabled={draft.recipients.length >= 200}
+                  >
+                    ＋ 添加单位
+                  </button>
+                </div>
+                {draft.recipients.map((r, i) => (
+                  <div
+                    className="df-recipient"
+                    key={i}
+                    id={"df-recipient-" + i}
+                  >
+                    <div className="df-recipient-title">
+                      <b>{String(i + 1).padStart(2, "0")}</b>
                       <button
-                        aria-label={"移除模板" + t.name}
+                        aria-label={`移除第${i + 1}家单位`}
                         onClick={() =>
-                          run("移除模板", async () => {
-                            const data = await saveDraft();
-                            receive(
-                              await request(
-                                `/cases/${data.id}/templates/${t.id}?revision=${data.revision}`,
-                                { method: "DELETE" },
-                              ),
-                            );
+                          edit({
+                            ...draft,
+                            recipients: draft.recipients.filter(
+                              (_, j) => j !== i,
+                            ),
                           })
                         }
                       >
                         移除
                       </button>
                     </div>
-                  ))}
-                </section>
-                <section className="df-paper df-summary">
-                  <span className="df-eyebrow">本次计划生成</span>
-                  <strong>
-                    {outputCount}
-                    <small> 份文书</small>
-                  </strong>
+                    <div className="df-fields">
+                      {[
+                        ["name", "单位名称"],
+                        ["start", "领取开始时间"],
+                        ["end", "领取结束时间"],
+                      ].map(([key, label]) => (
+                        <label
+                          className={
+                            "df-field " + (key === "name" ? "df-span" : "")
+                          }
+                          key={key}
+                        >
+                          <span>{label}</span>
+                          <input
+                            aria-label={`第${i + 1}家${label}`}
+                            type={key === "name" ? "text" : "datetime-local"}
+                            value={
+                              key === "name" ? r[key] : r[key].replace(" ", "T")
+                            }
+                            onChange={(e) =>
+                              edit({
+                                ...draft,
+                                recipients: draft.recipients.map((a, j) =>
+                                  j === i ? { ...a, [key]: e.target.value } : a,
+                                ),
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </section>
+              <section
+                className="df-paper df-template-panel"
+                aria-label="Word 模板"
+              >
+                <div className="df-section-head">
+                  <h2>Word 模板</h2>
+                  <button onClick={() => wordInput.current.click()}>
+                    ＋ 添加
+                  </button>
+                </div>
+                {!templates.length && (
+                  <p className="df-muted">
+                    添加与你的变量表对应的 .docx 模板。
+                  </p>
+                )}
+                {templates.map((t) => (
+                  <div className="df-template" key={t.id}>
+                    <b>{t.name}</b>
+                    <span>
+                      {t.per_recipient
+                        ? "按受邀单位分别生成"
+                        : "共用文件 · 生成一份"}
+                    </span>
+                    <small>{t.keys.length} 个引用变量</small>
+                    <button
+                      aria-label={"移除模板" + t.name}
+                      onClick={() =>
+                        run("移除模板", async () => {
+                          const data = await saveDraft();
+                          receive(
+                            await request(
+                              `/cases/${data.id}/templates/${t.id}?revision=${data.revision}`,
+                              { method: "DELETE" },
+                            ),
+                          );
+                        })
+                      }
+                    >
+                      移除
+                    </button>
+                  </div>
+                ))}
+              </section>
+              <section
+                className="df-paper df-edit-footer"
+                aria-label="核对与生成"
+              >
+                <div className="df-generation-plan">
+                  <h2>核对与生成</h2>
                   <p>
+                    本次计划生成 <b>{outputCount}</b> 份文书
+                  </p>
+                  <small>
                     {templates.filter((t) => !t.per_recipient).length}{" "}
-                    份共用文件
-                    <br />
+                    份共用文件 ·{" "}
                     {templates.filter((t) => t.per_recipient).length} 套邀请函 ×{" "}
                     {draft.recipients.length} 家单位
-                  </p>
+                  </small>
+                </div>
+                <div className="df-next-action">
                   <button className="df-primary" onClick={reviewDraft}>
                     核对填写内容 →
                   </button>
-                  <small>缺项和日期冲突会在下一步列出</small>
-                </section>
-              </aside>
+                  <small>先核对缺项与日期，再确认生成</small>
+                </div>
+              </section>
             </div>
           )}
           {draft && stage === "review" && review && (
@@ -725,7 +739,10 @@ function Workbench() {
                   <h3>共用信息</h3>
                   <dl>
                     {draft.fields.map((f) => (
-                      <div key={f.key}>
+                      <div
+                        key={f.key}
+                        className={isParagraph(f) ? "df-span" : undefined}
+                      >
                         <dt>{f.label}</dt>
                         <dd>
                           {(f.kind === "datetime-local"

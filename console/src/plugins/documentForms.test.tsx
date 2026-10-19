@@ -197,6 +197,21 @@ describe.each(["embedded", "compatible"])(
         }),
       );
       await screen.findByText("按受邀单位分别生成");
+      const generationFooter = screen.getByRole("region", {
+        name: "核对与生成",
+      });
+      expect(generationFooter.parentElement?.lastElementChild).toBe(
+        generationFooter,
+      );
+      expect(generationFooter).toContainElement(
+        screen.getByRole("button", { name: "核对填写内容 →" }),
+      );
+      expect(
+        screen
+          .getByRole("region", { name: "Word 模板" })
+          .compareDocumentPosition(generationFooter) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       await user.clear(screen.getByLabelText("项目名称"));
       await user.type(screen.getByLabelText("项目名称"), "新项目");
       await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
