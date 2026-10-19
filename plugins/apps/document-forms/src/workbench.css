@@ -873,3 +873,52 @@
   color: var(--df-muted);
   font-size: 12px;
 }
+.df-print-preview {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.df-print-toolbar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--df-line);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.df-print-toolbar > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.df-print-toolbar button,
+.df-print-toolbar select {
+  font-size: 11px;
+  padding: 5px 8px;
+}
+.df-print-toolbar button[aria-pressed="true"] {
+  color: var(--df-accent);
+  border-color: var(--df-accent);
+}
+.df-print-toolbar span {
+  font-size: 11px;
+  color: var(--df-muted);
+}
+.df-print-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.df-print-scroll img {
+  display: block;
+  max-width: none;
+  height: auto;
+  background: white;
+  box-shadow: 0 1px 6px #0002;
+}
+.df-text-preview {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}

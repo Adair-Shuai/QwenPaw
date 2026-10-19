@@ -9,6 +9,7 @@ import json
 import logging
 import re
 import shutil
+import subprocess
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -49,6 +50,7 @@ app = PawApp(name="文书填报", app_id="document-forms")
 router = APIRouter()
 ROOT = Path(WORKING_DIR) / "apps" / "document-forms"
 _lock = threading.RLock()
+_print_lock = threading.Lock()
 logger = logging.getLogger(__name__)
 
 
@@ -146,6 +148,80 @@ def name_only(name):
     return (
         re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")[:100] or "文书"
     )
+
+
+def office_cli():
+    """Share the host's bundled OfficeCLI."""
+    # The released host exposes the binary through these internal helpers.
+    # pylint: disable=protected-access
+    from qwenpaw.app.routers import workspace
+
+    if not workspace._is_officecli_available():
+        raise ValueError("OfficeCLI 暂不可用")
+    return workspace._officecli_bin()
+
+
+def print_document(source, cache):
+    """Render real Word pages; HTML pagination cannot verify a printed form."""
+    with _print_lock:
+        cache.mkdir(parents=True, exist_ok=True)
+        stats = cache / "pages.json"
+        if stats.is_file():
+            count = json.loads(stats.read_text(encoding="utf-8"))["pages"]
+        else:
+            binary = office_cli()
+            result = subprocess.run(
+                [
+                    binary,
+                    "view",
+                    str(source),
+                    "stats",
+                    "--page-count",
+                    "--json",
+                ],
+                capture_output=True,
+                timeout=90,
+                check=False,
+            )
+            if result.returncode:
+                raise ValueError("无法读取 Word 页数")
+            data = json.loads(result.stdout)
+            count = data.get("data", data).get("pages", 0)
+            if not isinstance(count, int) or not 1 <= count <= 40:
+                raise ValueError("未获得有效的 Word 页数")
+            stats.write_text(json.dumps({"pages": count}), encoding="utf-8")
+        target = cache / "document.png"
+        if not target.is_file():
+            binary = office_cli()
+            temp = cache / (uuid.uuid4().hex[:8] + ".png")
+            try:
+                result = subprocess.run(
+                    [
+                        binary,
+                        "view",
+                        str(source),
+                        "screenshot",
+                        "--render",
+                        "native",
+                        "--grid",
+                        "1",
+                        "-o",
+                        str(temp),
+                    ],
+                    capture_output=True,
+                    timeout=90,
+                    check=False,
+                )
+                if (
+                    result.returncode
+                    or not temp.is_file()
+                    or not temp.read_bytes().startswith(b"\x89PNG\r\n\x1a\n")
+                ):
+                    raise ValueError("Word 打印页面未能渲染")
+                temp.replace(target)
+            finally:
+                temp.unlink(missing_ok=True)
+        return target, count
 
 
 def attach_default_templates(root, case):
@@ -585,6 +661,43 @@ def download(
         elif filename == "填写数据.xlsx":
             download_name = generation.get("data_name", filename)
         return FileResponse(path, filename=download_name)
+
+
+@router.get("/cases/{case_id}/print/{generation_id}/{filename}")
+def print_preview(
+    case_id: str,
+    generation_id: str,
+    filename: str,
+    root=Depends(scope),
+):
+    with _lock:
+        case = load(root, case_id)
+        generation = next(
+            (g for g in case["generations"] if g["id"] == generation_id),
+            None,
+        )
+        if not generation or filename not in {
+            f["name"] for f in generation["files"]
+        }:
+            raise HTTPException(404, "文件不存在")
+        source = folder(root, case_id) / "outputs" / generation_id / filename
+        digest = hashlib.sha256(source.read_bytes()).hexdigest()
+        cache = folder(root, case_id) / "print-previews" / digest[:24]
+    try:
+        image, count = print_document(source, cache)
+    except HTTPException:
+        raise
+    except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
+        logger.warning("Office print preview unavailable: %s", exc)
+        raise HTTPException(503, "打印预览暂不可用，可切换文字预览或下载 Word 查看") from exc
+    return FileResponse(
+        image,
+        media_type="image/png",
+        headers={
+            "X-Total-Pages": str(count),
+            "X-Preview-Engine": "officecli-native",
+        },
+    )
 
 
 @router.get("/cases/{case_id}/excel")

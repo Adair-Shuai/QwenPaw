@@ -2,6 +2,7 @@
 """Real Excel/Word and HTTP lifecycle regressions for document forms."""
 
 import importlib.util
+import base64
 import io
 import json
 import sys
@@ -256,6 +257,81 @@ def test_reserved_unit_context_and_filename_safety(sources):
     a = main.output_name(case, template, 1, {"name": "相同单位" * 80}, 1)
     b = main.output_name(case, template, 1, {"name": "相同单位" * 80}, 2)
     assert a != b and len(a) < 130 and not any(c in a for c in '<>:"/\\|?*')
+
+
+def test_office_print_preview_all_pages_scope_cache_and_failure(
+    client,
+    sources,
+    monkeypatch,
+):
+    case = create(client, sources)
+    base = f"/api/document-forms/cases/{case['id']}"
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    case = client.post(
+        base + "/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    ).json()
+    generation = case["generations"][0]
+    file = generation["files"][0]
+    path = base + f"/print/{generation['id']}/{file['name']}"
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8"
+        "/x8AAwMCAO+jN1kAAAAASUVORK5CYII=",
+    )
+    calls = []
+
+    def run(args, **kwargs):
+        assert kwargs["timeout"] == 90
+        calls.append(args)
+        if "stats" in args:
+            assert "--page-count" in args
+            return types.SimpleNamespace(
+                returncode=0,
+                stdout=b'{"success":true,"data":{"pages":2}}',
+            )
+        assert args[args.index("--render") + 1] == "native"
+        # Native page filters are ignored by some installed OfficeCLI builds.
+        # A one-column contact sheet must contain every actual Word page.
+        assert args[args.index("--grid") + 1] == "1" and "--page" not in args
+        Path(args[-1]).write_bytes(png)
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(main, "office_cli", lambda: "officecli-test")
+    monkeypatch.setattr(main.subprocess, "run", run)
+    response = client.get(path)
+    assert response.status_code == 200, response.text
+    assert response.content == png and response.headers["X-Total-Pages"] == "2"
+    assert response.headers["X-Preview-Engine"] == "officecli-native"
+    assert len(calls) == 2
+    monkeypatch.setattr(
+        main,
+        "office_cli",
+        lambda: (_ for _ in ()).throw(ValueError("unavailable")),
+    )
+    assert (
+        client.get(path).content == png
+    )  # Already rendered pages stay usable.
+    assert len(calls) == 2
+    assert client.get(path, headers={"X-Agent-Id": "other"}).status_code == 404
+    assert (
+        client.get(base + f"/print/{generation['id']}/填写数据.xlsx").status_code
+        == 404
+    )
+    second = generation["files"][1]
+    failure = client.get(base + f"/print/{generation['id']}/{second['name']}")
+    assert failure.status_code == 503 and "文字预览" in failure.json()["detail"]
+    reopened = client.get(base).json()
+    assert reopened["generations"] == case["generations"]
+    bundle = client.get(base + f"/outputs/{generation['id']}/全部文书.zip")
+    with ZipFile(io.BytesIO(bundle.content)) as archive:
+        assert not any(name.endswith(".png") for name in archive.namelist())
 
 
 def test_real_excel_form_review_three_invitations_and_office_output(

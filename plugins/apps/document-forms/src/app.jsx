@@ -1,5 +1,5 @@
 import CSS from "./workbench.css";
-import OfficeServicePreview from "./office-preview.jsx";
+import OfficeServicePreview, { OfficePrintPreview } from "./office-preview.jsx";
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useLayoutEffect, useRef } = React;
@@ -333,6 +333,11 @@ function Workbench() {
         mimeType: MIME,
         extension: "docx",
         binaryUrl: preview.file.preview_url,
+        printUrl:
+          API +
+          `/cases/${draft.id}/print/${
+            preview.generation.id
+          }/${encodeURIComponent(preview.file.name)}`,
         agentId: Q.host.getSelectedAgentId?.(),
         createdAt: Date.parse(preview.generation.created_at),
       }
@@ -791,8 +796,8 @@ function Workbench() {
                   <small>
                     {templates.filter((t) => !t.per_recipient).length}{" "}
                     份共用文件 ·{" "}
-                    {templates.filter((t) => t.per_recipient).length} 类按单位文书 ×{" "}
-                    {draft.recipients.length} 家单位
+                    {templates.filter((t) => t.per_recipient).length}{" "}
+                    类按单位文书 × {draft.recipients.length} 家单位
                   </small>
                 </div>
                 <div className="df-next-action">
@@ -1017,12 +1022,14 @@ function Workbench() {
                 </div>
                 <div className="df-preview-body">
                   {artifact && Preview ? (
-                    <Preview
-                      key={artifact.id}
-                      artifact={artifact}
-                      readOnly
-                      hostControls
-                    />
+                    <OfficePrintPreview key={artifact.id} artifact={artifact}>
+                      <Preview
+                        key={artifact.id}
+                        artifact={artifact}
+                        readOnly
+                        hostControls
+                      />
+                    </OfficePrintPreview>
                   ) : (
                     <p className="df-muted">
                       {artifact ? "正在打开文件…" : "从左侧选择一份文件。"}

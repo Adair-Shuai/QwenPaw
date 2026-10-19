@@ -93,6 +93,11 @@ describe.each(["embedded", "compatible"])(
         const body =
           typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
         calls.push({ url, body });
+        if (url.includes("/print/")) {
+          return new Response(new Blob(["png"], { type: "image/png" }), {
+            headers: { "Content-Type": "image/png", "X-Total-Pages": "2" },
+          });
+        }
         if (url === "/workspace/convert-office")
           result = {
             engine: "officecli",
@@ -192,6 +197,15 @@ describe.each(["embedded", "compatible"])(
             ),
       );
       vi.stubGlobal("fetch", converter);
+      const createUrl = vi.fn(() => "blob:print-pages");
+      const revokeUrl = vi.fn();
+      vi.stubGlobal(
+        "URL",
+        Object.assign(class extends URL {}, {
+          createObjectURL: createUrl,
+          revokeObjectURL: revokeUrl,
+        }),
+      );
       Object.defineProperty(window, "QwenPaw", {
         configurable: true,
         value: {
@@ -339,6 +353,18 @@ describe.each(["embedded", "compatible"])(
       expect(
         screen.getByText(/共用文件 · 41 KB · 建议打印 7 份/),
       ).toBeInTheDocument();
+      expect(
+        await screen.findByRole("img", { name: /打印版式/ }),
+      ).toHaveAttribute("src", "blob:print-pages");
+      expect(screen.getByText("共 2 页")).toBeInTheDocument();
+      await user.selectOptions(screen.getByLabelText("预览比例"), "150");
+      expect(screen.getByRole("img", { name: /打印版式/ })).toHaveStyle({
+        width: "150%",
+      });
+      expect(calls.some((call) => call.url.includes("/print/g1/"))).toBe(true);
+      await user.click(
+        screen.getByRole("button", { name: "文字预览" }),
+      );
       await waitFor(
         () =>
           expect(
@@ -364,6 +390,8 @@ describe.each(["embedded", "compatible"])(
       await user.type(screen.getByLabelText("项目名称"), "（修改）");
       await user.click(screen.getByRole("button", { name: /04\s*文件预览/ }));
       expect(screen.getByText(/填写内容已有修改/)).toBeInTheDocument();
+      expect(createUrl).toHaveBeenCalled();
+      expect(revokeUrl).toHaveBeenCalledWith("blob:print-pages");
     });
   },
 );
