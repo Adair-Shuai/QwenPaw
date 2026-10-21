@@ -442,15 +442,13 @@ describe.each(["embedded", "compatible"])(
       const generationCount = calls.filter((call) =>
         call.url.endsWith("/generate"),
       ).length;
-      await user.click(
-        screen.getByRole("button", { name: "一键打包下载", exact: true }),
-      );
+      await user.click(screen.getByRole("button", { name: "一键打包下载" }));
       await screen.findByText("已开始下载该批次的 2 份文书压缩包。");
-      expect(downloadClicks.at(-1)).toEqual({
+      expect(downloadClicks[downloadClicks.length - 1]).toEqual({
         name: "新项目_谈判材料_20261018_160500_abcdef.zip",
         attached: true,
       });
-      expect(calls.at(-1)?.url).toBe(
+      expect(calls[calls.length - 1]?.url).toBe(
         "/document-forms/cases/case-1/outputs/g1/" +
           encodeURIComponent("全部文书.zip"),
       );
@@ -458,21 +456,19 @@ describe.each(["embedded", "compatible"])(
         screen.getByRole("button", { name: /打包下载.*修订 0$/ }),
       );
       await screen.findByText("已开始下载该批次的 1 份文书压缩包。");
-      expect(downloadClicks.at(-1)?.name).toBe("新项目_历史批次.zip");
-      expect(calls.at(-1)?.url).toBe(
+      expect(downloadClicks[downloadClicks.length - 1]?.name).toBe(
+        "新项目_历史批次.zip",
+      );
+      expect(calls[calls.length - 1]?.url).toBe(
         "/document-forms/cases/case-1/outputs/g0/" +
           encodeURIComponent("全部文书.zip"),
       );
       zipFails = true;
-      await user.click(
-        screen.getByRole("button", { name: "一键打包下载", exact: true }),
-      );
+      await user.click(screen.getByRole("button", { name: "一键打包下载" }));
       await screen.findByText("文件下载失败，请稍后重试");
       expect(downloadClicks).toHaveLength(2);
       zipFails = false;
-      await user.click(
-        screen.getByRole("button", { name: "一键打包下载", exact: true }),
-      );
+      await user.click(screen.getByRole("button", { name: "一键打包下载" }));
       await screen.findByText("已开始下载该批次的 2 份文书压缩包。");
       expect(downloadClicks).toHaveLength(3);
       expect(
