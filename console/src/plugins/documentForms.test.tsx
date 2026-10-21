@@ -94,6 +94,10 @@ describe.each(["embedded", "compatible"])(
           typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
         calls.push({ url, body });
         if (url.includes("/print/")) {
+          if (url.endsWith("?pages=true"))
+            return new Response(JSON.stringify({ pages: 2 }), {
+              headers: { "Content-Type": "application/json" },
+            });
           return new Response(Uint8Array.of(137, 80, 78, 71, 13, 10, 26, 10), {
             headers: { "Content-Type": "image/png", "X-Total-Pages": "2" },
           });
@@ -362,18 +366,20 @@ describe.each(["embedded", "compatible"])(
             createUrl,
             feedback || "Native print pages must finish loading",
           ).toHaveBeenCalled();
-          expect(screen.getByRole("img", { name: /打印版式/ })).toHaveAttribute(
-            "src",
-            "blob:print-pages",
-          );
+          expect(screen.getAllByRole("img", { name: /打印版式/ })).toHaveLength(2);
+          for (const image of screen.getAllByRole("img", { name: /打印版式/ }))
+            expect(image).toHaveAttribute("src", "blob:print-pages");
         },
         { timeout: 10000 },
       );
       expect(screen.getByText("共 2 页")).toBeInTheDocument();
       await user.selectOptions(screen.getByLabelText("预览比例"), "150");
-      expect(screen.getByRole("img", { name: /打印版式/ })).toHaveStyle({
+      expect(screen.getByText("第 1 页").parentElement?.parentElement).toHaveStyle({
         width: "150%",
       });
+      expect(screen.getByText("第 2 页")).toBeInTheDocument();
+      expect(calls.some((call) => call.url.endsWith("?page=1"))).toBe(true);
+      expect(calls.some((call) => call.url.endsWith("?page=2"))).toBe(true);
       expect(calls.some((call) => call.url.includes("/print/g1/"))).toBe(true);
       await user.click(screen.getByRole("button", { name: "文字预览" }));
       await waitFor(

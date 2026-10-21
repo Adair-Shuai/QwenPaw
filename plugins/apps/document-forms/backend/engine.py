@@ -850,7 +850,13 @@ def render_template(content, fields, recipient=None, participants=()):
         parts = f["key"].split(".")
         for p in parts[:-1]:
             cursor = cursor.setdefault(p, {})
-        cursor[parts[-1]] = document_field_value(f)
+        # A form newline is a new Word paragraph, not a soft line break.
+        # docxtpl's paragraph separator clones the slot's paragraph/run
+        # properties, including first-line indents, spacing and font.
+        value = document_field_value(f)
+        cursor[parts[-1]] = (
+            value.replace("\r\n", "\n").replace("\r", "\n").replace("\n", "\a")
+        )
     context["participants"] = [{"name": r["name"]} for r in participants]
     # Keep the reference scoring sheet's three writing columns readable.
     # More units receive another complete pair of business/technical sheets.

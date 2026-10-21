@@ -26,8 +26,9 @@ from fastapi import (
     HTTPException,
     Request,
     UploadFile,
+    Query,
 )
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, JSONResponse
 from pydantic import BaseModel, Field
 from qwenpaw.constant import WORKING_DIR
 from qwenpaw.pawapp import PawApp
@@ -162,15 +163,21 @@ def office_cli():
     return workspace._officecli_bin()
 
 
-def print_document(source, cache):
+def print_document(source, cache, page=None):
     """Render real Word pages; HTML pagination cannot verify a printed form."""
     with _print_lock:
         cache.mkdir(parents=True, exist_ok=True)
-        stats = cache / "pages-v2.json"
-        target = cache / "document-v2.png"
-        if stats.is_file() and target.is_file():
+        stats = cache / "pages-v3.json"
+        target = cache / (f"page-{page}.png" if page else "document-v3.png")
+        count = None
+        if stats.is_file():
             count = json.loads(stats.read_text(encoding="utf-8"))["pages"]
-            return target, count
+            if page == 0:
+                return None, count
+            if page is not None and page > count:
+                raise HTTPException(404, "页码超出文书范围")
+            if target.is_file():
+                return target, count
         binary = office_cli()
         working = cache / (uuid.uuid4().hex[:8] + ".docx")
         temp = working.with_suffix(".png")
@@ -180,26 +187,35 @@ def print_document(source, cache):
         environment = dict(os.environ, OFFICECLI_NO_AUTO_RESIDENT="1")
         try:
             shutil.copyfile(source, working)
-            result = subprocess.run(
-                [
-                    binary,
-                    "view",
-                    str(working),
-                    "stats",
-                    "--page-count",
-                    "--json",
-                ],
-                capture_output=True,
-                timeout=90,
-                check=False,
-                env=environment,
-            )
-            if result.returncode:
-                raise ValueError("无法读取 Word 页数")
-            data = json.loads(result.stdout)
-            count = data.get("data", data).get("pages", 0)
-            if not isinstance(count, int) or not 1 <= count <= 40:
-                raise ValueError("未获得有效的 Word 页数")
+            if count is None:
+                result = subprocess.run(
+                    [
+                        binary,
+                        "view",
+                        str(working),
+                        "stats",
+                        "--page-count",
+                        "--json",
+                    ],
+                    capture_output=True,
+                    timeout=90,
+                    check=False,
+                    env=environment,
+                )
+                if result.returncode:
+                    raise ValueError("无法读取 Word 页数")
+                data = json.loads(result.stdout)
+                count = data.get("data", data).get("pages", 0)
+                if not isinstance(count, int) or not 1 <= count <= 40:
+                    raise ValueError("未获得有效的 Word 页数")
+                stats.write_text(
+                    json.dumps({"pages": count}),
+                    encoding="utf-8",
+                )
+            if page == 0:
+                return None, count
+            if page is not None and page > count:
+                raise HTTPException(404, "页码超出文书范围")
             result = subprocess.run(
                 [
                     binary,
@@ -209,7 +225,7 @@ def print_document(source, cache):
                     "--render",
                     "native",
                     "--page",
-                    f"1-{count}",
+                    str(page) if page else f"1-{count}",
                     "-o",
                     str(temp),
                 ],
@@ -676,6 +692,8 @@ def print_preview(
     case_id: str,
     generation_id: str,
     filename: str,
+    page: int | None = Query(None, ge=1, le=40),
+    pages: bool = False,
     root=Depends(scope),
 ):
     with _lock:
@@ -692,12 +710,17 @@ def print_preview(
         digest = hashlib.sha256(source.read_bytes()).hexdigest()
         cache = folder(root, case_id) / "print-previews" / digest[:24]
     try:
-        image, count = print_document(source, cache)
+        image, count = print_document(source, cache, 0 if pages else page)
     except HTTPException:
         raise
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
         logger.warning("Office print preview unavailable: %s", exc)
         raise HTTPException(503, "打印预览暂不可用，可切换文字预览或下载 Word 查看") from exc
+    if pages:
+        return JSONResponse(
+            {"pages": count},
+            headers={"Cache-Control": "no-store"},
+        )
     return FileResponse(
         image,
         media_type="image/png",

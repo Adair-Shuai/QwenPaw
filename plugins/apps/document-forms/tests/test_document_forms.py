@@ -337,6 +337,66 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
         assert not any(name.endswith(".png") for name in archive.namelist())
 
 
+def test_print_preview_per_page_cache_and_bounds(client, sources, monkeypatch):
+    case = create(client, sources)
+    base = f"/api/document-forms/cases/{case['id']}"
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    case = client.post(
+        base + "/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    ).json()
+    generation = case["generations"][0]
+    path = base + f"/print/{generation['id']}/{generation['files'][0]['name']}"
+    png = b"\x89PNG\r\n\x1a\n"
+    calls = []
+
+    def page_run(args, **kwargs):
+        assert kwargs["env"]["OFFICECLI_NO_AUTO_RESIDENT"] == "1"
+        calls.append(args)
+        if "stats" in args:
+            return types.SimpleNamespace(returncode=0, stdout=b'{"pages":2}')
+        assert args[args.index("--page") + 1] in ("1", "2")
+        assert (
+            args[args.index("--render") + 1] == "native"
+            and "--grid" not in args
+        )
+        Path(args[-1]).write_bytes(png)
+        return types.SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(main, "office_cli", lambda: "officecli-test")
+    monkeypatch.setattr(main.subprocess, "run", page_run)
+    assert client.get(path + "?pages=true").json() == {"pages": 2}
+    assert len(calls) == 1  # Metadata does not create a stitched image.
+    for number in (1, 2):
+        sheet = client.get(path + f"?page={number}")
+        assert sheet.content == png and sheet.headers["X-Total-Pages"] == "2"
+    assert len(calls) == 3
+    monkeypatch.setattr(
+        main,
+        "office_cli",
+        lambda: (_ for _ in ()).throw(ValueError("offline")),
+    )
+    assert client.get(path + "?pages=true").json() == {"pages": 2}
+    assert client.get(path + "?page=1").content == png
+    assert client.get(path + "?page=3").status_code == 404
+    assert client.get(path + "?page=0").status_code == 422
+    assert (
+        client.get(
+            path + "?page=1",
+            headers={"X-Agent-Id": "other"},
+        ).status_code
+        == 404
+    )
+    assert len(calls) == 3
+
+
 def test_real_excel_form_review_three_invitations_and_office_output(
     client,
     sources,
@@ -557,6 +617,66 @@ def test_split_runs_tables_headers_and_literal_xml():
     assert result.tables[0].cell(0, 0).text == "A & B <名称>"
     assert result.sections[0].header.paragraphs[0].text == "A & B <名称>"
     assert result.paragraphs[0].runs[0].bold
+
+
+def test_multiline_values_keep_each_paragraph_indent_font_and_spacing():
+    # Inspect OOXML for character-based indentation and real paragraph breaks.
+    # pylint: disable=protected-access
+    from docx.oxml.ns import qn
+    from docx.shared import Pt
+
+    doc = Document()
+    for p in (
+        doc.add_paragraph("{{ research.contents }}"),
+        doc.add_table(rows=1, cols=1).cell(0, 0).paragraphs[0],
+        doc.sections[0].header.paragraphs[0],
+    ):
+        if not p.text:
+            p.add_run("{{ research.contents }}")
+        p.paragraph_format.first_line_indent = Pt(24)
+        p.paragraph_format.line_spacing = 1.5
+        p.paragraph_format.space_after = Pt(6)
+        ind = p._p.pPr.find(qn("w:ind"))
+        ind.set(qn("w:firstLineChars"), "200")
+        p.runs[0].font.name = "Times New Roman"
+        p.runs[0].font.size = Pt(12)
+        p.runs[0].bold = True
+    stream = io.BytesIO()
+    doc.save(stream)
+    result = Document(
+        io.BytesIO(
+            engine.render_template(
+                stream.getvalue(),
+                [
+                    {
+                        "key": "research.contents",
+                        "kind": "textarea",
+                        "value": "（1）A & B 2026\r\n第二段 <85%>\n第三段",
+                    },
+                ],
+            ),
+        ),
+    )
+    for paragraphs in (
+        result.paragraphs,
+        result.tables[0].cell(0, 0).paragraphs,
+        result.sections[0].header.paragraphs,
+    ):
+        assert [p.text for p in paragraphs] == [
+            "（1）A & B 2026",
+            "第二段 <85%>",
+            "第三段",
+        ]
+        for p in paragraphs:
+            assert p.paragraph_format.first_line_indent == Pt(24)
+            assert (
+                p._p.pPr.find(qn("w:ind")).get(qn("w:firstLineChars")) == "200"
+            )
+            assert p.paragraph_format.line_spacing == 1.5
+            assert p.paragraph_format.space_after == Pt(6)
+            assert p.runs[0].font.name == "Times New Roman"
+            assert p.runs[0].font.size == Pt(12) and p.runs[0].bold
+            assert not p._p.xpath(".//w:br")
 
 
 def test_bad_templates_and_unresolved_output_are_rejected(sources):

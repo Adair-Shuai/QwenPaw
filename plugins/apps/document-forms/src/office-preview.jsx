@@ -4,7 +4,7 @@ const { useEffect, useState } = React;
 /** Print pages use the host's OfficeCLI binary; text view keeps its renderer. */
 export function OfficePrintPreview({ artifact, children }) {
   const [mode, setMode] = useState("print");
-  const [image, setImage] = useState("");
+  const [images, setImages] = useState([]);
   const [pages, setPages] = useState(0);
   const [error, setError] = useState("");
   const [attempt, setAttempt] = useState(0);
@@ -12,11 +12,12 @@ export function OfficePrintPreview({ artifact, children }) {
   useEffect(() => {
     if (mode !== "print") return;
     const controller = new AbortController();
-    let objectUrl = "";
-    setImage("");
+    const objectUrls = [];
+    setImages([]);
+    setPages(0);
     setError("");
     window.QwenPaw.host
-      .fetch(artifact.printUrl, {
+      .fetch(artifact.printUrl + "?pages=true", {
         headers: artifact.agentId ? { "X-Agent-Id": artifact.agentId } : {},
         signal: controller.signal,
       })
@@ -29,11 +30,28 @@ export function OfficePrintPreview({ artifact, children }) {
               : "打印预览暂不可用，可切换文字预览或下载 Word 查看",
           );
         }
-        const blob = await response.blob();
+        const { pages: count } = await response.json();
         if (controller.signal.aborted) return;
-        objectUrl = URL.createObjectURL(blob);
-        setImage(objectUrl);
-        setPages(Number(response.headers.get("X-Total-Pages")) || 0);
+        if (!Number.isInteger(count) || count < 1 || count > 40)
+          throw new Error("未获得有效的 Word 页数");
+        setPages(count);
+        // Render each real sheet separately. A stitched mixed-orientation
+        // canvas pads portrait pages to the width of the widest landscape page.
+        for (let page = 1; page <= count; page++) {
+          const sheet = await window.QwenPaw.host.fetch(
+            artifact.printUrl + "?page=" + page,
+            {
+              headers: artifact.agentId ? { "X-Agent-Id": artifact.agentId } : {},
+              signal: controller.signal,
+            },
+          );
+          if (!sheet.ok) throw new Error(`第 ${page} 页未能渲染，请重新预览`);
+          const blob = await sheet.blob();
+          if (controller.signal.aborted) return;
+          const objectUrl = URL.createObjectURL(blob);
+          objectUrls.push(objectUrl);
+          setImages((current) => [...current, objectUrl]);
+        }
       })
       .catch((reason) => {
         if (!controller.signal.aborted)
@@ -41,7 +59,7 @@ export function OfficePrintPreview({ artifact, children }) {
       });
     return () => {
       controller.abort();
-      if (objectUrl) URL.revokeObjectURL(objectUrl);
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
     };
   }, [artifact.id, artifact.printUrl, artifact.agentId, mode, attempt]);
   return (
@@ -86,13 +104,17 @@ export function OfficePrintPreview({ artifact, children }) {
             重新预览
           </button>
         </div>
-      ) : image ? (
+      ) : images.length ? (
         <div className="df-print-scroll">
-          <img
-            src={image}
-            alt={artifact.title + " · 打印版式"}
-            style={{ width: zoom + "%" }}
-          />
+          <div className="df-print-pages" style={{ width: zoom + "%" }}>
+            {images.map((image, index) => (
+              <figure key={index}>
+                <figcaption>第 {index + 1} 页</figcaption>
+                <img src={image} alt={artifact.title + ` · 打印版式 · 第 ${index + 1} 页`} />
+              </figure>
+            ))}
+            {images.length < pages && <p role="status">正在排版第 {images.length + 1} 页…</p>}
+          </div>
         </div>
       ) : (
         <div className="df-preview-message" role="status">

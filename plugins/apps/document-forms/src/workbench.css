@@ -909,10 +909,20 @@
   min-height: 0;
   overflow: auto;
   padding: 16px;
+  background: #e9ebeb;
+}
+.df-print-pages figure {
+  margin: 0 0 18px;
+}
+.df-print-pages figcaption {
+  margin-bottom: 6px;
+  color: var(--df-muted);
+  font-size: 11px;
 }
 .df-print-scroll img {
   display: block;
   max-width: none;
+  width: 100%;
   height: auto;
   background: white;
   box-shadow: 0 1px 6px #0002;
