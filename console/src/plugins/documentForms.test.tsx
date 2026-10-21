@@ -442,7 +442,20 @@ describe.each(["embedded", "compatible"])(
       const generationCount = calls.filter((call) =>
         call.url.endsWith("/generate"),
       ).length;
-      await user.click(screen.getByRole("button", { name: "一键打包下载" }));
+      expect(
+        screen.queryByRole("region", { name: "整套文书下载" }),
+      ).not.toBeInTheDocument();
+      const latestBundle = () =>
+        screen.getByRole("button", {
+          name: new RegExp(`打包下载.*修订 ${state.generations[0].revision}$`),
+        });
+      for (const button of screen.getAllByRole("button", {
+        name: /^打包下载 /,
+      })) {
+        expect(button.closest(".df-generation-heading")).not.toBeNull();
+        expect(button).toHaveTextContent("打包下载");
+      }
+      await user.click(latestBundle());
       await screen.findByText("已开始下载该批次的 2 份文书压缩包。");
       expect(downloadClicks[downloadClicks.length - 1]).toEqual({
         name: "新项目_谈判材料_20261018_160500_abcdef.zip",
@@ -464,11 +477,11 @@ describe.each(["embedded", "compatible"])(
           encodeURIComponent("全部文书.zip"),
       );
       zipFails = true;
-      await user.click(screen.getByRole("button", { name: "一键打包下载" }));
+      await user.click(latestBundle());
       await screen.findByText("文件下载失败，请稍后重试");
       expect(downloadClicks).toHaveLength(2);
       zipFails = false;
-      await user.click(screen.getByRole("button", { name: "一键打包下载" }));
+      await user.click(latestBundle());
       await screen.findByText("已开始下载该批次的 2 份文书压缩包。");
       expect(downloadClicks).toHaveLength(3);
       expect(

@@ -961,28 +961,13 @@ function Workbench() {
           )}
           {draft && stage === "files" && generation && (
             <div className="df-results">
-              <section
-                className="df-paper df-bundle-bar"
-                aria-label="整套文书下载"
-              >
-                <div>
-                  <h2>整套文书下载</h2>
-                  <p>最新批次 · {generation.files.length} 份 Word 文书</p>
-                  <small>ZIP 压缩包，同时包含填写数据和核对记录</small>
-                </div>
-                <button
-                  className="df-primary"
-                  onClick={() => downloadBundle(generation)}
-                >
-                  一键打包下载
-                </button>
-              </section>
               <section className="df-paper df-output-list">
                 <span className="df-eyebrow">生成记录</span>
                 <h2>{generation.files.length} 份文件已生成</h2>
                 <p>
                   {time(generation.created_at)} · 修订 {generation.revision}
                 </p>
+                <p className="df-muted">压缩包包含 Word、填写数据和核对记录</p>
                 {(dirty || generation.revision !== draft.revision) && (
                   <div className="df-alert">
                     填写内容已有修改，下列文件保留生成时的内容。请重新核对并生成新版。
@@ -1002,7 +987,7 @@ function Workbench() {
                         }`}
                         onClick={() => downloadBundle(g)}
                       >
-                        下载此批次
+                        打包下载
                       </button>
                     </div>
                     {g.files.map((f) => (

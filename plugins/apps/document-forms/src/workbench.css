@@ -592,28 +592,6 @@
   gap: 20px;
   align-items: start;
 }
-.df-bundle-bar {
-  grid-column: 1 / -1;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 16px;
-}
-.df-bundle-bar h2 {
-  margin: 0 0 8px;
-}
-.df-bundle-bar p {
-  margin: 0 0 4px;
-  font-size: 12px;
-}
-.df-bundle-bar small {
-  color: var(--df-muted);
-  font-size: 11px;
-}
-.df-bundle-bar > button {
-  min-width: 170px;
-}
 .df-generation-heading {
   display: flex;
   align-items: baseline;

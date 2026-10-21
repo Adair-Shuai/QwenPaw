@@ -1,7 +1,7 @@
 {
   "id": "document-forms",
   "name": "文书填报",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "type": "app",
   "channel": "ugsci",
   "description": "从 Excel 变量表生成可编辑表单，核对日期与受邀单位，按 Word 模板生成文书并预览。",
