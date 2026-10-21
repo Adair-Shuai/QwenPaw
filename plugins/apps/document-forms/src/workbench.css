@@ -592,6 +592,48 @@
   gap: 20px;
   align-items: start;
 }
+.df-bundle-bar {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.df-bundle-bar h2 {
+  margin: 0 0 8px;
+}
+.df-bundle-bar p {
+  margin: 0 0 4px;
+  font-size: 12px;
+}
+.df-bundle-bar small {
+  color: var(--df-muted);
+  font-size: 11px;
+}
+.df-bundle-bar > button {
+  min-width: 170px;
+}
+.df-generation-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  margin-bottom: 10px;
+}
+.df-generation-heading h3 {
+  flex: 1 1 150px;
+  margin: 0;
+}
+.df-generation-heading button {
+  padding: 3px 0;
+  border: 0;
+  background: transparent;
+  color: var(--df-accent);
+  font-size: 11px;
+  white-space: nowrap;
+}
 .df-output-list {
   padding: 20px;
 }

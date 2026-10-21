@@ -23,6 +23,7 @@ vi.mock("react-i18next", () => {
 
 afterEach(() => {
   cleanup();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "QwenPaw");
 });
@@ -88,11 +89,26 @@ describe.each(["embedded", "compatible"])(
         rules: [],
       };
       const calls: Array<{ url: string; body: any }> = [];
+      let zipFails = false;
+      const downloadClicks: Array<{ name: string; attached: boolean }> = [];
+      vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+        function (this: HTMLAnchorElement) {
+          downloadClicks.push({
+            name: this.download,
+            attached: this.isConnected,
+          });
+        },
+      );
       const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
         let result: any;
         const body =
           typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
         calls.push({ url, body });
+        if (url.includes("/outputs/"))
+          return new Response(zipFails ? "unavailable" : "PK-test-bundle", {
+            status: zipFails ? 503 : 200,
+            headers: { "Content-Type": "application/zip" },
+          });
         if (url.includes("/print/")) {
           if (url.endsWith("?pages=true"))
             return new Response(JSON.stringify({ pages: 2 }), {
@@ -184,6 +200,16 @@ describe.each(["embedded", "compatible"])(
               },
             ],
           };
+          state.generations.push({
+            ...state.generations[0],
+            id: "g0",
+            revision: 0,
+            created_at: "2026-10-17T08:05:00Z",
+            bundle_name: "新项目_历史批次.zip",
+            files: [
+              { ...state.generations[0].files[0], name: "旧版邀请函.docx" },
+            ],
+          });
           result = state;
         } else throw new Error("Unexpected request: " + url);
         return new Response(JSON.stringify(structuredClone(result)), {
@@ -366,7 +392,9 @@ describe.each(["embedded", "compatible"])(
             createUrl,
             feedback || "Native print pages must finish loading",
           ).toHaveBeenCalled();
-          expect(screen.getAllByRole("img", { name: /打印版式/ })).toHaveLength(2);
+          expect(screen.getAllByRole("img", { name: /打印版式/ })).toHaveLength(
+            2,
+          );
           for (const image of screen.getAllByRole("img", { name: /打印版式/ }))
             expect(image).toHaveAttribute("src", "blob:print-pages");
         },
@@ -374,7 +402,9 @@ describe.each(["embedded", "compatible"])(
       );
       expect(screen.getByText("共 2 页")).toBeInTheDocument();
       await user.selectOptions(screen.getByLabelText("预览比例"), "150");
-      expect(screen.getByText("第 1 页").parentElement?.parentElement).toHaveStyle({
+      expect(
+        screen.getByText("第 1 页").parentElement?.parentElement,
+      ).toHaveStyle({
         width: "150%",
       });
       expect(screen.getByText("第 2 页")).toBeInTheDocument();
@@ -409,6 +439,45 @@ describe.each(["embedded", "compatible"])(
       expect(screen.getByText(/填写内容已有修改/)).toBeInTheDocument();
       expect(createUrl).toHaveBeenCalled();
       expect(revokeUrl).toHaveBeenCalledWith("blob:print-pages");
+      const generationCount = calls.filter((call) =>
+        call.url.endsWith("/generate"),
+      ).length;
+      await user.click(
+        screen.getByRole("button", { name: "一键打包下载", exact: true }),
+      );
+      await screen.findByText("已开始下载该批次的 2 份文书压缩包。");
+      expect(downloadClicks.at(-1)).toEqual({
+        name: "新项目_谈判材料_20261018_160500_abcdef.zip",
+        attached: true,
+      });
+      expect(calls.at(-1)?.url).toBe(
+        "/document-forms/cases/case-1/outputs/g1/" +
+          encodeURIComponent("全部文书.zip"),
+      );
+      await user.click(
+        screen.getByRole("button", { name: /打包下载.*修订 0$/ }),
+      );
+      await screen.findByText("已开始下载该批次的 1 份文书压缩包。");
+      expect(downloadClicks.at(-1)?.name).toBe("新项目_历史批次.zip");
+      expect(calls.at(-1)?.url).toBe(
+        "/document-forms/cases/case-1/outputs/g0/" +
+          encodeURIComponent("全部文书.zip"),
+      );
+      zipFails = true;
+      await user.click(
+        screen.getByRole("button", { name: "一键打包下载", exact: true }),
+      );
+      await screen.findByText("文件下载失败，请稍后重试");
+      expect(downloadClicks).toHaveLength(2);
+      zipFails = false;
+      await user.click(
+        screen.getByRole("button", { name: "一键打包下载", exact: true }),
+      );
+      await screen.findByText("已开始下载该批次的 2 份文书压缩包。");
+      expect(downloadClicks).toHaveLength(3);
+      expect(
+        calls.filter((call) => call.url.endsWith("/generate")),
+      ).toHaveLength(generationCount);
     });
   },
 );

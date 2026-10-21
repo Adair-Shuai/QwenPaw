@@ -32,8 +32,13 @@ async function download(path, name) {
   const link = document.createElement("a");
   link.href = url;
   link.download = name;
-  link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  document.body.appendChild(link);
+  try {
+    link.click();
+  } finally {
+    link.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
 }
 const json = (body) => ({
   method: "POST",
@@ -325,6 +330,15 @@ function Workbench() {
   }
   const filePath = (g, f) =>
     `/cases/${draft.id}/outputs/${g.id}/${encodeURIComponent(f)}`;
+  function downloadBundle(batch) {
+    return run("正在下载压缩包", async () => {
+      await download(
+        filePath(batch, "全部文书.zip"),
+        batch.bundle_name || draft.name + "_文书.zip",
+      );
+      setNotice(`已开始下载该批次的 ${batch.files.length} 份文书压缩包。`);
+    });
+  }
   const artifact = preview
     ? {
         id: preview.generation.id + preview.file.name,
@@ -947,6 +961,22 @@ function Workbench() {
           )}
           {draft && stage === "files" && generation && (
             <div className="df-results">
+              <section
+                className="df-paper df-bundle-bar"
+                aria-label="整套文书下载"
+              >
+                <div>
+                  <h2>整套文书下载</h2>
+                  <p>最新批次 · {generation.files.length} 份 Word 文书</p>
+                  <small>ZIP 压缩包，同时包含填写数据和核对记录</small>
+                </div>
+                <button
+                  className="df-primary"
+                  onClick={() => downloadBundle(generation)}
+                >
+                  一键打包下载
+                </button>
+              </section>
               <section className="df-paper df-output-list">
                 <span className="df-eyebrow">生成记录</span>
                 <h2>{generation.files.length} 份文件已生成</h2>
@@ -958,27 +988,23 @@ function Workbench() {
                     填写内容已有修改，下列文件保留生成时的内容。请重新核对并生成新版。
                   </div>
                 )}
-                <button
-                  className="df-primary"
-                  onClick={() =>
-                    run("下载全部文书", () =>
-                      download(
-                        filePath(generation, "全部文书.zip"),
-                        generation.bundle_name || draft.name + "_文书.zip",
-                      ),
-                    )
-                  }
-                >
-                  下载全部文书
-                </button>
-                <p className="df-muted">包含 Word、填写数据和核对记录</p>
                 {draft.generations.map((g) => (
                   <div className="df-generation" key={g.id}>
-                    <h3>
-                      {time(g.created_at)} · 修订 {g.revision}
-                      {g.date_style !== "zh-CN" && " · 原日期格式"}
-                      {g.naming_style !== "formal" && " · 原文件名"}
-                    </h3>
+                    <div className="df-generation-heading">
+                      <h3>
+                        {time(g.created_at)} · 修订 {g.revision}
+                        {g.date_style !== "zh-CN" && " · 原日期格式"}
+                        {g.naming_style !== "formal" && " · 原文件名"}
+                      </h3>
+                      <button
+                        aria-label={`打包下载 ${time(g.created_at)} 修订 ${
+                          g.revision
+                        }`}
+                        onClick={() => downloadBundle(g)}
+                      >
+                        下载此批次
+                      </button>
+                    </div>
                     {g.files.map((f) => (
                       <div
                         className={
