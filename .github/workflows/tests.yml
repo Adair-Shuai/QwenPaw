@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [main, master, dev, develop]
+    branches: [main, master, dev, develop, "release/**"]
     paths:
       - 'src/**'
       - 'tests/**'
@@ -12,13 +12,14 @@ on:
       - 'pyproject.toml'
       - 'setup.py'
       - 'deploy/Dockerfile'
+      - '.nvmrc'
       - '.github/workflows/tests.yml'
   pull_request:
     # Default types plus ready_for_review: converting a draft PR to
     # ready must re-trigger this workflow so the real tiers run on the
     # current head right after the author leaves draft state.
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main, master, dev, develop]
+    branches: [main, master, dev, develop, "release/**"]
   workflow_dispatch:
     inputs:
       integration_marker:
@@ -67,6 +68,7 @@ jobs:
               - '.gitattributes'
               - 'pyproject.toml'
               - 'setup.py'
+              - '.nvmrc'
               - '.github/workflows/tests.yml'
 
   approval-gate:
