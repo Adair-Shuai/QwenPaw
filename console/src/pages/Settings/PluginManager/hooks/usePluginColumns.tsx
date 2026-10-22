@@ -7,6 +7,7 @@ import type {
   PluginInfo,
 } from "@/api/modules/plugin";
 import { PluginTypeTag } from "../components/PluginTypeTag";
+import { PluginStatusTag } from "../components/PluginStatusTag";
 
 const { Text } = Typography;
 
@@ -77,7 +78,7 @@ export function usePluginColumns({
       dataIndex: "loaded",
       key: "loaded",
       width: 110,
-      render: (loaded: boolean) => {
+      render: (loaded: boolean, record: PluginInfo) => {
         if (!loaded && bundleState !== "ready" && bundleState !== "error") {
           return (
             <Tag
@@ -87,23 +88,7 @@ export function usePluginColumns({
             </Tag>
           );
         }
-        return loaded ? (
-          <Tag
-            icon={<CheckCircle size={12} />}
-            color="success"
-            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-          >
-            {t("pluginManager.statusLoaded")}
-          </Tag>
-        ) : (
-          <Tag
-            icon={<XCircle size={12} />}
-            color="default"
-            style={{ display: "inline-flex", alignItems: "center", gap: 4 }}
-          >
-            {t("pluginManager.statusUnloaded")}
-          </Tag>
-        );
+        return <PluginStatusTag plugin={record} />;
       },
     },
     {

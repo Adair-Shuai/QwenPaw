@@ -7,6 +7,8 @@ on:
       - 'console/**'
       - 'plugins/bundle/ugsci/ui/**'
       - 'scripts/check_console_bundle_budget.mjs'
+      - 'src/qwenpaw/plugins/frontend/**'
+      - 'scripts/check_plugin_sdk_frontend.py'
       - '.github/workflows/frontend-tests.yml'
   pull_request:
     # Default types plus ready_for_review: converting a draft PR to
@@ -44,6 +46,8 @@ jobs:
               - 'console/**'
               - 'plugins/bundle/ugsci/ui/**'
               - 'scripts/check_console_bundle_budget.mjs'
+              - 'src/qwenpaw/plugins/frontend/**'
+              - 'scripts/check_plugin_sdk_frontend.py'
               - '.github/workflows/frontend-tests.yml'
 
   vitest:
@@ -89,6 +93,13 @@ jobs:
       # separate `npm run test:run` pass executed the identical suite twice.
       - name: Run unit tests with coverage (ratchet blocks PR on regression)
         run: pnpm run test:coverage
+
+      - name: Verify standalone Plugin SDK types and behavior
+        run: >-
+          python3 ../scripts/check_plugin_sdk_frontend.py
+          --package ../src/qwenpaw/plugins/frontend
+          --dependencies node_modules
+          --output "${{ runner.temp }}/sdk-frontend-author"
 
       - name: Upload coverage report
         if: always()

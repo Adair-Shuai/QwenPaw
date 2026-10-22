@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -606,42 +607,67 @@ class TestGovernanceOwnerLifecycle:
 class TestRegisterToolRollback:
     """Mid-flight ``register_tool`` failures must not leave ownership/gov."""
 
-    def _run_startup_hooks(self, plugin_registry: PluginRegistry) -> None:
-        for hook in plugin_registry.get_startup_hooks():
-            hook.callback()
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "failure_point,error",
+        [
+            (
+                "_register_to_governance",
+                GovernanceRegistrationConflict("boom"),
+            ),
+            ("_bridge_to_runtime", RuntimeError("bridge failed")),
+            ("_write_tool_config", OSError("disk full")),
+        ],
+    )
+    async def test_failed_registration_revokes_published_tool(
+        self,
+        failure_point,
+        error,
+    ):
+        from qwenpaw.agents import tools
+        from qwenpaw.plugins.workspace_projector import ProjectionError
 
-    def test_governance_failure_releases_ownership(self):
-        plugin_id = "__ut_rollback_gov_fail__"
-        tool_name = "__ut_rollback_shared__"
-        policy = "UtRollbackShared"
-        release_tool_ownership_for_plugin(plugin_id)
-        DEFAULT_REGISTRY.unregister_python_tool(tool_name)
-        _TOOL_PLUGIN_OWNERS.pop(tool_name, None)
-
+        plugin_id = "__ut_rollback_fail__"
+        tool_name = "__ut_rollback_tool__"
+        policy = snake_to_pascal(tool_name)
+        runtime_tr = RuntimeToolRegistry()
+        bootstrap = {"builtin_tool_funcs": []}
+        manager = SimpleNamespace(
+            agents={
+                "default": SimpleNamespace(
+                    agent_id="default",
+                    plugins=SimpleNamespace(tool_registry=runtime_tr),
+                ),
+            },
+            _bootstrap_kwargs=bootstrap,
+        )
         old = PluginRegistry._instance
         PluginRegistry._instance = None
         try:
             preg = PluginRegistry()
+            preg.set_workspace_manager(manager)
             api = PluginApi(plugin_id, config={}, manifest={"id": plugin_id})
             api.set_registry(preg)
 
             async def _tool() -> str:
                 return "ok"
 
+            api.register_tool(tool_name, _tool, tool_type="network")
+            hooks = preg.get_startup_hooks()
+            assert len(hooks) == 1
             with patch(
-                "qwenpaw.plugins.api._register_to_governance",
-                side_effect=GovernanceRegistrationConflict("boom"),
-            ):
-                api.register_tool(
-                    tool_name=tool_name,
-                    tool_func=_tool,
-                    tool_type="network",
-                )
-                self._run_startup_hooks(preg)
+                f"qwenpaw.plugins.api.{failure_point}",
+                side_effect=error,
+            ), pytest.raises(ProjectionError, match=str(error)):
+                await hooks[0].callback()
 
+            assert tool_name not in runtime_tr
+            assert not bootstrap["builtin_tool_funcs"]
+            assert not hasattr(tools, tool_name)
+            assert tool_name not in tools.__all__
             assert tool_name not in _TOOL_PLUGIN_OWNERS
             assert DEFAULT_REGISTRY.get_type(policy) == "unknown"
-            # Another plugin can claim the name after rollback.
+            assert DEFAULT_REGISTRY.get_owner(tool_name) is None
             _claim_tool_ownership(tool_name, "plugin-b")
             assert _TOOL_PLUGIN_OWNERS[tool_name] == "plugin-b"
         finally:

@@ -162,6 +162,23 @@ describe("request", () => {
     });
   });
 
+  it.each([404, 409, 503])(
+    "preserves HTTP %s for route error handling",
+    async (status) => {
+      mockFetch(status, { detail: "Could not resolve Chat" });
+
+      const error = await request("/chats/resolve").catch(
+        (error: unknown) => error,
+      );
+
+      expect(error).toBeInstanceOf(ApiError);
+      expect(error).toMatchObject({
+        status,
+        message: expect.stringContaining("Could not resolve Chat"),
+      });
+    },
+  );
+
   it("injects Authorization header when token is present", async () => {
     vi.mocked(buildAuthHeaders).mockReturnValue({
       Authorization: "Bearer test-token",

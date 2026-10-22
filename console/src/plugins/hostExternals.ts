@@ -9,6 +9,7 @@
  */
 
 import React from "react";
+import i18n from "../i18n";
 import ReactDOM from "react-dom";
 import * as antd from "antd";
 import * as antdIcons from "@ant-design/icons";
@@ -34,6 +35,7 @@ import {
   registerSimpleModeItems,
 } from "../layouts/registry/simpleModeWhitelist";
 import type {
+  Localized,
   HostAgentInfo,
   HostSessionInfo,
   HostThemeMode,
@@ -128,8 +130,10 @@ export interface PluginRouteDeclaration {
   /** Full URL path, e.g. "/plugin/my-plugin/dashboard". */
   path: string;
   component: React.ComponentType;
-  /** Sidebar display label. */
-  label: string;
+  /** Sidebar label, resolved in the current Console language. */
+  label: Localized<string>;
+  /** Optional page/browser title; older declarations retain the path fallback. */
+  title?: Localized<string>;
   /** Emoji or short icon text. */
   icon?: string;
   /** Lower number = appears earlier in sidebar. Defaults to 0. */
@@ -402,6 +406,16 @@ export function installHostExternals(): void {
           id,
           path: r.path,
           component: r.component,
+          meta:
+            r.title === undefined
+              ? undefined
+              : {
+                  domain: "extensions",
+                  title: r.title,
+                  scope: "global",
+                  layout: "standard",
+                  navigation: "settings",
+                },
         });
 
         // PawApp pages are surfaced only in the App Center — never as a
@@ -409,11 +423,15 @@ export function installHostExternals(): void {
         if (/^\/apps\//.test(r.path)) continue;
 
         ensurePluginsGroup();
+        const label = r.label;
         menuRegistry.add(pluginId, {
           id,
           location: "primary.settings",
           parentId: "plugins-group",
-          label: r.label,
+          label:
+            typeof label === "function"
+              ? () => label(i18n.resolvedLanguage ?? i18n.language ?? "en")
+              : label,
           // Emoji string in original API → wrap to match prior Sidebar font-size styling.
           icon: React.createElement(
             "span",

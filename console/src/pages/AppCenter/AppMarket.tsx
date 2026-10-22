@@ -139,8 +139,8 @@ function LoadMoreSentinel({ onVisible }: { onVisible: () => void }) {
 // Curated featured apps use pinned artwork because the market API may not
 // provide an icon for them.
 const FEATURED_APP_ICONS: Record<string, string> = {
-  "@agentscope/qwenpaw-creator": "/creator-logo.png",
-  "qwenpaw-creator": "/creator-logo.png",
+  "@agentscope/qwenpaw-creator": `${import.meta.env.BASE_URL}creator-logo.png`,
+  "qwenpaw-creator": `${import.meta.env.BASE_URL}creator-logo.png`,
 };
 // Emoji icons from the plugins' own plugin.json (the market API carries no
 // icon field), so uninstalled cards match what the installed view shows.

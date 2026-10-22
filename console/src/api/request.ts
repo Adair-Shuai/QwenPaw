@@ -6,7 +6,11 @@ export class ApiError extends Error {
   status: number;
   reason?: string;
 
-  constructor(message: string, status: number, reason?: string) {
+  constructor(message: string, status: number, reason?: string);
+  constructor(status: number, message: string);
+  constructor(first: string | number, second: string | number, reason?: string) {
+    const message = typeof first === "string" ? first : String(second);
+    const status = typeof first === "number" ? first : Number(second);
     super(message);
     this.name = "ApiError";
     this.status = status;
