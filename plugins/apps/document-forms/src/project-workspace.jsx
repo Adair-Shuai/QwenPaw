@@ -188,6 +188,7 @@ export default function ProjectWorkspace({ Editor, services }) {
   const [editor, setEditor] = useState(null),
     [editorDirty, setEditorDirty] = useState(false);
   const [profileDirty, setProfileDirty] = useState(false);
+  const [editorBusy, setEditorBusy] = useState("");
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -199,6 +200,10 @@ export default function ProjectWorkspace({ Editor, services }) {
     excel = useRef(null),
     attachment = useRef(null),
     uploadTarget = useRef("");
+  const mainScroll = useRef(null);
+  useEffect(() => {
+    mainScroll.current?.scrollTo?.({ top: 0 });
+  }, [project?.id, tab, editor?.id]);
   const theme = Q.host.useTheme?.() || "light";
   const stage = project?.stages.find((s) => s.id === tab);
   const forms = project?.forms.filter((f) => f.stage_id === tab) || [];
@@ -388,7 +393,7 @@ export default function ProjectWorkspace({ Editor, services }) {
         </div>
         <button
           className="df-primary df-new"
-          disabled={!!busy}
+          disabled={!!busy || !!editorBusy}
           onClick={() => {
             if (canLeave())
               openDialog("create", { name: "", code: "", owner: "" });
@@ -418,7 +423,7 @@ export default function ProjectWorkspace({ Editor, services }) {
             .map((p) => (
               <button
                 key={p.id}
-                disabled={!!busy}
+                disabled={!!busy || !!editorBusy}
                 aria-current={project?.id === p.id ? "page" : undefined}
                 onClick={() => selectProject(p.id)}
               >
@@ -435,7 +440,7 @@ export default function ProjectWorkspace({ Editor, services }) {
             商务谈判阶段已配好五份 Word 模板，其余阶段可接入各自的统一模板。
           </p>
           <button
-            disabled={!!busy}
+            disabled={!!busy || !!editorBusy}
             onClick={() =>
               run("下载配套模板", () =>
                 download("/starter", "文书填报_配套模板.zip"),
@@ -447,7 +452,7 @@ export default function ProjectWorkspace({ Editor, services }) {
           <small>空白 Excel 与 5 份标准 Word</small>
         </div>
       </aside>
-      <section className="df-main df-project-main">
+      <section className="df-main df-project-main" ref={mainScroll}>
         <header className="df-header">
           <div>
             <span className="df-eyebrow">UGSCI / 项目材料</span>
@@ -466,12 +471,15 @@ export default function ProjectWorkspace({ Editor, services }) {
           {project && (
             <div className="df-actions">
               <button
-                disabled={!!busy || !!editor}
+                disabled={!!busy || !!editorBusy || !!editor}
                 onClick={() => changeTab("profile")}
               >
                 项目资料
               </button>
-              <button disabled={!!busy} onClick={() => bundledDownload()}>
+              <button
+                disabled={!!busy || !!editorBusy}
+                onClick={() => bundledDownload()}
+              >
                 下载项目材料
               </button>
             </div>
@@ -523,7 +531,7 @@ export default function ProjectWorkspace({ Editor, services }) {
             <nav className="df-project-tabs" aria-label="项目阶段">
               <button
                 className={tab === "overview" ? "active" : ""}
-                disabled={!!busy}
+                disabled={!!busy || !!editorBusy}
                 onClick={() => changeTab("overview")}
               >
                 项目总览
@@ -533,7 +541,7 @@ export default function ProjectWorkspace({ Editor, services }) {
                   key={s.id}
                   aria-current={tab === s.id ? "step" : undefined}
                   className={tab === s.id ? "active" : ""}
-                  disabled={!!busy}
+                  disabled={!!busy || !!editorBusy}
                   onClick={() => changeTab(s.id)}
                 >
                   <small>{String(i + 1).padStart(2, "0")}</small>
@@ -554,6 +562,8 @@ export default function ProjectWorkspace({ Editor, services }) {
                 initialCaseId={editor.id}
                 initialView={editor.view}
                 onDirtyChange={setEditorDirty}
+                onBusyChange={setEditorBusy}
+                onViewChange={() => mainScroll.current?.scrollTo?.({ top: 0 })}
                 onBack={() => {
                   setEditor(null);
                   setEditorDirty(false);
@@ -562,7 +572,10 @@ export default function ProjectWorkspace({ Editor, services }) {
                 onChanged={() => reload()}
               />
             ) : (
-              <fieldset className="df-content" disabled={!!busy}>
+              <fieldset
+                className="df-content"
+                disabled={!!busy || !!editorBusy}
+              >
                 {tab === "overview" && (
                   <>
                     {project.migrated && (
@@ -1042,7 +1055,7 @@ export default function ProjectWorkspace({ Editor, services }) {
             <div className="df-actions">
               <button
                 type="button"
-                disabled={!!busy}
+                disabled={!!busy || !!editorBusy}
                 onClick={() => setDialog(null)}
               >
                 取消
@@ -1114,11 +1127,15 @@ export default function ProjectWorkspace({ Editor, services }) {
               <button
                 type="button"
                 onClick={() => setDialog(null)}
-                disabled={!!busy}
+                disabled={!!busy || !!editorBusy}
               >
                 取消
               </button>
-              <button className="df-primary" disabled={!!busy} type="submit">
+              <button
+                className="df-primary"
+                disabled={!!busy || !!editorBusy}
+                type="submit"
+              >
                 保存材料信息
               </button>
             </div>
@@ -1239,7 +1256,7 @@ export default function ProjectWorkspace({ Editor, services }) {
               <button
                 type="button"
                 onClick={() => setDialog(null)}
-                disabled={!!busy}
+                disabled={!!busy || !!editorBusy}
               >
                 取消
               </button>

@@ -12,7 +12,7 @@ import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
 from urllib.parse import quote
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import BadZipFile, ZIP_DEFLATED, ZipFile
 
 from fastapi import Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -292,10 +292,11 @@ class ProjectStore:
             raise HTTPException(404, "项目不存在")
         return json.loads(path.read_text(encoding="utf-8"))
 
-    def save(self, root, project):
+    def save(self, root, project, update_time=True):
         path = self.path(root, project["id"])
         path.mkdir(parents=True, exist_ok=True)
-        project["updated_at"] = now()
+        if update_time:
+            project["updated_at"] = now()
         temp = path / "project.tmp"
         temp.write_text(
             json.dumps(project, ensure_ascii=False),
@@ -365,7 +366,7 @@ class ProjectStore:
         stage["completed_at"] = None
         project["revision"] += 1
 
-    def create(self, root, body, fields=None):
+    def create(self, root, body, fields=None, persist=True):
         fields = shared_fields(fields or self.host.builtin.blank_fields())
         if not any(f["key"] == "project.code" for f in fields):
             fields.append(
@@ -395,7 +396,8 @@ class ProjectStore:
             "stages": default_stages(),
             "forms": [],
         }
-        self.save(root, project)
+        if persist:
+            self.save(root, project)
         return project
 
     def all_projects(self, root):
@@ -437,9 +439,12 @@ class ProjectStore:
                     root,
                     ProjectBody(name=name, code=code),
                     case["fields"],
+                    persist=False,
                 )
                 project["legacy_identity"] = identity
                 project["migrated"] = True
+                project["created_at"] = case["updated_at"]
+                project["updated_at"] = case["updated_at"]
                 projects.append(project)
             stage_id = case.get("stage_id", "negotiation")
             project["forms"].append(
@@ -449,8 +454,23 @@ class ProjectStore:
             stage["status"] = "in_progress"
             stage["content_revision"] += 1
             stage["acknowledged"] = self.dependencies(project, stage_id, root)
-            self.save(root, project)
+            project["updated_at"] = max(
+                project["updated_at"],
+                case["updated_at"],
+            )
+            self.save(root, project, update_time=False)
             linked.add(case["id"])
+        for project in projects:
+            if project.get("migrated") and not project.get(
+                "legacy_order_version",
+            ):
+                if project["revision"] == 1:
+                    ids = {f["case_id"] for f in project["forms"]}
+                    dates = [c["updated_at"] for c in drafts if c["id"] in ids]
+                    if dates:
+                        project["updated_at"] = max(dates)
+                project["legacy_order_version"] = 1
+                self.save(root, project, update_time=False)
         return projects
 
     def form_summary(self, root, project, link):
@@ -688,8 +708,19 @@ class ProjectStore:
                     / generation["id"]
                     / "全部文书.zip"
                 )
-                if not source.is_file():
-                    raise HTTPException(422, "生成批次缺失，请检查后再打包")
+                try:
+                    with ZipFile(source) as bundle:
+                        names = bundle.namelist()
+                        valid = (
+                            bundle.testzip() is None
+                            and len(names) == len(set(names))
+                            and {f["name"] for f in generation["files"]}
+                            <= set(names)
+                        )
+                        if not valid:
+                            raise ValueError("Invalid generated archive")
+                except (OSError, BadZipFile, ValueError) as exc:
+                    raise HTTPException(422, "生成批次缺失或损坏，请检查后再打包") from exc
                 target = titles[link["stage_id"]] + "/生成文书/" + title
                 archive.write(source, target + f"_批次{index:02d}.zip")
 

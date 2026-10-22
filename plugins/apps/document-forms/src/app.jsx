@@ -132,6 +132,8 @@ function Workbench({
   onBack,
   onChanged,
   onDirtyChange,
+  onBusyChange,
+  onViewChange,
 }) {
   const [draft, setDraft] = useState(null);
   const [comparison, setComparison] = useState(null);
@@ -185,6 +187,12 @@ function Workbench({
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty]);
+  useEffect(() => {
+    onBusyChange?.(busy);
+  }, [busy]);
+  useEffect(() => {
+    onViewChange?.();
+  }, [stage]);
   useEffect(() => {
     const handler = (e) => {
       if (dirty) {

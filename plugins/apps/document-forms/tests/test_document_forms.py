@@ -158,6 +158,10 @@ def test_project_migration_groups_legacy_forms_without_rewriting_files(
     }
     projects = client.get("/api/document-forms/projects").json()
     assert len(projects) == 1 and projects[0]["forms"] == 2
+    assert projects[0]["updated_at"] == max(
+        first["updated_at"],
+        second["updated_at"],
+    )
     assert all(Path(p).read_bytes() == data for p, data in before.items())
     project = client.get(
         f"/api/document-forms/projects/{projects[0]['id']}",
@@ -609,6 +613,11 @@ def test_project_generated_batch_changes_prompt_downstream_review(
         ).content
         == original
     )
+
+    root = next(main.ROOT.iterdir())
+    archive = main.folder(root, case["id"]) / "outputs" / batch_id / "全部文书.zip"
+    archive.write_bytes(b"corrupt archive")
+    assert client.get(base + "/bundle").status_code == 422
 
 
 def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
