@@ -38,11 +38,18 @@ def release_fixture(tmp_path, monkeypatch):
             "plugin.json",
             "backend/main.py",
             "backend/engine.py",
+            "backend/builtin.py",
             "ui/index.js",
             "README.md",
             "requirements.txt",
         ]:
             z.writestr("document-forms/" + name, (source / name).read_bytes())
+        for path in (source / "templates").iterdir():
+            if path.is_file():
+                z.writestr(
+                    "document-forms/templates/" + path.name,
+                    path.read_bytes(),
+                )
     payload = archive.read_bytes()
     manifest = json.loads((source / "plugin.json").read_text(encoding="utf-8"))
     entry = {
@@ -130,5 +137,65 @@ def test_bad_package_digest_cannot_upload(release):
     index["files"][FILE_ID]["sha256"] = "invalid"
     (root / "index.json").write_text(json.dumps(index))
     with pytest.raises(AssertionError):
+        publisher.main()
+    assert writes == []
+
+
+@pytest.mark.parametrize(
+    "kind",
+    [
+        "missing_template",
+        "private_file",
+        "filled_schema",
+        "bad_digest",
+        "private_properties",
+    ],
+)
+def test_bundled_template_gate_blocks_incomplete_or_private_assets(
+    release,
+    kind,
+):
+    root, key, _, _, _, writes = release
+    path = root / key.removeprefix("files/plugins/")
+    with zipfile.ZipFile(path) as z:
+        parts = {name: z.read(name) for name in z.namelist()}
+    prefix = "document-forms/templates/"
+    entries = json.loads(parts[prefix + "index.json"])
+    name = prefix + entries[0]["name"]
+    if kind == "missing_template":
+        del parts[name]
+    elif kind == "private_file":
+        parts[prefix + "private-project.docx"] = parts[name]
+    elif kind == "filled_schema":
+        fields = json.loads(parts[prefix + "variables.json"])
+        fields[0]["value"] = "private project"
+        parts[prefix + "variables.json"] = json.dumps(fields).encode()
+    elif kind == "bad_digest":
+        entries[0]["sha256"] = "0" * 64
+        parts[prefix + "index.json"] = json.dumps(entries).encode()
+    else:
+        output = io.BytesIO()
+        with zipfile.ZipFile(io.BytesIO(parts[name])) as src, zipfile.ZipFile(
+            output,
+            "w",
+        ) as dst:
+            for entry in src.infolist():
+                dst.writestr(entry, src.read(entry.filename))
+            dst.writestr(
+                "docProps/custom.xml",
+                b"<private>editor history</private>",
+            )
+        parts[name] = output.getvalue()
+        entries[0]["sha256"] = hashlib.sha256(parts[name]).hexdigest()
+        parts[prefix + "index.json"] = json.dumps(entries).encode()
+    with zipfile.ZipFile(path, "w") as z:
+        for member, content in parts.items():
+            z.writestr(member, content)
+    index = json.loads((root / "index.json").read_text())
+    index["files"][FILE_ID]["sha256"] = hashlib.sha256(
+        path.read_bytes(),
+    ).hexdigest()
+    (root / "index.json").write_text(json.dumps(index))
+    with pytest.raises((AssertionError, ValueError)):
         publisher.main()
     assert writes == []

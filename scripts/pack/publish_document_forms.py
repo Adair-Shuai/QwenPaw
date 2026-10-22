@@ -9,12 +9,56 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
 import zipfile
 
 import oss2
+
+
+def verify_bundled_assets(archive):
+    """Only reviewed portable templates may enter the public application."""
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "plugins/apps/document-forms/backend/builtin.py"
+    )
+    spec = importlib.util.spec_from_file_location(
+        "public_document_templates", source
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    prefix = "document-forms/templates/"
+    entries = json.loads(archive.read(prefix + "index.json"))
+    assert [entry["name"] for entry in entries] == list(
+        module.NAMES
+    ), "Incomplete bundled templates"
+    expected = {
+        "document-forms/" + name
+        for name in (
+            "plugin.json",
+            "backend/main.py",
+            "backend/engine.py",
+            "backend/builtin.py",
+            "ui/index.js",
+            "README.md",
+            "requirements.txt",
+            "templates/index.json",
+            "templates/variables.json",
+        )
+    } | {prefix + name for name in module.NAMES}
+    assert set(archive.namelist()) == expected, "Unexpected application files"
+    for entry in entries:
+        content = archive.read(prefix + entry["name"])
+        assert (
+            hashlib.sha256(content).hexdigest() == entry["sha256"]
+        ), "Bundled template digest mismatch"
+        module.verify_public_template(content)
+    fields = json.loads(archive.read(prefix + "variables.json"))
+    assert fields and all(
+        "value" not in field for field in fields
+    ), "Business values in bundled schema"
 
 
 def main() -> None:
@@ -57,6 +101,7 @@ def main() -> None:
         assert manifest["id"] == entry["plugin_id"]
         assert manifest["version"] == entry["version"]
         assert manifest["qwenpaw_version"] == entry["qwenpaw_version"]
+        verify_bundled_assets(z)
 
     bucket = oss2.Bucket(
         oss2.Auth(

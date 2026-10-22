@@ -28,6 +28,104 @@ afterEach(() => {
   Reflect.deleteProperty(window, "QwenPaw");
 });
 
+it("automatically loads the five bundled templates and downloads their blank Excel kit", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const appRoot = path.resolve(process.cwd(), "../plugins/apps/document-forms");
+  const fields = JSON.parse(
+    fs.readFileSync(path.join(appRoot, "templates/variables.json"), "utf8"),
+  );
+  const entries = JSON.parse(
+    fs.readFileSync(path.join(appRoot, "templates/index.json"), "utf8"),
+  );
+  const state = {
+    id: "bundled-case",
+    name: "新填报",
+    revision: 1,
+    updated_at: "2026-10-22T00:00:00Z",
+    fields: fields.map((field: any) => ({ ...field, value: "" })),
+    recipients: [{ name: "", start: "", end: "" }],
+    rules: [],
+    generations: [],
+    templates: entries.map((entry: any, index: number) => ({
+      ...entry,
+      id: `builtin-${index}`,
+      from_default: true,
+      from_builtin: true,
+      per_recipient: index === 1 || index === 2,
+      keys: ["project.name"],
+    })),
+  };
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/starter")
+      return new Response("PK-standard-kit", {
+        headers: { "Content-Type": "application/zip" },
+      });
+    if (url === "/document-forms/cases")
+      return new Response(
+        JSON.stringify(init?.method === "POST" ? state : []),
+        { headers: { "Content-Type": "application/json" } },
+      );
+    throw new Error("Unexpected request: " + url);
+  });
+  const downloads: string[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloads.push(this.download);
+  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: () => "blob:standard-kit",
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {},
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      "URL",
+      fs.readFileSync(path.join(appRoot, "ui/index.js"), "utf8"),
+    )(window, URL);
+  });
+  renderWithProviders(<Page />);
+  await user.click(screen.getByRole("button", { name: /下载配套模板/ }));
+  await waitFor(() => expect(downloads).toEqual(["文书填报_配套模板.zip"]));
+  await user.upload(
+    screen.getByLabelText("导入 Excel 变量表"),
+    new File(["xlsx"], "配套.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    }),
+  );
+  await screen.findByLabelText("项目名称");
+  for (const entry of entries)
+    expect(screen.getByText(entry.name)).toBeInTheDocument();
+  expect(screen.getAllByText("应用自带模板")).toHaveLength(5);
+  expect(screen.getByLabelText("项目背景").tagName).toBe("TEXTAREA");
+  expect(screen.getByLabelText("项目名称")).toHaveValue("");
+  expect(
+    screen.getByText("已读取变量配置，并载入默认 Word 模板。"),
+  ).toBeInTheDocument();
+  expect(hostFetch.mock.calls.some(([url]) => url.endsWith("/defaults"))).toBe(
+    false,
+  );
+});
+
 describe.each(["embedded", "compatible"])(
   "UGSci document forms packaged page (%s)",
   (previewMode) => {

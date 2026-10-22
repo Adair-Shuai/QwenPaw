@@ -33,6 +33,8 @@ from pydantic import BaseModel, Field
 from qwenpaw.constant import WORKING_DIR
 from qwenpaw.pawapp import PawApp
 
+from .backend import builtin  # pylint: disable=relative-beyond-top-level
+
 # PluginLoader treats this entry module as the plugin root package.
 from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     MAX_FILE,
@@ -43,7 +45,6 @@ from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     read_excel,
     recipient_defaults,
     render_template,
-    starter_files,
     template_info,
     template_metadata,
 )
@@ -251,9 +252,25 @@ def print_document(source, cache, page=None):
 def attach_default_templates(root, case):
     library = root / "default-templates"
     index = library / "index.json"
-    if not index.is_file():
-        return 0
-    entries = json.loads(index.read_text(encoding="utf-8"))
+    built_in = not index.is_file()
+    bundled = {}
+    if built_in:
+        field_keys = {field["key"] for field in case["fields"]}
+        if (
+            not {field["key"] for field in builtin.blank_fields()}
+            <= field_keys
+        ):
+            case[
+                "template_notice"
+            ] = "这份 Excel 字段不同，请添加对应的 Word 模板，或使用应用配套 Excel。"
+            return 0
+        bundled = builtin.load_templates()
+        entries = [
+            {"name": name, "sha256": hashlib.sha256(content).hexdigest()}
+            for name, content in bundled.items()
+        ]
+    else:
+        entries = json.loads(index.read_text(encoding="utf-8"))
     if not isinstance(entries, list) or not 1 <= len(entries) <= 20:
         raise ValueError("默认模板清单不完整，请重新设定")
     prepared = []
@@ -261,7 +278,11 @@ def attach_default_templates(root, case):
         digest = entry["sha256"]
         if not re.fullmatch(r"[a-f0-9]{64}", digest):
             raise ValueError("默认模板校验信息无效")
-        content = (library / (digest + ".docx")).read_bytes()
+        content = (
+            bundled[entry["name"]]
+            if built_in
+            else (library / (digest + ".docx")).read_bytes()
+        )
         if hashlib.sha256(content).hexdigest() != digest:
             raise ValueError("默认模板内容已改变，请重新选择原文件")
         info = template_info(
@@ -276,6 +297,7 @@ def attach_default_templates(root, case):
                     id=uuid.uuid4().hex,
                     sha256=digest,
                     from_default=True,
+                    from_builtin=built_in,
                 ),
                 content,
             ),
@@ -428,8 +450,8 @@ def use_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
             ) from exc
         if not count:
             raise HTTPException(
-                404,
-                "尚未设置默认模板。添加 Word 文件后，可将这组模板设为默认。",
+                422,
+                case.get("template_notice", "未能载入默认模板，请重新选择 Word 文件"),
             )
         case["revision"] += 1
         case["review_token"] = None
@@ -508,6 +530,7 @@ def add_templates(
             case["templates"].append(info)
         case["revision"] += 1
         case["review_token"] = None
+        case.pop("template_notice", None)
         save(root, case)
         return public(case)
 
@@ -753,7 +776,7 @@ def excel(case_id: str, root=Depends(scope)):
 def starter():
     stream = io.BytesIO()
     with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
-        for name, content in starter_files().items():
+        for name, content in builtin.starter_files().items():
             archive.writestr(name, content)
     return Response(
         stream.getvalue(),

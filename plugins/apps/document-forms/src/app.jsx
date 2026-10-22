@@ -418,14 +418,14 @@ function Workbench() {
           <button
             disabled={!!busy}
             onClick={() =>
-              run("下载示例", () =>
-                download("/starter", "文书填报_入门模板.zip"),
+              run("下载配套模板", () =>
+                download("/starter", "文书填报_配套模板.zip"),
               )
             }
           >
-            下载入门模板 ↗
+            下载配套模板 ↗
           </button>
-          <small>通用示例，不含业务条款</small>
+          <small>含空白 Excel 与 5 份标准 Word 模板</small>
         </div>
       </aside>
       <section className="df-main">
@@ -527,10 +527,10 @@ function Workbench() {
                     </p>
                   </li>
                   <li>
-                    <b>添加 Word 模板</b>
+                    <b>自动载入模板</b>
                     <p>
-                      使用 {"{{ project.name }}"}{" "}
-                      引用变量，段落、表格及页眉页脚沿用模板。
+                      应用自带 5 份标准 Word 模板，使用配套 Excel 即可自动载入；
+                      也可添加自己的模板。
                     </p>
                   </li>
                   <li>
@@ -768,6 +768,7 @@ function Workbench() {
                 {templates.map((t) => (
                   <div className="df-template" key={t.id}>
                     <b>{t.name}</b>
+                    {t.from_builtin && <small>应用自带模板</small>}
                     <span>
                       {t.per_recipient
                         ? "按受邀单位分别生成"

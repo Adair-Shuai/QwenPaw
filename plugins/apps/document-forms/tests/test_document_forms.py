@@ -5,6 +5,7 @@ import importlib.util
 import base64
 import io
 import json
+import shutil
 import sys
 import types
 from pathlib import Path
@@ -96,6 +97,147 @@ def create(client, sources):
     )
     assert response.status_code == 200, response.text
     return response.json()
+
+
+def bundled_workbook(client, filled=False):
+    response = client.get("/api/document-forms/starter")
+    assert response.status_code == 200, response.text
+    with ZipFile(io.BytesIO(response.content)) as archive:
+        assert set(archive.namelist()) == set(main.builtin.NAMES) | {
+            "变量管理表.xlsx",
+        }
+        data = archive.read("变量管理表.xlsx")
+    if not filled:
+        return data
+    book = load_workbook(io.BytesIO(data))
+    values = {
+        "project.name": "测试项目 A & B <参数>",
+        "dates.issue": "2026-11-01",
+        "events.invitation_time": "2026-11-02 09:00 ~ 2026-11-03 17:00",
+        "events.questions_time": "2026-11-04 09:00 ~ 2026-11-04 11:00",
+        "submission.deadline": "2026-11-06T17:00",
+        "events.negotiation_time": "2026-11-07 09:00 ~ 2026-11-07 11:00",
+        "qualification.start_year": "2023",
+        "budget.ceiling_number": "100000",
+        "budget.ceiling_upper": "壹拾万元整",
+    }
+    for row in book["变量配置"].iter_rows(min_row=2):
+        row[2].value = values.get(row[0].value, row[1].value + "测试内容")
+    for index, name in enumerate(("甲单位", "乙单位", "丙单位"), 2):
+        book["受邀单位"].cell(index, 1, name)
+    book["受邀单位"].cell(2, 2, "2026-11-02T09:00")
+    book["受邀单位"].cell(2, 3, "2026-11-02T11:00")
+    output = io.BytesIO()
+    book.save(output)
+    return output.getvalue()
+
+
+def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
+    client,
+):
+    blank = bundled_workbook(client)
+    data = engine.read_excel(blank)
+    assert len(data["fields"]) == 25 and all(
+        not f["value"] for f in data["fields"]
+    )
+    assert all(
+        not r["name"] and not r["start"] and not r["end"]
+        for r in data["recipients"]
+    )
+    assert (
+        data["recipients"][1]["follow_start"]
+        and data["recipients"][2]["follow_end"]
+    )
+    response = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("配套.xlsx", bundled_workbook(client, True))},
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    assert [t["name"] for t in case["templates"]] == list(main.builtin.NAMES)
+    assert all(t["from_builtin"] for t in case["templates"])
+    assert not list(main.ROOT.glob("*/default-templates/index.json"))
+    base = f"/api/document-forms/cases/{case['id']}"
+    review = client.post(
+        base + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert review["can_generate"], review
+    case = client.post(
+        base + "/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    ).json()
+    generation = case["generations"][0]
+    assert len(generation["files"]) == 9
+    bundle = client.get(base + f"/outputs/{generation['id']}/全部文书.zip")
+    with ZipFile(io.BytesIO(bundle.content)) as archive:
+        assert archive.testzip() is None and len(archive.namelist()) == 11
+        for file in generation["files"]:
+            content = archive.read(file["name"])
+            main.builtin.verify_public_template(content)
+            text = "".join(Document(io.BytesIO(content)).element.itertext())
+            assert "测试项目 A & B <参数>" in text
+            assert not any(s in text for s in ("{{", "{%", "驴驹河", "郑帅"))
+    other = client.post(
+        "/api/document-forms/cases",
+        headers={"X-Agent-Id": "new-device"},
+        files={"workbook": ("配套.xlsx", blank)},
+    ).json()
+    assert len(other["templates"]) == 5 and all(
+        t["from_builtin"] for t in other["templates"]
+    )
+    assert {t["id"] for t in case["templates"]}.isdisjoint(
+        t["id"] for t in other["templates"]
+    )
+
+
+def test_personal_defaults_override_bundled_without_changing_old_records(
+    client,
+    sources,
+):
+    case = create(client, sources)
+    base = f"/api/document-forms/cases/{case['id']}"
+    client.post(
+        base + "/defaults",
+        json={"revision": case["revision"]},
+    ).raise_for_status()
+    before = client.get(base).json()
+    fresh = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("配套.xlsx", bundled_workbook(client))},
+    ).json()
+    assert [t["sha256"] for t in fresh["templates"]] == [
+        t["sha256"] for t in case["templates"]
+    ]
+    assert all(not t["from_builtin"] for t in fresh["templates"])
+    assert client.get(base).json() == before
+
+
+def test_corrupt_bundled_assets_are_rejected_without_partial_templates(
+    client,
+    tmp_path,
+    monkeypatch,
+):
+    workbook = bundled_workbook(client)
+    target = tmp_path / "broken-builtins"
+    shutil.copytree(main.builtin.LIBRARY, target)
+    (target / main.builtin.NAMES[0]).write_bytes(b"damaged")
+    monkeypatch.setattr(main.builtin, "LIBRARY", target)
+    response = client.post(
+        "/api/document-forms/cases",
+        files={"workbook": ("配套.xlsx", workbook)},
+    )
+    assert response.status_code == 200
+    assert (
+        response.json()["templates"] == []
+        and response.json()["template_notice"]
+    )
+    with pytest.raises(ValueError, match="校验失败"):
+        main.builtin.load_templates()
 
 
 def supplemental_sources():

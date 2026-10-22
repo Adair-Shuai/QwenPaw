@@ -1,13 +1,13 @@
 {
   "id": "document-forms",
   "name": "文书填报",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "type": "app",
   "channel": "ugsci",
   "description": "从 Excel 变量表生成可编辑表单，核对日期与受邀单位，按 Word 模板生成文书并预览。",
   "author": "UGSci Team",
   "entry": { "backend": "backend/main.py", "frontend": "ui/index.js" },
-  "qwenpaw_version": { "min": "2.2.2b8", "max": "2.3.0" },
+  "qwenpaw_version": { "min": "2.2.2b8", "max": "2.4.0" },
   "pack_exclude": ["src", "tests", "build.mjs"],
   "meta": {
     "pawapp": { "icon": "▤", "category": "productivity", "entry_page": "/apps/document-forms", "launch_scope": "page" },
