@@ -132,6 +132,485 @@ def bundled_workbook(client, filled=False):
     return output.getvalue()
 
 
+def project_case(client, stage_id="negotiation"):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "全流程测试项目", "code": "P-001", "owner": "测试经办人"},
+    ).json()
+    case = client.post(
+        f"/api/document-forms/projects/{project['id']}/cases",
+        json={"revision": project["revision"], "stage_id": stage_id},
+    ).json()
+    project = client.get(
+        f"/api/document-forms/projects/{project['id']}",
+    ).json()
+    return project, case
+
+
+def test_project_migration_groups_legacy_forms_without_rewriting_files(
+    client,
+    sources,
+):
+    first = create(client, sources)
+    second = create(client, sources)
+    before = {
+        str(p): p.read_bytes() for p in main.ROOT.glob("*/**/*") if p.is_file()
+    }
+    projects = client.get("/api/document-forms/projects").json()
+    assert len(projects) == 1 and projects[0]["forms"] == 2
+    assert all(Path(p).read_bytes() == data for p, data in before.items())
+    project = client.get(
+        f"/api/document-forms/projects/{projects[0]['id']}",
+    ).json()
+    assert {f["case_id"] for f in project["forms"]} == {
+        first["id"],
+        second["id"],
+    }
+    assert all(f["stage_id"] == "negotiation" for f in project["forms"])
+    repeated = client.get("/api/document-forms/projects").json()
+    assert repeated == projects
+    assert len(project["stages"]) == 6 and project["migrated"]
+    assert {
+        s["status"] for s in project["stages"] if s["id"] != "negotiation"
+    } == {"pending"}
+    other = client.get(
+        "/api/document-forms/projects",
+        headers={"X-Agent-Id": "another-agent"},
+    )
+    assert other.json() == []
+
+
+def test_project_shared_profile_sync_is_selective_and_invalidates_review(
+    client,
+):
+    project, case = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    profile = {
+        "revision": project["revision"],
+        "name": "更新后的项目",
+        "code": "P-002",
+        "owner": "经办人",
+        "values": {
+            "project.background": "统一背景",
+            "research.contents": "统一研究内容",
+        },
+    }
+    updated = client.put(base, json=profile).json()
+    assert updated["shared_revision"] == project["shared_revision"] + 1
+    assert client.put(base, json=profile).status_code == 409
+    original = client.get(f"/api/document-forms/cases/{case['id']}").json()
+    assert values_for(original)["project.name"] == "全流程测试项目"
+    assert set(updated["forms"][0]["shared_changes"]) == {
+        "project.name",
+        "project.background",
+        "research.contents",
+    }
+    synced = client.post(
+        base + f"/cases/{case['id']}/sync",
+        json={
+            "revision": updated["revision"],
+            "case_revision": case["revision"],
+            "keys": ["project.background"],
+        },
+    )
+    assert synced.status_code == 200, synced.text
+    assert values_for(synced.json())["project.background"] == "统一背景"
+    assert values_for(synced.json())["research.contents"] == ""
+    assert synced.json()["revision"] == case["revision"] + 1
+    assert "review_token" not in synced.json()
+    current = client.get(base).json()
+    assert "project.background" not in current["forms"][0]["shared_changes"]
+    assert (
+        client.post(
+            base + f"/cases/{case['id']}/sync",
+            json={
+                "revision": current["revision"],
+                "case_revision": case["revision"],
+                "keys": ["project.name"],
+            },
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            base + f"/cases/{case['id']}/sync",
+            json={
+                "revision": current["revision"],
+                "case_revision": synced.json()["revision"],
+                "keys": ["dates.issue"],
+            },
+        ).status_code
+        == 422
+    )
+    assert client.get(base, headers={"X-Agent-Id": "other"}).status_code == 404
+
+
+def values_for(case):
+    return {f["key"]: f["value"] for f in case["fields"]}
+
+
+def test_project_stage_defaults_do_not_replace_negotiation_defaults(client):
+    project, negotiation = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    kickoff = client.post(
+        base + "/cases",
+        json={"revision": project["revision"], "stage_id": "kickoff"},
+    ).json()
+    doc = Document()
+    doc.add_paragraph("开题报告：{{ project.name }}")
+    stream = io.BytesIO()
+    doc.save(stream)
+    path = f"/api/document-forms/cases/{kickoff['id']}"
+    kickoff = client.post(
+        path + "/templates",
+        data={"revision": kickoff["revision"]},
+        files=[("files", ("开题报告_模板.docx", stream.getvalue()))],
+    ).json()
+    client.post(
+        path + "/defaults",
+        json={"revision": kickoff["revision"]},
+    ).raise_for_status()
+    project = client.get(base).json()
+    next_kickoff = client.post(
+        base + "/cases",
+        json={"revision": project["revision"], "stage_id": "kickoff"},
+    ).json()
+    assert len(next_kickoff["templates"]) == 1
+    assert (
+        next_kickoff["templates"][0]["sha256"]
+        == kickoff["templates"][0]["sha256"]
+    )
+    project = client.get(base).json()
+    next_negotiation = client.post(
+        base + "/cases",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    ).json()
+    assert [t["sha256"] for t in next_negotiation["templates"]] == [
+        t["sha256"] for t in negotiation["templates"]
+    ]
+    assert not list(main.ROOT.glob("*/default-templates/index.json"))
+    assert (
+        len(list(main.ROOT.glob("*/stage-defaults/kickoff/index.json"))) == 1
+    )
+
+
+def test_project_sync_rejects_stale_confirmation_and_missing_archive_files(
+    client,
+    sources,
+):
+    case = create(client, sources)
+    project_id = client.get("/api/document-forms/projects").json()[0]["id"]
+    base = f"/api/document-forms/projects/{project_id}"
+    project = client.get(base).json()
+    review = client.post(
+        f"/api/document-forms/cases/{case['id']}/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert review["can_generate"]
+    project = client.put(
+        base,
+        json={
+            "revision": project["revision"],
+            "name": "新的项目底稿",
+            "code": project["code"],
+            "owner": project["owner"],
+        },
+    ).json()
+    changed = client.post(
+        base + f"/cases/{case['id']}/sync",
+        json={
+            "revision": project["revision"],
+            "case_revision": case["revision"],
+            "keys": ["project.name"],
+        },
+    )
+    assert changed.status_code == 200
+    stale = client.post(
+        f"/api/document-forms/cases/{case['id']}/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    )
+    assert stale.status_code == 409
+    root = next(main.ROOT.iterdir())
+    template = (
+        main.folder(root, case["id"])
+        / "templates"
+        / (case["templates"][0]["id"] + ".docx")
+    )
+    template.write_bytes(b"tampered")
+    result = client.get(base + "/bundle")
+    assert result.status_code == 422 and "校验" in result.json()["detail"]
+
+
+def test_project_stage_imports_own_templates_and_inherits_only_blank_fields(
+    client,
+    sources,
+):
+    project, first = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    assert len(first["templates"]) == 5
+    response = client.post(
+        base + "/cases/import",
+        data={"revision": project["revision"], "stage_id": "kickoff"},
+        files={"workbook": ("开题.xlsx", sources["变量管理表.xlsx"])},
+    )
+    assert response.status_code == 200, response.text
+    kickoff = response.json()
+    assert kickoff["templates"] == []
+    assert values_for(kickoff)["project.name"] != project["name"]
+    current = client.get(base).json()
+    assert {f["stage_id"] for f in current["forms"]} == {
+        "negotiation",
+        "kickoff",
+    }
+    data = engine.read_excel(sources["变量管理表.xlsx"])
+    data["templates"] = []
+    for field in data["fields"]:
+        field["value"] = ""
+    blank = engine.export_excel(data)
+    new_case = client.post(
+        base + "/cases/import",
+        data={"revision": current["revision"], "stage_id": "acceptance"},
+        files={"workbook": ("验收.xlsx", blank)},
+    ).json()
+    assert values_for(new_case)["project.name"] == project["name"]
+    assert values_for(new_case)["project.code"] == project["code"]
+    assert new_case["templates"] == []
+    root = next(main.ROOT.iterdir())
+    stored = main.load(root, new_case["id"])
+    assert (
+        stored["stage_id"] == "acceptance"
+        and stored["project_id"] == project["id"]
+    )
+
+
+def test_stage_completion_requires_confirmation_and_tracks_upstream_rework(
+    client,
+):
+    project, _ = project_case(client, "kickoff")
+    base = f"/api/document-forms/projects/{project['id']}"
+    stage = project["stages"][0]
+    material = stage["materials"][0]
+    path = base + f"/stages/plan/materials/{material['id']}"
+    project = client.put(
+        path,
+        json={
+            "revision": project["revision"],
+            "name": material["name"],
+            "required": True,
+            "status": "pending",
+        },
+    ).json()
+    body = {
+        "revision": project["revision"],
+        "status": "completed",
+        "notes": "系统已审批",
+    }
+    assert client.put(base + "/stages/plan", json=body).status_code == 422
+    body["confirmed"] = True
+    assert (
+        "必备" in client.put(base + "/stages/plan", json=body).json()["detail"]
+    )
+    project = client.put(
+        path,
+        json={
+            "revision": project["revision"],
+            "name": material["name"],
+            "required": True,
+            "status": "done",
+        },
+    ).json()
+    body["revision"] = project["revision"]
+    project = client.put(base + "/stages/plan", json=body).json()
+    assert project["stages"][0]["status"] == "completed"
+    assert "上报计划" in project["stages"][3]["upstream_changed"]
+    project = client.post(
+        base + "/stages/kickoff/acknowledge",
+        json={"revision": project["revision"]},
+    ).json()
+    assert project["stages"][3]["upstream_changed"] == []
+    project = client.put(
+        path,
+        json={
+            "revision": project["revision"],
+            "name": material["name"],
+            "required": True,
+            "status": "preparing",
+        },
+    ).json()
+    assert project["stages"][0]["status"] == "in_progress"
+    assert project["stages"][3]["upstream_changed"] == ["上报计划"]
+    assert (
+        client.put(
+            base + "/stages/plan",
+            json={"revision": project["revision"], "status": "banana"},
+        ).status_code
+        == 422
+    )
+    assert (
+        client.put(
+            base + "/stages/plan",
+            json={
+                "revision": project["revision"],
+                "status": "submitted",
+                "system_url": "javascript:alert(1)",
+            },
+        ).status_code
+        == 422
+    )
+    assert (
+        client.put(
+            base + "/stages/plan",
+            json={
+                "revision": project["revision"],
+                "status": "submitted",
+                "due_date": "2026-02-30",
+            },
+        ).status_code
+        == 422
+    )
+
+
+def test_project_attachments_retain_versions_scope_and_real_archive(client):
+    project, _ = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    material = project["stages"][0]["materials"][0]
+    path = base + f"/stages/plan/materials/{material['id']}/files"
+    payloads = [b"%PDF-1.4 draft", b"%PDF-1.4 final"]
+    stale = project["revision"]
+    for content in payloads:
+        result = client.post(
+            path,
+            data={"revision": project["revision"]},
+            files={"file": ("上报计划.pdf", content, "application/pdf")},
+        )
+        assert result.status_code == 200, result.text
+        project = result.json()
+    item = project["stages"][0]["materials"][0]
+    assert len(item["files"]) == 2 and item["status"] == "preparing"
+    for file, content in zip(item["files"], payloads):
+        assert client.get(base + f"/files/{file['id']}").content == content
+        assert (
+            client.get(
+                base + f"/files/{file['id']}",
+                headers={"X-Agent-Id": "different"},
+            ).status_code
+            == 404
+        )
+        assert "storage" not in file and file["preview_url"].startswith(
+            "/api/files/preview/",
+        )
+    assert (
+        client.post(
+            path,
+            data={"revision": stale},
+            files={"file": ("stale.pdf", b"x")},
+        ).status_code
+        == 409
+    )
+    assert (
+        client.post(
+            path,
+            data={"revision": project["revision"]},
+            files={"file": ("unsafe.exe", b"x")},
+        ).status_code
+        == 422
+    )
+    bundle = client.get(base + "/bundle?stage_id=plan")
+    assert bundle.status_code == 200
+    with ZipFile(io.BytesIO(bundle.content)) as archive:
+        assert len(archive.namelist()) == 4 and archive.testzip() is None
+        index = load_workbook(io.BytesIO(archive.read("材料目录.xlsx")))
+        assert index.active["E2"].value == 2
+        assert index.active["F2"].value == "上报计划.pdf"
+        manifest = json.loads(archive.read("项目材料台账.json"))
+        assert len(manifest["stages"]) == 1 and manifest["forms"] == []
+        assert b"preview_url" not in archive.read("项目材料台账.json")
+        assert set(
+            archive.read(n) for n in archive.namelist() if n.endswith(".pdf")
+        ) == set(payloads)
+    assert (
+        len(client.get(base).json()["stages"][0]["materials"][0]["files"]) == 2
+    )
+
+
+def test_project_generated_batch_changes_prompt_downstream_review(
+    client,
+    sources,
+):
+    case = create(client, sources)
+    projects = client.get("/api/document-forms/projects").json()
+    base = f"/api/document-forms/projects/{projects[0]['id']}"
+    project = client.get(base).json()
+    project = client.put(
+        base + "/stages/kickoff",
+        json={"revision": project["revision"], "status": "in_progress"},
+    ).json()
+    revision = case["revision"]
+    client.put(
+        f"/api/document-forms/cases/{case['id']}",
+        json={
+            "revision": revision,
+            "name": case["name"],
+            "values": values_for(case),
+            "recipients": case["recipients"],
+        },
+    ).raise_for_status()
+    updated = client.get(base).json()
+    assert updated["stages"][3]["upstream_changed"] == ["商务谈判"]
+    case = client.get(f"/api/document-forms/cases/{case['id']}").json()
+    review = client.post(
+        f"/api/document-forms/cases/{case['id']}/review",
+        json={"revision": case["revision"]},
+    ).json()
+    generated = client.post(
+        f"/api/document-forms/cases/{case['id']}/generate",
+        json={
+            "revision": case["revision"],
+            "review_token": review["review_token"],
+            "confirmed": True,
+        },
+    ).json()
+    batch_id = generated["generations"][0]["id"]
+    original = client.get(
+        f"/api/document-forms/cases/{case['id']}"
+        f"/outputs/{batch_id}/全部文书.zip",
+    ).content
+    bundle = client.get(base + "/bundle")
+    with ZipFile(io.BytesIO(bundle.content)) as archive:
+        nested = [n for n in archive.namelist() if n.endswith(".zip")]
+        assert len(nested) == 1 and archive.read(nested[0]) == original
+    project = client.get(base).json()
+    changed = client.put(
+        base,
+        json={
+            "revision": project["revision"],
+            "name": "新的项目名称",
+            "code": project["code"],
+            "owner": project["owner"],
+        },
+    ).json()
+    case = client.post(
+        base + f"/cases/{case['id']}/sync",
+        json={
+            "revision": changed["revision"],
+            "case_revision": generated["revision"],
+            "keys": ["project.name"],
+        },
+    ).json()
+    assert case["revision"] == generated["revision"] + 1
+    assert (
+        client.get(
+            f"/api/document-forms/cases/{case['id']}"
+            f"/outputs/{batch_id}/全部文书.zip",
+        ).content
+        == original
+    )
+
+
 def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
     client,
 ):

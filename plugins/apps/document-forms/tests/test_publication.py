@@ -39,6 +39,7 @@ def release_fixture(tmp_path, monkeypatch):
             "backend/main.py",
             "backend/engine.py",
             "backend/builtin.py",
+            "backend/projects.py",
             "ui/index.js",
             "README.md",
             "requirements.txt",

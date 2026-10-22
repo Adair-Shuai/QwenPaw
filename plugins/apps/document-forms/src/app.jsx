@@ -1,5 +1,6 @@
 import CSS from "./workbench.css";
 import OfficeServicePreview, { OfficePrintPreview } from "./office-preview.jsx";
+import ProjectWorkspace from "./project-workspace.jsx";
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useLayoutEffect, useRef } = React;
@@ -123,9 +124,18 @@ function Field({ field, displayValue, onChange }) {
     </label>
   );
 }
-function Workbench() {
-  const [records, setRecords] = useState([]),
-    [draft, setDraft] = useState(null);
+function Workbench({
+  project,
+  workflowStage,
+  initialCaseId,
+  initialView,
+  onBack,
+  onChanged,
+  onDirtyChange,
+}) {
+  const [draft, setDraft] = useState(null);
+  const [comparison, setComparison] = useState(null);
+  const [selectedKeys, setSelectedKeys] = useState([]);
   const [stage, setStage] = useState("import"),
     [dirty, setDirty] = useState(false);
   const [review, setReview] = useState(null),
@@ -140,13 +150,23 @@ function Workbench() {
   const seq = useRef(0),
     alive = useRef(true);
   const theme = Q.host.useTheme?.() || "light";
-  const refresh = () =>
-    request("/cases").then((data) => {
-      if (alive.current) setRecords(data);
-    });
+  const refresh = () => onChanged?.() || Promise.resolve();
   useEffect(() => {
     alive.current = true;
-    refresh().catch((e) => setError(e.message));
+    request("/cases/" + initialCaseId)
+      .then((data) => {
+        if (!alive.current) return;
+        receive(data);
+        setStage(
+          initialView === "files" && data.generations.length ? "files" : "edit",
+        );
+        if (initialView === "files" && data.generations.length)
+          setPreview({
+            file: data.generations[0].files[0],
+            generation: data.generations[0],
+          });
+      })
+      .catch((e) => alive.current && setError(e.message));
     (Q.workspace?.loadPreview
       ? Q.workspace.loadPreview()
       : Promise.resolve(OfficeServicePreview)
@@ -162,6 +182,9 @@ function Workbench() {
       seq.current++;
     };
   }, []);
+  useEffect(() => {
+    onDirtyChange?.(dirty);
+  }, [dirty]);
   useEffect(() => {
     const handler = (e) => {
       if (dirty) {
@@ -243,20 +266,17 @@ function Workbench() {
   );
   const generation = draft?.generations[0];
   const issues = review?.checks.filter((r) => r.status !== "ok") || [];
-  async function openRecord(id) {
-    if (!canLeave()) return;
-    await run("打开记录", async () => {
-      receive(await request("/cases/" + id));
-      setPreview(null);
-      setStage("edit");
-    });
-  }
   async function importExcel(file) {
     if (!file || !canLeave()) return;
     await run("读取 Excel", async () => {
       const form = new FormData();
       form.append("workbook", file);
-      const data = await request("/cases", { method: "POST", body: form });
+      form.append("revision", project.revision);
+      form.append("stage_id", workflowStage.id);
+      const data = await request(`/projects/${project.id}/cases/import`, {
+        method: "POST",
+        body: form,
+      });
       receive(data);
       setPreview(null);
       setStage("edit");
@@ -284,6 +304,7 @@ function Workbench() {
           body: form,
         }),
       );
+      await refresh();
       setNotice("Word 模板已添加，生成时会保留原有排版。");
     });
   }
@@ -357,7 +378,7 @@ function Workbench() {
       }
     : null;
   return (
-    <main className="df-app" data-theme={theme}>
+    <div className="df-app df-embedded-editor" data-theme={theme}>
       <style>{CSS}</style>
       <input
         ref={excelInput}
@@ -382,56 +403,47 @@ function Workbench() {
           e.target.value = "";
         }}
       />
-      <aside className="df-sidebar">
-        <div className="df-brand">
-          UGSci <span>文书填报</span>
-        </div>
-        <button
-          className="df-primary df-new"
-          disabled={!!busy}
-          onClick={() => excelInput.current.click()}
-        >
-          ＋ 新建填报
-        </button>
-        <div className="df-caption">
-          填报记录 <span>{records.length}</span>
-        </div>
-        <nav aria-label="填报记录">
-          {records.map((r) => (
-            <button
-              key={r.id}
-              aria-current={draft?.id === r.id ? "page" : undefined}
-              disabled={!!busy}
-              onClick={() => openRecord(r.id)}
-            >
-              <b>{r.name}</b>
-              <small>
-                {time(r.updated_at)} ·{" "}
-                {r.outputs ? `${r.outputs} 份文件` : "草稿"}
-              </small>
-            </button>
-          ))}
-        </nav>
-        <div className="df-sidebar-foot">
-          <b>模板准备</b>
-          <p>Excel 管理数据，Word 保留版式。同一组数据可填写多份文书。</p>
+      <section className="df-main">
+        <div className="df-editor-context">
           <button
             disabled={!!busy}
-            onClick={() =>
-              run("下载配套模板", () =>
-                download("/starter", "文书填报_配套模板.zip"),
-              )
-            }
+            onClick={() => {
+              if (canLeave()) onBack();
+            }}
           >
-            下载配套模板 ↗
+            ← 返回{workflowStage.title}
           </button>
-          <small>含空白 Excel 与 5 份标准 Word 模板</small>
+          <span>
+            {project.name} / {workflowStage.title}
+          </span>
+          {draft && (
+            <div className="df-actions">
+              <button
+                disabled={!!busy}
+                onClick={() => {
+                  setComparison("adopt");
+                  setSelectedKeys([]);
+                }}
+              >
+                核对项目资料差异
+              </button>
+              <button
+                disabled={!!busy}
+                onClick={() => {
+                  setComparison("publish");
+                  setSelectedKeys([]);
+                }}
+              >
+                存入项目底稿
+              </button>
+            </div>
+          )}
         </div>
-      </aside>
-      <section className="df-main">
         <header className="df-header">
           <div>
-            <span className="df-eyebrow">DOCUMENTS / 文书填报</span>
+            <span className="df-eyebrow">
+              {workflowStage.title} / 填写与生成
+            </span>
             <h1>{draft ? draft.name : "把重复填写的资料，整理成一张表。"}</h1>
             <p>
               {draft
@@ -571,9 +583,9 @@ function Workbench() {
                   </button>
                 </div>
                 <label className="df-field df-title-field">
-                  <span>填报名称</span>
+                  <span>表单名称</span>
                   <input
-                    aria-label="填报名称"
+                    aria-label="表单名称"
                     maxLength={120}
                     value={draft.name}
                     onChange={(e) => edit({ ...draft, name: e.target.value })}
@@ -730,12 +742,16 @@ function Workbench() {
                               json({ revision: data.revision }),
                             );
                             setNotice(
-                              "已设为本机默认模板，以后新建填报会自动载入。",
+                              workflowStage.id === "negotiation"
+                                ? "已设为本机默认模板，以后新建填报会自动载入。"
+                                : "已设为本阶段默认模板，以后新建该阶段表单会自动载入。",
                             );
                           })
                         }
                       >
-                        设为默认模板
+                        {workflowStage.id === "negotiation"
+                          ? "设为默认模板"
+                          : "设为本阶段默认模板"}
                       </button>
                     ) : (
                       <button
@@ -1057,13 +1073,143 @@ function Workbench() {
           <span>数据与文书保存在当前服务端 · 无需模型服务</span>
         </footer>
       </section>
-    </main>
+      {comparison && draft && (
+        <div className="df-dialog-backdrop">
+          <section
+            className="df-dialog df-paper"
+            role="dialog"
+            aria-modal="true"
+            aria-label="核对共用资料"
+          >
+            <div className="df-section-head">
+              <h2>
+                {comparison === "adopt"
+                  ? "采用项目底稿中的资料"
+                  : "将本表资料存入项目底稿"}
+              </h2>
+              <button
+                disabled={!!busy}
+                onClick={() => setComparison(null)}
+                aria-label="关闭共用资料核对"
+              >
+                ×
+              </button>
+            </div>
+            <p className="df-muted">
+              只更新勾选项。原生成文件保留，后续生成前需重新核对。
+            </p>
+            {error && (
+              <p role="alert" className="df-alert error">
+                {error}
+              </p>
+            )}
+            <div className="df-compare">
+              {project.fields
+                .filter((common) =>
+                  draft.fields.some(
+                    (f) => f.key === common.key && f.value !== common.value,
+                  ),
+                )
+                .map((common) => {
+                  const own = draft.fields.find((f) => f.key === common.key);
+                  return (
+                    <label key={common.key}>
+                      <input
+                        type="checkbox"
+                        checked={selectedKeys.includes(common.key)}
+                        onChange={(e) =>
+                          setSelectedKeys(
+                            e.target.checked
+                              ? [...selectedKeys, common.key]
+                              : selectedKeys.filter((k) => k !== common.key),
+                          )
+                        }
+                      />
+                      <div>
+                        <b>{common.label}</b>
+                        <div className="df-compare-values">
+                          <p>
+                            <small>当前表单</small>
+                            {own.value || "空白"}
+                          </p>
+                          <p>
+                            <small>项目底稿</small>
+                            {common.value || "空白"}
+                          </p>
+                        </div>
+                      </div>
+                    </label>
+                  );
+                })}
+              {!project.fields.some((common) =>
+                draft.fields.some(
+                  (f) => f.key === common.key && f.value !== common.value,
+                ),
+              ) && <p>本表与项目底稿中的共用资料一致。</p>}
+            </div>
+            <div className="df-actions">
+              <button disabled={!!busy} onClick={() => setComparison(null)}>
+                取消
+              </button>
+              <button
+                className="df-primary"
+                disabled={!!busy || !selectedKeys.length}
+                onClick={() =>
+                  run("同步共用资料", async () => {
+                    const saved = await saveDraft();
+                    if (comparison === "adopt") {
+                      receive(
+                        await request(
+                          `/projects/${project.id}/cases/${saved.id}/sync`,
+                          json({
+                            revision: project.revision,
+                            case_revision: saved.revision,
+                            keys: selectedKeys,
+                          }),
+                        ),
+                      );
+                    } else {
+                      const currentValues = Object.fromEntries(
+                        saved.fields
+                          .filter((f) => selectedKeys.includes(f.key))
+                          .map((f) => [f.key, f.value]),
+                      );
+                      await request(`/projects/${project.id}`, {
+                        ...json({
+                          revision: project.revision,
+                          name: currentValues["project.name"] ?? project.name,
+                          code: currentValues["project.code"] ?? project.code,
+                          owner: project.owner,
+                          values: currentValues,
+                        }),
+                        method: "PUT",
+                      });
+                    }
+                    await refresh();
+                    setComparison(null);
+                    setNotice("所选资料已同步，请重新核对后生成新版文书。");
+                  })
+                }
+              >
+                {comparison === "adopt"
+                  ? "采用所选项目资料"
+                  : "保存所选资料到底稿"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+    </div>
   );
 }
 function App() {
   const agent = Q.host.useSelectedAgent?.();
   return (
-    <Workbench key={agent?.id || Q.host.getSelectedAgentId?.() || "default"} />
+    <ProjectWorkspace
+      key={agent?.id || Q.host.getSelectedAgentId?.() || "default"}
+      Editor={Workbench}
+      services={{ request, json, download, time, Field }}
+    />
   );
 }
 Q.registerRoutes("document-forms", [

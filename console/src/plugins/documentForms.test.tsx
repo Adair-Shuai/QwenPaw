@@ -6,6 +6,7 @@ import {
   cleanup,
   fireEvent,
   screen,
+  within,
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
@@ -27,6 +28,478 @@ afterEach(() => {
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "QwenPaw");
 });
+
+const stageNames = [
+  "上报计划",
+  "选商论证",
+  "商务谈判",
+  "开题论证",
+  "结题验收",
+  "归档付款",
+];
+const stageIds = [
+  "plan",
+  "selection",
+  "negotiation",
+  "kickoff",
+  "acceptance",
+  "payment",
+];
+const reply = (value: unknown) =>
+  new Response(JSON.stringify(structuredClone(value)), {
+    headers: { "Content-Type": "application/json" },
+  });
+
+function formProjectApi(getCase: () => any) {
+  let imported = false;
+  return (url: string, init?: RequestInit) => {
+    const state = getCase();
+    if (url === "/document-forms/projects")
+      return reply([
+        {
+          id: "p1",
+          name: "测试项目",
+          code: "P001",
+          completed: 0,
+          forms: imported ? 1 : 0,
+        },
+      ]);
+    if (url === "/document-forms/projects/p1/cases/import") {
+      imported = true;
+      return reply(state);
+    }
+    if (url === `/document-forms/cases/${state.id}` && !init?.method)
+      return reply(state);
+    if (url === "/document-forms/projects/p1")
+      return reply({
+        id: "p1",
+        name: "测试项目",
+        code: "P001",
+        owner: "经办人",
+        revision: 1,
+        fields: state.fields.filter((f: any) =>
+          /^(project|research|org|contact)\./.test(f.key),
+        ),
+        forms: imported
+          ? [
+              {
+                case_id: state.id,
+                stage_id: "negotiation",
+                name: state.name,
+                revision: state.revision,
+                updated_at: state.updated_at,
+                outputs: 0,
+                shared_changes: [],
+                generations: state.generations,
+              },
+            ]
+          : [],
+        stages: stageIds.map((id, i) => ({
+          id,
+          title: stageNames[i],
+          purpose: "阶段材料",
+          status: "pending",
+          materials: [],
+          upstream_changed: [],
+          missing_required: [],
+          notes: "",
+          due_date: "",
+          system_url: "",
+          system_name: "",
+          submission_ref: "",
+        })),
+      });
+    return null;
+  };
+}
+
+it("organizes projects into six stages and keeps material versions and submission details on the packaged page", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  let project: any = null;
+  const calls: Array<{ url: string; body: any }> = [];
+  const downloads: string[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloads.push(this.download);
+  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: () => "blob:project-material",
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const body =
+      typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
+    calls.push({ url, body });
+    if (url === "/workspace/convert-office")
+      return reply({
+        engine: "officecli",
+        html: "<html><body>计划材料预览</body></html>",
+      });
+    if (url === "/document-forms/projects" && init?.method === "POST") {
+      project = {
+        id: "project-new",
+        ...body,
+        revision: 1,
+        fields: [
+          {
+            key: "project.name",
+            label: "项目名称",
+            group: "项目资料",
+            kind: "text",
+            value: body.name,
+          },
+        ],
+        forms: [],
+        stages: stageIds.map((id, i) => ({
+          id,
+          title: stageNames[i],
+          purpose: "阶段说明",
+          status: "pending",
+          due_date: "",
+          notes: "",
+          system_name: "",
+          system_url: "",
+          submission_ref: "",
+          upstream_changed: [],
+          missing_required: [],
+          materials: [
+            {
+              id: "m-" + id,
+              name: stageNames[i] + "材料",
+              required: false,
+              status: "pending",
+              note: "",
+              files: [],
+            },
+          ],
+        })),
+      };
+      return reply(project);
+    }
+    if (url === "/document-forms/projects")
+      return reply(project ? [{ ...project, completed: 0, forms: 0 }] : []);
+    if (url.endsWith("/project-new") && !init?.method) return reply(project);
+    if (url.includes("/materials/") && url.endsWith("/files")) {
+      const file = (body as FormData).get("file") as File;
+      const material = project.stages[0].materials[0];
+      material.files.push({
+        id: "f" + material.files.length,
+        name: file.name,
+        mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        size: file.size,
+        uploaded_at: "2026-10-22T10:00:00Z",
+        preview_url: "/api/files/preview/plan.docx",
+      });
+      material.status = "preparing";
+      project.revision++;
+      return reply(project);
+    }
+    if (url.endsWith("/materials/m-plan") && init?.method === "PUT") {
+      Object.assign(project.stages[0].materials[0], body);
+      project.revision++;
+      return reply(project);
+    }
+    if (url.endsWith("/stages/plan") && init?.method === "PUT") {
+      Object.assign(project.stages[0], body);
+      project.revision++;
+      return reply(project);
+    }
+    if (url.includes("/bundle"))
+      return new Response("PK-project-archive", {
+        headers: { "Content-Type": "application/zip" },
+      });
+    throw new Error("Unexpected project request: " + url);
+  });
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {},
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      "URL",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window, URL);
+  });
+  renderWithProviders(<Page />);
+  await waitFor(() =>
+    expect(screen.queryByText("载入项目…")).not.toBeInTheDocument(),
+  );
+  await user.click(screen.getByRole("button", { name: "＋ 新建项目" }));
+  await user.type(screen.getByLabelText("新项目名称"), "储气库项目");
+  await user.type(screen.getByLabelText("新项目编号"), "P-2026-01");
+  await user.type(screen.getByLabelText("新项目经办人"), "测试经办人");
+  await user.click(screen.getByRole("button", { name: "建立项目" }));
+  await screen.findByRole("heading", { name: "储气库项目" });
+  expect(
+    screen.queryByRole("navigation", { name: "填报记录" }),
+  ).not.toBeInTheDocument();
+  const nav = screen.getByRole("navigation", { name: "项目阶段" });
+  for (const label of stageNames)
+    expect(
+      within(nav).getByRole("button", { name: new RegExp(label) }),
+    ).toBeInTheDocument();
+  await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
+  await screen.findByRole("heading", { name: "材料清单 1" });
+  expect(screen.getByText(/统一模板待补充/)).toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "填写谈判材料" }),
+  ).not.toBeInTheDocument();
+  const upload = screen.getByLabelText("上传阶段材料");
+  await user.click(screen.getByRole("button", { name: "上传上报计划材料" }));
+  await user.upload(
+    upload,
+    new File(["v1"], "计划材料.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+  );
+  await screen.findByText(/1 份文件.*最新/);
+  await user.click(screen.getByRole("button", { name: "上传上报计划材料" }));
+  await user.upload(
+    upload,
+    new File(["v2"], "计划材料.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    }),
+  );
+  await user.click(await screen.findByText(/2 份文件.*最新/));
+  expect(screen.getByText("V2 · 计划材料.docx")).toBeInTheDocument();
+  expect(screen.getByText("V1 · 计划材料.docx")).toBeInTheDocument();
+  await user.click(screen.getAllByRole("button", { name: "预览" })[0]);
+  await screen.findByRole("dialog", { name: "计划材料.docx" });
+  await waitFor(() =>
+    expect(
+      hostFetch.mock.calls.some(([url]) => url === "/workspace/convert-office"),
+    ).toBe(true),
+  );
+  await user.click(screen.getByRole("button", { name: "关闭预览" }));
+  await user.click(screen.getByRole("button", { name: "编辑上报计划材料" }));
+  await user.selectOptions(screen.getByLabelText("材料状态"), "done");
+  await user.click(screen.getByRole("checkbox"));
+  await user.click(screen.getByRole("button", { name: "保存材料信息" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+  );
+  await user.click(screen.getByRole("button", { name: "办理信息与状态" }));
+  await user.selectOptions(screen.getByLabelText("阶段状态"), "completed");
+  await user.type(screen.getByLabelText("办理系统"), "计划管理系统");
+  await user.type(
+    screen.getByLabelText("系统地址"),
+    "https://example.com/plan",
+  );
+  await user.type(screen.getByLabelText("提交编号"), "PLAN-001");
+  await user.type(screen.getByLabelText("办理说明"), "已取得计划批复");
+  expect(screen.getByRole("button", { name: "保存办理信息" })).toBeDisabled();
+  expect(
+    calls.some(
+      (call) =>
+        call.url.endsWith("/stages/plan") && call.body.status === "completed",
+    ),
+  ).toBe(false);
+  await user.click(screen.getByLabelText("确认本阶段已办结"));
+  await user.click(screen.getByRole("button", { name: "保存办理信息" }));
+  await screen.findByRole("link", { name: "计划管理系统 ↗" });
+  expect(screen.getByText("PLAN-001")).toBeInTheDocument();
+  expect(
+    calls.find((call) => call.url.endsWith("/stages/plan"))?.body.confirmed,
+  ).toBe(true);
+  await user.click(screen.getByRole("button", { name: "下载本阶段材料" }));
+  await waitFor(() => expect(downloads).toContain("储气库项目_上报计划.zip"));
+  expect(calls.some((call) => call.url.endsWith("/bundle?stage_id=plan"))).toBe(
+    true,
+  );
+}, 30000);
+
+it("reviews shared project differences before selectively updating a stage form and protects unsaved edits", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  let state: any = {
+    id: "case-shared",
+    name: "谈判资料",
+    revision: 1,
+    updated_at: "2026-10-22T10:00:00Z",
+    fields: [
+      {
+        key: "project.name",
+        label: "项目名称",
+        kind: "text",
+        group: "项目资料",
+        value: "旧项目名称",
+        required: true,
+      },
+      {
+        key: "research.contents",
+        label: "研究内容",
+        kind: "textarea",
+        group: "研究内容",
+        value: "原有研究内容",
+        required: true,
+      },
+    ],
+    recipients: [],
+    templates: [],
+    generations: [],
+    document_values: {},
+  };
+  const common = [
+    { ...state.fields[0], value: "项目统一名称" },
+    { ...state.fields[1], value: "项目统一研究内容" },
+  ];
+  const project = () => ({
+    id: "p-shared",
+    name: "项目统一名称",
+    code: "P1",
+    owner: "经办人",
+    revision: 1,
+    fields: common,
+    forms: [
+      {
+        case_id: state.id,
+        name: state.name,
+        stage_id: "negotiation",
+        outputs: 0,
+        revision: state.revision,
+        shared_changes: ["project.name", "research.contents"],
+        generations: [],
+        updated_at: state.updated_at,
+      },
+    ],
+    stages: stageIds.map((id, i) => ({
+      id,
+      title: stageNames[i],
+      purpose: "材料",
+      status: "in_progress",
+      materials: [],
+      upstream_changed: [],
+      missing_required: [],
+      notes: "",
+      system_url: "",
+      system_name: "",
+      submission_ref: "",
+      due_date: "",
+    })),
+  });
+  const calls: Array<{ url: string; body: any }> = [];
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
+    calls.push({ url, body });
+    if (url === "/document-forms/projects")
+      return reply([
+        {
+          id: "p-shared",
+          name: "项目统一名称",
+          code: "P1",
+          completed: 0,
+          forms: 1,
+        },
+      ]);
+    if (url === "/document-forms/projects/p-shared") return reply(project());
+    if (url.endsWith("/case-shared/sync")) {
+      expect(body.keys).toEqual(["project.name"]);
+      expect(body.case_revision).toBe(2);
+      state = {
+        ...state,
+        revision: state.revision + 1,
+        fields: state.fields.map((f: any) =>
+          body.keys.includes(f.key)
+            ? { ...f, value: common.find((p) => p.key === f.key)!.value }
+            : f,
+        ),
+      };
+      return reply(state);
+    }
+    if (url === "/document-forms/cases/case-shared") {
+      if (init?.method === "PUT")
+        state = {
+          ...state,
+          revision: state.revision + 1,
+          fields: state.fields.map((f: any) => ({
+            ...f,
+            value: body.values[f.key],
+          })),
+        };
+      return reply(state);
+    }
+    throw new Error("Unexpected shared request: " + url);
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {},
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      "URL",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window, URL);
+  });
+  renderWithProviders(<Page />);
+  await user.click(
+    await screen.findByRole("button", { name: /^03.*商务谈判/ }),
+  );
+  await user.click(screen.getByRole("button", { name: "打开表单" }));
+  const name = await screen.findByLabelText("项目名称");
+  await user.clear(name);
+  await user.type(name, "用户未保存的名称");
+  await user.click(screen.getByRole("button", { name: /^05.*结题验收/ }));
+  expect(confirm).toHaveBeenCalled();
+  expect(name).toHaveValue("用户未保存的名称");
+  await user.click(screen.getByRole("button", { name: "核对项目资料差异" }));
+  const dialog = screen.getByRole("dialog", { name: "核对共用资料" });
+  expect(within(dialog).getByText("用户未保存的名称")).toBeInTheDocument();
+  expect(within(dialog).getByText("项目统一名称")).toBeInTheDocument();
+  expect(
+    within(dialog).getByRole("button", { name: "采用所选项目资料" }),
+  ).toBeDisabled();
+  expect(calls.some((call) => call.url.endsWith("/sync"))).toBe(false);
+  await user.click(within(dialog).getByRole("checkbox", { name: /^项目名称/ }));
+  await user.click(
+    within(dialog).getByRole("button", { name: "采用所选项目资料" }),
+  );
+  await screen.findByText("所选资料已同步，请重新核对后生成新版文书。");
+  expect(screen.getByLabelText("项目名称")).toHaveValue("项目统一名称");
+  expect(screen.getByLabelText("研究内容")).toHaveValue("原有研究内容");
+  expect(calls.filter((call) => call.url.endsWith("/sync"))).toHaveLength(1);
+}, 30000);
 
 it("automatically loads the five bundled templates and downloads their blank Excel kit", async () => {
   const user = userEvent.setup();
@@ -56,7 +529,10 @@ it("automatically loads the five bundled templates and downloads their blank Exc
       keys: ["project.name"],
     })),
   };
+  const projectApi = formProjectApi(() => state);
   const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const managed = projectApi(url, init);
+    if (managed) return managed;
     if (url === "/document-forms/starter")
       return new Response("PK-standard-kit", {
         headers: { "Content-Type": "application/zip" },
@@ -106,8 +582,11 @@ it("automatically loads the five bundled templates and downloads their blank Exc
   renderWithProviders(<Page />);
   await user.click(screen.getByRole("button", { name: /下载配套模板/ }));
   await waitFor(() => expect(downloads).toEqual(["文书填报_配套模板.zip"]));
+  await user.click(
+    await screen.findByRole("button", { name: /^03.*商务谈判/ }),
+  );
   await user.upload(
-    screen.getByLabelText("导入 Excel 变量表"),
+    screen.getByLabelText("导入阶段 Excel"),
     new File(["xlsx"], "配套.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     }),
@@ -197,11 +676,14 @@ describe.each(["embedded", "compatible"])(
           });
         },
       );
+      const projectApi = formProjectApi(() => state);
       const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
         let result: any;
         const body =
           typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
         calls.push({ url, body });
+        const managed = projectApi(url, init);
+        if (managed) return managed;
         if (url.includes("/outputs/"))
           return new Response(zipFails ? "unavailable" : "PK-test-bundle", {
             status: zipFails ? 503 : 200,
@@ -365,9 +847,16 @@ describe.each(["embedded", "compatible"])(
         )(window, URL);
       });
       renderWithProviders(<Page />);
-      expect(screen.getByText("从 Excel 变量表开始")).toBeInTheDocument();
+      await user.click(
+        await screen.findByRole("button", { name: /^03.*商务谈判/ }),
+      );
+      expect(
+        screen.getByText(
+          "五份标准模板已接入，可直接填写，也可导入现有 Excel。",
+        ),
+      ).toBeInTheDocument();
       await user.upload(
-        screen.getByLabelText("导入 Excel 变量表"),
+        screen.getByLabelText("导入阶段 Excel"),
         new File(["xlsx"], "变量表.xlsx", {
           type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         }),

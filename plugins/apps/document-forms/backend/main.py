@@ -11,6 +11,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import uuid
 from datetime import datetime, timezone
@@ -34,6 +35,7 @@ from qwenpaw.constant import WORKING_DIR
 from qwenpaw.pawapp import PawApp
 
 from .backend import builtin  # pylint: disable=relative-beyond-top-level
+from .backend import projects  # pylint: disable=relative-beyond-top-level
 
 # PluginLoader treats this entry module as the plugin root package.
 from .backend.engine import (  # pylint: disable=relative-beyond-top-level
@@ -249,12 +251,22 @@ def print_document(source, cache, page=None):
         return target, count
 
 
+def default_library(root, case):
+    stage_id = case.get("stage_id", "negotiation")
+    if stage_id != "negotiation" and stage_id in projects.STAGE_IDS:
+        return root / "stage-defaults" / stage_id
+    return root / "default-templates"
+
+
 def attach_default_templates(root, case):
-    library = root / "default-templates"
+    library = default_library(root, case)
     index = library / "index.json"
     built_in = not index.is_file()
     bundled = {}
     if built_in:
+        if case.get("stage_id", "negotiation") != "negotiation":
+            case["template_notice"] = "本阶段尚未设置默认 Word 模板，可添加统一模板后设为本阶段默认。"
+            return 0
         field_keys = {field["key"] for field in case["fields"]}
         if (
             not {field["key"] for field in builtin.blank_fields()}
@@ -314,7 +326,7 @@ def attach_default_templates(root, case):
 def store_default_templates(root, case):
     if not case["templates"]:
         raise HTTPException(422, "请先添加需要作为默认的 Word 模板")
-    library = root / "default-templates"
+    library = default_library(root, case)
     prepared = []
     for template in case["templates"]:
         content = (
@@ -659,6 +671,10 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                 str(target / f["name"]),
                 safe="",
             )
+        bundle_label = {row[0]: row[1] for row in projects.STAGES}.get(
+            case.get("stage_id"),
+            "谈判",
+        )
         generation = {
             "id": generation_id,
             "revision": case["revision"],
@@ -669,7 +685,9 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
             "data_name": project_name(case) + "_填写数据.xlsx",
             "bundle_name": (
                 project_name(case)
-                + "_谈判材料_"
+                + "_"
+                + bundle_label
+                + "材料_"
                 + datetime.now(timezone.utc)
                 .astimezone()
                 .strftime("%Y%m%d_%H%M%S")
@@ -789,5 +807,11 @@ def starter():
     )
 
 
+project_store = projects.register_routes(
+    router,
+    scope,
+    _lock,
+    sys.modules[__name__],
+)
 app.include_router(router)
 plugin = app

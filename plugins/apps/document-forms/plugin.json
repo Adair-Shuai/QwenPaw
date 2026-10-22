@@ -1,10 +1,10 @@
 {
   "id": "document-forms",
   "name": "文书填报",
-  "version": "1.0.12",
+  "version": "1.1.0",
   "type": "app",
   "channel": "ugsci",
-  "description": "从 Excel 变量表生成可编辑表单，核对日期与受邀单位，按 Word 模板生成文书并预览。",
+  "description": "按项目管理上报计划、选商论证、商务谈判、开题论证、结题验收与归档付款，共用资料、阶段材料、Word 填报和文件预览一处整理。",
   "author": "UGSci Team",
   "entry": { "backend": "backend/main.py", "frontend": "ui/index.js" },
   "qwenpaw_version": { "min": "2.2.2b8", "max": "2.4.0" },
